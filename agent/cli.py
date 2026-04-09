@@ -497,6 +497,7 @@ def _show_settings() -> None:
         "Temperature": os.getenv("LANGCHAIN_TEMPERATURE", "0.0"),
         "Timeout": os.getenv("TIMEOUT_SECONDS", "2400") + "s",
         "Tushare Token": "***" if os.getenv("TUSHARE_TOKEN") else "(not set)",
+        "Adanos API Key": "***" if os.getenv("ADANOS_API_KEY") else "(not set)",
     }
     for k, v in settings.items():
         table.add_row(k, v)
@@ -1439,6 +1440,7 @@ def cmd_init() -> int:
     model = input(f"Model name [{default_model.get(provider, '')}]: ").strip() or default_model.get(provider, "")
 
     tushare = input("Tushare token (A-shares, optional) []: ").strip()
+    adanos = input("Adanos API key (structured sentiment, optional) []: ").strip()
 
     env_content = (
         f"LANGCHAIN_PROVIDER={provider}\n"
@@ -1451,6 +1453,8 @@ def cmd_init() -> int:
     )
     if tushare:
         env_content += f"TUSHARE_TOKEN={tushare}\n"
+    if adanos:
+        env_content += f"ADANOS_API_KEY={adanos}\n"
 
     _INIT_ENV_DIR.mkdir(parents=True, exist_ok=True)
     _INIT_ENV_PATH.write_text(env_content, encoding="utf-8")

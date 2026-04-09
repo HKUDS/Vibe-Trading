@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main, master]
   pull_request:
-    branches: [master]
+    branches: [main, master]
 
 jobs:
   build:
@@ -20,7 +20,12 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e .
+        run: |
+          pip install -e .
+          pip install pytest
+
+      - name: Unit tests
+        run: python -m pytest tests/ -q
 
       - name: Syntax check
         run: |

@@ -157,6 +157,18 @@ def test_market_sentiment_trending_allows_partial_source_failures(monkeypatch):
     assert "polymarket" in payload["errors"]
 
 
+def test_market_sentiment_validates_mode_and_source(monkeypatch):
+    monkeypatch.setenv("ADANOS_API_KEY", "demo-key")
+
+    invalid_mode = json.loads(run_market_sentiment(mode="heatmap", tickers="AAPL"))
+    invalid_source = json.loads(run_market_sentiment(mode="trending", source="telegram"))
+
+    assert invalid_mode["status"] == "error"
+    assert "snapshot" in invalid_mode["error"]
+    assert invalid_source["status"] == "error"
+    assert "Unsupported source" in invalid_source["error"]
+
+
 def test_registry_includes_market_sentiment_tool():
     registry = build_registry()
     tool = registry.get("market_sentiment")

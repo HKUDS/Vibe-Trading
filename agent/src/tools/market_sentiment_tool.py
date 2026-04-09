@@ -353,8 +353,8 @@ class MarketSentimentTool(BaseTool):
                 "default": "snapshot",
             },
             "tickers": {
-                "type": ["string", "array"],
-                "description": "Comma-separated tickers or a ticker list for snapshot mode (max 10)",
+                "type": "string",
+                "description": "Comma-separated tickers for snapshot mode (max 10), e.g. AAPL,NVDA,TSLA",
             },
             "source": {
                 "type": "string",
