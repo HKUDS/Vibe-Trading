@@ -17,7 +17,7 @@
   <br>
   <img src="https://img.shields.io/badge/Skills-68-orange" alt="Skills">
   <img src="https://img.shields.io/badge/Swarm_Presets-29-7C3AED" alt="Swarm">
-  <img src="https://img.shields.io/badge/Tools-21-0F766E" alt="Tools">
+  <img src="https://img.shields.io/badge/Tools-22-0F766E" alt="Tools">
   <img src="https://img.shields.io/badge/Data_Sources-5-2563EB" alt="Data Sources">
   <br>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/Feishu-Group-E9DBFC?style=flat-square&logo=feishu&logoColor=white" alt="Feishu"></a>
@@ -44,7 +44,7 @@
 
 ## 📰 News
 
-- **2026-04-09** 🔧 **Data source expansion**: 5 data sources with auto-fallback (tushare, yfinance, OKX, AKShare, CCXT) — zero-config backtesting across A-shares, US/HK equities, crypto, futures, and forex. Added `web_search` tool (DuckDuckGo), skill categorization (7 categories), and `data-routing` meta-skill for intelligent source selection.
+- **2026-04-09** 🔧 **Data source expansion**: 5 data sources with auto-fallback (tushare, yfinance, OKX, AKShare, CCXT) — zero-config backtesting across A-shares, US/HK equities, crypto, futures, and forex. Added `web_search` tool (DuckDuckGo), optional `market_sentiment` structured alt-data tool, skill categorization (7 categories), and `data-routing` meta-skill for intelligent source selection.
 - **2026-04-08** 🔧 Multi-market backtest engines with per-market rules; **Pine Script v6 export** — convert strategies to TradingView in one command (`/pine`, API, frontend viewer).
 - **2026-04-01** 🚀 Released **v0.1.0** — Initial release: ReAct agent, 64 skills, 29 swarm presets, cross-market backtest, CLI + Web UI + MCP server.
 
@@ -292,6 +292,7 @@ Edit `agent/.env`:
 | `LANGCHAIN_PROVIDER` | Yes | LLM provider selector (e.g. `openrouter`) |
 | `LANGCHAIN_MODEL_NAME` | Yes | Model name (e.g. `deepseek/deepseek-v3.2`) |
 | `TUSHARE_TOKEN` | No | Tushare Pro token for A-share data (falls back to AKShare if missing) |
+| `ADANOS_API_KEY` | No | Optional Adanos key for structured US-stock market sentiment snapshots and trending tickers |
 | `CCXT_EXCHANGE` | No | CCXT exchange name, default `binance` |
 | `TIMEOUT_SECONDS` | No | Agent timeout, default 2400s |
 
@@ -385,7 +386,7 @@ Interactive docs: `http://localhost:8899/docs`
 
 ## 🔌 MCP Plugin
 
-Vibe-Trading exposes 16 MCP tools for any MCP-compatible client. Runs as a stdio subprocess — no server setup needed. **15 of 16 tools work with zero API keys** (HK/US/crypto). Only `run_swarm` needs an LLM key.
+Vibe-Trading exposes 17 MCP tools for any MCP-compatible client. Runs as a stdio subprocess — no server setup needed. **15 of 17 tools work with zero API keys** for default markets. `run_swarm` needs an LLM key, and `market_sentiment` is optional and only active when `ADANOS_API_KEY` is set.
 
 <details>
 <summary><b>Claude Desktop</b></summary>
@@ -427,7 +428,7 @@ vibe-trading-mcp --transport sse  # SSE for web clients
 
 </details>
 
-**MCP tools exposed (16):** `list_skills`, `load_skill`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `get_market_data`, `read_url`, `read_document`, `read_file`, `write_file`, `list_swarm_presets`, `run_swarm`, `get_swarm_status`, `get_run_result`, `list_runs`.
+**MCP tools exposed (17):** `list_skills`, `load_skill`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `get_market_data`, `market_sentiment`, `read_url`, `read_document`, `read_file`, `write_file`, `list_swarm_presets`, `run_swarm`, `get_swarm_status`, `get_run_result`, `list_runs`.
 
 <details>
 <summary><b>Install from ClawHub (one command)</b></summary>
@@ -485,7 +486,7 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli.py                      # CLI entrypoint — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server — 16 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 17 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core
@@ -496,7 +497,7 @@ Vibe-Trading/
 │   │   │   ├── memory.py           #   run memory / artifact store
 │   │   │   └── trace.py            #   execution trace writer
 │   │   │
-│   │   ├── tools/                  # 21 agent tools
+│   │   ├── tools/                  # 22 agent tools
 │   │   │   ├── backtest_tool.py    #   run backtests
 │   │   │   ├── factor_analysis_tool.py
 │   │   │   ├── options_pricing_tool.py
@@ -504,6 +505,7 @@ Vibe-Trading/
 │   │   │   ├── doc_reader_tool.py  #   PDF reader (OCR fallback)
 │   │   │   ├── web_reader_tool.py  #   web page reader (Jina)
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo web search
+│   │   │   ├── market_sentiment_tool.py # optional Adanos sentiment snapshots
 │   │   │   ├── swarm_tool.py       #   launch swarm teams
 │   │   │   └── ...                 #   file I/O, bash, tasks, etc.
 │   │   │

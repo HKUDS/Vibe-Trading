@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vibe-Trading MCP Server — expose 16 finance research tools to any MCP client.
+"""Vibe-Trading MCP Server — expose 17 finance research tools to any MCP client.
 
 Works with OpenClaw, Claude Desktop, Cursor, and any MCP-compatible client.
 Zero API key required for HK/US/crypto markets (yfinance + OKX are free).
@@ -422,6 +422,38 @@ def get_market_data(
             results[symbol] = records
 
     return json.dumps(results, ensure_ascii=False, indent=2)
+
+
+@mcp.tool
+def market_sentiment(
+    mode: str = "snapshot",
+    tickers: list[str] | None = None,
+    source: str = "all",
+    days: int = 7,
+    limit: int = 10,
+) -> str:
+    """Fetch optional structured market sentiment for US equities and ETFs.
+
+    The Adanos sentiment integration is optional and only becomes active when
+    ADANOS_API_KEY is configured. Without it, the tool returns
+    {"status":"not_configured"} so agents can fall back to web research.
+
+    Args:
+        mode: "snapshot" for ticker comparison or "trending" for hot names.
+        tickers: List of tickers for snapshot mode (e.g. ["AAPL", "NVDA", "TSLA"]).
+        source: all, reddit, x, news, or polymarket.
+        days: Lookback window in days.
+        limit: Max trending rows per source.
+    """
+    from src.tools.market_sentiment_tool import run_market_sentiment
+
+    return run_market_sentiment(
+        mode=mode,
+        tickers=tickers,
+        source=source,
+        days=days,
+        limit=limit,
+    )
 
 
 # ---------------------------------------------------------------------------

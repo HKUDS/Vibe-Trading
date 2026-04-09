@@ -26,8 +26,9 @@ agents:
       5. **Sentiment trend vs prior** — vs yesterday (daily) or prior week (weekly): direction, magnitude, speed
       6. **Tail-risk news** — items that could crater sentiment (geo / financial-system / black-swan watch)
 
+      If `market_sentiment` is configured, use it first for structured finance-news sentiment and hot-name context, then deepen with read_url for article detail.
       Use load_skill("web-reader"), load_skill("sentiment-analysis"), read_url.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+    tools: [bash, read_file, write_file, load_skill, read_url, market_sentiment]
     skills: [web-reader, sentiment-analysis, social-media-intelligence]
     max_iterations: 50
     timeout_seconds: 600
@@ -56,8 +57,9 @@ agents:
       5. **Bias map** — dominant biases and expected price impact (momentum vs reversal after overreaction)
       6. **Retail flow inflection** — forecast when retail flows may turn within {timeframe}
 
+      If `market_sentiment` is configured, use it first for structured retail heat and sentiment extremes on the target market before broader web sampling.
       Use load_skill("behavioral-finance"), load_skill("sentiment-analysis"), read_url.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+    tools: [bash, read_file, write_file, load_skill, read_url, market_sentiment]
     skills: [behavioral-finance, sentiment-analysis, social-media-intelligence]
     max_iterations: 50
     timeout_seconds: 600
@@ -118,8 +120,9 @@ agents:
       5. **Time window** — expected days until sentiment mean-reverts if reversal signal on
       6. **Limitations** — when sentiment fails in trends; blend with fundamentals; key uncertainties
 
+      If `market_sentiment` is configured, use it to ground the composite score with structured multi-source sentiment before blending news/social/flow outputs.
       Use load_skill("behavioral-finance"), load_skill("risk-analysis").
-    tools: [bash, read_file, write_file, load_skill]
+    tools: [bash, read_file, write_file, load_skill, market_sentiment]
     skills: [behavioral-finance, risk-analysis]
     max_iterations: 50
     timeout_seconds: 600

@@ -51,9 +51,10 @@ agents:
       4. **Narratives** — 3–5 dominant market narratives; novelty; stage (emerging / peak / late)
       5. **Tradable signals** — 1–3 observable, historically tested social signals (KOL consensus extreme / retail extreme / narrative stage) with rough historical hit rates
 
+      If `market_sentiment` is configured, use it first for structured X/Reddit/news/Polymarket sentiment snapshots on "{target}", then deepen with web reading as needed.
       Use load_skill("social-media-intelligence"), load_skill("sentiment-analysis").
-      Use read_url for X/FinTwit sources.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use read_url for X/FinTwit sources when the optional sentiment tool is unavailable or insufficient.
+    tools: [bash, read_file, write_file, load_skill, read_url, market_sentiment]
     skills: [social-media-intelligence, sentiment-analysis]
     max_iterations: 50
     timeout_seconds: 600
@@ -173,9 +174,10 @@ agents:
       4. **Attention lead** — Historical lead/lag; names with rising attention but flat price
       5. **Contrarian flag** — At greed/fear extremes, explicit fade signal with historical stats
 
+      If `market_sentiment` is configured, use it first for structured Reddit-centered snapshots or trending names on "{target}", then deepen with manual Reddit reading as needed.
       Use load_skill("social-media-intelligence"), load_skill("behavioral-finance"), load_skill("sentiment-analysis").
-      Use read_url for Reddit pages/API data.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use read_url for Reddit pages/API data when the optional sentiment tool is unavailable or insufficient.
+    tools: [bash, read_file, write_file, load_skill, read_url, market_sentiment]
     skills: [social-media-intelligence, behavioral-finance, sentiment-analysis]
     max_iterations: 50
     timeout_seconds: 600
@@ -236,9 +238,10 @@ agents:
       4. **Combined alpha verdict** — Buy / neutral / sell / contrarian for "{target}"; strength 1–5 stars; suggested holding horizon
       5. **Monitoring plan** — Refresh cadence, key thresholds, decay updates; blend with fundamental factors
 
+      If `market_sentiment` is configured, use it to anchor the three-channel scorecard with structured cross-source snapshots before doing historical validation.
       Use load_skill("social-media-intelligence"), load_skill("factor-research"), load_skill("quant-statistics").
       Use factor_analysis for factor stats.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, market_sentiment]
     skills: [social-media-intelligence, factor-research, quant-statistics]
     max_iterations: 50
     timeout_seconds: 600
