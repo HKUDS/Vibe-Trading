@@ -9,19 +9,22 @@ services:
       - vibe-runs:/app/agent/runs
       - vibe-sessions:/app/agent/sessions
     restart: unless-stopped
-    profiles: ["frontend", "fullstack"] 
 
   frontend:
-    image: node:20 
+    image: node:20
     working_dir: /app
     ports:
-      - "5173:5173" 
+      - "5899:5899"
     volumes:
-      - ./frontend:/app 
-    command: sh -c "npm install && npm run dev -- --host" 
-    profiles: ["frontend"] 
+      - ./frontend:/app
+    environment:
+      - VITE_API_URL=http://vibe-trading:8899
+    command: sh -c "npm install && npm run dev -- --host --port 5899"
+    profiles:
+      - frontend
     depends_on:
-      - vibe-trading
+      vibe-trading:
+        condition: service_started
 
 volumes:
   vibe-runs:
