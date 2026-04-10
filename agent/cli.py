@@ -35,7 +35,7 @@ for _s in ("stdout", "stderr"):
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Prompt
+from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.syntax import Syntax
 from rich.table import Table
 
@@ -1405,58 +1405,173 @@ def _handle_prompt_command(
 
 
 _INIT_ENV_DIR = Path.home() / ".vibe-trading"
-_INIT_ENV_PATH = _INIT_ENV_DIR / ".env"
+_INIT_ENV_PATH = AGENT_DIR / ".env"
+
+_PROVIDER_CHOICES: list[dict[str, str | None]] = [
+    {
+        "label": "OpenRouter (recommended - multiple models)",
+        "provider": "openrouter",
+        "key_env": "OPENROUTER_API_KEY",
+        "base_env": "OPENROUTER_BASE_URL",
+        "base_url": "https://openrouter.ai/api/v1",
+        "model": "deepseek/deepseek-chat",
+        "key_prefix": "sk-or-",
+        "key_placeholder": "sk-or-...",
+    },
+    {
+        "label": "OpenAI",
+        "provider": "openai",
+        "key_env": "OPENAI_API_KEY",
+        "base_env": "OPENAI_BASE_URL",
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o",
+        "key_prefix": "sk-",
+        "key_placeholder": "sk-...",
+    },
+    {
+        "label": "Anthropic",
+        "provider": "anthropic",
+        "key_env": "OPENAI_API_KEY",
+        "base_env": "OPENAI_BASE_URL",
+        "base_url": "https://api.anthropic.com/v1/",
+        "model": "claude-3-7-sonnet-latest",
+        "key_prefix": "sk-ant-",
+        "key_placeholder": "sk-ant-...",
+    },
+    {
+        "label": "DeepSeek",
+        "provider": "deepseek",
+        "key_env": "DEEPSEEK_API_KEY",
+        "base_env": "DEEPSEEK_BASE_URL",
+        "base_url": "https://api.deepseek.com/v1",
+        "model": "deepseek-chat",
+        "key_prefix": "sk-",
+        "key_placeholder": "sk-...",
+    },
+    {
+        "label": "Ollama (local, free)",
+        "provider": "ollama",
+        "key_env": None,
+        "base_env": "OLLAMA_BASE_URL",
+        "base_url": "http://localhost:11434/v1",
+        "model": "qwen2.5:32b",
+        "key_prefix": None,
+        "key_placeholder": None,
+    },
+]
+
+
+def _validate_api_key(api_key: str, expected_prefix: str | None) -> bool:
+    """Basic API-key format validation used during interactive setup."""
+    if expected_prefix is None:
+        return True
+    return api_key.startswith(expected_prefix)
+
+
+def _render_env_content(config: dict[str, str]) -> str:
+    """Render .env content with stable ordering."""
+    ordered_keys = [
+        "LANGCHAIN_TEMPERATURE",
+        "LANGCHAIN_PROVIDER",
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_BASE_URL",
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_BASE_URL",
+        "OLLAMA_BASE_URL",
+        "LANGCHAIN_MODEL_NAME",
+        "TUSHARE_TOKEN",
+        "TIMEOUT_SECONDS",
+        "MAX_RETRIES",
+    ]
+    lines: list[str] = []
+    for key in ordered_keys:
+        value = config.get(key)
+        if value:
+            lines.append(f"{key}={value}")
+    return "\n".join(lines) + "\n"
 
 
 def cmd_init() -> int:
-    """Interactive setup: create ~/.vibe-trading/.env."""
-    console.print("[bold cyan]Vibe-Trading Init[/bold cyan]\n")
+    """Interactive setup: create agent/.env."""
+    console.print("[bold cyan]Welcome to Vibe-Trading setup![/bold cyan]\n")
 
     if _INIT_ENV_PATH.exists():
         console.print(f"[yellow]Config already exists:[/yellow] {_INIT_ENV_PATH}")
-        overwrite = input("Overwrite? [y/N] ").strip().lower()
-        if overwrite != "y":
+        if not Confirm.ask("Overwrite it?", default=False):
             console.print("[dim]Aborted.[/dim]")
             return 0
 
-    console.print("[dim]Press Enter to accept defaults shown in brackets.[/dim]\n")
+    console.print("Select your LLM provider:")
+    for idx, option in enumerate(_PROVIDER_CHOICES, start=1):
+        console.print(f"  {idx}. {option['label']}")
 
-    provider = input("LLM provider [openrouter]: ").strip() or "openrouter"
-    api_key = input("API key [sk-or-v1-...]: ").strip() or "sk-or-v1-your-key-here"
-
-    default_base = {
-        "openrouter": "https://openrouter.ai/api/v1",
-        "deepseek": "https://api.deepseek.com/v1",
-        "openai": "https://api.openai.com/v1",
-    }
-    base_url = input(f"API base URL [{default_base.get(provider, '')}]: ").strip() or default_base.get(provider, "")
-
-    default_model = {
-        "openrouter": "deepseek/deepseek-v3.2",
-        "deepseek": "deepseek-chat",
-        "openai": "gpt-4o",
-    }
-    model = input(f"Model name [{default_model.get(provider, '')}]: ").strip() or default_model.get(provider, "")
-
-    tushare = input("Tushare token (A-shares, optional) []: ").strip()
-
-    env_content = (
-        f"LANGCHAIN_PROVIDER={provider}\n"
-        f"OPENAI_API_KEY={api_key}\n"
-        f"OPENAI_BASE_URL={base_url}\n"
-        f"LANGCHAIN_MODEL_NAME={model}\n"
-        f"LANGCHAIN_TEMPERATURE=0.0\n"
-        f"TIMEOUT_SECONDS=2400\n"
-        f"MAX_RETRIES=5\n"
+    choice = IntPrompt.ask(
+        "Provider",
+        choices=[str(i) for i in range(1, len(_PROVIDER_CHOICES) + 1)],
+        default=1,
+        show_choices=False,
     )
-    if tushare:
-        env_content += f"TUSHARE_TOKEN={tushare}\n"
+    selected = _PROVIDER_CHOICES[choice - 1]
 
-    _INIT_ENV_DIR.mkdir(parents=True, exist_ok=True)
-    _INIT_ENV_PATH.write_text(env_content, encoding="utf-8")
+    provider = str(selected["provider"])
+    key_env = selected["key_env"]
+    base_env = str(selected["base_env"])
+    default_base_url = str(selected["base_url"])
+    default_model = str(selected["model"])
+    key_prefix = selected["key_prefix"]
+    key_placeholder = selected["key_placeholder"]
 
-    console.print(f"\n[green]Config saved to {_INIT_ENV_PATH}[/green]")
-    console.print("[dim]Run [bold]vibe-trading[/bold] to start.[/dim]")
+    env_values: dict[str, str] = {
+        "LANGCHAIN_TEMPERATURE": "0.0",
+        "LANGCHAIN_PROVIDER": provider,
+        "LANGCHAIN_MODEL_NAME": default_model,
+        "TIMEOUT_SECONDS": "120",
+        "MAX_RETRIES": "2",
+    }
+
+    if key_env is not None:
+        while True:
+            api_key = Prompt.ask(
+                f"Enter your {provider.capitalize()} API key",
+                default=str(key_placeholder),
+                password=True,
+                show_default=False,
+            ).strip()
+            if _validate_api_key(api_key, str(key_prefix) if key_prefix is not None else None):
+                env_values[str(key_env)] = api_key
+                break
+            console.print(
+                f"[red]That key doesn't look right.[/red] Expected it to start with [bold]{key_prefix}[/bold]."
+            )
+    else:
+        console.print("[dim]Ollama does not require an API key.[/dim]")
+
+    env_values[base_env] = Prompt.ask(
+        "Base URL",
+        default=default_base_url,
+        show_default=True,
+    ).strip()
+
+    env_values["LANGCHAIN_MODEL_NAME"] = Prompt.ask(
+        "Select default model",
+        default=default_model,
+        show_default=True,
+    ).strip()
+
+    tushare_token = Prompt.ask(
+        "(Optional) Enter Tushare token for China A-share data",
+        default="",
+        show_default=False,
+    ).strip()
+    if tushare_token:
+        env_values["TUSHARE_TOKEN"] = tushare_token
+
+    _INIT_ENV_PATH.write_text(_render_env_content(env_values), encoding="utf-8")
+
+    console.print(f"\n[green]✅ Created {_INIT_ENV_PATH} — you're ready to go![/green]")
+    console.print("[dim]Run:[/dim] [bold]vibe-trading[/bold]")
     return 0
 
 
