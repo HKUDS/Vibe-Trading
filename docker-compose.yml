@@ -9,6 +9,19 @@ services:
       - vibe-runs:/app/agent/runs
       - vibe-sessions:/app/agent/sessions
     restart: unless-stopped
+    profiles: ["frontend", "fullstack"] 
+
+  frontend:
+    image: node:20 
+    working_dir: /app
+    ports:
+      - "5173:5173" 
+    volumes:
+      - ./frontend:/app 
+    command: sh -c "npm install && npm run dev -- --host" 
+    profiles: ["frontend"] 
+    depends_on:
+      - vibe-trading
 
 volumes:
   vibe-runs:
