@@ -14,7 +14,7 @@ class TestCliInit:
                 "LANGCHAIN_PROVIDER": "openrouter",
                 "OPENROUTER_API_KEY": "sk-or-test",
                 "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
-                "LANGCHAIN_MODEL_NAME": "deepseek/deepseek-chat",
+                "LANGCHAIN_MODEL_NAME": "deepseek/deepseek-v3.2",
                 "TIMEOUT_SECONDS": "120",
                 "MAX_RETRIES": "2",
                 "TUSHARE_TOKEN": "ts-token",
@@ -24,10 +24,28 @@ class TestCliInit:
         assert "LANGCHAIN_PROVIDER=openrouter" in content
         assert "OPENROUTER_API_KEY=sk-or-test" in content
         assert "OPENROUTER_BASE_URL=https://openrouter.ai/api/v1" in content
-        assert "LANGCHAIN_MODEL_NAME=deepseek/deepseek-chat" in content
+        assert "LANGCHAIN_MODEL_NAME=deepseek/deepseek-v3.2" in content
         assert "TUSHARE_TOKEN=ts-token" in content
         assert "TIMEOUT_SECONDS=120" in content
         assert "MAX_RETRIES=2" in content
+
+    def test_render_env_content_gemini(self) -> None:
+        content = cli._render_env_content(
+            {
+                "LANGCHAIN_TEMPERATURE": "0.0",
+                "LANGCHAIN_PROVIDER": "gemini",
+                "GEMINI_API_KEY": "gem-key",
+                "GEMINI_BASE_URL": "https://generativelanguage.googleapis.com/v1beta/openai/",
+                "LANGCHAIN_MODEL_NAME": "gemini-2.5-flash",
+                "TIMEOUT_SECONDS": "120",
+                "MAX_RETRIES": "2",
+            }
+        )
+
+        assert "LANGCHAIN_PROVIDER=gemini" in content
+        assert "GEMINI_API_KEY=gem-key" in content
+        assert "GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/" in content
+        assert "LANGCHAIN_MODEL_NAME=gemini-2.5-flash" in content
 
     def test_validate_api_key_prefix(self) -> None:
         assert cli._validate_api_key("sk-or-abc", "sk-or-") is True
@@ -45,7 +63,7 @@ class TestCliInit:
                  side_effect=[
                      "sk-or-test-key",
                      "https://openrouter.ai/api/v1",
-                     "deepseek/deepseek-chat",
+                     "deepseek/deepseek-v3.2",
                      "ts-token",
                  ],
              ):
@@ -56,14 +74,14 @@ class TestCliInit:
         assert "LANGCHAIN_PROVIDER=openrouter" in content
         assert "OPENROUTER_API_KEY=sk-or-test-key" in content
         assert "OPENROUTER_BASE_URL=https://openrouter.ai/api/v1" in content
-        assert "LANGCHAIN_MODEL_NAME=deepseek/deepseek-chat" in content
+        assert "LANGCHAIN_MODEL_NAME=deepseek/deepseek-v3.2" in content
         assert "TUSHARE_TOKEN=ts-token" in content
 
     def test_cmd_init_ollama_skips_api_key(self, tmp_path: Path) -> None:
         env_path = tmp_path / ".env"
 
         with patch.object(cli, "_INIT_ENV_PATH", env_path), \
-             patch.object(cli.IntPrompt, "ask", return_value=5), \
+             patch.object(cli.IntPrompt, "ask", return_value=11), \
              patch.object(
                  cli.Prompt,
                  "ask",
