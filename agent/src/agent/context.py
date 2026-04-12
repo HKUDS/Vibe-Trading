@@ -70,8 +70,9 @@ class ContextBuilder:
         skills_loader: Skills loader.
     """
 
-    def __init__(self, registry: ToolRegistry, memory: WorkspaceMemory,
-                 skills_loader: Optional[SkillsLoader] = None) -> None:
+    def __init__(
+        self, registry: ToolRegistry, memory: WorkspaceMemory, skills_loader: Optional[SkillsLoader] = None
+    ) -> None:
         """Initialize ContextBuilder.
 
         Args:
@@ -148,6 +149,9 @@ class ContextBuilder:
     def format_assistant_tool_calls(tool_calls: list, content: Optional[str] = None) -> Dict[str, Any]:
         """Format an assistant tool_calls message, preserving thinking text.
 
+        Includes Gemini ``thought_signature`` in ``extra_content.google.thought_signature``
+        when present, so subsequent API calls to Gemini preserve the signature.
+
         Args:
             tool_calls: List of tool call objects.
             content: Model reasoning/thinking text.
@@ -155,18 +159,25 @@ class ContextBuilder:
         Returns:
             OpenAI-format assistant message.
         """
+        formatted_calls = []
+        for tc in tool_calls:
+            call_dict = {
+                "id": tc.id,
+                "type": "function",
+                "function": {
+                    "name": tc.name,
+                    "arguments": json.dumps(tc.arguments, ensure_ascii=False),
+                },
+            }
+            if getattr(tc, "thought_signature", None):
+                call_dict["extra_content"] = {
+                    "google": {
+                        "thought_signature": tc.thought_signature,
+                    },
+                }
+            formatted_calls.append(call_dict)
         return {
             "role": "assistant",
             "content": content,
-            "tool_calls": [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {
-                        "name": tc.name,
-                        "arguments": json.dumps(tc.arguments, ensure_ascii=False),
-                    },
-                }
-                for tc in tool_calls
-            ],
+            "tool_calls": formatted_calls,
         }

@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from src.providers.llm import build_llm
+from src.providers.llm import GeminiChatOpenAI, build_llm
 
 
 @dataclass
@@ -19,11 +19,13 @@ class ToolCallRequest:
         id: Tool call ID (used to match tool_result messages).
         name: Tool name.
         arguments: Tool argument dict.
+        thought_signature: Gemini thought_signature for this tool call (if any).
     """
 
     id: str
     name: str
     arguments: Dict[str, Any]
+    thought_signature: Optional[str] = None
 
 
 @dataclass
@@ -64,7 +66,12 @@ class ChatLLM:
         self.model_name = model_name
         self._llm = build_llm(model_name=model_name)
 
-    def chat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> LLMResponse:
+    def chat(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        timeout: Optional[int] = None,
+    ) -> LLMResponse:
         """Call the LLM synchronously.
 
         Args:
@@ -92,6 +99,10 @@ class ChatLLM:
         Iterates AIMessageChunk; each text delta invokes ``on_text_chunk``.
         Aggregates chunks into one response; on failure falls back to ``chat()``.
 
+        For Gemini (GeminiChatOpenAI), streaming is bypassed in favor of
+        ``chat()`` because the streaming path does not preserve
+        ``extra_content.google.thought_signature`` from the raw response.
+
         Args:
             messages: Messages in OpenAI format.
             tools: Tool definitions for function calling.
@@ -101,6 +112,9 @@ class ChatLLM:
         Returns:
             Parsed ``LLMResponse``.
         """
+        if isinstance(self._llm, GeminiChatOpenAI):
+            return self.chat(messages, tools=tools, timeout=timeout)
+
         try:
             llm = self._llm.bind_tools(tools) if tools else self._llm
             config = {"timeout": timeout} if timeout else {}
@@ -115,7 +129,12 @@ class ChatLLM:
         except Exception:
             return self.chat(messages, tools=tools, timeout=timeout)
 
-    async def achat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> LLMResponse:
+    async def achat(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        timeout: Optional[int] = None,
+    ) -> LLMResponse:
         """Async LLM invocation.
 
         Args:
@@ -143,12 +162,25 @@ class ChatLLM:
         """
         content = ai_message.content if hasattr(ai_message, "content") else None
         raw_calls = getattr(ai_message, "tool_calls", None) or []
+        tool_call_extras: Dict[str, Any] = {}
+        if hasattr(ai_message, "additional_kwargs"):
+            tool_call_extras = ai_message.additional_kwargs.get("tool_call_extras", {})
         tool_calls = []
         for tc in raw_calls:
-            tool_calls.append(ToolCallRequest(
-                id=tc.get("id", ""),
-                name=tc.get("name", ""),
-                arguments=tc.get("args", {}),
-            ))
+            tc_id = tc.get("id", "")
+            thought_signature = None
+            if tc_id and tc_id in tool_call_extras:
+                extra = tool_call_extras[tc_id]
+                if isinstance(extra, dict):
+                    google_extra = extra.get("google", {})
+                    thought_signature = google_extra.get("thought_signature")
+            tool_calls.append(
+                ToolCallRequest(
+                    id=tc_id,
+                    name=tc.get("name", ""),
+                    arguments=tc.get("args", {}),
+                    thought_signature=thought_signature,
+                )
+            )
         finish = getattr(ai_message, "response_metadata", {}).get("finish_reason", "stop")
         return LLMResponse(content=content, tool_calls=tool_calls, finish_reason=finish)

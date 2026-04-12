@@ -17,6 +17,12 @@ try:
 except ImportError:
     ChatOpenAI = None  # type: ignore
 
+
+def _get_current_provider() -> str:
+    _ensure_dotenv()
+    return os.getenv("LANGCHAIN_PROVIDER", "openai").lower()
+
+
 AGENT_DIR = Path(__file__).resolve().parents[2]
 
 # .env search order: ~/.vibe-trading/.env → agent/.env → $CWD/.env
@@ -68,18 +74,18 @@ def _sync_provider_env() -> None:
 
     # (api_key_env, base_url_env)
     _PROVIDER_MAP: dict[str, tuple[str | None, str]] = {
-        "openai":     ("OPENAI_API_KEY",     "OPENAI_BASE_URL"),
-        "openrouter": ("OPENROUTER_API_KEY",  "OPENROUTER_BASE_URL"),
-        "deepseek":   ("DEEPSEEK_API_KEY",    "DEEPSEEK_BASE_URL"),
-        "gemini":     ("GEMINI_API_KEY",      "GEMINI_BASE_URL"),
-        "groq":       ("GROQ_API_KEY",        "GROQ_BASE_URL"),
-        "dashscope":  ("DASHSCOPE_API_KEY",   "DASHSCOPE_BASE_URL"),
-        "qwen":       ("DASHSCOPE_API_KEY",   "DASHSCOPE_BASE_URL"),
-        "zhipu":      ("ZHIPU_API_KEY",       "ZHIPU_BASE_URL"),
-        "moonshot":   ("MOONSHOT_API_KEY",    "MOONSHOT_BASE_URL"),
-        "minimax":    ("MINIMAX_API_KEY",     "MINIMAX_BASE_URL"),
-        "mimo":       ("MIMO_API_KEY",        "MIMO_BASE_URL"),
-        "ollama":     (None,                  "OLLAMA_BASE_URL"),
+        "openai": ("OPENAI_API_KEY", "OPENAI_BASE_URL"),
+        "openrouter": ("OPENROUTER_API_KEY", "OPENROUTER_BASE_URL"),
+        "deepseek": ("DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL"),
+        "gemini": ("GEMINI_API_KEY", "GEMINI_BASE_URL"),
+        "groq": ("GROQ_API_KEY", "GROQ_BASE_URL"),
+        "dashscope": ("DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"),
+        "qwen": ("DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"),
+        "zhipu": ("ZHIPU_API_KEY", "ZHIPU_BASE_URL"),
+        "moonshot": ("MOONSHOT_API_KEY", "MOONSHOT_BASE_URL"),
+        "minimax": ("MINIMAX_API_KEY", "MINIMAX_BASE_URL"),
+        "mimo": ("MIMO_API_KEY", "MIMO_BASE_URL"),
+        "ollama": (None, "OLLAMA_BASE_URL"),
     }
 
     spec = _PROVIDER_MAP.get(provider, _PROVIDER_MAP["openai"])
@@ -101,6 +107,45 @@ def _sync_provider_env() -> None:
         os.environ.setdefault("OPENAI_BASE_URL", base_url)
 
 
+if ChatOpenAI is not None:
+
+    class GeminiChatOpenAI(ChatOpenAI):
+        """ChatOpenAI subclass that preserves Gemini thought_signature on tool calls.
+
+        Gemini's OpenAI-compatible endpoint returns ``extra_content.google.thought_signature``
+        on each tool call. The base ``ChatOpenAI`` strips this during parsing. This subclass
+        captures the signature from the raw response and stores it in
+        ``AIMessage.additional_kwargs["tool_call_extras"]`` so downstream code can
+        include it in subsequent turns.
+        """
+
+        def _create_chat_result(self, response: Any, generation_info: Any = None) -> Any:
+            result = super()._create_chat_result(response, generation_info)
+            try:
+                msg = result.generations[0].message
+                extras: dict[str, Any] = {}
+                raw_choices = getattr(response, "choices", None) or []
+                for choice in raw_choices:
+                    raw_tcs = getattr(getattr(choice, "message", None), "tool_calls", None) or []
+                    for raw_tc in raw_tcs:
+                        tc_extra = getattr(raw_tc, "extra_content", None)
+                        if not tc_extra:
+                            pydantic_extra = getattr(raw_tc, "__pydantic_extra__", None)
+                            if pydantic_extra and isinstance(pydantic_extra, dict):
+                                tc_extra = pydantic_extra.get("extra_content")
+                        if tc_extra:
+                            tc_id = getattr(raw_tc, "id", "") or ""
+                            extras[tc_id] = tc_extra
+                if extras:
+                    msg.additional_kwargs["tool_call_extras"] = extras
+            except Exception:
+                pass
+            return result
+
+else:
+    GeminiChatOpenAI = None  # type: ignore
+
+
 def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any:
     """Construct a ChatOpenAI instance.
 
@@ -109,7 +154,7 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         callbacks: Optional LangChain callbacks.
 
     Returns:
-        ChatOpenAI instance.
+        ChatOpenAI instance (GeminiChatOpenAI when provider is gemini).
 
     Raises:
         RuntimeError: If langchain-openai is missing or LANGCHAIN_MODEL_NAME is unset.
@@ -123,7 +168,9 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
     temperature = float(os.getenv("LANGCHAIN_TEMPERATURE", "0.0"))
     timeout = int(os.getenv("TIMEOUT_SECONDS", "120"))
     max_retries = int(os.getenv("MAX_RETRIES", "2"))
-    return ChatOpenAI(
+    provider = _get_current_provider()
+    cls = GeminiChatOpenAI if provider == "gemini" else ChatOpenAI
+    return cls(
         model=name,
         temperature=temperature,
         timeout=timeout,

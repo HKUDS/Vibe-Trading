@@ -28,6 +28,7 @@ requests>=2.31.0
 yfinance>=0.2.30
 akshare>=1.12.0
 ccxt>=4.0.0
+ddgs>=6.0.0
 
 # REST API & SSE
 fastapi>=0.104.0
