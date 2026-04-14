@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.providers.llm import _extract_balanced_json, _sync_provider_env
+from src.providers.llm import _extract_balanced_json, _sync_provider_env, build_llm
 
 
 # ---------------------------------------------------------------------------
@@ -90,10 +90,79 @@ class TestSyncProviderEnv:
         })
         assert result["OPENAI_API_KEY"] == "sk-shared"
 
+    def test_minimax_provider(self) -> None:
+        result = self._run_sync({
+            "LANGCHAIN_PROVIDER": "minimax",
+            "MINIMAX_API_KEY": "minimax-key-123",
+            "MINIMAX_BASE_URL": "https://api.minimax.io/v1",
+        })
+        assert result["OPENAI_API_KEY"] == "minimax-key-123"
+        assert result["OPENAI_API_BASE"] == "https://api.minimax.io/v1"
+
+    def test_minimax_base_url_in_openai_base_url(self) -> None:
+        result = self._run_sync({
+            "LANGCHAIN_PROVIDER": "minimax",
+            "MINIMAX_API_KEY": "minimax-key",
+            "MINIMAX_BASE_URL": "https://api.minimax.io/v1",
+        })
+        assert "minimax.io" in result["OPENAI_BASE_URL"]
+
 
 # ---------------------------------------------------------------------------
-# _extract_balanced_json
+# MiniMax temperature clamping
 # ---------------------------------------------------------------------------
+
+
+class TestMinimaxTemperature:
+    """MiniMax requires temperature > 0; build_llm should clamp the default."""
+
+    def test_minimax_temperature_clamped_from_zero(self) -> None:
+        """When LANGCHAIN_TEMPERATURE=0.0 and provider=minimax, temperature must be clamped to 1.0."""
+        import src.providers.llm as llm_mod
+        llm_mod._dotenv_loaded = True
+
+        captured: dict[str, float] = {}
+
+        class _FakeChatOpenAI:
+            def __init__(self, **kwargs: object) -> None:
+                captured["temperature"] = float(kwargs.get("temperature", -1))
+
+        env = {
+            "LANGCHAIN_PROVIDER": "minimax",
+            "MINIMAX_API_KEY": "minimax-key",
+            "MINIMAX_BASE_URL": "https://api.minimax.io/v1",
+            "LANGCHAIN_MODEL_NAME": "MiniMax-M2.7",
+            "LANGCHAIN_TEMPERATURE": "0.0",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            with patch.object(llm_mod, "ChatOpenAI", _FakeChatOpenAI):
+                build_llm()
+        assert captured["temperature"] == 1.0, (
+            "MiniMax temperature must be clamped to 1.0 when 0.0 is configured"
+        )
+
+    def test_minimax_positive_temperature_preserved(self) -> None:
+        """When an explicit positive temperature is set, it should be preserved."""
+        import src.providers.llm as llm_mod
+        llm_mod._dotenv_loaded = True
+
+        captured: dict[str, float] = {}
+
+        class _FakeChatOpenAI:
+            def __init__(self, **kwargs: object) -> None:
+                captured["temperature"] = float(kwargs.get("temperature", -1))
+
+        env = {
+            "LANGCHAIN_PROVIDER": "minimax",
+            "MINIMAX_API_KEY": "minimax-key",
+            "MINIMAX_BASE_URL": "https://api.minimax.io/v1",
+            "LANGCHAIN_MODEL_NAME": "MiniMax-M2.7",
+            "LANGCHAIN_TEMPERATURE": "0.7",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            with patch.object(llm_mod, "ChatOpenAI", _FakeChatOpenAI):
+                build_llm()
+        assert captured["temperature"] == 0.7
 
 
 class TestExtractBalancedJson:

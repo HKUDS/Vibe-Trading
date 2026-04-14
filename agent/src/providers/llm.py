@@ -121,6 +121,10 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
     if not name:
         raise RuntimeError("LANGCHAIN_MODEL_NAME is not set")
     temperature = float(os.getenv("LANGCHAIN_TEMPERATURE", "0.0"))
+    # MiniMax requires temperature in (0.0, 1.0] — clamp to 1.0 when the
+    # default 0.0 is used to avoid an API validation error.
+    if os.getenv("LANGCHAIN_PROVIDER", "openai").lower() == "minimax" and temperature <= 0.0:
+        temperature = 1.0
     timeout = int(os.getenv("TIMEOUT_SECONDS", "120"))
     max_retries = int(os.getenv("MAX_RETRIES", "2"))
     return ChatOpenAI(
