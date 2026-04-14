@@ -51,6 +51,7 @@
 
 ## 📰 新闻
 
+- **2026-04-14** 🤖 **Z.ai 编程平台支持**：新增对 **Z.ai**（原智谱 AI）编程平台的原生支持。针对 `glm-5.1` 模型及专用编程端点进行了优化。`vibe-trading init` 现在已包含 Z.ai 的交互式配置。
 - **2026-04-13** 🌐 **跨市场复合回测**：新增 `CompositeEngine`，支持在同一次回测中混合不同市场的标的（如 A 股 + 加密货币），共享资金池，各市场规则（T+1、资金费率、掉期）按标的独立执行，信号按各自交易日历对齐。使用 `source: "auto"` 配合混合代码如 `["000001.SZ", "BTC-USDT"]` 即可。包含波动率加权策略技能和日历日年化计算。
 - **2026-04-12** 🌍 **多平台指标导出**：`/pine` 命令现在一次性导出 **TradingView (Pine Script v6)**、**通达信/同花顺/东方财富 (TDX 公式)** 和 **MetaTrader 5 (MQL5)** 三个平台的指标代码 — 覆盖国际股票、中国 A 股和全球外汇/CFD 市场。一条命令，三大平台。
 - **2026-04-11** 🛡️ **可靠性与开发体验**：`vibe-trading init` 交互式 .env 引导（[#19](https://github.com/HKUDS/Vibe-Trading/pull/19)），启动预检 LLM 与数据源连通性，主数据源返空时自动回退，回测引擎数据校验与错误隔离加固，Agent 与 Swarm 提示词注入当前日期时间。社区 PR [#21](https://github.com/HKUDS/Vibe-Trading/pull/21) 贡献多语言 README（zh/ja/ko）。
@@ -224,7 +225,7 @@ vibe-trading-mcp               # 启动 MCP 服务器（stdio）
 - Path B 需 **Python 3.11+**
 - Path A 需 **Docker**
 
-> **支持的 LLM 提供商：** OpenRouter、OpenAI、DeepSeek、Gemini、Groq、DashScope/Qwen、智谱、Moonshot/Kimi、MiniMax、小米 MIMO、Ollama（本地）。参见 `.env.example` 配置。
+> **支持的 LLM 提供商：** OpenRouter、OpenAI、DeepSeek、Gemini、Groq、DashScope/Qwen、智谱、Moonshot/Kimi、MiniMax、小米 MIMO、Z.ai、Ollama（本地）。参见 `.env.example` 配置。
 
 > **提示：** 所有市场都可在无 API key 情况下运行，因自动回退。yfinance（港美股）、OKX（加密）、AKShare（A 股、美股、港股、期货、外汇）均免费。Tushare token 可选——A 股可回退到 AKShare 免费获取。
 
@@ -298,7 +299,7 @@ npx clawhub@latest install vibe-trading --force
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
-| `LANGCHAIN_PROVIDER` | Yes | 提供商名称（`openrouter`、`deepseek`、`groq`、`ollama` 等） |
+| `LANGCHAIN_PROVIDER` | Yes | 提供商名称（`openrouter`、`deepseek`、`groq`、`z.ai`、`ollama` 等） |
 | `<PROVIDER>_API_KEY` | Yes* | API key（`OPENROUTER_API_KEY`、`DEEPSEEK_API_KEY` 等） |
 | `<PROVIDER>_BASE_URL` | Yes | API 端点 URL |
 | `LANGCHAIN_MODEL_NAME` | Yes | 模型名（如 `deepseek/deepseek-v3.2`） |

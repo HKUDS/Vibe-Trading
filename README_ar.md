@@ -225,7 +225,7 @@ vibe-trading-mcp               # بدء خادم MCP (stdio)
 - **Python 3.11+** للمسار B
 - **Docker** للمسار A
 
-> **مزودو نماذج اللغة المدعومون:** OpenRouter, OpenAI, DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, Xiaomi MIMO, Ollama (محلي). راجع `.env.example` للإعدادات.
+> **مزودو نماذج اللغة المدعومون:** OpenRouter, OpenAI, DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, Xiaomi MIMO, Z.ai, Ollama (محلي). راجع `.env.example` للإعدادات.
 
 > **نصيحة:** جميع الأسواق تعمل بدون أي مفاتيح API بفضل البديل التلقائي. yfinance (HK/US) و OKX (العملات المشفرة) و AKShare (أسهم A، US، HK، العقود الآجلة، الفوركس) جميعها مجانية. رمز Tushare اختياري — AKShare يغطي أسهم A كبديل مجاني.
 
@@ -299,7 +299,7 @@ npx clawhub@latest install vibe-trading --force
 
 | المتغير | مطلوب | الوصف |
 |----------|:--------:|-------------|
-| `LANGCHAIN_PROVIDER` | نعم | اسم المزود (`openrouter`, `deepseek`, `groq`, `ollama`, إلخ) |
+| `LANGCHAIN_PROVIDER` | نعم | اسم المزود (`openrouter`, `deepseek`, `groq`, `z.ai`, `ollama`, إلخ) |
 | `<PROVIDER>_API_KEY` | نعم* | مفتاح API (`OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, إلخ) |
 | `<PROVIDER>_BASE_URL` | نعم | رابط نقطة نهاية API |
 | `LANGCHAIN_MODEL_NAME` | نعم | اسم النموذج (مثلاً `deepseek/deepseek-v3.2`) |
