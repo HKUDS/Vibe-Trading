@@ -81,13 +81,14 @@ class TestCliInit:
         env_path = tmp_path / ".env"
 
         with patch.object(cli, "_INIT_ENV_PATH", env_path), \
-             patch.object(cli.IntPrompt, "ask", return_value=11), \
+             patch.object(cli.IntPrompt, "ask", return_value=12), \
              patch.object(
                  cli.Prompt,
                  "ask",
                  side_effect=[
                      "http://localhost:11434/v1",
                      "qwen2.5:32b",
+                     "",
                      "",
                  ],
              ):
