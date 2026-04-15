@@ -24,7 +24,7 @@ class TestSyncProviderEnv:
         import src.providers.llm as llm_mod
         llm_mod._dotenv_loaded = True  # pretend already loaded
 
-        clean = {k: v for k, v in os.environ.items() if not k.startswith(("OPENAI_", "LANGCHAIN_", "DEEPSEEK_", "GROQ_", "OLLAMA_", "DASHSCOPE_"))}
+        clean = {k: v for k, v in os.environ.items() if not k.startswith(("OPENAI_", "LANGCHAIN_", "DEEPSEEK_", "GROQ_", "OLLAMA_", "DASHSCOPE_", "ZAI_"))}
         clean.update(env)
         with patch.dict(os.environ, clean, clear=True):
             _sync_provider_env()
@@ -74,6 +74,15 @@ class TestSyncProviderEnv:
             "DASHSCOPE_BASE_URL": "https://dashscope.aliyuncs.com/v1",
         })
         assert result["OPENAI_API_KEY"] == "qwen-key"
+
+    def test_zai_provider(self) -> None:
+        result = self._run_sync({
+            "LANGCHAIN_PROVIDER": "zai",
+            "ZAI_API_KEY": "zai-key-test",
+            "ZAI_BASE_URL": "https://api.z.ai/api/coding/paas/v4",
+        })
+        assert result["OPENAI_API_KEY"] == "zai-key-test"
+        assert result["OPENAI_API_BASE"] == "https://api.z.ai/api/coding/paas/v4"
 
     def test_unknown_provider_falls_back_to_openai(self) -> None:
         result = self._run_sync({
