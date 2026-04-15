@@ -117,7 +117,7 @@ class TestMinimaxTemperature:
     """MiniMax requires temperature > 0; build_llm should clamp the default."""
 
     def test_minimax_temperature_clamped_from_zero(self) -> None:
-        """When LANGCHAIN_TEMPERATURE=0.0 and provider=minimax, temperature must be clamped to 1.0."""
+        """When LANGCHAIN_TEMPERATURE=0.0 and provider=minimax, temperature must be clamped to 0.01."""
         import src.providers.llm as llm_mod
         llm_mod._dotenv_loaded = True
 
@@ -137,8 +137,8 @@ class TestMinimaxTemperature:
         with patch.dict(os.environ, env, clear=True):
             with patch.object(llm_mod, "ChatOpenAI", _FakeChatOpenAI):
                 build_llm()
-        assert captured["temperature"] == 1.0, (
-            "MiniMax temperature must be clamped to 1.0 when 0.0 is configured"
+        assert captured["temperature"] == 0.01, (
+            "MiniMax temperature must be clamped to 0.01 when 0.0 is configured"
         )
 
     def test_minimax_positive_temperature_preserved(self) -> None:
