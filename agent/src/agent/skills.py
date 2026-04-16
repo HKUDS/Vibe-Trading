@@ -53,36 +53,7 @@ class Skill:
             return None
 
 
-def _parse_frontmatter(text: str) -> tuple[Dict[str, Any], str]:
-    """Parse YAML frontmatter and body.
-
-    Args:
-        text: Markdown text.
-
-    Returns:
-        Tuple of (metadata dict, body text).
-    """
-    match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)", text, re.DOTALL)
-    if not match:
-        return {}, text.strip()
-
-    meta: Dict[str, Any] = {}
-    for line in match.group(1).strip().split("\n"):
-        line = line.strip()
-        if ":" not in line:
-            continue
-        key, value = line.split(":", 1)
-        key = key.strip()
-        value = value.strip()
-        if value.startswith("[") and value.endswith("]"):
-            items = [item.strip().strip("'\"") for item in value[1:-1].split(",")]
-            meta[key] = [i for i in items if i]
-        elif value.lower() in ("true", "false"):
-            meta[key] = value.lower() == "true"
-        else:
-            meta[key] = value
-
-    return meta, match.group(2).strip()
+from src.agent.frontmatter import parse_frontmatter as _parse_frontmatter  # shared util
 
 
 def _load_skill_dir(dir_path: Path) -> Optional[Skill]:
@@ -117,32 +88,45 @@ def _load_skill_dir(dir_path: Path) -> Optional[Skill]:
     )
 
 
+USER_SKILLS_DIR = Path.home() / ".vibe-trading" / "skills" / "user"
+
+
 class SkillsLoader:
-    """Load skills from the skills/ directory.
+    """Load skills from bundled skills/ directory and user skills directory.
 
     Attributes:
-        skills: Loaded skill list.
+        skills: Loaded skill list (bundled + user-created).
     """
 
-    def __init__(self, skills_dir: Optional[Path] = None) -> None:
+    def __init__(self, skills_dir: Optional[Path] = None,
+                 user_skills_dir: Optional[Path] = None) -> None:
         """Initialize SkillsLoader.
 
         Args:
-            skills_dir: Skills directory path; defaults to agent/skills/.
+            skills_dir: Bundled skills directory path; defaults to agent/skills/.
+            user_skills_dir: User-created skills directory; defaults to ~/.vibe-trading/skills/user/.
         """
         self.skills_dir = skills_dir or Path(__file__).resolve().parents[1] / "skills"
+        self._user_skills_dir = user_skills_dir or USER_SKILLS_DIR
         self.skills: List[Skill] = []
         self._load()
 
     def _load(self) -> None:
-        """Load all skill subdirectories from the skills directory."""
-        if not self.skills_dir.exists():
-            return
-        for path in sorted(self.skills_dir.iterdir()):
-            if path.is_dir() and (path / "SKILL.md").exists():
-                skill = _load_skill_dir(path)
-                if skill:
-                    self.skills.append(skill)
+        """Load all skill subdirectories from user and bundled directories.
+
+        User skills are loaded first so they override bundled skills with the same name
+        (e.g. after patch_skill copies and modifies a bundled skill).
+        """
+        seen_names: set[str] = set()
+        for directory in (self._user_skills_dir, self.skills_dir):
+            if not directory or not directory.exists():
+                continue
+            for path in sorted(directory.iterdir()):
+                if path.is_dir() and (path / "SKILL.md").exists():
+                    skill = _load_skill_dir(path)
+                    if skill and skill.name not in seen_names:
+                        self.skills.append(skill)
+                        seen_names.add(skill.name)
 
     # Display order for categories (unlisted categories appear at the end).
     _CATEGORY_ORDER = [
@@ -176,6 +160,8 @@ class SkillsLoader:
     def get_content(self, name: str) -> str:
         """Return the full documentation for a skill (used by the load_skill tool).
 
+        Falls back to disk lookup for user skills created mid-session.
+
         Args:
             name: Skill name.
 
@@ -185,5 +171,13 @@ class SkillsLoader:
         for skill in self.skills:
             if skill.name == name:
                 return f'<skill name="{name}">\n{skill.body}\n</skill>'
+
+        # Fallback: check user skills directory on disk (mid-session created skills)
+        if self._user_skills_dir:
+            skill = _load_skill_dir(self._user_skills_dir / name)
+            if skill:
+                self.skills.append(skill)
+                return f'<skill name="{name}">\n{skill.body}\n</skill>'
+
         available = ", ".join(s.name for s in self.skills)
         return f"Error: Unknown skill '{name}'. Available: {available}"

@@ -12,6 +12,18 @@ class WebSearchTool(BaseTool):
     """Search the web via DuckDuckGo and return top results."""
 
     name = "web_search"
+
+    @classmethod
+    def check_available(cls) -> bool:
+        """Available only if ddgs or duckduckgo_search is installed."""
+        try:
+            try:
+                import ddgs  # noqa: F401
+            except ImportError:
+                import duckduckgo_search  # noqa: F401
+            return True
+        except ImportError:
+            return False
     description = (
         "Search the web via DuckDuckGo. Returns top results with title, URL, "
         "and snippet. Use this to find information, news, or URLs before "

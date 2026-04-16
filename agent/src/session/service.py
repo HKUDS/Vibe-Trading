@@ -21,6 +21,7 @@ from src.session.models import (
     Message,
     Session,
 )
+from src.session.search import get_shared_index
 from src.session.store import SessionStore
 
 
@@ -50,6 +51,7 @@ class SessionService:
         self.event_bus = event_bus
         self.runs_dir = runs_dir
         self._active_loops: Dict[str, "AgentLoop"] = {}
+        self._search_index = get_shared_index()
 
     def create_session(self, title: str = "", config: Optional[Dict[str, Any]] = None) -> Session:
         """Create a new session.
@@ -63,6 +65,7 @@ class SessionService:
         """
         session = Session(title=title, config=config or {})
         self.store.create_session(session)
+        self._search_index.index_session(session.session_id, title)
         self.event_bus.emit(session.session_id, "session.created", {"session_id": session.session_id, "title": title})
         return session
 
@@ -96,6 +99,7 @@ class SessionService:
 
         message = Message(session_id=session_id, role=role, content=content)
         self.store.append_message(message)
+        self._search_index.index_message(session_id, role, content)
         self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": role, "content": content})
 
         if role != "user":
@@ -200,6 +204,7 @@ class SessionService:
                 metadata=reply_metadata,
             )
             self.store.append_message(reply)
+            self._search_index.index_message(session.session_id, "assistant", reply.content)
             self.event_bus.emit(
                 session.session_id,
                 "attempt.completed" if attempt.status == AttemptStatus.COMPLETED else "attempt.failed",
@@ -225,9 +230,10 @@ class SessionService:
         from src.tools import build_registry
         from src.providers.chat import ChatLLM
         from src.agent.loop import AgentLoop
+        from src.memory.persistent import PersistentMemory
 
-        registry = build_registry()
         llm = ChatLLM()
+        pm = PersistentMemory()
 
         session_id = attempt.session_id
         attempt_id = attempt.attempt_id
@@ -238,10 +244,11 @@ class SessionService:
             self.event_bus.emit(session_id, event_type, data)
 
         agent = AgentLoop(
-            registry=registry,
+            registry=build_registry(persistent_memory=pm),
             llm=llm,
             event_callback=event_callback,
             max_iterations=50,
+            persistent_memory=pm,
         )
         self._active_loops[session_id] = agent
 
@@ -249,7 +256,7 @@ class SessionService:
         history = self._convert_messages_to_history(messages) if messages else None
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 _AGENT_EXECUTOR,
                 lambda: agent.run(

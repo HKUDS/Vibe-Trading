@@ -1,7 +1,7 @@
-"""Swarm Worker: standalone worker execution engine based on the SubagentTool ReAct pattern.
+"""Swarm Worker: standalone worker execution engine with a lightweight ReAct loop.
 
-Reuses the SubagentTool ReAct loop (ChatLLM.chat + manual for-loop) without
-instantiating AgentLoop, keeping the agent core unchanged.
+Uses ChatLLM.chat + manual for-loop directly (without instantiating AgentLoop),
+keeping the worker self-contained and the agent core unchanged.
 """
 
 from __future__ import annotations
@@ -187,9 +187,9 @@ def run_worker(
     run_dir: Path,
     event_callback: Callable[[SwarmEvent], None] | None = None,
 ) -> WorkerResult:
-    """Execute a single worker task using the SubagentTool ReAct pattern.
+    """Execute a single worker task using a lightweight ReAct loop.
 
-    Follows the exact same ReAct loop as SubagentTool:
+    Steps:
       1. Build filtered ToolRegistry from agent_spec.tools
       2. Create ChatLLM with agent_spec.model_name
       3. Build system prompt with role + upstream summaries + filtered skills
@@ -251,7 +251,7 @@ def run_worker(
         {"role": "user", "content": user_prompt},
     ]
 
-    # 6. ReAct loop (EXACTLY like SubagentTool)
+    # 6. ReAct loop
     artifact_dir = run_dir / "artifacts" / agent_id
     artifact_dir.mkdir(parents=True, exist_ok=True)
 

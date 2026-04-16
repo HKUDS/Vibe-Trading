@@ -26,6 +26,7 @@ class BashTool(BaseTool):
         "required": ["command"],
     }
     repeatable = True
+    is_readonly = False
 
     def execute(self, **kwargs: Any) -> str:
         """Execute a shell command.

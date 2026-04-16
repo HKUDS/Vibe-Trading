@@ -172,17 +172,10 @@ def _format_tool_call_args(tool: str, args: Dict[str, str]) -> str:
     if tool in ("bash", "background_run"):
         cmd = args.get("command", "")[:80]
         return f' [yellow]{cmd}[/yellow]'
-    if tool == "subagent":
-        desc = args.get("description", args.get("prompt", "")[:60])
-        return f' [magenta]{desc}[/magenta]'
-    if tool == "task_create":
-        return f' "{args.get("subject", "")}"'
-    if tool == "task_update":
-        return f' #{args.get("task_id", "")} -> {args.get("status", "")}'
     if tool == "check_background":
         tid = args.get("task_id", "")
         return f' {tid}' if tid else ""
-    if tool in ("backtest", "compact", "task_list"):
+    if tool in ("backtest", "compact"):
         return ""
     for v in args.values():
         if v and v != "None":
@@ -206,11 +199,6 @@ def _format_tool_result_preview(tool: str, status: str, preview: str) -> str:
     if tool in ("bash", "background_run"):
         if "OK" in preview[:50]:
             return "OK"
-        return preview[:60].replace("\n", " ")
-    if tool == "subagent":
-        m = re.search(r'"summary":\s*"(.{0,80})', preview)
-        return m.group(1).rstrip('"') if m else ""
-    if tool in ("task_create", "task_update"):
         return preview[:60].replace("\n", " ")
     if tool in ("read_file", "load_skill", "compact"):
         return ""
@@ -283,11 +271,15 @@ def _run_agent(
             tokens = data.get("tokens_before", "?")
             console.print(f"\n  [yellow]\u27f3 context compressed[/yellow] [dim]({tokens} tokens \u2192 summary)[/dim]\n")
 
+    from src.memory.persistent import PersistentMemory
+
+    pm = PersistentMemory()
     agent = AgentLoop(
-        registry=build_registry(),
+        registry=build_registry(persistent_memory=pm),
         llm=ChatLLM(),
         event_callback=on_event,
         max_iterations=max_iter,
+        persistent_memory=pm,
     )
     if run_dir_override:
         agent.memory.run_dir = run_dir_override

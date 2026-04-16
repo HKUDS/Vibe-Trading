@@ -15,6 +15,7 @@ class EditFileTool(BaseTool):
 
     name = "edit_file"
     description = "Find and replace the first occurrence of old_text with new_text in a file."
+    is_readonly = False
     parameters = {
         "type": "object",
         "properties": {

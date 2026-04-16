@@ -109,19 +109,6 @@ def _expand_artifacts_spec(spec: Dict[str, Any] | None) -> Dict[str, Dict[str, A
 class Runner:
     """Execute entry scripts inside a run directory and collect outputs."""
 
-    _PROXY_ENV_KEYS = (
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "ALL_PROXY",
-        "http_proxy",
-        "https_proxy",
-        "all_proxy",
-        "GIT_HTTP_PROXY",
-        "GIT_HTTPS_PROXY",
-        "git_http_proxy",
-        "git_https_proxy",
-    )
-
     def __init__(self, timeout: int = 300, artifacts_spec: Optional[Dict[str, Any]] = None) -> None:
         """Initialize runner.
 

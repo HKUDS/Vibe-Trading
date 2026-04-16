@@ -15,6 +15,7 @@ class WriteFileTool(BaseTool):
 
     name = "write_file"
     description = "Write content to a file in the workspace. Creates parent directories automatically."
+    is_readonly = False
     parameters = {
         "type": "object",
         "properties": {

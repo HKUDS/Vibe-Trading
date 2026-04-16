@@ -86,6 +86,7 @@ class BackgroundRunTool(BaseTool):
     parameters = {"type": "object", "properties": {
         "command": {"type": "string", "description": "Shell command to run in background"},
     }, "required": ["command"]}
+    is_readonly = False
 
     def execute(self, **kw: Any) -> str:
         return _BG.run(kw["command"])

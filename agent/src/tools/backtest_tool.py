@@ -75,6 +75,7 @@ class BacktestTool(BaseTool):
         "required": ["run_dir"],
     }
     repeatable = True
+    is_readonly = False
 
     def execute(self, **kwargs) -> str:
         """Execute backtest."""

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
-import traceback
+import logging
 from abc import ABC, abstractmethod
+
+logger = logging.getLogger(__name__)
 from typing import Any, Dict, List, Optional
 
 
@@ -22,6 +24,16 @@ class BaseTool(ABC):
     description: str = ""
     parameters: Dict[str, Any] = {}
     repeatable: bool = False
+    is_readonly: bool = True
+
+    @classmethod
+    def check_available(cls) -> bool:
+        """Check if this tool's dependencies are met.
+
+        Override in subclasses to check for API keys, packages, etc.
+        Tools that return False are excluded from the registry.
+        """
+        return True
 
     @abstractmethod
     def execute(self, **kwargs: Any) -> str:
@@ -65,9 +77,10 @@ class ToolRegistry:
         try:
             return tool.execute(**params)
         except Exception as exc:
+            logger.exception("Tool %s failed", name)
             return json.dumps({
                 "status": "error", "tool": name,
-                "error": str(exc), "traceback": traceback.format_exc()[-500:],
+                "error": str(exc),
             }, ensure_ascii=False)
 
     @property
