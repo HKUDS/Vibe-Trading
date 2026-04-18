@@ -378,7 +378,13 @@ class AgentLoop:
                     react_trace.append({"type": "answer", "content": final_content[:500]})
                     break
 
-                messages.append(context.format_assistant_tool_calls(response.tool_calls, content=response.content))
+                messages.append(
+                    context.format_assistant_tool_calls(
+                        response.tool_calls,
+                        content=response.content,
+                        reasoning_content=response.reasoning_content or thinking_text or None,
+                    )
+                )
 
                 # Execute tools with read/write batching
                 compact_requested, focus_topic = self._process_tool_calls(

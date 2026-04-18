@@ -371,7 +371,9 @@ def run_worker(
         # Append assistant message with tool calls
         messages.append(
             ContextBuilder.format_assistant_tool_calls(
-                response.tool_calls, content=response.content
+                response.tool_calls,
+                content=response.content,
+                reasoning_content=response.reasoning_content,
             )
         )
 

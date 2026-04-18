@@ -38,6 +38,7 @@ class LLMResponse:
 
     content: Optional[str] = None
     tool_calls: List[ToolCallRequest] = field(default_factory=list)
+    reasoning_content: Optional[str] = None
     finish_reason: str = "stop"
 
     @property
@@ -142,6 +143,11 @@ class ChatLLM:
             ``LLMResponse``.
         """
         content = ai_message.content if hasattr(ai_message, "content") else None
+        reasoning_content = (
+            getattr(ai_message, "reasoning_content", None)
+            or getattr(ai_message, "additional_kwargs", {}).get("reasoning_content")
+            or getattr(ai_message, "response_metadata", {}).get("reasoning_content")
+        )
         raw_calls = getattr(ai_message, "tool_calls", None) or []
         tool_calls = []
         for tc in raw_calls:
@@ -151,4 +157,9 @@ class ChatLLM:
                 arguments=tc.get("args", {}),
             ))
         finish = getattr(ai_message, "response_metadata", {}).get("finish_reason", "stop")
-        return LLMResponse(content=content, tool_calls=tool_calls, finish_reason=finish)
+        return LLMResponse(
+            content=content,
+            tool_calls=tool_calls,
+            reasoning_content=reasoning_content,
+            finish_reason=finish,
+        )

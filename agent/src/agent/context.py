@@ -209,7 +209,11 @@ class ContextBuilder:
         }
 
     @staticmethod
-    def format_assistant_tool_calls(tool_calls: list, content: Optional[str] = None) -> Dict[str, Any]:
+    def format_assistant_tool_calls(
+        tool_calls: list,
+        content: Optional[str] = None,
+        reasoning_content: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Format an assistant tool_calls message, preserving thinking text.
 
         Args:
@@ -219,7 +223,7 @@ class ContextBuilder:
         Returns:
             OpenAI-format assistant message.
         """
-        return {
+        message = {
             "role": "assistant",
             "content": content,
             "tool_calls": [
@@ -234,3 +238,6 @@ class ContextBuilder:
                 for tc in tool_calls
             ],
         }
+        if reasoning_content is not None:
+            message["reasoning_content"] = reasoning_content
+        return message
