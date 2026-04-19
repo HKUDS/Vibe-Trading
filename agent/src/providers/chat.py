@@ -10,23 +10,17 @@ from typing import Any, Dict, List, Optional
 
 from src.providers.llm import build_llm
 
-# Canonical finish_reason markers, in priority order. Used to deduplicate
-# relays (e.g. OpenRouter) that emit finish_reason on every stream chunk,
-# which AIMessageChunk.__add__ concatenates into "stopstop", "tool_callstool_calls", etc.
-_FINISH_REASON_MARKERS: tuple[str, ...] = (
-    "tool_calls",
-    "function_call",
-    "content_filter",
-    "length",
-    "stop",
-)
 
-
-def _normalize_finish_reason(raw: str) -> str:
-    for marker in _FINISH_REASON_MARKERS:
-        if marker in raw:
-            return marker
-    return raw or "stop"
+def _dedupe_finish_reason(raw: str) -> str:
+    """Relays (OpenRouter) emit finish_reason per chunk; AIMessageChunk.__add__
+    concatenates into 'stopstop', 'tool_callstool_calls', etc. Return the
+    canonical suffix so ReAct equality checks survive.
+    """
+    return next(
+        (m for m in ("tool_calls", "function_call", "content_filter", "length", "stop")
+         if raw.endswith(m)),
+        raw,
+    )
 
 
 @dataclass
@@ -154,23 +148,17 @@ class ChatLLM:
     def _parse_response(ai_message: Any) -> LLMResponse:
         """Convert a LangChain AIMessage (or AIMessageChunk) to ``LLMResponse``.
 
-        Single source of truth for provider-specific reasoning fields:
-        ``ai_message.additional_kwargs["reasoning_content"]``. Populated by
-        ``ChatOpenAIWithReasoning`` for both streaming and non-streaming paths.
+        Single source for reasoning: ``additional_kwargs["reasoning_content"]``,
+        populated by ``ChatOpenAIWithReasoning`` on both stream and non-stream paths.
         """
-        tool_calls = [
-            ToolCallRequest(
-                id=tc.get("id", ""),
-                name=tc.get("name", ""),
-                arguments=tc.get("args", {}),
-            )
-            for tc in (ai_message.tool_calls or [])
-        ]
         return LLMResponse(
             content=ai_message.content,
-            tool_calls=tool_calls,
+            tool_calls=[
+                ToolCallRequest(id=tc["id"], name=tc["name"], arguments=tc["args"])
+                for tc in ai_message.tool_calls
+            ],
             reasoning_content=ai_message.additional_kwargs.get("reasoning_content"),
-            finish_reason=_normalize_finish_reason(
+            finish_reason=_dedupe_finish_reason(
                 ai_message.response_metadata.get("finish_reason", "stop")
             ),
         )

@@ -194,13 +194,13 @@ class TestReasoningEffortPassthrough:
                 build_llm()
         return captured
 
-    def test_effort_unset_omits_extra_body(self) -> None:
+    def test_effort_unset_leaves_extra_body_none(self) -> None:
         captured = self._capture({
             "LANGCHAIN_PROVIDER": "openai",
             "OPENAI_API_KEY": "sk-test",
             "LANGCHAIN_MODEL_NAME": "gpt-4",
         })
-        assert "extra_body" not in captured
+        assert captured["extra_body"] is None
 
     def test_effort_medium_forwarded_as_extra_body(self) -> None:
         captured = self._capture({

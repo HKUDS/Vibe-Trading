@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from src.agent.context import ContextBuilder
-from src.providers.chat import ChatLLM, ToolCallRequest, _normalize_finish_reason
+from src.providers.chat import ChatLLM, ToolCallRequest, _dedupe_finish_reason
 from src.providers.llm import ChatOpenAIWithReasoning
 
 
@@ -61,36 +61,30 @@ class TestParseResponseSingleSource:
         assert response.tool_calls[0].arguments == {"command": "pwd"}
 
 
-class TestNormalizeFinishReason:
+class TestDedupeFinishReason:
     """OpenRouter-style relays emit finish_reason on every stream chunk;
-    AIMessageChunk.__add__ concatenates them into 'stopstop', 'tool_callstool_calls', etc.
-    ReAct loop uses finish_reason for exit decisions, so equality comparisons
-    must survive this quirk."""
+    AIMessageChunk.__add__ concatenates them into 'stopstop', etc. ReAct
+    loop uses finish_reason for exit decisions, so equality must survive."""
 
-    def test_clean_stop_unchanged(self) -> None:
-        assert _normalize_finish_reason("stop") == "stop"
+    def test_clean_values_unchanged(self) -> None:
+        assert _dedupe_finish_reason("stop") == "stop"
+        assert _dedupe_finish_reason("tool_calls") == "tool_calls"
 
-    def test_clean_tool_calls_unchanged(self) -> None:
-        assert _normalize_finish_reason("tool_calls") == "tool_calls"
+    def test_duplicated_dedupes(self) -> None:
+        assert _dedupe_finish_reason("stopstop") == "stop"
+        assert _dedupe_finish_reason("stopstopstop") == "stop"
+        assert _dedupe_finish_reason("tool_callstool_calls") == "tool_calls"
 
-    def test_duplicated_stop_dedupes(self) -> None:
-        assert _normalize_finish_reason("stopstop") == "stop"
-        assert _normalize_finish_reason("stopstopstop") == "stop"
+    def test_suffix_match_picks_longest_valid_marker(self) -> None:
+        # endswith — "stoptool_calls" ends with "tool_calls"
+        assert _dedupe_finish_reason("stoptool_calls") == "tool_calls"
 
-    def test_duplicated_tool_calls_dedupes(self) -> None:
-        assert _normalize_finish_reason("tool_callstool_calls") == "tool_calls"
-
-    def test_tool_calls_wins_over_stop_when_both_present(self) -> None:
-        # Defensive: if a relay ever emits "stoptool_calls" mid-stream,
-        # tool_calls is more actionable than stop.
-        assert _normalize_finish_reason("stoptool_calls") == "tool_calls"
-
-    def test_empty_defaults_to_stop(self) -> None:
-        assert _normalize_finish_reason("") == "stop"
+    def test_empty_returns_empty(self) -> None:
+        # No marker matches; raw is returned. Callers supply a default upstream.
+        assert _dedupe_finish_reason("") == ""
 
     def test_unknown_marker_passed_through(self) -> None:
-        # Future providers may introduce new markers; don't silently rewrite.
-        assert _normalize_finish_reason("custom_reason") == "custom_reason"
+        assert _dedupe_finish_reason("custom_reason") == "custom_reason"
 
 
 class TestContextBuilderToolCallReplay:
