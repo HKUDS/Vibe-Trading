@@ -15,6 +15,7 @@ from src.agent.loop import (
     _context_collapse,
     _fix_tool_pairs,
     _is_tool_success,
+    _normalize_tool_run_dir,
 )
 
 
@@ -248,3 +249,30 @@ class TestIsToolSuccess:
 
     def test_success_invalid_json(self) -> None:
         assert _is_tool_success("{not json}") is True
+
+
+# ---------------------------------------------------------------------------
+# _normalize_tool_run_dir
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeToolRunDir:
+    def test_injects_memory_run_dir_when_missing(self) -> None:
+        args = {"path": "config.json"}
+        out = _normalize_tool_run_dir(args, "/tmp/run_123")
+        assert out["run_dir"] == "/tmp/run_123"
+
+    def test_resolves_relative_dot_to_memory_run_dir(self) -> None:
+        args = {"run_dir": "."}
+        out = _normalize_tool_run_dir(args, "/tmp/run_123")
+        assert out["run_dir"] == "/tmp/run_123"
+
+    def test_resolves_relative_child_to_memory_run_dir(self) -> None:
+        args = {"run_dir": "risk_parity_run"}
+        out = _normalize_tool_run_dir(args, "/tmp/run_123")
+        assert out["run_dir"] == "/tmp/run_123/risk_parity_run"
+
+    def test_preserves_absolute_run_dir(self) -> None:
+        args = {"run_dir": "/var/tmp/custom_run"}
+        out = _normalize_tool_run_dir(args, "/tmp/run_123")
+        assert out["run_dir"] == "/var/tmp/custom_run"

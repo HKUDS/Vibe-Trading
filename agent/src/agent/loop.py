@@ -237,6 +237,31 @@ def _is_tool_success(result: str) -> bool:
     return True
 
 
+def _normalize_tool_run_dir(args: dict[str, Any], memory_run_dir: str | None) -> dict[str, Any]:
+    """Normalize ``run_dir`` in tool args to an absolute path when possible.
+
+    If the model supplies a relative ``run_dir`` (for example ``"."`` or
+    ``"risk_parity_run"``), resolve it against the active run directory.
+    """
+    normalized = dict(args)
+    if not memory_run_dir:
+        return normalized
+
+    if "run_dir" not in normalized:
+        normalized["run_dir"] = memory_run_dir
+        return normalized
+
+    run_dir_value = str(normalized["run_dir"]).strip()
+    if not run_dir_value:
+        normalized["run_dir"] = memory_run_dir
+        return normalized
+
+    candidate = Path(run_dir_value)
+    if not candidate.is_absolute():
+        normalized["run_dir"] = str((Path(memory_run_dir) / candidate).resolve())
+    return normalized
+
+
 class AgentLoop:
     """ReAct Agent core loop.
 
@@ -559,9 +584,7 @@ class AgentLoop:
         # Prepare args + emit events
         runnable: list[tuple] = []
         for tc in tool_calls:
-            args = dict(tc.arguments)
-            if "run_dir" not in args and self.memory.run_dir:
-                args["run_dir"] = self.memory.run_dir
+            args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
             self._emit("tool_call", {"tool": tc.name, "arguments": {k: str(v)[:200] for k, v in args.items()}, "iter": iteration})
             trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "args": {k: str(v)[:200] for k, v in args.items()}})
             runnable.append((tc, args))
@@ -607,9 +630,7 @@ class AgentLoop:
             react_trace: React trace list.
             iteration: Current iteration.
         """
-        args = dict(tc.arguments)
-        if "run_dir" not in args and self.memory.run_dir:
-            args["run_dir"] = self.memory.run_dir
+        args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
 
         self._emit("tool_call", {"tool": tc.name, "arguments": {k: str(v)[:200] for k, v in args.items()}, "iter": iteration})
         trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "args": {k: str(v)[:200] for k, v in args.items()}})
