@@ -397,6 +397,76 @@ vibe-trading --upload report.pdf
 
 ---
 
+## 💡 Examples
+
+### Strategy & Backtesting
+
+```bash
+# Moving average crossover on US equities
+vibe-trading run -p "Backtest a 20/50-day moving average crossover on AAPL for the past year, show Sharpe ratio and max drawdown"
+
+# RSI mean-reversion on crypto
+vibe-trading run -p "Test RSI(14) mean-reversion on BTC-USDT: buy below 30, sell above 70, last 6 months"
+
+# Multi-factor strategy on A-shares
+vibe-trading run -p "Backtest a momentum + value + quality multi-factor strategy on CSI 300 constituents over 2 years"
+
+# After backtesting, export to TradingView / TDX / MetaTrader 5
+vibe-trading --pine <run_id>
+```
+
+### Market Research
+
+```bash
+# Equity deep-dive
+vibe-trading run -p "Research NVDA: earnings trend, analyst consensus, option flow, and key risks for next quarter"
+
+# Macro analysis
+vibe-trading run -p "Analyze the current Fed rate path, USD strength, and impact on EM equities and gold"
+
+# Crypto on-chain
+vibe-trading run -p "Deep dive BTC on-chain: whale flows, exchange balances, miner activity, and funding rates"
+```
+
+### Swarm Workflows
+
+```bash
+# Bull/bear debate on a stock
+vibe-trading --swarm-run investment_committee '{"topic": "Is TSLA a buy at current levels?"}'
+
+# Quant strategy from screening to backtest
+vibe-trading --swarm-run quant_strategy_desk '{"universe": "S&P 500", "horizon": "3 months"}'
+
+# Crypto desk: funding + liquidation + flow → risk manager
+vibe-trading --swarm-run crypto_trading_desk '{"asset": "ETH-USDT", "timeframe": "1w"}'
+
+# Global macro portfolio allocation
+vibe-trading --swarm-run macro_rates_fx_desk '{"focus": "Fed pivot impact on EM bonds"}'
+```
+
+### Cross-Session Memory
+
+```bash
+# Save your preferences once
+vibe-trading run -p "Remember: I prefer RSI-based strategies, max 10% drawdown, hold period 5–20 days"
+
+# The agent recalls them in future sessions automatically
+vibe-trading run -p "Build a crypto strategy that fits my risk profile"
+```
+
+### Upload & Analyze Documents
+
+```bash
+# Analyze a broker export or earnings report
+vibe-trading --upload trades_export.csv
+vibe-trading run -p "Profile my trading behavior and identify any biases"
+
+vibe-trading --upload NVDA_Q1_earnings.pdf
+vibe-trading run -p "Summarize the key risks and beats/misses from this earnings report"
+```
+
+---
+
 ## 🌐 API Server
 
 ```bash
