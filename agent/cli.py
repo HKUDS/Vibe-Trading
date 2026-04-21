@@ -38,7 +38,6 @@ from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.syntax import Syntax
 from rich.table import Table
-from rich.box import box
 
 console = Console()
 AGENT_DIR = Path(__file__).resolve().parent
@@ -327,7 +326,7 @@ def _build_benchmark_table(m: dict) -> Optional[Table]:
     strategy_ret_str = m.get("total_return")
     strategy_ret     = float(strategy_ret_str) if strategy_ret_str else None
 
-    table = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
+    table = Table(show_header=False, padding=(0, 2))
     table.add_column("Label", style="dim", width=20)
     table.add_column("Value", style="white no_wrap")
 
@@ -1021,7 +1020,7 @@ def cmd_list(limit: int = 20) -> None:
         st = _read_json(d / "state.json").get("status", "?")
         m = _read_metrics(d / "artifacts" / "metrics.csv")
         c = "green" if st == "success" else "red" if st == "failed" else "dim"
-        table.add_row(d.name, f"[{c}]{st}[/{c}]", m.get("total_return", ""), m.get("sharpe", ""), (_read_json(d / "req.json").get("prompt") or "")[:40])
+        table.add_row(d.name, f"[{c}]{st.upper()}[/{c}]", m.get("total_return", ""), m.get("sharpe", ""), (_read_json(d / "req.json").get("prompt") or "")[:40])
 
     console.print(table)
 
@@ -1039,8 +1038,9 @@ def cmd_show(run_id: str) -> None:
 
     st = state.get("status", "unknown")
     c = "green" if st == "success" else "red"
-    lines = [f"[bold]Status:[/bold] [{c}]{st.upper()}[/{c}]", f"[bold]Prompt:[/bold] {req.get('prompt', '?')}"]
-
+    lines = [f"[bold]Status:[/bold] [{c}]{st.upper()}[/{c}]"]
+    if req.get("prompt"):
+        lines.append(f"[bold]Prompt:[/bold] {req['prompt'][:500]}{'...' if len(req['prompt']) > 500 else ''}")
     if metrics:
         lines.append("\n[bold]Metrics:[/bold]")
         lines.extend(f"  {k}: {v}" for k, v in metrics.items())
@@ -1771,7 +1771,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "list":
         return _coerce_exit_code(cmd_list(args.list_limit))
     if args.command == "show":
-        return _coerce_exit_code(cmd_show(args.run_id))
+        return _coerce_exit_code(cmd_show(args.show))
     if args.command == "chat":
         return _coerce_exit_code(cmd_interactive(args.chat_max_iter))
 
@@ -1810,7 +1810,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.chat:
         return _coerce_exit_code(cmd_interactive(args.max_iter))
     if args.cont:
-        return cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich)
+        return _coerce_exit_code(cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich))
 
     # No flags, no subcommand → check if prompt provided, otherwise interactive mode
     if args.prompt or args.prompt_file or not sys.stdin.isatty():
