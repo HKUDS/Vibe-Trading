@@ -38,6 +38,7 @@ SESSIONS_DIR = Path(__file__).resolve().parent / "sessions"
 UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
 
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
+_UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 # Rich console for colored logs
 console = Console()
@@ -501,13 +502,15 @@ async def list_runs(limit: int = 20):
             try:
                 req_data = json.loads(req_file.read_text(encoding="utf-8"))
                 prompt = req_data.get("prompt")
-            except: pass
+            except:
+                pass
         
         if not prompt and planner_file.exists():
             try:
                 planner_data = json.loads(planner_file.read_text(encoding="utf-8"))
                 prompt = planner_data.get("user_goal") or planner_data.get("goal")
-            except: pass
+            except:
+                pass
             
         if not prompt:
             prompt_file = d / "user_prompt.txt"
@@ -868,18 +871,36 @@ async def upload_file(file: UploadFile):
             detail=f"File type {ext} is not allowed (executables/archives blocked).",
         )
 
-    content = await file.read()
-    if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large (limit {MAX_UPLOAD_SIZE // (1024 * 1024)} MB)",
-        )
-
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
     safe_name = f"{uuid.uuid4().hex}{ext}"
     dest = UPLOADS_DIR / safe_name
-    dest.write_bytes(content)
+    total_size = 0
+
+    try:
+        with dest.open("wb") as handle:
+            while True:
+                chunk = await file.read(_UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > MAX_UPLOAD_SIZE:
+                    handle.close()
+                    if dest.exists():
+                        dest.unlink()
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File too large (limit {MAX_UPLOAD_SIZE // (1024 * 1024)} MB)",
+                    )
+                handle.write(chunk)
+    except HTTPException:
+        raise
+    except OSError as exc:
+        if dest.exists():
+            dest.unlink()
+        raise HTTPException(status_code=500, detail=f"Failed to store upload: {exc}") from exc
+    finally:
+        await file.close()
 
     return {
         "status": "ok",
@@ -1073,4 +1094,3 @@ def serve_main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(serve_main())
-
