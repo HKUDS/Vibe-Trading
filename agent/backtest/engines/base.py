@@ -303,6 +303,26 @@ class BaseEngine(ABC):
             index=[s.timestamp for s in self.equity_snapshots],
         )
         bench_ret = ret_df.mean(axis=1) if ret_df.shape[1] > 0 else pd.Series(0.0, index=dates)
+
+        # ── External benchmark fetch ──────────────────────────────────────────
+        bench_ticker = config.get("benchmark")
+        if bench_ticker and bench_ticker != "auto":
+            from backtest.benchmark import resolve_benchmark
+            bench_result = resolve_benchmark(
+                strategy_codes=codes,
+                source=config.get("source", "yfinance"),
+                start_date=config.get("start_date", ""),
+                end_date=config.get("end_date", ""),
+                interval=interval,
+                explicit=bench_ticker,
+            )
+            if bench_result is not None:
+                bench_ret = bench_result.ret_series.reindex(dates).fillna(0.0)
+                bench_equity = self.initial_capital * (1 + bench_ret).cumprod()
+                m["benchmark_ticker"] = bench_result.ticker
+                m["benchmark_return"]  = bench_result.total_ret
+        # ── External benchmark fetch ──────────────────────────────────────────
+
         bench_equity = self.initial_capital * (1 + bench_ret).cumprod()
 
         # 6. Metrics

@@ -295,23 +295,80 @@ def _run_agent(
     return agent.run(user_message=prompt, history=history)
 
 
+def _build_benchmark_table(m: dict) -> Optional[Table]:
+    """Build a benchmark comparison table from metrics dict.
+
+    Args:
+        m: Metrics dictionary (from _read_metrics or result dict).
+
+    Returns:
+        Rich Table, or None if no benchmark data is present.
+    """
+    bench_ticker  = m.get("benchmark_ticker")
+    bench_ret_str = m.get("benchmark_return")
+    bench_ret_raw = m.get("_benchmark_return_raw")
+
+    # Fall back to equity.csv if benchmark cols not in metrics.csv yet
+    if not bench_ticker:
+        return None
+
+    # Parse benchmark return
+    if bench_ret_raw is not None:
+        bench_ret = bench_ret_raw
+    elif bench_ret_str is not None:
+        try:
+            bench_ret = float(bench_ret_str)
+        except (ValueError, TypeError):
+            bench_ret = None
+    else:
+        bench_ret = None
+
+    strategy_ret_str = m.get("total_return")
+    strategy_ret     = float(strategy_ret_str) if strategy_ret_str else None
+
+    table = Table(show_header=False, padding=(0, 2))
+    table.add_column("Label", style="dim", width=20)
+    table.add_column("Value", style="white no_wrap")
+
+    table.add_row("[dim]Benchmark[/dim]",  bench_ticker)
+
+    if bench_ret is not None:
+        table.add_row("[dim]Benchmark Return[/dim]", f"{bench_ret * 100:+.2f}%")
+
+    if strategy_ret is not None and bench_ret is not None:
+        excess = strategy_ret - bench_ret
+        sign   = "+" if excess >= 0 else ""
+        style  = "green" if excess >= 0 else "red"
+        table.add_row(
+            "[dim]vs Benchmark[/dim]",
+            f"[{style}]{sign}{excess * 100:+.2f}%[/{style}]",
+        )
+
+    ir_str = m.get("information_ratio")
+    if ir_str:
+        table.add_row("[dim]Info Ratio[/dim]", ir_str)
+
+    excess_str = m.get("excess_return")
+    if excess_str and excess_str != "0" and excess_str != "0.0000":
+        table.add_row("[dim]Excess Return[/dim]", f"{float(excess_str) * 100:+.2f}%")
+
+    return table
+
+
 def _print_result(result: dict, elapsed: float, *, no_rich: bool = False) -> None:
     """Print execution result panel."""
     status = result.get("status", "unknown")
     ok = status == "success"
     style = "green" if ok else "red"
-
     lines = [f"Status: [bold {style}]{status.upper()}[/bold {style}]  Time: {elapsed:.1f}s"]
-
     if result.get("run_id"):
         lines.append(f"ID: {result['run_id']}")
-
     review = result.get("review")
     if review and review.get("overall_score") is not None:
         check = "\u2713" if review.get("passed") else "\u2717"
         lines.append(f"Review: {review['overall_score']}pts {check}")
-
     run_dir = result.get("run_dir")
+    m = {}
     if run_dir:
         m = _read_metrics(Path(run_dir) / "artifacts" / "metrics.csv")
         parts = [f"{k}={m[k]}" for k in ("total_return", "sharpe", "max_drawdown", "trade_count") if k in m]
@@ -322,6 +379,17 @@ def _print_result(result: dict, elapsed: float, *, no_rich: bool = False) -> Non
         lines.append(f"Reason: {result['reason']}")
 
     console.print(Panel("\n".join(lines), border_style=style, title="Result"))
+
+    # ── Benchmark comparison panel ─────────────────────────────────────────────
+    bench_table = _build_benchmark_table(m)
+    if bench_table:
+        console.print(Panel(
+            bench_table,
+            border_style="cyan",
+            title="Benchmark Comparison",
+            padding=(0, 1),
+        ))
+    # ── Benchmark comparison panel ─────────────────────────────────────────
 
     content = result.get("content", "").strip()
     if content:
@@ -952,7 +1020,7 @@ def cmd_list(limit: int = 20) -> None:
         st = _read_json(d / "state.json").get("status", "?")
         m = _read_metrics(d / "artifacts" / "metrics.csv")
         c = "green" if st == "success" else "red" if st == "failed" else "dim"
-        table.add_row(d.name, f"[{c}]{st}[/{c}]", m.get("total_return", ""), m.get("sharpe", ""), (_read_json(d / "req.json").get("prompt") or "")[:40])
+        table.add_row(d.name, f"[{c}]{st.upper()}[/{c}]", m.get("total_return", ""), m.get("sharpe", ""), (_read_json(d / "req.json").get("prompt") or "")[:40])
 
     console.print(table)
 
@@ -970,8 +1038,9 @@ def cmd_show(run_id: str) -> None:
 
     st = state.get("status", "unknown")
     c = "green" if st == "success" else "red"
-    lines = [f"[bold]Status:[/bold] [{c}]{st.upper()}[/{c}]", f"[bold]Prompt:[/bold] {req.get('prompt', '?')}"]
-
+    lines = [f"[bold]Status:[/bold] [{c}]{st.upper()}[/{c}]"]
+    if req.get("prompt"):
+        lines.append(f"[bold]Prompt:[/bold] {req['prompt'][:500]}{'...' if len(req['prompt']) > 500 else ''}")
     if metrics:
         lines.append("\n[bold]Metrics:[/bold]")
         lines.extend(f"  {k}: {v}" for k, v in metrics.items())
@@ -1702,7 +1771,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "list":
         return _coerce_exit_code(cmd_list(args.list_limit))
     if args.command == "show":
-        return _coerce_exit_code(cmd_show(args.run_id))
+        return _coerce_exit_code(cmd_show(args.show))
     if args.command == "chat":
         return _coerce_exit_code(cmd_interactive(args.chat_max_iter))
 
@@ -1741,7 +1810,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.chat:
         return _coerce_exit_code(cmd_interactive(args.max_iter))
     if args.cont:
-        return cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich)
+        return _coerce_exit_code(cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich))
 
     # No flags, no subcommand → check if prompt provided, otherwise interactive mode
     if args.prompt or args.prompt_file or not sys.stdin.isatty():
