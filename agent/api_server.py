@@ -36,6 +36,9 @@ for _s in ("stdout", "stderr"):
 RUNS_DIR = Path(__file__).resolve().parent / "runs"
 SESSIONS_DIR = Path(__file__).resolve().parent / "sessions"
 UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
+AGENT_DIR = Path(__file__).resolve().parent
+ENV_PATH = AGENT_DIR / ".env"
+ENV_EXAMPLE_PATH = AGENT_DIR / ".env.example"
 
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 _UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
@@ -131,6 +134,68 @@ class HealthResponse(BaseModel):
     status: str = Field(..., description="Service status")
     service: str = Field(..., description="Service name")
     timestamp: str = Field(..., description="Server timestamp")
+
+
+class LLMProviderOption(BaseModel):
+    """Supported LLM provider metadata for the settings UI."""
+
+    name: str
+    label: str
+    api_key_env: Optional[str] = None
+    base_url_env: str
+    default_model: str
+    default_base_url: str
+    api_key_required: bool = True
+
+
+class LLMSettingsResponse(BaseModel):
+    """Current LLM runtime settings."""
+
+    provider: str
+    model_name: str
+    base_url: str
+    api_key_env: Optional[str] = None
+    api_key_configured: bool
+    api_key_hint: Optional[str] = None
+    api_key_required: bool
+    temperature: float
+    timeout_seconds: int
+    max_retries: int
+    reasoning_effort: str
+    env_path: str
+    providers: List[LLMProviderOption]
+
+
+class UpdateLLMSettingsRequest(BaseModel):
+    """Update LLM settings persisted to agent/.env."""
+
+    provider: str = Field(..., min_length=1)
+    model_name: str = Field(..., min_length=1)
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    clear_api_key: bool = False
+    temperature: float = 0.0
+    timeout_seconds: int = Field(120, ge=1, le=3600)
+    max_retries: int = Field(2, ge=0, le=20)
+    reasoning_effort: Optional[str] = None
+
+
+class DataSourceSettingsResponse(BaseModel):
+    """Current data source credential settings."""
+
+    tushare_token_configured: bool
+    tushare_token_hint: Optional[str] = None
+    baostock_supported: bool
+    baostock_installed: bool
+    baostock_message: str
+    env_path: str
+
+
+class UpdateDataSourceSettingsRequest(BaseModel):
+    """Update project-local data source credentials."""
+
+    tushare_token: Optional[str] = None
+    clear_tushare_token: bool = False
 
 
 # ---- V4 Session Models ----
@@ -239,6 +304,307 @@ async def require_auth(
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
+LLM_PROVIDERS: List[LLMProviderOption] = [
+    LLMProviderOption(
+        name="openrouter",
+        label="OpenRouter",
+        api_key_env="OPENROUTER_API_KEY",
+        base_url_env="OPENROUTER_BASE_URL",
+        default_model="deepseek/deepseek-v3.2",
+        default_base_url="https://openrouter.ai/api/v1",
+    ),
+    LLMProviderOption(
+        name="openai",
+        label="OpenAI",
+        api_key_env="OPENAI_API_KEY",
+        base_url_env="OPENAI_BASE_URL",
+        default_model="gpt-4o",
+        default_base_url="https://api.openai.com/v1",
+    ),
+    LLMProviderOption(
+        name="deepseek",
+        label="DeepSeek",
+        api_key_env="DEEPSEEK_API_KEY",
+        base_url_env="DEEPSEEK_BASE_URL",
+        default_model="deepseek-chat",
+        default_base_url="https://api.deepseek.com/v1",
+    ),
+    LLMProviderOption(
+        name="gemini",
+        label="Gemini",
+        api_key_env="GEMINI_API_KEY",
+        base_url_env="GEMINI_BASE_URL",
+        default_model="gemini-2.5-flash",
+        default_base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    ),
+    LLMProviderOption(
+        name="groq",
+        label="Groq",
+        api_key_env="GROQ_API_KEY",
+        base_url_env="GROQ_BASE_URL",
+        default_model="llama-3.3-70b-versatile",
+        default_base_url="https://api.groq.com/openai/v1",
+    ),
+    LLMProviderOption(
+        name="dashscope",
+        label="DashScope / Qwen",
+        api_key_env="DASHSCOPE_API_KEY",
+        base_url_env="DASHSCOPE_BASE_URL",
+        default_model="qwen-plus",
+        default_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    ),
+    LLMProviderOption(
+        name="qwen",
+        label="Qwen",
+        api_key_env="DASHSCOPE_API_KEY",
+        base_url_env="DASHSCOPE_BASE_URL",
+        default_model="qwen-plus",
+        default_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    ),
+    LLMProviderOption(
+        name="zhipu",
+        label="Zhipu",
+        api_key_env="ZHIPU_API_KEY",
+        base_url_env="ZHIPU_BASE_URL",
+        default_model="glm-4-plus",
+        default_base_url="https://open.bigmodel.cn/api/paas/v4",
+    ),
+    LLMProviderOption(
+        name="moonshot",
+        label="Moonshot / Kimi",
+        api_key_env="MOONSHOT_API_KEY",
+        base_url_env="MOONSHOT_BASE_URL",
+        default_model="kimi-k2.5",
+        default_base_url="https://api.moonshot.ai/v1",
+    ),
+    LLMProviderOption(
+        name="minimax",
+        label="MiniMax",
+        api_key_env="MINIMAX_API_KEY",
+        base_url_env="MINIMAX_BASE_URL",
+        default_model="MiniMax-M2.7",
+        default_base_url="https://api.minimax.io/v1",
+    ),
+    LLMProviderOption(
+        name="mimo",
+        label="Xiaomi MIMO",
+        api_key_env="MIMO_API_KEY",
+        base_url_env="MIMO_BASE_URL",
+        default_model="MiMo-72B-A27B",
+        default_base_url="https://api.xiaomimimo.com/v1",
+    ),
+    LLMProviderOption(
+        name="zai",
+        label="Z.ai",
+        api_key_env="ZAI_API_KEY",
+        base_url_env="ZAI_BASE_URL",
+        default_model="glm-5.1",
+        default_base_url="https://api.z.ai/api/coding/paas/v4",
+    ),
+    LLMProviderOption(
+        name="ollama",
+        label="Ollama",
+        api_key_env=None,
+        base_url_env="OLLAMA_BASE_URL",
+        default_model="qwen2.5:32b",
+        default_base_url="http://localhost:11434/v1",
+        api_key_required=False,
+    ),
+]
+LLM_PROVIDER_BY_NAME = {provider.name: provider for provider in LLM_PROVIDERS}
+LLM_REASONING_EFFORTS = {"", "low", "medium", "high", "max"}
+TUSHARE_TOKEN_PLACEHOLDERS = {"", "your-tushare-token"}
+
+
+def _ensure_agent_env_file() -> Path:
+    """Ensure the project-local agent/.env exists."""
+    if not ENV_PATH.exists():
+        if ENV_EXAMPLE_PATH.exists():
+            ENV_PATH.write_text(ENV_EXAMPLE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+        else:
+            ENV_PATH.write_text("", encoding="utf-8")
+    return ENV_PATH
+
+
+def _strip_env_value(value: str) -> str:
+    """Remove basic dotenv quotes and inline comments."""
+    value = value.strip()
+    if " #" in value:
+        value = value.split(" #", 1)[0].rstrip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1]
+    return value.strip()
+
+
+def _read_env_values(path: Path) -> Dict[str, str]:
+    """Read active KEY=value entries from a dotenv file."""
+    values: Dict[str, str] = {}
+    if not path.exists():
+        return values
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key:
+            values[key] = _strip_env_value(value)
+    return values
+
+
+def _format_env_value(value: str) -> str:
+    """Format a dotenv value without allowing multiline injection."""
+    if "\n" in value or "\r" in value:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Environment values cannot contain newlines")
+    value = value.strip()
+    if not value:
+        return ""
+    if any(ch.isspace() for ch in value) or "#" in value:
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return value
+
+
+def _write_env_values(path: Path, updates: Dict[str, str]) -> None:
+    """Upsert active dotenv values while preserving comments and ordering."""
+    _ensure_agent_env_file()
+    lines = path.read_text(encoding="utf-8").splitlines()
+    seen: set[str] = set()
+    for index, raw in enumerate(lines):
+        stripped = raw.lstrip()
+        is_comment = stripped.startswith("#")
+        candidate = stripped[1:].lstrip() if is_comment else stripped
+        if "=" not in candidate:
+            continue
+        key = candidate.split("=", 1)[0].strip()
+        if key in updates and key not in seen:
+            lines[index] = f"{key}={_format_env_value(updates[key])}"
+            seen.add(key)
+    missing = [key for key in updates if key not in seen]
+    if missing:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append("# Updated from Web UI")
+        for key in missing:
+            lines.append(f"{key}={_format_env_value(updates[key])}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _mask_secret(value: str) -> Optional[str]:
+    """Return a non-sensitive hint for a configured secret."""
+    value = value.strip()
+    if not value:
+        return None
+    if len(value) <= 8:
+        return "****"
+    return f"{value[:4]}...{value[-4:]}"
+
+
+def _is_configured_secret(value: str, placeholders: set[str]) -> bool:
+    """Return True when a secret is set and not a documented placeholder."""
+    return value.strip() not in placeholders
+
+
+def _coerce_float(value: str, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_int(value: str, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_llm_settings_response(values: Optional[Dict[str, str]] = None) -> LLMSettingsResponse:
+    """Build the public settings payload from dotenv values."""
+    env_path = _ensure_agent_env_file()
+    env_values = values if values is not None else _read_env_values(env_path)
+    provider_name = env_values.get("LANGCHAIN_PROVIDER", "openai").strip().lower()
+    provider = LLM_PROVIDER_BY_NAME.get(provider_name, LLM_PROVIDER_BY_NAME["openai"])
+    api_key = env_values.get(provider.api_key_env or "", "") if provider.api_key_env else ""
+    return LLMSettingsResponse(
+        provider=provider.name,
+        model_name=env_values.get("LANGCHAIN_MODEL_NAME", provider.default_model),
+        base_url=env_values.get(provider.base_url_env, provider.default_base_url),
+        api_key_env=provider.api_key_env,
+        api_key_configured=bool(api_key.strip()),
+        api_key_hint=_mask_secret(api_key),
+        api_key_required=provider.api_key_required,
+        temperature=_coerce_float(env_values.get("LANGCHAIN_TEMPERATURE", "0.0"), 0.0),
+        timeout_seconds=_coerce_int(env_values.get("TIMEOUT_SECONDS", "120"), 120),
+        max_retries=_coerce_int(env_values.get("MAX_RETRIES", "2"), 2),
+        reasoning_effort=env_values.get("LANGCHAIN_REASONING_EFFORT", "").strip().lower(),
+        env_path=str(env_path),
+        providers=LLM_PROVIDERS,
+    )
+
+
+def _baostock_supported() -> bool:
+    """Check whether the project has a BaoStock loader implementation."""
+    loader_dir = AGENT_DIR / "backtest" / "loaders"
+    return any((loader_dir / name).exists() for name in ("baostock.py", "baostock_loader.py"))
+
+
+def _baostock_installed() -> bool:
+    """Check whether the optional BaoStock package is importable."""
+    import importlib.util
+
+    return importlib.util.find_spec("baostock") is not None
+
+
+def _build_data_source_settings_response(values: Optional[Dict[str, str]] = None) -> DataSourceSettingsResponse:
+    """Build the public data source settings payload."""
+    env_path = _ensure_agent_env_file()
+    env_values = values if values is not None else _read_env_values(env_path)
+    token = env_values.get("TUSHARE_TOKEN", "")
+    token_configured = _is_configured_secret(token, TUSHARE_TOKEN_PLACEHOLDERS)
+    supported = _baostock_supported()
+    installed = _baostock_installed()
+    if supported:
+        baostock_message = "BaoStock loader is available."
+    elif installed:
+        baostock_message = "BaoStock package is installed, but this project has no BaoStock loader."
+    else:
+        baostock_message = "No BaoStock loader is registered in this project."
+    return DataSourceSettingsResponse(
+        tushare_token_configured=token_configured,
+        tushare_token_hint=_mask_secret(token) if token_configured else None,
+        baostock_supported=supported,
+        baostock_installed=installed,
+        baostock_message=baostock_message,
+        env_path=str(env_path),
+    )
+
+
+def _sync_runtime_env(provider: LLMProviderOption, updates: Dict[str, str]) -> None:
+    """Apply saved LLM settings to the running API process."""
+    for key, value in updates.items():
+        if value:
+            os.environ[key] = value
+        else:
+            os.environ.pop(key, None)
+
+    if provider.api_key_env:
+        key_value = os.environ.get(provider.api_key_env, "")
+        if key_value:
+            os.environ["OPENAI_API_KEY"] = key_value
+        else:
+            os.environ.pop("OPENAI_API_KEY", None)
+    else:
+        os.environ["OPENAI_API_KEY"] = "ollama"
+
+    base_url = os.environ.get(provider.base_url_env, "")
+    if base_url:
+        os.environ["OPENAI_API_BASE"] = base_url
+        os.environ["OPENAI_BASE_URL"] = base_url
+    else:
+        os.environ.pop("OPENAI_API_BASE", None)
+        os.environ.pop("OPENAI_BASE_URL", None)
+
 
 def _load_json_file(path: Path) -> Optional[Dict[str, Any]]:
     """Load JSON from disk if present."""
@@ -546,6 +912,92 @@ async def list_runs(limit: int = 20):
         ))
         
     return results
+
+
+@app.get("/settings/llm", response_model=LLMSettingsResponse)
+async def get_llm_settings():
+    """Return project-local LLM settings for the Web UI."""
+    return _build_llm_settings_response()
+
+
+@app.put("/settings/llm", response_model=LLMSettingsResponse, dependencies=[Depends(require_auth)])
+async def update_llm_settings(payload: UpdateLLMSettingsRequest):
+    """Persist project-local LLM settings and update the running process."""
+    provider_name = payload.provider.strip().lower()
+    provider = LLM_PROVIDER_BY_NAME.get(provider_name)
+    if provider is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported LLM provider")
+
+    model_name = payload.model_name.strip()
+    if not model_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Model name is required")
+
+    if payload.temperature < 0 or payload.temperature > 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Temperature must be between 0 and 2")
+
+    reasoning_effort = (payload.reasoning_effort or "").strip().lower()
+    if reasoning_effort not in LLM_REASONING_EFFORTS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reasoning effort must be low, medium, high, or max")
+
+    current_values = _read_env_values(_ensure_agent_env_file())
+    updates: Dict[str, str] = {
+        "LANGCHAIN_PROVIDER": provider.name,
+        "LANGCHAIN_MODEL_NAME": model_name,
+        provider.base_url_env: (payload.base_url if payload.base_url is not None else provider.default_base_url).strip(),
+        "LANGCHAIN_TEMPERATURE": str(payload.temperature),
+        "TIMEOUT_SECONDS": str(payload.timeout_seconds),
+        "MAX_RETRIES": str(payload.max_retries),
+    }
+    if reasoning_effort or "LANGCHAIN_REASONING_EFFORT" in current_values:
+        updates["LANGCHAIN_REASONING_EFFORT"] = reasoning_effort
+
+    if provider.api_key_env:
+        if payload.clear_api_key:
+            updates[provider.api_key_env] = ""
+        elif payload.api_key is not None and payload.api_key.strip():
+            updates[provider.api_key_env] = payload.api_key.strip()
+        elif provider.api_key_env in current_values:
+            updates[provider.api_key_env] = current_values[provider.api_key_env]
+    elif payload.clear_api_key:
+        os.environ.pop("OPENAI_API_KEY", None)
+
+    _write_env_values(ENV_PATH, updates)
+    _sync_runtime_env(provider, updates)
+    return _build_llm_settings_response(_read_env_values(ENV_PATH))
+
+
+@app.get("/settings/data-sources", response_model=DataSourceSettingsResponse)
+async def get_data_source_settings():
+    """Return project-local data source credentials for the Web UI."""
+    return _build_data_source_settings_response()
+
+
+@app.put(
+    "/settings/data-sources",
+    response_model=DataSourceSettingsResponse,
+    dependencies=[Depends(require_auth)],
+)
+async def update_data_source_settings(payload: UpdateDataSourceSettingsRequest):
+    """Persist project-local data source credentials and update the running process."""
+    current_values = _read_env_values(_ensure_agent_env_file())
+    updates: Dict[str, str] = {}
+
+    if payload.clear_tushare_token:
+        updates["TUSHARE_TOKEN"] = ""
+    elif payload.tushare_token is not None and payload.tushare_token.strip():
+        updates["TUSHARE_TOKEN"] = payload.tushare_token.strip()
+    elif "TUSHARE_TOKEN" in current_values:
+        updates["TUSHARE_TOKEN"] = current_values["TUSHARE_TOKEN"]
+
+    if updates:
+        _write_env_values(ENV_PATH, updates)
+        token = updates.get("TUSHARE_TOKEN", "").strip()
+        if _is_configured_secret(token, TUSHARE_TOKEN_PLACEHOLDERS):
+            os.environ["TUSHARE_TOKEN"] = token
+        else:
+            os.environ.pop("TUSHARE_TOKEN", None)
+
+    return _build_data_source_settings_response(_read_env_values(ENV_PATH))
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -1045,6 +1497,18 @@ def serve_main(argv: list[str] | None = None) -> int:
     import subprocess
     import uvicorn
     from fastapi.staticfiles import StaticFiles
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    class SPAStaticFiles(StaticFiles):
+        """Serve index.html for browser refreshes on client-side routes."""
+
+        async def get_response(self, path: str, scope: Dict[str, Any]):
+            try:
+                return await super().get_response(path, scope)
+            except StarletteHTTPException as exc:
+                if exc.status_code != status.HTTP_404_NOT_FOUND:
+                    raise
+                return await super().get_response("index.html", scope)
 
     parser = argparse.ArgumentParser(description="Vibe-Trading Server")
     parser.add_argument("--port", type=int, default=8000, help="Listen port (default 8000)")
@@ -1072,7 +1536,7 @@ def serve_main(argv: list[str] | None = None) -> int:
         print(f"[dev] API: http://localhost:{args.port}")
     elif frontend_dist.exists():
         if not any(route.path == "/" for route in app.routes):
-            app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+            app.mount("/", SPAStaticFiles(directory=str(frontend_dist), html=True), name="frontend")
         print(f"[prod] Frontend served from {frontend_dist}")
     else:
         print(f"[warn] No frontend build found at {frontend_dist}")

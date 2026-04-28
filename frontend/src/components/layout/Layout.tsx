@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useDarkMode } from "@/hooks/useDarkMode";
@@ -11,6 +11,7 @@ import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
 const NAV = [
   { to: "/", icon: BarChart3, key: "home" as const },
   { to: "/agent", icon: Bot, key: "agent" as const },
+  { to: "/settings", icon: Settings, key: "settings" as const },
 ];
 
 export function Layout() {
