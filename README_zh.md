@@ -19,10 +19,10 @@
   <a href="https://pypi.org/project/vibe-trading-ai/"><img src="https://img.shields.io/pypi/v/vibe-trading-ai?style=flat&logo=pypi&logoColor=white" alt="PyPI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat" alt="License"></a>
   <br>
-  <img src="https://img.shields.io/badge/Skills-71-orange" alt="Skills">
+  <img src="https://img.shields.io/badge/Skills-72-orange" alt="Skills">
   <img src="https://img.shields.io/badge/Swarm_Presets-29-7C3AED" alt="Swarm">
   <img src="https://img.shields.io/badge/Tools-27-0F766E" alt="Tools">
-  <img src="https://img.shields.io/badge/Data_Sources-5-2563EB" alt="Data Sources">
+  <img src="https://img.shields.io/badge/Data_Sources-6-2563EB" alt="Data Sources">
   <br>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/Feishu-Group-E9DBFC?style=flat-square&logo=feishu&logoColor=white" alt="Feishu"></a>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/WeChat-Group-C5EAB4?style=flat-square&logo=wechat&logoColor=white" alt="WeChat"></a>
@@ -51,13 +51,14 @@
 
 ## 📰 新闻
 
+- **2026-04-28** 🚀 **v0.1.6 发布**（`pip install -U vibe-trading-ai`）：修复 `pip install` / `uv tool install` 安装后 `vibe-trading --swarm-presets` 返回空的问题（[#55](https://github.com/HKUDS/Vibe-Trading/issues/55)）—— 预设 YAML 现已打包进 `src.swarm` 包内，配套 6 个回归测试。同时 AKShare 加载器正确路由 ETF（`510300.SH`）和外汇（`USDCNH`）到对应端点，并加固注册表回退链。汇总自 v0.1.5 以来全部更新：基准对比面板、`/upload` 流式上传 + 大小限制、富途数据源（港股/A 股）、vnpy 导出技能、安全加固、前端懒加载（688KB → 262KB）。
 - **2026-04-27** 📊 **基准对比面板 + 上传安全**：回测输出新增基准对比面板（标的 / 基准收益 / 超额收益 / 信息比率），通过 yfinance 解析 SPY、沪深 300 等基准（[#48](https://github.com/HKUDS/Vibe-Trading/issues/48)）。同时 `/upload` 端点改为 1MB 分块流式落盘，超过 `MAX_UPLOAD_SIZE` 立即中断并清理半截文件，让 50MB 上限在恶意/超大请求下真正生效（[#53](https://github.com/HKUDS/Vibe-Trading/pull/53)）—— 配套 4 个回归测试。
 - **2026-04-22** 🛡️ **加固 + 新接入**：`safe_path` 强制路径包含校验 + 交割单/影子账户工具沙箱化，新增 `MANIFEST.in` 让 sdist 打包 `.env.example` / 测试 / Docker 文件，前端按路由懒加载把首屏包从 688KB 压到 262KB。同时新增富途港股/A 股数据加载器（[#47](https://github.com/HKUDS/Vibe-Trading/pull/47)）和 vnpy CtaTemplate 导出技能（[#46](https://github.com/HKUDS/Vibe-Trading/pull/46)）。
-- **2026-04-21** 🛡️ **工作区与文档**：相对路径 `run_dir` 归一化到当前 run 目录（[#43](https://github.com/HKUDS/Vibe-Trading/pull/43)）。README 加入使用示例（[#45](https://github.com/HKUDS/Vibe-Trading/pull/45)）。
 
 <details>
 <summary>更早的新闻</summary>
 
+- **2026-04-21** 🛡️ **工作区与文档**：相对路径 `run_dir` 归一化到当前 run 目录（[#43](https://github.com/HKUDS/Vibe-Trading/pull/43)）。README 加入使用示例（[#45](https://github.com/HKUDS/Vibe-Trading/pull/45)）。
 - **2026-04-20** 🔌 **推理模型与 Swarm 修复**：`reasoning_content` 在所有 `ChatOpenAI` 序列化路径上保留 —— Kimi / DeepSeek / Qwen thinking 端到端可用（[#39](https://github.com/HKUDS/Vibe-Trading/issues/39)）。Swarm 切流式调用 + 干净的 Ctrl+C 退出（[#42](https://github.com/HKUDS/Vibe-Trading/issues/42)）。
 - **2026-04-19** 📦 **v0.1.5**：发布至 PyPI 与 ClawHub。`python-multipart` CVE 版本下限升级，5 个新 MCP 工具接入（`analyze_trade_journal` + 4 个影子账户工具），修复 `pattern_recognition` → `pattern` 工具注册名不一致，Docker 依赖对齐，SKILL 清单同步（22 MCP 工具 / 71 技能）。
 - **2026-04-18** 👥 **影子账户 Shadow Account**：从券商交割单提取你自己的策略规则 → 跨市场回测这个"影子" → 8 节 HTML/PDF 报告精确告诉你每一块钱是怎么错过的（规则违反、过早止盈、漏掉信号、反向操作）。4 个新工具、1 个新技能、共 32 工具。Trade Journal / Shadow Account 例句已进 Web UI 欢迎屏。
@@ -97,9 +98,9 @@ Vibe-Trading 是一个由 AI 驱动的多代理金融工作台，将自然语言
     <td align="center" width="25%" valign="top">
       <img src="assets/scene-research.png" height="150" alt="Research"/><br>
       <h3>🔍 面向交易的深度研究</h3>
-      <img src="https://img.shields.io/badge/71_Skills-FF6B6B?style=for-the-badge&logo=bookstack&logoColor=white" alt="Skills" /><br><br>
+      <img src="https://img.shields.io/badge/72_Skills-FF6B6B?style=for-the-badge&logo=bookstack&logoColor=white" alt="Skills" /><br><br>
       <div align="left" style="font-size: 4px;">
-        • 71 个专长技能 + 跨会话持久记忆<br>
+        • 72 个专长技能 + 跨会话持久记忆<br>
         • 自进化：代理从经验中创建并优化工作流<br>
         • 5 层上下文压缩——长对话不丢失信息<br>
         • 覆盖全金融领域的自然语言任务路由
@@ -141,9 +142,9 @@ Vibe-Trading 是一个由 AI 驱动的多代理金融工作台，将自然语言
   </tr>
 </table>
 
-## 7 大类别中的 71 个技能
+## 7 大类别中的 72 个技能
 
-- 📊 71 个金融专长技能，划分 7 大类
+- 📊 72 个金融专长技能，划分 7 大类
 - 🌐 覆盖传统市场到加密与 DeFi
 - 🔬 覆盖数据获取到量化研究的全链路能力
 
@@ -352,7 +353,7 @@ vibe-trading serve         # API 服务器
 | Command | Description |
 |---------|-------------|
 | `/help` | 显示全部命令 |
-| `/skills` | 列出 71 个金融技能 |
+| `/skills` | 列出 72 个金融技能 |
 | `/swarm` | 列出 29 个 swarm 团队预设 |
 | `/swarm run <preset> [vars_json]` | 以流式输出运行一个 swarm 团队 |
 | `/swarm list` | Swarm 运行历史 |
@@ -423,7 +424,7 @@ vibe-trading serve --port 8899
 
 ## 🔌 MCP 插件
 
-Vibe-Trading 为任意 MCP 兼容客户端提供 17 个 MCP 工具。以 stdio 子进程运行——无需服务器部署。**17 个工具中有 16 个无需任何 API key**（港美股/加密）。仅 `run_swarm` 需要 LLM key。
+Vibe-Trading 为任意 MCP 兼容客户端提供 22 个 MCP 工具。以 stdio 子进程运行——无需服务器部署。**22 个工具中有 21 个无需任何 API key**（港美股/加密）。仅 `run_swarm` 需要 LLM key。
 
 <details>
 <summary><b>Claude Desktop</b></summary>
@@ -465,7 +466,7 @@ vibe-trading-mcp --transport sse  # 供 Web 客户端的 SSE
 
 </details>
 
-**已暴露的 MCP 工具（17）：** `list_skills`, `load_skill`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `get_market_data`, `web_search`, `read_url`, `read_document`, `read_file`, `write_file`, `list_swarm_presets`, `run_swarm`, `get_swarm_status`, `get_run_result`, `list_runs`。
+**已暴露的 MCP 工具（22）：** `list_skills`, `load_skill`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `get_market_data`, `web_search`, `read_url`, `read_document`, `read_file`, `write_file`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `list_swarm_presets`, `run_swarm`, `get_swarm_status`, `get_run_result`, `list_runs`。
 
 <details>
 <summary><b>ClawHub 一键安装</b></summary>
@@ -485,7 +486,7 @@ npx clawhub@latest install vibe-trading --force
 <details>
 <summary><b>OpenSpace — 自进化技能</b></summary>
 
-全部 71 个金融技能已发布在 [open-space.cloud](https://open-space.cloud)，并通过 OpenSpace 的自进化引擎自动演进。
+全部 72 个金融技能已发布在 [open-space.cloud](https://open-space.cloud)，并通过 OpenSpace 的自进化引擎自动演进。
 
 要在 OpenSpace 中使用，在代理配置中添加两个 MCP 服务器：
 
@@ -507,7 +508,7 @@ npx clawhub@latest install vibe-trading --force
 }
 ```
 
-OpenSpace 会自动发现全部 71 个技能，支持自动修复、自动改进与社区共享。在任意连接 OpenSpace 的代理中通过 `search_skills("finance backtest")` 搜索 Vibe-Trading 技能。
+OpenSpace 会自动发现全部 72 个技能，支持自动修复、自动改进与社区共享。在任意连接 OpenSpace 的代理中通过 `search_skills("finance backtest")` 搜索 Vibe-Trading 技能。
 
 </details>
 
@@ -523,7 +524,7 @@ Vibe-Trading/
 ├── agent/                          # 后端（Python）
 │   ├── cli.py                      # CLI 入口——交互式 TUI + 子命令
 │   ├── api_server.py               # FastAPI 服务器——运行、会话、上传、swarm、SSE
-│   ├── mcp_server.py               # MCP 服务器——为 OpenClaw / Claude Desktop 提供 17 个工具
+│   ├── mcp_server.py               # MCP 服务器——为 OpenClaw / Claude Desktop 提供 22 个工具
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct 代理核心
@@ -547,19 +548,18 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo 搜索
 │   │   │   └── ...                 #   bash、文件 I/O、因子分析、期权等
 │   │   │
-│   │   ├── skills/                 # 71 个金融技能（7 类，每个 SKILL.md）
+│   │   ├── skills/                 # 72 个金融技能（7 类，每个 SKILL.md）
 │   │   ├── swarm/                  # Swarm DAG 执行引擎
+│   │   │   └── presets/            #   29 个 swarm 预设 YAML 定义
 │   │   ├── session/                # 多轮对话 + FTS5 会话搜索
 │   │   └── providers/              # LLM 提供商抽象
 │   │
-│   ├── backtest/                   # 回测引擎
-│   │   ├── engines/                #   7 个引擎 + 跨市场复合引擎 + options_portfolio
-│   │   ├── loaders/                #   5 个数据源：tushare、okx、yfinance、akshare、ccxt
-│   │   │   ├── base.py             #   DataLoader Protocol
-│   │   │   └── registry.py         #   注册表 + 自动回退链
-│   │   └── optimizers/             #   MVO、等波动、最大分散、风险平价
-│   │
-│   └── config/swarm/               # 29 个 swarm 预设 YAML 定义
+│   └── backtest/                   # 回测引擎
+│       ├── engines/                #   7 个引擎 + 跨市场复合引擎 + options_portfolio
+│       ├── loaders/                #   6 个数据源：tushare、okx、yfinance、akshare、ccxt、futu
+│       │   ├── base.py             #   DataLoader Protocol
+│       │   └── registry.py         #   注册表 + 自动回退链
+│       └── optimizers/             #   MVO、等波动、最大分散、风险平价
 │
 ├── frontend/                       # Web UI（React 19 + Vite + TypeScript）
 │   └── src/

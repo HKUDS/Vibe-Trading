@@ -45,7 +45,7 @@ cd frontend && npm install && npm run dev
 | `agent/src/skills/` | 69 finance skill definitions (SKILL.md) | Yes |
 | `agent/src/tools/` | 21 agent tools | Yes |
 | `agent/backtest/` | Backtest engines, loaders, optimizers | Yes |
-| `agent/config/swarm/` | 29 swarm preset YAMLs | Yes |
+| `agent/src/swarm/presets/` | 29 swarm preset YAMLs | Yes |
 | `frontend/` | React 19 + Vite web UI | Yes |
 | `agent/src/agent/` | ReAct agent core (loop, context, skills) | Ask first |
 | `agent/src/session/` | Session management | Ask first |
@@ -112,7 +112,7 @@ Each skill is a single `SKILL.md` file in `agent/src/skills/<category>/<skill-na
 
 ### Easy: New Swarm Preset
 
-A YAML file in `agent/config/swarm/` defining agents, roles, and DAG workflow. See existing presets.
+A YAML file in `agent/src/swarm/presets/` defining agents, roles, and DAG workflow. See existing presets.
 
 ### Medium: New Data Source Loader
 
