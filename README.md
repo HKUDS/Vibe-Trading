@@ -86,7 +86,8 @@ Vibe-Trading is an AI-powered multi-agent finance workspace that turns natural l
 • **29 Expert Teams** — Pre-built multi-agent swarm workflows for investment, trading & risk<br>
 • **Cross-Session Memory** — Remembers preferences and insights; creates & evolves reusable skills<br>
 • **7 Backtest Engines** — Cross-market composite testing with statistical validation & 4 optimizers<br>
-• **Multi-Platform Export** — One-click to TradingView, TDX (通达信/同花顺), and MetaTrader 5
+• **Multi-Platform Export** — One-click to TradingView, TDX (通达信/同花顺), and MetaTrader 5<br>
+• **Web UI Language Toggle** — Switch between English and Simplified Chinese, with browser preference remembered
 
 ---
 

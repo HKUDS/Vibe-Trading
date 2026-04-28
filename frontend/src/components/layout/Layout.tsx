@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Languages } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useDarkMode } from "@/hooks/useDarkMode";
@@ -16,7 +16,7 @@ const NAV = [
 export function Layout() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
-  const { t } = useI18n();
+  const { t, language, toggleLanguage } = useI18n();
   const { dark, toggle } = useDarkMode();
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
@@ -171,7 +171,7 @@ export function Layout() {
                         <button
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameTarget(s.session_id); setRenameValue(s.title || ""); }}
                           className="p-1 text-muted-foreground hover:text-foreground rounded"
-                          title="Rename"
+                          title={t.rename}
                         >
                           <Pencil className="h-3 w-3" />
                         </button>
@@ -201,7 +201,10 @@ export function Layout() {
               <button onClick={toggle} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={dark ? t.lightMode : t.darkMode}>
                 {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
               </button>
-              <button onClick={() => setCollapsed(false)} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title="Expand">
+              <button onClick={toggleLanguage} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={t.switchLanguage}>
+                <Languages className="h-3.5 w-3.5" />
+              </button>
+              <button onClick={() => setCollapsed(false)} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={t.expandSidebar}>
                 <ChevronsRight className="h-3.5 w-3.5" />
               </button>
             </>
@@ -217,9 +220,17 @@ export function Layout() {
                 </button>
                 <div className="flex items-center gap-1">
                   <button
+                    onClick={toggleLanguage}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    title={t.switchLanguage}
+                  >
+                    <Languages className="h-3.5 w-3.5" />
+                    {language === "zh-CN" ? t.languageEnglish : t.languageChinese}
+                  </button>
+                  <button
                     onClick={() => setCollapsed(true)}
                     className="p-1 text-muted-foreground hover:text-foreground rounded transition-colors"
-                    title="Collapse"
+                    title={t.collapseSidebar}
                   >
                     <ChevronsLeft className="h-3.5 w-3.5" />
                   </button>

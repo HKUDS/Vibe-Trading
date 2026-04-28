@@ -83,7 +83,7 @@ export function RunDetail() {
       </div>
     );
   }
-  if (!run) return <div className="p-8 text-red-500">Run not found</div>;
+  if (!run) return <div className="p-8 text-red-500">{t.runNotFound}</div>;
 
   const ok = run.status === "success";
 
@@ -95,7 +95,7 @@ export function RunDetail() {
           <button
             onClick={() => navigate(-1)}
             className="p-1 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-            title="Go back"
+            title={t.goBack}
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
@@ -156,14 +156,15 @@ export function RunDetail() {
 }
 
 function ChartTab({ run }: { run: RunData }) {
+  const { t } = useI18n();
   const entries = run.price_series ? Object.entries(run.price_series) : [];
   const hasEquity = run.equity_curve && run.equity_curve.length > 0;
 
   if (entries.length === 0 && !hasEquity) {
     return (
       <div className="p-8 text-center text-muted-foreground space-y-2">
-        <p className="text-sm">No chart data available</p>
-        <p className="text-xs">The backtest engine may not have generated price data. Check the artifacts/ directory.</p>
+        <p className="text-sm">{t.noChartData}</p>
+        <p className="text-xs">{t.noChartDataHint}</p>
       </div>
     );
   }
@@ -178,7 +179,7 @@ function ChartTab({ run }: { run: RunData }) {
       ))}
       {hasEquity && (
         <div>
-          <h3 className="text-sm font-medium mb-1">Equity & Drawdown</h3>
+          <h3 className="text-sm font-medium mb-1">{t.equityDrawdown}</h3>
           <EquityChart data={run.equity_curve!} height={280} />
         </div>
       )}
@@ -187,19 +188,20 @@ function ChartTab({ run }: { run: RunData }) {
 }
 
 function TradesTab({ run }: { run: RunData }) {
+  const { t } = useI18n();
   const trades = run.trade_log || [];
-  if (trades.length === 0) return <div className="p-8 text-muted-foreground text-sm">No trades recorded.</div>;
+  if (trades.length === 0) return <div className="p-8 text-muted-foreground text-sm">{t.noTrades}</div>;
   return (
     <div className="p-4">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b text-left text-muted-foreground">
-            <th className="py-2 pr-4">Time</th>
-            <th className="py-2 pr-4">Code</th>
-            <th className="py-2 pr-4">Side</th>
-            <th className="py-2 pr-4">Price</th>
-            <th className="py-2 pr-4">Qty</th>
-            <th className="py-2">Reason</th>
+            <th className="py-2 pr-4">{t.colTime}</th>
+            <th className="py-2 pr-4">{t.colCode}</th>
+            <th className="py-2 pr-4">{t.colSide}</th>
+            <th className="py-2 pr-4">{t.colPrice}</th>
+            <th className="py-2 pr-4">{t.colQty}</th>
+            <th className="py-2">{t.colReason}</th>
           </tr>
         </thead>
         <tbody>
@@ -220,9 +222,10 @@ function TradesTab({ run }: { run: RunData }) {
 }
 
 function CodeTab({ code }: { code: Record<string, string> }) {
+  const { t } = useI18n();
   const files = Object.entries(code);
   const [active, setActive] = useState(files[0]?.[0] || "");
-  if (files.length === 0) return <div className="p-8 text-muted-foreground text-sm">No code files.</div>;
+  if (files.length === 0) return <div className="p-8 text-muted-foreground text-sm">{t.noCode}</div>;
   return (
     <div className="flex flex-col h-full">
       <div className="flex gap-1 p-2 border-b">
