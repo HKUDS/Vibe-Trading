@@ -128,6 +128,69 @@ def test_get_data_source_settings_treats_placeholder_as_unconfigured(
     assert not (tmp_path / ".env").exists()
 
 
+def test_settings_reads_reject_remote_dev_mode_clients(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env_path = tmp_path / ".env"
+    env_example = tmp_path / ".env.example"
+    env_path.write_text(
+        "\n".join(
+            [
+                "LANGCHAIN_PROVIDER=openrouter",
+                "OPENROUTER_API_KEY=or-secret-value",
+                "TUSHARE_TOKEN=ts-secret-token",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    env_example.write_text("LANGCHAIN_PROVIDER=openai\n", encoding="utf-8")
+    monkeypatch.setattr(api_server, "ENV_PATH", env_path)
+    monkeypatch.setattr(api_server, "ENV_EXAMPLE_PATH", env_example)
+    monkeypatch.delenv("API_AUTH_KEY", raising=False)
+    remote_client = TestClient(api_server.app, client=("203.0.113.10", 50000))
+
+    llm_response = remote_client.get("/settings/llm")
+    data_source_response = remote_client.get("/settings/data-sources")
+
+    assert llm_response.status_code == 403
+    assert data_source_response.status_code == 403
+    assert "or-s...alue" not in llm_response.text
+    assert "ts-s...oken" not in data_source_response.text
+
+
+def test_settings_reads_require_bearer_when_api_auth_key_is_configured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env_path = tmp_path / ".env"
+    env_example = tmp_path / ".env.example"
+    env_path.write_text(
+        "\n".join(
+            [
+                "LANGCHAIN_PROVIDER=openrouter",
+                "OPENROUTER_API_KEY=or-secret-value",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    env_example.write_text("LANGCHAIN_PROVIDER=openai\n", encoding="utf-8")
+    monkeypatch.setattr(api_server, "ENV_PATH", env_path)
+    monkeypatch.setattr(api_server, "ENV_EXAMPLE_PATH", env_example)
+    monkeypatch.setenv("API_AUTH_KEY", "settings-secret")
+    local_client = TestClient(api_server.app, client=("127.0.0.1", 50000))
+
+    unauthenticated_response = local_client.get("/settings/llm")
+    authenticated_response = local_client.get(
+        "/settings/llm",
+        headers={"Authorization": "Bearer settings-secret"},
+    )
+
+    assert unauthenticated_response.status_code == 401
+    assert authenticated_response.status_code == 200
+    assert authenticated_response.json()["api_key_hint"] == "or-s...alue"
+
+
 def test_update_data_source_settings_persists_tushare_token(
     client: TestClient, tmp_path: Path,
 ) -> None:

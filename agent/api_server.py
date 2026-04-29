@@ -319,11 +319,11 @@ async def require_local_or_auth(
     request: Request,
     cred: HTTPAuthorizationCredentials = Security(_security),
 ) -> None:
-    """Protect settings writes when dev-mode auth is disabled.
+    """Protect settings access when dev-mode auth is disabled.
 
     If API_AUTH_KEY is configured, require the bearer token. If not, allow only
     loopback clients so an API server bound to 0.0.0.0 cannot accept remote
-    credential changes in dev mode.
+    credential reads or writes in dev mode.
     """
     if _configured_api_key():
         await require_auth(cred)
@@ -331,7 +331,7 @@ async def require_local_or_auth(
     if not _is_local_client(request):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Settings writes require API_AUTH_KEY or a local loopback client",
+            detail="Settings access requires API_AUTH_KEY or a local loopback client",
         )
 
 
@@ -888,7 +888,11 @@ async def list_runs(limit: int = 20):
     return results
 
 
-@app.get("/settings/llm", response_model=LLMSettingsResponse)
+@app.get(
+    "/settings/llm",
+    response_model=LLMSettingsResponse,
+    dependencies=[Depends(require_local_or_auth)],
+)
 async def get_llm_settings():
     """Return project-local LLM settings for the Web UI."""
     return _build_llm_settings_response()
@@ -944,7 +948,11 @@ async def update_llm_settings(payload: UpdateLLMSettingsRequest):
     return _build_llm_settings_response(_read_env_values(ENV_PATH))
 
 
-@app.get("/settings/data-sources", response_model=DataSourceSettingsResponse)
+@app.get(
+    "/settings/data-sources",
+    response_model=DataSourceSettingsResponse,
+    dependencies=[Depends(require_local_or_auth)],
+)
 async def get_data_source_settings():
     """Return project-local data source credentials for the Web UI."""
     return _build_data_source_settings_response()
