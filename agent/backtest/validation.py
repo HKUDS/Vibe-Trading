@@ -338,6 +338,8 @@ def _parse_run_dir(argv: List[str]) -> Path:
     raw_run_dir = argv[1]
     if not raw_run_dir.strip():
         raise SystemExit("run_dir must be a non-empty path")
+    if "\0" in raw_run_dir:
+        raise SystemExit("Invalid run_dir path: embedded NUL byte")
 
     try:
         run_dir = Path(raw_run_dir).expanduser()
