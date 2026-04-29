@@ -5,7 +5,7 @@ Three independent tools:
   - Bootstrap Sharpe CI: how stable is the risk-adjusted return?
   - Walk-Forward analysis: is performance consistent across time windows?
 
-Usage: called automatically by BaseEngine.run_backtest when config["validation"]
+Usage: called automatically by BaseEngine.run_backtest when config[\"validation\"]
 is present, or invoked directly on backtest outputs.
 """
 
@@ -330,6 +330,31 @@ def _load_trades(run_dir: Path) -> List[TradeRecord]:
     return trades
 
 
+def _parse_run_dir(argv: List[str]) -> Path:
+    """Validate CLI input and return a usable run directory path."""
+    if len(argv) < 2:
+        raise SystemExit("Usage: python -m backtest.validation <run_dir>")
+
+    raw_run_dir = argv[1]
+    if not raw_run_dir.strip():
+        raise SystemExit("run_dir must be a non-empty path")
+    if "\0" in raw_run_dir:
+        raise SystemExit("Invalid run_dir path: embedded NUL byte")
+
+    try:
+        run_dir = Path(raw_run_dir).expanduser()
+        exists = run_dir.exists()
+        is_dir = run_dir.is_dir() if exists else False
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise SystemExit(f"Invalid run_dir path: {exc}") from exc
+
+    if not exists:
+        raise SystemExit(f"run_dir does not exist: {run_dir}")
+    if not is_dir:
+        raise SystemExit(f"run_dir is not a directory: {run_dir}")
+    return run_dir
+
+
 def main(run_dir: Path) -> Dict[str, Any]:
     """Run all three validations on existing backtest artifacts.
 
@@ -370,9 +395,5 @@ def main(run_dir: Path) -> Dict[str, Any]:
 
 if __name__ == "__main__":
     import sys
-    from pathlib import Path
 
-    if len(sys.argv) < 2:
-        print("Usage: python -m backtest.validation <run_dir>")
-        sys.exit(1)
-    main(Path(sys.argv[1]))
+    main(_parse_run_dir(sys.argv))

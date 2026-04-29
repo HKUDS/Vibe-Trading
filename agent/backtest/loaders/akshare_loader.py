@@ -39,6 +39,38 @@ def _is_crypto(code: str) -> bool:
     return "-USDT" in code.upper() or "/USDT" in code.upper()
 
 
+# Exchange-listed ETF / LOF prefix codes:
+#   SH: 50/51/52/56/58 (ETFs), SZ: 15/16 (ETFs + LOFs).
+# Issue #50 — these symbols look like A-shares (.SH / .SZ) but stock_zh_a_hist
+# can't price them; route through fund_etf_hist_sina instead.
+_ETF_PREFIXES = frozenset({"15", "16", "50", "51", "52", "56", "58"})
+
+
+def _is_etf_listed(code: str) -> bool:
+    """Detect exchange-listed ETF / LOF symbols (e.g. 518880.SH, 159915.SZ)."""
+    upper = code.upper()
+    if not upper.endswith((".SH", ".SZ")):
+        return False
+    digits = upper.split(".")[0]
+    if len(digits) != 6 or not digits.isdigit():
+        return False
+    return digits[:2] in _ETF_PREFIXES
+
+
+def _is_forex(code: str) -> bool:
+    """Detect forex pairs by matching against AKShare's symbol_market_map.
+
+    Issue #54 — forex symbols (EURUSD, GBPUSD, etc.) have no exchange suffix
+    and previously fell through to the A-share endpoint.
+    """
+    upper = code.upper().removesuffix(".FX")
+    try:
+        from akshare.forex.cons import symbol_market_map
+    except Exception:
+        return False
+    return upper in symbol_market_map
+
+
 @register
 class DataLoader:
     """AKShare universal OHLCV loader (free, no auth)."""
@@ -97,12 +129,17 @@ class DataLoader:
         """Fetch a single symbol."""
         import akshare as ak
 
+        # ETF check must precede A-share — 518880.SH ends with .SH but is an ETF.
+        if _is_etf_listed(code):
+            return self._fetch_etf(ak, code, start_date, end_date)
         if _is_a_share(code):
             return self._fetch_a_share(ak, code, start_date, end_date, interval)
         if _is_us(code):
             return self._fetch_us(ak, code, start_date, end_date)
         if _is_hk(code):
             return self._fetch_hk(ak, code, start_date, end_date)
+        if _is_forex(code):
+            return self._fetch_forex(ak, code, start_date, end_date)
         # Default: try A-share
         return self._fetch_a_share(ak, code, start_date, end_date, interval)
 
@@ -144,6 +181,49 @@ class DataLoader:
             except Exception:
                 continue
         return None
+
+    def _fetch_etf(self, ak, code: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """Fetch exchange-listed ETF / LOF via fund_etf_hist_sina.
+
+        Sina symbol format is ``sh518880`` / ``sz159915``. The endpoint returns
+        the full history; we filter to the requested window after fetching.
+        """
+        digits, _, suffix = code.upper().partition(".")
+        symbol = f"{suffix.lower()}{digits}"
+        df = ak.fund_etf_hist_sina(symbol=symbol)
+        if df is None or df.empty:
+            return None
+        df = self._normalize(df, date_col="date")
+        # fund_etf_hist_sina returns full history — clip to window.
+        return df.loc[start_date:end_date]
+
+    def _fetch_forex(self, ak, code: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """Fetch forex pair via forex_hist_em.
+
+        Columns returned are 日期 / 代码 / 名称 / 今开 / 最新价 / 最高 / 最低 / 振幅
+        — note ``最新价`` (latest) plays the role of close. Volume isn't reported,
+        so we synthesize a zero column to satisfy the OHLCV contract.
+        """
+        symbol = code.upper().removesuffix(".FX")
+        df = ak.forex_hist_em(symbol=symbol)
+        if df is None or df.empty:
+            return None
+        df = df.rename(columns={
+            "日期": "trade_date",
+            "今开": "open",
+            "最新价": "close",
+            "最高": "high",
+            "最低": "low",
+        })
+        df["trade_date"] = pd.to_datetime(df["trade_date"])
+        df = df.set_index("trade_date").sort_index()
+        df["volume"] = 0.0
+        for col in ("open", "high", "low", "close"):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df[["open", "high", "low", "close", "volume"]].dropna(
+            subset=["open", "high", "low", "close"]
+        )
+        return df.loc[start_date:end_date]
 
     def _fetch_hk(self, ak, code: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """Fetch HK stock via stock_hk_hist."""

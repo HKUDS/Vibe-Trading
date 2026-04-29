@@ -19,10 +19,10 @@
   <a href="https://pypi.org/project/vibe-trading-ai/"><img src="https://img.shields.io/pypi/v/vibe-trading-ai?style=flat&logo=pypi&logoColor=white" alt="PyPI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat" alt="License"></a>
   <br>
-  <img src="https://img.shields.io/badge/Skills-71-orange" alt="Skills">
+  <img src="https://img.shields.io/badge/Skills-72-orange" alt="Skills">
   <img src="https://img.shields.io/badge/Swarm_Presets-29-7C3AED" alt="Swarm">
   <img src="https://img.shields.io/badge/Tools-27-0F766E" alt="Tools">
-  <img src="https://img.shields.io/badge/Data_Sources-5-2563EB" alt="Data Sources">
+  <img src="https://img.shields.io/badge/Data_Sources-6-2563EB" alt="Data Sources">
   <br>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/Feishu-Group-E9DBFC?style=flat-square&logo=feishu&logoColor=white" alt="Feishu"></a>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/WeChat-Group-C5EAB4?style=flat-square&logo=wechat&logoColor=white" alt="WeChat"></a>
@@ -51,13 +51,16 @@
 
 ## 📰 News
 
-- **2026-04-22** 🛡️ **Hardening + new integrations**: Path containment enforced in `safe_path` + journal/shadow tool sandbox, `MANIFEST.in` ships `.env.example` / tests / Docker files in sdist, route-level lazy loading shrinks frontend initial bundle 688KB → 262KB. Plus Futu data loader for HK & A-share equities ([#47](https://github.com/HKUDS/Vibe-Trading/pull/47)) and vnpy CtaTemplate export skill ([#46](https://github.com/HKUDS/Vibe-Trading/pull/46)).
-- **2026-04-21** 🛡️ **Workspace + docs**: Relative `run_dir` normalized to active run dir ([#43](https://github.com/HKUDS/Vibe-Trading/pull/43)). README usage examples ([#45](https://github.com/HKUDS/Vibe-Trading/pull/45)).
-- **2026-04-20** 🔌 **Reasoning + Swarm**: `reasoning_content` preserved across all `ChatOpenAI` paths — Kimi / DeepSeek / Qwen thinking work end-to-end ([#39](https://github.com/HKUDS/Vibe-Trading/issues/39)). Swarm streaming + clean Ctrl+C ([#42](https://github.com/HKUDS/Vibe-Trading/issues/42)).
+- **2026-04-30** ⚙️ **Web UI Settings + validation CLI hardening**: New Settings page for LLM provider/model, base URL, reasoning effort, and data source credentials, backed by local/auth-protected settings APIs and data-driven provider metadata ([#57](https://github.com/HKUDS/Vibe-Trading/pull/57)). Also hardens `python -m backtest.validation <run_dir>` so missing, blank, malformed, non-existent, and non-directory inputs fail with clear operator-facing messages before validation starts ([#60](https://github.com/HKUDS/Vibe-Trading/pull/60)).
+- **2026-04-28** 🚀 **v0.1.6 released** (`pip install -U vibe-trading-ai`): Fixes `vibe-trading --swarm-presets` returning empty after `pip install` / `uv tool install` ([#55](https://github.com/HKUDS/Vibe-Trading/issues/55)) — preset YAMLs now bundled inside the `src.swarm` package and pinned by a 6-test regression suite. Plus AKShare loader correctly routes ETFs (`510300.SH`) and forex (`USDCNH`) to the right endpoints with hardened registry fallback. Rolls up everything since v0.1.5: benchmark comparison panel, `/upload` streaming + size limits, Futu loader (HK + A-share), vnpy export skill, security hardening, frontend lazy loading (688KB → 262KB).
+- **2026-04-27** 📊 **Benchmark panel + upload safety**: Backtest output now ships a benchmark comparison panel (ticker / benchmark return / excess return / information ratio) with yfinance-backed resolution for SPY, CSI 300, etc. ([#48](https://github.com/HKUDS/Vibe-Trading/issues/48)). Plus `/upload` streams the request body in 1 MB chunks and aborts past `MAX_UPLOAD_SIZE`, bounding memory under oversized/malformed clients ([#53](https://github.com/HKUDS/Vibe-Trading/pull/53)) — pinned by a 4-case regression suite.
 
 <details>
 <summary>Earlier news</summary>
 
+- **2026-04-22** 🛡️ **Hardening + new integrations**: Path containment enforced in `safe_path` + journal/shadow tool sandbox, `MANIFEST.in` ships `.env.example` / tests / Docker files in sdist, route-level lazy loading shrinks frontend initial bundle 688KB → 262KB. Plus Futu data loader for HK & A-share equities ([#47](https://github.com/HKUDS/Vibe-Trading/pull/47)) and vnpy CtaTemplate export skill ([#46](https://github.com/HKUDS/Vibe-Trading/pull/46)).
+- **2026-04-21** 🛡️ **Workspace + docs**: Relative `run_dir` normalized to active run dir ([#43](https://github.com/HKUDS/Vibe-Trading/pull/43)). README usage examples ([#45](https://github.com/HKUDS/Vibe-Trading/pull/45)).
+- **2026-04-20** 🔌 **Reasoning + Swarm**: `reasoning_content` preserved across all `ChatOpenAI` paths — Kimi / DeepSeek / Qwen thinking work end-to-end ([#39](https://github.com/HKUDS/Vibe-Trading/issues/39)). Swarm streaming + clean Ctrl+C ([#42](https://github.com/HKUDS/Vibe-Trading/issues/42)).
 - **2026-04-19** 📦 **v0.1.5**: Published to PyPI & ClawHub. `python-multipart` CVE floor bump, 5 new MCP tools wired (`analyze_trade_journal` + 4 shadow-account tools), `pattern_recognition` → `pattern` registry fix, Docker dep parity, SKILL manifest synced (22 MCP tools / 71 skills).
 - **2026-04-18** 👥 **Shadow Account**: Extract your strategy rules from a broker journal → backtest the shadow across markets → 8-section HTML/PDF report showing exactly how much you leave on the table (rule violations, early exits, missed signals, counterfactual trades). 4 new tools, 1 skill, 32 tools total. Trade Journal + Shadow Account samples now live in the web UI welcome screen.
 - **2026-04-17** 📊 **Trade Journal Analyzer + Universal File Reader**: Upload broker exports (同花顺/东财/富途/generic CSV) → auto trading profile (holding days, win rate, PnL ratio, drawdown) + 4 bias diagnostics (disposition effect, overtrading, chasing momentum, anchoring). `read_document` now dispatches PDF, Word, Excel, PowerPoint, images (OCR), and 40+ text formats behind one unified call.
@@ -81,7 +84,7 @@ Vibe-Trading is an AI-powered multi-agent finance workspace that turns natural l
 
 ### Key Capabilities:
 • **Natural Language → Strategy** — Describe an idea; the agent writes, tests, and exports trading code<br>
-• **5 Data Sources, Zero Config** — A-shares, HK/US, crypto, futures & forex with automatic fallback<br>
+• **6 Data Sources, Zero Config** — A-shares, HK/US, crypto, futures & forex with automatic fallback<br>
 • **29 Expert Teams** — Pre-built multi-agent swarm workflows for investment, trading & risk<br>
 • **Cross-Session Memory** — Remembers preferences and insights; creates & evolves reusable skills<br>
 • **7 Backtest Engines** — Cross-market composite testing with statistical validation & 4 optimizers<br>
@@ -96,9 +99,9 @@ Vibe-Trading is an AI-powered multi-agent finance workspace that turns natural l
     <td align="center" width="25%" valign="top">
       <img src="assets/scene-research.png" height="150" alt="Research"/><br>
       <h3>🔍 DeepResearch for Trading</h3>
-      <img src="https://img.shields.io/badge/71_Skills-FF6B6B?style=for-the-badge&logo=bookstack&logoColor=white" alt="Skills" /><br><br>
+      <img src="https://img.shields.io/badge/72_Skills-FF6B6B?style=for-the-badge&logo=bookstack&logoColor=white" alt="Skills" /><br><br>
       <div align="left" style="font-size: 4px;">
-        • 71 specialist skills with persistent cross-session memory<br>
+        • 72 specialist skills with persistent cross-session memory<br>
         • Self-evolving: agent creates & refines workflows from experience<br>
         • 5-layer context compression — no info lost in long sessions<br>
         • Natural-language task routing across all finance domains
@@ -118,7 +121,7 @@ Vibe-Trading is an AI-powered multi-agent finance workspace that turns natural l
     <td align="center" width="25%" valign="top">
       <img src="assets/scene-backtest.png" height="150" alt="Backtest"/><br>
       <h3>📊 Cross-Market Backtest</h3>
-      <img src="https://img.shields.io/badge/5_Data_Sources-FFD93D?style=for-the-badge&logo=bitcoin&logoColor=black" alt="Backtest" /><br><br>
+      <img src="https://img.shields.io/badge/6_Data_Sources-FFD93D?style=for-the-badge&logo=bitcoin&logoColor=black" alt="Backtest" /><br><br>
       <div align="left">
         • A-shares, HK/US equities, crypto, futures & forex<br>
         • 7 market engines + composite cross-market engine with shared capital pool<br>
@@ -140,9 +143,9 @@ Vibe-Trading is an AI-powered multi-agent finance workspace that turns natural l
   </tr>
 </table>
 
-## 71 Skills across 7 Categories
+## 72 Skills across 7 Categories
 
-- 📊 71 specialized finance skills organized into 7 categories
+- 📊 72 specialized finance skills organized into 7 categories
 - 🌐 Complete coverage from traditional markets to crypto & DeFi
 - 🔬 Comprehensive capabilities spanning data sourcing to quantitative research
 
@@ -353,7 +356,7 @@ vibe-trading serve         # API server
 | Command | Description |
 |---------|-------------|
 | `/help` | Show all commands |
-| `/skills` | List all 71 finance skills |
+| `/skills` | List all 72 finance skills |
 | `/swarm` | List 29 swarm team presets |
 | `/swarm run <preset> [vars_json]` | Run a swarm team with live streaming |
 | `/swarm list` | Swarm run history |
@@ -488,14 +491,24 @@ vibe-trading serve --port 8899
 | `GET` | `/swarm/presets` | List swarm presets |
 | `POST` | `/swarm/runs` | Start swarm run |
 | `GET` | `/swarm/runs/{id}/events` | Swarm SSE stream |
+| `GET` | `/settings/llm` | Read Web UI LLM settings |
+| `PUT` | `/settings/llm` | Update local LLM settings |
+| `GET` | `/settings/data-sources` | Read local data source settings |
+| `PUT` | `/settings/data-sources` | Update local data source settings |
 
 Interactive docs: `http://localhost:8899/docs`
+
+### Web UI Settings
+
+The Web UI Settings page lets local users update the LLM provider/model, base URL, generation parameters, reasoning effort, and optional market data credentials such as the Tushare token. Settings are persisted to `agent/.env`; provider defaults are loaded from `agent/src/providers/llm_providers.json`.
+
+Settings reads are side-effect free: `GET /settings/llm` and `GET /settings/data-sources` never create `agent/.env`, and they only return project-relative paths. Settings reads and writes can expose credential state or update credentials/runtime environment, so they require `API_AUTH_KEY` when configured. If `API_AUTH_KEY` is unset for dev mode, settings access is accepted only from loopback clients.
 
 ---
 
 ## 🔌 MCP Plugin
 
-Vibe-Trading exposes 17 MCP tools for any MCP-compatible client. Runs as a stdio subprocess — no server setup needed. **16 of 17 tools work with zero API keys** (HK/US/crypto). Only `run_swarm` needs an LLM key.
+Vibe-Trading exposes 22 MCP tools for any MCP-compatible client. Runs as a stdio subprocess — no server setup needed. **21 of 22 tools work with zero API keys** (HK/US/crypto). Only `run_swarm` needs an LLM key.
 
 <details>
 <summary><b>Claude Desktop</b></summary>
@@ -537,7 +550,7 @@ vibe-trading-mcp --transport sse  # SSE for web clients
 
 </details>
 
-**MCP tools exposed (17):** `list_skills`, `load_skill`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `get_market_data`, `web_search`, `read_url`, `read_document`, `read_file`, `write_file`, `list_swarm_presets`, `run_swarm`, `get_swarm_status`, `get_run_result`, `list_runs`.
+**MCP tools exposed (22):** `list_skills`, `load_skill`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `get_market_data`, `web_search`, `read_url`, `read_document`, `read_file`, `write_file`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `list_swarm_presets`, `run_swarm`, `get_swarm_status`, `get_run_result`, `list_runs`.
 
 <details>
 <summary><b>Install from ClawHub (one command)</b></summary>
@@ -557,7 +570,7 @@ Browse on ClawHub: [clawhub.ai/skills/vibe-trading](https://clawhub.ai/skills/vi
 <details>
 <summary><b>OpenSpace — self-evolving skills</b></summary>
 
-All 71 finance skills are published on [open-space.cloud](https://open-space.cloud) and evolve autonomously through OpenSpace's self-evolution engine.
+All 72 finance skills are published on [open-space.cloud](https://open-space.cloud) and evolve autonomously through OpenSpace's self-evolution engine.
 
 To use with OpenSpace, add both MCP servers to your agent config:
 
@@ -579,7 +592,7 @@ To use with OpenSpace, add both MCP servers to your agent config:
 }
 ```
 
-OpenSpace will auto-discover all 71 skills, enabling auto-fix, auto-improve, and community sharing. Search for Vibe-Trading skills via `search_skills("finance backtest")` in any OpenSpace-connected agent.
+OpenSpace will auto-discover all 72 skills, enabling auto-fix, auto-improve, and community sharing. Search for Vibe-Trading skills via `search_skills("finance backtest")` in any OpenSpace-connected agent.
 
 </details>
 
@@ -595,13 +608,13 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli.py                      # CLI entrypoint — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server — 17 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 22 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core
 │   │   │   ├── loop.py             #   5-layer compression + read/write tool batching
 │   │   │   ├── context.py          #   system prompt + auto-recall from persistent memory
-│   │   │   ├── skills.py           #   skill loader (71 bundled + user-created via CRUD)
+│   │   │   ├── skills.py           #   skill loader (72 bundled + user-created via CRUD)
 │   │   │   ├── tools.py            #   tool base class + registry
 │   │   │   ├── memory.py           #   lightweight workspace state per run
 │   │   │   ├── frontmatter.py      #   shared YAML frontmatter parser
@@ -619,19 +632,18 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo web search
 │   │   │   └── ...                 #   bash, file I/O, factor analysis, options, etc.
 │   │   │
-│   │   ├── skills/                 # 71 finance skills in 7 categories (SKILL.md each)
+│   │   ├── skills/                 # 72 finance skills in 7 categories (SKILL.md each)
 │   │   ├── swarm/                  # Swarm DAG execution engine
+│   │   │   └── presets/            #   29 swarm preset YAML definitions
 │   │   ├── session/                # Multi-turn chat + FTS5 session search
 │   │   └── providers/              # LLM provider abstraction
 │   │
-│   ├── backtest/                   # Backtest engines
-│   │   ├── engines/                #   7 engines + composite cross-market engine + options_portfolio
-│   │   ├── loaders/                #   5 sources: tushare, okx, yfinance, akshare, ccxt
-│   │   │   ├── base.py             #   DataLoader Protocol
-│   │   │   └── registry.py         #   Registry + auto-fallback chains
-│   │   └── optimizers/             #   MVO, equal vol, max div, risk parity
-│   │
-│   └── config/swarm/               # 29 swarm preset YAML definitions
+│   └── backtest/                   # Backtest engines
+│       ├── engines/                #   7 engines + composite cross-market engine + options_portfolio
+│       ├── loaders/                #   6 sources: tushare, okx, yfinance, akshare, ccxt, futu
+│       │   ├── base.py             #   DataLoader Protocol
+│       │   └── registry.py         #   Registry + auto-fallback chains
+│       └── optimizers/             #   MVO, equal vol, max div, risk parity
 │
 ├── frontend/                       # Web UI (React 19 + Vite + TypeScript)
 │   └── src/
@@ -727,6 +739,12 @@ Vibe-Trading is for research, simulation, and backtesting only. It is not invest
 ## License
 
 MIT License — see [LICENSE](LICENSE)
+
+---
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=HKUDS/Vibe-Trading&type=Date)](https://star-history.com/#HKUDS/Vibe-Trading&Date)
 
 ---
 

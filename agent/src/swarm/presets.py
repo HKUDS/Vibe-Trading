@@ -1,7 +1,9 @@
 """Swarm YAML preset loader.
 
-Reads YAML preset files from agent/config/swarm/ and parses them into
-SwarmRun / SwarmAgentSpec / SwarmTask data models.
+Reads YAML preset files from the bundled ``presets/`` directory next to this
+module and parses them into SwarmRun / SwarmAgentSpec / SwarmTask data models.
+Keeping the YAMLs inside the ``src.swarm`` package guarantees identical
+behavior under editable installs and built wheels.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import yaml
 
 from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, TaskStatus
 
-PRESETS_DIR = Path(__file__).resolve().parents[2] / "config" / "swarm"
+PRESETS_DIR = Path(__file__).resolve().parent / "presets"
 
 
 def load_preset(name: str) -> dict:

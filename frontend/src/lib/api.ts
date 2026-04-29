@@ -64,6 +64,18 @@ export const api = {
   getSwarmRun: (id: string) => request<Record<string, unknown>>(`/swarm/runs/${id}`),
   cancelSwarmRun: (id: string) =>
     request<{ status: string }>(`/swarm/runs/${id}/cancel`, { method: "POST" }),
+  getLLMSettings: () => request<LLMSettings>("/settings/llm"),
+  updateLLMSettings: (settings: UpdateLLMSettingsRequest) =>
+    request<LLMSettings>("/settings/llm", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
+  getDataSourceSettings: () => request<DataSourceSettings>("/settings/data-sources"),
+  updateDataSourceSettings: (settings: UpdateDataSourceSettingsRequest) =>
+    request<DataSourceSettings>("/settings/data-sources", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
 };
 
 // --- Swarm types ---
@@ -83,6 +95,58 @@ export interface SwarmRunSummary {
   created_at: string;
   task_count: number;
   completed_count: number;
+}
+
+export interface LLMProviderOption {
+  name: string;
+  label: string;
+  api_key_env?: string | null;
+  base_url_env: string;
+  default_model: string;
+  default_base_url: string;
+  api_key_required: boolean;
+}
+
+export interface LLMSettings {
+  provider: string;
+  model_name: string;
+  base_url: string;
+  api_key_env?: string | null;
+  api_key_configured: boolean;
+  api_key_hint?: string | null;
+  api_key_required: boolean;
+  temperature: number;
+  timeout_seconds: number;
+  max_retries: number;
+  reasoning_effort: string;
+  env_path: string;
+  providers: LLMProviderOption[];
+}
+
+export interface UpdateLLMSettingsRequest {
+  provider: string;
+  model_name: string;
+  base_url: string;
+  api_key?: string;
+  clear_api_key?: boolean;
+  temperature: number;
+  timeout_seconds: number;
+  max_retries: number;
+  reasoning_effort?: string;
+}
+
+export interface DataSourceSettings {
+  tushare_token_configured: boolean;
+  tushare_token_hint?: string | null;
+  baostock_supported: boolean;
+  baostock_installed: boolean;
+  baostock_message: string;
+  env_path: string;
+}
+
+export interface UpdateDataSourceSettingsRequest {
+  tushare_token?: string;
+  clear_tushare_token?: boolean;
 }
 
 // --- Types matching backend API contracts ---

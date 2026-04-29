@@ -46,6 +46,23 @@ class _FakeUnavailableLoader:
         return {}
 
 
+class _FakeInitErrorLoader:
+    """Mimics Tushare with a missing token: blows up inside ``__init__``."""
+
+    name = "fake_init_error"
+    markets = {"a_share"}
+    requires_auth = True
+
+    def __init__(self) -> None:
+        raise RuntimeError("api init error — TUSHARE_TOKEN not set")
+
+    def is_available(self) -> bool:  # pragma: no cover — never reached
+        return False
+
+    def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+        return {}
+
+
 class _FakeCryptoLoader:
     name = "fake_crypto"
     markets = {"crypto"}
@@ -177,3 +194,33 @@ class TestGetLoaderWithFallback:
             with patch.dict(FALLBACK_CHAINS, {"a_share": ["fake_unavailable"]}):
                 with pytest.raises(NoAvailableSourceError):
                     get_loader_cls_with_fallback("fake_unavailable")
+
+
+# ---------------------------------------------------------------------------
+# Issue #50 — loaders that explode in __init__ (e.g. Tushare with no token)
+# must not poison the fallback chain.
+# ---------------------------------------------------------------------------
+
+
+class TestInitErrorFallback:
+    def test_resolve_loader_skips_init_error(self) -> None:
+        with patch.dict(LOADER_REGISTRY, {
+            "fake_init_error": _FakeInitErrorLoader,
+            "fake_available": _FakeAvailableLoader,
+        }, clear=True):
+            with patch.dict(FALLBACK_CHAINS, {
+                "a_share": ["fake_init_error", "fake_available"],
+            }):
+                loader = resolve_loader("a_share")
+                assert loader.name == "fake_available"
+
+    def test_get_loader_cls_falls_back_when_requested_init_errors(self) -> None:
+        with patch.dict(LOADER_REGISTRY, {
+            "fake_init_error": _FakeInitErrorLoader,
+            "fake_available": _FakeAvailableLoader,
+        }, clear=True):
+            with patch.dict(FALLBACK_CHAINS, {
+                "a_share": ["fake_init_error", "fake_available"],
+            }):
+                cls = get_loader_cls_with_fallback("fake_init_error")
+                assert cls is _FakeAvailableLoader

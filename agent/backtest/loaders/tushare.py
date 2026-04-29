@@ -13,6 +13,9 @@ from backtest.loaders.base import validate_date_range
 from backtest.loaders.registry import register
 
 
+TUSHARE_TOKEN_PLACEHOLDERS = {"", "your-tushare-token"}
+
+
 @register
 class DataLoader:
     """Tushare-backed OHLCV loader."""
@@ -23,7 +26,7 @@ class DataLoader:
 
     def is_available(self) -> bool:
         """Available when TUSHARE_TOKEN is set."""
-        return bool(os.getenv("TUSHARE_TOKEN", ""))
+        return os.getenv("TUSHARE_TOKEN", "").strip() not in TUSHARE_TOKEN_PLACEHOLDERS
 
     def __init__(self) -> None:
         """Initialize Tushare pro API."""

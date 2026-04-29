@@ -521,7 +521,7 @@ def _build_variables(preset_name: str, prompt: str) -> dict[str, str]:
     goal = prompt.strip()
     g = _snippet(goal, 2000)
 
-    # Preset-specific variable sets (see agent/config/swarm/*.yaml).
+    # Preset-specific variable sets (see agent/src/swarm/presets/*.yaml).
     builders: dict[str, dict[str, str]] = {
         "global_allocation_committee": {"goal": g, "risk_tolerance": risk},
         "equity_research_team": {"market": market, "goal": g},
@@ -567,7 +567,7 @@ class SwarmTool(BaseTool):
     name = "run_swarm"
     description = (
         "Run a multi-agent swarm team for complex analysis tasks. "
-        "Provide a natural language prompt; the tool picks a preset from agent/config/swarm "
+        "Provide a natural language prompt; the tool picks a preset from agent/src/swarm/presets "
         "(e.g. equity_research_team, quant_strategy_desk, global_allocation_committee, risk_committee) "
         "and fills template variables. "
         "Example: run_swarm(prompt='Analyze A-share new energy opportunities for Q2 2026')"
