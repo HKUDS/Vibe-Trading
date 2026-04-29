@@ -77,6 +77,7 @@ include = ["src*", "backtest*"]
     "skills/**/*.md",
     "skills/**/*.yaml",
     "skills/**/*.json",
+    "providers/*.json",
     "swarm/presets/*.yaml",
     "shadow_account/templates/*.j2",
     "shadow_account/templates/*.html",

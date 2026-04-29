@@ -490,8 +490,18 @@ vibe-trading serve --port 8899
 | `GET` | `/swarm/presets` | List swarm presets |
 | `POST` | `/swarm/runs` | Start swarm run |
 | `GET` | `/swarm/runs/{id}/events` | Swarm SSE stream |
+| `GET` | `/settings/llm` | Read Web UI LLM settings |
+| `PUT` | `/settings/llm` | Update local LLM settings |
+| `GET` | `/settings/data-sources` | Read local data source settings |
+| `PUT` | `/settings/data-sources` | Update local data source settings |
 
 Interactive docs: `http://localhost:8899/docs`
+
+### Web UI Settings
+
+The Web UI Settings page lets local users update the LLM provider/model, base URL, generation parameters, reasoning effort, and optional market data credentials such as the Tushare token. Settings are persisted to `agent/.env`; provider defaults are loaded from `agent/src/providers/llm_providers.json`.
+
+Settings reads are side-effect free: `GET /settings/llm` and `GET /settings/data-sources` never create `agent/.env`, and they only return project-relative paths. Settings writes update credentials and runtime environment, so they require `API_AUTH_KEY` when configured. If `API_AUTH_KEY` is unset for dev mode, writes are accepted only from loopback clients.
 
 ---
 
