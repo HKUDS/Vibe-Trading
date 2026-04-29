@@ -17,10 +17,10 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     env_example.write_text(
         "\n".join(
             [
-                "LANGCHAIN_PROVIDER=deepseek",
-                "LANGCHAIN_MODEL_NAME=deepseek-chat",
-                "DEEPSEEK_BASE_URL=https://api.deepseek.com/v1",
-                "DEEPSEEK_API_KEY=sk-test-secret",
+                "LANGCHAIN_PROVIDER=openrouter",
+                "LANGCHAIN_MODEL_NAME=deepseek/deepseek-v3.2",
+                "OPENROUTER_BASE_URL=https://openrouter.ai/api/v1",
+                "OPENROUTER_API_KEY=sk-or-v1-your-key-here",
                 "LANGCHAIN_TEMPERATURE=0.2",
                 "TIMEOUT_SECONDS=90",
                 "MAX_RETRIES=3",
@@ -35,20 +35,51 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(api_server, "ENV_EXAMPLE_PATH", env_example)
     monkeypatch.setattr(api_server, "_baostock_supported", lambda: False)
     monkeypatch.setattr(api_server, "_baostock_installed", lambda: False)
-    return TestClient(api_server.app)
+    monkeypatch.delenv("API_AUTH_KEY", raising=False)
+    return TestClient(api_server.app, client=("127.0.0.1", 50000))
 
 
-def test_get_llm_settings_masks_configured_secret(client: TestClient) -> None:
+def test_get_llm_settings_is_side_effect_free_and_hides_placeholders(
+    client: TestClient, tmp_path: Path,
+) -> None:
     response = client.get("/settings/llm")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["provider"] == "deepseek"
-    assert body["model_name"] == "deepseek-chat"
-    assert body["api_key_configured"] is True
-    assert body["api_key_hint"] == "sk-t...cret"
-    assert "sk-test-secret" not in response.text
+    assert body["provider"] == "openrouter"
+    assert body["model_name"] == "deepseek/deepseek-v3.2"
+    assert body["api_key_configured"] is False
+    assert body["api_key_hint"] is None
+    assert not Path(body["env_path"]).is_absolute()
+    assert body["env_path"].endswith(".env")
     assert body["reasoning_effort"] == "max"
+    assert not (tmp_path / ".env").exists()
+
+
+@pytest.mark.parametrize("placeholder", ["sk-xxx", "xxx", "gsk_xxx"])
+def test_llm_settings_treat_documented_key_placeholders_as_unconfigured(
+    client: TestClient, tmp_path: Path, placeholder: str,
+) -> None:
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "LANGCHAIN_PROVIDER=deepseek",
+                "LANGCHAIN_MODEL_NAME=deepseek-chat",
+                f"DEEPSEEK_API_KEY={placeholder}",
+                "DEEPSEEK_BASE_URL=https://api.deepseek.com/v1",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    response = client.get("/settings/llm")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["api_key_configured"] is False
+    assert body["api_key_hint"] is None
+    assert placeholder not in response.text
 
 
 def test_update_llm_settings_persists_project_env(
@@ -78,10 +109,11 @@ def test_update_llm_settings_persists_project_env(
     assert "LANGCHAIN_PROVIDER=openrouter" in env_text
     assert "OPENROUTER_API_KEY=or-secret-value" in env_text
     assert "LANGCHAIN_REASONING_EFFORT=max" in env_text
+    assert "sk-or-v1-your-key-here" not in env_text
 
 
 def test_get_data_source_settings_treats_placeholder_as_unconfigured(
-    client: TestClient,
+    client: TestClient, tmp_path: Path,
 ) -> None:
     response = client.get("/settings/data-sources")
 
@@ -91,6 +123,9 @@ def test_get_data_source_settings_treats_placeholder_as_unconfigured(
     assert body["tushare_token_hint"] is None
     assert body["baostock_supported"] is False
     assert body["baostock_installed"] is False
+    assert not Path(body["env_path"]).is_absolute()
+    assert body["env_path"].endswith(".env")
+    assert not (tmp_path / ".env").exists()
 
 
 def test_update_data_source_settings_persists_tushare_token(
@@ -108,3 +143,23 @@ def test_update_data_source_settings_persists_tushare_token(
 
     env_text = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "TUSHARE_TOKEN=ts-secret-token" in env_text
+
+
+def test_settings_writes_reject_remote_dev_mode_clients(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env_example = tmp_path / ".env.example"
+    env_path = tmp_path / ".env"
+    env_example.write_text("LANGCHAIN_PROVIDER=openai\n", encoding="utf-8")
+    monkeypatch.setattr(api_server, "ENV_PATH", env_path)
+    monkeypatch.setattr(api_server, "ENV_EXAMPLE_PATH", env_example)
+    monkeypatch.delenv("API_AUTH_KEY", raising=False)
+    remote_client = TestClient(api_server.app, client=("203.0.113.10", 50000))
+
+    response = remote_client.put(
+        "/settings/data-sources",
+        json={"tushare_token": "ts-secret-token"},
+    )
+
+    assert response.status_code == 403
+    assert not env_path.exists()

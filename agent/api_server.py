@@ -7,6 +7,7 @@ V5: ReAct Agent + async /run + CORS env + SSE tool events.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import os
 import signal
@@ -277,6 +278,11 @@ _security = HTTPBearer(auto_error=False)
 _API_KEY = os.getenv("API_AUTH_KEY")
 
 
+def _configured_api_key() -> str:
+    """Return the current API auth key, if configured."""
+    return os.getenv("API_AUTH_KEY") or _API_KEY or ""
+
+
 async def require_auth(
     cred: HTTPAuthorizationCredentials = Security(_security),
 ) -> None:
@@ -291,10 +297,42 @@ async def require_auth(
     Raises:
         HTTPException: 401 when API_AUTH_KEY is set but the token is missing or wrong.
     """
-    if not _API_KEY:
+    api_key = _configured_api_key()
+    if not api_key:
         return
-    if not cred or cred.credentials != _API_KEY:
+    if not cred or cred.credentials != api_key:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+def _is_local_client(request: Request) -> bool:
+    """Return whether the request originates from a loopback client."""
+    host = request.client.host if request.client else ""
+    if host in {"localhost", "testclient"}:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+async def require_local_or_auth(
+    request: Request,
+    cred: HTTPAuthorizationCredentials = Security(_security),
+) -> None:
+    """Protect settings writes when dev-mode auth is disabled.
+
+    If API_AUTH_KEY is configured, require the bearer token. If not, allow only
+    loopback clients so an API server bound to 0.0.0.0 cannot accept remote
+    credential changes in dev mode.
+    """
+    if _configured_api_key():
+        await require_auth(cred)
+        return
+    if not _is_local_client(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Settings writes require API_AUTH_KEY or a local loopback client",
+        )
 
 
 # ============================================================================
@@ -305,125 +343,38 @@ async def require_auth(
 # Helper Functions
 # ============================================================================
 
-LLM_PROVIDERS: List[LLMProviderOption] = [
-    LLMProviderOption(
-        name="openrouter",
-        label="OpenRouter",
-        api_key_env="OPENROUTER_API_KEY",
-        base_url_env="OPENROUTER_BASE_URL",
-        default_model="deepseek/deepseek-v3.2",
-        default_base_url="https://openrouter.ai/api/v1",
-    ),
-    LLMProviderOption(
-        name="openai",
-        label="OpenAI",
-        api_key_env="OPENAI_API_KEY",
-        base_url_env="OPENAI_BASE_URL",
-        default_model="gpt-4o",
-        default_base_url="https://api.openai.com/v1",
-    ),
-    LLMProviderOption(
-        name="deepseek",
-        label="DeepSeek",
-        api_key_env="DEEPSEEK_API_KEY",
-        base_url_env="DEEPSEEK_BASE_URL",
-        default_model="deepseek-chat",
-        default_base_url="https://api.deepseek.com/v1",
-    ),
-    LLMProviderOption(
-        name="gemini",
-        label="Gemini",
-        api_key_env="GEMINI_API_KEY",
-        base_url_env="GEMINI_BASE_URL",
-        default_model="gemini-2.5-flash",
-        default_base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-    ),
-    LLMProviderOption(
-        name="groq",
-        label="Groq",
-        api_key_env="GROQ_API_KEY",
-        base_url_env="GROQ_BASE_URL",
-        default_model="llama-3.3-70b-versatile",
-        default_base_url="https://api.groq.com/openai/v1",
-    ),
-    LLMProviderOption(
-        name="dashscope",
-        label="DashScope / Qwen",
-        api_key_env="DASHSCOPE_API_KEY",
-        base_url_env="DASHSCOPE_BASE_URL",
-        default_model="qwen-plus",
-        default_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-    ),
-    LLMProviderOption(
-        name="qwen",
-        label="Qwen",
-        api_key_env="DASHSCOPE_API_KEY",
-        base_url_env="DASHSCOPE_BASE_URL",
-        default_model="qwen-plus",
-        default_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-    ),
-    LLMProviderOption(
-        name="zhipu",
-        label="Zhipu",
-        api_key_env="ZHIPU_API_KEY",
-        base_url_env="ZHIPU_BASE_URL",
-        default_model="glm-4-plus",
-        default_base_url="https://open.bigmodel.cn/api/paas/v4",
-    ),
-    LLMProviderOption(
-        name="moonshot",
-        label="Moonshot / Kimi",
-        api_key_env="MOONSHOT_API_KEY",
-        base_url_env="MOONSHOT_BASE_URL",
-        default_model="kimi-k2.5",
-        default_base_url="https://api.moonshot.ai/v1",
-    ),
-    LLMProviderOption(
-        name="minimax",
-        label="MiniMax",
-        api_key_env="MINIMAX_API_KEY",
-        base_url_env="MINIMAX_BASE_URL",
-        default_model="MiniMax-M2.7",
-        default_base_url="https://api.minimax.io/v1",
-    ),
-    LLMProviderOption(
-        name="mimo",
-        label="Xiaomi MIMO",
-        api_key_env="MIMO_API_KEY",
-        base_url_env="MIMO_BASE_URL",
-        default_model="MiMo-72B-A27B",
-        default_base_url="https://api.xiaomimimo.com/v1",
-    ),
-    LLMProviderOption(
-        name="zai",
-        label="Z.ai",
-        api_key_env="ZAI_API_KEY",
-        base_url_env="ZAI_BASE_URL",
-        default_model="glm-5.1",
-        default_base_url="https://api.z.ai/api/coding/paas/v4",
-    ),
-    LLMProviderOption(
-        name="ollama",
-        label="Ollama",
-        api_key_env=None,
-        base_url_env="OLLAMA_BASE_URL",
-        default_model="qwen2.5:32b",
-        default_base_url="http://localhost:11434/v1",
-        api_key_required=False,
-    ),
-]
+LLM_PROVIDER_CONFIG_PATH = AGENT_DIR / "src" / "providers" / "llm_providers.json"
+
+
+def _load_llm_providers() -> List[LLMProviderOption]:
+    """Load provider metadata from JSON so additions stay data-driven."""
+    try:
+        raw = json.loads(LLM_PROVIDER_CONFIG_PATH.read_text(encoding="utf-8"))
+        providers = [LLMProviderOption(**item) for item in raw]
+    except Exception as exc:
+        raise RuntimeError(f"Failed to load LLM provider config: {LLM_PROVIDER_CONFIG_PATH}") from exc
+
+    seen: set[str] = set()
+    for provider in providers:
+        if provider.name in seen:
+            raise RuntimeError(f"Duplicate LLM provider name: {provider.name}")
+        seen.add(provider.name)
+    if not providers:
+        raise RuntimeError("LLM provider config must not be empty")
+    return providers
+
+
+LLM_PROVIDERS = _load_llm_providers()
 LLM_PROVIDER_BY_NAME = {provider.name: provider for provider in LLM_PROVIDERS}
 LLM_REASONING_EFFORTS = {"", "low", "medium", "high", "max"}
+LLM_API_KEY_PLACEHOLDERS = {"", "sk-or-v1-your-key-here", "sk-xxx", "xxx", "gsk_xxx"}
 TUSHARE_TOKEN_PLACEHOLDERS = {"", "your-tushare-token"}
 
 
 def _ensure_agent_env_file() -> Path:
     """Ensure the project-local agent/.env exists."""
     if not ENV_PATH.exists():
-        if ENV_EXAMPLE_PATH.exists():
-            ENV_PATH.write_text(ENV_EXAMPLE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
-        else:
-            ENV_PATH.write_text("", encoding="utf-8")
+        ENV_PATH.write_text("# Created by Vibe-Trading Web UI settings.\n", encoding="utf-8")
     return ENV_PATH
 
 
@@ -451,6 +402,27 @@ def _read_env_values(path: Path) -> Dict[str, str]:
         if key:
             values[key] = _strip_env_value(value)
     return values
+
+
+def _read_settings_env_values() -> Dict[str, str]:
+    """Read settings without creating agent/.env.
+
+    Prefer the user's active agent/.env. If it does not exist yet, fall back to
+    agent/.env.example for display defaults only.
+    """
+    if ENV_PATH.exists():
+        return _read_env_values(ENV_PATH)
+    if ENV_EXAMPLE_PATH.exists():
+        return _read_env_values(ENV_EXAMPLE_PATH)
+    return {}
+
+
+def _project_relative_path(path: Path) -> str:
+    """Return a project-relative display path without leaking an absolute path."""
+    try:
+        return path.resolve().relative_to(AGENT_DIR.parent.resolve()).as_posix()
+    except ValueError:
+        return path.name
 
 
 def _format_env_value(value: str) -> str:
@@ -502,7 +474,10 @@ def _mask_secret(value: str) -> Optional[str]:
 
 def _is_configured_secret(value: str, placeholders: set[str]) -> bool:
     """Return True when a secret is set and not a documented placeholder."""
-    return value.strip() not in placeholders
+    normalized = value.strip().strip('"').strip("'")
+    if not normalized:
+        return False
+    return normalized.lower() not in {placeholder.lower() for placeholder in placeholders}
 
 
 def _coerce_float(value: str, default: float) -> float:
@@ -521,24 +496,24 @@ def _coerce_int(value: str, default: int) -> int:
 
 def _build_llm_settings_response(values: Optional[Dict[str, str]] = None) -> LLMSettingsResponse:
     """Build the public settings payload from dotenv values."""
-    env_path = _ensure_agent_env_file()
-    env_values = values if values is not None else _read_env_values(env_path)
+    env_values = values if values is not None else _read_settings_env_values()
     provider_name = env_values.get("LANGCHAIN_PROVIDER", "openai").strip().lower()
     provider = LLM_PROVIDER_BY_NAME.get(provider_name, LLM_PROVIDER_BY_NAME["openai"])
     api_key = env_values.get(provider.api_key_env or "", "") if provider.api_key_env else ""
+    api_key_configured = _is_configured_secret(api_key, LLM_API_KEY_PLACEHOLDERS)
     return LLMSettingsResponse(
         provider=provider.name,
         model_name=env_values.get("LANGCHAIN_MODEL_NAME", provider.default_model),
         base_url=env_values.get(provider.base_url_env, provider.default_base_url),
         api_key_env=provider.api_key_env,
-        api_key_configured=bool(api_key.strip()),
-        api_key_hint=_mask_secret(api_key),
+        api_key_configured=api_key_configured,
+        api_key_hint=_mask_secret(api_key) if api_key_configured else None,
         api_key_required=provider.api_key_required,
         temperature=_coerce_float(env_values.get("LANGCHAIN_TEMPERATURE", "0.0"), 0.0),
         timeout_seconds=_coerce_int(env_values.get("TIMEOUT_SECONDS", "120"), 120),
         max_retries=_coerce_int(env_values.get("MAX_RETRIES", "2"), 2),
         reasoning_effort=env_values.get("LANGCHAIN_REASONING_EFFORT", "").strip().lower(),
-        env_path=str(env_path),
+        env_path=_project_relative_path(ENV_PATH),
         providers=LLM_PROVIDERS,
     )
 
@@ -558,8 +533,7 @@ def _baostock_installed() -> bool:
 
 def _build_data_source_settings_response(values: Optional[Dict[str, str]] = None) -> DataSourceSettingsResponse:
     """Build the public data source settings payload."""
-    env_path = _ensure_agent_env_file()
-    env_values = values if values is not None else _read_env_values(env_path)
+    env_values = values if values is not None else _read_settings_env_values()
     token = env_values.get("TUSHARE_TOKEN", "")
     token_configured = _is_configured_secret(token, TUSHARE_TOKEN_PLACEHOLDERS)
     supported = _baostock_supported()
@@ -576,7 +550,7 @@ def _build_data_source_settings_response(values: Optional[Dict[str, str]] = None
         baostock_supported=supported,
         baostock_installed=installed,
         baostock_message=baostock_message,
-        env_path=str(env_path),
+        env_path=_project_relative_path(ENV_PATH),
     )
 
 
@@ -590,7 +564,7 @@ def _sync_runtime_env(provider: LLMProviderOption, updates: Dict[str, str]) -> N
 
     if provider.api_key_env:
         key_value = os.environ.get(provider.api_key_env, "")
-        if key_value:
+        if _is_configured_secret(key_value, LLM_API_KEY_PLACEHOLDERS):
             os.environ["OPENAI_API_KEY"] = key_value
         else:
             os.environ.pop("OPENAI_API_KEY", None)
@@ -920,7 +894,7 @@ async def get_llm_settings():
     return _build_llm_settings_response()
 
 
-@app.put("/settings/llm", response_model=LLMSettingsResponse, dependencies=[Depends(require_auth)])
+@app.put("/settings/llm", response_model=LLMSettingsResponse, dependencies=[Depends(require_local_or_auth)])
 async def update_llm_settings(payload: UpdateLLMSettingsRequest):
     """Persist project-local LLM settings and update the running process."""
     provider_name = payload.provider.strip().lower()
@@ -939,7 +913,7 @@ async def update_llm_settings(payload: UpdateLLMSettingsRequest):
     if reasoning_effort not in LLM_REASONING_EFFORTS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reasoning effort must be low, medium, high, or max")
 
-    current_values = _read_env_values(_ensure_agent_env_file())
+    current_values = _read_settings_env_values()
     updates: Dict[str, str] = {
         "LANGCHAIN_PROVIDER": provider.name,
         "LANGCHAIN_MODEL_NAME": model_name,
@@ -955,8 +929,12 @@ async def update_llm_settings(payload: UpdateLLMSettingsRequest):
         if payload.clear_api_key:
             updates[provider.api_key_env] = ""
         elif payload.api_key is not None and payload.api_key.strip():
-            updates[provider.api_key_env] = payload.api_key.strip()
-        elif provider.api_key_env in current_values:
+            api_key = payload.api_key.strip()
+            updates[provider.api_key_env] = api_key if _is_configured_secret(api_key, LLM_API_KEY_PLACEHOLDERS) else ""
+        elif provider.api_key_env in current_values and _is_configured_secret(
+            current_values[provider.api_key_env],
+            LLM_API_KEY_PLACEHOLDERS,
+        ):
             updates[provider.api_key_env] = current_values[provider.api_key_env]
     elif payload.clear_api_key:
         os.environ.pop("OPENAI_API_KEY", None)
@@ -975,11 +953,11 @@ async def get_data_source_settings():
 @app.put(
     "/settings/data-sources",
     response_model=DataSourceSettingsResponse,
-    dependencies=[Depends(require_auth)],
+    dependencies=[Depends(require_local_or_auth)],
 )
 async def update_data_source_settings(payload: UpdateDataSourceSettingsRequest):
     """Persist project-local data source credentials and update the running process."""
-    current_values = _read_env_values(_ensure_agent_env_file())
+    current_values = _read_settings_env_values()
     updates: Dict[str, str] = {}
 
     if payload.clear_tushare_token:
