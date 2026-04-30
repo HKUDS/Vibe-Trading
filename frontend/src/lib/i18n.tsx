@@ -149,6 +149,12 @@ const messages = {
   example1: "Dual MA crossover on 000001.SZ (5/20 day), backtest 2024",
   example2: "Build a dual MA crossover strategy for 000001.SZ, backtest 2024",
   example3: "Bollinger band mean-reversion on 600519.SH, backtest last 3 years",
+  correlation: "Correlation Matrix",
+  selectAssets: "Asset codes",
+  windowLabel: "Window (days)",
+  computeBtn: "Compute",
+  methodLabel: "Method",
+  noCorrelationData: "No correlation data available",
 } as const;
 
 type Messages = typeof messages;

@@ -996,6 +996,36 @@ async def health_check():
     )
 
 
+@app.get("/correlation")
+async def get_correlation_matrix(
+    codes: str = Query(..., description="Comma-separated asset codes, e.g. BTC-USDT,ETH-USDT,SPY"),
+    days: int = Query(90, description="Lookback window in days", ge=7, le=365),
+    method: str = Query("pearson", description="Correlation method: pearson or spearman"),
+):
+    """Compute cross-asset correlation matrix from daily returns.
+
+    Fetches price data for each code via available data loaders,
+    computes pairwise correlation of daily returns over the lookback window.
+    """
+    from backtest.correlation import compute_correlation_matrix
+
+    code_list = [c.strip() for c in codes.split(",") if c.strip()]
+    if len(code_list) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 asset codes required")
+    if len(code_list) > 20:
+        raise HTTPException(status_code=400, detail="Maximum 20 assets per request")
+    if method not in ("pearson", "spearman"):
+        raise HTTPException(status_code=400, detail="method must be 'pearson' or 'spearman'")
+
+    try:
+        result = compute_correlation_matrix(codes=code_list, days=days, method=method)
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Correlation computation failed: {exc}")
+
+
 def _terminate_current_process() -> None:
     """Stop the current API process after the response has been sent."""
     time.sleep(0.25)

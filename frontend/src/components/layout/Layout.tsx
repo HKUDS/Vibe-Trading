@@ -12,6 +12,7 @@ const NAV = [
   { to: "/", icon: BarChart3, key: "home" as const },
   { to: "/agent", icon: Bot, key: "agent" as const },
   { to: "/settings", icon: Settings, key: "settings" as const },
+  { to: "/correlation", icon: BarChart3, key: "correlation" as const },
 ];
 
 export function Layout() {

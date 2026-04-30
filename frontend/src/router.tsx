@@ -13,6 +13,10 @@ const Compare = lazy(() =>
 const Settings = lazy(() =>
   import("@/pages/Settings").then((m) => ({ default: m.Settings })),
 );
+const Correlation = lazy(() =>
+  import("@/pages/Correlation").then((m) => ({ default: m.Correlation })),
+);
+);
 
 function PageLoader() {
   return (
@@ -39,6 +43,7 @@ export const router = createBrowserRouter([
       { path: "/settings", element: wrap(Settings) },
       { path: "/runs/:runId", element: wrap(RunDetail) },
       { path: "/compare", element: wrap(Compare) },
+      { path: "/correlation", element: wrap(Correlation) },
     ],
   },
 ]);
