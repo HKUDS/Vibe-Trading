@@ -40,6 +40,14 @@ class TestSyncProviderEnv:
         })
         assert result["OPENAI_API_KEY"] == "sk-test"
 
+    def test_openai_codex_provider_does_not_map_oauth_token_to_api_key(self) -> None:
+        result = self._run_sync({
+            "LANGCHAIN_PROVIDER": "openai-codex",
+            "OPENAI_CODEX_BASE_URL": "https://chatgpt.com/backend-api/codex/responses",
+        })
+        assert result["OPENAI_API_KEY"] == ""
+        assert result["OPENAI_API_BASE"] == "https://chatgpt.com/backend-api/codex/responses"
+
     def test_deepseek_provider(self) -> None:
         result = self._run_sync({
             "LANGCHAIN_PROVIDER": "deepseek",

@@ -147,6 +147,8 @@ class LLMProviderOption(BaseModel):
     default_model: str
     default_base_url: str
     api_key_required: bool = True
+    auth_type: str = "api_key"
+    login_command: Optional[str] = None
 
 
 class LLMSettingsResponse(BaseModel):
@@ -501,13 +503,23 @@ def _build_llm_settings_response(values: Optional[Dict[str, str]] = None) -> LLM
     provider = LLM_PROVIDER_BY_NAME.get(provider_name, LLM_PROVIDER_BY_NAME["openai"])
     api_key = env_values.get(provider.api_key_env or "", "") if provider.api_key_env else ""
     api_key_configured = _is_configured_secret(api_key, LLM_API_KEY_PLACEHOLDERS)
+    api_key_hint = _mask_secret(api_key) if api_key_configured else None
+    if provider.auth_type == "oauth":
+        try:
+            from src.providers.openai_codex import get_openai_codex_login_status
+
+            token = get_openai_codex_login_status()
+        except Exception:
+            token = None
+        api_key_configured = bool(token)
+        api_key_hint = getattr(token, "account_id", None) if token else None
     return LLMSettingsResponse(
         provider=provider.name,
         model_name=env_values.get("LANGCHAIN_MODEL_NAME", provider.default_model),
         base_url=env_values.get(provider.base_url_env, provider.default_base_url),
         api_key_env=provider.api_key_env,
         api_key_configured=api_key_configured,
-        api_key_hint=_mask_secret(api_key) if api_key_configured else None,
+        api_key_hint=api_key_hint,
         api_key_required=provider.api_key_required,
         temperature=_coerce_float(env_values.get("LANGCHAIN_TEMPERATURE", "0.0"), 0.0),
         timeout_seconds=_coerce_int(env_values.get("TIMEOUT_SECONDS", "120"), 120),
@@ -568,6 +580,8 @@ def _sync_runtime_env(provider: LLMProviderOption, updates: Dict[str, str]) -> N
             os.environ["OPENAI_API_KEY"] = key_value
         else:
             os.environ.pop("OPENAI_API_KEY", None)
+    elif provider.auth_type == "oauth":
+        os.environ.pop("OPENAI_API_KEY", None)
     else:
         os.environ["OPENAI_API_KEY"] = "ollama"
 
@@ -918,10 +932,18 @@ async def update_llm_settings(payload: UpdateLLMSettingsRequest):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reasoning effort must be low, medium, high, or max")
 
     current_values = _read_settings_env_values()
+    base_url = (payload.base_url if payload.base_url is not None else provider.default_base_url).strip()
+    if provider.auth_type == "oauth":
+        try:
+            from src.providers.openai_codex import validate_codex_base_url
+
+            base_url = validate_codex_base_url(base_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     updates: Dict[str, str] = {
         "LANGCHAIN_PROVIDER": provider.name,
         "LANGCHAIN_MODEL_NAME": model_name,
-        provider.base_url_env: (payload.base_url if payload.base_url is not None else provider.default_base_url).strip(),
+        provider.base_url_env: base_url,
         "LANGCHAIN_TEMPERATURE": str(payload.temperature),
         "TIMEOUT_SECONDS": str(payload.timeout_seconds),
         "MAX_RETRIES": str(payload.max_retries),

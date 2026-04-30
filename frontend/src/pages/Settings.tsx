@@ -143,7 +143,11 @@ export function Settings() {
 
   const keyStatus = settings.api_key_hint
     ? t.llmApiKeyConfigured.replace("{key}", settings.api_key_hint)
-    : settings.api_key_required ? t.llmApiKeyPlaceholder : t.llmNoApiKeyRequired;
+    : settings.api_key_required
+      ? t.llmApiKeyPlaceholder
+      : selectedProvider?.auth_type === "oauth" && selectedProvider.login_command
+        ? t.llmOauthRequired.replace("{command}", selectedProvider.login_command)
+        : t.llmNoApiKeyRequired;
   const apiKeyDisabled = !selectedProvider?.api_key_required || clearApiKey;
   const tushareStatus = dataSettings.tushare_token_hint
     ? t.tushareTokenConfigured.replace("{key}", dataSettings.tushare_token_hint)
@@ -212,11 +216,14 @@ export function Settings() {
                 onChange={(event) => setForm({ ...form, base_url: event.target.value })}
                 className={fieldClass}
                 placeholder={selectedProvider?.default_base_url}
+                disabled={selectedProvider?.auth_type === "oauth"}
               />
             </label>
 
             <label className="grid gap-2">
-              <span className={labelClass}>{t.llmApiKey}</span>
+              <span className={labelClass}>
+                {selectedProvider?.auth_type === "oauth" ? "OAuth" : t.llmApiKey}
+              </span>
               <div className="relative">
                 <KeyRound className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <input

@@ -1406,6 +1406,28 @@ def cmd_upload(file_path: str) -> None:
     console.print(f"[green]Uploaded:[/green] {dest}")
 
 
+def cmd_provider_login(provider: str) -> int:
+    """Authenticate OAuth-backed LLM providers."""
+    normalized = provider.strip().lower().replace("_", "-")
+    if normalized != "openai-codex":
+        console.print("[red]Unknown OAuth provider.[/red] Supported: openai-codex")
+        return EXIT_USAGE_ERROR
+    try:
+        from src.providers.openai_codex import login_openai_codex
+
+        console.print("[cyan]Starting OpenAI Codex OAuth login...[/cyan]\n")
+        token = login_openai_codex(
+            print_fn=lambda text: console.print(text),
+            prompt_fn=lambda text: Prompt.ask(text),
+        )
+        account = getattr(token, "account_id", None) or "ChatGPT"
+        console.print(f"[green]Authenticated with OpenAI Codex[/green]  [dim]{account}[/dim]")
+        return EXIT_SUCCESS
+    except Exception as exc:
+        console.print(f"[red]Authentication error:[/red] {exc}")
+        return EXIT_RUN_FAILED
+
+
 # ---------------------------------------------------------------------------
 # CLI entrypoint
 # ---------------------------------------------------------------------------
@@ -1450,6 +1472,11 @@ def _build_parser() -> argparse.ArgumentParser:
     serve_parser.add_argument("--host", default="0.0.0.0", help="Bind address")
     serve_parser.add_argument("--port", type=int, default=8000, help="Listen port")
     serve_parser.add_argument("--dev", action="store_true", help="Start the Vite dev server")
+
+    provider_parser = subparsers.add_parser("provider", help="Manage OAuth providers")
+    provider_subparsers = provider_parser.add_subparsers(dest="provider_command")
+    login_parser = provider_subparsers.add_parser("login", help="Authenticate with an OAuth provider")
+    login_parser.add_argument("provider", help="OAuth provider name, e.g. openai-codex")
 
     list_parser = subparsers.add_parser("list", help="List runs")
     list_parser.add_argument("--limit", dest="list_limit", type=int, default=20, help="Maximum number of runs")
@@ -1614,6 +1641,16 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_prefix": None,
         "key_placeholder": None,
     },
+    {
+        "label": "OpenAI Codex (ChatGPT OAuth)",
+        "provider": "openai-codex",
+        "key_env": None,
+        "base_env": "OPENAI_CODEX_BASE_URL",
+        "base_url": "https://chatgpt.com/backend-api/codex/responses",
+        "model": "openai-codex/gpt-5.1-codex",
+        "key_prefix": None,
+        "key_placeholder": None,
+    },
 ]
 
 
@@ -1635,6 +1672,7 @@ def _render_env_content(config: dict[str, str]) -> str:
         "DEEPSEEK_BASE_URL",
         "OPENAI_API_KEY",
         "OPENAI_BASE_URL",
+        "OPENAI_CODEX_BASE_URL",
         "GEMINI_API_KEY",
         "GEMINI_BASE_URL",
         "GROQ_API_KEY",
@@ -1717,6 +1755,9 @@ def cmd_init() -> int:
             console.print(
                 f"[red]That key doesn't look right.[/red] Expected it to start with [bold]{key_prefix}[/bold]."
             )
+    elif provider == "openai-codex":
+        console.print("[dim]OpenAI Codex uses ChatGPT OAuth, not an API key.[/dim]")
+        console.print("[dim]After setup, run: vibe-trading provider login openai-codex[/dim]")
     else:
         console.print("[dim]Ollama does not require an API key.[/dim]")
 
@@ -1760,6 +1801,11 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_init()
     if args.command == "serve":
         return serve_main(raw_argv[1:])
+    if args.command == "provider":
+        if args.provider_command == "login":
+            return cmd_provider_login(args.provider)
+        console.print("[red]provider requires a subcommand.[/red] Try: vibe-trading provider login openai-codex")
+        return EXIT_USAGE_ERROR
     if args.command == "run":
         return _handle_prompt_command(
             args.run_prompt,

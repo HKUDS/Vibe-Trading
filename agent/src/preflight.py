@@ -54,6 +54,35 @@ def _check_llm_provider() -> CheckResult:
     _sync_provider_env()
     base_url = os.getenv("OPENAI_BASE_URL", "") or os.getenv("OPENAI_API_BASE", "")
 
+    if provider.lower() in {"openai-codex", "openai_codex"}:
+        try:
+            from src.providers.openai_codex import get_openai_codex_login_status
+
+            token = get_openai_codex_login_status()
+        except Exception as exc:
+            return CheckResult(
+                name=f"LLM ({provider})",
+                status="error",
+                message=f"OAuth status unavailable: {exc}",
+                impact="run `vibe-trading provider login openai-codex`",
+                critical=True,
+            )
+        if not token:
+            return CheckResult(
+                name=f"LLM ({provider})",
+                status="not_configured",
+                message="ChatGPT OAuth login not found",
+                impact="run `vibe-trading provider login openai-codex`",
+                critical=True,
+            )
+        account = getattr(token, "account_id", None) or "authenticated account"
+        return CheckResult(
+            name=f"LLM ({provider})",
+            status="ready",
+            message=f"{model} via ChatGPT OAuth ({account})",
+            impact="",
+        )
+
     if not base_url:
         return CheckResult(
             name=f"LLM ({provider})",

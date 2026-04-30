@@ -135,6 +135,13 @@ def _sync_provider_env() -> None:
     _ensure_dotenv()
     provider = os.getenv("LANGCHAIN_PROVIDER", "openai").lower()
 
+    if provider in {"openai-codex", "openai_codex"}:
+        codex_url = os.getenv("OPENAI_CODEX_BASE_URL", "https://chatgpt.com/backend-api/codex/responses")
+        os.environ["OPENAI_API_BASE"] = codex_url
+        os.environ["OPENAI_BASE_URL"] = codex_url
+        os.environ.pop("OPENAI_API_KEY", None)
+        return
+
     # (api_key_env, base_url_env)
     _PROVIDER_MAP: dict[str, tuple[str | None, str]] = {
         "openai":     ("OPENAI_API_KEY",     "OPENAI_BASE_URL"),
@@ -184,16 +191,28 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
     Raises:
         RuntimeError: If langchain-openai is missing or LANGCHAIN_MODEL_NAME is unset.
     """
-    if ChatOpenAI is None:
-        raise RuntimeError("langchain-openai is not installed")
     _sync_provider_env()
     name = model_name or os.getenv("LANGCHAIN_MODEL_NAME", "").strip()
     if not name:
         raise RuntimeError("LANGCHAIN_MODEL_NAME is not set")
     temperature = float(os.getenv("LANGCHAIN_TEMPERATURE", "0.0"))
+    provider = os.getenv("LANGCHAIN_PROVIDER", "openai").lower()
+    if provider in {"openai-codex", "openai_codex"}:
+        from src.providers.openai_codex import OpenAICodexLLM
+
+        effort = os.getenv("LANGCHAIN_REASONING_EFFORT", "").strip().lower()
+        return OpenAICodexLLM(
+            model=name,
+            temperature=temperature,
+            timeout=int(os.getenv("TIMEOUT_SECONDS", "120")),
+            reasoning_effort=effort or None,
+        )
+
+    if ChatOpenAI is None:
+        raise RuntimeError("langchain-openai is not installed")
     # MiniMax requires temperature in (0.0, 1.0] — clamp to 0.01 when the
     # default 0.0 is used to avoid an API validation error.
-    if os.getenv("LANGCHAIN_PROVIDER", "openai").lower() == "minimax" and temperature <= 0.0:
+    if provider == "minimax" and temperature <= 0.0:
         temperature = 0.01
     # Optional reasoning activation for relays requiring opt-in (e.g. OpenRouter).
     # Moonshot/DeepSeek official APIs emit reasoning by default and ignore this field.

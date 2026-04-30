@@ -15,6 +15,7 @@ const messages = {
   llmApiKeyPlaceholder: "Leave blank to keep the current key",
   llmClearApiKey: "Clear saved API key",
   llmNoApiKeyRequired: "This provider does not require an API key.",
+  llmOauthRequired: "This provider uses OAuth. Run: {command}",
   llmTemperature: "Temperature",
   llmTimeoutSeconds: "Timeout seconds",
   llmMaxRetries: "Max retries",
