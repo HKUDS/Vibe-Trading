@@ -48,7 +48,7 @@ category: risk-analysis
 | 审计意见 | `fina_audit` | `ts_code` + 最近 2 个年报 period | **akshare 无对应接口** | 缺失时在输出中标注"审计意见数据缺失"，**不得跳过**——必须提示用户去官网查 |
 | 分红 | `dividend` | `ts_code` + 近 5 年 `div_proc='实施'` | `stock_history_dividend_detail(symbol='600000', indicator='分红')` | 字段中文，需把"派息"金额×总股本得到现金分红总额 |
 | 日线行情（1 元退市预警） | `daily` | `ts_code` + 最近 30 个交易日 | `stock_zh_a_hist(symbol='600000', period='daily', adjust='')` | 必须用**不复权**价格判断 1 元退市线 |
-| 每日指标（市值） | `daily_basic` | `ts_code` + 最近一个交易日 | `stock_zh_a_spot_em()` 全市场快照筛 `代码=600000` | 字段名为"总市值"（单位元），需 /1e8 换算成亿元 |
+| 每日指标（市值） | `daily_basic` | `ts_code` + 最近一个交易日 | `stock_zh_a_spot_em()` 全市场快照筛 `代码=600000` | 字段名为"总市值"（**单位：元**，东方财富 push2 原始口径，akshare 不做缩放），换算成亿元需 `/1e8`。⚠️ 不要与 tushare `daily_basic.total_mv`（万元）混淆——本列是 akshare 兜底口径 |
 | 财报披露日期 | `disclosure_date` | `ts_code` + 当前年度 | **akshare 无对应接口** | 缺失时按经验估算（4/30 年报、8/31 中报、10/31 三季报） |
 | 监管处罚 | — | — | **走本 skill 自带 sina 脚本** | 见 E2 章节 |
 
@@ -411,7 +411,7 @@ python agent/src/skills/ashare-pre-st-filter/scripts/fetch_sina_penalties.py \
   --ts-code 000729.SZ --start-date 2025-01-01 --end-date 2025-12-31
 ```
 
-输出 JSON 到 stdout；失败返回 `{"source": "unavailable", "error": "..."}` 而非抛异常，便于 LLM 兜底处理。
+正常情况下输出 JSON 到 stdout；网络/解析失败或参数非法时返回 `{"source": "unavailable", "error": "..."}` 到 stdout 并以非零退出码结束（不抛 traceback），便于 LLM 兜底处理。
 
 ## 端到端调用伪代码
 

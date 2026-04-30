@@ -260,6 +260,23 @@ class TestFetchPenaltyListFallback:
         assert result["source"] == "unavailable"
         assert "parse_failed" in result["error"]
 
+    def test_http_get_gbk_rejects_disallowed_host(self, fsp):
+        # SSRF 防护：非白名单 host 必须在 _http_get_gbk 立即抛 ValueError
+        with pytest.raises(ValueError, match="disallowed host"):
+            fsp._http_get_gbk("https://example.com/foo")
+
+    def test_http_get_gbk_rejects_disallowed_scheme(self, fsp):
+        with pytest.raises(ValueError, match="disallowed scheme"):
+            fsp._http_get_gbk("file:///etc/passwd")
+
+    def test_disallowed_host_url_returns_fallback(self, fsp, monkeypatch):
+        # 若 URL_TEMPLATE 被改坏指向非白名单 host，fetch_penalty_list 应走 http_failed fallback
+        monkeypatch.setattr(fsp, "URL_TEMPLATE", "https://evil.example.com/{code6}.phtml")
+        result = fsp.fetch_penalty_list("600000.SH")
+        assert result["source"] == "unavailable"
+        assert "http_failed" in result["error"]
+        assert "disallowed host" in result["error"]
+
 
 # ---------------------------------------------------------------------------
 # 抗灾难性回溯：脏 HTML 不应卡死

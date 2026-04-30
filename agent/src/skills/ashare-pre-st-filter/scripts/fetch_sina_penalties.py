@@ -23,7 +23,6 @@ import re
 import sys
 import time
 import unicodedata
-from html import unescape
 from html.parser import HTMLParser
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -230,12 +229,6 @@ class _TableExtractor(HTMLParser):
     def handle_charref(self, name: str) -> None:
         if self._capture:
             self._buf.append(f"&#{name};")
-
-
-def _strip_html(html: str) -> str:
-    text = re.sub(r"<[^>]+>", "", html)
-    text = unescape(text)
-    return re.sub(r"\s+", " ", text).strip()
 
 
 # event_type 黑名单：head 文本首个中文片段如果落在这些"结构性字面量"上，
@@ -504,12 +497,24 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"source": "unavailable", "error": str(exc)}, ensure_ascii=False))
         return 2
 
-    result = fetch_penalty_list(
-        args.ts_code,
-        start_date=start_date,
-        end_date=end_date,
-        timeout=args.timeout,
-    )
+    try:
+        result = fetch_penalty_list(
+            args.ts_code,
+            start_date=start_date,
+            end_date=end_date,
+            timeout=args.timeout,
+        )
+    except ValueError as exc:
+        # _validate_stockid 等参数校验异常：保持脚本契约
+        # （永远输出 JSON，不抛 traceback），返回非零退出码。
+        json.dump(
+            {"source": "unavailable", "ts_code": args.ts_code, "error": f"invalid_input: {exc}", "records": []},
+            sys.stdout,
+            ensure_ascii=False,
+            indent=args.indent,
+        )
+        sys.stdout.write("\n")
+        return 2
     json.dump(result, sys.stdout, ensure_ascii=False, indent=args.indent)
     sys.stdout.write("\n")
     return 0 if result.get("source") == "sina" else 1
