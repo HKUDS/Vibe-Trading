@@ -40,6 +40,15 @@ class TestSyncProviderEnv:
         })
         assert result["OPENAI_API_KEY"] == "sk-test"
 
+    def test_openai_oauth_provider(self) -> None:
+        result = self._run_sync({
+            "LANGCHAIN_PROVIDER": "openai-oauth",
+            "OPENAI_OAUTH_TOKEN": "oauth-token",
+            "OPENAI_BASE_URL": "https://api.openai.com/v1",
+        })
+        assert result["OPENAI_API_KEY"] == "oauth-token"
+        assert result["OPENAI_API_BASE"] == "https://api.openai.com/v1"
+
     def test_deepseek_provider(self) -> None:
         result = self._run_sync({
             "LANGCHAIN_PROVIDER": "deepseek",

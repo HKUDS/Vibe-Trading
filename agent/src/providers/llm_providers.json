@@ -18,6 +18,15 @@
     "api_key_required": true
   },
   {
+    "name": "openai-oauth",
+    "label": "OpenAI (OAuth)",
+    "api_key_env": "OPENAI_OAUTH_TOKEN",
+    "base_url_env": "OPENAI_BASE_URL",
+    "default_model": "gpt-4o",
+    "default_base_url": "https://api.openai.com/v1",
+    "api_key_required": true
+  },
+  {
     "name": "deepseek",
     "label": "DeepSeek",
     "api_key_env": "DEEPSEEK_API_KEY",
