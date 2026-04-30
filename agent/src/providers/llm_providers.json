@@ -22,7 +22,7 @@
     "label": "OpenAI Codex (ChatGPT OAuth)",
     "api_key_env": null,
     "base_url_env": "OPENAI_CODEX_BASE_URL",
-    "default_model": "openai-codex/gpt-5.1-codex",
+    "default_model": "openai-codex/gpt-5.3-codex",
     "default_base_url": "https://chatgpt.com/backend-api/codex/responses",
     "api_key_required": false,
     "auth_type": "oauth",
