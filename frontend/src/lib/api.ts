@@ -1,9 +1,32 @@
 const BASE = "";
 
+const AUTH_KEY_STORAGE = "qa-api-auth-key";
+
+export function getStoredAuthKey(): string | null {
+  return localStorage.getItem(AUTH_KEY_STORAGE);
+}
+
+export function setStoredAuthKey(key: string): void {
+  localStorage.setItem(AUTH_KEY_STORAGE, key);
+}
+
+export function clearStoredAuthKey(): void {
+  localStorage.removeItem(AUTH_KEY_STORAGE);
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const authKey = getStoredAuthKey();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (options?.headers) {
+    const h = options.headers as Record<string, string>;
+    Object.entries(h).forEach(([k, v]) => { headers[k] = v; });
+  }
+  if (authKey) {
+    headers["Authorization"] = `Bearer ${authKey}`;
+  }
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
     ...options,
+    headers,
   });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;

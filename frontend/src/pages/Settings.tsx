@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Database, Globe, KeyRound, Loader2, RotateCcw, Save, Server, SlidersHorizontal } from "lucide-react";
+import { Database, Globe, KeyRound, Loader2, RotateCcw, Save, Server, SlidersHorizontal, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
-import { api, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
+import { api, getStoredAuthKey, setStoredAuthKey, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
 import { useI18n, LANGUAGES } from "@/lib/i18n";
 
 interface LLMFormState {
@@ -43,6 +43,8 @@ export function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dataSaving, setDataSaving] = useState(false);
+  const [authKeyInput, setAuthKeyInput] = useState(() => getStoredAuthKey() || "");
+  const [showAuthKey, setShowAuthKey] = useState(false);
 
   // Capture i18n strings once at component mount to avoid re-running effects on language change
   const {
@@ -212,6 +214,45 @@ export function Settings() {
             );
           })}
         </div>
+      </div>
+
+      {/* API Auth Key */}
+      <div className="rounded-lg border bg-card p-5 shadow-sm">
+        <div className="mb-4 flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-primary" />
+          <h2 className="text-base font-semibold">API Authentication</h2>
+        </div>
+        <div className="flex gap-2">
+          <input
+            type={showAuthKey ? "text" : "password"}
+            value={authKeyInput}
+            onChange={(e) => setAuthKeyInput(e.target.value)}
+            placeholder="Enter API Auth Key"
+            className={fieldClass}
+          />
+          <button
+            type="button"
+            onClick={() => setShowAuthKey(!showAuthKey)}
+            className="rounded-md border bg-muted px-3 py-2 hover:bg-muted/80"
+          >
+            {showAuthKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (authKeyInput.trim()) {
+                setStoredAuthKey(authKeyInput.trim());
+                toast.success("API key saved. Refresh to apply.");
+              }
+            }}
+            className="rounded-md border bg-primary px-3 py-2 text-primary-foreground hover:bg-primary/90"
+          >
+            <Save className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Required for remote access to settings endpoints
+        </p>
       </div>
 
       <div className="space-y-2">
