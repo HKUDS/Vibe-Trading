@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Database, KeyRound, Loader2, RotateCcw, Save, Server, SlidersHorizontal } from "lucide-react";
+import { Database, Globe, KeyRound, Loader2, RotateCcw, Save, Server, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { api, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, LANGUAGES } from "@/lib/i18n";
 
 interface LLMFormState {
   provider: string;
@@ -32,7 +32,7 @@ function toForm(settings: LLMSettings): LLMFormState {
 }
 
 export function Settings() {
-  const { t } = useI18n();
+  const { t, language, setLanguage } = useI18n();
   const [settings, setSettings] = useState<LLMSettings | null>(null);
   const [dataSettings, setDataSettings] = useState<DataSourceSettings | null>(null);
   const [form, setForm] = useState<LLMFormState | null>(null);
@@ -44,6 +44,25 @@ export function Settings() {
   const [saving, setSaving] = useState(false);
   const [dataSaving, setDataSaving] = useState(false);
 
+  // Capture i18n strings once at component mount to avoid re-running effects on language change
+  const {
+    llmSettingsLoadFailed,
+    dataSourceSettingsLoadFailed,
+    llmSettingsSaveFailed,
+    dataSourceSettingsSaveFailed,
+    llmSettingsSaved,
+    dataSourceSettingsSaved,
+    unknownError,
+  } = useMemo(() => ({
+    llmSettingsLoadFailed: t.llmSettingsLoadFailed,
+    dataSourceSettingsLoadFailed: t.dataSourceSettingsLoadFailed,
+    llmSettingsSaveFailed: t.llmSettingsSaveFailed,
+    dataSourceSettingsSaveFailed: t.dataSourceSettingsSaveFailed,
+    llmSettingsSaved: t.llmSettingsSaved,
+    dataSourceSettingsSaved: t.dataSourceSettingsSaved,
+    unknownError: t.unknownError,
+  }), [t]);
+
   useEffect(() => {
     let alive = true;
     Promise.all([api.getLLMSettings(), api.getDataSourceSettings()])
@@ -54,14 +73,15 @@ export function Settings() {
         setDataSettings(dataSourceData);
       })
       .catch((error) => {
-        toast.error(`${t.llmSettingsLoadFailed}: ${error.message}`);
-        toast.error(`${t.dataSourceSettingsLoadFailed}: ${error.message}`);
+        if (!alive) return;
+        toast.error(`${llmSettingsLoadFailed}: ${error.message}`);
+        toast.error(`${dataSourceSettingsLoadFailed}: ${error.message}`);
       })
       .finally(() => {
         if (alive) setLoading(false);
       });
     return () => { alive = false; };
-  }, [t.dataSourceSettingsLoadFailed, t.llmSettingsLoadFailed]);
+  }, [llmSettingsLoadFailed, dataSourceSettingsLoadFailed]);
 
   const providers = settings?.providers ?? [];
   const selectedProvider = useMemo<LLMProviderOption | undefined>(
@@ -105,9 +125,9 @@ export function Settings() {
       setForm(toForm(updated));
       setApiKey("");
       setClearApiKey(false);
-      toast.success(t.llmSettingsSaved);
+      toast.success(llmSettingsSaved);
     } catch (error) {
-      toast.error(`${t.llmSettingsSaveFailed}: ${error instanceof Error ? error.message : t.unknownError}`);
+      toast.error(`${llmSettingsSaveFailed}: ${error instanceof Error ? error.message : unknownError}`);
     } finally {
       setSaving(false);
     }
@@ -124,9 +144,9 @@ export function Settings() {
       setDataSettings(updated);
       setTushareToken("");
       setClearTushareToken(false);
-      toast.success(t.dataSourceSettingsSaved);
+      toast.success(dataSourceSettingsSaved);
     } catch (error) {
-      toast.error(`${t.dataSourceSettingsSaveFailed}: ${error instanceof Error ? error.message : t.unknownError}`);
+      toast.error(`${dataSourceSettingsSaveFailed}: ${error instanceof Error ? error.message : unknownError}`);
     } finally {
       setDataSaving(false);
     }
@@ -158,6 +178,40 @@ export function Settings() {
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">{t.settings}</h1>
         <p className="max-w-3xl text-sm text-muted-foreground">{t.settingsDesc}</p>
+      </div>
+
+      {/* Language Selector */}
+      <div className="rounded-lg border bg-card p-5 shadow-sm">
+        <div className="mb-4 flex items-center gap-2">
+          <Globe className="h-4 w-4 text-primary" />
+          <h2 className="text-base font-semibold">{t.language}</h2>
+        </div>
+        <div className="flex gap-3">
+          {LANGUAGES.map((lang) => {
+            const isSelected = language === lang.code;
+            return (
+              <label
+                key={lang.code}
+                className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-md border p-3 transition-colors ${
+                  isSelected
+                    ? "border-primary bg-primary/5 text-primary"
+                    : "border-border hover:bg-muted"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="language"
+                  value={lang.code}
+                  checked={isSelected}
+                  onChange={() => setLanguage(lang.code)}
+                  className="sr-only"
+                />
+                <span className="text-sm font-medium">{lang.nativeLabel}</span>
+                <span className="text-xs text-muted-foreground">{lang.label}</span>
+              </label>
+            );
+          })}
+        </div>
       </div>
 
       <div className="space-y-2">
