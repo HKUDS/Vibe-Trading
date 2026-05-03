@@ -23,6 +23,62 @@ Extract the following from the user's description:
 - **Time range**: if the user does not specify dates, default to **10 years back from today** (for example, if today is `2026-03-18`, then `start_date=2016-03-18`, `end_date=2026-03-18`)
 - **Strategy logic**: entry / exit conditions and indicator parameters
 
+### A-share Financial Statement Gating
+
+Before writing `config.json` or `signal_engine.py`, always classify the strategy into one of these three buckets:
+
+1. **Non-A-share strategy**
+2. **A-share strategy using only OHLCV or simple `daily_basic` fields**
+3. **A-share strategy using financial statement fields**
+
+The third bucket is special and must follow the gating rules below.
+
+#### What counts as "financial statement fields"
+
+Fields from any of these Tushare tables count as financial statement fields:
+
+- `income`
+- `balancesheet`
+- `cashflow`
+- `express`
+- `fina_indicator`
+
+Examples: `revenue`, `total_assets`, `n_cashflow_act`, `free_cashflow`, `grossprofit_margin`, `netprofit_margin`, `ocfps`, `roe_yearly`, `yoy_sales`.
+
+These do **not** trigger the financial-statement flow by themselves:
+
+- pure OHLCV
+- the existing A-share `daily_basic` fields already supported by the backtest loader: `pe`, `pb`, `pe_ttm`, `ps_ttm`, `dv_ttm`, `total_mv`, `circ_mv`, `roe`
+
+#### Gating rules
+
+If and only if the strategy is **A-share** and uses **financial statement fields**:
+
+1. You **must** enter the A-share financial enrichment flow.
+2. You **must** first check whether `TUSHARE_TOKEN` is available.
+3. You **must** treat 2000 Tushare points as the minimum gate for financial table access.
+4. You **must** treat 5000 Tushare points as the preferred threshold for full-market or universe A-share backtests; if the account has only 2000-4999 points, the run may proceed but will fall back to slower per-code fetching.
+5. You **must not** assume all fields are needed. Load only the tables and columns actually required by the strategy.
+6. You **must** follow the rules in [ashare-financial-enrichment](../ashare-financial-enrichment/SKILL.md).
+
+If the strategy is **not A-share** but requests financial statement fields:
+
+- Explain that the current financial-statement enrichment flow is only supported for A-shares.
+- Do **not** continue automatically.
+- Wait for the user's decision.
+
+If the strategy **is A-share** and requests financial statement fields but `TUSHARE_TOKEN` is not available:
+
+- Explain that the financial-statement enrichment flow requires `TUSHARE_TOKEN`.
+- Do **not** silently downgrade to AKShare or `daily_basic`.
+- Wait for the user's decision.
+
+If the strategy **is A-share** and requests financial statement fields but the account has fewer than 2000 Tushare points:
+
+- Explain that 2000 points is the minimum requirement for these financial tables.
+- Do **not** continue automatically.
+- Wait for the user's decision.
+
 **If critical information is missing, you must ask the user instead of guessing:**
 - Instrument not specified → ask which instrument they want to backtest (offer several popular suggestions)
 - Strategy description is vague (for example, "help me build a strategy") → provide 2-3 strategy directions for the user to choose from
@@ -41,6 +97,13 @@ Before writing code, think through these 5 questions:
 5. **Validation checklist**: signal consistency (no NaN signals), position check (normalized to prevent leverage), and completeness of generated artifacts
 
 There is no need to output a JSON design document. Express these design decisions directly in code.
+
+When the strategy uses A-share financial statement fields, refine question 1 into four sub-questions before proceeding:
+
+1. Is this definitely an A-share strategy?
+2. Which exact fields are needed from `income` / `balancesheet` / `cashflow` / `express` / `fina_indicator`?
+3. Is `TUSHARE_TOKEN` available right now?
+4. If not, should you stop and ask the user how to proceed?
 
 ## `SignalEngine` Contract
 
@@ -102,7 +165,16 @@ Self-check after writing `signal_engine.py`:
 | `^\d{3,5}\.HK$` | Hong Kong stocks | yfinance | - |
 | `^[A-Z]+-USDT$` | Cryptocurrency | okx | - |
 
-**`extra_fields` selection logic**: only China A-shares (`tushare`) support fundamentals. If the strategy needs `PE/PB/ROE` and similar fields, specify them in `config.json.extra_fields` and `DataLoader` will retrieve them automatically. Hong Kong stocks, US stocks, and crypto do not support `extra_fields`.
+**`extra_fields` selection logic**: only China A-shares (`tushare`) support the current built-in `daily_basic` fundamental fields. If the strategy needs `PE/PB/ROE` and similar `daily_basic` fields, specify them in `config.json.extra_fields` and `DataLoader` will retrieve them automatically.
+
+If the strategy needs fields from A-share financial statements (`income`, `balancesheet`, `cashflow`, `express`, `fina_indicator`):
+
+- do **not** treat them as ordinary `extra_fields`
+- do **not** silently fall back to AKShare
+- do **not** continue unless `TUSHARE_TOKEN` is available
+- follow [ashare-financial-enrichment](../ashare-financial-enrichment/SKILL.md)
+
+Hong Kong stocks, US stocks, and crypto do not support this A-share financial-statement enrichment flow.
 
 ## `config.json` Format
 

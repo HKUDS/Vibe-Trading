@@ -22,12 +22,18 @@ Use `source: "auto"` — the runner automatically routes by symbol pattern and f
 
 You do NOT need to specify a concrete data source in config.json unless the user explicitly asks for one.
 
+Exception:
+
+- If the strategy is **A-share** and uses **financial statement fields** from Tushare tables such as `income`, `balancesheet`, `cashflow`, `express`, or `fina_indicator`, do **not** rely on generic fallback routing.
+- In that case, use the gating rules from [ashare-financial-enrichment](../ashare-financial-enrichment/SKILL.md): `TUSHARE_TOKEN` is mandatory, and the flow must not silently downgrade to AKShare.
+
 ### Analysis / Research Scenario (writing Python scripts)
 
 1. Identify the market type from the user's request
 2. Pick the source by priority:
 
 **A-shares**: tushare (if TUSHARE_TOKEN is set) > akshare (free fallback)
+For A-share financial statement enrichment, this fallback rule does **not** apply — use strict Tushare only.
 **US stocks**: yfinance > akshare
 **HK stocks**: yfinance > akshare
 **Crypto**: okx (single exchange) > ccxt (multi-exchange)
@@ -67,3 +73,9 @@ User requests 000001.SZ (A-share)
 ```
 
 This is transparent to the user — they just see results.
+
+Important carve-out:
+
+- The transparent fallback chain is appropriate for price data and simple A-share `daily_basic` fields.
+- It is **not** appropriate for A-share financial statement strategies that depend on `income`, `balancesheet`, `cashflow`, `express`, or `fina_indicator`.
+- For those strategies, if `TUSHARE_TOKEN` is missing, stop and wait for the user's decision instead of routing to AKShare.

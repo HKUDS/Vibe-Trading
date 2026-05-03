@@ -7,7 +7,11 @@ category: flow
 
 ## Purpose
 
-Filter stocks using fundamental financial data (PE/PB/ROE, etc.) to build value or growth screen signals for backtesting. Supports multiple markets with different data sources.
+Filter stocks using simple fundamental data (PE/PB/ROE, market cap, and similar metrics) to build value or growth screen signals for backtesting. Supports multiple markets with different data sources.
+
+This skill is **not** the entry point for A-share financial statement strategies that depend on Tushare statement tables such as `income`, `balancesheet`, `cashflow`, `express`, or `fina_indicator`.
+
+When an A-share strategy needs fields from those tables, switch to [ashare-financial-enrichment](../ashare-financial-enrichment/SKILL.md) instead of continuing with this simple screening flow.
 
 ## Market Support
 
@@ -16,6 +20,30 @@ Filter stocks using fundamental financial data (PE/PB/ROE, etc.) to build value 
 | A-shares | tushare `daily_basic` | `extra_fields` in config.json | pe, pb, pe_ttm, ps_ttm, dv_ttm, total_mv, circ_mv, roe |
 | US stocks | yfinance `Ticker.info` | Direct API call | trailingPE, forwardPE, priceToBook, returnOnEquity, marketCap, dividendYield |
 | HK stocks | yfinance `Ticker.info` | Direct API call | trailingPE, priceToBook, returnOnEquity, marketCap |
+
+## Scope Boundary
+
+This skill covers only these two data styles:
+
+1. A-share `daily_basic`-style fields already supported by the backtest loader
+2. US/HK `Ticker.info` point-in-time snapshots
+
+This skill does **not** cover:
+
+- A-share fields from `income`
+- A-share fields from `balancesheet`
+- A-share fields from `cashflow`
+- A-share fields from `express`
+- A-share fields from `fina_indicator` when they are being treated as financial statement enrichment rather than simple built-in daily fields
+
+If the strategy is A-share and uses those financial statement fields:
+
+- require `TUSHARE_TOKEN`
+- require at least 2000 Tushare points to pull the financial tables at all
+- treat 5000 points as the preferred threshold for full-market or universe backtests; with 2000-4999 points the runtime can still proceed, but it will fall back to slower per-code fetching
+- do **not** silently degrade to `daily_basic`
+- do **not** continue automatically
+- follow [ashare-financial-enrichment](../ashare-financial-enrichment/SKILL.md)
 
 ## Signal Logic
 
@@ -49,6 +77,10 @@ Filter stocks using fundamental financial data (PE/PB/ROE, etc.) to build value 
 ```
 
 The `extra_fields` columns are automatically merged into the daily DataFrame by the DataLoader.
+
+This is only for the currently supported simple A-share fields such as `pe`, `pb`, `pe_ttm`, `roe`, and `total_mv`.
+
+If you need statement-style fields such as `revenue`, `total_assets`, `n_cashflow_act`, `free_cashflow`, `grossprofit_margin`, `netprofit_margin`, `ocfps`, or similar fields sourced from Tushare financial tables, this skill is no longer sufficient. Use [ashare-financial-enrichment](../ashare-financial-enrichment/SKILL.md).
 
 ## HK/US Stock Usage (yfinance)
 
@@ -115,6 +147,7 @@ results = screen_us_stocks(hk_tickers, criteria)  # Same function works
 - For portfolio strategies: N stocks passing the screen each get weight 1/N
 - yfinance `Ticker.info` is a point-in-time snapshot, not historical time-series — cannot directly use for daily rebalancing backtests on US/HK stocks
 - For US/HK daily fundamental backtests, consider using the screening results as a stock universe, then applying technical signals within that universe
+- Do not confuse simple A-share `daily_basic` fields with the full Tushare financial statement tables. They have different loading rules and different point-in-time semantics.
 
 ## Dependencies
 

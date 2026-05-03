@@ -9,8 +9,11 @@ Usage: ``python -m backtest.runner <run_dir>``
 
 import ast
 import importlib.util
+from dataclasses import dataclass
+from functools import lru_cache
 import json
 import logging
+import os
 import re
 import sys
 from pathlib import Path
@@ -32,12 +35,117 @@ from backtest.loaders.registry import (
     resolve_loader,
 )
 from backtest.loaders.base import NoAvailableSourceError
+from backtest.financials.ashare import get_ashare_financial_runtime
+from backtest.financials.ashare.field_registry import (
+    SUPPORTED_FINANCIAL_TABLES,
+)
+from backtest.financials.contracts import MarketFinancialRuntime
 
 logger = logging.getLogger(__name__)
 
 _VALID_INTERVALS = {"1m", "5m", "15m", "30m", "1H", "4H", "1D"}
 _VALID_ENGINES = {"daily", "options"}
 _VALID_SOURCES = {"tushare", "okx", "yfinance", "akshare", "ccxt", "auto"}
+_VALID_FINANCIAL_AVAILABILITY = {"ann_date_next_trade_day"}
+_VALID_UNIVERSE_MARKETS = {"a_share"}
+_VALID_UNIVERSE_SCOPES = {"all_active"}
+_TUSHARE_TOKEN_PLACEHOLDERS = {"", "your-tushare-token"}
+_DEFAULT_FINANCIAL_PERIOD_LOOKBACK_QUARTERS = 4
+_TUSHARE_POINTS_COLUMNS = ("到期积分", "points", "expire_points", "积分")
+
+
+def _get_ashare_financial_runtime() -> MarketFinancialRuntime:
+    """Return the market-scoped A-share financial implementation bundle."""
+    return get_ashare_financial_runtime()
+
+
+@dataclass(frozen=True)
+class FinancialFetchPlan:
+    """Runtime fetch mode for financial raw tables."""
+
+    mode: str
+    periods: tuple[str, ...] = ()
+
+
+class FinancialsConfigSchema(BaseModel):
+    """Validates the optional financial-statement request block."""
+
+    model_config = ConfigDict(extra="allow")
+
+    required: bool = False
+    tables: List[str] = []
+    fields: List[str] = []
+    availability: str = "ann_date_next_trade_day"
+    strict_source: str = "tushare"
+
+    @field_validator("tables")
+    @classmethod
+    def valid_tables(cls, value: List[str]) -> List[str]:
+        unknown = sorted(set(value) - set(SUPPORTED_FINANCIAL_TABLES))
+        if unknown:
+            raise ValueError(
+                f"unsupported financial tables {unknown!r}, must be chosen from {SUPPORTED_FINANCIAL_TABLES}"
+            )
+        return value
+
+    @field_validator("fields")
+    @classmethod
+    def valid_fields(cls, value: List[str]) -> List[str]:
+        registry = _get_ashare_financial_runtime().registry
+        unknown = [field_name for field_name in value if not registry.has_field(field_name)]
+        if unknown:
+            raise ValueError(f"unknown financial fields: {unknown!r}")
+        return value
+
+    @field_validator("availability")
+    @classmethod
+    def valid_availability(cls, value: str) -> str:
+        if value not in _VALID_FINANCIAL_AVAILABILITY:
+            raise ValueError(
+                "unsupported financial availability "
+                f"{value!r}, must be one of {_VALID_FINANCIAL_AVAILABILITY}"
+            )
+        return value
+
+    @field_validator("strict_source")
+    @classmethod
+    def valid_strict_source(cls, value: str) -> str:
+        if value != "tushare":
+            raise ValueError("financials.strict_source must be 'tushare'")
+        return value
+
+    @model_validator(mode="after")
+    def has_query_shape(self) -> "FinancialsConfigSchema":
+        if self.required and not self.tables and not self.fields:
+            raise ValueError("financials.required=true requires at least one table or field")
+        return self
+
+
+class UniverseConfigSchema(BaseModel):
+    """Validates the optional runtime universe selector."""
+
+    model_config = ConfigDict(extra="allow")
+
+    market: str
+    scope: str = "all_active"
+
+    @field_validator("market")
+    @classmethod
+    def valid_market(cls, value: str) -> str:
+        if value not in _VALID_UNIVERSE_MARKETS:
+            raise ValueError(
+                f"unsupported universe market {value!r}, must be one of {_VALID_UNIVERSE_MARKETS}"
+            )
+        return value
+
+    @field_validator("scope")
+    @classmethod
+    def valid_scope(cls, value: str) -> str:
+        if value not in _VALID_UNIVERSE_SCOPES:
+            raise ValueError(
+                f"unsupported universe scope {value!r}, must be one of {_VALID_UNIVERSE_SCOPES}"
+            )
+        return value
 
 
 class BacktestConfigSchema(BaseModel):
@@ -45,18 +153,18 @@ class BacktestConfigSchema(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    codes: List[str]
+    codes: List[str] = []
     start_date: str
     end_date: str
     source: str = "tushare"
     interval: str = "1D"
     engine: str = "daily"
+    financials: Optional[FinancialsConfigSchema] = None
+    universe: Optional[UniverseConfigSchema] = None
 
     @field_validator("codes")
     @classmethod
     def codes_not_empty(cls, v: List[str]) -> List[str]:
-        if not v:
-            raise ValueError("codes must be a non-empty list")
         if any(not c.strip() for c in v):
             raise ValueError("codes must not contain empty strings")
         return v
@@ -93,6 +201,8 @@ class BacktestConfigSchema(BaseModel):
 
     @model_validator(mode="after")
     def start_before_end(self) -> "BacktestConfigSchema":
+        if not self.codes and self.universe is None:
+            raise ValueError("codes must be a non-empty list")
         if pd.Timestamp(self.start_date) > pd.Timestamp(self.end_date):
             raise ValueError(
                 f"start_date ({self.start_date}) must be <= end_date ({self.end_date})"
@@ -352,6 +462,416 @@ def _normalize_codes(codes: List[str], source: str) -> List[str]:
     return codes
 
 
+def _financials_requested(config: dict) -> bool:
+    """Whether the config explicitly requests statement-style financial data."""
+    financials = config.get("financials") or {}
+    return bool(
+        financials
+        and (
+            financials.get("required")
+            or financials.get("tables")
+            or financials.get("fields")
+        )
+    )
+
+
+def _uses_runtime_a_share_universe(config: dict) -> bool:
+    """Whether codes were resolved from the runtime A-share all-active universe."""
+    universe = config.get("universe") or {}
+    return bool(
+        config.get("_resolved_codes_from_universe")
+        and universe.get("market") == "a_share"
+        and universe.get("scope", "all_active") == "all_active"
+    )
+
+
+def _format_financial_table_list(table_names: List[str] | tuple[str, ...]) -> str:
+    """Render requested financial tables for user-facing errors."""
+    return ", ".join(sorted(dict.fromkeys(str(name) for name in table_names if name))) or "<none>"
+
+
+def _format_required_points_by_table(required_points_by_table: Dict[str, int]) -> str:
+    """Render per-table VIP point requirements for user-facing errors."""
+    if not required_points_by_table:
+        return "<none>"
+    return ", ".join(
+        f"{table_name}={points}"
+        for table_name, points in sorted(required_points_by_table.items())
+    )
+
+
+def _parse_explicit_tushare_points(config: dict) -> int | None:
+    """Parse an explicit Tushare points override for compatibility fallbacks."""
+    financials = config.get("financials") or {}
+    raw_value = financials.get("tushare_points", os.getenv("TUSHARE_POINTS", "")).strip() if isinstance(financials.get("tushare_points", os.getenv("TUSHARE_POINTS", "")), str) else financials.get("tushare_points", os.getenv("TUSHARE_POINTS", ""))
+    if raw_value in (None, ""):
+        return None
+    try:
+        points = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("financials.tushare_points or TUSHARE_POINTS must be an integer") from exc
+    if points < 0:
+        raise ValueError("financials.tushare_points or TUSHARE_POINTS must be >= 0")
+    return points
+
+
+def _extract_tushare_points_from_user_frame(user_frame: pd.DataFrame) -> int:
+    """Extract current account points from the Tushare user endpoint result."""
+    if user_frame is None or user_frame.empty:
+        raise ValueError("Tushare user endpoint returned no rows")
+
+    points_column = next(
+        (column for column in _TUSHARE_POINTS_COLUMNS if column in user_frame.columns),
+        None,
+    )
+    if points_column is None:
+        raise ValueError(
+            "Tushare user endpoint returned no recognized points column; "
+            f"columns={list(user_frame.columns)!r}"
+        )
+
+    series = pd.to_numeric(user_frame[points_column], errors="coerce")
+    numeric_points = series[series.notna()]
+    if numeric_points.empty:
+        raise ValueError("Tushare user endpoint returned no numeric points")
+
+    total_points = int(numeric_points.sum())
+    if total_points < 0:
+        raise ValueError("Tushare user endpoint returned negative points")
+    return total_points
+
+
+def _resolve_financial_points_by_table(query_plan, *, use_vip_points: bool) -> Dict[str, int]:
+    """Resolve per-table Tushare point requirements for a query plan."""
+    runtime = _get_ashare_financial_runtime()
+    required_points_by_table: Dict[str, int] = {}
+    for table_name in query_plan.query_fields:
+        table = runtime.registry.get_table(table_name)
+        if use_vip_points and table.vip_min_points is not None:
+            required_points_by_table[table_name] = table.vip_min_points
+            continue
+        required_points_by_table[table_name] = table.min_points or 0
+    return required_points_by_table
+
+
+@lru_cache(maxsize=4)
+def _query_tushare_points_from_account(token: str) -> int:
+    """Query Tushare account capability and return currently available points."""
+    import tushare as ts
+
+    api = ts.pro_api(token)
+    user_frame = api.user(token=token)
+    return _extract_tushare_points_from_user_frame(user_frame)
+
+
+def _resolve_tushare_points(config: dict) -> int | None:
+    """Resolve Tushare points for VIP capability checks.
+
+    The primary path queries the account capability from Tushare directly so
+    full-market runtime requests do not require hand-filled point settings.
+    Explicit config or env values remain as a compatibility fallback when the
+    automatic query cannot be completed.
+    """
+    token = os.getenv("TUSHARE_TOKEN", "").strip()
+    if token and token not in _TUSHARE_TOKEN_PLACEHOLDERS:
+        try:
+            return _query_tushare_points_from_account(token)
+        except Exception as exc:
+            fallback_points = _parse_explicit_tushare_points(config)
+            if fallback_points is not None:
+                logger.warning(
+                    "Falling back to explicit Tushare points override after automatic query failed: %s",
+                    exc,
+                )
+                return fallback_points
+            raise ValueError(
+                "unable to query Tushare account points automatically via Tushare user(token=...); "
+                f"reason={type(exc).__name__}: {exc}"
+            ) from exc
+
+    return _parse_explicit_tushare_points(config)
+
+
+def _last_completed_quarter(as_of: pd.Timestamp) -> pd.Period:
+    """Return the latest completed fiscal quarter as of a trade date."""
+    timestamp = pd.Timestamp(as_of).normalize()
+    quarter = timestamp.to_period("Q")
+    if pd.Timestamp(quarter.end_time).normalize() > timestamp:
+        return quarter - 1
+    return quarter
+
+
+def _derive_cross_sectional_financial_periods(
+    start_date: str,
+    end_date: str,
+    *,
+    lookback_quarters: int = _DEFAULT_FINANCIAL_PERIOD_LOOKBACK_QUARTERS,
+) -> tuple[str, ...]:
+    """Derive completed fiscal report periods needed for PIT enrichment."""
+    if lookback_quarters < 1:
+        raise ValueError("financials.period_lookback_quarters must be >= 1")
+
+    start_ts = pd.Timestamp(start_date)
+    end_ts = pd.Timestamp(end_date)
+    if end_ts < start_ts:
+        raise ValueError("end_date must be >= start_date for financial period planning")
+
+    start_anchor = _last_completed_quarter(start_ts)
+    end_anchor = _last_completed_quarter(end_ts)
+    first_period = start_anchor - (lookback_quarters - 1)
+    periods = pd.period_range(start=first_period, end=end_anchor, freq="Q")
+    return tuple(pd.Timestamp(period.end_time).strftime("%Y%m%d") for period in periods)
+
+
+def _has_tushare_token() -> bool:
+    """Return whether a usable TUSHARE_TOKEN is configured."""
+    return os.getenv("TUSHARE_TOKEN", "").strip() not in _TUSHARE_TOKEN_PLACEHOLDERS
+
+
+def _resolve_a_share_universe_codes() -> List[str]:
+    """Resolve the active A-share universe through Tushare stock_basic."""
+    if not _has_tushare_token():
+        raise ValueError("a_share universe resolution requires TUSHARE_TOKEN")
+
+    import tushare as ts
+
+    api = ts.pro_api(os.getenv("TUSHARE_TOKEN", ""))
+    universe = api.stock_basic(exchange="", list_status="L", fields="ts_code")
+    if universe is None or universe.empty or "ts_code" not in universe.columns:
+        raise ValueError("a_share universe resolved to no codes")
+
+    codes = sorted(
+        {
+            code
+            for raw_code in universe["ts_code"].dropna().tolist()
+            for code in [str(raw_code).strip().upper()]
+            if code and _detect_market(code) == "a_share"
+        }
+    )
+    if not codes:
+        raise ValueError("a_share universe resolved to no codes")
+    return codes
+
+
+def _resolve_codes_from_config(config: dict, source: str) -> List[str]:
+    """Resolve the effective code list from explicit codes or a runtime universe."""
+    codes = list(config.get("codes") or [])
+    if codes:
+        return codes
+
+    universe = config.get("universe") or {}
+    if not universe:
+        return []
+
+    if universe.get("market") != "a_share":
+        raise ValueError("runtime universe currently supports only universe.market='a_share'")
+    if source not in {"tushare", "auto"}:
+        raise ValueError("a_share runtime universe currently requires source='tushare' or 'auto'")
+    return _resolve_a_share_universe_codes()
+
+
+def _validate_financials_request(config: dict, source: str, codes: List[str]) -> str:
+    """Validate a strict A-share financial request and normalize the source.
+
+    This gate intentionally fails fast until the dedicated runtime financial
+    loader/assembler is wired into the runner.
+    """
+    if not _financials_requested(config):
+        return source
+
+    markets = {_detect_market(code) for code in codes}
+    if markets != {"a_share"}:
+        raise ValueError(
+            "financials currently support only A-share strategies; "
+            f"detected markets={sorted(markets)}"
+        )
+
+    if source not in {"tushare", "auto"}:
+        raise ValueError(
+            "financials require strict Tushare mode; "
+            f"source must be 'tushare' or 'auto', got {source!r}"
+        )
+
+    if not _has_tushare_token():
+        raise ValueError("financials require TUSHARE_TOKEN")
+
+    if config.get("interval", "1D") != "1D":
+        raise ValueError("financials currently support only interval='1D'")
+
+    return "tushare"
+
+
+def _build_financial_query_plan_from_config(config: dict):
+    """Build the strict financial query plan declared in config."""
+    if not _financials_requested(config):
+        return None
+
+    runtime = _get_ashare_financial_runtime()
+    financials = config.get("financials") or {}
+    fields = tuple(financials.get("fields") or ())
+    if not fields:
+        raise ValueError("financials runtime currently requires explicit financials.fields")
+
+    preferred_tables = financials.get("preferred_tables") or {}
+    query_plan = runtime.registry.build_query_plan(
+        fields,
+        preferred_tables=preferred_tables,
+        include_key_columns=True,
+        strict=True,
+    )
+
+    declared_tables = set(financials.get("tables") or ())
+    unexpected_tables = set(query_plan.requested_fields) - declared_tables
+    if declared_tables and unexpected_tables:
+        raise ValueError(
+            "financials.tables does not cover all requested field owners: "
+            f"{sorted(unexpected_tables)}"
+        )
+
+    return query_plan
+
+
+def _build_financial_fetch_plan(config: dict, query_plan) -> FinancialFetchPlan | None:
+    """Plan whether financial raw tables should use per-code or VIP period fetches."""
+    if query_plan is None:
+        return None
+    if not _uses_runtime_a_share_universe(config):
+        return FinancialFetchPlan(mode="per_code")
+
+    runtime = _get_ashare_financial_runtime()
+    capability = runtime.registry.assess_cross_sectional_query(query_plan)
+    requested_tables = tuple(query_plan.query_fields)
+    requested_tables_text = _format_financial_table_list(requested_tables)
+    if not capability.supported:
+        raise ValueError(
+            "financials full-market cross-section requires VIP period endpoints for every requested table; "
+            f"requested tables={requested_tables_text}; "
+            f"unsupported tables={_format_financial_table_list(capability.unsupported_tables)}; "
+            f"supported tables={_format_financial_table_list(capability.supported_tables)}"
+        )
+
+    ordinary_required_points_by_table = _resolve_financial_points_by_table(
+        query_plan,
+        use_vip_points=False,
+    )
+    ordinary_required_points = max(ordinary_required_points_by_table.values(), default=0)
+    ordinary_required_points_text = _format_required_points_by_table(ordinary_required_points_by_table)
+    vip_required_points_text = _format_required_points_by_table(capability.required_points_by_table)
+
+    available_points = _resolve_tushare_points(config)
+    if available_points is None:
+        raise ValueError(
+            "financials full-market cross-section could not determine Tushare account points; "
+            f"requested tables={requested_tables_text}; "
+            f"required points by table={vip_required_points_text}"
+        )
+    if available_points < ordinary_required_points:
+        raise ValueError(
+            "financials require at least 2000 Tushare points for requested tables; "
+            f"requested tables={requested_tables_text}; "
+            f"current account points={available_points}; "
+            f"ordinary required points={ordinary_required_points}; "
+            f"ordinary required points by table={ordinary_required_points_text}"
+        )
+    if available_points < capability.required_points:
+        logger.warning(
+            "financials full-market cross-section falling back to slower per-code Tushare fetch; "
+            "requested tables=%s; current account points=%s; VIP required points=%s; ordinary required points=%s",
+            requested_tables_text,
+            available_points,
+            capability.required_points,
+            ordinary_required_points,
+        )
+        return FinancialFetchPlan(mode="per_code")
+
+    financials = config.get("financials") or {}
+    raw_lookback = financials.get(
+        "period_lookback_quarters",
+        _DEFAULT_FINANCIAL_PERIOD_LOOKBACK_QUARTERS,
+    )
+    try:
+        lookback_quarters = int(raw_lookback)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("financials.period_lookback_quarters must be an integer") from exc
+
+    return FinancialFetchPlan(
+        mode="cross_section",
+        periods=_derive_cross_sectional_financial_periods(
+            config.get("start_date", ""),
+            config.get("end_date", ""),
+            lookback_quarters=lookback_quarters,
+        ),
+    )
+
+
+def _fetch_cross_sectional_financial_tables(
+    raw_loader,
+    query_plan,
+    *,
+    periods: tuple[str, ...],
+    table_params: dict,
+) -> dict[str, pd.DataFrame]:
+    """Fetch and concatenate VIP period cross-sections for requested tables."""
+    frames_by_table: dict[str, list[pd.DataFrame]] = {
+        table_name: [] for table_name in query_plan.query_fields
+    }
+    for period in periods:
+        period_tables = raw_loader.fetch_for_period(
+            query_plan,
+            period=period,
+            table_params=table_params,
+        )
+        for table_name, frame in period_tables.items():
+            if frame is not None and not frame.empty:
+                frames_by_table.setdefault(table_name, []).append(frame)
+
+    result: dict[str, pd.DataFrame] = {}
+    for table_name, fields in query_plan.query_fields.items():
+        frames = frames_by_table.get(table_name) or []
+        if frames:
+            result[table_name] = pd.concat(frames, ignore_index=True)
+        else:
+            result[table_name] = pd.DataFrame(columns=list(fields))
+    return result
+
+
+def _enrich_price_data_map_with_financials(
+    config: dict,
+    data_map: dict,
+    query_plan,
+    fetch_plan: FinancialFetchPlan | None,
+) -> dict:
+    """Attach PIT financial statement columns to the fetched price data."""
+    if query_plan is None or not data_map:
+        return data_map
+
+    runtime = _get_ashare_financial_runtime()
+    financials = config.get("financials") or {}
+    raw_loader = runtime.loader_factory()
+    table_params = financials.get("table_params") or {}
+    if fetch_plan is not None and fetch_plan.mode == "cross_section":
+        raw_tables = _fetch_cross_sectional_financial_tables(
+            raw_loader,
+            query_plan,
+            periods=fetch_plan.periods,
+            table_params=table_params,
+        )
+    else:
+        raw_tables = raw_loader.fetch_for_codes(
+            query_plan,
+            codes=list(data_map.keys()),
+            start_date=config.get("start_date", ""),
+            end_date=config.get("end_date", ""),
+            table_params=table_params,
+        )
+    return runtime.enrich_data_map(
+        data_map,
+        raw_tables,
+        query_plan,
+        report_type_priorities=financials.get("report_type_priorities") or {},
+    )
+
+
 # --- Main entry ---
 
 def main(run_dir: Path) -> None:
@@ -378,8 +898,16 @@ def main(run_dir: Path) -> None:
         sys.exit(1)
 
     config = raw_config
+    config["_resolved_codes_from_universe"] = not bool(raw_config.get("codes")) and bool(
+        raw_config.get("universe")
+    )
     source = config.get("source", "tushare")
-    codes = config.get("codes", [])
+    try:
+        codes = _resolve_codes_from_config(config, source)
+    except ValueError as exc:
+        print(json.dumps({"error": str(exc)}))
+        sys.exit(1)
+    config["codes"] = codes
 
     # Load signal engine
     signal_path = run_dir / "code" / "signal_engine.py"
@@ -391,6 +919,14 @@ def main(run_dir: Path) -> None:
     engine_cls = getattr(signal_module, "SignalEngine", None)
     if engine_cls is None:
         print(json.dumps({"error": "SignalEngine class not found in signal_engine.py"}))
+        sys.exit(1)
+
+    try:
+        source = _validate_financials_request(config, source, codes)
+        financial_query_plan = _build_financial_query_plan_from_config(config)
+        financial_fetch_plan = _build_financial_fetch_plan(config, financial_query_plan)
+    except ValueError as exc:
+        print(json.dumps({"error": str(exc)}))
         sys.exit(1)
 
     # Data: auto split vs single loader
@@ -411,7 +947,7 @@ def main(run_dir: Path) -> None:
             interval=interval,
         )
         # Runtime fallback: try next sources in chain when primary returns empty
-        if not data_map and codes:
+        if not data_map and codes and not _financials_requested(config):
             market = _detect_market(codes[0])
             for fb_name in FALLBACK_CHAINS.get(market, []):
                 if fb_name == source or fb_name not in LOADER_REGISTRY:
@@ -429,6 +965,12 @@ def main(run_dir: Path) -> None:
                     source = fb_name
                     loader = fb_loader
                     break
+    data_map = _enrich_price_data_map_with_financials(
+        config,
+        data_map,
+        financial_query_plan,
+        financial_fetch_plan,
+    )
     if not data_map:
         print(json.dumps({"error": "No data fetched"}))
         sys.exit(1)
@@ -448,7 +990,7 @@ def main(run_dir: Path) -> None:
         bars_per_year = calc_bars_per_year(interval, effective_source)
 
     # Auto mode: wrap preloaded data in a dummy loader
-    if source == "auto":
+    if source == "auto" or financial_query_plan is not None:
         loader = _AutoLoader(data_map)
 
     if engine_type == "options":
