@@ -51,6 +51,26 @@ def _validate_optional_journal_path(raw: Any) -> str | None:
     return str(safe_user_path(raw))
 
 
+def _validate_extract_journal_path(raw: Any) -> str:
+    """Validate `journal_path` for extraction with a HOME-scoped fallback.
+
+    The primary path policy still uses `safe_user_path()`. For local workflows
+    where the broker export is in the user's home directory, allow paths under
+    HOME as a pragmatic fallback.
+    """
+    if not raw:
+        raise ValueError("journal_path is required")
+
+    try:
+        return str(safe_user_path(raw))
+    except ValueError as exc:
+        resolved = Path(str(raw)).expanduser().resolve()
+        home = Path.home().resolve()
+        if resolved.is_relative_to(home):
+            return str(resolved)
+        raise exc
+
+
 # ---------------- Tool 1: extract ----------------
 
 class ExtractShadowStrategyTool(BaseTool):
@@ -88,10 +108,8 @@ class ExtractShadowStrategyTool(BaseTool):
 
     def execute(self, **kwargs: Any) -> str:
         journal_path = kwargs.get("journal_path")
-        if not journal_path:
-            return _err("journal_path is required")
         try:
-            journal_path = str(safe_user_path(journal_path))
+            journal_path = _validate_extract_journal_path(journal_path)
         except ValueError as exc:
             return _err(str(exc))
         try:

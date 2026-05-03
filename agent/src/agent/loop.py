@@ -258,7 +258,7 @@ def _normalize_tool_run_dir(args: dict[str, Any], memory_run_dir: str | None) ->
 
     candidate = Path(run_dir_value)
     if not candidate.is_absolute():
-        normalized["run_dir"] = str((Path(memory_run_dir) / candidate).resolve())
+        normalized["run_dir"] = str(Path(memory_run_dir) / candidate)
     return normalized
 
 
