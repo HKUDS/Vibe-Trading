@@ -123,6 +123,7 @@ def backtest(run_dir: str) -> str:
     - "yfinance": HK/US equities (free, no API key needed)
     - "okx": cryptocurrency (free, no API key needed)
     - "tushare": China A-shares (requires TUSHARE_TOKEN env var)
+    - "efinance": A-shares, US, HK, ETF (free, no API key)
     - "akshare": A-shares, US, HK, futures, forex (free, no API key)
     - "ccxt": crypto from 100+ exchanges (free, no API key)
     - "auto": auto-detect based on symbol format (with fallback)
@@ -414,6 +415,7 @@ def get_market_data(
     - "yfinance": HK/US equities (free, e.g. AAPL.US, 700.HK)
     - "okx": cryptocurrency (free, e.g. BTC-USDT, ETH-USDT)
     - "tushare": China A-shares (requires TUSHARE_TOKEN, e.g. 000001.SZ)
+    - "efinance": A-shares, US, HK, ETF (free, e.g. 000001.SZ, AAPL.US, 518880.SH)
     - "akshare": A-shares, US, HK, futures, forex (free, e.g. 000001.SZ, AAPL.US)
     - "ccxt": crypto from 100+ exchanges (free, e.g. BTC/USDT)
     - "auto": auto-detect based on symbol format (with fallback)
@@ -422,7 +424,7 @@ def get_market_data(
         codes: List of symbols (e.g. ["AAPL.US", "BTC-USDT", "000001.SZ"]).
         start_date: Start date (YYYY-MM-DD).
         end_date: End date (YYYY-MM-DD).
-        source: Data source ("auto", "yfinance", "okx", "tushare", "akshare", "ccxt").
+        source: Data source ("auto", "yfinance", "okx", "tushare", "efinance", "akshare", "ccxt").
         interval: Bar size (1m/5m/15m/30m/1H/4H/1D, default "1D").
     """
     results = {}
