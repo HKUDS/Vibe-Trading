@@ -1,0 +1,23 @@
+{
+  "id": "task-aggregate",
+  "agent_id": "aggregator",
+  "prompt_template": "Synthesize all analyst reports and produce a complete investment research report.",
+  "depends_on": [
+    "task-stock"
+  ],
+  "blocked_by": [
+    "task-stock"
+  ],
+  "input_from": {
+    "macro": "task-macro",
+    "sector": "task-sector",
+    "stock": "task-stock"
+  },
+  "status": "blocked",
+  "summary": null,
+  "artifacts": [],
+  "error": null,
+  "started_at": null,
+  "completed_at": null,
+  "worker_iterations": 0
+}

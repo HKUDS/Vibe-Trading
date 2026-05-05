@@ -96,6 +96,8 @@ def _default_run_roots() -> list[Path]:
         agent_root / "runs",
         cwd / "runs",
         home / ".vibe-trading" / "shadow_runs",
+        agent_root / ".swarm",        # Swarm worker artifact directories
+        cwd / ".swarm",               # Local swarm runs (outside agent dir)
     ]
 
 

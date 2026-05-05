@@ -1,0 +1,15 @@
+{
+  "id": "task-macro",
+  "agent_id": "macro_analyst",
+  "prompt_template": "Analyze the current macroeconomic environment and its impact on the {market} market, with a focus on {goal}.",
+  "depends_on": [],
+  "blocked_by": [],
+  "input_from": {},
+  "status": "in_progress",
+  "summary": null,
+  "artifacts": [],
+  "error": null,
+  "started_at": "2026-05-04T16:46:59.812598+00:00",
+  "completed_at": null,
+  "worker_iterations": 0
+}

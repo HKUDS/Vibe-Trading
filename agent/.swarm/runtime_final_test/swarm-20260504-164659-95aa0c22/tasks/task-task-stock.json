@@ -1,0 +1,22 @@
+{
+  "id": "task-stock",
+  "agent_id": "stock_picker",
+  "prompt_template": "Screen specific targets from the recommended sectors and conduct technical and fundamental analysis.",
+  "depends_on": [
+    "task-sector"
+  ],
+  "blocked_by": [
+    "task-sector"
+  ],
+  "input_from": {
+    "sector_context": "task-sector",
+    "macro_context": "task-macro"
+  },
+  "status": "blocked",
+  "summary": null,
+  "artifacts": [],
+  "error": null,
+  "started_at": null,
+  "completed_at": null,
+  "worker_iterations": 0
+}

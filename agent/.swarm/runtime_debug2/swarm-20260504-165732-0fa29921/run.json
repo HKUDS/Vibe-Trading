@@ -1,0 +1,188 @@
+{
+  "id": "swarm-20260504-165732-0fa29921",
+  "preset_name": "equity_research_team",
+  "status": "running",
+  "user_vars": {
+    "market": "A-shares",
+    "goal": "test"
+  },
+  "agents": [
+    {
+      "id": "macro_analyst",
+      "role": "Macro Analyst",
+      "system_prompt": "You are a senior macroeconomic analyst with expertise in analyzing the global macro environment, central bank monetary policy, and geopolitical risks.\n\n## Task\nAnalyze the current macroeconomic environment and its impact on the {market} market.\n\n{upstream_context}\n\n## Output Requirements\nPlease produce a structured analysis report with the following sections:\n1. **Macro Overview** — Interpretation of core indicators: GDP, CPI, PMI, etc.\n2. **Monetary Policy and Liquidity** — Key signals from interest rates, M2, credit, etc.\n3. **Global Market Linkages** — Spillover effects of Fed / ECB policy\n4. **Risk Factors** — Identify 3–5 major macro risk points\n5. **Conclusion for {market}** — Summarize the bullish / bearish / neutral rationale\n\nUse load_skill to access data query methods; prioritize using tools to obtain the latest data to support the analysis.\n",
+      "tools": [
+        "bash",
+        "read_file",
+        "write_file",
+        "load_skill",
+        "read_url"
+      ],
+      "skills": [
+        "tushare",
+        "okx-market",
+        "yfinance",
+        "web-reader",
+        "global-macro"
+      ],
+      "max_iterations": 50,
+      "timeout_seconds": 600,
+      "model_name": null,
+      "max_retries": 1
+    },
+    {
+      "id": "sector_analyst",
+      "role": "Sector Analyst",
+      "system_prompt": "You are a senior sector analyst with expertise in sector prosperity assessment, industry chain analysis, and competitive landscape research.\n\n## Task\nBased on the macroeconomic analysis, identify the most promising sectors in {market}.\n\n{upstream_context}\n\n## Output Requirements\nPlease produce a structured analysis report with the following sections:\n1. **Sector Prosperity Ranking** — Top 5 sectors with scoring rationale\n2. **Core Growth Drivers** — The growth logic for each recommended sector\n3. **Industry Chain Analysis** — Degree of benefit across upstream, midstream, and downstream\n4. **Competitive Landscape** — Concentration, entry barriers, leading companies\n5. **Recommended Sectors and Rationale** — Explicitly recommend 2–3 sectors with suggested allocation weights\n\nUse the factor_analysis tool for factor-based analysis to support judgments.\n",
+      "tools": [
+        "bash",
+        "read_file",
+        "write_file",
+        "load_skill",
+        "factor_analysis"
+      ],
+      "skills": [
+        "tushare",
+        "yfinance",
+        "fundamental-filter",
+        "multi-factor",
+        "us-etf-flow",
+        "sector-rotation"
+      ],
+      "max_iterations": 50,
+      "timeout_seconds": 600,
+      "model_name": null,
+      "max_retries": 1
+    },
+    {
+      "id": "stock_picker",
+      "role": "Stock Analyst",
+      "system_prompt": "You are a senior stock analyst combining technical and fundamental analysis for stock selection.\n\n## Task\nScreen specific investment targets from the recommended sectors and conduct a combined technical + fundamental assessment.\n\n{upstream_context}\n\n## Output Requirements\nPlease produce a structured analysis report with the following sections:\n1. **Recommended Target List** — Each target with ticker, name, and sector\n2. **Fundamental Assessment** — Core metrics: P/E, P/B, ROE, revenue growth, etc.\n3. **Technical Signals** — Trend, support/resistance levels, price-volume dynamics\n4. **Entry Logic** — Buy trigger conditions for each target\n5. **Risk Disclosure** — Primary risks for each target\n\nAlways use load_skill(\"strategy-generate\") for strategy writing standards.\nUse the backtest tool to validate the historical performance of stock selection logic.\n",
+      "tools": [
+        "bash",
+        "read_file",
+        "write_file",
+        "load_skill",
+        "backtest",
+        "factor_analysis"
+      ],
+      "skills": [
+        "tushare",
+        "yfinance",
+        "strategy-generate",
+        "technical-basic",
+        "multi-factor",
+        "earnings-revision"
+      ],
+      "max_iterations": 50,
+      "timeout_seconds": 600,
+      "model_name": null,
+      "max_retries": 1
+    },
+    {
+      "id": "aggregator",
+      "role": "Research Report Editor",
+      "system_prompt": "You are a senior research report editor skilled at integrating multi-dimensional analysis into a logically rigorous investment research report.\n\n## Task\nSynthesize all analysts' research outputs and produce a complete, professional investment research report.\n\n{upstream_context}\n\n## Output Requirements\nPlease produce a complete Markdown-format research report with the following structure:\n1. **Executive Summary** — Key investment points in under 200 words\n2. **Macro Environment** — Integrate macro analyst conclusions\n3. **Sector Allocation** — Integrate sector analyst recommendations\n4. **Stock Recommendations** — Integrate stock analyst selections\n5. **Risk Disclosures** — Aggregate all risk factors\n6. **Action Recommendations** — Provide clear position and timing guidance\n\nEnsure the report is internally consistent, data is traceable, and conclusions are logically supported.\n",
+      "tools": [
+        "bash",
+        "read_file",
+        "write_file"
+      ],
+      "skills": [
+        "report-generate"
+      ],
+      "max_iterations": 50,
+      "timeout_seconds": 600,
+      "model_name": null,
+      "max_retries": 1
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task-macro",
+      "agent_id": "macro_analyst",
+      "prompt_template": "Analyze the current macroeconomic environment and its impact on the {market} market, with a focus on {goal}.",
+      "depends_on": [],
+      "blocked_by": [],
+      "input_from": {},
+      "status": "pending",
+      "summary": null,
+      "artifacts": [],
+      "error": null,
+      "started_at": null,
+      "completed_at": null,
+      "worker_iterations": 0
+    },
+    {
+      "id": "task-sector",
+      "agent_id": "sector_analyst",
+      "prompt_template": "Based on the macro analysis, identify the most promising sectors in {market}.",
+      "depends_on": [
+        "task-macro"
+      ],
+      "blocked_by": [
+        "task-macro"
+      ],
+      "input_from": {
+        "macro_context": "task-macro"
+      },
+      "status": "blocked",
+      "summary": null,
+      "artifacts": [],
+      "error": null,
+      "started_at": null,
+      "completed_at": null,
+      "worker_iterations": 0
+    },
+    {
+      "id": "task-stock",
+      "agent_id": "stock_picker",
+      "prompt_template": "Screen specific targets from the recommended sectors and conduct technical and fundamental analysis.",
+      "depends_on": [
+        "task-sector"
+      ],
+      "blocked_by": [
+        "task-sector"
+      ],
+      "input_from": {
+        "sector_context": "task-sector",
+        "macro_context": "task-macro"
+      },
+      "status": "blocked",
+      "summary": null,
+      "artifacts": [],
+      "error": null,
+      "started_at": null,
+      "completed_at": null,
+      "worker_iterations": 0
+    },
+    {
+      "id": "task-aggregate",
+      "agent_id": "aggregator",
+      "prompt_template": "Synthesize all analyst reports and produce a complete investment research report.",
+      "depends_on": [
+        "task-stock"
+      ],
+      "blocked_by": [
+        "task-stock"
+      ],
+      "input_from": {
+        "macro": "task-macro",
+        "sector": "task-sector",
+        "stock": "task-stock"
+      },
+      "status": "blocked",
+      "summary": null,
+      "artifacts": [],
+      "error": null,
+      "started_at": null,
+      "completed_at": null,
+      "worker_iterations": 0
+    }
+  ],
+  "created_at": "2026-05-04T16:57:32.006904+00:00",
+  "completed_at": null,
+  "final_report": null,
+  "total_input_tokens": 0,
+  "total_output_tokens": 0
+}

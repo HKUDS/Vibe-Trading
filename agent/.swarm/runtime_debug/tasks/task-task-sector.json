@@ -1,0 +1,21 @@
+{
+  "id": "task-sector",
+  "agent_id": "sector_analyst",
+  "prompt_template": "Based on the macro analysis, identify the most promising sectors in {market}.",
+  "depends_on": [
+    "task-macro"
+  ],
+  "blocked_by": [
+    "task-macro"
+  ],
+  "input_from": {
+    "macro_context": "task-macro"
+  },
+  "status": "blocked",
+  "summary": null,
+  "artifacts": [],
+  "error": null,
+  "started_at": null,
+  "completed_at": null,
+  "worker_iterations": 0
+}

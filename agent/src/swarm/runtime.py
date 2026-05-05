@@ -8,12 +8,11 @@ with cancellation and event callback support.
 from __future__ import annotations
 
 import logging
+import time
 import threading
 from concurrent.futures import (
     Future,
     ThreadPoolExecutor,
-    TimeoutError as FuturesTimeoutError,
-    as_completed,
 )
 from datetime import datetime, timezone
 from pathlib import Path
@@ -403,36 +402,68 @@ class SwarmRuntime:
                 per_task_budget = agent_spec.timeout_seconds * (agent_spec.max_retries + 1)
                 layer_budget = max(layer_budget, per_task_budget)
 
-            # Collect results with a hard layer-level deadline — defends against
-            # worker threads stuck in C extensions / blocked I/O that bypass the
-            # in-loop timeout check (issue #42).
+            # Collect results with explicit polling — avoids `as_completed`
+            # callback unreliability under heavy I/O load (issue #72).
+            # Each poll checks all pending futures for completion.
             deadline_buffer = 60
             layer_deadline = layer_budget + deadline_buffer if layer_budget else None
+            t0 = time.monotonic()
+            poll_interval = 0.5  # seconds between polls
 
-            try:
-                for future in as_completed(futures, timeout=layer_deadline):
-                    tid = futures[future]
-                    try:
-                        results[tid] = future.result()
-                    except Exception as exc:
-                        logger.error("Worker for task %s raised exception", tid, exc_info=True)
-                        results[tid] = WorkerResult(
-                            status="failed", summary="",
-                            error=str(exc),
-                        )
-            except FuturesTimeoutError:
-                for pending, tid in futures.items():
-                    if tid in results:
-                        continue
-                    pending.cancel()
+            pending = dict(futures)  # future -> tid copy to track
+            logger.info(
+                "Starting result polling for %d tasks, layer_deadline=%s",
+                len(pending), layer_deadline,
+            )
+            while pending:
+                # Check cancellation
+                if cancel_event.is_set():
+                    logger.info("Run %s cancelled during layer execution", run.id)
+                    for f in pending:
+                        f.cancel()
+                    break
+
+                # Check layer deadline
+                if layer_deadline is not None and (time.monotonic() - t0) > layer_deadline:
                     logger.error(
-                        "Worker for task %s exceeded layer deadline (%ds)",
-                        tid, layer_deadline,
+                        "Layer deadline exceeded (%.0fs > %ds), cancelling %d pending tasks",
+                        time.monotonic() - t0, layer_deadline, len(pending),
                     )
-                    results[tid] = WorkerResult(
-                        status="timeout", summary="",
-                        error=f"Worker exceeded layer deadline of {layer_deadline}s",
-                    )
+                    for f in pending:
+                        f.cancel()
+                    for tid in pending.values():
+                        results[tid] = WorkerResult(
+                            status="timeout", summary="",
+                            error=f"Worker exceeded layer deadline of {layer_deadline}s",
+                        )
+                    break
+
+                # Check each pending future
+                for future in list(pending.keys()):
+                    if future.done():
+                        tid = pending.pop(future)
+                        try:
+                            results[tid] = future.result()
+                            logger.info(
+                                "Task %s completed with status=%s",
+                                tid, results[tid].status,
+                            )
+                        except Exception as exc:
+                            logger.error("Worker for task %s raised exception", tid, exc_info=True)
+                            results[tid] = WorkerResult(
+                                status="failed", summary="",
+                                error=str(exc),
+                            )
+
+                if pending:
+                    # Log progress every 30 seconds
+                    elapsed_poll = time.monotonic() - t0
+                    if int(elapsed_poll) % 30 == 0:
+                        logger.info(
+                            "Polling: %d pending, %.0fs elapsed, deadline=%s",
+                            len(pending), elapsed_poll, layer_deadline,
+                        )
+                    time.sleep(poll_interval)
         except KeyboardInterrupt:
             cancel_event.set()
             logger.warning("Swarm layer interrupted — cancelling pending workers")
