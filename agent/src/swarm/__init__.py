@@ -12,7 +12,7 @@ from src.swarm.models import (
     TaskStatus,
     WorkerResult,
 )
-from src.swarm.presets import build_run_from_preset, list_presets, load_preset
+from src.swarm.presets import build_run_from_preset, inspect_preset, list_presets, load_preset
 from src.swarm.runtime import SwarmRuntime
 from src.swarm.store import SwarmStore
 from src.swarm.worker import run_worker
@@ -29,6 +29,7 @@ __all__ = [
     "TaskStatus",
     "WorkerResult",
     "build_run_from_preset",
+    "inspect_preset",
     "list_presets",
     "load_preset",
     "run_worker",

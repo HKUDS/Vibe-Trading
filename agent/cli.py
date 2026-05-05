@@ -671,6 +671,7 @@ def _print_help() -> None:
         ("/continue <run_id> <prompt>", "Continue an existing run"),
         ("/swarm", "List swarm team presets"),
         ("/swarm run <preset> {vars}", "Run a swarm team"),
+        ("/swarm inspect <preset>", "Inspect preset DAG and validation"),
         ("/swarm list", "List swarm run history"),
         ("/swarm show <run_id>", "Show swarm run details"),
         ("/swarm cancel <run_id>", "Cancel a swarm run"),
@@ -779,6 +780,11 @@ def _handle_swarm_command(arg: str) -> None:
         preset = run_parts[0]
         vars_json = run_parts[1] if len(run_parts) > 1 else None
         cmd_swarm_run_live(preset, vars_json)
+    elif sub == "inspect":
+        if sub_arg:
+            cmd_swarm_inspect(sub_arg)
+        else:
+            console.print("[red]Usage: /swarm inspect <preset>[/red]")
     elif sub == "list":
         cmd_swarm_list()
     elif sub == "show":
@@ -1409,6 +1415,78 @@ def cmd_swarm_run(preset: str, vars_json: Optional[str] = None) -> None:
     cmd_swarm_run_live(preset, vars_json)
 
 
+def cmd_swarm_inspect(preset: str) -> int:
+    """Inspect a swarm preset without starting workers."""
+    from src.swarm.presets import inspect_preset
+
+    try:
+        report = inspect_preset(preset)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+    except Exception as exc:
+        console.print(f"[red]Failed to inspect preset:[/red] {exc}")
+        return EXIT_RUN_FAILED
+
+    status = "OK" if report["valid"] else "INVALID"
+    status_color = "green" if report["valid"] else "red"
+    lines = [
+        f"[bold]Preset:[/bold] {report['name']}",
+        f"[bold]Title:[/bold] {report.get('title') or '-'}",
+        f"[bold]Status:[/bold] [{status_color}]{status}[/{status_color}]",
+        f"[bold]Agents:[/bold] {len(report['agents'])}",
+        f"[bold]Tasks:[/bold] {len(report['tasks'])}",
+        f"[bold]Variables:[/bold] {', '.join(report['variables']) or '-'}",
+    ]
+    if report.get("description"):
+        lines.append(f"[bold]Description:[/bold] {report['description']}")
+    console.print(Panel("\n".join(lines), border_style=status_color, title="Swarm Preset Inspect"))
+
+    agent_table = Table(title="Agents", show_lines=False)
+    agent_table.add_column("ID", style="cyan", no_wrap=True)
+    agent_table.add_column("Role")
+    agent_table.add_column("Tools", max_width=40)
+    for agent in report["agents"]:
+        agent_table.add_row(
+            agent["id"],
+            agent.get("role", ""),
+            ", ".join(agent.get("tools", [])),
+        )
+    console.print(agent_table)
+
+    dag_table = Table(title="DAG Execution Plan", show_lines=False)
+    dag_table.add_column("Layer", justify="right", width=6)
+    dag_table.add_column("Task", style="cyan")
+    dag_table.add_column("Agent")
+    dag_table.add_column("Depends On")
+    task_details = {task["id"]: task for task in report["tasks"]}
+    for idx, layer in enumerate(report["layers"], start=1):
+        for item in layer:
+            task = task_details[item["task_id"]]
+            dag_table.add_row(
+                str(idx),
+                item["task_id"],
+                item["agent_id"],
+                ", ".join(task.get("depends_on", [])) or "-",
+            )
+    console.print(dag_table)
+
+    validation_table = Table(title="Validation", show_lines=False)
+    validation_table.add_column("Level", width=8)
+    validation_table.add_column("Message")
+    if report["errors"]:
+        for error in report["errors"]:
+            validation_table.add_row("[red]ERROR[/red]", error)
+    if report["warnings"]:
+        for warning in report["warnings"]:
+            validation_table.add_row("[yellow]WARN[/yellow]", warning)
+    if not report["errors"] and not report["warnings"]:
+        validation_table.add_row("[green]OK[/green]", "No issues found")
+    console.print(validation_table)
+
+    return EXIT_SUCCESS if report["valid"] else EXIT_RUN_FAILED
+
+
 def cmd_swarm_list() -> None:
     """List swarm run history."""
     from src.swarm.store import SwarmStore
@@ -1684,6 +1762,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-iter", type=int, default=50, help="Maximum agent iterations")
 
     parser.add_argument("--swarm-presets", action="store_true", help="List swarm presets")
+    parser.add_argument("--swarm-inspect", metavar="PRESET", help="Inspect a swarm preset without running it")
     parser.add_argument("--swarm-run", nargs="+", metavar=("PRESET", "VARS"), help="Run a swarm preset")
     parser.add_argument("--swarm-list", action="store_true", help="List swarm runs")
     parser.add_argument("--swarm-show", metavar="RUN_ID", help="Show a swarm run")
@@ -2070,6 +2149,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.swarm_presets:
         return _coerce_exit_code(cmd_swarm_presets())
+    if args.swarm_inspect:
+        return _coerce_exit_code(cmd_swarm_inspect(args.swarm_inspect))
     if args.swarm_run:
         preset_name = args.swarm_run[0]
         vars_json = args.swarm_run[1] if len(args.swarm_run) > 1 else None

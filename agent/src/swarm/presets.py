@@ -9,14 +9,18 @@ behavior under editable installs and built wheels.
 from __future__ import annotations
 
 import uuid
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from string import Formatter
 
 import yaml
 
 from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, TaskStatus
+from src.swarm.task_store import topological_layers, validate_dag
 
 PRESETS_DIR = Path(__file__).resolve().parent / "presets"
+_INTERNAL_TEMPLATE_VARS = {"upstream_context"}
 
 
 def load_preset(name: str) -> dict:
@@ -65,6 +69,146 @@ def list_presets() -> list[dict]:
         })
 
     return results
+
+
+def _declared_variable_names(raw_variables: list) -> set[str]:
+    """Extract variable names from the YAML variables section."""
+    names: set[str] = set()
+    for item in raw_variables:
+        if isinstance(item, dict):
+            name = item.get("name")
+        else:
+            name = str(item)
+        if name:
+            names.add(str(name))
+    return names
+
+
+def _template_variables(template: str) -> set[str]:
+    """Return Python format fields referenced by a prompt template."""
+    variables: set[str] = set()
+    for _, field_name, _, _ in Formatter().parse(template or ""):
+        if not field_name:
+            continue
+        root = field_name.split(".", 1)[0].split("[", 1)[0]
+        if root and root not in _INTERNAL_TEMPLATE_VARS:
+            variables.add(root)
+    return variables
+
+
+def inspect_preset(name: str) -> dict:
+    """Validate a swarm preset and return a dry-run execution plan.
+
+    This does not start workers or call an LLM. It catches common YAML/DAG
+    mistakes early and exposes the topological task layers used by the runtime.
+    """
+    data = load_preset(name)
+    run = build_run_from_preset(name, {})
+
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    agent_ids = [agent.id for agent in run.agents]
+    task_ids = [task.id for task in run.tasks]
+    agent_id_set = set(agent_ids)
+    task_id_set = set(task_ids)
+
+    for duplicate in sorted(item for item, count in Counter(agent_ids).items() if count > 1):
+        errors.append(f"Duplicate agent id: {duplicate}")
+    for duplicate in sorted(item for item, count in Counter(task_ids).items() if count > 1):
+        errors.append(f"Duplicate task id: {duplicate}")
+
+    for task in run.tasks:
+        if task.agent_id not in agent_id_set:
+            errors.append(f"Task '{task.id}' references unknown agent '{task.agent_id}'")
+        for _, upstream_task_id in task.input_from.items():
+            if upstream_task_id not in task_id_set:
+                errors.append(
+                    f"Task '{task.id}' input_from references unknown task '{upstream_task_id}'"
+                )
+
+    layers: list[list[str]] = []
+    try:
+        validate_dag(run.tasks)
+        layers = topological_layers(run.tasks)
+    except ValueError as exc:
+        errors.append(str(exc))
+
+    dependents: dict[str, list[str]] = defaultdict(list)
+    for task in run.tasks:
+        for dep in task.depends_on:
+            dependents[dep].append(task.id)
+
+    def is_upstream(candidate: str, task_id: str) -> bool:
+        """Return whether candidate can reach task_id through dependency edges."""
+        seen: set[str] = set()
+        stack = [candidate]
+        while stack:
+            current = stack.pop()
+            if current == task_id:
+                return True
+            if current in seen:
+                continue
+            seen.add(current)
+            stack.extend(dependents.get(current, []))
+        return False
+
+    for task in run.tasks:
+        for key, upstream_task_id in task.input_from.items():
+            if upstream_task_id in task_id_set and not is_upstream(upstream_task_id, task.id):
+                warnings.append(
+                    f"Task '{task.id}' input_from '{key}' references '{upstream_task_id}', "
+                    "which is not upstream in the DAG"
+                )
+
+    declared_variables = _declared_variable_names(data.get("variables", []))
+    used_variables: set[str] = set()
+    for task in data.get("tasks", []):
+        try:
+            used_variables.update(_template_variables(task.get("prompt_template", "")))
+        except ValueError as exc:
+            errors.append(f"Task '{task.get('id', '?')}' has invalid prompt template: {exc}")
+
+    missing_declarations = sorted(used_variables - declared_variables)
+    unused_declarations = sorted(declared_variables - used_variables)
+    if missing_declarations:
+        warnings.append(
+            "Prompt templates use undeclared variables: " + ", ".join(missing_declarations)
+        )
+    if unused_declarations:
+        warnings.append(
+            "Declared variables are not used by task prompt templates: "
+            + ", ".join(unused_declarations)
+        )
+
+    task_agent = {task.id: task.agent_id for task in run.tasks}
+    return {
+        "name": data.get("name", name),
+        "title": data.get("title", ""),
+        "description": data.get("description", ""),
+        "valid": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "variables": sorted(declared_variables),
+        "used_variables": sorted(used_variables),
+        "agents": [
+            {"id": agent.id, "role": agent.role, "tools": agent.tools, "skills": agent.skills}
+            for agent in run.agents
+        ],
+        "tasks": [
+            {
+                "id": task.id,
+                "agent_id": task.agent_id,
+                "depends_on": task.depends_on,
+                "input_from": task.input_from,
+            }
+            for task in run.tasks
+        ],
+        "layers": [
+            [{"task_id": task_id, "agent_id": task_agent.get(task_id, "")} for task_id in layer]
+            for layer in layers
+        ],
+    }
 
 
 def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmRun:
