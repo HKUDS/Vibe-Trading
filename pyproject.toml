@@ -1,6 +1,6 @@
 [project]
 name = "vibe-trading-ai"
-version = "0.1.7"
+version = "0.1.6"
 description = "Natural-language finance research AI agent with backtesting"
 requires-python = ">=3.11"
 license = "MIT"
@@ -52,6 +52,7 @@ dependencies = [
     "sse-starlette>=1.6.0",
     "fastmcp>=2.0.0",
     "ddgs>=6.0.0",
+    "tavily>=0.5.0",
     "jinja2>=3.1.0",
     "matplotlib>=3.7.0",
     "weasyprint>=60.0",
