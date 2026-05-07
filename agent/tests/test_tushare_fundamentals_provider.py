@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
 
@@ -47,6 +50,23 @@ def test_provider_exposes_first_milestone_financial_table_metadata() -> None:
     assert {"ts_code", "end_date", "ann_date", "f_ann_date", "total_revenue"} <= {
         column.name for column in schema.columns
     }
+
+
+def test_default_constructor_uses_project_tushare_token_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    fake_api = _FakeTushareApi()
+
+    def pro_api(token: str = "") -> _FakeTushareApi:
+        calls.append(token)
+        return fake_api
+
+    monkeypatch.setenv("TUSHARE_TOKEN", "ts-secret-token")
+    monkeypatch.setitem(sys.modules, "tushare", SimpleNamespace(pro_api=pro_api))
+
+    provider = TushareFundamentalProvider()
+
+    assert provider.api is fake_api
+    assert calls == ["ts-secret-token"]
 
 
 def test_query_fundamentals_returns_pit_safe_dataframe() -> None:

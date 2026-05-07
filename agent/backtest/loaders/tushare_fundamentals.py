@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, Iterable
 
 import pandas as pd
+
+TUSHARE_TOKEN_PLACEHOLDERS = {"", "your-tushare-token"}
 
 
 class DataProviderError(Exception):
@@ -112,7 +115,10 @@ class TushareFundamentalProvider:
         if api is None:
             import tushare as ts
 
-            api = ts.pro_api()
+            token = os.getenv("TUSHARE_TOKEN", "").strip()
+            if token in TUSHARE_TOKEN_PLACEHOLDERS:
+                token = ""
+            api = ts.pro_api(token)
         self.api = api
 
     def list_tables(self) -> list[str]:
