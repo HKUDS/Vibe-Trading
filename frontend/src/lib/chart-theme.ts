@@ -19,6 +19,11 @@ function isChinese(): boolean {
   return (document.documentElement.lang || navigator.language || "").startsWith("zh");
 }
 
+export function setChartLocale(locale: string) {
+  document.documentElement.lang = locale;
+  _cache = null;
+}
+
 let _cache: ReturnType<typeof buildTheme> | null = null;
 let _cacheKey = "";
 

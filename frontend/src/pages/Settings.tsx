@@ -1,9 +1,25 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Database, KeyRound, Loader2, RotateCcw, Save, Server, SlidersHorizontal } from "lucide-react";
+import {
+  Database,
+  KeyRound,
+  Loader2,
+  RotateCcw,
+  Save,
+  Server,
+  SlidersHorizontal,
+} from "lucide-react";
 import { toast } from "sonner";
-import { api, isAuthRequiredError, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
+import {
+  api,
+  isAuthRequiredError,
+  type DataSourceSettings,
+  type LLMProviderOption,
+  type LLMSettings,
+} from "@/lib/api";
 import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
 import { useI18n } from "@/lib/i18n";
+import { Globe } from "lucide-react";
+import { support_languages } from "@/utils";
 
 interface LLMFormState {
   provider: string;
@@ -33,7 +49,7 @@ function toForm(settings: LLMSettings): LLMFormState {
 }
 
 export function Settings() {
-  const { t } = useI18n();
+  const { t, locale, setLocale, isLoading: isLocaleLoading } = useI18n();
   const [settings, setSettings] = useState<LLMSettings | null>(null);
   const [dataSettings, setDataSettings] = useState<DataSourceSettings | null>(null);
   const [form, setForm] = useState<LLMFormState | null>(null);
@@ -70,7 +86,9 @@ export function Settings() {
       .finally(() => {
         if (alive) setLoading(false);
       });
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [t.dataSourceSettingsLoadFailed, t.llmSettingsLoadFailed]);
 
   const providers = settings?.providers ?? [];
@@ -124,7 +142,9 @@ export function Settings() {
       setClearApiKey(false);
       toast.success(t.llmSettingsSaved);
     } catch (error) {
-      toast.error(`${t.llmSettingsSaveFailed}: ${error instanceof Error ? error.message : t.unknownError}`);
+      toast.error(
+        `${t.llmSettingsSaveFailed}: ${error instanceof Error ? error.message : t.unknownError}`,
+      );
     } finally {
       setSaving(false);
     }
@@ -143,7 +163,9 @@ export function Settings() {
       setClearTushareToken(false);
       toast.success(t.dataSourceSettingsSaved);
     } catch (error) {
-      toast.error(`${t.dataSourceSettingsSaveFailed}: ${error instanceof Error ? error.message : t.unknownError}`);
+      toast.error(
+        `${t.dataSourceSettingsSaveFailed}: ${error instanceof Error ? error.message : t.unknownError}`,
+      );
     } finally {
       setDataSaving(false);
     }
@@ -182,6 +204,34 @@ export function Settings() {
     </form>
   );
 
+  const localeSelect = (
+    <div className="rounded-lg border bg-card p-5 shadow-sm">
+      <div className="mb-4 flex items-center gap-2">
+        <Globe className="h-4 w-4 text-primary" />
+        <h2 className="text-base font-semibold">{t.language}</h2>
+      </div>
+      <div className="flex items-center gap-2">
+        {support_languages.map((item) => (
+          <button
+            type="button"
+            disabled={isLocaleLoading}
+            onClick={async () => {
+              await setLocale(item.value);
+            }}
+            className={`rounded-md border px-3 py-1.5 text-sm transition disabled:opacity-50 ${
+              locale === item.value
+                ? "border-primary bg-primary text-primary-foreground"
+                : "hover:bg-muted"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+        {isLocaleLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+      </div>
+    </div>
+  );
+
   if (loading || !form || !settings || !dataSettings) {
     return (
       <div className="mx-auto max-w-5xl space-y-6 p-6">
@@ -190,6 +240,7 @@ export function Settings() {
           <p className="max-w-3xl text-sm text-muted-foreground">{t.settingsDesc}</p>
         </div>
         {localApiAccessSection}
+        {localeSelect}
         <div className="flex min-h-32 items-center justify-center rounded-lg border bg-card p-5 text-sm text-muted-foreground">
           {settingsLoadError ? (
             <div className="text-center">
@@ -227,13 +278,17 @@ export function Settings() {
       </div>
 
       {localApiAccessSection}
+      {localeSelect}
 
       <div className="space-y-2">
         <h2 className="text-lg font-semibold tracking-tight">{t.llmSettings}</h2>
         <p className="max-w-3xl text-sm text-muted-foreground">{t.llmSettingsDesc}</p>
       </div>
 
-      <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
+      <form
+        onSubmit={submit}
+        className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]"
+      >
         <section className="rounded-lg border bg-card p-5 shadow-sm">
           <div className="mb-5 flex items-center gap-2">
             <Server className="h-4 w-4 text-primary" />
@@ -249,7 +304,9 @@ export function Settings() {
                 className={fieldClass}
               >
                 {providers.map((provider) => (
-                  <option key={provider.name} value={provider.name}>{provider.label}</option>
+                  <option key={provider.name} value={provider.name}>
+                    {provider.label}
+                  </option>
                 ))}
               </select>
               <span className={hintClass}>{t.llmProviderHint}</span>
@@ -353,7 +410,9 @@ export function Settings() {
                 max={3600}
                 step={1}
                 value={form.timeout_seconds}
-                onChange={(event) => setForm({ ...form, timeout_seconds: Number(event.target.value) })}
+                onChange={(event) =>
+                  setForm({ ...form, timeout_seconds: Number(event.target.value) })
+                }
                 className={fieldClass}
               />
             </label>
@@ -455,7 +514,11 @@ export function Settings() {
               disabled={dataSaving}
               className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {dataSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {dataSaving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
               {dataSaving ? t.llmSaving : t.saveDataSourceSettings}
             </button>
           </div>
@@ -463,7 +526,9 @@ export function Settings() {
           <div className="rounded-md border bg-muted/20 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <span className="text-sm font-medium">{t.baostockStatus}</span>
-              <span className={`rounded-full px-2 py-0.5 text-xs ${dataSettings.baostock_supported ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs ${dataSettings.baostock_supported ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}
+              >
                 {dataSettings.baostock_supported ? t.baostockSupported : t.baostockNotSupported}
               </span>
             </div>

@@ -1,6 +1,4 @@
-import { createContext, useContext, type ReactNode } from "react";
-
-const messages = {
+export const messages = {
   home: "Home", agent: "Agent", runs: "Runs", settings: "Settings",
   settingsDesc: "Configure model credentials and market data source tokens for this local project.",
   localApiAccess: "Local API access",
@@ -163,18 +161,55 @@ const messages = {
   computeBtn: "Compute",
   methodLabel: "Method",
   noCorrelationData: "No correlation data available",
-} as const;
+  welcomeSubtitle: "vibe trading with your professional financial agent team",
+  multiMarketBacktest: "Multi-Market Backtest",
+  researchAnalysis: "Research & Analysis",
+  swarmTeams: "Swarm Teams",
+  docWebResearch: "Document & Web Research",
+  tradeJournal: "Trade Journal",
+  shadowAccount: "Shadow Account",
+  crossMarketPortfolio: "Cross-Market Portfolio",
+  crossMarketPortfolioDesc: "A-shares + crypto + US equities with risk-parity optimizer",
+  btc5MinMacd: "BTC 5-Min MACD Strategy",
+  btc5MinMacdDesc: "Minute-level crypto backtest with real-time OKX data",
+  usTechMaxDiv: "US Tech Max Diversification",
+  usTechMaxDivDesc: "Portfolio optimizer across FAANG+ via yfinance",
+  multiFactorAlpha: "Multi-Factor Alpha Model",
+  multiFactorAlphaDesc: "IC-weighted factor synthesis across 300 stocks",
+  optionsGreeks: "Options Greeks Analysis",
+  optionsGreeksDesc: "Black-Scholes pricing with Delta/Gamma/Theta/Vega",
+  investmentCommittee: "Investment Committee Review",
+  investmentCommitteeDesc: "Multi-agent debate: long vs short, risk review, PM decision",
+  quantStrategyDesk: "Quant Strategy Desk",
+  quantStrategyDeskDesc: "Screening → factor research → backtest → risk audit pipeline",
+  analyzeEarningsPdf: "Analyze an Earnings Report PDF",
+  analyzeEarningsPdfDesc: "Upload a PDF and ask questions about the financials",
+  webResearchMacro: "Web Research: Macro Outlook",
+  webResearchMacroDesc: "Read live web sources for macro analysis",
+  analyzeBrokerExport: "Analyze My Broker Export",
+  analyzeBrokerExportDesc: "Parse 同花顺/东财/富途/generic CSV — holding days, win rate, PnL ratio, hourly distribution",
+  diagnoseBehaviorBiases: "Diagnose My Behavior Biases",
+  diagnoseBehaviorBiasesDesc: "Disposition effect, overtrading, chasing momentum, anchoring — severity + numeric evidence",
+  trainShadowFromJournal: "Train My Shadow from Journal",
+  trainShadowFromJournalDesc: "Extract your strategy rules from a broker CSV and persist a Shadow profile",
+  howMuchLeaving: "How Much Am I Leaving on the Table?",
+  howMuchLeavingDesc: "Backtest your shadow strategy and attribute delta vs. your actual PnL",
+  generateShadowReport: "Generate Shadow Report",
+  generateShadowReportDesc: "8-section HTML/PDF — equity curve, per-market Sharpe, attribution waterfall",
+  chipFinanceSkills: "70 Finance Skills",
+  chipSwarmPresets: "29 Swarm Presets",
+  chipAgentTools: "32 Agent Tools",
+  chipMarkets: "3 Markets: A-Share · Crypto · HK/US",
+  chipTimeframes: "Minute to Daily Timeframes",
+  chipPortfolioOptimizers: "4 Portfolio Optimizers",
+  chipRiskMetrics: "15+ Risk Metrics",
+  chipOptionsDerivatives: "Options & Derivatives",
+  chipPdfWebResearch: "PDF & Web Research",
+  chipFactorAnalysis: "Factor Analysis & ML",
+  chipTradeJournal: "Trade Journal Analyzer",
+  chipShadowAccount: "Shadow Account Backtest",
+  chipPersistentMemory: "Persistent Memory",
+  chipSessionSearch: "Session Search",
+};
 
-type Messages = typeof messages;
-
-const I18nCtx = createContext<{ t: Messages }>({ t: messages });
-
-export function I18nProvider({ children }: { children: ReactNode }) {
-  return (
-    <I18nCtx.Provider value={{ t: messages }}>
-      {children}
-    </I18nCtx.Provider>
-  );
-}
-
-export function useI18n() { return useContext(I18nCtx); }
+export type Messages = typeof messages;

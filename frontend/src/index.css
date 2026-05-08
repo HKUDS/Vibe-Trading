@@ -37,19 +37,23 @@
 
   .dark {
     /* Dark mode: 4-level surface system */
-    --background: 220 20% 5%;       /* bg-base */
+    --background: 220 20% 5%;
+    /* bg-base */
     --foreground: 220 10% 92%;
-    --card: 220 20% 8%;             /* surface-1 */
+    --card: 220 20% 8%;
+    /* surface-1 */
     --card-foreground: 220 10% 92%;
 
     --primary: 27 90% 52%;
     --primary-foreground: 0 0% 100%;
 
-    --muted: 220 20% 13%;           /* surface-2 */
+    --muted: 220 20% 13%;
+    /* surface-2 */
     --muted-foreground: 220 10% 55%;
     --destructive: 0 62% 50%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 20% 18%;          /* surface-3 */
+    --border: 220 20% 18%;
+    /* surface-3 */
 
     /* Semantic colors */
     --success: 142 71% 45%;
@@ -65,17 +69,45 @@
     --chart-compare-b: #fbbf24;
   }
 
-  * { @apply border-border; }
-  body { @apply bg-background text-foreground; }
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
 
   /* Prose table enhancements */
-  .prose table { border-collapse: collapse; width: 100%; }
-  .prose th, .prose td { border: 1px solid hsl(var(--border)); }
-  .prose tbody tr:nth-child(even) { background: hsl(var(--muted) / 0.3); }
+  .prose table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  .prose th,
+  .prose td {
+    border: 1px solid hsl(var(--border));
+  }
+
+  .prose tbody tr:nth-child(even) {
+    background: hsl(var(--muted) / 0.3);
+  }
 
   /* Smooth scrollbar for webkit */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
 }

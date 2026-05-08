@@ -12,6 +12,7 @@ export function Home() {
     { icon: UserCircle2, title: t.feat4, desc: t.feat4d },
   ];
 
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-8">
       <div className="max-w-2xl text-center space-y-6">
