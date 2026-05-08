@@ -9,9 +9,8 @@
 
 from __future__ import annotations
 
-import json
-import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Dict
 from unittest.mock import patch
 
@@ -20,6 +19,7 @@ import pandas as pd
 import pytest
 
 from backtest.engines.base import _align
+from backtest.engines import base as base_engine
 from backtest.engines.china_a import ChinaAEngine
 from backtest.loaders.base import validate_date_range
 from backtest.runner import BacktestConfigSchema
@@ -134,6 +134,136 @@ class TestSymbolIsolation:
         assert len(engine.trades) > 0
         assert all(t.symbol == "GOOD" for t in engine.trades)
 
+    def test_backtest_enriches_data_map_with_configured_fundamental_fields(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A-share backtests should expose configured statement fields to strategies."""
+        dates = pd.bdate_range("2024-04-01", periods=3)
+        bars = pd.DataFrame(
+            {
+                "open": [10.0, 11.0, 12.0],
+                "high": [10.5, 11.5, 12.5],
+                "low": [9.5, 10.5, 11.5],
+                "close": [10.2, 11.2, 12.2],
+                "volume": [1000, 1100, 1200],
+            },
+            index=dates,
+        )
+
+        class FakeLoader:
+            def fetch(self, *args, **kwargs):
+                return {"000001.SZ": bars.copy()}
+
+        class SignalEngine:
+            def generate(self, data_map):
+                frame = data_map["000001.SZ"]
+                assert "income_total_revenue" in frame.columns
+                assert frame["income_total_revenue"].iloc[-1] == 120.0
+                return {"000001.SZ": pd.Series(0.0, index=frame.index)}
+
+        def fake_enrich(data_map, provider, fields_by_table, *, as_of, periods=None):
+            assert fields_by_table == {"income": ["total_revenue"]}
+            assert as_of == "2024-04-30"
+            enriched = {code: frame.copy() for code, frame in data_map.items()}
+            enriched["000001.SZ"]["income_total_revenue"] = [None, 80.0, 120.0]
+            return enriched
+
+        monkeypatch.setattr(base_engine, "TushareFundamentalProvider", lambda: object(), raising=False)
+        monkeypatch.setattr(base_engine, "enrich_price_frames_with_fundamentals", fake_enrich, raising=False)
+
+        engine = ChinaAEngine({"initial_cash": 1_000_000})
+        engine.run_backtest(
+            {
+                "codes": ["000001.SZ"],
+                "start_date": "2024-04-01",
+                "end_date": "2024-04-30",
+                "source": "tushare",
+                "fundamental_fields": {"income": ["total_revenue"]},
+                "initial_cash": 1_000_000,
+            },
+            FakeLoader(),
+            SignalEngine(),
+            tmp_path,
+        )
+
+    def test_backtest_records_explicit_benchmark_metadata(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Explicit benchmark metadata should be added after metrics are computed."""
+        dates = pd.bdate_range("2024-04-01", periods=3)
+        bars = pd.DataFrame(
+            {
+                "open": [10.0, 11.0, 12.0],
+                "high": [10.5, 11.5, 12.5],
+                "low": [9.5, 10.5, 11.5],
+                "close": [10.2, 11.2, 12.2],
+                "volume": [1000, 1100, 1200],
+            },
+            index=dates,
+        )
+
+        class FakeLoader:
+            def fetch(self, *args, **kwargs):
+                return {"000001.SZ": bars.copy()}
+
+        class SignalEngine:
+            def generate(self, data_map):
+                return {"000001.SZ": pd.Series(0.0, index=data_map["000001.SZ"].index)}
+
+        def fake_resolve_benchmark(**kwargs):
+            return SimpleNamespace(
+                ticker="000300.SH",
+                ret_series=pd.Series([0.0, 0.01, -0.005], index=dates),
+                total_ret=0.00495,
+            )
+
+        monkeypatch.setattr("backtest.benchmark.resolve_benchmark", fake_resolve_benchmark)
+
+        engine = ChinaAEngine({"initial_cash": 1_000_000})
+        metrics = engine.run_backtest(
+            {
+                "codes": ["000001.SZ"],
+                "start_date": "2024-04-01",
+                "end_date": "2024-04-30",
+                "source": "tushare",
+                "benchmark": "000300.SH",
+                "initial_cash": 1_000_000,
+            },
+            FakeLoader(),
+            SignalEngine(),
+            tmp_path,
+        )
+
+        assert metrics["benchmark_ticker"] == "000300.SH"
+        assert metrics["benchmark_return"] == 0.00495
+
+    def test_configured_fundamental_enrichment_failure_is_not_silent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Explicit statement-field requests should fail rather than degrade silently."""
+        dates = pd.bdate_range("2024-04-01", periods=1)
+        bars = pd.DataFrame({"close": [10.0]}, index=dates)
+
+        def fake_enrich(*args, **kwargs):
+            raise RuntimeError("provider failed")
+
+        monkeypatch.setattr(base_engine, "TushareFundamentalProvider", lambda: object(), raising=False)
+        monkeypatch.setattr(base_engine, "enrich_price_frames_with_fundamentals", fake_enrich, raising=False)
+
+        with pytest.raises(RuntimeError, match="fundamental_fields.*provider failed"):
+            base_engine._maybe_enrich_fundamentals(
+                {"000001.SZ": bars},
+                {
+                    "end_date": "2024-04-30",
+                    "fundamental_fields": {"income": ["total_revenue"]},
+                },
+            )
+
 
 # ---------------------------------------------------------------------------
 # 3. Config schema validation (pydantic)
@@ -150,6 +280,15 @@ class TestBacktestConfigSchema:
         assert c.codes == ["AAPL.US"]
         assert c.interval == "1D"
         assert c.engine == "daily"
+
+    def test_fundamental_fields_must_be_table_to_field_list_mapping(self) -> None:
+        with pytest.raises(ValueError, match="fundamental_fields"):
+            BacktestConfigSchema(
+                codes=["000001.SZ"],
+                start_date="2025-01-01",
+                end_date="2025-06-01",
+                fundamental_fields={"income": "total_revenue"},
+            )
 
     def test_empty_codes_rejected(self) -> None:
         with pytest.raises(Exception, match="codes must be a non-empty list"):

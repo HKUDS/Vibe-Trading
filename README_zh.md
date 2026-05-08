@@ -51,13 +51,14 @@
 
 ## 📰 新闻
 
+- **2026-05-08** 🧾 **Tushare 财报字段进入选股过滤**：A 股日频回测现在可以通过 `fundamental_fields` 请求按时间点安全的财务报表字段，让 SignalEngine 在公告/披露日期之后使用 `income_total_revenue`、`income_n_income`、`balancesheet_total_hldr_eqy_exc_min_int`、`fina_indicator_roe` 等带表名前缀的列做预筛选（[#76](https://github.com/HKUDS/Vibe-Trading/pull/76)，感谢 @mrbob-git）。后续加固让显式请求财报字段时如果 Tushare enrichment 失败会直接报错，而不是静默退回到纯行情数据（[#77](https://github.com/HKUDS/Vibe-Trading/pull/77)）。
 - **2026-05-07** 📈 **Tushare 基本面 + 社区维护**：新增面向基本面研究流程的按时间点 `TushareFundamentalProvider` 契约，并用回归测试覆盖项目 `TUSHARE_TOKEN` 环境变量路径（[#74](https://github.com/HKUDS/Vibe-Trading/pull/74)）。社区维护也明确了几个边界：快速迭代阶段 UI 暂时保持单语言；项目已内置 DuckDuckGo 支持的 `web_search`，不再增加重复搜索依赖；非官方托管部署不应被视为填写 API key 或数据源 token 的可信入口。
 - **2026-05-06** 🚀 **v0.1.7 发布**（[Release notes](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.7)，`pip install -U vibe-trading-ai`）：安全边界加固版已发布到 PyPI 与 ClawHub，覆盖更安全的 API/读取/上传/文件/URL/生成代码/shell 工具/Docker 默认边界，同时保持本机 CLI/Web UI 低摩擦使用。本轮还包含 Web UI Settings、相关性热力图、OpenAI Codex OAuth、A 股 pre-ST 过滤、交互式 CLI 体验、swarm preset inspect、分红分析、开发工作流优化和前端构建依赖安全下限更新。感谢 0.1.7 周期的贡献者，以及 lemi9090 (S2W) 的协调披露和验证。
-- **2026-05-05** 🛡️ **安全边界补充加固**：补齐显式 CORS origin、Settings 凭据状态提示、网页 URL 读取与 Shadow Account 代码生成相关的安全边界，并为这些路径加入回归测试。本机 CLI/Web UI 使用方式不变；远程部署仍应使用 `API_AUTH_KEY` 和显式可信 origin。
 
 <details>
 <summary>更早的新闻</summary>
 
+- **2026-05-05** 🛡️ **安全边界补充加固**：补齐显式 CORS origin、Settings 凭据状态提示、网页 URL 读取与 Shadow Account 代码生成相关的安全边界，并为这些路径加入回归测试。本机 CLI/Web UI 使用方式不变；远程部署仍应使用 `API_AUTH_KEY` 和显式可信 origin。
 - **2026-05-04** 🖥️ **交互式 CLI 体验 + CI 清理**：交互模式新增实时底部状态栏，可显示 provider/model、会话时长、上次运行耗时和累计工具调用统计；同时通过 `prompt_toolkit` 支持方向键历史浏览与光标编辑（[#69](https://github.com/HKUDS/Vibe-Trading/pull/69)）。当 `prompt_toolkit` 或 TTY 不可用时，CLI 仍会回退到 Rich prompt。CI 路径断言也已对齐新的文件导入沙箱和跨平台 `/tmp` 解析，main 已恢复绿色（[`bb67dc7`](https://github.com/HKUDS/Vibe-Trading/commit/bb67dc7cfcc11553c57d8962bee56381dca43758)）。
 - **2026-05-03** 🛡️ **安全加固补丁**：收紧非本地部署的默认 API 鉴权，保护敏感的 run/session/swarm 读取接口，限制上传与本地文件读取边界，按入口类型控制 shell 能力工具，在导入前校验生成策略，并让 Docker 镜像默认以非 root 用户运行且只发布到 localhost。CLI 与本机 Web UI 仍保持低摩擦；远程 API/Web 部署应配置 `API_AUTH_KEY`。
 - **2026-05-02** 🧭 **分红分析 + 更清晰的路线图**：新增 `dividend-analysis` 技能，覆盖收益型股票、分红可持续性、股息增长、股东回报率、除息机制与高息陷阱检查，并用 bundled skill 回归测试固定。公开路线图现在聚焦未来工作：Research Autopilot、Data Bridge、Options Lab、Portfolio Studio、Alpha Zoo、Research Delivery、Trust Layer 和 Community 分享。

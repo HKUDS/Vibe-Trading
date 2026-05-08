@@ -208,3 +208,79 @@ def _parse_tushare_date(value: str | pd.Timestamp) -> pd.Timestamp:
     if len(text) == 8 and text.isdigit():
         return pd.to_datetime(text, format="%Y%m%d")
     return pd.to_datetime(text).normalize()
+
+
+def enrich_price_frames_with_fundamentals(
+    data_map: dict[str, pd.DataFrame],
+    provider: TushareFundamentalProvider,
+    fields_by_table: dict[str, Iterable[str]],
+    *,
+    as_of: str | pd.Timestamp,
+    periods: Iterable[str] | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Attach PIT-safe fundamental snapshots to daily price frames.
+
+    Fundamental columns are prefixed with their table name, for example
+    ``income_total_revenue`` and ``fina_indicator_roe``. Each row becomes
+    visible only on or after its announcement/disclosure date.
+    """
+    if not data_map or not fields_by_table:
+        return data_map
+
+    enriched = {code: frame.copy() for code, frame in data_map.items()}
+    codes = list(enriched)
+
+    for table, fields in fields_by_table.items():
+        field_list = list(fields or [])
+        fundamentals = provider.query_fundamentals(
+            table,
+            codes,
+            as_of=as_of,
+            periods=periods,
+            fields=field_list,
+        )
+        if fundamentals.empty:
+            continue
+
+        schema = provider.describe_table(table)
+        pit_column = schema.point_in_time_column
+        if pit_column not in fundamentals.columns or fundamentals[pit_column].isna().all():
+            pit_column = "ann_date"
+
+        for code, frame in enriched.items():
+            rows = fundamentals[fundamentals["ts_code"] == code].copy()
+            if rows.empty or frame.empty:
+                continue
+
+            pit_values = rows[pit_column]
+            if pit_column != "ann_date" and "ann_date" in rows.columns:
+                pit_values = pit_values.where(pit_values.notna(), rows["ann_date"])
+            rows["_pit_date"] = pit_values.map(_parse_tushare_date)
+            rows = rows.dropna(subset=["_pit_date"]).sort_values("_pit_date")
+            if rows.empty:
+                continue
+
+            value_columns = [column for column in rows.columns if column not in {"ts_code", "_pit_date"}]
+            right = rows[["_pit_date", *value_columns]].rename(
+                columns={column: f"{table}_{column}" for column in value_columns}
+            )
+
+            left = frame.copy()
+            original_index = left.index
+            left["_trade_date"] = pd.to_datetime(left.index).normalize()
+            left["_original_order"] = range(len(left))
+
+            merged = pd.merge_asof(
+                left.sort_values("_trade_date"),
+                right.sort_values("_pit_date"),
+                left_on="_trade_date",
+                right_on="_pit_date",
+                direction="backward",
+            )
+            merged = merged.sort_values("_original_order").drop(
+                columns=["_trade_date", "_original_order", "_pit_date"]
+            )
+            merged.index = original_index
+            enriched[code] = merged
+
+    return enriched

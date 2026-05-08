@@ -51,13 +51,14 @@
 
 ## 📰 뉴스
 
+- **2026-05-08** 🧾 **Tushare 재무제표 필드를 필터에 연결**: A주 일간 백테스트에서 `fundamental_fields`로 시점 안전한 재무제표 필드를 요청할 수 있습니다. 이제 SignalEngine은 공시/발표일 이후 `income_total_revenue`, `income_n_income`, `balancesheet_total_hldr_eqy_exc_min_int`, `fina_indicator_roe` 같은 테이블 접두사 컬럼으로 사전 필터링할 수 있습니다([#76](https://github.com/HKUDS/Vibe-Trading/pull/76), @mrbob-git 감사합니다). 후속 강화로 명시적으로 재무제표 필드를 요청했는데 Tushare enrichment가 실패하면 원시 가격 데이터로 조용히 돌아가지 않고 즉시 실패합니다([#77](https://github.com/HKUDS/Vibe-Trading/pull/77)).
 - **2026-05-07** 📈 **Tushare fundamentals + 커뮤니티 정리**: 펀더멘털 리서치 워크플로를 위한 시점 기준 `TushareFundamentalProvider` 계약을 추가하고, 프로젝트 `TUSHARE_TOKEN` 환경 변수 경로를 회귀 테스트로 고정했습니다([#74](https://github.com/HKUDS/Vibe-Trading/pull/74)). 커뮤니티 정리에서는 빠른 반복을 위해 당분간 UI를 단일 언어에 집중하고, DuckDuckGo 기반 `web_search`가 이미 번들되어 있으므로 중복 검색 의존성을 추가하지 않으며, 비공식 호스팅 배포를 API key나 데이터 소스 token 입력용 신뢰 진입점으로 보지 않는다는 점도 명확히 했습니다.
 - **2026-05-06** 🚀 **v0.1.7 릴리스**([Release notes](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.7), `pip install -U vibe-trading-ai`): 보안 경계 강화 버전이 PyPI와 ClawHub에 게시되었습니다. API/읽기/업로드/파일/URL/생성 코드/shell 도구/Docker 기본 경계를 더 안전하게 만들면서 localhost CLI/Web UI 흐름은 낮은 마찰을 유지합니다. 이번 사이클에는 Web UI Settings, 상관관계 히트맵, OpenAI Codex OAuth, A주 pre-ST 필터, 대화형 CLI UX, swarm preset inspection, 배당 분석, 개발 워크플로 개선, 프론트엔드 build dependency 보안 하한 업데이트도 포함됩니다. 0.1.7 기여자들과 조율된 보안 검증을 도와준 lemi9090 (S2W)에게 감사드립니다.
-- **2026-05-05** 🛡️ **보안 경계 후속 강화**: 명시적 CORS origin, Settings 자격 증명 상태 표시, 웹 URL 읽기, Shadow Account 코드 생성 주변의 남은 보안 경계를 보강하고 각 경로에 회귀 테스트를 추가했습니다. localhost CLI/Web UI 흐름은 그대로 유지됩니다. 원격 배포에서는 계속 `API_AUTH_KEY`와 명시적인 신뢰 origin을 사용하세요.
 
 <details>
 <summary>이전 뉴스</summary>
 
+- **2026-05-05** 🛡️ **보안 경계 후속 강화**: 명시적 CORS origin, Settings 자격 증명 상태 표시, 웹 URL 읽기, Shadow Account 코드 생성 주변의 남은 보안 경계를 보강하고 각 경로에 회귀 테스트를 추가했습니다. localhost CLI/Web UI 흐름은 그대로 유지됩니다. 원격 배포에서는 계속 `API_AUTH_KEY`와 명시적인 신뢰 origin을 사용하세요.
 - **2026-05-04** 🖥️ **대화형 CLI UX + CI 정리**: 대화형 모드에 provider/model, 세션 시간, 직전 실행 시간, 누적 도구 호출 통계를 보여주는 실시간 하단 상태 표시줄이 추가되었습니다. 또한 `prompt_toolkit`을 통해 위/아래 방향키 히스토리 탐색과 좌/우 방향키 커서 편집을 지원합니다([#69](https://github.com/HKUDS/Vibe-Trading/pull/69)). `prompt_toolkit` 또는 TTY를 사용할 수 없으면 기존 Rich prompt로 자동 폴백합니다. CI 경로 기대값도 강화된 파일 import 샌드박스와 크로스플랫폼 `/tmp` 해석에 맞춰 정리되어 main이 다시 green 상태가 되었습니다([`bb67dc7`](https://github.com/HKUDS/Vibe-Trading/commit/bb67dc7cfcc11553c57d8962bee56381dca43758)).
 - **2026-05-03** 🛡️ **보안 강화 패치**: 비로컬 배포의 기본 API 인증을 강화하고, 민감한 run/session/swarm 읽기 API를 보호하며, 업로드와 로컬 파일 읽기 경계를 제한하고, shell 가능 도구를 진입점별로 제어합니다. 생성된 전략은 import 전에 검증되며 Docker 이미지는 기본적으로 비root 사용자와 localhost 전용 포트 공개로 실행됩니다. CLI와 localhost Web UI 흐름은 낮은 마찰을 유지합니다. 원격 API/Web 배포에서는 `API_AUTH_KEY`를 설정하세요.
 - **2026-05-02** 🧭 **배당 분석 + 더 선명한 로드맵**: 인컴 주식, 배당 지속 가능성, 배당 성장, 주주환원 수익률, 배당락 메커니즘, 고배당 함정 점검을 다루는 `dividend-analysis` 스킬을 추가하고 bundled skill 회귀 테스트로 고정했습니다. 공개 로드맵은 Research Autopilot, Data Bridge, Options Lab, Portfolio Studio, Alpha Zoo, Research Delivery, Trust Layer, Community 공유에 집중하도록 정리했습니다.

@@ -1,6 +1,6 @@
 ---
 name: fundamental-filter
-description: Fundamental factor screening — filter stocks by PE/PB/ROE and other financial metrics for value or growth selection. Supports A-shares (via tushare extra_fields) and HK/US stocks (via yfinance Ticker info).
+description: Fundamental factor screening — filter stocks by PE/PB/ROE, financial statement fields, and other metrics for value or growth selection. Supports A-shares (via tushare extra_fields or fundamental_fields) and HK/US stocks (via yfinance Ticker info).
 category: flow
 ---
 # Fundamental Factor Screening
@@ -14,6 +14,7 @@ Filter stocks using fundamental financial data (PE/PB/ROE, etc.) to build value 
 | Market | Data Source | Method | Supported Metrics |
 |--------|-----------|--------|------------------|
 | A-shares | tushare `daily_basic` | `extra_fields` in config.json | pe, pb, pe_ttm, ps_ttm, dv_ttm, total_mv, circ_mv, roe |
+| A-shares | Tushare statements | `fundamental_fields` in config.json | income, balancesheet, cashflow, fina_indicator fields |
 | US stocks | yfinance `Ticker.info` | Direct API call | trailingPE, forwardPE, priceToBook, returnOnEquity, marketCap, dividendYield |
 | HK stocks | yfinance `Ticker.info` | Direct API call | trailingPE, priceToBook, returnOnEquity, marketCap |
 
@@ -49,6 +50,51 @@ Filter stocks using fundamental financial data (PE/PB/ROE, etc.) to build value 
 ```
 
 The `extra_fields` columns are automatically merged into the daily DataFrame by the DataLoader.
+
+### A-Share Statement Pre-Filter
+
+Use `fundamental_fields` when the strategy needs PIT-safe financial statement data instead of daily valuation fields:
+
+```json
+{
+  "source": "tushare",
+  "codes": ["000001.SZ", "600036.SH", "000858.SZ"],
+  "start_date": "2023-01-01",
+  "end_date": "2024-12-31",
+  "fundamental_fields": {
+    "income": ["total_revenue", "n_income"],
+    "balancesheet": ["total_hldr_eqy_exc_min_int"],
+    "fina_indicator": ["roe", "debt_to_assets"]
+  },
+  "initial_cash": 1000000,
+  "commission": 0.001
+}
+```
+
+The backtest runner queries the configured tables through `TushareFundamentalProvider` and merges each published statement snapshot into daily bars only after its announcement/disclosure date. Statement columns are prefixed by table name:
+
+| Requested field | SignalEngine column |
+|-----------------|---------------------|
+| `income.total_revenue` | `income_total_revenue` |
+| `income.n_income` | `income_n_income` |
+| `balancesheet.total_hldr_eqy_exc_min_int` | `balancesheet_total_hldr_eqy_exc_min_int` |
+| `fina_indicator.roe` | `fina_indicator_roe` |
+
+Representative financial-quality pre-filter:
+
+```python
+revenue = row.get("income_total_revenue")
+profit = row.get("income_n_income")
+net_assets = row.get("balancesheet_total_hldr_eqy_exc_min_int")
+roe = row.get("fina_indicator_roe")
+
+passes = (
+    revenue is not None and revenue > 0
+    and profit is not None and profit > 0
+    and net_assets is not None and net_assets > 0
+    and roe is not None and roe >= 8.0
+)
+```
 
 ## HK/US Stock Usage (yfinance)
 
@@ -110,6 +156,8 @@ results = screen_us_stocks(hk_tickers, criteria)  # Same function works
 ## Common Pitfalls
 
 - `extra_fields` columns may contain NaN (new listings, ST stocks) — must `fillna` or `dropna`
+- `fundamental_fields` columns are prefixed by table and may be NaN before the first statement is published in the backtest window
+- Do not forward-fill statement rows manually before their `ann_date` / `f_ann_date`; the runner's merge already enforces point-in-time visibility
 - Negative PE means loss-making — always filter with `pe > 0`
 - ROE units differ: tushare uses percentage (e.g., 15 = 15%), yfinance uses decimal (e.g., 0.15 = 15%)
 - For portfolio strategies: N stocks passing the screen each get weight 1/N

@@ -51,13 +51,14 @@
 
 ## 📰 ニュース
 
+- **2026-05-08** 🧾 **Tushare財務諸表フィールドをフィルターへ**: A株の日次バックテストで `fundamental_fields` から point-in-time 安全な財務諸表フィールドを要求できるようになり、SignalEngine は公告/開示日以降に `income_total_revenue`、`income_n_income`、`balancesheet_total_hldr_eqy_exc_min_int`、`fina_indicator_roe` など表名プレフィックス付き列でスクリーニングできます（[#76](https://github.com/HKUDS/Vibe-Trading/pull/76)、@mrbob-git に感謝）。後続の強化により、明示的な財務諸表フィールド要求で Tushare enrichment が失敗した場合は、価格バーだけに静かに戻るのではなく即時失敗します（[#77](https://github.com/HKUDS/Vibe-Trading/pull/77)）。
 - **2026-05-07** 📈 **Tushare fundamentals + コミュニティ整理**: ファンダメンタル調査ワークフロー向けに、時点ベースの `TushareFundamentalProvider` 契約を追加し、プロジェクトの `TUSHARE_TOKEN` 環境変数パスを回帰テストでカバーしました（[#74](https://github.com/HKUDS/Vibe-Trading/pull/74)）。コミュニティ整理では、迅速な反復のため当面 UI は単一言語に集中すること、DuckDuckGo ベースの `web_search` が既に同梱されているため重複する検索依存は追加しないこと、非公式ホスト先は API key やデータソース token を入力する信頼済み入口として扱わないことも明確にしました。
 - **2026-05-06** 🚀 **v0.1.7 リリース**（[Release notes](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.7)、`pip install -U vibe-trading-ai`）: セキュリティ境界強化版を PyPI と ClawHub に公開しました。API/読み取り/アップロード/ファイル/URL/生成コード/shell ツール/Docker の既定境界をより安全にしつつ、localhost の CLI/Web UI ワークフローは低摩擦のままです。このサイクルには Web UI Settings、相関ヒートマップ、OpenAI Codex OAuth、A株 pre-ST フィルター、対話型 CLI UX、swarm preset inspection、配当分析、開発ワークフロー改善、フロントエンド build dependency の安全下限更新も含まれます。0.1.7 のコントリビューターと、協調的なセキュリティ検証を行った lemi9090 (S2W) に感謝します。
-- **2026-05-05** 🛡️ **セキュリティ境界の追加強化**: 明示的な CORS origin、Settings の認証情報ステータス表示、Web URL 読み取り、Shadow Account コード生成まわりの残りのセキュリティ境界を補強し、それぞれに回帰テストを追加しました。localhost の CLI/Web UI ワークフローは従来どおりです。リモートデプロイでは引き続き `API_AUTH_KEY` と明示的な信頼済み origin を設定してください。
 
 <details>
 <summary>過去のニュース</summary>
 
+- **2026-05-05** 🛡️ **セキュリティ境界の追加強化**: 明示的な CORS origin、Settings の認証情報ステータス表示、Web URL 読み取り、Shadow Account コード生成まわりの残りのセキュリティ境界を補強し、それぞれに回帰テストを追加しました。localhost の CLI/Web UI ワークフローは従来どおりです。リモートデプロイでは引き続き `API_AUTH_KEY` と明示的な信頼済み origin を設定してください。
 - **2026-05-04** 🖥️ **インタラクティブCLI UX + CI整理**: インタラクティブモードに、provider/model、セッション時間、直近実行時間、累計ツール呼び出し統計を表示するライブ下部ステータスバーを追加。さらに `prompt_toolkit` により上下キーの履歴移動と左右キーのカーソル編集に対応しました（[#69](https://github.com/HKUDS/Vibe-Trading/pull/69)）。`prompt_toolkit` またはTTYが利用できない場合は、従来どおりRich promptにフォールバックします。CIのパス期待値も強化済みファイルimportサンドボックスとクロスプラットフォームな `/tmp` 解決に合わせ、mainはグリーンに戻りました（[`bb67dc7`](https://github.com/HKUDS/Vibe-Trading/commit/bb67dc7cfcc11553c57d8962bee56381dca43758)）。
 - **2026-05-03** 🛡️ **セキュリティハードニングパッチ**: 非ローカルデプロイ向けの既定API認証を強化し、機密性の高いrun/session/swarm読み取りを保護、アップロードとローカルファイル読み取り境界を制限、shell系ツールをエントリーポイント別に制御、生成戦略をimport前に検証し、Dockerイメージは既定で非rootユーザーかつlocalhost限定ポート公開で動作します。CLIとlocalhost Web UIは低摩擦のままです。リモートAPI/Webデプロイでは`API_AUTH_KEY`を設定してください。
 - **2026-05-02** 🧭 **配当分析 + ロードマップ刷新**: インカム株、配当の持続性、増配、株主還元利回り、権利落ちメカニクス、利回りの罠チェックに対応する `dividend-analysis` スキルを追加し、バンドルスキル回帰テストで固定しました。公開ロードマップは Research Autopilot、Data Bridge、Options Lab、Portfolio Studio、Alpha Zoo、Research Delivery、Trust Layer、Community 共有に絞りました。

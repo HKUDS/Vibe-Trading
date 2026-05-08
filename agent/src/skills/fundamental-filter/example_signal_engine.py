@@ -1,7 +1,8 @@
 """基本面因子过滤选股信号引擎。
 
 基于 PE/PB/ROE 等财务指标对 A 股进行价值筛选，
-满足全部条件的股票等权做多。仅限 tushare 数据源（需 extra_fields）。
+满足全部条件的股票等权做多。支持 tushare `extra_fields`
+以及 `fundamental_fields` 注入的财务报表字段。
 """
 
 from typing import Dict, List
@@ -32,6 +33,8 @@ class SignalEngine:
         pe_max: float = 20.0,
         pb_max: float = 3.0,
         roe_min: float = 8.0,
+        revenue_min: float = 0.0,
+        net_assets_min: float = 0.0,
     ):
         """初始化基本面过滤引擎。
 
@@ -40,11 +43,34 @@ class SignalEngine:
             pe_max: PE 上限（排除高估值）。
             pb_max: PB 上限。
             roe_min: ROE 下限（%）。
+            revenue_min: 营收下限，单位沿用 Tushare income 表。
+            net_assets_min: 净资产下限，单位沿用 Tushare balancesheet 表。
         """
         self.pe_min = pe_min
         self.pe_max = pe_max
         self.pb_max = pb_max
         self.roe_min = roe_min
+        self.revenue_min = revenue_min
+        self.net_assets_min = net_assets_min
+
+    def _passes_statement_filter(self, row: pd.Series) -> bool | None:
+        """Return statement-filter decision, or None when statement data is absent."""
+        revenue = _first_number(row, ["income_total_revenue", "income_revenue"])
+        profit = _first_number(row, ["income_n_income"])
+        net_assets = _first_number(row, ["balancesheet_total_hldr_eqy_exc_min_int"])
+        roe = _first_number(row, ["fina_indicator_roe", "roe"])
+
+        statement_values = [revenue, profit, net_assets, roe]
+        if all(pd.isna(value) for value in statement_values):
+            return None
+        if any(pd.isna(value) for value in statement_values):
+            return False
+        return (
+            revenue >= self.revenue_min
+            and profit > 0
+            and net_assets > self.net_assets_min
+            and roe >= self.roe_min
+        )
 
     def generate(self, data_map: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
         """基于基本面条件过滤，对满足条件的股票等权做多。
@@ -73,6 +99,12 @@ class SignalEngine:
                 if dt not in df.index:
                     continue
                 row = df.loc[dt]
+                statement_pass = self._passes_statement_filter(row)
+                if statement_pass is not None:
+                    if statement_pass:
+                        qualified.append(code)
+                    continue
+
                 pe = row.get("pe", np.nan)
                 pb = row.get("pb", np.nan)
                 roe = row.get("roe", np.nan)
@@ -92,6 +124,15 @@ class SignalEngine:
         for code, df in data_map.items():
             result[code] = signals[code].reindex(df.index).fillna(0.0)
         return result
+
+
+def _first_number(row: pd.Series, columns: List[str]) -> float:
+    """Return the first numeric value found in row, otherwise NaN."""
+    for column in columns:
+        value = row.get(column, np.nan)
+        if pd.notna(value):
+            return float(value)
+    return np.nan
 
 
 if __name__ == "__main__":

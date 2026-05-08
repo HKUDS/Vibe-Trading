@@ -14,7 +14,7 @@ import logging
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, model_validator, field_validator
@@ -51,6 +51,7 @@ class BacktestConfigSchema(BaseModel):
     source: str = "tushare"
     interval: str = "1D"
     engine: str = "daily"
+    fundamental_fields: Optional[Dict[str, List[str]]] = None
 
     @field_validator("codes")
     @classmethod
@@ -89,6 +90,21 @@ class BacktestConfigSchema(BaseModel):
     def valid_source(cls, v: str) -> str:
         if v not in _VALID_SOURCES:
             raise ValueError(f"unsupported source {v!r}, must be one of {_VALID_SOURCES}")
+        return v
+
+    @field_validator("fundamental_fields")
+    @classmethod
+    def valid_fundamental_fields(
+        cls,
+        v: Optional[Dict[str, List[str]]],
+    ) -> Optional[Dict[str, List[str]]]:
+        if v is None:
+            return v
+        for table, fields in v.items():
+            if not table.strip():
+                raise ValueError("fundamental_fields table names must be non-empty strings")
+            if any(not field.strip() for field in fields):
+                raise ValueError("fundamental_fields field names must be non-empty strings")
         return v
 
     @model_validator(mode="after")
@@ -646,6 +662,6 @@ class _AutoLoader:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print(f"Usage: python -m backtest.runner <run_dir>")
+        print("Usage: python -m backtest.runner <run_dir>")
         sys.exit(1)
     main(Path(sys.argv[1]))

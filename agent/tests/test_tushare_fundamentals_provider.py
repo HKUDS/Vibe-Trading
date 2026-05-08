@@ -10,6 +10,7 @@ from backtest.loaders.tushare_fundamentals import (
     SchemaValidationError,
     TushareFundamentalProvider,
     UnknownTableError,
+    enrich_price_frames_with_fundamentals,
 )
 
 
@@ -142,3 +143,54 @@ def test_query_fundamentals_validates_required_schema_columns() -> None:
 
     with pytest.raises(SchemaValidationError, match="end_date"):
         provider.query_fundamentals("fina_indicator", ["000001.SZ"], as_of="2024-04-30")
+
+
+def test_enrich_price_frames_with_fundamentals_respects_point_in_time_dates() -> None:
+    class StatementApi:
+        def income(self, **kwargs: object) -> pd.DataFrame:
+            return pd.DataFrame(
+                [
+                    {
+                        "ts_code": kwargs["ts_code"],
+                        "end_date": "20231231",
+                        "ann_date": "20240401",
+                        "f_ann_date": "20240402",
+                        "total_revenue": 80.0,
+                        "n_income": 8.0,
+                    },
+                    {
+                        "ts_code": kwargs["ts_code"],
+                        "end_date": "20240331",
+                        "ann_date": "20240425",
+                        "f_ann_date": "20240506",
+                        "total_revenue": 120.0,
+                        "n_income": 12.0,
+                    },
+                ]
+            )
+
+    dates = pd.to_datetime(["2024-04-01", "2024-04-03", "2024-05-07"])
+    bars = pd.DataFrame(
+        {
+            "open": [10.0, 11.0, 12.0],
+            "high": [10.5, 11.5, 12.5],
+            "low": [9.5, 10.5, 11.5],
+            "close": [10.2, 11.2, 12.2],
+            "volume": [1000, 1100, 1200],
+        },
+        index=dates,
+    )
+    provider = TushareFundamentalProvider(api=StatementApi())
+
+    enriched = enrich_price_frames_with_fundamentals(
+        {"000001.SZ": bars},
+        provider,
+        {"income": ["total_revenue", "n_income"]},
+        as_of="2024-05-31",
+    )
+
+    result = enriched["000001.SZ"]
+    assert pd.isna(result.loc[pd.Timestamp("2024-04-01"), "income_total_revenue"])
+    assert result.loc[pd.Timestamp("2024-04-03"), "income_total_revenue"] == 80.0
+    assert result.loc[pd.Timestamp("2024-05-07"), "income_total_revenue"] == 120.0
+    assert result.loc[pd.Timestamp("2024-05-07"), "income_end_date"] == "20240331"

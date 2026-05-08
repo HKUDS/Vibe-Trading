@@ -34,7 +34,7 @@ Extract the following from the user's description:
 
 Before writing code, think through these 5 questions:
 
-1. **Data requirements**: what fields are needed (basic OHLCV only? or fundamentals such as `pe/pb/roe` as well?), data frequency (daily), and market (which determines the data source)
+1. **Data requirements**: what fields are needed (basic OHLCV only, daily valuation fields such as `pe/pb/roe`, or statement fields such as `income_total_revenue` / `fina_indicator_roe`?), data frequency (daily), and market (which determines the data source)
 2. **Signal logic**: what are the entry conditions? What are the exit conditions? Direction (long / short / long-short)? Are there filters (volume, trend confirmation, and so on)?
 3. **Position management**: equal-weight allocation or scaling in/out? Risk control (stop-loss, maximum position)? In portfolio strategies, once top N names are selected, each weight = 1/N
 4. **Backtest parameters**: time range, initial capital (default 1,000,000), commission (default 0.1%)
@@ -50,7 +50,9 @@ class SignalEngine:
         """
         Args:
             data_map: code -> DataFrame (columns: open, high, low, close, volume, DatetimeIndex)
-                     If config.extra_fields is specified, pe, pb, roe, and similar columns will also be present.
+                     If config.extra_fields is specified, pe, pb, roe, and similar daily_basic columns will also be present.
+                     If config.fundamental_fields is specified, PIT-safe statement columns such as
+                     income_total_revenue, income_n_income, and fina_indicator_roe will also be present.
         Returns:
             code -> signal Series, value range [-1.0, 1.0]
             1.0 = fully long, 0.5 = half position, 0.0 = flat, -1.0 = fully short
@@ -97,12 +99,14 @@ Self-check after writing `signal_engine.py`:
 
 | Pattern | Market | source | Extra Fields |
 |------|------|--------|----------|
-| `^\d{6}\.(SZ\|SH\|BJ)$` | China A-shares | tushare | pe, pb, pe_ttm, ps_ttm, dv_ttm, total_mv, circ_mv, roe |
+| `^\d{6}\.(SZ\|SH\|BJ)$` | China A-shares | tushare | `extra_fields`: pe, pb, pe_ttm, ps_ttm, dv_ttm, total_mv, circ_mv, roe; `fundamental_fields`: income/balancesheet/cashflow/fina_indicator |
 | `^[A-Z]+\.US$` | US stocks | yfinance | - |
 | `^\d{3,5}\.HK$` | Hong Kong stocks | yfinance | - |
 | `^[A-Z]+-USDT$` | Cryptocurrency | okx | - |
 
-**`extra_fields` selection logic**: only China A-shares (`tushare`) support fundamentals. If the strategy needs `PE/PB/ROE` and similar fields, specify them in `config.json.extra_fields` and `DataLoader` will retrieve them automatically. Hong Kong stocks, US stocks, and crypto do not support `extra_fields`.
+**`extra_fields` selection logic**: only China A-shares (`tushare`) support daily valuation fields. If the strategy needs `PE/PB/ROE` and similar daily_basic fields, specify them in `config.json.extra_fields` and `DataLoader` will retrieve them automatically. Hong Kong stocks, US stocks, and crypto do not support `extra_fields`.
+
+**`fundamental_fields` selection logic**: use this for China A-share financial statement pre-filters. The runner queries `income`, `balancesheet`, `cashflow`, and/or `fina_indicator` through the Tushare fundamental provider, then merges rows into daily bars only after their announcement/disclosure date. Output columns are prefixed by table name, for example `income_total_revenue`, `income_n_income`, `balancesheet_total_hldr_eqy_exc_min_int`, and `fina_indicator_roe`.
 
 ## `config.json` Format
 
@@ -116,6 +120,7 @@ Self-check after writing `signal_engine.py`:
   "initial_cash": 1000000,
   "commission": 0.001,
   "extra_fields": null,
+  "fundamental_fields": null,
   "optimizer": null,
   "optimizer_params": {},
   "engine": "daily",
@@ -130,6 +135,7 @@ Self-check after writing `signal_engine.py`:
   - The annualization factor for minute backtests is inferred automatically from `source` (252 trading days for China A-shares, 365 calendar days for crypto)
   - Minute backtests can be very data-heavy. Recommended limits are no more than 30 days for `1m`, or 1 year for `1H`
 - `extra_fields`: China A-shares can use values such as `["pe", "pb", "roe"]`; other markets should use `null`
+- `fundamental_fields`: optional China A-share statement fields, such as `{"income": ["total_revenue", "n_income"], "fina_indicator": ["roe"]}`; use `null` unless the strategy needs financial statement pre-filtering
 - `optimizer`: optional, one of `"equal_volatility"` / `"risk_parity"` / `"mean_variance"` / `"max_diversification"` / `null` (equal-weight by default)
 - `optimizer_params`: optimizer parameters, such as `{"lookback": 60}`. `mean_variance` additionally supports `{"risk_free": 0.0}`
 - `engine`: backtest engine, default `"daily"`. For options strategies, set `"options"` (requires `OptionsSignalEngine`)
