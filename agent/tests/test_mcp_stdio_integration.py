@@ -137,7 +137,8 @@ def test_remote_tool_add_returns_correct_sum(tmp_path: Path) -> None:
     agent_config = load_agent_config(config_path=cfg_path)
     registry = build_registry(agent_config=agent_config)
 
-    add_tool = next(t for t in registry._tools.values() if t.name == "mcp_fake_add")
+    add_tool = registry.get("mcp_fake_add")
+    assert add_tool is not None, "mcp_fake_add not found in registry"
     result = add_tool.execute(a=3, b=4)
 
     assert "7" in result
@@ -155,7 +156,7 @@ def test_remote_tool_is_serial_only(tmp_path: Path) -> None:
     agent_config = load_agent_config(config_path=cfg_path)
     registry = build_registry(agent_config=agent_config)
 
-    mcp_tools = [t for t in registry._tools.values() if t.name.startswith("mcp_fake_")]
+    mcp_tools = [registry.get(n) for n in registry.tool_names if n.startswith("mcp_fake_")]
     assert mcp_tools, "No MCP tools found in registry"
     for tool in mcp_tools:
         assert tool.is_readonly is False, (
@@ -173,7 +174,7 @@ def test_enabled_tools_filter_limits_remote_tools(tmp_path: Path) -> None:
     agent_config = load_agent_config(config_path=cfg_path)
     registry = build_registry(agent_config=agent_config)
 
-    mcp_names = [t.name for t in registry._tools.values() if t.name.startswith("mcp_fake_")]
+    mcp_names = [n for n in registry.tool_names if n.startswith("mcp_fake_")]
     assert "mcp_fake_echo" in mcp_names
     assert "mcp_fake_add" not in mcp_names, (
         "mcp_fake_add should be excluded by enabledTools filter"
