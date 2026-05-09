@@ -406,6 +406,9 @@ def _run_agent(
     from src.memory.persistent import PersistentMemory
 
     pm = PersistentMemory()
+    # TODO(phase4): When CLI starts loading MCP config, surface
+    # format_mcp_server_name_collision_warning() to operators so sanitized
+    # server-name disambiguation is visible outside debug logs.
     agent = AgentLoop(
         registry=build_registry(persistent_memory=pm, include_shell_tools=True),
         llm=ChatLLM(),
@@ -903,6 +906,8 @@ def cmd_interactive(max_iter: int) -> None:
 
             try:
                 pm = PersistentMemory()
+                # TODO(phase4): Reuse format_mcp_server_name_collision_warning()
+                # here when interactive CLI runs begin loading MCP config.
                 agent = AgentLoop(
                     registry=build_registry(persistent_memory=pm),
                     llm=ChatLLM(),

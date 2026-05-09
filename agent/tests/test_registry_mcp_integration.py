@@ -128,6 +128,34 @@ def test_mcp_tools_registration_order_matches_config_order() -> None:
     assert mcp_names == ["mcp_alpha_tool_a", "mcp_alpha_tool_b", "mcp_alpha_tool_c"]
 
 
+def test_colliding_sanitized_server_names_receive_stable_unique_prefixes() -> None:
+    """Different raw server names that sanitize identically must still stay unique."""
+
+    def _wrapper_factory(
+        server_name: str,
+        server_config: MCPServerConfig,
+        *,
+        local_server_name: str | None = None,
+        **_kw: Any,
+    ):
+        del server_name, server_config
+        assert local_server_name is not None
+        return _make_fake_wrappers(local_server_name, ["search"])
+
+    with patch("src.tools.mcp.build_mcp_tool_wrappers", side_effect=_wrapper_factory):
+        config = _make_agent_config({
+            "foo-bar": {"command": "uvx", "args": []},
+            "foo_bar": {"command": "uvx", "args": []},
+        })
+        registry = build_registry(agent_config=config)
+
+    mcp_names = [n for n in registry.tool_names if n.startswith("mcp_foo_bar_")]
+    assert len(mcp_names) == 2
+    assert len(set(mcp_names)) == 2
+    assert "mcp_foo_bar_search" not in mcp_names
+    assert all(name.endswith("_search") for name in mcp_names)
+
+
 # ---------------------------------------------------------------------------
 # is_readonly enforcement
 # ---------------------------------------------------------------------------

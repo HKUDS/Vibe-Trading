@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from fastmcp.client.client import CallToolResult
@@ -10,7 +11,13 @@ from fastmcp.exceptions import McpError, ToolError
 from mcp import types as mcp_types
 
 from src.config.schema import MCPServerConfig
-from src.tools.mcp import build_mcp_tool_wrappers, make_mcp_tool_name, normalize_mcp_tool_schema
+from src.tools.mcp import (
+    build_mcp_tool_wrappers,
+    format_mcp_server_name_collision_warning,
+    make_mcp_tool_name,
+    normalize_mcp_tool_schema,
+    resolve_mcp_server_tool_name_segments,
+)
 
 
 class _FakeClient:
@@ -71,6 +78,41 @@ def _make_config(**overrides: Any) -> MCPServerConfig:
 
 def test_make_mcp_tool_name_is_stable() -> None:
     assert make_mcp_tool_name("Demo Server", "Price Quote") == "mcp_demo_server_price_quote"
+
+
+def test_format_mcp_server_name_collision_warning_is_operator_facing() -> None:
+    message = format_mcp_server_name_collision_warning("foo-bar", "foo_bar_deadbeef")
+
+    assert message == (
+        "Configured MCP server 'foo-bar' collides with another server after local name normalization. "
+        "Using local tool prefix 'mcp_foo_bar_deadbeef_<tool>' to keep generated tool names unique. "
+        "Rename the server in agent config if you want a different prefix."
+    )
+
+
+def test_resolve_mcp_server_tool_name_segments_disambiguates_collisions_stably() -> None:
+    resolved = resolve_mcp_server_tool_name_segments(["foo-bar", "foo_bar", "demo"])
+    reversed_resolved = resolve_mcp_server_tool_name_segments(["demo", "foo_bar", "foo-bar"])
+
+    assert resolved["demo"] == "demo"
+    assert resolved["foo-bar"].startswith("foo_bar_")
+    assert resolved["foo_bar"].startswith("foo_bar_")
+    assert resolved["foo-bar"] != resolved["foo_bar"]
+    assert resolved["foo-bar"] == reversed_resolved["foo-bar"]
+    assert resolved["foo_bar"] == reversed_resolved["foo_bar"]
+
+
+def test_resolve_mcp_server_tool_name_segments_logs_operator_warning(
+    caplog,
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        resolve_mcp_server_tool_name_segments(["foo-bar", "foo_bar"])
+
+    assert any(
+        "Using local tool prefix 'mcp_foo_bar_" in record.message
+        and "Rename the server in agent config" in record.message
+        for record in caplog.records
+    )
 
 
 def test_normalize_mcp_tool_schema_collapses_nullable_object() -> None:
@@ -138,6 +180,27 @@ def test_build_mcp_tool_wrappers_filters_enabled_tools() -> None:
 
     assert [tool.name for tool in tools] == ["mcp_demo_allowed"]
     assert tools[0].is_readonly is False
+
+
+def test_build_mcp_tool_wrappers_honors_local_server_name_override() -> None:
+    state = {
+        "list_calls": 0,
+        "call_calls": 0,
+        "call_records": [],
+        "list_outcomes": [[
+            mcp_types.Tool(name="quote", description="Quote", inputSchema={"type": "object"}),
+        ]],
+        "call_outcomes": [],
+    }
+
+    tools = build_mcp_tool_wrappers(
+        "foo-bar",
+        _make_config(),
+        local_server_name="foo_bar_deadbeef",
+        client_factory=_make_factory(state),
+    )
+
+    assert [tool.name for tool in tools] == ["mcp_foo_bar_deadbeef_quote"]
 
 
 def test_remote_tool_execute_retries_transient_timeout_and_strips_run_dir() -> None:

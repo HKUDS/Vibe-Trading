@@ -115,11 +115,17 @@ def build_registry(
             logger.warning("Failed to register tool %s: %s", cls.name, exc)
 
     if agent_config and agent_config.mcp_servers:
-        from src.tools.mcp import build_mcp_tool_wrappers
+        from src.tools.mcp import build_mcp_tool_wrappers, resolve_mcp_server_tool_name_segments
+
+        local_server_names = resolve_mcp_server_tool_name_segments(agent_config.mcp_servers.keys())
 
         for server_name, server_config in agent_config.mcp_servers.items():
             try:
-                wrappers = build_mcp_tool_wrappers(server_name, server_config)
+                wrappers = build_mcp_tool_wrappers(
+                    server_name,
+                    server_config,
+                    local_server_name=local_server_names[server_name],
+                )
                 for tool in wrappers:
                     registry.register(tool)
                 logger.info(
@@ -139,6 +145,11 @@ def build_registry(
 
 def build_filtered_registry(tool_names: list[str], *, include_shell_tools: bool = False) -> ToolRegistry:
     """Build a ToolRegistry with only specified tools.
+
+    TODO(v1): Keep this path local-only for now. Swarm workers currently use
+    filtered registries, and v1 MCP support does not propagate agent_config
+    into swarm execution until a separate design pass defines how remote MCP
+    tools should be configured and constrained there.
 
     Args:
         tool_names: Tool names to include.

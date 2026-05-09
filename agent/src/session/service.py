@@ -260,6 +260,9 @@ class SessionService:
             data["attempt_id"] = attempt_id
             self.event_bus.emit(session_id, event_type, data)
 
+        # TODO(phase4): When SessionService starts loading runtime MCP config,
+        # forward format_mcp_server_name_collision_warning() through the
+        # operator-facing event channel instead of leaving it as a registry log.
         agent = AgentLoop(
             registry=build_registry(persistent_memory=pm, include_shell_tools=include_shell_tools),
             llm=llm,

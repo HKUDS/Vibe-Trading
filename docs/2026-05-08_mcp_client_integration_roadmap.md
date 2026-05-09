@@ -99,6 +99,11 @@ The wrapper should reuse the most valuable nanobot ideas:
 
 The wrapper should present a synchronous local tool interface even if the MCP SDK is async internally.
 
+When two raw MCP server names sanitize to the same local `mcp_<server>_<tool>`
+prefix, v1 should keep the current ASCII-safe naming rules and append a
+deterministic hash suffix at the server-segment level so tool names remain
+stable and unique.
+
 ### Serial Execution Strategy
 
 All MCP tools should be treated as serial tools in v1.
@@ -218,6 +223,7 @@ It reuses nanobot's strongest implementation ideas while staying compatible with
 - [x] Keep behavior unchanged when no MCP config is present
 - [x] Keep tool ordering stable: local tools first, MCP tools after
 - [x] Mark MCP tools as serial-only in v1
+- [ ] TODO(v1 limitation): Keep the Swarm filtered-registry path local-only. Do not propagate MCP config into Swarm until a later iteration defines Swarm-specific config loading and execution constraints.
 
 ### Phase 4 - Entry-Point Integration
 
@@ -225,6 +231,7 @@ It reuses nanobot's strongest implementation ideas while staying compatible with
 - [ ] Load MCP config in SessionService runs
 - [ ] Support `session.config` overrides for API-created sessions
 - [ ] Surface clear warnings for skipped or failed MCP servers
+- [ ] Surface the same operator-facing server-name collision warning in CLI and SessionService when MCP config disambiguates sanitized server names: `Configured MCP server '<name>' collides with another server after local name normalization. Using local tool prefix 'mcp_<resolved>_<tool>' to keep generated tool names unique. Rename the server in agent config if you want a different prefix.`
 
 ### Phase 5 - Docs and Tests
 

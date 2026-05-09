@@ -219,6 +219,9 @@ def run_worker(
     _emit(event_callback, "worker_started", agent_id, task_id)
 
     # 1. Build filtered tool registry
+    # TODO(v1): Swarm stays local-tool-only. Do not thread MCP config into this
+    # path until swarm-specific config propagation and execution constraints are
+    # designed explicitly.
     registry = build_filtered_registry(agent_spec.tools, include_shell_tools=include_shell_tools)
 
     # 2. Create LLM

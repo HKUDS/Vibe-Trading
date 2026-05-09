@@ -11,7 +11,7 @@ import re
 import threading
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Coroutine, Protocol, TypeVar
+from typing import Any, Awaitable, Callable, Coroutine, Iterable, Protocol, TypeVar
 
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
@@ -93,6 +93,7 @@ def build_mcp_tool_wrappers(
     server_name: str,
     server_config: MCPServerConfig,
     *,
+    local_server_name: str | None = None,
     client_factory: ClientFactory | None = None,
 ) -> list["MCPRemoteTool"]:
     """Build local tool wrappers for a configured MCP server.
@@ -100,6 +101,10 @@ def build_mcp_tool_wrappers(
     Args:
         server_name: Logical server name from config.
         server_config: Validated stdio MCP server config.
+        local_server_name: Optional local naming override for the server
+            portion of generated tool names. This lets registry assembly keep
+            tool names stable when multiple raw server names sanitize to the
+            same local prefix.
         client_factory: Optional async client factory for tests.
 
     Returns:
@@ -109,7 +114,12 @@ def build_mcp_tool_wrappers(
         Exception: Propagates discovery failures so callers can decide whether
             to warn, skip, or abort.
     """
-    adapter = MCPServerAdapter(server_name, server_config, client_factory=client_factory)
+    adapter = MCPServerAdapter(
+        server_name,
+        server_config,
+        local_server_name=local_server_name,
+        client_factory=client_factory,
+    )
     return [MCPRemoteTool(adapter=adapter, spec=spec) for spec in adapter.discover_tools()]
 
 
@@ -124,6 +134,63 @@ def make_mcp_tool_name(server_name: str, tool_name: str) -> str:
         Stable local tool name in ``mcp_<server>_<tool>`` format.
     """
     return f"mcp_{_sanitize_name_segment(server_name)}_{_sanitize_name_segment(tool_name)}"
+
+
+def format_mcp_server_name_collision_warning(server_name: str, local_server_name: str) -> str:
+    """Build operator-facing warning text for sanitized server-name collisions.
+
+    Args:
+        server_name: Raw MCP server name from config.
+        local_server_name: Unique local server-name segment assigned after
+            collision disambiguation.
+
+    Returns:
+        Warning copy suitable for CLI, SessionService, and logs.
+    """
+    return (
+        f"Configured MCP server '{server_name}' collides with another server after local name normalization. "
+        f"Using local tool prefix 'mcp_{local_server_name}_<tool>' to keep generated tool names unique. "
+        "Rename the server in agent config if you want a different prefix."
+    )
+
+
+def resolve_mcp_server_tool_name_segments(server_names: Iterable[str]) -> dict[str, str]:
+    """Resolve unique local server-name segments for MCP tool names.
+
+    The first release keeps MCP tool names ASCII-safe by sanitizing server
+    names. Different raw server names can therefore collapse to the same local
+    segment, such as ``foo-bar`` and ``foo_bar`` both becoming ``foo_bar``.
+    When that happens, all members of the colliding group receive a stable hash
+    suffix at the server-segment level so local tool names remain unique
+    without depending on config order.
+
+    Args:
+        server_names: Ordered raw MCP server names from config.
+
+    Returns:
+        Mapping of raw server names to unique local server-name segments.
+    """
+    ordered_names = list(server_names)
+    base_counts: dict[str, int] = {}
+    for server_name in ordered_names:
+        base_segment = _sanitize_name_segment(server_name)
+        base_counts[base_segment] = base_counts.get(base_segment, 0) + 1
+
+    resolved_segments: dict[str, str] = {}
+    used_segments: set[str] = set()
+    for server_name in ordered_names:
+        base_segment = _sanitize_name_segment(server_name)
+        if base_counts[base_segment] == 1 and base_segment not in used_segments:
+            resolved_segments[server_name] = base_segment
+            used_segments.add(base_segment)
+            continue
+
+        unique_segment = _dedupe_server_name_segment(base_segment, server_name, used_segments)
+        logger.warning(format_mcp_server_name_collision_warning(server_name, unique_segment))
+        resolved_segments[server_name] = unique_segment
+        used_segments.add(unique_segment)
+
+    return resolved_segments
 
 
 def normalize_mcp_tool_schema(schema: dict[str, Any] | None) -> dict[str, Any]:
@@ -172,6 +239,7 @@ class MCPServerAdapter:
         server_name: str,
         server_config: MCPServerConfig,
         *,
+        local_server_name: str | None = None,
         client_factory: ClientFactory | None = None,
     ) -> None:
         """Initialize the MCP server adapter.
@@ -179,9 +247,12 @@ class MCPServerAdapter:
         Args:
             server_name: Logical server name from config.
             server_config: Validated MCP server config.
+            local_server_name: Optional local naming override used only for the
+                server portion of generated tool names.
             client_factory: Optional async client factory, mainly for tests.
         """
         self.server_name = server_name
+        self.local_server_name = local_server_name or server_name
         self.server_config = server_config
         self._client_factory = client_factory or self._build_client
 
@@ -203,7 +274,7 @@ class MCPServerAdapter:
                 continue
 
             local_name = _dedupe_local_tool_name(
-                make_mcp_tool_name(self.server_name, tool.name),
+                make_mcp_tool_name(self.local_server_name, tool.name),
                 tool.name,
                 seen_names,
             )
@@ -468,6 +539,28 @@ def _sanitize_name_segment(value: str) -> str:
     """
     normalized = _NAME_SEGMENT_RE.sub("_", value.strip().lower()).strip("_")
     return normalized or "tool"
+
+
+def _dedupe_server_name_segment(base_segment: str, server_name: str, used_segments: set[str]) -> str:
+    """Disambiguate colliding sanitized server-name segments.
+
+    Args:
+        base_segment: Preferred sanitized server-name segment.
+        server_name: Raw server name from config.
+        used_segments: Already-assigned local server-name segments.
+
+    Returns:
+        Unique local server-name segment.
+    """
+    suffix_source = server_name.encode("utf-8")
+    unique_segment = f"{base_segment}_{hashlib.sha1(suffix_source).hexdigest()[:8]}"
+    salt = 1
+    while unique_segment in used_segments:
+        unique_segment = (
+            f"{base_segment}_{hashlib.sha1(suffix_source + f':{salt}'.encode('utf-8')).hexdigest()[:8]}"
+        )
+        salt += 1
+    return unique_segment
 
 
 def _dedupe_local_tool_name(candidate: str, remote_name: str, seen_names: dict[str, str]) -> str:
@@ -820,6 +913,8 @@ __all__ = [
     "MCPRemoteToolSpec",
     "MCPServerAdapter",
     "build_mcp_tool_wrappers",
+    "format_mcp_server_name_collision_warning",
     "make_mcp_tool_name",
     "normalize_mcp_tool_schema",
+    "resolve_mcp_server_tool_name_segments",
 ]
