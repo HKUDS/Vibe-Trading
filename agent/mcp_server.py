@@ -711,6 +711,7 @@ def main():
     _include_shell_tools = True if args.transport == "stdio" else _env_shell_tools_enabled()
     _registry = None
     _get_registry()  # pre-warm: avoids deadlock when first tools/call lazy-inits inside FastMCP worker thread
+    _get_skills_loader()  # pre-warm: same deadlock mitigation — list_skills/load_skill must not lazy-init in worker thread
 
     if args.transport == "sse":
         mcp.run(transport="sse", port=args.port)
