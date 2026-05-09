@@ -26,6 +26,11 @@ from backtest.engines._market_hooks import (
 _MARKET_PATTERNS = [
     (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "a_share"),
     (re.compile(r"^(51|15|56)\d{4}\.(SZ|SH)$", re.I), "a_share"),
+    # Vietnam equities: explicit .HOSE / .HNX / .UPCOM suffix only.
+    # Bare 3-letter tickers (e.g. plain "VNM") intentionally fall through to the
+    # default a_share routing for backwards compatibility — VN routing requires
+    # an explicit exchange suffix.
+    (re.compile(r"^[A-Z0-9]+\.(HOSE|HNX|UPCOM)$", re.I), "vn_equity"),
     (re.compile(r"^[A-Z]+\.US$", re.I), "us_equity"),
     (re.compile(r"^\d{3,5}\.HK$", re.I), "hk_equity"),
     (re.compile(r"^[A-Z]+-USDT$", re.I), "crypto"),
@@ -64,6 +69,9 @@ def _build_rule_engines(config: dict, codes: List[str]) -> Dict[str, BaseEngine]
         if market == "a_share":
             from backtest.engines.china_a import ChinaAEngine
             engines["a_share"] = ChinaAEngine(config)
+        elif market == "vn_equity":
+            from backtest.engines.vn_equity import VNEquityEngine
+            engines["vn_equity"] = VNEquityEngine(config)
         elif market == "us_equity":
             from backtest.engines.global_equity import GlobalEquityEngine
             engines["us_equity"] = GlobalEquityEngine(config, market="us")

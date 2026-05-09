@@ -3,6 +3,7 @@
 Wave 1 (v1):
   - BaseEngine: ABC for bar-by-bar execution with market rules
   - ChinaAEngine: A-share (T+1, no short, price limits)
+  - VNEquityEngine: Vietnam equity (T+2, HOSE/HNX/UPCoM bands, 100-share lots)
   - GlobalEquityEngine: US / HK equities
   - CryptoEngine: Crypto perpetuals (funding fees, liquidation)
   - options_portfolio: European/American options (Black-Scholes, v2 with IV smile)
