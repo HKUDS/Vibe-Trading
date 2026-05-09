@@ -95,16 +95,15 @@ def test_remote_tools_appear_in_registry_after_local_tools(tmp_path: Path) -> No
     agent_config = load_agent_config(config_path=cfg_path)
 
     registry = build_registry(agent_config=agent_config)
-    all_tools = list(registry._tools.values())
+    all_names = registry.tool_names
 
-    names = [t.name for t in all_tools]
-    assert "mcp_fake_echo" in names
-    assert "mcp_fake_add" in names
+    assert "mcp_fake_echo" in all_names
+    assert "mcp_fake_add" in all_names
 
     # Remote tools must come after all local tools (no MCP name before local tools end).
-    first_mcp = next(i for i, t in enumerate(all_tools) if t.name.startswith("mcp_"))
+    first_mcp = next(i for i, name in enumerate(all_names) if name.startswith("mcp_"))
     local_after_first_mcp = [
-        t.name for t in all_tools[first_mcp:] if not t.name.startswith("mcp_")
+        name for name in all_names[first_mcp:] if not name.startswith("mcp_")
     ]
     assert local_after_first_mcp == [], (
         "Local tools found after the first MCP tool — ordering guarantee violated"
@@ -120,7 +119,8 @@ def test_remote_tool_is_callable_and_returns_expected_result(tmp_path: Path) -> 
     agent_config = load_agent_config(config_path=cfg_path)
     registry = build_registry(agent_config=agent_config)
 
-    echo_tool = next(t for t in registry._tools.values() if t.name == "mcp_fake_echo")
+    echo_tool = registry.get("mcp_fake_echo")
+    assert echo_tool is not None, "mcp_fake_echo not found in registry"
     result = echo_tool.execute(message="hello")
 
     # The tool returns a JSON string with the text content.

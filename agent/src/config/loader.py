@@ -40,7 +40,12 @@ def load_agent_config(config_path: Path | None = None) -> AgentConfig:
         raw = _read_config_file(path)
         return AgentConfig.model_validate(raw)
     except (OSError, ValueError, ValidationError) as exc:
-        logger.warning("Failed to load agent config from %s: %s", path, exc)
+        logger.warning(
+            "Failed to load agent config from %s: %s",
+            path,
+            type(exc).__name__,
+        )
+        logger.debug("Agent config load error details: %s", exc)
         return AgentConfig()
 
 
@@ -64,7 +69,16 @@ def merge_agent_config_overrides(
     if not overrides:
         return config
 
-    override_model = AgentConfigOverride.model_validate(dict(overrides))
+    try:
+        override_model = AgentConfigOverride.model_validate(dict(overrides))
+    except ValidationError as exc:
+        logger.warning(
+            "Ignoring invalid agent config overrides (%s): %s — using base config",
+            type(exc).__name__,
+            [str(e["loc"]) for e in exc.errors()],
+        )
+        return config
+
     merged = _merge_dicts(
         config.model_dump(mode="json"),
         override_model.model_dump(mode="json", exclude_unset=True),

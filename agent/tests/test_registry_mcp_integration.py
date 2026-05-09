@@ -8,10 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mcp import types as mcp_types
-from fastmcp.client.client import CallToolResult
-
-from src.agent.tools import BaseTool
 from src.config.schema import AgentConfig, MCPServerConfig
 from src.tools import build_registry
 from src.tools.mcp import MCPRemoteTool
@@ -22,31 +18,10 @@ from src.tools.mcp import MCPRemoteTool
 # ---------------------------------------------------------------------------
 
 
-def _make_server_config(**overrides: Any) -> MCPServerConfig:
-    """Create a minimal valid stdio MCPServerConfig."""
-    payload: dict[str, Any] = {
-        "command": "uvx",
-        "args": ["demo-server"],
-        "enabled_tools": ["*"],
-        "tool_timeout": 5,
-    }
-    payload.update(overrides)
-    return MCPServerConfig.model_validate(payload)
-
-
 def _make_agent_config(servers: dict[str, dict[str, Any]]) -> AgentConfig:
     """Build an AgentConfig from a plain server-name → config-dict map."""
     return AgentConfig.model_validate(
         {"mcpServers": {name: cfg for name, cfg in servers.items()}}
-    )
-
-
-def _fake_tool(name: str) -> mcp_types.Tool:
-    """Construct a minimal fake MCP tool definition."""
-    return mcp_types.Tool(
-        name=name,
-        description=f"Fake tool {name}",
-        inputSchema={"type": "object", "properties": {}, "required": []},
     )
 
 

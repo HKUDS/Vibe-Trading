@@ -443,8 +443,6 @@ class MCPServerAdapter:
                     exc,
                 )
 
-        raise RuntimeError(f"MCP operation {operation_name} exhausted retries")
-
 
 class MCPRemoteTool(BaseTool):
     """BaseTool wrapper for a discovered remote MCP tool."""
