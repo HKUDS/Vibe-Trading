@@ -41,6 +41,7 @@ dependencies = [
     "smartmoneyconcepts>=0.0.1",
     "pyharmonics>=1.5.0",
     "tushare>=1.2.89",
+    "vnstock>=4.0",
     "requests>=2.31.0",
     "yfinance>=0.2.30",
     "akshare>=1.12.0",
