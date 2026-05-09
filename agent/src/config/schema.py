@@ -35,7 +35,7 @@ class MCPServerConfig(ConfigBase):
     env: dict[str, str] = Field(default_factory=dict)
     url: str = ""
     headers: dict[str, str] = Field(default_factory=dict)
-    tool_timeout: int = Field(default=30, ge=1)
+    tool_timeout: float = Field(default=30.0, ge=0.1)
     enabled_tools: list[str] = Field(default_factory=lambda: ["*"])
 
     @model_validator(mode="after")
@@ -74,7 +74,7 @@ class MCPServerConfigOverride(ConfigBase):
     env: dict[str, str] | None = None
     url: str | None = None
     headers: dict[str, str] | None = None
-    tool_timeout: int | None = Field(default=None, ge=1)
+    tool_timeout: float | None = Field(default=None, ge=0.1)
     enabled_tools: list[str] | None = None
 
 

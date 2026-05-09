@@ -298,6 +298,12 @@ class MCPServerAdapter:
                 )
             )
 
+        if not specs:
+            logger.warning(
+                "Server '%s' produced 0 enabled tools — check the enabledTools allowlist in agent config.",
+                self.server_name,
+            )
+
         return specs
 
     def call_tool(
@@ -350,11 +356,15 @@ class MCPServerAdapter:
             env=env,
             keep_alive=False,
         )
+        # Use a minimum of 30 s for init_timeout so cold-start servers (pip
+        # install, docker pull, slow imports) do not trip the same short
+        # deadline as a per-call tool_timeout.
+        init_timeout = max(self.server_config.tool_timeout, 30.0)
         return Client(
             transport,
             name=self.server_name,
             timeout=self.server_config.tool_timeout,
-            init_timeout=self.server_config.tool_timeout,
+            init_timeout=init_timeout,
         )
 
     async def _list_tools(self) -> list[mcp_types.Tool]:
@@ -441,7 +451,7 @@ class MCPRemoteTool(BaseTool):
 
     name = ""
     description = ""
-    parameters: dict[str, Any] = {}
+    parameters: dict[str, Any]
     repeatable = True
     is_readonly = False
 
@@ -840,8 +850,10 @@ def _is_retryable_error(exc: Exception) -> bool:
         message = getattr(exc.error, "message", "")
         return _message_looks_transient(message)
 
+    # ToolError signals a remote business / validation error, not a
+    # connection-level transient failure.  Do not retry these.
     if isinstance(exc, ToolError):
-        return _message_looks_transient(str(exc))
+        return False
 
     return _message_looks_transient(str(exc))
 

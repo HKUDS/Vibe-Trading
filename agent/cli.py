@@ -407,7 +407,6 @@ def _run_agent(
 
     pm = PersistentMemory()
     from src.config.loader import load_agent_config
-    from src.tools.mcp import format_mcp_server_name_collision_warning  # noqa: F401 – used via warn_callback
 
     agent_config = load_agent_config()
 

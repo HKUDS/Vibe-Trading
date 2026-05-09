@@ -202,6 +202,8 @@ Pass `mcpServers` inside `session.config` when creating a session to extend or r
 }
 ```
 
+> **Security notice:** `session.config.mcpServers` spawns subprocesses with the configured `command`, `args`, and `env`. Treat this field as trusted operator input. Do not expose it to untrusted API clients without an explicit server-side allowlist.
+
 ### v1 limits
 
 - **Transport:** stdio only. SSE and HTTP transports are rejected.

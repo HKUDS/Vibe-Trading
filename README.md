@@ -620,7 +620,7 @@ OpenSpace will auto-discover all 74 skills, enabling auto-fix, auto-improve, and
 
 ---
 
-## � Loading Tools from External MCP Servers (MCP Client Mode)
+## 🔌 Loading Tools from External MCP Servers (MCP Client Mode)
 
 > **This is the opposite direction from the MCP Plugin above.**
 > The MCP Plugin lets *other* agents call Vibe-Trading tools.
@@ -701,7 +701,7 @@ tool names unique. Rename the server in agent config if you want a different pre
 
 ---
 
-## �📁 Project Structure
+## 📁 Project Structure
 
 <details>
 <summary><b>Click to expand</b></summary>
