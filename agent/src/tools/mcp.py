@@ -650,9 +650,17 @@ def _normalize_schema_node(value: Any) -> Any:
             normalized.pop("type", None)
 
         for key in ("anyOf", "oneOf"):
-            branches = normalized.get(key)
-            if isinstance(branches, list):
-                normalized[key] = [branch for branch in branches if not _is_null_schema(branch)]
+            norm_branches = normalized.get(key)
+            orig_branches = value.get(key)
+            if isinstance(norm_branches, list) and isinstance(orig_branches, list):
+                # Check nullness against the *original* branch before recursive
+                # normalization strips the "type" key from {"type": "null"} → {}.
+                # This preserves Copilot's requirement: {} means "accept anything"
+                # in JSON Schema and must NOT be treated as null-only.
+                normalized[key] = [
+                    nb for nb, ob in zip(norm_branches, orig_branches)
+                    if not _is_null_schema(ob)
+                ]
 
         return normalized
 
@@ -762,7 +770,7 @@ def _is_null_schema(schema: Any) -> bool:
     if not isinstance(schema, dict):
         return False
     branch_type = schema.get("type")
-    return branch_type == "null" or branch_type == ["null"] or not schema
+    return branch_type == "null" or branch_type == ["null"]
 
 
 def _normalize_call_tool_result(result: CallToolResult) -> dict[str, Any]:

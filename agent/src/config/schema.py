@@ -87,4 +87,10 @@ class AgentConfig(ConfigBase):
 class AgentConfigOverride(ConfigBase):
     """Partial top-level config override used for runtime layering."""
 
+    model_config = ConfigDict(
+        alias_generator=_to_camel,
+        populate_by_name=True,
+        extra="ignore",  # unknown session keys (e.g. include_shell_tools) are silently dropped
+    )
+
     mcp_servers: dict[str, MCPServerConfigOverride] = Field(default_factory=dict)
