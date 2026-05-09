@@ -1,0 +1,279 @@
+"""Unit tests for the MCP client adapter core."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from fastmcp.client.client import CallToolResult
+from fastmcp.exceptions import McpError, ToolError
+from mcp import types as mcp_types
+
+from src.config.schema import MCPServerConfig
+from src.tools.mcp import build_mcp_tool_wrappers, make_mcp_tool_name, normalize_mcp_tool_schema
+
+
+class _FakeClient:
+    def __init__(self, state: dict[str, Any]) -> None:
+        self._state = state
+
+    async def __aenter__(self) -> "_FakeClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool | None:
+        return None
+
+    async def list_tools(self) -> list[mcp_types.Tool]:
+        self._state["list_calls"] += 1
+        outcome = self._state["list_outcomes"].pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        *,
+        timeout: float | int | None = None,
+        raise_on_error: bool = False,
+    ) -> CallToolResult:
+        self._state["call_calls"] += 1
+        self._state["call_records"].append({
+            "name": name,
+            "arguments": arguments or {},
+            "timeout": timeout,
+            "raise_on_error": raise_on_error,
+        })
+        outcome = self._state["call_outcomes"].pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+def _make_factory(state: dict[str, Any]):
+    def _factory() -> _FakeClient:
+        return _FakeClient(state)
+
+    return _factory
+
+
+def _make_config(**overrides: Any) -> MCPServerConfig:
+    payload = {
+        "command": "uvx",
+        "args": ["demo-server"],
+        "enabled_tools": ["*"],
+        "tool_timeout": 7,
+    }
+    payload.update(overrides)
+    return MCPServerConfig.model_validate(payload)
+
+
+def test_make_mcp_tool_name_is_stable() -> None:
+    assert make_mcp_tool_name("Demo Server", "Price Quote") == "mcp_demo_server_price_quote"
+
+
+def test_normalize_mcp_tool_schema_collapses_nullable_object() -> None:
+    schema = normalize_mcp_tool_schema(
+        {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": ["string", "null"]},
+                    },
+                    "required": ["symbol"],
+                },
+                {"type": "null"},
+            ]
+        }
+    )
+
+    assert schema["type"] == "object"
+    assert schema["properties"]["symbol"]["type"] == "string"
+    assert schema["required"] == ["symbol"]
+
+
+def test_normalize_mcp_tool_schema_preserves_top_level_one_of_branches() -> None:
+    schema = normalize_mcp_tool_schema(
+        {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {"symbol": {"type": "string"}},
+                    "required": ["symbol"],
+                },
+                {
+                    "type": "object",
+                    "properties": {"cusip": {"type": "string"}},
+                    "required": ["cusip"],
+                },
+            ]
+        }
+    )
+
+    assert schema["type"] == "object"
+    assert "oneOf" in schema
+    assert schema["oneOf"][0]["properties"]["symbol"]["type"] == "string"
+    assert schema["oneOf"][1]["properties"]["cusip"]["type"] == "string"
+
+
+def test_build_mcp_tool_wrappers_filters_enabled_tools() -> None:
+    state = {
+        "list_calls": 0,
+        "call_calls": 0,
+        "call_records": [],
+        "list_outcomes": [[
+            mcp_types.Tool(name="allowed", description="Allowed", inputSchema={"type": "object"}),
+            mcp_types.Tool(name="blocked", description="Blocked", inputSchema={"type": "object"}),
+        ]],
+        "call_outcomes": [],
+    }
+
+    tools = build_mcp_tool_wrappers(
+        "demo",
+        _make_config(enabled_tools=["allowed"]),
+        client_factory=_make_factory(state),
+    )
+
+    assert [tool.name for tool in tools] == ["mcp_demo_allowed"]
+    assert tools[0].is_readonly is False
+
+
+def test_remote_tool_execute_retries_transient_timeout_and_strips_run_dir() -> None:
+    state = {
+        "list_calls": 0,
+        "call_calls": 0,
+        "call_records": [],
+        "list_outcomes": [[
+            mcp_types.Tool(
+                name="quote",
+                description="Quote lookup",
+                inputSchema={
+                    "type": "object",
+                    "properties": {"symbol": {"type": "string"}},
+                    "required": ["symbol"],
+                },
+            )
+        ]],
+        "call_outcomes": [
+            TimeoutError("timed out"),
+            CallToolResult(content=[], structured_content={"price": 12.3}, meta=None, data={"price": 12.3}),
+        ],
+    }
+
+    tool = build_mcp_tool_wrappers("demo", _make_config(), client_factory=_make_factory(state))[0]
+
+    payload = json.loads(tool.execute(symbol="AAPL", run_dir="/tmp/run"))
+
+    assert payload["status"] == "ok"
+    assert payload["server"] == "demo"
+    assert payload["remote_tool"] == "quote"
+    assert payload["tool"] == "mcp_demo_quote"
+    assert payload["structured_content"] == {"price": 12.3}
+    assert state["call_calls"] == 2
+    assert state["call_records"][0]["arguments"] == {"symbol": "AAPL"}
+    assert state["call_records"][0]["timeout"] == 7
+    assert state["call_records"][0]["raise_on_error"] is False
+
+
+def test_remote_tool_execute_forwards_arguments_for_composed_schema() -> None:
+    state = {
+        "list_calls": 0,
+        "call_calls": 0,
+        "call_records": [],
+        "list_outcomes": [[
+            mcp_types.Tool(
+                name="lookup",
+                description="Lookup by symbol or cusip",
+                inputSchema={
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "properties": {"symbol": {"type": "string"}},
+                            "required": ["symbol"],
+                        },
+                        {
+                            "type": "object",
+                            "properties": {"cusip": {"type": "string"}},
+                            "required": ["cusip"],
+                        },
+                    ]
+                },
+            )
+        ]],
+        "call_outcomes": [
+            CallToolResult(content=[], structured_content={"ok": True}, meta=None, data={"ok": True}),
+        ],
+    }
+
+    tool = build_mcp_tool_wrappers("demo", _make_config(), client_factory=_make_factory(state))[0]
+
+    payload = json.loads(tool.execute(symbol="AAPL", run_dir="/tmp/run"))
+
+    assert payload["status"] == "ok"
+    assert state["call_records"][0]["arguments"] == {"symbol": "AAPL"}
+
+
+def test_build_mcp_tool_wrappers_disambiguates_colliding_local_names() -> None:
+    state = {
+        "list_calls": 0,
+        "call_calls": 0,
+        "call_records": [],
+        "list_outcomes": [[
+            mcp_types.Tool(name="price-quote", description="Hyphen", inputSchema={"type": "object"}),
+            mcp_types.Tool(name="price quote", description="Space", inputSchema={"type": "object"}),
+        ]],
+        "call_outcomes": [],
+    }
+
+    tools = build_mcp_tool_wrappers("demo", _make_config(), client_factory=_make_factory(state))
+    names = [tool.name for tool in tools]
+
+    assert names[0] == "mcp_demo_price_quote"
+    assert names[1].startswith("mcp_demo_price_quote_")
+    assert len(set(names)) == 2
+
+
+def test_build_mcp_tool_wrappers_retries_transient_discovery_failure() -> None:
+    state = {
+        "list_calls": 0,
+        "call_calls": 0,
+        "call_records": [],
+        "list_outcomes": [
+            [McpError(mcp_types.ErrorData(code=mcp_types.CONNECTION_CLOSED, message="Connection closed"))][0],
+            [mcp_types.Tool(name="quote", description="Quote", inputSchema={"type": "object"})],
+        ],
+        "call_outcomes": [],
+    }
+
+    tools = build_mcp_tool_wrappers("demo", _make_config(), client_factory=_make_factory(state))
+
+    assert [tool.name for tool in tools] == ["mcp_demo_quote"]
+    assert state["list_calls"] == 2
+
+
+def test_remote_tool_execute_returns_normalized_error_payload_without_retry() -> None:
+    state = {
+        "list_calls": 0,
+        "call_calls": 0,
+        "call_records": [],
+        "list_outcomes": [[
+            mcp_types.Tool(name="quote", description="Quote", inputSchema={"type": "object"})
+        ]],
+        "call_outcomes": [ToolError("validation failed")],
+    }
+
+    tool = build_mcp_tool_wrappers("demo", _make_config(), client_factory=_make_factory(state))[0]
+
+    payload = json.loads(tool.execute(symbol="AAPL"))
+
+    assert payload == {
+        "status": "error",
+        "server": "demo",
+        "remote_tool": "quote",
+        "tool": "mcp_demo_quote",
+        "error": "validation failed",
+        "error_type": "ToolError",
+    }
+    assert state["call_calls"] == 1
