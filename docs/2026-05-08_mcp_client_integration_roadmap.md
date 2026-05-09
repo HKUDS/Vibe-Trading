@@ -151,14 +151,14 @@ Failure should be isolated per server.
 
 ## Acceptance Criteria
 
-- [ ] CLI agent runs can load tools from external stdio MCP servers
-- [ ] SessionService runs can load tools from external stdio MCP servers
-- [ ] Remote tools appear with stable `mcp_<server>_<tool>` names
-- [ ] `enabledTools` filtering works
-- [ ] MCP tools never enter the current parallel readonly path
-- [ ] Broken MCP servers degrade safely without breaking local tools
-- [ ] Missing or invalid config files fall back safely
-- [ ] Existing MCP server mode does not regress
+- [x] CLI agent runs can load tools from external stdio MCP servers
+- [x] SessionService runs can load tools from external stdio MCP servers
+- [x] Remote tools appear with stable `mcp_<server>_<tool>` names
+- [x] `enabledTools` filtering works
+- [x] MCP tools never enter the current parallel readonly path
+- [x] Broken MCP servers degrade safely without breaking local tools
+- [x] Missing or invalid config files fall back safely
+- [x] Existing MCP server mode does not regress
 
 ## Test Plan
 
@@ -197,7 +197,7 @@ It reuses nanobot's strongest implementation ideas while staying compatible with
 
 ### Cross-Cutting Requirement
 
-- [ ] All new Python methods introduced by this roadmap include repository-style docstrings with `Args`, `Returns`, and `Raises` when applicable
+- [x] All new Python methods introduced by this roadmap include repository-style docstrings with `Args`, `Returns`, and `Raises` when applicable
 
 ### Phase 1 - Config Foundation
 
@@ -235,12 +235,12 @@ It reuses nanobot's strongest implementation ideas while staying compatible with
 
 ### Phase 5 - Docs and Tests
 
-- [ ] Document the new MCP client mode in `README.md`
-- [ ] Document config examples and limits in `agent/SKILL.md`
-- [ ] Add unit tests for config, wrapper, timeout, retry, and schema normalization
-- [ ] Add integration tests with a fake stdio MCP server
-- [ ] Add regression tests for no-config behavior and current MCP server mode
-- [ ] Verify all acceptance criteria in this roadmap
+- [x] Document the new MCP client mode in `README.md`
+- [x] Document config examples and limits in `agent/SKILL.md`
+- [x] Add unit tests for config, wrapper, timeout, retry, and schema normalization
+- [x] Add integration tests with a fake stdio MCP server
+- [x] Add regression tests for no-config behavior and current MCP server mode
+- [x] Verify all acceptance criteria in this roadmap
 
 ## Phase Exit Criteria
 
@@ -263,7 +263,7 @@ The implementation should be split into small reviewable PRs.
 | PR 3 | done | Registry integration | inject MCP tools into registry, stable ordering, serial-only MCP behavior | API-specific overrides |
 | PR 4 | done | CLI integration | load MCP config in CLI runs, add operator-facing warnings | SessionService wiring |
 | PR 5 | done | SessionService integration | load MCP config in SessionService, support `session.config` override | Web UI management |
-| PR 6 | pending | Docs and hardening | docs, examples, regression tests, fake MCP server coverage | new transports or parallel MCP execution |
+| PR 6 | done | Docs and hardening | docs, examples, regression tests, fake MCP server coverage | new transports or parallel MCP execution |
 
 ### PR 1 - Config Foundation
 

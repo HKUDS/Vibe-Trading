@@ -620,7 +620,88 @@ OpenSpace will auto-discover all 74 skills, enabling auto-fix, auto-improve, and
 
 ---
 
-## 📁 Project Structure
+## � Loading Tools from External MCP Servers (MCP Client Mode)
+
+> **This is the opposite direction from the MCP Plugin above.**
+> The MCP Plugin lets *other* agents call Vibe-Trading tools.
+> This section lets the *built-in* Vibe-Trading agent call tools from *your* external MCP servers.
+
+### Quick start
+
+Create `~/.vibe-trading/agent.json`:
+
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "command": "uvx",
+      "args": ["my-mcp-server"]
+    }
+  }
+}
+```
+
+Run any CLI command — tools from `my-server` are automatically injected into the agent's registry after local tools:
+
+```bash
+vibe-trading run "use my-server to do X"
+```
+
+### Config reference
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `command` | string | required | Executable to spawn |
+| `args` | array | `[]` | Command-line arguments |
+| `env` | object | `{}` | Extra environment variables merged into the subprocess env |
+| `toolTimeout` | number | `30` | Per-tool call timeout in seconds |
+| `enabledTools` | array | `["*"]` | Tool allowlist. Use `["*"]` to expose all tools from the server |
+
+Config file location: `~/.vibe-trading/agent.json` (JSON or YAML).
+
+### Per-session overrides (API)
+
+When creating a session via the API you can pass `mcpServers` inside `session.config` to extend or override the global config for that session only:
+
+```json
+{
+  "config": {
+    "mcpServers": {
+      "research-server": {
+        "command": "uvx",
+        "args": ["research-mcp"],
+        "enabledTools": ["search", "fetch"]
+      }
+    }
+  }
+}
+```
+
+### Tool naming
+
+Remote tools are exposed with stable names: `mcp_<server>_<tool>`.
+
+If two server names produce the same ASCII-safe local prefix (e.g. `foo-bar` and `foo_bar` both become `foo_bar`), a deterministic hash suffix is appended at the server-segment level so names remain unique. The operator receives a warning:
+
+```
+WARNING: Configured MCP server 'foo-bar' collides with another server after local name
+normalization. Using local tool prefix 'mcp_foo_bar_<hash>_<tool>' to keep generated
+tool names unique. Rename the server in agent config if you want a different prefix.
+```
+
+### v1 limits
+
+| Limit | Detail |
+|-------|--------|
+| Transport | stdio only (SSE / streamable HTTP excluded in v1) |
+| Execution | serial only — MCP tools never enter the parallel readonly path |
+| Surfaces | tools only (resources and prompts excluded in v1) |
+| Hot reload | not supported — restart the process to pick up config changes |
+| Swarm path | MCP tools are not available inside Swarm worker registries in v1 |
+
+---
+
+## �📁 Project Structure
 
 <details>
 <summary><b>Click to expand</b></summary>

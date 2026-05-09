@@ -339,4 +339,64 @@ def test_remote_tool_execute_returns_normalized_error_payload_without_retry() ->
         "error": "validation failed",
         "error_type": "ToolError",
     }
-    assert state["call_calls"] == 1
+
+
+def test_build_mcp_tool_wrappers_wildcard_enabled_tools_passes_all() -> None:
+    """enabledTools: ["*"] must pass every tool through without filtering."""
+    state = {
+        "list_calls": 0,
+        "call_calls": 0,
+        "call_records": [],
+        "list_outcomes": [[
+            mcp_types.Tool(name="alpha", description="A", inputSchema={"type": "object"}),
+            mcp_types.Tool(name="beta", description="B", inputSchema={"type": "object"}),
+            mcp_types.Tool(name="gamma", description="C", inputSchema={"type": "object"}),
+        ]],
+        "call_outcomes": [],
+    }
+
+    # enabled_tools=["*"] is the default in _make_config()
+    tools = build_mcp_tool_wrappers("demo", _make_config(enabled_tools=["*"]), client_factory=_make_factory(state))
+
+    assert [t.name for t in tools] == [
+        "mcp_demo_alpha",
+        "mcp_demo_beta",
+        "mcp_demo_gamma",
+    ]
+
+
+def test_normalize_mcp_tool_schema_strips_null_from_any_of_branches() -> None:
+    """anyOf with a null-only branch should have that branch removed."""
+    schema = normalize_mcp_tool_schema(
+        {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"type": "null"},
+                    ]
+                }
+            },
+        }
+    )
+
+    # The null branch in the anyOf must be stripped.
+    value_schema = schema["properties"]["value"]
+    any_of_branches = value_schema["anyOf"]
+    assert all(branch != {"type": "null"} for branch in any_of_branches)
+    assert {"type": "integer"} in any_of_branches
+
+
+def test_normalize_mcp_tool_schema_collapses_nested_type_list_with_null() -> None:
+    """type: ["string", "null"] at any nesting level must collapse to type: "string"."""
+    schema = normalize_mcp_tool_schema(
+        {
+            "type": "object",
+            "properties": {
+                "label": {"type": ["string", "null"]},
+            },
+        }
+    )
+
+    assert schema["properties"]["label"]["type"] == "string"

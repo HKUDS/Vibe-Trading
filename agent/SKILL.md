@@ -149,6 +149,79 @@ pip install vibe-trading-ai
 
 That's it — no API keys needed for HK/US/crypto markets. Start using `backtest`, `get_market_data`, `analyze_options`, `analyze_trade_journal`, `extract_shadow_strategy`, `web_search`, and all 74 skills immediately.
 
+## Loading Tools from External MCP Servers
+
+The built-in agent can load tools from your own external MCP servers in addition to its local toolset.
+
+> **Note:** This is the *MCP client* path — the opposite of the MCP plugin listed above. The plugin above makes Vibe-Trading's tools available to your agents. This section lets Vibe-Trading's own agent call tools from *your* servers.
+
+### Setup
+
+Create `~/.vibe-trading/agent.json`:
+
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "command": "uvx",
+      "args": ["my-mcp-server"],
+      "toolTimeout": 30,
+      "enabledTools": ["*"]
+    }
+  }
+}
+```
+
+Remote tools appear automatically in every `vibe-trading run` / `vibe-trading chat` call. They are injected after local tools under stable names: `mcp_<server>_<tool>`.
+
+### Config fields
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `command` | yes | — | Executable to launch |
+| `args` | no | `[]` | Command arguments |
+| `env` | no | `{}` | Extra env vars for the subprocess |
+| `toolTimeout` | no | `30` | Seconds before a tool call is cancelled |
+| `enabledTools` | no | `["*"]` | Allowlist of remote tool names. `["*"]` enables all |
+
+### Per-session override (API)
+
+Pass `mcpServers` inside `session.config` when creating a session to extend or replace the global config for that session only:
+
+```json
+{
+  "config": {
+    "mcpServers": {
+      "research": {
+        "command": "uvx",
+        "args": ["research-mcp"],
+        "enabledTools": ["search"]
+      }
+    }
+  }
+}
+```
+
+### v1 limits
+
+- **Transport:** stdio only. SSE and HTTP transports are rejected.
+- **Execution:** serial only. MCP tools never enter the parallel readonly path.
+- **Surfaces:** tools only. Resources and prompts are not exposed.
+- **Swarm:** MCP tools are excluded from Swarm worker registries in v1.
+- **Hot reload:** not supported. Restart the process to pick up config changes.
+
+### Failure handling
+
+| Case | Behavior |
+|------|----------|
+| Missing config file | falls back to empty config — no MCP servers loaded |
+| Invalid config file | logs a warning and falls back to empty config |
+| Server fails to start | that server is skipped; local tools and other servers still load |
+| Tool call times out | returns a normalized error payload instead of raising |
+| Two server names collide after sanitization | deterministic hash suffix appended; operator warning emitted |
+
+
+
 ## Examples
 
 **Backtest a MACD strategy on Apple:**
