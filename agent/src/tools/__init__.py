@@ -15,7 +15,7 @@ import logging
 import pkgutil
 from collections import deque
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from src.agent.tools import BaseTool, ToolRegistry
 
@@ -67,6 +67,7 @@ def build_registry(
     persistent_memory: "PersistentMemory | None" = None,
     include_shell_tools: bool = False,
     agent_config: "AgentConfig | None" = None,
+    warn_callback: Callable[[str], None] | None = None,
 ) -> ToolRegistry:
     """Build the tool registry via auto-discovery, optionally enriched with MCP tools.
 
@@ -88,6 +89,10 @@ def build_registry(
             non-empty, MCP tools are appended to the registry after local
             tool discovery. Pass ``None`` (default) to preserve existing
             behavior with no MCP integration.
+        warn_callback: Optional callable invoked with operator-facing warning
+            messages. When provided, server-name collision warnings are passed
+            to this callback in addition to the standard logger so CLI and
+            SessionService can surface them to operators.
 
     Returns:
         ToolRegistry containing all available local tools followed by any
@@ -117,7 +122,10 @@ def build_registry(
     if agent_config and agent_config.mcp_servers:
         from src.tools.mcp import build_mcp_tool_wrappers, resolve_mcp_server_tool_name_segments
 
-        local_server_names = resolve_mcp_server_tool_name_segments(agent_config.mcp_servers.keys())
+        local_server_names = resolve_mcp_server_tool_name_segments(
+            agent_config.mcp_servers.keys(),
+            warn_callback=warn_callback,
+        )
 
         for server_name, server_config in agent_config.mcp_servers.items():
             try:
@@ -134,11 +142,10 @@ def build_registry(
                     server_name,
                 )
             except Exception as exc:
-                logger.warning(
-                    "Skipped MCP server '%s': %s",
-                    server_name,
-                    exc,
-                )
+                skip_msg = f"MCP server '{server_name}' skipped: {exc}"
+                logger.warning("Skipped MCP server '%s': %s", server_name, exc)
+                if warn_callback is not None:
+                    warn_callback(skip_msg)
 
     return registry
 

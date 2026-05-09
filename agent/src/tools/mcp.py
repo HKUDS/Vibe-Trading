@@ -154,7 +154,10 @@ def format_mcp_server_name_collision_warning(server_name: str, local_server_name
     )
 
 
-def resolve_mcp_server_tool_name_segments(server_names: Iterable[str]) -> dict[str, str]:
+def resolve_mcp_server_tool_name_segments(
+    server_names: Iterable[str],
+    warn_callback: Callable[[str], None] | None = None,
+) -> dict[str, str]:
     """Resolve unique local server-name segments for MCP tool names.
 
     The first release keeps MCP tool names ASCII-safe by sanitizing server
@@ -166,6 +169,10 @@ def resolve_mcp_server_tool_name_segments(server_names: Iterable[str]) -> dict[s
 
     Args:
         server_names: Ordered raw MCP server names from config.
+        warn_callback: Optional callable invoked with the operator-facing
+            warning message when a server-name collision is detected and
+            disambiguated. Receives the same text as ``logger.warning`` so
+            callers (CLI, SessionService) can surface it to operators.
 
     Returns:
         Mapping of raw server names to unique local server-name segments.
@@ -186,7 +193,10 @@ def resolve_mcp_server_tool_name_segments(server_names: Iterable[str]) -> dict[s
             continue
 
         unique_segment = _dedupe_server_name_segment(base_segment, server_name, used_segments)
-        logger.warning(format_mcp_server_name_collision_warning(server_name, unique_segment))
+        warning_text = format_mcp_server_name_collision_warning(server_name, unique_segment)
+        logger.warning(warning_text)
+        if warn_callback is not None:
+            warn_callback(warning_text)
         resolved_segments[server_name] = unique_segment
         used_segments.add(unique_segment)
 

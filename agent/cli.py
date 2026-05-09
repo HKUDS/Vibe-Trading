@@ -406,11 +406,24 @@ def _run_agent(
     from src.memory.persistent import PersistentMemory
 
     pm = PersistentMemory()
-    # TODO(phase4): When CLI starts loading MCP config, surface
-    # format_mcp_server_name_collision_warning() to operators so sanitized
-    # server-name disambiguation is visible outside debug logs.
+    from src.config.loader import load_agent_config
+    from src.tools.mcp import format_mcp_server_name_collision_warning  # noqa: F401 – used via warn_callback
+
+    agent_config = load_agent_config()
+
+    def _mcp_warn(msg: str) -> None:
+        if no_rich:
+            print(f"WARNING: {msg}", flush=True)
+        else:
+            console.print(f"[yellow]WARNING:[/yellow] {msg}")
+
     agent = AgentLoop(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=True),
+        registry=build_registry(
+            persistent_memory=pm,
+            include_shell_tools=True,
+            agent_config=agent_config,
+            warn_callback=_mcp_warn,
+        ),
         llm=ChatLLM(),
         event_callback=on_event,
         max_iterations=max_iter,
@@ -906,10 +919,18 @@ def cmd_interactive(max_iter: int) -> None:
 
             try:
                 pm = PersistentMemory()
-                # TODO(phase4): Reuse format_mcp_server_name_collision_warning()
-                # here when interactive CLI runs begin loading MCP config.
+                from src.config.loader import load_agent_config as _load_agent_config
+                agent_config = _load_agent_config()
+
+                def _chat_mcp_warn(msg: str) -> None:
+                    console.print(f"[yellow]WARNING:[/yellow] {msg}")
+
                 agent = AgentLoop(
-                    registry=build_registry(persistent_memory=pm),
+                    registry=build_registry(
+                        persistent_memory=pm,
+                        agent_config=agent_config,
+                        warn_callback=_chat_mcp_warn,
+                    ),
                     llm=ChatLLM(),
                     event_callback=_status_event_callback,
                     max_iterations=max_iter,

@@ -192,7 +192,12 @@ class SessionService:
 
         try:
             messages = self.store.get_messages(session.session_id)
-            result = await self._run_with_agent(attempt, messages=messages, include_shell_tools=include_shell_tools)
+            result = await self._run_with_agent(
+                attempt,
+                messages=messages,
+                include_shell_tools=include_shell_tools,
+                session_config=dict(session.config),
+            )
             if result.get("status") == "success":
                 attempt.mark_completed(summary=result.get("content", ""))
             else:
@@ -233,6 +238,7 @@ class SessionService:
         messages: list = None,
         *,
         include_shell_tools: bool = False,
+        session_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Execute an attempt with the V5 AgentLoop.
 
@@ -240,6 +246,10 @@ class SessionService:
             attempt: Current execution attempt.
             messages: Session message history.
             include_shell_tools: Whether the registry may include shell tools.
+            session_config: Optional session-level config overrides. MCP server
+                definitions under the ``mcpServers`` key are merged on top of
+                the user config file via ``load_runtime_agent_config`` so each
+                session can extend or override the global MCP server list.
 
         Returns:
             Result dictionary containing status, run_dir, run_id, metrics, and related fields.
@@ -248,6 +258,7 @@ class SessionService:
         from src.providers.chat import ChatLLM
         from src.agent.loop import AgentLoop
         from src.memory.persistent import PersistentMemory
+        from src.config.loader import load_runtime_agent_config
 
         llm = ChatLLM()
         pm = PersistentMemory()
@@ -255,16 +266,24 @@ class SessionService:
         session_id = attempt.session_id
         attempt_id = attempt.attempt_id
 
+        agent_config = load_runtime_agent_config(overrides=session_config)
+
         def event_callback(event_type: str, data: Dict[str, Any]) -> None:
             """Forward AgentLoop events to the SSE event bus."""
             data["attempt_id"] = attempt_id
             self.event_bus.emit(session_id, event_type, data)
 
-        # TODO(phase4): When SessionService starts loading runtime MCP config,
-        # forward format_mcp_server_name_collision_warning() through the
-        # operator-facing event channel instead of leaving it as a registry log.
+        def _mcp_collision_warn(msg: str) -> None:
+            """Forward MCP server-name collision warnings to the operator event channel."""
+            self.event_bus.emit(session_id, "mcp.warning", {"attempt_id": attempt_id, "message": msg})
+
         agent = AgentLoop(
-            registry=build_registry(persistent_memory=pm, include_shell_tools=include_shell_tools),
+            registry=build_registry(
+                persistent_memory=pm,
+                include_shell_tools=include_shell_tools,
+                agent_config=agent_config,
+                warn_callback=_mcp_collision_warn,
+            ),
             llm=llm,
             event_callback=event_callback,
             max_iterations=50,

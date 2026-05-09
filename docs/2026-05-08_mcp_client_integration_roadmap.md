@@ -227,11 +227,11 @@ It reuses nanobot's strongest implementation ideas while staying compatible with
 
 ### Phase 4 - Entry-Point Integration
 
-- [ ] Load MCP config in CLI agent runs
-- [ ] Load MCP config in SessionService runs
-- [ ] Support `session.config` overrides for API-created sessions
-- [ ] Surface clear warnings for skipped or failed MCP servers
-- [ ] Surface the same operator-facing server-name collision warning in CLI and SessionService when MCP config disambiguates sanitized server names: `Configured MCP server '<name>' collides with another server after local name normalization. Using local tool prefix 'mcp_<resolved>_<tool>' to keep generated tool names unique. Rename the server in agent config if you want a different prefix.`
+- [x] Load MCP config in CLI agent runs
+- [x] Load MCP config in SessionService runs
+- [x] Support `session.config` overrides for API-created sessions
+- [x] Surface clear warnings for skipped or failed MCP servers
+- [x] Surface the same operator-facing server-name collision warning in CLI and SessionService when MCP config disambiguates sanitized server names: `Configured MCP server '<name>' collides with another server after local name normalization. Using local tool prefix 'mcp_<resolved>_<tool>' to keep generated tool names unique. Rename the server in agent config if you want a different prefix.`
 
 ### Phase 5 - Docs and Tests
 
@@ -261,8 +261,8 @@ The implementation should be split into small reviewable PRs.
 | PR 1 | done | Config foundation | add config schema, loader, path helpers, precedence rules | MCP runtime integration |
 | PR 2 | done | MCP adapter core | add stdio MCP client support, tool wrapper, timeout, retry, schema normalization | CLI and SessionService wiring |
 | PR 3 | done | Registry integration | inject MCP tools into registry, stable ordering, serial-only MCP behavior | API-specific overrides |
-| PR 4 | pending | CLI integration | load MCP config in CLI runs, add operator-facing warnings | SessionService wiring |
-| PR 5 | pending | SessionService integration | load MCP config in SessionService, support `session.config` override | Web UI management |
+| PR 4 | done | CLI integration | load MCP config in CLI runs, add operator-facing warnings | SessionService wiring |
+| PR 5 | done | SessionService integration | load MCP config in SessionService, support `session.config` override | Web UI management |
 | PR 6 | pending | Docs and hardening | docs, examples, regression tests, fake MCP server coverage | new transports or parallel MCP execution |
 
 ### PR 1 - Config Foundation

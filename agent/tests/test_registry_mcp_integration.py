@@ -240,3 +240,79 @@ def test_build_registry_default_call_is_unchanged() -> None:
     r2 = build_registry(agent_config=None)
 
     assert set(r1.tool_names) == set(r2.tool_names)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: warn_callback surfaces server-name collision warnings
+# ---------------------------------------------------------------------------
+
+
+def test_warn_callback_called_on_server_name_collision() -> None:
+    """build_registry() must invoke warn_callback when two servers collide after sanitization."""
+    received: list[str] = []
+
+    def _wrapper_factory(
+        server_name: str,
+        server_config: MCPServerConfig,
+        *,
+        local_server_name: str | None = None,
+        **_kw: Any,
+    ):
+        del server_name, server_config
+        return _make_fake_wrappers(local_server_name or "x", ["ping"])
+
+    with patch("src.tools.mcp.build_mcp_tool_wrappers", side_effect=_wrapper_factory):
+        config = _make_agent_config({
+            "foo-bar": {"command": "uvx", "args": []},
+            "foo_bar": {"command": "uvx", "args": []},
+        })
+        build_registry(agent_config=config, warn_callback=received.append)
+
+    assert len(received) > 0, "warn_callback must be called at least once for a collision"
+    assert any("foo" in msg for msg in received), (
+        "warn_callback message must mention the colliding server name"
+    )
+
+
+def test_warn_callback_not_called_when_no_collision() -> None:
+    """build_registry() must NOT invoke warn_callback when server names are unique after sanitization."""
+    received: list[str] = []
+    fake_wrappers = _make_fake_wrappers("alpha", ["tool_a"])
+
+    with patch("src.tools.mcp.build_mcp_tool_wrappers", return_value=fake_wrappers):
+        config = _make_agent_config({"alpha": {"command": "uvx", "args": []}})
+        build_registry(agent_config=config, warn_callback=received.append)
+
+    assert received == [], f"warn_callback must not fire without a collision; got: {received}"
+
+
+def test_warn_callback_omitted_still_logs_collision(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """When warn_callback is absent, logger.warning must still fire for collisions."""
+
+    def _wrapper_factory(
+        server_name: str,
+        server_config: MCPServerConfig,
+        *,
+        local_server_name: str | None = None,
+        **_kw: Any,
+    ):
+        del server_name, server_config
+        return _make_fake_wrappers(local_server_name or "x", ["ping"])
+
+    with patch("src.tools.mcp.build_mcp_tool_wrappers", side_effect=_wrapper_factory):
+        config = _make_agent_config({
+            "foo-bar": {"command": "uvx", "args": []},
+            "foo_bar": {"command": "uvx", "args": []},
+        })
+        with caplog.at_level(logging.WARNING, logger="src.tools"):
+            registry = build_registry(agent_config=config)  # no warn_callback — must not raise
+
+    mcp_names = [n for n in registry.tool_names if n.startswith("mcp_")]
+    assert len(mcp_names) == 2
+
+    assert any("foo" in record.message for record in caplog.records), (
+        "logger.warning must still fire for the collision even without warn_callback"
+    )
+
