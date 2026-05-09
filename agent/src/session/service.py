@@ -258,7 +258,7 @@ class SessionService:
         from src.providers.chat import ChatLLM
         from src.agent.loop import AgentLoop
         from src.memory.persistent import PersistentMemory
-        from src.config.loader import load_runtime_agent_config
+        from src.config.loader import load_runtime_agent_config, sanitize_session_overrides
 
         llm = ChatLLM()
         pm = PersistentMemory()
@@ -266,7 +266,8 @@ class SessionService:
         session_id = attempt.session_id
         attempt_id = attempt.attempt_id
 
-        agent_config = load_runtime_agent_config(overrides=session_config)
+        safe_overrides = sanitize_session_overrides(session_config) if session_config else session_config
+        agent_config = load_runtime_agent_config(overrides=safe_overrides)
 
         def event_callback(event_type: str, data: Dict[str, Any]) -> None:
             """Forward AgentLoop events to the SSE event bus."""

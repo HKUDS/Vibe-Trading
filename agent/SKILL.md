@@ -186,7 +186,15 @@ Remote tools appear automatically in every `vibe-trading run` / `vibe-trading ch
 
 ### Per-session override (API)
 
-Pass `mcpServers` inside `session.config` when creating a session to extend or replace the global config for that session only:
+> **Security — disabled by default.** `mcpServers` defines subprocess `command`/`args`/`env` and is therefore restricted to operator-level trust. API callers **cannot** inject MCP server definitions through `POST /sessions` unless the server operator explicitly opts in.
+
+To enable session-level MCP injection, set the environment variable on the server before starting the agent:
+
+```bash
+export ALLOW_SESSION_MCP_SERVERS=1
+```
+
+With the opt-in active, pass `mcpServers` inside `session.config` to extend or replace the global config for that session only:
 
 ```json
 {
@@ -202,7 +210,7 @@ Pass `mcpServers` inside `session.config` when creating a session to extend or r
 }
 ```
 
-> **Security notice:** `session.config.mcpServers` spawns subprocesses with the configured `command`, `args`, and `env`. Treat this field as trusted operator input. Do not expose it to untrusted API clients without an explicit server-side allowlist.
+Without `ALLOW_SESSION_MCP_SERVERS=1`, any `mcpServers` key in `session.config` is silently stripped before config loading. The global operator config on disk (`~/.vibe-trading/agent.json`) is always respected regardless of this flag.
 
 ### v1 limits
 

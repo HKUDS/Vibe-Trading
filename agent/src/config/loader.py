@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -84,6 +85,41 @@ def merge_agent_config_overrides(
         override_model.model_dump(mode="json", exclude_unset=True),
     )
     return AgentConfig.model_validate(merged)
+
+
+# Keys in session overrides that carry subprocess definitions and therefore
+# require operator-level trust rather than API-caller trust.
+_SESSION_RESTRICTED_KEYS: frozenset[str] = frozenset({"mcpServers", "mcp_servers"})
+
+
+def sanitize_session_overrides(overrides: Mapping[str, Any]) -> dict[str, Any]:
+    """Strip operator-only keys from API-caller-supplied session overrides.
+
+    ``mcpServers`` / ``mcp_servers`` define subprocess ``command``/``args``/``env``
+    and therefore grant execution-level capabilities.  They must originate from
+    the operator-controlled config file on disk, not from unauthenticated or
+    semi-trusted API callers.  Operators who deliberately want to allow session-
+    level MCP injection can set ``ALLOW_SESSION_MCP_SERVERS=1``.
+
+    Args:
+        overrides: Raw session config dict received from the API caller.
+
+    Returns:
+        A new dict with restricted keys removed (or the original mapping
+        converted to dict if the env opt-in is active).
+    """
+    if os.environ.get("ALLOW_SESSION_MCP_SERVERS", "").strip().lower() in {"1", "true", "yes"}:
+        return dict(overrides)
+
+    restricted_present = _SESSION_RESTRICTED_KEYS & overrides.keys()
+    if restricted_present:
+        logger.warning(
+            "Stripped %s from session config overrides: MCP server definitions "
+            "require operator-level trust (disk config). "
+            "Set ALLOW_SESSION_MCP_SERVERS=1 to allow session-level injection.",
+            sorted(restricted_present),
+        )
+    return {k: v for k, v in overrides.items() if k not in _SESSION_RESTRICTED_KEYS}
 
 
 def load_runtime_agent_config(

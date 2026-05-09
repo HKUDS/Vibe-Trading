@@ -15,6 +15,7 @@ from src.config import (
     get_runtime_root,
     load_agent_config,
     load_runtime_agent_config,
+    sanitize_session_overrides,
 )
 
 
@@ -157,3 +158,64 @@ def test_get_data_dir_uses_explicit_config_parent(tmp_path: Path) -> None:
     assert get_runtime_root(config_path) == config_path.parent
     assert get_data_dir(config_path) == config_path.parent
     assert config_path.parent.exists()
+
+
+# ---------------------------------------------------------------------------
+# sanitize_session_overrides – security gate for mcpServers
+# ---------------------------------------------------------------------------
+
+def test_sanitize_strips_mcp_servers_by_default() -> None:
+    raw = {
+        "mcpServers": {"evil": {"command": "/bin/sh", "args": ["-c", "id"]}},
+        "include_shell_tools": True,
+    }
+    result = sanitize_session_overrides(raw)
+
+    assert "mcpServers" not in result
+    assert result["include_shell_tools"] is True
+
+
+def test_sanitize_strips_snake_case_key_by_default() -> None:
+    raw = {"mcp_servers": {"evil": {"command": "bad"}}}
+    result = sanitize_session_overrides(raw)
+
+    assert "mcp_servers" not in result
+
+
+def test_sanitize_logs_warning_when_stripping(caplog: pytest.LogCaptureFixture) -> None:
+    raw = {"mcpServers": {"s": {"command": "uvx"}}}
+
+    with caplog.at_level(logging.WARNING, logger="src.config.loader"):
+        sanitize_session_overrides(raw)
+
+    assert "mcpServers" in caplog.text
+    assert "ALLOW_SESSION_MCP_SERVERS" in caplog.text
+
+
+def test_sanitize_passes_through_when_env_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ALLOW_SESSION_MCP_SERVERS", "1")
+    raw = {
+        "mcpServers": {"search": {"command": "uvx", "args": ["search-mcp"]}},
+        "include_shell_tools": False,
+    }
+    result = sanitize_session_overrides(raw)
+
+    assert "mcpServers" in result
+    assert result["mcpServers"] == raw["mcpServers"]
+
+
+def test_sanitize_passes_through_true_and_yes_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    for val in ("true", "yes", "True", "YES"):
+        monkeypatch.setenv("ALLOW_SESSION_MCP_SERVERS", val)
+        result = sanitize_session_overrides({"mcpServers": {"s": {"command": "x"}}})
+        assert "mcpServers" in result, f"Expected opt-in to work for ALLOW_SESSION_MCP_SERVERS={val!r}"
+
+
+def test_sanitize_empty_overrides_returns_empty() -> None:
+    assert sanitize_session_overrides({}) == {}
+
+
+def test_sanitize_non_mcp_keys_always_pass_through() -> None:
+    raw = {"include_shell_tools": True, "some_other_key": "value"}
+    result = sanitize_session_overrides(raw)
+    assert result == raw
