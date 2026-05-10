@@ -25,13 +25,20 @@ _INTERVAL_MAP = {
 }
 
 _VN_SOURCES = ["VCI", "TCBS", "MSN"]
+_VN_FUTURES_SOURCES = ["VCI", "TCBS"]  # MSN does not support derivatives
 
 _VN_EXCHANGE_RE = re.compile(r"\.(HOSE|HNX|UPCOM)$", re.I)
+_VN30F_RE = re.compile(r"^VN30F[12][MQ](\.HNX)?$", re.I)
 
 
 def _strip_exchange(code: str) -> str:
     """Strip the .HOSE / .HNX / .UPCOM suffix to get the bare ticker."""
     return _VN_EXCHANGE_RE.sub("", code).upper()
+
+
+def _is_vn30f(symbol: str) -> bool:
+    """Return True if *symbol* is a VN30 futures contract (e.g. VN30F1M)."""
+    return bool(_VN30F_RE.match(symbol or ""))
 
 
 def _classify_vn_exchange(code: str) -> str:
@@ -114,28 +121,43 @@ class VNStockLoader:
         end_date: str,
         interval: str,
     ) -> Optional[pd.DataFrame]:
-        """Fetch a single symbol, walking the VCI -> TCBS -> MSN fallback chain."""
+        """Fetch a single symbol, walking the VCI -> TCBS -> MSN fallback chain.
+
+        For VN30F derivatives the chain narrows to VCI -> TCBS (MSN skipped —
+        it does not serve derivatives data).
+        """
         symbol = _strip_exchange(code)
+        is_futures = _is_vn30f(symbol)
+        sources = _VN_FUTURES_SOURCES if is_futures else _VN_SOURCES
+        if is_futures:
+            logger.info("Fetching VN30F symbol %s via %s (derivatives chain)", code, sources[0])
         last_exc: Optional[Exception] = None
-        for idx, source in enumerate(_VN_SOURCES):
+        for idx, source in enumerate(sources):
             try:
                 df = self._fetch_from_source(symbol, source, start_date, end_date, interval)
             except Exception as exc:
                 last_exc = exc
-                if idx + 1 < len(_VN_SOURCES):
+                if idx + 1 < len(sources):
                     logger.info(
                         "vnstock source %s failed for %s (%s); falling back to %s",
-                        source, code, exc, _VN_SOURCES[idx + 1],
+                        source, code, exc, sources[idx + 1],
                     )
                 continue
             if df is not None and not df.empty:
                 if idx > 0:
                     logger.info("vnstock recovered %s via fallback source %s", code, source)
                 return df
-        logger.warning(
-            "vnstock failed for %s across all sources %s: %s",
-            code, _VN_SOURCES, last_exc,
-        )
+        if is_futures:
+            logger.warning(
+                "VN30F symbol %s not available via vnstock — derivatives data may "
+                "require TCBS direct API integration (last error: %s)",
+                code, last_exc,
+            )
+        else:
+            logger.warning(
+                "vnstock failed for %s across all sources %s: %s",
+                code, sources, last_exc,
+            )
         return None
 
     @staticmethod
