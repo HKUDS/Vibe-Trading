@@ -48,7 +48,10 @@ class MemoryEntry:
 def _tokenize(text: str) -> set[str]:
     """Split text into searchable tokens.
 
-    ASCII words >= 3 chars + CJK individual characters.
+    ASCII words >= 3 chars + CJK individual characters. Underscores are
+    treated as word boundaries so snake_case titles (e.g. ``mcp_wiring_test``)
+    match natural-language queries (``"mcp wiring"``) as well as verbatim
+    lookups.
 
     Args:
         text: Input text.
@@ -56,7 +59,7 @@ def _tokenize(text: str) -> set[str]:
     Returns:
         Set of tokens.
     """
-    ascii_tokens = set(re.findall(r"[a-zA-Z0-9_]{3,}", text.lower()))
+    ascii_tokens = set(re.findall(r"[a-zA-Z0-9]{3,}", text.lower()))
     cjk_tokens = set(re.findall(r"[\u4e00-\u9fff\u3400-\u4dbf]", text))
     return ascii_tokens | cjk_tokens
 

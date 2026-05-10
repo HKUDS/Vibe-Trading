@@ -42,6 +42,14 @@ class TestTokenize:
     def test_empty(self) -> None:
         assert _tokenize("") == set()
 
+    def test_underscores_split(self) -> None:
+        # snake_case titles must match natural-language queries.
+        # Regression: previously _tokenize treated underscores as word chars,
+        # so "mcp_wiring_test" became a single token and queries like
+        # "mcp wiring" never matched.
+        tokens = _tokenize("mcp_wiring_test")
+        assert tokens == {"mcp", "wiring", "test"}
+
 
 # ---------------------------------------------------------------------------
 # PersistentMemory.add
