@@ -86,26 +86,41 @@ def _estimate_tokens(
     messages: list[dict],
     response: object,
 ) -> tuple[int, int]:
-    """Estimate token usage for a single LLM call.
+    """Return token usage for a single LLM call, real if available.
 
-    Tries to read actual token counts from the LLM response metadata
-    (LangChain's usage_metadata). Falls back to character-length estimation
-    (len // 4) if metadata is unavailable.
+    Prefers the provider-reported counts attached to the response by
+    :func:`ChatLLM._parse_response` (``usage_metadata``). Falls back to a
+    character-length heuristic (``len // 4``) only when the provider
+    didn't return usage data — keeps the behaviour contract for legacy
+    or partial responses while making per-run totals (which feed
+    ``SwarmRun.total_input_tokens`` / ``total_output_tokens``) reflect
+    real billing instead of a CJK-hostile char-count guess.
 
     Args:
-        messages: Messages sent to the LLM for this call.
-        response: LLMResponse from ChatLLM.chat().
+        messages: Messages sent to the LLM for this call. Used only for
+            the fallback estimate when ``response.usage_metadata`` is
+            missing.
+        response: ``LLMResponse`` from ``ChatLLM.chat`` /
+            ``ChatLLM.stream_chat``.
 
     Returns:
-        Tuple of (input_tokens, output_tokens).
+        Tuple of (input_tokens, output_tokens). Either component may be
+        zero — that simply means the provider didn't report it and the
+        fallback couldn't compute it either (e.g. binary content).
     """
     from src.providers.chat import LLMResponse
 
-    input_tokens = 0
-    output_tokens = 0
+    if isinstance(response, LLMResponse) and response.usage_metadata:
+        usage = response.usage_metadata
+        real_input = int(usage.get("input_tokens") or 0)
+        real_output = int(usage.get("output_tokens") or 0)
+        if real_input or real_output:
+            return real_input, real_output
 
-    # response is an LLMResponse; it doesn't carry raw metadata.
-    # Estimate: input = serialized messages length // 4, output = content length // 4
+    # Fallback: provider didn't return usage_metadata. Estimate from
+    # serialized message length and response content length. ~4 chars per
+    # English token; under-counts for CJK / Thai / emoji-heavy prompts but
+    # at least preserves the prior behaviour.
     try:
         input_tokens = len(json.dumps(messages, ensure_ascii=False)) // 4
     except Exception:
