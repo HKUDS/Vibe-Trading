@@ -270,6 +270,18 @@ class BaseEngine(ABC):
         Default: no-op. Override in subclass as needed.
         """
 
+    def _after_bar_close(self, bar) -> None:
+        """End-of-bar hook for engines that need post-close processing.
+
+        Default: no-op. Override in subclasses (e.g. VNFuturesEngine for
+        daily mark-to-market settlement). Called after all standard per-bar
+        updates (fills, equity snapshot) but before the loop advances.
+
+        Args:
+            bar: Current pandas Series bar that just closed.
+        """
+        return None
+
     # ── PnL / margin calculation hooks ──
     # Override in FuturesBaseEngine to inject contract multiplier.
 
@@ -451,7 +463,12 @@ class BaseEngine(ABC):
                 positions=len(self.positions),
             ))
 
-        # d. Force close all remaining positions
+            # d. End-of-bar hook (no-op by default; subclasses override for
+            #    e.g. daily mark-to-market settlement).
+            bar_close = close_df.loc[ts] if ts in close_df.index else None
+            self._after_bar_close(bar_close)
+
+        # e. Force close all remaining positions
         if len(dates) > 0:
             last_ts = dates[-1]
             for c in list(self.positions.keys()):
