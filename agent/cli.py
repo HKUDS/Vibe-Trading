@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vibe-Trading CLI — natural-language finance research & backtesting.
+"""Vibe-Trading CLI for natural-language finance research and backtesting.
 
 Usage:
     vibe-trading                           Interactive mode (default)
@@ -35,10 +35,14 @@ for _s in ("stdout", "stderr"):
         _r(encoding="utf-8", errors="replace")
 
 from rich.console import Console
+from rich import box
+from rich.columns import Columns
+from rich.live import Live
 from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.syntax import Syntax
 from rich.table import Table
+from rich.text import Text
 
 console = Console()
 AGENT_DIR = Path(__file__).resolve().parent
@@ -283,6 +287,308 @@ def _read_metrics(path: Path) -> dict:
         return {}
 
 
+def _status_style(status: str) -> str:
+    """Return a consistent Rich color for status labels."""
+    return {
+        "success": "green",
+        "completed": "green",
+        "ready": "green",
+        "running": "cyan",
+        "failed": "red",
+        "error": "red",
+        "cancelled": "yellow",
+        "warning": "yellow",
+    }.get((status or "").lower(), "dim")
+
+
+def _format_seconds(seconds: float) -> str:
+    """Format elapsed seconds for compact terminal display."""
+    total = max(0, int(seconds))
+    mins, secs = divmod(total, 60)
+    if mins >= 60:
+        hours, mins = divmod(mins, 60)
+        return f"{hours:d}h {mins:02d}m"
+    if mins:
+        return f"{mins:d}m {secs:02d}s"
+    return f"{secs:d}s"
+
+
+def _configured_label(value: str | None) -> str:
+    """Render a masked configuration state."""
+    return "[green]configured[/green]" if value else "[yellow]not set[/yellow]"
+
+
+def _state_badge(value: str | None, *, ready_label: str = "READY") -> str:
+    """Render a compact terminal status badge."""
+    return f"[black on green] {ready_label} [/]" if value else "[black on yellow] MISSING [/]"
+
+
+def _terminal_width() -> int:
+    """Return the active console width with a conservative fallback."""
+    try:
+        return max(40, int(console.size.width))
+    except Exception:
+        return 80
+
+
+def _ensure_cli_env() -> None:
+    """Load dotenv values before rendering CLI-only settings."""
+    try:
+        from src.providers.llm import _ensure_dotenv
+
+        _ensure_dotenv()
+    except Exception:
+        pass
+
+
+def _provider_key_env(provider: str | None) -> str | None:
+    """Return the credential environment variable for a provider."""
+    return {
+        "openrouter": "OPENROUTER_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "dashscope": "DASHSCOPE_API_KEY",
+        "qwen": "DASHSCOPE_API_KEY",
+        "zhipu": "ZHIPU_API_KEY",
+        "moonshot": "MOONSHOT_API_KEY",
+        "minimax": "MINIMAX_API_KEY",
+        "mimo": "MIMO_API_KEY",
+        "zai": "ZAI_API_KEY",
+    }.get((provider or "").lower())
+
+
+def _provider_base_env(provider: str | None) -> str | None:
+    """Return the base URL environment variable for a provider."""
+    return {
+        "openrouter": "OPENROUTER_BASE_URL",
+        "openai": "OPENAI_BASE_URL",
+        "openai-codex": "OPENAI_CODEX_BASE_URL",
+        "deepseek": "DEEPSEEK_BASE_URL",
+        "gemini": "GEMINI_BASE_URL",
+        "groq": "GROQ_BASE_URL",
+        "dashscope": "DASHSCOPE_BASE_URL",
+        "qwen": "DASHSCOPE_BASE_URL",
+        "zhipu": "ZHIPU_BASE_URL",
+        "moonshot": "MOONSHOT_BASE_URL",
+        "minimax": "MINIMAX_BASE_URL",
+        "mimo": "MIMO_BASE_URL",
+        "zai": "ZAI_BASE_URL",
+        "ollama": "OLLAMA_BASE_URL",
+    }.get((provider or "").lower())
+
+
+def _clip_inline(text: str, limit: int) -> str:
+    """Collapse whitespace and clip text for single-line terminal cells."""
+    clipped = " ".join(str(text or "").split())
+    if len(clipped) <= limit:
+        return clipped
+    return clipped[: max(0, limit - 3)] + "..."
+
+
+def _fit_cell(text: str, width: int) -> str:
+    """Clip and pad text to an exact display cell width."""
+    width = max(1, width)
+    return _clip_inline(text, width).ljust(width)
+
+
+def _styled_line(parts: list[tuple[str, int | None, str]]) -> Text:
+    """Build one fixed-width line with per-cell styling."""
+    line = Text()
+    for value, width, style in parts:
+        rendered = value if width is None else _fit_cell(value, width)
+        line.append(rendered, style=style)
+    return line
+
+
+def _stack_text(lines: list[Text]) -> Text:
+    """Join Text lines while preserving segment styles."""
+    out = Text()
+    for idx, line in enumerate(lines):
+        if idx:
+            out.append("\n")
+        out.append_text(line)
+    return out
+
+
+def _welcome_widths(term_width: int) -> dict[str, int]:
+    """Calculate welcome-screen column widths from the terminal width."""
+    content_width = max(34, term_width - 8)
+    label = 10
+    right_label = 10
+    right_value = 8
+    gap = 2 if term_width < 86 else 4
+    left_value = max(10, content_width - label - gap - right_label - right_value)
+
+    command_gap = 2 if term_width < 86 else 6
+    pair_width = max(20, (content_width - command_gap) // 2)
+    action = min(16, max(12, pair_width // 2))
+    use = max(7, pair_width - action - 1)
+
+    return {
+        "content": content_width,
+        "label": label,
+        "left_value": left_value,
+        "gap": gap,
+        "right_label": right_label,
+        "right_value": right_value,
+        "action": action,
+        "use": use,
+        "command_gap": command_gap,
+    }
+
+
+def _metric_value_style(key: str, value: str) -> str:
+    """Return a compact color style for numeric metric values."""
+    if key in {"total_return", "sharpe", "excess_return", "information_ratio"}:
+        try:
+            return "green" if float(value) >= 0 else "red"
+        except (TypeError, ValueError):
+            return "white"
+    if key == "max_drawdown":
+        return "yellow"
+    return "white"
+
+
+class _RunDashboard:
+    """Render a compact live view for a single agent run."""
+
+    def __init__(self, prompt: str, max_iter: int) -> None:
+        self.prompt = prompt
+        self.max_iter = max_iter
+        self.start_time = time.monotonic()
+        self.iterations = 0
+        self.current_tool = "thinking"
+        self.current_args = ""
+        self.latest_text = ""
+        self.timeline: list[tuple[str, str, str, float, str]] = []
+        self.status = "running"
+        self.live: Optional[Live] = None
+
+    def refresh(self) -> None:
+        """Refresh the live display when attached to a Rich Live context."""
+        if self.live is not None:
+            self.live.update(self.render())
+
+    def handle_event(self, event_type: str, data: Dict[str, Any]) -> None:
+        """Update the dashboard from AgentLoop UI events."""
+        if event_type == "text_delta":
+            delta = data.get("delta", "")
+            if delta:
+                self.latest_text = (self.latest_text + delta).strip()[-260:]
+                self.refresh()
+            return
+
+        if event_type == "thinking_done":
+            self.current_tool = "thinking"
+            self.current_args = ""
+            self.refresh()
+            return
+
+        if event_type == "tool_call":
+            tool = data.get("tool", "")
+            args = data.get("arguments", {})
+            self.iterations += 1
+            self.current_tool = tool or "tool"
+            self.current_args = _strip_rich_tags(_format_tool_call_args(tool, args)).strip()
+            self.timeline.append(("running", self.current_tool, self.current_args, 0.0, ""))
+            self.timeline = self.timeline[-8:]
+            self.refresh()
+            return
+
+        if event_type == "tool_result":
+            tool = data.get("tool", self.current_tool)
+            status = data.get("status", "ok")
+            elapsed_s = float(data.get("elapsed_ms", 0) or 0) / 1000
+            preview = _strip_rich_tags(_format_tool_result_preview(tool, status, data.get("preview", "")))
+            row_status = "success" if status == "ok" else "failed"
+            if self.timeline and self.timeline[-1][0] == "running":
+                self.timeline[-1] = (row_status, tool, self.timeline[-1][2], elapsed_s, preview)
+            else:
+                self.timeline.append((row_status, tool, "", elapsed_s, preview))
+            self.timeline = self.timeline[-8:]
+            self.current_tool = "thinking"
+            self.current_args = ""
+            self.refresh()
+            return
+
+        if event_type == "compact":
+            tokens = data.get("tokens_before", "?")
+            self.timeline.append(("warning", "context", "", 0.0, f"compressed after {tokens} tokens"))
+            self.timeline = self.timeline[-8:]
+            self.refresh()
+
+    def render(self) -> Panel:
+        """Build the Rich renderable shown while the run is active."""
+        term_width = _terminal_width()
+        compact = term_width < 86
+        content_width = max(32, term_width - (6 if compact else 10))
+        elapsed = _format_seconds(time.monotonic() - self.start_time)
+        prompt_preview = _clip_inline(self.prompt, min(96, max(22, content_width - 12)))
+
+        meta = Table.grid(expand=True)
+        meta.add_column(ratio=1)
+        progress = min(1.0, self.iterations / max(1, self.max_iter))
+        bar_width = 12 if compact else 20
+        filled = max(1, int(progress * bar_width)) if self.iterations else 0
+        bar = "#" * filled + "-" * (bar_width - filled)
+        progress_text = f"[cyan]{elapsed}[/cyan]  [dim]{bar} {self.iterations}/{self.max_iter}[/dim]"
+        if compact:
+            meta.add_row("[bold cyan]Running agent[/bold cyan]")
+            meta.add_row(progress_text)
+            meta.add_row(f"[dim]Request: {prompt_preview}[/dim]")
+        else:
+            meta.add_column(justify="right")
+            meta.add_row("[bold cyan]Running agent[/bold cyan]", progress_text)
+            meta.add_row(f"[dim]Request: {prompt_preview}[/dim]", "")
+
+        current = Table.grid(expand=True)
+        current.add_column(width=8 if compact else 9, style="dim")
+        current.add_column(ratio=1)
+        tool_label = self.current_tool
+        if self.current_args:
+            tool_label = f"{tool_label} [dim]{_clip_inline(self.current_args, max(20, content_width - 18))}[/dim]"
+        current.add_row("Current", f"[cyan]{tool_label}[/cyan]")
+
+        timeline = Table(
+            box=box.SIMPLE,
+            show_header=True,
+            header_style="dim",
+            padding=(0, 1),
+            expand=True,
+        )
+        timeline.add_column("State", width=7 if compact else 8, no_wrap=True)
+        timeline.add_column("Tool", width=12 if compact else 20, no_wrap=True)
+        timeline.add_column("Time", width=6 if compact else 8, justify="right")
+        timeline.add_column("Detail", ratio=1, overflow="fold")
+        rows = self.timeline[-6:] or [("running", "waiting", "", 0.0, "starting")]
+        for status, tool, args, elapsed_s, preview in rows:
+            style = _status_style(status)
+            label = "running" if status == "running" else ("ok" if status == "success" else "check")
+            detail = _clip_inline(preview or args, max(18, content_width - (35 if compact else 48)))
+            timeline.add_row(
+                f"[{style}]{label}[/{style}]",
+                _clip_inline(tool, 12 if compact else 20),
+                f"{elapsed_s:.1f}s" if elapsed_s else "",
+                detail,
+            )
+
+        latest = self.latest_text.replace("\n", " ").strip()
+        latest = _clip_inline(latest[-220:], max(24, content_width - 4))
+        body = Table.grid(expand=True)
+        body.add_row(meta)
+        body.add_row("")
+        body.add_row(current)
+        body.add_row("")
+        body.add_row(timeline)
+        if latest:
+            body.add_row("")
+            body.add_row(Panel(Text(latest, style="dim"), title="Latest answer", border_style="dim", padding=(0, 1)))
+
+        return Panel(body, title="Vibe-Trading", border_style="cyan", padding=(1, 1 if compact else 2))
+
+
 # ---------------------------------------------------------------------------
 # Agent execution core
 # ---------------------------------------------------------------------------
@@ -345,6 +651,7 @@ def _run_agent(
     *,
     no_rich: bool = False,
     stream_output: bool = True,
+    dashboard: Optional[_RunDashboard] = None,
 ) -> dict:
     """Build AgentLoop and execute, return result dict."""
     from src.tools import build_registry
@@ -353,6 +660,9 @@ def _run_agent(
 
     def on_event(event_type: str, data: Dict[str, Any]) -> None:
         if not stream_output:
+            return
+        if dashboard is not None and not no_rich:
+            dashboard.handle_event(event_type, data)
             return
         if no_rich and event_type == "thinking_done":
             print()
@@ -482,29 +792,92 @@ def _build_benchmark_table(m: dict) -> Optional[Table]:
 def _print_result(result: dict, elapsed: float, *, no_rich: bool = False) -> None:
     """Print execution result panel."""
     status = result.get("status", "unknown")
-    ok = status == "success"
-    style = "green" if ok else "red"
-    lines = [f"Status: [bold {style}]{status.upper()}[/bold {style}]  Time: {elapsed:.1f}s"]
+    style = _status_style(status)
+    run_dir = result.get("run_dir")
+    m = _read_metrics(Path(run_dir) / "artifacts" / "metrics.csv") if run_dir else {}
+
+    if no_rich:
+        print(f"Status: {status.upper()}")
+        print(f"Elapsed: {_format_seconds(elapsed)}")
+        if result.get("run_id"):
+            print(f"Run ID: {result['run_id']}")
+        review = result.get("review")
+        if review and review.get("overall_score") is not None:
+            review_status = "PASS" if review.get("passed") else "FAIL"
+            print(f"Review: {review_status} {review['overall_score']}pts")
+        if run_dir:
+            print(f"Run dir: {run_dir}")
+        if result.get("reason"):
+            print(f"Reason: {result['reason']}")
+        metric_parts = [f"{label}={m[key]}" for key, label in (
+            ("total_return", "return"),
+            ("sharpe", "sharpe"),
+            ("max_drawdown", "max_dd"),
+            ("trade_count", "trades"),
+        ) if key in m]
+        if metric_parts:
+            print(f"Metrics: {', '.join(metric_parts)}")
+        content = result.get("content", "").strip()
+        if content:
+            print(f"\n{content}")
+        return
+
+    summary = Table.grid(expand=True)
+    summary.add_column(width=12, style="dim")
+    summary.add_column(ratio=1)
+    summary.add_row("Status", f"[bold {style}]{status.upper()}[/bold {style}]")
+    summary.add_row("Elapsed", _format_seconds(elapsed))
     if result.get("run_id"):
-        lines.append(f"ID: {result['run_id']}")
+        summary.add_row("Run ID", f"[cyan]{result['run_id']}[/cyan]")
     review = result.get("review")
     if review and review.get("overall_score") is not None:
-        check = "\u2713" if review.get("passed") else "\u2717"
-        lines.append(f"Review: {review['overall_score']}pts {check}")
-    run_dir = result.get("run_dir")
-    m = {}
+        review_status = "PASS" if review.get("passed") else "FAIL"
+        review_style = "green" if review.get("passed") else "red"
+        summary.add_row("Review", f"[{review_style}]{review_status}[/{review_style}] {review['overall_score']}pts")
     if run_dir:
-        m = _read_metrics(Path(run_dir) / "artifacts" / "metrics.csv")
-        parts = [f"{k}={m[k]}" for k in ("total_return", "sharpe", "max_drawdown", "trade_count") if k in m]
-        if parts:
-            lines.append(f"Metrics: {', '.join(parts)}")
+        summary.add_row("Run dir", f"[dim]{run_dir}[/dim]")
 
     if result.get("reason"):
-        lines.append(f"Reason: {result['reason']}")
+        summary.add_row("Reason", f"[red]{result['reason']}[/red]")
 
-    console.print(Panel("\n".join(lines), border_style=style, title="Result"))
+    panels = [Panel(summary, border_style=style, title="Summary", padding=(0, 1))]
 
-    # ── Benchmark comparison panel ─────────────────────────────────────────────
+    metric_table = Table.grid(expand=True)
+    metric_table.add_column(width=12, style="dim")
+    metric_table.add_column(ratio=1)
+    has_metrics = False
+    for key, label in (
+        ("total_return", "Return"),
+        ("sharpe", "Sharpe"),
+        ("max_drawdown", "Max DD"),
+        ("trade_count", "Trades"),
+    ):
+        if key not in m:
+            continue
+        value = m[key]
+        value_style = _metric_value_style(key, value)
+        metric_table.add_row(label, f"[{value_style}]{value}[/{value_style}]")
+        has_metrics = True
+    if has_metrics:
+        panels.append(Panel(metric_table, border_style="cyan", title="Metrics", padding=(0, 1)))
+
+    if result.get("run_id"):
+        rid = result["run_id"]
+        actions = Table(box=None, show_header=False, padding=(0, 1))
+        actions.add_column(style="cyan", no_wrap=True)
+        actions.add_column(style="dim")
+        actions.add_row(f"vibe-trading show {rid}", "details")
+        actions.add_row(f"vibe-trading code {rid}", "generated Python")
+        actions.add_row(f"vibe-trading continue {rid} \"...\"", "refine this run")
+        panels.append(Panel(actions, border_style="dim", title="Next", padding=(0, 1)))
+
+    if _terminal_width() < 104:
+        for panel in panels:
+            console.print(panel)
+    else:
+        console.print(Columns(panels, expand=True, equal=True))
+
+    # Benchmark comparison panel.
     bench_table = _build_benchmark_table(m)
     if bench_table:
         console.print(Panel(
@@ -513,7 +886,7 @@ def _print_result(result: dict, elapsed: float, *, no_rich: bool = False) -> Non
             title="Benchmark Comparison",
             padding=(0, 1),
         ))
-    # ── Benchmark comparison panel ─────────────────────────────────────────
+    # End benchmark comparison panel.
 
     content = result.get("content", "").strip()
     if content:
@@ -541,7 +914,13 @@ def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: boo
             console.print(f"[dim]Prompt:[/dim] {preview}{suffix}\n")
     start = time.perf_counter()
     try:
-        result = _run_agent(prompt, max_iter=max_iter, no_rich=no_rich, stream_output=not json_mode)
+        if json_mode or no_rich:
+            result = _run_agent(prompt, max_iter=max_iter, no_rich=no_rich, stream_output=not json_mode)
+        else:
+            dashboard = _RunDashboard(prompt, max_iter)
+            with Live(dashboard.render(), console=console, refresh_per_second=6, transient=True) as live:
+                dashboard.live = live
+                result = _run_agent(prompt, max_iter=max_iter, dashboard=dashboard)
     except KeyboardInterrupt:
         if json_mode:
             _print_json_result({"status": "cancelled", "run_id": None, "run_dir": None, "reason": "Interrupted"})
@@ -625,7 +1004,16 @@ def cmd_continue(
     console.print(f"[dim]Continue {run_id}:[/dim] {prompt[:120]}\n")
     start = time.perf_counter()
     try:
-        result = _run_agent(prompt, history=history, run_dir_override=str(run_dir), max_iter=max_iter)
+        dashboard = _RunDashboard(prompt, max_iter)
+        with Live(dashboard.render(), console=console, refresh_per_second=6, transient=True) as live:
+            dashboard.live = live
+            result = _run_agent(
+                prompt,
+                history=history,
+                run_dir_override=str(run_dir),
+                max_iter=max_iter,
+                dashboard=dashboard,
+            )
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted[/yellow]")
         return EXIT_RUN_FAILED
@@ -637,52 +1025,186 @@ def cmd_continue(
 # Interactive mode (Welcome + Slash commands + Swarm streaming)
 # ---------------------------------------------------------------------------
 
+def _build_welcome_panel(term_width: Optional[int] = None) -> Panel:
+    """Build the welcome screen for the given terminal width."""
+    _ensure_cli_env()
+    term_width = term_width or _terminal_width()
+    compact = term_width < 64
+    widths = _welcome_widths(term_width)
+    provider = os.getenv("LANGCHAIN_PROVIDER", "(not set)")
+    model = os.getenv("LANGCHAIN_MODEL_NAME", "(not set)")
+    key_env = _provider_key_env(provider)
+    key_value = os.getenv(key_env or "")
+    credential_ready = provider in {"ollama", "openai-codex"} or bool(key_value)
+    key_state = "READY" if credential_ready else "MISSING"
+    recent_runs = len([d for d in RUNS_DIR.iterdir() if d.is_dir()]) if RUNS_DIR.exists() else 0
+    recent_swarms = len([d for d in SWARM_DIR.iterdir() if d.is_dir()]) if SWARM_DIR.exists() else 0
+    content_width = widths["content"]
+
+    header_lines: list[Text] = []
+    title = f"Vibe-Trading v{_VERSION}"
+    subtitle = "finance agent CLI"
+    if term_width < 78:
+        header_lines.append(Text(title, style="bold cyan"))
+        header_lines.append(Text(subtitle, style="dim"))
+    else:
+        header_lines.append(
+            _styled_line(
+                [
+                    (title, content_width - len(subtitle), "bold cyan"),
+                    (subtitle, None, "dim"),
+                ]
+            )
+        )
+    header_lines.append(Text(_clip_inline("Research, backtest, inspect runs, and coordinate swarm presets.", content_width), style="dim"))
+
+    config_lines: list[Text] = []
+    if compact:
+        value_width = max(10, content_width - widths["label"] - 1)
+        rows = [
+            ("Provider", str(provider), "bold cyan"),
+            ("Model", str(model), "white"),
+            ("Credential", key_state, "bold green" if credential_ready else "bold yellow"),
+            ("Runs", str(recent_runs), "cyan"),
+            ("Swarms", str(recent_swarms), "cyan"),
+            ("Workspace", str(AGENT_DIR), "dim"),
+        ]
+        for label, value, value_style in rows:
+            config_lines.append(
+                _styled_line(
+                    [
+                        (label, widths["label"], "dim"),
+                        (" ", None, ""),
+                        (value, value_width, value_style),
+                    ]
+                )
+            )
+    else:
+        gap = " " * widths["gap"]
+        rows = [
+            ("Provider", str(provider), "bold cyan", "Credential", key_state, "bold green" if credential_ready else "bold yellow"),
+            ("Model", str(model), "white", "Runs", str(recent_runs), "cyan"),
+            ("Workspace", str(AGENT_DIR), "dim", "Swarms", str(recent_swarms), "cyan"),
+        ]
+        for left_label, left_value, left_style, right_label, right_value, right_style in rows:
+            config_lines.append(
+                _styled_line(
+                    [
+                        (left_label, widths["label"], "dim"),
+                        (" ", None, ""),
+                        (left_value, widths["left_value"], left_style),
+                        (gap, None, ""),
+                        (right_label, widths["right_label"], "dim"),
+                        (" ", None, ""),
+                        (right_value, widths["right_value"], right_style),
+                    ]
+                )
+            )
+
+    action_lines: list[Text] = []
+    if compact:
+        actions = [
+            ("type a request", "start a run"),
+            ("/settings", "check config"),
+            ("/list", "recent runs"),
+            ("/swarm", "team presets"),
+            ("/help", "all commands"),
+            ("/quit", "exit"),
+        ]
+        action_width = min(16, max(12, content_width // 2 - 1))
+        use_width = max(8, content_width - action_width - 1)
+        for action, use in actions:
+            action_lines.append(
+                _styled_line(
+                    [
+                        (action, action_width, "bold cyan"),
+                        (" ", None, ""),
+                        (use, use_width, "white"),
+                    ]
+                )
+            )
+    else:
+        gap = " " * widths["command_gap"]
+        rows = [
+            ("type a request", "start a run", "/settings", "check config"),
+            ("/list", "recent runs", "/swarm", "team presets"),
+            ("/help", "all commands", "/quit", "exit"),
+        ]
+        for left_action, left_use, right_action, right_use in rows:
+            action_lines.append(
+                _styled_line(
+                    [
+                        (left_action, widths["action"], "bold cyan"),
+                        (" ", None, ""),
+                        (left_use, widths["use"], "white"),
+                        (gap, None, ""),
+                        (right_action, widths["action"], "bold cyan"),
+                        (" ", None, ""),
+                        (right_use, widths["use"], "white"),
+                    ]
+                )
+            )
+
+    body = Table.grid(expand=True)
+    body.add_row(_stack_text(header_lines))
+    body.add_row("")
+    body.add_row(
+        Panel(
+            _stack_text(config_lines),
+            title="[bold green]Current Config[/bold green]",
+            border_style="green" if credential_ready else "yellow",
+            padding=(0, 1),
+        )
+    )
+    body.add_row("")
+    body.add_row(
+        Panel(
+            _stack_text(action_lines),
+            title="[bold magenta]Actions[/bold magenta]",
+            border_style="magenta",
+            padding=(0, 1),
+        )
+    )
+    body.add_row("")
+    body.add_row(Text(_clip_inline("Example: analyze AAPL momentum with risk controls", content_width), style="dim"))
+
+    return Panel(body, title="[bold cyan]Vibe-Trading[/bold cyan]", border_style="cyan", padding=(1, 1))
+
+
 def _print_welcome() -> None:
     """Print the welcome screen."""
-    welcome = (
-        f"[bold cyan]Vibe-Trading[/bold cyan] [dim]v{_VERSION}[/dim]\n"
-        "[dim]Vibe trading with your professional financial agent team[/dim]\n"
-        "\n"
-        "Type a natural-language request to start, or use [bold]/commands[/bold]:\n"
-        "\n"
-        "  [cyan]/skills[/cyan]    List available skills       [cyan]/swarm[/cyan]     Agent team presets\n"
-        "  [cyan]/list[/cyan]      Recent runs                 [cyan]/settings[/cyan]  Runtime config\n"
-        "  [cyan]/help[/cyan]      All commands                [cyan]/quit[/cyan]      Exit\n"
-        "\n"
-        "[dim]Try: \"analyze my trade journal\" or \"train my shadow account\"[/dim]"
-    )
-    console.print(Panel(welcome, border_style="cyan", padding=(1, 2)))
+    console.print(_build_welcome_panel())
 
 
 def _print_help() -> None:
     """Print all available slash commands."""
-    table = Table(title="Commands", show_lines=False, border_style="dim")
+    table = Table(title="Commands", show_lines=False, border_style="dim", box=box.SIMPLE_HEAVY)
     table.add_column("Command", style="cyan", no_wrap=True)
     table.add_column("Description")
 
     cmds = [
-        ("/help", "Show this help"),
-        ("/skills", "List all skills"),
-        ("/list", "List recent runs"),
-        ("/show <run_id>", "Show run details"),
-        ("/code <run_id>", "Show generated code"),
-        ("/pine <run_id>", "Show Pine Script for TradingView"),
-        ("/trace <run_id>", "Replay run trace"),
-        ("/continue <run_id> <prompt>", "Continue an existing run"),
-        ("/swarm", "List swarm team presets"),
-        ("/swarm run <preset> {vars}", "Run a swarm team"),
+        ("/help", "Show this command list"),
+        ("/skills", "List available trading skills"),
+        ("/list", "List recent backtest and research runs"),
+        ("/show <run_id>", "Open a compact run summary"),
+        ("/code <run_id>", "Show generated Python"),
+        ("/pine <run_id>", "Show exported Pine Script"),
+        ("/trace <run_id>", "Replay tool calls and answer events"),
+        ("/continue <run_id> <prompt>", "Refine an existing run"),
+        ("/swarm", "List multi-agent team presets"),
+        ("/swarm run <preset> {vars}", "Run a team preset"),
         ("/swarm inspect <preset>", "Inspect preset DAG and validation"),
-        ("/swarm list", "List swarm run history"),
-        ("/swarm show <run_id>", "Show swarm run details"),
-        ("/swarm cancel <run_id>", "Cancel a swarm run"),
+        ("/swarm list", "List team run history"),
+        ("/swarm show <run_id>", "Show a team run"),
+        ("/swarm cancel <run_id>", "Cancel a team run"),
         ("/sessions", "List chat sessions"),
-        ("/settings", "Show runtime settings"),
-        ("/clear", "Clear screen"),
+        ("/settings", "Show provider, model, timeout, and credentials"),
+        ("/clear", "Clear the terminal"),
         ("/quit", "Exit"),
         ("", ""),
-        ("[dim]--- Natural language ---[/dim]", ""),
-        ('"analyze journal.csv"', "Parse broker export → profile + 4 behavior diagnostics"),
-        ('"train my shadow"', "Extract strategy → backtest → HTML/PDF report"),
+        ("[dim]Natural language[/dim]", ""),
+        ('"analyze journal.csv"', "Parse a broker export and diagnose trading behavior"),
+        ('"train my shadow"', "Extract a strategy, backtest it, and create a report"),
     ]
     for cmd, desc in cmds:
         table.add_row(cmd, desc)
@@ -692,21 +1214,57 @@ def _print_help() -> None:
 
 def _show_settings() -> None:
     """Show current runtime settings."""
-    table = Table(title="Settings", show_lines=False, border_style="dim")
-    table.add_column("Key", style="cyan")
-    table.add_column("Value")
+    _ensure_cli_env()
+    term_width = _terminal_width()
+    compact = term_width < 104
+    value_limit = max(18, min(56, term_width - 28))
+    provider = os.getenv("LANGCHAIN_PROVIDER", "(not set)")
+    model = os.getenv("LANGCHAIN_MODEL_NAME", "(not set)")
+    provider_key_env = _provider_key_env(provider)
+    provider_base_env = _provider_base_env(provider)
+    provider_key = os.getenv(provider_key_env or "")
+    provider_base_url = os.getenv(provider_base_env or "") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE") or "(not set)"
 
-    settings = {
-        "Provider": os.getenv("LANGCHAIN_PROVIDER", "(not set)"),
-        "Model": os.getenv("LANGCHAIN_MODEL_NAME", "(not set)"),
-        "Temperature": os.getenv("LANGCHAIN_TEMPERATURE", "0.0"),
-        "Timeout": os.getenv("TIMEOUT_SECONDS", "2400") + "s",
-        "Tushare Token": "***" if os.getenv("TUSHARE_TOKEN") else "(not set)",
-    }
-    for k, v in settings.items():
-        table.add_row(k, v)
+    provider_table = Table.grid(expand=True)
+    provider_table.add_column(width=12, style="dim")
+    provider_table.add_column(ratio=1)
+    provider_table.add_row("Provider", f"[bold]{provider}[/bold]")
+    provider_table.add_row("Model", _clip_inline(model, value_limit))
+    provider_table.add_row("Base URL", _clip_inline(provider_base_url, value_limit))
 
-    console.print(table)
+    runtime_table = Table.grid(expand=True)
+    runtime_table.add_column(width=13, style="dim")
+    runtime_table.add_column(ratio=1)
+    runtime_table.add_row("Temperature", os.getenv("LANGCHAIN_TEMPERATURE", "0.0"))
+    runtime_table.add_row("Timeout", os.getenv("TIMEOUT_SECONDS", "2400") + "s")
+    runtime_table.add_row("Retries", os.getenv("MAX_RETRIES", "(not set)"))
+
+    credential_table = Table.grid(expand=True)
+    credential_table.add_column(width=21, style="dim")
+    credential_table.add_column(ratio=1)
+
+    if provider in {"ollama", "openai-codex"}:
+        credential_table.add_row("Provider key", "[green]not required[/green]")
+        credential_ready = True
+    elif provider_key_env:
+        credential_table.add_row(provider_key_env, "***" if provider_key else "(not set)")
+        credential_ready = bool(provider_key)
+    else:
+        credential_table.add_row("Provider key", "(unknown provider)")
+        credential_ready = False
+    credential_table.add_row("TUSHARE_TOKEN", "***" if os.getenv("TUSHARE_TOKEN") else "(optional)")
+
+    panels = [
+        Panel(provider_table, title=f"Provider {_state_badge(provider if provider != '(not set)' else None)}", border_style="cyan", padding=(0, 1)),
+        Panel(runtime_table, title="Runtime", border_style="dim", padding=(0, 1)),
+        Panel(credential_table, title=f"Credentials {_state_badge('ok' if credential_ready else None)}", border_style="green" if credential_ready else "yellow", padding=(0, 1)),
+    ]
+    if compact:
+        for panel in panels:
+            console.print(panel)
+    else:
+        console.print(Columns(panels, expand=True, equal=True))
+    console.print("[dim]Edit configuration in agent/.env, or run vibe-trading init.[/dim]")
 
 
 def _handle_slash_command(input_str: str, *, max_iter: int) -> None:
@@ -759,7 +1317,7 @@ def _handle_slash_command(input_str: str, *, max_iter: int) -> None:
     elif cmd in ("/quit", "/exit"):
         raise EOFError
     else:
-        console.print(f"[red]Unknown command: {cmd}[/red] — type [cyan]/help[/cyan] for available commands")
+        console.print(f"[red]Unknown command: {cmd}[/red] - type [cyan]/help[/cyan] for available commands")
 
 
 def _handle_swarm_command(arg: str) -> None:
@@ -836,89 +1394,18 @@ def cmd_interactive(max_iter: int) -> None:
             continue
 
         # Natural language -> agent
-        from src.tools import build_registry
-        from src.providers.chat import ChatLLM
-        from src.agent.loop import AgentLoop
-        from src.memory.persistent import PersistentMemory
+        start = time.perf_counter()
+        try:
+            dashboard = _RunDashboard(user_input, max_iter)
+            with Live(dashboard.render(), console=console, refresh_per_second=6, transient=True) as live:
+                dashboard.live = live
+                result = _run_agent(user_input, history=history[-6:], max_iter=max_iter, dashboard=dashboard)
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Interrupted[/yellow]")
+            continue
 
-        run_start = time.perf_counter()
-        run_state = {"label": "connecting"}
-        pending_tool = {"name": "", "args_preview": ""}
-        stop_timer = threading.Event()
-
-        def _status_event_callback(event_type: str, data: Dict[str, Any]) -> None:
-            if event_type == "tool_result":
-                stats.total_tool_ms += data.get("elapsed_ms", 0)
-                stats.tool_count += 1
-                run_state["label"] = "thinking"
-            elif event_type == "tool_call":
-                run_state["label"] = f"running {data.get('tool', '?')}"
-            elif event_type == "text_delta":
-                run_state["label"] = "streaming"
-            elif event_type == "compact":
-                run_state["label"] = "compressing context"
-            _on_event_interactive(event_type, data)
-
-        def _on_event_interactive(event_type: str, data: Dict[str, Any]) -> None:
-            if event_type == "text_delta":
-                console.print(data.get("delta", ""), end="", style="dim")
-            elif event_type == "thinking_done":
-                console.print()
-            elif event_type == "tool_call":
-                pending_tool["name"] = data.get("tool", "")
-                pending_tool["args_preview"] = _format_tool_call_args(
-                    data.get("tool", ""), data.get("arguments", {})
-                )
-            elif event_type == "tool_result":
-                tool = data.get("tool", "") or pending_tool["name"]
-                name = tool
-                args_preview = pending_tool["args_preview"]
-                status_str = data.get("status", "ok")
-                elapsed_ms = data.get("elapsed_ms", 0)
-                elapsed_s = elapsed_ms / 1000
-                ok = status_str == "ok"
-                mark = "[green]\u2713[/green]" if ok else "[red]\u2717[/red]"
-                preview = _format_tool_result_preview(tool, status_str, data.get("preview", ""))
-                suffix = f"  {preview}" if preview else ""
-                console.print(f"  [cyan]\u25b6 {name}[/cyan]{args_preview}  {mark} [dim]{elapsed_s:.1f}s[/dim]{suffix}")
-                pending_tool["name"] = ""
-                pending_tool["args_preview"] = ""
-            elif event_type == "compact":
-                tokens = data.get("tokens_before", "?")
-                console.print(f"\n  [yellow]\u27f3 context compressed[/yellow] [dim]({tokens} tokens \u2192 summary)[/dim]\n")
-
-        def _timer_loop(status_ref: Any) -> None:
-            while not stop_timer.is_set():
-                elapsed = time.perf_counter() - run_start
-                label = run_state["label"]
-                try:
-                    status_ref.update(f"[bold cyan]\u23f3 {label}... {elapsed:.1f}s[/bold cyan]")
-                except Exception:
-                    pass
-                stop_timer.wait(1.0)
-
-        with console.status("[bold cyan]\u23f3 Connecting...[/bold cyan]") as spinner:
-            timer_thread = threading.Thread(target=_timer_loop, args=(spinner,), daemon=True)
-            timer_thread.start()
-
-            try:
-                pm = PersistentMemory()
-                agent = AgentLoop(
-                    registry=build_registry(persistent_memory=pm),
-                    llm=ChatLLM(),
-                    event_callback=_status_event_callback,
-                    max_iterations=max_iter,
-                    persistent_memory=pm,
-                )
-                result = agent.run(user_message=user_input, history=history[-6:])
-            except KeyboardInterrupt:
-                console.print("\n[yellow]Interrupted[/yellow]")
-                continue
-            finally:
-                stop_timer.set()
-                timer_thread.join(timeout=1)
-
-        stats.last_elapsed = time.perf_counter() - run_start
+        stats.last_elapsed = time.perf_counter() - start
+        stats.tool_count += dashboard.iterations
         _print_result(result, stats.last_elapsed)
         history.append({"role": "user", "content": user_input})
         if result.get("content"):
@@ -1224,20 +1711,30 @@ def cmd_list(limit: int = 20) -> None:
         console.print("[dim]No runs yet[/dim]")
         return
 
-    table = Table(show_lines=False)
+    table = Table(title="Recent Runs", show_lines=False, border_style="dim", box=box.SIMPLE_HEAVY)
     table.add_column("Run ID", style="cyan", no_wrap=True)
-    table.add_column("Status", width=8)
+    table.add_column("Status", width=10)
     table.add_column("Return", width=10)
     table.add_column("Sharpe", width=8)
-    table.add_column("Prompt", max_width=40)
+    table.add_column("Prompt", max_width=58)
 
     for d in dirs:
         st = _read_json(d / "state.json").get("status", "?")
         m = _read_metrics(d / "artifacts" / "metrics.csv")
-        c = "green" if st == "success" else "red" if st == "failed" else "dim"
-        table.add_row(d.name, f"[{c}]{st.upper()}[/{c}]", m.get("total_return", ""), m.get("sharpe", ""), (_read_json(d / "req.json").get("prompt") or "")[:40])
+        c = _status_style(st)
+        prompt = (_read_json(d / "req.json").get("prompt") or "").replace("\n", " ")
+        if len(prompt) > 58:
+            prompt = prompt[:55] + "..."
+        table.add_row(
+            d.name,
+            f"[{c}]{st.upper()}[/{c}]",
+            m.get("total_return", ""),
+            m.get("sharpe", ""),
+            prompt,
+        )
 
     console.print(table)
+    console.print("[dim]Use /show <run_id>, /code <run_id>, or /continue <run_id> <prompt>.[/dim]")
 
 
 def cmd_show(run_id: str) -> None:
@@ -1252,7 +1749,7 @@ def cmd_show(run_id: str) -> None:
     metrics = _read_metrics(run_dir / "artifacts" / "metrics.csv")
 
     st = state.get("status", "unknown")
-    c = "green" if st == "success" else "red"
+    c = _status_style(st)
     lines = [f"[bold]Status:[/bold] [{c}]{st.upper()}[/{c}]"]
     if req.get("prompt"):
         lines.append(f"[bold]Prompt:[/bold] {req['prompt'][:500]}{'...' if len(req['prompt']) > 500 else ''}")
@@ -1298,7 +1795,7 @@ def cmd_pine(run_id: str) -> None:
     code = pine_path.read_text(encoding="utf-8")
     console.print(Syntax(code, "javascript", theme="monokai", line_numbers=True), width=120)
     console.print()
-    console.print("[dim]Copy and paste into TradingView Pine Editor → Add to Chart[/dim]")
+    console.print("[dim]Copy and paste into TradingView Pine Editor, then Add to Chart[/dim]")
 
 
 def cmd_skills() -> None:
@@ -2019,7 +2516,7 @@ def _render_env_content(config: dict[str, str]) -> str:
 
 def cmd_init() -> int:
     """Interactive setup: create agent/.env."""
-    console.print("[bold cyan]Welcome to Vibe-Trading setup![/bold cyan]\n")
+    console.print(Panel("[bold cyan]Vibe-Trading setup[/bold cyan]\n[dim]Configure the default LLM provider and data tokens.[/dim]", border_style="cyan"))
 
     if _INIT_ENV_PATH.exists():
         console.print(f"[yellow]Config already exists:[/yellow] {_INIT_ENV_PATH}")
@@ -2027,9 +2524,15 @@ def cmd_init() -> int:
             console.print("[dim]Aborted.[/dim]")
             return 0
 
-    console.print("Select your LLM provider:")
+    provider_table = Table(title="LLM Providers", box=box.SIMPLE_HEAVY, show_lines=False, border_style="dim")
+    provider_table.add_column("#", justify="right", style="dim", width=3)
+    provider_table.add_column("Provider", style="cyan")
+    provider_table.add_column("Default model", style="dim")
+    provider_table.add_column("Credential", style="dim")
     for idx, option in enumerate(_PROVIDER_CHOICES, start=1):
-        console.print(f"  {idx}. {option['label']}")
+        credential = "OAuth" if option["provider"] == "openai-codex" else "none" if option["key_env"] is None else str(option["key_env"])
+        provider_table.add_row(str(idx), str(option["label"]), str(option["model"]), credential)
+    console.print(provider_table)
 
     choice = IntPrompt.ask(
         "Provider",
@@ -2097,8 +2600,14 @@ def cmd_init() -> int:
 
     _INIT_ENV_PATH.write_text(_render_env_content(env_values), encoding="utf-8")
 
-    console.print(f"\n[green]✅ Created {_INIT_ENV_PATH} — you're ready to go![/green]")
-    console.print("[dim]Run:[/dim] [bold]vibe-trading[/bold]")
+    next_steps = Table.grid(expand=True)
+    next_steps.add_column(width=10, style="dim")
+    next_steps.add_column(ratio=1)
+    next_steps.add_row("Config", f"[cyan]{_INIT_ENV_PATH}[/cyan]")
+    next_steps.add_row("Run", "[bold]vibe-trading[/bold]")
+    if provider == "openai-codex":
+        next_steps.add_row("OAuth", "[bold]vibe-trading provider login openai-codex[/bold]")
+    console.print(Panel(next_steps, title="Setup complete", border_style="green", padding=(0, 1)))
     return 0
 
 
@@ -2174,7 +2683,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cont:
         return _coerce_exit_code(cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich))
 
-    # No flags, no subcommand → check if prompt provided, otherwise interactive mode
+    # No flags and no subcommand: check for a prompt, otherwise enter interactive mode.
     if args.prompt or args.prompt_file or not sys.stdin.isatty():
         return _handle_prompt_command(
             args.prompt,

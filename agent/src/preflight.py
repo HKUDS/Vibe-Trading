@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from importlib.util import find_spec
 from typing import List, Optional
 
 from rich.console import Console
@@ -200,9 +201,7 @@ def _check_tushare() -> CheckResult:
 
 def _check_akshare() -> CheckResult:
     """Check akshare availability."""
-    try:
-        import akshare  # noqa: F401
-    except ImportError:
+    if find_spec("akshare") is None:
         return CheckResult(
             name="akshare",
             status="skipped",
