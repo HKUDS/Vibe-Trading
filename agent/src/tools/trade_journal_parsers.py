@@ -116,6 +116,16 @@ def detect_format(df: pd.DataFrame) -> FormatName:
         c in lowered for c in ("symbol", "ticker", "code")
     ):
         return "generic"
+
+    # VN broker registry fallback — try Vietnam broker formats before giving up
+    try:
+        from src.tools.journal_parsers_vn import detect_vn_format
+        vn = detect_vn_format(df)
+        if vn:
+            return vn
+    except ImportError:
+        pass
+
     return "unknown"
 
 
@@ -354,7 +364,16 @@ def parse_file(path: str | Path) -> tuple[FormatName, list[TradeRecord]]:
         except Exception:
             pass
         raise ValueError(f"Unrecognized trade journal format. Columns: {list(df.columns)}")
-    return fmt, _PARSERS[fmt](df)
+    if fmt in _PARSERS:
+        return fmt, _PARSERS[fmt](df)
+    # VN broker registry dispatch — anything not in _PARSERS but present in VN registry
+    try:
+        from src.tools.journal_parsers_vn import VN_PARSER_REGISTRY, parse_vn
+        if fmt in VN_PARSER_REGISTRY:
+            return fmt, parse_vn(fmt, df)
+    except ImportError:
+        pass
+    raise ValueError(f"Unrecognized trade journal format: {fmt!r}")
 
 
 def records_to_dataframe(records: list[TradeRecord]) -> pd.DataFrame:
