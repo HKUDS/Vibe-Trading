@@ -12,6 +12,7 @@ Wave 2:
   - FuturesBaseEngine: intermediate layer adding contract-multiplier logic
   - ChinaFuturesEngine: China commodity/financial futures (CFFEX/SHFE/DCE/ZCE/INE)
   - GlobalFuturesEngine: International futures (CME/ICE/Eurex)
+  - VNFuturesEngine: VN30 futures (HNX, daily MTM, ±7% band, 17% margin)
   - ForexEngine: FX spot/CFD (spread, swap, high leverage)
 
 Wave 3:
@@ -27,5 +28,6 @@ Inheritance:
   ├── CompositeEngine (delegates to sub-engines as rule providers)
   └── FuturesBaseEngine
       ├── ChinaFuturesEngine
-      └── GlobalFuturesEngine
+      ├── GlobalFuturesEngine
+      └── VNFuturesEngine
 """

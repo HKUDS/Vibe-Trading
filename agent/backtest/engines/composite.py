@@ -24,6 +24,8 @@ from backtest.engines._market_hooks import (
 # ── Market detection (same patterns as runner.py) ──
 
 _MARKET_PATTERNS = [
+    # VN30 index futures must match BEFORE the generic .HNX equity rule.
+    (re.compile(r"^VN30F[12][MQ](\.HNX)?$", re.I), "vn_futures"),
     (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "a_share"),
     (re.compile(r"^(51|15|56)\d{4}\.(SZ|SH)$", re.I), "a_share"),
     # Vietnam equities: explicit .HOSE / .HNX / .UPCOM suffix only.
@@ -72,6 +74,9 @@ def _build_rule_engines(config: dict, codes: List[str]) -> Dict[str, BaseEngine]
         elif market == "vn_equity":
             from backtest.engines.vn_equity import VNEquityEngine
             engines["vn_equity"] = VNEquityEngine(config)
+        elif market == "vn_futures":
+            from backtest.engines.vn_futures import VNFuturesEngine
+            engines["vn_futures"] = VNFuturesEngine(config)
         elif market == "us_equity":
             from backtest.engines.global_equity import GlobalEquityEngine
             engines["us_equity"] = GlobalEquityEngine(config, market="us")
