@@ -104,6 +104,34 @@ class TestAdd:
         index = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
         assert index.count("[dup-check]") == 1
 
+    def test_cjk_names_get_distinct_filenames(self, tmp_path: Path) -> None:
+        # Regression: previously every non-ASCII char was replaced with `_`, so
+        # any two CJK-only names of the same length collapsed to the same slug
+        # (e.g. "上证指数" and "黄金价格" both → "____") and the second add
+        # silently overwrote the first.
+        pm = PersistentMemory(memory_dir=tmp_path)
+        path1 = pm.add("上证指数", "A股大盘", "project", description="A股市场")
+        path2 = pm.add("黄金价格", "黄金现货", "project", description="贵金属")
+        assert path1 != path2
+        assert path1.exists()
+        assert path2.exists()
+        # Both bodies preserved on disk.
+        assert "A股大盘" in path1.read_text(encoding="utf-8")
+        assert "黄金现货" in path2.read_text(encoding="utf-8")
+        # Index lists both.
+        index = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
+        assert "上证指数" in index
+        assert "黄金价格" in index
+
+    def test_cjk_name_is_findable_after_add(self, tmp_path: Path) -> None:
+        # The frontmatter name still carries the original CJK title, so search
+        # by CJK token still hits even though the filename slug is mangled.
+        pm = PersistentMemory(memory_dir=tmp_path)
+        pm.add("人民币汇率", "USD/CNY 中间价", "project", description="汇率播报")
+        results = pm.find_relevant("人民币")
+        assert len(results) == 1
+        assert results[0].title == "人民币汇率"
+
 
 # ---------------------------------------------------------------------------
 # PersistentMemory.find_relevant

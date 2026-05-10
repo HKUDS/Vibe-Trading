@@ -168,7 +168,11 @@ class PersistentMemory:
         Returns:
             Path to the created memory file.
         """
-        slug = re.sub(r"[^a-z0-9_-]", "_", name.lower().strip())[:60]
+        # Preserve CJK characters in the slug — collapsing them all to ``_``
+        # caused any two same-length CJK-only names to share a filename and
+        # silently overwrite each other.
+        slug = re.sub(r"[^a-z0-9_\-一-鿿㐀-䶿]", "_",
+                      name.lower().strip())[:60]
         filename = f"{memory_type}_{slug}.md"
         path = self._dir / filename
 
