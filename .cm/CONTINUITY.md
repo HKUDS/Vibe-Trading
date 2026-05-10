@@ -4,7 +4,7 @@
 Add Vietnam Stock Market support (HOSE/HNX/UPCoM + VN30F) to Vibe-Trading as a first-class market line, per OpenSpec proposal `add-vn-market-support`.
 
 ## Current Phase
-sprint-1 complete (foundation merged on `feat/vn-market-support`, awaiting human review)
+sprint-2.1 complete (VNFuturesEngine merged on `feat/vn-market-support`)
 
 ## Working Tree
 - Branch: `feat/vn-market-support`
@@ -25,8 +25,28 @@ sprint-1 complete (foundation merged on `feat/vn-market-support`, awaiting human
 | Tests: engine 32 / loader 28 / skills 14 = **74 new tests** | done | `agent/tests/test_vn_*.py` |
 | Full regression suite | done | 913 pass, 0 fail (44s) |
 
-## Sprint 2 — NOT STARTED (human kickoff needed)
-- VNFuturesEngine (VN30F1M/F2M/F1Q/F2Q with daily mark-to-market, margin model)
+## Sprint 2 status
+
+### Sprint 2.1 — VNFuturesEngine (DONE 2026-05-10)
+
+| Phase | Commit | Outcome |
+|-------|--------|---------|
+| 1. `_after_bar_close` hook on BaseEngine | `c743bc4` | 913 tests still pass — hook lives in `_execute_bars` (not `run_backtest` directly) at `base.py:466-469` |
+| 2a. VNFuturesEngine + composite routing | `76f0140` | 250 LOC, all smoke values correct |
+| 2b. vnstock_loader VN30F detection | `b66bbce` | +30/-8 LOC, 28 existing loader tests still pass |
+| 3. Comprehensive tests | `b022552` | 86 new tests across 14 groups, all green first run |
+
+**Final state:** 999 tests pass (913 baseline + 86 new), 0 fail. Engine ≤ 250 LOC. No regressions.
+
+**Codebase deviations discovered during execution (preserved in code):**
+1. `BaseEngine` exposes `self.capital` (not `self.cash`) — used `self.capital` for MTM
+2. `_after_bar_close(bar)` receives a Series of close prices keyed by symbol with `bar.name` = timestamp (NOT a single OHLCV bar). Engine indexes via `bar[symbol]`.
+3. On expiry, MTM realizes P&L to close THEN engine releases margin via `_calc_margin(...)` to avoid double-counting
+4. Margin-call gate restricts to `direction == 0` (close-only); opens are blocked once `_pending_liquidation` is set
+
+**Symbol routing precedence (verified):** `VN30F1M.HNX` → vn_futures (NOT vn_equity), `SHB.HNX` → vn_equity (unchanged)
+
+### Sprint 2.2 — NOT YET PLANNED
 - 5 broker journal readers (SSI, HSC, VNDirect, TCBS, DNSE)
 - 3 swarm presets (vn_investment_committee, vn_derivatives_desk, vn_value_screener)
 - i18n locale `vi-VN`
