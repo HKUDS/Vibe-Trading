@@ -4,7 +4,7 @@
 Add Vietnam Stock Market support (HOSE/HNX/UPCoM + VN30F) to Vibe-Trading as a first-class market line, per OpenSpec proposal `add-vn-market-support`.
 
 ## Current Phase
-sprint-2.2 complete (5 VN broker journal parsers merged on `feat/vn-market-support`)
+sprint-2.2 complete → sprint-2.3 PLANNED (docs written, ready to execute)
 
 ## Working Tree
 - Branch: `feat/vn-market-support`
@@ -66,15 +66,26 @@ sprint-2.2 complete (5 VN broker journal parsers merged on `feat/vn-market-suppo
 
 **Execution note:** 4/5 Phase-2 sub-agents hit rate limit mid-run. SSI agent committed successfully (commit `55b0628`); HSC + VNDirect agents wrote files but didn't commit (recovered via main thread); TCBS + DNSE were written entirely in main thread. Net throughput delivered same result with mixed parallel/sequential execution.
 
-### Sprint 2.3 — NOT YET PLANNED
-- 3 swarm presets (`vn_investment_committee`, `vn_derivatives_desk`, `vn_value_screener`)
-- i18n locale `vi-VN`
-- `VNFundamentalProvider` (VAS PIT — `vn-financial-statements-vas` skill is currently just a manifest stub)
+### Sprint 2.3 — PLANNED (ready to execute)
 
-## Sprint 3 — NOT STARTED
-- Amibroker AFL exporter
-- 5 advanced skills (ex-rights-calendar, margin-list, vn30-arbitrage, sector-rotation-vn, pre-warning-stocks)
-- UBCK compliance disclaimer pass
+Design + tasks documented in:
+- `openspec/changes/add-vn-market-support/design-sprint2.3-sprint3.md`
+- `openspec/changes/add-vn-market-support/tasks-sprint2.3-sprint3.md`
+
+| Nhóm | Tasks | Ước tính |
+|------|-------|----------|
+| A. VNFundamentalProvider | A.1–A.4 | 2 ngày |
+| B. 3 VN Swarm Presets | B.1–B.5 | 2 ngày |
+| C. i18n vi-VN | C.1–C.4 | 1 ngày |
+
+## Sprint 3 — PLANNED (ready to execute)
+
+| Nhóm | Tasks | Ước tính |
+|------|-------|----------|
+| D. Amibroker AFL Exporter | D.1–D.4 | 3 ngày |
+| E. 5 Advanced VN Skills | E.1–E.6 | 3 ngày |
+| F. UBCK Compliance | F.1–F.4 | 1 ngày |
+| G+H. Docs + Release v0.2.0 | G.1–H.8 | 2 ngày |
 
 ## Key Decisions Made During Sprint 1
 
@@ -93,11 +104,12 @@ sprint-2.2 complete (5 VN broker journal parsers merged on `feat/vn-market-suppo
 
 ## Next Actions (when human returns)
 
-1. **Review the 6 commits** on `feat/vn-market-support`: `git log --oneline main..HEAD`
-2. **Update OpenSpec docs** to reflect actual loader pattern (proposal.md and design.md)
-3. **Run integration smoke** with `vnstock` installed: `uv pip install vnstock && pytest -m integration`
-4. **Decide:** push to remote + open PR? (NOT auto-pushed per safety rules)
-5. **Sprint 2 kickoff:** VNFuturesEngine first (highest user value), then journal readers, then swarm presets
+1. **Kick off Sprint 2.3** — bắt đầu với nhóm A (VNFundamentalProvider), rồi B (Swarm), rồi C (i18n)
+   - File kế hoạch: `openspec/changes/add-vn-market-support/tasks-sprint2.3-sprint3.md`
+   - Design: `openspec/changes/add-vn-market-support/design-sprint2.3-sprint3.md`
+2. **Run integration smoke** với vnstock thật: `pytest -m integration` (cần mạng)
+3. **Xem hướng dẫn sử dụng VN** tại `docs/vi/HUONG_DAN.md`
+4. **Sau Sprint 2.3+3:** tạo PR vào main, archive openspec, release v0.2.0 PyPI
 
 ## Open Questions (unanswered, parked)
 
