@@ -22,7 +22,16 @@ Supported formats (auto-detected):
 - **同花顺** (Tonghuashun) — A-share CSV, typically GBK-encoded
 - **东方财富** (Eastmoney) — A-share CSV, typically GBK-encoded
 - **富途** (Futu) — HK/US CSV, UTF-8
+- **SSI** (Vietnam) — iBoard export, Vietnamese (`Ngày GD / Mã CK / KL khớp`) or English variant
+- **HSC** (Vietnam) — Ho Chi Minh Securities, English (`Trade Date / Symbol / Quantity / Matched Price`)
+- **VNDirect** (Vietnam) — Vietnamese short headers (`Ngày / Mã / Loại lệnh / Khối lượng / Giá`)
+- **TCBS** (Vietnam) — Techcom Securities, full Vietnamese (`Ngày giao dịch / Mã CK / Khối lượng / Giá khớp`)
+- **DNSE** (Vietnam) — LightSpeed app, English short (`Trade Date / Symbol / Volume / Price / Net Value`)
 - **Generic** — any CSV with columns like `datetime/symbol/side/qty/price`
+
+Vietnam broker exports auto-route symbols to `.HOSE/.HNX/.UPCOM` via the
+shared `_qualify_vn_symbol` helper. Sell-side tax is combined into the
+`fee` field per `TradeRecord` schema.
 
 ## Usage
 

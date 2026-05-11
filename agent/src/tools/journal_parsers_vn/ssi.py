@@ -37,7 +37,14 @@ class SSIParser:
         cols = set(str(c).strip() for c in df.columns)
         # Need >=3 of the required + at least one qty hint
         vn_match = len(_VN_REQUIRED & cols) >= 3 and bool(_VN_QTY_HINT & cols)
-        en_match = len(_EN_REQUIRED & cols) >= 3 and bool({"Match Volume", "Quantity"} & cols)
+        # SSI English variant uses 'Match Volume' / 'Match Price' specifically.
+        # Do NOT accept 'Quantity' or 'Matched Price' — those are HSC's signature.
+        en_match = (
+            len(_EN_REQUIRED & cols) >= 3
+            and "Match Volume" in cols
+            and "Matched Price" not in cols
+            and "Quantity" not in cols
+        )
         return vn_match or en_match
 
     def parse(self, df: pd.DataFrame) -> list:
