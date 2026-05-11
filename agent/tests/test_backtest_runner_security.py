@@ -16,12 +16,17 @@ def _module_name() -> str:
 
 def test_signal_engine_rejects_top_level_execution(tmp_path) -> None:
     artifact = tmp_path / "top_level_rce"
+    # ``Path.as_posix()`` so the embedded path uses forward slashes; the raw
+    # Windows form ``C:\Users\...`` looks like ``\U`` (a unicode escape) when
+    # interpolated into Python source and breaks ``ast.parse`` before the
+    # security scrubber under test ever runs.
+    artifact_str = artifact.as_posix()
     signal_file = tmp_path / "signal_engine.py"
     signal_file.write_text(
         "\n".join(
             [
                 "import os",
-                f"os.system('touch {artifact}')",
+                f"os.system('touch {artifact_str}')",
                 "class SignalEngine:",
                 "    def generate(self, *args, **kwargs):",
                 "        return []",
@@ -38,13 +43,14 @@ def test_signal_engine_rejects_top_level_execution(tmp_path) -> None:
 
 def test_signal_engine_rejects_class_level_execution(tmp_path) -> None:
     artifact = tmp_path / "class_level_rce"
+    artifact_str = artifact.as_posix()  # see top_level test for rationale
     signal_file = tmp_path / "signal_engine.py"
     signal_file.write_text(
         "\n".join(
             [
                 "import os",
                 "class SignalEngine:",
-                f"    os.system('touch {artifact}')",
+                f"    os.system('touch {artifact_str}')",
                 "    def generate(self, *args, **kwargs):",
                 "        return []",
             ]

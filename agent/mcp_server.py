@@ -710,6 +710,7 @@ def main():
     args = parser.parse_args()
     _include_shell_tools = True if args.transport == "stdio" else _env_shell_tools_enabled()
     _registry = None
+    _get_registry()  # pre-warm: avoids deadlock when first tools/call lazy-inits inside FastMCP worker thread
 
     if args.transport == "sse":
         mcp.run(transport="sse", port=args.port)

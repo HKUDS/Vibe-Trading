@@ -167,3 +167,115 @@ def test_cors_origins_accept_explicit_remote_origins() -> None:
     origins = api_server._parse_cors_origins(" https://app.example.com,https://admin.example.com ")
 
     assert origins == ["https://app.example.com", "https://admin.example.com"]
+
+
+# ============================================================================
+# Path-parameter validation (run_id / session_id)
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        # Real formats produced by the codebase.
+        "20260105_120342_12_a1b2c3",            # state.create_run_dir
+        "swarm-20260105_120342-a1b2c3",         # swarm presets.run_id
+        "abcdef012345",                         # session_id (uuid.uuid4().hex[:12])
+        "run-1",
+        "A" * 128,
+    ],
+)
+def test_validate_path_param_accepts_known_good_values(value: str) -> None:
+    api_server._validate_path_param(value, "run_id")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "..",
+        "../etc",
+        "foo/bar",
+        "foo\\bar",
+        "foo bar",
+        "foo.bar",             # dot is not in the safe class
+        "foo\n",
+        "foo\r",
+        "foo\t",
+        "foo\x00bar",
+        "A" * 129,
+    ],
+)
+def test_validate_path_param_rejects_traversal_inputs(value: str) -> None:
+    with pytest.raises(api_server.HTTPException) as excinfo:
+        api_server._validate_path_param(value, "run_id")
+
+    assert excinfo.value.status_code == 400
+    assert "run_id" in excinfo.value.detail
+
+
+def test_get_run_code_rejects_dot_run_id() -> None:
+    response = _local_client().get("/runs/../code")
+
+    # Either rejected at routing (404) or by the validator (400). Both are safe;
+    # what we forbid is reading code from outside RUNS_DIR.
+    assert response.status_code in {400, 404}
+
+
+def test_get_run_pine_rejects_traversal_run_id() -> None:
+    response = _local_client().get("/runs/foo.bar/pine")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid run_id"
+
+
+def test_get_run_pine_rejects_url_encoded_newline_run_id() -> None:
+    response = _local_client().get("/runs/foo%0A/pine")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid run_id"
+
+
+def test_get_run_result_rejects_traversal_run_id() -> None:
+    response = _local_client().get("/runs/foo.bar")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid run_id"
+
+
+def test_session_endpoints_reject_traversal_session_id() -> None:
+    client = _local_client()
+
+    cases = [
+        ("get", "/sessions/foo.bar", None),
+        ("delete", "/sessions/foo.bar", None),
+        ("patch", "/sessions/foo.bar", {"title": "x"}),
+        ("post", "/sessions/foo.bar/messages", {"content": "x"}),
+        ("get", "/sessions/foo.bar/messages", None),
+        ("post", "/sessions/foo.bar/cancel", None),
+    ]
+    for method, path, body in cases:
+        kwargs = {"json": body} if body is not None else {}
+        response = getattr(client, method)(path, **kwargs)
+        assert response.status_code == 400, f"{method.upper()} {path} should be rejected"
+        assert response.json()["detail"] == "invalid session_id"
+
+
+def test_session_event_stream_rejects_traversal_session_id() -> None:
+    response = _local_client().get("/sessions/foo.bar/events")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid session_id"
+
+
+def test_swarm_run_endpoints_reject_traversal_run_id() -> None:
+    client = _local_client()
+
+    for method, path in (
+        ("get", "/swarm/runs/foo.bar"),
+        ("get", "/swarm/runs/foo.bar/events"),
+        ("post", "/swarm/runs/foo.bar/cancel"),
+    ):
+        response = getattr(client, method)(path)
+        assert response.status_code == 400, f"{method.upper()} {path} should be rejected"
+        assert response.json()["detail"] == "invalid run_id"

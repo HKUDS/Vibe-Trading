@@ -45,13 +45,20 @@ class LLMResponse:
     Attributes:
         content: Text content (final answer or thinking text).
         tool_calls: List of tool call requests.
+        reasoning_content: Optional thinking trace surfaced by reasoning models.
         finish_reason: Finish reason string.
+        usage_metadata: Real token counts reported by the provider, when
+            available. Mirrors LangChain's ``AIMessage.usage_metadata`` —
+            ``{"input_tokens": int, "output_tokens": int, "total_tokens": int}``.
+            ``None`` if the provider did not return usage information; callers
+            should fall back to a heuristic in that case.
     """
 
     content: Optional[str] = None
     tool_calls: List[ToolCallRequest] = field(default_factory=list)
     reasoning_content: Optional[str] = None
     finish_reason: str = "stop"
+    usage_metadata: Optional[Dict[str, int]] = None
 
     @property
     def has_tool_calls(self) -> bool:
@@ -150,7 +157,24 @@ class ChatLLM:
 
         Single source for reasoning: ``additional_kwargs["reasoning_content"]``,
         populated by ``ChatOpenAIWithReasoning`` on both stream and non-stream paths.
+
+        ``usage_metadata`` is forwarded as-is from the underlying message so
+        downstream cost / billing audit code (e.g. swarm worker token totals)
+        can use real provider tokens instead of a character-count heuristic.
+        For ``AIMessageChunk`` the metadata accumulates via the ``__add__``
+        merge LangChain performs while the response is being streamed; the
+        final aggregate carries the same shape as the non-stream path.
         """
+        usage = getattr(ai_message, "usage_metadata", None)
+        # Some providers / older LangChain versions surface a ``UsageMetadata``
+        # TypedDict that doesn't json-serialise without a cast. Normalise to a
+        # plain ``dict[str, int]`` so the value can be persisted alongside the
+        # rest of the run state without surprises.
+        if usage is not None and not isinstance(usage, dict):
+            try:
+                usage = dict(usage)
+            except (TypeError, ValueError):
+                usage = None
         return LLMResponse(
             content=ai_message.content,
             tool_calls=[
@@ -161,4 +185,5 @@ class ChatLLM:
             finish_reason=_dedupe_finish_reason(
                 ai_message.response_metadata.get("finish_reason", "stop")
             ),
+            usage_metadata=usage,
         )

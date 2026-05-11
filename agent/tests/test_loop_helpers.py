@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -274,6 +275,13 @@ class TestNormalizeToolRunDir:
         assert out["run_dir"] == str((Path("/tmp/run_123") / "risk_parity_run").resolve())
 
     def test_preserves_absolute_run_dir(self) -> None:
-        args = {"run_dir": "/var/tmp/custom_run"}
+        # ``os.path.abspath`` produces a platform-correct absolute path: on
+        # POSIX it stays ``/var/tmp/custom_run``; on Windows it becomes
+        # ``C:\var\tmp\custom_run``. ``Path.is_absolute()`` only treats the
+        # latter as absolute on Windows, so the bare Unix-style literal would
+        # otherwise be classified as relative and resolved against
+        # ``memory_run_dir`` — defeating the point of the test.
+        absolute_run_dir = os.path.abspath("/var/tmp/custom_run")
+        args = {"run_dir": absolute_run_dir}
         out = _normalize_tool_run_dir(args, "/tmp/run_123")
-        assert out["run_dir"] == "/var/tmp/custom_run"
+        assert out["run_dir"] == absolute_run_dir

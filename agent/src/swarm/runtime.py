@@ -8,6 +8,7 @@ with cancellation and event callback support.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from concurrent.futures import (
     Future,
@@ -91,6 +92,16 @@ class SwarmRuntime:
         """
         run = build_run_from_preset(preset_name, user_vars)
         validate_dag(run.tasks)
+
+        # Capture which provider/model the run was launched against so the
+        # serialized run.json carries enough context for cost audits and
+        # post-hoc debugging. Read directly from the same env vars the
+        # provider layer uses (src/providers/llm.py:136,195) — that way an
+        # override applied via os.environ still shows up. Per-agent overrides
+        # remain visible on SwarmAgentSpec.model_name.
+        run.provider = (os.getenv("LANGCHAIN_PROVIDER") or "").strip().lower() or None
+        run.model = (os.getenv("LANGCHAIN_MODEL_NAME") or "").strip() or None
+
         self._store.create_run(run)
 
         cancel_event = threading.Event()

@@ -870,6 +870,31 @@ def _build_response_from_run_dir(run_dir: Path, elapsed: float, *, include_analy
 
 
 # ============================================================================
+# Path-parameter validation
+# ============================================================================
+
+# ``run_id`` and ``session_id`` flow directly into filesystem paths
+# (``RUNS_DIR / run_id`` etc.). Restrict to a safe character class so that
+# values like ``..`` or ``foo/../bar`` cannot escape the parent directory.
+_SAFE_PATH_PARAM_RE = __import__("re").compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+def _validate_path_param(value: str, kind: str) -> None:
+    """Reject path parameters that could escape the parent directory.
+
+    Args:
+        value: User-supplied path-parameter value.
+        kind: Parameter name, used in the error detail.
+
+    Raises:
+        HTTPException: 400 when ``value`` does not match the safe character
+            class, mirroring the existing ``_SHADOW_ID_RE`` check.
+    """
+    if not _SAFE_PATH_PARAM_RE.fullmatch(value or ""):
+        raise HTTPException(status_code=400, detail=f"invalid {kind}")
+
+
+# ============================================================================
 # API Endpoints
 # ============================================================================
 
@@ -883,6 +908,7 @@ async def get_run_code(run_id: str):
     Returns:
         Map filename -> source text.
     """
+    _validate_path_param(run_id, "run_id")
     run_dir = RUNS_DIR / run_id / "code"
     if not run_dir.exists():
         raise HTTPException(status_code=404, detail=f"Code directory for run {run_id} not found")
@@ -904,6 +930,7 @@ async def get_run_pine(run_id: str):
     Returns:
         Object with pine script content and exists flag.
     """
+    _validate_path_param(run_id, "run_id")
     pine_path = RUNS_DIR / run_id / "artifacts" / "strategy.pine"
     if not pine_path.exists():
         return {"exists": False, "content": None}
@@ -916,6 +943,7 @@ async def get_run_pine(run_id: str):
 @app.get("/runs/{run_id}", response_model=RunResponse, dependencies=[Depends(require_auth)])
 async def get_run_result(run_id: str):
     """Fetch full details for a historical run by ``run_id``."""
+    _validate_path_param(run_id, "run_id")
     run_dir = RUNS_DIR / run_id
 
     if not run_dir.exists():
@@ -984,14 +1012,14 @@ async def list_runs(limit: int = 20):
             try:
                 req_data = json.loads(req_file.read_text(encoding="utf-8"))
                 prompt = req_data.get("prompt")
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
-        
+
         if not prompt and planner_file.exists():
             try:
                 planner_data = json.loads(planner_file.read_text(encoding="utf-8"))
                 prompt = planner_data.get("user_goal") or planner_data.get("goal")
-            except:
+            except (json.JSONDecodeError, OSError):
                 pass
             
         if not prompt:
@@ -1011,7 +1039,7 @@ async def list_runs(limit: int = 20):
                         total_return = float(row.get('total_return', 0) or 0)
                         sharpe = float(row.get('sharpe', 0) or 0)
                         break
-            except:
+            except (OSError, ValueError):
                 pass
         
         run_context = load_run_context(d)
@@ -1301,6 +1329,7 @@ async def list_sessions(limit: int = Query(50, ge=1, le=200)):
 @app.get("/sessions/{session_id}", response_model=SessionResponse, dependencies=[Depends(require_auth)])
 async def get_session(session_id: str):
     """Get one session by id."""
+    _validate_path_param(session_id, "session_id")
     svc = _get_session_service()
     if not svc:
         raise HTTPException(status_code=501, detail="Session runtime not enabled")
@@ -1320,6 +1349,7 @@ async def get_session(session_id: str):
 @app.delete("/sessions/{session_id}", dependencies=[Depends(require_auth)])
 async def delete_session(session_id: str):
     """Delete a session."""
+    _validate_path_param(session_id, "session_id")
     svc = _get_session_service()
     if not svc:
         raise HTTPException(status_code=501, detail="Session runtime not enabled")
@@ -1337,6 +1367,7 @@ class UpdateSessionRequest(BaseModel):
 @app.patch("/sessions/{session_id}", dependencies=[Depends(require_auth)])
 async def update_session(session_id: str, req: UpdateSessionRequest):
     """Update session fields (e.g. title)."""
+    _validate_path_param(session_id, "session_id")
     svc = _get_session_service()
     if not svc:
         raise HTTPException(status_code=501, detail="Session runtime not enabled")
@@ -1354,6 +1385,7 @@ async def update_session(session_id: str, req: UpdateSessionRequest):
 @app.post("/sessions/{session_id}/messages", dependencies=[Depends(require_auth)])
 async def send_message(session_id: str, payload: SendMessageRequest, http_request: Request):
     """Send a user message and start the agent loop (natural language strategy)."""
+    _validate_path_param(session_id, "session_id")
     svc = _get_session_service()
     if not svc:
         raise HTTPException(status_code=501, detail="Session runtime not enabled")
@@ -1371,6 +1403,7 @@ async def send_message(session_id: str, payload: SendMessageRequest, http_reques
 @app.post("/sessions/{session_id}/cancel", dependencies=[Depends(require_auth)])
 async def cancel_session(session_id: str):
     """Cancel the in-flight agent loop for this session."""
+    _validate_path_param(session_id, "session_id")
     svc = _get_session_service()
     if not svc:
         raise HTTPException(status_code=501, detail="Session runtime not enabled")
@@ -1383,6 +1416,7 @@ async def cancel_session(session_id: str):
 @app.get("/sessions/{session_id}/messages", response_model=List[MessageResponse], dependencies=[Depends(require_auth)])
 async def get_messages(session_id: str, limit: int = Query(100, ge=1, le=1000)):
     """List messages for a session."""
+    _validate_path_param(session_id, "session_id")
     svc = _get_session_service()
     if not svc:
         raise HTTPException(status_code=501, detail="Session runtime not enabled")
@@ -1408,6 +1442,7 @@ async def session_events(
     last_event_id: Optional[str] = Query(None, alias="Last-Event-ID"),
 ):
     """SSE stream for agent events."""
+    _validate_path_param(session_id, "session_id")
     svc = _get_session_service()
     if not svc:
         raise HTTPException(status_code=501, detail="Session runtime not enabled")
@@ -1609,6 +1644,7 @@ async def get_swarm_run(run_id: str):
     """Swarm run detail including task statuses."""
     from src.swarm.task_store import TaskStore
 
+    _validate_path_param(run_id, "run_id")
     runtime = _get_swarm_runtime()
     run = runtime._store.load_run(run_id)
     if not run:
@@ -1640,6 +1676,8 @@ async def get_swarm_run(run_id: str):
 async def swarm_run_events(run_id: str, request: Request, last_index: int = Query(0, ge=0)):
     """SSE stream for a swarm run."""
     import asyncio
+
+    _validate_path_param(run_id, "run_id")
     runtime = _get_swarm_runtime()
 
     async def event_stream():
@@ -1663,6 +1701,7 @@ async def swarm_run_events(run_id: str, request: Request, last_index: int = Quer
 @app.post("/swarm/runs/{run_id}/cancel", dependencies=[Depends(require_auth)])
 async def cancel_swarm_run(run_id: str):
     """Cancel an active swarm run."""
+    _validate_path_param(run_id, "run_id")
     runtime = _get_swarm_runtime()
     ok = runtime.cancel_run(run_id)
     if not ok:

@@ -377,7 +377,24 @@ def main(run_dir: Path) -> None:
 
     Args:
         run_dir: Run directory containing ``config.json`` and ``code/signal_engine.py``.
+            The path is validated against the allowed run roots
+            (``VIBE_TRADING_ALLOWED_RUN_ROOTS`` plus the defaults) before any
+            file is read so an arbitrary filesystem location cannot be used
+            to source ``code/signal_engine.py``.
     """
+    # Guard the CLI entry point with the same root whitelist the MCP
+    # ``backtest`` tool already uses (src/tools/backtest_tool.py:23). Without
+    # this, ``python -m backtest.runner /tmp/attacker_path`` would happily
+    # import ``signal_engine.py`` from anywhere on disk; the AST scrubber
+    # below blocks executable top-level statements but a method body still
+    # runs on instantiation. See ``safe_run_dir`` for the policy.
+    from src.tools.path_utils import safe_run_dir
+    try:
+        run_dir = safe_run_dir(str(run_dir))
+    except ValueError as exc:
+        print(json.dumps({"error": str(exc)}))
+        sys.exit(1)
+
     config_path = run_dir / "config.json"
     if not config_path.exists():
         print(json.dumps({"error": "config.json not found"}))

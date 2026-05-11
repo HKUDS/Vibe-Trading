@@ -48,7 +48,10 @@ class MemoryEntry:
 def _tokenize(text: str) -> set[str]:
     """Split text into searchable tokens.
 
-    ASCII words >= 3 chars + CJK individual characters.
+    ASCII words >= 3 chars + CJK individual characters. Underscores are
+    treated as word boundaries so snake_case titles (e.g. ``mcp_wiring_test``)
+    match natural-language queries (``"mcp wiring"``) as well as verbatim
+    lookups.
 
     Args:
         text: Input text.
@@ -56,7 +59,7 @@ def _tokenize(text: str) -> set[str]:
     Returns:
         Set of tokens.
     """
-    ascii_tokens = set(re.findall(r"[a-zA-Z0-9_]{3,}", text.lower()))
+    ascii_tokens = set(re.findall(r"[a-zA-Z0-9]{3,}", text.lower()))
     cjk_tokens = set(re.findall(r"[\u4e00-\u9fff\u3400-\u4dbf]", text))
     return ascii_tokens | cjk_tokens
 
@@ -165,7 +168,11 @@ class PersistentMemory:
         Returns:
             Path to the created memory file.
         """
-        slug = re.sub(r"[^a-z0-9_-]", "_", name.lower().strip())[:60]
+        # Preserve CJK characters in the slug — collapsing them all to ``_``
+        # caused any two same-length CJK-only names to share a filename and
+        # silently overwrite each other.
+        slug = re.sub(r"[^a-z0-9_\-一-鿿㐀-䶿]", "_",
+                      name.lower().strip())[:60]
         filename = f"{memory_type}_{slug}.md"
         path = self._dir / filename
 

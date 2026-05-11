@@ -166,6 +166,14 @@ class SwarmRun(BaseModel):
         final_report: Final aggregated report text.
         total_input_tokens: Cumulative input tokens across all workers.
         total_output_tokens: Cumulative output tokens across all workers.
+        provider: LLM provider name in effect when the run started
+            (e.g. ``"openai"``, ``"anthropic"``, ``"deepseek"``). Captured from
+            ``LANGCHAIN_PROVIDER`` at run-creation time. ``None`` if the
+            provider could not be resolved. Per-agent overrides — declared via
+            :attr:`SwarmAgentSpec.model_name` — are not reflected here; this
+            field is the run-level default.
+        model: LLM model name in effect when the run started, captured from
+            ``LANGCHAIN_MODEL_NAME``. Same scoping rules as :attr:`provider`.
     """
 
     id: str
@@ -179,6 +187,8 @@ class SwarmRun(BaseModel):
     final_report: str | None = None
     total_input_tokens: int = 0
     total_output_tokens: int = 0
+    provider: str | None = None
+    model: str | None = None
 
 
 class WorkerResult(BaseModel):
