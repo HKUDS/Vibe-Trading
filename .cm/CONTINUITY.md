@@ -4,7 +4,7 @@
 Add Vietnam Stock Market support (HOSE/HNX/UPCoM + VN30F) to Vibe-Trading as a first-class market line, per OpenSpec proposal `add-vn-market-support`.
 
 ## Current Phase
-sprint-2.1 complete (VNFuturesEngine merged on `feat/vn-market-support`)
+sprint-2.2 complete (5 VN broker journal parsers merged on `feat/vn-market-support`)
 
 ## Working Tree
 - Branch: `feat/vn-market-support`
@@ -46,11 +46,30 @@ sprint-2.1 complete (VNFuturesEngine merged on `feat/vn-market-support`)
 
 **Symbol routing precedence (verified):** `VN30F1M.HNX` → vn_futures (NOT vn_equity), `SHB.HNX` → vn_equity (unchanged)
 
-### Sprint 2.2 — NOT YET PLANNED
-- 5 broker journal readers (SSI, HSC, VNDirect, TCBS, DNSE)
-- 3 swarm presets (vn_investment_committee, vn_derivatives_desk, vn_value_screener)
+### Sprint 2.2 — VN Broker Journal Readers (DONE 2026-05-10)
+
+| Phase | Commit | Outcome |
+|-------|--------|---------|
+| 1. Registry foundation (`journal_parsers_vn/`) | `b913ea0` | sub-package + auto-registry + 5 stubs + `_common.py` helpers; 999 tests still pass |
+| 2-SSI | `55b0628` | parser + 7-row fixture + 11 tests |
+| 2-HSC | `87c5e80` | parser + 6-row fixture + 13 tests |
+| 2-VNDirect | `da2e8d3` | parser + 7-row fixture + 13 tests (DGC routes to .HNX) |
+| 2-TCBS | `48b7099` | parser + 7-row fixture + 13 tests |
+| 2-DNSE | `5ca7d35` | parser + 7-row fixture + 13 tests (no Tax column) |
+| 3. SSI EN false-positive fix + skill doc | `aef7c81` | SSI EN match now requires `Match Volume` AND rejects HSC's `Quantity` |
+
+**Final state:** 1062 tests pass (999 baseline + 63 new), 0 fail. 5 brokers cross-detected with no false positives.
+
+**Architecture:** Sub-package `agent/src/tools/journal_parsers_vn/` with `BrokerParser` Protocol + lazy auto-registry mirrors `backtest.loaders.registry`. Each broker is a 50-80 LOC module; `_common.py` provides `_qualify_vn_symbol` (HOSE/HNX/UPCoM), `_normalize_vn_side` (Mua/Bán/BUY/SELL), `_parse_vn_date`, `_to_float_vn` (handles VN `1.234,5` + US `1,234.5`).
+
+**Integration with existing parser dispatch:** `trade_journal_parsers.py::detect_format()` falls back to `detect_vn_format()` after existing 4 parsers; `parse_file()` dispatches VN formats via `parse_vn()`. Zero impact on existing Tonghuashun/Eastmoney/Futu/Generic flow.
+
+**Execution note:** 4/5 Phase-2 sub-agents hit rate limit mid-run. SSI agent committed successfully (commit `55b0628`); HSC + VNDirect agents wrote files but didn't commit (recovered via main thread); TCBS + DNSE were written entirely in main thread. Net throughput delivered same result with mixed parallel/sequential execution.
+
+### Sprint 2.3 — NOT YET PLANNED
+- 3 swarm presets (`vn_investment_committee`, `vn_derivatives_desk`, `vn_value_screener`)
 - i18n locale `vi-VN`
-- VNFundamentalProvider (VAS PIT) — currently the `vn-financial-statements-vas` skill is just a manifest stub
+- `VNFundamentalProvider` (VAS PIT — `vn-financial-statements-vas` skill is currently just a manifest stub)
 
 ## Sprint 3 — NOT STARTED
 - Amibroker AFL exporter
