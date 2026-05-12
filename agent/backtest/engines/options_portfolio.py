@@ -16,7 +16,6 @@ Artifacts: equity.csv, metrics.csv, trades.csv, greeks.csv.
 
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -290,7 +289,6 @@ def run_options_backtest(
     commission = config.get("commission", 0.001)
     options_cfg = config.get("options_config", {})
     risk_free_rate = options_cfg.get("risk_free_rate", 0.05)
-    iv_source = options_cfg.get("iv_source", "historical")
     contract_multiplier = options_cfg.get("contract_multiplier", 1.0)
     exercise_style = options_cfg.get("exercise_style", "european")  # v2: "european" or "american"
     iv_skew = options_cfg.get("iv_skew", 0.0)         # v2: smile skew param (0 = flat)
@@ -553,6 +551,15 @@ def run_options_backtest(
 
     pd.DataFrame(greeks_records).to_csv(out / "greeks.csv", index=False)
     pd.DataFrame([metrics]).to_csv(out / "metrics.csv", index=False)
+
+    from backtest.run_card import write_run_card
+    write_run_card(
+        run_dir,
+        config,
+        metrics,
+        data_sources=[str(getattr(loader, "name", config.get("source", "")))],
+        strategy_path=run_dir / "code" / "signal_engine.py",
+    )
 
     print(json.dumps(metrics, indent=2))
     return metrics
