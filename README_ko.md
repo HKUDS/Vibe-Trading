@@ -51,6 +51,7 @@
 
 ## 📰 뉴스
 
+- **2026-05-12** 🧾 **Trust Layer run cards**: 백테스트가 이제 artifacts와 함께 재현 가능한 `run_card.json` 및 `run_card.md`를 생성합니다. config와 전략 코드 해시, 데이터 소스, scalar metrics, validation payload, warnings, artifact checksum을 기록합니다. Backtest 도구도 run-card 경로를 반환하므로 CLI/API가 evidence package를 바로 보여줄 수 있습니다.
 - **2026-05-11** 🧭 **Memory slug, swarm 집계, CLI 프리플라이트**: 영구 메모리 파일 slug 생성 시 CJK 문자를 보존해 중국어/일본어/한국어 노트의 조용한 파일명 충돌을 막습니다([#95](https://github.com/HKUDS/Vibe-Trading/pull/95), @voidborne-d 감사합니다). Swarm run 합계는 provider가 반환한 token usage를 우선 사용하고 기존 추정 fallback도 유지합니다([#94](https://github.com/HKUDS/Vibe-Trading/pull/94), @Teerapat-Vatpitak 감사합니다). CLI run UI에는 일반적인 환경 문제를 더 일찍 드러내는 시작 프리플라이트 체크도 추가되었습니다([#96](https://github.com/HKUDS/Vibe-Trading/pull/96), @ykykj 감사합니다).
 - **2026-05-10** 🧱 **회귀 가드레일 + run 메타데이터**: Memory recall이 이제 밑줄을 token 경계로 처리하므로 `mcp_wiring_test` 같은 snake_case 저장 메모리가 "mcp wiring" 같은 자연어 쿼리에 매칭됩니다([#87](https://github.com/HKUDS/Vibe-Trading/pull/87), @hp083625 감사합니다). MCP server에는 initialize → `tools/list` → `tools/call` 경로를 실제 subprocess로 검증하는 smoke test를 추가해 첫 호출 deadlock 회귀를 막습니다([#86](https://github.com/HKUDS/Vibe-Trading/pull/86)). 또한 Windows 경로 민감 테스트 호환성, API best-effort 예외 처리 축소, backtest `run_dir` allowed-root 검증, SwarmRun provider/model 메타데이터 같은 저위험 강화도 반영했습니다([#88](https://github.com/HKUDS/Vibe-Trading/pull/88), [#90](https://github.com/HKUDS/Vibe-Trading/pull/90), [#91](https://github.com/HKUDS/Vibe-Trading/pull/91), [#92](https://github.com/HKUDS/Vibe-Trading/pull/92), @Teerapat-Vatpitak 감사합니다).
 - **2026-05-09** 🛡️ **API 경로 강화 + MCP server 안정성**: API run/session 라우트는 조회 전에 path ID를 검증하여 개행이 포함된 비정상 파라미터를 거부하고, 해당 동작을 auth/security 회귀 테스트로 고정했습니다([#80](https://github.com/HKUDS/Vibe-Trading/pull/80), @SJoon99 감사합니다). MCP server는 `tools/call` 처리 전에 메인 스레드에서 도구 레지스트리를 미리 워밍업해 lazy tool discovery의 첫 호출 deadlock을 피합니다([#85](https://github.com/HKUDS/Vibe-Trading/pull/85), @Teerapat-Vatpitak 감사합니다). Vite dev proxy도 `VITE_API_URL`을 존중해 기본값이 아닌 백엔드 타깃을 사용할 수 있게 했습니다([#82](https://github.com/HKUDS/Vibe-Trading/pull/82), @voidborne-d 감사합니다).
@@ -652,7 +653,7 @@ Vibe-Trading은 **[HKUDS](https://github.com/HKUDS)** 에이전트 생태계의 
 | **Portfolio Studio** | 리스크 엑스레이, 제약 조건, 턴오버 고려 옵티마이저, 리밸런싱 노트 | Planned |
 | **Alpha Zoo** | Alpha101 / Alpha158 / Alpha191 팩터 라이브러리와 스크리닝 + IC 테스트 | Planned |
 | **Research Delivery** | Slack / Telegram / 이메일형 채널로 예약 브리프 전달 | Planned |
-| **Trust Layer** | 재현 가능한 run card: 도구 추적, 데이터 소스, 가정, 인용 | Planned |
+| **Trust Layer** | 재현 가능한 run card: 도구 추적, 데이터 소스, 가정, 인용 | In Progress |
 | **Community** | 공유 가능한 skills, presets, strategy cards | Exploring |
 
 ---

@@ -51,6 +51,7 @@
 
 ## 📰 أحدث الأخبار
 
+- **2026-05-12** 🧾 **Trust Layer run cards**: أصبحت الاختبارات الخلفية تنشئ الآن `run_card.json` و`run_card.md` قابلين لإعادة الإنتاج بجانب artifacts، مع تسجيل hashes للإعدادات وكود الاستراتيجية، ومصادر البيانات، والمقاييس scalar، ونتائج validation، والتحذيرات، وchecksums للـ artifacts. كما يعيد Backtest tool مسارات run-card حتى تستطيع CLI/API عرض حزمة الأدلة مباشرة.
 - **2026-05-11** 🧭 **Memory slugs وswarm accounting وCLI preflight**: يحافظ توليد slugs لملفات الذاكرة الدائمة الآن على أحرف CJK، ما يمنع اصطدامات أسماء الملفات الصامتة لملاحظات الصينية/اليابانية/الكورية ([#95](https://github.com/HKUDS/Vibe-Trading/pull/95)، شكراً @voidborne-d). تستخدم مجاميع Swarm run الآن token usage المبلّغ من provider أولاً مع الإبقاء على fallback التقديري الحالي ([#94](https://github.com/HKUDS/Vibe-Trading/pull/94)، شكراً @Teerapat-Vatpitak)، كما حصلت واجهة CLI run على فحص preflight عند البدء لاكتشاف مشكلات البيئة الشائعة مبكراً ([#96](https://github.com/HKUDS/Vibe-Trading/pull/96)، شكراً @ykykj).
 - **2026-05-10** 🧱 **حواجز انحدار + بيانات run الوصفية**: أصبح Memory recall يتعامل مع الشرطات السفلية كحدود token، لذلك تطابق الذكريات المحفوظة بصيغة snake_case مثل `mcp_wiring_test` استعلامات اللغة الطبيعية مثل "mcp wiring" ([#87](https://github.com/HKUDS/Vibe-Trading/pull/87)، شكراً @hp083625). تمت إضافة اختبار smoke للـ MCP server عبر subprocess يغطي initialize → `tools/list` → `tools/call` لحماية مسار deadlock في أول استدعاء ([#86](https://github.com/HKUDS/Vibe-Trading/pull/86)). كما دخلت تحسينات منخفضة المخاطر لتوافق اختبارات مسارات Windows، وتضييق معالجة استثناءات API best-effort، والتحقق من allowed roots لمسار backtest `run_dir`، وبيانات provider/model الوصفية في SwarmRun ([#88](https://github.com/HKUDS/Vibe-Trading/pull/88)، [#90](https://github.com/HKUDS/Vibe-Trading/pull/90)، [#91](https://github.com/HKUDS/Vibe-Trading/pull/91)، [#92](https://github.com/HKUDS/Vibe-Trading/pull/92)، شكراً @Teerapat-Vatpitak).
 - **2026-05-09** 🛡️ **تعزيز مسارات API + استقرار MCP server**: تتحقق مسارات run/session في API الآن من معرفات المسار قبل البحث، وترفض المعاملات المشوهة التي تحتوي على أسطر جديدة، مع تثبيت السلوك في اختبارات الانحدار auth/security ([#80](https://github.com/HKUDS/Vibe-Trading/pull/80)، شكراً @SJoon99). يقوم MCP server الآن بتسخين سجل الأدوات مسبقاً على الخيط الرئيسي قبل خدمة `tools/call`، لتجنب deadlock في أول استدعاء أثناء lazy tool discovery ([#85](https://github.com/HKUDS/Vibe-Trading/pull/85)، شكراً @Teerapat-Vatpitak). كما يحترم Vite dev proxy المتغير `VITE_API_URL` للأهداف الخلفية غير الافتراضية ([#82](https://github.com/HKUDS/Vibe-Trading/pull/82)، شكراً @voidborne-d).
@@ -654,7 +655,7 @@ Vibe-Trading هو جزء من النظام البيئي للوكلاء **[HKUDS]
 | **Portfolio Studio** | أشعة مخاطر، قيود، محسّن يراعي الدوران، وملاحظات إعادة التوازن | مخطط |
 | **Alpha Zoo** | مكتبات عوامل Alpha101 / Alpha158 / Alpha191 مع فحص واختبارات IC | مخطط |
 | **Research Delivery** | موجزات مجدولة إلى Slack / Telegram / قنوات شبيهة بالبريد | مخطط |
-| **Trust Layer** | بطاقات تشغيل قابلة للإعادة: أثر الأدوات، مصادر البيانات، الافتراضات، الاستشهادات | مخطط |
+| **Trust Layer** | بطاقات تشغيل قابلة للإعادة: أثر الأدوات، مصادر البيانات، الافتراضات، الاستشهادات | قيد التنفيذ |
 | **Community** | skills وpresets وstrategy cards قابلة للمشاركة | قيد الاستكشاف |
 
 ---

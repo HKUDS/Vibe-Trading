@@ -137,6 +137,13 @@ Add a cross-asset correlation matrix component to the frontend:
 - ECharts heatmap or custom canvas renderer
 - Wire to a new API endpoint that computes rolling correlations
 
+### Medium: Trust Layer Run Card UI
+
+Backtests now emit `run_card.json` and `run_card.md`. Good follow-up contributions:
+- Surface run-card links in CLI/API/Web UI run summaries
+- Add a Web UI run-card detail view with config hash, strategy hash, data sources, metrics, validation, warnings, and artifact checksums
+- Extend the run-card schema with tool trace and citations once trace capture is promoted into the Trust Layer contract
+
 ### Hard: Intraday Backtest Engine
 
 Current engines run on daily bars. We need sub-daily execution:
