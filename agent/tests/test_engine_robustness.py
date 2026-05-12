@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Dict
@@ -240,6 +241,15 @@ class TestSymbolIsolation:
 
         assert metrics["benchmark_ticker"] == "000300.SH"
         assert metrics["benchmark_return"] == 0.00495
+
+        run_card_path = tmp_path / "run_card.json"
+        assert run_card_path.exists()
+        run_card = json.loads(run_card_path.read_text(encoding="utf-8"))
+        assert run_card["schema_version"] == "0.1"
+        assert run_card["backtest"]["codes"] == ["000001.SZ"]
+        assert run_card["data_sources"] == ["tushare"]
+        assert run_card["metrics"]["benchmark_return"] == 0.00495
+        assert (tmp_path / "run_card.md").exists()
 
     def test_configured_fundamental_enrichment_failure_is_not_silent(
         self,

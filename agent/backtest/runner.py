@@ -466,6 +466,11 @@ def main(run_dir: Path) -> None:
         print(json.dumps({"error": "No data fetched"}))
         sys.exit(1)
 
+    if source == "auto":
+        config["_run_card_effective_sources"] = sorted(_group_codes_by_source(codes))
+    else:
+        config["_run_card_effective_sources"] = [source]
+
     # Engine
     engine_type = config.get("engine", "daily")
     signal_engine = engine_cls()

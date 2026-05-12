@@ -34,6 +34,22 @@ from backtest.models import EquitySnapshot, Position, TradeRecord
 logger = logging.getLogger(__name__)
 
 
+def _run_card_data_sources(config: Dict[str, Any], loader: Any) -> List[str]:
+    """Return source names for run-card evidence."""
+    configured = config.get("_run_card_effective_sources")
+    if isinstance(configured, list):
+        return [str(source) for source in configured if str(source).strip()]
+    if isinstance(configured, str) and configured.strip():
+        return [configured.strip()]
+
+    loader_name = getattr(loader, "name", None)
+    if loader_name:
+        return [str(loader_name)]
+
+    source = config.get("source")
+    return [str(source)] if source else []
+
+
 # ─── Market detection (lightweight, for signal alignment only) ───
 
 _CRYPTO_RE = _re.compile(r"^[A-Z]+-USDT$|^[A-Z]+/USDT$", _re.I)
@@ -403,6 +419,16 @@ class BaseEngine(ABC):
         self._write_artifacts(
             run_dir, data_map, dates, equity_series, bench_equity, bench_ret,
             target_pos, m, valid_codes,
+        )
+
+        # 9. Trust Layer run card
+        from backtest.run_card import write_run_card
+        write_run_card(
+            run_dir,
+            config,
+            m,
+            data_sources=_run_card_data_sources(config, loader),
+            strategy_path=run_dir / "code" / "signal_engine.py",
         )
 
         # Print scalar metrics (skip nested dicts for JSON compat)
