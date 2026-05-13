@@ -27,6 +27,21 @@ MAX_RESULTS = 5
 METADATA_WEIGHT = 2.0
 MEMORY_TYPES = ("user", "feedback", "project", "reference")
 
+# Script ranges tokenized and slugged at char level (no word-boundary
+# whitespace). Arabic/Hebrew narrowed to letter blocks to exclude bidi
+# controls and combining marks from on-disk slugs.
+_NON_LATIN_SCRIPT_RANGES = (
+    "一-鿿"   # CJK Unified Ideographs   (U+4E00-U+9FFF)
+    "㐀-䶿"   # CJK Extension A          (U+3400-U+4DBF)
+    "฀-๿"   # Thai                     (U+0E00-U+0E7F)
+    "ؠ-ي"   # Arabic letters           (U+0620-U+064A)
+    "א-ת"   # Hebrew letters           (U+05D0-U+05EA)
+    "Ѐ-ӿ"   # Cyrillic                 (U+0400-U+04FF)
+)
+
+_TOKEN_RE = re.compile(rf"[a-zA-Z0-9]{{3,}}|[{_NON_LATIN_SCRIPT_RANGES}]")
+_SLUG_DISALLOWED_RE = re.compile(rf"[^a-z0-9_\-{_NON_LATIN_SCRIPT_RANGES}]")
+
 
 @dataclass(frozen=True)
 class MemoryEntry:
@@ -52,7 +67,9 @@ class MemoryEntry:
 def _tokenize(text: str) -> set[str]:
     """Split text into searchable tokens.
 
-    ASCII words >= 3 chars + CJK individual characters. Underscores are
+    ASCII words >= 3 chars + individual characters from non-Latin scripts
+    listed in ``_NON_LATIN_SCRIPT_RANGES`` (CJK, Thai, Arabic, Hebrew,
+    Cyrillic). Underscores are
     treated as word boundaries so snake_case titles (e.g. ``mcp_wiring_test``)
     match natural-language queries (``"mcp wiring"``) as well as verbatim
     lookups.
@@ -63,9 +80,7 @@ def _tokenize(text: str) -> set[str]:
     Returns:
         Set of tokens.
     """
-    ascii_tokens = set(re.findall(r"[a-zA-Z0-9]{3,}", text.lower()))
-    cjk_tokens = set(re.findall(r"[\u4e00-\u9fff\u3400-\u4dbf]", text))
-    return ascii_tokens | cjk_tokens
+    return set(_TOKEN_RE.findall(text.lower()))
 
 
 def _coerce_str(value: object, default: str = "") -> str:
@@ -223,11 +238,11 @@ class PersistentMemory:
         Returns:
             Path to the created memory file.
         """
-        # Preserve CJK characters in the slug — collapsing them all to ``_``
-        # caused any two same-length CJK-only names to share a filename and
-        # silently overwrite each other.
-        slug = re.sub(r"[^a-z0-9_\-一-鿿㐀-䶿]", "_",
-                      name.lower().strip())[:60]
+        # Preserve non-Latin script characters in the slug — collapsing
+        # them all to ``_`` caused two same-length non-Latin names to share a
+        # filename and silently overwrite each other (see PR #95 for CJK;
+        # this generalizes to Thai/Arabic/Hebrew/Cyrillic).
+        slug = _SLUG_DISALLOWED_RE.sub("_", name.lower().strip())[:60]
         filename = f"{memory_type}_{slug}.md"
         path = self._dir / filename
 

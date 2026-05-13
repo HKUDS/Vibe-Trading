@@ -84,6 +84,29 @@ class TestTokenize:
         tokens = _tokenize("mcp_wiring_test")
         assert tokens == {"mcp", "wiring", "test"}
 
+    def test_thai_characters(self) -> None:
+        # Thai script (฀-๿) was not tokenized — recall on Thai
+        # queries always returned the empty set. Char-level like CJK.
+        tokens = _tokenize("นโยบายการเทรด")
+        assert "น" in tokens
+        assert "เ" in tokens
+        assert "ท" in tokens
+
+    def test_arabic_characters(self) -> None:
+        tokens = _tokenize("التداول")
+        assert "ا" in tokens
+        assert "ل" in tokens
+
+    def test_hebrew_characters(self) -> None:
+        tokens = _tokenize("מסחר")
+        assert "מ" in tokens
+        assert "ס" in tokens
+
+    def test_cyrillic_characters(self) -> None:
+        tokens = _tokenize("торговля")
+        assert "т" in tokens
+        assert "о" in tokens
+
 
 # ---------------------------------------------------------------------------
 # PersistentMemory.add
@@ -130,6 +153,24 @@ class TestAdd:
         # Should overwrite the same file
         path = tmp_path / "project_overwrite.md"
         assert "v2" in path.read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("title", ["นโยบาย", "التداول", "מסחר", "торговля"])
+    def test_slug_preserves_non_latin_chars(self, tmp_path: Path, title: str) -> None:
+        # Regression: non-Latin chars used to collapse to "_" in slug,
+        # causing two distinct titles of equal length to collide.
+        pm = PersistentMemory(memory_dir=tmp_path)
+        path = pm.add(title, "body", "user")
+        assert title in path.name
+
+    def test_slug_distinguishes_two_thai_titles(self, tmp_path: Path) -> None:
+        # Two different Thai titles must produce different files. Without the
+        # fix both would collapse to "user________.md".
+        pm = PersistentMemory(memory_dir=tmp_path)
+        a = pm.add("นโยบาย", "rule a", "user")
+        b = pm.add("กลยุทธ์", "rule b", "user")
+        assert a != b
+        assert "rule a" in a.read_text(encoding="utf-8")
+        assert "rule b" in b.read_text(encoding="utf-8")
 
     def test_index_update_not_duplicate(self, tmp_path: Path) -> None:
         pm = PersistentMemory(memory_dir=tmp_path)
