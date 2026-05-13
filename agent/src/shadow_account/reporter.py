@@ -36,7 +36,7 @@ _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _HTML_TEMPLATE = "shadow_report.html"
 _CSS_TEMPLATE = "shadow_report.css"
 
-_MARKET_LABELS = {
+_MARKET_LABELS_EN = {
     "china_a": "China A-share",
     "us": "US equity",
     "hk": "HK equity",
@@ -44,10 +44,24 @@ _MARKET_LABELS = {
     "other": "Other",
 }
 
-_REASON_LABELS = {
+_MARKET_LABELS_ZH = {
+    "china_a": "A股",
+    "us": "美股",
+    "hk": "港股",
+    "crypto": "加密货币",
+    "other": "其他",
+}
+
+_REASON_LABELS_EN = {
     "rule_violation": "Outside any shadow rule",
     "early_exit": "Exited winner too early",
     "late_exit": "Held loser too long",
+}
+
+_REASON_LABELS_ZH = {
+    "rule_violation": "偏离影子规则",
+    "early_exit": "过早止盈",
+    "late_exit": "过晚止损",
 }
 
 
@@ -59,6 +73,7 @@ def render_shadow_report(
     *,
     today_signals: list[dict[str, Any]] | None = None,
     output_dir: Path | None = None,
+    lang: str = "zh",
 ) -> dict[str, Any]:
     """Render the full Shadow Account report.
 
@@ -77,25 +92,44 @@ def render_shadow_report(
 
     assets_dir = output_dir / f"{profile.shadow_id}_assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
-    charts = _render_charts(profile, backtest_result, assets_dir)
+    market_labels = _MARKET_LABELS_ZH if lang == "zh" else _MARKET_LABELS_EN
+    reason_labels = _REASON_LABELS_ZH if lang == "zh" else _REASON_LABELS_EN
+    charts = _render_charts(profile, backtest_result, assets_dir, lang=lang)
 
     sections = _build_sections(profile, backtest_result, today_signals or [])
     css = _load_css()
 
-    html = _env().get_template(_HTML_TEMPLATE).render(
+    # Generate Chinese version (default)
+    charts_zh = _render_charts(profile, backtest_result, assets_dir, lang="zh")
+    html_zh = _env().get_template(_HTML_TEMPLATE).render(
         css=css,
-        charts=charts,
-        market_labels=_MARKET_LABELS,
-        reason_labels=_REASON_LABELS,
+        charts=charts_zh,
+        market_labels=_MARKET_LABELS_ZH,
+        reason_labels=_REASON_LABELS_ZH,
+        lang="zh",
         **sections,
     )
     html_path = output_dir / f"{profile.shadow_id}.html"
-    html_path.write_text(html, encoding="utf-8")
+    html_path.write_text(html_zh, encoding="utf-8")
 
-    pdf_path, engine = _try_render_pdf(html, output_dir, profile.shadow_id)
+    # Generate English version
+    charts_en = _render_charts(profile, backtest_result, assets_dir, lang="en")
+    html_en = _env().get_template(_HTML_TEMPLATE).render(
+        css=css,
+        charts=charts_en,
+        market_labels=_MARKET_LABELS_EN,
+        reason_labels=_REASON_LABELS_EN,
+        lang="en",
+        **sections,
+    )
+    html_path_en = output_dir / f"{profile.shadow_id}.en.html"
+    html_path_en.write_text(html_en, encoding="utf-8")
+
+    pdf_path, engine = _try_render_pdf(html_zh, output_dir, profile.shadow_id)
 
     return {
         "html_path": str(html_path),
+        "html_path_en": str(html_path_en),
         "pdf_path": str(pdf_path) if pdf_path else None,
         "sections": sections,
         "engine": engine,
@@ -155,6 +189,8 @@ def _render_charts(
     profile: ShadowProfile,
     result: ShadowBacktestResult,
     assets_dir: Path,
+    *,
+    lang: str = "zh",
 ) -> dict[str, str]:
     """Render all charts and return a map section → file URI.
 
@@ -162,9 +198,9 @@ def _render_charts(
     """
     charts: dict[str, str] = {}
     for name, renderer in (
-        ("equity_curve", lambda p: _render_equity_curve(result, p)),
-        ("per_market_bar", lambda p: _render_per_market_bar(result, p)),
-        ("attribution_waterfall", lambda p: _render_attribution_waterfall(result, p)),
+        ("equity_curve", lambda p: _render_equity_curve(result, p, lang=lang)),
+        ("per_market_bar", lambda p: _render_per_market_bar(result, p, lang=lang)),
+        ("attribution_waterfall", lambda p: _render_attribution_waterfall(result, p, lang=lang)),
     ):
         path = assets_dir / f"{name}.png"
         try:
@@ -177,7 +213,7 @@ def _render_charts(
     return charts
 
 
-def _render_equity_curve(result: ShadowBacktestResult, path: Path) -> None:
+def _render_equity_curve(result: ShadowBacktestResult, path: Path, *, lang: str = "zh") -> None:
     curve = result.equity_curves.get("combined") or []
     if not curve:
         return
@@ -188,9 +224,9 @@ def _render_equity_curve(result: ShadowBacktestResult, path: Path) -> None:
     values = [pt[1] for pt in curve]
     ax.plot(dates, values, color="#1f7a3a", linewidth=1.3)
     ax.fill_between(dates, values, color="#1f7a3a", alpha=0.08)
-    ax.set_title("Shadow — Portfolio Equity Curve")
+    ax.set_title("影子策略 — 组合净值曲线" if lang == "zh" else "Shadow — Portfolio Equity Curve")
     ax.set_xlabel("")
-    ax.set_ylabel("Equity")
+    ax.set_ylabel("净值" if lang == "zh" else "Equity")
     ax.grid(True, linestyle=":", alpha=0.4)
     # Too many x-ticks looks cluttered; sample down.
     if len(dates) > 8:
@@ -201,19 +237,20 @@ def _render_equity_curve(result: ShadowBacktestResult, path: Path) -> None:
     plt.close(fig)
 
 
-def _render_per_market_bar(result: ShadowBacktestResult, path: Path) -> None:
+def _render_per_market_bar(result: ShadowBacktestResult, path: Path, *, lang: str = "zh") -> None:
     if not result.per_market:
         return
     import matplotlib.pyplot as plt
 
     markets = list(result.per_market.keys())
     sharpes = [result.per_market[m].get("sharpe", 0.0) for m in markets]
-    labels = [_MARKET_LABELS.get(m, m) for m in markets]
+    ml = _MARKET_LABELS_ZH if lang == "zh" else _MARKET_LABELS_EN
+    labels = [ml.get(m, m) for m in markets]
 
     fig, ax = plt.subplots(figsize=(8, 3), dpi=150)
     bars = ax.bar(labels, sharpes, color="#4a5fb0")
     ax.axhline(0, color="#8a8f99", linewidth=0.8)
-    ax.set_title("Sharpe by Market")
+    ax.set_title("各市场夏普比率" if lang == "zh" else "Sharpe by Market")
     ax.grid(True, axis="y", linestyle=":", alpha=0.4)
     for bar, value in zip(bars, sharpes):
         ax.text(
@@ -229,17 +266,28 @@ def _render_per_market_bar(result: ShadowBacktestResult, path: Path) -> None:
     plt.close(fig)
 
 
-def _render_attribution_waterfall(result: ShadowBacktestResult, path: Path) -> None:
+def _render_attribution_waterfall(result: ShadowBacktestResult, path: Path, *, lang: str = "zh") -> None:
     attr = result.attribution
-    components = [
-        ("Real PnL", result.real_total_pnl),
-        ("Noise Trades", attr.noise_trades_pnl),
-        ("Early Exit", attr.early_exit_pnl),
-        ("Late Exit", attr.late_exit_pnl),
-        ("Overtrading", attr.overtrading_pnl),
-        ("Missed Signals", attr.missed_signals_pnl),
-        ("Shadow PnL", result.shadow_total_pnl),
-    ]
+    if lang == "zh":
+        components = [
+            ("实际盈亏", result.real_total_pnl),
+            ("噪音交易", attr.noise_trades_pnl),
+            ("过早止盈", attr.early_exit_pnl),
+            ("过晚止损", attr.late_exit_pnl),
+            ("过度交易", attr.overtrading_pnl),
+            ("漏掉信号", attr.missed_signals_pnl),
+            ("影子策略盈亏", result.shadow_total_pnl),
+        ]
+    else:
+        components = [
+            ("Real PnL", result.real_total_pnl),
+            ("Noise Trades", attr.noise_trades_pnl),
+            ("Early Exit", attr.early_exit_pnl),
+            ("Late Exit", attr.late_exit_pnl),
+            ("Overtrading", attr.overtrading_pnl),
+            ("Missed Signals", attr.missed_signals_pnl),
+            ("Shadow PnL", result.shadow_total_pnl),
+        ]
     if all(value == 0.0 for _, value in components):
         return
     import matplotlib.pyplot as plt
@@ -270,7 +318,7 @@ def _render_attribution_waterfall(result: ShadowBacktestResult, path: Path) -> N
     fig, ax = plt.subplots(figsize=(8, 3.2), dpi=150, facecolor=bg)
     ax.bar(labels, values, bottom=bases, color=colors, edgecolor="none", width=0.55)
     ax.axhline(0, color=grid, linewidth=0.8)
-    ax.set_title("Delta Attribution (positive = shadow would outperform)")
+    ax.set_title("盈亏归因（正值=影子策略更优）" if lang == "zh" else "Delta Attribution (positive = shadow would outperform)")
     ax.grid(True, axis="y", linestyle=":", alpha=0.4)
     plt.setp(ax.get_xticklabels(), rotation=18, ha="right")
     fig.tight_layout()

@@ -1,9 +1,10 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
 import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useDarkMode } from "@/hooks/useDarkMode";
+import { Globe } from "lucide-react";
 import { api, type SessionItem } from "@/lib/api";
 import { useAgentStore } from "@/stores/agent";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
@@ -18,7 +19,7 @@ const NAV = [
 export function Layout() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
-  const { t } = useI18n();
+  const { t, locale, setLocale } = useI18n();
   const { dark, toggle } = useDarkMode();
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
@@ -76,7 +77,7 @@ export function Layout() {
         <div className={cn("border-b", collapsed ? "p-2 flex justify-center" : "p-4")}>
           <Link to="/" className={cn("flex items-center font-bold text-base tracking-tight", collapsed ? "justify-center" : "gap-2")}>
             <BarChart3 className="h-5 w-5 text-primary shrink-0" />
-            {!collapsed && "Vibe-Trading"}
+            {!collapsed && t.appBrandName}
           </Link>
         </div>
 
@@ -203,6 +204,13 @@ export function Layout() {
               <button onClick={toggle} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={dark ? t.lightMode : t.darkMode}>
                 {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
               </button>
+              <button
+                onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
+                className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors"
+                title={t.localDesc}
+              >
+                <Globe className="h-3.5 w-3.5" />
+              </button>
               <button onClick={() => setCollapsed(false)} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title="Expand">
                 <ChevronsRight className="h-3.5 w-3.5" />
               </button>
@@ -226,6 +234,16 @@ export function Layout() {
                     <ChevronsLeft className="h-3.5 w-3.5" />
                   </button>
                 </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  title={t.localDesc}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  {locale === "zh" ? t.englishMode : t.chineseMode}
+                </button>
               </div>
               <p className="text-xs text-muted-foreground/60">v0.1.7</p>
             </>

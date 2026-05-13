@@ -1,4 +1,4 @@
-﻿import { Bot, TrendingUp, Bitcoin, Globe, Sparkles, Users, UserCircle2, NotebookPen } from "lucide-react";
+import { Bot, TrendingUp, Bitcoin, Globe, Sparkles, Users, UserCircle2, NotebookPen } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
 interface Example {
@@ -14,144 +14,78 @@ interface Category {
   examples: Example[];
 }
 
-const CATEGORIES: Category[] = [
-  {
-    label: "Multi-Market Backtest",
-    icon: <TrendingUp className="h-4 w-4" />,
-    color: "text-red-400 border-red-500/30 hover:border-red-500/60 hover:bg-red-500/5",
-    examples: [
-      {
-        title: "Cross-Market Portfolio",
-        desc: "A-shares + crypto + US equities with risk-parity optimizer",
-        prompt: "Backtest a risk-parity portfolio of 000001.SZ, BTC-USDT, and AAPL for full-year 2024, compare against equal-weight baseline",
-      },
-      {
-        title: "BTC 5-Min MACD Strategy",
-        desc: "Minute-level crypto backtest with real-time OKX data",
-        prompt: "Backtest BTC-USDT 5-minute MACD strategy, fast=12 slow=26 signal=9, last 30 days",
-      },
-      {
-        title: "US Tech Max Diversification",
-        desc: "Portfolio optimizer across FAANG+ via yfinance",
-        prompt: "Backtest AAPL, MSFT, GOOGL, AMZN, NVDA with max_diversification portfolio optimizer, full-year 2024",
-      },
-    ],
-  },
-  {
-    label: "Research & Analysis",
-    icon: <Sparkles className="h-4 w-4" />,
-    color: "text-amber-400 border-amber-500/30 hover:border-amber-500/60 hover:bg-amber-500/5",
-    examples: [
-      {
-        title: "Multi-Factor Alpha Model",
-        desc: "IC-weighted factor synthesis across 300 stocks",
-        prompt: "Build a multi-factor alpha model using momentum, reversal, volatility, and turnover on CSI 300 constituents with IC-weighted factor synthesis, backtest 2023-2024",
-      },
-      {
-        title: "Options Greeks Analysis",
-        desc: "Black-Scholes pricing with Delta/Gamma/Theta/Vega",
-        prompt: "Calculate option Greeks using Black-Scholes: spot=100, strike=105, risk-free rate=3%, vol=25%, expiry=90 days, analyze Delta/Gamma/Theta/Vega",
-      },
-    ],
-  },
-  {
-    label: "Swarm Teams",
-    icon: <Users className="h-4 w-4" />,
-    color: "text-violet-400 border-violet-500/30 hover:border-violet-500/60 hover:bg-violet-500/5",
-    examples: [
-      {
-        title: "Investment Committee Review",
-        desc: "Multi-agent debate: long vs short, risk review, PM decision",
-        prompt: "[Swarm Team Mode] Use the investment_committee preset to evaluate whether to go long or short on NVDA given current market conditions",
-      },
-      {
-        title: "Quant Strategy Desk",
-        desc: "Screening → factor research → backtest → risk audit pipeline",
-        prompt: "[Swarm Team Mode] Use the quant_strategy_desk preset to find and backtest the best momentum strategy on CSI 300 constituents",
-      },
-    ],
-  },
-  {
-    label: "Document & Web Research",
-    icon: <Globe className="h-4 w-4" />,
-    color: "text-blue-400 border-blue-500/30 hover:border-blue-500/60 hover:bg-blue-500/5",
-    examples: [
-      {
-        title: "Analyze an Earnings Report PDF",
-        desc: "Upload a PDF and ask questions about the financials",
-        prompt: "Summarize the key financial metrics, risks, and outlook from the uploaded earnings report",
-      },
-      {
-        title: "Web Research: Macro Outlook",
-        desc: "Read live web sources for macro analysis",
-        prompt: "Read the latest Fed meeting minutes and summarize the key takeaways for equity and crypto markets",
-      },
-    ],
-  },
-  {
-    label: "Trade Journal",
-    icon: <NotebookPen className="h-4 w-4" />,
-    color: "text-orange-400 border-orange-500/30 hover:border-orange-500/60 hover:bg-orange-500/5",
-    examples: [
-      {
-        title: "Analyze My Broker Export",
-        desc: "Parse 同花顺/东财/富途/generic CSV — holding days, win rate, PnL ratio, hourly distribution",
-        prompt: "Analyze the trade journal I just uploaded — full profile with holding stats, win rate, top symbols, and hourly distribution",
-      },
-      {
-        title: "Diagnose My Behavior Biases",
-        desc: "Disposition effect, overtrading, chasing momentum, anchoring — severity + numeric evidence",
-        prompt: "Run the 4 behavior diagnostics on my trade journal (disposition, overtrading, chasing, anchoring) and tell me which bias hurts my PnL most",
-      },
-    ],
-  },
-  {
-    label: "Shadow Account",
-    icon: <UserCircle2 className="h-4 w-4" />,
-    color: "text-emerald-400 border-emerald-500/30 hover:border-emerald-500/60 hover:bg-emerald-500/5",
-    examples: [
-      {
-        title: "Train My Shadow from Journal",
-        desc: "Extract your strategy rules from a broker CSV and persist a Shadow profile",
-        prompt: "Train my shadow account from the trading journal I just uploaded — show the extracted rules and confirm they look like my behavior",
-      },
-      {
-        title: "How Much Am I Leaving on the Table?",
-        desc: "Backtest your shadow strategy and attribute delta vs. your actual PnL",
-        prompt: "Run a shadow backtest for the last 90 days on the US market and break down where my PnL diverged from the shadow (rule violations, early exits, missed signals)",
-      },
-      {
-        title: "Generate Shadow Report",
-        desc: "8-section HTML/PDF — equity curve, per-market Sharpe, attribution waterfall",
-        prompt: "Render the shadow report and give me the URL — lead with the you-vs-shadow delta",
-      },
-    ],
-  },
-];
-
-const CAPABILITY_CHIPS = [
-  "70 Finance Skills",
-  "29 Swarm Presets",
-  "32 Agent Tools",
-  "3 Markets: A-Share · Crypto · HK/US",
-  "Minute to Daily Timeframes",
-  "4 Portfolio Optimizers",
-  "15+ Risk Metrics",
-  "Options & Derivatives",
-  "PDF & Web Research",
-  "Factor Analysis & ML",
-  "Trade Journal Analyzer",
-  "Shadow Account Backtest",
-  "Persistent Memory",
-  "Session Search",
-];
-
 interface Props {
   onExample: (s: string) => void;
 }
 
 export function WelcomeScreen({ onExample }: Props) {
   const { t } = useI18n();
+
+  const CATEGORIES: Category[] = [
+    {
+      label: t.welcomeCatBacktest,
+      icon: <TrendingUp className="h-4 w-4" />,
+      color: "text-red-400 border-red-500/30 hover:border-red-500/60 hover:bg-red-500/5",
+      examples: [
+        { title: t.welcomeExample1Title, desc: t.welcomeExample1Desc, prompt: t.welcomeExample1Prompt },
+        { title: t.welcomeExample2Title, desc: t.welcomeExample2Desc, prompt: t.welcomeExample2Prompt },
+        { title: t.welcomeExample3Title, desc: t.welcomeExample3Desc, prompt: t.welcomeExample3Prompt },
+      ],
+    },
+    {
+      label: t.welcomeCatResearch,
+      icon: <Sparkles className="h-4 w-4" />,
+      color: "text-amber-400 border-amber-500/30 hover:border-amber-500/60 hover:bg-amber-500/5",
+      examples: [
+        { title: t.welcomeExample4Title, desc: t.welcomeExample4Desc, prompt: t.welcomeExample4Prompt },
+        { title: t.welcomeExample5Title, desc: t.welcomeExample5Desc, prompt: t.welcomeExample5Prompt },
+      ],
+    },
+    {
+      label: t.welcomeCatSwarm,
+      icon: <Users className="h-4 w-4" />,
+      color: "text-violet-400 border-violet-500/30 hover:border-violet-500/60 hover:bg-violet-500/5",
+      examples: [
+        { title: t.welcomeExample6Title, desc: t.welcomeExample6Desc, prompt: t.welcomeExample6Prompt },
+        { title: t.welcomeExample7Title, desc: t.welcomeExample7Desc, prompt: t.welcomeExample7Prompt },
+      ],
+    },
+    {
+      label: t.welcomeCatDoc,
+      icon: <Globe className="h-4 w-4" />,
+      color: "text-blue-400 border-blue-500/30 hover:border-blue-500/60 hover:bg-blue-500/5",
+      examples: [
+        { title: t.welcomeExample8Title, desc: t.welcomeExample8Desc, prompt: t.welcomeExample8Prompt },
+        { title: t.welcomeExample9Title, desc: t.welcomeExample9Desc, prompt: t.welcomeExample9Prompt },
+      ],
+    },
+    {
+      label: t.welcomeCatJournal,
+      icon: <NotebookPen className="h-4 w-4" />,
+      color: "text-orange-400 border-orange-500/30 hover:border-orange-500/60 hover:bg-orange-500/5",
+      examples: [
+        { title: t.welcomeExample10Title, desc: t.welcomeExample10Desc, prompt: t.welcomeExample10Prompt },
+        { title: t.welcomeExample11Title, desc: t.welcomeExample11Desc, prompt: t.welcomeExample11Prompt },
+      ],
+    },
+    {
+      label: t.welcomeCatShadow,
+      icon: <UserCircle2 className="h-4 w-4" />,
+      color: "text-emerald-400 border-emerald-500/30 hover:border-emerald-500/60 hover:bg-emerald-500/5",
+      examples: [
+        { title: t.welcomeExample12Title, desc: t.welcomeExample12Desc, prompt: t.welcomeExample12Prompt },
+        { title: t.welcomeExample13Title, desc: t.welcomeExample13Desc, prompt: t.welcomeExample13Prompt },
+        { title: t.welcomeExample14Title, desc: t.welcomeExample14Desc, prompt: t.welcomeExample14Prompt },
+      ],
+    },
+  ];
+
+  const CAPABILITY_CHIPS = [
+    t.welcomeChip1, t.welcomeChip2, t.welcomeChip3, t.welcomeChip4,
+    t.welcomeChip5, t.welcomeChip6, t.welcomeChip7, t.welcomeChip8,
+    t.welcomeChip9, t.welcomeChip10, t.welcomeChip11, t.welcomeChip12,
+    t.welcomeChip13, t.welcomeChip14,
+  ];
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-8 text-center">
@@ -161,9 +95,9 @@ export function WelcomeScreen({ onExample }: Props) {
           <Bot className="h-8 w-8 text-white" />
         </div>
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Vibe-Trading</h2>
+          <h2 className="text-2xl font-bold tracking-tight">{t.appBrandName}</h2>
           <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto leading-relaxed">
-            vibe trading with your professional financial agent team
+            {t.welcomeTagline}
           </p>
           <p className="text-sm text-muted-foreground mt-2 max-w-md leading-relaxed mx-auto">
             {t.describeStrategy}
@@ -216,5 +150,3 @@ export function WelcomeScreen({ onExample }: Props) {
     </div>
   );
 }
-
-

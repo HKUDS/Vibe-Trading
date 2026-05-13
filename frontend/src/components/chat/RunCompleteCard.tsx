@@ -103,7 +103,7 @@ export const RunCompleteCard = memo(function RunCompleteCard({ msg }: Props) {
               className="text-sm text-teal-600 dark:text-teal-400 hover:underline inline-flex items-center gap-1.5 font-medium"
             >
               <FileText className="h-3.5 w-3.5" />
-              Shadow Report
+              {t.shadowReport || "Shadow Report"}
             </a>
           )}
         </div>

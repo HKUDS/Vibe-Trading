@@ -56,8 +56,7 @@ class SignalEngine:
         # Fallback: first rule, regardless of market match.
         return RULES[0] if RULES else None
 
-    @staticmethod
-    def _replay_rule(index: pd.Index, rule: dict) -> pd.Series:
+    def _replay_rule(self, index: pd.Index, rule: dict) -> pd.Series:
         hold = max(1, int(rule["hold_days"]))
         period = max(2, hold * 2)
         weight = float(rule["weight"])

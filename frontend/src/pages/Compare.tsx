@@ -50,23 +50,7 @@ function runLabel(r: RunListItem): string {
   return r.run_id;
 }
 
-const METRICS: MetricDef[] = [
-  { key: "total_return",           label: "Total Return",         type: "pct", higherIsBetter: true },
-  { key: "annualized_return",      label: "Annualized Return",    type: "pct", higherIsBetter: true },
-  { key: "sharpe",                 label: "Sharpe Ratio",         type: "num", higherIsBetter: true },
-  { key: "calmar_ratio",           label: "Calmar Ratio",         type: "num", higherIsBetter: true },
-  { key: "sortino_ratio",          label: "Sortino Ratio",        type: "num", higherIsBetter: true },
-  { key: "max_drawdown",           label: "Max Drawdown",         type: "pct", higherIsBetter: false },
-  { key: "volatility",             label: "Volatility",           type: "pct", higherIsBetter: false },
-  { key: "win_rate",               label: "Win Rate",             type: "pct", higherIsBetter: true },
-  { key: "profit_factor",          label: "Profit Factor",        type: "num", higherIsBetter: true },
-  { key: "avg_win",                label: "Avg Win",              type: "pct", higherIsBetter: true },
-  { key: "avg_loss",               label: "Avg Loss",             type: "pct", higherIsBetter: false },
-  { key: "trade_count",            label: "Trades",               type: "int", higherIsBetter: true },
-  { key: "max_consecutive_losses", label: "Max Consec. Losses",   type: "int", higherIsBetter: false },
-  { key: "exposure_time",          label: "Exposure Time",        type: "pct", higherIsBetter: true },
-  { key: "avg_holding_period",     label: "Avg Holding Period",   type: "days", higherIsBetter: false },
-];
+}
 
 // Also accept backend aliases
 const METRIC_ALIASES: Record<string, string> = {
@@ -198,6 +182,25 @@ function EquityChartOverlay({ leftCurve, rightCurve, leftLabel, rightLabel }: Eq
 
 export function Compare() {
   const { t } = useI18n();
+  const tStr = t as unknown as Record<string, string>;
+
+  const METRICS: MetricDef[] = [
+    { key: "total_return",           label: tStr.compTotalReturn || "Total Return",         type: "pct", higherIsBetter: true },
+    { key: "annualized_return",      label: tStr.compAnnualReturn || "Annualized Return",    type: "pct", higherIsBetter: true },
+    { key: "sharpe",                 label: tStr.compSharpe || "Sharpe Ratio",         type: "num", higherIsBetter: true },
+    { key: "calmar_ratio",           label: tStr.compCalmar || "Calmar Ratio",         type: "num", higherIsBetter: true },
+    { key: "sortino_ratio",          label: tStr.compSortino || "Sortino Ratio",        type: "num", higherIsBetter: true },
+    { key: "max_drawdown",           label: tStr.compMaxDD || "Max Drawdown",         type: "pct", higherIsBetter: false },
+    { key: "volatility",             label: tStr.compVolatility || "Volatility",           type: "pct", higherIsBetter: false },
+    { key: "win_rate",               label: tStr.compWinRate || "Win Rate",             type: "pct", higherIsBetter: true },
+    { key: "profit_factor",          label: tStr.compProfitFactor || "Profit Factor",        type: "num", higherIsBetter: true },
+    { key: "avg_win",                label: tStr.compAvgWin || "Avg Win",              type: "pct", higherIsBetter: true },
+    { key: "avg_loss",               label: tStr.compAvgLoss || "Avg Loss",             type: "pct", higherIsBetter: false },
+    { key: "trade_count",            label: tStr.compTrades || "Trades",               type: "int", higherIsBetter: true },
+    { key: "max_consecutive_losses", label: tStr.compMaxConsecLoss || "Max Consec. Losses",   type: "int", higherIsBetter: false },
+    { key: "exposure_time",          label: tStr.compExposureTime || "Exposure Time",        type: "pct", higherIsBetter: true },
+    { key: "avg_holding_period",     label: tStr.compAvgHoldingPeriod || "Avg Holding Period",   type: "days", higherIsBetter: false },
+  ];
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [leftId, setLeftId] = useState("");
   const [rightId, setRightId] = useState("");

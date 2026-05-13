@@ -1495,10 +1495,11 @@ _SHADOW_ID_RE = __import__("re").compile(r"^shadow_[0-9a-f]{8}$")
 
 
 @app.get("/shadow-reports/{shadow_id}", dependencies=[Depends(require_auth)])
-async def get_shadow_report(shadow_id: str, format: str = "html"):
+async def get_shadow_report(shadow_id: str, format: str = "html", lang: str = "zh"):
     """Serve a rendered Shadow Account report (HTML by default, PDF if available).
 
     Reports live under ``~/.vibe-trading/shadow_reports/<shadow_id>.{html,pdf}``.
+    ``lang`` parameter selects Chinese (zh, default) or English (en).
     """
     if not _SHADOW_ID_RE.match(shadow_id):
         raise HTTPException(status_code=400, detail="invalid shadow_id")
@@ -1506,7 +1507,14 @@ async def get_shadow_report(shadow_id: str, format: str = "html"):
         raise HTTPException(status_code=400, detail="format must be html or pdf")
 
     reports_dir = Path.home() / ".vibe-trading" / "shadow_reports"
-    path = reports_dir / f"{shadow_id}.{format}"
+    if format == "html" and lang == "en":
+        path_en = reports_dir / f"{shadow_id}.en.html"
+        if path_en.exists():
+            path = path_en
+        else:
+            path = reports_dir / f"{shadow_id}.html"
+    else:
+        path = reports_dir / f"{shadow_id}.{format}"
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Shadow report not found: {shadow_id}.{format}")
 

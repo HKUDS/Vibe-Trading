@@ -3,10 +3,16 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { getMetricLabel, DISPLAY_ORDER, formatMetricVal, metricSentiment } from "@/lib/formatters";
 
-const SENTIMENT = {
+const SENTIMENT_EN = {
   positive: "text-success",
   neutral: "text-foreground",
   negative: "text-danger",
+} as const;
+
+const SENTIMENT_ZH = {
+  positive: "text-danger",
+  neutral: "text-foreground",
+  negative: "text-success",
 } as const;
 
 interface Props {
@@ -15,7 +21,7 @@ interface Props {
 }
 
 export const MetricsCard = memo(function MetricsCard({ metrics, compact = false }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const entries = DISPLAY_ORDER
     .filter((k) => metrics[k] != null)
     .map((k) => ({ k, v: metrics[k] }));
@@ -23,6 +29,7 @@ export const MetricsCard = memo(function MetricsCard({ metrics, compact = false 
   if (entries.length === 0) return null;
 
   const shown = compact ? entries.slice(0, 6) : entries;
+  const SENTIMENT = locale === "zh" ? SENTIMENT_ZH : SENTIMENT_EN;
 
   return (
     <div className={cn(

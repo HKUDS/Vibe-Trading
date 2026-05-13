@@ -1,41 +1,41 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{% if lang == 'zh' %}zh{% else %}en{% endif %}">
 <head>
   <meta charset="utf-8" />
-  <title>Shadow Account Report - {{ profile.shadow_id }}</title>
+  <title>{% if lang == 'zh' %}影子策略报告{% else %}Shadow Account Report{% endif %} - {{ profile.shadow_id }}</title>
   <style>{{ css }}</style>
 </head>
 <body>
   <header class="cover">
-    <p class="eyebrow">Shadow Account Report</p>
-    <h1>You vs Your Shadow</h1>
+    <p class="eyebrow">{% if lang == 'zh' %}影子策略报告{% else %}Shadow Account Report{% endif %}</p>
+    <h1>{% if lang == 'zh' %}你的实盘 vs 你的影子策略{% else %}You vs Your Shadow{% endif %}</h1>
     <p class="subtitle">{{ profile.shadow_id }} | {{ profile.created_at }}</p>
     <div class="cover-delta">
       <div class="delta-label">Delta PnL</div>
       <div class="delta-value {{ 'positive' if delta_pnl > 0 else 'negative' }}">
         {{ '%+.2f' | format(delta_pnl) }}
       </div>
-      <div class="delta-caption">Shadow {{ '%.2f' | format(shadow_pnl) }} | Real {{ '%.2f' | format(real_pnl) }}</div>
+      <div class="delta-caption">{% if lang == 'zh' %}影子策略{% else %}Shadow{% endif %} {{ '%.2f' | format(shadow_pnl) }} | {% if lang == 'zh' %}真实{% else %}Real{% endif %} {{ '%.2f' | format(real_pnl) }}</div>
     </div>
-    <p class="disclaimer">Research use only - not investment advice. Data window: {{ profile.date_range[0] }} -> {{ profile.date_range[1] }}</p>
+    <p class="disclaimer">{% if lang == 'zh' %}仅供研究使用 — 不构成投资建议。数据区间：{% else %}Research use only - not investment advice. Data window: {% endif %}{{ profile.date_range[0] }} → {{ profile.date_range[1] }}</p>
   </header>
 
   <section class="panel">
-    <h2>1. Your Shadow Profile</h2>
+    <h2>1. {% if lang == 'zh' %}你的影子画像{% else %}Your Shadow Profile{% endif %}</h2>
     <p class="lede">{{ profile.profile_text }}</p>
     <dl class="facts">
-      <dt>Profitable roundtrips</dt><dd>{{ profile.profitable_roundtrips }} / {{ profile.total_roundtrips }}</dd>
-      <dt>Primary market</dt><dd>{{ market_labels[profile.source_market] | default(profile.source_market) }}</dd>
-      <dt>Holding median / p75</dt><dd>{{ '%.1f' | format(profile.typical_holding_days[0]) }}d / {{ '%.1f' | format(profile.typical_holding_days[1]) }}d</dd>
-      <dt>Preferred markets</dt><dd>{% for m in profile.preferred_markets %}{{ market_labels[m] | default(m) }}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+      <dt>{% if lang == 'zh' %}盈利交易{% else %}Profitable roundtrips{% endif %}</dt><dd>{{ profile.profitable_roundtrips }} / {{ profile.total_roundtrips }}</dd>
+      <dt>{% if lang == 'zh' %}主要市场{% else %}Primary market{% endif %}</dt><dd>{{ market_labels[profile.source_market] | default(profile.source_market) }}</dd>
+      <dt>{% if lang == 'zh' %}持仓中位数 / P75{% else %}Holding median / p75{% endif %}</dt><dd>{{ '%.1f' | format(profile.typical_holding_days[0]) }}d / {{ '%.1f' | format(profile.typical_holding_days[1]) }}d</dd>
+      <dt>{% if lang == 'zh' %}偏好市场{% else %}Preferred markets{% endif %}</dt><dd>{% for m in profile.preferred_markets %}{{ market_labels[m] | default(m) }}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
     </dl>
   </section>
 
   <section class="panel">
-    <h2>2. Shadow Rules</h2>
+    <h2>2. {% if lang == 'zh' %}影子规则{% else %}Shadow Rules{% endif %}</h2>
     <table class="rules">
       <thead>
-        <tr><th>ID</th><th>Rule</th><th>Support</th><th>Coverage</th><th>Holding</th></tr>
+        <tr><th>ID</th><th>{% if lang == 'zh' %}规则{% else %}Rule{% endif %}</th><th>{% if lang == 'zh' %}支持度{% else %}Support{% endif %}</th><th>{% if lang == 'zh' %}覆盖率{% else %}Coverage{% endif %}</th><th>{% if lang == 'zh' %}持仓{% else %}Holding{% endif %}</th></tr>
       </thead>
       <tbody>
       {% for rule in profile.rules %}
@@ -52,12 +52,12 @@
   </section>
 
   <section class="panel">
-    <h2>3. Shadow Backtest - Combined</h2>
+    <h2>3. {% if lang == 'zh' %}影子策略回测 — 综合{% else %}Shadow Backtest - Combined{% endif %}</h2>
     {% if charts.equity_curve %}
       <img class="chart" src="{{ charts.equity_curve }}" alt="equity curve"/>
     {% endif %}
     {% if combined_error %}
-      <p class="muted">Backtest warning: {{ combined_error }}</p>
+      <p class="muted">{% if lang == 'zh' %}回测警告{% else %}Backtest warning{% endif %}: {{ combined_error }}</p>
     {% endif %}
     {% if combined_metrics %}
       <table class="metrics">
@@ -66,18 +66,18 @@
         {% endfor %}
       </table>
     {% else %}
-      <p class="muted">Backtest produced no usable metrics (see warning above).</p>
+      <p class="muted">{% if lang == 'zh' %}回测未产生有效指标（见上方警告）。{% else %}Backtest produced no usable metrics (see warning above).{% endif %}</p>
     {% endif %}
   </section>
 
   <section class="panel">
-    <h2>4. Shadow Backtest - By Market</h2>
+    <h2>4. {% if lang == 'zh' %}影子策略回测 — 分市场{% else %}Shadow Backtest - By Market{% endif %}</h2>
     {% if charts.per_market_bar %}
       <img class="chart" src="{{ charts.per_market_bar }}" alt="per-market bar"/>
     {% endif %}
     <table class="metrics">
       <thead>
-        <tr><th>Market</th><th>Sharpe</th><th>Annual</th><th>Max Drawdown</th></tr>
+        <tr><th>{% if lang == 'zh' %}市场{% else %}Market{% endif %}</th><th>Sharpe</th><th>{% if lang == 'zh' %}年化{% else %}Annual{% endif %}</th><th>{% if lang == 'zh' %}最大回撤{% else %}Max Drawdown{% endif %}</th></tr>
       </thead>
       <tbody>
       {% for market, metrics in per_market_metrics.items() %}
@@ -93,26 +93,26 @@
   </section>
 
   <section class="panel gut-punch">
-    <h2>5. You vs Shadow - Delta Attribution</h2>
-    <p class="lede">Shadow PnL <strong class="{{ 'pos' if shadow_pnl > 0 else 'neg' if shadow_pnl < 0 else '' }}">{{ '%+.2f' | format(shadow_pnl) }}</strong>, your real PnL <strong class="{{ 'pos' if real_pnl > 0 else 'neg' if real_pnl < 0 else '' }}">{{ '%+.2f' | format(real_pnl) }}</strong>, delta <strong class="{{ 'pos' if delta_pnl > 0 else 'neg' if delta_pnl < 0 else '' }}">{{ '%+.2f' | format(delta_pnl) }}</strong>.</p>
+    <h2>5. {% if lang == 'zh' %}你 vs 影子策略 — 盈亏归因{% else %}You vs Shadow - Delta Attribution{% endif %}</h2>
+    <p class="lede">{% if lang == 'zh' %}影子策略盈亏{% else %}Shadow PnL{% endif %} <strong class="{{ 'pos' if shadow_pnl > 0 else 'neg' if shadow_pnl < 0 else '' }}">{{ '%+.2f' | format(shadow_pnl) }}</strong>, {% if lang == 'zh' %}你的实际盈亏{% else %}your real PnL{% endif %} <strong class="{{ 'pos' if real_pnl > 0 else 'neg' if real_pnl < 0 else '' }}">{{ '%+.2f' | format(real_pnl) }}</strong>, {% if lang == 'zh' %}差值{% else %}delta{% endif %} <strong class="{{ 'pos' if delta_pnl > 0 else 'neg' if delta_pnl < 0 else '' }}">{{ '%+.2f' | format(delta_pnl) }}</strong>.</p>
     {% if charts.attribution_waterfall %}
       <img class="chart" src="{{ charts.attribution_waterfall }}" alt="attribution waterfall"/>
     {% endif %}
     <table class="metrics">
-      <tr><th>Noise trades</th><td class="mono {{ 'pos' if attribution.noise_trades_pnl > 0 else 'neg' if attribution.noise_trades_pnl < 0 else '' }}">{{ '%+.2f' | format(attribution.noise_trades_pnl) }}</td></tr>
-      <tr><th>Early exit (winners)</th><td class="mono {{ 'pos' if attribution.early_exit_pnl > 0 else 'neg' if attribution.early_exit_pnl < 0 else '' }}">{{ '%+.2f' | format(attribution.early_exit_pnl) }}</td></tr>
-      <tr><th>Late exit (losers)</th><td class="mono {{ 'pos' if attribution.late_exit_pnl > 0 else 'neg' if attribution.late_exit_pnl < 0 else '' }}">{{ '%+.2f' | format(attribution.late_exit_pnl) }}</td></tr>
-      <tr><th>Overtrading</th><td class="mono {{ 'pos' if attribution.overtrading_pnl > 0 else 'neg' if attribution.overtrading_pnl < 0 else '' }}">{{ '%+.2f' | format(attribution.overtrading_pnl) }}</td></tr>
-      <tr><th>Missed signals (residual)</th><td class="mono {{ 'pos' if attribution.missed_signals_pnl > 0 else 'neg' if attribution.missed_signals_pnl < 0 else '' }}">{{ '%+.2f' | format(attribution.missed_signals_pnl) }}</td></tr>
+      <tr><th>{% if lang == 'zh' %}噪音交易{% else %}Noise trades{% endif %}</th><td class="mono {{ 'pos' if attribution.noise_trades_pnl > 0 else 'neg' if attribution.noise_trades_pnl < 0 else '' }}">{{ '%+.2f' | format(attribution.noise_trades_pnl) }}</td></tr>
+      <tr><th>{% if lang == 'zh' %}过早止盈（盈利单）{% else %}Early exit (winners){% endif %}</th><td class="mono {{ 'pos' if attribution.early_exit_pnl > 0 else 'neg' if attribution.early_exit_pnl < 0 else '' }}">{{ '%+.2f' | format(attribution.early_exit_pnl) }}</td></tr>
+      <tr><th>{% if lang == 'zh' %}过晚止损（亏损单）{% else %}Late exit (losers){% endif %}</th><td class="mono {{ 'pos' if attribution.late_exit_pnl > 0 else 'neg' if attribution.late_exit_pnl < 0 else '' }}">{{ '%+.2f' | format(attribution.late_exit_pnl) }}</td></tr>
+      <tr><th>{% if lang == 'zh' %}过度交易{% else %}Overtrading{% endif %}</th><td class="mono {{ 'pos' if attribution.overtrading_pnl > 0 else 'neg' if attribution.overtrading_pnl < 0 else '' }}">{{ '%+.2f' | format(attribution.overtrading_pnl) }}</td></tr>
+      <tr><th>{% if lang == 'zh' %}漏掉信号（残差）{% else %}Missed signals (residual){% endif %}</th><td class="mono {{ 'pos' if attribution.missed_signals_pnl > 0 else 'neg' if attribution.missed_signals_pnl < 0 else '' }}">{{ '%+.2f' | format(attribution.missed_signals_pnl) }}</td></tr>
     </table>
   </section>
 
   <section class="panel">
-    <h2>6. Counterfactual Top 5</h2>
+    <h2>6. {% if lang == 'zh' %}反事实分析 Top 5{% else %}Counterfactual Top 5{% endif %}</h2>
     {% if attribution.counterfactual_trades %}
       <table class="rules">
         <thead>
-          <tr><th>#</th><th>Symbol</th><th>Buy</th><th>Sell</th><th>Hold</th><th>Real PnL</th><th>Impact</th><th>Reason</th></tr>
+          <tr><th>#</th><th>{% if lang == 'zh' %}标的{% else %}Symbol{% endif %}</th><th>{% if lang == 'zh' %}买入{% else %}Buy{% endif %}</th><th>{% if lang == 'zh' %}卖出{% else %}Sell{% endif %}</th><th>{% if lang == 'zh' %}持仓{% else %}Hold{% endif %}</th><th>{% if lang == 'zh' %}实际盈亏{% else %}Real PnL{% endif %}</th><th>{% if lang == 'zh' %}影响{% else %}Impact{% endif %}</th><th>{% if lang == 'zh' %}原因{% else %}Reason{% endif %}</th></tr>
         </thead>
         <tbody>
         {% for t in attribution.counterfactual_trades %}
@@ -130,16 +130,16 @@
         </tbody>
       </table>
     {% else %}
-      <p class="muted">No material counterfactual trades - every roundtrip falls inside the shadow rules.</p>
+      <p class="muted">{% if lang == 'zh' %}无显著反事实交易 — 每笔交易均在影子规则范围内。{% else %}No material counterfactual trades - every roundtrip falls inside the shadow rules.{% endif %}</p>
     {% endif %}
   </section>
 
   <section class="panel">
-    <h2>7. Today's Signal Scan</h2>
+    <h2>7. {% if lang == 'zh' %}今日信号扫描{% else %}Today's Signal Scan{% endif %}</h2>
     {% if today_signals %}
       <table class="rules">
         <thead>
-          <tr><th>Symbol</th><th>Market</th><th>Rule</th><th>Reason</th></tr>
+          <tr><th>{% if lang == 'zh' %}标的{% else %}Symbol{% endif %}</th><th>{% if lang == 'zh' %}市场{% else %}Market{% endif %}</th><th>{% if lang == 'zh' %}规则{% else %}Rule{% endif %}</th><th>{% if lang == 'zh' %}理由{% else %}Reason{% endif %}</th></tr>
         </thead>
         <tbody>
         {% for s in today_signals %}
@@ -153,18 +153,18 @@
         </tbody>
       </table>
     {% else %}
-      <p class="muted">No shadow-matching symbols today (or scan skipped).</p>
+      <p class="muted">{% if lang == 'zh' %}今日无影子策略匹配标的（或未执行扫描）。{% else %}No shadow-matching symbols today (or scan skipped).{% endif %}</p>
     {% endif %}
-    <p class="disclaimer">For research reference only - not a buy/sell recommendation.</p>
+    <p class="disclaimer">{% if lang == 'zh' %}仅供研究参考 — 不构成买卖建议。{% else %}For research reference only - not a buy/sell recommendation.{% endif %}</p>
   </section>
 
   <section class="panel">
-    <h2>8. Confidence &amp; Caveats</h2>
+    <h2>8. {% if lang == 'zh' %}置信度与注意事项{% else %}Confidence &amp; Caveats{% endif %}</h2>
     <ul class="caveats">
-      <li>Sample size: {{ profile.profitable_roundtrips }} profitable roundtrips support {{ profile.rules | length }} rule(s).</li>
-      <li>Backtest assumptions: slippage/fees use engine defaults; cross-market annualization uses calendar days.</li>
-      <li>Style decay: rules reflect the user's historical window and may not hold in future regimes.</li>
-      <li>Red line: this report is research-only and never routes to any live trading system.</li>
+      <li>{% if lang == 'zh' %}样本量：{{ profile.profitable_roundtrips }} 笔盈利交易支撑 {{ profile.rules | length }} 条规则。{% else %}Sample size: {{ profile.profitable_roundtrips }} profitable roundtrips support {{ profile.rules | length }} rule(s).{% endif %}</li>
+      <li>{% if lang == 'zh' %}回测假设：滑点/手续费使用引擎默认值；跨市场年化收益率按自然日计算。{% else %}Backtest assumptions: slippage/fees use engine defaults; cross-market annualization uses calendar days.{% endif %}</li>
+      <li>{% if lang == 'zh' %}风格衰减：规则反映用户历史窗口，未必适用于未来市场环境。{% else %}Style decay: rules reflect the user's historical window and may not hold in future regimes.{% endif %}</li>
+      <li>{% if lang == 'zh' %}红线：本报告仅供研究参考，不会连接到任何实盘交易系统。{% else %}Red line: this report is research-only and never routes to any live trading system.{% endif %}</li>
     </ul>
   </section>
 </body>

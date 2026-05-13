@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { CheckCircle2, XCircle, Loader2, Clock, Timer } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useI18n } from "@/lib/i18n";
 
 export interface SwarmAgent {
   id: string;
@@ -59,12 +60,20 @@ function StatusIcon({ status }: { status: SwarmAgent["status"] }) {
 }
 
 function StatusLabel({ status }: { status: SwarmAgent["status"] }) {
+  const { t } = useI18n();
+  const labels: Record<string, string> = {
+    running: t.swarmRunning,
+    done: t.swarmDone,
+    failed: t.swarmFailed,
+    retry: t.swarmRetry,
+    waiting: t.swarmWaiting,
+  };
   switch (status) {
-    case "running": return <span className="text-primary font-medium">running</span>;
-    case "done": return <span className="text-emerald-500 font-medium">done</span>;
-    case "failed": return <span className="text-red-500 font-medium">failed</span>;
-    case "retry": return <span className="text-amber-500 font-medium">retry</span>;
-    default: return <span className="text-muted-foreground/50">waiting</span>;
+    case "running": return <span className="text-primary font-medium">{labels.running}</span>;
+    case "done": return <span className="text-emerald-500 font-medium">{labels.done}</span>;
+    case "failed": return <span className="text-red-500 font-medium">{labels.failed}</span>;
+    case "retry": return <span className="text-amber-500 font-medium">{labels.retry}</span>;
+    default: return <span className="text-muted-foreground/50">{labels.waiting}</span>;
   }
 }
 
@@ -104,11 +113,11 @@ export function SwarmDashboard(props: SwarmDashboardProps) {
                   ? "bg-emerald-500/20 text-emerald-500"
                   : "bg-red-500/20 text-red-500"
               }`}>
-                {finalStatus.toUpperCase()}
+                {finalStatus === "completed" ? t.swarmCompleted : t.swarmFailedStatus}
               </span>
             ) : (
               <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">
-                RUNNING
+                {t.swarmRunningStatus}
               </span>
             )}
           </div>
@@ -200,7 +209,7 @@ export function SwarmDashboard(props: SwarmDashboardProps) {
       {/* Final report */}
       {finalReport && (
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-5 py-4">
-          <div className="text-xs font-semibold text-emerald-500 mb-3">Final Report</div>
+          <div className="text-xs font-semibold text-emerald-500 mb-3">{t.swarmFinalReport}</div>
           <div className="prose prose-sm dark:prose-invert max-w-none">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{finalReport}</ReactMarkdown>
           </div>

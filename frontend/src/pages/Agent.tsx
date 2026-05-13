@@ -248,7 +248,7 @@ export function Agent() {
       "attempt.failed": (d) => {
         touch();
         act().clearStreaming();
-        act().addMessage({ id: "", type: "error", content: String(d.error || "Execution failed"), timestamp: Date.now() });
+        act().addMessage({ id: "", type: "error", content: String(d.error || t.executionFailed), timestamp: Date.now() });
         act().setStatus("idle");
         scrollToBottom();
       },
@@ -290,7 +290,7 @@ export function Agent() {
     const timer = setInterval(() => {
       if (lastEventRef.current && Date.now() - lastEventRef.current > 90_000 && act().status === "streaming") {
         act().setStatus("idle");
-        toast.warning("Execution timed out, automatically stopped");
+        toast.warning(t.executionTimeout);
       }
     }, 10_000);
     return () => clearInterval(timer);
@@ -485,11 +485,11 @@ export function Agent() {
         } catch {}
       }
       evtSource.close();
-      act().addMessage({ id: "", type: "error", content: "Swarm timed out", timestamp: Date.now() });
+      act().addMessage({ id: "", type: "error", content: t.agentSwarmTimedOut, timestamp: Date.now() });
       act().setStatus("idle");
     } catch (err) {
       act().setStatus("error");
-      act().addMessage({ id: "", type: "error", content: `Swarm failed: ${err instanceof Error ? err.message : "Unknown"}`, timestamp: Date.now() });
+      act().addMessage({ id: "", type: "error", content: t.agentSwarmFailed.replace("{error}", err instanceof Error ? err.message : "Unknown"), timestamp: Date.now() });
     }
   };
 
@@ -544,9 +544,9 @@ export function Agent() {
       act().setStatus("idle");
       act().clearStreaming();
       useAgentStore.setState({ toolCalls: [] });
-      toast.info("Cancel request sent");
+      toast.info(t.cancelSent);
     } catch {
-      toast.error("Cancel failed");
+      toast.error(t.cancelFailed);
     }
   };
 
@@ -604,11 +604,11 @@ export function Agent() {
     ];
     const lowered = file.name.toLowerCase();
     if (blockedExts.some((ext) => lowered.endsWith(ext))) {
-      toast.error("Executables and archives are not allowed");
+      toast.error(t.agentExecutablesBlocked);
       return;
     }
     if (file.size > 50 * 1024 * 1024) {
-      toast.error("File size exceeds 50 MB limit");
+      toast.error(t.agentFileTooLarge);
       return;
     }
     setUploading(true);
@@ -616,9 +616,9 @@ export function Agent() {
     try {
       const result = await api.uploadFile(file);
       setAttachment({ filename: result.filename, filePath: result.file_path });
-      toast.success(`Uploaded: ${result.filename}`);
+      toast.success(t.agentUploaded.replace("{filename}", result.filename));
     } catch (err) {
-      toast.error(`Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+      toast.error(t.agentUploadFailed.replace("{error}", err instanceof Error ? err.message : "Unknown error"));
     } finally {
       setUploading(false);
     }
@@ -757,7 +757,7 @@ export function Agent() {
           {uploading && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" />
-              Uploading...
+              {t.agentUploading}
             </div>
           )}
           <div className="flex gap-2 items-end">
@@ -768,7 +768,7 @@ export function Agent() {
                 onClick={() => setShowUploadMenu(prev => !prev)}
                 disabled={status === "streaming" || uploading}
                 className="w-9 h-9 rounded-full border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 shrink-0"
-                title="More options"
+                title={t.agentMoreOptions}
               >
                 <Plus className="h-4 w-4" />
               </button>
@@ -780,20 +780,20 @@ export function Agent() {
                     className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
                   >
                     <Paperclip className="h-4 w-4" />
-                    Upload PDF document
+                    {t.agentUploadPdf}
                   </button>
                   <div className="border-t my-1" />
                   <button
                     type="button"
                     onClick={() => {
                       setShowUploadMenu(false);
-                      setSwarmPreset({ name: "auto", title: "Agent Swarm" });
+                      setSwarmPreset({ name: "auto", title: t.agentSwarm });
                       inputRef.current?.focus();
                     }}
                     className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
                   >
                     <Users className="h-4 w-4" />
-                    Agent Swarm
+                    {t.agentSwarm}
                   </button>
                 </div>
               )}
@@ -830,7 +830,7 @@ export function Agent() {
                 type="button"
                 onClick={handleExport}
                 className="px-3 py-2.5 rounded-xl border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                title="Export chat"
+                title={t.exportChat}
               >
                 <Download className="h-4 w-4" />
               </button>
@@ -840,7 +840,7 @@ export function Agent() {
                 type="button"
                 onClick={handleCancel}
                 className="px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-                title="Stop generation"
+                title={t.stopGeneration}
               >
                 <Square className="h-4 w-4" />
               </button>

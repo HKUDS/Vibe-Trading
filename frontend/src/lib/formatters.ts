@@ -26,7 +26,10 @@ export function getMetricLabel(k: string, t: Record<string, string>): string {
 const PCT_KEYS = ["total_return", "annual_return", "win_rate", "max_drawdown", "benchmark_return", "excess_return"];
 const RATIO_KEYS = ["sharpe", "calmar", "sortino", "profit_loss_ratio", "information_ratio"];
 const INT_KEYS = ["trade_count", "max_consecutive_loss"];
-const NEUTRAL_KEYS = new Set(["trade_count", "avg_holding_days", "final_value"]);
+const NEUTRAL_KEYS = new Set([
+  "trade_count", "avg_holding_days", "final_value",
+  "win_rate", "max_consecutive_loss", "benchmark_return",
+]);
 
 export function formatMetricVal(k: string, v: number): string {
   if (PCT_KEYS.includes(k)) {
@@ -45,12 +48,9 @@ export function formatMetricVal(k: string, v: number): string {
 
 export function metricSentiment(k: string, v: number): "positive" | "neutral" | "negative" {
   if (NEUTRAL_KEYS.has(k)) return "neutral";
-  if (k === "max_drawdown") return v > -0.05 ? "positive" : v > -0.2 ? "neutral" : "negative";
-  if (k === "max_consecutive_loss") return v <= 3 ? "positive" : v <= 6 ? "neutral" : "negative";
-  if (k === "win_rate") return v >= 0.5 ? "positive" : v >= 0.35 ? "neutral" : "negative";
-  if (k === "sharpe" || k === "calmar" || k === "sortino") return v >= 1.0 ? "positive" : v >= 0.3 ? "neutral" : "negative";
-  if (k === "information_ratio") return v >= 0.5 ? "positive" : v >= 0 ? "neutral" : "negative";
-  return v > 0 ? "positive" : v === 0 ? "neutral" : "negative";
+  if (v > 0) return "positive";
+  if (v < 0) return "negative";
+  return "neutral";
 }
 
 export const DISPLAY_ORDER = [

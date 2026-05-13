@@ -5,6 +5,8 @@ import { abbreviateNum } from "@/lib/formatters";
 import { echarts, CHART_GROUP, connectCharts } from "@/lib/echarts";
 import { useDarkMode } from "@/hooks/useDarkMode";
 
+import { useI18n } from "@/lib/i18n";
+
 interface Props {
   data: EquityPoint[];
   height?: number;
@@ -13,6 +15,7 @@ interface Props {
 export function EquityChart({ data, height = 300 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const { dark } = useDarkMode();
+  const { t } = useI18n();
 
   useEffect(() => {
     if (!ref.current || data.length === 0) return;
@@ -106,7 +109,7 @@ export function EquityChart({ data, height = 300 }: Props) {
   }, [data, dark]);
 
   if (data.length === 0) {
-    return <div className="text-muted-foreground text-sm p-4">No equity data</div>;
+    return <div className="text-muted-foreground text-sm p-4">{t.noEquityData}</div>;
   }
   return <div ref={ref} style={{ height }} />;
 }

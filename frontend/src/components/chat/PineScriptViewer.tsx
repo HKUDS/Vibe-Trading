@@ -1,5 +1,6 @@
 import { memo, useState, useCallback } from "react";
 import { X, Copy, Check, ExternalLink } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 interface Props {
   code: string;
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }: Props) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -45,7 +47,7 @@ export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
             >
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-              {copied ? "Copied" : "Copy"}
+              {copied ? t.pineCopied : t.pineCopy}
             </button>
             <a
               href="https://www.tradingview.com/pine-script-docs/welcome/"
@@ -54,7 +56,7 @@ export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }
               className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               <ExternalLink className="h-3 w-3" />
-              Docs
+              {t.pineDocs}
             </a>
             <button
               onClick={onClose}
@@ -75,7 +77,7 @@ export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }
         {/* Footer */}
         <div className="px-4 py-2.5 border-t bg-muted/30">
           <p className="text-xs text-muted-foreground">
-            TradingView Pine Editor &rarr; New blank indicator &rarr; Paste code &rarr; Add to Chart
+            {t.pineFooter}
           </p>
         </div>
       </div>
