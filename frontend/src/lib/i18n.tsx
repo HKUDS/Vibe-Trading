@@ -328,9 +328,16 @@ const enMessages = {
 } as const;
 
 /* ---------- Chinese messages ---------- */
-const zhMessages: typeof enMessages = {
+const zhMessages: { [K in keyof typeof enMessages]: string } = {
   home: "首页", agent: "Agent", runs: "运行", settings: "设置",
   settingsDesc: "配置 LLM 模型和数据接口，保存到项目本地的 agent/.env 文件。",
+  localApiAccess: "本地 API 访问",
+  localApiAccessDesc: "远程或私有 Web UI 部署时，在此浏览器中输入服务器 API 密钥。本地使用可留空。",
+  localApiKey: "服务器 API 密钥",
+  localApiKeyHint: "仅存储在此浏览器中。留空以清除。",
+  localApiKeySaved: "本地 API 密钥已保存",
+  localApiKeySave: "保存本地密钥",
+  settingsUnavailable: "设置不可用",
   llmSettings: "LLM 设置",
   llmSettingsDesc: "选择 Agent 使用的模型，保存到项目本地的 agent/.env 文件中。",
   llmConnection: "连接",
@@ -645,11 +652,11 @@ const zhMessages: typeof enMessages = {
   /* ---- CandlestickChart ---- */
   candlestickIndicators: "指标",
   candlestickBareK: "仅 K 线（清除全部）",
-  appBrandName: "语  研",
+  appBrandName: "语研",
 } as const;
 
 /* ---------- Types & Context ---------- */
-type Messages = typeof enMessages;
+type Messages = Record<keyof typeof enMessages, string>;
 type Locale = "zh" | "en";
 
 const messagesMap: Record<Locale, Messages> = { zh: zhMessages, en: enMessages };

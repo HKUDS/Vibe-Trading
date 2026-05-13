@@ -78,6 +78,7 @@ function StatusLabel({ status }: { status: SwarmAgent["status"] }) {
 }
 
 export function SwarmDashboard(props: SwarmDashboardProps) {
+  const { t } = useI18n();
   const { preset, agents, agentOrder, finished, finalStatus, startTime, completedSummaries, finalReport } = props;
   const [now, setNow] = useState(Date.now());
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);

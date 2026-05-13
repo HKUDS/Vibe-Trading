@@ -50,7 +50,7 @@ function runLabel(r: RunListItem): string {
   return r.run_id;
 }
 
-}
+let METRICS: MetricDef[] = []; // defined inside Compare()
 
 // Also accept backend aliases
 const METRIC_ALIASES: Record<string, string> = {
