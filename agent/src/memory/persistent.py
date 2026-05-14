@@ -10,6 +10,7 @@ Storage layout:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from dataclasses import dataclass
@@ -81,6 +82,33 @@ def _tokenize(text: str) -> set[str]:
         Set of tokens.
     """
     return set(_TOKEN_RE.findall(text.lower()))
+
+
+# Strip C0 (U+0000-U+001F except \t \n) and C1 (U+0080-U+009F) bytes from
+# user-supplied body content. These never carry useful payload from agent
+# writes but can be replayed back through `memory show` to inject ANSI
+# escape sequences into the user's terminal (see issue #108).
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+# Truncation marker appended when content exceeds MAX_ENTRY_CHARS. Read
+# semantics are unchanged (clipped at MAX_ENTRY_CHARS), but the marker
+# makes the silent clip surfaceable to anyone inspecting the file directly
+# (see issue #109).
+_TRUNCATION_MARKER = "\n\n[truncated at {limit} chars]\n"
+
+
+def _sanitize_body(content: str) -> str:
+    """Strip C0/C1 control bytes from `content` while keeping ``\n`` and ``\t``."""
+    return _CONTROL_CHAR_RE.sub("", content)
+
+
+def _truncate_body(content: str, limit: int = None) -> str:
+    """Clip `content` to `limit` chars, appending a visible marker if clipped."""
+    if limit is None:
+        limit = MAX_ENTRY_CHARS
+    if len(content) <= limit:
+        return content
+    return content[:limit] + _TRUNCATION_MARKER.format(limit=limit)
 
 
 def _coerce_str(value: object, default: str = "") -> str:
@@ -230,32 +258,58 @@ class PersistentMemory:
         """Save a new memory entry and update the index.
 
         Args:
-            name: Memory name (used as filename slug).
-            content: Memory body text.
+            name: Memory name (used as filename slug). Empty or whitespace-
+                only names are rejected.
+            content: Memory body text. C0/C1 control bytes (other than
+                ``\n`` and ``\t``) are stripped; the body is truncated to
+                ``MAX_ENTRY_CHARS`` with a visible marker.
             memory_type: One of user/feedback/project/reference.
             description: One-line description for retrieval scoring.
 
         Returns:
             Path to the created memory file.
+
+        Raises:
+            ValueError: If `name` is empty or whitespace-only.
         """
+        # Reject empty / whitespace-only names so they cannot all collapse
+        # to the same `{type}_.md` filename and silently overwrite each
+        # other (issue #110).
+        stripped_name = name.strip()
+        if not stripped_name:
+            raise ValueError("memory name must not be empty or whitespace-only")
+
         # Preserve non-Latin script characters in the slug — collapsing
         # them all to ``_`` caused two same-length non-Latin names to share a
-        # filename and silently overwrite each other (see PR #95 for CJK;
-        # this generalizes to Thai/Arabic/Hebrew/Cyrillic).
-        slug = _SLUG_DISALLOWED_RE.sub("_", name.lower().strip())[:60]
+        # filename and silently overwrite each other (PR #95 + #104).
+        slug = _SLUG_DISALLOWED_RE.sub("_", stripped_name.lower())[:60]
+
+        # If the slug normalized to all underscores (emoji-only, punctuation-
+        # only, etc.) the on-disk filename would still collide between any
+        # two such names. Append a short deterministic hash so distinct
+        # inputs produce distinct files (issue #110).
+        if slug.strip("_") == "":
+            digest = hashlib.sha256(stripped_name.encode("utf-8")).hexdigest()[:6]
+            slug = f"{slug}_{digest}" if slug else digest
+
         filename = f"{memory_type}_{slug}.md"
         path = self._dir / filename
 
-        safe_name = name.replace("\n", " ").replace("\r", " ")
-        safe_desc = (description or name).replace("\n", " ").replace("\r", " ")
+        safe_name = stripped_name.replace("\n", " ").replace("\r", " ")
+        safe_desc = (description or stripped_name).replace("\n", " ").replace("\r", " ")
+
+        # Strip control bytes (#108) before truncation (#109) so the marker
+        # is computed against the user-visible content length.
+        clean_content = _truncate_body(_sanitize_body(content))
+
         frontmatter = (
             f"---\nname: {safe_name}\n"
             f"description: {safe_desc}\n"
             f"type: {memory_type}\n---\n\n"
-            f"{content}"
+            f"{clean_content}"
         )
         path.write_text(frontmatter, encoding="utf-8")
-        self._update_index(name, filename, description or name)
+        self._update_index(stripped_name, filename, description or stripped_name)
         return path
 
     def remove(self, name: str) -> bool:

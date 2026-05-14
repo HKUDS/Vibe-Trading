@@ -6,7 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from src.memory.persistent import PersistentMemory, MemoryEntry, _coerce_str, _tokenize
+from src.memory.persistent import (
+    MAX_ENTRY_CHARS,
+    MemoryEntry,
+    PersistentMemory,
+    _coerce_str,
+    _sanitize_body,
+    _tokenize,
+    _truncate_body,
+)
 
 
 class TestCoerceStr:
@@ -312,3 +320,116 @@ class TestSnapshot:
     def test_empty_dir_snapshot(self, tmp_path: Path) -> None:
         pm = PersistentMemory(memory_dir=tmp_path)
         assert pm.snapshot == ""
+
+
+class TestSanitizeBody:
+    """Regression for #108 — strip C0/C1 control bytes from agent-supplied content."""
+
+    def test_strips_ansi_escape(self) -> None:
+        assert _sanitize_body("hello\x1b[31mred\x1b[0m world") == "hello[31mred[0m world"
+
+    def test_strips_null_and_bell(self) -> None:
+        assert _sanitize_body("a\x00b\x07c") == "abc"
+
+    def test_preserves_tab_and_newline(self) -> None:
+        assert _sanitize_body("line1\nline2\tindented") == "line1\nline2\tindented"
+
+    def test_strips_c1_range(self) -> None:
+        # U+0080 to U+009F are C1 controls (PAD, NEL, etc.)
+        assert _sanitize_body("a\x80b\x9fc") == "abc"
+
+    def test_empty_passthrough(self) -> None:
+        assert _sanitize_body("") == ""
+
+
+class TestTruncateBody:
+    """Regression for #109 — enforce MAX_ENTRY_CHARS at write with visible marker."""
+
+    def test_short_passthrough(self) -> None:
+        assert _truncate_body("short") == "short"
+
+    def test_at_limit_passthrough(self) -> None:
+        text = "x" * MAX_ENTRY_CHARS
+        assert _truncate_body(text) == text
+
+    def test_over_limit_truncated_with_marker(self) -> None:
+        text = "x" * (MAX_ENTRY_CHARS + 100)
+        out = _truncate_body(text)
+        assert out.startswith("x" * MAX_ENTRY_CHARS)
+        assert "[truncated at" in out
+        assert str(MAX_ENTRY_CHARS) in out
+
+    def test_custom_limit(self) -> None:
+        out = _truncate_body("abcdef", limit=3)
+        assert out.startswith("abc")
+        assert "[truncated at 3 chars]" in out
+
+
+class TestAddRejectsEmptyName:
+    """Regression for #110 — reject empty / whitespace-only names."""
+
+    def test_empty_raises(self, tmp_path: Path) -> None:
+        pm = PersistentMemory(memory_dir=tmp_path)
+        with pytest.raises(ValueError, match="empty or whitespace"):
+            pm.add("", "body", "user")
+
+    def test_whitespace_only_raises(self, tmp_path: Path) -> None:
+        pm = PersistentMemory(memory_dir=tmp_path)
+        with pytest.raises(ValueError, match="empty or whitespace"):
+            pm.add("   ", "body", "user")
+
+    def test_tab_only_raises(self, tmp_path: Path) -> None:
+        pm = PersistentMemory(memory_dir=tmp_path)
+        with pytest.raises(ValueError):
+            pm.add("\t\n  ", "body", "user")
+
+
+class TestAddHashSuffixForCollapsedSlug:
+    """Regression for #110 — distinct emoji-only / punctuation-only names must
+    produce distinct files via deterministic hash suffix."""
+
+    def test_two_distinct_emoji_names_no_collision(self, tmp_path: Path) -> None:
+        pm = PersistentMemory(memory_dir=tmp_path)
+        p1 = pm.add("🚀", "rocket body", "reference")  # 🚀
+        p2 = pm.add("🎯", "target body", "reference")  # 🎯
+        assert p1 != p2
+        assert "rocket body" in p1.read_text(encoding="utf-8")
+        assert "target body" in p2.read_text(encoding="utf-8")
+
+    def test_hash_is_deterministic(self, tmp_path: Path) -> None:
+        pm = PersistentMemory(memory_dir=tmp_path)
+        p1 = pm.add("🚀", "v1", "reference")
+        p2 = pm.add("🚀", "v2", "reference")
+        # Same name → same slug → overwrite (this is expected and desired
+        # for the "edit memory" workflow).
+        assert p1 == p2
+        assert "v2" in p1.read_text(encoding="utf-8")
+
+    def test_punctuation_only_name_gets_hash(self, tmp_path: Path) -> None:
+        pm = PersistentMemory(memory_dir=tmp_path)
+        path = pm.add("???", "body", "user")
+        # Slug ??? -> _ after sanitization; hash appended.
+        # File name must not be just "user_.md".
+        assert path.name != "user_.md"
+        assert path.exists()
+
+
+class TestAddSanitizesAndTruncates:
+    """Regression for #108 + #109 wired into `PersistentMemory.add()`."""
+
+    def test_add_strips_control_bytes_in_body(self, tmp_path: Path) -> None:
+        pm = PersistentMemory(memory_dir=tmp_path)
+        path = pm.add("ctrl-test", "before\x1b[31mred\x1b[0mafter", "user")
+        body_on_disk = path.read_text(encoding="utf-8")
+        # ESC byte must be gone; surrounding text preserved.
+        assert "\x1b" not in body_on_disk
+        assert "before" in body_on_disk and "after" in body_on_disk
+        assert "[31m" in body_on_disk  # the textual remainder is fine
+
+    def test_add_truncates_long_body_with_marker(self, tmp_path: Path) -> None:
+        pm = PersistentMemory(memory_dir=tmp_path)
+        path = pm.add("long-content", "x" * (MAX_ENTRY_CHARS + 500), "reference")
+        body_on_disk = path.read_text(encoding="utf-8").split("---\n\n", 1)[1]
+        assert len(body_on_disk) <= MAX_ENTRY_CHARS + len("\n\n[truncated at  chars]\n") + 20
+        assert "[truncated at" in body_on_disk
+
