@@ -355,14 +355,22 @@ class TestTruncateBody:
     def test_over_limit_truncated_with_marker(self) -> None:
         text = "x" * (MAX_ENTRY_CHARS + 100)
         out = _truncate_body(text)
-        assert out.startswith("x" * MAX_ENTRY_CHARS)
+        # Total body length stays within MAX_ENTRY_CHARS so the marker survives
+        # the read-side clip in _scan_entries.
+        assert len(out) <= MAX_ENTRY_CHARS
+        # Marker is at the tail; head still starts with content.
+        assert out.startswith("x")
+        assert out.endswith("chars]\n")
         assert "[truncated at" in out
         assert str(MAX_ENTRY_CHARS) in out
 
     def test_custom_limit(self) -> None:
-        out = _truncate_body("abcdef", limit=3)
+        # Custom limit must be large enough to fit the marker plus some head.
+        text = "abcdef" * 100  # 600 chars
+        out = _truncate_body(text, limit=100)
+        assert len(out) <= 100
         assert out.startswith("abc")
-        assert "[truncated at 3 chars]" in out
+        assert "[truncated at 100 chars]" in out
 
 
 class TestAddRejectsEmptyName:
@@ -432,4 +440,3 @@ class TestAddSanitizesAndTruncates:
         body_on_disk = path.read_text(encoding="utf-8").split("---\n\n", 1)[1]
         assert len(body_on_disk) <= MAX_ENTRY_CHARS + len("\n\n[truncated at  chars]\n") + 20
         assert "[truncated at" in body_on_disk
-

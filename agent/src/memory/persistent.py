@@ -103,12 +103,21 @@ def _sanitize_body(content: str) -> str:
 
 
 def _truncate_body(content: str, limit: int = None) -> str:
-    """Clip `content` to `limit` chars, appending a visible marker if clipped."""
+    """Clip `content` to `limit` chars total, leaving room for the marker.
+
+    The marker is reserved inside the limit (not appended on top) so the on-
+    disk body length stays <= MAX_ENTRY_CHARS and the marker survives the
+    matching read-side clip in `_scan_entries`. Callers that inspect
+    `entry.body` see the marker; the original tail content past the head
+    window is dropped.
+    """
     if limit is None:
         limit = MAX_ENTRY_CHARS
     if len(content) <= limit:
         return content
-    return content[:limit] + _TRUNCATION_MARKER.format(limit=limit)
+    marker = _TRUNCATION_MARKER.format(limit=limit)
+    head_len = max(0, limit - len(marker))
+    return content[:head_len] + marker
 
 
 def _coerce_str(value: object, default: str = "") -> str:
