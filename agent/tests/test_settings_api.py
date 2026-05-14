@@ -56,7 +56,7 @@ def test_get_llm_settings_is_side_effect_free_and_hides_placeholders(
     assert not (tmp_path / ".env").exists()
 
 
-@pytest.mark.parametrize("placeholder", ["sk-xxx", "xxx", "gsk_xxx"])
+@pytest.mark.parametrize("placeholder", ["sk-xxx", "xxx", "gsk_xxx", "sk-ant-xxx"])
 def test_llm_settings_treat_documented_key_placeholders_as_unconfigured(
     client: TestClient, tmp_path: Path, placeholder: str,
 ) -> None:

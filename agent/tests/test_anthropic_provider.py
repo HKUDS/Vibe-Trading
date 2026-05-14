@@ -307,20 +307,29 @@ class TestAnthropicMessageNormalization:
             "max_tokens",
         }
 
-    def test_tool_calls_present_keep_content_list(self) -> None:
-        # LangChain's tool-call extraction inspects the content list when
-        # tool_use blocks are present. Flattening it would erase the tool
-        # call, breaking subsequent ReAct turns.
+    def test_tool_calls_present_flatten_content_keep_tool_calls_intact(self) -> None:
+        # When tool_use is present, ChatAnthropic._format_output has already
+        # lifted the call into msg.tool_calls; the rest of Vibe-Trading
+        # (e.g. swarm/worker.py:411 calls response.content.strip()) requires
+        # response.content to be a string. We must flatten the list so the
+        # downstream consumers don't crash. On the next ReAct turn LangChain
+        # reconstructs the Anthropic content blocks from string content +
+        # tool_calls — so multi-turn tool use is unaffected.
         msg = _FakeMessage(
             content=[
+                {"type": "thinking", "thinking": "Plan: call tool."},
                 {"type": "text", "text": "Calling tool"},
                 {"type": "tool_use", "id": "tu_1", "name": "bash", "input": {}},
             ],
             response_metadata={"stop_reason": "tool_use"},
         )
+        # tool_calls already extracted by LangChain's _format_output.
         msg.tool_calls = [{"id": "tu_1", "name": "bash", "args": {}}]
         _normalize_anthropic_message(msg)
-        assert isinstance(msg.content, list)
+        # Content flattened to text only; thinking surfaced; tool_calls intact.
+        assert msg.content == "Calling tool"
+        assert msg.additional_kwargs["reasoning_content"] == "Plan: call tool."
+        assert msg.tool_calls == [{"id": "tu_1", "name": "bash", "args": {}}]
         assert msg.response_metadata["finish_reason"] == "tool_calls"
 
 
@@ -407,7 +416,7 @@ class TestChatAnthropicWithReasoningEndToEnd:
         assert ai_message.usage_metadata["input_tokens"] == 10
         assert ai_message.usage_metadata["output_tokens"] == 20
 
-    def test_invoke_with_tool_use_preserves_tool_calls(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_invoke_with_tool_use_flattens_content_and_preserves_tool_calls(self, monkeypatch: pytest.MonkeyPatch) -> None:
         pytest.importorskip("langchain_anthropic")
         from src.providers.llm import ChatAnthropicWithReasoning
 
@@ -425,7 +434,11 @@ class TestChatAnthropicWithReasoningEndToEnd:
 
         ai_message = wrapper.invoke("Compute 2+2")
 
+        # Content flattened to the user-visible text; downstream consumers
+        # (swarm/worker.py:411 calls .content.strip()) need a string.
+        assert ai_message.content == "I will run a calculation."
+        # tool_calls survives via msg.tool_calls — that's the field the
+        # ReAct loop uses to drive the next iteration.
         assert ai_message.tool_calls and ai_message.tool_calls[0]["name"] == "calculator"
         assert ai_message.tool_calls[0]["args"] == {"expr": "2+2"}
-        # finish_reason normalized for the agent loop's downstream consumers.
         assert ai_message.response_metadata["finish_reason"] == "tool_calls"

@@ -112,9 +112,13 @@ def _normalize_anthropic_message(msg: Any, llm_output: Optional[Dict[str, Any]] 
     Anthropic reports the terminal condition as ``stop_reason``; the rest of
     the codebase reads ``finish_reason`` (OpenAI-style).
 
-    When the AIMessage holds ``tool_calls``, the content list is preserved so
-    LangChain's tool-call extraction continues to work — only ``stop_reason``
-    is mapped onto ``finish_reason`` in that case.
+    Tool calls are extracted by ``ChatAnthropic._format_output`` into
+    ``msg.tool_calls`` *before* this function runs, so flattening the content
+    list never destroys a tool call — and we have to flatten unconditionally
+    because the rest of Vibe-Trading (e.g. ``swarm/worker.py:411`` calls
+    ``response.content.strip()``) assumes ``content`` is a string. On the next
+    ReAct turn LangChain reconstructs the Anthropic-format content blocks
+    from the string content plus ``tool_calls``.
 
     ``llm_output`` is the ``ChatResult.llm_output`` that ChatAnthropic emits
     alongside the message; ``stop_reason`` lives there at the point this
@@ -128,15 +132,23 @@ def _normalize_anthropic_message(msg: Any, llm_output: Optional[Dict[str, Any]] 
         for k, v in llm_output.items():
             metadata.setdefault(k, v)
 
-    has_tool_calls = bool(getattr(msg, "tool_calls", None))
     content = getattr(msg, "content", None)
-    if isinstance(content, list) and not has_tool_calls:
+    if isinstance(content, list):
+        # Always flatten — tool_use blocks have already been lifted into
+        # ``msg.tool_calls`` by ChatAnthropic._format_output, so leaving them
+        # in ``content`` would break the rest of Vibe-Trading, which assumes
+        # ``response.content`` is a string (e.g. swarm/worker.py:411 calls
+        # ``response.content.strip()``). On the next ReAct turn LangChain
+        # reconstructs the Anthropic-format content list from the string
+        # content + tool_calls field, so dropping the typed blocks here does
+        # not break multi-turn tool use.
         text_parts: list[str] = []
         thinking_parts: list[str] = []
         for block in content:
+            if isinstance(block, str):
+                text_parts.append(block)
+                continue
             if not isinstance(block, dict):
-                if isinstance(block, str):
-                    text_parts.append(block)
                 continue
             btype = block.get("type")
             if btype == "text":
@@ -145,6 +157,9 @@ def _normalize_anthropic_message(msg: Any, llm_output: Optional[Dict[str, Any]] 
                 thinking_parts.append(block.get("thinking", ""))
             elif btype == "redacted_thinking":
                 thinking_parts.append("[redacted_thinking]")
+            # tool_use / input_json_delta / other typed blocks: skipped;
+            # they survive via msg.tool_calls (or get aggregated by the chunk
+            # __add__ path for streams).
         msg.content = "".join(text_parts)
         if thinking_parts and "reasoning_content" not in msg.additional_kwargs:
             msg.additional_kwargs["reasoning_content"] = "".join(thinking_parts)
