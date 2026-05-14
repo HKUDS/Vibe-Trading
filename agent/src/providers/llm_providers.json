@@ -18,6 +18,15 @@
     "api_key_required": true
   },
   {
+    "name": "anthropic",
+    "label": "Anthropic Claude",
+    "api_key_env": "ANTHROPIC_API_KEY",
+    "base_url_env": "ANTHROPIC_BASE_URL",
+    "default_model": "claude-sonnet-4-6",
+    "default_base_url": "https://api.anthropic.com",
+    "api_key_required": true
+  },
+  {
     "name": "openai-codex",
     "label": "OpenAI Codex (ChatGPT OAuth)",
     "api_key_env": null,

@@ -17,6 +17,11 @@ try:
 except ImportError:
     ChatOpenAI = None  # type: ignore
 
+try:
+    from langchain_anthropic import ChatAnthropic
+except ImportError:
+    ChatAnthropic = None  # type: ignore
+
 
 if ChatOpenAI is not None:
     class ChatOpenAIWithReasoning(ChatOpenAI):  # type: ignore[misc,valid-type]
@@ -86,6 +91,116 @@ if ChatOpenAI is not None:
 else:
     ChatOpenAIWithReasoning = None  # type: ignore
 
+
+_ANTHROPIC_STOP_REASON_MAP = {
+    "end_turn": "stop",
+    "tool_use": "tool_calls",
+    "stop_sequence": "stop",
+    "max_tokens": "length",
+    "pause_turn": "stop",
+    "refusal": "content_filter",
+}
+
+
+def _normalize_anthropic_message(msg: Any, llm_output: Optional[Dict[str, Any]] = None) -> None:
+    """Flatten Anthropic content blocks and map stop_reason → finish_reason.
+
+    When extended thinking is enabled, ChatAnthropic returns ``content`` as a
+    list of typed blocks (``{"type": "thinking", ...}``, ``{"type": "text", ...}``).
+    The rest of Vibe-Trading expects ``content`` to be a string and surfaces
+    chain-of-thought through ``additional_kwargs["reasoning_content"]``. Also,
+    Anthropic reports the terminal condition as ``stop_reason``; the rest of
+    the codebase reads ``finish_reason`` (OpenAI-style).
+
+    When the AIMessage holds ``tool_calls``, the content list is preserved so
+    LangChain's tool-call extraction continues to work — only ``stop_reason``
+    is mapped onto ``finish_reason`` in that case.
+
+    ``llm_output`` is the ``ChatResult.llm_output`` that ChatAnthropic emits
+    alongside the message; ``stop_reason`` lives there at the point this
+    function is called from ``_generate`` (BaseChatModel merges it onto the
+    message a step later, but we don't want to depend on that ordering).
+    """
+    metadata = dict(getattr(msg, "response_metadata", None) or {})
+    if llm_output:
+        # Merge llm_output (read-only view) into metadata so we have stop_reason
+        # available without depending on the BaseChatModel post-merge step.
+        for k, v in llm_output.items():
+            metadata.setdefault(k, v)
+
+    has_tool_calls = bool(getattr(msg, "tool_calls", None))
+    content = getattr(msg, "content", None)
+    if isinstance(content, list) and not has_tool_calls:
+        text_parts: list[str] = []
+        thinking_parts: list[str] = []
+        for block in content:
+            if not isinstance(block, dict):
+                if isinstance(block, str):
+                    text_parts.append(block)
+                continue
+            btype = block.get("type")
+            if btype == "text":
+                text_parts.append(block.get("text", ""))
+            elif btype == "thinking":
+                thinking_parts.append(block.get("thinking", ""))
+            elif btype == "redacted_thinking":
+                thinking_parts.append("[redacted_thinking]")
+        msg.content = "".join(text_parts)
+        if thinking_parts and "reasoning_content" not in msg.additional_kwargs:
+            msg.additional_kwargs["reasoning_content"] = "".join(thinking_parts)
+
+    stop_reason = metadata.get("stop_reason")
+    if stop_reason and "finish_reason" not in metadata:
+        metadata["finish_reason"] = _ANTHROPIC_STOP_REASON_MAP.get(stop_reason, stop_reason)
+
+    msg.response_metadata = metadata
+
+
+if ChatAnthropic is not None:
+    class ChatAnthropicWithReasoning(ChatAnthropic):  # type: ignore[misc,valid-type]
+        """ChatAnthropic adapter that normalizes content + stop_reason.
+
+        Vibe-Trading's :class:`ChatLLM` parser expects a string ``content``
+        field and an OpenAI-style ``finish_reason`` in ``response_metadata``.
+        Anthropic instead returns a list of typed content blocks when extended
+        thinking is enabled and uses ``stop_reason``. We flatten both shapes
+        here so every downstream consumer (ReAct loop, swarm worker, run-card
+        writer) sees the same envelope regardless of provider.
+
+        Hooks at ``_generate`` / ``_agenerate`` / ``_stream`` / ``_astream``
+        because ChatAnthropic (langchain-anthropic 0.3.x) does not call
+        ``_create_chat_result`` — it overrides ``_generate`` directly and
+        emits the message via ``_format_output``.
+        """
+
+        def _generate(self, *args: Any, **kwargs: Any):  # type: ignore[override]
+            result = super()._generate(*args, **kwargs)
+            for gen in result.generations:
+                _normalize_anthropic_message(gen.message, result.llm_output)
+            return result
+
+        async def _agenerate(self, *args: Any, **kwargs: Any):  # type: ignore[override]
+            result = await super()._agenerate(*args, **kwargs)
+            for gen in result.generations:
+                _normalize_anthropic_message(gen.message, result.llm_output)
+            return result
+
+        def _stream(self, *args: Any, **kwargs: Any):  # type: ignore[override]
+            for chunk in super()._stream(*args, **kwargs):
+                # Chunks expose generation_info / response_metadata directly
+                # on the chunk; pass llm_output=None — the chunk itself
+                # already carries stop_reason on the terminal chunk.
+                _normalize_anthropic_message(chunk.message)
+                yield chunk
+
+        async def _astream(self, *args: Any, **kwargs: Any):  # type: ignore[override]
+            async for chunk in super()._astream(*args, **kwargs):
+                _normalize_anthropic_message(chunk.message)
+                yield chunk
+else:
+    ChatAnthropicWithReasoning = None  # type: ignore
+
+
 AGENT_DIR = Path(__file__).resolve().parents[2]
 
 # .env search order: ~/.vibe-trading/.env → agent/.env → $CWD/.env
@@ -140,6 +255,16 @@ def _sync_provider_env() -> None:
         os.environ["OPENAI_API_BASE"] = codex_url
         os.environ["OPENAI_BASE_URL"] = codex_url
         os.environ.pop("OPENAI_API_KEY", None)
+        return
+
+    if provider in {"anthropic", "claude"}:
+        # ChatAnthropic reads ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL itself; do
+        # not project the Anthropic key into OPENAI_API_KEY so it cannot leak
+        # to OpenAI-compatible clients on a later provider switch within the
+        # same process.
+        base_url = os.getenv("ANTHROPIC_BASE_URL", "").strip()
+        if base_url:
+            os.environ.setdefault("ANTHROPIC_API_URL", base_url)
         return
 
     # (api_key_env, base_url_env)
@@ -207,6 +332,42 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
             timeout=int(os.getenv("TIMEOUT_SECONDS", "120")),
             reasoning_effort=effort or None,
         )
+
+    if provider in {"anthropic", "claude"}:
+        if ChatAnthropicWithReasoning is None:
+            raise RuntimeError(
+                "langchain-anthropic is not installed. Run: pip install langchain-anthropic"
+            )
+        api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError("ANTHROPIC_API_KEY is not set (required for the anthropic provider)")
+        kwargs: Dict[str, Any] = {
+            "model": name,
+            "temperature": temperature,
+            "timeout": int(os.getenv("TIMEOUT_SECONDS", "120")),
+            "max_retries": int(os.getenv("MAX_RETRIES", "2")),
+            "api_key": api_key,
+            "callbacks": callbacks,
+        }
+        base_url = os.getenv("ANTHROPIC_BASE_URL", "").strip()
+        if base_url:
+            kwargs["base_url"] = base_url
+        max_tokens = os.getenv("ANTHROPIC_MAX_TOKENS", "").strip()
+        if max_tokens:
+            kwargs["max_tokens"] = int(max_tokens)
+        effort = os.getenv("LANGCHAIN_REASONING_EFFORT", "").strip().lower()
+        if effort and effort != "none":
+            # Anthropic extended thinking is opt-in. Map effort → budget_tokens
+            # so the existing LANGCHAIN_REASONING_EFFORT control plane works
+            # across all providers that support a reasoning toggle.
+            budget = {"low": 1024, "medium": 4096, "high": 12288, "max": 24576}.get(effort)
+            if budget is not None:
+                kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
+                # Extended thinking requires temperature=1.
+                kwargs["temperature"] = 1.0
+                # max_tokens must exceed budget_tokens.
+                kwargs.setdefault("max_tokens", budget + 4096)
+        return ChatAnthropicWithReasoning(**kwargs)
 
     if ChatOpenAI is None:
         raise RuntimeError("langchain-openai is not installed")
