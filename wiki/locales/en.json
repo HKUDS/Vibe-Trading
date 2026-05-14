@@ -1,0 +1,10 @@
+{
+  "nav.docs": "Docs",
+  "nav.source": "Source",
+  "nav.pypi": "PyPI",
+  "hero.eyebrow": "Open-source finance research agent",
+  "hero.title": "Turn market questions into runnable research.",
+  "hero.lead": "Vibe-Trading connects natural-language prompts to market data, backtests, swarm analysis, trade-journal diagnostics, and reproducible research artifacts.",
+  "hero.cta_docs": "Read the docs",
+  "hero.cta_source": "View source"
+}

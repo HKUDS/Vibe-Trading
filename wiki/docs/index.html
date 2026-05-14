@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("vibetrading-theme");
+        var resolved = stored === "dark" || stored === "light"
+          ? stored
+          : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", resolved);
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vibe-Trading Docs</title>
+  <meta name="description" content="Documentation for Vibe-Trading, the natural-language finance research agent.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Vibe-Trading Docs">
+  <meta property="og:title" content="Vibe-Trading Docs">
+  <meta property="og:description" content="Install, configure, and run finance research workflows with Vibe-Trading.">
+  <meta property="og:image" content="https://vibetrading.wiki/assets/icon.png">
+  <meta property="og:url" content="https://vibetrading.wiki/docs/latest/getting-started/vibe-trading-overview">
+  <link rel="canonical" href="https://vibetrading.wiki/docs/latest/getting-started/vibe-trading-overview">
+  <link rel="icon" type="image/png" href="/assets/icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/docs/styles.css">
+  <script type="module" src="/docs/main.js"></script>
+</head>
+<body class="docs-body">
+  <header class="site-header docs-header" id="site-header">
+    <div class="site-header__inner">
+      <a class="brand" href="/home/" aria-label="Vibe-Trading home">
+        <img class="brand__mark" src="/assets/icon.png" alt="" width="40" height="40">
+        <span class="brand__text">Vibe-Trading <em>Docs</em></span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/home/">Home</a>
+        <a href="https://github.com/HKUDS/Vibe-Trading">Source</a>
+        <a href="https://pypi.org/project/vibe-trading-ai/">PyPI</a>
+      </nav>
+      <div class="site-actions">
+        <a class="star-pill" href="https://github.com/HKUDS/Vibe-Trading" aria-label="Vibe-Trading on GitHub">
+          <span aria-hidden="true">Star</span>
+          <strong id="star-count">--</strong>
+        </a>
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme">
+          <span class="theme-icon" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="docs-shell">
+    <aside class="docs-sidebar" aria-label="Documentation navigation">
+      <div class="docs-sidebar__tools">
+        <label class="search-box">
+          <span>Search</span>
+          <input id="docs-search" type="search" placeholder="Search docs">
+        </label>
+        <label class="version-box">
+          <span>Version</span>
+          <select id="version-select"></select>
+        </label>
+      </div>
+      <nav id="docs-nav"></nav>
+    </aside>
+
+    <article class="docs-article" id="docs-article" tabindex="-1"></article>
+
+    <aside class="docs-outline" aria-label="On this page">
+      <p>On this page</p>
+      <nav id="docs-outline"></nav>
+    </aside>
+  </main>
+</body>
+</html>

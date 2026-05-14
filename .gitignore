@@ -21,6 +21,12 @@ agent/tests/*_result.json
 .ruff_cache/
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
+wiki/node_modules/
+wiki/dist/
+wiki/.astro/
+wiki/.vite/
+wiki/.wrangler/
+wiki/.cache/
 .vibe-dev/
 .vibe-record/
 .cache/
@@ -35,6 +41,8 @@ data/backup/
 
 # Internal docs (plans, specs)
 docs/
+!wiki/docs/
+!wiki/docs/**
 data/minutes/
 data/overnight*.log
 data/*.log

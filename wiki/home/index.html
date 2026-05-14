@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("vibetrading-theme");
+        var resolved = stored === "dark" || stored === "light"
+          ? stored
+          : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", resolved);
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vibe-Trading Wiki - Finance Research Agent</title>
+  <meta name="description" content="Vibe-Trading is a natural-language finance research agent for market data, backtesting, swarm analysis, trade journals, and research artifacts.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="author" content="HKUDS">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Vibe-Trading Wiki">
+  <meta property="og:title" content="Vibe-Trading Wiki - Finance Research Agent">
+  <meta property="og:description" content="Natural-language finance research, backtesting, swarm analysis, and Shadow Account workflows. Research only. No live trading.">
+  <meta property="og:image" content="https://vibetrading.wiki/assets/icon.png">
+  <meta property="og:url" content="https://vibetrading.wiki/home/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Vibe-Trading Wiki">
+  <meta name="twitter:description" content="Natural-language finance research, backtesting, swarm analysis, and Shadow Account workflows.">
+  <meta name="twitter:image" content="https://vibetrading.wiki/assets/icon.png">
+  <link rel="canonical" href="https://vibetrading.wiki/home/">
+  <link rel="icon" type="image/png" href="/assets/icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/main.js"></script>
+</head>
+<body>
+  <header class="site-header" id="site-header">
+    <div class="site-header__inner">
+      <a class="brand" href="/home/" aria-label="Vibe-Trading home">
+        <img class="brand__mark" src="/assets/icon.png" alt="" width="40" height="40">
+        <span class="brand__text">Vibe-Trading</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/docs/" data-i18n="nav.docs">Docs</a>
+        <a href="https://github.com/HKUDS/Vibe-Trading" data-i18n="nav.source">Source</a>
+        <a href="https://pypi.org/project/vibe-trading-ai/" data-i18n="nav.pypi">PyPI</a>
+      </nav>
+      <div class="site-actions">
+        <a class="star-pill" href="https://github.com/HKUDS/Vibe-Trading" aria-label="Vibe-Trading on GitHub">
+          <span aria-hidden="true">Star</span>
+          <strong id="star-count">--</strong>
+        </a>
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme">
+          <span class="theme-icon" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero__content">
+        <p class="eyebrow" data-i18n="hero.eyebrow">Open-source finance research agent</p>
+        <h1 data-i18n-html="hero.title">Turn market questions into runnable research.</h1>
+        <p class="hero__lead" data-i18n="hero.lead">Vibe-Trading connects natural-language prompts to market data, backtests, swarm analysis, trade-journal diagnostics, and reproducible research artifacts.</p>
+        <div class="hero__actions">
+          <a class="button button--primary" href="/docs/" data-i18n="hero.cta_docs">Read the docs</a>
+          <a class="button button--ghost" href="https://github.com/HKUDS/Vibe-Trading" data-i18n="hero.cta_source">View source</a>
+        </div>
+      </div>
+      <div class="hero__visual" aria-label="Vibe-Trading research terminal preview">
+        <div class="terminal">
+          <div class="terminal__bar">
+            <span></span><span></span><span></span>
+            <strong>vibe-trading</strong>
+          </div>
+          <div class="terminal__body">
+            <p><span class="prompt">$</span> vibe-trading run -p "Backtest BTC-USDT 20/50 MA for 2024"</p>
+            <p class="muted">route: crypto data -> strategy -> backtest -> run card</p>
+            <p><span class="ok">return</span> +18.6% <span class="warn">max drawdown</span> -7.4%</p>
+            <p><span class="prompt">$</span> vibe-trading --swarm-run investment_committee</p>
+            <p class="muted">workers: macro, quant, risk, catalyst</p>
+            <p><span class="ok">report</span> saved with evidence, metrics, and caveats</p>
+          </div>
+        </div>
+        <div class="market-strip" aria-hidden="true">
+          <span>BTC-USDT</span><span>SPY</span><span>510300.SH</span><span>USDCNH</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="install-band" aria-labelledby="install-title">
+      <div class="section-head">
+        <p class="eyebrow">Install</p>
+        <h2 id="install-title">One command to start a research workspace.</h2>
+      </div>
+      <div class="install-panel">
+        <div class="tabs" role="tablist" aria-label="Installation methods">
+          <button role="tab" aria-selected="true" aria-controls="install-pypi" id="tab-pypi" data-tab="pypi">PyPI</button>
+          <button role="tab" aria-selected="false" aria-controls="install-uv" id="tab-uv" data-tab="uv">uv</button>
+          <button role="tab" aria-selected="false" aria-controls="install-source" id="tab-source" data-tab="source">Source</button>
+        </div>
+        <pre id="install-pypi" role="tabpanel" aria-labelledby="tab-pypi"><code>pip install vibe-trading-ai
+vibe-trading init
+vibe-trading</code></pre>
+        <pre id="install-uv" role="tabpanel" aria-labelledby="tab-uv" hidden><code>uv tool install vibe-trading-ai
+vibe-trading init
+vibe-trading serve --port 8899</code></pre>
+        <pre id="install-source" role="tabpanel" aria-labelledby="tab-source" hidden><code>git clone https://github.com/HKUDS/Vibe-Trading
+cd Vibe-Trading
+pip install -e .
+vibe-trading</code></pre>
+      </div>
+    </section>
+
+    <section class="workflow" aria-labelledby="workflow-title">
+      <div class="section-head">
+        <p class="eyebrow">Research loop</p>
+        <h2 id="workflow-title">Every answer keeps the trail inspectable.</h2>
+      </div>
+      <div class="step-grid">
+        <article>
+          <span>01</span>
+          <h3>Route</h3>
+          <p>Select skills, data sources, tools, and swarm teams from the request.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h3>Ground</h3>
+          <p>Fetch market data, documents, URLs, broker journals, or local files at runtime.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h3>Test</h3>
+          <p>Run backtests, factor analysis, options checks, validation, and report generation.</p>
+        </article>
+        <article>
+          <span>04</span>
+          <h3>Deliver</h3>
+          <p>Return run cards, exports, reports, tool traces, and caveats for the next session.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="feature-band" aria-labelledby="features-title">
+      <div class="section-head">
+        <p class="eyebrow">Capabilities</p>
+        <h2 id="features-title">Built for finance research, not brokerage execution.</h2>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card">
+          <img src="/assets/feature-self-improving-trading-agent.png" alt="Self-improving trading agent">
+          <h3>Agent Harness</h3>
+          <p>Persistent memory, session search, editable skills, context compression, and tool-batched research runs.</p>
+        </article>
+        <article class="feature-card">
+          <img src="/assets/feature-cross-market-data-backtesting.png" alt="Cross-market data and backtesting">
+          <h3>Backtesting</h3>
+          <p>Seven engines across equities, crypto, futures, forex, composites, and options portfolios.</p>
+        </article>
+        <article class="feature-card">
+          <img src="/assets/feature-multi-agent-trading-teams.png" alt="Multi-agent trading teams">
+          <h3>Swarm Teams</h3>
+          <p>Investment committee, quant desk, risk review, macro, crypto, and other preset research teams.</p>
+        </article>
+        <article class="feature-card">
+          <img src="/assets/feature-shadow-account.png" alt="Shadow Account workflow">
+          <h3>Shadow Account</h3>
+          <p>Parse broker journals, extract implicit rules, run counterfactual backtests, and render audit reports.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="safety-band" aria-label="Research only">
+      <div>
+        <p class="eyebrow">Boundary</p>
+        <h2>No live trading.</h2>
+      </div>
+      <p>Vibe-Trading is for research, simulation, and backtesting. It does not execute live trades and does not provide investment advice.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Vibe-Trading Wiki</span>
+    <a href="/docs/">Docs</a>
+    <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
+    <a href="https://pypi.org/project/vibe-trading-ai/">PyPI</a>
+  </footer>
+</body>
+</html>
