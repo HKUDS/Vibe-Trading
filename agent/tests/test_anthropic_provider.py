@@ -202,6 +202,35 @@ class TestAnthropicBuildLlm:
         # max_tokens must exceed budget_tokens.
         assert kwargs["max_tokens"] == expected_max_tokens
 
+    def test_extended_thinking_blocked_for_opus_4_7(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # docs.anthropic.com (Models overview): Claude Opus 4.7 uses adaptive
+        # thinking and does NOT support the `thinking={type:enabled}` kwarg.
+        # Setting LANGCHAIN_REASONING_EFFORT with claude-opus-4-7 must fail
+        # at build_llm() time rather than silently misbehave at API time.
+        monkeypatch.setattr(llm_mod, "ChatAnthropicWithReasoning", _CapturedAnthropic)
+        env = {
+            "LANGCHAIN_PROVIDER": "anthropic",
+            "LANGCHAIN_MODEL_NAME": "claude-opus-4-7",
+            "ANTHROPIC_API_KEY": "sk-ant-test",
+            "LANGCHAIN_REASONING_EFFORT": "medium",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(RuntimeError, match="claude-opus-4-7 does not support extended thinking"):
+                build_llm()
+
+    def test_opus_4_7_without_reasoning_effort_works(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Opus 4.7 is still a valid model — just without LANGCHAIN_REASONING_EFFORT.
+        monkeypatch.setattr(llm_mod, "ChatAnthropicWithReasoning", _CapturedAnthropic)
+        env = {
+            "LANGCHAIN_PROVIDER": "anthropic",
+            "LANGCHAIN_MODEL_NAME": "claude-opus-4-7",
+            "ANTHROPIC_API_KEY": "sk-ant-test",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            build_llm()
+        assert _CapturedAnthropic.last_kwargs["model"] == "claude-opus-4-7"
+        assert "thinking" not in _CapturedAnthropic.last_kwargs
+
     def test_explicit_max_tokens_overrides_thinking_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(llm_mod, "ChatAnthropicWithReasoning", _CapturedAnthropic)
         env = {

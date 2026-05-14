@@ -372,6 +372,19 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
             kwargs["max_tokens"] = int(max_tokens)
         effort = os.getenv("LANGCHAIN_REASONING_EFFORT", "").strip().lower()
         if effort and effort != "none":
+            # Per docs.anthropic.com (Models overview), Claude Opus 4.7 supports
+            # ``adaptive thinking`` but NOT ``extended thinking`` — the
+            # ``thinking={type:enabled}`` kwarg only applies to Sonnet 4.6 +
+            # Haiku 4.5 (and the 4.x legacy family). Refuse the misconfiguration
+            # at build time rather than letting the API silently reject or
+            # ignore the field.
+            if name.startswith("claude-opus-4-7"):
+                raise RuntimeError(
+                    "claude-opus-4-7 does not support extended thinking — it uses "
+                    "adaptive thinking automatically. Unset LANGCHAIN_REASONING_EFFORT, "
+                    "or switch to claude-sonnet-4-6 / claude-haiku-4-5 for budgeted "
+                    "extended thinking."
+                )
             # Anthropic extended thinking is opt-in. Map effort → budget_tokens
             # so the existing LANGCHAIN_REASONING_EFFORT control plane works
             # across all providers that support a reasoning toggle.
