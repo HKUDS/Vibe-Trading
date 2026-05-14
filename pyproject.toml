@@ -93,6 +93,12 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
 ]
+# LANGCHAIN_PROVIDER=claude-code dependency. ~58 MB; opt-in only so the
+# default `pip install vibe-trading-ai` stays lightweight. Requires a prior
+# `claude login` to use the user's Pro/Max subscription.
+claude-code = [
+    "claude-agent-sdk>=0.1.81",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["agent/tests"]

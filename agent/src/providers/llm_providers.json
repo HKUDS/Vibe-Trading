@@ -29,6 +29,17 @@
     "login_command": "vibe-trading provider login openai-codex"
   },
   {
+    "name": "claude-code",
+    "label": "Claude Code (Pro/Max subscription)",
+    "api_key_env": null,
+    "base_url_env": "",
+    "default_model": "",
+    "default_base_url": "",
+    "api_key_required": false,
+    "auth_type": "oauth",
+    "login_command": "claude login"
+  },
+  {
     "name": "deepseek",
     "label": "DeepSeek",
     "api_key_env": "DEEPSEEK_API_KEY",

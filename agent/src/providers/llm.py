@@ -142,6 +142,13 @@ def _sync_provider_env() -> None:
         os.environ.pop("OPENAI_API_KEY", None)
         return
 
+    if provider in {"claude-code", "claude_code"}:
+        # claude-agent-sdk reads auth from `claude login` (Pro/Max subscription).
+        # No env projection needed — and explicitly do NOT touch OPENAI_API_KEY
+        # so the standard OpenAI key cannot leak into a Claude Code call path
+        # on a later provider switch within the same process.
+        return
+
     # (api_key_env, base_url_env)
     _PROVIDER_MAP: dict[str, tuple[str | None, str]] = {
         "openai":     ("OPENAI_API_KEY",     "OPENAI_BASE_URL"),
@@ -193,10 +200,13 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
     """
     _sync_provider_env()
     name = model_name or os.getenv("LANGCHAIN_MODEL_NAME", "").strip()
-    if not name:
-        raise RuntimeError("LANGCHAIN_MODEL_NAME is not set")
     temperature = float(os.getenv("LANGCHAIN_TEMPERATURE", "0.0"))
     provider = os.getenv("LANGCHAIN_PROVIDER", "openai").lower()
+    # claude-code lets the SDK pick the model from the user's Claude Code CLI
+    # default when LANGCHAIN_MODEL_NAME is empty. Every other provider requires
+    # an explicit model name.
+    if not name and provider not in {"claude-code", "claude_code"}:
+        raise RuntimeError("LANGCHAIN_MODEL_NAME is not set")
     if provider in {"openai-codex", "openai_codex"}:
         from src.providers.openai_codex import OpenAICodexLLM
 
@@ -206,6 +216,16 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
             temperature=temperature,
             timeout=int(os.getenv("TIMEOUT_SECONDS", "120")),
             reasoning_effort=effort or None,
+        )
+
+    if provider in {"claude-code", "claude_code"}:
+        from src.providers.claude_code import ClaudeCodeLLM
+
+        return ClaudeCodeLLM(
+            model=name or None,
+            temperature=temperature,
+            timeout=int(os.getenv("TIMEOUT_SECONDS", "120")),
+            cwd=os.getenv("CLAUDE_CODE_CWD", "").strip() or None,
         )
 
     if ChatOpenAI is None:
