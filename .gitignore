@@ -40,7 +40,8 @@ data/parquet/
 data/backup/
 
 # Internal docs (plans, specs)
-docs/
+docs/*
+!docs/MARKET_DATA_ROUTING_BASELINE.md
 !wiki/docs/
 !wiki/docs/**
 data/minutes/
