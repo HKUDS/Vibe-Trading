@@ -42,6 +42,7 @@ data/backup/
 # Internal docs (plans, specs)
 docs/*
 !docs/MARKET_DATA_ROUTING_BASELINE.md
+!docs/CANDLESTICK_WORKFLOW_BASELINE.md
 !wiki/docs/
 !wiki/docs/**
 data/minutes/
