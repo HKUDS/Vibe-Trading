@@ -205,7 +205,45 @@ def test_worker_prompt_includes_grounding_block_when_provided() -> None:
 
 def test_worker_prompt_omits_grounding_section_when_block_empty() -> None:
     prompt = build_worker_prompt(_spec(), {}, "(no matching skills)")
-    assert "Ground Truth" not in prompt
+    # No rendered Ground Truth section. The Data Citation Discipline below
+    # may reference "Ground Truth block above (if present)" as a referent;
+    # that's fine. What must not appear is the actual section header.
+    assert "## Ground Truth" not in prompt
+
+
+def test_worker_prompt_always_includes_data_citation_discipline() -> None:
+    """Universal anti-fabrication rule: must appear regardless of whether
+    grounding_block or upstream_summaries were provided.  Issue #106 reported
+    swarm reports citing prices the agent never actually fetched; the
+    grounding-block rule only covered runs with explicit symbols in user_vars."""
+    bare = build_worker_prompt(_spec(), {}, "(no matching skills)")
+    assert "Data Citation Discipline" in bare
+    assert "HARD RULE" in bare
+    assert "may NOT cite numbers from memory or training data" in bare
+
+    with_grounding = build_worker_prompt(
+        _spec(), {}, "(no matching skills)",
+        grounding_block="## Ground Truth — Recent Market Data\n\nNVDA.US ...",
+    )
+    assert with_grounding.count("Data Citation Discipline") == 1
+
+
+def test_worker_prompt_data_citation_discipline_precedes_execution_rules() -> None:
+    """The discipline must be in scope before Phase 1/2/3 execution rules
+    so the worker sees it while planning the first tool call."""
+    prompt = build_worker_prompt(_spec(), {}, "(no matching skills)")
+    assert prompt.index("Data Citation Discipline") < prompt.index("## Execution Rules")
+
+
+def test_worker_prompt_data_citation_rule_targets_aggregator_roles() -> None:
+    """The rule must explicitly address synthesis / aggregator agents
+    that lack data tools, since those were the worst-case path in #106
+    (equity_research_team aggregator has [bash, read_file, write_file] only)."""
+    prompt = build_worker_prompt(_spec(), {}, "(no matching skills)")
+    # Aggregators must be told not to invent numbers upstream omitted.
+    lowered = prompt.lower()
+    assert "synthesis" in lowered or "aggregator" in lowered
+    assert "upstream did not provide" in prompt
 
 
 def test_runtime_threads_grounding_block_into_layer_workers(tmp_path, monkeypatch) -> None:

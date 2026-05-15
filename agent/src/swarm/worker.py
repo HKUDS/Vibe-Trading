@@ -192,6 +192,36 @@ def build_worker_prompt(
         # instruction to prefer these prices over training data.
         prompt_parts.append(grounding_block)
 
+    # Universal anti-fabrication rule. The grounding_block carries a similar
+    # instruction but only renders when user_vars supplies explicit symbols.
+    # Free-form prompts ("look at A-share short-term sentiment") otherwise
+    # leave the worker with no guardrail and it cheerfully cites training-data
+    # prices and sector weights. This block applies the rule unconditionally
+    # — including to aggregator / synthesis agents that have no data tools
+    # and previously had no instruction against inventing numbers.
+    prompt_parts.append(
+        "## Data Citation Discipline (HARD RULE)\n\n"
+        "Every specific number you cite in your output — prices, percentages, "
+        "volumes, fund flows, market-cap rankings, sector weights, ETF codes, "
+        "ticker recommendations — MUST be traceable to one of:\n"
+        "  (a) a tool call result obtained in THIS run,\n"
+        "  (b) the Ground Truth block above (if present),\n"
+        "  (c) the Upstream Context above (if present and the upstream agent "
+        "itself sourced it from (a) or (b)).\n\n"
+        "You may NOT cite numbers from memory or training data. Markets have "
+        "moved since your cutoff; any specific price/percentage you recall is "
+        "wrong by default.\n\n"
+        "If you cannot back a number with (a), (b), or (c), you have two "
+        "choices:\n"
+        "  - call a data tool to fetch it (preferred), or\n"
+        "  - omit the number and qualify the statement (e.g. \"directional "
+        "only — not verified against live data\").\n\n"
+        "This rule applies equally to synthesis / aggregator / editor roles "
+        "that lack data tools. If upstream did not provide a specific number, "
+        "do NOT introduce one from training data — say the upstream omitted "
+        "it and proceed without."
+    )
+
     prompt_parts.append(
         "## Execution Rules\n\n"
         "You have a HARD LIMIT of 20 tool calls. After that you will be cut off. Work efficiently.\n\n"
