@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from src.agent.skills import SkillsLoader
 from src.agent.tools import BaseTool
+
+_MARKET_DATA_NAME_PATTERN = re.compile(
+    r"(crypto|market|btc|eth|price|ohlcv|ticker).{0,12}(price|fetch|fetcher|data)|"
+    r"(price|fetch|fetcher|data).{0,12}(crypto|market|btc|eth|ohlcv|ticker)",
+    re.IGNORECASE,
+)
 
 
 class LoadSkillTool(BaseTool):
@@ -42,7 +49,19 @@ class LoadSkillTool(BaseTool):
         """
         name = kwargs["name"]
         content = self._loader.get_content(name)
-        return json.dumps({
-            "status": "ok" if not content.startswith("Error:") else "error",
-            "content": content,
-        }, ensure_ascii=False)
+        if content.startswith("Error:"):
+            if _MARKET_DATA_NAME_PATTERN.search(name or ""):
+                hint = (
+                    f"skill '{name}' does not exist. For price/OHLCV/ticker/candle "
+                    f"data use the get_market_data tool instead — never invent "
+                    f"a market-data skill name."
+                )
+            else:
+                hint = (
+                    f"skill '{name}' does not exist. Do not invent skill names. "
+                    f"For price/OHLCV/ticker data use the get_market_data tool. "
+                    f"For other workflows, choose from the skills listed in the "
+                    f"system prompt."
+                )
+            return json.dumps({"status": "error", "content": hint, "error": hint}, ensure_ascii=False)
+        return json.dumps({"status": "ok", "content": content}, ensure_ascii=False)

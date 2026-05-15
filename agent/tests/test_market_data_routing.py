@@ -43,3 +43,13 @@ def test_guidelines_forbid_web_tools_for_market_data() -> None:
         "Guidelines no longer carry the negative policy forbidding web "
         "tools for price/ticker/OHLCV. Restore the bullet."
     )
+
+
+@pytest.mark.unit
+def test_market_data_section_points_to_get_market_data_tool() -> None:
+    """Patch 2: the routing rule must direct the LLM to the get_market_data
+    tool as the first action (not load_skill+write_file+bash anymore)."""
+    assert "get_market_data" in _SYSTEM_PROMPT, (
+        "Market data routing section no longer references the get_market_data "
+        "tool. The deterministic dispatch path is broken."
+    )

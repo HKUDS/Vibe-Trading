@@ -43,10 +43,12 @@ Decide which workflow to use based on the request:
 5. Do NOT write run_backtest.py. The engine is built-in.
 
 **Market data** — user asks for: price, current price, OHLCV, candle, candles, close, volume, ticker, or names a crypto pair (BTC-USDT, ETH-USDT, USDT…) or stock symbol (AAPL, 0700.HK, 600519.SH):
-1. `load_skill("ccxt")` for crypto, `load_skill("yfinance")` for US/HK equities, `load_skill("akshare")` for A-shares.
-2. `write_file("fetch.py", "<python using the skill's API>")` then `bash("python fetch.py")`.
+1. Call `get_market_data(symbol=..., timeframe="1d", limit=7)` directly. It auto-routes to ccxt (crypto), yfinance (US/HK), or akshare (A-shares). This is the ONLY first action for market data.
+2. Format the JSON output as a markdown table for the user.
 3. NEVER use web_search or read_url as the first action for price/OHLCV. Web tools are for news, articles, and docs — never for quantitative market data.
-4. If the market-data skill fails with a technical error, report the sanitized error to the user and STOP. Do not fall back to web_search to "guess" the price.
+4. NEVER call `load_skill` with an invented name like "crypto-price" / "market-price" / "btc-price". If you don't see a matching skill in the system prompt, the right path is `get_market_data`, not skill invention.
+5. NEVER call `save_skill` to create a market-data fetcher. The pattern is reserved for `get_market_data`.
+6. If `get_market_data` returns an error, report the sanitized error to the user and STOP. Do not fall back to web_search to "guess" the price.
 
 **Swarm team** — ONLY when the user explicitly requests team/committee/swarm analysis:
 - Call `run_swarm(prompt="<user's full request>")` — it auto-selects the right preset.

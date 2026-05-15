@@ -22,10 +22,22 @@ from src.agent.tools import BaseTool
 
 _ALLOWED_SUBDIRS = {"references", "templates", "examples", "assets"}
 
+_MARKET_DATA_SKILL_PATTERN = re.compile(
+    r"(crypto|market|btc|eth|price|ohlcv|ticker)[\-_]?(price|fetch|fetcher|data)|"
+    r"(price|fetch|fetcher|data)[\-_]?(crypto|market|btc|eth|ohlcv|ticker)",
+    re.IGNORECASE,
+)
+
 
 def _sanitize_skill_name(name: str) -> str:
     """Sanitize skill name to a safe directory slug."""
     return re.sub(r"[^a-z0-9-]", "-", name.lower().strip())[:60]
+
+
+def _is_market_data_name(name: str) -> bool:
+    """True if name matches a market-data fetcher pattern that must be
+    served by the get_market_data tool, not by a new skill."""
+    return bool(_MARKET_DATA_SKILL_PATTERN.search(name or ""))
 
 
 class SaveSkillTool(BaseTool):
@@ -72,6 +84,16 @@ class SaveSkillTool(BaseTool):
 
         if not name or not content:
             return json.dumps({"status": "error", "error": "name and content required"})
+
+        if _is_market_data_name(name):
+            return json.dumps({
+                "status": "error",
+                "error": (
+                    f"skill name {name!r} matches the reserved market-data "
+                    f"pattern. Use the get_market_data tool for price/OHLCV/"
+                    f"ticker requests instead of creating a new skill."
+                ),
+            }, ensure_ascii=False)
 
         slug = _sanitize_skill_name(name)
         skill_dir = USER_SKILLS_DIR / slug
