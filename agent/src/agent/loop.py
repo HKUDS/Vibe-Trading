@@ -435,27 +435,46 @@ class AgentLoop:
                 "react_trace": react_trace,
             }
 
-        # Determine final status
+        # Determine final status. The reason is also propagated into the
+        # returned dict so SessionService can surface a meaningful UI
+        # message instead of "Execution failed: unknown" (issue #114).
+        final_reason: str | None = None
         if self._cancelled:
-            state_store.mark_failure(run_dir, "cancelled by user")
+            final_reason = "cancelled by user"
+            state_store.mark_failure(run_dir, final_reason)
             final_status = "cancelled"
         elif (run_dir / "artifacts" / "metrics.csv").exists() or final_content:
             state_store.mark_success(run_dir)
             final_status = "success"
         else:
-            state_store.mark_failure(run_dir, "pipeline did not complete")
+            final_reason = (
+                f"reached max iterations ({self.max_iterations}) without final answer"
+            )
+            state_store.mark_failure(run_dir, final_reason)
             final_status = "failed"
 
-        trace.write({"type": "end", "status": final_status, "iterations": iteration})
+        end_event: dict[str, Any] = {
+            "type": "end",
+            "status": final_status,
+            "iterations": iteration,
+        }
+        if final_reason is not None:
+            end_event["reason"] = final_reason
+        trace.write(end_event)
         trace.close()
 
-        return {
+        result: dict[str, Any] = {
             "status": final_status,
             "run_dir": str(run_dir),
             "run_id": run_dir.name,
             "content": final_content,
             "react_trace": react_trace,
+            "iterations": iteration,
+            "max_iterations": self.max_iterations,
         }
+        if final_reason is not None:
+            result["reason"] = final_reason
+        return result
 
     # -- Tool execution with read/write batching --------------------------------
 
