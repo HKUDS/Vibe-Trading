@@ -21,6 +21,7 @@ import time as _time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from src.agent.candlestick_workflow import CandlestickWorkflowDispatcher
 from src.agent.context import ContextBuilder
 from src.agent.market_data_dispatcher import MarketDataDispatcher
 from src.agent.memory import WorkspaceMemory
@@ -354,6 +355,16 @@ class AgentLoop:
                 state_store.mark_success(run_dir)
             else:
                 state_store.mark_failure(run_dir, "market_data_router")
+            return routed
+
+        # Patch 5: deterministic candlestick workflow short-circuit.
+        routed = CandlestickWorkflowDispatcher().try_route(
+            user_message, self.registry, trace, str(run_dir))
+        if routed is not None:
+            if routed.get("status") == "success":
+                state_store.mark_success(run_dir)
+            else:
+                state_store.mark_failure(run_dir, "candlestick_workflow")
             return routed
 
         iteration = 0
