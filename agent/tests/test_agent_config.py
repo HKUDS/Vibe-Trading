@@ -219,3 +219,62 @@ def test_sanitize_non_mcp_keys_always_pass_through() -> None:
     raw = {"include_shell_tools": True, "some_other_key": "value"}
     result = sanitize_session_overrides(raw)
     assert result == raw
+
+
+# ---------------------------------------------------------------------------
+# End-to-end sanitize + load + merge regression
+#
+# Locks the `extra="ignore"` invariant on AgentConfigOverride: if it gets
+# flipped back to "forbid", a session whose config carries unrelated keys
+# (e.g. `include_shell_tools`, which SessionService injects at line ~118)
+# would raise a ValidationError and silently drop the entire override,
+# including any valid `mcpServers`. That regression would not show up in
+# any test that only exercises sanitize_session_overrides in isolation.
+# ---------------------------------------------------------------------------
+
+def test_runtime_load_drops_mcp_servers_when_mixed_with_unknown_keys(
+    tmp_path: Path,
+) -> None:
+    """Default path: session overrides with mcpServers + unknown keys must
+    strip mcpServers and still merge cleanly on top of the disk config."""
+    config_path = tmp_path / "agent.json"
+    config_path.write_text(
+        '{"mcpServers": {"trusted": {"command": "uvx", "args": ["t"]}}}',
+        encoding="utf-8",
+    )
+
+    session_overrides = {
+        "include_shell_tools": True,
+        "mcpServers": {"evil": {"command": "/bin/sh", "args": ["-c", "id"]}},
+    }
+    safe = sanitize_session_overrides(session_overrides)
+    merged = load_runtime_agent_config(config_path=config_path, overrides=safe)
+
+    assert set(merged.mcp_servers.keys()) == {"trusted"}
+    assert merged.mcp_servers["trusted"].command == "uvx"
+
+
+def test_runtime_load_preserves_mcp_servers_when_opted_in_with_unknown_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Opt-in path: with ALLOW_SESSION_MCP_SERVERS=1, valid mcpServers must
+    survive the merge even when the session payload also carries unknown
+    keys like include_shell_tools.  Guards AgentConfigOverride extra='ignore'."""
+    monkeypatch.setenv("ALLOW_SESSION_MCP_SERVERS", "1")
+    config_path = tmp_path / "agent.json"
+    config_path.write_text(
+        '{"mcpServers": {"base": {"command": "uvx", "args": ["base"]}}}',
+        encoding="utf-8",
+    )
+
+    session_overrides = {
+        "include_shell_tools": False,
+        "some_future_field": "ignored",
+        "mcpServers": {"session": {"command": "uvx", "args": ["session-mcp"]}},
+    }
+    safe = sanitize_session_overrides(session_overrides)
+    merged = load_runtime_agent_config(config_path=config_path, overrides=safe)
+
+    assert set(merged.mcp_servers.keys()) == {"base", "session"}
+    assert merged.mcp_servers["session"].command == "uvx"
+    assert merged.mcp_servers["session"].args == ["session-mcp"]

@@ -90,7 +90,14 @@ class AgentConfigOverride(ConfigBase):
     model_config = ConfigDict(
         alias_generator=_to_camel,
         populate_by_name=True,
-        extra="ignore",  # unknown session keys (e.g. include_shell_tools) are silently dropped
+        # Load-bearing: SessionService passes the entire session.config dict
+        # (which carries unrelated keys like include_shell_tools) through
+        # merge_agent_config_overrides.  Flipping this back to "forbid" makes
+        # any such payload raise ValidationError and silently drops the whole
+        # override, including any valid mcpServers.  Regression test:
+        # tests/test_agent_config.py::
+        #   test_runtime_load_preserves_mcp_servers_when_opted_in_with_unknown_keys
+        extra="ignore",
     )
 
     mcp_servers: dict[str, MCPServerConfigOverride] = Field(default_factory=dict)
