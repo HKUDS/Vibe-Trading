@@ -723,12 +723,12 @@ vibe-trading run "use my-server to do X"
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `type` | string | inferred only for stdio | Transport type. Use `sse` or `streamableHttp` for URL-based servers. |
-| `command` | string | required | Executable to spawn |
-| `args` | array | `[]` | Command-line arguments |
-| `env` | object | `{}` | Extra environment variables merged into the subprocess env |
-| `url` | string | — | Remote SSE / streamable HTTP endpoint URL |
-| `headers` | object | `{}` | Extra HTTP headers for SSE / streamable HTTP servers |
+| `type` | string | inferred for stdio; required for HTTP | Omit for stdio, or set to `sse` / `streamableHttp` for URL-based servers. |
+| `command` | string | required for stdio | Executable to spawn for stdio servers. Invalid for `sse` / `streamableHttp` servers. |
+| `args` | array | `[]` | Command-line arguments for stdio servers only. |
+| `env` | object | `{}` | Extra environment variables merged into the subprocess env for stdio servers only. |
+| `url` | string | required for `sse` / `streamableHttp` | Remote SSE / streamable HTTP endpoint URL. Not used for stdio servers. |
+| `headers` | object | `{}` | Extra HTTP headers for `sse` / `streamableHttp` servers only. |
 | `toolTimeout` | number | `30` | Per-tool call timeout in seconds |
 | `enabledTools` | array | `["*"]` | Tool allowlist. Use `["*"]` to expose all tools from the server |
 

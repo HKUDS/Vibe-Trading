@@ -89,7 +89,7 @@ def start_http_mcp_server(
     for _ in range(40):
         if proc.poll() is not None:
             output = proc.stdout.read() if proc.stdout is not None else ""
-            raise RuntimeError(f"{service_name}启动失败，退出码 {proc.returncode}: {output}")
+            raise RuntimeError(f"{service_name} failed to start with exit code {proc.returncode}: {output}")
         try:
             response = requests.get(ready_url, timeout=0.5, **request_kwargs)
             if response.status_code in accepted_statuses:
@@ -101,7 +101,7 @@ def start_http_mcp_server(
 
     stop_http_mcp_server(proc)
     output = proc.stdout.read() if proc.stdout is not None else ""
-    raise RuntimeError(f"{service_name}未能在 8 秒内启动: {output}")
+    raise RuntimeError(f"{service_name} did not become ready within 8 seconds: {output}")
 
 
 def start_http_mcp_server_on_random_port(
@@ -142,7 +142,7 @@ def start_http_mcp_server_on_random_port(
 
     if last_error is not None:
         raise last_error
-    raise RuntimeError(f"{service_name}未能分配可用端口")
+    raise RuntimeError(f"{service_name} could not obtain an available port")
 
 
 def _wait_for_server_port(
@@ -157,7 +157,7 @@ def _wait_for_server_port(
     while time.time() < deadline:
         if proc.poll() is not None:
             output = _collect_process_output(proc)
-            raise RuntimeError(f"{service_name}启动失败，退出码 {proc.returncode}: {output}")
+            raise RuntimeError(f"{service_name} failed to start with exit code {proc.returncode}: {output}")
         if port_file.exists():
             try:
                 return int(port_file.read_text(encoding="utf-8").strip())
@@ -166,7 +166,7 @@ def _wait_for_server_port(
         time.sleep(0.05)
 
     output = _collect_process_output(proc)
-    raise RuntimeError(f"{service_name}未能在 8 秒内写出监听端口: {output}")
+    raise RuntimeError(f"{service_name} did not write its listening port within 8 seconds: {output}")
 
 
 def _wait_for_http_ready(
@@ -186,7 +186,7 @@ def _wait_for_http_ready(
     while time.time() < deadline:
         if proc.poll() is not None:
             output = _collect_process_output(proc)
-            raise RuntimeError(f"{service_name}启动失败，退出码 {proc.returncode}: {output}")
+            raise RuntimeError(f"{service_name} failed to start with exit code {proc.returncode}: {output}")
         try:
             response = requests.get(ready_url, timeout=0.5, **request_kwargs)
             if response.status_code in accepted_statuses:
@@ -197,7 +197,7 @@ def _wait_for_http_ready(
             time.sleep(0.2)
 
     output = _collect_process_output(proc)
-    raise RuntimeError(f"{service_name}未能在 8 秒内启动: {output}")
+    raise RuntimeError(f"{service_name} did not become ready within 8 seconds: {output}")
 
 
 @contextmanager

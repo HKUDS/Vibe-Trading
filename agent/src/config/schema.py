@@ -38,7 +38,7 @@ class MCPServerConfig(ConfigBase):
     tool_timeout: float = Field(default=30.0, ge=0.1)
     enabled_tools: list[str] = Field(default_factory=lambda: ["*"])
 
-    def _resolved_transport(self) -> Literal["stdio", "sse", "streamableHttp"]:
+    def resolved_transport(self) -> Literal["stdio", "sse", "streamableHttp"]:
         """Resolve the effective transport from explicit type or implied fields."""
         if self.type is not None:
             return self.type
@@ -59,7 +59,7 @@ class MCPServerConfig(ConfigBase):
             ValueError: If required fields are missing for the resolved
                 transport or conflicting fields are provided.
         """
-        transport = self._resolved_transport()
+        transport = self.resolved_transport()
 
         if transport == "stdio":
             if not self.command.strip():

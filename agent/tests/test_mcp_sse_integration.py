@@ -47,7 +47,7 @@ def test_remote_sse_tool_appears_in_registry(tmp_path: Path) -> None:
 
     with running_http_mcp_server_on_random_port(
         _FIXTURE_SERVER,
-        service_name="FastMCP SSE 服务",
+        service_name="FastMCP SSE service",
         ready_url_builder=_sse_url,
         extra_args_builder=lambda port: ["--port", str(port)],
         ready_request_kwargs={"stream": True},
@@ -65,7 +65,7 @@ def test_remote_sse_tool_is_callable_and_returns_expected_result(tmp_path: Path)
 
     with running_http_mcp_server_on_random_port(
         _FIXTURE_SERVER,
-        service_name="FastMCP SSE 服务",
+        service_name="FastMCP SSE service",
         ready_url_builder=_sse_url,
         extra_args_builder=lambda port: ["--port", str(port)],
         ready_request_kwargs={"stream": True},
@@ -87,7 +87,7 @@ def test_enabled_tools_filter_limits_remote_sse_tools(tmp_path: Path) -> None:
 
     with running_http_mcp_server_on_random_port(
         _FIXTURE_SERVER,
-        service_name="FastMCP SSE 服务",
+        service_name="FastMCP SSE service",
         ready_url_builder=_sse_url,
         extra_args_builder=lambda port: ["--port", str(port)],
         ready_request_kwargs={"stream": True},

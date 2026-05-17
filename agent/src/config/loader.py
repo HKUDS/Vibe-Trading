@@ -212,7 +212,7 @@ def _override_switches_transport(base: dict[str, Any], override: dict[str, Any])
     override_transport = _resolve_override_transport(override)
     if override_transport is None:
         return False
-    base_transport = MCPServerConfig.model_validate(base)._resolved_transport()
+    base_transport = MCPServerConfig.model_validate(base).resolved_transport()
     return override_transport != base_transport
 
 

@@ -6,6 +6,7 @@ import json
 import logging
 from typing import Any
 
+import pytest
 from fastmcp.client.client import CallToolResult
 from fastmcp.exceptions import McpError, ToolError
 from mcp import types as mcp_types
@@ -484,3 +485,13 @@ def test_build_client_uses_streamable_http_transport(monkeypatch) -> None:
 
     assert captured["transport"] == "streamableHttp"
     assert captured["transport_kwargs"]["url"] == "http://localhost:8900/mcp"
+
+
+def test_build_client_rejects_url_only_config_without_explicit_type() -> None:
+    config = _make_config(type="sse", command="", args=[], url="http://localhost:8900/sse")
+    config.type = None
+
+    adapter = MCPServerAdapter("demo", config)
+
+    with pytest.raises(ValueError, match="explicit type"):
+        adapter._build_client()

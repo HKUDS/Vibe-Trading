@@ -350,14 +350,7 @@ class MCPServerAdapter:
         Returns:
             Configured async FastMCP client.
         """
-        transport_type = self.server_config.type
-        if transport_type is None:
-            if self.server_config.command.strip():
-                transport_type = "stdio"
-            elif self.server_config.url.strip():
-                transport_type = "sse" if self.server_config.url.rstrip("/").endswith("/sse") else "streamableHttp"
-            else:
-                transport_type = "stdio"
+        transport_type = self.server_config.resolved_transport()
 
         if transport_type == "stdio":
             env = os.environ.copy()

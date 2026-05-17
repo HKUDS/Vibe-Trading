@@ -51,7 +51,7 @@ def test_remote_streamable_http_tool_appears_in_registry(tmp_path: Path) -> None
 
     with running_http_mcp_server_on_random_port(
         _FIXTURE_SERVER,
-        service_name="FastMCP streamable HTTP 服务",
+        service_name="FastMCP streamable HTTP service",
         ready_url_builder=_http_url,
         extra_args_builder=lambda port: ["--port", str(port), "--path", HTTP_PATH],
         ready_statuses={200, 400, 405, 406},
@@ -69,7 +69,7 @@ def test_remote_streamable_http_tool_is_callable_and_returns_expected_result(tmp
 
     with running_http_mcp_server_on_random_port(
         _FIXTURE_SERVER,
-        service_name="FastMCP streamable HTTP 服务",
+        service_name="FastMCP streamable HTTP service",
         ready_url_builder=_http_url,
         extra_args_builder=lambda port: ["--port", str(port), "--path", HTTP_PATH],
         ready_statuses={200, 400, 405, 406},
@@ -91,7 +91,7 @@ def test_enabled_tools_filter_limits_remote_streamable_http_tools(tmp_path: Path
 
     with running_http_mcp_server_on_random_port(
         _FIXTURE_SERVER,
-        service_name="FastMCP streamable HTTP 服务",
+        service_name="FastMCP streamable HTTP service",
         ready_url_builder=_http_url,
         extra_args_builder=lambda port: ["--port", str(port), "--path", HTTP_PATH],
         ready_statuses={200, 400, 405, 406},
