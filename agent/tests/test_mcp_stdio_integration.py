@@ -18,8 +18,6 @@ IMPORTANT — v1 limits exercised here:
   - tools-only exposure (resources / prompts excluded)
   - Swarm path NOT tested (excluded from MCP config propagation in v1)
 
-TODO(v1): Add SSE / HTTP transport integration tests once those transports are
-supported.
 TODO(v1): Add Swarm-path integration tests once Swarm worker registries are
 allowed to load MCP config.
 """
@@ -32,6 +30,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
+pytestmark = pytest.mark.integration
 
 # ---------------------------------------------------------------------------
 # Path helpers
