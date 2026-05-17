@@ -71,6 +71,18 @@ def test_logs_none_when_no_env_found(tmp_path, fresh, monkeypatch, caplog):
     assert "none (no .env file found)" in msg
 
 
+def test_logs_redacted_base_url_without_credentials(tmp_path, fresh, monkeypatch, caplog):
+    monkeypatch.setattr(llm, "_ENV_CANDIDATES", [tmp_path / "does-not-exist.env"])
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://sk-secret@example.com:8443/v1?api_key=sk-hidden")
+    with caplog.at_level(logging.INFO, logger=LOGGER):
+        llm._ensure_dotenv()
+    msg = "\n".join(r.getMessage() for r in caplog.records)
+    assert "base=https://example.com:8443" in msg
+    assert "sk-secret" not in msg
+    assert "sk-hidden" not in msg
+    assert "api_key" not in msg
+
+
 def test_latch_still_skips_second_call(tmp_path, fresh, monkeypatch, caplog):
     """Behavior preserved: still loads once per process (no log on re-entry)."""
     monkeypatch.setattr(llm, "_ENV_CANDIDATES", [tmp_path / "nope.env"])

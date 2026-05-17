@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlsplit
 
 try:
     from dotenv import load_dotenv
@@ -124,6 +125,33 @@ def _redact_env_source(loaded: Path | None) -> str:
     return "<.env>"
 
 
+def _redact_base_url_for_log(raw: str | None) -> str:
+    """Return a diagnostic-safe base URL label for logs."""
+    if not raw or not raw.strip():
+        return "(unset)"
+
+    try:
+        parsed = urlsplit(raw.strip())
+    except ValueError:
+        return "<base-url>"
+
+    if not parsed.scheme or not parsed.hostname:
+        return "<base-url>"
+
+    host = parsed.hostname
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if port is not None:
+        host = f"{host}:{port}"
+
+    return f"{parsed.scheme}://{host}"
+
+
 def _load_env_file(path: Path) -> None:
     """Load a single .env file into os.environ (setdefault, no override)."""
     if load_dotenv is not None:
@@ -159,7 +187,7 @@ def _ensure_dotenv() -> None:
         _redact_env_source(loaded),
         os.getenv("LANGCHAIN_PROVIDER", "(unset)"),
         os.getenv("LANGCHAIN_MODEL_NAME", "(unset)"),
-        os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE") or "(unset)",
+        _redact_base_url_for_log(os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE")),
     )
 
 
