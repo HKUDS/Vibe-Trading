@@ -11,7 +11,7 @@ from typing import Any, Mapping
 from pydantic import ValidationError
 
 from src.config.paths import get_config_path
-from src.config.schema import AgentConfig, AgentConfigOverride
+from src.config.schema import AgentConfig, AgentConfigOverride, MCPServerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -80,11 +80,19 @@ def merge_agent_config_overrides(
         )
         return config
 
-    merged = _merge_dicts(
+    merged = _merge_agent_config_dicts(
         config.model_dump(mode="json"),
         override_model.model_dump(mode="json", exclude_unset=True),
     )
-    return AgentConfig.model_validate(merged)
+    try:
+        return AgentConfig.model_validate(merged)
+    except ValidationError as exc:
+        logger.warning(
+            "Ignoring merged agent config overrides after validation failure (%s): %s — using base config",
+            type(exc).__name__,
+            [str(e["loc"]) for e in exc.errors()],
+        )
+        return config
 
 
 # Keys in session overrides that carry subprocess definitions and therefore
@@ -167,6 +175,70 @@ def _read_config_file(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("Agent config must decode to a JSON/YAML object")
     return data
+
+
+def _merge_agent_config_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Merge top-level agent config payloads with MCP-aware server replacement."""
+    non_mcp_override = {key: value for key, value in override.items() if key != "mcp_servers"}
+    merged = _merge_dicts(base, non_mcp_override)
+
+    override_servers = override.get("mcp_servers")
+    if not isinstance(override_servers, dict):
+        if "mcp_servers" in override:
+            merged["mcp_servers"] = override_servers
+        return merged
+
+    merged_servers = dict(base.get("mcp_servers", {}))
+    for server_name, server_override in override_servers.items():
+        current_server = merged_servers.get(server_name)
+        if isinstance(current_server, dict) and isinstance(server_override, dict):
+            merged_servers[server_name] = _merge_mcp_server_dicts(current_server, server_override)
+        else:
+            merged_servers[server_name] = server_override
+
+    merged["mcp_servers"] = merged_servers
+    return merged
+
+
+def _merge_mcp_server_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Merge one MCP server payload, resetting incompatible transport fields when needed."""
+    if _override_switches_transport(base, override):
+        return _merge_dicts(_default_mcp_server_payload(base), override)
+    return _merge_dicts(base, override)
+
+
+def _override_switches_transport(base: dict[str, Any], override: dict[str, Any]) -> bool:
+    """Return whether a partial override changes the server transport family."""
+    override_transport = _resolve_override_transport(override)
+    if override_transport is None:
+        return False
+    base_transport = MCPServerConfig.model_validate(base)._resolved_transport()
+    return override_transport != base_transport
+
+
+def _resolve_override_transport(override: dict[str, Any]) -> str | None:
+    """Infer transport intent from a partial MCP server override."""
+    explicit_type = override.get("type")
+    if explicit_type in {"stdio", "sse", "streamableHttp"}:
+        return str(explicit_type)
+    if any(key in override for key in ("command", "args", "env")):
+        return "stdio"
+    return None
+
+
+def _default_mcp_server_payload(base: dict[str, Any]) -> dict[str, Any]:
+    """Return a transport-neutral MCP server payload preserving non-transport defaults."""
+    enabled_tools = base.get("enabled_tools")
+    return {
+        "type": None,
+        "command": "",
+        "args": [],
+        "env": {},
+        "url": "",
+        "headers": {},
+        "tool_timeout": base.get("tool_timeout", 30.0),
+        "enabled_tools": list(enabled_tools) if isinstance(enabled_tools, list) else ["*"],
+    }
 
 
 def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

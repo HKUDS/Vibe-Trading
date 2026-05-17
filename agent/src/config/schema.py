@@ -38,30 +38,40 @@ class MCPServerConfig(ConfigBase):
     tool_timeout: float = Field(default=30.0, ge=0.1)
     enabled_tools: list[str] = Field(default_factory=lambda: ["*"])
 
+    def _resolved_transport(self) -> Literal["stdio", "sse", "streamableHttp"]:
+        """Resolve the effective transport from explicit type or implied fields."""
+        if self.type is not None:
+            return self.type
+        if self.command.strip() or self.args or self.env:
+            return "stdio"
+        if self.url.strip():
+            raise ValueError("HTTP MCP servers require an explicit type of 'sse' or 'streamableHttp'")
+        return "stdio"
+
     @model_validator(mode="after")
-    def validate_v1_stdio_only(self) -> "MCPServerConfig":
-        """Reject non-stdio transports for the first release.
+    def validate_transport_config(self) -> "MCPServerConfig":
+        """Validate transport-specific MCP server configuration.
 
         Returns:
             The validated MCP server config instance.
 
         Raises:
-            ValueError: If the config implies a non-stdio transport, uses
-                HTTP-only fields, or omits the command required for stdio.
+            ValueError: If required fields are missing for the resolved
+                transport or conflicting fields are provided.
         """
-        transport = self.type
-        if transport is None:
-            if self.command:
-                transport = "stdio"
-            elif self.url:
-                transport = "sse" if self.url.rstrip("/").endswith("/sse") else "streamableHttp"
+        transport = self._resolved_transport()
 
-        if transport and transport != "stdio":
-            raise ValueError("Only stdio MCP servers are supported in v1")
-        if self.url or self.headers:
-            raise ValueError("HTTP MCP transports are not supported in v1")
-        if not self.command.strip():
-            raise ValueError("stdio MCP servers require a command")
+        if transport == "stdio":
+            if not self.command.strip():
+                raise ValueError("stdio MCP servers require a command")
+            if self.url.strip() or self.headers:
+                raise ValueError("stdio MCP servers do not accept url/headers")
+            return self
+
+        if not self.url.strip():
+            raise ValueError(f"{transport} MCP servers require a url")
+        if self.command.strip() or self.args or self.env:
+            raise ValueError(f"{transport} MCP servers do not accept command/args/env")
         return self
 
 

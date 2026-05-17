@@ -15,6 +15,8 @@ from typing import Any, Awaitable, Callable, Coroutine, Iterable, Protocol, Type
 
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
+from fastmcp.client.transports.http import StreamableHttpTransport
+from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import StdioTransport
 from fastmcp.exceptions import McpError, ToolError
 from mcp import types as mcp_types
@@ -343,19 +345,40 @@ class MCPServerAdapter:
             }
 
     def _build_client(self) -> AsyncMCPClient:
-        """Create the default FastMCP stdio client.
+        """Create the default FastMCP client from MCP transport config.
 
         Returns:
             Configured async FastMCP client.
         """
-        env = os.environ.copy()
-        env.update(self.server_config.env)
-        transport = StdioTransport(
-            command=self.server_config.command,
-            args=list(self.server_config.args),
-            env=env,
-            keep_alive=False,
-        )
+        transport_type = self.server_config.type
+        if transport_type is None:
+            if self.server_config.command.strip():
+                transport_type = "stdio"
+            elif self.server_config.url.strip():
+                transport_type = "sse" if self.server_config.url.rstrip("/").endswith("/sse") else "streamableHttp"
+            else:
+                transport_type = "stdio"
+
+        if transport_type == "stdio":
+            env = os.environ.copy()
+            env.update(self.server_config.env)
+            transport = StdioTransport(
+                command=self.server_config.command,
+                args=list(self.server_config.args),
+                env=env,
+                keep_alive=False,
+            )
+        elif transport_type == "sse":
+            transport = SSETransport(
+                url=self.server_config.url,
+                headers=dict(self.server_config.headers) or None,
+            )
+        else:
+            transport = StreamableHttpTransport(
+                url=self.server_config.url,
+                headers=dict(self.server_config.headers) or None,
+            )
+
         # Use a minimum of 30 s for init_timeout so cold-start servers (pip
         # install, docker pull, slow imports) do not trip the same short
         # deadline as a per-call tool_timeout.
@@ -388,7 +411,7 @@ class MCPServerAdapter:
             return await client.list_tools()
 
     async def _call_tool(self, remote_name: str, arguments: dict[str, Any]) -> CallToolResult:
-        """Call a remote tool with timeout and a single transient retry.
+        """Call a remote tool with timeout and no automatic retry.
 
         Args:
             remote_name: Remote tool name.
@@ -409,7 +432,10 @@ class MCPServerAdapter:
                     raise_on_error=False,
                 )
 
-        return await self._run_with_retry(f"call_tool:{remote_name}", _invoke)
+        # Remote MCP tools are arbitrary and may mutate external state. If a
+        # timeout / connection drop happens after the server has already
+        # committed the action, retrying here would duplicate the side effect.
+        return await _invoke()
 
     async def _run_with_retry(
         self,

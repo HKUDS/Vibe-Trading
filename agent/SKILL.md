@@ -178,11 +178,16 @@ Remote tools appear automatically in every `vibe-trading run` / `vibe-trading ch
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `command` | yes | — | Executable to launch |
+| `type` | stdio: no, HTTP: yes | inferred only for stdio | Transport type. Use `sse` or `streamableHttp` for URL-based servers. |
+| `command` | stdio: yes | — | Executable to launch |
 | `args` | no | `[]` | Command arguments |
 | `env` | no | `{}` | Extra env vars for the subprocess |
+| `url` | HTTP: yes | — | Remote SSE / streamable HTTP endpoint URL |
+| `headers` | no | `{}` | Extra HTTP headers for SSE / streamable HTTP servers |
 | `toolTimeout` | no | `30` | Seconds before a tool call is cancelled |
 | `enabledTools` | no | `["*"]` | Allowlist of remote tool names. `["*"]` enables all |
+
+For URL-based transports, `type` is required. The agent no longer guesses between SSE and streamable HTTP from the URL suffix.
 
 ### Per-session override (API)
 
@@ -214,7 +219,7 @@ Without `ALLOW_SESSION_MCP_SERVERS=1`, any `mcpServers` key in `session.config` 
 
 ### v1 limits
 
-- **Transport:** stdio only. SSE and HTTP transports are rejected.
+- **Transport:** stdio, SSE, and streamable HTTP.
 - **Execution:** serial only. MCP tools never enter the parallel readonly path.
 - **Surfaces:** tools only. Resources and prompts are not exposed.
 - **Swarm:** MCP tools are excluded from Swarm worker registries in v1.

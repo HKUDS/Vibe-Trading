@@ -265,6 +265,7 @@ class SessionService:
 
         session_id = attempt.session_id
         attempt_id = attempt.attempt_id
+        loop = asyncio.get_running_loop()
 
         safe_overrides = sanitize_session_overrides(session_config) if session_config else session_config
         agent_config = load_runtime_agent_config(overrides=safe_overrides)
@@ -278,13 +279,18 @@ class SessionService:
             """Forward MCP server-name collision warnings to the operator event channel."""
             self.event_bus.emit(session_id, "mcp.warning", {"attempt_id": attempt_id, "message": msg})
 
-        agent = AgentLoop(
-            registry=build_registry(
+        registry = await loop.run_in_executor(
+            _AGENT_EXECUTOR,
+            lambda: build_registry(
                 persistent_memory=pm,
                 include_shell_tools=include_shell_tools,
                 agent_config=agent_config,
                 warn_callback=_mcp_collision_warn,
             ),
+        )
+
+        agent = AgentLoop(
+            registry=registry,
             llm=llm,
             event_callback=event_callback,
             max_iterations=50,
@@ -296,7 +302,6 @@ class SessionService:
         history = self._convert_messages_to_history(messages) if messages else None
 
         try:
-            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 _AGENT_EXECUTOR,
                 lambda: agent.run(

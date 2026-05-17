@@ -723,13 +723,18 @@ vibe-trading run "use my-server to do X"
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
+| `type` | string | inferred only for stdio | Transport type. Use `sse` or `streamableHttp` for URL-based servers. |
 | `command` | string | required | Executable to spawn |
 | `args` | array | `[]` | Command-line arguments |
 | `env` | object | `{}` | Extra environment variables merged into the subprocess env |
+| `url` | string | — | Remote SSE / streamable HTTP endpoint URL |
+| `headers` | object | `{}` | Extra HTTP headers for SSE / streamable HTTP servers |
 | `toolTimeout` | number | `30` | Per-tool call timeout in seconds |
 | `enabledTools` | array | `["*"]` | Tool allowlist. Use `["*"]` to expose all tools from the server |
 
 Config file location: `~/.vibe-trading/agent.json` (JSON or YAML).
+
+For URL-based transports, `type` is required. The agent no longer guesses between SSE and streamable HTTP from the URL suffix.
 
 ### Per-session overrides (API)
 
@@ -765,7 +770,7 @@ tool names unique. Rename the server in agent config if you want a different pre
 
 | Limit | Detail |
 |-------|--------|
-| Transport | stdio only (SSE / streamable HTTP excluded in v1) |
+| Transport | stdio, SSE, and streamable HTTP |
 | Execution | serial only — MCP tools never enter the parallel readonly path |
 | Surfaces | tools only (resources and prompts excluded in v1) |
 | Hot reload | not supported — restart the process to pick up config changes |
