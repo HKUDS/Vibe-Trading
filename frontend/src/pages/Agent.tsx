@@ -253,7 +253,7 @@ export function Agent() {
         scrollToBottom();
       },
 
-      heartbeat: () => {},
+      heartbeat: () => { touch(); },
       reconnect: (d) => { act().setSseStatus("reconnecting", Number(d.attempt ?? 0)); },
     });
   }, [connect, disconnect, scrollToBottom]);
@@ -463,6 +463,7 @@ export function Agent() {
         if (swarmCancelRef.current) { evtSource.close(); break; }
         try {
           const run = await api.getSwarmRun(runId);
+          lastEventRef.current = Date.now();
           const rs = String(run.status || "");
           if (["completed", "failed", "cancelled"].includes(rs)) {
             evtSource.close();
