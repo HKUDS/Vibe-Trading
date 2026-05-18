@@ -472,6 +472,17 @@ export function Agent() {
             );
           })}
 
+          {/* Pre-stream placeholder: visible after Send, before first SSE event */}
+          {status === "streaming" && !streamingText && toolCalls.length === 0 && (
+            <div className="flex gap-3">
+              <AgentAvatar />
+              <div className="flex-1 min-w-0 flex items-center gap-2 text-xs text-muted-foreground pt-1">
+                <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
+                <span>Thinking…</span>
+              </div>
+            </div>
+          )}
+
           {/* Live streaming area: text + tool status */}
           {(streamingText || (status === "streaming" && toolCalls.length > 0)) && (
             <div className="flex gap-3">
