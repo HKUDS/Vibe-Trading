@@ -124,7 +124,7 @@
     "api_key_env": null,
     "base_url_env": "OLLAMA_BASE_URL",
     "default_model": "qwen2.5:32b",
-    "default_base_url": "http://localhost:11434/v1",
+    "default_base_url": "http://localhost:11434",
     "api_key_required": false
   }
 ]

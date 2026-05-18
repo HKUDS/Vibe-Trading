@@ -73,7 +73,15 @@ class TestSyncProviderEnv:
         })
         # Ollama uses "ollama" as fallback key
         assert result["OPENAI_API_KEY"] in ("ollama", "")
-        assert "localhost" in result["OPENAI_API_BASE"]
+        assert result["OPENAI_API_BASE"] == "http://localhost:11434/v1"
+
+    def test_ollama_base_url_appends_v1(self) -> None:
+        result = self._run_sync({
+            "LANGCHAIN_PROVIDER": "ollama",
+            "OLLAMA_BASE_URL": "http://23.152.56.42:11434/",
+        })
+        assert result["OPENAI_API_BASE"] == "http://23.152.56.42:11434/v1"
+        assert result["OPENAI_BASE_URL"] == "http://23.152.56.42:11434/v1"
 
     def test_qwen_alias_to_dashscope(self) -> None:
         result = self._run_sync({

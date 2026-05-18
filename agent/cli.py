@@ -2490,7 +2490,7 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "provider": "ollama",
         "key_env": None,
         "base_env": "OLLAMA_BASE_URL",
-        "base_url": "http://localhost:11434/v1",
+        "base_url": "http://localhost:11434",
         "model": "qwen2.5:32b",
         "key_prefix": None,
         "key_placeholder": None,

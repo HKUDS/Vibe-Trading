@@ -190,6 +190,16 @@ def _ensure_dotenv() -> None:
     )
 
 
+def _normalize_ollama_base_url(base_url: str) -> str:
+    """Append ``/v1`` when missing so ChatOpenAI hits Ollama's OpenAI-compatible API."""
+    url = base_url.strip().rstrip("/")
+    if not url:
+        return url
+    if url.endswith("/v1"):
+        return url
+    return f"{url}/v1"
+
+
 def _sync_provider_env() -> None:
     """Map provider-specific env vars to OPENAI_* for ChatOpenAI.
 
@@ -235,6 +245,8 @@ def _sync_provider_env() -> None:
 
     # Resolve base URL: provider-specific env → OPENAI_BASE_URL fallback
     base_url = os.getenv(base_env, "") or os.getenv("OPENAI_BASE_URL", "") or os.getenv("OPENAI_API_BASE", "")
+    if provider == "ollama" and base_url:
+        base_url = _normalize_ollama_base_url(base_url)
 
     if api_key:
         os.environ["OPENAI_API_KEY"] = api_key

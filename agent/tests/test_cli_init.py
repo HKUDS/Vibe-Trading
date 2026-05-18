@@ -86,7 +86,7 @@ class TestCliInit:
                  cli.Prompt,
                  "ask",
                  side_effect=[
-                     "http://localhost:11434/v1",
+                     "http://localhost:11434",
                      "qwen2.5:32b",
                      "",
                      "",
@@ -97,7 +97,7 @@ class TestCliInit:
         assert result == 0
         content = env_path.read_text(encoding="utf-8")
         assert "LANGCHAIN_PROVIDER=ollama" in content
-        assert "OLLAMA_BASE_URL=http://localhost:11434/v1" in content
+        assert "OLLAMA_BASE_URL=http://localhost:11434" in content
         assert "LANGCHAIN_MODEL_NAME=qwen2.5:32b" in content
         assert "OPENAI_API_KEY=" not in content
         assert "OPENROUTER_API_KEY=" not in content
