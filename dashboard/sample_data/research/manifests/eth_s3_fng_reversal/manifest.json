@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "strategy_id": "eth_s3_fng_reversal",
+  "symbol": "ETH",
+  "generated_at": "2026-05-14T12:40:00Z",
+  "pipeline_stage": 5,
+  "spec": {
+    "source_run": null,
+    "strategy_id": "eth_s3_fng_reversal",
+    "symbol": "ETH",
+    "spec_yaml": "research/strategies/eth_s3_fng_reversal.yaml",
+    "description": "Fear & Greed contrarian reversal: buy extreme fear, sell extreme greed."
+  },
+  "generation": {
+    "source_run": null,
+    "method": "crypto_trading_desk swarm",
+    "model": "gpt-5",
+    "rationale": "Sentiment extremes are widely believed to mark reversals; the swarm proposed a contrarian entry on F&G tails.",
+    "factors_used": ["fng"]
+  },
+  "reproducibility": {
+    "source_run": "runs/eth_s3_fng_reversal_base",
+    "git_commit": "fd9ff77",
+    "config_hash": "c9d0e1f2",
+    "engine": "vibe-backtest",
+    "data_source": "okx",
+    "seed": 42
+  },
+  "backtest": {
+    "in_sample": {
+      "source_run": "runs/eth_s3_fng_reversal_base",
+      "sharpe": 1.71,
+      "max_drawdown": 0.088,
+      "trades": 156,
+      "profit_factor": 1.63,
+      "total_return": 0.341,
+      "win_rate": 0.54
+    },
+    "oos": {
+      "source_run": "runs/eth_s3_fng_reversal_oos",
+      "sharpe": -0.42,
+      "max_drawdown": 0.231,
+      "trades": 68,
+      "profit_factor": 0.81,
+      "total_return": -0.147,
+      "win_rate": 0.41
+    },
+    "walk_forward": {
+      "source_run": "runs/eth_s3_fng_reversal_oos",
+      "windows": [
+        { "window": "2024-Q1", "sharpe": 0.18, "total_return": 0.009 },
+        { "window": "2024-Q2", "sharpe": -0.71, "total_return": -0.061 },
+        { "window": "2024-Q3", "sharpe": -0.34, "total_return": -0.028 },
+        { "window": "2024-Q4", "sharpe": -0.55, "total_return": -0.044 }
+      ]
+    },
+    "monte_carlo": {
+      "source_run": "runs/eth_s3_fng_reversal_base",
+      "n_simulations": 5000,
+      "ci_low": -0.214,
+      "ci_high": 0.276,
+      "ci_crosses_zero": true
+    },
+    "benchmark": {
+      "source_run": "runs/eth_s3_fng_reversal_base",
+      "strategy_return": 0.341,
+      "hodl_return": 0.518,
+      "excess_return": -0.177,
+      "beats_hodl": false
+    },
+    "by_regime": [
+      {
+        "regime": "bull",
+        "source_run": "runs/eth_s3_fng_reversal_bull",
+        "sharpe": 2.44,
+        "max_drawdown": 0.052,
+        "total_return": 0.287,
+        "trades": 61
+      },
+      {
+        "regime": "bear",
+        "source_run": "runs/eth_s3_fng_reversal_bear",
+        "sharpe": -1.12,
+        "max_drawdown": 0.244,
+        "total_return": -0.198,
+        "trades": 54
+      },
+      {
+        "regime": "chop",
+        "source_run": "runs/eth_s3_fng_reversal_chop",
+        "sharpe": 0.21,
+        "max_drawdown": 0.121,
+        "total_return": 0.014,
+        "trades": 41
+      }
+    ],
+    "cost_stress": {
+      "source_run": "runs/eth_s3_fng_reversal_stress",
+      "levels": [
+        { "label": "baseline", "source_run": "runs/eth_s3_fng_reversal_stress", "fee_multiplier": 1.0, "sharpe": 1.71, "total_return": 0.341, "profit_factor": 1.63 },
+        { "label": "2x", "source_run": "runs/eth_s3_fng_reversal_stress", "fee_multiplier": 2.0, "sharpe": 0.74, "total_return": 0.092, "profit_factor": 1.12 },
+        { "label": "3x", "source_run": "runs/eth_s3_fng_reversal_stress", "fee_multiplier": 3.0, "sharpe": -0.08, "total_return": -0.041, "profit_factor": 0.93 }
+      ]
+    }
+  },
+  "optimization": {
+    "source_run": "runs/eth_s3_fng_reversal_sweep",
+    "method": "quant_strategy_desk swarm",
+    "swept_params": ["fng_low_threshold", "fng_high_threshold"],
+    "best_params": { "fng_low_threshold": 20, "fng_high_threshold": 80 },
+    "improvement_summary": "No parameter combination produced a positive OOS Sharpe; edge is in-sample only."
+  },
+  "diagnosis": {
+    "source_run": "runs/eth_s3_fng_reversal_base",
+    "recommended_action": "back_to_stage_2",
+    "summary": "Classic overfit: strong in-sample, negative OOS, alpha disappears under realistic fees. Abandon this design.",
+    "findings": [
+      "OOS Sharpe -0.42 versus in-sample 1.71 — the edge does not generalise.",
+      "Profit factor drops to 1.12 at 2x fees and below 1.0 at 3x — alpha is a fee illusion.",
+      "All four walk-forward windows except Q1 are negative."
+    ]
+  },
+  "gate": {
+    "source_run": "runs/eth_s3_fng_reversal_base",
+    "thresholds": [
+      { "name": "min_sharpe", "threshold": 1.5, "actual": 1.71, "passed": true, "fatal": false },
+      { "name": "max_drawdown", "threshold": 0.1, "actual": 0.088, "passed": true, "fatal": false },
+      { "name": "min_trades", "threshold": 100, "actual": 156, "passed": true, "fatal": false },
+      { "name": "min_profit_factor", "threshold": 1.5, "actual": 1.63, "passed": true, "fatal": false },
+      { "name": "walk_forward_min_sharpe", "threshold": 1.0, "actual": -0.71, "passed": false, "fatal": false },
+      { "name": "monte_carlo_ci_positive", "threshold": 0.0, "actual": -0.214, "passed": false, "fatal": false },
+      { "name": "oos_sharpe_positive", "threshold": 0.0, "actual": -0.42, "passed": false, "fatal": true },
+      { "name": "alpha_not_fee_illusion", "threshold": 1.5, "actual": 1.12, "passed": false, "fatal": true }
+    ],
+    "overall_pass": false,
+    "fatal_fail": true,
+    "red_flags": [
+      "oos_sharpe_far_below_is",
+      "underperforms_hodl",
+      "alpha_is_fee_illusion",
+      "overfit_suspect",
+      "regime_conditional"
+    ]
+  }
+}

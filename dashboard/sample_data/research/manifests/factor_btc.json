@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "symbol": "BTC",
+  "generated_at": "2026-05-12T08:00:00Z",
+  "period_days": 730,
+  "horizons_h": [8, 24, 72, 168],
+  "factors": [
+    {
+      "name": "funding_rate",
+      "ic_by_horizon": {
+        "8": -0.041,
+        "24": -0.118,
+        "72": -0.092,
+        "168": -0.055
+      },
+      "ir": -0.83,
+      "sample_size": 17400,
+      "cross_regime_ic": {
+        "bull": -0.131,
+        "bear": -0.097,
+        "chop": -0.044
+      },
+      "stability": "conditional",
+      "verdict": "single_use"
+    },
+    {
+      "name": "oi_change_24h",
+      "ic_by_horizon": {
+        "8": 0.032,
+        "24": 0.067,
+        "72": 0.058,
+        "168": 0.021
+      },
+      "ir": 0.41,
+      "sample_size": 17376,
+      "cross_regime_ic": null,
+      "stability": null,
+      "verdict": "ensemble_only"
+    },
+    {
+      "name": "fng",
+      "ic_by_horizon": {
+        "8": 0.009,
+        "24": 0.018,
+        "72": 0.027,
+        "168": 0.033
+      },
+      "ir": 0.12,
+      "sample_size": 17400,
+      "cross_regime_ic": null,
+      "stability": null,
+      "verdict": "reject"
+    }
+  ]
+}

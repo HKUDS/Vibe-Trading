@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-14T13:00:00Z",
+  "method": "weighted_score(oos_sharpe, profit_factor, regime_stability)",
+  "ranking": [
+    {
+      "strategy_id": "btc_s1_funding_carry",
+      "symbol": "BTC",
+      "rank": 1,
+      "score": 0.871,
+      "selected": true
+    },
+    {
+      "strategy_id": "btc_s2_oi_momentum",
+      "symbol": "BTC",
+      "rank": 2,
+      "score": 0.402,
+      "selected": false
+    },
+    {
+      "strategy_id": "eth_s3_fng_reversal",
+      "symbol": "ETH",
+      "rank": 3,
+      "score": 0.118,
+      "selected": false
+    }
+  ]
+}

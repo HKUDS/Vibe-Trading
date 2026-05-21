@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "strategy_id": "btc_s2_oi_momentum",
+  "symbol": "BTC",
+  "generated_at": "2026-05-14T11:15:00Z",
+  "pipeline_stage": 5,
+  "spec": {
+    "source_run": null,
+    "strategy_id": "btc_s2_oi_momentum",
+    "symbol": "BTC",
+    "spec_yaml": "research/strategies/btc_s2_oi_momentum.yaml",
+    "description": "Open-interest momentum: long when OI rises with price, exit on OI divergence."
+  },
+  "generation": {
+    "source_run": null,
+    "method": "crypto_trading_desk swarm",
+    "model": "gpt-5",
+    "rationale": "OI change had a weak positive ensemble-only IC; momentum framing attempts to extract a directional edge.",
+    "factors_used": ["oi_change_24h"]
+  },
+  "reproducibility": {
+    "source_run": "runs/btc_s2_oi_momentum_base",
+    "git_commit": "fd9ff77",
+    "config_hash": "e5f6a7b8",
+    "engine": "vibe-backtest",
+    "data_source": "okx",
+    "seed": 42
+  },
+  "backtest": {
+    "in_sample": {
+      "source_run": "runs/btc_s2_oi_momentum_base",
+      "sharpe": 1.62,
+      "max_drawdown": 0.094,
+      "trades": 71,
+      "profit_factor": 1.58,
+      "total_return": 0.288,
+      "win_rate": 0.52
+    },
+    "oos": {
+      "source_run": "runs/btc_s2_oi_momentum_oos",
+      "sharpe": 0.94,
+      "max_drawdown": 0.112,
+      "trades": 33,
+      "profit_factor": 1.21,
+      "total_return": 0.071,
+      "win_rate": 0.48
+    },
+    "walk_forward": {
+      "source_run": "runs/btc_s2_oi_momentum_oos",
+      "windows": [
+        { "window": "2024-Q1", "sharpe": 1.14, "total_return": 0.041 },
+        { "window": "2024-Q2", "sharpe": 0.72, "total_return": 0.018 },
+        { "window": "2024-Q3", "sharpe": 1.31, "total_return": 0.053 },
+        { "window": "2024-Q4", "sharpe": 0.88, "total_return": 0.022 }
+      ]
+    },
+    "monte_carlo": {
+      "source_run": "runs/btc_s2_oi_momentum_base",
+      "n_simulations": 5000,
+      "ci_low": 0.014,
+      "ci_high": 0.388,
+      "ci_crosses_zero": false
+    },
+    "benchmark": {
+      "source_run": "runs/btc_s2_oi_momentum_base",
+      "strategy_return": 0.288,
+      "hodl_return": 0.402,
+      "excess_return": -0.114,
+      "beats_hodl": false
+    },
+    "by_regime": [
+      {
+        "regime": "bull",
+        "source_run": "runs/btc_s2_oi_momentum_bull",
+        "sharpe": 2.01,
+        "max_drawdown": 0.061,
+        "total_return": 0.214,
+        "trades": 38
+      },
+      {
+        "regime": "bear",
+        "source_run": "runs/btc_s2_oi_momentum_bear",
+        "sharpe": 0.31,
+        "max_drawdown": 0.137,
+        "total_return": -0.022,
+        "trades": 19
+      },
+      {
+        "regime": "chop",
+        "source_run": "runs/btc_s2_oi_momentum_chop",
+        "sharpe": 0.77,
+        "max_drawdown": 0.108,
+        "total_return": 0.041,
+        "trades": 14
+      }
+    ],
+    "cost_stress": {
+      "source_run": "runs/btc_s2_oi_momentum_stress",
+      "levels": [
+        { "label": "baseline", "source_run": "runs/btc_s2_oi_momentum_stress", "fee_multiplier": 1.0, "sharpe": 1.62, "total_return": 0.288, "profit_factor": 1.58 },
+        { "label": "2x", "source_run": "runs/btc_s2_oi_momentum_stress", "fee_multiplier": 2.0, "sharpe": 1.34, "total_return": 0.196, "profit_factor": 1.52 },
+        { "label": "3x", "source_run": "runs/btc_s2_oi_momentum_stress", "fee_multiplier": 3.0, "sharpe": 1.06, "total_return": 0.118, "profit_factor": 1.39 }
+      ]
+    }
+  },
+  "optimization": {
+    "source_run": "runs/btc_s2_oi_momentum_sweep",
+    "method": "quant_strategy_desk swarm",
+    "swept_params": ["oi_lookback", "divergence_threshold"],
+    "best_params": { "oi_lookback": 24, "divergence_threshold": 0.03 },
+    "improvement_summary": "Marginal Sharpe gain; trade count remained too low across the sweep."
+  },
+  "diagnosis": {
+    "source_run": "runs/btc_s2_oi_momentum_base",
+    "recommended_action": "back_to_stage_2",
+    "summary": "Too few trades and regime-conditional edge; needs a redesign with more entry opportunities.",
+    "findings": [
+      "Only 71 in-sample trades — below the 100-trade minimum for statistical reliability.",
+      "Edge concentrates in bull regime (Sharpe 2.01) and collapses in bear (0.31)."
+    ]
+  },
+  "gate": {
+    "source_run": "runs/btc_s2_oi_momentum_base",
+    "thresholds": [
+      { "name": "min_sharpe", "threshold": 1.5, "actual": 1.62, "passed": true, "fatal": false },
+      { "name": "max_drawdown", "threshold": 0.1, "actual": 0.094, "passed": true, "fatal": false },
+      { "name": "min_trades", "threshold": 100, "actual": 71, "passed": false, "fatal": false },
+      { "name": "min_profit_factor", "threshold": 1.5, "actual": 1.58, "passed": true, "fatal": false },
+      { "name": "walk_forward_min_sharpe", "threshold": 1.0, "actual": 0.72, "passed": false, "fatal": false },
+      { "name": "monte_carlo_ci_positive", "threshold": 0.0, "actual": 0.014, "passed": true, "fatal": false },
+      { "name": "oos_sharpe_positive", "threshold": 0.0, "actual": 0.94, "passed": true, "fatal": true },
+      { "name": "alpha_not_fee_illusion", "threshold": 1.5, "actual": 1.52, "passed": true, "fatal": true }
+    ],
+    "overall_pass": false,
+    "fatal_fail": false,
+    "red_flags": ["too_few_trades", "underperforms_hodl", "regime_conditional"]
+  }
+}
