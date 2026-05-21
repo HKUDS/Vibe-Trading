@@ -1,0 +1,37 @@
+# research/research_config.yaml
+# 管線種子設定檔 — D5 決策：只放 seed inputs，階段間決策走 JSON handoff。
+# 修改此檔可重新定向整條管線，不需改任何 .py 原始碼。
+
+# ─── 研究幣種清單 ──────────────────────────────────────────────────────────────
+# 管線對每個幣種跑一輪，產出檔名帶幣種前綴（btc_、eth_）互不覆蓋。
+# 每個 symbol entry 需包含：
+#   name      : 短名（小寫），用作檔名前綴與 run 目錄前綴
+#   okx_swap  : OKX 永續合約代碼（REST / funding history 使用）
+#   ccxt_bybit: ccxt 統一格式的 Bybit 永續合約代碼（OI history 使用）
+symbols:
+  - name: btc
+    okx_swap: "BTC-USDT-SWAP"
+    ccxt_bybit: "BTC/USDT:USDT"
+
+# 若要加 ETH，取消下面的注釋：
+# - name: eth
+#   okx_swap: "ETH-USDT-SWAP"
+#   ccxt_bybit: "ETH/USDT:USDT"
+
+# ─── 資料抓取參數 ──────────────────────────────────────────────────────────────
+period: 730          # 回溯天數（約 2 年）
+interval: "1H"       # K 線週期（OKX bar 格式）
+data_source: okx     # 資金費率 & K 線來源；OI 固定來自 Bybit
+
+# ─── 回測引擎 ──────────────────────────────────────────────────────────────────
+engine: daily        # backtest.runner 引擎模式（daily / hourly）
+
+# ─── 交易成本（OKX 掛單 / 吃單 / 滑點，單位：比率） ──────────────────────────
+fees:
+  maker_rate: 0.0002   # BTC 永續掛單手續費 0.02%
+  taker_rate: 0.00055  # BTC 永續吃單手續費 0.055%
+  slippage:   0.0005   # 預設滑點估計 0.05%
+
+# ─── 因子分析 Horizons ──────────────────────────────────────────────────────────
+# IC/IR 計算所用的前向報酬時窗（小時）
+horizons_h: [8, 24, 72, 168]
