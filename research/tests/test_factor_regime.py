@@ -243,12 +243,8 @@ class TestClassifyStability:
         assert classify_stability(ic) == FactorStability.CONDITIONAL
 
     def test_large_magnitude_spread_is_conditional(self):
-        """spread = 0.20 - 0.02 = 0.18 > 0.15 -> conditional."""
-        ic = {"bull": 0.20, "bear": 0.02, "neutral": 0.05}
-        # bear is below non-trivial threshold (0.005 ... wait, 0.02 is exactly at threshold)
-        # Let's use values where two are non-trivial but spread > 0.15
+        """spread = |0.22 - 0.06| = 0.16 > 0.15 -> conditional."""
         ic = {"bull": 0.22, "bear": 0.06, "neutral": float("nan")}
-        # spread = |0.22 - 0.06| = 0.16 > 0.15 -> conditional
         assert classify_stability(ic) == FactorStability.CONDITIONAL
 
     def test_small_spread_consistent_sign_regime_stable(self):
