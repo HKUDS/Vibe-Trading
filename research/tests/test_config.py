@@ -14,6 +14,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+import yaml
 
 # We run pytest from research/ so pipeline.config is importable directly.
 from pipeline.config import (
@@ -77,21 +78,13 @@ class TestRealConfig:
         assert isinstance(cfg.period, int)
         assert cfg.period > 0
 
-    def test_interval_is_1H(self) -> None:
+    def test_horizons_all_positive(self) -> None:
         cfg = load_config()
-        assert cfg.interval == "1H"
+        assert all(h > 0 for h in cfg.horizons_h)
 
-    def test_horizons_match_factor_extended_defaults(self) -> None:
-        """factor_extended.py hardcoded [8, 24, 72, 168]; config must match."""
+    def test_horizons_is_non_empty(self) -> None:
         cfg = load_config()
-        assert cfg.horizons_h == [8, 24, 72, 168]
-
-    def test_fees_match_setup_bear_values(self) -> None:
-        """setup_bear.py hardcoded maker=0.0002, taker=0.00055, slip=0.0005."""
-        cfg = load_config()
-        assert cfg.fees.maker_rate == pytest.approx(0.0002)
-        assert cfg.fees.taker_rate == pytest.approx(0.00055)
-        assert cfg.fees.slippage == pytest.approx(0.0005)
+        assert len(cfg.horizons_h) >= 1
 
     def test_engine_is_set(self) -> None:
         cfg = load_config()
@@ -101,28 +94,86 @@ class TestRealConfig:
         cfg = load_config()
         assert cfg.data_source  # non-empty string
 
+    def test_fees_are_non_negative(self) -> None:
+        cfg = load_config()
+        assert cfg.fees.maker_rate >= 0
+        assert cfg.fees.taker_rate >= 0
+        assert cfg.fees.slippage >= 0
+
+    def test_symbols_field_is_tuple(self) -> None:
+        cfg = load_config()
+        assert isinstance(cfg.symbols, tuple)
+
+    def test_horizons_h_field_is_tuple(self) -> None:
+        cfg = load_config()
+        assert isinstance(cfg.horizons_h, tuple)
+
+
+# ─── Integration: exact-value pins (intentionally brittle) ───────────────────
+
+class TestLegacyCompatibility:
+    """
+    WARNING: These tests intentionally pin exact values from research_config.yaml
+    against downstream hardcoded constants in factor_extended.py and setup_bear.py.
+    They WILL break on any intentional YAML edit to these values, and that is
+    expected — update both this class and the downstream file when changing the values.
+    """
+
+    def test_interval_is_1H(self) -> None:
+        cfg = load_config()
+        assert cfg.interval == "1H"
+
+    def test_horizons_match_factor_extended_defaults(self) -> None:
+        """factor_extended.py hardcoded [8, 24, 72, 168]; config must match."""
+        cfg = load_config()
+        assert list(cfg.horizons_h) == [8, 24, 72, 168]
+
+    def test_fees_match_setup_bear_values(self) -> None:
+        """setup_bear.py hardcoded maker=0.0002, taker=0.00055, slip=0.0005."""
+        cfg = load_config()
+        assert cfg.fees.maker_rate == pytest.approx(0.0002)
+        assert cfg.fees.taker_rate == pytest.approx(0.00055)
+        assert cfg.fees.slippage == pytest.approx(0.0005)
+
 
 # ─── Unit: minimal valid fixture ─────────────────────────────────────────────
 
+@pytest.fixture
+def minimal_cfg(tmp_path: Path) -> ResearchConfig:
+    """Load MINIMAL_VALID_YAML once; shared by TestMinimalValidFixture methods."""
+    p = write_yaml(tmp_path, MINIMAL_VALID_YAML)
+    return load_config(p)
+
+
 class TestMinimalValidFixture:
-    def test_loads_from_fixture(self, tmp_path: Path) -> None:
-        p = write_yaml(tmp_path, MINIMAL_VALID_YAML)
-        cfg = load_config(p)
-        assert isinstance(cfg, ResearchConfig)
+    def test_loads_from_fixture(self, minimal_cfg: ResearchConfig) -> None:
+        assert isinstance(minimal_cfg, ResearchConfig)
 
-    def test_fees_parsed(self, tmp_path: Path) -> None:
-        p = write_yaml(tmp_path, MINIMAL_VALID_YAML)
-        cfg = load_config(p)
-        assert isinstance(cfg.fees, FeesConfig)
-        assert cfg.fees.maker_rate == pytest.approx(0.0002)
+    def test_fees_parsed(self, minimal_cfg: ResearchConfig) -> None:
+        assert isinstance(minimal_cfg.fees, FeesConfig)
+        assert minimal_cfg.fees.maker_rate == pytest.approx(0.0002)
 
-    def test_horizons_parsed(self, tmp_path: Path) -> None:
-        p = write_yaml(tmp_path, MINIMAL_VALID_YAML)
-        cfg = load_config(p)
-        assert cfg.horizons_h == [8, 24, 72, 168]
+    def test_horizons_parsed(self, minimal_cfg: ResearchConfig) -> None:
+        assert list(minimal_cfg.horizons_h) == [8, 24, 72, 168]
+
+    def test_symbols_is_tuple(self, minimal_cfg: ResearchConfig) -> None:
+        assert isinstance(minimal_cfg.symbols, tuple)
+
+    def test_horizons_h_is_tuple(self, minimal_cfg: ResearchConfig) -> None:
+        assert isinstance(minimal_cfg.horizons_h, tuple)
+
+    def test_symbols_tuple_immutable(self, minimal_cfg: ResearchConfig) -> None:
+        """Appending to cfg.symbols must fail (it is a tuple, not a list)."""
+        with pytest.raises(AttributeError):
+            minimal_cfg.symbols.append(None)  # type: ignore[attr-defined]
+
+    def test_horizons_tuple_immutable(self, minimal_cfg: ResearchConfig) -> None:
+        """Appending to cfg.horizons_h must fail (it is a tuple, not a list)."""
+        with pytest.raises(AttributeError):
+            minimal_cfg.horizons_h.append(999)  # type: ignore[attr-defined]
 
 
-# ─── Unit: symbol prefix logic ───────────────────────────────────────────────
+# ─── Unit: symbol prefix / name logic ────────────────────────────────────────
 
 class TestSymbolPrefix:
     def test_single_symbol_prefix(self, tmp_path: Path) -> None:
@@ -130,7 +181,7 @@ class TestSymbolPrefix:
         cfg = load_config(p)
         assert cfg.symbols[0].prefix == "btc_"
 
-    def test_multi_symbol_prefixes(self, tmp_path: Path) -> None:
+    def test_multi_symbol_names(self, tmp_path: Path) -> None:
         yaml_content = """\
             symbols:
               - name: btc
@@ -154,8 +205,10 @@ class TestSymbolPrefix:
         assert len(cfg.symbols) == 2
         prefixes = [s.prefix for s in cfg.symbols]
         assert prefixes == ["btc_", "eth_"]
-        # symbol_prefixes() returns bare names
-        assert cfg.symbol_prefixes() == ["btc", "eth"]
+        # symbol_names() returns bare short names
+        assert cfg.symbol_names() == ["btc", "eth"]
+        # symbol_prefix_list() returns underscore-suffixed prefixes
+        assert cfg.symbol_prefix_list() == ["btc_", "eth_"]
 
     def test_name_forced_lowercase(self, tmp_path: Path) -> None:
         yaml_content = """\
@@ -178,12 +231,15 @@ class TestSymbolPrefix:
         assert cfg.symbols[0].name == "btc"
         assert cfg.symbols[0].prefix == "btc_"
 
-    def test_iter_symbols(self, tmp_path: Path) -> None:
+    def test_symbol_names_method(self, tmp_path: Path) -> None:
         p = write_yaml(tmp_path, MINIMAL_VALID_YAML)
         cfg = load_config(p)
-        syms = list(cfg.iter_symbols())
-        assert len(syms) == 1
-        assert isinstance(syms[0], SymbolConfig)
+        assert cfg.symbol_names() == ["btc"]
+
+    def test_symbol_prefix_list_method(self, tmp_path: Path) -> None:
+        p = write_yaml(tmp_path, MINIMAL_VALID_YAML)
+        cfg = load_config(p)
+        assert cfg.symbol_prefix_list() == ["btc_"]
 
 
 # ─── Unit: error cases ───────────────────────────────────────────────────────
@@ -195,17 +251,37 @@ class TestMissingFile:
             load_config(missing)
 
 
+class TestEmptyOrMalformedYaml:
+    def test_empty_yaml_raises_type_error(self, tmp_path: Path) -> None:
+        """Empty YAML file produces None from safe_load; must raise TypeError."""
+        p = tmp_path / "research_config.yaml"
+        p.write_text("", encoding="utf-8")
+        with pytest.raises(TypeError, match="YAML mapping"):
+            load_config(p)
+
+    def test_list_root_yaml_raises_type_error(self, tmp_path: Path) -> None:
+        """List-rooted YAML must raise TypeError, not AttributeError."""
+        p = tmp_path / "research_config.yaml"
+        p.write_text("- foo\n- bar\n", encoding="utf-8")
+        with pytest.raises(TypeError, match="YAML mapping"):
+            load_config(p)
+
+    def test_scalar_root_yaml_raises_type_error(self, tmp_path: Path) -> None:
+        """Scalar YAML must raise TypeError."""
+        p = tmp_path / "research_config.yaml"
+        p.write_text("just_a_string\n", encoding="utf-8")
+        with pytest.raises(TypeError, match="YAML mapping"):
+            load_config(p)
+
+
 class TestMissingTopLevelKey:
     @pytest.mark.parametrize("missing_key", [
         "symbols", "period", "interval", "data_source", "engine", "fees", "horizons_h"
     ])
     def test_raises_key_error_for_missing_key(self, tmp_path: Path, missing_key: str) -> None:
-        import yaml as _yaml
-
-        base = _yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
         del base[missing_key]
 
-        import yaml
         p = tmp_path / "research_config.yaml"
         p.write_text(yaml.dump(base), encoding="utf-8")
 
@@ -218,12 +294,9 @@ class TestMissingSymbolKey:
     def test_raises_key_error_for_missing_symbol_field(
         self, tmp_path: Path, missing_sym_key: str
     ) -> None:
-        import yaml as _yaml
-
-        base = _yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
         del base["symbols"][0][missing_sym_key]
 
-        import yaml
         p = tmp_path / "research_config.yaml"
         p.write_text(yaml.dump(base), encoding="utf-8")
 
@@ -236,12 +309,9 @@ class TestMissingFeeKey:
     def test_raises_key_error_for_missing_fee_field(
         self, tmp_path: Path, missing_fee_key: str
     ) -> None:
-        import yaml as _yaml
-
-        base = _yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
         del base["fees"][missing_fee_key]
 
-        import yaml
         p = tmp_path / "research_config.yaml"
         p.write_text(yaml.dump(base), encoding="utf-8")
 
@@ -251,11 +321,9 @@ class TestMissingFeeKey:
 
 class TestTypeErrors:
     def test_symbols_not_list_raises_type_error(self, tmp_path: Path) -> None:
-        import yaml as _yaml
-        base = _yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
         base["symbols"] = "btc"  # string instead of list
 
-        import yaml
         p = tmp_path / "research_config.yaml"
         p.write_text(yaml.dump(base), encoding="utf-8")
 
@@ -263,11 +331,9 @@ class TestTypeErrors:
             load_config(p)
 
     def test_horizons_not_list_raises_type_error(self, tmp_path: Path) -> None:
-        import yaml as _yaml
-        base = _yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
         base["horizons_h"] = 8  # scalar instead of list
 
-        import yaml
         p = tmp_path / "research_config.yaml"
         p.write_text(yaml.dump(base), encoding="utf-8")
 
@@ -275,13 +341,130 @@ class TestTypeErrors:
             load_config(p)
 
     def test_empty_symbols_raises_value_error(self, tmp_path: Path) -> None:
-        import yaml as _yaml
-        base = _yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
         base["symbols"] = []
 
-        import yaml
         p = tmp_path / "research_config.yaml"
         p.write_text(yaml.dump(base), encoding="utf-8")
 
         with pytest.raises(ValueError, match="empty"):
+            load_config(p)
+
+    def test_fees_is_scalar_raises_type_error(self, tmp_path: Path) -> None:
+        """fees: scalar string must raise TypeError, not AttributeError."""
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base["fees"] = "cheap"
+
+        p = tmp_path / "research_config.yaml"
+        p.write_text(yaml.dump(base), encoding="utf-8")
+
+        with pytest.raises(TypeError, match="fees"):
+            load_config(p)
+
+    def test_symbol_entry_is_string_raises_type_error(self, tmp_path: Path) -> None:
+        """A symbol entry that is a plain string must raise TypeError, not AttributeError."""
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base["symbols"] = ["btc"]  # string element instead of mapping
+
+        p = tmp_path / "research_config.yaml"
+        p.write_text(yaml.dump(base), encoding="utf-8")
+
+        with pytest.raises(TypeError, match="symbols\\[0\\]"):
+            load_config(p)
+
+
+class TestRangeValidation:
+    def test_negative_period_raises_value_error(self, tmp_path: Path) -> None:
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base["period"] = -1
+
+        p = tmp_path / "research_config.yaml"
+        p.write_text(yaml.dump(base), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="period"):
+            load_config(p)
+
+    def test_zero_period_raises_value_error(self, tmp_path: Path) -> None:
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base["period"] = 0
+
+        p = tmp_path / "research_config.yaml"
+        p.write_text(yaml.dump(base), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="period"):
+            load_config(p)
+
+    def test_negative_horizon_raises_value_error(self, tmp_path: Path) -> None:
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base["horizons_h"] = [8, -24, 72]
+
+        p = tmp_path / "research_config.yaml"
+        p.write_text(yaml.dump(base), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="horizons_h"):
+            load_config(p)
+
+    def test_zero_horizon_raises_value_error(self, tmp_path: Path) -> None:
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base["horizons_h"] = [0, 24]
+
+        p = tmp_path / "research_config.yaml"
+        p.write_text(yaml.dump(base), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="horizons_h"):
+            load_config(p)
+
+    def test_negative_maker_rate_raises_value_error(self, tmp_path: Path) -> None:
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base["fees"]["maker_rate"] = -0.001
+
+        p = tmp_path / "research_config.yaml"
+        p.write_text(yaml.dump(base), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="maker_rate"):
+            load_config(p)
+
+    def test_negative_taker_rate_raises_value_error(self, tmp_path: Path) -> None:
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base["fees"]["taker_rate"] = -0.001
+
+        p = tmp_path / "research_config.yaml"
+        p.write_text(yaml.dump(base), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="taker_rate"):
+            load_config(p)
+
+    def test_negative_slippage_raises_value_error(self, tmp_path: Path) -> None:
+        base = yaml.safe_load(textwrap.dedent(MINIMAL_VALID_YAML))
+        base["fees"]["slippage"] = -0.001
+
+        p = tmp_path / "research_config.yaml"
+        p.write_text(yaml.dump(base), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="slippage"):
+            load_config(p)
+
+
+class TestDuplicateSymbols:
+    def test_duplicate_symbol_names_raises_value_error(self, tmp_path: Path) -> None:
+        yaml_content = """\
+            symbols:
+              - name: btc
+                okx_swap: "BTC-USDT-SWAP"
+                ccxt_bybit: "BTC/USDT:USDT"
+              - name: btc
+                okx_swap: "BTC-USDT-SWAP"
+                ccxt_bybit: "BTC/USDT:USDT"
+            period: 730
+            interval: "1H"
+            data_source: okx
+            engine: daily
+            fees:
+              maker_rate: 0.0002
+              taker_rate: 0.00055
+              slippage: 0.0005
+            horizons_h: [8, 24, 72, 168]
+        """
+        p = write_yaml(tmp_path, yaml_content)
+        with pytest.raises(ValueError, match="[Dd]uplicate"):
             load_config(p)
