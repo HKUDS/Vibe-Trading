@@ -32,8 +32,9 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import types
 from pathlib import Path
-from typing import Optional
+from typing import Mapping
 
 # strategy_runs.json lives at  <repo-root>/research/strategy_runs.json.
 # This module is at            <repo-root>/research/pipeline/strategy_runs.py.
@@ -66,32 +67,32 @@ class StrategyRunsEntry:
     spec_yaml: str
     """Repo-relative path to the strategy YAML, e.g. 'research/strategies/strategy_S1.yaml'."""
 
-    base_run: Optional[str]
+    base_run: str | None
     """
     Name of the primary in-sample backtest run directory under runs/.
     Null means the run has not been generated yet (fill in as you backtest).
     """
 
-    regime_runs: dict[str, str]
+    regime_runs: Mapping[str, str]
     """
     Per-market-regime run directories.
     Typical keys: 'bull', 'bear', 'neutral'.
     Example: {"bull": "btc_s1_bull", "bear": "btc_s1_bear", "neutral": "btc_s1_neutral"}
     """
 
-    stress_runs: dict[str, str]
+    stress_runs: Mapping[str, str]
     """
     Cost-stress run directories keyed by a descriptive label.
     Example: {"3x_fees": "btc_s1_base_stress"}
     """
 
-    oos_runs: list[str]
+    oos_runs: tuple[str, ...]
     """
     Out-of-sample run directory names (ordered chronologically if multiple).
-    Example: ["btc_s1_oos_2023", "btc_s1_oos_2024"]
+    Example: ("btc_s1_oos_2023", "btc_s1_oos_2024")
     """
 
-    sweep_run: Optional[str]
+    sweep_run: str | None
     """
     Parameter-sweep run directory name.
     Null means no sweep has been run yet.
@@ -102,7 +103,7 @@ class StrategyRunsEntry:
 class StrategyRunsMap:
     """Top-level object returned by load_strategy_runs()."""
 
-    entries: dict[str, StrategyRunsEntry]
+    entries: Mapping[str, StrategyRunsEntry]
     """
     Maps strategy_id -> StrategyRunsEntry.
     strategy_id follows the convention: <coin>_s<N>_<archetype>
@@ -155,8 +156,10 @@ def load_strategy_runs(path: Path | str | None = None) -> StrategyRunsMap:
     entries: dict[str, StrategyRunsEntry] = {}
 
     for strategy_id, entry_raw in raw.items():
-        # Skip the top-level "_comment" key used for self-documentation
-        if strategy_id.startswith("_"):
+        # Skip the top-level "_comment" key used for self-documentation.
+        # Only the exact key "_comment" is skipped; other underscore-prefixed
+        # strategy ids (e.g. "_archived_strategy") are loaded normally.
+        if strategy_id == "_comment":
             continue
 
         # Each entry must be a JSON object
@@ -247,10 +250,10 @@ def load_strategy_runs(path: Path | str | None = None) -> StrategyRunsMap:
             symbol=symbol,
             spec_yaml=spec_yaml,
             base_run=base_run,
-            regime_runs=dict(regime_runs),   # copy; original JSON dict is fine
-            stress_runs=dict(stress_runs),
-            oos_runs=list(oos_runs),
+            regime_runs=types.MappingProxyType(dict(regime_runs)),
+            stress_runs=types.MappingProxyType(dict(stress_runs)),
+            oos_runs=tuple(oos_runs),
             sweep_run=sweep_run,
         )
 
-    return StrategyRunsMap(entries=entries)
+    return StrategyRunsMap(entries=types.MappingProxyType(entries))

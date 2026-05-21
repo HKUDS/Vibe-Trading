@@ -14,6 +14,7 @@ Run from the research/ directory:
 from __future__ import annotations
 
 import json
+import types
 from pathlib import Path
 
 import pytest
@@ -99,22 +100,22 @@ class TestRealStrategyRuns:
     def test_regime_runs_has_expected_keys(self) -> None:
         result = load_strategy_runs()
         for sid, entry in result.entries.items():
-            assert isinstance(entry.regime_runs, dict), (
-                f"Entry '{sid}' regime_runs must be a dict"
+            assert isinstance(entry.regime_runs, types.MappingProxyType), (
+                f"Entry '{sid}' regime_runs must be a MappingProxyType"
             )
 
     def test_stress_runs_has_entries(self) -> None:
         result = load_strategy_runs()
         for sid, entry in result.entries.items():
-            assert isinstance(entry.stress_runs, dict), (
-                f"Entry '{sid}' stress_runs must be a dict"
+            assert isinstance(entry.stress_runs, types.MappingProxyType), (
+                f"Entry '{sid}' stress_runs must be a MappingProxyType"
             )
 
-    def test_oos_runs_is_list(self) -> None:
+    def test_oos_runs_is_tuple(self) -> None:
         result = load_strategy_runs()
         for sid, entry in result.entries.items():
-            assert isinstance(entry.oos_runs, list), (
-                f"Entry '{sid}' oos_runs must be a list"
+            assert isinstance(entry.oos_runs, tuple), (
+                f"Entry '{sid}' oos_runs must be a tuple"
             )
 
     def test_sweep_run_is_str_or_none(self) -> None:
@@ -164,7 +165,7 @@ class TestValidFixture:
         assert entry.base_run == "btc_s1_base"
         assert entry.regime_runs == {"bull": "btc_s1_bull", "bear": "btc_s1_bear", "neutral": "btc_s1_neutral"}
         assert entry.stress_runs == {"3x_fees": "btc_s1_base_stress"}
-        assert entry.oos_runs == ["btc_s1_oos_2023"]
+        assert entry.oos_runs == ("btc_s1_oos_2023",)
         assert entry.sweep_run == "btc_s1_sweep"
 
     def test_sweep_run_null_is_allowed(self, tmp_path: Path) -> None:
@@ -198,7 +199,7 @@ class TestValidFixture:
         }
         p = write_json(tmp_path, data)
         result = load_strategy_runs(p)
-        assert result.entries["btc_s1_test"].oos_runs == []
+        assert result.entries["btc_s1_test"].oos_runs == ()
 
     def test_multiple_entries_parsed(self, tmp_path: Path) -> None:
         entry2 = {**MINIMAL_VALID_ENTRY, "spec_yaml": "research/strategies/strategy_S2.yaml"}
@@ -213,13 +214,30 @@ class TestValidFixture:
         assert "btc_s2_funding_mean_reversion" in result.entries
 
     def test_returns_immutable_entries(self, tmp_path: Path) -> None:
-        """entries mapping should not allow unexpected mutation — dict is OK but
-        the StrategyRunsEntry itself must be frozen."""
+        """All mutable containers must be genuinely immutable after loading."""
         p = write_json(tmp_path, MINIMAL_VALID_MAP)
         result = load_strategy_runs(p)
         entry = result.entries["btc_s1_multifactor_contrarian"]
+
+        # Frozen dataclass field — cannot reassign
         with pytest.raises((AttributeError, TypeError)):
             entry.symbol = "MODIFIED"  # type: ignore[misc]
+
+        # oos_runs is a tuple — cannot append
+        with pytest.raises((AttributeError, TypeError)):
+            entry.oos_runs.append("new_run")  # type: ignore[union-attr]
+
+        # regime_runs is a MappingProxyType — cannot set items
+        with pytest.raises(TypeError):
+            entry.regime_runs["x"] = "y"  # type: ignore[index]
+
+        # stress_runs is a MappingProxyType — cannot set items
+        with pytest.raises(TypeError):
+            entry.stress_runs["x"] = "y"  # type: ignore[index]
+
+        # entries top-level mapping is a MappingProxyType — cannot set items
+        with pytest.raises(TypeError):
+            result.entries["fake"] = entry  # type: ignore[index]
 
 
 # ─── Unit: missing required key → clear error naming strategy_id + field ─────
@@ -363,6 +381,21 @@ class TestWrongType:
         assert "btc_s1_test" in msg
         assert "oos_runs" in msg
 
+    def test_stress_runs_value_not_string_raises_type_error(self, tmp_path: Path) -> None:
+        """stress_runs dict values must be strings — mirrors regime_runs coverage."""
+        data = {
+            "btc_s1_test": {
+                **MINIMAL_VALID_ENTRY,
+                "stress_runs": {"3x_fees": 42},
+            }
+        }
+        p = write_json(tmp_path, data)
+        with pytest.raises(TypeError) as exc_info:
+            load_strategy_runs(p)
+        msg = str(exc_info.value)
+        assert "btc_s1_test" in msg
+        assert "stress_runs" in msg
+
 
 # ─── Unit: file not found ─────────────────────────────────────────────────────
 
@@ -404,3 +437,43 @@ class TestMultiSymbolPrefixes:
         p = write_json(tmp_path, data)
         result = load_strategy_runs(p)
         assert "eth_s2_funding_mean_reversion" in result.entries
+
+
+# ─── Unit: _comment skip is exact-match only ─────────────────────────────────
+
+class TestCommentSkip:
+    def test_comment_key_is_skipped(self, tmp_path: Path) -> None:
+        """The exact key '_comment' is silently skipped."""
+        data = {
+            "_comment": "This file maps strategy IDs to run directories.",
+            "btc_s1_multifactor_contrarian": MINIMAL_VALID_ENTRY,
+        }
+        p = write_json(tmp_path, data)
+        result = load_strategy_runs(p)
+        assert "_comment" not in result.entries
+        assert len(result.entries) == 1
+
+    def test_underscore_prefixed_strategy_id_is_not_dropped(self, tmp_path: Path) -> None:
+        """A strategy_id like '_archived' must NOT be silently discarded.
+        It should be loaded as a normal entry (since its structure is valid)."""
+        data = {
+            "_archived_strategy": MINIMAL_VALID_ENTRY,
+            "btc_s1_multifactor_contrarian": MINIMAL_VALID_ENTRY,
+        }
+        p = write_json(tmp_path, data)
+        result = load_strategy_runs(p)
+        assert "_archived_strategy" in result.entries, (
+            "strategy_id '_archived_strategy' must be loaded, not silently dropped"
+        )
+        assert len(result.entries) == 2
+
+    def test_underscore_prefixed_with_invalid_structure_raises(self, tmp_path: Path) -> None:
+        """A strategy_id like '_archived' with bad structure must raise, not silently vanish."""
+        data = {
+            "_archived_strategy": "not_a_dict",
+        }
+        p = write_json(tmp_path, data)
+        with pytest.raises(TypeError) as exc_info:
+            load_strategy_runs(p)
+        msg = str(exc_info.value)
+        assert "_archived_strategy" in msg
