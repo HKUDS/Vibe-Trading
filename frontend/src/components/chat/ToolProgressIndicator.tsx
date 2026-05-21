@@ -96,8 +96,8 @@ function ToolRow({ entry, stepIndex, totalSteps, isHeader, connector = "none", e
 
   const localized = localizeName(entry.tool);
   const stepLabel = isHeader
-    ? `${totalSteps} tools running`
-    : `Step ${stepIndex} · ${localized}`;
+    ? `${totalSteps} 个工具正在运行`
+    : `第 ${stepIndex} 步 · ${localized}`;
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-x-2 gap-y-0.5 text-xs min-w-0">
@@ -134,7 +134,7 @@ function ToolRow({ entry, stepIndex, totalSteps, isHeader, connector = "none", e
           )}
           {eta != null && (
             <span className="text-[10px] text-muted-foreground/70 tabular-nums shrink-0">
-              ~{eta}s left
+              剩余约 {eta} 秒
             </span>
           )}
         </div>
@@ -245,7 +245,7 @@ export function ToolProgressIndicator({ toolCalls }: Props): JSX.Element | null 
       {/* Header row */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {aggregateIcon}
-        <span className="text-foreground">{running.length} tools running</span>
+        <span className="text-foreground">{running.length} 个工具正在运行</span>
       </div>
       {/* Indented rows */}
       <div className="pl-4 space-y-1">
@@ -262,7 +262,7 @@ export function ToolProgressIndicator({ toolCalls }: Props): JSX.Element | null 
         {overflow > 0 && (
           <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60">
             <span className="text-border/60 shrink-0 w-3 text-center" aria-hidden="true">└</span>
-            <span>… +{overflow} more</span>
+            <span>… 另外还有 {overflow} 个</span>
           </div>
         )}
       </div>

@@ -1805,7 +1805,12 @@ def serve_main(argv: list[str] | None = None) -> int:
                 return await super().get_response("index.html", scope)
 
     parser = argparse.ArgumentParser(description="Vibe-Trading Server")
-    parser.add_argument("--port", type=int, default=8000, help="Listen port (default 8000)")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("PORT", "8899")),
+        help="Listen port (default: PORT env or 8899)",
+    )
     parser.add_argument("--host", default="0.0.0.0", help="Bind address")
     parser.add_argument("--dev", action="store_true", help="Dev mode: spawn Vite on :5173")
     try:

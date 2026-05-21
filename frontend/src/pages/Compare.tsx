@@ -51,21 +51,21 @@ function runLabel(r: RunListItem): string {
 }
 
 const METRICS: MetricDef[] = [
-  { key: "total_return",           label: "Total Return",         type: "pct", higherIsBetter: true },
-  { key: "annualized_return",      label: "Annualized Return",    type: "pct", higherIsBetter: true },
-  { key: "sharpe",                 label: "Sharpe Ratio",         type: "num", higherIsBetter: true },
-  { key: "calmar_ratio",           label: "Calmar Ratio",         type: "num", higherIsBetter: true },
-  { key: "sortino_ratio",          label: "Sortino Ratio",        type: "num", higherIsBetter: true },
-  { key: "max_drawdown",           label: "Max Drawdown",         type: "pct", higherIsBetter: false },
-  { key: "volatility",             label: "Volatility",           type: "pct", higherIsBetter: false },
-  { key: "win_rate",               label: "Win Rate",             type: "pct", higherIsBetter: true },
-  { key: "profit_factor",          label: "Profit Factor",        type: "num", higherIsBetter: true },
-  { key: "avg_win",                label: "Avg Win",              type: "pct", higherIsBetter: true },
-  { key: "avg_loss",               label: "Avg Loss",             type: "pct", higherIsBetter: false },
-  { key: "trade_count",            label: "Trades",               type: "int", higherIsBetter: true },
-  { key: "max_consecutive_losses", label: "Max Consec. Losses",   type: "int", higherIsBetter: false },
-  { key: "exposure_time",          label: "Exposure Time",        type: "pct", higherIsBetter: true },
-  { key: "avg_holding_period",     label: "Avg Holding Period",   type: "days", higherIsBetter: false },
+  { key: "total_return",           label: "总收益率",         type: "pct", higherIsBetter: true },
+  { key: "annualized_return",      label: "年化收益率",       type: "pct", higherIsBetter: true },
+  { key: "sharpe",                 label: "夏普比率",         type: "num", higherIsBetter: true },
+  { key: "calmar_ratio",           label: "卡尔马比率",       type: "num", higherIsBetter: true },
+  { key: "sortino_ratio",          label: "索提诺比率",       type: "num", higherIsBetter: true },
+  { key: "max_drawdown",           label: "最大回撤",         type: "pct", higherIsBetter: false },
+  { key: "volatility",             label: "波动率",           type: "pct", higherIsBetter: false },
+  { key: "win_rate",               label: "胜率",             type: "pct", higherIsBetter: true },
+  { key: "profit_factor",          label: "盈亏因子",         type: "num", higherIsBetter: true },
+  { key: "avg_win",                label: "平均盈利",         type: "pct", higherIsBetter: true },
+  { key: "avg_loss",               label: "平均亏损",         type: "pct", higherIsBetter: false },
+  { key: "trade_count",            label: "交易次数",         type: "int", higherIsBetter: true },
+  { key: "max_consecutive_losses", label: "最大连续亏损",     type: "int", higherIsBetter: false },
+  { key: "exposure_time",          label: "持仓时间",         type: "pct", higherIsBetter: true },
+  { key: "avg_holding_period",     label: "平均持仓周期",     type: "days", higherIsBetter: false },
 ];
 
 // Also accept backend aliases

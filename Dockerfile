@@ -16,7 +16,7 @@ FROM python:3.11-slim AS runtime
 
 LABEL org.opencontainers.image.title="Vibe-Trading" \
     org.opencontainers.image.description="Natural-language finance research AI agent with backtesting" \
-    org.opencontainers.image.version="0.1.7" \
+    org.opencontainers.image.version="0.1.8" \
     org.opencontainers.image.source="https://github.com/HKUDS/Vibe-Trading" \
     org.opencontainers.image.licenses="MIT"
 
@@ -53,7 +53,7 @@ EXPOSE 8899
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8899/health')" || exit 1
+    CMD python -c "import os, urllib.request; port = os.environ.get('PORT', '8899'); urllib.request.urlopen(f'http://127.0.0.1:{port}/health')" || exit 1
 
 # Run API server (serves frontend/dist as static files)
-CMD ["vibe-trading", "serve", "--host", "0.0.0.0", "--port", "8899"]
+CMD ["sh", "-c", "exec vibe-trading serve --host 0.0.0.0 --port ${PORT:-8899}"]

@@ -17,8 +17,6 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
   const toolLabel = (tool?: string): string => {
     if (!tool) return t.toolProcessing;
     const key = localizeToolName(tool);
-    // If the lookup returned a mapped i18n key, resolve it against the
-    // active i18n table; otherwise fall back to the raw tool name.
     if (key === tool) return tool;
     return (t as Record<string, string>)[key] || tool;
   };
@@ -31,7 +29,6 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
     let totalMs = 0;
     let latestTool = "";
     let latestThinking = "";
-    // Merge tool_call + tool_result pairs into "steps"
     const steps: Array<{ tool: string; label: string; status: "running" | "ok" | "error"; elapsed_ms?: number }> = [];
 
     for (const m of messages) {
@@ -41,7 +38,7 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
         if (m.status === "running") latestTool = m.tool || "";
       }
       if (m.type === "tool_result") {
-        const existing = [...steps].reverse().find(s => s.tool === m.tool);
+        const existing = [...steps].reverse().find((s) => s.tool === m.tool);
         if (existing) {
           existing.status = m.status === "ok" ? "ok" : "error";
           existing.elapsed_ms = m.elapsed_ms;
@@ -52,8 +49,8 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
 
     return {
       steps,
-      hasError: steps.some(s => s.status === "error"),
-      isRunning: steps.some(s => s.status === "running"),
+      hasError: steps.some((s) => s.status === "error"),
+      isRunning: steps.some((s) => s.status === "running"),
       totalMs,
       latestTool,
       latestThinking,
@@ -63,11 +60,10 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
   const stepCount = steps.length;
   const summaryText = isRunning
     ? t.thinkingRunning.replace("{tool}", toolLabel(latestTool))
-    : t.thinkingDone.replace("{count}", String(stepCount)) + (totalMs > 0 ? ` · ${(totalMs / 1000).toFixed(1)}s` : "");
+    : t.thinkingDone.replace("{count}", String(stepCount)) + (totalMs > 0 ? `（用时 ${(totalMs / 1000).toFixed(1)} 秒）` : "");
 
   return (
     <div className="rounded-lg border border-border/40 bg-muted/5 overflow-hidden">
-      {/* Summary bar */}
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted/10 transition-colors"
@@ -87,7 +83,6 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
         </span>
       </button>
 
-      {/* Thinking preview when running but collapsed */}
       {!expanded && isRunning && latestThinking && (
         <div className="px-3 pb-2 -mt-1">
           <p className="text-[11px] text-muted-foreground/40 line-clamp-1 pl-5 italic">
@@ -96,17 +91,14 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
         </div>
       )}
 
-      {/* Expanded step list */}
       {expanded && steps.length > 0 && (
         <div className="border-t border-border/30 px-3 py-1.5 space-y-0.5">
           {steps.map((step, i) => (
             <div key={`${step.tool}-${i}`} className="flex items-center gap-2 py-1 text-xs">
-              {/* Tree connector */}
-              <span className="text-border/60 shrink-0 w-3 text-center">
+              <span className="text-border/60 shrink-0 w-3 text-center" aria-hidden="true">
                 {i < steps.length - 1 ? "├" : "└"}
               </span>
 
-              {/* Status icon */}
               {step.status === "running" ? (
                 <Loader2 className="h-3 w-3 text-primary animate-spin shrink-0" />
               ) : step.status === "error" ? (
@@ -115,15 +107,13 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
                 <Circle className="h-3 w-3 text-success/50 shrink-0" fill="currentColor" />
               )}
 
-              {/* Label */}
               <span className={cn(
                 "flex-1",
-                step.status === "running" ? "text-foreground" : "text-muted-foreground/60"
+                step.status === "running" ? "text-foreground" : "text-muted-foreground/60",
               )}>
                 {step.label}
               </span>
 
-              {/* Duration or status */}
               {step.status === "running" ? (
                 <span className="text-[10px] text-primary/60">{t.toolRunning}</span>
               ) : step.elapsed_ms != null ? (
@@ -134,7 +124,6 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
         </div>
       )}
 
-      {/* Expanded: show thinking content if any (for Q&A without tools) */}
       {expanded && steps.length === 0 && latestThinking && (
         <div className="border-t border-border/30 px-3 py-2">
           <p className="text-xs text-muted-foreground/50 leading-relaxed line-clamp-4">

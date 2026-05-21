@@ -89,10 +89,10 @@ export const RunCompleteCard = memo(function RunCompleteCard({ msg }: Props) {
             <button
               onClick={handlePineClick}
               disabled={pineLoading}
-              className="text-sm text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1.5 font-medium disabled:opacity-50"
-            >
+            className="text-sm text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1.5 font-medium disabled:opacity-50"
+          >
               {pineLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Code2 className="h-3.5 w-3.5" />}
-              Pine Script
+              Pine 脚本
             </button>
           )}
           {msg.shadowId && (
@@ -103,7 +103,7 @@ export const RunCompleteCard = memo(function RunCompleteCard({ msg }: Props) {
               className="text-sm text-teal-600 dark:text-teal-400 hover:underline inline-flex items-center gap-1.5 font-medium"
             >
               <FileText className="h-3.5 w-3.5" />
-              Shadow Report
+              影子报告
             </a>
           )}
         </div>

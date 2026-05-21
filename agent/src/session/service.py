@@ -345,5 +345,5 @@ class SessionService:
     def _format_result_message(attempt: Attempt) -> str:
         """Format the final execution result message."""
         if attempt.status == AttemptStatus.COMPLETED:
-            return attempt.summary or "Strategy execution completed."
-        return f"Execution failed: {attempt.error or 'unknown error'}"
+            return attempt.summary or "策略执行完成。"
+        return f"执行失败：{attempt.error or '未知错误'}"

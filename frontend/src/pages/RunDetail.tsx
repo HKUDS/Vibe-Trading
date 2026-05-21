@@ -78,7 +78,7 @@ export function RunDetail() {
     { id: "chart", label: t.chart, icon: BarChart3 },
     { id: "trades", label: t.trades, icon: List },
     { id: "validation", label: t.validation, icon: ShieldCheck, hidden: !hasValidation },
-    { id: "runCard", label: "Run Card", icon: FileCheck2, hidden: !hasRunCard },
+    { id: "runCard", label: "运行卡片", icon: FileCheck2, hidden: !hasRunCard },
     { id: "code", label: t.code, icon: Code2 },
   ];
 
@@ -99,7 +99,7 @@ export function RunDetail() {
       </div>
     );
   }
-  if (!run) return <div className="p-8 text-red-500">Run not found</div>;
+  if (!run) return <div className="p-8 text-red-500">未找到运行记录</div>;
 
   const ok = run.status === "success";
 
@@ -111,7 +111,7 @@ export function RunDetail() {
           <button
             onClick={() => navigate(-1)}
             className="p-1 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-            title="Go back"
+            title="返回"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
@@ -183,17 +183,17 @@ function RunCardTab({ card }: { card: RunCard }) {
   return (
     <div className="p-4 space-y-4">
       <div className="grid gap-3 md:grid-cols-4">
-        <RunCardStat label="Schema" value={card.schema_version || "unknown"} />
-        <RunCardStat label="Generated" value={formatRunCardValue(card.generated_at)} />
-        <RunCardStat label="Data sources" value={dataSources.length ? dataSources.join(", ") : "None recorded"} />
-        <RunCardStat label="Warnings" value={String(warnings.length)} tone={warnings.length ? "warning" : "normal"} />
+        <RunCardStat label="结构版本" value={card.schema_version || "未知"} />
+        <RunCardStat label="生成时间" value={formatRunCardValue(card.generated_at)} />
+        <RunCardStat label="数据源" value={dataSources.length ? dataSources.join(", ") : "暂无记录"} />
+        <RunCardStat label="警告" value={String(warnings.length)} tone={warnings.length ? "warning" : "normal"} />
       </div>
 
       {warnings.length > 0 && (
         <section className="rounded-md border border-amber-500/25 bg-amber-500/5 p-3">
           <div className="mb-2 flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-300">
             <AlertTriangle className="h-4 w-4" />
-            Warnings
+            警告
           </div>
           <ul className="space-y-1 text-xs text-muted-foreground">
             {warnings.map((warning, index) => <li key={index}>{warning}</li>)}
@@ -202,37 +202,37 @@ function RunCardTab({ card }: { card: RunCard }) {
       )}
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <RunCardPanel title="Backtest Summary" icon={Database}>
-          <KeyValueTable data={backtest} empty="No backtest summary recorded." />
+        <RunCardPanel title="回测摘要" icon={Database}>
+          <KeyValueTable data={backtest} empty="暂无回测摘要。" />
         </RunCardPanel>
-        <RunCardPanel title="Reproducibility" icon={Fingerprint}>
-          <KeyValueTable data={reproducibility} empty="No reproducibility hashes recorded." monospaceValues />
+        <RunCardPanel title="可复现性" icon={Fingerprint}>
+          <KeyValueTable data={reproducibility} empty="暂无可复现哈希。" monospaceValues />
         </RunCardPanel>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <RunCardPanel title="Metrics" icon={BarChart3}>
-          <KeyValueTable data={metrics} empty="No scalar metrics recorded." />
+        <RunCardPanel title="指标" icon={BarChart3}>
+          <KeyValueTable data={metrics} empty="暂无标量指标。" />
         </RunCardPanel>
-        <RunCardPanel title="Validation" icon={ShieldCheck}>
+        <RunCardPanel title="校验" icon={ShieldCheck}>
           {card.validation ? (
             <pre className="max-h-80 overflow-auto rounded-md bg-muted/40 p-3 text-xs leading-relaxed">
               {JSON.stringify(card.validation, null, 2)}
             </pre>
           ) : (
-            <p className="text-sm text-muted-foreground">No validation payload recorded.</p>
+            <p className="text-sm text-muted-foreground">暂无校验载荷。</p>
           )}
         </RunCardPanel>
       </div>
 
-      <RunCardPanel title="Artifact Checksums" icon={FileCheck2}>
+      <RunCardPanel title="产物校验和" icon={FileCheck2}>
         {artifacts.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="py-2 pr-4">Path</th>
-                  <th className="py-2 pr-4">Size</th>
+                  <th className="py-2 pr-4">路径</th>
+                  <th className="py-2 pr-4">大小</th>
                   <th className="py-2">SHA-256</th>
                 </tr>
               </thead>
@@ -248,7 +248,7 @@ function RunCardTab({ card }: { card: RunCard }) {
             </table>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No artifact checksums recorded.</p>
+          <p className="text-sm text-muted-foreground">暂无产物校验和。</p>
         )}
       </RunCardPanel>
     </div>
@@ -320,8 +320,8 @@ function ChartTab({ run }: { run: RunData }) {
   if (entries.length === 0 && !hasEquity) {
     return (
       <div className="p-8 text-center text-muted-foreground space-y-2">
-        <p className="text-sm">No chart data available</p>
-        <p className="text-xs">The backtest engine may not have generated price data. Check the artifacts/ directory.</p>
+        <p className="text-sm">暂无图表数据</p>
+        <p className="text-xs">回测引擎可能没有生成价格数据。请检查 artifacts/ 目录。</p>
       </div>
     );
   }
@@ -336,7 +336,7 @@ function ChartTab({ run }: { run: RunData }) {
       ))}
       {hasEquity && (
         <div>
-          <h3 className="text-sm font-medium mb-1">Equity & Drawdown</h3>
+          <h3 className="text-sm font-medium mb-1">权益与回撤</h3>
           <EquityChart data={run.equity_curve!} height={280} />
         </div>
       )}
@@ -346,18 +346,18 @@ function ChartTab({ run }: { run: RunData }) {
 
 function TradesTab({ run }: { run: RunData }) {
   const trades = run.trade_log || [];
-  if (trades.length === 0) return <div className="p-8 text-muted-foreground text-sm">No trades recorded.</div>;
+  if (trades.length === 0) return <div className="p-8 text-muted-foreground text-sm">暂无交易记录。</div>;
   return (
     <div className="p-4">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b text-left text-muted-foreground">
-            <th className="py-2 pr-4">Time</th>
-            <th className="py-2 pr-4">Code</th>
-            <th className="py-2 pr-4">Side</th>
-            <th className="py-2 pr-4">Price</th>
-            <th className="py-2 pr-4">Qty</th>
-            <th className="py-2">Reason</th>
+            <th className="py-2 pr-4">时间</th>
+            <th className="py-2 pr-4">代码</th>
+            <th className="py-2 pr-4">方向</th>
+            <th className="py-2 pr-4">价格</th>
+            <th className="py-2 pr-4">数量</th>
+            <th className="py-2">原因</th>
           </tr>
         </thead>
         <tbody>
@@ -380,7 +380,7 @@ function TradesTab({ run }: { run: RunData }) {
 function CodeTab({ code }: { code: Record<string, string> }) {
   const files = Object.entries(code);
   const [active, setActive] = useState(files[0]?.[0] || "");
-  if (files.length === 0) return <div className="p-8 text-muted-foreground text-sm">No code files.</div>;
+  if (files.length === 0) return <div className="p-8 text-muted-foreground text-sm">暂无代码文件。</div>;
   return (
     <div className="flex flex-col h-full">
       <div className="flex gap-1 p-2 border-b">
