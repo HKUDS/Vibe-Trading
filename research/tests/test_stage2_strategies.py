@@ -41,6 +41,7 @@ for _p in (_RESEARCH_DIR, _DASHBOARD_SCHEMAS):
 
 from pipeline.stage2_strategies import (  # noqa: E402
     DEFAULT_TIMEFRAME,
+    SWARM_TIMEOUT_S,
     GeneratedStrategy,
     StrategyCheckResult,
     build_generation_block,
@@ -96,6 +97,24 @@ def _manifest_dict(symbol: str = "BTC", factors: list[dict] | None = None) -> di
 
 def _manifest(symbol: str = "BTC", factors: list[dict] | None = None) -> FactorManifest:
     return FactorManifest.model_validate(_manifest_dict(symbol, factors))
+
+
+# ---------------------------------------------------------------------------
+# SWARM_TIMEOUT_S constant (issue #1)
+# ---------------------------------------------------------------------------
+
+
+class TestSwarmTimeoutConstant:
+    """SWARM_TIMEOUT_S must exist and be a positive integer."""
+
+    def test_constant_exists_and_is_positive_int(self):
+        assert isinstance(SWARM_TIMEOUT_S, int)
+        assert SWARM_TIMEOUT_S > 0
+
+    def test_constant_is_at_least_60_seconds(self):
+        # A swarm involves multiple LLM calls; a timeout below 60 s would be
+        # too aggressive in practice.
+        assert SWARM_TIMEOUT_S >= 60
 
 
 # ---------------------------------------------------------------------------
@@ -266,10 +285,30 @@ class TestExtractSwarmReport:
         assert not report.startswith("-")
         assert "Desk recommends fading funding extremes." in report
 
-    def test_falls_back_to_full_text_without_marker(self):
-        stdout = "no marker here, just analysis prose\n"
+    def test_falls_back_to_tail_without_marker(self):
+        # Without a "Final Report" marker the fallback must return the LAST
+        # ~4000 chars (where the desk analysis actually is), NOT the first
+        # ~4000 chars (which are startup banners).
+        #
+        # Build a stdout string that is ~8000 chars total:
+        #   - First half: "START_BANNER" repeated to fill ~4000 chars
+        #   - Second half: "END_ANALYSIS" repeated to fill ~4000 chars
+        # Only the tail should be returned by the fallback.
+        start_chunk = "START_BANNER" * 350     # ~4200 chars
+        end_chunk = "END_ANALYSIS_" * 350       # ~4550 chars
+        stdout = start_chunk + end_chunk
+        assert len(stdout) > 8000              # confirm total length
         report = extract_swarm_report(stdout)
-        assert "analysis prose" in report
+        # The analysis at the tail must be present in the returned text.
+        assert "END_ANALYSIS_" in report
+        # The very beginning (startup banners) must NOT be in the returned text.
+        # We check for the specific start token that only appears at the beginning.
+        assert not report.startswith("START_BANNER"), (
+            "fallback must return the tail, not the beginning"
+        )
+        assert "START_BANNER" not in report, (
+            "fallback returned the head of stdout instead of the tail"
+        )
 
     def test_handles_empty(self):
         assert extract_swarm_report("") == ""
@@ -383,6 +422,39 @@ class TestBuildStrategySpec:
                 symbol="btc", ticker="BTC-USDT-SWAP",
                 usable_factors=[], swarm_rationale="x", seq=1,
             )
+
+    def test_single_factor_yields_mean_reversion_archetype(self):
+        # When exactly ONE factor passes stage-1 screening (verdict=single_use),
+        # build_strategy_spec must use the <factor>_mean_reversion archetype,
+        # NOT multi_factor_consensus. This exercises the single-factor branch of
+        # _archetype_for() and validates that the strategy_id is named correctly.
+        single_factor_manifest = _manifest(
+            factors=[
+                _factor("funding_rate", "single_use", 0.12),
+                _factor("fng", "reject", 0.02),
+            ]
+        )
+        usable = select_usable_factors(single_factor_manifest)
+        assert len(usable) == 1, "test setup: exactly one non-rejected factor expected"
+
+        sid, yaml_text = build_strategy_spec(
+            symbol="btc",
+            ticker="BTC-USDT-SWAP",
+            usable_factors=usable,
+            swarm_rationale="Single-factor desk rationale.",
+            seq=1,
+        )
+
+        # The strategy_id must contain the single-factor mean-reversion archetype.
+        assert "funding_rate_mean_reversion" in sid, (
+            f"Expected 'funding_rate_mean_reversion' in strategy_id, got: {sid}"
+        )
+        # Sanity: multi_factor_consensus must NOT be selected.
+        assert "multi_factor_consensus" not in sid
+
+        # The archetype field in the YAML must also reflect the single-factor path.
+        doc = yaml.safe_load(yaml_text)
+        assert doc["archetype"] == "funding_rate_mean_reversion"
 
 
 # ---------------------------------------------------------------------------
@@ -508,6 +580,28 @@ class TestCheckStrategy:
         gen.yaml_path.write_text("{ not: valid: yaml: ::", encoding="utf-8")
         result = check_strategy(gen)
         assert not result.ok
+
+    def test_yaml_missing_required_key_detected(self, tmp_path: Path):
+        # check_strategy must reject a YAML that parses as a dict but is
+        # missing one of the required strategy keys (e.g. 'archetype').
+        gen = _write_generated(tmp_path)
+        # Read the valid YAML, remove a required key, write it back.
+        doc = yaml.safe_load(gen.yaml_path.read_text(encoding="utf-8"))
+        assert "archetype" in doc  # confirm it was there
+        del doc["archetype"]
+        gen.yaml_path.write_text(
+            yaml.safe_dump(doc, default_flow_style=False), encoding="utf-8"
+        )
+        result = check_strategy(gen)
+        assert not result.ok
+        assert result.error is not None
+        assert "archetype" in result.error  # error message names the missing key
+
+    def test_yaml_all_required_keys_present_passes(self, tmp_path: Path):
+        # Confirm that a correctly written strategy passes the required-key check.
+        gen = _write_generated(tmp_path)
+        result = check_strategy(gen)
+        assert result.ok  # all keys present -> must pass
 
 
 class TestVerifyOutputs:

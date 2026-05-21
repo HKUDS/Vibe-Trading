@@ -102,6 +102,9 @@ import re
 import subprocess
 from datetime import datetime, timezone
 
+# ── Third-party ────────────────────────────────────────────────────────────────
+import yaml
+
 # ── Internal imports ───────────────────────────────────────────────────────────
 # Per the stage-1 code review: import _REPO_ROOT from pipeline.config rather
 # than recomputing it, so all stages agree on one repo-root definition.
@@ -133,6 +136,19 @@ _RUN_ID_RE = re.compile(r"\bswarm-\d{8}-\d{6}-[0-9a-f]{8}\b")
 #: How many strategies stage 2 emits per symbol. The swarm delivers ONE
 #: integrated desk plan per run, so the runner emits one strategy per run.
 STRATEGIES_PER_SYMBOL = 1
+
+#: Maximum wall-clock seconds to wait for a swarm subprocess. A trading-desk
+#: swarm with several agents typically completes in under 2 minutes, but
+#: network hiccups or model latency can stretch runs; 600 s (10 min) is a
+#: generous ceiling that prevents an indefinite hang from blocking CI.
+SWARM_TIMEOUT_S = 600
+
+#: Canonical data-source strings for known factors used in the indicators
+#: block of generated strategy YAMLs (mirrors the existing S1-S4 files).
+_KNOWN_SOURCES: dict[str, str] = {
+    "funding_rate": "okx:funding-rate-history",
+    "fng": "alternative.me",
+}
 
 
 # ─── Data containers ──────────────────────────────────────────────────────────
@@ -317,11 +333,8 @@ def build_strategy_spec(
     factor_names = [f.name for f in usable_factors]
 
     # Indicators block — one entry per usable factor. funding_rate / fng have
-    # canonical sources in the S1-S4 files; anything else gets a generic stub.
-    _KNOWN_SOURCES = {
-        "funding_rate": "okx:funding-rate-history",
-        "fng": "alternative.me",
-    }
+    # canonical sources in the S1-S4 files (see module-level _KNOWN_SOURCES);
+    # anything else gets a generic stub.
     indicators: dict[str, dict] = {}
     for f in usable_factors:
         indicators[f.name] = {
@@ -418,8 +431,6 @@ def build_strategy_spec(
 
     # default_flow_style=False -> block style, matching the existing S*.yaml.
     # allow_unicode keeps any CJK in the swarm prose readable.
-    import yaml  # local import: yaml is only needed for output, not for tests
-
     yaml_text = yaml.safe_dump(
         spec,
         default_flow_style=False,
@@ -471,8 +482,6 @@ def check_strategy(generated: GeneratedStrategy) -> StrategyCheckResult:
     Returns:
         StrategyCheckResult describing whether both outputs are present & valid.
     """
-    import yaml  # local import — see build_strategy_spec
-
     if not generated.yaml_path.exists():
         return StrategyCheckResult(
             strategy_id=generated.strategy_id,
@@ -488,6 +497,21 @@ def check_strategy(generated: GeneratedStrategy) -> StrategyCheckResult:
             strategy_id=generated.strategy_id,
             ok=False,
             error=f"strategy YAML invalid: {exc}",
+        )
+
+    # Verify all required strategy-YAML keys are present (same set the tests assert on).
+    _REQUIRED_YAML_KEYS = (
+        "name", "archetype", "hypothesis", "symbol", "timeframe_signal",
+        "hold_period", "indicators", "entry_long", "entry_short",
+        "exit_rules", "position_sizing", "parameter_search_ranges",
+        "expected_behavior", "caveats",
+    )
+    missing = [k for k in _REQUIRED_YAML_KEYS if k not in doc]
+    if missing:
+        return StrategyCheckResult(
+            strategy_id=generated.strategy_id,
+            ok=False,
+            error=f"strategy YAML missing required keys: {missing}",
         )
 
     if not generated.generation_path.exists():
@@ -585,14 +609,20 @@ def run_swarm(vars_dict: dict[str, str]) -> str:
         Captured stdout of the swarm run.
 
     Raises:
-        subprocess.CalledProcessError: If the CLI exits non-zero.
+        subprocess.TimeoutExpired: If the swarm subprocess does not complete
+            within SWARM_TIMEOUT_S seconds (default 600 s). Prevents an
+            indefinitely hung swarm from blocking the runner.
+        subprocess.CalledProcessError: If the CLI exits non-zero. The
+            exception carries both stdout and stderr so callers can inspect
+            what went wrong. The first ~2000 chars of stderr are also printed
+            to sys.stderr for immediate visibility.
     """
     agent_dir = _REPO_ROOT / "agent"
     cli_path = agent_dir / "cli.py"
     vars_json = json.dumps(vars_dict, ensure_ascii=False)
 
     cmd = [sys.executable, str(cli_path), "--swarm-run", SWARM_PRESET, vars_json]
-    print(f"[stage2] invoking swarm: {SWARM_PRESET}  (cwd={agent_dir})")
+    print(f"[stage2] invoking swarm: {SWARM_PRESET}  (cwd={agent_dir}, timeout={SWARM_TIMEOUT_S}s)")
     completed = subprocess.run(
         cmd,
         cwd=str(agent_dir),
@@ -600,8 +630,22 @@ def run_swarm(vars_dict: dict[str, str]) -> str:
         text=True,
         encoding="utf-8",
         errors="replace",
-        check=True,
+        check=False,
+        timeout=SWARM_TIMEOUT_S,
     )
+    if completed.returncode != 0:
+        stderr_snippet = (completed.stderr or "")[:2000]
+        print(
+            f"[stage2] swarm subprocess exited with code {completed.returncode}.\n"
+            f"stderr (first 2000 chars):\n{stderr_snippet}",
+            file=sys.stderr,
+        )
+        raise subprocess.CalledProcessError(
+            returncode=completed.returncode,
+            cmd=cmd,
+            output=completed.stdout,
+            stderr=completed.stderr,
+        )
     return completed.stdout or ""
 
 
@@ -711,12 +755,18 @@ def extract_swarm_report(stdout: str) -> str:
     text = stdout or ""
     marker = "Final Report"
     idx = text.rfind(marker)
-    report = text[idx + len(marker):] if idx != -1 else text
-    # Strip the box-drawing / ascii decoration the CLI wraps the header in
-    # ("── Final Report ──" -> leftover "──" / "--" on the first line).
-    report = report.strip().lstrip("-─— \t").strip()
-    # Keep it bounded — this becomes generation.rationale (Tier-3 audit prose).
-    return report[:4000]
+    if idx != -1:
+        report = text[idx + len(marker):]
+        # Strip the box-drawing / ascii decoration the CLI wraps the header in
+        # ("── Final Report ──" -> leftover "──" / "--" on the first line).
+        report = report.strip().lstrip("-─— \t").strip()
+        # Keep it bounded — this becomes generation.rationale (Tier-3 audit prose).
+        return report[:4000]
+    else:
+        # No marker found: return the LAST ~4000 chars. Startup banners fill
+        # the beginning of stdout; the desk analysis (if any) is at the tail.
+        # This preserves the "rationale is never silently lost" guarantee.
+        return text[-4000:].strip()
 
 
 def main() -> None:
