@@ -35,6 +35,11 @@ wiki/.cache/
 .cache/
 .remotion/
 
+# Dashboard runtime data and secrets (quant-strategy-dashboard)
+dashboard/data/
+dashboard/server/.env
+dashboard/trader/.env
+
 # DuckDB data cache
 data/*.duckdb
 data/*.duckdb.wal
