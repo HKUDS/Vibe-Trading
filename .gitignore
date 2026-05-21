@@ -4,6 +4,9 @@ __pycache__/
 .pytest_cache/
 *.pyc
 
+# Git worktrees (superpowers isolated workspaces)
+.worktrees/
+
 .env
 agent/.env
 
