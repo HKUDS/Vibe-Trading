@@ -290,7 +290,7 @@ export function Settings() {
 
             <label className="grid gap-2">
               <span className={labelClass}>
-                {selectedProvider?.auth_type === "oauth" ? "OAuth" : t.llmApiKey}
+                {selectedProvider?.auth_type === "oauth" ? "OAuth 授权" : t.llmApiKey}
               </span>
               <div className="relative">
                 <KeyRound className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />

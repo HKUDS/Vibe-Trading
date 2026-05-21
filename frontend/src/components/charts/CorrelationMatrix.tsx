@@ -31,17 +31,17 @@ export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
 
     chart.setOption({
       backgroundColor: "transparent",
-      tooltip: {
-        position: "top",
-        backgroundColor: t.tooltipBg,
-        borderColor: t.tooltipBorder,
-        textStyle: { color: t.tooltipText, fontSize: 12 },
-        formatter: (params: unknown) => {
-          const p = params as { data: [number, number, number] };
-          const [x, y, v] = p.data;
-          return `<b>${labels[x]}</b> vs <b>${labels[y]}</b><br/>r = <b>${v.toFixed(4)}</b>`;
+        tooltip: {
+          position: "top",
+          backgroundColor: t.tooltipBg,
+          borderColor: t.tooltipBorder,
+          textStyle: { color: t.tooltipText, fontSize: 12 },
+          formatter: (params: unknown) => {
+            const p = params as { data: [number, number, number] };
+            const [x, y, v] = p.data;
+          return `<b>${labels[x]}</b> 对 <b>${labels[y]}</b><br/>相关系数 = <b>${v.toFixed(4)}</b>`;
+          },
         },
-      },
       grid: { left: "3%", right: "8%", top: "8%", bottom: "12%", containLabel: true },
       xAxis: {
         type: "category",
@@ -77,7 +77,7 @@ export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
       },
       series: [
         {
-          name: "Correlation",
+          name: "相关性",
           type: "heatmap",
           data,
           label: {
@@ -102,7 +102,7 @@ export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
   }, [labels, matrix]);
 
   if (labels.length === 0) {
-    return <div className="text-muted-foreground text-sm p-4">No correlation data</div>;
+    return <div className="text-muted-foreground text-sm p-4">暂无相关性数据</div>;
   }
   return <div ref={ref} style={{ height }} />;
 }

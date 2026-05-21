@@ -39,7 +39,7 @@ export function EquityChart({ data, height = 300 }: Props) {
           if (!Array.isArray(params) || !params.length) return "";
           let html = `<b>${params[0].axisValue}</b>`;
           for (const p of params) {
-            const val = p.seriesName === "Drawdown%"
+            const val = p.seriesName === "回撤%"
               ? `${p.value}%`
               : Number(p.value).toLocaleString();
             html += `<br/>${p.marker} ${p.seriesName}: <b>${val}</b>`;
@@ -49,13 +49,13 @@ export function EquityChart({ data, height = 300 }: Props) {
       },
       toolbox: {
         feature: {
-          saveAsImage: { title: "Save" },
-          restore: { title: "Reset" },
+          saveAsImage: { title: "保存" },
+          restore: { title: "重置" },
         },
         right: 8, top: 0,
         iconStyle: { borderColor: t.textColor },
       },
-      legend: { data: ["Equity", "Drawdown%"], textStyle: { color: t.textColor, fontSize: 11 }, right: 60, top: 4 },
+      legend: { data: ["权益曲线", "回撤%"], textStyle: { color: t.textColor, fontSize: 11 }, right: 60, top: 4 },
       grid: [
         { left: 8, right: 8, top: 36, height: "56%", containLabel: true },
         { left: 8, right: 8, top: "68%", height: "20%", containLabel: true },
@@ -87,13 +87,13 @@ export function EquityChart({ data, height = 300 }: Props) {
           },
         },
         {
-          name: "Drawdown%", type: "line", xAxisIndex: 1, yAxisIndex: 1,
+          name: "回撤%", type: "line", xAxisIndex: 1, yAxisIndex: 1,
           data: drawdown, smooth: false, symbol: "none",
           lineStyle: { color: t.downColor, width: 1 },
           areaStyle: { color: t.downColor + "25" },
           markLine: {
             silent: true, symbol: "none",
-            data: [{ yAxis: minDD, label: { formatter: `Max DD: ${minDD}%`, position: "insideEndTop", fontSize: 10, color: t.downColor } }],
+            data: [{ yAxis: minDD, label: { formatter: `最大回撤：${minDD}%`, position: "insideEndTop", fontSize: 10, color: t.downColor } }],
             lineStyle: { color: t.downColor, type: "dashed", width: 1 },
           },
         },
@@ -106,7 +106,7 @@ export function EquityChart({ data, height = 300 }: Props) {
   }, [data, dark]);
 
   if (data.length === 0) {
-    return <div className="text-muted-foreground text-sm p-4">No equity data</div>;
+    return <div className="text-muted-foreground text-sm p-4">暂无权益数据</div>;
   }
   return <div ref={ref} style={{ height }} />;
 }

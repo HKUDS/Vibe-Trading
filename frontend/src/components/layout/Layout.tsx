@@ -15,7 +15,7 @@ const APP_VERSION = "v0.1.8";
 const NAV = [
   { to: "/", icon: BarChart3, key: "home" as const, label: null },
   { to: "/agent", icon: Bot, key: "agent" as const, label: null },
-  { to: "/alpha-zoo", icon: Layers, key: "alphaZoo" as const, label: "Alpha Zoo" },
+  { to: "/alpha-zoo", icon: Layers, key: "alphaZoo" as const, label: "阿尔法动物园" },
   { to: "/settings", icon: Settings, key: "settings" as const, label: null },
   { to: "/correlation", icon: BarChart3, key: "correlation" as const, label: null },
 ];
@@ -179,9 +179,9 @@ export function Layout() {
                     ) : !isRenaming ? (
                       <div className="absolute right-1 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
                         <button
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameTarget(s.session_id); setRenameValue(s.title || ""); }}
-                          className="p-1 text-muted-foreground hover:text-foreground rounded"
-                          title="Rename"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameTarget(s.session_id); setRenameValue(s.title || ""); }}
+                        className="p-1 text-muted-foreground hover:text-foreground rounded"
+                          title="重命名"
                         >
                           <Pencil className="h-3 w-3" />
                         </button>
@@ -211,7 +211,7 @@ export function Layout() {
               <button onClick={toggle} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={dark ? t.lightMode : t.darkMode}>
                 {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
               </button>
-              <button onClick={() => setCollapsed(false)} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title="Expand">
+              <button onClick={() => setCollapsed(false)} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title="展开侧边栏">
                 <ChevronsRight className="h-3.5 w-3.5" />
               </button>
             </>
@@ -229,7 +229,7 @@ export function Layout() {
                   <button
                     onClick={() => setCollapsed(true)}
                     className="p-1 text-muted-foreground hover:text-foreground rounded transition-colors"
-                    title="Collapse"
+                    title="折叠侧边栏"
                   >
                     <ChevronsLeft className="h-3.5 w-3.5" />
                   </button>
