@@ -1,0 +1,72 @@
+name: S3_BTC_trend_with_factor_filter
+archetype: trend_with_factor_filter
+hypothesis: |
+  While price trend following (EMA 20/50) captures medium-term momentum, funding rate’s negative IC at 72–168h indicates
+  that crowded longs tend to mean-revert downward and crowded shorts tend to mean-revert upward. Using funding as a gate
+  filters out trend entries that are too crowded, improving risk-adjusted returns. Holding 2–5 days aligns with the
+  predictive window where sentiment-based contrarian effects are strongest.
+
+symbol: BTC-USDT-SWAP
+timeframe_signal: 8h
+hold_period:
+  min_hours: 24
+  max_hours: 120
+
+indicators:
+  funding_rate:
+    source: okx:funding-rate-history
+    smoothing: sma_3
+  fng:
+    source: alternative.me
+    smoothing: sma_3
+  # for S3 only:
+  # price_ema_fast: 20
+  # price_ema_slow: 50
+
+entry_long:
+  description: Go long with uptrend confirmation but only when funding does not indicate crowded longs.
+  conditions:
+    - EMA20 > EMA50 on 8h closes for at least 2 of last 3 bars (uptrend persistence).
+    - funding_rate percentile over last 90 days <= 60th percentile (block longs when >60th; prefer <=40th), with at least 2 of last 3 settlements below 60th.
+
+entry_short:
+  description: Go short with downtrend confirmation but only when funding does not indicate crowded shorts.
+  conditions:
+    - EMA20 < EMA50 on 8h closes for at least 2 of last 3 bars (downtrend persistence).
+    - funding_rate percentile over last 90 days >= 40th percentile (block shorts when <40th; prefer >=60th), with at least 2 of last 3 settlements above 40th.
+
+exit_rules:
+  - condition: time_based
+    max_hold_hours: 120
+  - condition: take_profit_pct
+    value: 6.0
+  - condition: stop_loss_pct
+    value: 3.0
+  - condition: signal_invalidation
+    description: Exit if EMA crossover reverses (EMA20 crosses EMA50 opposite) or funding returns to 40th–60th neutral band.
+
+position_sizing:
+  method: fixed_risk
+  risk_per_trade_pct: 1.25
+  leverage: 1.5
+
+parameter_search_ranges:
+  ema_fast: [15, 25, 5]
+  ema_slow: [40, 60, 10]
+  funding_block_long_pct: [55, 70, 5]
+  funding_block_short_pct: [30, 45, 5]
+  persistence_last_n: [3, 5, 1]
+  persistence_min_hits: [2, 3, 1]
+  hold_max_hours: [96, 144, 24]
+  tp_pct: [4.0, 7.0, 1.5]
+  sl_pct: [2.5, 4.0, 0.5]
+
+expected_behavior:
+  trades_per_year_estimate: 90
+  expected_sharpe: 1.0
+  expected_max_dd_pct: 9.0
+  expected_win_rate_pct: 48
+
+caveats:
+  - Trend whipsaws in range-bound markets can degrade performance if funding filter is permissive.
+  - F&G is slow-moving; using it as a secondary filter might further cut bad entries but reduce trade count.

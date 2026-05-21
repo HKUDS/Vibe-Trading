@@ -1,0 +1,68 @@
+name: S2_BTC_funding_mean_reversion
+archetype: funding_mean_reversion
+hypothesis: |
+  Funding rate at 72–168h horizons exhibits the strongest negative IC with forward returns (≈ -0.08 to -0.09),
+  implying that crowded long (high positive funding) tends to precede negative price drift over the next 3–7 days,
+  and crowded short (negative funding) precedes positive drift. A single-factor, percentile-based, persistence-aware
+  mean-reversion entry seeks to exploit this effect while keeping rules simple and robust.
+
+symbol: BTC-USDT-SWAP
+timeframe_signal: 8h
+hold_period:
+  min_hours: 24
+  max_hours: 144
+
+indicators:
+  funding_rate:
+    source: okx:funding-rate-history
+    smoothing: sma_3
+  fng:
+    source: alternative.me
+    smoothing: none
+
+entry_long:
+  description: Fade crowded shorts: go long when funding is in sustained lower-tail percentiles.
+  conditions:
+    - funding_rate percentile over last 90 days <= 20th percentile in at least 2 of the last 3 settlements (after smoothing).
+    - Exclude if F&G percentile over last 90 days >= 85th percentile (to avoid fighting extreme greed with single factor).
+
+entry_short:
+  description: Fade crowded longs: go short when funding is in sustained upper-tail percentiles.
+  conditions:
+    - funding_rate percentile over last 90 days >= 80th percentile in at least 2 of the last 3 settlements (after smoothing).
+    - Exclude if F&G percentile over last 90 days <= 15th percentile (to avoid fighting extreme fear with single factor).
+
+exit_rules:
+  - condition: time_based
+    max_hold_hours: 144
+  - condition: take_profit_pct
+    value: 7.0
+  - condition: stop_loss_pct
+    value: 3.5
+  - condition: signal_invalidation
+    description: Exit when funding percentile re-enters the 40th–60th band (mean reversion), or flips to opposite extreme.
+
+position_sizing:
+  method: fixed_risk
+  risk_per_trade_pct: 1.5
+  leverage: 2.0
+
+parameter_search_ranges:
+  funding_lookback_days: [60, 120, 30]
+  funding_high_pct: [75, 90, 5]
+  funding_low_pct: [10, 25, 5]
+  persistence_last_n: [3, 5, 1]
+  persistence_min_hits: [2, 3, 1]
+  hold_max_hours: [96, 168, 24]
+  tp_pct: [5.0, 8.0, 1.0]
+  sl_pct: [3.0, 4.5, 0.5]
+
+expected_behavior:
+  trades_per_year_estimate: 120
+  expected_sharpe: 1.0
+  expected_max_dd_pct: 9.0
+  expected_win_rate_pct: 50
+
+caveats:
+  - In strong directional trends, mean-reversion entries may underperform without additional filters.
+  - Exchange funding methodology changes can alter percentile distributions; thresholds may need periodic recalibration.

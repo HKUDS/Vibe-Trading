@@ -1,0 +1,69 @@
+name: S4_BTC_dual_extreme_contrarian
+archetype: dual_extreme_contrarian
+hypothesis: |
+  Funding rate and F&G each have stable, negative IC with forward 3–7 day returns; when both reach simultaneous
+  extremes, crowding risk is highest and subsequent mean reversion is strongest. Requiring dual extremes with persistence
+  creates a rare, high-conviction setup with lower frequency and potentially higher per-trade expectancy.
+
+symbol: BTC-USDT-SWAP
+timeframe_signal: 8h
+hold_period:
+  min_hours: 24
+  max_hours: 168
+
+indicators:
+  funding_rate:
+    source: okx:funding-rate-history
+    smoothing: sma_3
+  fng:
+    source: alternative.me
+    smoothing: sma_3
+
+entry_long:
+  description: Enter long only when both factors are at simultaneous fear/short-crowded extremes, with persistence.
+  conditions:
+    - funding_rate percentile over last 120 days <= 15th percentile and observed in at least 2 of last 3 settlements (after smoothing).
+    - F&G percentile over last 120 days <= 20th percentile, confirmed by both today and 3-day SMA below threshold.
+
+entry_short:
+  description: Enter short only when both factors are at simultaneous greed/long-crowded extremes, with persistence.
+  conditions:
+    - funding_rate percentile over last 120 days >= 85th percentile and observed in at least 2 of last 3 settlements (after smoothing).
+    - F&G percentile over last 120 days >= 80th percentile, confirmed by both today and 3-day SMA above threshold.
+
+exit_rules:
+  - condition: time_based
+    max_hold_hours: 168
+  - condition: take_profit_pct
+    value: 8.0
+  - condition: stop_loss_pct
+    value: 3.5
+  - condition: signal_invalidation
+    description: Exit when both factors revert out of extreme zones and into the 35th–65th neutral band or cross the opposite threshold.
+
+position_sizing:
+  method: fixed_risk
+  risk_per_trade_pct: 1.25
+  leverage: 1.5
+
+parameter_search_ranges:
+  lookback_days: [90, 180, 30]
+  funding_high_pct: [80, 90, 5]
+  funding_low_pct: [10, 20, 5]
+  fng_high_pct: [75, 85, 5]
+  fng_low_pct: [15, 25, 5]
+  persistence_last_n: [3, 5, 1]
+  persistence_min_hits: [2, 3, 1]
+  hold_max_hours: [120, 168, 24]
+  tp_pct: [6.0, 9.0, 1.0]
+  sl_pct: [3.0, 4.5, 0.5]
+
+expected_behavior:
+  trades_per_year_estimate: 40
+  expected_sharpe: 1.2
+  expected_max_dd_pct: 7.0
+  expected_win_rate_pct: 54
+
+caveats:
+  - Very low frequency may lead to long flat periods; performance is path-dependent on rare extremes.
+  - Extremes can persist in strong secular trends, causing late entries; strict invalidation and time stops are essential.
