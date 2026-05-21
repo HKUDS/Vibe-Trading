@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from datetime import datetime
+
 from schemas import (
     FATAL_GATE_CHECKS,
     GATE_MAX_DRAWDOWN,
@@ -26,9 +28,11 @@ from schemas import (
     GATE_MIN_WALK_FORWARD_SHARPE,
     FactorManifest,
     FactorVerdict,
+    LiveStatus,
     RecommendedAction,
     RedFlagCode,
     SelectionManifest,
+    AlertSeverity,
     StrategyManifest,
     TestnetStatus,
 )
@@ -360,6 +364,9 @@ def test_testnet_vs_backtest_is_nullable():
 
 # ---------------------------------------------------------------------------
 # Canonical constants — the contract pins the gate thresholds
+# NOTE (M6): the three tests below intentionally pin contract values.
+# Changing any of these assertions is a BREAKING schema change affecting all
+# workstreams; update the schema_version and notify all consumers.
 # ---------------------------------------------------------------------------
 
 
@@ -388,3 +395,309 @@ def test_factor_verdict_enum_has_three_values():
 
 def test_red_flag_enum_has_six_codes():
     assert len(list(RedFlagCode)) == 6
+
+
+# ---------------------------------------------------------------------------
+# I1 — FactorEntry cross-regime consistency validator
+# ---------------------------------------------------------------------------
+
+
+def test_factor_entry_stability_without_cross_regime_ic_raises():
+    """stability must be null when cross_regime_ic is null (I1)."""
+    bad = {
+        "symbol": "BTC",
+        "generated_at": "2026-05-12T00:00:00Z",
+        "period_days": 730,
+        "horizons_h": [24],
+        "factors": [
+            {
+                "name": "f",
+                "ic_by_horizon": {"24": 0.07},
+                "ir": 0.5,
+                "sample_size": 1000,
+                "cross_regime_ic": None,
+                "stability": "regime_stable",  # must be null when cross_regime_ic is null
+                "verdict": "ensemble_only",
+            }
+        ],
+    }
+    with pytest.raises(ValidationError, match="stability must be null"):
+        FactorManifest.model_validate(bad)
+
+
+def test_factor_entry_stability_with_cross_regime_ic_is_valid():
+    """stability may be set when cross_regime_ic is also set (I1 — positive case)."""
+    good = {
+        "symbol": "BTC",
+        "generated_at": "2026-05-12T00:00:00Z",
+        "period_days": 730,
+        "horizons_h": [24],
+        "factors": [
+            {
+                "name": "f",
+                "ic_by_horizon": {"24": 0.12},
+                "ir": 1.1,
+                "sample_size": 2000,
+                "cross_regime_ic": {"bull": 0.14, "bear": 0.09},
+                "stability": "regime_stable",
+                "verdict": "single_use",
+            }
+        ],
+    }
+    manifest = FactorManifest.model_validate(good)
+    assert manifest.factors[0].stability.value == "regime_stable"
+
+
+# ---------------------------------------------------------------------------
+# I2 — GateBlock overall_pass / fatal_fail consistency validator
+# ---------------------------------------------------------------------------
+
+_BASE_STRATEGY = {
+    "strategy_id": "x",
+    "symbol": "BTC",
+    "generated_at": "2026-05-14T00:00:00Z",
+    "pipeline_stage": 5,
+    "spec": {
+        "strategy_id": "x",
+        "symbol": "BTC",
+        "spec_yaml": "research/strategies/x.yaml",
+    },
+}
+
+
+def test_gate_overall_pass_true_with_failing_threshold_raises():
+    """overall_pass=True is invalid when any threshold has passed=False (I2)."""
+    bad_gate = {
+        "thresholds": [
+            {"name": "min_sharpe", "threshold": 1.5, "actual": 2.0, "passed": True},
+            {"name": "min_trades", "threshold": 100, "actual": 50, "passed": False},
+        ],
+        "overall_pass": True,  # wrong — min_trades failed
+        "fatal_fail": False,
+    }
+    with pytest.raises(ValidationError, match="overall_pass"):
+        StrategyManifest.model_validate({**_BASE_STRATEGY, "gate": bad_gate})
+
+
+def test_gate_fatal_fail_true_with_no_failed_fatal_threshold_raises():
+    """fatal_fail=True is invalid when no fatal threshold failed (I2)."""
+    bad_gate = {
+        "thresholds": [
+            {"name": "oos_sharpe_positive", "threshold": 0.0, "actual": 1.5,
+             "passed": True, "fatal": True},
+        ],
+        "overall_pass": True,
+        "fatal_fail": True,  # wrong — no fatal failed
+    }
+    with pytest.raises(ValidationError, match="fatal_fail"):
+        StrategyManifest.model_validate({**_BASE_STRATEGY, "gate": bad_gate})
+
+
+def test_gate_fatal_fail_false_with_failed_fatal_threshold_raises():
+    """fatal_fail=False is invalid when a fatal threshold did fail (I2)."""
+    bad_gate = {
+        "thresholds": [
+            {"name": "oos_sharpe_positive", "threshold": 0.0, "actual": -0.5,
+             "passed": False, "fatal": True},
+        ],
+        "overall_pass": False,
+        "fatal_fail": False,  # wrong — a fatal threshold failed
+    }
+    with pytest.raises(ValidationError, match="fatal_fail"):
+        StrategyManifest.model_validate({**_BASE_STRATEGY, "gate": bad_gate})
+
+
+# ---------------------------------------------------------------------------
+# I3 — timestamp fields coerce to datetime
+# ---------------------------------------------------------------------------
+
+
+def test_factor_manifest_generated_at_coerces_to_datetime():
+    """generated_at accepts an ISO-8601 string and stores it as datetime (I3)."""
+    manifest = FactorManifest.model_validate(
+        {
+            "symbol": "BTC",
+            "generated_at": "2026-05-12T08:00:00Z",
+            "period_days": 730,
+            "horizons_h": [24],
+            "factors": [],
+        }
+    )
+    assert isinstance(manifest.generated_at, datetime)
+
+
+def test_testnet_live_timestamps_coerce_to_datetime():
+    """started_at and updated_at coerce to datetime (I3)."""
+    status = TestnetStatus.model_validate(
+        {
+            "testnet_id": "t1",
+            "strategy_id": "btc_s1_funding_carry",
+            "symbol": "BTC",
+            "live": {
+                "started_at": "2026-05-21T00:00:00Z",
+                "updated_at": "2026-05-21T00:05:00Z",
+                "status": "running",
+            },
+            "killswitch": {},
+        }
+    )
+    assert isinstance(status.live.started_at, datetime)
+    assert isinstance(status.live.updated_at, datetime)
+
+
+def test_testnet_alert_timestamp_coerces_to_datetime():
+    """TestnetAlert.timestamp coerces to datetime (I3)."""
+    status = TestnetStatus.model_validate(
+        {
+            "testnet_id": "t1",
+            "strategy_id": "s1",
+            "symbol": "BTC",
+            "live": {
+                "started_at": "2026-05-21T00:00:00Z",
+                "updated_at": "2026-05-21T00:05:00Z",
+                "status": "running",
+            },
+            "killswitch": {},
+            "alerts": [
+                {
+                    "timestamp": "2026-05-18T14:20:00Z",
+                    "severity": "warning",
+                    "message": "test alert",
+                }
+            ],
+        }
+    )
+    assert isinstance(status.alerts[0].timestamp, datetime)
+
+
+def test_strategy_generated_at_coerces_to_datetime():
+    """StrategyManifest.generated_at coerces to datetime (I3)."""
+    manifest = StrategyManifest.model_validate(
+        {
+            "strategy_id": "btc_s9_early",
+            "symbol": "BTC",
+            "generated_at": "2026-05-14T00:00:00Z",
+            "pipeline_stage": 2,
+            "spec": {
+                "strategy_id": "btc_s9_early",
+                "symbol": "BTC",
+                "spec_yaml": "research/strategies/btc_s9_early.yaml",
+            },
+        }
+    )
+    assert isinstance(manifest.generated_at, datetime)
+
+
+# ---------------------------------------------------------------------------
+# M1 — LiveStatus and AlertSeverity enums
+# ---------------------------------------------------------------------------
+
+
+def test_live_status_enum_rejects_invalid_value():
+    """LiveBlock.status must be a valid LiveStatus enum value (M1)."""
+    with pytest.raises(ValidationError):
+        TestnetStatus.model_validate(
+            {
+                "testnet_id": "t1",
+                "strategy_id": "s1",
+                "symbol": "BTC",
+                "live": {
+                    "started_at": "2026-05-21T00:00:00Z",
+                    "updated_at": "2026-05-21T00:05:00Z",
+                    "status": "exploding",  # not valid
+                },
+                "killswitch": {},
+            }
+        )
+
+
+def test_alert_severity_enum_rejects_invalid_value():
+    """TestnetAlert.severity must be a valid AlertSeverity value (M1)."""
+    with pytest.raises(ValidationError):
+        TestnetStatus.model_validate(
+            {
+                "testnet_id": "t1",
+                "strategy_id": "s1",
+                "symbol": "BTC",
+                "live": {
+                    "started_at": "2026-05-21T00:00:00Z",
+                    "updated_at": "2026-05-21T00:05:00Z",
+                    "status": "running",
+                },
+                "killswitch": {},
+                "alerts": [
+                    {
+                        "timestamp": "2026-05-18T14:20:00Z",
+                        "severity": "extreme",  # not valid
+                        "message": "test",
+                    }
+                ],
+            }
+        )
+
+
+def test_live_status_enum_covers_known_values():
+    """LiveStatus enum must cover running / paused / stopped (M1)."""
+    values = {v.value for v in LiveStatus}
+    assert {"running", "paused", "stopped"}.issubset(values)
+
+
+def test_alert_severity_enum_covers_known_values():
+    """AlertSeverity enum must cover info / warning / critical (M1)."""
+    values = {v.value for v in AlertSeverity}
+    assert {"info", "warning", "critical"}.issubset(values)
+
+
+# ---------------------------------------------------------------------------
+# M2 — BacktestMetrics physical bounds
+# ---------------------------------------------------------------------------
+
+
+def _make_strategy_with_in_sample(metrics: dict) -> dict:
+    return {
+        "strategy_id": "x",
+        "symbol": "BTC",
+        "generated_at": "2026-05-14T00:00:00Z",
+        "pipeline_stage": 3,
+        "spec": {
+            "strategy_id": "x",
+            "symbol": "BTC",
+            "spec_yaml": "research/strategies/x.yaml",
+        },
+        "backtest": {"in_sample": metrics},
+    }
+
+
+def test_backtest_win_rate_above_one_raises():
+    """win_rate > 1.0 is physically impossible (M2)."""
+    bad = {"source_run": "r1", "win_rate": 1.5}
+    with pytest.raises(ValidationError, match="win_rate"):
+        StrategyManifest.model_validate(_make_strategy_with_in_sample(bad))
+
+
+def test_backtest_win_rate_below_zero_raises():
+    """win_rate < 0.0 is physically impossible (M2)."""
+    bad = {"source_run": "r1", "win_rate": -0.1}
+    with pytest.raises(ValidationError, match="win_rate"):
+        StrategyManifest.model_validate(_make_strategy_with_in_sample(bad))
+
+
+def test_backtest_profit_factor_below_zero_raises():
+    """profit_factor < 0.0 is physically impossible (M2)."""
+    bad = {"source_run": "r1", "profit_factor": -1.0}
+    with pytest.raises(ValidationError, match="profit_factor"):
+        StrategyManifest.model_validate(_make_strategy_with_in_sample(bad))
+
+
+def test_backtest_max_drawdown_above_one_raises():
+    """max_drawdown > 1.0 is physically impossible (M2)."""
+    bad = {"source_run": "r1", "max_drawdown": 1.2}
+    with pytest.raises(ValidationError, match="max_drawdown"):
+        StrategyManifest.model_validate(_make_strategy_with_in_sample(bad))
+
+
+def test_backtest_max_drawdown_below_zero_raises():
+    """max_drawdown < 0.0 is physically impossible (M2)."""
+    bad = {"source_run": "r1", "max_drawdown": -0.05}
+    with pytest.raises(ValidationError, match="max_drawdown"):
+        StrategyManifest.model_validate(_make_strategy_with_in_sample(bad))

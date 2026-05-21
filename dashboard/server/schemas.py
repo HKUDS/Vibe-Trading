@@ -24,10 +24,11 @@ A small SelectionManifest is also modelled for research/manifests/selection.json
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ---------------------------------------------------------------------------
 # Canonical gate thresholds — pinned by the contract (alpha-workflow §3).
@@ -94,6 +95,22 @@ class RedFlagCode(str, Enum):
     REGIME_CONDITIONAL = "regime_conditional"
 
 
+class LiveStatus(str, Enum):
+    """Operational state of a testnet run."""
+
+    RUNNING = "running"
+    PAUSED = "paused"
+    STOPPED = "stopped"
+
+
+class AlertSeverity(str, Enum):
+    """Severity level for a testnet monitoring alert."""
+
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
 # ---------------------------------------------------------------------------
 # Base config — manifests are written by multiple producers; forbidding extra
 # fields catches typos in producers before they reach the dashboard.
@@ -116,9 +133,13 @@ class FactorEntry(_Manifest):
     factor manifest before the cross-regime IC pass (task 2.3) has run. When
     null, the dashboard shows a "cross-regime not done" warning and the
     pipeline MUST NOT be blocked.
+
+    Invariant: ``stability`` must be null whenever ``cross_regime_ic`` is null.
     """
 
     name: str = Field(..., description="Factor identifier, e.g. 'funding_rate'.")
+    # NOTE: schema does not cross-validate that ic_by_horizon keys match
+    # FactorManifest.horizons_h — producers are responsible for consistency.
     ic_by_horizon: Dict[int, float] = Field(
         ...,
         description="Map of forward-return horizon (hours) -> Spearman IC.",
@@ -137,14 +158,21 @@ class FactorEntry(_Manifest):
         ..., description="single_use / ensemble_only / reject."
     )
 
+    @model_validator(mode="after")
+    def cross_regime_fields_are_consistent(self):
+        if self.cross_regime_ic is None and self.stability is not None:
+            raise ValueError("stability must be null when cross_regime_ic is null")
+        return self
+
 
 class FactorManifest(_Manifest):
     """Top-level factor manifest for one symbol."""
 
-    schema_version: int = Field(default=1, ge=1)
+    schema_version: int = Field(default=1, ge=1, le=1)
     symbol: str = Field(..., description="Trading symbol, e.g. 'BTC'.")
-    generated_at: str = Field(..., description="ISO-8601 UTC timestamp.")
+    generated_at: datetime = Field(..., description="ISO-8601 UTC timestamp.")
     period_days: int = Field(..., gt=0, description="Sample length in days.")
+    # NOTE: schema does not cross-validate that horizons_h matches FactorEntry.ic_by_horizon keys.
     horizons_h: List[int] = Field(..., description="Forward-return horizons tested.")
     factors: List[FactorEntry] = Field(..., description="One entry per factor.")
 
@@ -199,12 +227,12 @@ class BacktestMetrics(_Manifest):
     source_run: str = Field(..., description="Run directory this block came from.")
     sharpe: Optional[float] = None
     max_drawdown: Optional[float] = Field(
-        default=None, description="Positive fraction, e.g. 0.08 == 8%."
+        default=None, ge=0.0, le=1.0, description="Positive fraction, e.g. 0.08 == 8%."
     )
     trades: Optional[int] = Field(default=None, ge=0)
-    profit_factor: Optional[float] = None
+    profit_factor: Optional[float] = Field(default=None, ge=0.0)
     total_return: Optional[float] = None
-    win_rate: Optional[float] = None
+    win_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
 
 class WalkForwardWindow(_Manifest):
@@ -267,6 +295,8 @@ class CostStressLevel(_Manifest):
 class CostStressBlock(_Manifest):
     """The cost-stress sweep — exposes the 'alpha is a fee illusion' failure."""
 
+    # source_run is the parent sweep run; each CostStressLevel also carries its
+    # own source_run which may differ (e.g. a sub-run per fee scenario).
     source_run: str
     levels: List[CostStressLevel] = Field(default_factory=list)
 
@@ -333,6 +363,25 @@ class GateBlock(_Manifest):
         default_factory=list, description="Auto-derived red-flag codes."
     )
 
+    @model_validator(mode="after")
+    def gate_flags_are_consistent(self):
+        all_passed = all(t.passed for t in self.thresholds)
+        any_fatal_failed = any(t.fatal and not t.passed for t in self.thresholds)
+
+        if self.overall_pass and not all_passed:
+            raise ValueError(
+                "overall_pass may be True only if every threshold has passed=True"
+            )
+        if self.fatal_fail and not any_fatal_failed:
+            raise ValueError(
+                "fatal_fail may be True only if at least one fatal threshold has passed=False"
+            )
+        if not self.fatal_fail and any_fatal_failed:
+            raise ValueError(
+                "fatal_fail must be True when any fatal threshold has passed=False"
+            )
+        return self
+
 
 class StrategyManifest(_Manifest):
     """Top-level strategy manifest, written progressively across stages 2-5.
@@ -341,10 +390,10 @@ class StrategyManifest(_Manifest):
     blocks still null. ``gate`` is computed once enough backtest blocks exist.
     """
 
-    schema_version: int = Field(default=1, ge=1)
+    schema_version: int = Field(default=1, ge=1, le=1)
     strategy_id: str
     symbol: str
-    generated_at: str = Field(..., description="ISO-8601 UTC timestamp.")
+    generated_at: datetime = Field(..., description="ISO-8601 UTC timestamp.")
     pipeline_stage: int = Field(
         ..., ge=1, le=5, description="Highest pipeline stage completed (1-5)."
     )
@@ -375,8 +424,8 @@ class SelectionEntry(_Manifest):
 class SelectionManifest(_Manifest):
     """Stage 5 selection result — ranks all gate-passing strategies."""
 
-    schema_version: int = Field(default=1, ge=1)
-    generated_at: str = Field(..., description="ISO-8601 UTC timestamp.")
+    schema_version: int = Field(default=1, ge=1, le=1)
+    generated_at: datetime = Field(..., description="ISO-8601 UTC timestamp.")
     method: Optional[str] = Field(default=None, description="Scoring method used.")
     ranking: List[SelectionEntry] = Field(default_factory=list)
 
@@ -389,9 +438,9 @@ class SelectionManifest(_Manifest):
 class LiveBlock(_Manifest):
     """Current live testnet state."""
 
-    started_at: str = Field(..., description="ISO-8601 UTC timestamp.")
-    updated_at: str = Field(..., description="ISO-8601 UTC timestamp.")
-    status: str = Field(..., description="e.g. 'running', 'paused', 'stopped'.")
+    started_at: datetime = Field(..., description="ISO-8601 UTC timestamp.")
+    updated_at: datetime = Field(..., description="ISO-8601 UTC timestamp.")
+    status: LiveStatus = Field(..., description="running / paused / stopped.")
     equity: Optional[float] = None
     open_positions: int = Field(default=0, ge=0)
     trades: int = Field(default=0, ge=0)
@@ -416,7 +465,7 @@ class KillswitchBlock(_Manifest):
     """Kill-switch state and thresholds (DD-based)."""
 
     triggered: bool = Field(default=False)
-    triggered_at: Optional[str] = None
+    triggered_at: Optional[datetime] = None
     reason: Optional[str] = None
     pause_drawdown: float = Field(
         default=0.05, description="Drawdown fraction that pauses trading."
@@ -429,8 +478,8 @@ class KillswitchBlock(_Manifest):
 class TestnetAlert(_Manifest):
     """A single monitoring alert."""
 
-    timestamp: str = Field(..., description="ISO-8601 UTC timestamp.")
-    severity: str = Field(..., description="e.g. 'info', 'warning', 'critical'.")
+    timestamp: datetime = Field(..., description="ISO-8601 UTC timestamp.")
+    severity: AlertSeverity = Field(..., description="info / warning / critical.")
     message: str
 
 
@@ -440,7 +489,7 @@ class TestnetStatus(_Manifest):
     # The name starts with "Test" — tell pytest this is not a test class.
     __test__ = False
 
-    schema_version: int = Field(default=1, ge=1)
+    schema_version: int = Field(default=1, ge=1, le=1)
     testnet_id: str
     strategy_id: str
     symbol: str
