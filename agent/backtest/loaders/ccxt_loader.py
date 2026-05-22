@@ -37,6 +37,28 @@ _CCXT_TIMEOUT_MS = int(os.getenv("CCXT_TIMEOUT_MS", "15000"))
 _CCXT_FETCH_BUDGET_S = float(os.getenv("CCXT_FETCH_BUDGET_S", "60"))
 
 
+def _first_proxy_env(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _ccxt_proxy_config() -> dict[str, str]:
+    """Build CCXT proxy settings from conventional proxy environment variables."""
+    all_proxy = _first_proxy_env("ALL_PROXY", "all_proxy")
+    http_proxy = _first_proxy_env("HTTP_PROXY", "http_proxy") or all_proxy
+    https_proxy = _first_proxy_env("HTTPS_PROXY", "https_proxy") or all_proxy or http_proxy
+
+    proxies: dict[str, str] = {}
+    if http_proxy:
+        proxies["http"] = http_proxy
+    if https_proxy:
+        proxies["https"] = https_proxy
+    return proxies
+
+
 @register
 class DataLoader:
     """CCXT-backed crypto OHLCV loader (100+ exchanges)."""
@@ -64,7 +86,12 @@ class DataLoader:
         if exchange_cls is None:
             logger.warning("Unknown CCXT exchange %s, falling back to binance", exchange_id)
             exchange_cls = ccxt.binance
-        return exchange_cls({"enableRateLimit": True, "timeout": _CCXT_TIMEOUT_MS})
+
+        config = {"enableRateLimit": True, "timeout": _CCXT_TIMEOUT_MS}
+        proxies = _ccxt_proxy_config()
+        if proxies:
+            config["proxies"] = proxies
+        return exchange_cls(config)
 
     def fetch(
         self,
