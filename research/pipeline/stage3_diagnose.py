@@ -228,6 +228,10 @@ def rule_based_action(metrics_by_run: dict[str, dict]) -> RecommendedAction:
       - sharpe < 1.0 OR drawdown > 0.15 OR trade_count < 50 -> back_to_stage_4
       - else -> proceed
 
+    Note: drawdown is read directly from metrics.csv where the backtest engine
+    stores it as a negative fraction (e.g. -0.07 for 7% drawdown). abs() is used
+    to handle both sign conventions.
+
     Args:
         metrics_by_run: Dict mapping run_name -> metrics dict.
 
@@ -269,7 +273,7 @@ def rule_based_action(metrics_by_run: dict[str, dict]) -> RecommendedAction:
     # back_to_stage_4: moderate failures — needs optimization.
     if (
         (sharpe_f is not None and sharpe_f < 1.0)
-        or (drawdown_f is not None and drawdown_f > 0.15)
+        or (drawdown_f is not None and abs(drawdown_f) > 0.15)
         or (trade_count_f is not None and trade_count_f < 50)
     ):
         return RecommendedAction.BACK_TO_STAGE_4
@@ -475,7 +479,7 @@ def _diagnose_strategy(
         return DiagnosisCheckResult(strategy_id=strategy_id, ok=False, error=msg)
 
     # ── Collect metrics ───────────────────────────────────────────────────────
-    print(f"  [1/4] Reading metrics …")
+    print("  [1/4] Reading metrics …")
     metrics_by_run: dict[str, dict] = {}
 
     base_metrics = read_metrics_csv(base_metrics_path)
@@ -497,11 +501,11 @@ def _diagnose_strategy(
             print(f"    oos_run '{oos_run}': metrics.csv missing or empty (skipped)")
 
     # ── Build LLM prompt ──────────────────────────────────────────────────────
-    print(f"  [2/4] Building diagnosis prompt …")
+    print("  [2/4] Building diagnosis prompt …")
     prompt = build_diagnosis_prompt(strategy_id, metrics_by_run)
 
     # ── Invoke LLM ────────────────────────────────────────────────────────────
-    print(f"  [3/4] Invoking LLM diagnosis …")
+    print("  [3/4] Invoking LLM diagnosis …")
     recommended_action: RecommendedAction
     summary: str | None = None
     findings: list[str] = []
@@ -532,7 +536,7 @@ def _diagnose_strategy(
         print(f"  [FALLBACK] rule-based recommended_action = {recommended_action.value}")
 
     # ── Write diagnosis.json ──────────────────────────────────────────────────
-    print(f"  [4/4] Writing diagnosis.json …")
+    print("  [4/4] Writing diagnosis.json …")
     block = build_diagnosis_block(
         strategy_id=strategy_id,
         base_run=entry.base_run,

@@ -113,7 +113,7 @@ def _write_metrics_csv(path: Path, row: dict) -> None:
 
 GOOD_METRICS = {
     "sharpe": "2.1",
-    "max_drawdown": "0.07",
+    "max_drawdown": "-0.07",
     "trade_count": "150",
     "profit_factor": "1.8",
     "total_return": "0.45",
@@ -122,7 +122,7 @@ GOOD_METRICS = {
 
 POOR_METRICS = {
     "sharpe": "-0.3",
-    "max_drawdown": "0.35",
+    "max_drawdown": "-0.35",
     "trade_count": "10",
     "profit_factor": "0.9",
     "total_return": "-0.15",
@@ -131,7 +131,7 @@ POOR_METRICS = {
 
 MEDIOCRE_METRICS = {
     "sharpe": "0.8",
-    "max_drawdown": "0.12",
+    "max_drawdown": "-0.12",
     "trade_count": "60",
     "profit_factor": "1.2",
     "total_return": "0.12",
@@ -356,6 +356,17 @@ class TestRuleBasedAction:
         metrics = {"base": {"sharpe": 0.0, "max_drawdown": 0.05, "trade_count": 100}}
         result = rule_based_action(metrics)
         assert result != RecommendedAction.BACK_TO_STAGE_2
+
+    def test_negative_drawdown_convention_triggers_stage4(self):
+        """Drawdown stored as negative (engine convention) should still trigger back_to_stage_4."""
+        metrics = {"base": {"sharpe": 1.2, "max_drawdown": -0.20, "trade_count": 100}}
+        assert rule_based_action(metrics) == RecommendedAction.BACK_TO_STAGE_4
+
+    def test_negative_large_drawdown_still_detected(self):
+        """Catastrophic negative drawdown (-0.35) should not be diagnosed as proceed."""
+        metrics = {"base": {"sharpe": 1.5, "max_drawdown": -0.35, "trade_count": 150}}
+        result = rule_based_action(metrics)
+        assert result != RecommendedAction.PROCEED
 
 
 # ---------------------------------------------------------------------------
