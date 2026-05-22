@@ -111,6 +111,15 @@ for _p in (_RESEARCH_DIR,):
 # repo-root definition.
 from pipeline.config import _REPO_ROOT, ResearchConfig, SymbolConfig, load_config  # noqa: E402
 
+# ── Dashboard schemas (FactorManifest) ─────────────────────────────────────────
+# dashboard/server/schemas.py lives at <repo-root>/dashboard/server/schemas.py.
+# Add the repo-root to sys.path so the import resolves regardless of CWD.
+_REPO_ROOT_STR = str(_REPO_ROOT)
+if _REPO_ROOT_STR not in sys.path:
+    sys.path.insert(0, _REPO_ROOT_STR)
+
+from dashboard.server.schemas import FactorManifest  # noqa: E402
+
 # ── Standard library ───────────────────────────────────────────────────────────
 import pandas as pd
 
@@ -183,6 +192,53 @@ class RegimeCheckResult:
 # ─── Pure-logic helpers (testable, network-free) ──────────────────────────────
 
 
+def check_factor_manifest_gate(manifests_dir: Path, symbol: str) -> None:
+    """Prerequisite gate: verify that stage 1 has produced a valid factor manifest.
+
+    Stage 2.5 must NOT run for a symbol until stage 1 has completed and written
+    ``factor_<symbol>.json``.  This function enforces that ordering by reading
+    and validating the factor manifest before the regime computation starts.
+
+    The regime algorithm does NOT use factor IC data — this is a pure ordering
+    gate, not an algorithmic input.
+
+    Args:
+        manifests_dir: Path to the research/manifests/ directory.
+        symbol:        Short lowercase symbol name, e.g. "btc".
+
+    Raises:
+        FileNotFoundError: If ``factor_<symbol>.json`` is missing.  The error
+            message explicitly names ``stage1_factors`` so it is clear which
+            upstream stage must be run first.
+        ValueError: If the file exists but cannot be parsed as JSON, or does
+            not validate as a FactorManifest.
+    """
+    path = manifests_dir / f"factor_{symbol}.json"
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"stage 1 has not produced a valid factor manifest for {symbol!r} — "
+            f"run stage1_factors first (expected: {path})"
+        )
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"factor manifest for {symbol!r} is not valid JSON: {exc} — "
+            f"re-run stage1_factors to regenerate it"
+        ) from exc
+
+    try:
+        FactorManifest.model_validate(data)
+    except Exception as exc:  # noqa: BLE001 — pydantic ValidationError
+        raise ValueError(
+            f"factor manifest for {symbol!r} failed FactorManifest schema validation: {exc} — "
+            f"re-run stage1_factors to regenerate it"
+        ) from exc
+
+
 def build_regime_manifest(
     symbol: str,
     regime_series: "pd.Series",
@@ -223,10 +279,10 @@ def build_regime_manifest(
     last_date = s.index[-1]
     # timedelta.days gives the number of full calendar days between the two
     # timestamps; adding 1 includes both endpoints.
-    try:
-        period_days = (last_date - first_date).days + 1
-    except Exception:  # noqa: BLE001
-        period_days = n
+    # The production caller always supplies a DatetimeIndex, so this must not
+    # raise AttributeError.  We let any wrong-type error propagate naturally
+    # rather than silently falling back to a semantically wrong value.
+    period_days = (last_date - first_date).days + 1
 
     # ── per-bar breakdown ─────────────────────────────────────────────────────
     breakdown: list[dict] = []
@@ -322,6 +378,19 @@ def check_regime_manifest(manifests_dir: Path, symbol: str) -> RegimeCheckResult
             exists=True,
             valid=False,
             error=f"'breakdown' must be a list, got {type(data['breakdown']).__name__}",
+        )
+
+    # Validate current_regime is one of the three canonical labels
+    current_regime = data.get("current_regime")
+    if current_regime not in _ALL_LABELS:
+        return RegimeCheckResult(
+            symbol=symbol,
+            exists=True,
+            valid=False,
+            error=(
+                f"current_regime {current_regime!r} is not a canonical label; "
+                f"must be one of {_ALL_LABELS}"
+            ),
         )
 
     return RegimeCheckResult(symbol=symbol, exists=True, valid=True)
@@ -421,13 +490,23 @@ def _run_regime_for_symbol(
     print(f"[regime] Symbol: {sym.name.upper()}")
     print(f"{'='*60}")
 
-    print(f"[1/2] Fetching hourly candles (last {period_days}d) from OKX…")
+    # ── Prerequisite gate: stage 1 factor manifest must exist and be valid ──
+    # This enforces the D2-mandated stage ordering: stage 2.5 must not run
+    # for a symbol before stage 1 has successfully produced its outputs.
+    print(f"[0/2] Checking stage-1 prerequisite: factor_{sym.name}.json …")
+    check_factor_manifest_gate(manifests_dir, sym.name)
+    print(f"      prerequisite OK — factor manifest present and valid")
+
+    print(f"[1/3] Fetching hourly candles (last {period_days}d) from OKX…")
     candles = fetch_candles(sym.okx_swap, period_days, bar="1H", use_history_endpoint=True)
     print(f"      rows: {len(candles)}")
 
-    print(f"[2/2] Fetching funding rate history (last {period_days}d) from OKX…")
+    print(f"[2/3] Fetching funding rate history (last {period_days}d) from OKX…")
     funding = fetch_funding_history(sym.okx_swap, period_days)
     print(f"      rows: {len(funding)}")
+
+    # ── Step 3: compute regime ────────────────────────────────────────────────
+    print(f"[3/3] Computing regime labels …")
 
     # Build daily close series from hourly candles.
     daily_close = daily_close_from_hourly(candles, col="close")

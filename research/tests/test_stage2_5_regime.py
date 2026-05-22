@@ -35,6 +35,7 @@ if str(_RESEARCH_DIR) not in sys.path:
 from pipeline.stage2_5_regime import (  # noqa: E402
     RegimeCheckResult,
     build_regime_manifest,
+    check_factor_manifest_gate,
     check_regime_manifest,
     compute_exit_code,
     print_summary,
@@ -147,10 +148,26 @@ class TestBuildRegimeManifest:
             assert isinstance(v, float), f"distribution value {v!r} is not float"
             assert 0.0 <= v <= 1.0
 
-    def test_period_days_matches_series_length(self):
+    def test_total_daily_bars_matches_series_length(self):
         series = _make_regime_series(60)
         manifest = build_regime_manifest("btc", series, {})
         assert manifest["total_daily_bars"] == 60
+
+    def test_period_days_is_calendar_span(self):
+        """period_days is the calendar span; total_daily_bars counts actual bars.
+
+        A gapped series spanning Jan 1 -> Jan 6 (3 bars, 2 gaps) must produce:
+          period_days      == 6   (Jan 6 - Jan 1 = 5 days + 1 = 6)
+          total_daily_bars == 3   (only 3 bars in the series)
+        """
+        idx = pd.DatetimeIndex(
+            ["2024-01-01", "2024-01-03", "2024-01-06"]  # 3 bars, gaps on Jan 2, 4, 5
+        )
+        labels = ["bull", "bear", "neutral"]
+        series = pd.Series(labels, index=idx, dtype=object)
+        manifest = build_regime_manifest("btc", series, {})
+        assert manifest["total_daily_bars"] == 3
+        assert manifest["period_days"] == 6  # (Jan 6 - Jan 1).days + 1 = 5 + 1 = 6
 
     def test_breakdown_is_list_of_date_regime_pairs(self):
         series = _make_regime_series(10)
@@ -286,6 +303,20 @@ class TestCheckRegimeManifest:
         result = check_regime_manifest(manifests_dir, "btc")
         assert not result.ok
 
+    def test_invalid_current_regime_label_detected(self, tmp_path: Path):
+        """current_regime must be one of bull/bear/neutral; any other value fails."""
+        manifests_dir = tmp_path / "manifests"
+        manifests_dir.mkdir()
+        bad = _valid_manifest_dict()
+        bad["current_regime"] = "sideways"  # not a canonical label
+        (manifests_dir / "regime_btc.json").write_text(
+            json.dumps(bad), encoding="utf-8"
+        )
+        result = check_regime_manifest(manifests_dir, "btc")
+        assert not result.ok
+        assert result.error is not None
+        assert "current_regime" in result.error
+
 
 # ---------------------------------------------------------------------------
 # (c) verify_outputs
@@ -402,3 +433,70 @@ class TestPrintSummary:
         print_summary(results)
         out = capsys.readouterr().out
         assert "1/2" in out
+
+
+# ---------------------------------------------------------------------------
+# (f) check_factor_manifest_gate  (Issue 1 — prerequisite gate for stage 2.5)
+# ---------------------------------------------------------------------------
+
+def _make_valid_factor_manifest_json(symbol: str = "btc") -> str:
+    """Return a minimal valid factor_<symbol>.json string (FactorManifest schema)."""
+    payload = {
+        "schema_version": 1,
+        "symbol": symbol.upper(),
+        "generated_at": "2024-01-01T00:00:00+00:00",
+        "period_days": 90,
+        "horizons_h": [24, 72],
+        "factors": [
+            {
+                "name": "funding_rate",
+                "ic_by_horizon": {"24": -0.08, "72": -0.06},
+                "ir": -0.55,
+                "sample_size": 87,
+                "cross_regime_ic": None,
+                "stability": None,
+                "verdict": "ensemble_only",
+            }
+        ],
+    }
+    return json.dumps(payload)
+
+
+class TestCheckFactorManifestGate:
+    """check_factor_manifest_gate(manifests_dir, symbol) -> None (raises on failure)."""
+
+    def test_valid_factor_manifest_passes(self, tmp_path: Path):
+        """A valid factor manifest must not raise."""
+        manifests_dir = tmp_path / "manifests"
+        manifests_dir.mkdir()
+        (manifests_dir / "factor_btc.json").write_text(
+            _make_valid_factor_manifest_json("btc"), encoding="utf-8"
+        )
+        # Must not raise
+        check_factor_manifest_gate(manifests_dir, "btc")
+
+    def test_missing_factor_manifest_raises(self, tmp_path: Path):
+        """Missing factor manifest must raise with a clear stage-ordering message."""
+        manifests_dir = tmp_path / "manifests"
+        manifests_dir.mkdir()
+        with pytest.raises(FileNotFoundError, match="stage1_factors"):
+            check_factor_manifest_gate(manifests_dir, "btc")
+
+    def test_invalid_json_raises(self, tmp_path: Path):
+        """Un-parseable JSON in the factor manifest must raise ValueError."""
+        manifests_dir = tmp_path / "manifests"
+        manifests_dir.mkdir()
+        (manifests_dir / "factor_btc.json").write_text("NOT JSON", encoding="utf-8")
+        with pytest.raises(ValueError, match="factor manifest"):
+            check_factor_manifest_gate(manifests_dir, "btc")
+
+    def test_schema_invalid_raises(self, tmp_path: Path):
+        """JSON that does not match FactorManifest schema must raise ValueError."""
+        manifests_dir = tmp_path / "manifests"
+        manifests_dir.mkdir()
+        bad = {"schema_version": 1, "symbol": "BTC"}  # missing required fields
+        (manifests_dir / "factor_btc.json").write_text(
+            json.dumps(bad), encoding="utf-8"
+        )
+        with pytest.raises(ValueError, match="factor manifest"):
+            check_factor_manifest_gate(manifests_dir, "btc")
