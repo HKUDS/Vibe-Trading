@@ -98,7 +98,7 @@ def symbol_to_short(symbol: str) -> str:
     return symbol.split("-")[0].lower()
 
 
-def build_run_config(symbol: str, cfg: ResearchConfig) -> dict:
+def build_run_config(symbol: str, cfg: ResearchConfig, today: date | None = None) -> dict:
     """Build the config.json dict for a backtest run.
 
     The schema matches agent/backtest/runner.py BacktestConfigSchema:
@@ -120,11 +120,13 @@ def build_run_config(symbol: str, cfg: ResearchConfig) -> dict:
     Args:
         symbol: Exchange ticker, e.g. "BTC-USDT-SWAP".
         cfg:    ResearchConfig loaded from research_config.yaml.
+        today:  Reference date for end_date (defaults to date.today()).
 
     Returns:
         Dict conforming to BacktestConfigSchema (JSON-serialisable).
     """
-    today = date.today()
+    if today is None:
+        today = date.today()
     start = today - timedelta(days=cfg.period)
     return {
         "codes": [symbol],
@@ -244,15 +246,15 @@ def list_pending_runs(
     if entry.base_run is not None:
         runs.append((entry.base_run, strategy_id, entry.symbol))
 
-    # regime_runs (dict of regime_label -> run_name, skip null values)
+    # regime_runs (dict of regime_label -> run_name)
+    # loader guarantees non-null values
     for _regime_label, run_name in entry.regime_runs.items():
-        if run_name is not None:
-            runs.append((run_name, strategy_id, entry.symbol))
+        runs.append((run_name, strategy_id, entry.symbol))
 
     # oos_runs (tuple of strings)
+    # loader guarantees non-null values
     for run_name in entry.oos_runs:
-        if run_name is not None:
-            runs.append((run_name, strategy_id, entry.symbol))
+        runs.append((run_name, strategy_id, entry.symbol))
 
     return runs
 
@@ -281,7 +283,7 @@ def print_summary(results: list[BacktestRunResult]) -> None:
     passed = sum(1 for r in results if r.ok)
     print(f"\n{passed}/{total} runs passed.")
     if total == 0 or passed < total:
-        print("Stage 3 FAILED: one or more backtest runs are missing artifacts.")
+        print("Stage 3 FAILED: no runs were attempted or one or more backtest runs failed.")
     else:
         print("Stage 3 PASSED: all backtest runs produced artifacts.")
     print("=" * 60)
@@ -377,13 +379,14 @@ def _run_backtest_for_run(
     print(f"[stage3] Run: {run_name}  (strategy: {strategy_id}  symbol: {symbol})")
     print(f"{'='*60}")
 
-    # ── Gate: stage1 factor manifest must exist ────────────────────────────────
+    # ── Gate: stage1 factor manifest must exist and be valid ──────────────────
+    # Local import to avoid circular imports at module level.
+    from pipeline.stage2_5_regime import check_factor_manifest_gate  # noqa: PLC0415
     manifest_path = manifests_dir / f"factor_{short}.json"
-    if not manifest_path.exists():
-        msg = (
-            f"stage 1 factor manifest for {short!r} is missing — "
-            f"run stage1_factors first (expected: {manifest_path})"
-        )
+    try:
+        check_factor_manifest_gate(manifest_path)
+    except (FileNotFoundError, ValueError) as exc:
+        msg = str(exc)
         print(f"  [SKIP] {msg}")
         return BacktestRunResult(run_name=run_name, ok=False, error=msg)
 
@@ -442,6 +445,14 @@ def main() -> None:
     print(f"Runs root:  {runs_root}")
 
     all_results: list[BacktestRunResult] = []
+
+    # Check that at least one run exists across all strategies
+    all_pending: list[tuple[str, str, str]] = []
+    for strategy_id, entry in runs_map.entries.items():
+        all_pending.extend(list_pending_runs(strategy_id, entry))
+    if not all_pending:
+        print("[stage3] WARNING: no pending runs found in strategy_runs.json — nothing to run.")
+        sys.exit(1)
 
     for strategy_id, entry in runs_map.entries.items():
         pending = list_pending_runs(strategy_id, entry)

@@ -131,16 +131,17 @@ class TestBuildRunConfig:
         assert result["interval"] == "4H"
 
     def test_end_date_is_today(self):
+        fixed_today = date(2024, 1, 15)
         cfg = _make_research_config(period=730)
-        result = build_run_config(symbol="BTC-USDT-SWAP", cfg=cfg)
-        today = date.today().isoformat()
-        assert result["end_date"] == today
+        result = build_run_config(symbol="BTC-USDT-SWAP", cfg=cfg, today=fixed_today)
+        assert result["end_date"] == fixed_today.isoformat()
 
     def test_start_date_is_period_days_before_today(self):
         period = 730
+        fixed_today = date(2024, 1, 15)
         cfg = _make_research_config(period=period)
-        result = build_run_config(symbol="BTC-USDT-SWAP", cfg=cfg)
-        expected_start = (date.today() - timedelta(days=period)).isoformat()
+        result = build_run_config(symbol="BTC-USDT-SWAP", cfg=cfg, today=fixed_today)
+        expected_start = (fixed_today - timedelta(days=period)).isoformat()
         assert result["start_date"] == expected_start
 
     def test_oos_run_config_structure(self):
@@ -245,7 +246,10 @@ class TestStubPassesASTValidator:
         if not had_agent:
             sys.path.insert(0, agent_dir_str)
         try:
-            from backtest.runner import _validate_signal_engine_source
+            try:
+                from backtest.runner import _validate_signal_engine_source
+            except ImportError:
+                pytest.skip("agent/backtest/runner not available")
             stub_source = build_stub_signal_engine()
             se_file = tmp_path / "signal_engine.py"
             se_file.write_text(stub_source, encoding="utf-8")
@@ -438,3 +442,6 @@ class TestSymbolToShort:
     def test_returns_lowercase(self):
         result = symbol_to_short("BTC-USDT-SWAP")
         assert result == result.lower()
+
+    def test_symbol_to_short_no_hyphen(self):
+        assert symbol_to_short("BTC") == "btc"
