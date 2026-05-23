@@ -1,1 +1,0 @@
-export { linearMap, roundLegacy as round, asc, getPrecision, getPrecisionSafe, getPixelPrecision, getPercentWithPrecision, parsePercent, MAX_SAFE_INTEGER, remRadian, isRadianAroundZero, parseDate, quantity, quantityExponent, nice, quantile, reformIntervals, isNumeric, numericToNumber } from '../../util/number.js';
