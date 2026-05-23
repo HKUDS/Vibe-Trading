@@ -1,0 +1,40 @@
+{
+  "symbol": "BTC",
+  "generated_at": "2026-05-14T08:00:00Z",
+  "method": "HMM-3-state",
+  "current_regime": "bull",
+  "regimes": [
+    {
+      "label": "bull",
+      "start": "2024-01-01",
+      "end": "2024-06-30",
+      "avg_return_24h": 0.0042,
+      "volatility_24h": 0.021,
+      "duration_days": 181
+    },
+    {
+      "label": "chop",
+      "start": "2024-07-01",
+      "end": "2024-09-30",
+      "avg_return_24h": 0.0003,
+      "volatility_24h": 0.018,
+      "duration_days": 92
+    },
+    {
+      "label": "bear",
+      "start": "2024-10-01",
+      "end": "2024-12-31",
+      "avg_return_24h": -0.0031,
+      "volatility_24h": 0.029,
+      "duration_days": 92
+    },
+    {
+      "label": "bull",
+      "start": "2025-01-01",
+      "end": "2025-05-14",
+      "avg_return_24h": 0.0051,
+      "volatility_24h": 0.024,
+      "duration_days": 133
+    }
+  ]
+}
