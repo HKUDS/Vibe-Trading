@@ -1,0 +1,97 @@
+version: "3.9"
+
+# Production deployment for Alibaba Cloud Light Server (2GB RAM)
+# Optimized for low memory footprint
+
+services:
+  # ─── Nginx Reverse Proxy ───────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - vibe-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─── Backend API ───────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    expose:
+      - "8001"
+    environment:
+      - DATABASE_URL=sqlite:///data/app.db
+      - VIBE_TRADING_API_URL=http://agent:8899
+      - LOG_LEVEL=info
+      - API_AUTH_KEY=${API_AUTH_KEY:-change-me-in-production}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost,http://localhost:80}
+    volumes:
+      - ./data:/data
+    depends_on:
+      - agent
+    restart: unless-stopped
+    networks:
+      - vibe-network
+    # Memory limit for 2GB server
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─── Vibe-Trading Agent (optional) ─────────────────────────────────
+  # If this OOMs on 2GB, comment it out and set VIBE_TRADING_API_URL
+  # to an external agent instance
+  agent:
+    build: .
+    expose:
+      - "8899"
+    env_file:
+      - agent/.env
+    environment:
+      - VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1
+    volumes:
+      - agent-data:/app/agent/runs
+      - agent-sessions:/app/agent/sessions
+    restart: unless-stopped
+    networks:
+      - vibe-network
+    # Strict memory limit — if it dies, the backend falls back to mock
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  agent-data:
+  agent-sessions:
+
+networks:
+  vibe-network:
+    driver: bridge
