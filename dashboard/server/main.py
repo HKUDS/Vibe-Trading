@@ -137,3 +137,22 @@ def get_selection() -> SelectionManifest:
     if manifest is None:
         raise HTTPException(status_code=404, detail="Selection manifest not found")
     return manifest
+
+
+# ---------------------------------------------------------------------------
+# 3.7 Markdown reports — allowlist: research/ only
+# ---------------------------------------------------------------------------
+
+_REPORT_ALLOWED_DIRS = ["research"]
+
+
+@app.get("/api/reports")
+def get_report(
+    path: str = Query(..., description="Path to markdown file relative to repo root"),
+) -> dict[str, str]:
+    target = (REPO_ROOT / path)
+    if not parsers.is_path_allowed(target, REPO_ROOT, _REPORT_ALLOWED_DIRS):
+        raise HTTPException(status_code=403, detail="Path not in allowed directories")
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"Report '{path}' not found")
+    return {"path": path, "content": parsers.read_text(target)}

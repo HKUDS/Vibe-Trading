@@ -249,3 +249,44 @@ def test_get_selection_404(tmp_path):
     with TestClient(app) as c:
         r = c.get("/api/selection")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET /api/reports — allowlist
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def client_reports(tmp_path: Path):
+    research = tmp_path / "research"
+    research.mkdir()
+    (research / "report.md").write_text("# Analysis\nContent here", encoding="utf-8")
+    secret = tmp_path / "secret"
+    secret.mkdir()
+    (secret / "creds.txt").write_text("password=abc", encoding="utf-8")
+    os.environ["REPO_ROOT"] = str(tmp_path)
+    import importlib, main as main_module
+    importlib.reload(main_module)
+    from main import app
+    with TestClient(app) as c:
+        yield c
+
+
+def test_get_report_allowed(client_reports):
+    r = client_reports.get("/api/reports?path=research/report.md")
+    assert r.status_code == 200
+    assert "Analysis" in r.json()["content"]
+
+
+def test_get_report_outside_allowlist(client_reports):
+    r = client_reports.get("/api/reports?path=secret/creds.txt")
+    assert r.status_code == 403
+
+
+def test_get_report_traversal(client_reports):
+    r = client_reports.get("/api/reports?path=research/../secret/creds.txt")
+    assert r.status_code == 403
+
+
+def test_get_report_missing_file(client_reports):
+    r = client_reports.get("/api/reports?path=research/nonexistent.md")
+    assert r.status_code == 404
