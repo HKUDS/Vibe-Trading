@@ -97,3 +97,65 @@ def test_get_strategy_404(client):
     r = client.get("/api/strategies/nonexistent")
     assert r.status_code == 404
     assert "not found" in r.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# GET /api/strategies/{id}/equity  &  /trades
+# ---------------------------------------------------------------------------
+
+EQUITY_CSV = "timestamp,equity\n2024-01-01T00:00:00,10000.5\n2024-01-02T00:00:00,10250.0\n"
+TRADES_CSV = "entry_time,side,pnl\n2024-01-01T08:00:00,long,250.5\n"
+
+
+@pytest.fixture()
+def repo_root_with_run(tmp_path: Path) -> Path:
+    manifests = tmp_path / "research" / "manifests" / "strat_btc_001"
+    manifests.mkdir(parents=True)
+    (manifests / "manifest.json").write_text(json.dumps(STRATEGY_PAYLOAD), encoding="utf-8")
+    run_dir = tmp_path / "runs" / "strat_btc_001_base"
+    run_dir.mkdir(parents=True)
+    (run_dir / "equity.csv").write_text(EQUITY_CSV, encoding="utf-8")
+    (run_dir / "trades.csv").write_text(TRADES_CSV, encoding="utf-8")
+    return tmp_path
+
+
+@pytest.fixture()
+def client_with_run(repo_root_with_run: Path):
+    os.environ["REPO_ROOT"] = str(repo_root_with_run)
+    import importlib, main as main_module
+    importlib.reload(main_module)
+    from main import app
+    with TestClient(app) as c:
+        yield c
+
+
+def test_get_equity(client_with_run):
+    r = client_with_run.get("/api/strategies/strat_btc_001/equity?run=runs/strat_btc_001_base")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 2
+    assert data[0]["equity"] == 10000.5
+
+
+def test_get_trades(client_with_run):
+    r = client_with_run.get("/api/strategies/strat_btc_001/trades?run=runs/strat_btc_001_base")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 1
+    assert data[0]["side"] == "long"
+
+
+def test_get_equity_strategy_404(client_with_run):
+    r = client_with_run.get("/api/strategies/ghost/equity?run=runs/strat_btc_001_base")
+    assert r.status_code == 404
+
+
+def test_get_equity_csv_missing(client_with_run):
+    r = client_with_run.get("/api/strategies/strat_btc_001/equity?run=runs/nonexistent_run")
+    assert r.status_code == 404
+
+
+def test_get_equity_no_run_no_manifest_default(client):
+    # manifest has no backtest block → no default run → 404
+    r = client.get("/api/strategies/strat_btc_001/equity")
+    assert r.status_code == 404

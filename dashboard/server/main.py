@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 import artifacts
+import parsers
 from schemas import StrategyManifest
 
 # Repo root — override with REPO_ROOT env var for Docker / Linux deployment.
@@ -57,3 +59,46 @@ def get_strategy(strategy_id: str) -> StrategyManifest:
     if manifest is None:
         raise HTTPException(status_code=404, detail=f"Strategy '{strategy_id}' not found")
     return manifest
+
+
+# ---------------------------------------------------------------------------
+# 3.5 Equity curve & trades
+# ---------------------------------------------------------------------------
+
+def _resolve_run_csv(strategy_id: str, run: Optional[str], filename: str) -> Path:
+    """Return path to <run>/<filename>; 404 if not found."""
+    manifest = artifacts.get_strategy_manifest(REPO_ROOT, strategy_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Strategy '{strategy_id}' not found")
+
+    run_dir = run
+    if run_dir is None and manifest.backtest and manifest.backtest.in_sample:
+        run_dir = manifest.backtest.in_sample.source_run
+    if run_dir is None:
+        raise HTTPException(status_code=404, detail="No run specified and no default in manifest")
+
+    path = (REPO_ROOT / run_dir / filename).resolve()
+    # Safety: must stay within repo_root
+    if not path.is_relative_to(REPO_ROOT.resolve()):
+        raise HTTPException(status_code=403, detail="Path outside repo root")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"{filename} not found in run '{run_dir}'")
+    return path
+
+
+@app.get("/api/strategies/{strategy_id}/equity")
+def get_equity(
+    strategy_id: str,
+    run: Optional[str] = Query(default=None, description="Run directory relative to repo root"),
+) -> list[dict[str, Any]]:
+    path = _resolve_run_csv(strategy_id, run, "equity.csv")
+    return parsers.csv_to_records(path)
+
+
+@app.get("/api/strategies/{strategy_id}/trades")
+def get_trades(
+    strategy_id: str,
+    run: Optional[str] = Query(default=None, description="Run directory relative to repo root"),
+) -> list[dict[str, Any]]:
+    path = _resolve_run_csv(strategy_id, run, "trades.csv")
+    return parsers.csv_to_records(path)
