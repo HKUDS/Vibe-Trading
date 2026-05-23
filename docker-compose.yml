@@ -1,4 +1,7 @@
+version: "3.9"
+
 services:
+  # ─── Vibe-Trading Agent (upstream) ─────────────────────────────────
   vibe-trading:
     build: .
     ports:
@@ -11,7 +14,35 @@ services:
       - vibe-runs:/app/agent/runs
       - vibe-sessions:/app/agent/sessions
     restart: unless-stopped
+    networks:
+      - vibe-network
 
+  # ─── Backend API (new) ─────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=sqlite:///data/app.db
+      - VIBE_TRADING_API_URL=http://vibe-trading:8899
+      - LOG_LEVEL=info
+      - API_AUTH_KEY=${API_AUTH_KEY:-dev-key}
+    volumes:
+      - backend-data:/data
+      - ./backend/src:/app/src:ro
+    depends_on:
+      - vibe-trading
+    networks:
+      - vibe-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Frontend SPA ──────────────────────────────────────────────────
   frontend:
     image: node:20
     working_dir: /app
@@ -20,14 +51,20 @@ services:
     volumes:
       - ./frontend:/app
     environment:
-      - VITE_API_URL=http://vibe-trading:8899
-    command: sh -c "npm install && npm run dev -- --host --port 5899"
-    profiles:
-      - frontend
+      - VITE_API_URL=http://backend:8001
+    command: sh -c "npm install -g pnpm && pnpm install && pnpm dev -- --host --port 5899"
     depends_on:
-      vibe-trading:
-        condition: service_started
+      - backend
+    networks:
+      - vibe-network
+    profiles:
+      - dev
 
 volumes:
   vibe-runs:
   vibe-sessions:
+  backend-data:
+
+networks:
+  vibe-network:
+    driver: bridge

@@ -34,10 +34,6 @@ export default defineConfig(({ mode }) => {
       port: 5899,
       proxy: {
         ...Object.fromEntries(PROXY_PATHS.map((p) => [p, apiProxy])),
-        // SPA RunDetail page — only the two-segment ``/runs/{id}``
-        // form should fall back to ``index.html`` on browser navigation.
-        // ``/runs/{id}/code`` and ``/runs/{id}/pine`` are API-only and
-        // must keep proxying to the backend even when Accept is text/html.
         "^/runs/[^/]+/?$": apiProxyWithHtmlFallback,
         "/runs": apiProxy,
         "/correlation": apiProxyWithHtmlFallback,
@@ -53,6 +49,11 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
+    },
+    test: {
+      globals: true,
+      environment: "jsdom",
+      setupFiles: ["./src/test/setup.ts"],
     },
   };
 });

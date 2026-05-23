@@ -9,6 +9,7 @@ agent/.env
 
 .claude/*
 !.claude/hooks.json
+!.claude/settings.json
 CLAUDE.md
 .vscode/
 learn-claude-code-main/
@@ -39,14 +40,32 @@ data/.duckdb_tmp/
 data/parquet/
 data/backup/
 
-# Internal docs (plans, specs)
-docs/
-!wiki/docs/
-!wiki/docs/**
+# Internal docs (plans, specs) — keep project docs, ignore data/
 data/minutes/
 data/overnight*.log
 data/*.log
 data/test_write.txt
+
+# Backend artifacts
+backend/.venv/
+backend/__pycache__/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/htmlcov/
+backend/.coverage
+backend/*.egg-info/
+backend/dist/
+backend/build/
+
+# Frontend artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
+frontend/tsconfig.tsbuildinfo
+
+# Secrets baseline
+docs/.secrets.baseline
 agent/.pytest_tmp/
 agent/vibe_trading.egg-info/
 agent/vibe_trading_ai.egg-info/

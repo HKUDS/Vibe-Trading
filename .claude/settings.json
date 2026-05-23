@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "Bash": {
+      "read": ["git status", "git log", "git diff", "ls", "find", "grep", "cat", "head", "tail", "wc", "which"],
+      "write": ["git add", "git commit", "git push", "rm", "mkdir", "touch", "cp", "mv"]
+    }
+  },
+  "env": {
+    "VITE_API_URL": "http://localhost:8001"
+  }
+}
