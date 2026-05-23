@@ -396,7 +396,8 @@ export function Agent() {
     const { sessionId: curSid, messages: curMsgs, cacheSession, reset, getCachedSession, switchSession } = act();
 
     if (urlSessionId && urlSessionId !== curSid) {
-      const gen = ++genRef.current;
+      const gen = genRef.current + 1;
+      genRef.current = gen;
       doDisconnect();
       if (curSid && curMsgs.length > 0) cacheSession(curSid, curMsgs);
 
@@ -410,9 +411,9 @@ export function Agent() {
       }
       setupSSE(urlSessionId);
     } else if (!urlSessionId && curSid) {
-      ++genRef.current;
+      genRef.current += 1;
       doDisconnect();
-      if (curMsgs.length > 0) cacheSession(curSid, curMsgs);
+      if (curSid && curMsgs.length > 0) cacheSession(curSid, curMsgs);
       reset();
     }
   }, [urlSessionId, doDisconnect, loadSessionMessages, setupSSE, forceScrollToBottom]);
