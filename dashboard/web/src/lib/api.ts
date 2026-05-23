@@ -266,8 +266,13 @@ export interface TestnetStatus {
 export interface StrategyRow {
   strategy_id: string;
   symbol: string;
-  gate: string;
+  pipeline_stage: number;
+  generated_at: string;
+  gate_pass: boolean | null;
+  gate_fatal: boolean | null;
   sharpe: number | null;
+  max_drawdown: number | null;
+  red_flags: RedFlagCode[];
 }
 
 export interface PipelineRow {
