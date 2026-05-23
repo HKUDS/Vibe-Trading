@@ -1,0 +1,22 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    environment:
+      REPO_ROOT: /repo
+      CORS_ORIGINS: http://localhost
+    volumes:
+      # Mount repo root read-only so server can read research/ and runs/
+      - ..:/repo:ro
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    restart: unless-stopped
