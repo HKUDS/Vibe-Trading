@@ -1,6 +1,6 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Globe } from "lucide-react";
+import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Globe, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useDarkMode } from "@/hooks/useDarkMode";
@@ -23,17 +23,23 @@ const NAV = [
 export function Layout() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
-  const { t, locale, setLocale, locales, localeLabel } = useI18n();
-  const cycleLocale = () => {
-    const idx = locales.indexOf(locale);
-    setLocale(locales[(idx + 1) % locales.length]);
-  };
+  const { t, locale, setLocale, locales, labels } = useI18n();
   const { dark, toggle } = useDarkMode();
+  const [langOpen, setLangOpen] = useState(false);
+  const langRef = useRef<HTMLDivElement>(null);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const sseStatus = useAgentStore(s => s.sseStatus);
   const sseRetryAttempt = useAgentStore(s => s.sseRetryAttempt);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("qa-sidebar") === "collapsed");
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (langRef.current && !langRef.current.contains(e.target as Node)) setLangOpen(false);
+    };
+    if (langOpen) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [langOpen]);
 
   const activeSessionId = searchParams.get("session");
 
@@ -216,17 +222,52 @@ export function Layout() {
 
         {/* Footer */}
         <div className={cn("border-t", collapsed ? "p-1 flex flex-col items-center gap-1" : "p-3 space-y-2")}>
-          {collapsed ? (
-            <>
-              <button onClick={toggle} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={dark ? t.lightMode : t.darkMode}>
-                {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-              </button>
+          {/* Language dropdown */}
+          <div className="relative" ref={langRef}>
+            {collapsed ? (
               <button
-                onClick={cycleLocale}
+                onClick={() => setLangOpen(!langOpen)}
                 className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors"
                 title={t.language}
               >
                 <Globe className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <button
+                onClick={() => setLangOpen(!langOpen)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
+                title={t.language}
+              >
+                <Globe className="h-3.5 w-3.5" />
+                <span className="truncate">{labels[locale]}</span>
+                <ChevronDown className={cn("h-3 w-3 transition-transform", langOpen && "rotate-180")} />
+              </button>
+            )}
+            {langOpen && (
+              <div className={cn(
+                "absolute z-50 rounded-lg border bg-background/95 backdrop-blur-sm shadow-lg py-1 overflow-y-auto max-h-56",
+                collapsed ? "left-full bottom-0 ml-1 w-36" : "bottom-full left-0 mb-1 w-full min-w-[140px]"
+              )}>
+                {locales.map((l) => (
+                  <button
+                    key={l}
+                    onClick={() => { setLocale(l); setLangOpen(false); }}
+                    className={cn(
+                      "w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted",
+                      l === locale ? "text-primary font-medium bg-primary/5" : "text-muted-foreground"
+                    )}
+                  >
+                    {labels[l]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {collapsed ? (
+            <>
+              <button onClick={toggle} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={dark ? t.lightMode : t.darkMode}>
+                {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
               </button>
               <button onClick={() => setCollapsed(false)} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={t.expand}>
                 <ChevronsRight className="h-3.5 w-3.5" />
@@ -242,23 +283,13 @@ export function Layout() {
                   {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
                   {dark ? t.lightMode : t.darkMode}
                 </button>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={cycleLocale}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    title={t.language}
-                  >
-                    <Globe className="h-3.5 w-3.5" />
-                    {localeLabel(locale)}
-                  </button>
-                  <button
-                    onClick={() => setCollapsed(true)}
-                    className="p-1 text-muted-foreground hover:text-foreground rounded transition-colors"
-                    title={t.collapse}
-                  >
-                    <ChevronsLeft className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                <button
+                  onClick={() => setCollapsed(true)}
+                  className="p-1 text-muted-foreground hover:text-foreground rounded transition-colors"
+                  title={t.collapse}
+                >
+                  <ChevronsLeft className="h-3.5 w-3.5" />
+                </button>
               </div>
               <p className="text-xs text-muted-foreground/60">{APP_VERSION}</p>
             </>

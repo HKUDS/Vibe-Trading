@@ -4,18 +4,32 @@ import zh from "./zh";
 import zhHant from "./zh-Hant";
 import ja from "./ja";
 import fr from "./fr";
+import ko from "./ko";
+import es from "./es";
+import ar from "./ar";
+import pt from "./pt";
+import de from "./de";
+import ru from "./ru";
 
-const LOCALES = ["en", "zh", "zh-Hant", "ja", "fr"] as const;
+const LOCALES = ["en", "zh", "zh-Hant", "ja", "fr", "ko", "es", "ar", "pt", "de", "ru"] as const;
 type Locale = (typeof LOCALES)[number];
 
-const messagesMap: Record<Locale, Record<string, string>> = { en, zh, "zh-Hant": zhHant, ja, fr };
+const messagesMap: Record<Locale, Record<string, string>> = {
+  en, zh, "zh-Hant": zhHant, ja, fr, ko, es, ar, pt, de, ru,
+};
 
 const LABELS: Record<Locale, string> = {
-  en: "EN",
-  zh: "中文",
-  "zh-Hant": "繁體",
+  en: "English",
+  zh: "简体中文",
+  "zh-Hant": "繁體中文",
   ja: "日本語",
-  fr: "FR",
+  fr: "Français",
+  ko: "한국어",
+  es: "Español",
+  ar: "العربية",
+  pt: "Português",
+  de: "Deutsch",
+  ru: "Русский",
 };
 
 function detectLocale(): Locale {
@@ -26,6 +40,12 @@ function detectLocale(): Locale {
   if (lang.startsWith("zh")) return "zh";
   if (lang.startsWith("ja")) return "ja";
   if (lang.startsWith("fr")) return "fr";
+  if (lang.startsWith("ko")) return "ko";
+  if (lang.startsWith("es")) return "es";
+  if (lang.startsWith("ar")) return "ar";
+  if (lang.startsWith("pt")) return "pt";
+  if (lang.startsWith("de")) return "de";
+  if (lang.startsWith("ru")) return "ru";
   return "en";
 }
 
@@ -34,7 +54,7 @@ interface I18nCtxValue {
   locale: Locale;
   setLocale: (l: Locale) => void;
   locales: readonly Locale[];
-  localeLabel: (l: Locale) => string;
+  labels: Record<Locale, string>;
 }
 
 const I18nCtx = createContext<I18nCtxValue>({
@@ -42,7 +62,7 @@ const I18nCtx = createContext<I18nCtxValue>({
   locale: "en",
   setLocale: () => {},
   locales: LOCALES,
-  localeLabel: (l) => LABELS[l],
+  labels: LABELS,
 });
 
 export function I18nProvider({ children }: { children: ReactNode }) {
@@ -57,7 +77,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = locale.startsWith("zh") ? "zh-CN" : locale;
   }, [locale]);
 
-  const val = { t: messagesMap[locale], locale, setLocale, locales: LOCALES, localeLabel: (l: Locale) => LABELS[l] };
+  const val = { t: messagesMap[locale], locale, setLocale, locales: LOCALES, labels: LABELS };
 
   return <I18nCtx.Provider value={val}>{children}</I18nCtx.Provider>;
 }
