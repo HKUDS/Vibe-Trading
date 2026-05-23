@@ -6,9 +6,14 @@ services:
     environment:
       REPO_ROOT: /repo
       CORS_ORIGINS: http://localhost
+      # Forward Bybit credentials to supervisor subprocesses
+      BYBIT_API_KEY: ${BYBIT_API_KEY:-}
+      BYBIT_API_SECRET: ${BYBIT_API_SECRET:-}
     volumes:
       # Mount repo root read-only so server can read research/ and runs/
       - ..:/repo:ro
+      # Writable mount for testnet output (runs/testnet/)
+      - ../runs:/repo/runs
     restart: unless-stopped
 
   web:
@@ -20,3 +25,21 @@ services:
     depends_on:
       - server
     restart: unless-stopped
+
+  # dashboard-trader — optional: run standalone trader without the dashboard
+  # To use: docker compose run --rm trader python -m trader.loop --help
+  trader:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    command: ["echo", "Trader subprocess managed by server supervisor — use API to start"]
+    environment:
+      BYBIT_API_KEY: ${BYBIT_API_KEY:-}
+      BYBIT_API_SECRET: ${BYBIT_API_SECRET:-}
+      REPO_ROOT: /repo
+    volumes:
+      - ..:/repo:ro
+      - ../runs:/repo/runs
+    profiles:
+      - trader
+    restart: "no"

@@ -317,4 +317,25 @@ export const api = {
     }),
   demote: (id: string) =>
     fetch(`${BASE}/strategies/${id}/promote`, { method: "DELETE" }),
+  traderStart: (
+    testnetId: string,
+    body: {
+      strategy_id: string;
+      run_dir?: string;
+      symbol?: string;
+      interval?: string;
+      qty?: number;
+    },
+  ) =>
+    fetch(`${BASE}/testnet/${testnetId}/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  traderStop: (testnetId: string, strategyId: string) =>
+    fetch(`${BASE}/testnet/${testnetId}/stop?strategy_id=${encodeURIComponent(strategyId)}`, {
+      method: "POST",
+    }),
+  traderProcess: (testnetId: string, strategyId: string): Promise<{ running: boolean; pid: number | null }> =>
+    get(`/testnet/${testnetId}/process?strategy_id=${encodeURIComponent(strategyId)}`),
 };

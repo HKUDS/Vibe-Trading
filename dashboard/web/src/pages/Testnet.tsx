@@ -12,6 +12,134 @@ import {
 import { cn } from "../lib/utils";
 
 // ---------------------------------------------------------------------------
+// Trader control (start / stop)
+// ---------------------------------------------------------------------------
+
+function TraderControls({
+  status,
+  onAction,
+}: {
+  status: TestnetStatus;
+  onAction: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [showStartForm, setShowStartForm] = useState(false);
+  const [runDir, setRunDir] = useState("");
+  const [qty, setQty] = useState("0.001");
+
+  const isRunning = status.live.status === "running" || status.live.status === "paused";
+
+  const handleStop = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await api.traderStop(status.testnet_id, status.strategy_id);
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error((j as { detail?: string }).detail ?? `HTTP ${res.status}`);
+      }
+      onAction();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStart = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await api.traderStart(status.testnet_id, {
+        strategy_id: status.strategy_id,
+        run_dir: runDir.trim() || undefined,
+        symbol: status.symbol,
+        qty: parseFloat(qty) || 0.001,
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error((j as { detail?: string }).detail ?? `HTTP ${res.status}`);
+      }
+      setShowStartForm(false);
+      onAction();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        {isRunning ? (
+          <button
+            onClick={handleStop}
+            disabled={loading}
+            className="rounded-md border border-red-300 bg-red-50 dark:bg-red-950/30 px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-400 hover:bg-red-100 disabled:opacity-50 transition-colors"
+          >
+            {loading ? "停止中…" : "停止 Trader"}
+          </button>
+        ) : (
+          <button
+            onClick={() => setShowStartForm((v) => !v)}
+            disabled={loading}
+            className="rounded-md border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 disabled:opacity-50 transition-colors"
+          >
+            啟動 Trader
+          </button>
+        )}
+      </div>
+
+      {showStartForm && (
+        <div className="rounded-md border p-3 space-y-2 text-xs">
+          <div className="space-y-1">
+            <label className="text-muted-foreground">Run 目錄（repo-relative，含 code/signal_engine.py）</label>
+            <input
+              value={runDir}
+              onChange={(e) => setRunDir(e.target.value)}
+              placeholder="runs/btc_s1_funding_carry_oos"
+              className="w-full rounded border px-2 py-1 text-xs bg-background"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-muted-foreground">下單數量（base asset）</label>
+            <input
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              placeholder="0.001"
+              className="w-32 rounded border px-2 py-1 text-xs bg-background"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleStart}
+              disabled={loading || !runDir.trim()}
+              className="rounded-md bg-emerald-600 px-3 py-1 text-xs text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+            >
+              {loading ? "啟動中…" : "確認啟動"}
+            </button>
+            <button
+              onClick={() => setShowStartForm(false)}
+              className="rounded-md border px-3 py-1 text-xs hover:bg-muted transition-colors"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {err && (
+        <div className="rounded-md border border-red-300 bg-red-50 dark:bg-red-950/30 px-2 py-1 text-xs text-red-700 dark:text-red-400">
+          {err}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -205,7 +333,7 @@ function AlertsList({ alerts }: { alerts: TestnetAlert[] }) {
 // Single testnet card
 // ---------------------------------------------------------------------------
 
-function TestnetCard({ status }: { status: TestnetStatus }) {
+function TestnetCard({ status, onRefresh }: { status: TestnetStatus; onRefresh: () => void }) {
   const { live, vs_backtest, killswitch, alerts } = status;
   const updatedAgo = Math.round(
     (Date.now() - new Date(live.updated_at).getTime()) / 1000
@@ -266,6 +394,12 @@ function TestnetCard({ status }: { status: TestnetStatus }) {
             警報 {alerts.length > 0 && `(${alerts.length})`}
           </div>
           <AlertsList alerts={alerts} />
+        </div>
+
+        {/* Trader controls */}
+        <div>
+          <div className="text-xs font-medium text-muted-foreground mb-2">Trader 控制</div>
+          <TraderControls status={status} onAction={onRefresh} />
         </div>
       </div>
     </div>
@@ -353,7 +487,7 @@ export default function Testnet() {
       )}
 
       {statuses.map((s) => (
-        <TestnetCard key={s.testnet_id} status={s} />
+        <TestnetCard key={s.testnet_id} status={s} onRefresh={fetchData} />
       ))}
     </div>
   );

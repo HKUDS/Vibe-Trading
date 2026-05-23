@@ -11,6 +11,7 @@ from pydantic import BaseModel
 import artifacts
 import parsers
 import state as state_module
+import supervisor as supervisor_module
 from schemas import FATAL_GATE_CHECKS, StrategyManifest
 
 # Repo root — override with REPO_ROOT env var for Docker / Linux deployment.
@@ -19,6 +20,9 @@ REPO_ROOT = Path(os.environ.get("REPO_ROOT", Path(__file__).parent.parent.parent
 DASHBOARD_DIR = Path(__file__).parent.parent
 
 app = FastAPI(title="Quant Strategy Dashboard API", version="0.1.0")
+
+# Initialise supervisor singleton at startup
+supervisor_module.init_supervisor(REPO_ROOT, DASHBOARD_DIR)
 
 app.add_middleware(
     CORSMiddleware,
@@ -252,3 +256,53 @@ def get_testnet(testnet_id: str) -> TestnetStatus:
     if status is None:
         raise HTTPException(status_code=404, detail=f"Testnet '{testnet_id}' not found")
     return status
+
+
+# ---------------------------------------------------------------------------
+# 6.5 Trader start / stop (v1.5)
+# ---------------------------------------------------------------------------
+
+class TraderStartRequest(BaseModel):
+    strategy_id: str
+    run_dir: str = ""      # repo-relative path to backtest run dir (has code/signal_engine.py)
+    symbol: str = ""       # ccxt symbol e.g. "BTC/USDT:USDT"
+    interval: str = "1H"
+    qty: float = 0.001
+
+
+@app.post("/api/testnet/{testnet_id}/start", status_code=201)
+def start_trader(testnet_id: str, body: TraderStartRequest) -> dict:
+    """Launch trader subprocess for a promoted strategy."""
+    if not state_module.is_promoted(DASHBOARD_DIR, body.strategy_id):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Strategy '{body.strategy_id}' is not promoted — promote first",
+        )
+    sup = supervisor_module.get_supervisor()
+    try:
+        sup.start(
+            strategy_id=body.strategy_id,
+            testnet_id=testnet_id,
+            run_dir=str(REPO_ROOT / body.run_dir) if body.run_dir else "",
+            symbol=body.symbol,
+            interval=body.interval,
+            qty=body.qty,
+        )
+    except EnvironmentError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"testnet_id": testnet_id, "strategy_id": body.strategy_id, "started": True}
+
+
+@app.post("/api/testnet/{testnet_id}/stop", status_code=200)
+def stop_trader(testnet_id: str, strategy_id: str = Query(...)) -> dict:
+    """Stop trader subprocess for a strategy."""
+    sup = supervisor_module.get_supervisor()
+    stopped = sup.stop(strategy_id)
+    return {"testnet_id": testnet_id, "strategy_id": strategy_id, "stopped": stopped}
+
+
+@app.get("/api/testnet/{testnet_id}/process")
+def trader_process_status(testnet_id: str, strategy_id: str = Query(...)) -> dict:
+    """Return subprocess running status for a strategy."""
+    sup = supervisor_module.get_supervisor()
+    return sup.status(strategy_id)
