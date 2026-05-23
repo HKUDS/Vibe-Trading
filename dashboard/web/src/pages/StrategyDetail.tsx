@@ -13,6 +13,7 @@ import {
   type FactorManifest,
 } from "../lib/api";
 import { EquityChart } from "../components/charts/EquityChart";
+import { PromoteDialog } from "../components/common/PromoteDialog";
 import { cn } from "../lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -513,6 +514,8 @@ export default function StrategyDetail() {
   const [factorManifest, setFactorManifest] = useState<FactorManifest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showPromote, setShowPromote] = useState(false);
+  const [isPromoted, setIsPromoted] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -574,7 +577,43 @@ export default function StrategyDetail() {
             {new Date(manifest.generated_at).toLocaleString("zh-TW")}
           </div>
         </div>
+
+        {/* Promote / Demote button */}
+        {isPromoted ? (
+          <button
+            onClick={async () => {
+              await api.demote(manifest.strategy_id);
+              setIsPromoted(false);
+            }}
+            className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+          >
+            Demote
+          </button>
+        ) : (
+          <button
+            onClick={() => setShowPromote(true)}
+            className={cn(
+              "rounded-md px-4 py-2 text-sm font-medium transition-colors",
+              manifest.gate?.fatal_fail
+                ? "bg-muted text-muted-foreground cursor-not-allowed"
+                : "bg-primary text-primary-foreground hover:bg-primary/90",
+            )}
+            disabled={manifest.gate?.fatal_fail ?? false}
+            title={manifest.gate?.fatal_fail ? "致命門檻未過，無法 Promote" : undefined}
+          >
+            Promote →
+          </button>
+        )}
       </div>
+
+      {/* Promote dialog */}
+      {showPromote && (
+        <PromoteDialog
+          manifest={manifest}
+          onClose={() => setShowPromote(false)}
+          onSuccess={() => { setShowPromote(false); setIsPromoted(true); }}
+        />
+      )}
 
       {/* Red flag banner — always shown when flags exist */}
       {manifest.gate && <RedFlagBanner gate={manifest.gate} />}
