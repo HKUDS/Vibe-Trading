@@ -3,19 +3,13 @@ import en from "./en";
 import zh from "./zh";
 import zhHant from "./zh-Hant";
 import ja from "./ja";
-import fr from "./fr";
 import ko from "./ko";
-import es from "./es";
-import ar from "./ar";
-import pt from "./pt";
-import de from "./de";
-import ru from "./ru";
 
-const LOCALES = ["en", "zh", "zh-Hant", "ja", "fr", "ko", "es", "ar", "pt", "de", "ru"] as const;
+const LOCALES = ["en", "zh", "zh-Hant", "ja", "ko"] as const;
 type Locale = (typeof LOCALES)[number];
 
 const messagesMap: Record<Locale, Record<string, string>> = {
-  en, zh, "zh-Hant": zhHant, ja, fr, ko, es, ar, pt, de, ru,
+  en, zh, "zh-Hant": zhHant, ja, ko,
 };
 
 const LABELS: Record<Locale, string> = {
@@ -23,13 +17,7 @@ const LABELS: Record<Locale, string> = {
   zh: "简体中文",
   "zh-Hant": "繁體中文",
   ja: "日本語",
-  fr: "Français",
   ko: "한국어",
-  es: "Español",
-  ar: "العربية",
-  pt: "Português",
-  de: "Deutsch",
-  ru: "Русский",
 };
 
 function detectLocale(): Locale {
@@ -39,13 +27,7 @@ function detectLocale(): Locale {
   if (lang.startsWith("zh-Hant") || lang.startsWith("zh-HK") || lang.startsWith("zh-TW")) return "zh-Hant";
   if (lang.startsWith("zh")) return "zh";
   if (lang.startsWith("ja")) return "ja";
-  if (lang.startsWith("fr")) return "fr";
   if (lang.startsWith("ko")) return "ko";
-  if (lang.startsWith("es")) return "es";
-  if (lang.startsWith("ar")) return "ar";
-  if (lang.startsWith("pt")) return "pt";
-  if (lang.startsWith("de")) return "de";
-  if (lang.startsWith("ru")) return "ru";
   return "en";
 }
 
