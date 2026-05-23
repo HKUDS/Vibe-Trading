@@ -1,0 +1,5 @@
+export var INCREMENTAL_ID_FALSE = 0;
+export var INCREMENTAL_ID_TRUE_COMPAT = 1;
+export var ZLEVEL2_NORMAL_ABOVE = 2;
+export var ZLEVEL2_INCREMENTAL = 1;
+export var ZLEVEL2_NORMAL_BELOW = 0;

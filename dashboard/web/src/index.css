@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 98%;
+    --foreground: 220 20% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 10%;
+
+    --primary: 27 90% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --muted: 220 14% 92%;
+    --muted-foreground: 220 14% 46%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 14% 87%;
+    --radius: 0.5rem;
+
+    --success: 142 71% 45%;
+    --danger: 0 84% 60%;
+    --warning: 38 92% 50%;
+    --info: 217 91% 60%;
+
+    --chart-grid: 220 14% 90%;
+    --chart-text: 220 14% 46%;
+    --chart-axis: 220 14% 80%;
+  }
+
+  .dark {
+    --background: 220 20% 5%;
+    --foreground: 220 10% 92%;
+    --card: 220 20% 8%;
+    --card-foreground: 220 10% 92%;
+
+    --primary: 27 90% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --muted: 220 20% 13%;
+    --muted-foreground: 220 10% 55%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 20% 18%;
+
+    --success: 142 71% 45%;
+    --danger: 0 62% 50%;
+    --warning: 38 92% 50%;
+    --info: 217 91% 60%;
+
+    --chart-grid: 220 20% 12%;
+    --chart-text: 220 10% 42%;
+    --chart-axis: 220 20% 22%;
+  }
+
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+
+  .prose table { border-collapse: collapse; width: 100%; }
+  .prose th, .prose td { border: 1px solid hsl(var(--border)); }
+  .prose tbody tr:nth-child(even) { background: hsl(var(--muted) / 0.3); }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
+}

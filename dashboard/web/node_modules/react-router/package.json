@@ -1,0 +1,163 @@
+{
+  "name": "react-router",
+  "version": "7.15.1",
+  "description": "Declarative routing for React",
+  "keywords": [
+    "react",
+    "router",
+    "route",
+    "routing",
+    "history",
+    "link"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/remix-run/react-router",
+    "directory": "packages/react-router"
+  },
+  "license": "MIT",
+  "author": "Remix Software <hello@remix.run>",
+  "sideEffects": false,
+  "types": "./dist/development/index.d.ts",
+  "main": "./dist/development/index.js",
+  "module": "./dist/development/index.mjs",
+  "exports": {
+    ".": {
+      "react-server": {
+        "module": "./dist/development/index-react-server.mjs",
+        "default": "./dist/development/index-react-server.js"
+      },
+      "node": {
+        "types": "./dist/development/index.d.ts",
+        "module": "./dist/development/index.mjs",
+        "module-sync": "./dist/development/index.mjs",
+        "default": "./dist/development/index.js"
+      },
+      "module": {
+        "types": "./dist/development/index.d.mts",
+        "default": "./dist/development/index.mjs"
+      },
+      "import": {
+        "types": "./dist/development/index.d.mts",
+        "default": "./dist/development/index.mjs"
+      },
+      "default": {
+        "types": "./dist/development/index.d.ts",
+        "default": "./dist/development/index.js"
+      }
+    },
+    "./dom": {
+      "node": {
+        "types": "./dist/development/dom-export.d.ts",
+        "module": "./dist/development/dom-export.mjs",
+        "module-sync": "./dist/development/dom-export.mjs",
+        "default": "./dist/development/dom-export.js"
+      },
+      "module": {
+        "types": "./dist/development/dom-export.d.mts",
+        "default": "./dist/development/dom-export.mjs"
+      },
+      "import": {
+        "types": "./dist/development/dom-export.d.mts",
+        "default": "./dist/development/dom-export.mjs"
+      },
+      "default": {
+        "types": "./dist/development/dom-export.d.ts",
+        "default": "./dist/development/dom-export.js"
+      }
+    },
+    "./internal": {
+      "node": {
+        "types": "./dist/development/lib/types/internal.d.ts"
+      },
+      "import": {
+        "types": "./dist/development/lib/types/internal.d.mts"
+      },
+      "default": {
+        "types": "./dist/development/lib/types/index.d.ts"
+      }
+    },
+    "./internal/react-server-client": {
+      "react-server": {
+        "module": "./dist/development/index-react-server-client.mjs",
+        "default": "./dist/development/index-react-server-client.js"
+      },
+      "node": {
+        "types": "./dist/development/index.d.ts",
+        "module": "./dist/development/index.mjs",
+        "module-sync": "./dist/development/index.mjs",
+        "default": "./dist/development/index.js"
+      },
+      "module": {
+        "types": "./dist/development/index.d.mts",
+        "default": "./dist/development/index.mjs"
+      },
+      "import": {
+        "types": "./dist/development/index.d.mts",
+        "default": "./dist/development/index.mjs"
+      },
+      "default": {
+        "types": "./dist/development/index.d.ts",
+        "default": "./dist/development/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "wireit": {
+    "build": {
+      "command": "premove dist && tsup && tsup --config tsup.config.rsc.ts",
+      "files": [
+        "../../pnpm-workspace.yaml",
+        "lib/**",
+        "*.ts",
+        "tsconfig.json",
+        "package.json"
+      ],
+      "output": [
+        "dist/**"
+      ]
+    }
+  },
+  "dependencies": {
+    "cookie": "^1.0.1",
+    "set-cookie-parser": "^2.6.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/set-cookie-parser": "^2.4.1",
+    "jest-environment-jsdom": "^29.6.2",
+    "premove": "^4.0.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "react-test-renderer": "^19.1.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.4.5",
+    "undici": "^6.19.2",
+    "wireit": "0.14.9"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "files": [
+    "dist/",
+    "CHANGELOG.md",
+    "LICENSE.md",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "wireit",
+    "watch": "tsup --watch & tsup --config tsup.config.rsc.ts --watch",
+    "typecheck": "tsc"
+  }
+}
