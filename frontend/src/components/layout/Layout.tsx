@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState, type RefObject } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
 import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Globe, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,43 @@ const NAV = [
   { to: "/settings", icon: Settings, key: "settings" as const, label: null },
   { to: "/correlation", icon: BarChart3, key: "correlation" as const, label: null },
 ];
+
+function LanguageMenu({
+  locales, labels, locale, anchorRef, onSelect,
+}: {
+  locales: readonly string[];
+  labels: Record<string, string>;
+  locale: string;
+  anchorRef: RefObject<HTMLDivElement | null>;
+  onSelect: (l: string) => void;
+}) {
+  const rect = anchorRef.current?.getBoundingClientRect();
+  const menuH = 220;
+  const top = rect
+    ? (rect.bottom + menuH > window.innerHeight ? Math.max(4, rect.top - menuH) : rect.top)
+    : 0;
+  const left = rect ? rect.right + 4 : 0;
+
+  return (
+    <div
+      className="fixed z-50 rounded-lg border bg-popover shadow-lg py-1 overflow-y-auto max-h-56 w-40"
+      style={{ top, left }}
+    >
+      {locales.map((l) => (
+        <button
+          key={l}
+          onClick={() => onSelect(l)}
+          className={cn(
+            "w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted",
+            l === locale ? "text-primary font-medium bg-primary/5" : "text-muted-foreground"
+          )}
+        >
+          {labels[l]}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function Layout() {
   const { pathname } = useLocation();
@@ -223,7 +260,7 @@ export function Layout() {
         {/* Footer */}
         <div className={cn("border-t", collapsed ? "p-1 flex flex-col items-center gap-1" : "p-3 space-y-2")}>
           {/* Language dropdown */}
-          <div className="relative" ref={langRef}>
+          <div ref={langRef}>
             {collapsed ? (
               <button
                 onClick={() => setLangOpen(!langOpen)}
@@ -244,23 +281,13 @@ export function Layout() {
               </button>
             )}
             {langOpen && (
-              <div className={cn(
-                "absolute z-50 rounded-lg border bg-background/95 backdrop-blur-sm shadow-lg py-1 overflow-y-auto max-h-56",
-                collapsed ? "left-full bottom-0 ml-1 w-36" : "bottom-full left-0 mb-1 w-full min-w-[140px]"
-              )}>
-                {locales.map((l) => (
-                  <button
-                    key={l}
-                    onClick={() => { setLocale(l); setLangOpen(false); }}
-                    className={cn(
-                      "w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted",
-                      l === locale ? "text-primary font-medium bg-primary/5" : "text-muted-foreground"
-                    )}
-                  >
-                    {labels[l]}
-                  </button>
-                ))}
-              </div>
+              <LanguageMenu
+                locales={locales}
+                labels={labels}
+                locale={locale}
+                anchorRef={langRef}
+                onSelect={(l) => { setLocale(l as typeof locale); setLangOpen(false); }}
+              />
             )}
           </div>
 
