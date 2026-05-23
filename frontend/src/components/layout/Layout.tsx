@@ -235,7 +235,7 @@ export function Layout() {
           )}
           {langOpen && (
             <div className={cn(
-              "border rounded-lg bg-popover shadow py-1",
+              "border rounded-lg bg-background shadow-lg py-1",
               collapsed ? "w-32" : "w-full"
             )}>
               {locales.map((l) => (
