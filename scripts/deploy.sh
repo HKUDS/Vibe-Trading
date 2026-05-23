@@ -34,7 +34,7 @@ cd frontend
 if [ ! -d node_modules ]; then
     echo "Installing frontend dependencies..."
     npm install -g pnpm
-    pnpm install
+    pnpm install --allow-build=esbuild
 fi
 
 # Build for production
