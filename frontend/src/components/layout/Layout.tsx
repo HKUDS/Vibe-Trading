@@ -23,7 +23,11 @@ const NAV = [
 export function Layout() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
-  const { t, locale, setLocale } = useI18n();
+  const { t, locale, setLocale, locales, localeLabel } = useI18n();
+  const cycleLocale = () => {
+    const idx = locales.indexOf(locale);
+    setLocale(locales[(idx + 1) % locales.length]);
+  };
   const { dark, toggle } = useDarkMode();
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
@@ -218,7 +222,7 @@ export function Layout() {
                 {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
               </button>
               <button
-                onClick={() => setLocale(locale === "en" ? "zh" : "en")}
+                onClick={cycleLocale}
                 className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors"
                 title={t.language}
               >
@@ -240,12 +244,12 @@ export function Layout() {
                 </button>
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => setLocale(locale === "en" ? "zh" : "en")}
+                    onClick={cycleLocale}
                     className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                     title={t.language}
                   >
                     <Globe className="h-3.5 w-3.5" />
-                    {locale === "en" ? "EN" : "中文"}
+                    {localeLabel(locale)}
                   </button>
                   <button
                     onClick={() => setCollapsed(true)}
