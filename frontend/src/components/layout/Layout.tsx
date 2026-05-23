@@ -1,5 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+﻿import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
 import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Globe, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -27,7 +26,6 @@ export function Layout() {
   const { t, locale, setLocale, locales, labels } = useI18n();
   const { dark, toggle } = useDarkMode();
   const [langOpen, setLangOpen] = useState(false);
-  const langBtnRef = useRef<HTMLButtonElement>(null);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const sseStatus = useAgentStore(s => s.sseStatus);
@@ -215,10 +213,9 @@ export function Layout() {
 
         {/* Footer */}
         <div className={cn("border-t", collapsed ? "p-1 flex flex-col items-center gap-1" : "p-3 space-y-2")}>
-          {/* Language button */}
+          {/* Language selector */}
           {collapsed ? (
             <button
-              ref={langBtnRef}
               onClick={() => setLangOpen(!langOpen)}
               className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors"
               title={t.language}
@@ -227,7 +224,6 @@ export function Layout() {
             </button>
           ) : (
             <button
-              ref={langBtnRef}
               onClick={() => setLangOpen(!langOpen)}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
               title={t.language}
@@ -236,6 +232,25 @@ export function Layout() {
               <span className="truncate">{labels[locale]}</span>
               <ChevronDown className={cn("h-3 w-3 transition-transform", langOpen && "rotate-180")} />
             </button>
+          )}
+          {langOpen && (
+            <div className={cn(
+              "border rounded-lg bg-popover shadow py-1",
+              collapsed ? "w-32" : "w-full"
+            )}>
+              {locales.map((l) => (
+                <button
+                  key={l}
+                  onClick={() => { setLocale(l as typeof locale); setLangOpen(false); }}
+                  className={cn(
+                    "w-full px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-muted",
+                    l === locale ? "text-primary font-medium bg-primary/5" : "text-muted-foreground"
+                  )}
+                >
+                  {labels[l]}
+                </button>
+              ))}
+            </div>
           )}
 
           {collapsed ? (
@@ -278,65 +293,6 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
-    </div>
-    {langOpen && langBtnRef.current && createPortal(
-      <LanguageDropdown
-        locales={locales as unknown as string[]}
-        labels={labels as unknown as Record<string, string>}
-        locale={locale}
-        anchor={langBtnRef.current.getBoundingClientRect()}
-        onSelect={(l) => { setLocale(l as unknown as typeof locale); setLangOpen(false); }}
-        onClose={() => setLangOpen(false)}
-      />,
-      document.body
-    )}
-  );
-}
-
-function LanguageDropdown({
-  locales, labels, locale, anchor, onSelect, onClose,
-}: {
-  locales: string[];
-  labels: Record<string, string>;
-  locale: string;
-  anchor: DOMRect;
-  onSelect: (l: string) => void;
-  onClose: () => void;
-}) {
-  const menuH = Math.min(locales.length * 32 + 8, 224);
-  const top = anchor.bottom + menuH > window.innerHeight
-    ? Math.max(4, anchor.top - menuH)
-    : anchor.top;
-  const left = anchor.right + 4;
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const el = document.getElementById("lang-dropdown");
-      if (el && !el.contains(e.target as Node)) onClose();
-    };
-    // delay adding listener so the opening click doesn't immediately close it
-    const id = setTimeout(() => document.addEventListener("mousedown", handler), 0);
-    return () => { clearTimeout(id); document.removeEventListener("mousedown", handler); };
-  }, [onClose]);
-
-  return (
-    <div
-      id="lang-dropdown"
-      className="fixed z-[9999] rounded-lg border bg-popover shadow-lg py-1 overflow-y-auto"
-      style={{ top, left, maxHeight: menuH, minWidth: 140 }}
-    >
-      {locales.map((l) => (
-        <button
-          key={l}
-          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(l); }}
-          className={cn(
-            "w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted",
-            l === locale ? "text-primary font-medium bg-primary/5" : "text-muted-foreground"
-          )}
-        >
-          {labels[l]}
-        </button>
-      ))}
     </div>
   );
 }
