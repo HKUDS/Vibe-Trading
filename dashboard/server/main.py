@@ -146,6 +146,28 @@ def get_selection() -> SelectionManifest:
 _REPORT_ALLOWED_DIRS = ["research"]
 
 
+# ---------------------------------------------------------------------------
+# 3.8 Pipeline stage overview
+# ---------------------------------------------------------------------------
+
+@app.get("/api/pipeline")
+def get_pipeline() -> list[dict]:
+    manifests = artifacts.list_strategy_manifests(REPO_ROOT)
+    return [
+        {
+            "strategy_id": m.strategy_id,
+            "symbol": m.symbol,
+            "pipeline_stage": m.pipeline_stage,
+            "generated_at": m.generated_at.isoformat(),
+        }
+        for m in manifests
+    ]
+
+
+# ---------------------------------------------------------------------------
+# 3.7 Markdown reports — allowlist: research/ only
+# ---------------------------------------------------------------------------
+
 @app.get("/api/reports")
 def get_report(
     path: str = Query(..., description="Path to markdown file relative to repo root"),

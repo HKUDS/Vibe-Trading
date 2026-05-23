@@ -290,3 +290,27 @@ def test_get_report_traversal(client_reports):
 def test_get_report_missing_file(client_reports):
     r = client_reports.get("/api/reports?path=research/nonexistent.md")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET /api/pipeline
+# ---------------------------------------------------------------------------
+
+def test_get_pipeline(client):
+    r = client.get("/api/pipeline")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 1
+    assert data[0]["strategy_id"] == "strat_btc_001"
+    assert data[0]["pipeline_stage"] == 2
+
+
+def test_get_pipeline_empty(tmp_path):
+    os.environ["REPO_ROOT"] = str(tmp_path)
+    import importlib, main as main_module
+    importlib.reload(main_module)
+    from main import app
+    with TestClient(app) as c:
+        r = c.get("/api/pipeline")
+    assert r.status_code == 200
+    assert r.json() == []
