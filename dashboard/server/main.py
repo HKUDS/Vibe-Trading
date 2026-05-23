@@ -6,13 +6,17 @@ from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 import artifacts
 import parsers
-from schemas import StrategyManifest
+import state as state_module
+from schemas import FATAL_GATE_CHECKS, StrategyManifest
 
 # Repo root — override with REPO_ROOT env var for Docker / Linux deployment.
 REPO_ROOT = Path(os.environ.get("REPO_ROOT", Path(__file__).parent.parent.parent))
+# Dashboard data dir — one level up from server/
+DASHBOARD_DIR = Path(__file__).parent.parent
 
 app = FastAPI(title="Quant Strategy Dashboard API", version="0.1.0")
 
@@ -178,3 +182,53 @@ def get_report(
     if not target.exists():
         raise HTTPException(status_code=404, detail=f"Report '{path}' not found")
     return {"path": path, "content": parsers.read_text(target)}
+
+
+# ---------------------------------------------------------------------------
+# 3.9 Promote / demote
+# ---------------------------------------------------------------------------
+
+class PromoteRequest(BaseModel):
+    override_reason: Optional[str] = None
+
+
+@app.post("/api/strategies/{strategy_id}/promote", status_code=201)
+def promote_strategy(strategy_id: str, body: PromoteRequest = PromoteRequest()) -> dict:
+    manifest = artifacts.get_strategy_manifest(REPO_ROOT, strategy_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Strategy '{strategy_id}' not found")
+
+    # Fatal gate check — hard block, no override allowed
+    if manifest.gate and manifest.gate.fatal_fail:
+        fatal_names = [
+            t.name for t in manifest.gate.thresholds
+            if t.fatal and not t.passed
+        ]
+        raise HTTPException(
+            status_code=422,
+            detail=f"Fatal gate failures cannot be overridden: {fatal_names}",
+        )
+
+    # Non-fatal gate failures require an override reason
+    if manifest.gate and not manifest.gate.overall_pass and not body.override_reason:
+        raise HTTPException(
+            status_code=422,
+            detail="Gate not fully passed — provide override_reason to override",
+        )
+
+    record = state_module.promote(
+        DASHBOARD_DIR,
+        REPO_ROOT,
+        strategy_id,
+        manifest.spec.spec_yaml,
+        override_reason=body.override_reason,
+    )
+    return {"strategy_id": strategy_id, **record}
+
+
+@app.delete("/api/strategies/{strategy_id}/promote", status_code=200)
+def demote_strategy(strategy_id: str) -> dict:
+    removed = state_module.demote(DASHBOARD_DIR, strategy_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"Strategy '{strategy_id}' is not promoted")
+    return {"strategy_id": strategy_id, "demoted": True}
