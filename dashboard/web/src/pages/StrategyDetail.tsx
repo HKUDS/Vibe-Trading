@@ -8,6 +8,8 @@ import {
   type CostStressLevel,
   type RegimeMetrics,
   type RecommendedAction,
+  type GateBlock,
+  type RedFlagCode,
 } from "../lib/api";
 import { EquityChart } from "../components/charts/EquityChart";
 import { cn } from "../lib/utils";
@@ -37,6 +39,128 @@ function MetricRow({
       <td className="py-2 pr-6 text-sm tabular-nums font-medium">{is}</td>
       <td className="py-2 text-sm tabular-nums font-medium">{oos}</td>
     </tr>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// RedFlagBanner
+// ---------------------------------------------------------------------------
+
+const RED_FLAG_LABELS: Record<RedFlagCode, { short: string; detail: string }> = {
+  oos_sharpe_far_below_is:   { short: "OOS Sharpe << IS",  detail: "樣本外表現遠差於樣本內，過擬合嫌疑高" },
+  underperforms_hodl:        { short: "輸給 HODL",          detail: "策略報酬低於買入持有，不值得持倉" },
+  too_few_trades:            { short: "交易數太少",          detail: "統計意義不足，結果不可靠" },
+  alpha_is_fee_illusion:     { short: "Alpha = 費用幻覺",   detail: "扣除交易費後策略無超額收益" },
+  overfit_suspect:           { short: "疑似過擬合",          detail: "Walk-forward 或 Monte Carlo 結果惡化" },
+  regime_conditional:        { short: "Regime 限定",         detail: "策略只在特定市場環境有效" },
+};
+
+function RedFlagBanner({ gate }: { gate: GateBlock }) {
+  const flags = gate.red_flags;
+  if (flags.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-red-400 bg-red-50 dark:bg-red-950/30 dark:border-red-700 p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm font-semibold text-red-700 dark:text-red-400">⚠ 紅旗警示</span>
+        {gate.fatal_fail && (
+          <span className="rounded px-1.5 py-0.5 text-xs font-bold bg-red-600 text-white">
+            FATAL — 硬擋，無法 override
+          </span>
+        )}
+      </div>
+      <ul className="space-y-1">
+        {flags.map((f) => {
+          const info = RED_FLAG_LABELS[f];
+          return (
+            <li key={f} className="flex items-start gap-2 text-sm text-red-700 dark:text-red-300">
+              <span className="mt-0.5 text-red-500">✗</span>
+              <span>
+                <span className="font-medium">{info.short}</span>
+                <span className="text-red-600/70 dark:text-red-400/70"> — {info.detail}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GateChecklist
+// ---------------------------------------------------------------------------
+
+function GateChecklist({ gate }: { gate: GateBlock }) {
+  const { thresholds, overall_pass, fatal_fail } = gate;
+  return (
+    <div className="space-y-3">
+      {/* Summary badge */}
+      <div className="flex items-center gap-3">
+        <span
+          className={cn(
+            "rounded-full px-3 py-1 text-sm font-bold",
+            fatal_fail
+              ? "bg-red-600 text-white"
+              : overall_pass
+              ? "bg-emerald-500 text-white"
+              : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+          )}
+        >
+          {fatal_fail ? "FATAL FAIL" : overall_pass ? "GO ✓" : "NO-GO"}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {thresholds.filter((t) => t.passed).length}/{thresholds.length} 門檻通過
+        </span>
+      </div>
+
+      {/* Threshold rows */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-xs text-muted-foreground">
+              <th className="py-2 pr-4 text-left">門檻</th>
+              <th className="py-2 pr-4 text-right">要求</th>
+              <th className="py-2 pr-4 text-right">實際</th>
+              <th className="py-2 pr-2 text-center">結果</th>
+              <th className="py-2 text-center">致命</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {thresholds.map((t) => (
+              <tr
+                key={t.name}
+                className={cn(
+                  !t.passed && t.fatal && "bg-red-50/70 dark:bg-red-950/30",
+                  !t.passed && !t.fatal && "bg-orange-50/40 dark:bg-orange-950/10",
+                )}
+              >
+                <td className="py-2 pr-4 font-medium">{t.name}</td>
+                <td className="py-2 pr-4 text-right tabular-nums text-muted-foreground">
+                  {t.threshold}
+                </td>
+                <td className="py-2 pr-4 text-right tabular-nums">
+                  {t.actual !== null ? t.actual : "—"}
+                </td>
+                <td className="py-2 pr-2 text-center">
+                  {t.passed ? (
+                    <span className="text-emerald-500 font-bold">✓</span>
+                  ) : (
+                    <span className="text-red-500 font-bold">✗</span>
+                  )}
+                </td>
+                <td className="py-2 text-center">
+                  {t.fatal ? (
+                    <span className="text-xs font-bold text-red-600 dark:text-red-400">硬擋</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -447,6 +571,9 @@ export default function StrategyDetail() {
         </div>
       </div>
 
+      {/* Red flag banner — always shown when flags exist */}
+      {manifest.gate && <RedFlagBanner gate={manifest.gate} />}
+
       {/* Evidence chain */}
       <div className="rounded-lg border p-4">
         <div className="text-xs font-medium text-muted-foreground mb-3">證據鏈</div>
@@ -457,6 +584,13 @@ export default function StrategyDetail() {
           </p>
         )}
       </div>
+
+      {/* Gate checklist — Tier 1 */}
+      {manifest.gate && (
+        <Panel title="GO/NO-GO 門檻 Checklist">
+          <GateChecklist gate={manifest.gate} />
+        </Panel>
+      )}
 
       {/* Tier 1 panels */}
 
