@@ -38,6 +38,7 @@ import {
 import { echarts } from "@/lib/echarts";
 import { getChartTheme } from "@/lib/chart-theme";
 import { useDarkMode } from "@/hooks/useDarkMode";
+import { useI18n } from "@/lib/i18n";
 
 /* ---------- Constants ---------- */
 
@@ -49,48 +50,46 @@ interface ZooCard {
   accent: string;
 }
 
-// IMPORTANT: The Kakushadze 101 zoo must use the author's name as the label.
-// The legacy / trademark name is forbidden by a CI grep gate — do not add it.
-const ZOO_CARDS: ZooCard[] = [
-  {
-    id: "qlib158",
-    title: "Qlib 158",
-    description:
-      "Microsoft Qlib's full 158-feature library covering momentum, volatility, volume and rolling statistical signals.",
-    approxCount: 154,
-    accent: "from-sky-500/20 to-sky-500/5",
-  },
-  {
-    id: "alpha101",
-    title: "Kakushadze 101 Formulaic Alphas",
-    description:
-      "The 101 formulaic alphas from Kakushadze (2015); short-horizon cross-sectional signals.",
-    approxCount: 101,
-    accent: "from-emerald-500/20 to-emerald-500/5",
-  },
-  {
-    id: "gtja191",
-    title: "GTJA 191",
-    description:
-      "Guotai Junan Securities' 191 alphas; technical and microstructure signals tuned to China A-share markets.",
-    approxCount: 191,
-    accent: "from-amber-500/20 to-amber-500/5",
-  },
-  {
-    id: "academic",
-    title: "Academic Anomalies",
-    description:
-      "Curated long-horizon anomalies from the academic literature (value, momentum, quality, low-vol, etc.).",
-    approxCount: 6,
-    accent: "from-violet-500/20 to-violet-500/5",
-  },
-];
+function buildZooCards(t: Record<string, string>): ZooCard[] {
+  return [
+    {
+      id: "qlib158",
+      title: t.zooQlibTitle,
+      description: t.zooQlibDesc,
+      approxCount: 154,
+      accent: "from-sky-500/20 to-sky-500/5",
+    },
+    {
+      id: "alpha101",
+      title: t.zooAlpha101Title,
+      description: t.zooAlpha101Desc,
+      approxCount: 101,
+      accent: "from-emerald-500/20 to-emerald-500/5",
+    },
+    {
+      id: "gtja191",
+      title: t.zooGtjaTitle,
+      description: t.zooGtjaDesc,
+      approxCount: 191,
+      accent: "from-amber-500/20 to-amber-500/5",
+    },
+    {
+      id: "academic",
+      title: t.zooAcademicTitle,
+      description: t.zooAcademicDesc,
+      approxCount: 6,
+      accent: "from-violet-500/20 to-violet-500/5",
+    },
+  ];
+}
 
-const UNIVERSE_OPTIONS = [
-  { value: "csi300", label: "CSI 300 (China A)" },
-  { value: "sp500", label: "S&P 500 (US)" },
-  { value: "btc-usdt", label: "BTC-USDT (Crypto)" },
-];
+function buildUniverseOptions(t: Record<string, string>) {
+  return [
+    { value: "csi300", label: t.zooUniverseCSI300 },
+    { value: "sp500", label: t.zooUniverseSP500 },
+    { value: "btc-usdt", label: t.zooUniverseBTC },
+  ];
+}
 
 const PAGE_SIZE = 50;
 
@@ -115,7 +114,6 @@ export function AlphaZoo() {
   const params = useParams<{ alphaId?: string }>();
   const { pathname } = useLocation();
 
-  // Internal view selection
   if (pathname === "/alpha-zoo/bench") {
     return <BenchView />;
   }
@@ -128,6 +126,10 @@ export function AlphaZoo() {
 /* ---------- Browse view ---------- */
 
 function BrowseView() {
+  const { t } = useI18n();
+  const zooCards = useMemo(() => buildZooCards(t), [t]);
+  const universeOptions = useMemo(() => buildUniverseOptions(t), [t]);
+
   const [alphas, setAlphas] = useState<AlphaSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [zooFilter, setZooFilter] = useState<string>("");
@@ -155,7 +157,7 @@ function BrowseView() {
       })
       .catch((err: unknown) => {
         if (!alive) return;
-        const msg = err instanceof Error ? err.message : "Failed to load alphas";
+        const msg = err instanceof Error ? err.message : t.zooFailedLoad;
         toast.error(msg);
         setAlphas([]);
         setTotal(0);
@@ -166,11 +168,11 @@ function BrowseView() {
     return () => {
       alive = false;
     };
-  }, [zooFilter, themeFilter, universeFilter]);
+  }, [zooFilter, themeFilter, universeFilter, t.zooFailedLoad]);
 
   const themeOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const a of alphas) for (const t of a.theme || []) set.add(t);
+    for (const a of alphas) for (const th of a.theme || []) set.add(th);
     return Array.from(set).sort();
   }, [alphas]);
 
@@ -191,7 +193,7 @@ function BrowseView() {
       {/* Hero */}
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wide">
-          <Layers className="h-3.5 w-3.5" aria-hidden="true" /> Alpha Zoo
+          <Layers className="h-3.5 w-3.5" aria-hidden="true" /> {t.alphaZoo}
         </div>
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
           {total > 0 ? total : 452} pre-built quant alphas across 4 zoos
@@ -206,7 +208,7 @@ function BrowseView() {
 
       {/* Zoo cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {ZOO_CARDS.map((z) => {
+        {zooCards.map((z) => {
           const active = zooFilter === z.id;
           return (
             <button
@@ -239,7 +241,7 @@ function BrowseView() {
       <div className="flex flex-col md:flex-row md:items-end gap-3 border rounded-xl p-4 bg-card">
         <div className="flex-1 min-w-0">
           <label htmlFor="alpha-search" className="text-xs text-muted-foreground block mb-1">
-            Search
+            {t.zooSearch}
           </label>
           <div className="relative">
             <Search
@@ -253,21 +255,21 @@ function BrowseView() {
                 setSearch(e.target.value);
                 setVisibleCount(PAGE_SIZE);
               }}
-              placeholder="Filter by id or nickname…"
+              placeholder={t.zooFilterPlaceholder}
               className="w-full pl-9 pr-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
         </div>
         <div className="md:w-40">
-          <label htmlFor="alpha-zoo-filter" className="text-xs text-muted-foreground block mb-1">Zoo</label>
+          <label htmlFor="alpha-zoo-filter" className="text-xs text-muted-foreground block mb-1">{t.zooTab}</label>
           <select
             id="alpha-zoo-filter"
             value={zooFilter}
             onChange={(e) => setZooFilter(e.target.value)}
             className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
-            <option value="">All zoos</option>
-            {ZOO_CARDS.map((z) => (
+            <option value="">{t.zooAllZoos}</option>
+            {zooCards.map((z) => (
               <option key={z.id} value={z.id}>
                 {z.title}
               </option>
@@ -276,7 +278,7 @@ function BrowseView() {
         </div>
         <div className="md:w-40">
           <label htmlFor="alpha-theme-filter" className="text-xs text-muted-foreground block mb-1">
-            Theme
+            {t.zooTheme}
           </label>
           <select
             id="alpha-theme-filter"
@@ -284,7 +286,7 @@ function BrowseView() {
             onChange={(e) => setThemeFilter(e.target.value)}
             className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
-            <option value="">All themes</option>
+            <option value="">{t.zooAllThemes}</option>
             {themeOptions.map((tname) => (
               <option key={tname} value={tname}>
                 {tname}
@@ -294,7 +296,7 @@ function BrowseView() {
         </div>
         <div className="md:w-44">
           <label htmlFor="alpha-universe-filter" className="text-xs text-muted-foreground block mb-1">
-            Universe
+            {t.zooUniverseLabel}
           </label>
           <select
             id="alpha-universe-filter"
@@ -302,8 +304,8 @@ function BrowseView() {
             onChange={(e) => setUniverseFilter(e.target.value)}
             className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
-            <option value="">All universes</option>
-            {UNIVERSE_OPTIONS.map((u) => (
+            <option value="">{t.zooAllUniverses}</option>
+            {universeOptions.map((u) => (
               <option key={u.value} value={u.value}>
                 {u.label}
               </option>
@@ -314,12 +316,11 @@ function BrowseView() {
           to="/alpha-zoo/bench"
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
         >
-          <Play className="h-3.5 w-3.5" aria-hidden="true" /> Run bench
+          <Play className="h-3.5 w-3.5" aria-hidden="true" /> {t.zooRunBench}
         </Link>
       </div>
 
       {/* Table */}
-      {/* TODO(v0.2): switch to react-window if alpha count exceeds 5000 */}
       <div className="border rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm" aria-label="Alpha catalogue">
@@ -327,19 +328,19 @@ function BrowseView() {
             <thead>
               <tr className="border-b bg-muted/40">
                 <th className="text-left px-4 py-2.5 text-muted-foreground">
-                  ID
+                  {t.zooIDHeader}
                 </th>
                 <th className="text-left px-4 py-2.5 text-muted-foreground">
-                  Zoo
+                  {t.zooTab}
                 </th>
                 <th className="text-left px-4 py-2.5 text-muted-foreground">
-                  Theme
+                  {t.zooTheme}
                 </th>
                 <th className="text-left px-4 py-2.5 text-muted-foreground hidden md:table-cell">
-                  Universe
+                  {t.zooUniverseLabel}
                 </th>
                 <th className="text-right px-4 py-2.5 text-muted-foreground">
-                  Decay
+                  {t.zooDecayHeader}
                 </th>
               </tr>
             </thead>
@@ -348,13 +349,13 @@ function BrowseView() {
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin inline mr-2" aria-hidden="true" />
-                    Loading alphas…
+                    {t.zooLoadingAlphas}
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                    No alphas match the current filters.
+                    {t.zooNoMatch}
                   </td>
                 </tr>
               ) : (
@@ -395,14 +396,14 @@ function BrowseView() {
         {!loading && visible.length < filtered.length && (
           <div className="border-t p-3 flex items-center justify-between text-xs text-muted-foreground">
             <span>
-              Showing {visible.length} of {filtered.length}
+              {t.zooShowing.replace("{visible}", String(visible.length)).replace("{total}", String(filtered.length))}
             </span>
             <button
               type="button"
               onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
               className="px-3 py-1 rounded-md border hover:bg-muted hover:text-foreground transition"
             >
-              Load more
+              {t.zooLoadMore}
             </button>
           </div>
         )}
@@ -418,6 +419,8 @@ interface DetailProps {
 }
 
 function DetailView({ alphaId }: DetailProps) {
+  const { t } = useI18n();
+
   const [detail, setDetail] = useState<AlphaDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -434,7 +437,7 @@ function DetailView({ alphaId }: DetailProps) {
       })
       .catch((err: unknown) => {
         if (!alive) return;
-        const msg = err instanceof Error ? err.message : "Failed to load alpha";
+        const msg = err instanceof Error ? err.message : t.zooFailedLoadAlpha;
         setError(msg);
       })
       .finally(() => {
@@ -443,7 +446,7 @@ function DetailView({ alphaId }: DetailProps) {
     return () => {
       alive = false;
     };
-  }, [alphaId]);
+  }, [alphaId, t.zooFailedLoadAlpha]);
 
   if (loading) {
     return (
@@ -457,13 +460,13 @@ function DetailView({ alphaId }: DetailProps) {
     return (
       <div className="p-8 max-w-3xl mx-auto space-y-4">
         <Link to="/alpha-zoo" className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Back to Alpha Zoo
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> {t.zooBackToAlphaZoo}
         </Link>
         <div className="border rounded-xl p-6 bg-card">
           <h2 className="font-semibold text-sm mb-1 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-warning" aria-hidden="true" /> Could not load alpha
+            <AlertTriangle className="h-4 w-4 text-warning" aria-hidden="true" /> {t.zooCouldNotLoad}
           </h2>
-          <p className="text-sm text-muted-foreground">{error || "Unknown error"}</p>
+          <p className="text-sm text-muted-foreground">{error || t.unknownError}</p>
         </div>
       </div>
     );
@@ -475,8 +478,6 @@ function DetailView({ alphaId }: DetailProps) {
   const nickname = (meta["nickname"] as string | undefined) || "";
   const firstUniverse = ((meta["universe"] as string[] | undefined) || [])[0] || "";
 
-  // Keep period in sync with the BenchView form default so the prefilled
-  // form values match what users see if they click "Run bench" from here.
   const benchHref = firstUniverse
     ? `/alpha-zoo/bench?zoo=${encodeURIComponent(a.zoo)}&universe=${encodeURIComponent(firstUniverse)}&period=2020-2025`
     : `/alpha-zoo/bench?zoo=${encodeURIComponent(a.zoo)}&period=2020-2025`;
@@ -488,14 +489,14 @@ function DetailView({ alphaId }: DetailProps) {
           to="/alpha-zoo"
           className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
         >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Back to Alpha Zoo
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> {t.zooBackToAlphaZoo}
         </Link>
         <button
           type="button"
           onClick={() => navigate(benchHref)}
           className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition"
         >
-          <Play className="h-3.5 w-3.5" aria-hidden="true" /> Run bench
+          <Play className="h-3.5 w-3.5" aria-hidden="true" /> {t.zooRunBench}
         </button>
       </div>
 
@@ -516,26 +517,26 @@ function DetailView({ alphaId }: DetailProps) {
 
       {/* Formula */}
       <section className="space-y-2">
-        <h2 className="text-sm font-medium text-muted-foreground">Formula</h2>
+        <h2 className="text-sm font-medium text-muted-foreground">{t.zooFormula}</h2>
         <pre className="border rounded-xl bg-muted/30 p-4 overflow-x-auto text-xs leading-relaxed">
-          <code>{formulaLatex || "(no formula provided)"}</code>
+          <code>{formulaLatex || t.zooNoFormula}</code>
         </pre>
       </section>
 
       {/* Metadata */}
       <section className="space-y-2">
-        <h2 className="text-sm font-medium text-muted-foreground">Metadata</h2>
+        <h2 className="text-sm font-medium text-muted-foreground">{t.zooMetadataLabel}</h2>
         <div className="border rounded-xl overflow-hidden">
           <table className="w-full text-sm">
             <tbody>
-              <MetaRow label="Theme" value={metaString(meta, "theme")} />
-              <MetaRow label="Universe" value={metaString(meta, "universe")} />
-              <MetaRow label="Frequency" value={metaString(meta, "frequency")} />
-              <MetaRow label="Decay horizon" value={metaString(meta, "decay_horizon")} />
-              <MetaRow label="Min warm-up bars" value={metaString(meta, "min_warmup_bars")} />
-              <MetaRow label="Requires sector" value={metaString(meta, "requires_sector")} />
-              <MetaRow label="Module path" value={a.module_path || "—"} />
-              <MetaRow label="Notes" value={metaString(meta, "notes")} last />
+              <MetaRow label={t.zooTheme} value={metaString(meta, "theme")} />
+              <MetaRow label={t.zooUniverseLabel} value={metaString(meta, "universe")} />
+              <MetaRow label={t.zooFrequency} value={metaString(meta, "frequency")} />
+              <MetaRow label={t.zooDecayHorizon} value={metaString(meta, "decay_horizon")} />
+              <MetaRow label={t.zooMinWarmup} value={metaString(meta, "min_warmup_bars")} />
+              <MetaRow label={t.zooRequiresSector} value={metaString(meta, "requires_sector")} />
+              <MetaRow label={t.zooModulePath} value={a.module_path || "—"} />
+              <MetaRow label={t.zooNotes} value={metaString(meta, "notes")} last />
             </tbody>
           </table>
         </div>
@@ -543,13 +544,13 @@ function DetailView({ alphaId }: DetailProps) {
 
       {/* Source code */}
       <section className="space-y-2">
-        <h2 className="text-sm font-medium text-muted-foreground">Source code</h2>
+        <h2 className="text-sm font-medium text-muted-foreground">{t.zooSourceCodeLabel}</h2>
         <details className="border rounded-xl bg-card group">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium hover:bg-muted/40 select-none">
-            View source ({(detail.source_code || "").split("\n").length} lines)
+            {t.zooViewSource.replace("{n}", String((detail.source_code || "").split("\n").length))}
           </summary>
           <pre className="border-t bg-muted/30 p-4 overflow-x-auto text-xs leading-relaxed">
-            <code>{detail.source_code || "(no source available)"}</code>
+            <code>{detail.source_code || t.zooNoSource}</code>
           </pre>
         </details>
       </section>
@@ -577,7 +578,10 @@ interface BenchProgress {
 }
 
 function BenchView() {
-  // Read prefill from query string (set by Detail "Run bench" button).
+  const { t } = useI18n();
+  const zooCards = useMemo(() => buildZooCards(t), [t]);
+  const universeOptions = useMemo(() => buildUniverseOptions(t), [t]);
+
   const { search: locSearch } = useLocation();
   const initial = useMemo(() => {
     const q = new URLSearchParams(locSearch);
@@ -600,8 +604,6 @@ function BenchView() {
   const [result, setResult] = useState<AlphaBenchResult | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const sourceRef = useRef<EventSource | null>(null);
-  // Track terminal `done` so the synthetic EventSource `error` fired on
-  // close doesn't surface as a spurious toast (race between done + error).
   const doneRef = useRef(false);
 
   useEffect(() => {
@@ -631,14 +633,9 @@ function BenchView() {
       setJobId(res.job_id);
       attachStream(res.job_id);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to start bench";
-      // BTC-USDT is single-asset — surface inline rather than as a toast,
-      // because the form is the action context and the message includes a
-      // concrete suggestion for the user's next step.
+      const msg = err instanceof Error ? err.message : t.zooFailedBench;
       if (msg.toLowerCase().includes("single-asset")) {
-        setFormError(
-          `${msg} Try \`sp500\` or \`csi300\` for a meaningful cross-sectional IC.`,
-        );
+        setFormError(`${msg} ${t.zooSingleAssetHint}`);
       } else {
         toast.error(msg);
       }
@@ -678,16 +675,12 @@ function BenchView() {
     });
 
     source.addEventListener("error", (e) => {
-      // EventSource raises a synthetic error on every disconnect, including
-      // the normal close that follows our `done` event. The ref check is
-      // synchronous (state updates from `done` would be batched and not
-      // visible here yet), so it's the only reliable race guard.
       if (doneRef.current) {
         source.close();
         sourceRef.current = null;
         return;
       }
-      let msg = "Bench stream error";
+      let msg = t.zooBenchStreamError;
       try {
         const data = JSON.parse((e as MessageEvent).data || "{}");
         if (typeof data.message === "string") msg = data.message;
@@ -709,19 +702,18 @@ function BenchView() {
         to="/alpha-zoo"
         className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
       >
-        <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Back to Alpha Zoo
+        <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> {t.zooBackToAlphaZoo}
       </Link>
 
       <div className="space-y-1">
         <div className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wide">
-          <Play className="h-3.5 w-3.5" aria-hidden="true" /> Bench runner
+          <Play className="h-3.5 w-3.5" aria-hidden="true" /> {t.zooBenchRunner}
         </div>
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-          Score a zoo on a universe
+          {t.zooBenchDesc}
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Computes IC / IR for every alpha in the selected zoo over the chosen
-          universe and period, then bucketizes them as alive / reversed / dead.
+          {t.zooBenchDescLong}
         </p>
       </div>
 
@@ -731,7 +723,7 @@ function BenchView() {
         className="border rounded-xl p-4 bg-card grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end"
       >
         <div>
-          <label htmlFor="bench-zoo" className="text-xs text-muted-foreground block mb-1">Zoo</label>
+          <label htmlFor="bench-zoo" className="text-xs text-muted-foreground block mb-1">{t.zooTab}</label>
           <select
             id="bench-zoo"
             value={zoo}
@@ -739,7 +731,7 @@ function BenchView() {
             disabled={busy}
             className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
           >
-            {ZOO_CARDS.map((z) => (
+            {zooCards.map((z) => (
               <option key={z.id} value={z.id}>
                 {z.title}
               </option>
@@ -747,7 +739,7 @@ function BenchView() {
           </select>
         </div>
         <div>
-          <label htmlFor="bench-universe" className="text-xs text-muted-foreground block mb-1">Universe</label>
+          <label htmlFor="bench-universe" className="text-xs text-muted-foreground block mb-1">{t.zooUniverseLabel}</label>
           <select
             id="bench-universe"
             value={universe}
@@ -755,7 +747,7 @@ function BenchView() {
             disabled={busy}
             className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
           >
-            {UNIVERSE_OPTIONS.map((u) => (
+            {universeOptions.map((u) => (
               <option key={u.value} value={u.value}>
                 {u.label}
               </option>
@@ -763,7 +755,7 @@ function BenchView() {
           </select>
         </div>
         <div>
-          <label htmlFor="bench-period" className="text-xs text-muted-foreground block mb-1">Period</label>
+          <label htmlFor="bench-period" className="text-xs text-muted-foreground block mb-1">{t.zooPeriod}</label>
           <input
             id="bench-period"
             value={period}
@@ -774,7 +766,7 @@ function BenchView() {
           />
         </div>
         <div>
-          <label htmlFor="bench-top" className="text-xs text-muted-foreground block mb-1">Top</label>
+          <label htmlFor="bench-top" className="text-xs text-muted-foreground block mb-1">{t.zooTop}</label>
           <input
             id="bench-top"
             type="number"
@@ -782,8 +774,6 @@ function BenchView() {
             max={500}
             value={Number.isFinite(top) ? top : ""}
             onChange={(e) =>
-              // Empty input → fall back to default; submit also clamps
-              // to a safe value so NaN never reaches the API.
               setTop(e.target.value === "" ? 20 : Number(e.target.value))
             }
             disabled={busy}
@@ -798,11 +788,11 @@ function BenchView() {
           >
             {busy ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> Running…
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> {t.zooRunning}
               </>
             ) : (
               <>
-                <Play className="h-3.5 w-3.5" aria-hidden="true" /> Run bench
+                <Play className="h-3.5 w-3.5" aria-hidden="true" /> {t.zooRunBench}
               </>
             )}
           </button>
@@ -819,11 +809,11 @@ function BenchView() {
 
       {/* Progress */}
       {(status === "submitting" || status === "streaming") && (
-        <ProgressPanel jobId={jobId} progress={progress} />
+        <ProgressPanel jobId={jobId} progress={progress} t={t} />
       )}
 
       {/* Result */}
-      {result && <ResultPanel result={result} />}
+      {result && <ResultPanel result={result} t={t} />}
     </div>
   );
 }
@@ -831,9 +821,11 @@ function BenchView() {
 function ProgressPanel({
   jobId,
   progress,
+  t,
 }: {
   jobId: string | null;
   progress: BenchProgress | null;
+  t: Record<string, string>;
 }) {
   const pct = progress && progress.n_total > 0
     ? Math.min(100, Math.round((progress.n_done / progress.n_total) * 100))
@@ -843,7 +835,7 @@ function ProgressPanel({
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-          {jobId ? `Job ${jobId.slice(0, 12)}…` : "Submitting…"}
+          {jobId ? `Job ${jobId.slice(0, 12)}…` : t.zooSubmitting}
         </span>
         {progress && (
           <span className="font-mono tabular-nums">
@@ -859,14 +851,14 @@ function ProgressPanel({
       </div>
       {progress?.current_alpha_id && (
         <p className="text-xs text-muted-foreground font-mono truncate">
-          Computing: {progress.current_alpha_id}
+          {t.zooComputing.replace("{id}", progress.current_alpha_id)}
         </p>
       )}
     </div>
   );
 }
 
-function ResultPanel({ result }: { result: AlphaBenchResult }) {
+function ResultPanel({ result, t }: { result: AlphaBenchResult; t: Record<string, string> }) {
   const { dark } = useDarkMode();
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -883,7 +875,7 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
       backgroundColor: "transparent",
       tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
       legend: {
-        data: ["Alive", "Reversed", "Dead"],
+        data: [t.zooAlive, t.zooReversed, t.zooDead],
         textStyle: { color: theme.textColor, fontSize: 11 },
         right: 8,
         top: 4,
@@ -901,9 +893,9 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
         axisLabel: { color: theme.textColor, fontSize: 10 },
       },
       series: [
-        { name: "Alive", type: "bar", stack: "n", data: aliveSeries, itemStyle: { color: theme.upColor } },
-        { name: "Reversed", type: "bar", stack: "n", data: reversedSeries, itemStyle: { color: theme.warningColor } },
-        { name: "Dead", type: "bar", stack: "n", data: deadSeries, itemStyle: { color: theme.downColor } },
+        { name: t.zooAlive, type: "bar", stack: "n", data: aliveSeries, itemStyle: { color: theme.upColor } },
+        { name: t.zooReversed, type: "bar", stack: "n", data: reversedSeries, itemStyle: { color: theme.warningColor } },
+        { name: t.zooDead, type: "bar", stack: "n", data: deadSeries, itemStyle: { color: theme.downColor } },
       ],
     });
 
@@ -913,18 +905,17 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
       ro.disconnect();
       chart.dispose();
     };
-  }, [result, dark]);
+  }, [result, dark, t]);
 
   const totals = [
-    { label: "Alive", value: result.alive, icon: CheckCircle2, tone: "text-green-600 dark:text-green-400" },
-    { label: "Reversed", value: result.reversed, icon: AlertTriangle, tone: "text-amber-600 dark:text-amber-400" },
-    { label: "Dead", value: result.dead, icon: XCircle, tone: "text-red-600 dark:text-red-400" },
-    { label: "Skipped", value: result.skipped ?? 0, icon: Loader2, tone: "text-muted-foreground" },
+    { label: t.zooAlive, value: result.alive, icon: CheckCircle2, tone: "text-green-600 dark:text-green-400" },
+    { label: t.zooReversed, value: result.reversed, icon: AlertTriangle, tone: "text-amber-600 dark:text-amber-400" },
+    { label: t.zooDead, value: result.dead, icon: XCircle, tone: "text-red-600 dark:text-red-400" },
+    { label: t.zooSkipped, value: result.skipped ?? 0, icon: Loader2, tone: "text-muted-foreground" },
   ];
 
   return (
     <div className="space-y-4">
-      {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {totals.map(({ label, value, icon: Icon, tone }) => (
           <div key={label} className="border rounded-xl p-4 bg-card flex items-center gap-3">
@@ -937,17 +928,15 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
         ))}
       </div>
 
-      {/* Top tables */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <TopTable title="Top 5 by IR" rows={result.top5_by_ir || []} />
-        <TopTable title="Most reversed" rows={(result.dead_examples || []).slice(0, 3)} />
+        <TopTable title={t.zooTop5ByIR} rows={result.top5_by_ir || []} t={t} />
+        <TopTable title={t.zooMostReversed} rows={(result.dead_examples || []).slice(0, 3)} t={t} />
       </div>
 
-      {/* By-theme breakdown */}
       {result.by_theme && Object.keys(result.by_theme).length > 0 && (
         <div className="border rounded-xl p-4 bg-card">
           <h3 className="text-sm font-medium text-muted-foreground mb-2">
-            By theme
+            {t.zooByTheme}
           </h3>
           <div ref={chartRef} style={{ height: 240 }} />
         </div>
@@ -956,7 +945,7 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
   );
 }
 
-function TopTable({ title, rows }: { title: string; rows: AlphaBenchTopRow[] }) {
+function TopTable({ title, rows, t }: { title: string; rows: AlphaBenchTopRow[]; t: Record<string, string> }) {
   return (
     <div className="border rounded-xl overflow-hidden bg-card">
       <div className="px-4 py-2.5 border-b bg-muted/40">
@@ -964,17 +953,17 @@ function TopTable({ title, rows }: { title: string; rows: AlphaBenchTopRow[] }) 
       </div>
       {rows.length === 0 ? (
         <div className="px-4 py-6 text-xs text-muted-foreground text-center">
-          No rows.
+          {t.zooNoRows}
         </div>
       ) : (
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b">
-              <th className="text-left px-4 py-2 text-xs text-muted-foreground font-medium">ID</th>
-              <th className="text-right px-4 py-2 text-xs text-muted-foreground font-medium">Mean IC</th>
-              <th className="text-right px-4 py-2 text-xs text-muted-foreground font-medium">IR</th>
-              <th className="text-left px-4 py-2 text-xs text-muted-foreground font-medium">Theme</th>
-              <th className="text-left px-4 py-2 text-xs text-muted-foreground font-medium">Category</th>
+              <th className="text-left px-4 py-2 text-xs text-muted-foreground font-medium">{t.zooIDHeader}</th>
+              <th className="text-right px-4 py-2 text-xs text-muted-foreground font-medium">{t.zooMeanIC}</th>
+              <th className="text-right px-4 py-2 text-xs text-muted-foreground font-medium">{t.zooIR}</th>
+              <th className="text-left px-4 py-2 text-xs text-muted-foreground font-medium">{t.zooTheme}</th>
+              <th className="text-left px-4 py-2 text-xs text-muted-foreground font-medium">{t.zooCategoryHeader}</th>
             </tr>
           </thead>
           <tbody>
@@ -1003,11 +992,6 @@ function TopTable({ title, rows }: { title: string; rows: AlphaBenchTopRow[] }) 
   );
 }
 
-/**
- * Render the alpha bench category as a colored badge so users can see whether
- * a row is alive / reversed / dead at a glance. The "Most reversed" panel
- * mixes reversed + dead rows; the badge keeps them distinguishable.
- */
 function CategoryBadge({ category }: { category: AlphaBenchTopRow["category"] }) {
   const tone =
     category === "alive"

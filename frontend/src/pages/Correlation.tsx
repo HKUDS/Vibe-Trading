@@ -26,7 +26,7 @@ export function Correlation() {
       setLabels(result.labels);
       setMatrix(result.matrix);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to compute correlation");
+      setError(e instanceof Error ? e.message : t.corrComputeFailed);
     } finally {
       setLoading(false);
     }
@@ -37,28 +37,28 @@ export function Correlation() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <BarChart3 className="h-6 w-6 text-primary" />
-        <h1 className="text-2xl font-bold">{t.correlation || "Correlation Matrix"}</h1>
+        <h1 className="text-2xl font-bold">{t.correlation}</h1>
       </div>
 
       {/* Controls */}
       <div className="flex flex-col gap-4 border rounded-lg p-4">
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium">{t.selectAssets || "Asset codes"}</label>
+          <label className="text-sm font-medium">{t.selectAssets}</label>
           <input
             type="text"
             value={codes}
             onChange={(e) => setCodes(e.target.value)}
-            placeholder="BTC-USDT,ETH-USDT,SPY"
+            placeholder={t.corrPlaceholder}
             className="w-full px-3 py-2 rounded-md border bg-background text-sm"
           />
           <p className="text-xs text-muted-foreground">
-            Comma-separated ticker symbols, e.g. BTC-USDT,ETH-USDT,AAPL,SPY
+            {t.corrHint}
           </p>
         </div>
 
         <div className="flex flex-wrap gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium">{t.windowLabel || "Window (days)"}</label>
+            <label className="text-sm font-medium">{t.windowLabel}</label>
             <div className="flex gap-1.5">
               {WINDOWS.map((w) => (
                 <button
@@ -77,7 +77,7 @@ export function Correlation() {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium">{t.methodLabel || "Method"}</label>
+            <label className="text-sm font-medium">{t.methodLabel}</label>
             <div className="flex gap-1.5">
               {(["pearson", "spearman"] as const).map((m) => (
                 <button
@@ -101,7 +101,7 @@ export function Correlation() {
           disabled={loading}
           className="self-start px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
-          {loading ? (t.loading || "Loading...") : (t.computeBtn || "Compute")}
+          {loading ? t.loading : t.computeBtn}
         </button>
       </div>
 

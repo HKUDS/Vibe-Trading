@@ -1,6 +1,7 @@
 import { Suspense, lazy, type ComponentType } from "react";
 import { createBrowserRouter } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
+import { useI18n } from "@/lib/i18n";
 
 const Home = lazy(() => import("@/pages/Home").then((m) => ({ default: m.Home })));
 const Agent = lazy(() => import("@/pages/Agent").then((m) => ({ default: m.Agent })));
@@ -21,9 +22,10 @@ const AlphaZoo = lazy(() =>
 );
 
 function PageLoader() {
+  const { t } = useI18n();
   return (
     <div className="flex h-[60vh] items-center justify-center text-muted-foreground">
-      Loading…
+      {t.loading}
     </div>
   );
 }

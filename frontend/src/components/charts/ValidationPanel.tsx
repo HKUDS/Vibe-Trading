@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 import type { ValidationData } from "@/lib/api";
 
 interface Props {
@@ -35,22 +36,23 @@ function pctFmt(v: number): string {
 }
 
 function MonteCarloSection({ mc }: { mc: NonNullable<ValidationData["monte_carlo"]> }) {
+  const { t } = useI18n();
   if (mc.error) return <p className="text-sm text-muted-foreground">{mc.error}</p>;
   const sig = mc.p_value_sharpe < 0.05;
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <h4 className="text-sm font-semibold">Monte Carlo Permutation Test</h4>
-        <Badge value={sig ? "Significant" : "Not Significant"} good={sig} />
+        <h4 className="text-sm font-semibold">{t.vpMonteCarlo}</h4>
+        <Badge value={sig ? t.vpSignificant : t.vpNotSignificant} good={sig} />
       </div>
       <p className="text-xs text-muted-foreground">
-        Shuffled trade order {mc.n_simulations.toLocaleString()} times to test if Sharpe is better than random.
+        {t.vpMonteCarloDesc.replace("{n}", mc.n_simulations.toLocaleString())}
       </p>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl border border-border/60 bg-muted/20 p-3">
-        <Stat label="Actual Sharpe" value={mc.actual_sharpe.toFixed(2)} />
-        <Stat label="p-value (Sharpe)" value={mc.p_value_sharpe.toFixed(4)} sub={sig ? "< 0.05" : ">= 0.05"} />
-        <Stat label="Simulated Mean" value={mc.simulated_sharpe_mean.toFixed(2)} sub={`std ${mc.simulated_sharpe_std.toFixed(2)}`} />
-        <Stat label="Simulated 90% Range" value={`[${mc.simulated_sharpe_p5.toFixed(2)}, ${mc.simulated_sharpe_p95.toFixed(2)}]`} />
+        <Stat label={t.vpActualSharpe} value={mc.actual_sharpe.toFixed(2)} />
+        <Stat label={t.vpPValue} value={mc.p_value_sharpe.toFixed(4)} sub={sig ? "< 0.05" : ">= 0.05"} />
+        <Stat label={t.vpSimulatedMean} value={mc.simulated_sharpe_mean.toFixed(2)} sub={`std ${mc.simulated_sharpe_std.toFixed(2)}`} />
+        <Stat label={t.vpSimulated90Range} value={`[${mc.simulated_sharpe_p5.toFixed(2)}, ${mc.simulated_sharpe_p95.toFixed(2)}]`} />
       </div>
       {/* Visual: where actual falls in distribution */}
       <div className="space-y-1">
@@ -69,22 +71,23 @@ function MonteCarloSection({ mc }: { mc: NonNullable<ValidationData["monte_carlo
 }
 
 function BootstrapSection({ bs }: { bs: NonNullable<ValidationData["bootstrap"]> }) {
+  const { t } = useI18n();
   if (bs.error) return <p className="text-sm text-muted-foreground">{bs.error}</p>;
   const reliable = bs.ci_lower > 0;
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <h4 className="text-sm font-semibold">Bootstrap Sharpe CI</h4>
-        <Badge value={reliable ? "CI > 0" : "CI includes 0"} good={reliable} />
+        <h4 className="text-sm font-semibold">{t.vpBootstrap}</h4>
+        <Badge value={reliable ? t.vpCiPositive : t.vpCiIncludesZero} good={reliable} />
       </div>
       <p className="text-xs text-muted-foreground">
-        Resampled daily returns {bs.n_bootstrap.toLocaleString()} times to estimate {(bs.confidence * 100).toFixed(0)}% confidence interval.
+        {t.vpBootstrapDesc.replace("{n}", bs.n_bootstrap.toLocaleString()).replace("{pct}", (bs.confidence * 100).toFixed(0))}
       </p>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl border border-border/60 bg-muted/20 p-3">
-        <Stat label="Observed Sharpe" value={bs.observed_sharpe.toFixed(2)} />
+        <Stat label={t.vpObservedSharpe} value={bs.observed_sharpe.toFixed(2)} />
         <Stat label={`${(bs.confidence * 100).toFixed(0)}% CI`} value={`[${bs.ci_lower.toFixed(2)}, ${bs.ci_upper.toFixed(2)}]`} />
-        <Stat label="Median Sharpe" value={bs.median_sharpe.toFixed(2)} />
-        <Stat label="P(Sharpe > 0)" value={pctFmt(bs.prob_positive)} />
+        <Stat label={t.vpMedianSharpe} value={bs.median_sharpe.toFixed(2)} />
+        <Stat label={t.vpProbPositive} value={pctFmt(bs.prob_positive)} />
       </div>
       {/* CI bar */}
       <div className="space-y-1">
@@ -102,34 +105,35 @@ function BootstrapSection({ bs }: { bs: NonNullable<ValidationData["bootstrap"]>
 }
 
 function WalkForwardSection({ wf }: { wf: NonNullable<ValidationData["walk_forward"]> }) {
+  const { t } = useI18n();
   if (wf.error) return <p className="text-sm text-muted-foreground">{wf.error}</p>;
   const consistent = wf.consistency_rate >= 0.8;
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <h4 className="text-sm font-semibold">Walk-Forward Analysis</h4>
-        <Badge value={`${wf.profitable_windows}/${wf.n_windows} profitable`} good={consistent ? true : wf.consistency_rate >= 0.5 ? null : false} />
+        <h4 className="text-sm font-semibold">{t.vpWalkForward}</h4>
+        <Badge value={t.vpProfitableWindows.replace("{n}", String(wf.profitable_windows)).replace("{total}", String(wf.n_windows))} good={consistent ? true : wf.consistency_rate >= 0.5 ? null : false} />
       </div>
       <p className="text-xs text-muted-foreground">
-        Split into {wf.n_windows} sequential windows to check performance consistency.
+        {t.vpWalkForwardDesc.replace("{n}", String(wf.n_windows))}
       </p>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl border border-border/60 bg-muted/20 p-3">
-        <Stat label="Consistency" value={pctFmt(wf.consistency_rate)} />
-        <Stat label="Avg Return" value={pctFmt(wf.return_mean)} sub={`std ${pctFmt(wf.return_std)}`} />
-        <Stat label="Avg Sharpe" value={wf.sharpe_mean.toFixed(2)} sub={`std ${wf.sharpe_std.toFixed(2)}`} />
-        <Stat label="Windows" value={String(wf.n_windows)} />
+        <Stat label={t.vpConsistency} value={pctFmt(wf.consistency_rate)} />
+        <Stat label={t.vpAvgReturn} value={pctFmt(wf.return_mean)} sub={`std ${pctFmt(wf.return_std)}`} />
+        <Stat label={t.vpAvgSharpe} value={wf.sharpe_mean.toFixed(2)} sub={`std ${wf.sharpe_std.toFixed(2)}`} />
+        <Stat label={t.vpWindows} value={String(wf.n_windows)} />
       </div>
       {/* Per-window table */}
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b text-left text-muted-foreground">
             <th className="py-1.5 pr-3">#</th>
-            <th className="py-1.5 pr-3">Period</th>
-            <th className="py-1.5 pr-3 text-right">Return</th>
-            <th className="py-1.5 pr-3 text-right">Sharpe</th>
-            <th className="py-1.5 pr-3 text-right">Max DD</th>
-            <th className="py-1.5 pr-3 text-right">Trades</th>
-            <th className="py-1.5 text-right">Win Rate</th>
+            <th className="py-1.5 pr-3">{t.vpPeriod}</th>
+            <th className="py-1.5 pr-3 text-right">{t.vpReturn}</th>
+            <th className="py-1.5 pr-3 text-right">{t.vpSharpe}</th>
+            <th className="py-1.5 pr-3 text-right">{t.vpMaxDD}</th>
+            <th className="py-1.5 pr-3 text-right">{t.vpTrades}</th>
+            <th className="py-1.5 text-right">{t.cmpWinRate}</th>
           </tr>
         </thead>
         <tbody>
@@ -165,12 +169,13 @@ function markerStyle(value: number, min: number, max: number) {
 }
 
 export function ValidationPanel({ data }: Props) {
+  const { t } = useI18n();
   const hasMC = !!data.monte_carlo;
   const hasBS = !!data.bootstrap;
   const hasWF = !!data.walk_forward;
 
   if (!hasMC && !hasBS && !hasWF) {
-    return <p className="p-8 text-sm text-muted-foreground">No validation data available.</p>;
+    return <p className="p-8 text-sm text-muted-foreground">{t.noValidationData}</p>;
   }
 
   return (

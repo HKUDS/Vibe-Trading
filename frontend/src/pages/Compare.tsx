@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { GitCompare, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api, type RunListItem, type RunData, type EquityPoint } from "@/lib/api";
@@ -50,23 +50,25 @@ function runLabel(r: RunListItem): string {
   return r.run_id;
 }
 
-const METRICS: MetricDef[] = [
-  { key: "total_return",           label: "Total Return",         type: "pct", higherIsBetter: true },
-  { key: "annualized_return",      label: "Annualized Return",    type: "pct", higherIsBetter: true },
-  { key: "sharpe",                 label: "Sharpe Ratio",         type: "num", higherIsBetter: true },
-  { key: "calmar_ratio",           label: "Calmar Ratio",         type: "num", higherIsBetter: true },
-  { key: "sortino_ratio",          label: "Sortino Ratio",        type: "num", higherIsBetter: true },
-  { key: "max_drawdown",           label: "Max Drawdown",         type: "pct", higherIsBetter: false },
-  { key: "volatility",             label: "Volatility",           type: "pct", higherIsBetter: false },
-  { key: "win_rate",               label: "Win Rate",             type: "pct", higherIsBetter: true },
-  { key: "profit_factor",          label: "Profit Factor",        type: "num", higherIsBetter: true },
-  { key: "avg_win",                label: "Avg Win",              type: "pct", higherIsBetter: true },
-  { key: "avg_loss",               label: "Avg Loss",             type: "pct", higherIsBetter: false },
-  { key: "trade_count",            label: "Trades",               type: "int", higherIsBetter: true },
-  { key: "max_consecutive_losses", label: "Max Consec. Losses",   type: "int", higherIsBetter: false },
-  { key: "exposure_time",          label: "Exposure Time",        type: "pct", higherIsBetter: true },
-  { key: "avg_holding_period",     label: "Avg Holding Period",   type: "days", higherIsBetter: false },
-];
+function buildMetrics(t: Record<string, string>): MetricDef[] {
+  return [
+    { key: "total_return",           label: t.cmpTotalReturn,         type: "pct", higherIsBetter: true },
+    { key: "annualized_return",      label: t.cmpAnnualizedReturn,    type: "pct", higherIsBetter: true },
+    { key: "sharpe",                 label: t.cmpSharpeRatio,         type: "num", higherIsBetter: true },
+    { key: "calmar_ratio",           label: t.cmpCalmarRatio,         type: "num", higherIsBetter: true },
+    { key: "sortino_ratio",          label: t.cmpSortinoRatio,        type: "num", higherIsBetter: true },
+    { key: "max_drawdown",           label: t.cmpMaxDrawdown,         type: "pct", higherIsBetter: false },
+    { key: "volatility",             label: t.cmpVolatility,           type: "pct", higherIsBetter: false },
+    { key: "win_rate",               label: t.cmpWinRate,             type: "pct", higherIsBetter: true },
+    { key: "profit_factor",          label: t.cmpProfitFactor,        type: "num", higherIsBetter: true },
+    { key: "avg_win",                label: t.cmpAvgWin,              type: "pct", higherIsBetter: true },
+    { key: "avg_loss",               label: t.cmpAvgLoss,             type: "pct", higherIsBetter: false },
+    { key: "trade_count",            label: t.cmpTrades,              type: "int", higherIsBetter: true },
+    { key: "max_consecutive_losses", label: t.cmpMaxConsecLosses,     type: "int", higherIsBetter: false },
+    { key: "exposure_time",          label: t.cmpExposureTime,        type: "pct", higherIsBetter: true },
+    { key: "avg_holding_period",     label: t.cmpAvgHoldingPeriod,    type: "days", higherIsBetter: false },
+  ];
+}
 
 // Also accept backend aliases
 const METRIC_ALIASES: Record<string, string> = {
@@ -198,6 +200,7 @@ function EquityChartOverlay({ leftCurve, rightCurve, leftLabel, rightLabel }: Eq
 
 export function Compare() {
   const { t } = useI18n();
+  const metrics = useMemo(() => buildMetrics(t), [t]);
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [leftId, setLeftId] = useState("");
   const [rightId, setRightId] = useState("");
@@ -292,7 +295,7 @@ export function Compare() {
               </tr>
             </thead>
             <tbody>
-              {METRICS.map(({ key, label, type, higherIsBetter }) => {
+              {metrics.map(({ key, label, type, higherIsBetter }) => {
                 const lv = resolveMetric(leftData, key);
                 const rv = resolveMetric(rightData, key);
                 return (
