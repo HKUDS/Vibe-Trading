@@ -95,6 +95,15 @@ def get_selection_manifest(repo_root: Path) -> Optional[SelectionManifest]:
 
 
 # ---------------------------------------------------------------------------
+# Regime manifest — research/manifests/regime_<symbol>.json (raw dict)
+# ---------------------------------------------------------------------------
+
+def get_regime_manifest(repo_root: Path, symbol: str) -> Optional[dict]:
+    path = repo_root / "research" / "manifests" / f"regime_{symbol}.json"
+    return _load_json(path)
+
+
+# ---------------------------------------------------------------------------
 # Testnet status — runs/testnet/<id>/testnet_status.json
 # ---------------------------------------------------------------------------
 

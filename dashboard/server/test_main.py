@@ -159,3 +159,93 @@ def test_get_equity_no_run_no_manifest_default(client):
     # manifest has no backtest block → no default run → 404
     r = client.get("/api/strategies/strat_btc_001/equity")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET /api/factor-analysis, /api/regime, /api/selection
+# ---------------------------------------------------------------------------
+
+FACTOR_PAYLOAD = {
+    "schema_version": 1,
+    "symbol": "BTC",
+    "generated_at": "2024-01-01T00:00:00Z",
+    "period_days": 365,
+    "horizons_h": [4, 8, 24],
+    "factors": [
+        {
+            "name": "funding_rate",
+            "ic_by_horizon": {"4": 0.12, "8": 0.09, "24": 0.06},
+            "ir": 0.8,
+            "sample_size": 500,
+            "verdict": "single_use",
+        }
+    ],
+}
+
+SELECTION_PAYLOAD = {
+    "schema_version": 1,
+    "generated_at": "2024-01-01T00:00:00Z",
+    "method": "weighted_score",
+    "ranking": [{"strategy_id": "strat_btc_001", "symbol": "BTC", "rank": 1, "score": 0.92, "selected": True}],
+}
+
+REGIME_PAYLOAD = {"symbol": "BTC", "current_regime": "bull", "distribution": {"bull": 0.6, "bear": 0.3, "neutral": 0.1}}
+
+
+@pytest.fixture()
+def repo_root_full(tmp_path: Path) -> Path:
+    m = tmp_path / "research" / "manifests"
+    m.mkdir(parents=True)
+    (m / "factor_BTC.json").write_text(json.dumps(FACTOR_PAYLOAD), encoding="utf-8")
+    (m / "selection.json").write_text(json.dumps(SELECTION_PAYLOAD), encoding="utf-8")
+    (m / "regime_BTC.json").write_text(json.dumps(REGIME_PAYLOAD), encoding="utf-8")
+    return tmp_path
+
+
+@pytest.fixture()
+def client_full(repo_root_full: Path):
+    os.environ["REPO_ROOT"] = str(repo_root_full)
+    import importlib, main as main_module
+    importlib.reload(main_module)
+    from main import app
+    with TestClient(app) as c:
+        yield c
+
+
+def test_get_factor_analysis(client_full):
+    r = client_full.get("/api/factor-analysis?symbol=BTC")
+    assert r.status_code == 200
+    assert r.json()["symbol"] == "BTC"
+    assert len(r.json()["factors"]) == 1
+
+
+def test_get_factor_analysis_404(client_full):
+    r = client_full.get("/api/factor-analysis?symbol=ETH")
+    assert r.status_code == 404
+
+
+def test_get_regime(client_full):
+    r = client_full.get("/api/regime?symbol=BTC")
+    assert r.status_code == 200
+    assert r.json()["current_regime"] == "bull"
+
+
+def test_get_regime_404(client_full):
+    r = client_full.get("/api/regime?symbol=ETH")
+    assert r.status_code == 404
+
+
+def test_get_selection(client_full):
+    r = client_full.get("/api/selection")
+    assert r.status_code == 200
+    assert len(r.json()["ranking"]) == 1
+
+
+def test_get_selection_404(tmp_path):
+    os.environ["REPO_ROOT"] = str(tmp_path)
+    import importlib, main as main_module
+    importlib.reload(main_module)
+    from main import app
+    with TestClient(app) as c:
+        r = c.get("/api/selection")
+    assert r.status_code == 404

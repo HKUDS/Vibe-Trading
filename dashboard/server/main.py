@@ -102,3 +102,38 @@ def get_trades(
 ) -> list[dict[str, Any]]:
     path = _resolve_run_csv(strategy_id, run, "trades.csv")
     return parsers.csv_to_records(path)
+
+
+# ---------------------------------------------------------------------------
+# 3.6 Factor analysis, regime, selection
+# ---------------------------------------------------------------------------
+
+from schemas import FactorManifest, SelectionManifest
+
+
+@app.get("/api/factor-analysis")
+def get_factor_analysis(
+    symbol: str = Query(..., description="Trading symbol, e.g. 'BTC'"),
+) -> FactorManifest:
+    manifest = artifacts.get_factor_manifest(REPO_ROOT, symbol)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Factor manifest for '{symbol}' not found")
+    return manifest
+
+
+@app.get("/api/regime")
+def get_regime(
+    symbol: str = Query(..., description="Trading symbol, e.g. 'BTC'"),
+) -> dict[str, Any]:
+    data = artifacts.get_regime_manifest(REPO_ROOT, symbol)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"Regime manifest for '{symbol}' not found")
+    return data
+
+
+@app.get("/api/selection")
+def get_selection() -> SelectionManifest:
+    manifest = artifacts.get_selection_manifest(REPO_ROOT)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail="Selection manifest not found")
+    return manifest
