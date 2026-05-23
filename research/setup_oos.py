@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "research"))
 
 from lib.ccxt_data import fetch_funding_rate_history_ccxt  # noqa: E402
 from lib.sentiment import fetch_fear_greed  # noqa: E402
+from pipeline.config import load_config  # noqa: E402
 
 TEMPLATE = ROOT / "runs" / "_templates" / "signal_engine_ensemble_v2.py"
 REGIME_PARQUET = ROOT / "research" / "regime_labels.parquet"
@@ -62,6 +63,7 @@ def build(period_name, start_str, end_str, fund, fng, regime_full, stress=False)
     rg = regime_full.loc[start_str:end_str][["regime"]]
     rg.to_parquet(dst / "factor_data" / "regime.parquet")
 
+    fees = load_config().fees
     cfg = {
         "codes": ["BTC-USDT"],
         "start_date": start_str,
@@ -71,9 +73,9 @@ def build(period_name, start_str, end_str, fund, fng, regime_full, stress=False)
         "engine": "daily",
         "initial_cash": 1000.0,
         "leverage": 1.5,
-        "maker_rate": 0.0002,
-        "taker_rate": 0.00055,
-        "slippage": 0.0005,
+        "maker_rate": fees.maker_rate,
+        "taker_rate": fees.taker_rate,
+        "slippage": fees.slippage,
         "margin_mode": "isolated",
         "benchmark": "BTC-USDT",
     }

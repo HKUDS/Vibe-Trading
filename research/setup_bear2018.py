@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "research"))
 
 from lib.ccxt_data import fetch_funding_rate_history_ccxt  # noqa: E402
 from lib.sentiment import fetch_fear_greed  # noqa: E402
+from pipeline.config import load_config  # noqa: E402
 
 BEAR_START = datetime(2018, 2, 1, tzinfo=timezone.utc)
 BEAR_END = datetime(2018, 12, 31, tzinfo=timezone.utc)
@@ -75,6 +76,7 @@ def build_run(run_name: str, baseline_name: str, leverage: float, funding, fng) 
     funding.to_parquet(dst / "factor_data" / "funding.parquet")
     fng.to_parquet(dst / "factor_data" / "fng.parquet")
 
+    fees = load_config().fees
     cfg = {
         "codes": ["BTC-USDT"],
         "start_date": START_STR,
@@ -84,9 +86,9 @@ def build_run(run_name: str, baseline_name: str, leverage: float, funding, fng) 
         "engine": "daily",
         "initial_cash": 1000.0,
         "leverage": leverage,
-        "maker_rate": 0.0002,
-        "taker_rate": 0.00055,
-        "slippage": 0.0005,
+        "maker_rate": fees.maker_rate,
+        "taker_rate": fees.taker_rate,
+        "slippage": fees.slippage,
         "margin_mode": "isolated",
         "benchmark": "BTC-USDT",
     }
