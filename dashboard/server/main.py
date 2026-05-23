@@ -232,3 +232,23 @@ def demote_strategy(strategy_id: str) -> dict:
     if not removed:
         raise HTTPException(status_code=404, detail=f"Strategy '{strategy_id}' is not promoted")
     return {"strategy_id": strategy_id, "demoted": True}
+
+
+# ---------------------------------------------------------------------------
+# 3.10 Testnet status
+# ---------------------------------------------------------------------------
+
+from schemas import TestnetStatus
+
+
+@app.get("/api/testnet")
+def list_testnet() -> list[TestnetStatus]:
+    return artifacts.list_testnet_statuses(REPO_ROOT)
+
+
+@app.get("/api/testnet/{testnet_id}")
+def get_testnet(testnet_id: str) -> TestnetStatus:
+    status = artifacts.get_testnet_status(REPO_ROOT, testnet_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail=f"Testnet '{testnet_id}' not found")
+    return status

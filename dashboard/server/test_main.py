@@ -293,6 +293,67 @@ def test_get_report_missing_file(client_reports):
 
 
 # ---------------------------------------------------------------------------
+# GET /api/testnet  &  /api/testnet/{id}
+# ---------------------------------------------------------------------------
+
+TESTNET_PAYLOAD = {
+    "schema_version": 1,
+    "testnet_id": "tn_001",
+    "strategy_id": "strat_btc_001",
+    "symbol": "BTC",
+    "live": {
+        "started_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T01:00:00Z",
+        "status": "running",
+    },
+    "killswitch": {"triggered": False},
+}
+
+
+@pytest.fixture()
+def client_testnet(tmp_path: Path):
+    tn = tmp_path / "runs" / "testnet" / "tn_001"
+    tn.mkdir(parents=True)
+    (tn / "testnet_status.json").write_text(json.dumps(TESTNET_PAYLOAD), encoding="utf-8")
+    os.environ["REPO_ROOT"] = str(tmp_path)
+    import importlib, main as main_module
+    importlib.reload(main_module)
+    from main import app
+    with TestClient(app) as c:
+        yield c
+
+
+def test_list_testnet(client_testnet):
+    r = client_testnet.get("/api/testnet")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 1
+    assert data[0]["testnet_id"] == "tn_001"
+
+
+def test_get_testnet(client_testnet):
+    r = client_testnet.get("/api/testnet/tn_001")
+    assert r.status_code == 200
+    assert r.json()["strategy_id"] == "strat_btc_001"
+
+
+def test_get_testnet_404(client_testnet):
+    r = client_testnet.get("/api/testnet/nonexistent")
+    assert r.status_code == 404
+
+
+def test_list_testnet_empty(tmp_path):
+    os.environ["REPO_ROOT"] = str(tmp_path)
+    import importlib, main as main_module
+    importlib.reload(main_module)
+    from main import app
+    with TestClient(app) as c:
+        r = c.get("/api/testnet")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+# ---------------------------------------------------------------------------
 # GET /api/pipeline
 # ---------------------------------------------------------------------------
 
