@@ -25,6 +25,7 @@ agent/tests/*_result.json
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
 wiki/node_modules/
+dashboard/web/node_modules/
 wiki/dist/
 wiki/.astro/
 wiki/.vite/
@@ -34,6 +35,11 @@ wiki/.cache/
 .vibe-record/
 .cache/
 .remotion/
+
+# Dashboard runtime data and secrets (quant-strategy-dashboard)
+dashboard/data/
+dashboard/server/.env
+dashboard/trader/.env
 
 # DuckDB data cache
 data/*.duckdb

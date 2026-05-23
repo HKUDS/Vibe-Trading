@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "testnet_id": "btc_s1_funding_carry_001",
+  "strategy_id": "btc_s1_funding_carry",
+  "symbol": "BTC",
+  "live": {
+    "started_at": "2026-05-16T00:00:00Z",
+    "updated_at": "2026-05-21T08:00:00Z",
+    "status": "running",
+    "equity": 10412.55,
+    "open_positions": 1,
+    "trades": 27,
+    "sharpe": 1.61,
+    "max_drawdown": 0.043
+  },
+  "vs_backtest": {
+    "live_sharpe": 1.61,
+    "backtest_sharpe": 1.83,
+    "sharpe_ratio": 0.88,
+    "live_slippage": 0.00072,
+    "assumed_slippage": 0.0005,
+    "unfilled_orders": 2
+  },
+  "killswitch": {
+    "triggered": false,
+    "triggered_at": null,
+    "reason": null,
+    "pause_drawdown": 0.05,
+    "terminate_drawdown": 0.07
+  },
+  "alerts": [
+    {
+      "timestamp": "2026-05-18T14:20:00Z",
+      "severity": "warning",
+      "message": "Live slippage 0.072% running above assumed 0.05%."
+    },
+    {
+      "timestamp": "2026-05-20T09:05:00Z",
+      "severity": "info",
+      "message": "Live Sharpe 1.61 tracking at 88% of backtest 1.83."
+    }
+  ]
+}

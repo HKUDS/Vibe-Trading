@@ -1,0 +1,71 @@
+name: S1_BTC_multifactor_contrarian
+archetype: multi_factor_consensus
+hypothesis: |
+  Funding rate and Fear & Greed (F&G) both show stable negative IC with forward 3–7 day returns (IC ≈ -0.03 to -0.09),
+  indicating that crowded long/greedy regimes tend to precede negative returns and fearful/short-crowded regimes precede
+  positive returns. Requiring both factors to align in a contrarian direction increases signal quality and reduces
+  noise versus single-factor triggers, while a 3–5 day hold matches the strongest IC horizon (72–168h).
+
+symbol: BTC-USDT-SWAP
+timeframe_signal: 8h  # bar size at which entry signal is evaluated
+hold_period:
+  min_hours: 24
+  max_hours: 120
+
+indicators:
+  funding_rate:
+    source: okx:funding-rate-history
+    smoothing: sma_3
+  fng:
+    source: alternative.me
+    smoothing: sma_3
+
+entry_long:
+  description: Enter long when both factors indicate fear/short-crowded regime (low percentiles) with persistence.
+  conditions:
+    - funding_rate percentile over last 90 days <= 20th percentile, observed in at least 2 of the last 3 funding settlements (after smoothing).
+    - F&G percentile over last 90 days <= 30th percentile, confirmed by both today and 3-day SMA below threshold.
+
+entry_short:
+  description: Enter short when both factors indicate greed/long-crowded regime (high percentiles) with persistence.
+  conditions:
+    - funding_rate percentile over last 90 days >= 80th percentile, observed in at least 2 of the last 3 funding settlements (after smoothing).
+    - F&G percentile over last 90 days >= 70th percentile, confirmed by both today and 3-day SMA above threshold.
+
+exit_rules:
+  - condition: time_based
+    max_hold_hours: 120
+  - condition: take_profit_pct
+    value: 6.0
+  - condition: stop_loss_pct
+    value: 3.0
+  - condition: signal_invalidation
+    description: Exit when either factor reverts toward neutral — e.g., funding and/or F&G percentile return inside the 40th–60th band.
+
+position_sizing:
+  method: fixed_risk
+  risk_per_trade_pct: 1.5
+  leverage: 1.5
+
+parameter_search_ranges:
+  funding_lookback_days: [60, 120, 30]
+  fng_lookback_days: [60, 180, 30]
+  funding_high_pct: [75, 90, 5]
+  funding_low_pct: [10, 25, 5]
+  fng_high_pct: [65, 85, 5]
+  fng_low_pct: [15, 35, 5]
+  persistence_last_n: [3, 5, 1]
+  persistence_min_hits: [2, 3, 1]
+  hold_max_hours: [96, 144, 24]
+  tp_pct: [4.0, 7.0, 1.5]
+  sl_pct: [2.5, 4.0, 0.5]
+
+expected_behavior:
+  trades_per_year_estimate: 80
+  expected_sharpe: 1.1
+  expected_max_dd_pct: 8.0
+  expected_win_rate_pct: 52
+
+caveats:
+  - Regime shifts in funding dynamics (exchange policy changes or structural basis compression) can weaken the edge.
+  - F&G is daily and laggy; extreme news may cause fast reversals before the daily print updates.

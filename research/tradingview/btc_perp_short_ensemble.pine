@@ -1,0 +1,161 @@
+//@version=5
+// =====================================================================
+// BTC Perp Short-Only Ensemble (Gated) — TradingView port
+// Source: gated short-only ensemble v2 (w=48, h=2) from Vibe-Trading research
+// Backtest peak: bear2022 Sharpe +2.58 / DD -5.0%, bull2024-26 Sharpe +0.93 / DD -1.6%
+//
+// LIMITATIONS vs Python backtest:
+//   - alternative.me Fear & Greed unavailable on TradingView
+//     => S2 FNG veto dropped, S4 entire sub-strategy dropped (needs FNG)
+//     => Ensemble = (S2_funding_only + S3) / 2, not (S2 + S3 + S4) / 3
+//   - Funding rate source must be set via input (default: BYBIT:BTCUSDT.P perp funding)
+//     - TradingView funding rate feed differs slightly from Binance perp used in backtest
+//   - Pine quantile via percentrank approximates the 90d/120d rolling quantile
+//   - Persistence window uses bar-count (timeframe-dependent); set chart to 1H
+//
+// Expected drift: 5-20% Sharpe loss vs Python backtest. Use for visualization +
+// signal alerting only. Execution should still go through the Python ccxt bot.
+//
+// USAGE:
+//   1. Open BTCUSDT perp on Bybit (or any BTC perp) on 1H timeframe
+//   2. Apply this script
+//   3. Set funding symbol input to match exchange
+//   4. Configure alert on `Signal change` to webhook external bot
+// =====================================================================
+indicator("BTC Perp Short Ensemble (Gated)", overlay=false, max_bars_back=2500)
+
+// ---------------- inputs ----------------
+g_data    = "Data sources"
+fundingSym = input.symbol("BYBIT:BTCUSDT.P",  "Funding rate symbol",  group=g_data, tooltip="TradingView ticker that returns the funding rate time series. Default uses Bybit perp price as proxy if no dedicated feed. Try: BINANCE:BTCUSDT_FUNDING_RATE")
+regimeSym  = input.symbol("BINANCE:BTCUSDT",  "Regime detector symbol (spot, longer history)", group=g_data, tooltip="Use spot BTC for regime detector — perp tickers often have <2yr history on TV. Default BINANCE:BTCUSDT spot.")
+useDailyForRegime = input.bool(true, "Use daily close for regime detector", group=g_data, tooltip="ON = pull daily close for 100d EMA (recommended). OFF = use chart timeframe.")
+
+g_regime = "Regime detector v1c"
+emaWin       = input.int(100, "EMA window (daily bars)",        minval=20, maxval=300, group=g_regime)
+slopeWin     = input.int(20,  "EMA slope lookback (daily bars)", minval=5,  maxval=60,  group=g_regime)
+persistDays  = input.int(20,   "Bear persistence window (days)", minval=5, maxval=60, group=g_regime)
+persistThr   = input.float(0.55,"Bear persistence threshold",    minval=0.3,maxval=1.0,step=0.05,group=g_regime)
+enableFundingOverride = input.bool(false, "Enable funding mania override (requires REAL funding rate ticker)", group=g_regime, tooltip="OFF by default. TradingView doesn't expose perp funding as a clean time series — using perp close as proxy will give garbage values ($30k vs 0.0003 threshold). Only enable if your fundingSym returns actual funding rate values (range ~-0.01 to +0.01).")
+fundMeanWinDays = input.int(30, "Funding mean window (days)",   minval=5,  maxval=90,  group=g_regime)
+fundMania    = input.float(0.0003, "Funding mania threshold (8h rate)", step=0.00005, group=g_regime, tooltip="If rolling funding mean > +threshold, flip bear→neutral. Below -threshold flips bull→neutral.")
+
+g_s2 = "S2 funding mean-reversion (FNG veto dropped)"
+s2_pct_bars = input.int(90 * 24, "Percentile window (bars)", minval=200, group=g_s2, tooltip="90 days × 24 hours on 1H chart")
+s2_fh       = input.float(0.80, "Funding HIGH percentile (short)", step=0.05, group=g_s2)
+s2_fl       = input.float(0.20, "Funding LOW percentile (long)",   step=0.05, group=g_s2)
+
+g_s3 = "S3 trend + funding filter"
+s3_ema_fast = input.int(20, "Fast EMA",  minval=5,  group=g_s3)
+s3_ema_slow = input.int(50, "Slow EMA",  minval=20, group=g_s3)
+s3_gate_long  = input.float(0.60, "Funding ceiling for long",  step=0.05, group=g_s3)
+s3_gate_short = input.float(0.40, "Funding floor for short",   step=0.05, group=g_s3)
+
+g_pers = "Ensemble persistence + sizing"
+persWin  = input.int(48, "Persistence window (bars)", minval=4, group=g_pers)
+persHits = input.int(2,  "Persistence required hits",  minval=1, group=g_pers)
+posSize  = input.float(0.5, "Position size at full agreement", step=0.05, group=g_pers)
+
+// ---------------- data fetch ----------------
+// Funding rate (8h native). All funding-derived series must be computed inside request.security
+// so ta.sma/ta.ema operate on funding's 8h bars, not the chart timeframe.
+funding      = request.security(fundingSym, "480", close, lookahead=barmerge.lookahead_off)
+fundMeanBars = math.max(1, math.round(fundMeanWinDays * 24 / 8))
+fundMean     = request.security(fundingSym, "480", ta.sma(close, fundMeanBars), lookahead=barmerge.lookahead_off)
+
+// ---------------- regime detector v1c (ALL daily math inside request.security) ----------------
+// Bug previously: ta.ema(daily_close, 100) on 1H chart ran ema over 1H bars (100 bars = 4 days),
+// not 100 days. Fix: compute everything on the daily timeframe and pull final values out.
+daily_regime() =>
+    e         = ta.ema(close, emaWin)
+    sl        = e - e[slopeWin]
+    above_d   = close > e
+    pos_sl    = sl > 0
+    raw_bear  = (not above_d) and (not pos_sl)
+    raw_bull  = above_d and pos_sl
+    bear_share     = ta.sma(raw_bear ? 1.0 : 0.0, persistDays)
+    bear_confirmed = bear_share >= persistThr
+    [raw_bull, bear_confirmed, e, close, raw_bear, bear_share]
+
+[rawBull_d, bearConfirmed_d, ema_d, btcDailyClose, rawBear_d, bearShare_d] = request.security(regimeSym, "1D", daily_regime(), lookahead=barmerge.lookahead_off)
+
+// Apply funding mania override on 1H bar level (only if user enabled — default OFF)
+bearFinal = enableFundingOverride ? (bearConfirmed_d and not (fundMean > fundMania)) : bearConfirmed_d
+bullFinal = enableFundingOverride ? (rawBull_d        and not (fundMean < -fundMania)) : rawBull_d
+
+regime = bearFinal ? 1 : (bullFinal ? -1 : 0)   // 1=bear, -1=bull, 0=neutral
+
+// ---------------- S2 funding mean reversion (FNG veto dropped) ----------------
+fundPctRank = ta.percentrank(funding, s2_pct_bars) / 100.0
+
+s2_short_raw = fundPctRank >= s2_fh
+s2_long_raw  = fundPctRank <= s2_fl
+
+// ---------------- S3 trend + funding filter ----------------
+ema_fast = ta.ema(close, s3_ema_fast)
+ema_slow = ta.ema(close, s3_ema_slow)
+uptrend   = ema_fast > ema_slow
+downtrend = ema_fast < ema_slow
+
+s3_long_raw  = uptrend   and fundPctRank <= s3_gate_long
+s3_short_raw = downtrend and fundPctRank >= s3_gate_short
+
+// ---------------- sub-strategy persistence (per-strat 2/24 internal like Python) ----------------
+internalWin  = 24
+internalHits = 2
+
+s2_short_hit = math.sum(s2_short_raw ? 1 : 0, internalWin) >= internalHits
+s2_long_hit  = math.sum(s2_long_raw  ? 1 : 0, internalWin) >= internalHits
+s2_sig = s2_short_hit ? -1.0 : s2_long_hit ? 1.0 : 0.0
+
+s3_short_hit = math.sum(s3_short_raw ? 1 : 0, internalWin) >= internalHits
+s3_long_hit  = math.sum(s3_long_raw  ? 1 : 0, internalWin) >= internalHits
+s3_sig = s3_short_hit ? -1.0 : s3_long_hit ? 1.0 : 0.0
+
+// ---------------- ensemble = avg, clip upper=0 (short-only) ----------------
+ensemble = (s2_sig + s3_sig) / 2.0
+ensembleShort = math.min(ensemble, 0.0)
+
+// ---------------- outer persistence (48/2) ----------------
+isShort = ensembleShort < 0
+outerShortHits = math.sum(isShort ? 1 : 0, persWin)
+shortConfirmed = outerShortHits >= persHits
+
+position = shortConfirmed ? ensembleShort * posSize : 0.0
+
+// ---------------- gate by bear regime ----------------
+gated = regime == 1 ? position : 0.0
+
+// ---------------- plotting ----------------
+bgcolor(regime == 1  ? color.new(color.red,   88) : regime == -1 ? color.new(color.green, 92) : color.new(color.gray, 95))
+
+plot(gated,           "Gated short signal", color=color.new(color.red, 0),    linewidth=2)
+plot(ensembleShort,   "Ensemble raw (pre-gate)", color=color.new(color.orange, 60))
+plot(s2_sig * 0.3,    "S2 sub-signal", color=color.new(color.blue, 50))
+plot(s3_sig * 0.3,    "S3 sub-signal", color=color.new(color.purple, 50))
+hline(0, "zero", color=color.new(color.gray, 50))
+
+// regime numeric line, scaled
+plot(regime * 0.05, "regime (red bg=bear)", color=color.new(color.white, 70), display=display.none)
+
+// ---------------- alerts ----------------
+shortEntry = gated < 0 and gated[1] == 0
+flat        = gated == 0 and gated[1] < 0
+
+alertcondition(shortEntry, title="Short ENTRY", message="BTC ensemble short entry @ {{close}} position={{plot_0}}")
+alertcondition(flat,        title="Close to FLAT", message="BTC ensemble closing short @ {{close}}")
+
+// ---------------- info table ----------------
+var table info = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 70), border_width=1)
+if barstate.islast
+    table.cell(info, 0, 0, "Regime",        text_color=color.white)
+    table.cell(info, 1, 0, regime == 1 ? "BEAR (gate open)" : regime == -1 ? "BULL (gate closed)" : "NEUTRAL (gate closed)", text_color = regime == 1 ? color.red : regime == -1 ? color.green : color.gray)
+    table.cell(info, 0, 1, "Funding pct",  text_color=color.white)
+    table.cell(info, 1, 1, str.tostring(fundPctRank * 100, "#.#") + "%", text_color=color.yellow)
+    table.cell(info, 0, 2, "S2",           text_color=color.white)
+    table.cell(info, 1, 2, str.tostring(s2_sig), text_color=color.blue)
+    table.cell(info, 0, 3, "S3",           text_color=color.white)
+    table.cell(info, 1, 3, str.tostring(s3_sig), text_color=color.purple)
+    table.cell(info, 0, 4, "Ensemble",     text_color=color.white)
+    table.cell(info, 1, 4, str.tostring(ensembleShort, "#.##"), text_color=color.orange)
+    table.cell(info, 0, 5, "Final position", text_color=color.white)
+    table.cell(info, 1, 5, str.tostring(gated, "#.##"), text_color = gated < 0 ? color.red : color.gray)

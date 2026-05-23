@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "strategy_id": "btc_s1_funding_carry",
+  "symbol": "BTC",
+  "generated_at": "2026-05-14T10:30:00Z",
+  "pipeline_stage": 5,
+  "spec": {
+    "source_run": null,
+    "strategy_id": "btc_s1_funding_carry",
+    "symbol": "BTC",
+    "spec_yaml": "research/strategies/btc_s1_funding_carry.yaml",
+    "description": "Funding-rate contrarian carry: short when funding richly positive, long when richly negative."
+  },
+  "generation": {
+    "source_run": null,
+    "method": "crypto_trading_desk swarm",
+    "model": "gpt-5",
+    "rationale": "Funding rate showed a regime-stable negative IC at the 24h horizon; a contrarian carry harvests the mean reversion of over-leveraged positioning.",
+    "factors_used": ["funding_rate"]
+  },
+  "reproducibility": {
+    "source_run": "runs/btc_s1_funding_carry_base",
+    "git_commit": "fd9ff77",
+    "config_hash": "a1b2c3d4",
+    "engine": "vibe-backtest",
+    "data_source": "okx",
+    "seed": 42
+  },
+  "backtest": {
+    "in_sample": {
+      "source_run": "runs/btc_s1_funding_carry_base",
+      "sharpe": 2.14,
+      "max_drawdown": 0.072,
+      "trades": 318,
+      "profit_factor": 1.94,
+      "total_return": 0.687,
+      "win_rate": 0.58
+    },
+    "oos": {
+      "source_run": "runs/btc_s1_funding_carry_oos",
+      "sharpe": 1.83,
+      "max_drawdown": 0.081,
+      "trades": 142,
+      "profit_factor": 1.71,
+      "total_return": 0.312,
+      "win_rate": 0.55
+    },
+    "walk_forward": {
+      "source_run": "runs/btc_s1_funding_carry_oos",
+      "windows": [
+        { "window": "2024-Q1", "sharpe": 1.62, "total_return": 0.094 },
+        { "window": "2024-Q2", "sharpe": 1.41, "total_return": 0.071 },
+        { "window": "2024-Q3", "sharpe": 1.88, "total_return": 0.118 },
+        { "window": "2024-Q4", "sharpe": 1.55, "total_return": 0.087 }
+      ]
+    },
+    "monte_carlo": {
+      "source_run": "runs/btc_s1_funding_carry_base",
+      "n_simulations": 5000,
+      "ci_low": 0.118,
+      "ci_high": 0.541,
+      "ci_crosses_zero": false
+    },
+    "benchmark": {
+      "source_run": "runs/btc_s1_funding_carry_base",
+      "strategy_return": 0.687,
+      "hodl_return": 0.402,
+      "excess_return": 0.285,
+      "beats_hodl": true
+    },
+    "by_regime": [
+      {
+        "regime": "bull",
+        "source_run": "runs/btc_s1_funding_carry_bull",
+        "sharpe": 1.97,
+        "max_drawdown": 0.069,
+        "total_return": 0.241,
+        "trades": 121
+      },
+      {
+        "regime": "bear",
+        "source_run": "runs/btc_s1_funding_carry_bear",
+        "sharpe": 2.08,
+        "max_drawdown": 0.058,
+        "total_return": 0.198,
+        "trades": 104
+      },
+      {
+        "regime": "chop",
+        "source_run": "runs/btc_s1_funding_carry_chop",
+        "sharpe": 1.66,
+        "max_drawdown": 0.084,
+        "total_return": 0.133,
+        "trades": 93
+      }
+    ],
+    "cost_stress": {
+      "source_run": "runs/btc_s1_funding_carry_stress",
+      "levels": [
+        { "label": "baseline", "source_run": "runs/btc_s1_funding_carry_stress", "fee_multiplier": 1.0, "sharpe": 2.14, "total_return": 0.687, "profit_factor": 1.94 },
+        { "label": "2x", "source_run": "runs/btc_s1_funding_carry_stress", "fee_multiplier": 2.0, "sharpe": 1.79, "total_return": 0.488, "profit_factor": 1.66 },
+        { "label": "3x", "source_run": "runs/btc_s1_funding_carry_stress", "fee_multiplier": 3.0, "sharpe": 1.52, "total_return": 0.331, "profit_factor": 1.51 }
+      ]
+    }
+  },
+  "optimization": {
+    "source_run": "runs/btc_s1_funding_carry_sweep",
+    "method": "quant_strategy_desk swarm",
+    "swept_params": ["funding_threshold", "holding_hours"],
+    "best_params": { "funding_threshold": 0.015, "holding_hours": 24 },
+    "improvement_summary": "Sharpe improved from 1.81 to 2.14 by widening the funding entry threshold."
+  },
+  "diagnosis": {
+    "source_run": "runs/btc_s1_funding_carry_base",
+    "recommended_action": "proceed",
+    "summary": "OOS holds up well, alpha survives 3x fees, no overfit signal.",
+    "findings": [
+      "OOS Sharpe 1.83 is 86% of in-sample 2.14 — within healthy decay range.",
+      "Alpha survives 3x cost stress with profit factor still above 1.5."
+    ]
+  },
+  "gate": {
+    "source_run": "runs/btc_s1_funding_carry_base",
+    "thresholds": [
+      { "name": "min_sharpe", "threshold": 1.5, "actual": 2.14, "passed": true, "fatal": false },
+      { "name": "max_drawdown", "threshold": 0.1, "actual": 0.072, "passed": true, "fatal": false },
+      { "name": "min_trades", "threshold": 100, "actual": 318, "passed": true, "fatal": false },
+      { "name": "min_profit_factor", "threshold": 1.5, "actual": 1.94, "passed": true, "fatal": false },
+      { "name": "walk_forward_min_sharpe", "threshold": 1.0, "actual": 1.41, "passed": true, "fatal": false },
+      { "name": "monte_carlo_ci_positive", "threshold": 0.0, "actual": 0.118, "passed": true, "fatal": false },
+      { "name": "oos_sharpe_positive", "threshold": 0.0, "actual": 1.83, "passed": true, "fatal": true },
+      { "name": "alpha_not_fee_illusion", "threshold": 1.5, "actual": 1.51, "passed": true, "fatal": true }
+    ],
+    "overall_pass": true,
+    "fatal_fail": false,
+    "red_flags": []
+  }
+}

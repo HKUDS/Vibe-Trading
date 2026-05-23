@@ -1,0 +1,280 @@
+"""
+Extended factor research — 2-year sample, 3 non-price factors, multi-horizon IC.
+
+Factors:
+- funding_rate: OKX 8h settlement (forward-filled to hourly)
+- oi_change_24h: Bybit hourly OI %change over 24h (proxy for total perp leverage)
+- fng: alternative.me daily Fear & Greed Index (forward-filled to hourly)
+
+Horizons: driven by research_config.yaml (default 8h, 24h, 72h, 168h)
+Outputs (per symbol):
+  research/manifests/factor_<symbol>.json  — structured FactorManifest (JSON)
+  research/manifests/factor_<symbol>.md    — markdown audit report
+
+Config: research/research_config.yaml (loaded via pipeline.config.load_config)
+
+Pure-logic helpers (verdict_from_ic, build_factor_manifest, resolve_manifests_dir)
+are importable and testable independently of network I/O.
+"""
+
+from __future__ import annotations
+
+import math
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+# ── Path bootstrap ─────────────────────────────────────────────────────────────
+# This script lives at <repo-root>/research/factor_extended.py.
+# • <repo-root>/research is added so lib.* and pipeline.* are importable.
+# • <repo-root>/dashboard/server is added so schemas.py is importable.
+_THIS_DIR = Path(__file__).resolve().parent          # research/
+_REPO_ROOT = _THIS_DIR.parent                        # repo root
+
+_RESEARCH_DIR = _REPO_ROOT / "research"
+_DASHBOARD_SCHEMAS = _REPO_ROOT / "dashboard" / "server"
+
+for _p in (_RESEARCH_DIR, _DASHBOARD_SCHEMAS):
+    _ps = str(_p)
+    if _ps not in sys.path:
+        sys.path.insert(0, _ps)
+
+# ── Standard library & third-party ────────────────────────────────────────────
+import pandas as pd
+
+# ── Internal imports ───────────────────────────────────────────────────────────
+from lib.ccxt_data import fetch_oi_history_bybit
+from lib.factor_metrics import FactorResult, add_forward_returns, evaluate_factor
+from lib.okx_data import fetch_candles, fetch_funding_history
+from lib.report import build_factor_report
+from lib.sentiment import fetch_fear_greed
+from pipeline.config import ResearchConfig, SymbolConfig, _REPO_ROOT as _CFG_REPO_ROOT
+from pipeline.config import load_config
+from schemas import FactorEntry, FactorManifest, FactorVerdict
+
+
+# ─── Pure-logic helpers (testable) ────────────────────────────────────────────
+
+
+def resolve_manifests_dir() -> Path:
+    """Return the repo-relative path to research/manifests/.
+
+    Uses the same repo-root resolution as pipeline.config (_REPO_ROOT derived
+    from __file__), so this never contains a hardcoded Windows user path.
+    """
+    # _CFG_REPO_ROOT is computed from pipeline/config.py two parents up, giving
+    # the same repo root regardless of CWD or OS.
+    return _CFG_REPO_ROOT / "research" / "manifests"
+
+
+def verdict_from_ic(ic: float) -> FactorVerdict:
+    """Return the FactorVerdict for a given IC value.
+
+    Rule (per schema docstring):
+        |IC| >= 0.10           -> single_use
+        0.05 <= |IC| < 0.10   -> ensemble_only
+        |IC| < 0.05            -> reject
+        NaN                    -> reject (insufficient data)
+    """
+    if math.isnan(ic):
+        return FactorVerdict.REJECT
+    abs_ic = abs(ic)
+    if abs_ic >= 0.10:
+        return FactorVerdict.SINGLE_USE
+    if abs_ic >= 0.05:
+        return FactorVerdict.ENSEMBLE_ONLY
+    return FactorVerdict.REJECT
+
+
+def build_factor_manifest(
+    symbol: str,
+    period_days: int,
+    horizons_h: list[int],
+    factor_results: list[FactorResult],
+    generated_at: datetime,
+) -> FactorManifest:
+    """Build and validate a FactorManifest from evaluated FactorResult objects.
+
+    Verdict horizon decision: the verdict for each factor is driven by the
+    maximum |IC| across all horizons for that factor.  Using the maximum gives
+    the most generous but still evidence-grounded assessment — if a factor is
+    predictive at even one horizon it should not be globally rejected.  This
+    choice is documented here so reviewers can change it to e.g. median |IC|.
+
+    cross_regime_ic and stability are set to None here (task 2.3 fills them).
+    """
+    # Group FactorResult objects by factor name.
+    factors_map: dict[str, list[FactorResult]] = {}
+    for r in factor_results:
+        factors_map.setdefault(r.factor, []).append(r)
+
+    factor_entries: list[FactorEntry] = []
+    for factor_name, results in factors_map.items():
+        ic_by_horizon: dict[int, float] = {}
+        # Reconstruct horizon int from the "8h" / "24h" string stored in FactorResult.
+        for r in results:
+            h_int = int(r.horizon.rstrip("h"))
+            ic_by_horizon[h_int] = r.ic
+
+        # Use the single IR from the last result (evaluate_factor returns one IR
+        # per horizon; we pick the horizon with the maximum |IC| for IR too).
+        best_result = max(
+            results,
+            key=lambda r: 0.0 if math.isnan(r.ic) else abs(r.ic),
+        )
+        ir_value = best_result.ir if not math.isnan(best_result.ir) else 0.0
+        n_samples = best_result.n_samples
+
+        # Verdict: driven by maximum |IC| across horizons (see docstring above).
+        max_ic = best_result.ic
+        verdict = verdict_from_ic(max_ic)
+
+        factor_entries.append(
+            FactorEntry(
+                name=factor_name,
+                ic_by_horizon=ic_by_horizon,
+                ir=ir_value,
+                sample_size=n_samples,
+                cross_regime_ic=None,   # task 2.3 fills this
+                stability=None,          # task 2.3 fills this
+                verdict=verdict,
+            )
+        )
+
+    return FactorManifest(
+        schema_version=1,
+        symbol=symbol.upper(),
+        generated_at=generated_at,
+        period_days=period_days,
+        horizons_h=list(horizons_h),
+        factors=factor_entries,
+    )
+
+
+# ─── Per-symbol orchestration ──────────────────────────────────────────────────
+
+
+def run_symbol(sym: SymbolConfig, cfg: ResearchConfig, manifests_dir: Path) -> None:
+    """Fetch data, evaluate factors, write JSON manifest + markdown report for one symbol."""
+    period_days = cfg.period
+    horizons = list(cfg.horizons_h)
+
+    print(f"\n{'='*60}")
+    print(f"Symbol: {sym.name.upper()} ({sym.okx_swap} / {sym.ccxt_bybit})")
+    print(f"{'='*60}")
+
+    print(f"[1/4] funding history (last {period_days}d)")
+    funding = fetch_funding_history(sym.okx_swap, period_days)
+    print(f"     rows: {len(funding)}  range: {funding.index.min()} ~ {funding.index.max()}")
+
+    print(f"[2/4] hourly candles (history endpoint, last {period_days}d)")
+    candles = fetch_candles(sym.okx_swap, period_days, bar="1H", use_history_endpoint=True)
+    print(f"     rows: {len(candles)}  range: {candles.index.min()} ~ {candles.index.max()}")
+
+    print(f"[3/4] Bybit hourly OI history (last {period_days}d)")
+    try:
+        oi_hist = fetch_oi_history_bybit(sym.ccxt_bybit, days=period_days, timeframe="1h")
+        print(f"     rows: {len(oi_hist)}  range: {oi_hist.index.min()} ~ {oi_hist.index.max()}")
+    except Exception as e:
+        print(f"     WARN: OI fetch failed ({e}); continuing without OI")
+        oi_hist = pd.DataFrame(columns=["oi", "oi_usd"])
+
+    print(f"[4/4] Fear & Greed (last {period_days}d)")
+    fng = fetch_fear_greed(days=period_days)
+    print(f"     rows: {len(fng)}  range: {fng.index.min()} ~ {fng.index.max()}")
+
+    # Align everything onto hourly candle index
+    print("\n[align] joining factors to hourly candle index")
+    df = pd.DataFrame(index=candles.index)
+    df["close"] = candles["close"]
+
+    fund_h = funding.reindex(candles.index, method="ffill").bfill()
+    df["funding_rate"] = fund_h["funding_rate"]
+
+    if not oi_hist.empty:
+        oi_h = oi_hist.reindex(candles.index, method="ffill")
+        df["oi"] = oi_h["oi"]
+        df["oi_change_24h"] = df["oi"].pct_change(24)  # stationarize OI
+    else:
+        df["oi_change_24h"] = pd.NA
+
+    fng_h = fng.reindex(candles.index, method="ffill").bfill()
+    df["fng"] = fng_h["fng"]
+
+    df = add_forward_returns(df, "close", horizons)
+
+    # Evaluate each factor
+    print("\n[evaluate] computing IC/IR for each factor x horizon")
+    all_results: list[FactorResult] = []
+    for factor in ["funding_rate", "oi_change_24h", "fng"]:
+        if df[factor].isna().all():
+            print(f"  {factor}: all NaN, skipping")
+            continue
+        res = evaluate_factor(df, factor, horizons)
+        for r in res:
+            print(f"  {factor:>16} @ {r.horizon:>5}: IC={r.ic:+.4f} IR={r.ir:+.3f} n={r.n_samples}")
+        all_results.extend(res)
+
+    generated_at = datetime.now(timezone.utc)
+
+    # ── JSON manifest ──────────────────────────────────────────────────────────
+    manifests_dir.mkdir(parents=True, exist_ok=True)
+    manifest = build_factor_manifest(
+        symbol=sym.name,
+        period_days=period_days,
+        horizons_h=horizons,
+        factor_results=all_results,
+        generated_at=generated_at,
+    )
+    json_path = manifests_dir / f"factor_{sym.name}.json"
+    json_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    print(f"\n[manifest] JSON -> {json_path}")
+
+    # ── Markdown report (Tier-2 audit attachment) ──────────────────────────────
+    data_summary = {
+        "Sample": f"{sym.okx_swap}, hourly, ~{period_days} days",
+        "Funding": f"{len(funding)} rows (OKX 8h)",
+        "Candles": f"{len(candles)} rows (OKX hourly)",
+        "OI": f"{len(oi_hist)} rows (Bybit hourly)" if not oi_hist.empty else "unavailable",
+        "F&G": f"{len(fng)} rows (alternative.me daily)",
+        "Horizons tested": ", ".join(f"{h}h" for h in horizons),
+    }
+    caveats = [
+        "OI 來源 Bybit、funding & candles 來源 OKX；不同交易所微小差異但模式高度相關。",
+        "F&G 為日頻、forward-fill 到 hourly，可能高估該因子的有效樣本量。",
+        "funding 為 8h 頻、forward-fill 到 hourly 同樣造成自相關膨脹，IR 偏樂觀。",
+        "OI 用 24h pct change（差分化）使其平穩；原始 OI 為趨勢序列、與價格高度共線。",
+        "Spearman IC 不考慮交易成本與滑點，**不代表策略獲利**。",
+        "未做 multiple-testing 校正：3 因子 × 4 horizon = 12 檢定，部分 |IC| 可能為偽。",
+        f"Verdict 規則：|IC| 取所有 horizon 中最大值；≥0.10 → single_use，[0.05,0.10) → ensemble_only，<0.05 → reject。",
+    ]
+
+    md = build_factor_report(
+        title=f"Extended Factor Research — {sym.okx_swap}",
+        period_days=period_days,
+        data_summary=data_summary,
+        factor_results=all_results,
+        caveats=caveats,
+    )
+    md_path = manifests_dir / f"factor_{sym.name}.md"
+    md_path.write_text(md, encoding="utf-8")
+    print(f"[report]   MD  -> {md_path}")
+
+
+# ─── Entry point ───────────────────────────────────────────────────────────────
+
+
+def main() -> None:
+    cfg = load_config()
+    manifests_dir = resolve_manifests_dir()
+
+    print(f"Research config: period={cfg.period}d  horizons={list(cfg.horizons_h)}  symbols={cfg.symbol_names()}")
+
+    for sym in cfg.symbols:
+        run_symbol(sym, cfg, manifests_dir)
+
+    print("\n[done] all symbols processed.")
+
+
+if __name__ == "__main__":
+    main()
