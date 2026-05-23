@@ -10,6 +10,7 @@ import {
   type RecommendedAction,
   type GateBlock,
   type RedFlagCode,
+  type FactorManifest,
 } from "../lib/api";
 import { EquityChart } from "../components/charts/EquityChart";
 import { cn } from "../lib/utils";
@@ -509,6 +510,7 @@ export default function StrategyDetail() {
   const [manifest, setManifest] = useState<StrategyManifest | null>(null);
   const [equity, setEquity] = useState<EquityPoint[]>([]);
   const [trades, setTrades] = useState<Record<string, unknown>[]>([]);
+  const [factorManifest, setFactorManifest] = useState<FactorManifest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -518,11 +520,14 @@ export default function StrategyDetail() {
       api.strategy(id),
       api.equity(id).catch(() => [] as EquityPoint[]),
       api.trades(id).catch(() => [] as Record<string, unknown>[]),
+      api.factorAnalysis().catch(() => [] as FactorManifest[]),
     ])
-      .then(([m, eq, tr]) => {
+      .then(([m, eq, tr, factors]) => {
         setManifest(m);
         setEquity(eq);
         setTrades(tr);
+        const fm = (factors as FactorManifest[]).find((f) => f.symbol === m.symbol) ?? null;
+        setFactorManifest(fm);
         setLoading(false);
       })
       .catch((e: Error) => {
@@ -622,6 +627,142 @@ export default function StrategyDetail() {
       <Panel title="成交明細">
         <TradeTablePanel trades={trades} />
       </Panel>
+
+      {/* ── Tier 2: audit panels (default collapsed) ── */}
+
+      <Panel title="策略 YAML（Tier 2）" defaultOpen={false}>
+        {manifest.spec.spec_yaml ? (
+          <pre className="overflow-x-auto rounded bg-muted p-3 text-xs font-mono whitespace-pre-wrap break-words">
+            {manifest.spec.spec_yaml}
+          </pre>
+        ) : (
+          <p className="text-sm text-muted-foreground">無 YAML</p>
+        )}
+      </Panel>
+
+      {factorManifest && (
+        <Panel title={`因子 IC/IR — ${factorManifest.symbol}（Tier 2）`} defaultOpen={false}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-xs text-muted-foreground">
+                  <th className="py-2 pr-4 text-left">因子</th>
+                  <th className="py-2 pr-4 text-right">IR</th>
+                  {factorManifest.horizons_h.map((h) => (
+                    <th key={h} className="py-2 pr-3 text-right">IC {h}h</th>
+                  ))}
+                  <th className="py-2 text-center">Verdict</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {factorManifest.factors.map((f) => (
+                  <tr key={f.name} className={f.verdict === "reject" ? "opacity-50" : ""}>
+                    <td className="py-2 pr-4 font-mono text-xs">{f.name}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{f.ir.toFixed(3)}</td>
+                    {factorManifest.horizons_h.map((h) => (
+                      <td key={h} className="py-2 pr-3 text-right tabular-nums text-xs">
+                        {f.ic_by_horizon[h] !== undefined
+                          ? f.ic_by_horizon[h].toFixed(3)
+                          : "—"}
+                      </td>
+                    ))}
+                    <td className="py-2 text-center">
+                      <span
+                        className={cn(
+                          "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                          f.verdict === "single_use"
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                            : f.verdict === "ensemble_only"
+                            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {f.verdict}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+
+      {manifest.diagnosis && (
+        <Panel title="診斷報告（Tier 2）" defaultOpen={false}>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">建議行動：</span>
+              <span
+                className={cn(
+                  "rounded px-2 py-0.5 text-xs font-semibold",
+                  manifest.diagnosis.recommended_action === "proceed"
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                    : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+                )}
+              >
+                {manifest.diagnosis.recommended_action}
+              </span>
+            </div>
+            {manifest.diagnosis.findings.length > 0 && (
+              <ul className="space-y-1">
+                {manifest.diagnosis.findings.map((f, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <span className="mt-1 text-muted-foreground">•</span>
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Panel>
+      )}
+
+      {manifest.reproducibility && (
+        <Panel title="可重現戳記（Tier 2）" defaultOpen={false}>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+            {(
+              [
+                ["Git commit",   manifest.reproducibility.git_commit],
+                ["Config hash",  manifest.reproducibility.config_hash],
+                ["Engine",       manifest.reproducibility.engine],
+                ["Data source",  manifest.reproducibility.data_source],
+                ["Seed",         manifest.reproducibility.seed !== null ? String(manifest.reproducibility.seed) : null],
+              ] as [string, string | null][]
+            ).map(([label, val]) => (
+              <div key={label}>
+                <dt className="text-xs text-muted-foreground">{label}</dt>
+                <dd className="font-mono text-xs break-all">{val ?? "—"}</dd>
+              </div>
+            ))}
+          </dl>
+        </Panel>
+      )}
+
+      {/* ── Tier 3: deep links (noise) ── */}
+
+      <div className="rounded-lg border border-dashed p-4 space-y-3">
+        <div className="text-xs font-medium text-muted-foreground">Tier 3 — 深層連結</div>
+        <div className="flex flex-wrap gap-3 text-sm">
+          <a
+            href="/factors"
+            onClick={(e) => { e.preventDefault(); navigate("/factors"); }}
+            className="text-primary underline underline-offset-2 hover:opacity-70"
+          >
+            → 因子分析完整報告
+          </a>
+        </div>
+        {manifest.generation?.rationale && (
+          <details className="text-sm">
+            <summary className="cursor-pointer text-muted-foreground hover:text-foreground select-none">
+              策略生成理由（LLM 散文 — 非決策依據）
+            </summary>
+            <p className="mt-2 rounded bg-muted p-3 text-xs text-muted-foreground whitespace-pre-wrap">
+              {manifest.generation.rationale}
+            </p>
+          </details>
+        )}
+      </div>
     </div>
   );
 }
