@@ -7,6 +7,12 @@ Covers:
   (c) resolve_manifests_dir() — repo-relative path (no Windows absolute paths)
 
 These tests are network-free; main() is NOT tested here.
+
+Note: These tests exercise pure-logic helpers only. The HARDCODED_LIST of factors
+(funding_rate, oi_change_24h, fng) is used exclusively via the legacy path
+(_run_symbol_legacy), which is invoked when RESEARCH_LEGACY_FACTORS=1.
+Dynamic factor loading via candidates manifests is tested in
+test_factor_extended_dynamic.py.
 """
 
 from __future__ import annotations
