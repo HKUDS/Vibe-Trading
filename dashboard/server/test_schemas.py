@@ -385,11 +385,12 @@ def test_fatal_gate_checks_are_the_two_canonical_ones():
     }
 
 
-def test_factor_verdict_enum_has_three_values():
+def test_factor_verdict_enum_has_four_values():
     assert {v.value for v in FactorVerdict} == {
         "single_use",
         "ensemble_only",
         "reject",
+        "data_unavailable",
     }
 
 

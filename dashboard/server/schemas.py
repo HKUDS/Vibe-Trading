@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -74,6 +74,7 @@ class FactorVerdict(str, Enum):
     SINGLE_USE = "single_use"
     ENSEMBLE_ONLY = "ensemble_only"
     REJECT = "reject"
+    DATA_UNAVAILABLE = "data_unavailable"
 
 
 class RecommendedAction(str, Enum):
@@ -140,15 +141,15 @@ class FactorEntry(_Manifest):
     name: str = Field(..., description="Factor identifier, e.g. 'funding_rate'.")
     # NOTE: schema does not cross-validate that ic_by_horizon keys match
     # FactorManifest.horizons_h — producers are responsible for consistency.
-    ic_by_horizon: Dict[int, float] = Field(
+    ic_by_horizon: Dict[int, Optional[float]] = Field(
         ...,
-        description="Map of forward-return horizon (hours) -> Spearman IC.",
+        description="Map of forward-return horizon (hours) -> Spearman IC. Value null when sample insufficient (e.g. sparse OI history from API limits).",
     )
     ir: float = Field(..., description="Information ratio (mean rolling IC / std).")
     sample_size: int = Field(..., ge=0, description="Paired observations used.")
-    cross_regime_ic: Optional[Dict[str, float]] = Field(
+    cross_regime_ic: Optional[Dict[str, Optional[float]]] = Field(
         default=None,
-        description="Map of regime label -> IC; null until task 2.3 has run.",
+        description="Map of regime label -> IC; null until task 2.3 has run. Inner value may be null when a regime has insufficient samples for that factor.",
     )
     stability: Optional[FactorStability] = Field(
         default=None,
@@ -175,6 +176,30 @@ class FactorManifest(_Manifest):
     # NOTE: schema does not cross-validate that horizons_h matches FactorEntry.ic_by_horizon keys.
     horizons_h: List[int] = Field(..., description="Forward-return horizons tested.")
     factors: List[FactorEntry] = Field(..., description="One entry per factor.")
+
+
+# ---------------------------------------------------------------------------
+# 0. Factor candidates — stage 0 output / stage 1 input
+# ---------------------------------------------------------------------------
+
+
+class FactorCandidate(_Manifest):
+    name: str
+    formula: str
+    data_source: str
+    transform: str
+    expected_ic_sign: Literal["+", "-", "?"]
+    economic_logic: str
+    horizons_h: List[int]
+    category: Literal["funding", "basis", "oi"]
+
+
+class CandidatesManifest(_Manifest):
+    schema_version: int = 1
+    symbol: str
+    generated_at: datetime
+    source_swarm_run: Optional[str] = None
+    candidates: List[FactorCandidate]
 
 
 # ---------------------------------------------------------------------------
