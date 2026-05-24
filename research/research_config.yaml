@@ -9,14 +9,14 @@
 #   okx_swap  : OKX 永續合約代碼（REST / funding history 使用）
 #   ccxt_bybit: ccxt 統一格式的 Bybit 永續合約代碼（OI history 使用）
 symbols:
-  - name: btc
-    okx_swap: "BTC-USDT-SWAP"
-    ccxt_bybit: "BTC/USDT:USDT"
+  # - name: btc
+  #   okx_swap: "BTC-USDT-SWAP"
+  #   ccxt_bybit: "BTC/USDT:USDT"
 
 # 若要加 ETH，取消下面的注釋：
-# - name: eth
-#   okx_swap: "ETH-USDT-SWAP"
-#   ccxt_bybit: "ETH/USDT:USDT"
+- name: eth
+  okx_swap: "ETH-USDT-SWAP"
+  ccxt_bybit: "ETH/USDT:USDT"
 
 # ─── 資料抓取參數 ──────────────────────────────────────────────────────────────
 period: 730          # 回溯天數（約 2 年）
@@ -35,3 +35,6 @@ fees:
 # ─── 因子分析 Horizons ──────────────────────────────────────────────────────────
 # IC/IR 計算所用的前向報酬時窗（小時）
 horizons_h: [8, 24, 72, 168]
+
+# ─── Stage 0 探索快取 ────────────────────────────────────────────────────────
+discovery_cache_days: 7    # swarm 重跑間隔天數（0 = 永不快取）

@@ -66,6 +66,7 @@ class ResearchConfig:
     engine: str              # backtest engine mode, e.g. "daily"
     fees: FeesConfig
     horizons_h: tuple[int, ...]    # forward-return horizons in hours
+    discovery_cache_days: int = 7  # stage-0 cache TTL in days (0 = disabled)
 
     # ── Convenience helpers ──────────────────────────────────────────────────
 
@@ -218,6 +219,13 @@ def load_config(path: Path | str | None = None) -> ResearchConfig:
     if period <= 0:
         raise ValueError(f"'period' must be > 0, got {period}.")
 
+    # ── discovery_cache_days ─────────────────────────────────────────────────
+    discovery_cache_days = int(raw.get("discovery_cache_days", 7))
+    if discovery_cache_days < 0:
+        raise ValueError(
+            f"'discovery_cache_days' must be >= 0, got {discovery_cache_days}."
+        )
+
     return ResearchConfig(
         symbols=tuple(symbol_configs),
         period=period,
@@ -226,4 +234,5 @@ def load_config(path: Path | str | None = None) -> ResearchConfig:
         engine=str(raw["engine"]),
         fees=fees,
         horizons_h=tuple(horizons),
+        discovery_cache_days=discovery_cache_days,
     )
