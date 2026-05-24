@@ -282,6 +282,9 @@ def register_alpha_routes(
                 status_code=400,
                 detail=f"unknown theme {theme!r}; expected one of {sorted(_VALID_THEMES)}",
             )
+        if universe is not None:
+            _ALIAS = {"csi300": "equity_cn", "sp500": "equity_us", "btc-usdt": "crypto"}
+            universe = _ALIAS.get(universe, universe)
         if universe is not None and universe not in _VALID_UNIVERSES:
             raise HTTPException(
                 status_code=400,
