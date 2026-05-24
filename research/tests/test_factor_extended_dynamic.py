@@ -33,7 +33,7 @@ for _p in (_RESEARCH_DIR, _DASHBOARD_SCHEMAS):
     if _ps not in sys.path:
         sys.path.insert(0, _ps)
 
-from factor_extended import _compute_candidate_series, _load_candidates, run_symbol
+from factor_extended import _compute_candidate_series, _load_candidates, _run_symbol_dynamic, run_symbol
 from schemas import CandidatesManifest, FactorCandidate
 
 
@@ -301,3 +301,95 @@ class TestRunSymbolDecisionTable:
         ):
             with pytest.raises(FileNotFoundError, match="candidates_eth.json"):
                 run_symbol(sym, cfg, tmp_path)
+
+    # (e) env unset + no candidates file → legacy fallback with "candidates missing" warning
+    def test_missing_candidates_falls_back_to_legacy(self, tmp_path: Path, capsys, monkeypatch):
+        """When env is unset and no candidates file → legacy fallback with warning."""
+        monkeypatch.delenv("RESEARCH_LEGACY_FACTORS", raising=False)
+        # No candidates file created in tmp_path
+
+        sym = _make_sym_config()
+        cfg = _make_research_config()
+
+        mock_candles = make_candles(200)
+        mock_funding = make_funding(100)
+        mock_oi = make_oi_hist(200)
+        mock_fng = pd.DataFrame(
+            {"fng": np.ones(30)},
+            index=pd.date_range("2024-01-01", periods=30, freq="1D", tz="UTC"),
+        )
+
+        with (
+            patch("factor_extended.fetch_funding_history", return_value=mock_funding),
+            patch("factor_extended.fetch_candles", return_value=mock_candles),
+            patch("factor_extended.fetch_oi_history_bybit", return_value=mock_oi),
+            patch("factor_extended.fetch_fear_greed", return_value=mock_fng),
+            patch("factor_extended._run_symbol_legacy", return_value=[]) as mock_legacy,
+            patch("factor_extended.build_factor_manifest") as mock_build,
+            patch("factor_extended.build_factor_report", return_value="# report"),
+        ):
+            mock_manifest = MagicMock()
+            mock_manifest.model_dump_json.return_value = '{"schema_version": 1}'
+            mock_build.return_value = mock_manifest
+
+            run_symbol(sym, cfg, tmp_path)
+
+        mock_legacy.assert_called_once()
+        captured = capsys.readouterr()
+        assert "candidates missing" in captured.out or "LEGACY MODE" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# _run_symbol_dynamic: multiple candidates produce proportional FactorResult output
+# ---------------------------------------------------------------------------
+
+
+def test_dynamic_mode_5_candidates_produce_results(tmp_path: Path):
+    """_run_symbol_dynamic processes all candidates and returns FactorResult for each."""
+    from lib.factor_metrics import add_forward_returns
+
+    n = 300
+    idx = pd.date_range("2024-01-01", periods=n, freq="1h", tz="UTC")
+    rng = np.random.default_rng(7)
+    candles = pd.DataFrame({"close": rng.standard_normal(n).cumsum() + 100, "volume": 1000}, index=idx)
+    funding_idx = pd.date_range("2024-01-01", periods=n // 3, freq="8h", tz="UTC")
+    funding = pd.DataFrame({"funding_rate": rng.standard_normal(n // 3) * 0.001}, index=funding_idx)
+    oi_hist = pd.DataFrame(columns=["oi", "oi_usd"])  # empty — bybit_oi candidates will be skipped
+
+    # Build df like run_symbol does
+    df = pd.DataFrame(index=candles.index)
+    df["close"] = candles["close"]
+    fund_h = funding.reindex(candles.index, method="ffill").bfill()
+    df["funding_rate"] = fund_h["funding_rate"]
+    df["oi_change_24h"] = pd.NA
+    df["fng"] = 50.0
+    cfg = _make_research_config()
+    df = add_forward_returns(df, "close", list(cfg.horizons_h))
+
+    candidates = CandidatesManifest(
+        schema_version=1,
+        symbol="eth",
+        generated_at=datetime.now(timezone.utc),
+        source_swarm_run=None,
+        candidates=[
+            _make_factor_candidate(
+                name=f"funding_raw_{i}",
+                formula="raw funding",
+                data_source="okx_funding",
+                transform="raw",
+                expected_ic_sign="?",
+                economic_logic="test",
+                horizons_h=[8],
+                category="funding",
+            )
+            for i in range(5)
+        ],
+    )
+
+    sym = _make_sym_config()
+    results = _run_symbol_dynamic(sym, cfg, tmp_path, candidates, funding, candles, oi_hist, df)
+
+    # 5 candidates × 2 horizons (from cfg.horizons_h = (8, 24)) = 10 FactorResult entries
+    assert len(results) == 10
+    names_returned = {r.factor for r in results}
+    assert names_returned == {f"funding_raw_{i}" for i in range(5)}
