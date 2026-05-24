@@ -274,6 +274,11 @@ def _run_symbol_dynamic(
         for r in res:
             print(f"  {cand.name:>24} @ {r.horizon:>5}: IC={r.ic:+.4f} IR={r.ir:+.3f} n={r.n_samples}")
         all_results.extend(res)
+
+    if not all_results:
+        # All candidates were skipped — warn but return empty so caller decides fallback.
+        print(f"\033[93m[stage1] WARNING: all dynamic candidates skipped for {sym.name}, manifest will have 0 factors\033[0m")
+
     return all_results
 
 
