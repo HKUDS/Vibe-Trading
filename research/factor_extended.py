@@ -20,6 +20,7 @@ are importable and testable independently of network I/O.
 from __future__ import annotations
 
 import math
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,9 +49,10 @@ from lib.factor_metrics import FactorResult, add_forward_returns, evaluate_facto
 from lib.okx_data import fetch_candles, fetch_funding_history
 from lib.report import build_factor_report
 from lib.sentiment import fetch_fear_greed
+from lib.sources import SOURCE_REGISTRY, TRANSFORM_REGISTRY
 from pipeline.config import ResearchConfig, SymbolConfig, _REPO_ROOT as _CFG_REPO_ROOT
 from pipeline.config import load_config
-from schemas import FactorEntry, FactorManifest, FactorVerdict
+from schemas import CandidatesManifest, FactorCandidate, FactorEntry, FactorManifest, FactorVerdict
 
 
 # ─── Pure-logic helpers (testable) ────────────────────────────────────────────
@@ -151,6 +153,130 @@ def build_factor_manifest(
     )
 
 
+# ─── Candidate loading & series computation ───────────────────────────────────
+
+
+def _load_candidates(manifests_dir: Path, sym: str) -> CandidatesManifest | None:
+    """Load candidates_<sym>.json if it exists. Returns None if not found."""
+    path = manifests_dir / f"candidates_{sym}.json"
+    if not path.exists():
+        return None
+    return CandidatesManifest.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _compute_candidate_series(
+    cand: FactorCandidate,
+    candles: pd.DataFrame,
+    funding: pd.DataFrame,
+    oi_hist: pd.DataFrame,
+) -> pd.Series | None:
+    """Compute a transformed factor series for a single FactorCandidate.
+
+    Uses already-fetched data (no additional network calls).
+    Returns None if the data source is unavailable or data is missing.
+    Raises ValueError if cand.transform is not in TRANSFORM_REGISTRY.
+    """
+    spec = SOURCE_REGISTRY.get(cand.data_source)
+    if spec is None or spec.status != "available" or spec.fetcher is None:
+        print(f"  WARN: data_source '{cand.data_source}' unavailable, skipping {cand.name}")
+        return None
+
+    # Extract raw series from already-fetched data based on data_source key.
+    if cand.data_source == "okx_funding":
+        raw = funding["funding_rate"]
+    elif cand.data_source == "okx_candles":
+        raw = candles["close"]
+    elif cand.data_source == "bybit_oi":
+        if oi_hist.empty:
+            print(f"  WARN: bybit_oi data empty, skipping {cand.name}")
+            return None
+        raw = oi_hist["oi"]
+    else:
+        print(f"  WARN: no pre-fetched handler for data_source '{cand.data_source}', skipping {cand.name}")
+        return None
+
+    if cand.transform not in TRANSFORM_REGISTRY:
+        raise ValueError(
+            f"transform '{cand.transform}' not in TRANSFORM_REGISTRY "
+            f"(available: {list(TRANSFORM_REGISTRY.keys())})"
+        )
+
+    transformed = TRANSFORM_REGISTRY[cand.transform](raw)
+
+    # Align to candle index via reindex + forward-fill.
+    aligned = transformed.reindex(candles.index, method="ffill")
+    return aligned
+
+
+# ─── Legacy path (hardcoded 3 factors) ───────────────────────────────────────
+
+
+def _run_symbol_legacy(
+    sym: SymbolConfig,
+    cfg: ResearchConfig,
+    manifests_dir: Path,
+    funding: pd.DataFrame,
+    candles: pd.DataFrame,
+    oi_hist: pd.DataFrame,
+    fng: pd.DataFrame,
+    df: pd.DataFrame,
+) -> list[FactorResult]:
+    """Evaluate the 3 hardcoded factors: funding_rate, oi_change_24h, fng.
+
+    Takes already-fetched data and a df that already has forward returns added.
+    Returns list[FactorResult].
+    """
+    horizons = list(cfg.horizons_h)
+    print("\n[evaluate] computing IC/IR for each factor x horizon")
+    all_results: list[FactorResult] = []
+    for factor in ["funding_rate", "oi_change_24h", "fng"]:
+        if df[factor].isna().all():
+            print(f"  {factor}: all NaN, skipping")
+            continue
+        res = evaluate_factor(df, factor, horizons)
+        for r in res:
+            print(f"  {factor:>16} @ {r.horizon:>5}: IC={r.ic:+.4f} IR={r.ir:+.3f} n={r.n_samples}")
+        all_results.extend(res)
+    return all_results
+
+
+# ─── Dynamic path (candidates from stage0) ────────────────────────────────────
+
+
+def _run_symbol_dynamic(
+    sym: SymbolConfig,
+    cfg: ResearchConfig,
+    manifests_dir: Path,
+    candidates: CandidatesManifest,
+    funding: pd.DataFrame,
+    candles: pd.DataFrame,
+    oi_hist: pd.DataFrame,
+    df: pd.DataFrame,
+) -> list[FactorResult]:
+    """Evaluate factors from a CandidatesManifest (stage0 output).
+
+    Takes already-fetched data and a df that already has forward returns added.
+    Returns list[FactorResult].
+    """
+    horizons = list(cfg.horizons_h)
+    print(f"\n[evaluate] computing IC/IR for {len(candidates.candidates)} candidate factors x horizon")
+    all_results: list[FactorResult] = []
+    for cand in candidates.candidates:
+        series = _compute_candidate_series(cand, candles, funding, oi_hist)
+        if series is None:
+            print(f"  {cand.name}: skipped (no series)")
+            continue
+        df[cand.name] = series
+        if df[cand.name].isna().all():
+            print(f"  {cand.name}: all NaN, skipping")
+            continue
+        res = evaluate_factor(df, cand.name, horizons)
+        for r in res:
+            print(f"  {cand.name:>24} @ {r.horizon:>5}: IC={r.ic:+.4f} IR={r.ir:+.3f} n={r.n_samples}")
+        all_results.extend(res)
+    return all_results
+
+
 # ─── Per-symbol orchestration ──────────────────────────────────────────────────
 
 
@@ -203,17 +329,32 @@ def run_symbol(sym: SymbolConfig, cfg: ResearchConfig, manifests_dir: Path) -> N
 
     df = add_forward_returns(df, "close", horizons)
 
-    # Evaluate each factor
-    print("\n[evaluate] computing IC/IR for each factor x horizon")
-    all_results: list[FactorResult] = []
-    for factor in ["funding_rate", "oi_change_24h", "fng"]:
-        if df[factor].isna().all():
-            print(f"  {factor}: all NaN, skipping")
-            continue
-        res = evaluate_factor(df, factor, horizons)
-        for r in res:
-            print(f"  {factor:>16} @ {r.horizon:>5}: IC={r.ic:+.4f} IR={r.ir:+.3f} n={r.n_samples}")
-        all_results.extend(res)
+    # ── Decision table (D5 from design.md) ────────────────────────────────────
+    #   RESEARCH_LEGACY_FACTORS=1   → always legacy
+    #   RESEARCH_LEGACY_FACTORS=0   → candidates required (raise if missing)
+    #   RESEARCH_LEGACY_FACTORS not set + candidates exists → dynamic
+    #   RESEARCH_LEGACY_FACTORS not set + candidates_<sym>.failed.json exists → legacy + warn
+    #   RESEARCH_LEGACY_FACTORS not set + candidates missing (no json, no failed.json) → legacy + warn
+    legacy_env = os.environ.get("RESEARCH_LEGACY_FACTORS", "")
+    candidates_manifest = _load_candidates(manifests_dir, sym.name)
+    failed_path = manifests_dir / f"candidates_{sym.name}.failed.json"
+
+    if legacy_env == "1":
+        # Forced legacy
+        print(f"[stage1] {sym.name}: LEGACY MODE (forced via env)")
+        all_results = _run_symbol_legacy(sym, cfg, manifests_dir, funding, candles, oi_hist, fng, df)
+    elif legacy_env == "0" and candidates_manifest is None:
+        # Explicitly require dynamic mode, but candidates missing
+        raise FileNotFoundError(f"RESEARCH_LEGACY_FACTORS=0 but candidates_{sym.name}.json not found")
+    elif candidates_manifest is not None:
+        # Normal dynamic mode
+        print(f"[stage1] {sym.name}: DYNAMIC mode ({len(candidates_manifest.candidates)} candidates)")
+        all_results = _run_symbol_dynamic(sym, cfg, manifests_dir, candidates_manifest, funding, candles, oi_hist, df)
+    else:
+        # Fallback to legacy (candidates missing or failed)
+        reason = "stage0 failed" if failed_path.exists() else "candidates missing"
+        print(f"\033[93m[stage1] {sym.name}: LEGACY MODE — {reason}, using hardcoded factors\033[0m")
+        all_results = _run_symbol_legacy(sym, cfg, manifests_dir, funding, candles, oi_hist, fng, df)
 
     generated_at = datetime.now(timezone.utc)
 
