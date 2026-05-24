@@ -14,9 +14,10 @@ NOT implemented here.
 
 Three manifest types are modelled:
 
-1. FactorManifest   -> research/manifests/factor_<symbol>.json
-2. StrategyManifest -> research/manifests/<strategy_id>/manifest.json
-3. TestnetStatus    -> runs/testnet/<id>/testnet_status.json
+1. FactorManifest      -> research/manifests/factor_<symbol>.json
+2. StrategyManifest    -> research/manifests/<strategy_id>/manifest.json
+3. TestnetStatus       -> runs/testnet/<id>/testnet_status.json
+4. CandidatesManifest  -> research/manifests/candidates_<symbol>.json
 
 A small SelectionManifest is also modelled for research/manifests/selection.json
 (stage 5 output), so its sample fixture can be validated.
@@ -184,22 +185,22 @@ class FactorManifest(_Manifest):
 
 
 class FactorCandidate(_Manifest):
-    name: str
-    formula: str
-    data_source: str
-    transform: str
-    expected_ic_sign: Literal["+", "-", "?"]
-    economic_logic: str
-    horizons_h: List[int]
-    category: Literal["funding", "basis", "oi"]
+    name: str = Field(..., description="因子識別名，例 'funding_z_30d'。")
+    formula: str = Field(..., description="自然語 + 虛擬公式，供人工審閱，stage 1 不直接 eval。")
+    data_source: str = Field(..., description="對應 SOURCE_REGISTRY 的 key，例 'okx_funding'。")
+    transform: str = Field(..., description="對應 TRANSFORM_REGISTRY 的 key，例 'z_30d'。")
+    expected_ic_sign: Literal["+", "-", "?"] = Field(..., description="預期 IC 符號：'+' 正向、'-' 反向、'?' 未知。")
+    economic_logic: str = Field(..., description="為何此因子具備 alpha 的經濟邏輯解釋。")
+    horizons_h: List[int] = Field(..., description="候選因子適用的前向報酬時窗（小時）清單。")
+    category: Literal["funding", "basis", "oi"] = Field(..., description="訊號類別：funding / basis / oi。")
 
 
 class CandidatesManifest(_Manifest):
-    schema_version: int = 1
-    symbol: str
-    generated_at: datetime
-    source_swarm_run: Optional[str] = None
-    candidates: List[FactorCandidate]
+    schema_version: int = Field(default=1, ge=1, le=1, description="Schema 版本，目前固定為 1。")
+    symbol: str = Field(..., description="交易標的短名，例 'eth'。")
+    generated_at: datetime = Field(..., description="ISO-8601 UTC 時間戳記。")
+    source_swarm_run: Optional[str] = Field(default=None, description="產出此 manifest 的 swarm run id；null 表示非 swarm 產出。")
+    candidates: List[FactorCandidate] = Field(..., description="候選因子清單，每項為 FactorCandidate。")
 
 
 # ---------------------------------------------------------------------------
