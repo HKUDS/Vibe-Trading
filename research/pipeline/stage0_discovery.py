@@ -106,7 +106,11 @@ class CandidatesCheckResult:
 
 
 def parse_candidates_json(stdout: str) -> list[dict]:
-    """Extract the first JSON fenced code block from stdout and parse it.
+    """Extract the first JSON fenced code block that is a JSON array from stdout.
+
+    Scans ALL fenced code blocks (```json or ```) in order and returns the
+    content of the first one that parses as a JSON list. This avoids the bug
+    where an LLM emits a reasoning JSON object before the actual candidate list.
 
     Args:
         stdout: Raw string output from the swarm subprocess.
@@ -115,28 +119,28 @@ def parse_candidates_json(stdout: str) -> list[dict]:
         List of raw dicts (not yet validated against FactorCandidate).
 
     Raises:
-        ValueError: If no fenced block is found in stdout, or the extracted
-            content is not valid JSON, or the top-level value is not a list.
+        ValueError: If no fenced block contains a valid JSON array.
     """
-    match = _JSON_FENCE_RE.search(stdout or "")
-    if not match:
+    matches = _JSON_FENCE_RE.findall(stdout or "")
+    if not matches:
         raise ValueError(
             "No JSON fenced code block found in swarm output. "
             "Expected a ```json ... ``` block containing a list of factor candidates."
         )
 
-    raw_json = match.group(1).strip()
-    try:
-        parsed = json.loads(raw_json)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Failed to parse JSON from fenced block: {exc}") from exc
+    for raw_json in matches:
+        text = raw_json.strip()
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, list):
+            return data
 
-    if not isinstance(parsed, list):
-        raise ValueError(
-            f"Expected a JSON array at the top level, got {type(parsed).__name__}."
-        )
-
-    return parsed
+    raise ValueError(
+        "No valid JSON array found in any fenced code block in stdout. "
+        f"Found {len(matches)} block(s) but none parsed as a JSON list."
+    )
 
 
 def filter_invalid_candidates(
@@ -367,7 +371,9 @@ def run_swarm(vars_dict: dict, timeout: int = SWARM_TIMEOUT_S) -> str:
 # ─── Per-symbol processing ───────────────────────────────────────────────────
 
 
-def _build_swarm_vars(sym_name: str, okx_swap: str, cfg: ResearchConfig) -> dict:
+def _build_swarm_vars(
+    sym_name: str, okx_swap: str, cfg: ResearchConfig
+) -> tuple[dict[str, str], list[str], list[str]]:
     """Build the user_vars dict for the crypto_factor_lab swarm.
 
     Args:
@@ -376,7 +382,10 @@ def _build_swarm_vars(sym_name: str, okx_swap: str, cfg: ResearchConfig) -> dict
         cfg:      Loaded ResearchConfig.
 
     Returns:
-        dict[str, str] suitable for JSON serialisation into the CLI VARS_JSON arg.
+        Tuple of (vars_dict, available_sources, available_transforms) where
+        vars_dict is suitable for JSON serialisation into the CLI VARS_JSON arg,
+        and the two lists are the same registries advertised to the swarm so
+        filter_invalid_candidates uses identical data.
     """
     available_sources = [
         key
@@ -385,13 +394,14 @@ def _build_swarm_vars(sym_name: str, okx_swap: str, cfg: ResearchConfig) -> dict
     ]
     available_transforms = list(TRANSFORM_REGISTRY.keys())
 
-    return {
+    vars_dict = {
         "target_universe": okx_swap,
         "signal_categories": "funding,basis,oi",
         "horizons_h": str(list(cfg.horizons_h)),
         "available_sources": ",".join(available_sources),
         "available_transforms": ",".join(available_transforms),
     }
+    return vars_dict, available_sources, available_transforms
 
 
 def _process_symbol(
@@ -444,10 +454,7 @@ def _process_symbol(
 
     # ── 2. Build vars and run swarm ───────────────────────────────────────────
     print(f"[stage0] {sym_name}: running swarm...")
-    vars_dict = _build_swarm_vars(sym_name, okx_swap, cfg)
-
-    available_sources = [k for k, v in SOURCE_REGISTRY.items() if v.status == "available"]
-    available_transforms = list(TRANSFORM_REGISTRY.keys())
+    vars_dict, available_sources, available_transforms = _build_swarm_vars(sym_name, okx_swap, cfg)
 
     try:
         stdout = run_swarm(vars_dict)
@@ -616,8 +623,7 @@ def main() -> None:
 
     # Build a patched cfg with the effective cache days (we only shadow the field
     # for the process_symbol call — cfg itself is frozen).
-    import dataclasses as _dc
-    effective_cfg = _dc.replace(cfg, discovery_cache_days=effective_cache_days)
+    effective_cfg = dataclasses.replace(cfg, discovery_cache_days=effective_cache_days)
 
     print("=" * 60)
     print("Stage 0 — Factor Discovery")
