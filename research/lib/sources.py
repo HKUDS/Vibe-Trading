@@ -100,8 +100,8 @@ SOURCE_REGISTRY: dict[str, SourceSpec] = {
 
 TRANSFORM_REGISTRY: dict[str, Callable[[pd.Series], pd.Series]] = {
     "raw":            lambda s: s,
-    "z_30d":          lambda s: (s - s.rolling(90).mean()) / s.rolling(90).std(),
-    "z_90d":          lambda s: (s - s.rolling(270).mean()) / s.rolling(270).std(),
+    "z_30d":          lambda s: (s - s.rolling(90).mean()) / s.rolling(90).std().replace(0, float("nan")),
+    "z_90d":          lambda s: (s - s.rolling(270).mean()) / s.rolling(270).std().replace(0, float("nan")),
     "pct_change_24h": lambda s: s.pct_change(24),
     "ma_diff_7d_30d": lambda s: s.rolling(21).mean() - s.rolling(90).mean(),
 }
