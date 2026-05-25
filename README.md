@@ -712,6 +712,12 @@ vibe-trading-mcp --transport sse  # SSE for web clients
 
 **MCP tools exposed (22):** `list_skills`, `load_skill`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `get_market_data`, `web_search`, `read_url`, `read_document`, `read_file`, `write_file`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `list_swarm_presets`, `run_swarm`, `get_swarm_status`, `get_run_result`, `list_runs`.
 
+### SWARM external MCP tools
+
+`run_swarm` workers can call operator-approved tools from external MCP servers. Configure the server-side allowlist in `VIBE_TRADING_SWARM_AGENT_CONFIG`, `~/.vibe-trading/swarm-agent.json`, or the fallback `~/.vibe-trading/agent.json`; then list remote tools in a swarm preset using the local MCP wrapper name, such as `mcp_internal_kb_search`. Caller-provided `variables` stay template data only and cannot inject MCP URLs, commands, environment variables, or allowlist overrides.
+
+See the [SWARM external MCP tools roadmap](docs/2026-05-25_swarm_mcp_tools_roadmap.md) and [test-driven design matrix](docs/2026-05-25_swarm_mcp_tools_tdd.md) for the trust model, milestones, and regression coverage.
+
 <details>
 <summary><b>Install from ClawHub (one command)</b></summary>
 
