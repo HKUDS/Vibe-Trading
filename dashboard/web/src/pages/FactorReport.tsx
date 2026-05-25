@@ -53,8 +53,8 @@ function StabilityChip({ stability }: { stability: FactorStability | null }) {
 // IC value cell — color-code by magnitude
 // ---------------------------------------------------------------------------
 
-function IcCell({ v }: { v: number | undefined }) {
-  if (v === undefined) return <span className="text-muted-foreground">—</span>;
+function IcCell({ v }: { v: number | null | undefined }) {
+  if (v === undefined || v === null) return <span className="text-muted-foreground">—</span>;
   return (
     <span
       className={cn(

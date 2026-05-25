@@ -120,13 +120,8 @@ from schemas import FactorManifest, SelectionManifest
 
 
 @app.get("/api/factor-analysis")
-def get_factor_analysis(
-    symbol: str = Query(..., description="Trading symbol, e.g. 'BTC'"),
-) -> FactorManifest:
-    manifest = artifacts.get_factor_manifest(REPO_ROOT, symbol)
-    if manifest is None:
-        raise HTTPException(status_code=404, detail=f"Factor manifest for '{symbol}' not found")
-    return manifest
+def get_factor_analysis() -> list[FactorManifest]:
+    return artifacts.list_factor_manifests(REPO_ROOT)
 
 
 @app.get("/api/regime")

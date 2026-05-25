@@ -29,10 +29,10 @@ export type AlertSeverity = "info" | "warning" | "critical";
 
 export interface FactorEntry {
   name: string;
-  ic_by_horizon: Record<number, number>;
+  ic_by_horizon: Record<number, number | null>;
   ir: number;
   sample_size: number;
-  cross_regime_ic: Record<string, number> | null;
+  cross_regime_ic: Record<string, number | null> | null;
   stability: FactorStability | null;
   verdict: FactorVerdict;
 }

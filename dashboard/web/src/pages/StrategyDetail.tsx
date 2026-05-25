@@ -700,8 +700,8 @@ export default function StrategyDetail() {
                     <td className="py-2 pr-4 text-right tabular-nums">{f.ir.toFixed(3)}</td>
                     {factorManifest.horizons_h.map((h) => (
                       <td key={h} className="py-2 pr-3 text-right tabular-nums text-xs">
-                        {f.ic_by_horizon[h] !== undefined
-                          ? f.ic_by_horizon[h].toFixed(3)
+                        {f.ic_by_horizon[h] != null
+                          ? f.ic_by_horizon[h]!.toFixed(3)
                           : "—"}
                       </td>
                     ))}
