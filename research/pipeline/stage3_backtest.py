@@ -382,9 +382,8 @@ def _run_backtest_for_run(
     # ── Gate: stage1 factor manifest must exist and be valid ──────────────────
     # Local import to avoid circular imports at module level.
     from pipeline.stage2_5_regime import check_factor_manifest_gate  # noqa: PLC0415
-    manifest_path = manifests_dir / f"factor_{short}.json"
     try:
-        check_factor_manifest_gate(manifest_path)
+        check_factor_manifest_gate(manifests_dir, short)
     except (FileNotFoundError, ValueError) as exc:
         msg = str(exc)
         print(f"  [SKIP] {msg}")

@@ -80,7 +80,7 @@ class DataLoader:
         start_ts = int(pd.Timestamp(start_date).timestamp() * 1000)
         end_ts = int((pd.Timestamp(end_date) + pd.Timedelta(days=1)).timestamp() * 1000)
 
-        max_pages = 200 if interval in ("1m", "5m") else 50 if interval in ("15m", "30m") else 20
+        max_pages = 200 if interval in ("1m", "5m") else 50 if interval in ("15m", "30m") else 200
 
         result: Dict[str, pd.DataFrame] = {}
         for symbol in codes:
@@ -124,7 +124,7 @@ class DataLoader:
 
             def _do_request() -> dict:
                 resp = requests.get(
-                    f"{BASE_URL}/market/candles",
+                    f"{BASE_URL}/market/history-candles",
                     params=params,
                     timeout=_OKX_TIMEOUT,
                 )

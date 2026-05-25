@@ -131,7 +131,7 @@ def parse_candidates_json(stdout: str) -> list[dict]:
     for raw_json in matches:
         text = raw_json.strip()
         try:
-            data = json.loads(text)
+            data = json.loads(text, strict=False)
         except json.JSONDecodeError:
             continue
         if isinstance(data, list):
