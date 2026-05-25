@@ -10,10 +10,14 @@ from typing import Any, Mapping
 
 from pydantic import ValidationError
 
-from src.config.paths import get_config_path
+from src.config.paths import get_config_path, get_runtime_root
 from src.config.schema import AgentConfig, AgentConfigOverride, MCPServerConfig
 
 logger = logging.getLogger(__name__)
+
+_SWARM_AGENT_CONFIG_ENV_VAR = "VIBE_TRADING_SWARM_AGENT_CONFIG"
+_SWARM_AGENT_CONFIG_FILENAME = "swarm-agent.json"
+_MAIN_AGENT_FALLBACK_FILENAMES = ("agent.json", "agent.yaml", "agent.yml")
 
 try:
     import yaml
@@ -145,6 +149,86 @@ def load_runtime_agent_config(
     """
     config = load_agent_config(config_path)
     return merge_agent_config_overrides(config, overrides)
+
+
+def _resolve_swarm_agent_config_path(
+    *,
+    runtime_root: Path | None = None,
+) -> Path | None:
+    """Pick the operator config the swarm runtime should boot against.
+
+    Resolution order (first hit wins):
+
+    1. ``VIBE_TRADING_SWARM_AGENT_CONFIG`` env var — absolute override hatch
+       for CI / sandbox deployments where the runtime root is read-only.
+       Returned even if the file does not yet exist; the caller logs &
+       degrades gracefully so a misconfigured env var doesn't crash boot.
+    2. ``<runtime_root>/swarm-agent.json`` — the swarm-specific operator
+       allowlist. Lets the swarm path use a *different* set of MCP servers
+       from the main agent without duplicating non-MCP fields.
+    3. ``<runtime_root>/{agent.json,agent.yaml,agent.yml}`` — fallback to the
+       main agent config so single-config operators don't have to duplicate
+       their MCP allowlist.
+    4. ``None`` when nothing matches — preserves byte-for-byte legacy
+       behaviour where the swarm runs strictly on local tools (R-03 in the
+       SWARM external MCP tools TDD).
+
+    Trust model: callers of swarm entry points (e.g. an external MCP client
+    invoking ``run_swarm``) cannot influence this path — config resolution is
+    a boot-time / operator-trusted action. See
+    ``docs/2026-05-25_swarm_mcp_tools_roadmap.md`` for the full rationale.
+
+    Args:
+        runtime_root: Override the directory the on-disk lookup uses. Defaults
+            to ``~/.vibe-trading``. Tests pass a ``tmp_path`` here to keep
+            assertions hermetic.
+
+    Returns:
+        The chosen config path, or ``None`` when no candidate is available.
+    """
+    env_value = os.environ.get(_SWARM_AGENT_CONFIG_ENV_VAR, "").strip()
+    if env_value:
+        return Path(env_value).expanduser()
+
+    root = runtime_root if runtime_root is not None else get_runtime_root()
+    swarm_specific = root / _SWARM_AGENT_CONFIG_FILENAME
+    if swarm_specific.exists():
+        return swarm_specific
+
+    for fallback in _MAIN_AGENT_FALLBACK_FILENAMES:
+        candidate = root / fallback
+        if candidate.exists():
+            return candidate
+
+    return None
+
+
+def load_swarm_agent_config(
+    *,
+    runtime_root: Path | None = None,
+) -> AgentConfig:
+    """Load the swarm-side AgentConfig using the M3 boot resolution order.
+
+    This is the helper boot wiring (``mcp_server.py``, ``api_server.py``, CLI
+    swarm runners, in-process ``swarm_tool``) calls before constructing
+    ``SwarmRuntime``. It returns an :class:`AgentConfig` (never ``None``) so
+    every caller can pass the result through to ``SwarmRuntime(agent_config=...)``
+    without conditional unwrapping. An empty config (``mcp_servers={}``) is
+    treated identically to ``agent_config=None`` by ``build_swarm_registry``,
+    so the swarm stays strictly local-tool-only when nothing is configured.
+
+    Args:
+        runtime_root: Override the directory the on-disk lookup uses. Defaults
+            to ``~/.vibe-trading``.
+
+    Returns:
+        The validated swarm agent config, or an empty :class:`AgentConfig`
+        when no candidate is on disk / the chosen file fails to parse.
+    """
+    path = _resolve_swarm_agent_config_path(runtime_root=runtime_root)
+    if path is None:
+        return AgentConfig()
+    return load_agent_config(path)
 
 
 def _read_config_file(path: Path) -> dict[str, Any]:

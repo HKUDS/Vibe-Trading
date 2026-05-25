@@ -1938,6 +1938,7 @@ class _SwarmDashboard:
 def cmd_swarm_run_live(preset: str, vars_json: Optional[str] = None) -> None:
     """Run a swarm preset with Rich Live dashboard."""
     from rich.live import Live
+    from src.config import load_swarm_agent_config
     from src.swarm.runtime import SwarmRuntime
     from src.swarm.store import SwarmStore
     from src.swarm.models import RunStatus
@@ -1951,7 +1952,8 @@ def cmd_swarm_run_live(preset: str, vars_json: Optional[str] = None) -> None:
             return
 
     store = SwarmStore(base_dir=SWARM_DIR)
-    runtime = SwarmRuntime(store=store)
+    agent_config = load_swarm_agent_config()
+    runtime = SwarmRuntime(store=store, agent_config=agent_config)
     _agent_color_map.clear()
 
     console.print(f"\n[dim]Starting swarm:[/dim] [cyan]{preset}[/cyan]")

@@ -610,12 +610,17 @@ async def run_swarm(
     """
     import asyncio
     import time
+    from src.config import load_swarm_agent_config
     from src.swarm.runtime import SwarmRuntime
     from src.swarm.store import SwarmStore, swarm_runs_root
 
     swarm_dir = swarm_runs_root()
     store = SwarmStore(base_dir=swarm_dir)
-    runtime = SwarmRuntime(store=store)
+    # Boot-time / operator-trusted: resolved from env var or on-disk config.
+    # The MCP caller (this tool's invoker) cannot influence the path — the
+    # ``variables`` arg below is template data, never config (R-06).
+    agent_config = load_swarm_agent_config()
+    runtime = SwarmRuntime(store=store, agent_config=agent_config)
 
     try:
         run = runtime.start_run(

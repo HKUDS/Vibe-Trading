@@ -621,13 +621,22 @@ class SwarmTool(BaseTool):
             prompt[:100],
         )
 
+        from src.config import load_swarm_agent_config
         from src.swarm.runtime import SwarmRuntime
         from src.swarm.store import SwarmStore
 
         swarm_base_dir = Path(__file__).resolve().parents[2] / ".swarm" / "runs"
         swarm_base_dir.mkdir(parents=True, exist_ok=True)
         store = SwarmStore(base_dir=swarm_base_dir)
-        runtime = SwarmRuntime(store=store, max_workers=int(os.getenv("SWARM_MAX_WORKERS", "4")))
+        # Boot-time / operator-trusted: even when reached via the in-process
+        # agent tool, the config path is resolved from disk / env, never from
+        # the calling LLM's prompt (R-06).
+        agent_config = load_swarm_agent_config()
+        runtime = SwarmRuntime(
+            store=store,
+            max_workers=int(os.getenv("SWARM_MAX_WORKERS", "4")),
+            agent_config=agent_config,
+        )
 
         try:
             run = runtime.start_run(

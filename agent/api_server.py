@@ -1861,11 +1861,15 @@ def _get_swarm_runtime():
     global _swarm_runtime
     if _swarm_runtime is not None:
         return _swarm_runtime
+    from src.config import load_swarm_agent_config
     from src.swarm.store import SwarmStore
     from src.swarm.runtime import SwarmRuntime
     swarm_dir = Path(__file__).resolve().parent / ".swarm" / "runs"
     store = SwarmStore(base_dir=swarm_dir)
-    _swarm_runtime = SwarmRuntime(store=store)
+    # Boot-time / operator-trusted: REST API callers cannot influence the
+    # config path. See docs/2026-05-25_swarm_mcp_tools_roadmap.md.
+    agent_config = load_swarm_agent_config()
+    _swarm_runtime = SwarmRuntime(store=store, agent_config=agent_config)
     return _swarm_runtime
 
 
