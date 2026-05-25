@@ -1,140 +1,20 @@
 {
-  "_comment": [
-    "strategy_runs.json — user-maintained mapping of strategy IDs to backtest run directories.",
-    "",
-    "HOW TO USE THIS FILE",
-    "====================",
-    "Each top-level key is a strategy_id — a stable identifier you assign when you first",
-    "generate a strategy.  The convention is:  <coin>_s<N>_<archetype_short>",
-    "  e.g.  btc_s1_multifactor_contrarian",
-    "",
-    "For each strategy_id the value is an object with these fields:",
-    "",
-    "  symbol      (string)           Exchange ticker this strategy trades.",
-    "                                  e.g. 'BTC-USDT-SWAP'",
-    "",
-    "  spec_yaml   (string)           Repo-relative path to the strategy YAML.",
-    "                                  e.g. 'research/strategies/strategy_S1.yaml'",
-    "",
-    "  base_run    (string | null)    Primary in-sample backtest run directory name",
-    "                                  under <repo-root>/runs/.  Set null until generated.",
-    "                                  e.g. 'btc_s1_base'",
-    "",
-    "  regime_runs (object)           Per-market-regime run directories.",
-    "                                  Keys are regime labels; values are run directory names.",
-    "                                  e.g. { 'bull': 'btc_s1_bull', 'bear': 'btc_s1_bear', ... }",
-    "",
-    "  stress_runs (object)           Cost-stress run directories.",
-    "                                  Keys are descriptive labels; values are run directory names.",
-    "                                  e.g. { '3x_fees': 'btc_s1_base_stress' }",
-    "                                  (Created by running setup_stress.py on the base run.)",
-    "",
-    "  oos_runs    (array of strings) Out-of-sample run directory names, ordered chronologically.",
-    "                                  e.g. ['btc_s1_oos_2023', 'btc_s1_oos_2024']",
-    "",
-    "  sweep_run   (string | null)    Parameter-sweep run directory name.  null until generated.",
-    "                                  e.g. 'btc_s1_sweep'",
-    "",
-    "RUN NAMING CONVENTION",
-    "=====================",
-    "Pattern:  <coin>_s<N>_<variant>[_<year_or_label>]",
-    "  base run:      btc_s1_base",
-    "  regime runs:   btc_s1_bull  /  btc_s1_bear  /  btc_s1_neutral",
-    "  stress runs:   btc_s1_base_stress",
-    "  oos runs:      btc_s1_oos_2023  /  btc_s1_oos_2024",
-    "  sweep run:     btc_s1_sweep",
-    "",
-    "The coin prefix (btc_, eth_, ...) prevents name collisions when the same",
-    "strategy archetype is run on multiple symbols.",
-    "",
-    "All run directories live under <repo-root>/runs/<run-name>/.",
-    "Each run directory contains config.json + artifacts/ (metrics.csv, equity.csv, etc.).",
-    "",
-    "WORKFLOW",
-    "========",
-    "1. Generate a strategy (Stage 2) → edit spec_yaml to point at its YAML.",
-    "2. Run backtests (Stage 3) → fill in base_run, regime_runs, stress_runs, oos_runs.",
-    "3. Run parameter sweep (Stage 4) → fill in sweep_run.",
-    "4. emit_manifest.py (Task 2.12) reads this file to aggregate a strategy's runs",
-    "   into research/manifests/<strategy_id>/manifest.json.",
-    "",
-    "NOTE: emit_manifest.py will raise a clear error if a named run directory is absent",
-    "from disk.  This file only records the expected mapping; it does not validate paths."
-  ],
-
-  "btc_s1_multifactor_contrarian": {
-    "symbol": "BTC-USDT-SWAP",
-    "spec_yaml": "research/strategies/strategy_S1.yaml",
-    "base_run": "btc_s1_base",
+  "eth_s1_multi_factor_consensus": {
+    "symbol": "ETH-USDT-SWAP",
+    "spec_yaml": "research/strategies/strategy_eth_s1_multi_factor_consensus.yaml",
+    "base_run": "eth_s1_base",
     "regime_runs": {
-      "bull": "btc_s1_bull",
-      "bear": "btc_s1_bear",
-      "neutral": "btc_s1_neutral"
+      "bull": "eth_s1_bull",
+      "bear": "eth_s1_bear",
+      "neutral": "eth_s1_neutral"
     },
     "stress_runs": {
-      "3x_fees": "btc_s1_base_stress"
+      "3x_fees": "eth_s1_base_stress"
     },
     "oos_runs": [
-      "btc_s1_oos_2023",
-      "btc_s1_oos_2024"
+      "eth_s1_oos_2023",
+      "eth_s1_oos_2024"
     ],
-    "sweep_run": "btc_s1_sweep"
-  },
-
-  "btc_s2_funding_mean_reversion": {
-    "symbol": "BTC-USDT-SWAP",
-    "spec_yaml": "research/strategies/strategy_S2.yaml",
-    "base_run": "btc_s2_base",
-    "regime_runs": {
-      "bull": "btc_s2_bull",
-      "bear": "btc_s2_bear",
-      "neutral": "btc_s2_neutral"
-    },
-    "stress_runs": {
-      "3x_fees": "btc_s2_base_stress"
-    },
-    "oos_runs": [
-      "btc_s2_oos_2023",
-      "btc_s2_oos_2024"
-    ],
-    "sweep_run": "btc_s2_sweep"
-  },
-
-  "btc_s3_trend_with_factor_filter": {
-    "symbol": "BTC-USDT-SWAP",
-    "spec_yaml": "research/strategies/strategy_S3.yaml",
-    "base_run": "btc_s3_base",
-    "regime_runs": {
-      "bull": "btc_s3_bull",
-      "bear": "btc_s3_bear",
-      "neutral": "btc_s3_neutral"
-    },
-    "stress_runs": {
-      "3x_fees": "btc_s3_base_stress"
-    },
-    "oos_runs": [
-      "btc_s3_oos_2023",
-      "btc_s3_oos_2024"
-    ],
-    "sweep_run": "btc_s3_sweep"
-  },
-
-  "btc_s4_dual_extreme_contrarian": {
-    "symbol": "BTC-USDT-SWAP",
-    "spec_yaml": "research/strategies/strategy_S4.yaml",
-    "base_run": "btc_s4_base",
-    "regime_runs": {
-      "bull": "btc_s4_bull",
-      "bear": "btc_s4_bear",
-      "neutral": "btc_s4_neutral"
-    },
-    "stress_runs": {
-      "3x_fees": "btc_s4_base_stress"
-    },
-    "oos_runs": [
-      "btc_s4_oos_2023",
-      "btc_s4_oos_2024"
-    ],
-    "sweep_run": "btc_s4_sweep"
+    "sweep_run": "eth_s1_sweep"
   }
 }

@@ -86,3 +86,30 @@ AGENTS.md
 # Alpha Zoo wiki artifacts (generated, not source)
 wiki/alpha-library/manifest.json
 wiki/alpha-library/content/
+
+# Pipeline-generated artifacts (do not commit)
+runs/
+research/manifests/candidates_*.json
+research/manifests/factor_*.json
+research/manifests/factor_*.md
+research/manifests/regime_*.json
+research/manifests/selection_*.json
+research/manifests/*/generation.json
+research/manifests/*/diagnosis.json
+research/manifests/*/optimization.json
+research/manifests/*/manifest.json
+research/strategies/strategy_btc_*.yaml
+research/strategies/strategy_eth_*.yaml
+research/strategies/strategy_sol_*.yaml
+research/strategies/strategy_*-USDT-*.yaml
+research/strategies/code/
+research/strategy_runs.json.bak
+
+# Pipeline-generated logs
+stage*.log
+install.log
+
+# Local agent / session scratch
+.agents/
+compact-notes/
+skills-lock.json
