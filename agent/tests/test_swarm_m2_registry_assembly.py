@@ -193,6 +193,45 @@ def test_build_swarm_registry_filters_remote_tools_outside_agent_whitelist() -> 
     assert "mcp_kb_fetch" not in registry.tool_names
 
 
+def test_build_swarm_registry_discovers_only_servers_named_by_whitelist() -> None:
+    """Remote discovery is limited to MCP servers implied by the whitelist."""
+    cfg = _make_agent_config(
+        {
+            "kb": {"command": "uvx", "args": ["kb-server"]},
+            "expensive": {"command": "uvx", "args": ["expensive-server"]},
+        }
+    )
+
+    def fake_build_mcp_tool_wrappers(server_name, *_args, **_kwargs):
+        return _make_fake_wrappers(server_name, ["search"])
+
+    with patch(
+        "src.tools.mcp.build_mcp_tool_wrappers",
+        side_effect=fake_build_mcp_tool_wrappers,
+    ) as build_wrappers:
+        registry = build_swarm_registry(
+            ["mcp_kb_search"],
+            agent_config=cfg,
+        )
+
+    assert "mcp_kb_search" in registry.tool_names
+    assert [call.args[0] for call in build_wrappers.call_args_list] == ["kb"]
+
+
+def test_build_swarm_registry_skips_mcp_discovery_for_local_only_whitelist() -> None:
+    """A local-only agent whitelist must not discover any configured MCP server."""
+    cfg = _make_agent_config({"kb": {"command": "uvx", "args": ["kb-server"]}})
+
+    with patch("src.tools.mcp.build_mcp_tool_wrappers") as build_wrappers:
+        registry = build_swarm_registry(
+            ["read_file"],
+            agent_config=cfg,
+        )
+
+    assert "read_file" in registry.tool_names
+    build_wrappers.assert_not_called()
+
+
 # --------------------------------------------------------------------------- #
 # Backward compatibility: empty MCP config behaves like None (R-03)
 # --------------------------------------------------------------------------- #

@@ -212,11 +212,39 @@ def build_swarm_registry(
         ToolRegistry containing the whitelist intersection of local tools
         and any operator-surfaced MCP tools.
     """
+    swarm_agent_config = _prune_agent_config_for_swarm_tools(agent_config, tool_names)
     full = build_registry(
-        agent_config=agent_config,
+        agent_config=swarm_agent_config,
         include_shell_tools=include_shell_tools,
     )
     return _filter_registry(full, tool_names, include_shell_tools=include_shell_tools)
+
+
+def _prune_agent_config_for_swarm_tools(
+    agent_config: "AgentConfig | None",
+    tool_names: list[str],
+) -> "AgentConfig | None":
+    """Keep only MCP servers whose local tool prefix appears in ``tool_names``."""
+    if not agent_config or not agent_config.mcp_servers:
+        return agent_config
+
+    requested_mcp_tool_names = [name for name in tool_names if name.startswith("mcp_")]
+    if not requested_mcp_tool_names:
+        return None
+
+    from src.config.schema import AgentConfig
+    from src.tools.mcp import resolve_mcp_server_tool_name_segments
+
+    local_server_names = resolve_mcp_server_tool_name_segments(agent_config.mcp_servers.keys())
+    selected_servers = {
+        server_name: server_config
+        for server_name, server_config in agent_config.mcp_servers.items()
+        if any(
+            tool_name.startswith(f"mcp_{local_server_names[server_name]}_")
+            for tool_name in requested_mcp_tool_names
+        )
+    }
+    return AgentConfig(mcp_servers=selected_servers)
 
 
 def _filter_registry(

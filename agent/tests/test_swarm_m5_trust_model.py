@@ -37,8 +37,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import pytest
-
 import mcp_server
 from src.config.schema import AgentConfig
 from src.providers.chat import LLMResponse
