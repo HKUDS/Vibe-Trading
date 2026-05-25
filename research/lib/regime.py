@@ -57,9 +57,16 @@ def compute_regime(
     funding_mean = pd.Series(index=s.index, dtype=float)
     if funding_rate is not None and not funding_rate.empty:
         fr = funding_rate.sort_index()
-        if hasattr(fr.index, "tz") and fr.index.tz is not None:
+        s_tz = getattr(s.index, "tz", None)
+        fr_tz = getattr(fr.index, "tz", None)
+        if s_tz != fr_tz:
             fr = fr.copy()
-            fr.index = fr.index.tz_convert(None)
+            if s_tz is None:
+                fr.index = fr.index.tz_convert(None)
+            elif fr_tz is None:
+                fr.index = fr.index.tz_localize(s_tz)
+            else:
+                fr.index = fr.index.tz_convert(s_tz)
         roll = fr.rolling(funding_window_hours, min_periods=max(1, funding_window_hours // 4)).mean()
         funding_mean = roll.reindex(s.index, method="ffill")
 
