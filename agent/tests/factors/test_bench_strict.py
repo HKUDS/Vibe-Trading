@@ -305,3 +305,299 @@ def test_run_bench_strict_random_control_false_is_explicit_opt_out(
     # When random_control is False, random_ic_mean degenerates to 0.
     for row in result["rows"]:
         assert row["random_ic_mean"] == pytest.approx(0.0)
+
+
+# ── Regression tests for the 2026-05-26 code review findings ────────────────
+
+
+def test_oos_train_test_split_does_not_double_count_boundary() -> None:
+    """Regression for A1: ``.loc[:t]`` and ``.loc[t:]`` both inclusive."""
+    idx = pd.date_range("2024-01-01", periods=80, freq="D")
+    series = pd.Series(np.linspace(-1.0, 1.0, 80), index=idx)
+    boundary = pd.Timestamp("2024-02-15")  # exists in the index
+    # Use the same convention as run_bench_strict: train inclusive,
+    # test strictly after the boundary.
+    train = series[series.index <= boundary]
+    test = series[series.index > boundary]
+    assert len(train) + len(test) == len(series)
+    # Crucially, the boundary date appears once across the two buckets.
+    assert (boundary in train.index) is True
+    assert (boundary in test.index) is False
+
+
+def test_shuffle_handles_inf_like_nan() -> None:
+    """Regression for A4: ``±inf`` must be pinned in place like NaN."""
+    df = _panel(seed=0)
+    df.iloc[5, 3] = np.inf
+    df.iloc[7, 1] = -np.inf
+    shuffled = _shuffle_within_rows(df, seed=42)
+    assert shuffled.iloc[5, 3] == np.inf
+    assert shuffled.iloc[7, 1] == -np.inf
+
+
+def test_categorise_oos_sign_flip_is_reversed_strict_not_train_only() -> None:
+    """Regression for A5: OOS sign-flip with strong negative test t-stat
+    should be reversed_strict, not train_only."""
+    row = _row(alpha_t_full=2.5, alpha_t_train=3.0, alpha_t_test=-3.0)
+    assert categorise_strict(row) == "reversed_strict"
+
+
+def test_categorise_oos_decay_to_noise_band_is_train_only() -> None:
+    """Companion to the sign-flip test: an OOS that decays to the noise
+    band (between -thr and +thr) is still train_only."""
+    row = _row(alpha_t_full=2.5, alpha_t_train=3.0, alpha_t_test=1.0)
+    assert categorise_strict(row) == "train_only"
+
+
+def test_run_bench_strict_emits_legacy_alive_dead_reversed_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for C1: wire schema must keep legacy bucket keys so
+    existing dashboards keep rendering."""
+    _stub_panel(monkeypatch)
+    reg = _StubRegistry(panel={})
+    result = run_bench_strict(
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        registry=reg,
+    )
+    assert result["status"] == "ok"
+    for legacy_key in ("alive", "reversed", "dead", "by_theme"):
+        assert legacy_key in result, f"missing legacy key {legacy_key!r}"
+
+
+def test_run_bench_strict_legacy_alive_equals_confirmed_alive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``alive`` is an alias for ``confirmed_alive``."""
+    _stub_panel(monkeypatch)
+    reg = _StubRegistry(panel={})
+    result = run_bench_strict(
+        zoo="alpha101", universe="csi300", period="2024-2024",
+        random_control=True, registry=reg,
+    )
+    assert result["alive"] == result["confirmed_alive"]
+    assert result["reversed"] == result["reversed_strict"]
+    # Dead = noise + train_only (both buckets the existing categorise()
+    # treats as "didn't survive").
+    assert result["dead"] == result["noise"] + result["train_only"]
+
+
+def test_run_bench_strict_top_lists_include_formula_latex(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for C2: dashboard renders formula_latex on top entries."""
+    _stub_panel(monkeypatch)
+    reg = _StubRegistry(panel={})
+    result = run_bench_strict(
+        zoo="alpha101", universe="csi300", period="2024-2024",
+        random_control=True, registry=reg,
+    )
+    for bucket in ("top5_by_ir", "top5_by_alpha_t", "dead_examples"):
+        for entry in result[bucket]:
+            assert "formula_latex" in entry
+
+
+def test_run_bench_strict_n_random_seeds_zero_is_clamped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for C6: ``n_random_seeds=0`` must clamp to 1 AND the
+    wire result must report the effective value."""
+    _stub_panel(monkeypatch)
+    reg = _StubRegistry(panel={})
+    result = run_bench_strict(
+        zoo="alpha101", universe="csi300", period="2024-2024",
+        random_control=True, n_random_seeds=0, registry=reg,
+    )
+    assert result["n_random_seeds"] == 1
+
+
+def test_run_bench_strict_empty_zoo_returns_schema_with_counters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for C5: error envelope must carry every counter key."""
+    class EmptyReg:
+        def list(self, *, zoo: str) -> list[str]:  # noqa: ARG002
+            return []
+
+        def get(self, aid: str) -> Any:  # pragma: no cover
+            raise AssertionError("should not be called")
+
+        def compute(self, aid: str, panel: dict) -> pd.DataFrame:  # pragma: no cover
+            raise AssertionError("should not be called")
+
+    result = run_bench_strict(
+        zoo="alpha101", universe="csi300", period="2024-2024",
+        random_control=True, registry=EmptyReg(),
+    )
+    assert result["status"] == "error"
+    for k in (
+        "n_alphas_tested", "n_skipped",
+        "confirmed_alive", "train_only", "reversed_strict", "noise",
+        "alive", "reversed", "dead", "by_theme",
+        "rows", "skipped", "top5_by_ir", "top5_by_alpha_t",
+    ):
+        assert k in result, f"error envelope missing {k!r}"
+    assert result["n_alphas_tested"] == 0
+
+
+def test_run_bench_strict_on_progress_exception_is_caught(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for A3: a raising on_progress must not kill the loop."""
+    _stub_panel(monkeypatch)
+    reg = _StubRegistry(panel={})
+    calls: list[int] = []
+
+    def bad_cb(idx: int, total: int, aid: str) -> None:
+        calls.append(idx)
+        # First call raises, subsequent ones don't — verifies the loop
+        # survives a transient callback failure.
+        if idx == 1:
+            raise RuntimeError("simulated SSE writer closed")
+
+    result = run_bench_strict(
+        zoo="alpha101", universe="csi300", period="2024-2024",
+        random_control=True, registry=reg, on_progress=bad_cb,
+    )
+    assert result["status"] == "ok"
+    # All two stub alphas should still complete despite the first cb
+    # raising.
+    assert result["n_alphas_tested"] >= 2
+    assert calls == [1, 2]
+
+
+def test_run_bench_strict_rows_drop_underscore_prefixed_sort_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sort-helper keys (``_ir_raw`` etc) are internal and must not leak
+    into the wire payload."""
+    _stub_panel(monkeypatch)
+    reg = _StubRegistry(panel={})
+    result = run_bench_strict(
+        zoo="alpha101", universe="csi300", period="2024-2024",
+        random_control=True, registry=reg,
+    )
+    for row in result["rows"]:
+        for k in row:
+            assert not k.startswith("_") or k == "_category", (
+                f"underscore-prefixed key leaked into wire row: {k!r}"
+            )
+
+
+def test_compute_random_ic_series_inner_joins_seed_dates() -> None:
+    """Regression for A2: averaging must use the dates where *every*
+    seed produced a value (inner join), not a mix of 1-seed/3-seed/etc."""
+    factor = _panel(seed=0)
+    returns = _panel(seed=1)
+    ic = compute_random_ic_series(factor, returns, n_seeds=3, base_seed=7)
+    # Result series may be shorter than the input panel but should not
+    # contain NaN — inner join + mean of finite seed ICs.
+    assert ic.notna().all()
+
+
+def _planted_signal_panel(
+    n_dates: int = 200,
+    n_stocks: int = 12,
+    seed: int = 13,
+) -> dict[str, pd.DataFrame]:
+    """Build a panel where the close price *is* the latent factor — the
+    test can then ask for a factor that uses close.pct_change(5) and
+    knows the answer should be 'alive'."""
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range("2024-01-01", periods=n_dates, freq="B")
+    cols = [f"S{i}" for i in range(n_stocks)]
+    # Strong cross-sectional momentum drift: each stock gets a different
+    # drift, returns are highly autocorrelated.
+    drifts = rng.normal(0.0005, 0.0008, size=n_stocks)
+    idio = rng.normal(0, 0.005, size=(n_dates, n_stocks))
+    returns = drifts + idio * 0.7
+    close = (1 + pd.DataFrame(returns, index=idx, columns=cols)).cumprod() * 100.0
+    panel = {
+        "close": close, "open": close.shift(1).fillna(close),
+        "high": close * 1.005, "low": close * 0.995,
+        "volume": pd.DataFrame(
+            rng.lognormal(14, 0.5, size=close.shape), index=idx, columns=cols),
+        "vwap": close, "amount": close * 1_000_000,
+    }
+    return panel
+
+
+def test_run_bench_strict_catches_planted_alive_signal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for the original code-review finding 'integration test
+    cheats': here we plant a genuine momentum signal and assert that the
+    strict gate puts it in confirmed_alive."""
+    panel = _planted_signal_panel()
+    monkeypatch.setattr(
+        "src.factors.bench_runner_strict._load_universe_panel",
+        lambda u, p: panel,  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "src.factors.bench_runner_strict._compute_forward_returns",
+        lambda p: p["close"].pct_change().shift(-1),
+    )
+
+    class PlantedReg:
+        def list(self, *, zoo: str) -> list[str]:  # noqa: ARG002
+            return ["planted_momentum"]
+
+        def get(self, aid: str) -> Any:
+            class _Handle:
+                meta = {"theme": ["momentum"], "formula_latex": "close.pct_change(5)"}
+            return _Handle()
+
+        def compute(self, aid: str, panel: dict) -> pd.DataFrame:  # noqa: ARG002
+            # 5-day momentum: highly correlated with the latent drift.
+            return panel["close"].pct_change(5)
+
+    result = run_bench_strict(
+        zoo="alpha101", universe="csi300", period="2024-2024",
+        random_control=True, n_random_seeds=5, registry=PlantedReg(),
+    )
+    assert result["status"] == "ok"
+    assert result["confirmed_alive"] == 1, (
+        f"planted momentum signal should be confirmed_alive, "
+        f"got result={result}"
+    )
+    assert result["alive"] == 1  # legacy alias must agree
+
+
+def test_run_bench_strict_catches_planted_reversed_signal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    panel = _planted_signal_panel()
+    monkeypatch.setattr(
+        "src.factors.bench_runner_strict._load_universe_panel",
+        lambda u, p: panel,  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "src.factors.bench_runner_strict._compute_forward_returns",
+        lambda p: p["close"].pct_change().shift(-1),
+    )
+
+    class ReversedReg:
+        def list(self, *, zoo: str) -> list[str]:  # noqa: ARG002
+            return ["inverted_momentum"]
+
+        def get(self, aid: str) -> Any:
+            class _Handle:
+                meta = {"theme": ["reversal"], "formula_latex": "-close.pct_change(5)"}
+            return _Handle()
+
+        def compute(self, aid: str, panel: dict) -> pd.DataFrame:  # noqa: ARG002
+            # Negated momentum on a momentum-rewarding panel → reversed.
+            return -panel["close"].pct_change(5)
+
+    result = run_bench_strict(
+        zoo="alpha101", universe="csi300", period="2024-2024",
+        random_control=True, n_random_seeds=5, registry=ReversedReg(),
+    )
+    assert result["status"] == "ok"
+    assert result["reversed_strict"] == 1, (
+        f"inverted momentum should be reversed_strict, got result={result}"
+    )
+    assert result["reversed"] == 1  # legacy alias

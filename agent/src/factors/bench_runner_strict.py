@@ -99,7 +99,7 @@ class StrictThresholds:
 def _shuffle_within_rows(
     df: pd.DataFrame, *, seed: int
 ) -> pd.DataFrame:
-    """Cross-sectionally permute non-NaN values within each row.
+    """Cross-sectionally permute finite values within each row.
 
     This preserves the per-date cross-sectional distribution of the factor
     while destroying the actual signal→instrument mapping. The result is a
@@ -107,21 +107,29 @@ def _shuffle_within_rows(
     the original — which is what makes it a fair null hypothesis baseline
     for IC computation.
 
+    Non-finite cells (``NaN``, ``+inf``, ``-inf``) are pinned in place. We
+    treat infinities the same as NaN here even though
+    ``Registry._validate_output`` rejects infinities upstream — this keeps
+    the shuffle robust against third-party zoo plugins that bypass the
+    standard registry path and keeps the IC of the shuffled factor
+    insensitive to whether the cell happened to land on the inf or just
+    next to it.
+
     Args:
         df: Factor frame, index=date, columns=instrument codes.
         seed: RNG seed for reproducibility.
 
     Returns:
         A new DataFrame with the same index/columns but with each row's
-        non-NaN values randomly reassigned to other non-NaN positions in
-        the same row. NaN positions stay NaN.
+        finite values randomly reassigned to other finite positions in
+        the same row. Non-finite positions stay non-finite.
     """
     rng = np.random.default_rng(seed)
     values = df.to_numpy(copy=True)
     n_rows, _ = values.shape
     for i in range(n_rows):
         row = values[i]
-        mask = ~np.isnan(row)
+        mask = np.isfinite(row)
         if mask.sum() < 2:
             continue
         permuted = rng.permutation(row[mask])
@@ -137,10 +145,17 @@ def compute_random_ic_series(
     n_seeds: int = 5,
     base_seed: int = 42,
 ) -> pd.Series:
-    """Average IC series across ``n_seeds`` row-shuffled random controls.
+    """Mean IC series across ``n_seeds`` row-shuffled random controls.
 
-    Returns one IC value per date, averaged across the seeds. Empty input
-    or zero common dates yields an empty Series.
+    Returns one IC value per date, averaged across **all** ``n_seeds``
+    seeds on dates where every seed produced a valid IC. Dates where any
+    seed dropped out (e.g. fewer than ``_MIN_VALID_PER_DATE=5`` paired
+    non-NaN cells) are excluded from the output via an inner join — the
+    random control is supposed to be a stable per-date baseline, so a
+    "1-seed average on some dates, 5-seed on others" mix would silently
+    inflate variance on the borderline dates.
+
+    Empty input or zero common dates yields an empty Series.
     """
     if factor_df.empty or return_df.empty:
         return pd.Series(dtype=float)
@@ -153,9 +168,10 @@ def compute_random_ic_series(
             ic_frames.append(ic)
     if not ic_frames:
         return pd.Series(dtype=float)
-    # Align by date index, take row-wise mean across seeds.
-    combined = pd.concat(ic_frames, axis=1)
-    return combined.mean(axis=1).dropna()
+    # Inner join so every retained date is the mean of all available seeds
+    # uniformly — see docstring rationale above.
+    combined = pd.concat(ic_frames, axis=1, join="inner")
+    return combined.mean(axis=1)
 
 
 def alpha_series_paired(
@@ -179,6 +195,47 @@ def t_stat(series: pd.Series) -> float:
     return float(series.mean() / (std / math.sqrt(n)))
 
 
+# ── Theme breakdown (strict-aware version of bench_runner.theme_breakdown) ──
+
+
+def _theme_breakdown_strict(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """Aggregate strict-category counts per theme tag.
+
+    Mirrors ``bench_runner.theme_breakdown`` but with the strict
+    ``confirmed_alive`` / ``train_only`` / ``reversed_strict`` / ``noise``
+    buckets, plus legacy ``alive`` / ``reversed`` / ``dead`` aliases so
+    existing dashboards keep working without code changes.
+    """
+    by_theme: dict[str, dict[str, int]] = {}
+    for row in rows:
+        cat = row.get("_category", "noise")
+        themes = row.get("theme", []) or ["uncategorised"]
+        for theme in themes:
+            bucket = by_theme.setdefault(
+                theme,
+                {
+                    "confirmed_alive": 0,
+                    "train_only": 0,
+                    "reversed_strict": 0,
+                    "noise": 0,
+                    "alive": 0,
+                    "reversed": 0,
+                    "dead": 0,
+                    "count": 0,
+                },
+            )
+            bucket[cat] = bucket.get(cat, 0) + 1
+            bucket["count"] += 1
+            # Legacy aliases mirror the bucket aliasing in the entry dict.
+            if cat == "confirmed_alive":
+                bucket["alive"] += 1
+            elif cat == "reversed_strict":
+                bucket["reversed"] += 1
+            elif cat in ("noise", "train_only"):
+                bucket["dead"] += 1
+    return by_theme
+
+
 # ── Strict categorisation ──────────────────────────────────────────────────
 
 
@@ -193,12 +250,27 @@ def categorise_strict(
         - ``alpha_t_train`` (Optional[float])  — None when no OOS split was run
         - ``alpha_t_test`` (Optional[float])   — None when no OOS split was run
         - ``ic_count`` (int)
+
+    Rules:
+        - ``alpha_t_full <= -thr``                          → ``reversed_strict``
+        - ``alpha_t_full >=  thr`` and (no OOS or ``alpha_t_test >= thr``)
+                                                            → ``confirmed_alive``
+        - ``alpha_t_full >=  thr`` and ``alpha_t_test <= -thr`` (OOS sign-flip)
+                                                            → ``reversed_strict``
+        - ``alpha_t_full >=  thr`` and ``alpha_t_test`` in the noise band
+                                                            → ``train_only``
+        - everything else (including ``ic_count < min_ic_count``) → ``noise``
+
+    The OOS sign-flip case is deliberately bucketed alongside the
+    reversed_strict outcome rather than as ``train_only``: a factor that
+    inverts in OOS is one of the *strongest* possible signals that the
+    train-period alpha was an artefact, and quantitative researchers want
+    that distinction surfaced separately from a benign decay-to-zero.
     """
     if row["ic_count"] < thresholds.min_ic_count:
         return "noise"
 
     t_full = row["alpha_t_full"]
-    t_train = row.get("alpha_t_train")
     t_test = row.get("alpha_t_test")
     thr = thresholds.alpha_t_threshold
 
@@ -209,11 +281,13 @@ def categorise_strict(
     # Confirmed alive requires full-sample alpha_t > thr AND, when OOS was
     # run, the test-period alpha must also clear thr (same sign as train).
     if t_full >= thr:
-        if t_test is None:
+        if t_test is None or t_test >= thr:
             return "confirmed_alive"
-        if t_test >= thr:
-            return "confirmed_alive"
-        # Full sample passes but OOS doesn't → train-only artefact.
+        # OOS sign-flip is the most diagnostic failure — treat as
+        # reversed_strict, not train_only.
+        if t_test <= -thr:
+            return "reversed_strict"
+        # Full sample passes but OOS sits in the noise band → train-only.
         return "train_only"
 
     return "noise"
@@ -287,40 +361,64 @@ def run_bench_strict(
 
     start = time.monotonic()
     thresholds = thresholds or StrictThresholds()
+    # Clamp n_random_seeds once and store the actual value used so the
+    # wire response doesn't lie about the seed count when callers pass 0
+    # (e.g. from a JSON-config import).
+    effective_seeds = max(1, int(n_random_seeds))
+
+    # Initialise the full schema up-front so even early-error returns
+    # carry zeroed counters and empty lists — downstream consumers can
+    # depend on the keys always being present.
     entry: dict[str, Any] = {
         "status": "pending",
         "zoo": zoo,
         "universe": universe,
         "period": period,
         "random_control": random_control,
-        "n_random_seeds": n_random_seeds,
+        "n_random_seeds": effective_seeds,
         "oos_split": oos_split,
         "alpha_t_threshold": thresholds.alpha_t_threshold,
+        "n_alphas_tested": 0,
+        "n_skipped": 0,
+        "confirmed_alive": 0,
+        "train_only": 0,
+        "reversed_strict": 0,
+        "noise": 0,
+        # Legacy keys mirror run_bench's surface so existing dashboard
+        # paths (alpha_routes._result_for_wire) keep rendering. See C1
+        # in the PR's code review notes.
+        "alive": 0,
+        "reversed": 0,
+        "dead": 0,
+        "by_theme": {},
+        "top5_by_ir": [],
+        "top5_by_alpha_t": [],
+        "dead_examples": [],
+        "rows": [],
+        "skipped": [],
+        "meta": {},
     }
+
+    def _finish_error(msg: str) -> dict[str, Any]:
+        entry["status"] = "error"
+        entry["error"] = msg
+        entry["wall_seconds"] = round(time.monotonic() - start, 2)
+        return entry
 
     reg = registry if registry is not None else get_default_registry()
     alpha_ids = reg.list(zoo=zoo)
     if not alpha_ids:
-        entry["status"] = "error"
-        entry["error"] = f"no alphas registered under zoo={zoo!r}"
-        entry["wall_seconds"] = round(time.monotonic() - start, 2)
-        return entry
+        return _finish_error(f"no alphas registered under zoo={zoo!r}")
 
     try:
         panel = _load_universe_panel(universe, period)
     except (ValueError, NotImplementedError, RuntimeError) as exc:
-        entry["status"] = "error"
-        entry["error"] = f"universe load failed: {exc}"
-        entry["wall_seconds"] = round(time.monotonic() - start, 2)
-        return entry
+        return _finish_error(f"universe load failed: {exc}")
 
     try:
         return_df = _compute_forward_returns(panel)
     except Exception as exc:  # noqa: BLE001
-        entry["status"] = "error"
-        entry["error"] = f"forward returns failed: {exc}"
-        entry["wall_seconds"] = round(time.monotonic() - start, 2)
-        return entry
+        return _finish_error(f"forward returns failed: {exc}")
 
     rows: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
@@ -331,10 +429,15 @@ def run_bench_strict(
         try:
             oos_ts = pd.Timestamp(oos_split)
         except (TypeError, ValueError) as exc:
-            entry["status"] = "error"
-            entry["error"] = f"invalid oos_split {oos_split!r}: {exc}"
-            entry["wall_seconds"] = round(time.monotonic() - start, 2)
-            return entry
+            return _finish_error(f"invalid oos_split {oos_split!r}: {exc}")
+
+    def _fire_progress(idx: int, aid: str) -> None:
+        if on_progress is None:
+            return
+        try:
+            on_progress(idx, n_total, aid)
+        except Exception:  # noqa: BLE001
+            logger.exception("on_progress callback raised; ignoring")
 
     for idx, aid in enumerate(alpha_ids, start=1):
         try:
@@ -344,15 +447,14 @@ def run_bench_strict(
                 skipped.append(
                     {"id": aid, "reason": "empty IC series", "kind": "typed"}
                 )
-                if on_progress is not None:
-                    on_progress(idx, n_total, aid)
+                _fire_progress(idx, aid)
                 continue
 
             if random_control:
                 random_ic = compute_random_ic_series(
                     factor_df,
                     return_df,
-                    n_seeds=n_random_seeds,
+                    n_seeds=effective_seeds,
                 )
             else:
                 random_ic = pd.Series(0.0, index=signal_ic.index)
@@ -362,9 +464,20 @@ def run_bench_strict(
 
             alpha_t_train: float | None = None
             alpha_t_test: float | None = None
+            ic_count_train: int | None = None
+            ic_count_test: int | None = None
             if oos_ts is not None:
-                alpha_t_train = t_stat(alpha_full.loc[: oos_ts])
-                alpha_t_test = t_stat(alpha_full.loc[oos_ts:])
+                # Train-inclusive, test-exclusive on the boundary date so
+                # the OOS guard cannot leak the split bar across buckets.
+                # See A1 in the PR's code review notes.
+                train_mask = alpha_full.index <= oos_ts
+                test_mask = alpha_full.index > oos_ts
+                train_slice = alpha_full[train_mask]
+                test_slice = alpha_full[test_mask]
+                alpha_t_train = t_stat(train_slice)
+                alpha_t_test = t_stat(test_slice)
+                ic_count_train = int(len(train_slice))
+                ic_count_test = int(len(test_slice))
 
             meta = reg.get(aid).meta or {}
             ic_mean = float(signal_ic.mean())
@@ -376,8 +489,15 @@ def run_bench_strict(
                     "ic_mean": round(ic_mean, 6),
                     "ic_std": round(ic_std, 6),
                     "ir": round(ir, 4),
+                    # Sorting uses the unrounded raw values to keep
+                    # top-N stable across runs (see A7 in review).
+                    "_ir_raw": float(ir),
+                    "_alpha_t_full_raw": float(alpha_t_full),
+                    "_ic_mean_raw": ic_mean,
                     "ic_positive_ratio": round(float((signal_ic > 0).mean()), 4),
                     "ic_count": int(len(signal_ic)),
+                    "ic_count_train": ic_count_train,
+                    "ic_count_test": ic_count_test,
                     "random_ic_mean": round(float(random_ic.mean()), 6),
                     "alpha_t_full": round(alpha_t_full, 4),
                     "alpha_t_train": (
@@ -398,11 +518,7 @@ def run_bench_strict(
                 {"id": aid, "reason": f"unexpected: {exc}", "kind": "unexpected"}
             )
 
-        if on_progress is not None:
-            try:
-                on_progress(idx, n_total, aid)
-            except Exception:  # noqa: BLE001
-                logger.exception("on_progress callback raised; ignoring")
+        _fire_progress(idx, aid)
 
     for row in rows:
         row["_category"] = categorise_strict(row, thresholds)
@@ -416,9 +532,9 @@ def run_bench_strict(
     for row in rows:
         counts[row["_category"]] += 1
 
-    rows_by_ir = sorted(rows, key=lambda r: r["ir"], reverse=True)
-    rows_by_alpha = sorted(rows, key=lambda r: r["alpha_t_full"], reverse=True)
-    rows_by_ic = sorted(rows, key=lambda r: r["ic_mean"])
+    rows_by_ir = sorted(rows, key=lambda r: r["_ir_raw"], reverse=True)
+    rows_by_alpha = sorted(rows, key=lambda r: r["_alpha_t_full_raw"], reverse=True)
+    rows_by_ic = sorted(rows, key=lambda r: r["_ic_mean_raw"])
 
     def _slim(r: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -430,6 +546,10 @@ def run_bench_strict(
             "alpha_t_train": r["alpha_t_train"],
             "alpha_t_test": r["alpha_t_test"],
             "theme": r["theme"],
+            # Keep formula_latex on the slim payload — the wiki and
+            # dashboard render this cell from top5_by_ir entries (see C2
+            # in the PR's code review notes).
+            "formula_latex": r["formula_latex"],
             "category": r["_category"],
         }
 
@@ -444,6 +564,27 @@ def run_bench_strict(
         except Exception:  # noqa: BLE001
             universe_meta = {"raw": str(universe_meta_raw)}
 
+    # Strip the underscore-prefixed sort helper keys from the wire-bound
+    # row payloads so they never appear in JSON responses or persisted
+    # results. Keep the rest of the row schema as-is so dashboards see
+    # both the strict and legacy fields.
+    public_rows: list[dict[str, Any]] = []
+    for r in rows:
+        public_rows.append(
+            {k: v for k, v in r.items() if not k.startswith("_")
+             or k == "_category"}
+        )
+
+    # Legacy bucket aliasing for backward compat (see C1 in code review):
+    #   alive    ← confirmed_alive  (positive, OOS-confirmed)
+    #   reversed ← reversed_strict  (negative paired alpha)
+    #   dead     ← noise + train_only  (everything that didn't survive)
+    legacy_alive = counts["confirmed_alive"]
+    legacy_reversed = counts["reversed_strict"]
+    legacy_dead = counts["noise"] + counts["train_only"]
+
+    by_theme = _theme_breakdown_strict(rows)
+
     entry.update(
         {
             "status": "ok",
@@ -453,10 +594,15 @@ def run_bench_strict(
             "train_only": counts["train_only"],
             "reversed_strict": counts["reversed_strict"],
             "noise": counts["noise"],
+            # Legacy keys for run_bench wire compatibility.
+            "alive": legacy_alive,
+            "reversed": legacy_reversed,
+            "dead": legacy_dead,
+            "by_theme": by_theme,
             "top5_by_ir": [_slim(r) for r in rows_by_ir[: min(5, top)]],
             "top5_by_alpha_t": [_slim(r) for r in rows_by_alpha[: min(5, top)]],
             "dead_examples": [_slim(r) for r in rows_by_ic[:5]],
-            "rows": rows,
+            "rows": public_rows,
             "skipped": skipped,
             "meta": universe_meta,
             "wall_seconds": round(time.monotonic() - start, 2),
