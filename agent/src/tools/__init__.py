@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib
 import logging
 import pkgutil
+from collections.abc import Mapping
 from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -70,6 +71,7 @@ def build_registry(
     session_id: str | None = None,
     event_callback: Callable[[str, dict], None] | None = None,
     warn_callback: Callable[[str], None] | None = None,
+    _mcp_server_tool_name_segments: Mapping[str, str] | None = None,
 ) -> ToolRegistry:
     """Build the tool registry via auto-discovery, optionally enriched with MCP tools.
 
@@ -132,10 +134,16 @@ def build_registry(
     if agent_config and agent_config.mcp_servers:
         from src.tools.mcp import build_mcp_tool_wrappers, resolve_mcp_server_tool_name_segments
 
-        local_server_names = resolve_mcp_server_tool_name_segments(
-            agent_config.mcp_servers.keys(),
-            warn_callback=warn_callback,
-        )
+        if _mcp_server_tool_name_segments is None:
+            local_server_names = resolve_mcp_server_tool_name_segments(
+                agent_config.mcp_servers.keys(),
+                warn_callback=warn_callback,
+            )
+        else:
+            local_server_names = {
+                server_name: _mcp_server_tool_name_segments[server_name]
+                for server_name in agent_config.mcp_servers
+            }
 
         for server_name, server_config in agent_config.mcp_servers.items():
             try:
@@ -212,10 +220,14 @@ def build_swarm_registry(
         ToolRegistry containing the whitelist intersection of local tools
         and any operator-surfaced MCP tools.
     """
-    swarm_agent_config = _prune_agent_config_for_swarm_tools(agent_config, tool_names)
+    swarm_agent_config, swarm_local_server_names = _prune_agent_config_for_swarm_tools(
+        agent_config,
+        tool_names,
+    )
     full = build_registry(
         agent_config=swarm_agent_config,
         include_shell_tools=include_shell_tools,
+        _mcp_server_tool_name_segments=swarm_local_server_names,
     )
     return _filter_registry(full, tool_names, include_shell_tools=include_shell_tools)
 
@@ -223,14 +235,14 @@ def build_swarm_registry(
 def _prune_agent_config_for_swarm_tools(
     agent_config: "AgentConfig | None",
     tool_names: list[str],
-) -> "AgentConfig | None":
+) -> tuple["AgentConfig | None", dict[str, str] | None]:
     """Keep only MCP servers whose local tool prefix appears in ``tool_names``."""
     if not agent_config or not agent_config.mcp_servers:
-        return agent_config
+        return agent_config, None
 
     requested_mcp_tool_names = [name for name in tool_names if name.startswith("mcp_")]
     if not requested_mcp_tool_names:
-        return None
+        return None, None
 
     from src.config.schema import AgentConfig
     from src.tools.mcp import resolve_mcp_server_tool_name_segments
@@ -244,7 +256,11 @@ def _prune_agent_config_for_swarm_tools(
             for tool_name in requested_mcp_tool_names
         )
     }
-    return AgentConfig(mcp_servers=selected_servers)
+    selected_local_server_names = {
+        server_name: local_server_names[server_name]
+        for server_name in selected_servers
+    }
+    return AgentConfig(mcp_servers=selected_servers), selected_local_server_names
 
 
 def _filter_registry(

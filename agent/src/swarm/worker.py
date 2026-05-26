@@ -12,7 +12,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from src.agent.context import ContextBuilder
 from src.agent.progress import HeartbeatTimer
@@ -576,7 +576,7 @@ def run_worker(
                 event_callback, "tool_result", agent_id, task_id,
                 {"tool": tc.name, "elapsed_ms": int(tc_elapsed * 1000),
                  "status": "ok", "iteration": iteration,
-                 "result_preview": str(result)[:200],
+                  "result_preview": _preview_tool_result(result),
                  **mcp_meta},
             )
             messages.append(
@@ -657,9 +657,38 @@ def _preview_tool_arguments(arguments: dict) -> dict[str, str]:
         if _is_sensitive_tool_argument(key):
             preview[key] = "[redacted]"
             continue
-        text = str(value)
-        preview[key] = text if len(text) <= 200 else text[:200] + "..."
+        preview[key] = _truncate_preview(_redact_preview_payload(value))
     return preview
+
+
+def _preview_tool_result(result: str) -> str:
+    """Return a short, redacted result preview for streamed events."""
+    try:
+        parsed = json.loads(result)
+    except (TypeError, ValueError):
+        return _truncate_preview(result)
+    return _truncate_preview(_redact_preview_payload(parsed))
+
+
+def _redact_preview_payload(value: Any) -> Any:
+    """Recursively redact sensitive keys before event preview stringification."""
+    if isinstance(value, dict):
+        return {
+            key: "[redacted]" if _is_sensitive_tool_argument(str(key)) else _redact_preview_payload(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_preview_payload(item) for item in value]
+    return value
+
+
+def _truncate_preview(value: Any, *, limit: int = 200) -> str:
+    """Stringify and truncate an event preview payload."""
+    if isinstance(value, (dict, list)):
+        text = json.dumps(value, ensure_ascii=False, default=str)
+    else:
+        text = str(value)
+    return text if len(text) <= limit else text[:limit] + "..."
 
 
 def _is_sensitive_tool_argument(key: str) -> bool:

@@ -413,7 +413,15 @@ def test_tool_call_events_carry_mcp_metadata_and_redact_sensitive_arguments(
                 },
             )
         ]],
-        call_outcomes=[_ok_call_result({"hit": "ok"})],
+        call_outcomes=[
+            _ok_call_result(
+                {
+                    "hit": "ok",
+                    "token": "result-token-should-not-appear",
+                    "nested": {"authorization": "Bearer result-secret"},
+                }
+            )
+        ],
     )
     remote_tools = build_mcp_tool_wrappers(
         "kb", _make_server_config(), client_factory=_make_factory(state)
@@ -427,6 +435,10 @@ def test_tool_call_events_carry_mcp_metadata_and_redact_sensitive_arguments(
                 "query": "AAPL",
                 "api_key": "should-not-appear-in-events",
                 "token": "also-secret",
+                "request": {
+                    "headers": {"Authorization": "Bearer nested-secret"},
+                    "payload": {"password": "nested-password"},
+                },
             },
         ),
         _final_response("done"),
@@ -473,11 +485,19 @@ def test_tool_call_events_carry_mcp_metadata_and_redact_sensitive_arguments(
     assert call_data["arguments"]["api_key"] == "[redacted]"
     assert call_data["arguments"]["token"] == "[redacted]"
     assert call_data["arguments"]["query"] == "AAPL"
+    assert "nested-secret" not in call_data["arguments"]["request"]
+    assert "nested-password" not in call_data["arguments"]["request"]
+    assert "result-token-should-not-appear" not in result_data["result_preview"]
+    assert "result-secret" not in result_data["result_preview"]
     # Defense-in-depth: the secret values must never appear anywhere in
     # the event payload (including via str-coerced views).
     serialized = json.dumps([e.data for e in events], ensure_ascii=False)
     assert "should-not-appear-in-events" not in serialized
     assert "also-secret" not in serialized
+    assert "nested-secret" not in serialized
+    assert "nested-password" not in serialized
+    assert "result-token-should-not-appear" not in serialized
+    assert "result-secret" not in serialized
 
 
 # --------------------------------------------------------------------------- #

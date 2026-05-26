@@ -32,7 +32,7 @@ from unittest.mock import MagicMock, patch
 
 from src.config.schema import AgentConfig
 from src.tools import build_swarm_registry
-from src.tools.mcp import MCPRemoteTool
+from src.tools.mcp import MCPRemoteTool, resolve_mcp_server_tool_name_segments
 
 
 def _make_agent_config(servers: dict[str, dict[str, Any]]) -> AgentConfig:
@@ -216,6 +216,35 @@ def test_build_swarm_registry_discovers_only_servers_named_by_whitelist() -> Non
 
     assert "mcp_kb_search" in registry.tool_names
     assert [call.args[0] for call in build_wrappers.call_args_list] == ["kb"]
+
+
+def test_build_swarm_registry_preserves_collision_hash_prefix_after_pruning() -> None:
+    """Pruning keeps full-config MCP collision disambiguation stable."""
+    cfg = _make_agent_config(
+        {
+            "foo-bar": {"command": "uvx", "args": ["foo-bar-server"]},
+            "foo_bar": {"command": "uvx", "args": ["foo-bar-alt-server"]},
+            "expensive": {"command": "uvx", "args": ["expensive-server"]},
+        }
+    )
+    resolved_names = resolve_mcp_server_tool_name_segments(cfg.mcp_servers.keys())
+    requested_tool = f"mcp_{resolved_names['foo-bar']}_ping"
+
+    def fake_build_mcp_tool_wrappers(_server_name, *_args, **kwargs):
+        return _make_fake_wrappers(kwargs["local_server_name"], ["ping"])
+
+    with patch(
+        "src.tools.mcp.build_mcp_tool_wrappers",
+        side_effect=fake_build_mcp_tool_wrappers,
+    ) as build_wrappers:
+        registry = build_swarm_registry(
+            [requested_tool],
+            agent_config=cfg,
+        )
+
+    assert registry.tool_names == [requested_tool]
+    assert [call.args[0] for call in build_wrappers.call_args_list] == ["foo-bar"]
+    assert build_wrappers.call_args.kwargs["local_server_name"] == resolved_names["foo-bar"]
 
 
 def test_build_swarm_registry_skips_mcp_discovery_for_local_only_whitelist() -> None:
