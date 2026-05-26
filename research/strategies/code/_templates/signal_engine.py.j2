@@ -1,0 +1,26 @@
+# yaml-hash: {{ yaml_hash }}
+import pandas as pd
+from lib.factor_io import load_factor_values
+
+
+class SignalEngine:
+    SYMBOL = "{{ spec.symbol }}"
+
+    def generate(self, data_map: dict) -> dict:
+        symbol = self.SYMBOL
+        ohlcv = data_map[symbol]
+
+        # Load factor values
+        _factors = load_factor_values(symbol)
+
+        # Indicator setup
+{{ indicator_code }}
+
+        # Entry signals
+{{ entry_long_code }}
+{{ entry_short_code }}
+
+        # Exit state machine
+{{ exit_code }}
+
+        return {symbol: signal}

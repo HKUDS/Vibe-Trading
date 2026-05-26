@@ -229,14 +229,24 @@ def _run_symbol_legacy(
     horizons = list(cfg.horizons_h)
     print("\n[evaluate] computing IC/IR for each factor x horizon")
     all_results: list[FactorResult] = []
+    factor_series_dict: dict[str, pd.Series] = {}
     for factor in ["funding_rate", "oi_change_24h", "fng"]:
         if df[factor].isna().all():
             print(f"  {factor}: all NaN, skipping")
             continue
+        factor_series_dict[factor] = df[factor]
         res = evaluate_factor(df, factor, horizons)
         for r in res:
             print(f"  {factor:>16} @ {r.horizon:>5}: IC={r.ic:+.4f} IR={r.ir:+.3f} n={r.n_samples}")
         all_results.extend(res)
+
+    if factor_series_dict:
+        try:
+            from lib.factor_io import dump_factor_values
+            dump_factor_values(sym.name, factor_series_dict, manifests_dir)
+        except Exception as exc:
+            print(f"[stage1] {sym.name}: factor_values parquet dump failed — {exc}", file=sys.stderr)
+
     return all_results
 
 
@@ -261,6 +271,7 @@ def _run_symbol_dynamic(
     horizons = list(cfg.horizons_h)
     print(f"\n[evaluate] computing IC/IR for {len(candidates.candidates)} candidate factors x horizon")
     all_results: list[FactorResult] = []
+    factor_series_dict: dict[str, pd.Series] = {}
     for cand in candidates.candidates:
         series = _compute_candidate_series(cand, candles, funding, oi_hist)
         if series is None:
@@ -270,6 +281,7 @@ def _run_symbol_dynamic(
         if df[cand.name].isna().all():
             print(f"  {cand.name}: all NaN, skipping")
             continue
+        factor_series_dict[cand.name] = series
         res = evaluate_factor(df, cand.name, horizons)
         for r in res:
             print(f"  {cand.name:>24} @ {r.horizon:>5}: IC={r.ic:+.4f} IR={r.ir:+.3f} n={r.n_samples}")
@@ -278,6 +290,13 @@ def _run_symbol_dynamic(
     if not all_results:
         # All candidates were skipped — warn but return empty so caller decides fallback.
         print(f"\033[93m[stage1] WARNING: all dynamic candidates skipped for {sym.name}, manifest will have 0 factors\033[0m")
+
+    if factor_series_dict:
+        try:
+            from lib.factor_io import dump_factor_values
+            dump_factor_values(sym.name, factor_series_dict, manifests_dir)
+        except Exception as exc:
+            print(f"[stage1] {sym.name}: factor_values parquet dump failed — {exc}", file=sys.stderr)
 
     return all_results
 

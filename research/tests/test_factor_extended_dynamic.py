@@ -393,3 +393,75 @@ def test_dynamic_mode_5_candidates_produce_results(tmp_path: Path):
     assert len(results) == 10
     names_returned = {r.factor for r in results}
     assert names_returned == {f"funding_raw_{i}" for i in range(5)}
+
+
+# ---------------------------------------------------------------------------
+# Integration test: parquet + meta exist after dynamic flow
+# (skip by default — requires real OKX/Bybit network access)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_dynamic_flow_writes_factor_parquet(tmp_path: Path):
+    """After _run_symbol_dynamic, factor_values parquet and meta.json are written.
+
+    This is a skip-by-default integration test.  Run explicitly with:
+        pytest -m integration tests/test_factor_extended_dynamic.py
+    """
+    from lib.factor_metrics import add_forward_returns
+
+    n = 300
+    idx = pd.date_range("2024-01-01", periods=n, freq="1h", tz="UTC")
+    rng = np.random.default_rng(99)
+    candles = pd.DataFrame({"close": rng.standard_normal(n).cumsum() + 100, "volume": 1000}, index=idx)
+    funding_idx = pd.date_range("2024-01-01", periods=n // 3, freq="8h", tz="UTC")
+    funding = pd.DataFrame({"funding_rate": rng.standard_normal(n // 3) * 0.001}, index=funding_idx)
+    oi_hist = pd.DataFrame(columns=["oi", "oi_usd"])
+
+    df = pd.DataFrame(index=candles.index)
+    df["close"] = candles["close"]
+    fund_h = funding.reindex(candles.index, method="ffill").bfill()
+    df["funding_rate"] = fund_h["funding_rate"]
+    df["oi_change_24h"] = pd.NA
+    df["fng"] = 50.0
+    cfg = _make_research_config()
+    df = add_forward_returns(df, "close", list(cfg.horizons_h))
+
+    candidates = CandidatesManifest(
+        schema_version=1,
+        symbol="eth",
+        generated_at=datetime.now(timezone.utc),
+        source_swarm_run=None,
+        candidates=[
+            _make_factor_candidate(
+                name="funding_raw_0",
+                formula="raw funding",
+                data_source="okx_funding",
+                transform="raw",
+                expected_ic_sign="?",
+                economic_logic="test",
+                horizons_h=[8],
+                category="funding",
+            )
+        ],
+    )
+
+    sym = _make_sym_config()
+    _run_symbol_dynamic(sym, cfg, tmp_path, candidates, funding, candles, oi_hist, df)
+
+    parquet_path = tmp_path / "factor_values_eth.parquet"
+    meta_path = tmp_path / "factor_values_eth.meta.json"
+
+    assert parquet_path.exists(), f"Expected parquet at {parquet_path}"
+    assert meta_path.exists(), f"Expected meta.json at {meta_path}"
+
+    import json as _json
+    meta = _json.loads(meta_path.read_text())
+    assert meta["schema_version"] == 1
+    assert "funding_raw_0" in meta["factor_names"]
+    assert meta["n_rows"] == n
+
+    import pandas as _pd
+    loaded = _pd.read_parquet(parquet_path, engine="pyarrow")
+    assert "funding_raw_0" in loaded.columns
+    assert len(loaded) == n

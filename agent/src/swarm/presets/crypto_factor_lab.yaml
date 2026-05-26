@@ -141,6 +141,21 @@ agents:
       - `category`（string）：必須是 `{signal_categories}` 以逗號分隔後的某一項
 
       輸出 JSON 區塊後，請以繁體中文簡短說明每個因子被納入或排除的原因。
+
+      ## DSL 詞彙提示（供後續 stage2b 編譯器使用）
+      輸出的因子 `name` 將直接作為 signal_engine DSL 的指標鍵值（indicator key）。
+      進場條件（entry conditions）必須符合以下格式之一：
+
+      - `<factor_name>_percentile_<n>d <op> <value> [persist <m>/<k>]`
+        例：`funding_z_30d_percentile_90d <= 20 persist 2/3`
+      - `<factor_name>_zscore_<n>d <op> <value> [persist <m>/<k>]`
+        例：`oi_change_24h_zscore_30d >= 1.5`
+
+      `<op>` 可用：`<=`、`>=`、`<`、`>`、`==`
+      `persist <m>/<k>` 表示過去 k 根 K 線中至少 m 根滿足條件才觸發（可省略）
+
+      指標來源格式：`stage1:<factor_name>`（例 `stage1:funding_z_30d`）
+      平滑選項：`none`、`sma_<n>`（例 `sma_3`）、`ema_<n>`（例 `ema_5`）
     tools: [bash, read_file, write_file, load_skill]
     skills: [perp-funding-basis, okx-market, crypto-derivatives]
     max_iterations: 50

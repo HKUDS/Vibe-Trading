@@ -25,11 +25,12 @@ A small SelectionManifest is also modelled for research/manifests/selection.json
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Literal, Optional
+from typing import Annotated, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
 # Canonical gate thresholds — pinned by the contract (alpha-workflow §3).
@@ -523,3 +524,162 @@ class TestnetStatus(_Manifest):
     vs_backtest: Optional[VsBacktestBlock] = None
     killswitch: KillswitchBlock
     alerts: List[TestnetAlert] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Stage 2b — signal-engine compiler schemas
+# ---------------------------------------------------------------------------
+
+# DSL patterns for entry condition strings
+_PERSIST_SUFFIX_RE = re.compile(r"\s+persist\s+(\d+)/(\d+)$")
+_INDICATOR_PERCENTILE_RE = re.compile(r"^([a-z][a-z0-9_]*_percentile_\d+d)\s+(<=|>=|<|>|==)\s+(-?\d+(?:\.\d+)?)")
+_INDICATOR_ZSCORE_RE = re.compile(r"^([a-z][a-z0-9_]*_zscore_\d+d)\s+(<=|>=|<|>|==)\s+(-?\d+(?:\.\d+)?)")
+_INDICATOR_RAW_RE = re.compile(r"^([a-z][a-z0-9_]*)\s+(<=|>=|<|>|==)\s+(-?\d+(?:\.\d+)?)")
+
+
+def _parse_condition(cond: str) -> tuple:
+    """Parse a DSL entry condition string into a structured tuple.
+
+    DSL forms:
+      <indicator>_percentile_<n>d <op> <value> [persist <m>/<n>]
+      <indicator>_zscore_<n>d <op> <value> [persist <m>/<n>]
+      <indicator> <op> <value> [persist <m>/<n>]
+
+    Returns:
+        (indicator_expr: str, op: str, value: float,
+         persist_m: Optional[int], persist_n: Optional[int])
+
+    Raises:
+        ValueError: if the condition does not match any recognised DSL pattern.
+    """
+    cond = cond.rstrip()
+
+    # Extract optional persist suffix first
+    persist_m: Optional[int] = None
+    persist_n: Optional[int] = None
+    persist_match = _PERSIST_SUFFIX_RE.search(cond)
+    if persist_match:
+        persist_m = int(persist_match.group(1))
+        persist_n = int(persist_match.group(2))
+        cond = cond[: persist_match.start()]
+
+    # Try each pattern in order of specificity
+    for pattern in (_INDICATOR_PERCENTILE_RE, _INDICATOR_ZSCORE_RE, _INDICATOR_RAW_RE):
+        m = pattern.match(cond.strip())
+        if m:
+            indicator_expr = m.group(1)
+            op = m.group(2)
+            value = float(m.group(3))
+            return (indicator_expr, op, value, persist_m, persist_n)
+
+    raise ValueError(f"Unrecognised condition DSL: {cond!r}")
+
+
+# ---------------------------------------------------------------------------
+# 4. IndicatorSpec — references a stage1 factor output
+# ---------------------------------------------------------------------------
+
+
+class IndicatorSpec(_Manifest):
+    """Spec for one indicator referenced in a StrategySpec."""
+
+    source: str = Field(
+        ...,
+        description="Stage-1 factor output key, e.g. 'stage1:funding_zscore_30d'.",
+        pattern=r"^stage1:[a-z][a-z0-9_]*$",
+    )
+    smoothing: str = Field(
+        ...,
+        description="Smoothing applied before signal comparison: none, sma_<n>, or ema_<n>.",
+        pattern=r"^(none|sma_\d+|ema_\d+)$",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 5. EntryBlock — one directional entry rule
+# ---------------------------------------------------------------------------
+
+
+class EntryBlock(_Manifest):
+    """Long or short entry specification with DSL conditions."""
+
+    description: str
+    conditions: List[str] = Field(..., description="DSL condition strings.")
+
+    @field_validator("conditions", mode="after")
+    @classmethod
+    def conditions_are_valid_dsl(cls, v: List[str]) -> List[str]:
+        for idx, cond in enumerate(v):
+            try:
+                _parse_condition(cond)
+            except ValueError as exc:
+                raise ValueError(f"conditions[{idx}] is invalid: {exc}") from exc
+        return v
+
+
+# ---------------------------------------------------------------------------
+# 6. ExitRule — discriminated union of exit rule variants
+# ---------------------------------------------------------------------------
+
+
+class _ExitTimeBased(_Manifest):
+    condition: Literal["time_based"]
+    max_hold_hours: int
+
+
+class _ExitTakeProfit(_Manifest):
+    condition: Literal["take_profit_pct"]
+    value: float
+
+
+class _ExitStopLoss(_Manifest):
+    condition: Literal["stop_loss_pct"]
+    value: float
+
+
+_SIGNAL_INVALIDATION_EXPR_RE = re.compile(
+    r"^[a-z][a-z0-9_]*_percentile_\d+d between \d+(\.\d+)?,\d+(\.\d+)?$"
+)
+
+
+class _ExitSignalInvalidation(_Manifest):
+    condition: Literal["signal_invalidation"]
+    expression: str = Field(..., description="Percentile-range DSL expression.")
+
+    @field_validator("expression", mode="after")
+    @classmethod
+    def expression_matches_dsl(cls, v: str) -> str:
+        if not _SIGNAL_INVALIDATION_EXPR_RE.match(v):
+            raise ValueError(
+                f"expression must match '<indicator>_percentile_<n>d between <lo>,<hi>'; got {v!r}"
+            )
+        return v
+
+
+ExitRule = Annotated[
+    Union[
+        _ExitTimeBased,
+        _ExitTakeProfit,
+        _ExitStopLoss,
+        _ExitSignalInvalidation,
+    ],
+    Field(discriminator="condition"),
+]
+
+
+# ---------------------------------------------------------------------------
+# 7. StrategySpec — top-level compiler input (from stage 2 YAML)
+# ---------------------------------------------------------------------------
+
+
+class StrategySpec(_Manifest):
+    """Structured representation of a stage-2 YAML strategy specification."""
+
+    name: str
+    archetype: str
+    symbol: str
+    timeframe_signal: Literal["1H", "4H", "8h", "1D"]
+    indicators: Dict[str, IndicatorSpec]
+    entry_long: Optional[EntryBlock] = None
+    entry_short: Optional[EntryBlock] = None
+    exit_rules: List[ExitRule]

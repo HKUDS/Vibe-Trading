@@ -43,3 +43,47 @@ logic (e.g. `multi_factor_consensus` for >=2 usable factors, or
 Note: the `strategy_Sn.yaml` shorthand that appears in `design.md`'s stage table
 is a pre-D4 convention and is superseded by this coin-prefixed scheme for all
 stage-2-generated files.
+
+---
+
+# Strategy DSL Quick Reference
+
+## Indicator Source
+| Field | Format | Example |
+|-------|--------|---------|
+| `source` | `stage1:<factor_key>` | `stage1:funding_rate` |
+| `smoothing` | `none` \| `sma_<n>` \| `ema_<n>` | `sma_8`, `ema_24`, `none` |
+
+## Entry Condition Patterns
+| Pattern | Example |
+|---------|---------|
+| `<indicator>_percentile_<n>d <op> <value>` | `funding_rate_percentile_90d <= 20` |
+| `<indicator>_zscore_<n>d <op> <value>` | `oi_change_zscore_30d >= 1.5` |
+| `<indicator> <op> <value>` (raw) | `funding_rate <= -0.001` |
+| + persist suffix: `... persist <m>/<n>` | `funding_rate_percentile_90d <= 20 persist 2/3` |
+
+Valid operators: `<=`, `>=`, `<`, `>`, `==`
+
+## Exit Rule Types
+| condition | Extra fields | Meaning |
+|-----------|-------------|---------|
+| `time_based` | `max_hold_hours: int` | Exit after N hours |
+| `take_profit_pct` | `value: float` | Exit at +X% unrealized P&L |
+| `stop_loss_pct` | `value: float` | Exit at -X% unrealized P&L |
+| `signal_invalidation` | `expression: "<indicator>_percentile_<n>d between <lo>,<hi>"` | Exit when indicator returns to neutral zone |
+
+## Smoothing Translation
+| DSL | pandas equivalent |
+|-----|------------------|
+| `none` | (no transform) |
+| `sma_N` | `.rolling(N, min_periods=1).mean()` |
+| `ema_N` | `.ewm(span=N, adjust=False).mean()` |
+
+## Escape Hatch
+Add `# manual: do-not-overwrite` as one of the first 5 lines of `signal_engine.py` to prevent stage2b from overwriting it.
+
+## Pipeline Integration
+```
+stage1 → stage2 → stage2b → stage2.5 → stage3 → ...
+```
+Stage 2b: `python -m research.pipeline.stage2b_compile_signal [--strategy <id>] [--dry-run]`
