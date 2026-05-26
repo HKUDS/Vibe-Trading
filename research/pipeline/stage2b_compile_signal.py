@@ -179,7 +179,8 @@ def _render_smoke_test(spec: StrategySpec, strategy_id: str) -> str:  # noqa: AR
 
 
         def _make_ohlcv(n: int = 200) -> pd.DataFrame:
-            idx = pd.date_range("2023-01-01", periods=n, freq="h", tz="UTC")
+            # Naive index — mirrors agent/backtest loader output (datetime64[ms]).
+            idx = pd.date_range("2023-01-01", periods=n, freq="h")
             rng = np.random.default_rng(42)
             return pd.DataFrame({{
                 "open":   rng.standard_normal(n).cumsum() + 1800,
