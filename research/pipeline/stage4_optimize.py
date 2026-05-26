@@ -1,28 +1,27 @@
 """
 research/pipeline/stage4_optimize.py
 ──────────────────────────────────────
-Stage-4 runner: Optimization.
+Stage-4 runner: Optimization (deterministic grid sweep).
 
-For each strategy that has a diagnosis.json (stage-3 output) this runner:
-  1. Gates on diagnosis.json existing.
-  2. Gates on the strategy YAML existing.
-  3. Reads diagnosis.json + strategy YAML text + base_run metrics (optional).
-  4. Builds a Vibe-Trading swarm invocation (quant_strategy_desk preset),
-     injecting strategy YAML, diagnosis findings and metrics as context.
-  5. Parses swept_params + best_params from the swarm prose report.
-  6. Writes research/manifests/<strategy_id>/optimization.json (OptimizationBlock).
-  7. Verifies the output; exits non-zero on any failure.
+For each strategy that has diagnosis.json:
+  1. Gate on diagnosis.json + strategy YAML + base run.
+  2. Expand YAML ``parameter_search_ranges`` into discrete value lists.
+  3. Sample N combos (seeded random, deterministic).
+  4. For each combo: apply overrides to the spec, recompile signal_engine,
+     scaffold ``runs/<strategy_id>_sweep_NNN/``, invoke backtest runner,
+     parse metrics.csv.
+  5. Rank combos by sharpe (with trade_count gate).
+  6. Write ``research/manifests/<strategy_id>/optimization.json``
+     (OptimizationBlock).
+
+No LLM swarm — the swarm-driven variant in v1 returned empty swept_params
+because the LLM cannot deterministically execute a parameter grid.
 
 Usage
 -----
-    # From repo root:
     python -m research.pipeline.stage4_optimize
-
-    # From research/ directory:
-    python -m pipeline.stage4_optimize
-
-    # Direct script invocation:
-    python research/pipeline/stage4_optimize.py
+    python -m research.pipeline.stage4_optimize --max 30 --seed 7
+    python -m research.pipeline.stage4_optimize --strategy eth_s1_multi_factor_consensus
 """
 
 from __future__ import annotations
@@ -30,46 +29,45 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# ── Path bootstrap ─────────────────────────────────────────────────────────────
 _THIS_FILE = Path(__file__).resolve()
-_PIPELINE_DIR = _THIS_FILE.parent          # research/pipeline/
-_RESEARCH_DIR = _PIPELINE_DIR.parent       # research/
+_PIPELINE_DIR = _THIS_FILE.parent
+_RESEARCH_DIR = _PIPELINE_DIR.parent
 
 for _p in (_RESEARCH_DIR,):
     _ps = str(_p)
     if _ps not in sys.path:
         sys.path.insert(0, _ps)
 
-# ── Standard library ───────────────────────────────────────────────────────────
+import argparse
+import csv
 import dataclasses
 import json
+import random
 import re
 import subprocess
+import shutil
+from itertools import product
 
-# ── Internal imports ───────────────────────────────────────────────────────────
+import yaml as _yaml
+
 from pipeline.config import _REPO_ROOT, ResearchConfig, load_config
 from pipeline.strategy_runs import StrategyRunsEntry, StrategyRunsMap, load_strategy_runs
+from pipeline.stage3_backtest import build_run_config, symbol_to_short
 
-# ── Dashboard schemas path ─────────────────────────────────────────────────────
 _DASHBOARD_SCHEMAS = _REPO_ROOT / "dashboard" / "server"
 if str(_DASHBOARD_SCHEMAS) not in sys.path:
     sys.path.insert(0, str(_DASHBOARD_SCHEMAS))
 
-from schemas import OptimizationBlock  # noqa: E402
+from schemas import OptimizationBlock, StrategySpec  # noqa: E402
 
-# ─── Constants ────────────────────────────────────────────────────────────────
+from lib.signal_compiler import compile_strategy  # noqa: E402
 
-#: The swarm preset stage 4 drives (design D2).
-SWARM_PRESET = "quant_strategy_desk"
 
-#: Method string recorded in OptimizationBlock.method.
-OPTIMIZATION_METHOD = f"{SWARM_PRESET} swarm (stage 4 optimization)"
-
-#: Run id regex — swarm-YYYYMMDD-HHMMSS-<hex8>.
-_RUN_ID_RE = re.compile(r"\bswarm-\d{8}-\d{6}-[0-9a-f]{8}\b")
-
-#: Maximum wall-clock seconds to wait for a swarm subprocess.
-SWARM_TIMEOUT_S = 600
+OPTIMIZATION_METHOD = "deterministic grid sweep (stage 4)"
+DEFAULT_MAX_COMBOS = 60
+DEFAULT_SEED = 42
+MIN_TRADE_COUNT_GATE = 10
+BACKTEST_TIMEOUT_S = 600
 
 
 # ─── Data containers ──────────────────────────────────────────────────────────
@@ -77,370 +75,391 @@ SWARM_TIMEOUT_S = 600
 
 @dataclasses.dataclass
 class OptimizationCheckResult:
-    """Result of verifying one strategy's optimization output."""
-
     strategy_id: str
     ok: bool
     error: str | None = None
 
 
-# ─── Pure-logic helpers (testable, no subprocess/filesystem) ──────────────────
+@dataclasses.dataclass
+class ComboResult:
+    idx: int
+    overrides: dict
+    run_name: str
+    metrics: dict | None
+    error: str | None = None
+
+    @property
+    def sharpe(self) -> float:
+        if not self.metrics:
+            return float("-inf")
+        try:
+            return float(self.metrics.get("sharpe", "-inf"))
+        except (TypeError, ValueError):
+            return float("-inf")
+
+    @property
+    def trade_count(self) -> int:
+        if not self.metrics:
+            return 0
+        try:
+            return int(float(self.metrics.get("trade_count", 0)))
+        except (TypeError, ValueError):
+            return 0
 
 
-def swarm_target_from_ticker(okx_swap: str) -> str:
-    """Convert an OKX swap ticker into a grounding-friendly swarm ``market`` value.
+# ─── Parameter grid helpers (pure) ────────────────────────────────────────────
 
-    Strips the ``-SWAP`` suffix so the swarm grounding layer can detect the
-    ``BASE-USDT`` token.
 
-    Args:
-        okx_swap: OKX perpetual swap ticker, e.g. "BTC-USDT-SWAP".
+def expand_param_ranges(psr: dict) -> dict[str, list]:
+    """Expand [lo, hi, step] tuples into discrete value lists.
 
-    Returns:
-        Token without the ``-SWAP`` suffix, e.g. "BTC-USDT".
-        The case of the input is preserved (uppercase inputs stay uppercase).
-
-    Note:
-        This function is intentionally duplicated from stage2_strategies.py to
-        avoid cross-stage dependencies.
+    Lists already discrete are passed through. Non-numeric or malformed
+    entries are skipped silently.
     """
-    token = okx_swap.strip()
-    if token.upper().endswith("-SWAP"):
-        token = token[: -len("-SWAP")]
-    return token
+    out: dict[str, list] = {}
+    for key, spec in psr.items():
+        if not isinstance(spec, (list, tuple)) or len(spec) not in (1, 3):
+            continue
+        if len(spec) == 1:
+            out[key] = [spec[0]]
+            continue
+        lo, hi, step = spec
+        try:
+            lo_f, hi_f, step_f = float(lo), float(hi), float(step)
+        except (TypeError, ValueError):
+            continue
+        if step_f <= 0 or hi_f < lo_f:
+            continue
+        # Preserve int-ness if all three are integers
+        is_int = all(float(x).is_integer() for x in (lo, hi, step))
+        vals: list = []
+        v = lo_f
+        while v <= hi_f + 1e-9:
+            vals.append(int(round(v)) if is_int else round(v, 6))
+            v += step_f
+        if vals:
+            out[key] = vals
+    return out
 
 
-def build_swarm_vars(
-    strategy_id: str,
-    spec_yaml_text: str,
-    diagnosis: dict,
-    metrics_by_run: dict[str, dict],
-    market: str,
-) -> dict[str, str]:
-    """Build the user_vars dict for ``vibe-trading --swarm-run quant_strategy_desk``.
+def sample_combos(expanded: dict[str, list], max_n: int, seed: int) -> list[dict]:
+    """Cartesian product, then random-sample (seeded) down to max_n combos.
 
-    The quant_strategy_desk preset declares two variables: ``market`` and
-    ``goal``. Strategy context is injected into ``goal`` (free-form prose)
-    because ``market`` must stay a clean ``BASE-USDT`` token.
-
-    Args:
-        strategy_id:    Strategy identifier.
-        spec_yaml_text: Raw YAML text of the strategy spec.
-        diagnosis:      Parsed diagnosis.json dict (at minimum ``recommended_action``
-                        and ``findings`` keys are expected).
-        metrics_by_run: Dict mapping run_name -> metrics dict (may be empty).
-        market:         Clean swarm market token, e.g. "BTC-USDT".
-
-    Returns:
-        dict[str, str] with keys ``market`` and ``goal``.
+    If the full grid is smaller than max_n, returns the full grid in shuffled
+    order. The first combo is always the centroid (median of each dim) for
+    a sensible default-vs-tuned baseline.
     """
-    # Truncate YAML to avoid token overflow.
-    yaml_snippet = spec_yaml_text[:2000]
+    if not expanded:
+        return []
+    keys = sorted(expanded.keys())
+    all_combos = [dict(zip(keys, vals)) for vals in product(*[expanded[k] for k in keys])]
+    if not all_combos:
+        return []
 
-    # Extract relevant diagnosis fields.
-    diagnosis_context = {
-        "recommended_action": diagnosis.get("recommended_action"),
-        "findings": diagnosis.get("findings", []),
-        "summary": diagnosis.get("summary"),
-    }
+    rng = random.Random(seed)
+    rng.shuffle(all_combos)
 
-    # Include base_run metrics if available.
-    base_metrics: dict = {}
-    if metrics_by_run:
-        first_key = next(iter(metrics_by_run))
-        base_metrics = metrics_by_run[first_key] or {}
+    # Prepend centroid combo (median per dim) if not already at front
+    centroid = {k: expanded[k][len(expanded[k]) // 2] for k in keys}
+    if all_combos[0] != centroid:
+        all_combos = [centroid] + [c for c in all_combos if c != centroid]
 
-    goal_text = (
-        f"Strategy ID: {strategy_id}\n\n"
-        "## Strategy Spec (YAML)\n\n"
-        f"```yaml\n{yaml_snippet}\n```\n\n"
-        "## Stage-3 Diagnosis\n\n"
-        f"```json\n{json.dumps(diagnosis_context, indent=2, ensure_ascii=False)}\n```\n\n"
-        "## Base Run Metrics\n\n"
-        f"```json\n{json.dumps(base_metrics, indent=2, ensure_ascii=False)}\n```\n\n"
-        "## Optimization Task\n\n"
-        "Identify the top 3-5 parameters to sweep from the strategy's "
-        "``parameter_search_ranges``. Suggest improved ranges for each parameter "
-        "based on the diagnosis findings and metrics. Output optimization findings "
-        "including: which parameters to sweep, recommended best values, and a "
-        "summary of expected improvement."
-    )
-
-    return {
-        "market": market,
-        "goal": goal_text,
-    }
+    return all_combos[: max_n]
 
 
-def parse_swarm_run_id(stdout: str) -> str | None:
-    """Extract the swarm run id from ``vibe-trading --swarm-run`` stdout.
+# ─── Spec override helpers (pure, regex-driven) ───────────────────────────────
 
-    Args:
-        stdout: Captured stdout of the swarm subprocess.
 
-    Returns:
-        The run id string (swarm-YYYYMMDD-HHMMSS-<hex8>), or None.
+_PERCENTILE_COND_RE = re.compile(
+    r"^([a-z][a-z0-9_]*)_percentile_(\d+)d\s+(<=|>=|<|>|==)\s+(-?\d+(?:\.\d+)?)"
+    r"(?:\s+persist\s+(\d+)/(\d+))?\s*$"
+)
+_INVALIDATION_EXPR_RE = re.compile(
+    r"^([a-z][a-z0-9_]*)_percentile_(\d+)d between (\d+(?:\.\d+)?),(\d+(?:\.\d+)?)$"
+)
+
+
+def _rewrite_percentile_condition(
+    cond: str,
+    new_value: float | None = None,
+    new_lookback: int | None = None,
+    new_persist_m: int | None = None,
+    new_persist_n: int | None = None,
+) -> str:
+    """Apply field-wise overrides to a single percentile DSL condition.
+
+    Untouched fields keep their original values. Raises ValueError if the
+    condition does not match the percentile DSL.
     """
-    match = _RUN_ID_RE.search(stdout or "")
-    return match.group(0) if match else None
+    m = _PERCENTILE_COND_RE.match(cond.strip())
+    if not m:
+        raise ValueError(f"Not a percentile DSL condition: {cond!r}")
+    indicator, lookback, op, value, pm, pn = m.groups()
+    lookback_out = new_lookback if new_lookback is not None else int(lookback)
+    value_out = new_value if new_value is not None else float(value)
+    persist_m_out = new_persist_m if new_persist_m is not None else (int(pm) if pm else None)
+    persist_n_out = new_persist_n if new_persist_n is not None else (int(pn) if pn else None)
 
-
-def extract_swarm_report(stdout: str) -> str:
-    """Best-effort extraction of the swarm's prose final report from stdout.
-
-    Args:
-        stdout: Captured stdout of the swarm subprocess.
-
-    Returns:
-        The optimization prose report, trimmed to a reasonable length.
-    """
-    text = stdout or ""
-    marker = "Final Report"
-    idx = text.rfind(marker)
-    if idx != -1:
-        report = text[idx + len(marker):]
-        report = report.strip().lstrip("-─— \t").strip()
-        return report[:4000]
+    # Format value: keep integer-looking values without trailing .0
+    if float(value_out).is_integer():
+        value_str = str(int(value_out))
     else:
-        return text[-4000:].strip()
+        value_str = str(value_out)
+
+    out = f"{indicator}_percentile_{lookback_out}d {op} {value_str}"
+    if persist_m_out is not None and persist_n_out is not None:
+        out += f" persist {persist_m_out}/{persist_n_out}"
+    return out
 
 
-def parse_optimization_from_report(
-    report: str,
-    strategy_yaml_text: str,
-) -> tuple[list[str], dict[str, float]]:
-    """Extract swept_params and best_params from the swarm prose report.
+def _rewrite_invalidation_lookback(expr: str, new_lookback: int) -> str:
+    m = _INVALIDATION_EXPR_RE.match(expr.strip())
+    if not m:
+        raise ValueError(f"Not an invalidation expression: {expr!r}")
+    indicator, _lookback, lo, hi = m.groups()
+    return f"{indicator}_percentile_{new_lookback}d between {lo},{hi}"
 
-    Uses heuristics / regex to parse:
-      - ``swept_params``: parameter names from the strategy YAML's
-        ``parameter_search_ranges`` that appear in the report text.
-      - ``best_params``: lines like "lookback_days: 90" or "param = 3.0".
 
-    Args:
-        report:             Prose text from the swarm Final Report.
-        strategy_yaml_text: Raw YAML text of the strategy spec (used to
-                            identify which parameter names are relevant).
+def apply_overrides_to_spec(base_spec: dict, overrides: dict) -> dict:
+    """Return a deep-ish copy of base_spec with sweep overrides applied.
 
-    Returns:
-        (swept_params, best_params). Both are empty if nothing parseable is
-        found. This function never raises.
+    Override keys handled (subset of yaml parameter_search_ranges):
+      - lookback_days       → rewrite all percentile_<n>d in entry/exit DSL
+      - entry_low_pct       → entry_long condition value
+      - entry_high_pct      → entry_short condition value
+      - persistence_last_n  → persist X/N denominator (entry conditions)
+      - persistence_min_hits→ persist M/X numerator (entry conditions)
+      - hold_max_hours      → exit_rules[time_based].max_hold_hours
+      - tp_pct              → exit_rules[take_profit_pct].value
+      - sl_pct              → exit_rules[stop_loss_pct].value
+
+    Unknown keys are ignored.
     """
-    try:
-        return _parse_optimization_from_report_inner(report, strategy_yaml_text)
-    except Exception:  # noqa: BLE001
-        return [], {}
+    spec = json.loads(json.dumps(base_spec))  # cheap deep copy via json
+
+    lookback = overrides.get("lookback_days")
+    entry_low = overrides.get("entry_low_pct")
+    entry_high = overrides.get("entry_high_pct")
+    persist_n = overrides.get("persistence_last_n")
+    persist_m = overrides.get("persistence_min_hits")
+
+    def _rewrite_entry_block(block: dict | None, new_value: float | None) -> None:
+        if not block or "conditions" not in block:
+            return
+        new_conds: list[str] = []
+        for c in block["conditions"]:
+            new_conds.append(
+                _rewrite_percentile_condition(
+                    c,
+                    new_value=new_value,
+                    new_lookback=lookback,
+                    new_persist_m=persist_m,
+                    new_persist_n=persist_n,
+                )
+            )
+        block["conditions"] = new_conds
+
+    _rewrite_entry_block(spec.get("entry_long"), float(entry_low) if entry_low is not None else None)
+    _rewrite_entry_block(spec.get("entry_short"), float(entry_high) if entry_high is not None else None)
+
+    # Exit rules
+    hold = overrides.get("hold_max_hours")
+    tp = overrides.get("tp_pct")
+    sl = overrides.get("sl_pct")
+    for rule in spec.get("exit_rules", []):
+        cond = rule.get("condition")
+        if cond == "time_based" and hold is not None:
+            rule["max_hold_hours"] = int(hold)
+        elif cond == "take_profit_pct" and tp is not None:
+            rule["value"] = float(tp)
+        elif cond == "stop_loss_pct" and sl is not None:
+            rule["value"] = float(sl)
+        elif cond == "signal_invalidation" and lookback is not None:
+            rule["expression"] = _rewrite_invalidation_lookback(rule["expression"], int(lookback))
+
+    return spec
 
 
-def _parse_optimization_from_report_inner(
-    report: str,
-    strategy_yaml_text: str,
-) -> tuple[list[str], dict[str, float]]:
-    """Inner implementation (may raise; outer wrapper catches all exceptions)."""
-    import yaml as _yaml
+# ─── Per-combo execution ──────────────────────────────────────────────────────
 
-    swept_params: list[str] = []
-    best_params: dict[str, float] = {}
 
-    if not report:
-        return swept_params, best_params
+def _compile_signal_code(spec_dict: dict) -> str:
+    """Validate spec dict against StrategySpec and compile to signal_engine source."""
+    spec_model = StrategySpec.model_validate(spec_dict)
+    return compile_strategy(spec_model)
 
-    # ── Extract parameter names from YAML parameter_search_ranges ─────────────
-    known_param_names: list[str] = []
-    try:
-        doc = _yaml.safe_load(strategy_yaml_text or "")
-        if isinstance(doc, dict):
-            psr = doc.get("parameter_search_ranges", {})
-            if isinstance(psr, dict):
-                known_param_names = list(psr.keys())
-    except Exception:  # noqa: BLE001
-        pass
 
-    # ── Identify swept params: known param names that appear in the report ─────
-    report_lower = report.lower()
-    for param in known_param_names:
-        if param.lower() in report_lower:
-            swept_params.append(param)
+def _scaffold_combo_run(
+    run_dir: Path,
+    base_config: dict,
+    signal_code: str,
+) -> None:
+    """Create runs/<combo>/ with config.json + code/signal_engine.py."""
+    code_dir = run_dir / "code"
+    code_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "config.json").write_text(
+        json.dumps(base_config, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    (code_dir / "signal_engine.py").write_text(signal_code, encoding="utf-8")
 
-    # ── Extract best_params: lines like "param: value" or "param = value" ──────
-    # Pattern covers both ":" and "=" separators, with optional spaces.
-    # Value must be numeric (int or float).
-    param_value_re = re.compile(
-        r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*[:=]\s*([+-]?\d+(?:\.\d+)?)\b"
+
+def _invoke_backtest(run_dir: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-m", "backtest.runner", str(run_dir)],
+        cwd=str(_REPO_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=BACKTEST_TIMEOUT_S,
     )
 
-    for match in param_value_re.finditer(report):
-        param_name = match.group(1)
-        value_str = match.group(2)
-        # Only include params we recognise from the strategy YAML.
-        if param_name in known_param_names:
-            try:
-                best_params[param_name] = float(value_str)
-            except ValueError:
-                pass
 
-    return swept_params, best_params
+def _read_metrics(run_dir: Path) -> dict | None:
+    path = run_dir / "artifacts" / "metrics.csv"
+    if not path.exists():
+        return None
+    with path.open("r", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    return rows[0] if rows else None
+
+
+def _run_one_combo(
+    idx: int,
+    overrides: dict,
+    base_spec: dict,
+    base_config: dict,
+    strategy_id: str,
+    runs_root: Path,
+) -> ComboResult:
+    run_name = f"{strategy_id}_sweep_{idx:03d}"
+    run_dir = runs_root / run_name
+
+    try:
+        spec_dict = apply_overrides_to_spec(base_spec, overrides)
+        signal_code = _compile_signal_code(spec_dict)
+    except Exception as exc:  # noqa: BLE001
+        return ComboResult(idx=idx, overrides=overrides, run_name=run_name, metrics=None,
+                           error=f"compile failed: {exc}")
+
+    _scaffold_combo_run(run_dir, base_config, signal_code)
+
+    try:
+        proc = _invoke_backtest(run_dir)
+    except subprocess.TimeoutExpired:
+        return ComboResult(idx=idx, overrides=overrides, run_name=run_name, metrics=None,
+                           error="backtest timeout")
+    if proc.returncode != 0:
+        return ComboResult(idx=idx, overrides=overrides, run_name=run_name, metrics=None,
+                           error=f"backtest exit {proc.returncode}: {(proc.stderr or '')[:200]}")
+
+    metrics = _read_metrics(run_dir)
+    if metrics is None:
+        return ComboResult(idx=idx, overrides=overrides, run_name=run_name, metrics=None,
+                           error="no metrics.csv produced")
+    return ComboResult(idx=idx, overrides=overrides, run_name=run_name, metrics=metrics)
+
+
+# ─── Ranking / output ─────────────────────────────────────────────────────────
+
+
+def rank_combos(combos: list[ComboResult], min_trades: int = MIN_TRADE_COUNT_GATE) -> list[ComboResult]:
+    """Return combos sorted best→worst.
+
+    Primary filter: trade_count >= min_trades. Among gated combos, sort by
+    sharpe desc. If zero combos pass the gate, fall back to all combos
+    ranked by sharpe desc (caller sees that the best has trade_count < gate).
+    """
+    valid = [c for c in combos if c.metrics is not None]
+    gated = [c for c in valid if c.trade_count >= min_trades]
+    pool = gated if gated else valid
+    return sorted(pool, key=lambda c: c.sharpe, reverse=True)
+
+
+def _summarise(combos: list[ComboResult], ranked: list[ComboResult], top_n: int = 5) -> str:
+    n_total = len(combos)
+    n_with_metrics = sum(1 for c in combos if c.metrics is not None)
+    n_errors = n_total - n_with_metrics
+    n_gated = sum(1 for c in ranked if c.trade_count >= MIN_TRADE_COUNT_GATE)
+
+    lines = [
+        f"# Stage 4 grid sweep summary",
+        f"",
+        f"- combos attempted: {n_total}",
+        f"- combos with metrics: {n_with_metrics}",
+        f"- combos with errors: {n_errors}",
+        f"- combos passing trade_count >= {MIN_TRADE_COUNT_GATE}: {n_gated}",
+        f"",
+        f"## Top {min(top_n, len(ranked))} (by sharpe)",
+        f"",
+    ]
+    for c in ranked[:top_n]:
+        lines.append(
+            f"- {c.run_name}: sharpe={c.sharpe:.3f}, trade_count={c.trade_count}, "
+            f"overrides={c.overrides}"
+        )
+    return "\n".join(lines)
 
 
 def build_optimization_block(
-    run_id: str | None,
     swept_params: list[str],
-    best_params: dict[str, float],
-    improvement_summary: str | None,
+    best: ComboResult | None,
+    summary: str,
 ) -> dict:
-    """Build the OptimizationBlock dict.
-
-    Args:
-        run_id:              The swarm run id; None if unavailable.
-        swept_params:        List of parameter names that were swept.
-        best_params:         Dict of {param_name: best_float_value}.
-        improvement_summary: First 2000 chars of the prose report (or None).
-
-    Returns:
-        A plain dict that validates against OptimizationBlock schema.
-    """
+    best_params: dict[str, float] = {}
+    if best is not None:
+        for k, v in best.overrides.items():
+            try:
+                best_params[k] = float(v)
+            except (TypeError, ValueError):
+                continue
     return {
-        "source_run": run_id,
+        "source_run": best.run_name if best is not None else None,
         "method": OPTIMIZATION_METHOD,
-        "swept_params": list(swept_params),
-        "best_params": dict(best_params),
-        "improvement_summary": improvement_summary,
+        "swept_params": sorted(swept_params),
+        "best_params": best_params,
+        "improvement_summary": summary[:2000] if summary else None,
     }
 
 
 def verify_optimization(optimization_path: Path) -> OptimizationCheckResult:
-    """Verify optimization.json exists and validates against OptimizationBlock schema.
-
-    Args:
-        optimization_path: Path to the <strategy_id>/optimization.json file.
-
-    Returns:
-        OptimizationCheckResult with ok=True if the file validates; ok=False otherwise.
-    """
     strategy_id = optimization_path.parent.name
-
     if not optimization_path.exists():
-        return OptimizationCheckResult(
-            strategy_id=strategy_id,
-            ok=False,
-            error=f"optimization.json missing: {optimization_path}",
-        )
-
+        return OptimizationCheckResult(strategy_id=strategy_id, ok=False,
+                                       error=f"optimization.json missing: {optimization_path}")
     try:
-        raw = optimization_path.read_text(encoding="utf-8")
-        data = json.loads(raw)
+        data = json.loads(optimization_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        return OptimizationCheckResult(
-            strategy_id=strategy_id,
-            ok=False,
-            error=f"optimization.json invalid JSON: {exc}",
-        )
-
+        return OptimizationCheckResult(strategy_id=strategy_id, ok=False,
+                                       error=f"optimization.json invalid JSON: {exc}")
     try:
         OptimizationBlock.model_validate(data)
     except Exception as exc:  # noqa: BLE001
-        return OptimizationCheckResult(
-            strategy_id=strategy_id,
-            ok=False,
-            error=f"optimization.json schema validation failed: {exc}",
-        )
-
+        return OptimizationCheckResult(strategy_id=strategy_id, ok=False,
+                                       error=f"schema validation failed: {exc}")
     return OptimizationCheckResult(strategy_id=strategy_id, ok=True)
 
 
 def compute_exit_code(results: list[OptimizationCheckResult]) -> int:
-    """Return 0 if at least one result was produced and all are ok; 1 otherwise.
-
-    Args:
-        results: List of OptimizationCheckResult from verify_optimization() calls.
-
-    Returns:
-        0 on full success (>=1 result, all ok); 1 otherwise.
-    """
     if not results:
         return 1
     return 0 if all(r.ok for r in results) else 1
 
 
 def print_summary(results: list[OptimizationCheckResult]) -> None:
-    """Print a human-readable per-strategy optimization summary to stdout.
-
-    Args:
-        results: List of OptimizationCheckResult.
-    """
     print("\n" + "=" * 60)
-    print("Stage-4 Optimization output verification summary")
+    print("Stage-4 Optimization summary")
     print("=" * 60)
-    if not results:
-        print("  (no strategies were optimized)")
-
     for r in results:
         status = "OK" if r.ok else "FAIL"
-        if r.ok:
-            msg = "optimization.json present and valid"
-        else:
-            msg = f"FAILED — {r.error}"
+        msg = "optimization.json present and valid" if r.ok else f"FAILED — {r.error}"
         print(f"  [{status}] {r.strategy_id}: {msg}")
-
     total = len(results)
     passed = sum(1 for r in results if r.ok)
-    print(f"\n{passed}/{total} optimizations passed.")
-    if total == 0 or passed < total:
-        print("Stage 4 Optimization FAILED: no strategies were optimized or one or more failed.")
-    else:
-        print("Stage 4 Optimization PASSED: all strategies have valid optimization.json.")
+    print(f"\n{passed}/{total} strategies optimized.")
+    print("Stage 4 " + ("PASSED" if total and passed == total else "FAILED"))
     print("=" * 60)
 
 
-# ─── Stage orchestration (thin shell, not unit-tested) ────────────────────────
-
-
-def run_swarm(vars_dict: dict[str, str]) -> str:
-    """Invoke ``vibe-trading --swarm-run quant_strategy_desk`` and return stdout.
-
-    The CLI entry point is ``cli.py`` in the agent directory. The subprocess
-    MUST run with cwd=<repo>/agent because cli.py imports ``src.*`` packages.
-
-    Args:
-        vars_dict: The user_vars dict from build_swarm_vars().
-
-    Returns:
-        Captured stdout of the swarm run.
-
-    Raises:
-        subprocess.TimeoutExpired: If the swarm subprocess does not complete
-            within SWARM_TIMEOUT_S seconds.
-        subprocess.CalledProcessError: If the CLI exits non-zero.
-    """
-    agent_dir = _REPO_ROOT / "agent"
-    cli_path = agent_dir / "cli.py"
-    vars_json = json.dumps(vars_dict, ensure_ascii=False)
-
-    cmd = [sys.executable, str(cli_path), "--swarm-run", SWARM_PRESET, vars_json]
-    print(f"[stage4] invoking swarm: {SWARM_PRESET}  (cwd={agent_dir}, timeout={SWARM_TIMEOUT_S}s)")
-    completed = subprocess.run(
-        cmd,
-        cwd=str(agent_dir),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=SWARM_TIMEOUT_S,
-    )
-    if completed.returncode != 0:
-        stderr_snippet = (completed.stderr or "")[:2000]
-        print(
-            f"[stage4] swarm subprocess exited with code {completed.returncode}.\n"
-            f"stderr (first 2000 chars):\n{stderr_snippet}",
-            file=sys.stderr,
-        )
-        raise subprocess.CalledProcessError(
-            returncode=completed.returncode,
-            cmd=cmd,
-            output=completed.stdout,
-            stderr=completed.stderr,
-        )
-    return completed.stdout or ""
+# ─── Orchestration ────────────────────────────────────────────────────────────
 
 
 def _optimize_strategy(
@@ -450,183 +469,119 @@ def _optimize_strategy(
     runs_root: Path,
     strategies_dir: Path,
     manifests_dir: Path,
+    max_combos: int,
+    seed: int,
 ) -> OptimizationCheckResult:
-    """Gate, build vars, invoke swarm, and write optimization.json for one strategy.
+    print(f"\n{'='*60}\n[stage4] Strategy: {strategy_id}\n{'='*60}")
 
-    Steps:
-      1. Gate: diagnosis.json must exist (stage-3 complete).
-      2. Gate: strategy YAML must exist.
-      3. Read diagnosis.json + strategy YAML text.
-      4. Read base_run metrics (optional).
-      5. Build swarm vars.
-      6. Call run_swarm() — catch TimeoutExpired and generic exceptions.
-      7. Parse run_id + extract report.
-      8. Parse swept_params + best_params.
-      9. Build optimization block + write optimization.json.
-      10. Verify and return result.
-
-    A swarm failure (timeout or CalledProcessError) produces an empty but valid
-    OptimizationBlock (ok=True) so the pipeline can continue.
-
-    Args:
-        strategy_id:   Strategy identifier.
-        entry:         StrategyRunsEntry from strategy_runs.json.
-        cfg:           ResearchConfig (loaded from research_config.yaml).
-        runs_root:     <repo_root>/runs/ directory.
-        strategies_dir: research/strategies/ directory.
-        manifests_dir: research/manifests/ directory.
-
-    Returns:
-        OptimizationCheckResult for this strategy.
-    """
-    print(f"\n{'=' * 60}")
-    print(f"[stage4] Strategy: {strategy_id}")
-    print(f"{'=' * 60}")
-
-    # ── Gate: diagnosis.json must exist ──────────────────────────────────────
     diagnosis_path = manifests_dir / strategy_id / "diagnosis.json"
     if not diagnosis_path.exists():
-        msg = f"{strategy_id}: diagnosis.json not found at {diagnosis_path} — run stage 3 first"
+        msg = f"diagnosis.json not found at {diagnosis_path} — run stage 3 first"
         print(f"  [SKIP] {msg}")
         return OptimizationCheckResult(strategy_id=strategy_id, ok=False, error=msg)
 
-    # ── Gate: strategy YAML must exist ────────────────────────────────────────
     yaml_path = strategies_dir / f"strategy_{strategy_id}.yaml"
     if not yaml_path.exists():
-        msg = f"{strategy_id}: strategy YAML not found at {yaml_path}"
+        msg = f"strategy YAML missing: {yaml_path}"
         print(f"  [SKIP] {msg}")
         return OptimizationCheckResult(strategy_id=strategy_id, ok=False, error=msg)
 
-    # ── Read inputs ───────────────────────────────────────────────────────────
-    print("  [1/5] Reading diagnosis.json and strategy YAML …")
-    try:
-        diagnosis = json.loads(diagnosis_path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        msg = f"{strategy_id}: failed to read diagnosis.json: {exc}"
-        print(f"  [ERROR] {msg}")
+    base_spec = _yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    psr = base_spec.get("parameter_search_ranges", {})
+    expanded = expand_param_ranges(psr)
+    if not expanded:
+        msg = "no parameter_search_ranges to sweep"
+        print(f"  [SKIP] {msg}")
         return OptimizationCheckResult(strategy_id=strategy_id, ok=False, error=msg)
 
-    spec_yaml_text = yaml_path.read_text(encoding="utf-8")
+    combos = sample_combos(expanded, max_n=max_combos, seed=seed)
+    print(f"  Param dims: {list(expanded.keys())}")
+    print(f"  Total grid: {sum(1 for _ in product(*[expanded[k] for k in expanded])):,}  "
+          f"sampling: {len(combos)}  seed={seed}")
 
-    # ── Read base_run metrics (optional) ──────────────────────────────────────
-    metrics_by_run: dict[str, dict] = {}
-    if entry.base_run is not None:
-        from pipeline.stage3_diagnose import read_metrics_csv  # local import to avoid circular
-        base_metrics_path = runs_root / entry.base_run / "artifacts" / "metrics.csv"
-        base_metrics = read_metrics_csv(base_metrics_path)
-        if base_metrics is not None:
-            metrics_by_run[entry.base_run] = base_metrics
-            print(f"    base_run '{entry.base_run}': {len(base_metrics)} columns")
+    base_config = build_run_config(symbol=entry.symbol, cfg=cfg)
+    # If a regime/oos override is desired in future, route through here.
+
+    results: list[ComboResult] = []
+    for i, overrides in enumerate(combos):
+        res = _run_one_combo(
+            idx=i, overrides=overrides, base_spec=base_spec, base_config=base_config,
+            strategy_id=strategy_id, runs_root=runs_root,
+        )
+        results.append(res)
+        if res.error:
+            print(f"  [combo {i:03d}] ERROR — {res.error}  overrides={overrides}")
         else:
-            print(f"    base_run '{entry.base_run}': metrics.csv missing or empty (skipped)")
+            print(f"  [combo {i:03d}] sharpe={res.sharpe:+.3f}  trades={res.trade_count}  "
+                  f"overrides={overrides}")
 
-    # ── Determine market token ─────────────────────────────────────────────────
-    # Derive market from the config symbol whose strategy prefix matches.
-    market = strategy_id  # fallback: use strategy_id itself
-    for sym in cfg.symbols:
-        if strategy_id.startswith(sym.name.lower()):
-            market = swarm_target_from_ticker(sym.okx_swap)
-            break
+    ranked = rank_combos(results)
+    best = ranked[0] if ranked else None
+    summary = _summarise(results, ranked)
+    print(f"\n{summary}\n")
 
-    # ── Build swarm vars ──────────────────────────────────────────────────────
-    print("  [2/5] Building swarm vars …")
-    vars_dict = build_swarm_vars(
-        strategy_id=strategy_id,
-        spec_yaml_text=spec_yaml_text,
-        diagnosis=diagnosis,
-        metrics_by_run=metrics_by_run,
-        market=market,
-    )
-
-    # ── Invoke swarm ──────────────────────────────────────────────────────────
-    print("  [3/5] Invoking swarm …")
-    swarm_stdout: str = ""
-    swarm_ok = True
-    try:
-        swarm_stdout = run_swarm(vars_dict)
-    except subprocess.TimeoutExpired:
-        swarm_ok = False
-        print(f"  [WARN] swarm timed out after {SWARM_TIMEOUT_S}s — writing empty optimization block")
-    except Exception as exc:  # noqa: BLE001
-        swarm_ok = False
-        print(f"  [WARN] swarm failed: {exc} — writing empty optimization block")
-
-    # ── Parse results ─────────────────────────────────────────────────────────
-    print("  [4/5] Parsing swarm output …")
-    if swarm_ok and swarm_stdout:
-        run_id = parse_swarm_run_id(swarm_stdout)
-        report = extract_swarm_report(swarm_stdout)
-        swept_params, best_params = parse_optimization_from_report(report, spec_yaml_text)
-        improvement_summary = report[:2000] if report else None
-        print(f"    run_id={run_id}, swept_params={swept_params}, best_params={best_params}")
-    else:
-        run_id = None
-        swept_params = []
-        best_params = {}
-        improvement_summary = None
-
-    # ── Write optimization.json ───────────────────────────────────────────────
-    print("  [5/5] Writing optimization.json …")
     block = build_optimization_block(
-        run_id=run_id,
-        swept_params=swept_params,
-        best_params=best_params,
-        improvement_summary=improvement_summary,
+        swept_params=list(expanded.keys()),
+        best=best,
+        summary=summary,
     )
-
     out_dir = manifests_dir / strategy_id
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "optimization.json"
     out_path.write_text(json.dumps(block, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"  [OK] wrote {out_path}")
 
-    # ── Verify ────────────────────────────────────────────────────────────────
     return verify_optimization(out_path)
 
 
 def main() -> None:
-    """Stage-4 Optimization entry point: orchestrate, verify, report, exit."""
-    cfg: ResearchConfig = load_config()
-    runs_map: StrategyRunsMap = load_strategy_runs()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--strategy", default=None, help="optimize only this strategy_id")
+    parser.add_argument("--max", type=int, default=DEFAULT_MAX_COMBOS,
+                        help=f"max combos per strategy (default {DEFAULT_MAX_COMBOS})")
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED,
+                        help=f"RNG seed for combo sampling (default {DEFAULT_SEED})")
+    args = parser.parse_args()
+
+    cfg = load_config()
+    runs_map = load_strategy_runs()
 
     runs_root = _REPO_ROOT / "runs"
     strategies_dir = _REPO_ROOT / "research" / "strategies"
     manifests_dir = _REPO_ROOT / "research" / "manifests"
 
     print("=" * 60)
-    print("Stage 4 — Optimization")
+    print(f"Stage 4 — Deterministic Grid Sweep")
     print("=" * 60)
-    print(f"Strategies: {list(runs_map.entries.keys())}")
-    print(f"Runs root:  {runs_root}")
-    print(f"Manifests:  {manifests_dir}")
+    print(f"max_combos={args.max}  seed={args.seed}")
 
-    all_results: list[OptimizationCheckResult] = []
+    targets = (
+        [(args.strategy, runs_map.entries[args.strategy])]
+        if args.strategy and args.strategy in runs_map.entries
+        else list(runs_map.entries.items())
+    )
 
-    if not runs_map.entries:
-        print("[stage4] WARNING: no strategies found in strategy_runs.json — nothing to optimize.")
+    if not targets:
+        print(f"[stage4] no matching strategies (--strategy={args.strategy!r}).")
         sys.exit(1)
 
-    for strategy_id, entry in runs_map.entries.items():
+    results: list[OptimizationCheckResult] = []
+    for strategy_id, entry in targets:
         try:
             result = _optimize_strategy(
-                strategy_id=strategy_id,
-                entry=entry,
-                cfg=cfg,
-                runs_root=runs_root,
-                strategies_dir=strategies_dir,
+                strategy_id=strategy_id, entry=entry, cfg=cfg,
+                runs_root=runs_root, strategies_dir=strategies_dir,
                 manifests_dir=manifests_dir,
+                max_combos=args.max, seed=args.seed,
             )
         except Exception as exc:  # noqa: BLE001
-            result = OptimizationCheckResult(
-                strategy_id=strategy_id,
-                ok=False,
-                error=f"unexpected error: {exc}",
-            )
+            result = OptimizationCheckResult(strategy_id=strategy_id, ok=False,
+                                             error=f"unexpected error: {exc}")
             print(f"  [ERROR] {strategy_id}: {exc}")
-        all_results.append(result)
+        results.append(result)
 
-    print_summary(all_results)
-    sys.exit(compute_exit_code(all_results))
+    print_summary(results)
+    sys.exit(compute_exit_code(results))
 
 
 if __name__ == "__main__":
