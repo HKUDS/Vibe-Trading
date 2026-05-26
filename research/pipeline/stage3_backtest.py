@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -226,7 +227,7 @@ def compute_exit_code(results: list[BacktestRunResult]) -> int:
 def list_pending_runs(
     strategy_id: str,
     entry: StrategyRunsEntry,
-) -> list[tuple[str, str, str]]:
+) -> list[tuple[str, str, str, str]]:
     """List all backtest runs to process from a strategy entry.
 
     Processes base_run, regime_runs values, and oos_runs items.
@@ -238,25 +239,111 @@ def list_pending_runs(
         entry:       StrategyRunsEntry from strategy_runs.json.
 
     Returns:
-        List of (run_name, strategy_id, symbol) tuples.
+        List of (run_name, strategy_id, symbol, role) tuples.
+        Role is one of: "base", "<regime_label>" (e.g. "bull"), or the oos
+        run_name itself (e.g. "eth_s1_oos_2023") — caller parses year from it.
     """
-    runs: list[tuple[str, str, str]] = []
+    runs: list[tuple[str, str, str, str]] = []
 
-    # base_run (string or null)
     if entry.base_run is not None:
-        runs.append((entry.base_run, strategy_id, entry.symbol))
+        runs.append((entry.base_run, strategy_id, entry.symbol, "base"))
 
-    # regime_runs (dict of regime_label -> run_name)
-    # loader guarantees non-null values
-    for _regime_label, run_name in entry.regime_runs.items():
-        runs.append((run_name, strategy_id, entry.symbol))
+    for regime_label, run_name in entry.regime_runs.items():
+        runs.append((run_name, strategy_id, entry.symbol, regime_label))
 
-    # oos_runs (tuple of strings)
-    # loader guarantees non-null values
     for run_name in entry.oos_runs:
-        runs.append((run_name, strategy_id, entry.symbol))
+        runs.append((run_name, strategy_id, entry.symbol, run_name))
 
     return runs
+
+
+# ── Per-run window overrides (regime / oos slicing) ───────────────────────────
+
+
+_OOS_YEAR_RE = re.compile(r"oos_(\d{4})$")
+
+
+def load_regime_windows(manifests_dir: Path, short: str) -> dict[str, tuple[str, str]]:
+    """Read regime_<short>.json breakdown, return longest contiguous span per label.
+
+    Args:
+        manifests_dir: research/manifests/
+        short:         Symbol short, e.g. "eth"
+
+    Returns:
+        {regime_label: (start_iso, end_iso)} for each label that has data.
+        Empty dict if regime file missing.
+    """
+    path = manifests_dir / f"regime_{short}.json"
+    if not path.exists():
+        return {}
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    breakdown = data.get("breakdown", [])
+    if not breakdown:
+        return {}
+
+    # For each label, find longest contiguous run of consecutive days.
+    best: dict[str, tuple[str, str, int]] = {}  # label -> (start, end, length)
+    current_label: str | None = None
+    current_start: str | None = None
+    current_len = 0
+    prev_date: str | None = None
+
+    for row in breakdown:
+        label = row.get("regime")
+        d = row.get("date")
+        if label != current_label:
+            if current_label is not None and current_start is not None:
+                prior = best.get(current_label)
+                if prior is None or current_len > prior[2]:
+                    best[current_label] = (current_start, prev_date, current_len)
+            current_label = label
+            current_start = d
+            current_len = 1
+        else:
+            current_len += 1
+        prev_date = d
+
+    if current_label is not None and current_start is not None:
+        prior = best.get(current_label)
+        if prior is None or current_len > prior[2]:
+            best[current_label] = (current_start, prev_date, current_len)
+
+    return {lbl: (s, e) for lbl, (s, e, _n) in best.items()}
+
+
+def apply_run_window_overrides(
+    config_dict: dict,
+    role: str,
+    regime_windows: dict[str, tuple[str, str]],
+) -> dict:
+    """Mutate-and-return config_dict with per-role start_date/end_date overrides.
+
+    Role mapping:
+      - "base"                  → unchanged (full window)
+      - "bull"/"bear"/"neutral" → longest contiguous regime span from regime_windows
+      - "*_oos_YYYY"            → YYYY-01-01 to YYYY-12-31
+
+    Unknown roles → unchanged.
+    """
+    if role == "base":
+        return config_dict
+
+    if role in regime_windows:
+        start, end = regime_windows[role]
+        config_dict["start_date"] = start
+        config_dict["end_date"] = end
+        return config_dict
+
+    m = _OOS_YEAR_RE.search(role)
+    if m:
+        year = m.group(1)
+        config_dict["start_date"] = f"{year}-01-01"
+        config_dict["end_date"] = f"{year}-12-31"
+        return config_dict
+
+    return config_dict
 
 
 def print_summary(results: list[BacktestRunResult]) -> None:
@@ -354,6 +441,7 @@ def _run_backtest_for_run(
     run_name: str,
     strategy_id: str,
     symbol: str,
+    role: str,
     cfg: ResearchConfig,
     runs_root: Path,
     strategies_code_dir: Path,
@@ -392,7 +480,9 @@ def _run_backtest_for_run(
     # ── Setup run directory ────────────────────────────────────────────────────
     run_dir = runs_root / run_name
     config_dict = build_run_config(symbol=symbol, cfg=cfg)
-    print(f"  [1/3] Creating run dir: {run_dir}")
+    regime_windows = load_regime_windows(manifests_dir, short)
+    config_dict = apply_run_window_overrides(config_dict, role, regime_windows)
+    print(f"  [1/3] Creating run dir: {run_dir}  (role={role}, window={config_dict['start_date']}..{config_dict['end_date']})")
     _setup_run_dir(run_dir, config_dict, strategies_code_dir, strategy_id)
 
     # ── Invoke backtest runner ─────────────────────────────────────────────────
@@ -446,7 +536,7 @@ def main() -> None:
     all_results: list[BacktestRunResult] = []
 
     # Check that at least one run exists across all strategies
-    all_pending: list[tuple[str, str, str]] = []
+    all_pending: list[tuple[str, str, str, str]] = []
     for strategy_id, entry in runs_map.entries.items():
         all_pending.extend(list_pending_runs(strategy_id, entry))
     if not all_pending:
@@ -459,12 +549,13 @@ def main() -> None:
             print(f"\n[skip] {strategy_id}: no pending runs")
             continue
 
-        for run_name, sid, symbol in pending:
+        for run_name, sid, symbol, role in pending:
             try:
                 result = _run_backtest_for_run(
                     run_name=run_name,
                     strategy_id=sid,
                     symbol=symbol,
+                    role=role,
                     cfg=cfg,
                     runs_root=runs_root,
                     strategies_code_dir=strategies_code_dir,
