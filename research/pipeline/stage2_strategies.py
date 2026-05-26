@@ -370,8 +370,7 @@ def build_strategy_spec(
                 "fear / short-crowded (contrarian) regime with persistence."
             ),
             "conditions": [
-                f"{name} percentile over last 90 days <= 20th percentile, "
-                "observed in at least 2 of the last 3 settlements (after smoothing)."
+                f"{name}_percentile_90d <= 20 persist 2/3"
                 for name in factor_names
             ],
         },
@@ -381,8 +380,7 @@ def build_strategy_spec(
                 "greed / long-crowded (contrarian) regime with persistence."
             ),
             "conditions": [
-                f"{name} percentile over last 90 days >= 80th percentile, "
-                "observed in at least 2 of the last 3 settlements (after smoothing)."
+                f"{name}_percentile_90d >= 80 persist 2/3"
                 for name in factor_names
             ],
         },
@@ -390,13 +388,17 @@ def build_strategy_spec(
             {"condition": "time_based", "max_hold_hours": 120},
             {"condition": "take_profit_pct", "value": 6.0},
             {"condition": "stop_loss_pct", "value": 3.0},
-            {
-                "condition": "signal_invalidation",
-                "description": (
-                    "Exit when the retained factors revert toward neutral "
-                    "(percentile back inside the 40th-60th band)."
-                ),
-            },
+            # NOTE: signal_invalidation DSL only supports one indicator per rule.
+            # Emitting one rule per retained factor approximates the AND-band
+            # semantics with OR semantics (any factor reverting to mid-band
+            # triggers exit). Stage-4 sweep can tune the band per factor.
+            *[
+                {
+                    "condition": "signal_invalidation",
+                    "expression": f"{name}_percentile_90d between 40,60",
+                }
+                for name in factor_names
+            ],
         ],
         "position_sizing": {
             "method": "fixed_risk",

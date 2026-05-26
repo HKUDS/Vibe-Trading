@@ -1,17 +1,34 @@
 # yaml-hash: {{ yaml_hash }}
+import sys
+from pathlib import Path
+
 import pandas as pd
-from lib.factor_io import load_factor_values
+
+
+def _ensure_research_on_syspath() -> None:
+    here = Path(__file__).resolve()
+    repo_root = here.parents[3]
+    research_dir = repo_root / "research"
+    sp = str(research_dir)
+    if sp not in sys.path:
+        sys.path.insert(0, sp)
 
 
 class SignalEngine:
     SYMBOL = "{{ spec.symbol }}"
 
     def generate(self, data_map: dict) -> dict:
+        _ensure_research_on_syspath()
+        from lib.factor_io import load_factor_values
+
         symbol = self.SYMBOL
         ohlcv = data_map[symbol]
 
         # Load factor values
         _factors = load_factor_values(symbol)
+        # Strip tz on factor index to match naive ohlcv.index in backtest.
+        if _factors.index.tz is not None:
+            _factors.index = _factors.index.tz_localize(None)
 
         # Indicator setup
 {{ indicator_code }}

@@ -7,12 +7,16 @@
 | 階段 | 檔案 | 功能 |
 |------|------|------|
 | Stage 0 | `stage0_discovery.py` | 因子探索：由 LLM swarm 提議候選因子，寫出 `candidates_<sym>.json` |
-| Stage 1 | `stage1_factor_eval.py` | 因子評估：計算 IC、t-stat，篩選有效因子 |
-| Stage 2 | `stage2_regime.py` | 市場機制分類：偵測多頭/空頭/盤整等 regime |
-| Stage 2b | `stage2b_compile_signal.py` | YAML→signal_engine 編譯：將策略 spec YAML 透過 Jinja 模板產生 signal_engine.py |
-| Stage 3 | `stage3_combine.py` | 因子合成：將多因子加權合併成複合訊號 |
-| Stage 4 | `stage4_backtest.py` | 回測：對合成訊號做歷史績效驗證 |
-| Stage 5 | `stage5_report.py` | 報告輸出：產出 manifest JSON 與可視化報告 |
+| Stage 1 | `stage1_factors.py` | 因子評估：計算 IC、t-stat，篩選有效因子；dump `factor_values_<sym>.parquet` + `meta.json` |
+| Stage 2 | `stage2_strategies.py` | 策略合成：LLM swarm 寫 `strategy_<id>.yaml`（受 `StrategySpec` DSL 限制） |
+| Stage 2b | `stage2b_compile_signal.py` | YAML→signal_engine 編譯：Jinja 模板產 `signal_engine.py`，AST 雙驗證 + 自動 smoke test |
+| Stage 2.5 | `stage2_5_regime.py` | 市場機制分類：偵測多頭/空頭/盤整等 regime |
+| Stage 3 | `stage3_backtest.py` | 回測：用編譯後 signal_engine 跑歷史績效；讀 parquet 不 fetch OKX |
+| Stage 3-diag | `stage3_diagnose.py` | 回測診斷：輸出 `recommended_action`（proceed / back_to_stage_2 / back_to_stage_4） |
+| Stage 4 | `stage4_optimize.py` | 參數優化：對 stage3 通過的策略掃參 |
+| Stage 5 | `stage5_select.py` | 策略挑選：輸出 manifest JSON |
+
+執行順序：`0 → 1 → 2 → 2b → 2.5 → 3 → 3-diag → 4 → 3 (re-verify) → 5`。
 
 ---
 

@@ -104,7 +104,12 @@ def _render_indicator_load(name: str, spec: IndicatorSpec) -> str:
     # Extract factor name from source like "stage1:funding_rate"
     factor_key = spec.source.split(":", 1)[1]
 
-    lines: list[str] = [f'        {name} = _factors["{factor_key}"]']
+    lines: list[str] = [
+        f'        {name} = _factors["{factor_key}"]',
+        # Align factor parquet index to ohlcv index (backtest window may differ from
+        # stage1 dump). reindex + ffill = sample-and-hold for sparse factors too.
+        f"        {name} = {name}.reindex(ohlcv.index, method='ffill')",
+    ]
 
     smoothing = spec.smoothing
     if smoothing == "none":
@@ -183,15 +188,15 @@ def _render_condition(
             indicator_expr, _PERCENTILE_INDICATOR_RE, indicator_var_map
         )
         base_cond = (
-            f"({base_name}.rolling({n_days}*24, min_periods=1).rank(pct=True)*100 {op} {value})"
+            f"({base_name}.rolling({n_days}*24, min_periods={n_days}*24//2).rank(pct=True)*100 {op} {value})"
         )
     elif zscore_m:
         base_name, n_days = _resolve_indicator_var(
             indicator_expr, _ZSCORE_INDICATOR_RE, indicator_var_map
         )
         base_cond = (
-            f"(({base_name} - {base_name}.rolling({n_days}*24, min_periods=1).mean()) "
-            f"/ ({base_name}.rolling({n_days}*24, min_periods=1).std() + 1e-9) {op} {value})"
+            f"(({base_name} - {base_name}.rolling({n_days}*24, min_periods={n_days}*24//2).mean()) "
+            f"/ ({base_name}.rolling({n_days}*24, min_periods={n_days}*24//2).std() + 1e-9) {op} {value})"
         )
     else:
         # Raw comparison — indicator name used as-is
@@ -307,7 +312,7 @@ def _render_exit_state_machine(exit_rules) -> str:
             n_days = int(m.group(2))
             pct_var = f"_inv_pct_{rule_idx}"
             pre_loop_lines.append(
-                f"{i8}{pct_var} = {indicator}.rolling({n_days}*24, min_periods=1)"
+                f"{i8}{pct_var} = {indicator}.rolling({n_days}*24, min_periods={n_days}*24//2)"
                 f".rank(pct=True)*100"
             )
 

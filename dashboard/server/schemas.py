@@ -673,7 +673,14 @@ ExitRule = Annotated[
 
 
 class StrategySpec(_Manifest):
-    """Structured representation of a stage-2 YAML strategy specification."""
+    """Structured representation of a stage-2 YAML strategy specification.
+
+    Compiler-relevant fields are strictly typed; stage-2 attaches extra
+    metadata (hypothesis, hold_period, position_sizing, parameter_search_ranges,
+    expected_behavior, caveats) for humans/dashboard that the compiler ignores.
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
     name: str
     archetype: str
