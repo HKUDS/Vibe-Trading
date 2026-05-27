@@ -176,10 +176,12 @@ def build_diagnosis_prompt(strategy_id: str, metrics_by_run: dict[str, dict]) ->
         f"Use:\n"
         f"  - 'proceed' if metrics are acceptable and the strategy can advance\n"
         f"  - 'back_to_stage_4' if the strategy concept is sound but parameters "
-        f"need optimization (e.g. sharpe between 1.0 and 1.5, or drawdown between "
-        f"10% and 15%)\n"
-        f"  - 'back_to_stage_2' if the strategy concept itself is flawed and needs "
-        f"redesign (e.g. sharpe < 0 or very few trades or fundamental logic issues)\n"
+        f"need optimization (e.g. sharpe between 1.0 and 1.5, drawdown between "
+        f"10% and 15%, OR trade_count below 50 — low trade count usually means "
+        f"entry thresholds are too strict, which is a parameter problem)\n"
+        f"  - 'back_to_stage_2' ONLY if the strategy concept itself is flawed and "
+        f"needs redesign (e.g. sharpe < 0, fundamentally negative edge, or "
+        f"logic issues that cannot be tuned away)\n"
     )
 
 
@@ -224,9 +226,13 @@ def rule_based_action(metrics_by_run: dict[str, dict]) -> RecommendedAction:
     "base" is not explicitly keyed). Falls back gracefully on empty/missing data.
 
     Thresholds:
-      - sharpe < 0 OR trade_count < 20  -> back_to_stage_2
+      - sharpe < 0  -> back_to_stage_2 (concept has negative edge)
       - sharpe < 1.0 OR drawdown > 0.15 OR trade_count < 50 -> back_to_stage_4
       - else -> proceed
+
+    Low trade count alone is NOT a stage_2 signal — it usually reflects entry
+    thresholds being too strict, which is a parameter-tuning problem solvable
+    in stage_4, not a concept failure.
 
     Note: drawdown is read directly from metrics.csv where the backtest engine
     stores it as a negative fraction (e.g. -0.07 for 7% drawdown). abs() is used
@@ -266,8 +272,8 @@ def rule_based_action(metrics_by_run: dict[str, dict]) -> RecommendedAction:
     except (TypeError, ValueError):
         trade_count_f = None
 
-    # back_to_stage_2: severe failures in both sharpe and trade count.
-    if (sharpe_f is not None and sharpe_f < 0) or (trade_count_f is not None and trade_count_f < 20):
+    # back_to_stage_2: concept-level failure (negative edge only).
+    if sharpe_f is not None and sharpe_f < 0:
         return RecommendedAction.BACK_TO_STAGE_2
 
     # back_to_stage_4: moderate failures — needs optimization.

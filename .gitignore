@@ -93,7 +93,7 @@ research/manifests/candidates_*.json
 research/manifests/factor_*.json
 research/manifests/factor_*.md
 research/manifests/regime_*.json
-research/manifests/selection_*.json
+research/manifests/selection*.json
 research/manifests/*/generation.json
 research/manifests/*/diagnosis.json
 research/manifests/*/optimization.json

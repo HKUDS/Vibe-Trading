@@ -310,9 +310,10 @@ class TestRuleBasedAction:
         metrics = {"base": {"sharpe": -0.5, "max_drawdown": 0.20, "trade_count": 80}}
         assert rule_based_action(metrics) == RecommendedAction.BACK_TO_STAGE_2
 
-    def test_very_few_trades_returns_back_to_stage_2(self):
+    def test_very_few_trades_returns_back_to_stage_4(self):
+        """Low trade count is a parameter problem (entry too strict), not concept failure."""
         metrics = {"base": {"sharpe": 1.2, "max_drawdown": 0.05, "trade_count": 5}}
-        assert rule_based_action(metrics) == RecommendedAction.BACK_TO_STAGE_2
+        assert rule_based_action(metrics) == RecommendedAction.BACK_TO_STAGE_4
 
     def test_low_sharpe_returns_back_to_stage_4(self):
         metrics = {"base": {"sharpe": 0.5, "max_drawdown": 0.05, "trade_count": 100}}
@@ -341,9 +342,10 @@ class TestRuleBasedAction:
         result = rule_based_action(metrics)
         assert isinstance(result, RecommendedAction)
 
-    def test_exact_boundary_trade_count_19_stage2(self):
+    def test_exact_boundary_trade_count_19_stage4(self):
+        """trade_count=19 → back_to_stage_4 (under the 50 trade gate, tune-able)."""
         metrics = {"base": {"sharpe": 1.5, "max_drawdown": 0.05, "trade_count": 19}}
-        assert rule_based_action(metrics) == RecommendedAction.BACK_TO_STAGE_2
+        assert rule_based_action(metrics) == RecommendedAction.BACK_TO_STAGE_4
 
     def test_exact_boundary_trade_count_20_not_stage2(self):
         """trade_count == 20 should NOT trigger back_to_stage_2."""
