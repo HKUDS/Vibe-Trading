@@ -135,7 +135,11 @@ def read_metrics_csv(metrics_csv: Path) -> dict | None:
         return None
 
 
-def build_diagnosis_prompt(strategy_id: str, metrics_by_run: dict[str, dict]) -> str:
+def build_diagnosis_prompt(
+    strategy_id: str,
+    metrics_by_run: dict[str, dict],
+    optimization_metrics: dict | None = None,
+) -> str:
     """Build the LLM prompt for diagnosis, injecting metrics JSON.
 
     The prompt asks the LLM to output a JSON object with:
@@ -144,18 +148,36 @@ def build_diagnosis_prompt(strategy_id: str, metrics_by_run: dict[str, dict]) ->
       - findings: list of strings, one per key observation
 
     Args:
-        strategy_id:    The strategy identifier, e.g. "btc_s1_multifactor_contrarian".
-        metrics_by_run: Dict mapping run_name -> metrics dict from read_metrics_csv().
+        strategy_id:          The strategy identifier, e.g. "btc_s1_multifactor_contrarian".
+        metrics_by_run:       Dict mapping run_name -> metrics dict from read_metrics_csv().
+        optimization_metrics: Optional stage-4 best combo metrics. When present, the
+                              prompt instructs the LLM that the base_run reflects
+                              UNTUNED default params and the stage-4 best is the
+                              authoritative concept-level evidence.
 
     Returns:
         The prompt text string.
     """
     metrics_json = json.dumps(metrics_by_run, indent=2, ensure_ascii=False)
+    opt_section = ""
+    if optimization_metrics is not None:
+        opt_json = json.dumps(optimization_metrics, indent=2, ensure_ascii=False)
+        opt_section = (
+            f"## Stage-4 Best Combo (post-optimisation)\n\n"
+            f"The base_run above uses the strategy YAML's DEFAULT parameters. "
+            f"Stage 4 has already run a parameter sweep; the best combo's metrics "
+            f"are below. **Treat these as the concept-level evidence, not the "
+            f"untuned base_run.** A profitable best-combo means the concept is "
+            f"sound under tuned params — do NOT recommend back_to_stage_2 in that "
+            f"case.\n\n"
+            f"```json\n{opt_json}\n```\n\n"
+        )
     return (
         f"You are a quantitative trading analyst reviewing backtest results for "
         f"strategy '{strategy_id}'.\n\n"
         f"## Backtest Metrics\n\n"
         f"```json\n{metrics_json}\n```\n\n"
+        f"{opt_section}"
         f"## Task\n\n"
         f"Based on the metrics above, diagnose this strategy and decide the next "
         f"recommended action. Consider:\n"
@@ -219,58 +241,116 @@ def parse_diagnosis_response(stdout: str) -> dict | None:
     return data
 
 
-def rule_based_action(metrics_by_run: dict[str, dict]) -> RecommendedAction:
+def read_optimization_best(
+    optimization_path: Path,
+    runs_root: Path,
+) -> dict | None:
+    """Return the stage-4 best combo's metrics dict, or None if unavailable.
+
+    Reads ``optimization.json``, extracts the ``source_run`` field (the best
+    sweep run id), then reads that run's ``artifacts/metrics.csv`` and returns
+    the parsed metrics dict.
+
+    Returns ``None`` if:
+      - optimization.json does not exist,
+      - optimization.json is unparseable or missing ``source_run``,
+      - the referenced sweep run's metrics.csv does not exist or cannot be read.
+
+    Args:
+        optimization_path: Path to ``manifests/<strategy_id>/optimization.json``.
+        runs_root:         ``<repo_root>/runs/`` directory.
+
+    Returns:
+        Metrics dict (same shape as ``read_metrics_csv`` output) or None.
+    """
+    if not optimization_path.exists():
+        return None
+    try:
+        opt = json.loads(optimization_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    source_run = opt.get("source_run")
+    if not source_run or not isinstance(source_run, str):
+        return None
+    metrics_csv = runs_root / source_run / "artifacts" / "metrics.csv"
+    return read_metrics_csv(metrics_csv)
+
+
+def rule_based_action(
+    metrics_by_run: dict[str, dict],
+    optimization_metrics: dict | None = None,
+) -> RecommendedAction:
     """Fallback rule-based diagnosis when the LLM response is unparseable.
 
-    Uses only the base_run metrics (first run in the dict by convention if
-    "base" is not explicitly keyed). Falls back gracefully on empty/missing data.
+    When ``optimization_metrics`` is provided AND it has a positive sharpe,
+    stage-4 has already proven the strategy concept can produce edge under
+    tuned parameters. In that case the base_run is treated as a pre-tune
+    snapshot (default yaml params) and routing is decided on the stage-4 best
+    metrics, never on the untuned base. This prevents the common false
+    positive where a negative-sharpe base_run gets routed to ``back_to_stage_2``
+    even though stage 4 already found a profitable combo.
 
-    Thresholds:
-      - sharpe < 0  -> back_to_stage_2 (concept has negative edge)
-      - sharpe < 1.0 OR drawdown > 0.15 OR trade_count < 50 -> back_to_stage_4
-      - else -> proceed
+    Decision tree:
+      1. If optimization_metrics has sharpe > 0:
+            - apply standard thresholds to the stage-4 best metrics
+            - never returns back_to_stage_2 (concept proven)
+      2. Else (or optimization_metrics missing):
+            - sharpe < 0                                  -> back_to_stage_2
+            - sharpe < 1.0 OR |drawdown| > 0.15 OR trades < 50 -> back_to_stage_4
+            - else                                        -> proceed
 
     Low trade count alone is NOT a stage_2 signal — it usually reflects entry
     thresholds being too strict, which is a parameter-tuning problem solvable
     in stage_4, not a concept failure.
 
-    Note: drawdown is read directly from metrics.csv where the backtest engine
-    stores it as a negative fraction (e.g. -0.07 for 7% drawdown). abs() is used
-    to handle both sign conventions.
+    Drawdown convention: metrics.csv stores it as a negative fraction (e.g.
+    -0.07 for 7%); abs() handles both signs.
 
     Args:
-        metrics_by_run: Dict mapping run_name -> metrics dict.
+        metrics_by_run:        Dict mapping run_name -> metrics dict.
+        optimization_metrics:  Optional stage-4 best combo metrics from
+                               read_optimization_best().
 
     Returns:
         RecommendedAction enum value.
     """
+
+    def _f(d: dict | None, k: str) -> float | None:
+        if d is None:
+            return None
+        v = d.get(k)
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    # Stage-4 override: if stage 4 has already produced a positive-sharpe combo,
+    # the strategy concept is proven and routing must not regress to stage_2.
+    opt_sharpe = _f(optimization_metrics, "sharpe")
+    if opt_sharpe is not None and opt_sharpe > 0:
+        opt_drawdown = _f(optimization_metrics, "max_drawdown")
+        opt_trades = _f(optimization_metrics, "trade_count")
+        if (
+            opt_sharpe < 1.0
+            or (opt_drawdown is not None and abs(opt_drawdown) > 0.15)
+            or (opt_trades is not None and opt_trades < 50)
+        ):
+            return RecommendedAction.BACK_TO_STAGE_4
+        return RecommendedAction.PROCEED
+
+    # No stage-4 evidence → fall back to base_run inspection.
     if not metrics_by_run:
         return RecommendedAction.BACK_TO_STAGE_4
 
-    # Use the first run's metrics (base_run is typically first or only entry).
     first_metrics = next(iter(metrics_by_run.values()))
     if not first_metrics:
         return RecommendedAction.BACK_TO_STAGE_4
 
-    sharpe = first_metrics.get("sharpe")
-    drawdown = first_metrics.get("max_drawdown")
-    trade_count = first_metrics.get("trade_count")
-
-    # Normalize: convert to float if present.
-    try:
-        sharpe_f = float(sharpe) if sharpe is not None else None
-    except (TypeError, ValueError):
-        sharpe_f = None
-
-    try:
-        drawdown_f = float(drawdown) if drawdown is not None else None
-    except (TypeError, ValueError):
-        drawdown_f = None
-
-    try:
-        trade_count_f = float(trade_count) if trade_count is not None else None
-    except (TypeError, ValueError):
-        trade_count_f = None
+    sharpe_f = _f(first_metrics, "sharpe")
+    drawdown_f = _f(first_metrics, "max_drawdown")
+    trade_count_f = _f(first_metrics, "trade_count")
 
     # back_to_stage_2: concept-level failure (negative edge only).
     if sharpe_f is not None and sharpe_f < 0:
@@ -506,9 +586,26 @@ def _diagnose_strategy(
         else:
             print(f"    oos_run '{oos_run}': metrics.csv missing or empty (skipped)")
 
+    # Read stage-4 optimisation best if available — used both in prompt and as
+    # rule-based fallback override.
+    optimization_path = manifests_dir / strategy_id / "optimization.json"
+    optimization_metrics = read_optimization_best(optimization_path, runs_root)
+    if optimization_metrics is not None:
+        opt_sharpe = optimization_metrics.get("sharpe")
+        opt_trades = optimization_metrics.get("trade_count")
+        try:
+            opt_sharpe_str = f"{float(opt_sharpe):+.3f}" if opt_sharpe is not None else "?"
+            opt_trades_str = str(int(float(opt_trades))) if opt_trades is not None else "?"
+        except (TypeError, ValueError):
+            opt_sharpe_str, opt_trades_str = "?", "?"
+        print(
+            f"    stage-4 best: sharpe={opt_sharpe_str}  trades={opt_trades_str}  "
+            f"(used to authoritatively decide concept-level routing)"
+        )
+
     # ── Build LLM prompt ──────────────────────────────────────────────────────
     print("  [2/4] Building diagnosis prompt …")
-    prompt = build_diagnosis_prompt(strategy_id, metrics_by_run)
+    prompt = build_diagnosis_prompt(strategy_id, metrics_by_run, optimization_metrics)
 
     # ── Invoke LLM ────────────────────────────────────────────────────────────
     print("  [3/4] Invoking LLM diagnosis …")
@@ -532,13 +629,13 @@ def _diagnose_strategy(
             recommended_action = RecommendedAction(action_str)
             print(f"  [LLM] recommended_action = {recommended_action.value}")
         except ValueError:
-            recommended_action = rule_based_action(metrics_by_run)
+            recommended_action = rule_based_action(metrics_by_run, optimization_metrics)
             print(f"  [FALLBACK] invalid action '{action_str}' — rule-based: {recommended_action.value}")
         summary = parsed.get("summary")
         raw_findings = parsed.get("findings", [])
         findings = list(raw_findings) if isinstance(raw_findings, list) else []
     else:
-        recommended_action = rule_based_action(metrics_by_run)
+        recommended_action = rule_based_action(metrics_by_run, optimization_metrics)
         print(f"  [FALLBACK] rule-based recommended_action = {recommended_action.value}")
 
     # ── Write diagnosis.json ──────────────────────────────────────────────────

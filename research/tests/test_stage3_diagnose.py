@@ -55,6 +55,7 @@ from pipeline.stage3_diagnose import (  # noqa: E402
     parse_diagnosis_response,
     print_summary,
     read_metrics_csv,
+    read_optimization_best,
     rule_based_action,
     verify_diagnosis,
 )
@@ -369,6 +370,92 @@ class TestRuleBasedAction:
         metrics = {"base": {"sharpe": 1.5, "max_drawdown": -0.35, "trade_count": 150}}
         result = rule_based_action(metrics)
         assert result != RecommendedAction.PROCEED
+
+
+# ---------------------------------------------------------------------------
+# (d2) rule_based_action with optimization_metrics override
+# ---------------------------------------------------------------------------
+
+
+class TestRuleBasedActionWithOptimization:
+    """When stage-4 best metrics are supplied, routing must reflect the tuned
+    combo's edge — not the untuned base_run."""
+
+    def test_negative_base_positive_opt_routes_to_stage_4_not_2(self):
+        """Stage-4 already found positive sharpe — base failure is param-only."""
+        base = {"base": {"sharpe": -0.3, "max_drawdown": -0.20, "trade_count": 350}}
+        opt = {"sharpe": 0.56, "max_drawdown": -0.08, "trade_count": 242}
+        assert rule_based_action(base, optimization_metrics=opt) == RecommendedAction.BACK_TO_STAGE_4
+
+    def test_negative_base_strong_opt_proceeds(self):
+        """Stage-4 sharpe >= 1.0 with good drawdown / trades → proceed regardless of base."""
+        base = {"base": {"sharpe": -0.1, "max_drawdown": -0.10, "trade_count": 100}}
+        opt = {"sharpe": 1.6, "max_drawdown": -0.07, "trade_count": 200}
+        assert rule_based_action(base, optimization_metrics=opt) == RecommendedAction.PROCEED
+
+    def test_zero_opt_sharpe_falls_through_to_base(self):
+        """When stage-4 best sharpe is not positive, the override does NOT kick in
+        (the stage-4 evidence is too weak to overturn the base-run verdict)."""
+        base = {"base": {"sharpe": -0.5, "max_drawdown": -0.20, "trade_count": 50}}
+        opt = {"sharpe": 0.0, "max_drawdown": -0.10, "trade_count": 100}
+        # Base sharpe < 0 → would normally route to stage_2; opt sharpe=0 not positive.
+        assert rule_based_action(base, optimization_metrics=opt) == RecommendedAction.BACK_TO_STAGE_2
+
+    def test_no_optimization_uses_base_behaviour(self):
+        """optimization_metrics=None preserves the pre-existing semantics."""
+        base = {"base": {"sharpe": -0.3, "max_drawdown": -0.20, "trade_count": 350}}
+        assert rule_based_action(base) == RecommendedAction.BACK_TO_STAGE_2
+
+    def test_opt_low_trades_routes_to_stage_4(self):
+        """Even positive stage-4 sharpe with trade_count < 50 still needs more tuning."""
+        base = {"base": {"sharpe": 0.5, "max_drawdown": -0.05, "trade_count": 80}}
+        opt = {"sharpe": 1.8, "max_drawdown": -0.05, "trade_count": 12}
+        assert rule_based_action(base, optimization_metrics=opt) == RecommendedAction.BACK_TO_STAGE_4
+
+    def test_opt_high_drawdown_routes_to_stage_4(self):
+        """Stage-4 sharpe high but drawdown > 15% → still needs more tuning."""
+        opt = {"sharpe": 1.6, "max_drawdown": -0.22, "trade_count": 200}
+        assert rule_based_action({}, optimization_metrics=opt) == RecommendedAction.BACK_TO_STAGE_4
+
+
+# ---------------------------------------------------------------------------
+# (d3) read_optimization_best — disk reader
+# ---------------------------------------------------------------------------
+
+
+class TestReadOptimizationBest:
+    def test_missing_optimization_returns_none(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        assert read_optimization_best(tmp_path / "missing.json", runs_root) is None
+
+    def test_invalid_json_returns_none(self, tmp_path):
+        opt_path = tmp_path / "opt.json"
+        opt_path.write_text("{not json", encoding="utf-8")
+        assert read_optimization_best(opt_path, tmp_path) is None
+
+    def test_missing_source_run_returns_none(self, tmp_path):
+        opt_path = tmp_path / "opt.json"
+        opt_path.write_text(json.dumps({"foo": "bar"}), encoding="utf-8")
+        assert read_optimization_best(opt_path, tmp_path) is None
+
+    def test_referenced_metrics_missing_returns_none(self, tmp_path):
+        opt_path = tmp_path / "opt.json"
+        opt_path.write_text(json.dumps({"source_run": "nonexistent_run"}), encoding="utf-8")
+        assert read_optimization_best(opt_path, tmp_path / "runs") is None
+
+    def test_returns_referenced_metrics(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        metrics_csv = runs_root / "sweep_033" / "artifacts" / "metrics.csv"
+        metrics_csv.parent.mkdir(parents=True, exist_ok=True)
+        metrics_csv.write_text(
+            "sharpe,max_drawdown,trade_count\n0.561,-0.08,242\n", encoding="utf-8"
+        )
+        opt_path = tmp_path / "opt.json"
+        opt_path.write_text(json.dumps({"source_run": "sweep_033"}), encoding="utf-8")
+        result = read_optimization_best(opt_path, runs_root)
+        assert result is not None
+        assert result["sharpe"] == pytest.approx(0.561)
+        assert int(result["trade_count"]) == 242
 
 
 # ---------------------------------------------------------------------------
