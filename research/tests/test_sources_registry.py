@@ -38,6 +38,7 @@ class TestRegistryKeys:
         "okx_funding",
         "okx_candles",
         "bybit_oi",
+        "coingecko_stablecoin_supply",
         "coinglass_liq",
         "glassnode_pub",
         "deribit_skew",
@@ -51,6 +52,9 @@ class TestRegistryKeys:
         "z_90d",
         "pct_change_24h",
         "ma_diff_7d_30d",
+        "momentum_24h",
+        "momentum_72h",
+        "rolling_vol_30d",
     }
 
     def test_all_expected_source_keys_present(self) -> None:
@@ -61,11 +65,11 @@ class TestRegistryKeys:
         for key in self._EXPECTED_TRANSFORMS:
             assert key in TRANSFORM_REGISTRY, f"TRANSFORM_REGISTRY missing key: {key!r}"
 
-    def test_source_registry_has_exactly_8_entries(self) -> None:
-        assert len(SOURCE_REGISTRY) == 8
+    def test_source_registry_has_exactly_9_entries(self) -> None:
+        assert len(SOURCE_REGISTRY) == 9
 
-    def test_transform_registry_has_exactly_5_entries(self) -> None:
-        assert len(TRANSFORM_REGISTRY) == 5
+    def test_transform_registry_has_exactly_8_entries(self) -> None:
+        assert len(TRANSFORM_REGISTRY) == 8
 
     def test_source_registry_values_are_source_spec(self) -> None:
         for key, spec in SOURCE_REGISTRY.items():
@@ -94,13 +98,18 @@ class TestAvailableSources:
                     f"SOURCE_REGISTRY[{key!r}] is 'available' but fetcher is None"
                 )
 
-    def test_exactly_3_available_sources(self) -> None:
+    def test_exactly_4_available_sources(self) -> None:
         available = [k for k, v in SOURCE_REGISTRY.items() if v.status == "available"]
-        assert len(available) == 3, f"Expected 3 available sources, got {len(available)}: {available}"
+        assert len(available) == 4, f"Expected 4 available sources, got {len(available)}: {available}"
 
     def test_known_available_keys(self) -> None:
         available_keys = {k for k, v in SOURCE_REGISTRY.items() if v.status == "available"}
-        assert available_keys == {"okx_funding", "okx_candles", "bybit_oi"}
+        assert available_keys == {
+            "okx_funding",
+            "okx_candles",
+            "bybit_oi",
+            "coingecko_stablecoin_supply",
+        }
 
 
 # ---------------------------------------------------------------------------

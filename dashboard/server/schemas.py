@@ -66,11 +66,14 @@ class FactorStability(str, Enum):
 
 
 class FactorVerdict(str, Enum):
-    """Disposition of a factor based on |IC| (rule lives in task 2.12).
+    """Disposition of a factor based on |IC| (rule lives in factor_extended.verdict_from_ic).
 
     |IC| >= 0.10           -> single_use
-    0.05 <= |IC| < 0.10    -> ensemble_only
-    |IC| < 0.05            -> reject
+    0.03 <= |IC| < 0.10    -> ensemble_only
+    |IC| < 0.03            -> reject
+
+    Lowered ensemble_only floor from 0.05 → 0.03 on 2026-05-27 to widen the
+    candidate funnel; see ADR project_stage1_verdict_gate_lowering_adr.
     """
 
     SINGLE_USE = "single_use"

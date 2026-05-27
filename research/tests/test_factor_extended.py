@@ -56,10 +56,10 @@ def _now() -> datetime:
 
 
 class TestVerdictFromIc:
-    """Verdict threshold logic per the schema docstring:
+    """Verdict threshold logic (loosened 2026-05-27):
         |IC| >= 0.10  -> single_use
-        0.05 <= |IC| < 0.10 -> ensemble_only
-        |IC| < 0.05   -> reject
+        0.03 <= |IC| < 0.10 -> ensemble_only
+        |IC| < 0.03   -> reject
     """
 
     # --- reject zone ---
@@ -67,21 +67,25 @@ class TestVerdictFromIc:
         assert verdict_from_ic(0.0) == FactorVerdict.REJECT
 
     def test_small_positive_below_threshold_is_reject(self):
-        assert verdict_from_ic(0.04) == FactorVerdict.REJECT
+        assert verdict_from_ic(0.02) == FactorVerdict.REJECT
 
     def test_small_negative_below_threshold_is_reject(self):
-        assert verdict_from_ic(-0.04) == FactorVerdict.REJECT
+        assert verdict_from_ic(-0.02) == FactorVerdict.REJECT
 
-    def test_just_below_0_05_is_reject(self):
-        # 0.0499... < 0.05 -> reject
-        assert verdict_from_ic(0.0499) == FactorVerdict.REJECT
+    def test_just_below_0_03_is_reject(self):
+        # 0.0299... < 0.03 -> reject
+        assert verdict_from_ic(0.0299) == FactorVerdict.REJECT
 
-    # --- ensemble_only zone: [0.05, 0.10) ---
-    def test_exactly_0_05_positive_is_ensemble_only(self):
-        assert verdict_from_ic(0.05) == FactorVerdict.ENSEMBLE_ONLY
+    # --- ensemble_only zone: [0.03, 0.10) ---
+    def test_exactly_0_03_positive_is_ensemble_only(self):
+        assert verdict_from_ic(0.03) == FactorVerdict.ENSEMBLE_ONLY
 
-    def test_exactly_0_05_negative_is_ensemble_only(self):
-        assert verdict_from_ic(-0.05) == FactorVerdict.ENSEMBLE_ONLY
+    def test_exactly_0_03_negative_is_ensemble_only(self):
+        assert verdict_from_ic(-0.03) == FactorVerdict.ENSEMBLE_ONLY
+
+    def test_old_0_05_threshold_now_ensemble_only(self):
+        """Previously REJECT under the 0.05 floor; now ENSEMBLE_ONLY under 0.03 floor."""
+        assert verdict_from_ic(0.04) == FactorVerdict.ENSEMBLE_ONLY
 
     def test_mid_ensemble_zone_is_ensemble_only(self):
         assert verdict_from_ic(0.075) == FactorVerdict.ENSEMBLE_ONLY
@@ -192,9 +196,9 @@ class TestBuildFactorManifest:
         m = build_factor_manifest("btc", 730, [8, 24], results, _now())
         assert m.factors[0].verdict == FactorVerdict.ENSEMBLE_ONLY
 
-    def test_verdict_reject_when_max_ic_below_0_05(self):
-        # max |IC| = 0.04 -> reject
-        results = self._make_results({"fng": {8: 0.04, 24: 0.02}})
+    def test_verdict_reject_when_max_ic_below_0_03(self):
+        # max |IC| = 0.02 -> reject (post 0.05 → 0.03 gate loosening)
+        results = self._make_results({"fng": {8: 0.02, 24: 0.01}})
         m = build_factor_manifest("btc", 730, [8, 24], results, _now())
         assert m.factors[0].verdict == FactorVerdict.REJECT
 

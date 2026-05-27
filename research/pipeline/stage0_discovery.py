@@ -396,7 +396,7 @@ def _build_swarm_vars(
 
     vars_dict = {
         "target_universe": okx_swap,
-        "signal_categories": "funding,basis,oi",
+        "signal_categories": "funding,basis,oi,momentum,volatility,stablecoin,whale,skew",
         "horizons_h": str(list(cfg.horizons_h)),
         "available_sources": ",".join(available_sources),
         "available_transforms": ",".join(available_transforms),

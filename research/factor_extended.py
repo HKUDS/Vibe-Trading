@@ -45,6 +45,7 @@ import pandas as pd
 
 # ── Internal imports ───────────────────────────────────────────────────────────
 from lib.ccxt_data import fetch_oi_history_bybit
+from lib.coingecko_data import fetch_stablecoin_supply
 from lib.factor_metrics import FactorResult, add_forward_returns, evaluate_factor
 from lib.okx_data import fetch_candles, fetch_funding_history
 from lib.report import build_factor_report
@@ -72,18 +73,23 @@ def resolve_manifests_dir() -> Path:
 def verdict_from_ic(ic: float) -> FactorVerdict:
     """Return the FactorVerdict for a given IC value.
 
-    Rule (per schema docstring):
+    Rule (loosened 2026-05-27 to widen candidate funnel — see ADR
+    project_stage1_verdict_gate_lowering_adr):
         |IC| >= 0.10           -> single_use
-        0.05 <= |IC| < 0.10   -> ensemble_only
-        |IC| < 0.05            -> reject
+        0.03 <= |IC| < 0.10   -> ensemble_only
+        |IC| < 0.03            -> reject
         NaN                    -> reject (insufficient data)
+
+    Lower ensemble_only floor (0.05 → 0.03) lets weak-but-positive signals
+    survive to stage 2 for ensemble use; previously borderline factors were
+    silently dropped, starving downstream strategies of factor diversity.
     """
     if math.isnan(ic):
         return FactorVerdict.REJECT
     abs_ic = abs(ic)
     if abs_ic >= 0.10:
         return FactorVerdict.SINGLE_USE
-    if abs_ic >= 0.05:
+    if abs_ic >= 0.03:
         return FactorVerdict.ENSEMBLE_ONLY
     return FactorVerdict.REJECT
 
@@ -169,6 +175,7 @@ def _compute_candidate_series(
     candles: pd.DataFrame,
     funding: pd.DataFrame,
     oi_hist: pd.DataFrame,
+    stablecoin: pd.DataFrame | None = None,
 ) -> pd.Series | None:
     """Compute a transformed factor series for a single FactorCandidate.
 
@@ -191,6 +198,11 @@ def _compute_candidate_series(
             print(f"  WARN: bybit_oi data empty, skipping {cand.name}")
             return None
         raw = oi_hist["oi"]
+    elif cand.data_source == "coingecko_stablecoin_supply":
+        if stablecoin is None or stablecoin.empty:
+            print(f"  WARN: coingecko_stablecoin_supply data empty, skipping {cand.name}")
+            return None
+        raw = stablecoin["stablecoin_supply"]
     else:
         print(f"  WARN: no pre-fetched handler for data_source '{cand.data_source}', skipping {cand.name}")
         return None
@@ -262,6 +274,7 @@ def _run_symbol_dynamic(
     candles: pd.DataFrame,
     oi_hist: pd.DataFrame,
     df: pd.DataFrame,
+    stablecoin: pd.DataFrame | None = None,
 ) -> list[FactorResult]:
     """Evaluate factors from a CandidatesManifest (stage0 output).
 
@@ -273,7 +286,7 @@ def _run_symbol_dynamic(
     all_results: list[FactorResult] = []
     factor_series_dict: dict[str, pd.Series] = {}
     for cand in candidates.candidates:
-        series = _compute_candidate_series(cand, candles, funding, oi_hist)
+        series = _compute_candidate_series(cand, candles, funding, oi_hist, stablecoin=stablecoin)
         if series is None:
             print(f"  {cand.name}: skipped (no series)")
             continue
@@ -329,9 +342,25 @@ def run_symbol(sym: SymbolConfig, cfg: ResearchConfig, manifests_dir: Path) -> N
         print(f"     WARN: OI fetch failed ({e}); continuing without OI")
         oi_hist = pd.DataFrame(columns=["oi", "oi_usd"])
 
-    print(f"[4/4] Fear & Greed (last {period_days}d)")
+    print(f"[4/5] Fear & Greed (last {period_days}d)")
     fng = fetch_fear_greed(days=period_days)
     print(f"     rows: {len(fng)}  range: {fng.index.min()} ~ {fng.index.max()}")
+
+    # CoinGecko free tier caps daily history at 365 days per call.
+    cg_days = min(period_days, 365)
+    print(f"[5/5] CoinGecko stablecoin supply (last {cg_days}d — capped by free tier)")
+    try:
+        stablecoin = fetch_stablecoin_supply(days=cg_days)
+        if stablecoin.empty:
+            print("     WARN: stablecoin supply empty, downstream candidates referencing it will skip")
+        else:
+            print(
+                f"     rows: {len(stablecoin)}  range: "
+                f"{stablecoin.index.min()} ~ {stablecoin.index.max()}"
+            )
+    except Exception as e:  # noqa: BLE001
+        print(f"     WARN: stablecoin supply fetch failed ({e}); continuing without it")
+        stablecoin = pd.DataFrame(columns=["stablecoin_supply"])
 
     # Align everything onto hourly candle index
     print("\n[align] joining factors to hourly candle index")
@@ -373,7 +402,11 @@ def run_symbol(sym: SymbolConfig, cfg: ResearchConfig, manifests_dir: Path) -> N
     elif candidates_manifest is not None:
         # Normal dynamic mode
         print(f"[stage1] {sym.name}: DYNAMIC mode ({len(candidates_manifest.candidates)} candidates)")
-        all_results = _run_symbol_dynamic(sym, cfg, manifests_dir, candidates_manifest, funding, candles, oi_hist, df)
+        all_results = _run_symbol_dynamic(
+            sym, cfg, manifests_dir, candidates_manifest,
+            funding, candles, oi_hist, df,
+            stablecoin=stablecoin,
+        )
     else:
         # Fallback to legacy (candidates missing or failed)
         reason = "stage0 failed" if failed_path.exists() else "candidates missing"
@@ -411,7 +444,7 @@ def run_symbol(sym: SymbolConfig, cfg: ResearchConfig, manifests_dir: Path) -> N
         "OI 用 24h pct change（差分化）使其平穩；原始 OI 為趨勢序列、與價格高度共線。",
         "Spearman IC 不考慮交易成本與滑點，**不代表策略獲利**。",
         "未做 multiple-testing 校正：3 因子 × 4 horizon = 12 檢定，部分 |IC| 可能為偽。",
-        f"Verdict 規則：|IC| 取所有 horizon 中最大值；≥0.10 → single_use，[0.05,0.10) → ensemble_only，<0.05 → reject。",
+        f"Verdict 規則：|IC| 取所有 horizon 中最大值；≥0.10 → single_use，[0.03,0.10) → ensemble_only，<0.03 → reject。",
     ]
 
     md = build_factor_report(
