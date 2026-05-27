@@ -51,7 +51,12 @@ from itertools import product
 import yaml as _yaml
 
 from pipeline.config import _REPO_ROOT, ResearchConfig, load_config
-from pipeline.strategy_runs import StrategyRunsEntry, StrategyRunsMap, load_strategy_runs
+from pipeline.strategy_runs import (
+    StrategyRunsEntry,
+    StrategyRunsMap,
+    load_strategy_runs,
+    update_sweep_run,
+)
 from pipeline.stage3_backtest import build_run_config, symbol_to_short
 
 _DASHBOARD_SCHEMAS = _REPO_ROOT / "dashboard" / "server"
@@ -530,6 +535,22 @@ def _optimize_strategy(
     out_path = out_dir / "optimization.json"
     out_path.write_text(json.dumps(block, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"  [OK] wrote {out_path}")
+
+    # Refresh strategy_runs.json so downstream stages (diag, stage 5) see the
+    # tuned best run as the canonical sweep_run. Failure here is non-fatal —
+    # optimization.json already carries the same info, so a warning suffices.
+    if best is not None:
+        try:
+            update_sweep_run(strategy_id, best.run_name)
+            print(
+                f"  [OK] strategy_runs.json: {strategy_id}.sweep_run -> {best.run_name}"
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"  [WARN] failed to update strategy_runs.json: {exc} "
+                "(optimization.json still authoritative)",
+                file=sys.stderr,
+            )
 
     return verify_optimization(out_path)
 

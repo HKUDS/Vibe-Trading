@@ -23,6 +23,7 @@ from pipeline.strategy_runs import (
     StrategyRunsEntry,
     StrategyRunsMap,
     load_strategy_runs,
+    update_sweep_run,
 )
 
 
@@ -477,3 +478,80 @@ class TestCommentSkip:
             load_strategy_runs(p)
         msg = str(exc_info.value)
         assert "_archived_strategy" in msg
+
+
+# ─── update_sweep_run writer tests ───────────────────────────────────────────
+
+
+class TestUpdateSweepRun:
+    """Writer that stage 4 calls after a successful grid sweep."""
+
+    def _bootstrap(self, tmp_path: Path) -> Path:
+        """Write a minimal valid strategy_runs.json fixture and return its path."""
+        return write_json(tmp_path, dict(MINIMAL_VALID_MAP))
+
+    def test_updates_sweep_run_to_new_name(self, tmp_path: Path) -> None:
+        p = self._bootstrap(tmp_path)
+        update_sweep_run("btc_s1_multifactor_contrarian", "new_sweep_033", path=p)
+        loaded = load_strategy_runs(p)
+        assert loaded.entries["btc_s1_multifactor_contrarian"].sweep_run == "new_sweep_033"
+
+    def test_clears_sweep_run_when_none(self, tmp_path: Path) -> None:
+        p = self._bootstrap(tmp_path)
+        update_sweep_run("btc_s1_multifactor_contrarian", None, path=p)
+        loaded = load_strategy_runs(p)
+        assert loaded.entries["btc_s1_multifactor_contrarian"].sweep_run is None
+
+    def test_unknown_strategy_id_raises_keyerror(self, tmp_path: Path) -> None:
+        p = self._bootstrap(tmp_path)
+        with pytest.raises(KeyError):
+            update_sweep_run("nonexistent_strategy", "x", path=p)
+
+    def test_comment_key_treated_as_unknown(self, tmp_path: Path) -> None:
+        p = self._bootstrap(tmp_path)
+        with pytest.raises(KeyError):
+            update_sweep_run("_comment", "x", path=p)
+
+    def test_missing_file_raises_filenotfound(self, tmp_path: Path) -> None:
+        missing = tmp_path / "absent.json"
+        with pytest.raises(FileNotFoundError):
+            update_sweep_run("any", "x", path=missing)
+
+    def test_non_string_sweep_run_raises_typeerror(self, tmp_path: Path) -> None:
+        p = self._bootstrap(tmp_path)
+        with pytest.raises(TypeError):
+            update_sweep_run("btc_s1_multifactor_contrarian", 123, path=p)  # type: ignore[arg-type]
+
+    def test_preserves_other_fields(self, tmp_path: Path) -> None:
+        """Writer must not corrupt unrelated fields on the same entry."""
+        p = self._bootstrap(tmp_path)
+        update_sweep_run("btc_s1_multifactor_contrarian", "new_name", path=p)
+        loaded = load_strategy_runs(p)
+        entry = loaded.entries["btc_s1_multifactor_contrarian"]
+        assert entry.symbol == MINIMAL_VALID_ENTRY["symbol"]
+        assert entry.base_run == MINIMAL_VALID_ENTRY["base_run"]
+        assert dict(entry.regime_runs) == MINIMAL_VALID_ENTRY["regime_runs"]
+        assert list(entry.oos_runs) == MINIMAL_VALID_ENTRY["oos_runs"]
+
+    def test_preserves_other_strategies(self, tmp_path: Path) -> None:
+        """Writing one strategy's sweep_run must leave siblings untouched."""
+        data = {
+            "btc_s1_multifactor_contrarian": MINIMAL_VALID_ENTRY,
+            "btc_s2_other": {**MINIMAL_VALID_ENTRY, "sweep_run": "keep_me"},
+        }
+        p = write_json(tmp_path, data)
+        update_sweep_run("btc_s1_multifactor_contrarian", "fresh", path=p)
+        loaded = load_strategy_runs(p)
+        assert loaded.entries["btc_s1_multifactor_contrarian"].sweep_run == "fresh"
+        assert loaded.entries["btc_s2_other"].sweep_run == "keep_me"
+
+    def test_preserves_comment_key(self, tmp_path: Path) -> None:
+        data = {
+            "_comment": "this is metadata, do not delete",
+            "btc_s1_multifactor_contrarian": MINIMAL_VALID_ENTRY,
+        }
+        p = write_json(tmp_path, data)
+        update_sweep_run("btc_s1_multifactor_contrarian", "renamed", path=p)
+        # Re-parse raw to confirm _comment survived (load_strategy_runs strips it).
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        assert raw.get("_comment") == "this is metadata, do not delete"

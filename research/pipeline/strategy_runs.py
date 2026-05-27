@@ -257,3 +257,79 @@ def load_strategy_runs(path: Path | str | None = None) -> StrategyRunsMap:
         )
 
     return StrategyRunsMap(entries=types.MappingProxyType(entries))
+
+
+# ─── Writer ──────────────────────────────────────────────────────────────────
+
+def update_sweep_run(
+    strategy_id: str,
+    sweep_run: str | None,
+    path: Path | str | None = None,
+) -> None:
+    """Update the ``sweep_run`` field for one strategy and write the file back.
+
+    Intended to be called by stage 4 after a successful grid sweep so that
+    downstream stages (stage 3 diagnosis, stage 5 selection) and dashboards
+    can resolve the strategy's best-tuned run via strategy_runs.json without
+    requiring every consumer to also parse optimization.json.
+
+    The on-disk write preserves the order and indentation of the existing
+    JSON (uses ``json.dumps(..., indent=2)``) and includes a trailing newline
+    to keep diffs stable. ``_comment`` top-level entries are preserved.
+
+    Parameters
+    ----------
+    strategy_id:
+        The strategy whose ``sweep_run`` field should be updated.
+    sweep_run:
+        The new sweep-run name (e.g. ``"eth_s1_multi_factor_consensus_sweep_033"``)
+        or ``None`` to clear the field.
+    path:
+        Optional override for the strategy_runs.json path. Defaults to
+        ``<repo-root>/research/strategy_runs.json``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If strategy_runs.json does not exist at the resolved path.
+    KeyError
+        If ``strategy_id`` is not present in the file.
+    TypeError
+        If ``sweep_run`` is not a string or None.
+    """
+    if sweep_run is not None and not isinstance(sweep_run, str):
+        raise TypeError(
+            f"update_sweep_run: sweep_run must be a string or None, "
+            f"got {type(sweep_run).__name__}."
+        )
+
+    resolved = Path(path) if path is not None else _DEFAULT_JSON_PATH
+    if not resolved.exists():
+        raise FileNotFoundError(
+            f"strategy_runs.json not found at: {resolved}"
+        )
+
+    with resolved.open("r", encoding="utf-8") as fh:
+        raw = json.load(fh)
+
+    if not isinstance(raw, dict):
+        raise TypeError(
+            f"strategy_runs.json must be a JSON mapping at the top level, "
+            f"got {type(raw).__name__}."
+        )
+
+    if strategy_id not in raw or strategy_id == "_comment":
+        raise KeyError(
+            f"strategy_runs.json: strategy_id '{strategy_id}' not present."
+        )
+
+    entry = raw[strategy_id]
+    if not isinstance(entry, dict):
+        raise TypeError(
+            f"strategy_runs.json: entry for '{strategy_id}' is not a JSON object."
+        )
+
+    entry["sweep_run"] = sweep_run
+
+    payload = json.dumps(raw, indent=2, ensure_ascii=False) + "\n"
+    resolved.write_text(payload, encoding="utf-8")

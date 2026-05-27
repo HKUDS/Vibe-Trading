@@ -15,6 +15,6 @@
       "eth_s1_oos_2023",
       "eth_s1_oos_2024"
     ],
-    "sweep_run": "eth_s1_sweep"
+    "sweep_run": "eth_s1_multi_factor_consensus_sweep_033"
   }
 }
