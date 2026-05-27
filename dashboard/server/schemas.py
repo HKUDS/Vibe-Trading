@@ -196,7 +196,16 @@ class FactorCandidate(_Manifest):
     expected_ic_sign: Literal["+", "-", "?"] = Field(..., description="預期 IC 符號：'+' 正向、'-' 反向、'?' 未知。")
     economic_logic: str = Field(..., description="為何此因子具備 alpha 的經濟邏輯解釋。")
     horizons_h: List[int] = Field(..., description="候選因子適用的前向報酬時窗（小時）清單。")
-    category: Literal["funding", "basis", "oi"] = Field(..., description="訊號類別：funding / basis / oi。")
+    category: Literal[
+        "funding",
+        "basis",
+        "oi",
+        "momentum",
+        "volatility",
+        "stablecoin",
+        "whale",
+        "skew",
+    ] = Field(..., description="訊號類別：funding / basis / oi / momentum / volatility / stablecoin / whale / skew。")
 
 
 class CandidatesManifest(_Manifest):

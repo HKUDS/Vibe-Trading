@@ -28,8 +28,8 @@ def test_missing_required_field_raises():
 
 
 def test_invalid_category_raises():
-    """(b) category not in {funding, basis, oi} raises ValidationError."""
-    data = {**VALID_CANDIDATE, "category": "volume"}
+    """(b) category not in the allowed Literal set raises ValidationError."""
+    data = {**VALID_CANDIDATE, "category": "not_a_real_category"}
     with pytest.raises(ValidationError):
         FactorCandidate(**data)
 
