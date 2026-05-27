@@ -40,6 +40,14 @@ class ZTradeAutoResearchTool(BaseTool):
                 "type": "integer",
                 "description": "Maximum symbols per ztrade_csv window, default 50.",
             },
+            "use_mutable_candidate": {
+                "type": "boolean",
+                "description": (
+                    "When true, evaluate the Karpathy-style workspace candidate "
+                    "from autoresearch/mutable/v47_params.json instead of the "
+                    "built-in static search-space candidates."
+                ),
+            },
         },
         "required": ["run_dir"],
     }
@@ -55,10 +63,12 @@ class ZTradeAutoResearchTool(BaseTool):
                 data_dir=data_dir,
                 max_iterations=int(kwargs.get("max_iterations", 4)),
                 max_symbols=int(kwargs.get("max_symbols", 50)),
+                use_mutable_candidate=bool(kwargs.get("use_mutable_candidate", False)),
             )
         else:
             summary = run_synthetic_research(
                 kwargs["run_dir"],
                 max_iterations=int(kwargs.get("max_iterations", 4)),
+                use_mutable_candidate=bool(kwargs.get("use_mutable_candidate", False)),
             )
         return json.dumps(summary, ensure_ascii=False)

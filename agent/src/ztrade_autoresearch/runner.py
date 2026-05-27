@@ -24,6 +24,12 @@ from src.ztrade_autoresearch.protocol import (
     merged_params,
     protocol_payload,
 )
+from src.ztrade_autoresearch.research_loop import (
+    initialize_karpathy_workspace,
+    mutable_candidate_definition,
+    write_latest_state,
+    write_results_tsv,
+)
 
 
 class SyntheticAshareLoader:
@@ -101,6 +107,7 @@ def run_synthetic_research(
     run_dir: str | Path,
     *,
     max_iterations: int = 4,
+    use_mutable_candidate: bool = False,
 ) -> dict[str, Any]:
     """Run a bounded ztrade autoresearch smoke loop.
 
@@ -110,7 +117,12 @@ def run_synthetic_research(
     """
     root = safe_run_dir(str(run_dir))
     root.mkdir(parents=True, exist_ok=True)
-    candidates = SEARCH_SPACE[: max(1, max_iterations + 1)]
+    karpathy_workspace = initialize_karpathy_workspace(root, mode="synthetic_smoke")
+    candidates = _candidate_definitions(
+        root,
+        max_iterations=max_iterations,
+        use_mutable_candidate=use_mutable_candidate,
+    )
     rows: list[MetricRow] = []
     experiment_records: list[dict[str, Any]] = []
 
@@ -138,6 +150,7 @@ def run_synthetic_research(
                     "gates": verdict.gates,
                     "reasons": verdict.reasons,
                     "diagnostics": verdict.diagnostics,
+                    "rows": [asdict(row) for row in rows if row.candidate_id == candidate_id],
                 }
             )
 
@@ -150,6 +163,7 @@ def run_synthetic_research(
         "rows": [asdict(row) for row in rows],
         "iterations": experiment_records,
         "best_candidate": best,
+        "karpathy_workspace": karpathy_workspace,
     }
     (root / "metrics_rows.json").write_text(
         json.dumps(summary["rows"], ensure_ascii=False, indent=2) + "\n",
@@ -163,6 +177,8 @@ def run_synthetic_research(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    write_results_tsv(root, experiment_records)
+    write_latest_state(root, summary)
     return summary
 
 
@@ -173,12 +189,23 @@ def run_ztrade_csv_research(
     max_iterations: int = 4,
     max_symbols: int = 50,
     windows: list[dict[str, Any]] | None = None,
+    use_mutable_candidate: bool = False,
 ) -> dict[str, Any]:
     """Run the V47 autoresearch loop against local ztrade CSV history."""
     root = safe_run_dir(str(run_dir))
     root.mkdir(parents=True, exist_ok=True)
+    karpathy_workspace = initialize_karpathy_workspace(
+        root,
+        mode="ztrade_csv",
+        data_dir=data_dir,
+        max_symbols=max_symbols,
+    )
     loader = ZtradeCsvLoader(data_dir)
-    candidate_defs = SEARCH_SPACE[: max(1, max_iterations + 1)]
+    candidate_defs = _candidate_definitions(
+        root,
+        max_iterations=max_iterations,
+        use_mutable_candidate=use_mutable_candidate,
+    )
     active_windows = windows or ZTRADE_CSV_WINDOWS
     rows: list[MetricRow] = []
     experiment_records: list[dict[str, Any]] = []
@@ -231,6 +258,7 @@ def run_ztrade_csv_research(
                     "gates": verdict.gates,
                     "reasons": verdict.reasons,
                     "diagnostics": verdict.diagnostics,
+                    "rows": [asdict(row) for row in rows if row.candidate_id == candidate_id],
                 }
             )
 
@@ -246,6 +274,7 @@ def run_ztrade_csv_research(
         "rows": [asdict(row) for row in rows],
         "iterations": experiment_records,
         "best_candidate": best,
+        "karpathy_workspace": karpathy_workspace,
     }
     (root / "metrics_rows.json").write_text(
         json.dumps(summary["rows"], ensure_ascii=False, indent=2) + "\n",
@@ -259,7 +288,21 @@ def run_ztrade_csv_research(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    write_results_tsv(root, experiment_records)
+    write_latest_state(root, summary)
     return summary
+
+
+def _candidate_definitions(
+    root: Path,
+    *,
+    max_iterations: int,
+    use_mutable_candidate: bool,
+) -> list[dict[str, Any]]:
+    if not use_mutable_candidate:
+        return SEARCH_SPACE[: max(1, max_iterations + 1)]
+    baseline = SEARCH_SPACE[0]
+    return [baseline, mutable_candidate_definition(root)]
 
 
 def discover_ztrade_csv_universe(

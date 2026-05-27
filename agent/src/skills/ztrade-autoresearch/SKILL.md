@@ -13,6 +13,10 @@ This skill is for ztrade strategy research, not live trading.
 - Agent must not modify the evaluator, data windows, search space, or backtest engine during a run.
 - Candidate code must use standard library plus existing project dependencies only.
 - The loop produces research evidence and run cards. It does not promote live profiles.
+- Karpathy-style runs use `autoresearch/program.md` as the loop contract and
+  `autoresearch/mutable/v47_params.json` as the first editable surface.
+- Swarm and Alpha Zoo may participate in the Think/proposal step, but only as
+  read-only analysis context. KEEP/DISCARD remains the fixed evaluator's job.
 
 ## Starting Point
 
@@ -32,6 +36,19 @@ Use the `ztrade_autoresearch` tool for the deterministic synthetic smoke:
 
 The smoke loop uses deterministic synthetic A-share OHLCV data to verify the
 Vibe-Trading scaffolding before connecting live Tushare data.
+
+For the Karpathy-faithful loop shape, set `use_mutable_candidate: true`.
+The tool initializes:
+
+- `autoresearch/program.md`
+- `autoresearch/mutable/v47_params.json`
+- `autoresearch/context/alpha_zoo_context.json`
+- `autoresearch/proposals/swarm_proposal_request.json`
+- `autoresearch/results.tsv`
+- `autoresearch/latest_state.json`
+
+The coding agent should edit only `autoresearch/mutable/v47_params.json`, rerun
+the fixed evaluator, then keep or discard based on the evaluator verdict.
 
 Use local ztrade CSV history with:
 

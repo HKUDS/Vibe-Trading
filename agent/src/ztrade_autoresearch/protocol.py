@@ -124,15 +124,22 @@ def protocol_payload() -> dict[str, Any]:
         "baseline_id": BASELINE_ID,
         "baseline_profile": "v47_weak_guard_62_70",
         "mutable_surface": [
+            "Karpathy-style autoresearch/mutable/v47_params.json",
             "candidate strategy parameters rendered into code/signal_engine.py",
             "helper functions only inside candidate_strategy.py",
         ],
         "immutable_surface": [
             "data windows",
-            "search space",
             "evaluator gates",
             "backtest engine",
             "run card hashing",
+            "KEEP/DISCARD decisions",
+            "Alpha Zoo and swarm proposal contexts",
+        ],
+        "proposal_layer": [
+            "swarm agents may analyze and propose one next experiment",
+            "Alpha Zoo metadata may ground factor ideas",
+            "neither proposal source may decide KEEP/DISCARD or edit the evaluator",
         ],
         "dependency_policy": "standard library plus existing project dependencies only",
         "rolling_windows": ROLLING_WINDOWS,
