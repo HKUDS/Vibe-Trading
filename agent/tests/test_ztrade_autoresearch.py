@@ -3,11 +3,18 @@ from __future__ import annotations
 import json
 
 import pandas as pd
+import pytest
 
 from src.tools import build_registry
-from src.ztrade_autoresearch.candidate_strategy import ZTradeV47SignalEngine
+from src.ztrade_autoresearch.candidate_strategy import (
+    ZTradeV47SignalEngine,
+    _PendingSell,
+    _Position,
+    _with_indicators,
+)
 from src.ztrade_autoresearch.protocol import BASELINE_ID, DEFAULT_V47_PARAMS
 from src.ztrade_autoresearch.runner import (
+    _synthetic_data_map,
     discover_ztrade_csv_universe,
     run_synthetic_research,
     run_ztrade_csv_research,
@@ -35,7 +42,190 @@ def test_candidate_strategy_generates_long_only_signals() -> None:
     assert series.index.equals(_sample_frame().index)
 
 
-def test_synthetic_research_writes_evidence(tmp_path) -> None:
+def test_default_v47_params_match_reference_profile() -> None:
+    assert DEFAULT_V47_PARAMS == {
+        "s1_window": 7,
+        "s1_volume_ratio_min": 1.2,
+        "s1_max_age": 2,
+        "s1_stale_age_min": None,
+        "s1_stale_volume_ratio_min": None,
+        "early_failure_exit_enable": True,
+        "early_failure_max_hold_days": 2,
+        "early_failure_loss_pct": 1.0,
+        "early_failure_market_weak_enable": True,
+        "early_failure_market_ma_window": 20,
+        "early_failure_market_min_coverage": 2000,
+        "early_failure_market_below_ma_ratio_min": 0.55,
+        "early_failure_market_down_ratio_min": 0.50,
+        "early_failure_gap_guard_pct": 3.0,
+        "early_failure_gap_guard_capitulation_pct": 6.0,
+        "early_failure_gap_guard_capitulation_below_ma_ratio_max": 0.65,
+        "early_failure_gap_guard_capitulation_down_ratio_max": 0.75,
+        "early_failure_weak_breadth_guard_enable": True,
+        "early_failure_weak_breadth_below_ma_ratio_max": 0.62,
+        "early_failure_weak_breadth_down_ratio_max": 0.70,
+    }
+
+
+def test_v47_entry_uses_brick_filters_and_s1_exclusion() -> None:
+    data = _synthetic_data_map(11, "2025-07-01", 160, "recovery")["000001.SZ"]
+    hist = _with_indicators(data).loc[: "2025-11-03"].tail(200)
+    engine = ZTradeV47SignalEngine(**DEFAULT_V47_PARAMS)
+
+    passed, factors = engine._passes_filters(hist)
+    assert passed is True
+    assert factors
+    assert factors["brick_ratio"] > 0
+    assert factors["dif_val"] >= 0
+
+    s1_blocked = hist.copy()
+    s1_blocked.iloc[-2, s1_blocked.columns.get_loc("close")] = s1_blocked.iloc[-3]["close"] * 0.98
+    s1_blocked.iloc[-2, s1_blocked.columns.get_loc("volume")] = s1_blocked["volume"].tail(7).max() * 10
+    blocked, _ = engine._passes_filters(s1_blocked)
+    assert blocked is False
+
+
+def test_v47_ranking_and_active_start_do_not_carry_warmup_positions() -> None:
+    data = _synthetic_data_map(11, "2025-07-01", 160, "recovery")
+    engine = ZTradeV47SignalEngine(**DEFAULT_V47_PARAMS, max_positions=1, active_start_date="2025-11-05")
+
+    signals = engine.generate(data)
+
+    assert signals["600519.SH"].loc["2025-10-15"] == 0.0
+    assert signals["000001.SZ"].loc["2025-11-05"] == 0.0
+    assert signals["000001.SZ"].loc["2025-11-27"] == 1.0
+
+
+def test_v47_uses_symbol_next_bar_for_buy_when_global_next_date_missing() -> None:
+    signal_ts = pd.Timestamp("2026-01-02")
+    missing_next = pd.DataFrame(
+        {
+            "open": [10.0, 10.5],
+            "high": [10.2, 10.7],
+            "low": [9.8, 10.3],
+            "close": [10.0, 10.6],
+            "volume": [1_000_000, 1_000_000],
+        },
+        index=pd.to_datetime(["2026-01-02", "2026-01-06"]),
+    )
+    other_symbol = pd.DataFrame(
+        {
+            "open": [20.0, 20.2],
+            "high": [20.1, 20.3],
+            "low": [19.9, 20.1],
+            "close": [20.0, 20.2],
+            "volume": [1_000_000, 1_000_000],
+        },
+        index=pd.to_datetime(["2026-01-02", "2026-01-05"]),
+    )
+    engine = ZTradeV47SignalEngine(**DEFAULT_V47_PARAMS, max_positions=1)
+    factors = {"brick_ratio": 1.0, "vol_ratio": 1.0, "dif_val": 1.0, "gain_margin": 1.0, "near_score": 1.0}
+    engine._passes_filters = lambda hist: (bool(hist["close"].iloc[-1] == 10.0), factors)  # type: ignore[method-assign]
+    frames = {"000001.SZ": missing_next, "000002.SZ": other_symbol}
+    positions: dict[str, _Position] = {}
+
+    engine._select_buys(signal_ts, 0, pd.DatetimeIndex(sorted(set(missing_next.index) | set(other_symbol.index))), frames, positions, {})
+
+    assert positions["000001.SZ"].buy_i == 1
+    assert positions["000001.SZ"].buy_price == 10.5
+
+
+def test_v47_max_hold_uses_symbol_calendar_not_union_calendar() -> None:
+    idx = pd.to_datetime(["2026-01-02", "2026-01-09", "2026-01-12"])
+    frame = pd.DataFrame(
+        {
+            "open": [10.0, 10.1, 10.2],
+            "high": [10.2, 10.3, 10.4],
+            "low": [9.8, 9.9, 10.0],
+            "close": [10.0, 10.1, 10.2],
+            "volume": [1_000_000, 1_000_000, 1_000_000],
+            "红柱": [True, True, True],
+            "绿柱": [False, False, False],
+            "砖型图": [4.0, 5.0, 6.0],
+        },
+        index=idx,
+    )
+    engine = ZTradeV47SignalEngine(**DEFAULT_V47_PARAMS, max_hold_days=2)
+    positions = {"000001.SZ": _Position("000001.SZ", buy_i=0, buy_price=10.0, entry_score=1.0, buy_trade_i=0)}
+
+    engine._detect_exits(idx[1], 5, {"000001.SZ": frame}, pd.DataFrame(), positions, {})
+    assert "000001.SZ" in positions
+
+    engine._detect_exits(idx[2], 6, {"000001.SZ": frame}, pd.DataFrame(), positions, {})
+    assert positions == {}
+
+
+def test_v47_pending_sell_confirms_or_cancels_next_close() -> None:
+    idx = pd.bdate_range("2026-01-01", periods=3)
+    frame = pd.DataFrame(
+        {
+            "open": [10.0, 10.0, 10.0],
+            "high": [10.5, 10.5, 10.5],
+            "low": [9.5, 9.5, 9.5],
+            "close": [10.0, 9.8, 10.2],
+            "volume": [1_000_000, 1_000_000, 1_000_000],
+            "红柱": [True, False, True],
+            "绿柱": [False, True, False],
+            "砖型图": [5.0, 4.0, 5.0],
+        },
+        index=idx,
+    )
+    engine = ZTradeV47SignalEngine(**DEFAULT_V47_PARAMS)
+    positions = {"000001.SZ": _Position("000001.SZ", buy_i=0, buy_price=10.0, entry_score=1.0)}
+    pending = {"000001.SZ": _PendingSell("000001.SZ", detect_i=1, stored_red_count=1)}
+
+    engine._execute_pending(idx[2], 2, {"000001.SZ": frame}, positions, pending)
+
+    assert "000001.SZ" in positions
+    assert "000001.SZ" not in pending
+    assert positions["000001.SZ"].red_count == 1
+
+
+def test_v47_four_red_take_profit_uses_stored_red_count() -> None:
+    idx = pd.bdate_range("2026-01-01", periods=6)
+    frame = pd.DataFrame(
+        {
+            "open": [10.0, 10.1, 10.2, 10.3, 10.4, 10.5],
+            "high": [10.5, 10.6, 10.7, 10.8, 10.9, 10.9],
+            "low": [9.9, 10.0, 10.1, 10.2, 10.3, 10.1],
+            "close": [10.0, 10.2, 10.3, 10.4, 10.5, 10.1],
+            "volume": [1_000_000] * 6,
+            "红柱": [False, True, True, True, True, False],
+            "绿柱": [False, False, False, False, False, True],
+            "砖型图": [4.0, 5.0, 6.0, 7.0, 8.0, 7.0],
+        },
+        index=idx,
+    )
+    engine = ZTradeV47SignalEngine(**DEFAULT_V47_PARAMS)
+    positions = {
+        "000001.SZ": _Position("000001.SZ", buy_i=0, buy_price=10.0, entry_score=1.0, red_count=4)
+    }
+    pending: dict[str, _PendingSell] = {}
+
+    engine._detect_exits(idx[5], 5, {"000001.SZ": frame}, pd.DataFrame(), positions, pending)
+
+    assert positions == {}
+    assert pending == {}
+
+
+def test_v47_early_failure_gap_and_breadth_guards() -> None:
+    params = {**DEFAULT_V47_PARAMS, "early_failure_market_min_coverage": 1}
+    engine = ZTradeV47SignalEngine(**params)
+
+    assert engine._early_failure_skip_reason(-2.0, True, {"below_ma_ratio": 0.60, "down_ratio": 0.60}) == ""
+    assert engine._early_failure_skip_reason(-4.0, True, {"below_ma_ratio": 0.60, "down_ratio": 0.60}) == "gap_guard"
+    assert (
+        engine._early_failure_skip_reason(-7.0, True, {"below_ma_ratio": 0.60, "down_ratio": 0.60})
+        == ""
+    )
+    assert (
+        engine._early_failure_skip_reason(-2.0, True, {"below_ma_ratio": 0.80, "down_ratio": 0.60})
+        == "market_too_weak"
+    )
+
+
+def test_synthetic_research_writes_evidence(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
     summary = run_synthetic_research(tmp_path / "research", max_iterations=2)
 
     assert summary["status"] == "ok"
@@ -46,20 +236,30 @@ def test_synthetic_research_writes_evidence(tmp_path) -> None:
     assert list((tmp_path / "research").glob("*/rw_*/*run_card.json"))
 
 
-def test_tool_registry_discovers_ztrade_autoresearch() -> None:
+def test_tool_registry_discovers_ztrade_autoresearch(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
     registry = build_registry()
     assert "ztrade_autoresearch" in registry.tool_names
 
+    run_dir = tmp_path / "tool_run"
     payload = json.loads(
         registry.execute(
             "ztrade_autoresearch",
-            {"run_dir": "/tmp/vibe_ztrade_autoresearch_tool_test", "max_iterations": 1},
+            {"run_dir": str(run_dir), "max_iterations": 1},
         )
     )
     assert payload["status"] == "ok"
 
 
-def test_ztrade_csv_research_uses_local_csv_data(tmp_path) -> None:
+def test_ztrade_autoresearch_rejects_unconfigured_absolute_run_dir(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", raising=False)
+
+    with pytest.raises(ValueError, match="outside allowed run roots"):
+        run_synthetic_research(tmp_path / "blocked", max_iterations=1)
+
+
+def test_ztrade_csv_research_uses_local_csv_data(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
     data_dir = tmp_path / "ztrade_data"
     data_dir.mkdir()
     _write_csv(data_dir / "000001.csv", offset=0.0)

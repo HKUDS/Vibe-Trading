@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from backtest.engines.china_a import ChinaAEngine
+from src.tools.path_utils import safe_run_dir
 from src.ztrade_autoresearch.candidate_strategy import ZTradeV47SignalEngine
 from src.ztrade_autoresearch.evaluator import MetricRow, evaluate_candidate
 from src.ztrade_autoresearch.protocol import (
@@ -107,7 +108,7 @@ def run_synthetic_research(
     scaffolding, run-card generation, fixed evaluator, and candidate strategy
     rendering work before connecting live Tushare data.
     """
-    root = Path(run_dir)
+    root = safe_run_dir(str(run_dir))
     root.mkdir(parents=True, exist_ok=True)
     candidates = SEARCH_SPACE[: max(1, max_iterations + 1)]
     rows: list[MetricRow] = []
@@ -174,7 +175,7 @@ def run_ztrade_csv_research(
     windows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run the V47 autoresearch loop against local ztrade CSV history."""
-    root = Path(run_dir)
+    root = safe_run_dir(str(run_dir))
     root.mkdir(parents=True, exist_ok=True)
     loader = ZtradeCsvLoader(data_dir)
     candidate_defs = SEARCH_SPACE[: max(1, max_iterations + 1)]
