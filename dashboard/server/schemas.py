@@ -617,6 +617,15 @@ class EntryBlock(_Manifest):
 
     description: str
     conditions: List[str] = Field(..., description="DSL condition strings.")
+    logic: Literal["all", "any"] = Field(
+        default="all",
+        description=(
+            "How to combine multiple conditions: 'all' = AND (consensus, "
+            "default — backward-compatible), 'any' = OR (majority-of-1, useful "
+            "when each factor independently has edge but their intersection "
+            "is too sparse for meaningful trade counts)."
+        ),
+    )
 
     @field_validator("conditions", mode="after")
     @classmethod

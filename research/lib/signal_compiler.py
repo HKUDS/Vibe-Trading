@@ -219,14 +219,18 @@ def _render_entry_block(
 ) -> str:
     """Render entry_{side} boolean Series assignment.
 
-    Indented at 8 spaces.
+    Indented at 8 spaces. Conditions are joined with ``&`` when
+    ``block.logic == 'all'`` (default, AND semantics — multi-factor consensus)
+    or ``|`` when ``block.logic == 'any'`` (OR semantics — fire on any single
+    factor's signal).
     """
     var = f"entry_{side}"
     if block is None:
         return f"        {var} = pd.Series(False, index=ohlcv.index)"
 
     cond_exprs = [_render_condition(c, indicator_var_map) for c in block.conditions]
-    joined = " & ".join(cond_exprs)
+    op = " & " if block.logic == "all" else " | "
+    joined = op.join(cond_exprs)
     return f"        {var} = ({joined})"
 
 

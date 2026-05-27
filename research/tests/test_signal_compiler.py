@@ -57,6 +57,7 @@ def _make_spec(
     entry_short_conds=None,
     exit_rules=None,
     smoothing="none",
+    entry_logic="all",
 ):
     """Build a minimal valid StrategySpec."""
     indicators = {
@@ -69,6 +70,7 @@ def _make_spec(
         entry_long = EntryBlock(
             description="Long entry",
             conditions=entry_long_conds,
+            logic=entry_logic,
         )
 
     entry_short = None
@@ -76,6 +78,7 @@ def _make_spec(
         entry_short = EntryBlock(
             description="Short entry",
             conditions=entry_short_conds,
+            logic=entry_logic,
         )
 
     if exit_rules is None:
@@ -181,6 +184,51 @@ def test_two_conditions_joined_with_and():
         line for line in source.splitlines() if "entry_long" in line and "=" in line
     )
     assert " & " in entry_line
+
+
+def test_two_conditions_joined_with_or_when_logic_any():
+    """logic='any' joins conditions with | instead of &."""
+    spec = _make_spec(
+        entry_long_conds=[
+            "funding_rate_percentile_90d <= 20.0",
+            "basis_percentile_90d <= 20.0",
+        ],
+        entry_short_conds=[
+            "funding_rate_percentile_90d >= 80.0",
+            "basis_percentile_90d >= 80.0",
+        ],
+        entry_logic="any",
+    )
+    source = compile_strategy(spec)
+    long_line = next(
+        line for line in source.splitlines() if "entry_long" in line and "=" in line
+    )
+    short_line = next(
+        line for line in source.splitlines() if "entry_short" in line and "=" in line
+    )
+    assert " | " in long_line
+    assert " & " not in long_line
+    assert " | " in short_line
+
+
+def test_invalid_logic_rejected_by_schema():
+    """Pydantic Literal must reject unknown logic values."""
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        EntryBlock(
+            description="bad",
+            conditions=["funding_rate_percentile_90d <= 20.0"],
+            logic="majority",
+        )
+
+
+def test_default_logic_is_all():
+    """When logic is omitted, the entry block must default to AND semantics."""
+    block = EntryBlock(
+        description="default",
+        conditions=["funding_rate_percentile_90d <= 20.0"],
+    )
+    assert block.logic == "all"
 
 
 # ---------------------------------------------------------------------------
