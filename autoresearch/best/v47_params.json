@@ -1,0 +1,26 @@
+{
+  "candidate_id": "candidate_mutable_v47",
+  "params": {
+    "early_failure_exit_enable": true,
+    "early_failure_gap_guard_capitulation_below_ma_ratio_max": 0.65,
+    "early_failure_gap_guard_capitulation_down_ratio_max": 0.75,
+    "early_failure_gap_guard_capitulation_pct": 6.0,
+    "early_failure_gap_guard_pct": 3.0,
+    "early_failure_loss_pct": 1.0,
+    "early_failure_market_below_ma_ratio_min": 0.55,
+    "early_failure_market_down_ratio_min": 0.5,
+    "early_failure_market_ma_window": 20,
+    "early_failure_market_min_coverage": 2000,
+    "early_failure_market_weak_enable": true,
+    "early_failure_max_hold_days": 2,
+    "early_failure_weak_breadth_below_ma_ratio_max": 0.62,
+    "early_failure_weak_breadth_down_ratio_max": 0.7,
+    "early_failure_weak_breadth_guard_enable": true,
+    "s1_max_age": 2,
+    "s1_stale_age_min": null,
+    "s1_stale_volume_ratio_min": null,
+    "s1_volume_ratio_min": 1.2,
+    "s1_window": 7
+  },
+  "strategy_family": "ztrade_v47_weak_guard_62_70"
+}

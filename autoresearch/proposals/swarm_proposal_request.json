@@ -1,0 +1,56 @@
+{
+  "data_dir": "/private/var/folders/n_/2cw9gf5n52z_w6kllyb44ttw0000gn/T/pytest-of-wdblink/pytest-26/test_ztrade_csv_research_uses_0/ztrade_data",
+  "hard_limits": [
+    "read-only analysis only",
+    "do not edit evaluator, protocol, data windows, or backtest engine",
+    "do not decide KEEP or DISCARD",
+    "emit one proposal only"
+  ],
+  "inputs": [
+    "autoresearch/program.md",
+    "autoresearch/results.tsv",
+    "autoresearch/latest_state.json",
+    "autoresearch/context/alpha_zoo_context.json",
+    "autoresearch/mutable/v47_params.json"
+  ],
+  "max_symbols": 2,
+  "mode": "ztrade_csv",
+  "required_output": {
+    "alpha_zoo_references": [
+      "optional alpha ids used as idea support"
+    ],
+    "expected_evaluator_effect": "return/win-rate/drawdown/trade-count expectation",
+    "hypothesis": "one falsifiable hypothesis",
+    "mutation_surface": "autoresearch/mutable/v47_params.json",
+    "overfit_objections": [
+      "specific risks"
+    ],
+    "param_changes": {
+      "parameter_name": "new value"
+    },
+    "proposal_id": "short stable id"
+  },
+  "roles": [
+    {
+      "purpose": "Use Alpha Zoo metadata to nominate explainable factor ideas; do not invent factors.",
+      "role": "factor_librarian"
+    },
+    {
+      "purpose": "Map each idea onto the current v47 parameter surface before requesting any expansion.",
+      "role": "v47_researcher"
+    },
+    {
+      "purpose": "Compare bull, bear, chop, and live-like windows using only evaluator artifacts.",
+      "role": "regime_analyst"
+    },
+    {
+      "purpose": "Reject ideas that depend on frozen-test peeking, evaluator edits, or one-window luck.",
+      "role": "overfit_skeptic"
+    },
+    {
+      "purpose": "Emit one structured experiment proposal that mutates only the allowed surface.",
+      "role": "proposal_writer"
+    }
+  ],
+  "status": "proposal_request"
+}

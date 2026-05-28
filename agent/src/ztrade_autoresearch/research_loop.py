@@ -19,13 +19,13 @@ from src.ztrade_autoresearch.protocol import BASELINE_ID, DEFAULT_V47_PARAMS, ST
 
 
 AUTORESEARCH_DIRNAME = "autoresearch"
-MUTABLE_PARAMS_REL = f"{AUTORESEARCH_DIRNAME}/mutable/v47_params.json"
-BEST_PARAMS_REL = f"{AUTORESEARCH_DIRNAME}/best/v47_params.json"
-PROGRAM_REL = f"{AUTORESEARCH_DIRNAME}/program.md"
-RESULTS_TSV_REL = f"{AUTORESEARCH_DIRNAME}/results.tsv"
-ALPHA_CONTEXT_REL = f"{AUTORESEARCH_DIRNAME}/context/alpha_zoo_context.json"
-SWARM_REQUEST_REL = f"{AUTORESEARCH_DIRNAME}/proposals/swarm_proposal_request.json"
-LATEST_STATE_REL = f"{AUTORESEARCH_DIRNAME}/latest_state.json"
+MUTABLE_PARAMS_REL = "mutable/v47_params.json"
+BEST_PARAMS_REL = "best/v47_params.json"
+PROGRAM_REL = "program.md"
+RESULTS_TSV_REL = "results.tsv"
+ALPHA_CONTEXT_REL = "context/alpha_zoo_context.json"
+SWARM_REQUEST_REL = "proposals/swarm_proposal_request.json"
+LATEST_STATE_REL = "latest_state.json"
 MUTABLE_CANDIDATE_ID = "candidate_mutable_v47"
 
 RESULTS_COLUMNS = [
@@ -136,7 +136,7 @@ machine-checked bounds in the project code.
 
 
 def initialize_karpathy_workspace(
-    root: str | Path,
+    workspace_root: str | Path | None = None,
     *,
     mode: str,
     data_dir: str | Path | None = None,
@@ -148,8 +148,8 @@ def initialize_karpathy_workspace(
     That lets a coding agent edit ``mutable/v47_params.json`` between evaluator
     runs without the runner erasing its candidate.
     """
-    root_path = Path(root)
-    research_dir = root_path / AUTORESEARCH_DIRNAME
+    root_path = _workspace_root(workspace_root)
+    research_dir = root_path
     for rel in ("mutable", "best", "context", "proposals", "archive"):
         (research_dir / rel).mkdir(parents=True, exist_ok=True)
 
@@ -165,6 +165,19 @@ def initialize_karpathy_workspace(
         root_path / SWARM_REQUEST_REL,
         build_swarm_proposal_request(mode=mode, data_dir=data_dir, max_symbols=max_symbols),
     )
+    _write_json_if_missing(
+        root_path / LATEST_STATE_REL,
+        {
+            "mode": mode,
+            "baseline_id": BASELINE_ID,
+            "best_candidate": None,
+            "iterations": [],
+            "row_count": 0,
+            "candidate_count": 0,
+            "strategy_family": STRATEGY_FAMILY,
+            "next_allowed_mutation": f"{AUTORESEARCH_DIRNAME}/{MUTABLE_PARAMS_REL}",
+        },
+    )
     return {
         "root": str(research_dir),
         "program": str(root_path / PROGRAM_REL),
@@ -173,13 +186,14 @@ def initialize_karpathy_workspace(
         "results_tsv": str(root_path / RESULTS_TSV_REL),
         "alpha_zoo_context": str(root_path / ALPHA_CONTEXT_REL),
         "swarm_proposal_request": str(root_path / SWARM_REQUEST_REL),
+        "latest_state": str(root_path / LATEST_STATE_REL),
         "mutable_candidate_id": MUTABLE_CANDIDATE_ID,
     }
 
 
 def load_mutable_v47_params(root: str | Path) -> dict[str, Any]:
     """Load and validate the current mutable v47 parameter candidate."""
-    path = Path(root) / MUTABLE_PARAMS_REL
+    path = _workspace_root(root) / MUTABLE_PARAMS_REL
     payload = json.loads(path.read_text(encoding="utf-8"))
     params = payload.get("params", payload)
     if not isinstance(params, dict):
@@ -220,7 +234,7 @@ def write_results_tsv(root: str | Path, records: list[dict[str, Any]]) -> str:
                 ]
             )
         )
-    path = Path(root) / RESULTS_TSV_REL
+    path = _workspace_root(root) / RESULTS_TSV_REL
     _write_text(path, "\n".join(lines) + "\n")
     return str(path)
 
@@ -236,9 +250,9 @@ def write_latest_state(root: str | Path, summary: dict[str, Any]) -> str:
         "row_count": len(rows),
         "candidate_count": len({row.get("candidate_id") for row in rows if isinstance(row, dict)}),
         "strategy_family": STRATEGY_FAMILY,
-        "next_allowed_mutation": MUTABLE_PARAMS_REL,
+        "next_allowed_mutation": f"{AUTORESEARCH_DIRNAME}/{MUTABLE_PARAMS_REL}",
     }
-    path = Path(root) / LATEST_STATE_REL
+    path = _workspace_root(root) / LATEST_STATE_REL
     _write_json(path, payload)
     return str(path)
 
@@ -257,16 +271,16 @@ def build_swarm_proposal_request(
         "max_symbols": max_symbols,
         "roles": SWARM_ROLES,
         "inputs": [
-            PROGRAM_REL,
-            RESULTS_TSV_REL,
-            LATEST_STATE_REL,
-            ALPHA_CONTEXT_REL,
-            MUTABLE_PARAMS_REL,
+            f"{AUTORESEARCH_DIRNAME}/{PROGRAM_REL}",
+            f"{AUTORESEARCH_DIRNAME}/{RESULTS_TSV_REL}",
+            f"{AUTORESEARCH_DIRNAME}/{LATEST_STATE_REL}",
+            f"{AUTORESEARCH_DIRNAME}/{ALPHA_CONTEXT_REL}",
+            f"{AUTORESEARCH_DIRNAME}/{MUTABLE_PARAMS_REL}",
         ],
         "required_output": {
             "proposal_id": "short stable id",
             "hypothesis": "one falsifiable hypothesis",
-            "mutation_surface": MUTABLE_PARAMS_REL,
+            "mutation_surface": f"{AUTORESEARCH_DIRNAME}/{MUTABLE_PARAMS_REL}",
             "param_changes": {"parameter_name": "new value"},
             "alpha_zoo_references": ["optional alpha ids used as idea support"],
             "overfit_objections": ["specific risks"],
@@ -351,6 +365,17 @@ def _params_payload(params: dict[str, Any]) -> dict[str, Any]:
         "candidate_id": MUTABLE_CANDIDATE_ID,
         "params": params,
     }
+
+
+def default_karpathy_workspace_root() -> Path:
+    """Return the repo-level Karpathy-style autoresearch workspace path."""
+    return Path(__file__).resolve().parents[3] / AUTORESEARCH_DIRNAME
+
+
+def _workspace_root(root: str | Path | None) -> Path:
+    if root is None:
+        return default_karpathy_workspace_root()
+    return Path(root)
 
 
 def _alpha_meta(registry: Any, alpha_id: str) -> dict[str, Any]:

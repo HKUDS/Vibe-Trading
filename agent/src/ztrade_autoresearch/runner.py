@@ -108,6 +108,7 @@ def run_synthetic_research(
     *,
     max_iterations: int = 4,
     use_mutable_candidate: bool = False,
+    workspace_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run a bounded ztrade autoresearch smoke loop.
 
@@ -117,9 +118,9 @@ def run_synthetic_research(
     """
     root = safe_run_dir(str(run_dir))
     root.mkdir(parents=True, exist_ok=True)
-    karpathy_workspace = initialize_karpathy_workspace(root, mode="synthetic_smoke")
+    karpathy_workspace = initialize_karpathy_workspace(workspace_dir, mode="synthetic_smoke")
     candidates = _candidate_definitions(
-        root,
+        Path(karpathy_workspace["root"]),
         max_iterations=max_iterations,
         use_mutable_candidate=use_mutable_candidate,
     )
@@ -177,8 +178,9 @@ def run_synthetic_research(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    write_results_tsv(root, experiment_records)
-    write_latest_state(root, summary)
+    workspace_root = Path(karpathy_workspace["root"])
+    write_results_tsv(workspace_root, experiment_records)
+    write_latest_state(workspace_root, summary)
     return summary
 
 
@@ -190,19 +192,20 @@ def run_ztrade_csv_research(
     max_symbols: int = 50,
     windows: list[dict[str, Any]] | None = None,
     use_mutable_candidate: bool = False,
+    workspace_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run the V47 autoresearch loop against local ztrade CSV history."""
     root = safe_run_dir(str(run_dir))
     root.mkdir(parents=True, exist_ok=True)
     karpathy_workspace = initialize_karpathy_workspace(
-        root,
+        workspace_dir,
         mode="ztrade_csv",
         data_dir=data_dir,
         max_symbols=max_symbols,
     )
     loader = ZtradeCsvLoader(data_dir)
     candidate_defs = _candidate_definitions(
-        root,
+        Path(karpathy_workspace["root"]),
         max_iterations=max_iterations,
         use_mutable_candidate=use_mutable_candidate,
     )
@@ -288,8 +291,9 @@ def run_ztrade_csv_research(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    write_results_tsv(root, experiment_records)
-    write_latest_state(root, summary)
+    workspace_root = Path(karpathy_workspace["root"])
+    write_results_tsv(workspace_root, experiment_records)
+    write_latest_state(workspace_root, summary)
     return summary
 
 

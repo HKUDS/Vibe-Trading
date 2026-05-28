@@ -231,44 +231,52 @@ def test_v47_early_failure_gap_and_breadth_guards() -> None:
 
 def test_synthetic_research_writes_evidence(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
-    summary = run_synthetic_research(tmp_path / "research", max_iterations=2)
+    workspace_dir = tmp_path / "autoresearch"
+    summary = run_synthetic_research(tmp_path / "research", max_iterations=2, workspace_dir=workspace_dir)
 
     assert summary["status"] == "ok"
     assert summary["baseline_id"] == BASELINE_ID
     assert len(summary["iterations"]) == 2
     assert (tmp_path / "research" / "summary.json").exists()
     assert (tmp_path / "research" / "metrics_rows.json").exists()
-    assert (tmp_path / "research" / "autoresearch" / "program.md").exists()
-    assert (tmp_path / "research" / "autoresearch" / "results.tsv").exists()
+    assert (workspace_dir / "program.md").exists()
+    assert (workspace_dir / "results.tsv").exists()
+    assert not (tmp_path / "research" / "autoresearch").exists()
     assert list((tmp_path / "research").glob("*/rw_*/*run_card.json"))
 
 
 def test_karpathy_workspace_preserves_mutable_candidate_and_writes_proposal_context(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
-    run_dir = tmp_path / "karpathy"
-    workspace = initialize_karpathy_workspace(run_dir, mode="synthetic_smoke")
-    mutable_path = run_dir / "autoresearch" / "mutable" / "v47_params.json"
+    run_dir = tmp_path / "karpathy_run"
+    workspace_dir = tmp_path / "autoresearch"
+    workspace = initialize_karpathy_workspace(workspace_dir, mode="synthetic_smoke")
+    mutable_path = workspace_dir / "mutable" / "v47_params.json"
     payload = json.loads(mutable_path.read_text(encoding="utf-8"))
     payload["params"]["s1_volume_ratio_min"] = 1.35
     mutable_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    summary = run_synthetic_research(run_dir, max_iterations=4, use_mutable_candidate=True)
+    summary = run_synthetic_research(
+        run_dir,
+        max_iterations=4,
+        use_mutable_candidate=True,
+        workspace_dir=workspace_dir,
+    )
 
     assert summary["karpathy_workspace"]["mutable_candidate_id"] == MUTABLE_CANDIDATE_ID
     assert summary["karpathy_workspace"]["program"] == workspace["program"]
-    assert load_mutable_v47_params(run_dir)["s1_volume_ratio_min"] == 1.35
+    assert load_mutable_v47_params(workspace_dir)["s1_volume_ratio_min"] == 1.35
 
     iterations = summary["iterations"]
     assert [record["candidate_id"] for record in iterations] == [MUTABLE_CANDIDATE_ID]
 
-    program = (run_dir / "autoresearch" / "program.md").read_text(encoding="utf-8")
+    program = (workspace_dir / "program.md").read_text(encoding="utf-8")
     assert "Swarm agents and Alpha Zoo are inside the Think step" in program
 
-    alpha_context = json.loads((run_dir / "autoresearch" / "context" / "alpha_zoo_context.json").read_text())
+    alpha_context = json.loads((workspace_dir / "context" / "alpha_zoo_context.json").read_text())
     assert alpha_context["status"] in {"ok", "unavailable"}
     assert "policy" in alpha_context
 
-    swarm_request = json.loads((run_dir / "autoresearch" / "proposals" / "swarm_proposal_request.json").read_text())
+    swarm_request = json.loads((workspace_dir / "proposals" / "swarm_proposal_request.json").read_text())
     assert [role["role"] for role in swarm_request["roles"]] == [
         "factor_librarian",
         "v47_researcher",
@@ -278,10 +286,11 @@ def test_karpathy_workspace_preserves_mutable_candidate_and_writes_proposal_cont
     ]
     assert "do not decide KEEP or DISCARD" in swarm_request["hard_limits"]
 
-    ledger = (run_dir / "autoresearch" / "results.tsv").read_text(encoding="utf-8")
+    ledger = (workspace_dir / "results.tsv").read_text(encoding="utf-8")
     assert ledger.splitlines()[0].startswith("iteration\tcandidate_id\tverdict")
     assert MUTABLE_CANDIDATE_ID in ledger
-    assert (run_dir / "autoresearch" / "latest_state.json").exists()
+    assert (workspace_dir / "latest_state.json").exists()
+    assert not (run_dir / "autoresearch").exists()
 
 
 def test_tool_registry_discovers_ztrade_autoresearch(tmp_path, monkeypatch) -> None:
@@ -293,7 +302,12 @@ def test_tool_registry_discovers_ztrade_autoresearch(tmp_path, monkeypatch) -> N
     payload = json.loads(
         registry.execute(
             "ztrade_autoresearch",
-            {"run_dir": str(run_dir), "max_iterations": 1, "use_mutable_candidate": True},
+            {
+                "run_dir": str(run_dir),
+                "max_iterations": 1,
+                "use_mutable_candidate": True,
+                "workspace_dir": str(tmp_path / "autoresearch"),
+            },
         )
     )
     assert payload["status"] == "ok"
@@ -330,6 +344,7 @@ def test_ztrade_csv_research_uses_local_csv_data(tmp_path, monkeypatch) -> None:
         data_dir=data_dir,
         max_iterations=1,
         max_symbols=2,
+        workspace_dir=tmp_path / "autoresearch",
         windows=[
             {"id": "rw_fixture", "type": "rolling", "regime": "fixture", "start": "2026-01-01", "end": "2026-03-31"}
         ],

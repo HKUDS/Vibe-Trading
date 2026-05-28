@@ -48,6 +48,13 @@ class ZTradeAutoResearchTool(BaseTool):
                     "built-in static search-space candidates."
                 ),
             },
+            "workspace_dir": {
+                "type": "string",
+                "description": (
+                    "Optional Karpathy-style workspace directory. Defaults to "
+                    "the repo-level autoresearch/ directory."
+                ),
+            },
         },
         "required": ["run_dir"],
     }
@@ -64,11 +71,13 @@ class ZTradeAutoResearchTool(BaseTool):
                 max_iterations=int(kwargs.get("max_iterations", 4)),
                 max_symbols=int(kwargs.get("max_symbols", 50)),
                 use_mutable_candidate=bool(kwargs.get("use_mutable_candidate", False)),
+                workspace_dir=kwargs.get("workspace_dir"),
             )
         else:
             summary = run_synthetic_research(
                 kwargs["run_dir"],
                 max_iterations=int(kwargs.get("max_iterations", 4)),
                 use_mutable_candidate=bool(kwargs.get("use_mutable_candidate", False)),
+                workspace_dir=kwargs.get("workspace_dir"),
             )
         return json.dumps(summary, ensure_ascii=False)
