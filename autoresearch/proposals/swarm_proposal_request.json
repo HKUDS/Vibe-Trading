@@ -4,13 +4,16 @@
     "read-only analysis only",
     "do not edit evaluator, protocol, data windows, or backtest engine",
     "do not decide KEEP or DISCARD",
+    "do not edit autoresearch/mutable/v47_params.json; emit proposed changes only",
     "emit one proposal only"
   ],
   "inputs": [
     "autoresearch/program.md",
     "autoresearch/evaluator_contract.md",
     "autoresearch/results.tsv",
+    "autoresearch/results.template.tsv",
     "autoresearch/latest_state.json",
+    "autoresearch/latest_state.template.json",
     "autoresearch/context/alpha_zoo_context.json",
     "autoresearch/mutable/v47_params.json"
   ],

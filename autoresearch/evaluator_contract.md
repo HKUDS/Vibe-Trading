@@ -21,6 +21,9 @@ windows. It computes return delta, drawdown delta, loss-window count, trade
 retention, positive-return concentration, and minimum trade count. A candidate
 is KEEP only if every gate passes.
 
+Alternate scoring paths are forbidden. Do not compute your own KEEP/DISCARD
+outside `agent/src/ztrade_autoresearch/evaluator.py`.
+
 ## Required Mutable Input
 
 The only editable candidate input for V1 is:
@@ -42,9 +45,15 @@ edit evaluator code, or expand the official mutable surface directly.
 ## Required Output
 
 Each evaluator run writes normal run artifacts under `agent/runs/...` and
-refreshes project-level state in:
+updates project-level runtime state:
 
-- `autoresearch/results.tsv`
-- `autoresearch/latest_state.json`
+- `autoresearch/results.tsv` is append-only experiment history.
+- `autoresearch/latest_state.json` is refreshed to the latest evaluator state.
+
+These files are runtime outputs and should not be committed. The tracked
+templates are:
+
+- `autoresearch/results.template.tsv`
+- `autoresearch/latest_state.template.json`
 
 Do not hand-edit evaluator results.

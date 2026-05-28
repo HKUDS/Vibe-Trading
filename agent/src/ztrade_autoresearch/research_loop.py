@@ -23,10 +23,12 @@ MUTABLE_PARAMS_REL = "mutable/v47_params.json"
 BEST_PARAMS_REL = "best/v47_params.json"
 PROGRAM_REL = "program.md"
 RESULTS_TSV_REL = "results.tsv"
+RESULTS_TEMPLATE_REL = "results.template.tsv"
 EVALUATOR_CONTRACT_REL = "evaluator_contract.md"
 ALPHA_CONTEXT_REL = "context/alpha_zoo_context.json"
 SWARM_REQUEST_REL = "proposals/swarm_proposal_request.json"
 LATEST_STATE_REL = "latest_state.json"
+LATEST_STATE_TEMPLATE_REL = "latest_state.template.json"
 MUTABLE_CANDIDATE_ID = "candidate_mutable_v47"
 
 RESULTS_COLUMNS = [
@@ -99,14 +101,19 @@ The first research surface is v47 parameter tuning only.
 ## Loop
 
 1. Read every file in the Required Context section before changing anything.
-2. Think with the local Alpha Zoo context and the swarm proposal request.
-3. Mutate exactly one allowed candidate surface:
+2. If this is a fresh workspace, run the baseline/default v47 evaluation first
+   before proposing any parameter change.
+3. Think with the local Alpha Zoo context and the swarm proposal request.
+4. Mutate exactly one allowed candidate surface:
    `autoresearch/mutable/v47_params.json`.
-4. Run the fixed ztrade autoresearch evaluator through the Required Evaluator
+5. Run the fixed ztrade autoresearch evaluator through the Required Evaluator
    Invocation section. Do not invent another backtest or scoring path.
-5. Let the evaluator append or refresh `results.tsv` and `latest_state.json`.
-6. Keep the candidate only when the evaluator returns KEEP and all required
+6. Let the evaluator append `results.tsv` and refresh `latest_state.json`.
+7. Keep the candidate only when the evaluator returns KEEP and all required
    gates pass. Otherwise discard or revise in the next iteration.
+8. NEVER STOP after a single iteration. Continue proposing, evaluating, and
+   keeping/discarding until a human explicitly stops the session, a hard blocker
+   repeats, or a configured loop limit is reached.
 
 ## Required Context
 
@@ -114,14 +121,17 @@ Before each iteration, read these project-level files:
 
 - `autoresearch/program.md`
 - `autoresearch/evaluator_contract.md`
-- `autoresearch/results.tsv`
-- `autoresearch/latest_state.json`
+- `autoresearch/results.tsv` if present; otherwise create it from
+  `autoresearch/results.template.tsv`
+- `autoresearch/latest_state.json` if present; otherwise create it from
+  `autoresearch/latest_state.template.json`
 - `autoresearch/best/v47_params.json`
 - `autoresearch/mutable/v47_params.json`
 - `autoresearch/context/alpha_zoo_context.json`
 - `autoresearch/proposals/swarm_proposal_request.json`
 
-Then inspect these code-owned judge files when evaluator behavior is relevant:
+Every iteration must also inspect these code-owned judge files before proposing
+or evaluating a candidate:
 
 - `agent/src/ztrade_autoresearch/protocol.py`
 - `agent/src/ztrade_autoresearch/evaluator.py`
@@ -133,16 +143,44 @@ Then inspect these code-owned judge files when evaluator behavior is relevant:
 Use the existing ztrade autoresearch evaluator only. The normal CSV command is:
 
 ```bash
-PYTHONPATH=agent uv run python - <<'PY'
+RUN_ID="$(date +%Y%m%d_%H%M%S)"
+RUN_DIR="agent/runs/ztrade_autoresearch_${RUN_ID}"
+export RUN_DIR
+mkdir -p "$RUN_DIR/logs"
+PYTHONPATH=agent uv run python - <<'PY' > "$RUN_DIR/logs/autoresearch_stdout.log" 2> "$RUN_DIR/logs/autoresearch_stderr.log"
+import os
 from pathlib import Path
 from src.ztrade_autoresearch.runner import run_ztrade_csv_research
 
 run_ztrade_csv_research(
-    Path("agent/runs") / "ztrade_autoresearch_<iteration_id>",
+    Path(os.environ["RUN_DIR"]),
     data_dir="/Users/wdblink/Code/my_repo/ztrade/data",
     max_iterations=1,
     max_symbols=200,
     use_mutable_candidate=True,
+)
+PY
+```
+
+For baseline-first sanity on a fresh workspace, do not mutate params. Run the
+same evaluator with static search disabled after baseline:
+
+```bash
+RUN_ID="$(date +%Y%m%d_%H%M%S)"
+RUN_DIR="agent/runs/ztrade_autoresearch_baseline_${RUN_ID}"
+export RUN_DIR
+mkdir -p "$RUN_DIR/logs"
+PYTHONPATH=agent uv run python - <<'PY' > "$RUN_DIR/logs/autoresearch_stdout.log" 2> "$RUN_DIR/logs/autoresearch_stderr.log"
+import os
+from pathlib import Path
+from src.ztrade_autoresearch.runner import run_ztrade_csv_research
+
+run_ztrade_csv_research(
+    Path(os.environ["RUN_DIR"]),
+    data_dir="/Users/wdblink/Code/my_repo/ztrade/data",
+    max_iterations=0,
+    max_symbols=200,
+    use_mutable_candidate=False,
 )
 PY
 ```
@@ -158,6 +196,49 @@ The tool-equivalent invocation is `ztrade_autoresearch` with:
   "use_mutable_candidate": true
 }
 ```
+
+## Baseline First
+
+Before the first parameter mutation in a new research run, evaluate the default
+v47 baseline using the baseline-first command above. This run should produce
+baseline rows and no candidate verdict. Do not treat an empty `results.tsv` as
+evidence that parameter search should start immediately.
+
+## Git Advance/Revert Discipline
+
+Each candidate iteration must be recoverable:
+
+1. Start from a clean or understood worktree.
+2. Record the current commit hash and mutable params before editing.
+3. Edit only `autoresearch/mutable/v47_params.json`.
+4. Run the required evaluator.
+5. If verdict is KEEP, update `autoresearch/best/v47_params.json` and commit
+   the kept candidate with a message that includes the evaluator score.
+6. If verdict is DISCARD/BLOCKED, revert `autoresearch/mutable/v47_params.json`
+   to the previous best candidate. Do not commit discarded params.
+
+Do not use destructive repository-wide commands. Revert only the mutable
+candidate file unless a human explicitly requests broader reset behavior.
+
+## Logging
+
+Every evaluator invocation must write stdout and stderr under that run's
+`logs/` directory. Do not stream full backtest output into the chat context.
+Summarize the verdict, score, failed gates, and run directory instead.
+
+## Timeouts and Crashes
+
+If an evaluator run exceeds 90 minutes, stop that run, mark the candidate
+BLOCKED in notes, inspect stderr, and continue with a simpler candidate. If the
+run crashes, first check whether the crash is caused by the candidate params. A
+small candidate-surface fix is allowed; evaluator/protocol/backtest fixes are
+not allowed during the research loop.
+
+## Simplicity Criterion
+
+Prefer simpler changes when scores are similar. A small return or win-rate
+improvement is not enough if it requires a wider mutable surface, opaque factor
+addition, or fragile one-window behavior.
 
 ## Immutable Judge
 
@@ -209,6 +290,9 @@ windows. It computes return delta, drawdown delta, loss-window count, trade
 retention, positive-return concentration, and minimum trade count. A candidate
 is KEEP only if every gate passes.
 
+Alternate scoring paths are forbidden. Do not compute your own KEEP/DISCARD
+outside `agent/src/ztrade_autoresearch/evaluator.py`.
+
 ## Required Mutable Input
 
 The only editable candidate input for V1 is:
@@ -230,10 +314,16 @@ edit evaluator code, or expand the official mutable surface directly.
 ## Required Output
 
 Each evaluator run writes normal run artifacts under `agent/runs/...` and
-refreshes project-level state in:
+updates project-level runtime state:
 
-- `autoresearch/results.tsv`
-- `autoresearch/latest_state.json`
+- `autoresearch/results.tsv` is append-only experiment history.
+- `autoresearch/latest_state.json` is refreshed to the latest evaluator state.
+
+These files are runtime outputs and should not be committed. The tracked
+templates are:
+
+- `autoresearch/results.template.tsv`
+- `autoresearch/latest_state.template.json`
 
 Do not hand-edit evaluator results.
 """
@@ -261,6 +351,7 @@ def initialize_karpathy_workspace(
     _write_text(root_path / EVALUATOR_CONTRACT_REL, EVALUATOR_CONTRACT_MD)
     _write_json_if_missing(root_path / MUTABLE_PARAMS_REL, _params_payload(DEFAULT_V47_PARAMS))
     _write_json_if_missing(root_path / BEST_PARAMS_REL, _params_payload(DEFAULT_V47_PARAMS))
+    _write_text(root_path / RESULTS_TEMPLATE_REL, "\t".join(RESULTS_COLUMNS) + "\n")
     _write_text_if_missing(root_path / RESULTS_TSV_REL, "\t".join(RESULTS_COLUMNS) + "\n")
     _write_json(
         root_path / ALPHA_CONTEXT_REL,
@@ -270,29 +361,21 @@ def initialize_karpathy_workspace(
         root_path / SWARM_REQUEST_REL,
         build_swarm_proposal_request(mode=mode, data_dir=data_dir, max_symbols=max_symbols),
     )
-    _write_json_if_missing(
-        root_path / LATEST_STATE_REL,
-        {
-            "mode": mode,
-            "baseline_id": BASELINE_ID,
-            "best_candidate": None,
-            "iterations": [],
-            "row_count": 0,
-            "candidate_count": 0,
-            "strategy_family": STRATEGY_FAMILY,
-            "next_allowed_mutation": f"{AUTORESEARCH_DIRNAME}/{MUTABLE_PARAMS_REL}",
-        },
-    )
+    initial_state = _initial_latest_state(mode)
+    _write_json(root_path / LATEST_STATE_TEMPLATE_REL, initial_state)
+    _write_json_if_missing(root_path / LATEST_STATE_REL, initial_state)
     return {
         "root": str(research_dir),
         "program": str(root_path / PROGRAM_REL),
         "mutable_params": str(root_path / MUTABLE_PARAMS_REL),
         "best_params": str(root_path / BEST_PARAMS_REL),
         "results_tsv": str(root_path / RESULTS_TSV_REL),
+        "results_template": str(root_path / RESULTS_TEMPLATE_REL),
         "evaluator_contract": str(root_path / EVALUATOR_CONTRACT_REL),
         "alpha_zoo_context": str(root_path / ALPHA_CONTEXT_REL),
         "swarm_proposal_request": str(root_path / SWARM_REQUEST_REL),
         "latest_state": str(root_path / LATEST_STATE_REL),
+        "latest_state_template": str(root_path / LATEST_STATE_TEMPLATE_REL),
         "mutable_candidate_id": MUTABLE_CANDIDATE_ID,
     }
 
@@ -318,15 +401,19 @@ def mutable_candidate_definition(root: str | Path) -> dict[str, Any]:
 
 
 def write_results_tsv(root: str | Path, records: list[dict[str, Any]]) -> str:
-    """Write the compact Karpathy-style ledger from evaluator records."""
-    lines = ["\t".join(RESULTS_COLUMNS)]
-    for idx, record in enumerate(records, start=1):
+    """Append evaluator records to the compact Karpathy-style ledger."""
+    path = _workspace_root(root) / RESULTS_TSV_REL
+    header = "\t".join(RESULTS_COLUMNS)
+    existing = _existing_tsv_lines(path, header)
+    next_iteration = len(existing)
+    new_lines: list[str] = []
+    for offset, record in enumerate(records, start=1):
         diagnostics = record.get("diagnostics") or {}
         failed = ",".join(record.get("reasons") or [])
-        lines.append(
+        new_lines.append(
             "\t".join(
                 [
-                    str(idx),
+                    str(next_iteration + offset),
                     _tsv(record.get("candidate_id", "")),
                     _tsv(record.get("verdict", "")),
                     _tsv(record.get("score", "")),
@@ -340,8 +427,7 @@ def write_results_tsv(root: str | Path, records: list[dict[str, Any]]) -> str:
                 ]
             )
         )
-    path = _workspace_root(root) / RESULTS_TSV_REL
-    _write_text(path, "\n".join(lines) + "\n")
+    _write_text(path, "\n".join([header, *existing, *new_lines]) + "\n")
     return str(path)
 
 
@@ -380,7 +466,9 @@ def build_swarm_proposal_request(
             f"{AUTORESEARCH_DIRNAME}/{PROGRAM_REL}",
             f"{AUTORESEARCH_DIRNAME}/{EVALUATOR_CONTRACT_REL}",
             f"{AUTORESEARCH_DIRNAME}/{RESULTS_TSV_REL}",
+            f"{AUTORESEARCH_DIRNAME}/{RESULTS_TEMPLATE_REL}",
             f"{AUTORESEARCH_DIRNAME}/{LATEST_STATE_REL}",
+            f"{AUTORESEARCH_DIRNAME}/{LATEST_STATE_TEMPLATE_REL}",
             f"{AUTORESEARCH_DIRNAME}/{ALPHA_CONTEXT_REL}",
             f"{AUTORESEARCH_DIRNAME}/{MUTABLE_PARAMS_REL}",
         ],
@@ -397,6 +485,7 @@ def build_swarm_proposal_request(
             "read-only analysis only",
             "do not edit evaluator, protocol, data windows, or backtest engine",
             "do not decide KEEP or DISCARD",
+            f"do not edit {AUTORESEARCH_DIRNAME}/{MUTABLE_PARAMS_REL}; emit proposed changes only",
             "emit one proposal only",
         ],
     }
@@ -474,6 +563,19 @@ def _params_payload(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _initial_latest_state(mode: str) -> dict[str, Any]:
+    return {
+        "mode": mode,
+        "baseline_id": BASELINE_ID,
+        "best_candidate": None,
+        "iterations": [],
+        "row_count": 0,
+        "candidate_count": 0,
+        "strategy_family": STRATEGY_FAMILY,
+        "next_allowed_mutation": f"{AUTORESEARCH_DIRNAME}/{MUTABLE_PARAMS_REL}",
+    }
+
+
 def default_karpathy_workspace_root() -> Path:
     """Return the repo-level Karpathy-style autoresearch workspace path."""
     return Path(__file__).resolve().parents[3] / AUTORESEARCH_DIRNAME
@@ -514,6 +616,17 @@ def _avg_candidate_win_rate(record: dict[str, Any]) -> str:
 def _tsv(value: Any) -> str:
     text = "" if value is None else str(value)
     return text.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+
+
+def _existing_tsv_lines(path: Path, header: str) -> list[str]:
+    if not path.exists():
+        return []
+    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if not lines:
+        return []
+    if lines[0] != header:
+        raise ValueError(f"{path} has an unexpected header")
+    return lines[1:]
 
 
 def _write_json(path: Path, payload: Any) -> None:

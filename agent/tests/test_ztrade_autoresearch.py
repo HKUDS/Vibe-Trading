@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+import subprocess
 
 import pandas as pd
 import pytest
@@ -17,6 +19,7 @@ from src.ztrade_autoresearch.research_loop import (
     MUTABLE_CANDIDATE_ID,
     initialize_karpathy_workspace,
     load_mutable_v47_params,
+    write_results_tsv,
 )
 from src.ztrade_autoresearch.runner import (
     _synthetic_data_map,
@@ -36,6 +39,9 @@ def _sample_frame() -> pd.DataFrame:
     volume = pd.Series(1_000_000.0, index=dates)
     volume.iloc[40] = 2_500_000.0
     return pd.DataFrame({"open": open_, "high": high, "low": low, "close": close, "volume": volume}, index=dates)
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_candidate_strategy_generates_long_only_signals() -> None:
@@ -242,6 +248,8 @@ def test_synthetic_research_writes_evidence(tmp_path, monkeypatch) -> None:
     assert (workspace_dir / "program.md").exists()
     assert (workspace_dir / "evaluator_contract.md").exists()
     assert (workspace_dir / "results.tsv").exists()
+    assert (workspace_dir / "results.template.tsv").exists()
+    assert (workspace_dir / "latest_state.template.json").exists()
     assert not (tmp_path / "research" / "autoresearch").exists()
     assert list((tmp_path / "research").glob("*/rw_*/*run_card.json"))
 
@@ -273,10 +281,17 @@ def test_karpathy_workspace_preserves_mutable_candidate_and_writes_proposal_cont
     program = (workspace_dir / "program.md").read_text(encoding="utf-8")
     assert "Swarm agents and Alpha Zoo are inside the Think step" in program
     assert "Required Evaluator Invocation" in program
+    assert "NEVER STOP after a single iteration" in program
+    assert "Baseline First" in program
+    assert "Git Advance/Revert Discipline" in program
+    assert "Timeouts and Crashes" in program
+    assert "Simplicity Criterion" in program
 
     evaluator_contract = (workspace_dir / "evaluator_contract.md").read_text(encoding="utf-8")
     assert "agent/src/ztrade_autoresearch/evaluator.py" in evaluator_contract
+    assert "Alternate scoring paths are forbidden" in evaluator_contract
     assert "Do not hand-edit evaluator results" in evaluator_contract
+    assert "autoresearch/results.template.tsv" in evaluator_contract
 
     alpha_context = json.loads((workspace_dir / "context" / "alpha_zoo_context.json").read_text())
     assert alpha_context["status"] in {"ok", "unavailable"}
@@ -291,6 +306,7 @@ def test_karpathy_workspace_preserves_mutable_candidate_and_writes_proposal_cont
         "proposal_writer",
     ]
     assert "autoresearch/evaluator_contract.md" in swarm_request["inputs"]
+    assert "autoresearch/results.template.tsv" in swarm_request["inputs"]
     assert "do not decide KEEP or DISCARD" in swarm_request["hard_limits"]
 
     ledger = (workspace_dir / "results.tsv").read_text(encoding="utf-8")
@@ -298,6 +314,57 @@ def test_karpathy_workspace_preserves_mutable_candidate_and_writes_proposal_cont
     assert MUTABLE_CANDIDATE_ID in ledger
     assert (workspace_dir / "latest_state.json").exists()
     assert not (run_dir / "autoresearch").exists()
+
+
+def test_karpathy_results_tsv_appends_experiment_history(tmp_path) -> None:
+    workspace_dir = tmp_path / "autoresearch"
+    initialize_karpathy_workspace(workspace_dir, mode="synthetic_smoke")
+    record = {
+        "candidate_id": MUTABLE_CANDIDATE_ID,
+        "verdict": "DISCARD",
+        "score": 0.0,
+        "reasons": ["return_delta"],
+        "rationale": "fixture",
+        "diagnostics": {
+            "return_delta": 0.0,
+            "average_max_drawdown_delta": 0.0,
+            "trade_retention": 1.0,
+            "candidate_trades": 2,
+        },
+        "rows": [{"win_rate": 0.5}],
+    }
+
+    write_results_tsv(workspace_dir, [record])
+    write_results_tsv(workspace_dir, [record])
+
+    lines = (workspace_dir / "results.tsv").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 3
+    assert lines[1].startswith("1\t")
+    assert lines[2].startswith("2\t")
+
+
+def test_repo_autoresearch_templates_and_ignore_policy() -> None:
+    required_json = [
+        REPO_ROOT / "autoresearch" / "best" / "v47_params.json",
+        REPO_ROOT / "autoresearch" / "context" / "alpha_zoo_context.json",
+        REPO_ROOT / "autoresearch" / "latest_state.template.json",
+        REPO_ROOT / "autoresearch" / "mutable" / "v47_params.json",
+        REPO_ROOT / "autoresearch" / "proposals" / "swarm_proposal_request.json",
+    ]
+    for path in required_json:
+        assert path.exists(), path
+        json.loads(path.read_text(encoding="utf-8"))
+    assert (REPO_ROOT / "autoresearch" / "results.template.tsv").exists()
+
+    ignored = subprocess.run(
+        ["git", "check-ignore", "autoresearch/results.tsv", "autoresearch/latest_state.json"],
+        cwd=REPO_ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert "autoresearch/results.tsv" in ignored.stdout
+    assert "autoresearch/latest_state.json" in ignored.stdout
 
 
 def test_tool_registry_discovers_ztrade_autoresearch(tmp_path, monkeypatch) -> None:
