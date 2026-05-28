@@ -328,6 +328,15 @@ class SwarmRuntime:
                             ),
                         )
 
+                # Tasks blocked by a failed upstream are never dispatched and
+                # therefore not present in layer_results — they were already
+                # marked TaskStatus.blocked in _execute_layer and emitted
+                # task_blocked. Account for them in run-level status so the
+                # run is marked failed, not silently completed.
+                for tid in layer_task_ids:
+                    if tid not in layer_results:
+                        all_succeeded = False
+
                 # Snapshot run.json at the layer boundary so list_runs and any
                 # client that reads run.json directly sees fresh task statuses
                 # without per-task I/O spam. One write per layer is cheap.
@@ -483,6 +492,46 @@ class SwarmRuntime:
         try:
             for tid in layer_task_ids:
                 task = task_store.load_task(tid)
+
+                # Dependency-aware gating: without this check, a failed upstream
+                # silently produces an empty task_summaries entry (the worker
+                # upstream loop below only copies summaries that exist) and the
+                # downstream worker runs with no upstream context. For an
+                # investment-committee preset where portfolio_manager
+                # depends_on=["task-risk"], a failed risk_officer would let PM
+                # produce a "decision" with no risk input — which is
+                # safety-critical. Mark blocked and skip dispatch; same-layer
+                # peers with no shared upstream are unaffected.
+                blocked_upstreams: list[tuple[str, str]] = []
+                for dep_id in task.depends_on:
+                    try:
+                        dep_task = task_store.load_task(dep_id)
+                    except FileNotFoundError:
+                        blocked_upstreams.append((dep_id, "missing"))
+                        continue
+                    if dep_task.status != TaskStatus.completed:
+                        blocked_upstreams.append((dep_id, dep_task.status.value))
+
+                if blocked_upstreams:
+                    reason = ", ".join(f"{d}={s}" for d, s in blocked_upstreams)
+                    blocked_by_ids = [d for d, _ in blocked_upstreams]
+                    task_store.update_status(
+                        tid,
+                        TaskStatus.blocked,
+                        error=f"Blocked: upstream not completed ({reason})",
+                        blocked_by=blocked_by_ids,
+                        completed_at=datetime.now(timezone.utc).isoformat(),
+                    )
+                    self._emit_event(
+                        run.id,
+                        self._make_event(
+                            "task_blocked",
+                            task_id=tid,
+                            data={"blocked_by": blocked_by_ids, "reason": reason},
+                        ),
+                    )
+                    continue
+
                 agent_spec = agent_map.get(task.agent_id)
                 if agent_spec is None:
                     results[tid] = WorkerResult(
