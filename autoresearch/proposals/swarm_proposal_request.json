@@ -1,5 +1,5 @@
 {
-  "data_dir": "/private/var/folders/n_/2cw9gf5n52z_w6kllyb44ttw0000gn/T/pytest-of-wdblink/pytest-26/test_ztrade_csv_research_uses_0/ztrade_data",
+  "data_dir": "/Users/wdblink/Code/my_repo/ztrade/data",
   "hard_limits": [
     "read-only analysis only",
     "do not edit evaluator, protocol, data windows, or backtest engine",
@@ -8,12 +8,13 @@
   ],
   "inputs": [
     "autoresearch/program.md",
+    "autoresearch/evaluator_contract.md",
     "autoresearch/results.tsv",
     "autoresearch/latest_state.json",
     "autoresearch/context/alpha_zoo_context.json",
     "autoresearch/mutable/v47_params.json"
   ],
-  "max_symbols": 2,
+  "max_symbols": 200,
   "mode": "ztrade_csv",
   "required_output": {
     "alpha_zoo_references": [

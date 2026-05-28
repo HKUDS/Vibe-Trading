@@ -240,6 +240,7 @@ def test_synthetic_research_writes_evidence(tmp_path, monkeypatch) -> None:
     assert (tmp_path / "research" / "summary.json").exists()
     assert (tmp_path / "research" / "metrics_rows.json").exists()
     assert (workspace_dir / "program.md").exists()
+    assert (workspace_dir / "evaluator_contract.md").exists()
     assert (workspace_dir / "results.tsv").exists()
     assert not (tmp_path / "research" / "autoresearch").exists()
     assert list((tmp_path / "research").glob("*/rw_*/*run_card.json"))
@@ -271,6 +272,11 @@ def test_karpathy_workspace_preserves_mutable_candidate_and_writes_proposal_cont
 
     program = (workspace_dir / "program.md").read_text(encoding="utf-8")
     assert "Swarm agents and Alpha Zoo are inside the Think step" in program
+    assert "Required Evaluator Invocation" in program
+
+    evaluator_contract = (workspace_dir / "evaluator_contract.md").read_text(encoding="utf-8")
+    assert "agent/src/ztrade_autoresearch/evaluator.py" in evaluator_contract
+    assert "Do not hand-edit evaluator results" in evaluator_contract
 
     alpha_context = json.loads((workspace_dir / "context" / "alpha_zoo_context.json").read_text())
     assert alpha_context["status"] in {"ok", "unavailable"}
@@ -284,6 +290,7 @@ def test_karpathy_workspace_preserves_mutable_candidate_and_writes_proposal_cont
         "overfit_skeptic",
         "proposal_writer",
     ]
+    assert "autoresearch/evaluator_contract.md" in swarm_request["inputs"]
     assert "do not decide KEEP or DISCARD" in swarm_request["hard_limits"]
 
     ledger = (workspace_dir / "results.tsv").read_text(encoding="utf-8")

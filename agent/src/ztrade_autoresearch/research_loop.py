@@ -23,6 +23,7 @@ MUTABLE_PARAMS_REL = "mutable/v47_params.json"
 BEST_PARAMS_REL = "best/v47_params.json"
 PROGRAM_REL = "program.md"
 RESULTS_TSV_REL = "results.tsv"
+EVALUATOR_CONTRACT_REL = "evaluator_contract.md"
 ALPHA_CONTEXT_REL = "context/alpha_zoo_context.json"
 SWARM_REQUEST_REL = "proposals/swarm_proposal_request.json"
 LATEST_STATE_REL = "latest_state.json"
@@ -97,15 +98,66 @@ The first research surface is v47 parameter tuning only.
 
 ## Loop
 
-1. Read this file, `results.tsv`, `latest_state.json`, and the current best
-   parameters before changing anything.
+1. Read every file in the Required Context section before changing anything.
 2. Think with the local Alpha Zoo context and the swarm proposal request.
 3. Mutate exactly one allowed candidate surface:
    `autoresearch/mutable/v47_params.json`.
-4. Run the fixed ztrade autoresearch evaluator.
-5. Append or refresh `results.tsv` from evaluator output.
+4. Run the fixed ztrade autoresearch evaluator through the Required Evaluator
+   Invocation section. Do not invent another backtest or scoring path.
+5. Let the evaluator append or refresh `results.tsv` and `latest_state.json`.
 6. Keep the candidate only when the evaluator returns KEEP and all required
    gates pass. Otherwise discard or revise in the next iteration.
+
+## Required Context
+
+Before each iteration, read these project-level files:
+
+- `autoresearch/program.md`
+- `autoresearch/evaluator_contract.md`
+- `autoresearch/results.tsv`
+- `autoresearch/latest_state.json`
+- `autoresearch/best/v47_params.json`
+- `autoresearch/mutable/v47_params.json`
+- `autoresearch/context/alpha_zoo_context.json`
+- `autoresearch/proposals/swarm_proposal_request.json`
+
+Then inspect these code-owned judge files when evaluator behavior is relevant:
+
+- `agent/src/ztrade_autoresearch/protocol.py`
+- `agent/src/ztrade_autoresearch/evaluator.py`
+- `agent/src/ztrade_autoresearch/runner.py`
+- `agent/src/tools/ztrade_autoresearch_tool.py`
+
+## Required Evaluator Invocation
+
+Use the existing ztrade autoresearch evaluator only. The normal CSV command is:
+
+```bash
+PYTHONPATH=agent uv run python - <<'PY'
+from pathlib import Path
+from src.ztrade_autoresearch.runner import run_ztrade_csv_research
+
+run_ztrade_csv_research(
+    Path("agent/runs") / "ztrade_autoresearch_<iteration_id>",
+    data_dir="/Users/wdblink/Code/my_repo/ztrade/data",
+    max_iterations=1,
+    max_symbols=200,
+    use_mutable_candidate=True,
+)
+PY
+```
+
+The tool-equivalent invocation is `ztrade_autoresearch` with:
+
+```json
+{
+  "mode": "ztrade_csv",
+  "data_dir": "/Users/wdblink/Code/my_repo/ztrade/data",
+  "max_iterations": 1,
+  "max_symbols": 200,
+  "use_mutable_candidate": true
+}
+```
 
 ## Immutable Judge
 
@@ -134,6 +186,58 @@ All keys must be existing v47 parameter keys and must stay within the
 machine-checked bounds in the project code.
 """
 
+EVALUATOR_CONTRACT_MD = """# ztrade Autoresearch Evaluator Contract
+
+This file is the agent-readable contract for the fixed judge. The executable
+source of truth remains the Python code listed below.
+
+## Authoritative Code
+
+- Protocol, windows, baseline, and gates:
+  `agent/src/ztrade_autoresearch/protocol.py`
+- KEEP/DISCARD decision logic:
+  `agent/src/ztrade_autoresearch/evaluator.py`
+- Backtest execution and artifact writing:
+  `agent/src/ztrade_autoresearch/runner.py`
+- Tool wrapper:
+  `agent/src/tools/ztrade_autoresearch_tool.py`
+
+## Current Judge
+
+The evaluator compares one candidate against `ztrade_v47_baseline` on paired
+windows. It computes return delta, drawdown delta, loss-window count, trade
+retention, positive-return concentration, and minimum trade count. A candidate
+is KEEP only if every gate passes.
+
+## Required Mutable Input
+
+The only editable candidate input for V1 is:
+
+`autoresearch/mutable/v47_params.json`
+
+It must contain existing v47 parameter keys only. Bounds are enforced by
+`agent/src/ztrade_autoresearch/research_loop.py`.
+
+## Required Proposal Input
+
+Read this file before proposing the next experiment:
+
+`autoresearch/proposals/swarm_proposal_request.json`
+
+Swarm and Alpha Zoo can propose hypotheses. They cannot decide KEEP/DISCARD,
+edit evaluator code, or expand the official mutable surface directly.
+
+## Required Output
+
+Each evaluator run writes normal run artifacts under `agent/runs/...` and
+refreshes project-level state in:
+
+- `autoresearch/results.tsv`
+- `autoresearch/latest_state.json`
+
+Do not hand-edit evaluator results.
+"""
+
 
 def initialize_karpathy_workspace(
     workspace_root: str | Path | None = None,
@@ -154,6 +258,7 @@ def initialize_karpathy_workspace(
         (research_dir / rel).mkdir(parents=True, exist_ok=True)
 
     _write_text(root_path / PROGRAM_REL, PROGRAM_MD)
+    _write_text(root_path / EVALUATOR_CONTRACT_REL, EVALUATOR_CONTRACT_MD)
     _write_json_if_missing(root_path / MUTABLE_PARAMS_REL, _params_payload(DEFAULT_V47_PARAMS))
     _write_json_if_missing(root_path / BEST_PARAMS_REL, _params_payload(DEFAULT_V47_PARAMS))
     _write_text_if_missing(root_path / RESULTS_TSV_REL, "\t".join(RESULTS_COLUMNS) + "\n")
@@ -184,6 +289,7 @@ def initialize_karpathy_workspace(
         "mutable_params": str(root_path / MUTABLE_PARAMS_REL),
         "best_params": str(root_path / BEST_PARAMS_REL),
         "results_tsv": str(root_path / RESULTS_TSV_REL),
+        "evaluator_contract": str(root_path / EVALUATOR_CONTRACT_REL),
         "alpha_zoo_context": str(root_path / ALPHA_CONTEXT_REL),
         "swarm_proposal_request": str(root_path / SWARM_REQUEST_REL),
         "latest_state": str(root_path / LATEST_STATE_REL),
@@ -272,6 +378,7 @@ def build_swarm_proposal_request(
         "roles": SWARM_ROLES,
         "inputs": [
             f"{AUTORESEARCH_DIRNAME}/{PROGRAM_REL}",
+            f"{AUTORESEARCH_DIRNAME}/{EVALUATOR_CONTRACT_REL}",
             f"{AUTORESEARCH_DIRNAME}/{RESULTS_TSV_REL}",
             f"{AUTORESEARCH_DIRNAME}/{LATEST_STATE_REL}",
             f"{AUTORESEARCH_DIRNAME}/{ALPHA_CONTEXT_REL}",

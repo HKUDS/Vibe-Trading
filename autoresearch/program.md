@@ -10,15 +10,66 @@ The first research surface is v47 parameter tuning only.
 
 ## Loop
 
-1. Read this file, `results.tsv`, `latest_state.json`, and the current best
-   parameters before changing anything.
+1. Read every file in the Required Context section before changing anything.
 2. Think with the local Alpha Zoo context and the swarm proposal request.
 3. Mutate exactly one allowed candidate surface:
    `autoresearch/mutable/v47_params.json`.
-4. Run the fixed ztrade autoresearch evaluator.
-5. Append or refresh `results.tsv` from evaluator output.
+4. Run the fixed ztrade autoresearch evaluator through the Required Evaluator
+   Invocation section. Do not invent another backtest or scoring path.
+5. Let the evaluator append or refresh `results.tsv` and `latest_state.json`.
 6. Keep the candidate only when the evaluator returns KEEP and all required
    gates pass. Otherwise discard or revise in the next iteration.
+
+## Required Context
+
+Before each iteration, read these project-level files:
+
+- `autoresearch/program.md`
+- `autoresearch/evaluator_contract.md`
+- `autoresearch/results.tsv`
+- `autoresearch/latest_state.json`
+- `autoresearch/best/v47_params.json`
+- `autoresearch/mutable/v47_params.json`
+- `autoresearch/context/alpha_zoo_context.json`
+- `autoresearch/proposals/swarm_proposal_request.json`
+
+Then inspect these code-owned judge files when evaluator behavior is relevant:
+
+- `agent/src/ztrade_autoresearch/protocol.py`
+- `agent/src/ztrade_autoresearch/evaluator.py`
+- `agent/src/ztrade_autoresearch/runner.py`
+- `agent/src/tools/ztrade_autoresearch_tool.py`
+
+## Required Evaluator Invocation
+
+Use the existing ztrade autoresearch evaluator only. The normal CSV command is:
+
+```bash
+PYTHONPATH=agent uv run python - <<'PY'
+from pathlib import Path
+from src.ztrade_autoresearch.runner import run_ztrade_csv_research
+
+run_ztrade_csv_research(
+    Path("agent/runs") / "ztrade_autoresearch_<iteration_id>",
+    data_dir="/Users/wdblink/Code/my_repo/ztrade/data",
+    max_iterations=1,
+    max_symbols=200,
+    use_mutable_candidate=True,
+)
+PY
+```
+
+The tool-equivalent invocation is `ztrade_autoresearch` with:
+
+```json
+{
+  "mode": "ztrade_csv",
+  "data_dir": "/Users/wdblink/Code/my_repo/ztrade/data",
+  "max_iterations": 1,
+  "max_symbols": 200,
+  "use_mutable_candidate": true
+}
+```
 
 ## Immutable Judge
 
