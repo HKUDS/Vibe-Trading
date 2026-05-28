@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 最低价位置 60日
+# 简要说明: ts_argmin(low, 60) / 60，60日内最低价出现位置的归一化指标。
+# 典型用途: 值接近0表示最低价出现在近期，接近1表示出现在较早期。
+# ============================================================
 """qlib158 IMIN60: formula = \\mathrm{ts\\_argmin}(\\mathrm{low}, 60) / 60."""
 from __future__ import annotations
 

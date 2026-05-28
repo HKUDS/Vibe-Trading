@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 下跌强度 20日
+# 简要说明: sum(max(-delta_close, 0)) / sum(|delta_close|)，20日内负收益占比。
+# 典型用途: 衡量20日下跌日的比例强度，值接近1表示连续下跌。
+# ============================================================
 """qlib158 SUMN20: formula = \\sum \\max(-\\Delta\\mathrm{close}, 0) / \\sum |\\Delta\\mathrm{close}|."""
 from __future__ import annotations
 

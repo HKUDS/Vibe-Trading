@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA #50 - 开盘日内动量
+# 简要说明: (-1*RANK(CORR(RANK(HIGH),RANK(VOLUME),6))*RANK(CORR(RANK(LOW),RANK(VOLUME),6)))，类似Alpha#48。
+# 典型用途: 量价关系的复合反转信号。
+# ============================================================
 """GTJA Alpha #50.
 
 Formula: SUM(up_move,12)/(SUM(up_move,12)+SUM(dn_move,12)) - SUM(dn_move,12)/(SUM(up_move,12)+SUM(dn_move,12))

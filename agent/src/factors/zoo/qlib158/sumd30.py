@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 涨跌差 30日
+# 简要说明: SUMP_30 - SUMN_30，30日内上涨强度与下跌强度的差值。
+# 典型用途: 判断30日内的整体涨跌倾向，正值表示上涨动量占优。
+# ============================================================
 """qlib158 SUMD30: formula = \\mathrm{SUMP}_w - \\mathrm{SUMN}_w."""
 from __future__ import annotations
 

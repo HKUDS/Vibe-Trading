@@ -1,6 +1,8 @@
 name: event_driven_task_force
 title: "Event-Driven Task Force"
 description: "Event scanning → deep impact analysis → strategy construction: sequential deep-dive chain replicating an event-driven hedge fund special investigation unit workflow"
+name_zh: "事件驱动专项组"
+description_zh: "事件扫描 → 深度影响分析 → 策略构建：事件驱动型对冲基金特别调查单元的序列深度研究链"
 
 agents:
   - id: event_scanner

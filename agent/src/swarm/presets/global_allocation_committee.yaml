@@ -1,6 +1,8 @@
 name: global_allocation_committee
 title: "Global Allocation Committee"
 description: "Parallel A-shares + crypto + HK/US analysts; allocator synthesizes cross-market allocation with data-driven weighting, scenario analysis, and rebalancing rules."
+name_zh: "全球配置委员会"
+description_zh: "A股 + 加密 + 港股/美股分析师并行；配置师基于数据驱动权重、情景分析与再平衡规则综合形成跨市场配置方案"
 
 agents:
   - id: a_share_analyst

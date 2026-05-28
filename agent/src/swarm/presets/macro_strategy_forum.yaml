@@ -1,6 +1,8 @@
 name: macro_strategy_forum
 title: "Macro Strategy Forum"
 description: "Global + domestic + policy perspectives run in parallel; chief strategist delivers integrated cross-asset allocation guidance."
+name_zh: "宏观策略论坛"
+description_zh: "全球 + 国内 + 政策视角并行分析；首席策略师输出整合性跨资产配置指引"
 
 agents:
   - id: global_economist

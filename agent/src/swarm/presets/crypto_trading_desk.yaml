@@ -1,6 +1,8 @@
 name: crypto_trading_desk
 title: "Crypto Trading & Risk Desk"
 description: "Execution-oriented crypto desk: funding/basis analyst + liquidation/microstructure analyst + on-chain/flow analyst + risk manager. Goes beyond research into position sizing, execution timing, and risk gating."
+name_zh: "加密交易与风控台"
+description_zh: "以执行为导向的加密交易台：资金/基差分析师 + 清算/微观结构分析师 + 链上/资金流分析师 + 风控经理。超越研究层面，涵盖仓位管理、执行时机与风控把关"
 
 agents:
   - id: funding_basis_analyst

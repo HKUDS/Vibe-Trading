@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA Alpha #75
+# 简要说明: 国泰君安191短周期交易型alpha因子第75号，详见公式定义。
+# 典型用途: 在A股市场经中性化处理后用于选股或股指期货日内交易。
+# ============================================================
 """GTJA Alpha #75.
 
 Formula: COUNT((CLOSE>OPEN & BENCHMARKINDEXCLOSE<DELAY(BENCHMARKINDEXCLOSE,1)),50)/COUNT(BENCHMARKINDEXCLOSE<DELAY(BENCHMARKINDEXCLOSE,1),50)

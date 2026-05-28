@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 涨跌幅
+# 简要说明: (close - open) / open，即当日收盘相对于开盘的简单收益率。
+# 典型用途: 日内动量因子，正值为多头占优，负值为空头占优。
+# ============================================================
 """qlib158 KMID: formula = (\\mathrm{close} - \\mathrm{open}) / \\mathrm{open}."""
 from __future__ import annotations
 

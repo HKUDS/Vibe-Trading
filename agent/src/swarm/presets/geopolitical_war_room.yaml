@@ -1,6 +1,8 @@
 name: geopolitical_war_room
 title: "Geopolitical Risk War Room"
 description: "Geopolitical analysis, energy shock, and supply-chain impact run in parallel, then feed into the Chief Strategist for synthesis, producing emergency asset-allocation playbooks for geopolitical crises."
+name_zh: "地缘政治风险作战室"
+description_zh: "地缘政治分析、能源冲击与供应链影响并行分析，输入首席策略师综合研判，生成地缘危机下的紧急资产配置预案"
 
 agents:
   - id: geopolitical_analyst

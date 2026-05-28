@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 成交量下跌强度 60日
+# 简要说明: sum(max(-delta_v, 0)) / sum(|delta_v|)，60日内负成交量变化占比。
+# 典型用途: 衡量60日内成交量缩小日的比例，反映卖盘衰竭程度。
+# ============================================================
 """qlib158 VSUMN60: formula = \\sum \\max(-\\Delta v, 0) / \\sum |\\Delta v|."""
 from __future__ import annotations
 

@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 未成熟随机值 20日
+# 简要说明: (close - ts_min(low, 20)) / (ts_max(high, 20) - ts_min(low, 20))，KDJ指标中的RSV值。
+# 典型用途: 衡量收盘价在20日高低区间中的位置，用于超买超卖判断(>80超买，<20超卖)。
+# ============================================================
 """qlib158 RSV20: formula = (\\mathrm{close} - \\mathrm{ts\\_min}(\\mathrm{low}, 20)) / (\\mathrm{ts\\_max}(\\mathrm{high}, 20) - \\mathrm{ts\\_min}(\\mathrm{low}, 20))."""
 from __future__ import annotations
 

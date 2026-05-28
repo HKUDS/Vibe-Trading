@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: Alpha #7 - VWAP动量
+# 简要说明: ((adv20 < volume) ? ((-1 * ts_rank(abs(delta(close, 7)), 60)) * sign(delta(close, 7))) : (-1 * volume))，条件量价动量。
+# 典型用途: 放量条件下跟踪趋势方向，缩量条件下做空成交量本身。
+# ============================================================
 """Kakushadze Alpha #7.
 
 Formula (paper appendix): (adv20<volume)?((-1*ts_rank(abs(delta(close,7)),60))*sign(delta(close,7))):(-1)

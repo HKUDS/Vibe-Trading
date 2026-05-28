@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 价格标准差比 30日
+# 简要说明: ts_std(close, 30) / close，30日收盘价标准差与收盘价的比率（变异系数）。
+# 典型用途: 衡量30日价格波动幅度相对于价格水平的比率，用于波动率排序。
+# ============================================================
 """qlib158 STD30: formula = \\mathrm{ts\\_std}(\\mathrm{close}, 30) / \\mathrm{close}."""
 from __future__ import annotations
 

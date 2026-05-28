@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA #23 - 条件相关系数
+# 简要说明: ((SUM(MEAN(VOLUME,20),5) * SUM(MEAN(CLOSE,20),5)) * (-1*RANK(CORR(HIGH,MEAN(VOLUME,60),5))))，量价相关性与均值的组合。
+# 典型用途: 长期量价均值与短期相关性的综合信号。
+# ============================================================
 """GTJA Alpha #23.
 
 Formula: SMA((CLOSE>DELAY(CLOSE,1)?STD(CLOSE,20):0),20,1)/(SMA((CLOSE>DELAY(CLOSE,1)?STD(CLOSE,20):0),20,1) + SMA((CLOSE<=DELAY(CLOSE,1)?STD(CLOSE,20):0),20,1)) * 100

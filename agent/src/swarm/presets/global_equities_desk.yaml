@@ -1,6 +1,8 @@
 name: global_equities_desk
 title: "Global Equities Research Desk"
 description: "Cross-market equity research: A-share analyst + HK/US analyst + crypto analyst + global strategist. Covers fundamental screening, earnings analysis, ETF flows, and cross-listing arbitrage for multi-market stock selection."
+name_zh: "全球股票研究交易台"
+description_zh: "跨市场股票研究：A股分析师 + 港股/美股分析师 + 加密分析师 + 全球策略师。覆盖基本面筛选、财报分析、ETF 资金流及跨市场套利，支持多市场选股"
 
 agents:
   - id: a_share_researcher

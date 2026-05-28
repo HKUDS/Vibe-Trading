@@ -1,6 +1,8 @@
 name: convertible_bond_team
 title: "Convertible Bond Research Team"
 description: "Parallel three-dimensional analysis — bond floor, equity optionality, and embedded option value — synthesized into a convertible bond investment strategy"
+name_zh: "可转债研究团队"
+description_zh: "债底保护、权益期权及嵌入式期权价值三维并行分析，综合形成可转债投资策略"
 
 agents:
   - id: bond_analyst

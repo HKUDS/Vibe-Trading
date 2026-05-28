@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 上分位数 10日
+# 简要说明: quantile_0.8(close, 10) / close，10日80%分位价格与当前收盘价的比率。
+# 典型用途: 衡量当前价格相对于10日高分位的位置，值小表示价格在近期高位以下。
+# ============================================================
 """qlib158 QTLU10: formula = \\mathrm{quantile}_{{0.8}}(\\mathrm{close}, 10) / \\mathrm{close}."""
 from __future__ import annotations
 

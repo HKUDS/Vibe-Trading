@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA #59 - 价格极值差
+# 简要说明: (-1*RANK(DELTA(MEAN(CLOSE,6),3))*RANK((CLOSE-MEAN(CLOSE,6))/MEAN(CLOSE,6)))，同Alpha#53/#55/#58。
+# 典型用途: 均线趋势与偏离度的综合判断。
+# ============================================================
 """GTJA Alpha #59.
 
 Formula: SUM((CLOSE=DELAY(CLOSE,1)?0:CLOSE-(CLOSE>DELAY(CLOSE,1)?MIN(LOW,DELAY(CLOSE,1)):MAX(HIGH,DELAY(CLOSE,1)))),20)

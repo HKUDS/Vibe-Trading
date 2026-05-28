@@ -1,6 +1,8 @@
 name: ml_quant_lab
 title: "Machine Learning Quant Lab"
 description: "Feature engineering and model design in parallel; flows into the backtest engineer for strict out-of-sample validation."
+name_zh: "机器学习量化实验室"
+description_zh: "特征工程与模型设计并行推进，输入回测工程师进行严格的样本外验证"
 
 agents:
   - id: feature_engineer

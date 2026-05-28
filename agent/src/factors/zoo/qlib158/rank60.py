@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 时间序列排名 60日
+# 简要说明: ts_rank(close, 60)，当前收盘价在60日窗口内的百分位排名。
+# 典型用途: 衡量当前价格在过去60日中的相对位置，高排名表示处于近期高位。
+# ============================================================
 """qlib158 RANK60: formula = \\mathrm{ts\\_rank}(\\mathrm{close}, 60)."""
 from __future__ import annotations
 

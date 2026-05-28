@@ -1,6 +1,8 @@
 name: factor_research_committee
 title: "Factor Research Committee"
 description: "Factor mining + factor validation running in parallel → factor combination construction → backtest review: quant fund internal research review workflow"
+name_zh: "因子研究委员会"
+description_zh: "因子挖掘 + 因子验证并行运行 → 因子组合构建 → 回测评审：量化基金内部研究评审工作流"
 
 agents:
   - id: factor_miner

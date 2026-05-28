@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA #35 - 最高价位置
+# 简要说明: (-1*RANK(DELTA(VWAP,1))^3 / RANK(CORR(LOW,MEAN(VOLUME,50),12)))，类似Alpha#32。
+# 典型用途: VWAP一阶变化的趋势反转判断。
+# ============================================================
 """GTJA Alpha #35.
 
 Formula: (MIN(RANK(DECAYLINEAR(DELTA(OPEN,1),15)), RANK(DECAYLINEAR(CORR(VOLUME,((OPEN*0.65)+(OPEN*0.35)),17),7))) * -1)

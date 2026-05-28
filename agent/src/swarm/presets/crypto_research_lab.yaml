@@ -1,6 +1,8 @@
 name: crypto_research_lab
 title: "Crypto Asset Research Lab"
 description: "On-chain data + DeFi protocol + market sentiment three-dimensional parallel analysis → Alpha synthesizer converges investment recommendations"
+name_zh: "加密资产研究实验室"
+description_zh: "链上数据 + DeFi 协议 + 市场情绪三维并行分析 → Alpha 综合器收敛为投资建议"
 
 agents:
   - id: onchain_analyst

@@ -1,6 +1,8 @@
 name: fundamental_research_team
 title: "Fundamental Deep Research Team"
 description: "Financial / valuation / quality three-dimensional parallel analysis → research editor consolidates into a buy-side deep research report"
+name_zh: "基本面深度研究团队"
+description_zh: "财务 / 估值 / 质量三维并行分析 → 研究编辑整合为买方深度研究报告"
 
 agents:
   - id: financial_analyst

@@ -1,6 +1,8 @@
 name: investment_committee
 title: "Investment Committee"
 description: "Long–short debate → risk review → PM final call: buy-side fund investment committee workflow."
+name_zh: "投资委员会"
+description_zh: "多空辩论 → 风险评估 → PM 最终决策：买方基金投资委员会工作流程"
 
 agents:
   - id: bull_advocate

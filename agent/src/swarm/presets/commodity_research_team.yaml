@@ -1,6 +1,8 @@
 name: commodity_research_team
 title: "Commodity Research Team"
 description: "Parallel deep-dive on supply and demand, synthesized by a cycle strategist into an investment thesis — DAG workflow"
+name_zh: "大宗商品研究团队"
+description_zh: "供需两侧并行深度研究，由周期策略师综合形成投资观点 — DAG 工作流"
 
 agents:
   - id: supply_analyst

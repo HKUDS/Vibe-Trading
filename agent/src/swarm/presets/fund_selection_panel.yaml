@@ -1,6 +1,8 @@
 name: fund_selection_panel
 title: "Fund Selection Panel"
 description: "Multi-dimensional quantitative screening → Brinson performance attribution and style analysis → FOF portfolio weight optimization, sequential professional review chain"
+name_zh: "基金筛选评审组"
+description_zh: "多维度量化初筛 → Brinson 绩效归因与风格分析 → FOF 组合权重优化，序列化专业评审链"
 
 agents:
   - id: fund_screener

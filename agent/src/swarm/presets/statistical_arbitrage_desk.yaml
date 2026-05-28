@@ -1,6 +1,8 @@
 name: statistical_arbitrage_desk
 title: "Statistical Arbitrage Desk"
 description: "Pair scanning and microstructure analysis in parallel → converge into the arbitrage strategist to build the strategy → final risk-control review."
+name_zh: "统计套利交易台"
+description_zh: "配对扫描与微观结构分析并行 → 汇聚至套利策略师构建策略 → 最终风控审查"
 
 agents:
   - id: pair_scanner

@@ -1,6 +1,8 @@
 name: risk_committee
 title: "Risk Committee"
 description: "Drawdown, tail risk, and market regime reviews run in parallel; head of risk signs off."
+name_zh: "风险委员会"
+description_zh: "回撤分析、尾部风险与市场状态评估并行运行；风控主管审批签署"
 
 agents:
   - id: drawdown_analyst

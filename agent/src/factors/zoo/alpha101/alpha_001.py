@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: Alpha #1 - 收益条件动量
+# 简要说明: rank(ts_argmax(SignedPower((returns<0)?stddev(returns,20):close, 2.), 5)) - 0.5，基于收益与波动的时间序列动量。
+# 典型用途: 识别收益加速或波动条件改善的股票，做多排名靠前、做空排名靠后的标的。
+# ============================================================
 """Kakushadze Alpha #1.
 
 Formula (paper appendix): rank(ts_argmax(SignedPower((returns<0)?stddev(returns,20):close, 2.), 5)) - 0.5

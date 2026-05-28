@@ -1,6 +1,8 @@
 name: macro_rates_fx_desk
 title: "Macro / Rates / FX Desk"
 description: "Cross-asset macro desk: global rates analyst + FX strategist + commodity/inflation analyst + macro portfolio manager. Covers central bank policy, yield curve dynamics, currency positioning, and macro-driven asset allocation."
+name_zh: "宏观 / 利率 / 外汇交易台"
+description_zh: "跨资产宏观交易台：全球利率分析师 + 外汇策略师 + 商品/通胀分析师 + 宏观投资组合经理。覆盖央行政策、收益率曲线动态、货币头寸及宏观驱动的大类资产配置"
 
 agents:
   - id: rates_analyst

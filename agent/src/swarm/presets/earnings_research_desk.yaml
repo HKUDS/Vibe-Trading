@@ -1,6 +1,8 @@
 name: earnings_research_desk
 title: "Earnings Research Desk"
 description: "Earnings-focused research team: fundamental analyst + earnings revision tracker + options/event analyst + earnings strategist. Deep-dives into company financials, consensus revisions, earnings event trades, and post-earnings drift."
+name_zh: "财报研究交易台"
+description_zh: "专注于财报的研究团队：基本面分析师 + 盈利修正追踪员 + 期权/事件分析师 + 财报策略师。深入分析公司财务、共识修正、财报事件交易及财报后漂移"
 
 agents:
   - id: fundamental_analyst

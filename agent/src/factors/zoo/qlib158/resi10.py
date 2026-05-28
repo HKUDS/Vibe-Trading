@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 残差 10日
+# 简要说明: (close - ts_mean(close, 10)) / close，价格相对10日均线的偏离度。
+# 典型用途: 衡量价格偏离均线的程度，用于均值回复策略。
+# ============================================================
 """qlib158 RESI10: formula = (\\mathrm{close} - \\mathrm{ts\\_mean}(\\mathrm{close}, 10)) / \\mathrm{close}."""
 from __future__ import annotations
 

@@ -1,6 +1,8 @@
 name: technical_analysis_panel
 title: "Technical Analysis Panel"
 description: "Classic TA + Ichimoku + harmonic patterns + Elliott Wave + SMC run in parallel → signal aggregator scores consensus and resonance."
+name_zh: "技术分析专家组"
+description_zh: "经典 TA + 一目均衡 + 谐波形态 + 波浪理论 + SMC 并行分析 → 信号聚合器评分共识度与共振度"
 
 agents:
   - id: classic_ta_analyst

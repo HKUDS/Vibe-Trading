@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 未成熟随机值 60日
+# 简要说明: (close - ts_min(low, 60)) / (ts_max(high, 60) - ts_min(low, 60))，KDJ指标中的RSV值。
+# 典型用途: 衡量收盘价在60日高低区间中的位置，用于超买超卖判断(>80超买，<20超卖)。
+# ============================================================
 """qlib158 RSV60: formula = (\\mathrm{close} - \\mathrm{ts\\_min}(\\mathrm{low}, 60)) / (\\mathrm{ts\\_max}(\\mathrm{high}, 60) - \\mathrm{ts\\_min}(\\mathrm{low}, 60))."""
 from __future__ import annotations
 

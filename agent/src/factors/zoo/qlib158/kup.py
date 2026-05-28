@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 上影线比率
+# 简要说明: (high - max(open,close)) / open，衡量上影线长度相对于开盘价的比率。
+# 典型用途: 反映日内卖出压力，上影线较长意味着高位有抛压。
+# ============================================================
 """qlib158 KUP: formula = (\\mathrm{high} - \\max(\\mathrm{open}, \\mathrm{close})) / \\mathrm{open}."""
 from __future__ import annotations
 

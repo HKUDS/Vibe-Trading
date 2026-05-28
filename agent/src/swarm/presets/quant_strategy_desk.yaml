@@ -1,6 +1,8 @@
 name: quant_strategy_desk
 title: "Quant Strategy Desk"
 description: "Stock screening + factor research in parallel → strategy backtest → risk audit."
+name_zh: "量化策略交易台"
+description_zh: "股票筛选 + 因子研究并行 → 策略回测 → 风险审计"
 
 agents:
   - id: screener

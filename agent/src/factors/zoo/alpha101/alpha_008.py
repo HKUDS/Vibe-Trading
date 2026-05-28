@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: Alpha #8 - 收益波动对冲
+# 简要说明: (-1 * rank(((sum(open, 5) * sum(returns, 5)) - delay((sum(open, 5) * sum(returns, 5)), 10))))，开盘累计与收益累计的滞后差。
+# 典型用途: 检测开盘价趋势与收益率趋势的变化速度差异，用于趋势反转预警。
+# ============================================================
 """Kakushadze Alpha #8.
 
 Formula (paper appendix): -1 * rank((sum(open,5)*sum(returns,5)) - delay(sum(open,5)*sum(returns,5),10))

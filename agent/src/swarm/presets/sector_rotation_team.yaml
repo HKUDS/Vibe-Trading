@@ -1,6 +1,8 @@
 name: sector_rotation_team
 title: "Sector Rotation Research Team"
 description: "Economic cycle + prosperity + capital flows in parallel → rotation strategist builds and backtests a sector rotation strategy."
+name_zh: "行业轮动研究团队"
+description_zh: "经济周期 + 行业景气度 + 资金流向并行分析 → 轮动策略师构建并回测行业轮动策略"
 
 agents:
   - id: cycle_analyst

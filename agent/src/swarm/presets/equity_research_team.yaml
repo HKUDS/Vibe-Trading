@@ -1,6 +1,8 @@
 name: equity_research_team
 title: "Equity Research Team"
 description: "Macro → sector → stock three-tier deep research → research editor consolidates into a complete report"
+name_zh: "股票研究团队"
+description_zh: "宏观 → 行业 → 个股三层深度研究 → 研究编辑整合为完整报告"
 
 agents:
   - id: macro_analyst

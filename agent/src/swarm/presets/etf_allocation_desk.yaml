@@ -1,6 +1,8 @@
 name: etf_allocation_desk
 title: "ETF Allocation Desk"
 description: "ETF screening + macro allocation + risk budgeting three-dimensional parallel analysis → portfolio optimizer constructs the final ETF portfolio and backtests"
+name_zh: "ETF 配置交易台"
+description_zh: "ETF 筛选 + 宏观配置 + 风险预算三维并行分析 → 投资组合优化器构建最终 ETF 组合并回测"
 
 agents:
   - id: etf_screener

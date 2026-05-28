@@ -1,6 +1,8 @@
 name: derivatives_strategy_desk
 title: "Derivatives Strategy Desk"
 description: "Volatility analysis → strategy design → Greeks risk management: sequential options trading desk workflow"
+name_zh: "衍生品策略交易台"
+description_zh: "波动率分析 → 策略设计 → Greeks 风险管理：期权交易台序列工作流"
 
 agents:
   - id: vol_analyst

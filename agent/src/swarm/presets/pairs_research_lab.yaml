@@ -1,6 +1,8 @@
 name: pairs_research_lab
 title: "Pairs Trading Research Lab"
 description: "Correlation scan and cointegration testing in parallel → converge into the pair strategist for strategy design → final microstructure review for execution feasibility."
+name_zh: "配对交易研究实验室"
+description_zh: "相关性扫描与协整检验并行运行 → 汇聚至配对策略师进行策略设计 → 最终微观结构审查确保执行可行性"
 
 agents:
   - id: correlation_scanner

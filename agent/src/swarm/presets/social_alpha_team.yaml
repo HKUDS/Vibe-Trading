@@ -1,6 +1,8 @@
 name: social_alpha_team
 title: "Social-Media Alternative Data Team"
 description: "Twitter, Telegram, and Reddit analyzed in parallel → Alpha synthesizer extracts tradable social sentiment factors."
+name_zh: "社交媒体另类数据团队"
+description_zh: "Twitter、Telegram 和 Reddit 并行分析 → Alpha 综合器提取可交易的社交情绪因子"
 
 agents:
   - id: twitter_analyst

@@ -1,6 +1,8 @@
 name: portfolio_review_board
 title: "Portfolio Review Board"
 description: "Performance attribution, risk review, and execution quality in parallel; CIO synthesizes into rebalance decisions."
+name_zh: "投资组合评审委员会"
+description_zh: "绩效归因、风险审查与执行质量并行分析；CIO 综合形成再平衡决策"
 
 agents:
   - id: attribution_analyst

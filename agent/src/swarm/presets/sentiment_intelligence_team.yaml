@@ -1,6 +1,8 @@
 name: sentiment_intelligence_team
 title: "Market Sentiment Intelligence Unit"
 description: "News intel / social sentiment / capital flows in parallel → sentiment signal synthesizer outputs composite score and reversal signals."
+name_zh: "市场情绪情报组"
+description_zh: "新闻情报 / 社交情绪 / 资金流向并行分析 → 情绪信号综合器输出综合评分与反转信号"
 
 agents:
   - id: news_analyst

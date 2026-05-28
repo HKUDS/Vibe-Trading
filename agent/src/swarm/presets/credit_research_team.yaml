@@ -1,6 +1,8 @@
 name: credit_research_team
 title: "Fixed Income Credit Research Team"
 description: "Credit quality + interest rate environment + sector credit three-dimensional parallel analysis → fixed income strategist synthesizes a complete bond investment strategy"
+name_zh: "固定收益信用研究团队"
+description_zh: "信用质量 + 利率环境 + 行业信用三维并行分析 → 固收策略师综合形成完整债券投资策略"
 
 agents:
   - id: credit_analyst
