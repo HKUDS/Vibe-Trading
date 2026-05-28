@@ -44,7 +44,7 @@ for _p in (_RESEARCH_DIR, _DASHBOARD_SCHEMAS):
 import pandas as pd
 
 # ── Internal imports ───────────────────────────────────────────────────────────
-from lib.ccxt_data import fetch_oi_history_bybit
+from lib.ccxt_data import fetch_oi_history_bybit, fetch_funding_history_multiyear
 from lib.coingecko_data import fetch_stablecoin_supply
 from lib.factor_metrics import FactorResult, add_forward_returns, evaluate_factor
 from lib.okx_data import fetch_candles, fetch_funding_history
@@ -326,15 +326,18 @@ def run_symbol(sym: SymbolConfig, cfg: ResearchConfig, manifests_dir: Path) -> N
     print(f"Symbol: {sym.name.upper()} ({sym.okx_swap} / {sym.ccxt_bybit})")
     print(f"{'='*60}")
 
-    print(f"[1/4] funding history (last {period_days}d)")
-    funding = fetch_funding_history(sym.okx_swap, period_days)
+    print(f"[1/5] funding history (last {period_days}d, ccxt multi-year)")
+    funding = fetch_funding_history_multiyear(
+        ccxt_symbol=sym.ccxt_bybit, days=period_days, exchange="binance",
+        okx_swap=sym.okx_swap,
+    )
     print(f"     rows: {len(funding)}  range: {funding.index.min()} ~ {funding.index.max()}")
 
-    print(f"[2/4] hourly candles (history endpoint, last {period_days}d)")
+    print(f"[2/5] hourly candles (history endpoint, last {period_days}d)")
     candles = fetch_candles(sym.okx_swap, period_days, bar="1H", use_history_endpoint=True)
     print(f"     rows: {len(candles)}  range: {candles.index.min()} ~ {candles.index.max()}")
 
-    print(f"[3/4] Bybit hourly OI history (last {period_days}d)")
+    print(f"[3/5] Bybit hourly OI history (last {period_days}d)")
     try:
         oi_hist = fetch_oi_history_bybit(sym.ccxt_bybit, days=period_days, timeframe="1h")
         print(f"     rows: {len(oi_hist)}  range: {oi_hist.index.min()} ~ {oi_hist.index.max()}")

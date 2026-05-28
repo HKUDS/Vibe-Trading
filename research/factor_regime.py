@@ -233,8 +233,8 @@ def _resolve_manifests_dir() -> Path:
 
 def run_symbol_regime(sym: SymbolConfig, cfg: ResearchConfig, manifests_dir: Path) -> None:
     """Fetch data, compute regime IC, enrich manifest for one symbol."""
-    from lib.ccxt_data import fetch_oi_history_bybit
-    from lib.okx_data import fetch_candles, fetch_funding_history
+    from lib.ccxt_data import fetch_oi_history_bybit, fetch_funding_history_multiyear
+    from lib.okx_data import fetch_candles
     from lib.sentiment import fetch_fear_greed
 
     period_days = cfg.period
@@ -244,8 +244,11 @@ def run_symbol_regime(sym: SymbolConfig, cfg: ResearchConfig, manifests_dir: Pat
     print(f"[regime] Symbol: {sym.name.upper()}")
     print(f"{'='*60}")
 
-    print(f"[1/4] funding history (last {period_days}d)")
-    funding = fetch_funding_history(sym.okx_swap, period_days)
+    print(f"[1/4] funding history (last {period_days}d, ccxt multi-year)")
+    funding = fetch_funding_history_multiyear(
+        ccxt_symbol=sym.ccxt_bybit, days=period_days, exchange="binance",
+        okx_swap=sym.okx_swap,
+    )
     print(f"     rows: {len(funding)}")
 
     print(f"[2/4] hourly candles (last {period_days}d)")

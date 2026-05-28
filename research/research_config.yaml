@@ -19,7 +19,7 @@ symbols:
   ccxt_bybit: "ETH/USDT:USDT"
 
 # ─── 資料抓取參數 ──────────────────────────────────────────────────────────────
-period: 730          # 回溯天數（約 2 年）
+period: 1460         # 回溯天數（約 4 年）— funding 改 ccxt 多年源後可拉長；2022-05 起資料
 interval: "1H"       # K 線週期（OKX bar 格式）
 data_source: okx     # 資金費率 & K 線來源；OI 固定來自 Bybit
 

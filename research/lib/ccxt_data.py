@@ -86,6 +86,51 @@ def fetch_funding_rate_history_ccxt(
     return df
 
 
+def fetch_funding_history_multiyear(
+    ccxt_symbol: str,
+    days: int,
+    exchange: str = "binance",
+    okx_swap: str | None = None,
+) -> pd.DataFrame:
+    """Fetch funding-rate history with multi-year reach.
+
+    The OKX public ``/public/funding-rate-history`` endpoint caps at roughly
+    90 days regardless of the requested window, which silently truncates any
+    in-sample/OOS window longer than ~3 months. Binance / Bybit expose
+    multi-year funding history via ccxt, so this helper prefers the ccxt
+    source and falls back to OKX only if ccxt fails.
+
+    Args:
+        ccxt_symbol: ccxt unified perp symbol, e.g. "ETH/USDT:USDT".
+        days:        Lookback window in days.
+        exchange:    ccxt exchange id for the primary source ("binance" / "bybit").
+        okx_swap:    OKX swap ticker (e.g. "ETH-USDT-SWAP") used only for the
+                     fallback path. If None, no fallback is attempted.
+
+    Returns:
+        DataFrame indexed by UTC time, column ``funding_rate`` (float).
+        Empty DataFrame (with the column) if every source fails.
+    """
+    try:
+        df = fetch_funding_rate_history_ccxt(
+            exchange_name=exchange, symbol=ccxt_symbol, days=days
+        )
+        if df is not None and not df.empty:
+            return df
+        print(f"  WARN: ccxt {exchange} funding returned empty for {ccxt_symbol}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  WARN: ccxt {exchange} funding failed ({exc}); trying OKX fallback")
+
+    if okx_swap:
+        try:
+            from lib.okx_data import fetch_funding_history
+            return fetch_funding_history(okx_swap, days)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  WARN: OKX funding fallback also failed ({exc})")
+
+    return pd.DataFrame(columns=["funding_rate"])
+
+
 def fetch_oi_history_bybit(symbol: str = "BTC/USDT:USDT", days: int = 90, timeframe: str = "1h") -> pd.DataFrame:
     """Fetch hourly historical open interest from Bybit via ccxt.
 
