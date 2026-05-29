@@ -1,27 +1,24 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Bot, BarChart3, Zap, UserCircle2 } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
 
 export function Home() {
-  const { t } = useI18n();
-
   const FEATURES = [
-    { icon: Bot, title: t.feat1, desc: t.feat1d },
-    { icon: BarChart3, title: t.feat2, desc: t.feat2d },
-    { icon: Zap, title: t.feat3, desc: t.feat3d },
-    { icon: UserCircle2, title: t.feat4, desc: t.feat4d },
+    { icon: Bot, title: "AI Agent", desc: "Natural language strategy generation with ReAct reasoning" },
+    { icon: BarChart3, title: "Built-in Backtest", desc: "3 data sources: A-shares, US/HK, Crypto" },
+    { icon: Zap, title: "Real-time Streaming", desc: "Watch the agent think, call tools, and iterate" },
+    { icon: UserCircle2, title: "Strategy Replay", desc: "Trade journal analyzer + Shadow Account — extract your rules, backtest them, attribute PnL delta" },
   ];
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-8">
       <div className="max-w-2xl text-center space-y-6">
-        <h1 className="text-4xl font-bold tracking-tight">{t.heroTitle}</h1>
-        <p className="text-lg text-muted-foreground">{t.heroDesc}</p>
+        <h1 className="text-4xl font-bold tracking-tight">AI-Powered Quant Strategy Research</h1>
+        <p className="text-lg text-muted-foreground">Describe a trading strategy in natural language. The agent generates code, runs backtests, and optimizes — all in real time.</p>
         <Link
           to="/agent"
           className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 transition"
         >
-          {t.startResearch} <ArrowRight className="h-4 w-4" />
+          Start Research <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
 

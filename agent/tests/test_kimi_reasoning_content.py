@@ -332,7 +332,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
 
     def test_normalizes_none_content_on_assistant_messages(self) -> None:
         """LangChain serializes AIMessage(content='', tool_calls=[...]) as
-        content=null; Moonshot kimi-k2.5 rejects that, so we normalize to ''."""
+        content=null; Moonshot kimi-k2.6 rejects that, so we normalize to ''."""
         from langchain_core.messages import AIMessage, HumanMessage
 
         instance = self._instance()
@@ -355,7 +355,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
         assert assistant_msg["content"] == ""
 
     def test_injects_empty_reasoning_content_when_absent(self) -> None:
-        """kimi-k2.5 requires reasoning_content on every assistant turn."""
+        """kimi-k2.6 requires reasoning_content on every assistant turn."""
         from langchain_core.messages import AIMessage, HumanMessage
 
         instance = self._instance()

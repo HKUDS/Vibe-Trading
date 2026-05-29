@@ -244,6 +244,8 @@ class SessionService:
                 persistent_memory=pm,
                 include_shell_tools=include_shell_tools,
                 agent_config=agent_config,
+                session_id=session_id,
+                event_callback=event_callback,
                 warn_callback=_mcp_collision_warn,
             ),
         )

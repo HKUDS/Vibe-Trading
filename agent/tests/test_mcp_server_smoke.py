@@ -44,7 +44,15 @@ CALL_TIMEOUT = 15.0
 # assert ``>= 20`` so unrelated tool additions / removals don't break the
 # test, but a regression that drops half the catalogue still fires.
 EXPECTED_MIN_TOOL_COUNT = 20
-REQUIRED_TOOL_NAMES = {"analyze_options", "get_market_data", "list_skills"}
+REQUIRED_TOOL_NAMES = {
+    "analyze_options",
+    "get_market_data",
+    "list_skills",
+    "start_research_goal",
+    "get_research_goal",
+    "add_goal_evidence",
+    "update_research_goal_status",
+}
 
 
 def _reader(stream, q: Queue) -> None:

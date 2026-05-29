@@ -1,9 +1,9 @@
 / /home/ 302
 /docs /docs/latest/getting-started/vibe-trading-overview 302
 /docs/ /docs/latest/getting-started/vibe-trading-overview 302
-/docs/latest/* /docs/index.html 200
-/docs/0.1.7/* /docs/index.html 200
 /tutorials /tutorials/ 302
 /alpha /alpha-library/ 302
 /alpha-library /alpha-library/ 302
 /research-lab /research-lab/ 302
+/docs/latest/* /docs/ 200
+/docs/0.1.7/* /docs/ 200

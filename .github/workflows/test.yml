@@ -25,7 +25,7 @@ jobs:
       - name: Syntax check
         run: |
           cd agent
-          python -m py_compile cli.py
+          python -m compileall -q cli
           python -m py_compile api_server.py
           python -m py_compile mcp_server.py
           python -m py_compile src/agent/loop.py

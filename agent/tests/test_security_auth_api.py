@@ -37,6 +37,28 @@ def test_remote_write_requires_api_key_when_key_unset() -> None:
     assert "API_AUTH_KEY" in response.json()["detail"]
 
 
+def test_remote_goal_endpoints_require_api_key_when_key_unset() -> None:
+    client = _remote_client()
+
+    cases = [
+        ("post", "/sessions/abcdef012345/goal", {"objective": "Evaluate NVDA", "criteria": ["Define thesis"]}),
+        ("get", "/sessions/abcdef012345/goal", None),
+        (
+            "post",
+            "/sessions/abcdef012345/goal/evidence",
+            {
+                "goal_id": "goal_123",
+                "expected_goal_id": "goal_123",
+                "text": "Evidence",
+            },
+        ),
+    ]
+    for method, path, body in cases:
+        kwargs = {"json": body} if body is not None else {}
+        response = getattr(client, method)(path, **kwargs)
+        assert response.status_code == 403, f"{method.upper()} {path}"
+
+
 def test_local_dev_write_allowed_when_key_unset() -> None:
     response = _local_client().post("/sessions", json={})
 
@@ -84,6 +106,7 @@ def test_configured_api_key_required_for_sensitive_reads(
     for path in [
         "/runs",
         "/sessions",
+        "/sessions/abcdef012345/goal",
         "/swarm/runs",
     ]:
         response = client.get(path)
@@ -253,6 +276,13 @@ def test_session_endpoints_reject_traversal_session_id() -> None:
         ("post", "/sessions/foo.bar/messages", {"content": "x"}),
         ("get", "/sessions/foo.bar/messages", None),
         ("post", "/sessions/foo.bar/cancel", None),
+        ("post", "/sessions/foo.bar/goal", {"objective": "x", "criteria": ["y"]}),
+        ("get", "/sessions/foo.bar/goal", None),
+        (
+            "post",
+            "/sessions/foo.bar/goal/evidence",
+            {"goal_id": "goal_123", "expected_goal_id": "goal_123", "text": "x"},
+        ),
     ]
     for method, path, body in cases:
         kwargs = {"json": body} if body is not None else {}

@@ -131,6 +131,25 @@ def _allowed_run_roots() -> list[Path]:
     return roots
 
 
+def _import_candidate(p: str) -> Path:
+    """Return the filesystem candidate for an import path.
+
+    Browser uploads are exposed as ``uploads/<name>`` so the UI never needs
+    a local absolute path. Resolve that handle back to the agent upload root
+    before enforcing the allowlist.
+    """
+    candidate = Path(p).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+
+    parts = candidate.parts
+    if parts and parts[0] == "uploads":
+        return (_agent_root() / candidate).resolve()
+    if len(parts) >= 2 and parts[0] == "agent" and parts[1] == "uploads":
+        return (_agent_root() / Path(*parts[1:])).resolve()
+    return (Path.cwd() / candidate).resolve()
+
+
 def _safe_import_path(p: str, *, purpose: str) -> Path:
     """Validate a user-supplied path against explicit import roots.
 
@@ -146,7 +165,7 @@ def _safe_import_path(p: str, *, purpose: str) -> Path:
             import roots.
     """
     _rejects_unc(p)
-    resolved = Path(p).expanduser().resolve()
+    resolved = _import_candidate(p)
 
     for root in _allowed_file_roots():
         if resolved.is_relative_to(root):
@@ -214,3 +233,33 @@ def safe_run_dir(p: str) -> Path:
         f"run_dir {p!r} is outside allowed run roots. "
         f"Set {_ALLOWED_RUN_ROOTS_ENV} to add a run directory."
     )
+
+
+def safe_run_id(run_id: str) -> Path:
+    """Resolve a bare run id to an existing allowed run directory.
+
+    Args:
+        run_id: Bare run directory name, not a path.
+
+    Returns:
+        Existing run directory under one of the allowed run roots.
+
+    Raises:
+        ValueError: If the run id is empty, path-shaped, or not found.
+    """
+    _rejects_unc(run_id)
+    candidate = Path(run_id)
+    if (
+        not run_id.strip()
+        or candidate.is_absolute()
+        or len(candidate.parts) != 1
+        or any(part in {"", ".", ".."} for part in candidate.parts)
+    ):
+        raise ValueError(f"run_id {run_id!r} must be a bare run directory name")
+
+    for root in _allowed_run_roots():
+        resolved = (root / candidate.name).resolve()
+        if resolved.is_relative_to(root) and resolved.is_dir():
+            return resolved
+
+    raise ValueError(f"run_id {run_id!r} was not found under allowed run roots")

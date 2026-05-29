@@ -1,7 +1,6 @@
 import { memo, useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { BarChart3, Code2, FileText, Loader2 } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/api";
 import { AgentAvatar } from "./AgentAvatar";
 import { MetricsCard } from "./MetricsCard";
@@ -14,7 +13,6 @@ interface Props {
 }
 
 export const RunCompleteCard = memo(function RunCompleteCard({ msg }: Props) {
-  const { t } = useI18n();
   const [curve, setCurve] = useState(msg.equityCurve);
   const [pineCode, setPineCode] = useState<string | null>(null);
   const [pineLoading, setPineLoading] = useState(false);
@@ -82,7 +80,7 @@ export const RunCompleteCard = memo(function RunCompleteCard({ msg }: Props) {
               className="text-sm text-primary hover:underline inline-flex items-center gap-1.5 font-medium"
             >
               <BarChart3 className="h-3.5 w-3.5" />
-              {t.fullReport}
+              Full Report →
             </Link>
           )}
           {pineExists && (

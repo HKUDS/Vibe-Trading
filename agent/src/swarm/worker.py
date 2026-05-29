@@ -12,10 +12,13 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from src.agent.context import ContextBuilder
+from src.agent.progress import HeartbeatTimer
 from src.agent.skills import SkillsLoader
+from src.agent.tools import ToolRegistry
+from src.config.schema import AgentConfig
 from src.providers.chat import ChatLLM
 from src.swarm.models import (
     SwarmAgentSpec,
@@ -23,24 +26,31 @@ from src.swarm.models import (
     SwarmTask,
     WorkerResult,
 )
-from src.tools import build_filtered_registry
+from src.tools import build_swarm_registry
+from src.tools.mcp import MCPRemoteTool
+from src.tools.redaction import is_sensitive_arg, redact_payload
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_ITERATIONS = int(os.getenv("SWARM_WORKER_MAX_ITER", "50"))
 _DEFAULT_TIMEOUT_SECONDS = int(os.getenv("SWARM_WORKER_TIMEOUT", "300"))
+
+
+def _heartbeat_interval_s() -> float:
+    """Resolve the heartbeat tick interval from env, robust to garbage values.
+
+    Matches the parsing discipline in :func:`SwarmStore.compute_stale_threshold`
+    — both sides use the same env var, so they must fail the same way. A bad
+    value (``"abc"``, empty) falls back to 3.0s instead of crashing import.
+    """
+    try:
+        return float(os.getenv("SWARM_HEARTBEAT_INTERVAL_S", "3.0"))
+    except ValueError:
+        return 3.0
+
+
+_HEARTBEAT_INTERVAL_S = _heartbeat_interval_s()
 _MAX_TOKEN_ESTIMATE = 60_000
-_SENSITIVE_TOOL_ARGUMENT_KEYS = {
-    "api_key",
-    "authorization",
-    "content",
-    "env",
-    "headers",
-    "passphrase",
-    "password",
-    "secret",
-    "token",
-}
 
 
 def _emit(
@@ -258,6 +268,7 @@ def run_worker(
     event_callback: Callable[[SwarmEvent], None] | None = None,
     include_shell_tools: bool = False,
     grounding_block: str = "",
+    agent_config: AgentConfig | None = None,
 ) -> WorkerResult:
     """Execute a single worker task using a lightweight ReAct loop.
 
@@ -281,6 +292,11 @@ def run_worker(
         grounding_block: Optional pre-rendered "Ground Truth" markdown that
             anchors the worker on real recent prices for symbols mentioned in
             ``user_vars``. Forwarded verbatim to :func:`build_worker_prompt`.
+        agent_config: Optional resolved agent config carrying remote MCP
+            server definitions. Threaded from :class:`SwarmRuntime` and
+            consumed by :func:`build_swarm_registry` to merge remote MCP
+            tools with the local-tool pool before applying the agent's
+            whitelist. ``None`` preserves the prior local-only behavior.
 
     Returns:
         WorkerResult with status, summary, artifacts, and iteration count.
@@ -292,11 +308,13 @@ def run_worker(
 
     _emit(event_callback, "worker_started", agent_id, task_id)
 
-    # 1. Build filtered tool registry
-    # TODO(v1): Swarm stays local-tool-only. Do not thread MCP config into this
-    # path until swarm-specific config propagation and execution constraints are
-    # designed explicitly.
-    registry = build_filtered_registry(agent_spec.tools, include_shell_tools=include_shell_tools)
+    # 1. Build per-worker tool registry — local pool plus any operator-
+    #    surfaced MCP tools, projected onto the agent's whitelist.
+    registry = build_swarm_registry(
+        agent_spec.tools,
+        agent_config=agent_config,
+        include_shell_tools=include_shell_tools,
+    )
 
     # 2. Create LLM
     llm = ChatLLM(model_name=agent_spec.model_name)
@@ -416,12 +434,34 @@ def run_worker(
                 _emit(event_callback, "worker_text", agent_id, task_id,
                       {"content": delta, "iteration": iteration})
 
-            response = llm.stream_chat(
-                messages,
-                tools=tool_defs,
-                timeout=remaining_timeout,
-                on_text_chunk=_on_text_chunk,
-            )
+            # LLM streaming can stall for 30s+ between request start and the
+            # first text chunk (slow first-token providers, reasoning models'
+            # think phase, pure-tool-call responses with no text). Without a
+            # ticker, the stale-run reaper would mark a healthy run failed
+            # the moment its silence exceeds the heartbeat-based threshold.
+            # Wrap the call in the same HeartbeatTimer used for tool execution
+            # so events.jsonl gets a fresh entry every few seconds no matter
+            # what the provider is doing.
+            def _on_llm_heartbeat(payload: dict) -> None:
+                _emit(
+                    event_callback,
+                    "task_heartbeat",
+                    agent_id,
+                    task_id,
+                    {**payload, "iteration": iteration, "phase": "llm"},
+                )
+
+            with HeartbeatTimer(
+                tool_name=f"llm:{agent_spec.model_name or 'default'}",
+                interval=_HEARTBEAT_INTERVAL_S,
+                emit=_on_llm_heartbeat,
+            ):
+                response = llm.stream_chat(
+                    messages,
+                    tools=tool_defs,
+                    timeout=remaining_timeout,
+                    on_text_chunk=_on_text_chunk,
+                )
         except Exception as exc:
             error_msg = f"LLM call failed at iteration {iteration}: {exc}"
             logger.warning(error_msg)
@@ -489,14 +529,35 @@ def run_worker(
 
         # Execute each tool call — inject run_dir so tools write inside artifact_dir
         for tc in response.tool_calls:
+            mcp_meta = _remote_tool_metadata(registry, tc.name)
             _emit(
                 event_callback, "tool_call", agent_id, task_id,
                 {"tool": tc.name, "iteration": iteration,
-                 "arguments": _preview_tool_arguments(tc.arguments)},
+                 "arguments": _preview_tool_arguments(tc.arguments),
+                 **mcp_meta},
             )
             tc_start = time.monotonic()
             args = {**tc.arguments, "run_dir": str(artifact_dir)}
-            result = registry.execute(tc.name, args)
+
+            # Wrap tool execution in a heartbeat so the events.jsonl tail has a
+            # fresh timestamp every few seconds. The stale-run reaper relies on
+            # this signal to tell a hung tool call apart from a dead host; the
+            # CLI dashboard / SSE clients also get live "still working" ticks.
+            def _on_heartbeat(payload: dict) -> None:
+                _emit(
+                    event_callback,
+                    "task_heartbeat",
+                    agent_id,
+                    task_id,
+                    {**payload, "iteration": iteration, "phase": "tool"},
+                )
+
+            with HeartbeatTimer(
+                tool_name=tc.name,
+                interval=_HEARTBEAT_INTERVAL_S,
+                emit=_on_heartbeat,
+            ):
+                result = registry.execute(tc.name, args)
             if tc.name != "load_skill" and not _is_error_result(result):
                 data_tool_calls += 1
             tc_elapsed = time.monotonic() - tc_start
@@ -504,7 +565,8 @@ def run_worker(
                 event_callback, "tool_result", agent_id, task_id,
                 {"tool": tc.name, "elapsed_ms": int(tc_elapsed * 1000),
                  "status": "ok", "iteration": iteration,
-                 "result_preview": str(result)[:200]},
+                  "result_preview": _preview_tool_result(result),
+                 **mcp_meta},
             )
             messages.append(
                 ContextBuilder.format_tool_result(tc.id, tc.name, result[:10_000])
@@ -556,27 +618,54 @@ def _best_summary(messages: list[dict], fallback: str) -> str:
     return fallback
 
 
+def _remote_tool_metadata(registry: ToolRegistry, tool_name: str) -> dict[str, str]:
+    """Return MCP routing metadata for ``tool_name`` if it's a remote MCP tool.
+
+    Auditors of ``events.jsonl`` need to tell at a glance which remote MCP
+    server a swarm worker reached and what the *original* (non-prefixed)
+    tool name was. The local-side name is already in ``data["tool"]``; this
+    helper supplies the missing ``server`` + ``remote_tool`` pair when the
+    registered tool is an :class:`MCPRemoteTool`. Local-only tools yield
+    an empty dict so the event payload is unchanged for them.
+    """
+    tool = registry.get(tool_name)
+    if not isinstance(tool, MCPRemoteTool):
+        return {}
+    spec = getattr(tool, "_spec", None)
+    if spec is None:
+        return {}
+    return {"server": spec.server_name, "remote_tool": spec.remote_name}
+
+
 def _preview_tool_arguments(arguments: dict) -> dict[str, str]:
     """Return a short, redacted argument preview for streamed events."""
     preview: dict[str, str] = {}
     for key, value in arguments.items():
         if key == "run_dir":
             continue
-        if _is_sensitive_tool_argument(key):
+        if is_sensitive_arg(key):
             preview[key] = "[redacted]"
             continue
-        text = str(value)
-        preview[key] = text if len(text) <= 200 else text[:200] + "..."
+        preview[key] = _truncate_preview(redact_payload(value))
     return preview
 
 
-def _is_sensitive_tool_argument(key: str) -> bool:
-    """Return whether a tool argument name should be redacted in events."""
-    normalized = key.strip().lower()
-    return normalized in _SENSITIVE_TOOL_ARGUMENT_KEYS or any(
-        marker in normalized
-        for marker in ("api_key", "authorization", "password", "secret", "token")
-    )
+def _preview_tool_result(result: str) -> str:
+    """Return a short, redacted result preview for streamed events."""
+    try:
+        parsed = json.loads(result)
+    except (TypeError, ValueError):
+        return _truncate_preview(result)
+    return _truncate_preview(redact_payload(parsed))
+
+
+def _truncate_preview(value: Any, *, limit: int = 200) -> str:
+    """Stringify and truncate an event preview payload."""
+    if isinstance(value, (dict, list)):
+        text = json.dumps(value, ensure_ascii=False, default=str)
+    else:
+        text = str(value)
+    return text if len(text) <= limit else text[:limit] + "..."
 
 
 # Tools that do not themselves fetch/compute market data. An agent whose

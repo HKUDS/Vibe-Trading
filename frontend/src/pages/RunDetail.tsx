@@ -16,7 +16,6 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useI18n } from "@/lib/i18n";
 import { api, type BacktestMetrics, type RunCard, type RunData } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -65,7 +64,6 @@ function buildMetricsCsv(metrics: BacktestMetrics): string {
 
 export function RunDetail() {
   const { runId } = useParams<{ runId: string }>();
-  const { t } = useI18n();
   const navigate = useNavigate();
   const [run, setRun] = useState<RunData | null>(null);
   const [code, setCode] = useState<Record<string, string>>({});
@@ -75,11 +73,11 @@ export function RunDetail() {
   const hasValidation = !!run?.validation;
   const hasRunCard = !!run?.run_card;
   const TABS: { id: Tab; label: string; icon: typeof BarChart3; hidden?: boolean }[] = [
-    { id: "chart", label: t.chart, icon: BarChart3 },
-    { id: "trades", label: t.trades, icon: List },
-    { id: "validation", label: t.validation, icon: ShieldCheck, hidden: !hasValidation },
+    { id: "chart", label: "Chart", icon: BarChart3 },
+    { id: "trades", label: "Trades", icon: List },
+    { id: "validation", label: "Validation", icon: ShieldCheck, hidden: !hasValidation },
     { id: "runCard", label: "Run Card", icon: FileCheck2, hidden: !hasRunCard },
-    { id: "code", label: t.code, icon: Code2 },
+    { id: "code", label: "Code", icon: Code2 },
   ];
 
   useEffect(() => {
@@ -141,18 +139,18 @@ export function RunDetail() {
               <button
                 onClick={() => downloadCsv(`trades_${runId}.csv`, buildTradesCsv(run.trade_log!))}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-muted transition-colors"
-                title={t.downloadTradesCsv}
+                title="Download Trades CSV"
               >
-                <Download className="h-3.5 w-3.5" /> {t.downloadTradesCsv}
+                <Download className="h-3.5 w-3.5" /> Download Trades CSV
               </button>
             )}
             {run.metrics && (
               <button
                 onClick={() => downloadCsv(`metrics_${runId}.csv`, buildMetricsCsv(run.metrics!))}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-muted transition-colors"
-                title={t.downloadMetricsCsv}
+                title="Download Metrics CSV"
               >
-                <Download className="h-3.5 w-3.5" /> {t.downloadMetricsCsv}
+                <Download className="h-3.5 w-3.5" /> Download Metrics CSV
               </button>
             )}
           </div>

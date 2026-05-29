@@ -29,7 +29,7 @@ if ChatOpenAI is not None:
           * _convert_message_to_dict — request serialization (outbound)
         Moonshot/DeepSeek emit `reasoning_content`; OpenRouter relays as
         `reasoning`. Inbound paths normalize to additional_kwargs["reasoning_content"];
-        outbound path re-injects it so strict providers (kimi-k2.5) accept
+        outbound path re-injects it so strict providers (kimi-k2.6) accept
         multi-turn continuations.
         """
 
@@ -71,7 +71,7 @@ if ChatOpenAI is not None:
             """Re-inject reasoning_content and normalize assistant content.
 
             LangChain strips ``reasoning_content`` when serializing AIMessages
-            back to OpenAI wire format. Moonshot kimi-k2.5 also rejects
+            back to OpenAI wire format. Moonshot kimi-k2.6 also rejects
             assistant turns where ``content`` is null or ``reasoning_content``
             is absent, breaking ReAct continuations after a tool call (#39).
             """
@@ -302,5 +302,4 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         callbacks=callbacks,
         extra_body={"reasoning": {"effort": effort}} if effort else None,
     )
-
 

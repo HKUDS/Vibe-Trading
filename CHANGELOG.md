@@ -5,6 +5,11 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### UI
+- Redesigned the interactive CLI startup and run-state visuals with a large
+  figlet-style banner plus a Claude Code-style activity rail using `●`, `│`,
+  and `·` glyphs. Non-TTY prompt runs now fall back to plain text output.
+
 ### Added
 
 ### Changed

@@ -52,6 +52,8 @@ data/backup/
 docs/
 !wiki/docs/
 !wiki/docs/**
+docs/screenshots/agent-run.png
+docs/screenshots/boot.png
 data/minutes/
 data/overnight*.log
 data/*.log

@@ -128,7 +128,8 @@ class SwarmEvent(BaseModel):
     Appended to events.jsonl; supports SSE streaming and post-run audit.
 
     Attributes:
-        type: Event type, e.g. "run_started", "task_completed", "task_failed".
+        type: Event type, e.g. "run_started", "task_completed", "task_failed",
+            "task_blocked" (upstream not completed → downstream skipped).
         agent_id: Associated agent ID (optional).
         task_id: Associated task ID (optional).
         data: Arbitrary additional data.

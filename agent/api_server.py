@@ -11,6 +11,7 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import signal
 import time
 import csv
@@ -26,6 +27,7 @@ from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from rich.console import Console
 
+from src.goal.context import default_goal_criteria
 from src.ui_services import build_run_analysis, load_run_context
 
 # UTF-8 on Windows
@@ -47,6 +49,10 @@ _UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 # Rich console for colored logs
 console = Console()
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -237,6 +243,220 @@ class MessageResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class CreateGoalRequest(BaseModel):
+    """Create or replace a finance research goal."""
+
+    objective: str = Field(..., min_length=1, max_length=5000)
+    criteria: List[str] = Field(default_factory=list)
+    ui_summary: str = ""
+    protocol: str = "thesis_review"
+    risk_tier: str = "research_general"
+    token_budget: Optional[int] = Field(None, ge=1)
+    turn_budget: Optional[int] = Field(None, ge=1)
+    time_budget_seconds: Optional[int] = Field(None, ge=1)
+
+
+class UpdateGoalRequest(BaseModel):
+    """Edit mutable finance research goal fields."""
+
+    goal_id: str = Field(..., min_length=1)
+    expected_goal_id: str = Field(..., min_length=1)
+    objective: Optional[str] = Field(None, min_length=1, max_length=5000)
+    ui_summary: Optional[str] = Field(None, max_length=500)
+
+
+class AddGoalEvidenceRequest(BaseModel):
+    """Append evidence to a finance research goal."""
+
+    goal_id: str = Field(..., min_length=1)
+    expected_goal_id: str = Field(..., min_length=1)
+    text: str = Field(..., min_length=1, max_length=10000)
+    criterion_id: Optional[str] = None
+    claim_id: Optional[str] = None
+    evidence_type: str = "evidence"
+    tool_call_id: Optional[str] = None
+    run_id: Optional[str] = None
+    source_provider: Optional[str] = None
+    source_type: Optional[str] = None
+    source_uri: Optional[str] = None
+    symbol_universe: List[str] = Field(default_factory=list)
+    benchmark: List[str] = Field(default_factory=list)
+    timeframe: Optional[str] = None
+    method: Optional[str] = None
+    assumptions: Dict[str, Any] = Field(default_factory=dict)
+    artifact_path: Optional[str] = None
+    artifact_hash: Optional[str] = None
+    data_as_of: Optional[str] = None
+    confidence: Optional[str] = None
+    caveat: Optional[str] = None
+    contradicts_claim_ids: List[str] = Field(default_factory=list)
+
+
+class GoalSnapshotResponse(BaseModel):
+    """Finance research goal snapshot."""
+
+    goal: Dict[str, Any]
+    claims: List[Dict[str, Any]]
+    criteria: List[Dict[str, Any]]
+    evidence: List[Dict[str, Any]]
+    evidence_count: int = 0
+
+
+class AddGoalEvidenceResponse(BaseModel):
+    """Response after appending goal evidence."""
+
+    evidence: Dict[str, Any]
+    snapshot: GoalSnapshotResponse
+
+
+class GoalAuditRowRequest(BaseModel):
+    """One criterion row for goal status audits."""
+
+    criterion_id: str = Field(..., min_length=1)
+    result: str = Field(..., min_length=1)
+    evidence_ids: List[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+class UpdateGoalStatusRequest(BaseModel):
+    """Update a finance research goal status."""
+
+    goal_id: str = Field(..., min_length=1)
+    expected_goal_id: str = Field(..., min_length=1)
+    status: str = Field(..., min_length=1)
+    audit: List[GoalAuditRowRequest] = Field(default_factory=list)
+    recap: Optional[str] = None
+
+
+class UpdateGoalStatusResponse(BaseModel):
+    """Response after changing a goal status."""
+
+    goal: Dict[str, Any]
+    snapshot: GoalSnapshotResponse
+
+
+class UpdateGoalResponse(BaseModel):
+    """Response after editing a goal."""
+
+    goal: Dict[str, Any]
+    snapshot: GoalSnapshotResponse
+
+
+# ---- Live trading channel: consent commit + kill switch ----
+
+
+class CommitMandateRequest(BaseModel):
+    """Surface-originated mandate commit (Consent §1 / §3).
+
+    This is the ONLY write path that activates a live-trading mandate. It is a
+    privileged HTTP action the user surface sends on an explicit click/keypress
+    — NOT a tool the agent model can call. ``consent_ack`` MUST be ``true``.
+    """
+
+    broker: str = Field(..., min_length=1, max_length=64)
+    proposal_id: str = Field(..., min_length=1, max_length=128)
+    selected_ordinal: int = Field(..., ge=1, le=10)
+    adjustments: Optional[Dict[str, Any]] = None
+    consent_ack: bool = Field(..., description="Explicit affirmative; must be true")
+    session_id: Optional[str] = None
+    account_ref: str = Field("", max_length=128)
+    lifetime_days: int = Field(30, ge=1, le=365)
+
+
+class LiveHaltRequest(BaseModel):
+    """Trip or clear the live kill switch (Consent §4).
+
+    Tripping/clearing is a privileged surface action, never an agent tool. When
+    ``broker`` is omitted the GLOBAL switch is used (halts every broker).
+    """
+
+    broker: Optional[str] = Field(None, max_length=64)
+    reason: str = Field("user requested halt", max_length=500)
+    session_id: Optional[str] = None
+
+
+class LiveAuthorizeRequest(BaseModel):
+    """Kick off (or describe) the OAuth bootstrap for a live broker (C2).
+
+    Vibe-Trading never holds funds and never operates a venue, so the OAuth
+    bootstrap runs through the broker's own user-authorized device flow on the
+    client (CLI / desktop MCP), not a server-side redirect. This endpoint is the
+    web on-ramp: it tells a Web UI user exactly how to discover/start the flow.
+    """
+
+    broker: str = Field(..., min_length=1, max_length=64)
+
+
+class LiveRunnerControlRequest(BaseModel):
+    """Start or stop the persistent live runner for one broker (SPEC §7.5).
+
+    The runner wakes on schedule/market events and trades autonomously inside a
+    committed mandate. Starting it is a privileged surface action, never an
+    agent tool. A committed, unexpired mandate must already exist.
+    """
+
+    broker: str = Field(..., min_length=1, max_length=64)
+    session_id: Optional[str] = None
+
+
+class BrokerAuthState(BaseModel):
+    """Per-broker authorization snapshot for ``GET /live/status``."""
+
+    broker: str
+    oauth_token_present: bool = Field(..., description="Whether an OAuth token cache exists")
+    is_live_broker: bool = Field(..., description="Whether this key is a recognized live broker")
+
+
+class MandateLimits(BaseModel):
+    """Flattened active-mandate limits surfaced to the UI (Mandate layer a/b)."""
+
+    max_order_notional_usd: float
+    max_total_exposure_usd: float
+    max_leverage: float
+    max_trades_per_day: int
+    allowed_instruments: List[str]
+    account_funding_usd: float
+
+
+class ActiveMandateState(BaseModel):
+    """Active-mandate snapshot with the expiry countdown (SPEC §9 dec. 2)."""
+
+    broker: str
+    account_ref: str
+    created_at: str
+    expires_at: str
+    expires_in_seconds: Optional[int] = Field(
+        None, description="Seconds until expiry; negative when already expired"
+    )
+    expired: bool
+    limits: MandateLimits
+
+
+class RunnerLivenessState(BaseModel):
+    """Runner liveness snapshot via the §7.5 liveness contract."""
+
+    broker: str
+    alive: bool
+    last_tick: Optional[float] = Field(None, description="Unix epoch of last heartbeat tick")
+    last_tick_age_seconds: Optional[float] = None
+
+
+class LiveBrokerStatus(BaseModel):
+    """Combined live-channel status for a single broker."""
+
+    auth: BrokerAuthState
+    mandate: Optional[ActiveMandateState] = None
+    runner: RunnerLivenessState
+    halted: bool = Field(..., description="Per-broker OR global kill switch is tripped")
+
+
+class LiveStatusResponse(BaseModel):
+    """Top-level live-channel status (C2)."""
+
+    global_halted: bool = Field(..., description="Whether the GLOBAL kill switch is tripped")
+    brokers: List[LiveBrokerStatus]
+
+
 
 # ============================================================================
 # FastAPI Application
@@ -295,6 +515,61 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ----------------------------------------------------------------------------
+# SPA deep-link fallback
+# ----------------------------------------------------------------------------
+# A handful of API routes share their path with frontend SPA routes (e.g.
+# ``/runs/{id}`` and ``/correlation``). Because FastAPI matches registered
+# routes before the static SPA mount, a browser that refreshes or bookmarks
+# one of these URLs would receive JSON (or 401/422) instead of the SPA shell.
+# The middleware below serves ``frontend/dist/index.html`` when the request
+# clearly came from a browser (``Accept`` contains ``text/html``); programmatic
+# clients are routed to the real API handler as before.
+#
+# Patterns are written narrowly so the SPA shell only shadows paths that
+# actually correspond to frontend pages. In particular ``/runs/{id}`` is
+# the RunDetail page, but ``/runs/{id}/code`` and ``/runs/{id}/pine`` are
+# API-only endpoints with no SPA route — using a broad ``/runs/`` prefix
+# here would incorrectly hijack those when the browser sets ``Accept:
+# text/html`` (e.g. a user pasting the URL into the address bar).
+
+_FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+_SPA_HTML_EXACT_PATHS: frozenset[str] = frozenset({"/correlation"})
+# Each regex matches a complete request path. Trailing slash optional.
+_SPA_HTML_PATH_REGEX: tuple[re.Pattern[str], ...] = (
+    # ``/runs/{run_id}`` — RunDetail page. Excludes ``/runs/{id}/code``,
+    # ``/runs/{id}/pine`` (API only) and ``/runs`` (collection endpoint).
+    re.compile(r"^/runs/[^/]+/?$"),
+)
+
+
+def _is_spa_html_route(path: str) -> bool:
+    """Return True when ``path`` corresponds to a frontend SPA page that
+    shadows an API endpoint and should fall back to ``index.html`` on
+    browser navigation."""
+    if path in _SPA_HTML_EXACT_PATHS:
+        return True
+    return any(pattern.match(path) for pattern in _SPA_HTML_PATH_REGEX)
+
+
+@app.middleware("http")
+async def _spa_html_deep_link_fallback(request: Request, call_next):
+    """Serve ``frontend/dist/index.html`` when a browser navigates directly to
+    an SPA path that also exists as an API endpoint.
+
+    Conflicts: ``/runs/{id}`` (RunDetail page vs API) and ``/correlation``
+    (Correlation page vs API). Programmatic clients (``Accept: */*`` or
+    ``application/json``) still hit the real API handler.
+    """
+    if request.method == "GET":
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept and _is_spa_html_route(request.url.path):
+            index = _FRONTEND_DIST / "index.html"
+            if index.exists():
+                return FileResponse(str(index))
+    return await call_next(request)
 
 
 @app.on_event("startup")
@@ -1264,6 +1539,7 @@ async def api_info():
 # ============================================================================
 
 _session_service = None
+_goal_store = None
 
 
 def _get_session_service():
@@ -1295,6 +1571,26 @@ def _get_session_service():
         runs_dir=RUNS_DIR,
     )
     return _session_service
+
+
+def _get_goal_store():
+    """Return the shared finance goal store."""
+    global _goal_store
+    if _goal_store is None:
+        from src.goal import GoalStore
+
+        _goal_store = GoalStore()
+    return _goal_store
+
+
+def _get_existing_session_or_404(session_id: str):
+    svc = _get_session_service()
+    if not svc:
+        raise HTTPException(status_code=501, detail="Session runtime not enabled")
+    session = svc.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    return svc, session
 
 
 @app.post("/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_auth)])
@@ -1354,6 +1650,205 @@ async def get_session(session_id: str):
     )
 
 
+@app.post(
+    "/sessions/{session_id}/goal",
+    response_model=GoalSnapshotResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_auth)],
+)
+async def create_session_goal(session_id: str, req: CreateGoalRequest):
+    """Create or replace the current finance research goal for a session."""
+    _validate_path_param(session_id, "session_id")
+    svc, _session = _get_existing_session_or_404(session_id)
+    from src.goal import RiskTier
+
+    criteria = [item.strip() for item in req.criteria if item.strip()]
+    if not criteria:
+        criteria = default_goal_criteria()
+    try:
+        risk_tier = RiskTier(req.risk_tier)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid risk_tier: {req.risk_tier}") from exc
+    if risk_tier is RiskTier.LIVE_TRADING_OR_EXECUTION:
+        raise HTTPException(status_code=400, detail="live trading or execution goals are not supported")
+
+    goal_store = _get_goal_store()
+    try:
+        goal = goal_store.replace_goal(
+            session_id=session_id,
+            objective=req.objective,
+            criteria=criteria,
+            ui_summary=req.ui_summary,
+            source="api",
+            protocol=req.protocol,
+            risk_tier=risk_tier,
+            token_budget=req.token_budget,
+            turn_budget=req.turn_budget,
+            time_budget_seconds=req.time_budget_seconds,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    snapshot = goal_store.get_goal_snapshot(goal.goal_id)
+    if snapshot is None:
+        raise HTTPException(status_code=500, detail="Goal created but could not be reloaded")
+    svc.event_bus.emit(session_id, "goal.created", {"goal": snapshot["goal"]})
+    return snapshot
+
+
+@app.get(
+    "/sessions/{session_id}/goal",
+    response_model=GoalSnapshotResponse,
+    dependencies=[Depends(require_auth)],
+)
+async def get_session_goal(session_id: str):
+    """Return the current finance research goal snapshot for a session."""
+    _validate_path_param(session_id, "session_id")
+    _get_existing_session_or_404(session_id)
+    snapshot = _get_goal_store().get_current_snapshot(session_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="No current goal")
+    return snapshot
+
+
+@app.patch(
+    "/sessions/{session_id}/goal",
+    response_model=UpdateGoalResponse,
+    dependencies=[Depends(require_auth)],
+)
+async def update_session_goal(session_id: str, req: UpdateGoalRequest):
+    """Edit the current finance research goal without replacing the session."""
+    _validate_path_param(session_id, "session_id")
+    svc, _session = _get_existing_session_or_404(session_id)
+    from src.goal import StaleGoalError
+
+    if req.objective is None and req.ui_summary is None:
+        raise HTTPException(status_code=400, detail="objective or ui_summary is required")
+
+    goal_store = _get_goal_store()
+    try:
+        goal = goal_store.update_goal(
+            session_id=session_id,
+            goal_id=req.goal_id,
+            expected_goal_id=req.expected_goal_id,
+            objective=req.objective,
+            ui_summary=req.ui_summary,
+        )
+    except StaleGoalError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    snapshot = goal_store.get_goal_snapshot(goal.goal_id)
+    if snapshot is None:
+        raise HTTPException(status_code=500, detail="Goal snapshot could not be reloaded")
+    svc.event_bus.emit(session_id, "goal.updated", {"goal": snapshot["goal"], "snapshot": snapshot})
+    return {"goal": snapshot["goal"], "snapshot": snapshot}
+
+
+@app.post(
+    "/sessions/{session_id}/goal/evidence",
+    response_model=AddGoalEvidenceResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_auth)],
+)
+async def add_session_goal_evidence(session_id: str, req: AddGoalEvidenceRequest):
+    """Append traceable evidence to the current finance research goal."""
+    _validate_path_param(session_id, "session_id")
+    svc, _session = _get_existing_session_or_404(session_id)
+    from dataclasses import asdict
+    from src.goal import EvidenceInput, StaleGoalError
+
+    goal_store = _get_goal_store()
+    try:
+        evidence = goal_store.append_evidence(
+            session_id=session_id,
+            goal_id=req.goal_id,
+            expected_goal_id=req.expected_goal_id,
+            evidence=EvidenceInput(
+                criterion_id=req.criterion_id,
+                claim_id=req.claim_id,
+                evidence_type=req.evidence_type,
+                text=req.text,
+                tool_call_id=req.tool_call_id,
+                run_id=req.run_id,
+                source_provider=req.source_provider,
+                source_type=req.source_type,
+                source_uri=req.source_uri,
+                symbol_universe=req.symbol_universe,
+                benchmark=req.benchmark,
+                timeframe=req.timeframe,
+                method=req.method,
+                assumptions=req.assumptions,
+                artifact_path=req.artifact_path,
+                artifact_hash=req.artifact_hash,
+                data_as_of=req.data_as_of,
+                confidence=req.confidence,
+                caveat=req.caveat,
+                contradicts_claim_ids=req.contradicts_claim_ids,
+            ),
+        )
+    except StaleGoalError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    snapshot = goal_store.get_goal_snapshot(req.goal_id)
+    if snapshot is None:
+        raise HTTPException(status_code=500, detail="Goal snapshot could not be reloaded")
+    svc.event_bus.emit(
+        session_id,
+        "goal.evidence",
+        {"evidence": asdict(evidence), "goal_id": req.goal_id},
+    )
+    return {"evidence": asdict(evidence), "snapshot": snapshot}
+
+
+@app.patch(
+    "/sessions/{session_id}/goal/status",
+    response_model=UpdateGoalStatusResponse,
+    dependencies=[Depends(require_auth)],
+)
+async def update_session_goal_status(session_id: str, req: UpdateGoalStatusRequest):
+    """Update the current finance research goal status."""
+    _validate_path_param(session_id, "session_id")
+    svc, _session = _get_existing_session_or_404(session_id)
+    from src.goal import AuditRow, GoalStatus, StaleGoalError
+
+    try:
+        next_status = GoalStatus(req.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid goal status: {req.status}") from exc
+
+    goal_store = _get_goal_store()
+    try:
+        goal = goal_store.update_status(
+            session_id=session_id,
+            goal_id=req.goal_id,
+            expected_goal_id=req.expected_goal_id,
+            status=next_status,
+            audit=[
+                AuditRow(
+                    criterion_id=row.criterion_id,
+                    result=row.result,
+                    evidence_ids=row.evidence_ids,
+                    notes=row.notes,
+                )
+                for row in req.audit
+            ],
+            recap=req.recap,
+        )
+    except StaleGoalError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    snapshot = goal_store.get_goal_snapshot(goal.goal_id)
+    if snapshot is None:
+        raise HTTPException(status_code=500, detail="Goal snapshot could not be reloaded")
+    svc.event_bus.emit(session_id, "goal.updated", {"goal": snapshot["goal"], "snapshot": snapshot})
+    return {"goal": snapshot["goal"], "snapshot": snapshot}
+
+
 @app.delete("/sessions/{session_id}", dependencies=[Depends(require_auth)])
 async def delete_session(session_id: str):
     """Delete a session."""
@@ -1364,6 +1859,7 @@ async def delete_session(session_id: str):
     deleted = svc.delete_session(session_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    _get_goal_store().delete_session_goals(session_id)
     return {"status": "deleted", "session_id": session_id}
 
 
@@ -1448,6 +1944,7 @@ async def session_events(
     session_id: str,
     request: Request,
     last_event_id: Optional[str] = Query(None, alias="Last-Event-ID"),
+    replay: Optional[str] = Query(None),
 ):
     """SSE stream for agent events."""
     _validate_path_param(session_id, "session_id")
@@ -1460,12 +1957,28 @@ async def session_events(
 
     header_id = request.headers.get("Last-Event-ID")
     event_id = header_id or last_event_id
+    replay_active = (replay or "").lower() == "active"
+    replay_all = False
+    if replay_active and not event_id and session.last_attempt_id:
+        attempt = svc.store.get_attempt(session_id, session.last_attempt_id)
+        attempt_status = getattr(attempt.status, "value", attempt.status) if attempt else None
+        replay_all = attempt_status == "running"
 
     async def event_generator():
-        async for event in svc.event_bus.subscribe(session_id, last_event_id=event_id):
+        async for event in svc.event_bus.subscribe(
+            session_id,
+            last_event_id=event_id,
+            replay_all=replay_all,
+        ):
             if await request.is_disconnected():
                 break
             yield event.to_sse()
+            relayed = _mandate_proposal_frame_from_tool_result(event)
+            if relayed is not None:
+                yield relayed
+            live_action = _live_action_frame_from_tool_result(event)
+            if live_action is not None:
+                yield live_action
 
     return StreamingResponse(
         event_generator(),
@@ -1538,20 +2051,19 @@ async def upload_file(file: UploadFile):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
     filename = Path(file.filename).name
-    ext = Path(file.filename).suffix.lower()
+    ext = Path(filename).suffix.lower()
     if ext in _BLOCKED_UPLOAD_EXT or filename.lower() in _BLOCKED_UPLOAD_NAMES:
         raise HTTPException(
             status_code=400,
             detail="This file type is not allowed for upload.",
         )
 
-    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-
     safe_name = f"{uuid.uuid4().hex}{ext}"
     dest = UPLOADS_DIR / safe_name
     total_size = 0
 
     try:
+        UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
         with dest.open("wb") as handle:
             while True:
                 chunk = await file.read(_UPLOAD_CHUNK_SIZE)
@@ -1572,14 +2084,17 @@ async def upload_file(file: UploadFile):
     except OSError as exc:
         if dest.exists():
             dest.unlink()
-        raise HTTPException(status_code=500, detail=f"Failed to store upload: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Upload failed while storing the file. Please retry or choose a different file.",
+        ) from exc
     finally:
         await file.close()
 
     return {
         "status": "ok",
-        "file_path": str(dest.resolve()),
-        "filename": file.filename,
+        "file_path": f"uploads/{safe_name}",
+        "filename": filename,
     }
 
 
@@ -1595,11 +2110,15 @@ def _get_swarm_runtime():
     global _swarm_runtime
     if _swarm_runtime is not None:
         return _swarm_runtime
+    from src.config import load_swarm_agent_config
     from src.swarm.store import SwarmStore
     from src.swarm.runtime import SwarmRuntime
     swarm_dir = Path(__file__).resolve().parent / ".swarm" / "runs"
     store = SwarmStore(base_dir=swarm_dir)
-    _swarm_runtime = SwarmRuntime(store=store)
+    # Boot-time / operator-trusted: REST API callers cannot influence the
+    # config path. See docs/2026-05-25_swarm_mcp_tools_roadmap.md.
+    agent_config = load_swarm_agent_config()
+    _swarm_runtime = SwarmRuntime(store=store, agent_config=agent_config)
     return _swarm_runtime
 
 
@@ -1631,46 +2150,45 @@ async def create_swarm_run(payload: dict, http_request: Request):
 
 @app.get("/swarm/runs", dependencies=[Depends(require_auth)])
 async def list_swarm_runs(limit: int = Query(20, ge=1, le=100)):
-    """List swarm runs (newest first)."""
+    """List swarm runs (newest first), reconciled."""
     runtime = _get_swarm_runtime()
     runs = runtime._store.list_runs(limit=limit)
-    return [
-        {
-            "id": r.id,
-            "preset_name": r.preset_name,
-            "status": r.status.value,
-            "created_at": r.created_at,
-            "task_count": len(r.tasks),
-            "completed_count": sum(1 for t in r.tasks if t.status.value == "completed"),
-        }
-        for r in runs
-    ]
+    items = []
+    for r in runs:
+        # Reconcile each row: a zombie running run will be auto-finalized so
+        # the dashboard never shows a permanent "running" stuck row.
+        reconciled = runtime._store.reconcile_run(r, write=True)
+        items.append(
+            {
+                "id": reconciled.id,
+                "preset_name": reconciled.preset_name,
+                "status": reconciled.status.value,
+                "is_stale": runtime._store.is_run_stale(reconciled),
+                "created_at": reconciled.created_at,
+                "completed_at": reconciled.completed_at,
+                "task_count": len(reconciled.tasks),
+                "completed_count": sum(1 for t in reconciled.tasks if t.status.value == "completed"),
+            }
+        )
+    return items
 
 
 @app.get("/swarm/runs/{run_id}", dependencies=[Depends(require_auth)])
 async def get_swarm_run(run_id: str):
-    """Swarm run detail including task statuses."""
-    from src.swarm.task_store import TaskStore
-
+    """Swarm run detail including task statuses (reconciled)."""
     _validate_path_param(run_id, "run_id")
     runtime = _get_swarm_runtime()
-    run = runtime._store.load_run(run_id)
-    if not run:
+    loaded = runtime._store.load_run(run_id)
+    if not loaded:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
-    # Merge real-time task statuses from task_store (updated during execution)
-    run_dir = runtime._store.run_dir(run_id)
-    tasks_dir = run_dir / "tasks"
-    if tasks_dir.exists():
-        task_store = TaskStore(run_dir)
-        live_tasks = task_store.load_all()
-        if live_tasks:
-            run.tasks = live_tasks
+    run = runtime._store.reconcile_run(loaded, write=True)
 
     return {
         "id": run.id,
         "preset_name": run.preset_name,
         "status": run.status.value,
+        "is_stale": runtime._store.is_run_stale(run),
         "user_vars": run.user_vars,
         "agents": [a.model_dump() for a in run.agents],
         "tasks": [t.model_dump() for t in run.tasks],
@@ -1698,9 +2216,14 @@ async def swarm_run_events(run_id: str, request: Request, last_index: int = Quer
                 idx += 1
                 yield f"id: {idx}\nevent: {evt.type}\ndata: {json.dumps(evt.model_dump(), ensure_ascii=False)}\n\n"
             run = runtime._store.load_run(run_id)
-            if run and run.status.value in ("completed", "failed", "cancelled"):
-                yield f"event: done\ndata: {{\"status\": \"{run.status.value}\"}}\n\n"
-                break
+            if run:
+                # Reconcile so a zombie running run can still close this SSE
+                # stream cleanly — without it, a dead host would keep the
+                # stream open forever and block the dashboard's "done" state.
+                reconciled = runtime._store.reconcile_run(run, write=True)
+                if reconciled.status.value in ("completed", "failed", "cancelled"):
+                    yield f"event: done\ndata: {{\"status\": \"{reconciled.status.value}\"}}\n\n"
+                    break
             await asyncio.sleep(2)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -1715,6 +2238,747 @@ async def cancel_swarm_run(run_id: str):
     if not ok:
         raise HTTPException(status_code=404, detail=f"No active run {run_id}")
     return {"status": "cancelled"}
+
+
+# ============================================================================
+# Live trading channel — consent commit + kill switch
+# ============================================================================
+#
+# These are the privileged SURFACE actions of the live-trading channel
+# (docs/live-trading/SPEC.md, Consent §1/§3/§4). None is an agent tool:
+#   - POST /mandate/commit  -> the single mandate writer (commit_mandate)
+#   - POST /live/halt       -> trip the kill switch (P5 trip_halt)
+#   - POST /live/resume     -> clear the kill switch (P5 clear_halt)
+# Each best-effort relays a mandate.committed / live.halted / live.action event
+# through the EXISTING session EventBus, so the frontend's already-wired
+# /sessions/{id}/events SSE stream reflects the state change. No new bus.
+
+
+def _emit_live_event(session_id: Optional[str], event_type: str, data: Dict[str, Any]) -> None:
+    """Best-effort relay of a live-channel event through the existing bus.
+
+    The event flows out the existing ``/sessions/{session_id}/events`` SSE
+    stream. Notifications never gate autonomy (SPEC Consent §5): a relay failure
+    or a missing session is swallowed — the state change already happened on disk.
+
+    Args:
+        session_id: Target session, or ``None`` to skip relay.
+        event_type: SSE event name (``mandate.committed`` / ``live.halted`` /
+            ``live.resumed`` / ``live.action``).
+        data: JSON-serializable event payload.
+    """
+    if not session_id:
+        return
+    try:
+        svc = _get_session_service()
+        if svc and svc.get_session(session_id):
+            svc.event_bus.emit(session_id, event_type, data)
+    except Exception:  # pragma: no cover - relay is non-blocking by contract
+        logger.debug("live event relay failed for %s/%s", session_id, event_type, exc_info=True)
+
+
+# ---- C1: propose_mandate_profiles tool_result -> mandate.proposal SSE frame ----
+#
+# The agent surfaces a proposal by calling the read-only ``propose_mandate_profiles``
+# tool whose tool_result JSON body is ``{"type":"mandate.proposal", ...}`` (SPEC
+# Consent §1). The CLI / frontend listen for a TOP-LEVEL ``mandate.proposal`` SSE
+# event. ``src/agent/loop.py`` only emits a truncated ``tool_result`` event
+# (``preview = result[:200]``) and is PROTECTED — we do NOT edit it. Instead this
+# open-file SSE seam (TASKS "Remaining integration items" #1, the recommended
+# wiring) detects the propose tool's tool_result on the stream, recovers the
+# ``proposal_id`` from the preview, reloads the FULL persisted proposal from the
+# proposal store (written by the tool before it returned), and emits the
+# ``mandate.proposal`` frame. No protected touch.
+
+_PROPOSAL_TOOL_NAME = "propose_mandate_profiles"
+_PROPOSAL_ID_RE = re.compile(r'"proposal_id"\s*:\s*"(mp_[0-9a-zA-Z]+)"')
+
+
+def _load_full_proposal(proposal_id: str) -> Optional[Dict[str, Any]]:
+    """Reload a persisted ``mandate.proposal`` payload by id, broker-agnostic.
+
+    The propose tool persists the full proposal under
+    ``<runtime_root>/live/<broker>/proposals/<proposal_id>.json`` before
+    returning. The SSE ``tool_result`` preview is too short to carry the full
+    body, so the relay reloads it from disk. The broker segment is unknown from
+    the preview alone, so every broker's proposals directory is searched.
+
+    Args:
+        proposal_id: The ``mp_...`` id parsed from the tool_result preview.
+
+    Returns:
+        The full proposal dict, or ``None`` when not found / unreadable.
+    """
+    try:
+        from src.live.paths import live_root
+
+        for proposal_path in live_root().glob(f"*/proposals/{proposal_id}.json"):
+            try:
+                data = json.loads(proposal_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(data, dict) and data.get("type") == "mandate.proposal":
+                return data
+    except Exception:  # pragma: no cover - relay must never break the stream
+        logger.debug("mandate.proposal reload failed for %s", proposal_id, exc_info=True)
+    return None
+
+
+def _mandate_proposal_frame_from_tool_result(event: Any) -> Optional[str]:
+    """Build a ``mandate.proposal`` SSE frame from a propose-tool tool_result.
+
+    Args:
+        event: An ``SSEEvent`` flowing through the session stream.
+
+    Returns:
+        A ready-to-yield SSE text frame for the ``mandate.proposal`` event, or
+        ``None`` when ``event`` is not a successful propose-tool result or the
+        proposal cannot be recovered.
+    """
+    data = getattr(event, "data", None)
+    if getattr(event, "event_type", None) != "tool_result" or not isinstance(data, dict):
+        return None
+    if data.get("tool") != _PROPOSAL_TOOL_NAME or data.get("status") != "ok":
+        return None
+    match = _PROPOSAL_ID_RE.search(str(data.get("preview") or ""))
+    if not match:
+        return None
+    proposal = _load_full_proposal(match.group(1))
+    if proposal is None:
+        return None
+
+    from src.session.events import SSEEvent
+
+    frame = SSEEvent(
+        event_type="mandate.proposal",
+        data=proposal,
+        session_id=getattr(event, "session_id", "") or "",
+    )
+    return frame.to_sse()
+
+
+_LIVE_ACTION_ID_RE = re.compile(r'"audit_id"\s*:\s*"(la_[0-9a-zA-Z]+)"')
+
+
+def _load_live_action_record(audit_id: str) -> Optional[Dict[str, Any]]:
+    """Reload a redacted live-action record from the ledger by ``audit_id``.
+
+    The order guard embeds its (already-redacted) audit record under the
+    ``live_action`` key of its tool_result, but the SSE ``tool_result`` preview
+    is truncated to ~200 chars, so the full record is reloaded from the
+    append-only ledger at ``<runtime_root>/live/audit.jsonl``.
+
+    Args:
+        audit_id: The ``la_...`` id parsed from the tool_result preview.
+
+    Returns:
+        The full redacted live-action record, or ``None`` when not found.
+    """
+    try:
+        from src.live.paths import live_root
+
+        ledger = live_root() / "audit.jsonl"
+        if not ledger.exists():
+            return None
+        for line in reversed(ledger.read_text(encoding="utf-8").splitlines()):
+            if audit_id not in line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict) and record.get("audit_id") == audit_id:
+                return record
+    except Exception:  # pragma: no cover - relay must never break the stream
+        logger.debug("live.action reload failed for %s", audit_id, exc_info=True)
+    return None
+
+
+def _live_action_frame_from_tool_result(event: Any) -> Optional[str]:
+    """Build a ``live.action`` SSE frame from an order-guard tool_result.
+
+    The order guard stamps a ``live_action`` audit record onto its tool_result
+    (and the ledger) for every live order placed/rejected. The interactive agent
+    loop only emits a truncated ``tool_result`` event and is PROTECTED, so this
+    open-file relay surfaces the live action as a top-level ``live.action`` event
+    for the timeline — without touching ``src/agent/loop.py``. (Autonomous-runner
+    actions already emit ``live.action`` natively via the runner's event bus.)
+
+    Args:
+        event: An ``SSEEvent`` flowing through the session stream.
+
+    Returns:
+        A ready-to-yield ``live.action`` SSE frame, or ``None`` when the event is
+        not an order-guard result carrying a recoverable live-action record.
+    """
+    data = getattr(event, "data", None)
+    if getattr(event, "event_type", None) != "tool_result" or not isinstance(data, dict):
+        return None
+    preview = str(data.get("preview") or "")
+    if '"live_action"' not in preview:
+        return None
+    match = _LIVE_ACTION_ID_RE.search(preview)
+    if not match:
+        return None
+    record = _load_live_action_record(match.group(1))
+    if record is None:
+        return None
+
+    from src.session.events import SSEEvent
+
+    frame = SSEEvent(
+        event_type="live.action",
+        data=record,
+        session_id=getattr(event, "session_id", "") or "",
+    )
+    return frame.to_sse()
+
+
+def _fetch_broker_ceilings(broker: str) -> Optional[Dict[str, Any]]:
+    """Best-effort fetch of broker-side account ceilings for the commit re-check.
+
+    Reads the broker's ``get_account`` tool and derives an authoritative ceiling
+    snapshot (buying power / funding) so the commit-time fit check binds to the
+    venue's real limits rather than an agent-proposed number. Returns ``None`` on
+    any failure (channel not configured, tool error, fields not recognized) so
+    the caller falls back to the proposal's own snapshot — a commit is never
+    blocked on a broker read. The exact Robinhood field names are finalized
+    post-access (L6); we probe the common ones.
+
+    Args:
+        broker: The live-broker key.
+
+    Returns:
+        A ceilings dict (canonical keys) or ``None`` to fall back.
+    """
+    try:
+        adapter = _live_broker_adapter(broker)
+    except LiveRunnerUnavailable:
+        return None
+    try:
+        result = adapter.call_tool("get_account", {})
+    except Exception:  # pragma: no cover - status/commit must never raise here
+        logger.debug("broker ceiling fetch failed for %s", broker, exc_info=True)
+        return None
+    if not isinstance(result, dict) or result.get("status") == "error":
+        return None
+    payload = result.get("result") if isinstance(result.get("result"), dict) else result
+    funding: Optional[float] = None
+    for key in ("account_funding_usd", "buying_power", "cash", "portfolio_value", "equity"):
+        raw = payload.get(key) if isinstance(payload, dict) else None
+        try:
+            if raw is not None:
+                funding = float(raw)
+                break
+        except (TypeError, ValueError):
+            continue
+    if funding is None or funding <= 0:
+        return None
+    # A single order can never exceed available funding; total exposure is capped
+    # at funding for a cash account. Leverage stays at 1.0 unless the broker
+    # reports margin (L6). These canonical keys are normalized by commit_mandate.
+    return {
+        "account_funding_usd": funding,
+        "max_order_notional_usd": funding,
+        "max_total_exposure_usd": funding,
+    }
+
+
+@app.post("/mandate/commit", dependencies=[Depends(require_auth)])
+async def commit_mandate_endpoint(payload: CommitMandateRequest):
+    """Commit a user-selected mandate profile — the only mandate write path.
+
+    Calls :func:`src.live.mandate.commit.commit_mandate`, which re-validates the
+    proposal is live and the resolved profile still fits the ceilings the user
+    saw. Requires ``consent_ack=true`` (rejected otherwise). On success emits a
+    ``mandate.committed`` + ``live.action`` event so all surfaces reflect the
+    newly active mandate.
+    """
+    if payload.consent_ack is not True:
+        raise HTTPException(status_code=400, detail="consent_ack must be true to commit a mandate")
+
+    from src.live.mandate.commit import CommitError, commit_mandate
+
+    # Prefer broker-DERIVED ceilings over the agent-supplied proposal snapshot:
+    # the commit re-check should bind to the venue's real account limits, not a
+    # number the model proposed. Best-effort — falls back to the proposal's own
+    # ceilings (commit_mandate handles ceilings_ref=None) when the broker channel
+    # is unavailable or the read fails (we never block a commit on a broker read).
+    broker_ceilings = _fetch_broker_ceilings(payload.broker)
+
+    try:
+        result = commit_mandate(
+            proposal_id=payload.proposal_id,
+            ordinal=payload.selected_ordinal,
+            adjustments=payload.adjustments,
+            consent_ack=payload.consent_ack,
+            broker=payload.broker,
+            account_ref=payload.account_ref,
+            session_id=payload.session_id,
+            ceilings_ref=broker_ceilings,
+            lifetime_days=payload.lifetime_days,
+        )
+    except CommitError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    _emit_live_event(payload.session_id, "mandate.committed", result)
+    _emit_live_event(
+        payload.session_id,
+        "live.action",
+        {"kind": "mandate_committed", "broker": result["broker"], "mandate_id": result["mandate_id"]},
+    )
+    return result
+
+
+@app.post("/live/halt", dependencies=[Depends(require_auth)])
+async def halt_live_endpoint(payload: LiveHaltRequest):
+    """Trip the live kill switch (privileged surface action, Consent §4).
+
+    Writes the HALT sentinel via :func:`src.live.halt.trip_halt`; the
+    enforcement gate then rejects every order attempt until resumed. Emits a
+    ``live.halted`` event so all surfaces reflect the halted state.
+    """
+    from src.live.halt import trip_halt
+
+    try:
+        path = trip_halt(by="frontend", reason=payload.reason, broker=payload.broker)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result = {"halted": True, "broker": payload.broker, "reason": payload.reason, "sentinel": str(path)}
+    _emit_live_event(payload.session_id, "live.halted", result)
+    _emit_live_event(
+        payload.session_id,
+        "live.action",
+        {"kind": "halt_tripped", "broker": payload.broker, "reason": payload.reason},
+    )
+    return result
+
+
+@app.post("/live/resume", dependencies=[Depends(require_auth)])
+async def resume_live_endpoint(payload: LiveHaltRequest):
+    """Clear the live kill switch (privileged surface action, Consent §4).
+
+    Deletes the HALT sentinel via :func:`src.live.halt.clear_halt` (an explicit
+    re-enable; never an agent tool). Emits a ``live.resumed`` event.
+    """
+    from src.live.halt import clear_halt
+
+    try:
+        cleared = clear_halt(broker=payload.broker)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result = {"halted": False, "broker": payload.broker, "cleared": cleared}
+    _emit_live_event(payload.session_id, "live.resumed", result)
+    _emit_live_event(
+        payload.session_id,
+        "live.action",
+        {"kind": "halt_cleared", "broker": payload.broker, "cleared": cleared},
+    )
+    return result
+
+
+# ============================================================================
+# Live trading channel — status, authorize on-ramp, runner control (C2 + §7.5)
+# ============================================================================
+#
+# C2 surfaces the dormant-by-default channel state so a user can SEE what is and
+# is not authorized before trusting it: per-broker OAuth presence, the active
+# mandate with its expiry countdown, runner liveness, and the kill-switch state.
+# The runner-control endpoints start/stop the persistent §7.5 runner that trades
+# autonomously inside a committed mandate. None of these is an agent tool; they
+# are privileged surface actions like /mandate/commit and /live/halt.
+
+
+def _known_live_brokers() -> List[str]:
+    """Return the recognized live-broker keys (SPEC §7.2)."""
+    from src.config.schema import LIVE_BROKER_SERVER_KEYS
+
+    return sorted(LIVE_BROKER_SERVER_KEYS)
+
+
+def _oauth_token_present(broker: str) -> bool:
+    """Return whether an OAuth token cache exists for a broker (C2 auth state).
+
+    The token cache lives at ``<runtime_root>/live/<broker>/oauth/`` (0700) and
+    is created only when the user OAuth-authorizes the channel. A missing or
+    empty directory means the channel is dormant (read-only, no live path).
+    """
+    try:
+        from src.live.paths import broker_dir
+
+        oauth_dir = broker_dir(broker) / "oauth"
+        return oauth_dir.is_dir() and any(oauth_dir.iterdir())
+    except Exception:  # pragma: no cover - status must never raise
+        logger.debug("oauth presence check failed for %s", broker, exc_info=True)
+        return False
+
+
+def _active_mandate_state(broker: str) -> Optional[ActiveMandateState]:
+    """Build the active-mandate snapshot for a broker, or ``None`` when absent.
+
+    Reads the committed mandate via the frozen store contract and computes the
+    ``expires_at`` countdown (SPEC §9 dec. 2). A mandate whose ``expires_at`` has
+    passed is still surfaced, flagged ``expired`` so the UI can prompt re-consent.
+    """
+    from src.live.mandate.store import load_mandate
+
+    mandate = load_mandate(broker)
+    if mandate is None:
+        return None
+
+    consent = mandate.consent
+    caps = mandate.hard_caps
+    expires_in: Optional[int] = None
+    expired = False
+    try:
+        expires_dt = datetime.fromisoformat(consent.expires_at.replace("Z", "+00:00"))
+        from datetime import timezone
+
+        now = datetime.now(timezone.utc)
+        if expires_dt.tzinfo is None:
+            expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+        delta = expires_dt - now
+        expires_in = int(delta.total_seconds())
+        expired = expires_in <= 0
+    except (ValueError, AttributeError):
+        logger.debug("could not parse expires_at for %s mandate", broker, exc_info=True)
+
+    return ActiveMandateState(
+        broker=broker,
+        account_ref=consent.account_ref,
+        created_at=consent.created_at,
+        expires_at=consent.expires_at,
+        expires_in_seconds=expires_in,
+        expired=expired,
+        limits=MandateLimits(
+            max_order_notional_usd=caps.max_order_notional_usd,
+            max_total_exposure_usd=caps.max_total_exposure_usd,
+            max_leverage=caps.max_leverage,
+            max_trades_per_day=caps.max_trades_per_day,
+            allowed_instruments=[str(getattr(i, "value", i)) for i in caps.allowed_instruments],
+            account_funding_usd=caps.account_funding_usd,
+        ),
+    )
+
+
+def _runner_liveness_state(broker: str) -> RunnerLivenessState:
+    """Build the runner-liveness snapshot for a broker (SPEC §7.5 contract).
+
+    Uses the §7.5 ``liveness`` module (``is_runner_alive`` / ``last_tick``),
+    keyed by broker as the runner id. The module is built concurrently (R1); a
+    missing module or any error is treated as "not alive" (fail-safe display).
+    """
+    alive = False
+    tick: Optional[float] = None
+    age: Optional[float] = None
+    try:
+        from src.live.runtime import liveness
+
+        alive = bool(liveness.is_runner_alive(broker))
+        raw_tick = liveness.last_tick(broker)
+        if raw_tick is not None:
+            tick = float(raw_tick)
+            age = max(0.0, time.time() - tick)
+    except Exception:  # pragma: no cover - liveness module is built concurrently
+        logger.debug("runner liveness lookup failed for %s", broker, exc_info=True)
+
+    return RunnerLivenessState(broker=broker, alive=alive, last_tick=tick, last_tick_age_seconds=age)
+
+
+@app.get("/live/status", response_model=LiveStatusResponse, dependencies=[Depends(require_auth)])
+async def live_status_endpoint(broker: Optional[str] = Query(None, max_length=64)):
+    """Return live-channel status: auth, active mandate, runner liveness, halt (C2).
+
+    Args:
+        broker: Optional single-broker filter. When omitted, every recognized
+            live broker is reported.
+
+    Returns:
+        A :class:`LiveStatusResponse` with the global kill-switch state and a
+        per-broker breakdown so the UI can show exactly what is authorized.
+    """
+    from src.live.halt import halt_flag_set
+
+    if broker is not None:
+        target = broker.strip().lower()
+        if not target:
+            raise HTTPException(status_code=400, detail="broker must not be blank")
+        brokers = [target]
+    else:
+        brokers = _known_live_brokers()
+
+    known = set(_known_live_brokers())
+    statuses: List[LiveBrokerStatus] = []
+    for key in brokers:
+        statuses.append(
+            LiveBrokerStatus(
+                auth=BrokerAuthState(
+                    broker=key,
+                    oauth_token_present=_oauth_token_present(key),
+                    is_live_broker=key in known,
+                ),
+                mandate=_active_mandate_state(key),
+                runner=_runner_liveness_state(key),
+                halted=halt_flag_set(broker=key),
+            )
+        )
+
+    return LiveStatusResponse(global_halted=halt_flag_set(broker=None), brokers=statuses)
+
+
+@app.post("/live/authorize", dependencies=[Depends(require_auth)])
+async def live_authorize_endpoint(payload: LiveAuthorizeRequest):
+    """Describe the OAuth bootstrap on-ramp for a live broker (C2 web on-ramp).
+
+    Vibe-Trading holds no funds and runs no venue: the OAuth flow happens on the
+    broker's own user-authorized device channel (CLI / desktop MCP), never a
+    server-side redirect. A Web UI user reaches this endpoint to DISCOVER how to
+    start the flow. It performs no authorization itself and never returns a token.
+    """
+    broker = payload.broker.strip().lower()
+    if not broker:
+        raise HTTPException(status_code=400, detail="broker must not be blank")
+    if broker not in set(_known_live_brokers()):
+        raise HTTPException(status_code=400, detail=f"unknown live broker: {broker}")
+
+    return {
+        "broker": broker,
+        "oauth_token_present": _oauth_token_present(broker),
+        "instruction": (
+            f"Run `vibe-trading live authorize {broker}` from the device that will "
+            "hold the broker session. This opens the broker's own OAuth consent flow; "
+            "Vibe-Trading never holds funds and only relays intent once you authorize."
+        ),
+        "note": (
+            "The live channel stays read-only until the OAuth token is present AND a "
+            "mandate is committed AND order tools are explicitly enabled."
+        ),
+    }
+
+
+# ---- Runner control (SPEC §7.5): start / stop the persistent live runner ----
+#
+# A LiveRunner (R2 contract: ``LiveRunner(broker)`` with ``run_loop()`` /
+# ``run_once()``) is driven in a background task per broker. The factory is
+# injectable (``_runner_factory``) so tests stub it with no real agent/broker.
+# ``run_loop`` may be sync (long-blocking) or async; both are supported.
+
+_runner_tasks: Dict[str, "asyncio.Task[Any]"] = {}
+_runner_factory: Optional[Any] = None
+
+
+class LiveRunnerUnavailable(RuntimeError):
+    """Raised when a live runner cannot be wired (broker not configured/authorized).
+
+    Distinct from a programming error so the start endpoint can map it to a 503
+    rather than a 500: the runtime is fine, the broker channel just isn't ready.
+    """
+
+
+def _live_broker_adapter(broker: str) -> Any:
+    """Build an ``MCPServerAdapter`` for a live broker from the user-side config.
+
+    Resolves the broker's MCP server entry by config key OR by a live-broker URL
+    host (so an aliased key still resolves), mirroring the registry's detection.
+
+    Args:
+        broker: The live-broker key, e.g. ``"robinhood"``.
+
+    Returns:
+        A constructed :class:`MCPServerAdapter` for the broker's read/write tools.
+
+    Raises:
+        LiveRunnerUnavailable: When no MCP server is configured for the broker.
+    """
+    from src.config.loader import load_agent_config
+    from src.tools.mcp import MCPServerAdapter
+
+    try:
+        from src.config.schema import is_live_broker_entry
+    except Exception:  # pragma: no cover - older schema without URL detection
+        is_live_broker_entry = None  # type: ignore[assignment]
+
+    cfg = load_agent_config()
+    servers = getattr(cfg, "mcp_servers", {}) or {}
+    for name, server_cfg in servers.items():
+        is_match = name == broker
+        if not is_match and is_live_broker_entry is not None and broker == "robinhood":
+            try:
+                is_match = is_live_broker_entry(name, server_cfg)
+            except Exception:  # pragma: no cover
+                is_match = False
+        if is_match:
+            return MCPServerAdapter(name, server_cfg)
+    raise LiveRunnerUnavailable(f"no MCP server configured for live broker {broker!r}")
+
+
+def _build_live_runner(broker: str) -> Any:
+    """Construct a fully-wired ``LiveRunner`` for a broker (SPEC §7.5 R-INT).
+
+    Wires the runner to the real surfaces — the public ``SessionService`` agent
+    caller (never the protected loop internals), the broker's READ/WRITE MCP
+    tools, the R4 reconciler, the R1 scheduler, and R3 market-hours triggers —
+    and injects an audit ``event_callback`` so every autonomous live action is
+    broadcast as a ``live.action`` SSE event on the runner's session bus.
+
+    Args:
+        broker: The live-broker key.
+
+    Returns:
+        A runner object exposing ``run_loop`` / ``run_once`` (R2 contract).
+
+    Raises:
+        LiveRunnerUnavailable: When the broker channel is not configured.
+    """
+    if _runner_factory is not None:
+        return _runner_factory(broker)
+
+    from functools import partial
+
+    from src.live.audit import write_live_action
+    from src.live.runtime.reconcile import reconcile
+    from src.live.runtime.runner import LiveRunner
+    from src.live.runtime.scheduler import Scheduler
+    from src.live.runtime.triggers import Trigger
+
+    adapter = _live_broker_adapter(broker)  # raises LiveRunnerUnavailable if absent
+
+    def _read(remote_tool: str):
+        """A zero-arg broker READ callable bound to one remote tool."""
+        return lambda: adapter.call_tool(remote_tool, {})
+
+    def _submit(order: Dict[str, Any]) -> Dict[str, Any]:
+        # Route the flatten sweep's normalized order to the broker's write tools.
+        # Field mapping against the real Robinhood schema is finalized post-access
+        # (L6); the action discriminator is broker-agnostic.
+        if order.get("action") == "cancel":
+            return adapter.call_tool("cancel_order", order)
+        return adapter.call_tool("place_order", order)
+
+    svc = _get_session_service()
+    session = svc.create_session(title=f"live-runner:{broker}")
+    session_id = session.session_id
+
+    async def _agent_caller(sid: str, prompt: str) -> Dict[str, Any]:
+        # Dispatch one autonomous turn through the PUBLIC SessionService entry.
+        # The agent then trades within the mandate via the gated order tools.
+        return await svc.send_message(sid, prompt)
+
+    def _audit_with_bus(event: Any) -> Dict[str, Any]:
+        # Broadcast each live action as a live.action SSE event on the runner's
+        # session bus (no protected-loop touch — the runner owns its session).
+        return write_live_action(
+            event,
+            event_callback=lambda etype, record: svc.event_bus.emit(session_id, etype, record),
+        )
+
+    # Wire the scheduler's fire callback to the runner's tick. The scheduler is
+    # constructed before the runner (it needs on_fire), and the runner needs the
+    # scheduler, so late-bind via a holder to break the cycle.
+    runner_holder: Dict[str, Any] = {}
+
+    async def _on_fire(_job: Any) -> None:
+        runner = runner_holder.get("runner")
+        if runner is not None:
+            await runner.run_once()
+
+    scheduler = Scheduler(_on_fire)
+
+    runner = LiveRunner(
+        broker,
+        agent_caller=_agent_caller,
+        reconcile_fn=reconcile,
+        read_positions=_read("get_positions"),
+        read_balance=_read("get_account"),
+        read_open_orders=_read("list_orders"),
+        submit_fn=_submit,
+        write_audit_fn=_audit_with_bus,
+        scheduler=scheduler,
+        triggers=[Trigger.market("us_equity")],
+        session_id=session_id,
+    )
+    runner_holder["runner"] = runner
+    return runner
+
+
+async def _drive_runner(runner: Any) -> None:
+    """Run a runner's ``run_loop`` to completion, sync or async.
+
+    A synchronous ``run_loop`` is offloaded to a worker thread so it does not
+    block the event loop; an async ``run_loop`` is awaited directly.
+    """
+    result = runner.run_loop()
+    if asyncio.iscoroutine(result):
+        await result
+    else:
+        await asyncio.get_running_loop().run_in_executor(None, lambda: result)
+
+
+@app.post("/live/runner/start", dependencies=[Depends(require_auth)])
+async def start_runner_endpoint(payload: LiveRunnerControlRequest):
+    """Start the persistent live runner for a broker (SPEC §7.5).
+
+    Refuses to start unless a committed, unexpired mandate exists and the kill
+    switch is clear — the runner trades autonomously, so it must not start into a
+    dead/halted channel. Idempotent: a request for an already-running broker
+    returns ``already_running`` without spawning a second task.
+    """
+    from src.live.halt import halt_flag_set
+
+    broker = payload.broker.strip().lower()
+    if not broker:
+        raise HTTPException(status_code=400, detail="broker must not be blank")
+
+    existing = _runner_tasks.get(broker)
+    if existing is not None and not existing.done():
+        return {"broker": broker, "started": False, "already_running": True}
+
+    mandate = _active_mandate_state(broker)
+    if mandate is None:
+        raise HTTPException(status_code=409, detail=f"no committed mandate for {broker}")
+    if mandate.expired:
+        raise HTTPException(status_code=409, detail=f"mandate for {broker} has expired; re-authorize first")
+    if halt_flag_set(broker=broker) or halt_flag_set(broker=None):
+        raise HTTPException(status_code=409, detail="kill switch is tripped; resume before starting the runner")
+
+    try:
+        runner = _build_live_runner(broker)
+    except LiveRunnerUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"could not construct runner: {exc}") from exc
+
+    task = asyncio.ensure_future(_drive_runner(runner))
+    _runner_tasks[broker] = task
+    task.add_done_callback(lambda t, b=broker: _runner_tasks.pop(b, None) if _runner_tasks.get(b) is t else None)
+
+    _emit_live_event(payload.session_id, "live.action", {"kind": "runner_started", "broker": broker})
+    return {"broker": broker, "started": True, "already_running": False}
+
+
+@app.post("/live/runner/stop", dependencies=[Depends(require_auth)])
+async def stop_runner_endpoint(payload: LiveRunnerControlRequest):
+    """Stop the persistent live runner for a broker (SPEC §7.5).
+
+    Cancels the background task. This does NOT flatten positions — that is the
+    preemptive kill switch's job (``/live/halt`` -> flatten); stopping the runner
+    simply ceases new autonomous turns. Idempotent for an already-stopped broker.
+    """
+    broker = payload.broker.strip().lower()
+    if not broker:
+        raise HTTPException(status_code=400, detail="broker must not be blank")
+
+    task = _runner_tasks.pop(broker, None)
+    if task is None or task.done():
+        return {"broker": broker, "stopped": False, "was_running": False}
+
+    task.cancel()
+    _emit_live_event(payload.session_id, "live.action", {"kind": "runner_stopped", "broker": broker})
+    return {"broker": broker, "stopped": True, "was_running": True}
 
 
 # ============================================================================

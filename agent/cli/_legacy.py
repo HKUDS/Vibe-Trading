@@ -35,7 +35,6 @@ for _s in ("stdout", "stderr"):
     if callable(_r):
         _r(encoding="utf-8", errors="replace")
 
-from rich.console import Console
 from rich import box
 from rich.columns import Columns
 from rich.live import Live
@@ -46,8 +45,10 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
-console = Console()
-AGENT_DIR = Path(__file__).resolve().parent
+from cli.theme import get_console
+
+console = get_console()
+AGENT_DIR = Path(__file__).resolve().parents[1]
 RUNS_DIR = AGENT_DIR / "runs"
 SWARM_DIR = AGENT_DIR / ".swarm" / "runs"
 SESSIONS_DIR = AGENT_DIR / "sessions"
@@ -58,7 +59,7 @@ EXIT_RUN_FAILED = 1
 EXIT_USAGE_ERROR = 2
 RICH_TAG_PATTERN = re.compile(r"\[/?[^\]]+\]")
 
-_VERSION = "0.1.7"
+from cli._version import __version__ as _VERSION  # noqa: E402 — single source of truth
 
 # Agent color assignments for swarm display
 _AGENT_STYLES = ["cyan", "magenta", "green", "yellow", "blue", "bright_red", "bright_cyan", "bright_magenta"]
@@ -783,6 +784,9 @@ class _RunDashboard:
         return Panel(body, title="Vibe-Trading", border_style="cyan", padding=(1, 1 if compact else 2))
 
 
+from cli.ui.rail import RailRunDashboard as _RunDashboard  # noqa: E402,F811
+
+
 # ---------------------------------------------------------------------------
 # Agent execution core
 # ---------------------------------------------------------------------------
@@ -837,6 +841,82 @@ def _format_tool_result_preview(tool: str, status: str, preview: str) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# In-process mandate.proposal relay (CLI mirror of api_server's
+# _mandate_proposal_frame_from_tool_result, SPEC.md Consent §1/§2)
+# ---------------------------------------------------------------------------
+#
+# The agent loop emits the propose tool's output only as a generic
+# ``tool_result`` event (``loop.py`` ``_finalize_tool_result`` → preview =
+# result[:200]); it NEVER emits a top-level ``mandate.proposal`` event. So in
+# the in-process REPL path nothing ever arms ``ctx.pending_proposal`` and the
+# user's numeric pick falls through to the model as chat. The frontend solved
+# the same gap server-side by relaying the propose-tool ``tool_result`` into a
+# top-level ``mandate.proposal`` SSE frame (api_server
+# ``_mandate_proposal_frame_from_tool_result``). The CLI needs the identical
+# relay in its own ``on_event`` handler — done below, WITHOUT touching the
+# protected ``loop.py``.
+
+_PROPOSAL_TOOL_NAME = "propose_mandate_profiles"
+_PROPOSAL_ID_RE = re.compile(r'"proposal_id"\s*:\s*"(mp_[0-9a-zA-Z]+)"')
+
+
+def _load_full_proposal(proposal_id: str) -> Optional[Dict[str, Any]]:
+    """Reload a persisted ``mandate.proposal`` payload by id, broker-agnostic.
+
+    The propose tool persists the full proposal under
+    ``<runtime_root>/live/<broker>/proposals/<proposal_id>.json`` before
+    returning. The ``tool_result`` preview is only the first 200 chars of the
+    JSON body, far too short to carry the full proposal, so the relay reloads it
+    from disk. The broker segment is unknown from the preview alone, so every
+    broker's proposals directory is searched (mirrors api_server).
+
+    Args:
+        proposal_id: The ``mp_...`` id parsed from the tool_result preview.
+
+    Returns:
+        The full proposal dict, or ``None`` when not found / unreadable.
+    """
+    try:
+        from src.live.paths import live_root
+
+        for proposal_path in live_root().glob(f"*/proposals/{proposal_id}.json"):
+            try:
+                data = json.loads(proposal_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(data, dict) and data.get("type") == "mandate.proposal":
+                return data
+    except Exception:  # noqa: BLE001 — relay must never break the turn
+        pass
+    return None
+
+
+def _mandate_proposal_from_tool_result(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Recover a full ``mandate.proposal`` payload from a propose-tool result.
+
+    Detection mirrors api_server's ``_mandate_proposal_frame_from_tool_result``:
+    the event must be a successful ``tool_result`` for ``propose_mandate_profiles``
+    whose preview carries a ``proposal_id``. The full proposal is then reloaded
+    from disk (the preview is truncated).
+
+    Args:
+        data: The ``tool_result`` event payload (``tool`` / ``status`` /
+            ``preview``).
+
+    Returns:
+        The full proposal dict ready to feed ``proposal_sink`` (arming
+        ``ctx.pending_proposal``), or ``None`` when this is not a recoverable
+        propose-tool result.
+    """
+    if data.get("tool") != _PROPOSAL_TOOL_NAME or data.get("status") != "ok":
+        return None
+    match = _PROPOSAL_ID_RE.search(str(data.get("preview") or ""))
+    if not match:
+        return None
+    return _load_full_proposal(match.group(1))
+
+
 def _run_agent(
     prompt: str,
     history: Optional[List[Dict]] = None,
@@ -846,8 +926,19 @@ def _run_agent(
     no_rich: bool = False,
     stream_output: bool = True,
     dashboard: Optional[_RunDashboard] = None,
+    session_id: str = "",
+    proposal_sink: Optional[Any] = None,
 ) -> dict:
-    """Build AgentLoop and execute, return result dict."""
+    """Build AgentLoop and execute, return result dict.
+
+    Args:
+        proposal_sink: Optional callable invoked with the payload of every
+            ``mandate.proposal`` event the agent emits. The interactive REPL
+            uses this to capture an outstanding live-trading mandate proposal so
+            it can intercept the user's numeric pick *before* the model — a pick
+            is a privileged surface action (commit), never a tool the model can
+            call (SPEC.md Consent §2).
+    """
     from src.tools import build_registry
     from src.providers.chat import ChatLLM
     from src.agent.loop import AgentLoop
@@ -861,6 +952,30 @@ def _run_agent(
     }
 
     def on_event(event_type: str, data: Dict[str, Any]) -> None:
+        # Live mandate proposals are surfaced to the REPL out-of-band so the
+        # user's pick is intercepted before the model (SPEC.md Consent §2).
+        # This fires regardless of stream_output / rich state — capturing the
+        # proposal must not depend on rendering.
+        if event_type == "mandate.proposal" and proposal_sink is not None:
+            try:
+                proposal_sink(data)
+            except Exception:  # noqa: BLE001 — capture must never kill the turn
+                pass
+            return
+        # The agent loop never emits a top-level ``mandate.proposal`` — it only
+        # emits the propose tool's output as a generic ``tool_result``. Relay it
+        # here (CLI mirror of api_server's SSE relay) so the REPL arms
+        # ``ctx.pending_proposal`` and intercepts the pick before the model
+        # (SPEC.md Consent §1/§2). Fires regardless of stream_output / rich
+        # state — arming must not depend on rendering — and does NOT return:
+        # the tool_result still flows on to the dashboard / no-rich printers.
+        if event_type == "tool_result" and proposal_sink is not None:
+            proposal = _mandate_proposal_from_tool_result(data)
+            if proposal is not None:
+                try:
+                    proposal_sink(proposal)
+                except Exception:  # noqa: BLE001 — relay must never kill the turn
+                    pass
         if not stream_output:
             return
         if dashboard is not None and not no_rich:
@@ -971,6 +1086,7 @@ def _run_agent(
             persistent_memory=pm,
             include_shell_tools=True,
             agent_config=agent_config,
+            session_id=session_id or None,
             warn_callback=_mcp_warn,
         ),
         llm=ChatLLM(),
@@ -981,7 +1097,13 @@ def _run_agent(
     if run_dir_override:
         agent.memory.run_dir = run_dir_override
 
-    return _run_with_graceful_cancel(agent, prompt, history, no_rich=no_rich)
+    return _run_with_graceful_cancel(
+        agent,
+        prompt,
+        history,
+        no_rich=no_rich,
+        session_id=session_id,
+    )
 
 
 def _run_with_graceful_cancel(
@@ -990,6 +1112,7 @@ def _run_with_graceful_cancel(
     history: Optional[List[Dict]],
     *,
     no_rich: bool,
+    session_id: str = "",
 ) -> dict:
     """Run an agent loop with first-Ctrl+C = graceful cancel.
 
@@ -1016,7 +1139,7 @@ def _run_with_graceful_cancel(
         original = _signal.getsignal(_signal.SIGINT)
     except (ValueError, AttributeError):
         # Not on a thread that can receive signals — skip the handler swap.
-        return agent.run(user_message=prompt, history=history)
+        return agent.run(user_message=prompt, history=history, session_id=session_id)
 
     def _on_sigint(_signum, _frame) -> None:
         now = time.time()
@@ -1037,10 +1160,10 @@ def _run_with_graceful_cancel(
         _signal.signal(_signal.SIGINT, _on_sigint)
     except (ValueError, OSError):
         # signal.signal only works on the main thread of the main interpreter.
-        return agent.run(user_message=prompt, history=history)
+        return agent.run(user_message=prompt, history=history, session_id=session_id)
 
     try:
-        return agent.run(user_message=prompt, history=history)
+        return agent.run(user_message=prompt, history=history, session_id=session_id)
     finally:
         try:
             _signal.signal(_signal.SIGINT, original)
@@ -1240,6 +1363,7 @@ def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: boo
             with Live(dashboard.render(), console=console, refresh_per_second=6, transient=True) as live:
                 dashboard.live = live
                 result = _run_agent(prompt, max_iter=max_iter, dashboard=dashboard)
+                dashboard.finish(result, time.perf_counter() - start)
     except KeyboardInterrupt:
         if json_mode:
             _print_json_result({"status": "cancelled", "run_id": None, "run_dir": None, "reason": "Interrupted"})
@@ -1333,6 +1457,7 @@ def cmd_continue(
                 max_iter=max_iter,
                 dashboard=dashboard,
             )
+            dashboard.finish(result, time.perf_counter() - start)
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted[/yellow]")
         return EXIT_RUN_FAILED
@@ -1726,6 +1851,7 @@ def cmd_interactive(max_iter: int) -> None:
             with Live(dashboard.render(), console=console, refresh_per_second=6, transient=True) as live:
                 dashboard.live = live
                 result = _run_agent(user_input, history=history[-6:], max_iter=max_iter, dashboard=dashboard)
+                dashboard.finish(result, time.perf_counter() - start)
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted[/yellow]")
             continue
@@ -1824,6 +1950,12 @@ class _SwarmDashboard:
             agent["elapsed"] = (time.monotonic() - agent["started_at"]) if agent["started_at"] else 0
             error = data.get("error", "")[:80]
             self.completed_summaries.append((agent["name"], f"[red]FAILED: {error}[/red]"))
+        elif etype == "task_blocked":
+            agent["status"] = "blocked"
+            blocked_by = ", ".join(data.get("blocked_by", []))
+            self.completed_summaries.append(
+                (agent["name"], f"[yellow]BLOCKED by: {blocked_by}[/yellow]")
+            )
         elif etype == "task_retry":
             attempt = data.get("attempt", "?")
             agent["status"] = "retry"
@@ -1922,6 +2054,7 @@ class _SwarmDashboard:
 def cmd_swarm_run_live(preset: str, vars_json: Optional[str] = None) -> None:
     """Run a swarm preset with Rich Live dashboard."""
     from rich.live import Live
+    from src.config import load_swarm_agent_config
     from src.swarm.runtime import SwarmRuntime
     from src.swarm.store import SwarmStore
     from src.swarm.models import RunStatus
@@ -1935,7 +2068,8 @@ def cmd_swarm_run_live(preset: str, vars_json: Optional[str] = None) -> None:
             return
 
     store = SwarmStore(base_dir=SWARM_DIR)
-    runtime = SwarmRuntime(store=store)
+    agent_config = load_swarm_agent_config()
+    runtime = SwarmRuntime(store=store, agent_config=agent_config)
     _agent_color_map.clear()
 
     console.print(f"\n[dim]Starting swarm:[/dim] [cyan]{preset}[/cyan]")
@@ -2562,6 +2696,605 @@ def cmd_provider_login(provider: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Live trading channel (`vibe-trading live ...`) — SPEC.md §9 Decision 1.
+#
+# Every state-changing verb here is a PRIVILEGED USER-SIDE action: none is
+# reachable from the agent loop / tool registry. There is deliberately NO
+# `live commit` verb — committing a mandate happens only through the consent
+# flow's `POST /mandate/commit`, never the CLI (the CLI cannot create or widen
+# a mandate). The verbs are:
+#
+#   live authorize <broker>  Desktop OAuth bootstrap (opens browser, writes
+#                            the token cache). The only way to turn on the channel.
+#   live run [<broker>]      Run the persistent runner in the FOREGROUND (tails
+#                            the heartbeat; Ctrl+C stops it). SPEC §7.5.
+#   live start [<broker>]    Start the persistent runner in the background.
+#   live stop [<broker>]     Stop the persistent runner.
+#   live status              Per-broker auth state + active mandate (limits +
+#                            expires_at countdown) + halt state + runner
+#                            liveness / last-tick (read-only).
+#   live mandate [<broker>]  Print the committed mandate (read-only).
+#   live halt [<broker>]     Trip the kill switch (writes the HALT sentinel).
+#   live resume [<broker>]   Clear the halt (explicit privileged re-enable).
+#   live revoke <broker>     Revoke OAuth token + delete the mandate (full off).
+# ---------------------------------------------------------------------------
+
+_DEFAULT_LIVE_BROKER = "robinhood"
+
+
+def _live_api_base() -> str:
+    """Return the base URL of the running API server for runner-control calls.
+
+    Mirrors :func:`cli.main._commit_mandate`: the base is read from
+    ``VIBE_TRADING_API_URL`` (falling back to ``http://127.0.0.1:8000``). The
+    persistent runner (SPEC §7.5) is controlled through the R6 surface endpoints
+    (``POST /live/runner/start|stop`` / ``GET /live/status``), never from the
+    agent loop, so the CLI only ever relays intent.
+
+    Returns:
+        The API base URL with any trailing slash removed.
+    """
+    return os.environ.get("VIBE_TRADING_API_URL", "http://127.0.0.1:8000").rstrip("/")
+
+
+def _live_api_call(method: str, path: str, *, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Call an R6 live-runner endpoint and decode the JSON response.
+
+    Args:
+        method: HTTP verb (``"GET"`` or ``"POST"``).
+        path: Endpoint path beginning with ``/`` (e.g. ``"/live/runner/start"``).
+        body: JSON request body for ``POST`` calls.
+
+    Returns:
+        The decoded response object on success, or an ``{"status": "error",
+        "error": ...}`` envelope when the server is unreachable / returns a
+        non-2xx status — so a caller can surface a clean message instead of a
+        traceback when no server is running.
+    """
+    import httpx
+
+    url = f"{_live_api_base()}{path}"
+    try:
+        if method.upper() == "GET":
+            response = httpx.get(url, timeout=30.0)
+        else:
+            response = httpx.post(url, json=body or {}, timeout=30.0)
+        response.raise_for_status()
+        return response.json()
+    except Exception as exc:  # noqa: BLE001 — surface a clean error to the user
+        return {"status": "error", "error": str(exc)}
+
+
+def _live_server_config(broker: str):
+    """Resolve the protected MCP server config for ``broker``.
+
+    The config is read at boot from the user-side protected agent config file
+    (never from caller input / agent tool args / ``variables``), exactly as the
+    #142 swarm-config trust template requires.
+
+    Args:
+        broker: Broker key, e.g. ``"robinhood"``.
+
+    Returns:
+        The :class:`MCPServerConfig` for ``broker``, or ``None`` when the broker
+        has no entry in the protected config.
+    """
+    from src.config.loader import load_agent_config
+
+    agent_config = load_agent_config()
+    servers = getattr(agent_config, "mcp_servers", {}) or {}
+    return servers.get(broker.strip().lower())
+
+
+def cmd_live_authorize(broker: str) -> int:
+    """Bootstrap the OAuth handshake for a live broker channel (desktop only).
+
+    Builds the broker's MCP tool wrappers, which forces a connection and — when
+    no valid token is cached — triggers the native FastMCP OAuth flow: a browser
+    opens to the broker's authorize page and the token is persisted to the
+    protected cache. This is the only way to turn the channel on.
+
+    Args:
+        broker: Broker key, e.g. ``"robinhood"``.
+
+    Returns:
+        Process exit code.
+    """
+    key = broker.strip().lower()
+    server_config = _live_server_config(key)
+    if server_config is None:
+        console.print(
+            f"[red]No live channel configured for '{key}'.[/red] "
+            "Add the broker's mcpServers entry to ~/.vibe-trading/agent.json first."
+        )
+        return EXIT_USAGE_ERROR
+    if getattr(server_config, "auth", None) is None:
+        console.print(
+            f"[red]Live channel '{key}' has no OAuth auth configured[/red] — "
+            "cannot authorize."
+        )
+        return EXIT_USAGE_ERROR
+
+    console.print(f"[cyan]Opening browser to authorize {key}…[/cyan]")
+    console.print(
+        "[dim]Complete the sign-in in your browser; this terminal will continue "
+        "once the broker redirects back.[/dim]"
+    )
+    try:
+        from src.tools.mcp import build_mcp_tool_wrappers
+
+        tools = build_mcp_tool_wrappers(key, server_config)
+    except Exception as exc:  # noqa: BLE001 — surface any handshake failure
+        console.print(f"[red]Authorization failed:[/red] {exc}")
+        return EXIT_RUN_FAILED
+
+    console.print(
+        f"[green]Authorized {key}[/green] "
+        f"[dim]({len(tools)} read-only tool(s) available)[/dim]"
+    )
+    console.print(
+        "[dim]The channel is read-only until you commit a mandate and enable "
+        "order tools. Use `vibe-trading live status` to check state.[/dim]"
+    )
+    return EXIT_SUCCESS
+
+
+def _format_expiry_countdown(expires_at: str) -> str:
+    """Return a human-readable countdown to ``expires_at`` (ISO-8601 UTC)."""
+    from datetime import datetime, timezone
+
+    try:
+        parsed = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return f"{expires_at} (unparseable)"
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    delta = parsed - datetime.now(timezone.utc)
+    secs = int(delta.total_seconds())
+    if secs <= 0:
+        return f"{expires_at} (EXPIRED)"
+    days, rem = divmod(secs, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    if days:
+        human = f"{days}d {hours}h"
+    elif hours:
+        human = f"{hours}h {minutes}m"
+    else:
+        human = f"{minutes}m"
+    return f"{expires_at} (in {human})"
+
+
+def _runner_id_for(broker: str) -> str:
+    """Return the persistent-runner identity key for ``broker`` (SPEC §7.5)."""
+    return f"live-{broker}"
+
+
+def _add_runner_liveness_rows(table: Table, broker: str) -> None:
+    """Append persistent-runner liveness rows to a ``live status`` table.
+
+    Liveness is reported from the local heartbeat files via the runtime
+    contract (:func:`src.live.runtime.liveness.is_runner_alive` /
+    :func:`~src.live.runtime.liveness.last_tick`), so it works without a running
+    API server. If the liveness module is not yet present (it lands concurrently
+    with this parcel), the rows degrade to ``unknown`` rather than crashing the
+    read-only status command.
+
+    Args:
+        table: The Rich table being built by :func:`cmd_live_status`.
+        broker: Broker key the runner is bound to.
+    """
+    runner_id = _runner_id_for(broker)
+    try:
+        from src.live.runtime.liveness import is_runner_alive, last_tick
+    except Exception:  # noqa: BLE001 — liveness lands concurrently; degrade cleanly
+        table.add_row("Runner", "[dim]unknown (runtime not available)[/dim]")
+        return
+
+    try:
+        alive = is_runner_alive(runner_id)
+    except Exception as exc:  # noqa: BLE001 — never let a status read raise
+        table.add_row("Runner", f"[dim]unknown ({exc})[/dim]")
+        return
+
+    if alive:
+        table.add_row("Runner", "[green]running[/green]")
+    else:
+        table.add_row("Runner", "[yellow]stopped[/yellow]")
+
+    try:
+        tick = last_tick(runner_id)
+    except Exception:  # noqa: BLE001
+        tick = None
+    if tick is not None:
+        table.add_row("  Last tick", _format_last_tick(tick))
+
+
+def _format_last_tick(tick: Any) -> str:
+    """Render a runner's last-tick timestamp as an absolute + relative string.
+
+    Args:
+        tick: A ``datetime`` or ISO-8601 string from the liveness heartbeat.
+
+    Returns:
+        Human-readable ``"<iso> (<n>s ago)"`` (or the raw value if unparseable).
+    """
+    from datetime import datetime, timezone
+
+    if isinstance(tick, datetime):
+        parsed = tick
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(tick).replace("Z", "+00:00"))
+        except ValueError:
+            return str(tick)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    ago = int((datetime.now(timezone.utc) - parsed).total_seconds())
+    iso = parsed.isoformat()
+    if ago < 0:
+        return iso
+    if ago < 60:
+        return f"{iso} ({ago}s ago)"
+    if ago < 3600:
+        return f"{iso} ({ago // 60}m ago)"
+    return f"{iso} ({ago // 3600}h ago)"
+
+
+def cmd_live_status(broker: Optional[str] = None) -> int:
+    """Show auth state, active mandate, and halt state for live channels.
+
+    Read-only: it loads the mandate via :func:`src.live.mandate.store.load_mandate`
+    and checks the halt sentinel via :func:`src.live.halt.halt_flag_set`; it never
+    writes anything.
+
+    Args:
+        broker: Limit the report to a single broker. ``None`` reports the
+            default broker (``robinhood``).
+
+    Returns:
+        Process exit code.
+    """
+    from src.live.halt import halt_flag_set, read_halt
+    from src.live.mandate.model import MANDATE_SCHEMA_VERSION
+    from src.live.mandate.store import load_mandate
+
+    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
+
+    table = Table(title=f"Live channel: {key}", box=box.SIMPLE)
+    table.add_column("Field", style="cyan", no_wrap=True)
+    table.add_column("Value")
+
+    server_config = _live_server_config(key)
+    authorized = server_config is not None and getattr(server_config, "auth", None) is not None
+    table.add_row("Configured", "yes" if server_config is not None else "[red]no[/red]")
+    table.add_row("OAuth auth", "yes" if authorized else "no")
+
+    halted = halt_flag_set(key)
+    if halted:
+        meta = read_halt(key) or read_halt() or {}
+        reason = meta.get("reason", "")
+        by = meta.get("by", "")
+        detail = f" [dim]({by}: {reason})[/dim]" if (by or reason) else ""
+        table.add_row("Halt", f"[bold red]HALTED[/bold red]{detail}")
+    else:
+        table.add_row("Halt", "[green]clear[/green]")
+
+    _add_runner_liveness_rows(table, key)
+
+    mandate = load_mandate(key)
+    if mandate is None:
+        table.add_row("Mandate", "[yellow]none on file[/yellow] (read-only)")
+    elif mandate.schema_version != MANDATE_SCHEMA_VERSION:
+        table.add_row(
+            "Mandate",
+            f"[red]unknown schema v{mandate.schema_version}[/red] (gate fail-closed)",
+        )
+    else:
+        caps = mandate.hard_caps
+        table.add_row("Mandate", "[green]active[/green]")
+        table.add_row("  Max order", f"${caps.max_order_notional_usd:,.0f}")
+        table.add_row("  Max exposure", f"${caps.max_total_exposure_usd:,.0f}")
+        table.add_row("  Max leverage", f"{caps.max_leverage:g}x")
+        table.add_row("  Trades/day", str(caps.max_trades_per_day))
+        table.add_row(
+            "  Instruments",
+            ", ".join(i.value for i in caps.allowed_instruments) or "[red]none[/red]",
+        )
+        table.add_row("  Expires", _format_expiry_countdown(mandate.consent.expires_at))
+
+    console.print(table)
+    return EXIT_SUCCESS
+
+
+def cmd_live_mandate(broker: Optional[str] = None) -> int:
+    """Print the committed mandate for a broker (read-only).
+
+    Args:
+        broker: Broker key. ``None`` uses the default broker (``robinhood``).
+
+    Returns:
+        Process exit code. ``EXIT_RUN_FAILED`` when no mandate is on file.
+    """
+    from dataclasses import asdict
+
+    from src.live.mandate.store import load_mandate
+
+    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
+    mandate = load_mandate(key)
+    if mandate is None:
+        console.print(
+            f"[yellow]No committed mandate for '{key}'.[/yellow] "
+            "The channel is read-only until a mandate is committed via the consent flow."
+        )
+        return EXIT_RUN_FAILED
+
+    payload = asdict(mandate)
+    # asdict leaves enums as Enum members; render their string values.
+    caps = payload["hard_caps"]
+    caps["allowed_instruments"] = [i.value for i in mandate.hard_caps.allowed_instruments]
+    payload["universe"]["asset_classes"] = [a.value for a in mandate.universe.asset_classes]
+    console.print_json(data=payload)
+    return EXIT_SUCCESS
+
+
+def cmd_live_halt(broker: Optional[str] = None) -> int:
+    """Trip the kill switch — write the HALT sentinel (privileged).
+
+    With no broker, trips the global switch (halts all brokers); with a broker,
+    trips only that broker's sentinel. The gate rejects all order attempts until
+    the switch is cleared with ``live resume``.
+
+    Args:
+        broker: Broker key, or ``None`` for the global switch.
+
+    Returns:
+        Process exit code.
+    """
+    from src.live.halt import trip_halt
+
+    target = broker.strip().lower() if broker else None
+    path = trip_halt(by="cli", reason="cli live halt", broker=target)
+    scope = target or "ALL brokers"
+    console.print(f"[bold red]Live trading halted[/bold red] for {scope}.")
+    console.print(f"[dim]Sentinel: {path}[/dim]")
+    console.print("[dim]Run `vibe-trading live resume` to re-enable.[/dim]")
+    return EXIT_SUCCESS
+
+
+def cmd_live_resume(broker: Optional[str] = None) -> int:
+    """Clear a tripped kill switch (privileged, explicit re-enable).
+
+    Args:
+        broker: Broker key, or ``None`` for the global switch. Each scope is
+            cleared independently.
+
+    Returns:
+        Process exit code.
+    """
+    from src.live.halt import clear_halt
+
+    target = broker.strip().lower() if broker else None
+    cleared = clear_halt(broker=target)
+    scope = target or "ALL brokers"
+    if cleared:
+        console.print(f"[green]Halt cleared[/green] for {scope}.")
+    else:
+        console.print(f"[dim]No active halt for {scope}.[/dim]")
+    return EXIT_SUCCESS
+
+
+def cmd_live_revoke(broker: str) -> int:
+    """Revoke the OAuth token and delete the mandate — full channel off.
+
+    Deletes the broker's OAuth token cache directory and its ``mandate.json``
+    so the channel reverts to fully off. This is a privileged user-side action.
+
+    Args:
+        broker: Broker key, e.g. ``"robinhood"``.
+
+    Returns:
+        Process exit code.
+    """
+    from src.live.paths import broker_dir
+
+    key = broker.strip().lower()
+    try:
+        base = broker_dir(key)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+
+    removed: list[str] = []
+
+    # OAuth token cache. Prefer the configured cache_dir; fall back to the
+    # canonical per-broker oauth/ subtree.
+    server_config = _live_server_config(key)
+    cache_dir: Optional[Path] = None
+    auth = getattr(server_config, "auth", None) if server_config is not None else None
+    if auth is not None and getattr(auth, "cache_dir", None):
+        cache_dir = Path(auth.cache_dir).expanduser()
+    if cache_dir is None or not cache_dir.exists():
+        cache_dir = base / "oauth"
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir, ignore_errors=True)
+        removed.append(f"OAuth token cache ({cache_dir})")
+
+    mandate_path = base / "mandate.json"
+    if mandate_path.exists():
+        try:
+            mandate_path.unlink()
+            removed.append(f"mandate ({mandate_path})")
+        except OSError as exc:
+            console.print(f"[red]Failed to delete mandate: {exc}[/red]")
+            return EXIT_RUN_FAILED
+
+    if removed:
+        console.print(f"[green]Revoked live channel '{key}'.[/green]")
+        for item in removed:
+            console.print(f"  [dim]- removed {item}[/dim]")
+    else:
+        console.print(f"[dim]Nothing to revoke for '{key}' (no token or mandate on file).[/dim]")
+    return EXIT_SUCCESS
+
+
+def cmd_live_start(broker: Optional[str] = None) -> int:
+    """Start the persistent live runner in the background (SPEC §7.5).
+
+    Relays a start request to the R6 surface endpoint
+    (``POST /live/runner/start``); the server owns the durable scheduler + job
+    store. This never touches the agent loop. The runner is read-only until a
+    mandate is committed (the consent flow), so starting it is safe even before
+    any mandate exists.
+
+    Args:
+        broker: Broker key, or ``None`` for the default broker (``robinhood``).
+
+    Returns:
+        Process exit code. ``EXIT_RUN_FAILED`` when the server is unreachable.
+    """
+    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
+    result = _live_api_call(
+        "POST", "/live/runner/start", body={"broker": key, "foreground": False}
+    )
+    if result.get("status") == "error":
+        console.print(f"[red]Could not start the live runner:[/red] {result.get('error')}")
+        console.print(
+            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
+        )
+        return EXIT_RUN_FAILED
+
+    runner_id = result.get("runner_id") or _runner_id_for(key)
+    console.print(f"[green]Live runner started[/green] for {key} [dim]({runner_id})[/dim].")
+    console.print("[dim]Check it with `vibe-trading live status`.[/dim]")
+    return EXIT_SUCCESS
+
+
+def cmd_live_stop(broker: Optional[str] = None) -> int:
+    """Stop the persistent live runner (SPEC §7.5).
+
+    Relays a stop request to ``POST /live/runner/stop``. Stopping the runner
+    halts autonomous activity but does NOT clear a tripped kill switch or revoke
+    the mandate — use ``live resume`` / ``live revoke`` for those.
+
+    Args:
+        broker: Broker key, or ``None`` for the default broker (``robinhood``).
+
+    Returns:
+        Process exit code. ``EXIT_RUN_FAILED`` when the server is unreachable.
+    """
+    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
+    result = _live_api_call("POST", "/live/runner/stop", body={"broker": key})
+    if result.get("status") == "error":
+        console.print(f"[red]Could not stop the live runner:[/red] {result.get('error')}")
+        console.print(
+            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
+        )
+        return EXIT_RUN_FAILED
+
+    console.print(f"[yellow]Live runner stopped[/yellow] for {key}.")
+    return EXIT_SUCCESS
+
+
+def cmd_live_run(broker: Optional[str] = None) -> int:
+    """Run the persistent live runner in the foreground (SPEC §7.5).
+
+    The foreground variant of ``live start``: it starts the runner via
+    ``POST /live/runner/start`` and then tails its heartbeat in a Rich ``Live``
+    panel until Ctrl+C, at which point it requests a clean stop. This mirrors
+    how ``serve`` runs a long-lived process attached to the terminal. The runner
+    is read-only until a mandate is committed through the consent flow.
+
+    Args:
+        broker: Broker key, or ``None`` for the default broker (``robinhood``).
+
+    Returns:
+        Process exit code.
+    """
+    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
+    runner_id = _runner_id_for(key)
+
+    result = _live_api_call(
+        "POST", "/live/runner/start", body={"broker": key, "foreground": True}
+    )
+    if result.get("status") == "error":
+        console.print(f"[red]Could not start the live runner:[/red] {result.get('error')}")
+        console.print(
+            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
+        )
+        return EXIT_RUN_FAILED
+
+    console.print(
+        f"[green]Live runner running[/green] for {key} [dim]({runner_id})[/dim] — "
+        "press Ctrl+C to stop."
+    )
+
+    try:
+        from src.live.runtime.liveness import is_runner_alive, last_tick
+    except Exception:  # noqa: BLE001 — runtime lands concurrently; fall back to a wait
+        is_runner_alive = None  # type: ignore[assignment]
+        last_tick = None  # type: ignore[assignment]
+
+    def _panel() -> Panel:
+        alive = bool(is_runner_alive(runner_id)) if is_runner_alive else True
+        state = "[green]running[/green]" if alive else "[yellow]stopped[/yellow]"
+        lines = [f"Runner: {state}", f"Broker: {key}"]
+        if last_tick:
+            try:
+                tick = last_tick(runner_id)
+            except Exception:  # noqa: BLE001
+                tick = None
+            if tick is not None:
+                lines.append(f"Last tick: {_format_last_tick(tick)}")
+        return Panel("\n".join(lines), title=f"live run · {key}", box=box.ROUNDED)
+
+    try:
+        with Live(_panel(), console=console, refresh_per_second=2, transient=False) as live:
+            while True:
+                time.sleep(1.0)
+                live.update(_panel())
+                if is_runner_alive and not is_runner_alive(runner_id):
+                    break
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopping live runner…[/dim]")
+    finally:
+        stop = _live_api_call("POST", "/live/runner/stop", body={"broker": key})
+        if stop.get("status") == "error":
+            console.print(f"[red]Failed to stop the runner cleanly:[/red] {stop.get('error')}")
+        else:
+            console.print(f"[yellow]Live runner stopped[/yellow] for {key}.")
+    return EXIT_SUCCESS
+
+
+def _dispatch_live(args: argparse.Namespace) -> int:
+    """Route a parsed ``live`` subcommand to its handler."""
+    sub = getattr(args, "live_command", None)
+    if sub == "authorize":
+        return cmd_live_authorize(args.live_broker)
+    if sub == "run":
+        return cmd_live_run(getattr(args, "live_broker", None))
+    if sub == "start":
+        return cmd_live_start(getattr(args, "live_broker", None))
+    if sub == "stop":
+        return cmd_live_stop(getattr(args, "live_broker", None))
+    if sub == "status":
+        return cmd_live_status(getattr(args, "live_broker", None))
+    if sub == "mandate":
+        return cmd_live_mandate(getattr(args, "live_broker", None))
+    if sub == "halt":
+        return cmd_live_halt(getattr(args, "live_broker", None))
+    if sub == "resume":
+        return cmd_live_resume(getattr(args, "live_broker", None))
+    if sub == "revoke":
+        return cmd_live_revoke(args.live_broker)
+    console.print(
+        "[red]live requires a subcommand.[/red] "
+        "Try: vibe-trading live status"
+    )
+    return EXIT_USAGE_ERROR
+
+
+# ---------------------------------------------------------------------------
 # CLI entrypoint
 # ---------------------------------------------------------------------------
 
@@ -2648,9 +3381,77 @@ def _build_parser() -> argparse.ArgumentParser:
     memory_forget_parser.add_argument("name", help="Memory title or filename stem")
     memory_forget_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
+    # Live trading channel (SPEC.md §9 Decision 1). Every verb is a privileged
+    # user-side action; there is intentionally NO `live commit` verb.
+    live_parser = subparsers.add_parser("live", help="Manage the live trading channel")
+    live_subparsers = live_parser.add_subparsers(dest="live_command")
+
+    live_authorize = live_subparsers.add_parser(
+        "authorize", help="Desktop OAuth bootstrap — opens browser, turns the channel on"
+    )
+    live_authorize.add_argument("live_broker", metavar="broker", help="Broker key, e.g. robinhood")
+
+    live_run = live_subparsers.add_parser(
+        "run", help="Run the persistent runner in the foreground (Ctrl+C to stop)"
+    )
+    live_run.add_argument(
+        "live_broker", metavar="broker", nargs="?", default=None, help="Broker key (default: robinhood)"
+    )
+
+    live_start = live_subparsers.add_parser(
+        "start", help="Start the persistent runner in the background"
+    )
+    live_start.add_argument(
+        "live_broker", metavar="broker", nargs="?", default=None, help="Broker key (default: robinhood)"
+    )
+
+    live_stop = live_subparsers.add_parser(
+        "stop", help="Stop the persistent runner"
+    )
+    live_stop.add_argument(
+        "live_broker", metavar="broker", nargs="?", default=None, help="Broker key (default: robinhood)"
+    )
+
+    live_status = live_subparsers.add_parser(
+        "status", help="Show auth state, active mandate, and halt state (read-only)"
+    )
+    live_status.add_argument(
+        "live_broker", metavar="broker", nargs="?", default=None, help="Broker key (default: robinhood)"
+    )
+
+    live_mandate = live_subparsers.add_parser(
+        "mandate", help="Print the committed mandate (read-only)"
+    )
+    live_mandate.add_argument(
+        "live_broker", metavar="broker", nargs="?", default=None, help="Broker key (default: robinhood)"
+    )
+
+    live_halt = live_subparsers.add_parser(
+        "halt", help="Trip the kill switch (writes the HALT sentinel)"
+    )
+    live_halt.add_argument(
+        "live_broker", metavar="broker", nargs="?", default=None, help="Broker key (default: global)"
+    )
+
+    live_resume = live_subparsers.add_parser(
+        "resume", help="Clear the halt (explicit privileged re-enable)"
+    )
+    live_resume.add_argument(
+        "live_broker", metavar="broker", nargs="?", default=None, help="Broker key (default: global)"
+    )
+
+    live_revoke = live_subparsers.add_parser(
+        "revoke", help="Revoke OAuth token + delete mandate (full off)"
+    )
+    live_revoke.add_argument("live_broker", metavar="broker", help="Broker key, e.g. robinhood")
+
     # Alpha Zoo subcommands (registered via cli_handlers.add_subparser)
     from src.factors.cli_handlers import add_subparser as _add_alpha_subparser
     _add_alpha_subparser(subparsers)
+
+    # Hypothesis Registry subcommands
+    from src.hypotheses.cli_handlers import add_subparser as _add_hypothesis_subparser
+    _add_hypothesis_subparser(subparsers)
 
     return parser
 
@@ -2690,7 +3491,7 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_env": "OPENROUTER_API_KEY",
         "base_env": "OPENROUTER_BASE_URL",
         "base_url": "https://openrouter.ai/api/v1",
-        "model": "deepseek/deepseek-v3.2",
+        "model": "deepseek/deepseek-v4-pro",
         "key_prefix": "sk-or-",
         "key_placeholder": "sk-or-v1-...",
     },
@@ -2700,7 +3501,7 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_env": "DEEPSEEK_API_KEY",
         "base_env": "DEEPSEEK_BASE_URL",
         "base_url": "https://api.deepseek.com/v1",
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-pro",
         "key_prefix": "sk-",
         "key_placeholder": "sk-...",
     },
@@ -2710,7 +3511,7 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_env": "OPENAI_API_KEY",
         "base_env": "OPENAI_BASE_URL",
         "base_url": "https://api.openai.com/v1",
-        "model": "gpt-4o",
+        "model": "gpt-5.5-instant",
         "key_prefix": "sk-",
         "key_placeholder": "sk-...",
     },
@@ -2720,7 +3521,7 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_env": "GEMINI_API_KEY",
         "base_env": "GEMINI_BASE_URL",
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "model": "gemini-2.5-flash",
+        "model": "gemini-3.5-flash",
         "key_prefix": None,
         "key_placeholder": "api-key...",
     },
@@ -2730,7 +3531,7 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_env": "GROQ_API_KEY",
         "base_env": "GROQ_BASE_URL",
         "base_url": "https://api.groq.com/openai/v1",
-        "model": "llama-3.3-70b-versatile",
+        "model": "meta-llama/llama-4-maverick-17b-128e-instruct",
         "key_prefix": "gsk_",
         "key_placeholder": "gsk_...",
     },
@@ -2740,7 +3541,7 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_env": "DASHSCOPE_API_KEY",
         "base_env": "DASHSCOPE_BASE_URL",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "model": "qwen-plus",
+        "model": "qwen-plus-latest",
         "key_prefix": "sk-",
         "key_placeholder": "sk-...",
     },
@@ -2750,7 +3551,7 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_env": "ZHIPU_API_KEY",
         "base_env": "ZHIPU_BASE_URL",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "model": "glm-4-plus",
+        "model": "glm-5.1",
         "key_prefix": None,
         "key_placeholder": "api-key...",
     },
@@ -2760,7 +3561,7 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_env": "MOONSHOT_API_KEY",
         "base_env": "MOONSHOT_BASE_URL",
         "base_url": "https://api.moonshot.ai/v1",
-        "model": "kimi-k2.5",
+        "model": "kimi-k2.6",
         "key_prefix": "sk-",
         "key_placeholder": "sk-...",
     },
@@ -2770,7 +3571,7 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_env": "MINIMAX_API_KEY",
         "base_env": "MINIMAX_BASE_URL",
         "base_url": "https://api.minimax.io/v1",
-        "model": "MiniMax-Text-01",
+        "model": "MiniMax-M2.7",
         "key_prefix": None,
         "key_placeholder": "api-key...",
     },
@@ -3113,6 +3914,10 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args(raw_argv)
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else EXIT_USAGE_ERROR
+    if not sys.stdout.isatty():
+        args.no_rich = True
+        if hasattr(args, "run_no_rich"):
+            args.run_no_rich = True
 
     if args.command == "init":
         return cmd_init()
@@ -3140,6 +3945,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "alpha":
         from src.factors.cli_handlers import dispatch as _alpha_dispatch
         return _coerce_exit_code(_alpha_dispatch(args))
+    if args.command == "hypothesis":
+        from src.hypotheses.cli_handlers import dispatch as _hyp_dispatch
+        return _coerce_exit_code(_hyp_dispatch(args))
+    if args.command == "live":
+        return _coerce_exit_code(_dispatch_live(args))
     if args.command == "memory":
         if args.memory_command == "list":
             return _coerce_exit_code(cmd_memory_list(args.memory_type))

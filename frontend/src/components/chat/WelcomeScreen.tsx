@@ -1,5 +1,4 @@
 ﻿import { Bot, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
 
 interface Example {
   title: string;
@@ -151,8 +150,6 @@ interface Props {
 }
 
 export function WelcomeScreen({ onExample }: Props) {
-  const { t } = useI18n();
-
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-8 text-center">
       {/* Header */}
@@ -166,7 +163,7 @@ export function WelcomeScreen({ onExample }: Props) {
             vibe trading with your professional financial agent team
           </p>
           <p className="text-sm text-muted-foreground mt-2 max-w-md leading-relaxed mx-auto">
-            {t.describeStrategy}
+            Describe a trading strategy to get started.
           </p>
         </div>
       </div>
@@ -185,7 +182,7 @@ export function WelcomeScreen({ onExample }: Props) {
 
       {/* Example categories grid */}
       <div className="w-full max-w-2xl text-left space-y-4">
-        <p className="text-xs text-muted-foreground px-1">{t.examples}</p>
+        <p className="text-xs text-muted-foreground px-1">Try an example:</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {CATEGORIES.map((cat) => (
             <div key={cat.label} className="space-y-2">
