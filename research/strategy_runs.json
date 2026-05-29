@@ -1,20 +1,20 @@
 {
-  "eth_s1_multi_factor_consensus": {
-    "symbol": "ETH-USDT-SWAP",
-    "spec_yaml": "research/strategies/strategy_eth_s1_multi_factor_consensus.yaml",
-    "base_run": "eth_s1_base",
+  "btc_s1_multi_factor_consensus": {
+    "symbol": "BTC-USDT-SWAP",
+    "spec_yaml": "research/strategies/strategy_btc_s1_multi_factor_consensus.yaml",
+    "base_run": "btc_s1_base",
     "regime_runs": {
-      "bull": "eth_s1_bull",
-      "bear": "eth_s1_bear",
-      "neutral": "eth_s1_neutral"
+      "bull": "btc_s1_bull",
+      "bear": "btc_s1_bear",
+      "neutral": "btc_s1_neutral"
     },
     "stress_runs": {
-      "3x_fees": "eth_s1_base_stress"
+      "3x_fees": "btc_s1_base_stress"
     },
     "oos_runs": [
-      "eth_s1_oos_2023",
-      "eth_s1_oos_2024"
+      "btc_s1_oos_2023",
+      "btc_s1_oos_2024"
     ],
-    "sweep_run": "eth_s1_multi_factor_consensus_sweep_033"
+    "sweep_run": "btc_s1_multi_factor_consensus_sweep_296"
   }
 }

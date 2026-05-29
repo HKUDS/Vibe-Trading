@@ -9,14 +9,14 @@
 #   okx_swap  : OKX 永續合約代碼（REST / funding history 使用）
 #   ccxt_bybit: ccxt 統一格式的 Bybit 永續合約代碼（OI history 使用）
 symbols:
-  # - name: btc
-  #   okx_swap: "BTC-USDT-SWAP"
-  #   ccxt_bybit: "BTC/USDT:USDT"
+- name: btc
+  okx_swap: "BTC-USDT-SWAP"
+  ccxt_bybit: "BTC/USDT:USDT"
 
-# 若要加 ETH，取消下面的注釋：
-- name: eth
-  okx_swap: "ETH-USDT-SWAP"
-  ccxt_bybit: "ETH/USDT:USDT"
+# ETH 已驗證為 negative result（見 memory project_eth_4yr_negative_result），暫關：
+# - name: eth
+#   okx_swap: "ETH-USDT-SWAP"
+#   ccxt_bybit: "ETH/USDT:USDT"
 
 # ─── 資料抓取參數 ──────────────────────────────────────────────────────────────
 period: 1460         # 回溯天數（約 4 年）— funding 改 ccxt 多年源後可拉長；2022-05 起資料
