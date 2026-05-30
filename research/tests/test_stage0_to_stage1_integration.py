@@ -67,6 +67,7 @@ following candidate factors:
     "formula": "rolling 30-day z-score of 8h funding rate",
     "data_source": "okx_funding",
     "transform": "z_30d",
+    "feature_key": "funding_z_30d",
     "expected_ic_sign": "+",
     "economic_logic": "Elevated funding signals crowded longs which tend to mean-revert.",
     "horizons_h": [8, 24],
@@ -77,6 +78,7 @@ following candidate factors:
     "formula": "24-hour percent change in open interest",
     "data_source": "bybit_oi",
     "transform": "pct_change_24h",
+    "feature_key": "oi_pct_change_24h",
     "expected_ic_sign": "-",
     "economic_logic": "Rapid OI build-up precedes squeeze-driven reversals.",
     "horizons_h": [8, 24],
@@ -85,6 +87,35 @@ following candidate factors:
 ]
 ```
 """
+
+
+def _write_fake_stage0a_outputs(manifests_dir: Path, sym: str = "eth") -> None:
+    """Write minimal features parquet + evidence JSON to satisfy stage0a preflight."""
+    import numpy as np
+    import pandas as pd
+    from lib.factor_io import dump_features, dump_evidence
+
+    n = 100
+    idx = pd.date_range("2024-01-01", periods=n, freq="1h", tz="UTC")
+    # Column names must match the feature_key values in _FAKE_SWARM_STDOUT
+    features = {
+        "funding_z_30d": pd.Series(np.random.randn(n), index=idx),
+        "oi_pct_change_24h": pd.Series(np.random.randn(n), index=idx),
+    }
+    dump_features(sym, features, manifests_dir)
+
+    evidence_payload = {
+        "caveat": "test only",
+        "symbol": sym,
+        "generated_at": "2024-01-01T00:00:00+00:00",
+        "evidence": [
+            {"feature_key": "funding_z_30d", "category": "funding",
+             "ic_by_horizon": {"8": 0.05}, "ir": 0.1, "sample_size": 100},
+            {"feature_key": "oi_pct_change_24h", "category": "oi",
+             "ic_by_horizon": {"8": -0.03}, "ir": 0.08, "sample_size": 100},
+        ],
+    }
+    dump_evidence(sym, evidence_payload, manifests_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +136,7 @@ class TestStage0ToStage1Handoff:
 
     def test_process_symbol_writes_valid_manifest(self, tmp_path: Path):
         """_process_symbol() with mocked swarm writes a valid CandidatesManifest."""
+        _write_fake_stage0a_outputs(tmp_path)
         cfg = _make_research_config()
 
         with patch("pipeline.stage0_discovery.subprocess.run") as mock_run:
@@ -126,6 +158,7 @@ class TestStage0ToStage1Handoff:
 
     def test_written_manifest_is_valid_candidates_manifest(self, tmp_path: Path):
         """The JSON written by _process_symbol validates as CandidatesManifest."""
+        _write_fake_stage0a_outputs(tmp_path)
         cfg = _make_research_config()
 
         with patch("pipeline.stage0_discovery.subprocess.run") as mock_run:
@@ -146,6 +179,7 @@ class TestStage0ToStage1Handoff:
 
     def test_manifest_has_two_candidates_with_correct_fields(self, tmp_path: Path):
         """The two candidates in the manifest have correct names and data_sources."""
+        _write_fake_stage0a_outputs(tmp_path)
         cfg = _make_research_config()
 
         with patch("pipeline.stage0_discovery.subprocess.run") as mock_run:
@@ -170,6 +204,7 @@ class TestStage0ToStage1Handoff:
 
     def test_stage1_load_candidates_reads_stage0_output(self, tmp_path: Path):
         """_load_candidates (stage-1) reads back the manifest written by stage-0."""
+        _write_fake_stage0a_outputs(tmp_path)
         cfg = _make_research_config()
 
         with patch("pipeline.stage0_discovery.subprocess.run") as mock_run:
@@ -189,6 +224,7 @@ class TestStage0ToStage1Handoff:
 
     def test_stage1_gets_two_candidates(self, tmp_path: Path):
         """The two candidates loaded by stage-1 match what stage-0 produced."""
+        _write_fake_stage0a_outputs(tmp_path)
         cfg = _make_research_config()
 
         with patch("pipeline.stage0_discovery.subprocess.run") as mock_run:
