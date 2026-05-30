@@ -248,11 +248,30 @@ def apply_overrides_to_spec(base_spec: dict, overrides: dict) -> dict:
     persist_n = overrides.get("persistence_last_n")
     persist_m = overrides.get("persistence_min_hits")
 
-    def _rewrite_entry_block(block: dict | None, new_value: float | None) -> None:
+    def _value_for_operator(op: str) -> float | None:
+        """Pick the override pct by the condition's operator, not by long/short.
+
+        A high-extreme condition (``>=`` / ``>``) is gated by entry_high_pct; a
+        low-extreme condition (``<=`` / ``<``) by entry_low_pct. This is
+        direction-agnostic: it works for contrarian specs (long low / short
+        high), trend specs (long high / short low), and mixed multi-factor
+        specs where each factor has its own direction. The previous code
+        hard-wired entry_long->entry_low_pct, which inverted trend factors
+        (e.g. rewriting ``>= 80`` to ``>= 10`` fires on ~90% of bars).
+        """
+        if op in (">=", ">"):
+            return float(entry_high) if entry_high is not None else None
+        if op in ("<=", "<"):
+            return float(entry_low) if entry_low is not None else None
+        return None
+
+    def _rewrite_entry_block(block: dict | None) -> None:
         if not block or "conditions" not in block:
             return
         new_conds: list[str] = []
         for c in block["conditions"]:
+            m = _PERCENTILE_COND_RE.match(c.strip())
+            new_value = _value_for_operator(m.group(3)) if m else None
             new_conds.append(
                 _rewrite_percentile_condition(
                     c,
@@ -264,8 +283,8 @@ def apply_overrides_to_spec(base_spec: dict, overrides: dict) -> dict:
             )
         block["conditions"] = new_conds
 
-    _rewrite_entry_block(spec.get("entry_long"), float(entry_low) if entry_low is not None else None)
-    _rewrite_entry_block(spec.get("entry_short"), float(entry_high) if entry_high is not None else None)
+    _rewrite_entry_block(spec.get("entry_long"))
+    _rewrite_entry_block(spec.get("entry_short"))
 
     # Exit rules
     hold = overrides.get("hold_max_hours")
