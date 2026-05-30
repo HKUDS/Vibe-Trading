@@ -10,7 +10,7 @@ Public API:
     load_features(symbol, manifests_dir=None) -> pd.DataFrame
     load_features_meta(symbol, manifests_dir=None) -> dict
     dump_evidence(symbol, evidence, manifests_dir) -> Path
-    load_evidence(symbol, manifests_dir=None) -> list[dict]
+    load_evidence(symbol, manifests_dir=None) -> list | dict
     append_feature_column(symbol, key, series, manifests_dir=None, coverage_threshold=0.5) -> None
 """
 
@@ -341,17 +341,20 @@ def load_features_meta(symbol: str, manifests_dir: Path | None = None) -> dict:
 
 def dump_evidence(
     symbol: str,
-    evidence: list[dict],
+    evidence: list | dict,
     manifests_dir: Path,
 ) -> Path:
-    """Write evidence list to JSON.
+    """Write evidence to JSON.
 
     Parameters
     ----------
     symbol:
         Symbol name, e.g. "eth" or "ETH-USDT-SWAP".
     evidence:
-        List of EvidenceEntry-like dicts.
+        Either a list of EvidenceEntry-like dicts (bare list form), or a full
+        evidence payload dict containing keys such as ``symbol``,
+        ``generated_at``, ``caveat``, and ``evidence`` (list).  Both forms are
+        serialised as-is via ``json.dumps`` — the caller controls the shape.
     manifests_dir:
         Directory to write output into.
 
@@ -370,7 +373,7 @@ def dump_evidence(
     return json_path
 
 
-def load_evidence(symbol: str, manifests_dir: Path | None = None) -> list[dict]:
+def load_evidence(symbol: str, manifests_dir: Path | None = None) -> list | dict:
     """Load evidence JSON for the given symbol.
 
     Parameters

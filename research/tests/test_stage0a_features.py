@@ -5,7 +5,7 @@ Covers:
   test_outputs_exist                  — parquet + meta.json + evidence.json all written
   test_evidence_count_equals_features_columns — evidence entry count == feature column count
   test_evidence_sorted_by_ic          — evidence is sorted by descending max |IC|
-  test_evidence_contains_price_and_non_price  — at least one price-based indicator entry
+  test_evidence_contains_price_and_non_price  — at least one price-based AND one non-price feature entry
   test_evidence_caveat_field          — top-level caveat field present in JSON
   test_evidence_payload_structure     — symbol / generated_at / evidence keys present
 
@@ -215,7 +215,7 @@ class TestEvidenceContainsPriceAndNonPrice:
     """Task 5.4 — test_evidence_contains_price_and_non_price."""
 
     def test_evidence_contains_price_and_non_price(self, tmp_path: Path):
-        """Evidence list must contain at least one price-based (indicator pool) entry."""
+        """Evidence list must contain at least one price-based AND one non-price feature entry."""
         feature_dict, candles, cfg = run_full_pipeline(tmp_path)
 
         evidence_raw = json.loads((tmp_path / "evidence_btc.json").read_text(encoding="utf-8"))
@@ -227,6 +227,13 @@ class TestEvidenceContainsPriceAndNonPrice:
         price_entries = feature_keys & price_indicators
         assert len(price_entries) > 0, (
             f"No price-based indicator entries found in evidence. Keys: {feature_keys}"
+        )
+
+        non_price_keys = {"funding_rate_raw", "oi_change_24h", "stablecoin_supply_z"}
+        non_price_entries = feature_keys & non_price_keys
+        assert len(non_price_entries) > 0, (
+            f"No non-price feature entries found in evidence. "
+            f"Expected at least one of {non_price_keys}. Keys: {feature_keys}"
         )
 
     def test_non_price_features_present_when_data_provided(self, tmp_path: Path):
