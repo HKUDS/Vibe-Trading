@@ -365,6 +365,7 @@ class AgentLoop:
         final_content = ""
         goal_continuations = 0
         goal_last_progress: tuple[int, int] | None = None
+        wrap_up_at = max(1, int(self.max_iterations * 0.8))
 
         try:
             while iteration < self.max_iterations:
@@ -399,6 +400,19 @@ class AgentLoop:
 
                 logger.info(f"ReAct iteration {iteration}/{self.max_iterations}")
 
+                # Inject wrap-up nudge when approaching iteration limit
+                if iteration == wrap_up_at:
+                    remaining = self.max_iterations - iteration
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"[SYSTEM] You have {remaining} iterations remaining out of "
+                            f"{self.max_iterations}. Please wrap up your work. "
+                            "Stop calling tools and provide your final answer as plain text. "
+                            "If you have partial results, summarize what you have so far."
+                        ),
+                    })
+
                 # Streaming output + collect thinking text
                 thinking_chunks: List[str] = []
 
@@ -406,9 +420,15 @@ class AgentLoop:
                     thinking_chunks.append(delta)
                     self._emit("text_delta", {"delta": delta, "iter": iteration})
 
+                # On last iteration, drop tool definitions to force text output
+                is_last_iteration = (iteration == self.max_iterations)
+                tool_defs = None if is_last_iteration else self.registry.get_definitions()
+                if is_last_iteration:
+                    trace.write({"type": "forced_text_only", "iter": iteration})
+
                 response = self.llm.stream_chat(
                     messages,
-                    tools=self.registry.get_definitions(),
+                    tools=tool_defs,
                     on_text_chunk=_on_text_chunk,
                 )
                 usage = getattr(response, "usage_metadata", None) or {}
