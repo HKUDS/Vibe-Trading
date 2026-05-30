@@ -46,6 +46,7 @@ import pandas as pd
 # ── Internal imports ───────────────────────────────────────────────────────────
 from lib.ccxt_data import fetch_oi_history_bybit, fetch_funding_history_multiyear
 from lib.coingecko_data import fetch_stablecoin_supply
+from lib.factor_io import load_features, dump_factor_values
 from lib.factor_metrics import FactorResult, add_forward_returns, evaluate_factor
 from lib.okx_data import fetch_candles, fetch_funding_history
 from lib.report import build_factor_report
@@ -265,6 +266,31 @@ def _run_symbol_legacy(
 # ─── Dynamic path (candidates from stage0) ────────────────────────────────────
 
 
+def _load_series_from_features(
+    cand: FactorCandidate,
+    features_df: pd.DataFrame,
+) -> pd.Series | None:
+    """Return the pre-computed series for *cand* from the features store.
+
+    Pure logic — makes no network calls, applies no transforms.
+
+    Returns
+    -------
+    pd.Series
+        The column ``cand.feature_key`` from *features_df*.
+    None
+        If ``cand.feature_key`` is None (warns) or the key is absent in
+        *features_df* (warns with the missing key name).
+    """
+    if cand.feature_key is None:
+        print(f"  WARN: {cand.name} has no feature_key, skipping")
+        return None
+    if cand.feature_key not in features_df.columns:
+        print(f"  WARN: feature_key '{cand.feature_key}' not found in features store, skipping {cand.name}")
+        return None
+    return features_df[cand.feature_key]
+
+
 def _run_symbol_dynamic(
     sym: SymbolConfig,
     cfg: ResearchConfig,
@@ -283,12 +309,20 @@ def _run_symbol_dynamic(
     """
     horizons = list(cfg.horizons_h)
     print(f"\n[evaluate] computing IC/IR for {len(candidates.candidates)} candidate factors x horizon")
+
+    # Load pre-computed feature series from the features store.
+    try:
+        features_df = load_features(sym.name, manifests_dir)
+    except FileNotFoundError as exc:
+        print(f"\033[93m[stage1] WARNING: {exc} — all candidates will be skipped\033[0m")
+        features_df = pd.DataFrame()
+
     all_results: list[FactorResult] = []
     factor_series_dict: dict[str, pd.Series] = {}
     for cand in candidates.candidates:
-        series = _compute_candidate_series(cand, candles, funding, oi_hist, stablecoin=stablecoin)
+        series = _load_series_from_features(cand, features_df)
         if series is None:
-            print(f"  {cand.name}: skipped (no series)")
+            print(f"  {cand.name}: skipped (no series from feature store)")
             continue
         df[cand.name] = series
         if df[cand.name].isna().all():
@@ -306,7 +340,6 @@ def _run_symbol_dynamic(
 
     if factor_series_dict:
         try:
-            from lib.factor_io import dump_factor_values
             dump_factor_values(sym.name, factor_series_dict, manifests_dir)
         except Exception as exc:
             print(f"[stage1] {sym.name}: factor_values parquet dump failed — {exc}", file=sys.stderr)

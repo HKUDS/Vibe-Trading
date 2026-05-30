@@ -33,7 +33,13 @@ for _p in (_RESEARCH_DIR, _DASHBOARD_SCHEMAS):
     if _ps not in sys.path:
         sys.path.insert(0, _ps)
 
-from factor_extended import _compute_candidate_series, _load_candidates, _run_symbol_dynamic, run_symbol
+from factor_extended import (
+    _compute_candidate_series,
+    _load_candidates,
+    _load_series_from_features,
+    _run_symbol_dynamic,
+    run_symbol,
+)
 from schemas import CandidatesManifest, FactorCandidate
 
 
@@ -345,24 +351,29 @@ class TestRunSymbolDecisionTable:
 
 
 def test_dynamic_mode_5_candidates_produce_results(tmp_path: Path):
-    """_run_symbol_dynamic processes all candidates and returns FactorResult for each."""
+    """_run_symbol_dynamic processes all candidates and returns FactorResult for each.
+
+    Dynamic path now reads from the features store (feature_key), not from
+    pre-fetched DataFrames via _compute_candidate_series.
+    """
+    from lib.factor_io import dump_features
     from lib.factor_metrics import add_forward_returns
 
     n = 300
     idx = pd.date_range("2024-01-01", periods=n, freq="1h", tz="UTC")
     rng = np.random.default_rng(7)
-    candles = pd.DataFrame({"close": rng.standard_normal(n).cumsum() + 100, "volume": 1000}, index=idx)
-    funding_idx = pd.date_range("2024-01-01", periods=n // 3, freq="8h", tz="UTC")
-    funding = pd.DataFrame({"funding_rate": rng.standard_normal(n // 3) * 0.001}, index=funding_idx)
-    oi_hist = pd.DataFrame(columns=["oi", "oi_usd"])  # empty — bybit_oi candidates will be skipped
 
-    # Build df like run_symbol does
-    df = pd.DataFrame(index=candles.index)
+    # Write 5 feature columns to the features store.
+    feature_keys = [f"funding_raw_{i}" for i in range(5)]
+    feature_series = {k: pd.Series(rng.standard_normal(n) * 0.001, index=idx) for k in feature_keys}
+    dump_features("eth", feature_series, tmp_path)
+
+    candles = pd.DataFrame({"close": rng.standard_normal(n).cumsum() + 100, "volume": 1000}, index=idx)
+    oi_hist = pd.DataFrame(columns=["oi", "oi_usd"])
+
+    # Build df with forward returns (as run_symbol does).
+    df = pd.DataFrame(index=idx)
     df["close"] = candles["close"]
-    fund_h = funding.reindex(candles.index, method="ffill").bfill()
-    df["funding_rate"] = fund_h["funding_rate"]
-    df["oi_change_24h"] = pd.NA
-    df["fng"] = 50.0
     cfg = _make_research_config()
     df = add_forward_returns(df, "close", list(cfg.horizons_h))
 
@@ -372,22 +383,24 @@ def test_dynamic_mode_5_candidates_produce_results(tmp_path: Path):
         generated_at=datetime.now(timezone.utc),
         source_swarm_run=None,
         candidates=[
-            _make_factor_candidate(
-                name=f"funding_raw_{i}",
-                formula="raw funding",
-                data_source="okx_funding",
-                transform="raw",
-                expected_ic_sign="?",
-                economic_logic="test",
-                horizons_h=[8],
-                category="funding",
+            FactorCandidate.model_validate(
+                dict(
+                    name=f"funding_raw_{i}",
+                    formula="raw funding",
+                    feature_key=f"funding_raw_{i}",
+                    expected_ic_sign="?",
+                    economic_logic="test",
+                    horizons_h=[8],
+                    category="funding",
+                )
             )
             for i in range(5)
         ],
     )
 
     sym = _make_sym_config()
-    results = _run_symbol_dynamic(sym, cfg, tmp_path, candidates, funding, candles, oi_hist, df)
+    empty_funding = pd.DataFrame({"funding_rate": []}, index=pd.DatetimeIndex([], tz="UTC"))
+    results = _run_symbol_dynamic(sym, cfg, tmp_path, candidates, empty_funding, candles, oi_hist, df)
 
     # 5 candidates × 2 horizons (from cfg.horizons_h = (8, 24)) = 10 FactorResult entries
     assert len(results) == 10
@@ -405,25 +418,29 @@ def test_dynamic_mode_5_candidates_produce_results(tmp_path: Path):
 def test_dynamic_flow_writes_factor_parquet(tmp_path: Path):
     """After _run_symbol_dynamic, factor_values parquet and meta.json are written.
 
-    This is a skip-by-default integration test.  Run explicitly with:
+    Dynamic path reads from the features store (feature_key). No network required.
+    Run explicitly with:
         pytest -m integration tests/test_factor_extended_dynamic.py
     """
+    from lib.factor_io import dump_features
     from lib.factor_metrics import add_forward_returns
 
     n = 300
     idx = pd.date_range("2024-01-01", periods=n, freq="1h", tz="UTC")
     rng = np.random.default_rng(99)
+
+    # Write features parquet
+    dump_features(
+        "eth",
+        {"funding_raw_0": pd.Series(rng.standard_normal(n) * 0.001, index=idx)},
+        tmp_path,
+    )
+
     candles = pd.DataFrame({"close": rng.standard_normal(n).cumsum() + 100, "volume": 1000}, index=idx)
-    funding_idx = pd.date_range("2024-01-01", periods=n // 3, freq="8h", tz="UTC")
-    funding = pd.DataFrame({"funding_rate": rng.standard_normal(n // 3) * 0.001}, index=funding_idx)
     oi_hist = pd.DataFrame(columns=["oi", "oi_usd"])
 
-    df = pd.DataFrame(index=candles.index)
+    df = pd.DataFrame(index=idx)
     df["close"] = candles["close"]
-    fund_h = funding.reindex(candles.index, method="ffill").bfill()
-    df["funding_rate"] = fund_h["funding_rate"]
-    df["oi_change_24h"] = pd.NA
-    df["fng"] = 50.0
     cfg = _make_research_config()
     df = add_forward_returns(df, "close", list(cfg.horizons_h))
 
@@ -433,21 +450,23 @@ def test_dynamic_flow_writes_factor_parquet(tmp_path: Path):
         generated_at=datetime.now(timezone.utc),
         source_swarm_run=None,
         candidates=[
-            _make_factor_candidate(
-                name="funding_raw_0",
-                formula="raw funding",
-                data_source="okx_funding",
-                transform="raw",
-                expected_ic_sign="?",
-                economic_logic="test",
-                horizons_h=[8],
-                category="funding",
+            FactorCandidate.model_validate(
+                dict(
+                    name="funding_raw_0",
+                    formula="raw funding",
+                    feature_key="funding_raw_0",
+                    expected_ic_sign="?",
+                    economic_logic="test",
+                    horizons_h=[8],
+                    category="funding",
+                )
             )
         ],
     )
 
     sym = _make_sym_config()
-    _run_symbol_dynamic(sym, cfg, tmp_path, candidates, funding, candles, oi_hist, df)
+    empty_funding = pd.DataFrame({"funding_rate": []}, index=pd.DatetimeIndex([], tz="UTC"))
+    _run_symbol_dynamic(sym, cfg, tmp_path, candidates, empty_funding, candles, oi_hist, df)
 
     parquet_path = tmp_path / "factor_values_eth.parquet"
     meta_path = tmp_path / "factor_values_eth.meta.json"
@@ -465,3 +484,203 @@ def test_dynamic_flow_writes_factor_parquet(tmp_path: Path):
     loaded = _pd.read_parquet(parquet_path, engine="pyarrow")
     assert "funding_raw_0" in loaded.columns
     assert len(loaded) == n
+
+
+# ---------------------------------------------------------------------------
+# _load_series_from_features
+# ---------------------------------------------------------------------------
+
+
+def _make_features_df(n: int = 100) -> pd.DataFrame:
+    rng = np.random.default_rng(55)
+    idx = pd.date_range("2024-01-01", periods=n, freq="1h", tz="UTC")
+    return pd.DataFrame(
+        {
+            "rsi_14": rng.random(n) * 100,
+            "macd_diff": rng.standard_normal(n),
+        },
+        index=idx,
+    )
+
+
+def _make_candidate_with_feature_key(
+    name: str = "rsi_14",
+    feature_key: str | None = "rsi_14",
+) -> FactorCandidate:
+    return FactorCandidate.model_validate(
+        dict(
+            name=name,
+            formula="RSI 14",
+            feature_key=feature_key,
+            expected_ic_sign="?",
+            economic_logic="RSI momentum",
+            horizons_h=[8],
+            category="momentum",
+        )
+    )
+
+
+class TestLoadSeriesFromFeatures:
+    """_load_series_from_features(cand, features_df) -> pd.Series | None"""
+
+    def test_valid_feature_key_returns_series(self):
+        features_df = _make_features_df()
+        cand = _make_candidate_with_feature_key(name="rsi_14", feature_key="rsi_14")
+        result = _load_series_from_features(cand, features_df)
+        assert isinstance(result, pd.Series)
+        assert len(result) == len(features_df)
+
+    def test_none_feature_key_returns_none(self, capsys):
+        features_df = _make_features_df()
+        cand = _make_candidate_with_feature_key(name="rsi_14", feature_key=None)
+        result = _load_series_from_features(cand, features_df)
+        assert result is None
+        captured = capsys.readouterr()
+        assert "WARN" in captured.out
+
+    def test_missing_feature_key_returns_none(self, capsys):
+        features_df = _make_features_df()
+        cand = _make_candidate_with_feature_key(name="unknown", feature_key="unknown_col")
+        result = _load_series_from_features(cand, features_df)
+        assert result is None
+        captured = capsys.readouterr()
+        assert "unknown_col" in captured.out
+
+    def test_returned_series_has_correct_index(self):
+        features_df = _make_features_df(50)
+        cand = _make_candidate_with_feature_key(name="macd_diff", feature_key="macd_diff")
+        result = _load_series_from_features(cand, features_df)
+        assert result is not None
+        pd.testing.assert_index_equal(result.index, features_df.index)
+
+
+# ---------------------------------------------------------------------------
+# _run_symbol_dynamic: reads from feature store
+# ---------------------------------------------------------------------------
+
+
+def _write_features_parquet(tmp_path: Path, n: int = 300) -> pd.DataFrame:
+    """Write a features parquet to tmp_path and return the features DataFrame."""
+    from lib.factor_io import dump_features
+
+    rng = np.random.default_rng(77)
+    idx = pd.date_range("2024-01-01", periods=n, freq="1h", tz="UTC")
+    features = {
+        "rsi_14": pd.Series(rng.random(n) * 100, index=idx),
+        "macd_diff": pd.Series(rng.standard_normal(n), index=idx),
+    }
+    dump_features("eth", features, tmp_path)
+    return pd.DataFrame(features)
+
+
+def _make_candidates_manifest_with_feature_keys(
+    candidates: list[FactorCandidate],
+) -> CandidatesManifest:
+    return CandidatesManifest(
+        schema_version=1,
+        symbol="eth",
+        generated_at=datetime.now(timezone.utc),
+        source_swarm_run=None,
+        candidates=candidates,
+    )
+
+
+def _make_df_with_forward_returns(n: int = 300) -> pd.DataFrame:
+    from lib.factor_metrics import add_forward_returns
+
+    rng = np.random.default_rng(88)
+    idx = pd.date_range("2024-01-01", periods=n, freq="1h", tz="UTC")
+    df = pd.DataFrame({"close": rng.standard_normal(n).cumsum() + 100}, index=idx)
+    cfg = _make_research_config()
+    return add_forward_returns(df, "close", list(cfg.horizons_h))
+
+
+class TestRunSymbolDynamicFromFeatureStore:
+    """_run_symbol_dynamic now loads from feature store, not fetchers."""
+
+    def test_dynamic_mode_reads_from_features_not_fetcher(self, tmp_path: Path):
+        n = 300
+        _write_features_parquet(tmp_path, n)
+        df = _make_df_with_forward_returns(n)
+
+        candidates = _make_candidates_manifest_with_feature_keys(
+            [
+                _make_candidate_with_feature_key(name="rsi_14", feature_key="rsi_14"),
+                _make_candidate_with_feature_key(name="macd_diff", feature_key="macd_diff"),
+            ]
+        )
+
+        sym = _make_sym_config()
+        cfg = _make_research_config()
+        # Pass empty DataFrames — if the function tries to re-fetch from them it
+        # would produce wrong results, but since it reads from the feature store
+        # instead, the results should be non-empty.
+        empty_funding = pd.DataFrame({"funding_rate": []}, index=pd.DatetimeIndex([], tz="UTC"))
+        empty_candles = pd.DataFrame({"close": []}, index=pd.DatetimeIndex([], tz="UTC"))
+        empty_oi = pd.DataFrame(columns=["oi", "oi_usd"])
+
+        results = _run_symbol_dynamic(
+            sym, cfg, tmp_path, candidates,
+            empty_funding, empty_candles, empty_oi, df,
+        )
+        assert len(results) > 0
+        factor_names = {r.factor for r in results}
+        assert "rsi_14" in factor_names or "macd_diff" in factor_names
+
+    def test_missing_feature_key_candidate_is_skipped(self, tmp_path: Path):
+        n = 300
+        _write_features_parquet(tmp_path, n)
+        df = _make_df_with_forward_returns(n)
+
+        candidates = _make_candidates_manifest_with_feature_keys(
+            [
+                _make_candidate_with_feature_key(name="rsi_14", feature_key="rsi_14"),
+                # This candidate has no feature_key → should be skipped
+                _make_candidate_with_feature_key(name="bad_cand", feature_key=None),
+                # This candidate has a non-existent key → should be skipped
+                _make_candidate_with_feature_key(name="ghost_factor", feature_key="nonexistent_col"),
+            ]
+        )
+
+        sym = _make_sym_config()
+        cfg = _make_research_config()
+        empty_funding = pd.DataFrame({"funding_rate": []}, index=pd.DatetimeIndex([], tz="UTC"))
+        empty_candles = pd.DataFrame({"close": []}, index=pd.DatetimeIndex([], tz="UTC"))
+        empty_oi = pd.DataFrame(columns=["oi", "oi_usd"])
+
+        results = _run_symbol_dynamic(
+            sym, cfg, tmp_path, candidates,
+            empty_funding, empty_candles, empty_oi, df,
+        )
+        factor_names = {r.factor for r in results}
+        # valid candidate produces results
+        assert "rsi_14" in factor_names
+        # skipped candidates produce no results
+        assert "bad_cand" not in factor_names
+        assert "ghost_factor" not in factor_names
+
+    def test_factor_values_parquet_written_after_dynamic_run(self, tmp_path: Path):
+        n = 300
+        _write_features_parquet(tmp_path, n)
+        df = _make_df_with_forward_returns(n)
+
+        candidates = _make_candidates_manifest_with_feature_keys(
+            [_make_candidate_with_feature_key(name="rsi_14", feature_key="rsi_14")]
+        )
+
+        sym = _make_sym_config()
+        cfg = _make_research_config()
+        empty_funding = pd.DataFrame({"funding_rate": []}, index=pd.DatetimeIndex([], tz="UTC"))
+        empty_candles = pd.DataFrame({"close": []}, index=pd.DatetimeIndex([], tz="UTC"))
+        empty_oi = pd.DataFrame(columns=["oi", "oi_usd"])
+
+        _run_symbol_dynamic(
+            sym, cfg, tmp_path, candidates,
+            empty_funding, empty_candles, empty_oi, df,
+        )
+
+        parquet_path = tmp_path / "factor_values_eth.parquet"
+        assert parquet_path.exists(), f"Expected factor_values parquet at {parquet_path}"
+
+        loaded = pd.read_parquet(parquet_path, engine="pyarrow")
+        assert "rsi_14" in loaded.columns
