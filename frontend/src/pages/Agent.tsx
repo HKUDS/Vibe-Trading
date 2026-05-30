@@ -331,25 +331,33 @@ export function Agent() {
           if (metrics && Object.keys(metrics).length > 0) {
             agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, metrics, timestamp: ts + 1 });
           } else {
-            // Always show card when runId exists; enrich with fetched data if available
+            // Fetch run data to check report-worthiness; show fallback card if fetch fails
             let fetchedMetrics: Record<string, number> | undefined;
             let fetchedCurve: Array<{ time: string; equity: number }> | undefined;
+            let showCard = false;
             try {
               const runData = await api.getRun(runId);
               if (isReportWorthyRun(runData)) {
                 fetchedMetrics = runData.metrics;
                 fetchedCurve = runData.equity_curve?.map((e) => ({ time: e.time, equity: Number(e.equity) }));
+                showCard = true;
               }
-            } catch { /* run may be unavailable — still show link */ }
-            agentMsgs.push({
-              id: m.message_id,
-              type: "run_complete",
-              content: "",
-              runId,
-              metrics: fetchedMetrics,
-              equityCurve: fetchedCurve,
-              timestamp: ts + 1,
-            });
+              // succeeded but not report-worthy (plain chat turn) → skip card
+            } catch {
+              // fetch failed (auth/404/network) → can't tell, show link as fallback
+              showCard = true;
+            }
+            if (showCard) {
+              agentMsgs.push({
+                id: m.message_id,
+                type: "run_complete",
+                content: "",
+                runId,
+                metrics: fetchedMetrics,
+                equityCurve: fetchedCurve,
+                timestamp: ts + 1,
+              });
+            }
           }
         } else {
           agentMsgs.push({ id: m.message_id, type: "answer", content: m.content, timestamp: ts });
@@ -472,20 +480,26 @@ export function Agent() {
         if (runId) {
           let runMetrics: Record<string, number> | undefined;
           let runCurve: Array<{ time: string; equity: number }> | undefined;
+          let showCard = false;
           try {
             const runData = await api.getRun(runId);
             if (isReportWorthyRun(runData)) {
               runMetrics = runData.metrics;
               runCurve = runData.equity_curve?.map(e => ({ time: e.time, equity: Number(e.equity) }));
+              showCard = true;
             }
-          } catch { /* run data unavailable — still show link */ }
-          s.addMessage({
-            id: "", type: "run_complete", content: "", runId,
-            metrics: runMetrics,
-            equityCurve: runCurve,
-            shadowId,
-            timestamp: Date.now(),
-          });
+          } catch {
+            showCard = true; // fetch failed → show link as fallback
+          }
+          if (showCard || shadowId) {
+            s.addMessage({
+              id: "", type: "run_complete", content: "", runId,
+              metrics: showCard ? runMetrics : undefined,
+              equityCurve: showCard ? runCurve : undefined,
+              shadowId,
+              timestamp: Date.now(),
+            });
+          }
         } else if (shadowId) {
           s.addMessage({ id: "", type: "run_complete", content: "", shadowId, timestamp: Date.now() });
         }
