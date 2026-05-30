@@ -9,6 +9,7 @@ Usage: ``python -m backtest.runner <run_dir>``
 
 import ast
 import importlib.util
+import inspect
 import json
 import logging
 import sys
@@ -233,6 +234,11 @@ def _validate_signal_engine_source(file_path: Path) -> None:
     for node in tree.body:
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
             continue
+        if isinstance(node, ast.ImportFrom) and node.module == "signal_engine":
+            raise ValueError(
+                "Circular import: 'from signal_engine import ...' imports the file from itself. "
+                "Remove this import — SignalEngine is defined in this same file."
+            )
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             continue
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -245,6 +251,26 @@ def _validate_signal_engine_source(file_path: Path) -> None:
             continue
         raise ValueError(
             f"Executable top-level statement {type(node).__name__} is not allowed"
+        )
+
+
+def _validate_signal_engine_class(engine_cls) -> None:
+    """Pre-flight check: SignalEngine can be instantiated with no args and has generate()."""
+    sig = inspect.signature(engine_cls.__init__)
+    required = [
+        p.name for p in sig.parameters.values()
+        if p.name != "self" and p.default is inspect.Parameter.empty
+        and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    ]
+    if required:
+        raise ValueError(
+            f"SignalEngine.__init__() has required arguments {required}. "
+            "All parameters must have default values so the runner can call SignalEngine()."
+        )
+    if not callable(getattr(engine_cls, "generate", None)):
+        raise ValueError(
+            "SignalEngine must have a callable 'generate' method. "
+            "Expected: def generate(self, data_map: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]"
         )
 
 
@@ -400,6 +426,12 @@ def main(run_dir: Path) -> None:
     engine_cls = getattr(signal_module, "SignalEngine", None)
     if engine_cls is None:
         print(json.dumps({"error": "SignalEngine class not found in signal_engine.py"}))
+        sys.exit(1)
+
+    try:
+        _validate_signal_engine_class(engine_cls)
+    except ValueError as exc:
+        print(json.dumps({"error": f"SignalEngine interface error: {exc}"}))
         sys.exit(1)
 
     # Data: auto split vs single loader
