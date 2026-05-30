@@ -503,10 +503,11 @@ def run_vibe_trading_diagnose(prompt: str) -> str:
         subprocess.TimeoutExpired: If the subprocess does not complete within
             DIAGNOSE_TIMEOUT_S seconds.
     """
-    cli_path = _REPO_ROOT / "agent" / "cli.py"
     agent_dir = _REPO_ROOT / "agent"
 
-    cmd = [sys.executable, str(cli_path), "run", "-p", prompt, "--no-rich"]
+    # Invoke the CLI as a module (``python -m cli``) with cwd=agent; there is no
+    # standalone agent/cli.py file (the CLI is the ``cli`` package).
+    cmd = [sys.executable, "-m", "cli", "run", "-p", prompt, "--no-rich"]
     print(f"[stage3d] invoking vibe-trading run (timeout={DIAGNOSE_TIMEOUT_S}s) …")
     completed = subprocess.run(
         cmd,

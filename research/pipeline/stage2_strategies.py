@@ -176,6 +176,16 @@ class StrategyCheckResult:
 # ─── Pure-logic helpers (testable, network-free, no subprocess) ───────────────
 
 
+def _entry_logic_note(n_factors: int) -> str:
+    """Human-readable note explaining the AND/OR combine choice for n factors."""
+    if n_factors >= 3:
+        return (
+            f"OR-logic (logic=any) — {n_factors}-factor AND-consensus is too "
+            "sparse to trade."
+        )
+    return "AND-logic (logic=all) — 2-factor consensus."
+
+
 def select_usable_factors(manifest: FactorManifest) -> list[FactorEntry]:
     """Return factors whose verdict is NOT ``reject``, preserving input order.
 
@@ -332,6 +342,12 @@ def build_strategy_spec(
 
     factor_names = [f.name for f in usable_factors]
 
+    # Entry combine-logic: AND (`all`) requires every factor at its extreme
+    # simultaneously, which gets very sparse (near-zero trades) once 3+ factors
+    # are involved — see archetype-switch finding. Use OR (`any`) for 3+ factors
+    # so the strategy actually trades; 2-factor consensus stays AND.
+    entry_logic = "any" if len(factor_names) >= 3 else "all"
+
     # Indicators block — one entry per usable factor. funding_rate / fng have
     # canonical sources in the S1-S4 files (see module-level _KNOWN_SOURCES);
     # anything else gets a generic stub.
@@ -367,8 +383,10 @@ def build_strategy_spec(
         "entry_long": {
             "description": (
                 "Enter long when the retained factors align in a "
-                "fear / short-crowded (contrarian) regime with persistence."
+                "fear / short-crowded (contrarian) regime with persistence. "
+                f"{_entry_logic_note(len(factor_names))}"
             ),
+            "logic": entry_logic,
             "conditions": [
                 f"{name}_percentile_90d <= 20 persist 2/3"
                 for name in factor_names
@@ -377,8 +395,10 @@ def build_strategy_spec(
         "entry_short": {
             "description": (
                 "Enter short when the retained factors align in a "
-                "greed / long-crowded (contrarian) regime with persistence."
+                "greed / long-crowded (contrarian) regime with persistence. "
+                f"{_entry_logic_note(len(factor_names))}"
             ),
+            "logic": entry_logic,
             "conditions": [
                 f"{name}_percentile_90d >= 80 persist 2/3"
                 for name in factor_names
@@ -620,10 +640,11 @@ def run_swarm(vars_dict: dict[str, str]) -> str:
             to sys.stderr for immediate visibility.
     """
     agent_dir = _REPO_ROOT / "agent"
-    cli_path = agent_dir / "cli.py"
     vars_json = json.dumps(vars_dict, ensure_ascii=False)
 
-    cmd = [sys.executable, str(cli_path), "--swarm-run", SWARM_PRESET, vars_json]
+    # Invoke the CLI as a module (``python -m cli``) with cwd=agent so its
+    # ``cli.*`` package imports resolve. There is no standalone agent/cli.py file.
+    cmd = [sys.executable, "-m", "cli", "--swarm-run", SWARM_PRESET, vars_json]
     print(f"[stage2] invoking swarm: {SWARM_PRESET}  (cwd={agent_dir}, timeout={SWARM_TIMEOUT_S}s)")
     completed = subprocess.run(
         cmd,
