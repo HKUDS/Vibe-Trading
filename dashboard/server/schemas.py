@@ -191,8 +191,9 @@ class FactorManifest(_Manifest):
 class FactorCandidate(_Manifest):
     name: str = Field(..., description="因子識別名，例 'funding_z_30d'。")
     formula: str = Field(..., description="自然語 + 虛擬公式，供人工審閱，stage 1 不直接 eval。")
-    data_source: str = Field(..., description="對應 SOURCE_REGISTRY 的 key，例 'okx_funding'。")
-    transform: str = Field(..., description="對應 TRANSFORM_REGISTRY 的 key，例 'z_30d'。")
+    feature_key: Optional[str] = None
+    data_source: Optional[str] = Field(default=None, description="對應 SOURCE_REGISTRY 的 key，例 'okx_funding'。")
+    transform: Optional[str] = Field(default=None, description="對應 TRANSFORM_REGISTRY 的 key，例 'z_30d'。")
     expected_ic_sign: Literal["+", "-", "?"] = Field(..., description="預期 IC 符號：'+' 正向、'-' 反向、'?' 未知。")
     economic_logic: str = Field(..., description="為何此因子具備 alpha 的經濟邏輯解釋。")
     horizons_h: List[int] = Field(..., description="候選因子適用的前向報酬時窗（小時）清單。")
@@ -206,6 +207,14 @@ class FactorCandidate(_Manifest):
         "whale",
         "skew",
     ] = Field(..., description="訊號類別：funding / basis / oi / momentum / volatility / stablecoin / whale / skew。")
+
+
+class EvidenceEntry(_Manifest):
+    feature_key: str = Field(..., description="Column name in the feature parquet store.")
+    category: str = Field(..., description="Indicator category, e.g. momentum/trend/volatility/volume.")
+    ic_by_horizon: Dict[int, Optional[float]] = Field(..., description="Horizon hours → Spearman IC.")
+    ir: float = Field(..., description="Information ratio.")
+    sample_size: int = Field(..., ge=0, description="Number of paired observations.")
 
 
 class CandidatesManifest(_Manifest):
