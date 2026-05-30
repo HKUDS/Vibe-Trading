@@ -67,6 +67,19 @@ class ResearchConfig:
     fees: FeesConfig
     horizons_h: tuple[int, ...]    # forward-return horizons in hours
     discovery_cache_days: int = 7  # stage-0 cache TTL in days (0 = disabled)
+    # ── Evidence-driven indicator pool (Task 1.2) ────────────────────────────
+    indicator_pool: tuple[str, ...] = (
+        # momentum
+        "rsi_14", "macd_diff", "roc_10", "stoch_k",
+        # trend
+        "ema_cross_9_21", "sma_cross_10_30", "adx_14",
+        # volatility
+        "atr_14", "bb_width_20", "rolling_std_20",
+        # volume
+        "obv", "mfi_14", "volume_zscore_20",
+    )
+    feature_store_path: str = "research/manifests"   # relative to repo root
+    append_coverage_threshold: float = 0.5           # min non-NaN fraction to accept a feature column
 
     # ── Convenience helpers ──────────────────────────────────────────────────
 
@@ -226,6 +239,31 @@ def load_config(path: Path | str | None = None) -> ResearchConfig:
             f"'discovery_cache_days' must be >= 0, got {discovery_cache_days}."
         )
 
+    # ── indicator_pool ───────────────────────────────────────────────────────
+    _default_indicator_pool = (
+        "rsi_14", "macd_diff", "roc_10", "stoch_k",
+        "ema_cross_9_21", "sma_cross_10_30", "adx_14",
+        "atr_14", "bb_width_20", "rolling_std_20",
+        "obv", "mfi_14", "volume_zscore_20",
+    )
+    raw_pool = raw.get("indicator_pool", None)
+    if raw_pool is None:
+        indicator_pool = _default_indicator_pool
+    else:
+        if not isinstance(raw_pool, list):
+            raise TypeError("'indicator_pool' in research_config.yaml must be a list of strings.")
+        indicator_pool = tuple(str(s) for s in raw_pool)
+
+    # ── feature_store_path ───────────────────────────────────────────────────
+    feature_store_path = str(raw.get("feature_store_path", "research/manifests"))
+
+    # ── append_coverage_threshold ────────────────────────────────────────────
+    append_coverage_threshold = float(raw.get("append_coverage_threshold", 0.5))
+    if not 0.0 <= append_coverage_threshold <= 1.0:
+        raise ValueError(
+            f"'append_coverage_threshold' must be between 0.0 and 1.0, got {append_coverage_threshold}."
+        )
+
     return ResearchConfig(
         symbols=tuple(symbol_configs),
         period=period,
@@ -235,4 +273,7 @@ def load_config(path: Path | str | None = None) -> ResearchConfig:
         fees=fees,
         horizons_h=tuple(horizons),
         discovery_cache_days=discovery_cache_days,
+        indicator_pool=indicator_pool,
+        feature_store_path=feature_store_path,
+        append_coverage_threshold=append_coverage_threshold,
     )

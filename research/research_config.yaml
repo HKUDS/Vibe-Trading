@@ -38,3 +38,33 @@ horizons_h: [8, 24, 72, 168]
 
 # ─── Stage 0 探索快取 ────────────────────────────────────────────────────────
 discovery_cache_days: 7    # swarm 重跑間隔天數（0 = 永不快取）
+
+# ─── 技術指標池（evidence-driven factor discovery） ──────────────────────────
+# 列出啟用的短名稱指標；indicators.py 依此清單計算特徵。
+# 省略此區塊則使用下列預設 13 個指標。
+# indicator_pool:
+#   # momentum
+#   - rsi_14
+#   - macd_diff
+#   - roc_10
+#   - stoch_k
+#   # trend
+#   - ema_cross_9_21
+#   - sma_cross_10_30
+#   - adx_14
+#   # volatility
+#   - atr_14
+#   - bb_width_20
+#   - rolling_std_20
+#   # volume
+#   - obv
+#   - mfi_14
+#   - volume_zscore_20
+
+# ─── Feature Store 路徑 ──────────────────────────────────────────────────────
+# 計算好的指標特徵快取目錄（相對 repo root）。
+# feature_store_path: "research/manifests"   # 預設值
+
+# ─── Feature 覆蓋率門檻 ──────────────────────────────────────────────────────
+# 新增一欄特徵時，非 NaN 比例必須達到此閾值才接受（0.0–1.0）。
+# append_coverage_threshold: 0.5   # 預設 50%

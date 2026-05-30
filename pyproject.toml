@@ -33,7 +33,11 @@ dependencies = [
     "python-pptx>=0.6.23",
     "pypdfium2>=4.0.0",
     "Pillow>=10.0.0",
-    "numpy>=1.24.0",
+    # pandas-ta uses np.NaN which was removed in numpy 2.0 (see twopirllc/pandas-ta#860).
+    # Pin to <2 until upstream ships a numpy-2-clean release.
+    "numpy>=1.24.0,<2",
+    # pandas-ta: pure-Python TA library (no TA-Lib C compilation required).
+    "pandas-ta>=0.3.14b",
     "scipy>=1.10.0",
     "duckdb>=1.2.0",
     "scikit-learn>=1.3.0",
