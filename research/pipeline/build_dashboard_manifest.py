@@ -126,6 +126,7 @@ def build_manifest(
 
     # ── spec (always present post-stage-2) ────────────────────────────────────
     description = None
+    spec_doc: dict = {}
     spec_path = _REPO_ROOT / entry.spec_yaml
     if spec_path.exists():
         try:
@@ -136,7 +137,7 @@ def build_manifest(
             if isinstance(h, str):
                 description = " ".join(h.split())[:300]
         except Exception:  # noqa: BLE001 — description is best-effort
-            description = None
+            spec_doc = {}
 
     spec = SpecBlock(
         source_run=None,
@@ -149,6 +150,10 @@ def build_manifest(
     stage = 2  # spec implies stage 2 complete
 
     # ── generation (stage 2) ──────────────────────────────────────────────────
+    # Prefer the swarm-written generation.json. If absent (e.g. a strategy that
+    # was authored deterministically / by hand rather than by the stage-2 swarm),
+    # synthesise an honest provenance block from the spec YAML so the dashboard
+    # shows "generated" rather than a misleading "incomplete".
     generation = None
     gen_raw = _read_json(out_dir / "generation.json")
     if gen_raw:
@@ -156,6 +161,16 @@ def build_manifest(
             generation = GenerationBlock.model_validate(gen_raw)
         except Exception:  # noqa: BLE001
             generation = None
+    if generation is None and spec_doc:
+        archetype = spec_doc.get("archetype") or "unknown"
+        factors_used = sorted((spec_doc.get("indicators") or {}).keys())
+        generation = GenerationBlock(
+            source_run=None,
+            method=f"deterministic ({archetype}; not LLM swarm)",
+            model=None,
+            rationale=description,
+            factors_used=factors_used,
+        )
 
     # ── backtest (stage 3) ────────────────────────────────────────────────────
     backtest = None
@@ -248,6 +263,12 @@ def main() -> None:
     print("=" * 60)
     built = 0
     for strategy_id, entry in targets:
+        # Skip entries with no base_run: these are not deployable strategies but
+        # validation harnesses (e.g. a walk-forward test that only carries
+        # held-out oos_runs). They should not appear in the dashboard strategy list.
+        if entry.base_run is None:
+            print(f"  [SKIP] {strategy_id:32s} no base_run (validation harness, not a strategy)")
+            continue
         try:
             res = build_manifest(strategy_id, entry, runs_root, manifests_dir)
             print(f"  [OK] {res['strategy_id']:32s} stage={res['stage']}  -> {res['path']}")
