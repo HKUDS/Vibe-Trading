@@ -32,12 +32,17 @@ for _p in (_RESEARCH_DIR, _DASHBOARD_SCHEMAS):
     if _ps not in sys.path:
         sys.path.insert(0, _ps)
 
+import dataclasses
+
+from pipeline.config import FeesConfig, ResearchConfig, SymbolConfig
 from pipeline.stage0_discovery import (
     CandidatesCheckResult,
+    _process_symbol,
     cache_hit,
     compute_exit_code,
     filter_invalid_candidates,
     parse_candidates_json,
+    validate_feature_keys,
 )
 
 
@@ -323,3 +328,140 @@ class TestComputeExitCode:
 
     def test_return_type_is_int(self):
         assert isinstance(compute_exit_code([]), int)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for preflight / _process_symbol tests
+# ---------------------------------------------------------------------------
+
+
+def _make_minimal_cfg() -> ResearchConfig:
+    """Build a minimal ResearchConfig suitable for unit tests (no I/O)."""
+    return ResearchConfig(
+        symbols=(
+            SymbolConfig(
+                name="eth",
+                okx_swap="ETH-USDT-SWAP",
+                ccxt_bybit="ETH/USDT:USDT",
+            ),
+        ),
+        period=30,
+        interval="1H",
+        data_source="okx",
+        engine="daily",
+        fees=FeesConfig(maker_rate=0.0002, taker_rate=0.0005, slippage=0.0003),
+        horizons_h=(8, 24),
+        discovery_cache_days=0,  # disable cache so preflight is always reached
+    )
+
+
+# ---------------------------------------------------------------------------
+# TestStage0aPreflightCheck
+# ---------------------------------------------------------------------------
+
+
+class TestStage0aPreflightCheck:
+    """Pre-flight: _process_symbol must fail fast when stage0a outputs are absent."""
+
+    def test_missing_features_and_evidence_writes_failed_json(self, tmp_path: Path):
+        """Both features parquet and evidence JSON absent → failed.json written, ok=False."""
+        cfg = _make_minimal_cfg()
+        sym_cfg = cfg.symbols[0]
+
+        result = _process_symbol(
+            sym_name=sym_cfg.name,
+            okx_swap=sym_cfg.okx_swap,
+            cfg=cfg,
+            manifests_dir=tmp_path,
+        )
+
+        assert result.ok is False
+        assert "stage0a" in (result.error or "").lower() or "missing" in (result.error or "").lower()
+
+        failed_path = tmp_path / "candidates_eth.failed.json"
+        assert failed_path.exists(), "expected candidates_eth.failed.json to be written"
+        payload = json.loads(failed_path.read_text(encoding="utf-8"))
+        assert payload["symbol"] == "eth"
+        assert "missing" in payload["error"].lower() or "stage0a" in payload["error"].lower()
+
+    def test_missing_only_evidence_writes_failed_json(self, tmp_path: Path):
+        """Features parquet exists but evidence JSON is absent → still fails."""
+        cfg = _make_minimal_cfg()
+        sym_cfg = cfg.symbols[0]
+
+        # Create a minimal (but not necessarily valid) features parquet placeholder
+        features_path = tmp_path / "features_eth.parquet"
+        import pandas as pd
+        pd.DataFrame({"rsi_14": [0.5]}).to_parquet(str(features_path), engine="pyarrow")
+        # evidence_eth.json intentionally left absent
+
+        result = _process_symbol(
+            sym_name=sym_cfg.name,
+            okx_swap=sym_cfg.okx_swap,
+            cfg=cfg,
+            manifests_dir=tmp_path,
+        )
+
+        assert result.ok is False
+        failed_path = tmp_path / "candidates_eth.failed.json"
+        assert failed_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# TestValidateFeatureKeys
+# ---------------------------------------------------------------------------
+
+
+class TestValidateFeatureKeys:
+    """validate_feature_keys(candidates, available_feature_keys) -> (kept, warnings)"""
+
+    def _make_cand(self, name: str = "c1", feature_key: str | None = "rsi_14") -> dict:
+        return {"name": name, "feature_key": feature_key}
+
+    def test_candidate_without_feature_key_is_discarded(self):
+        """feature_key=None → discarded."""
+        cand = self._make_cand(name="no_key", feature_key=None)
+        kept, warnings = validate_feature_keys([cand], {"rsi_14", "macd_diff"})
+        assert kept == []
+        assert len(warnings) == 1
+
+    def test_candidate_with_unknown_feature_key_is_discarded(self):
+        """feature_key not in available_feature_keys → discarded."""
+        cand = self._make_cand(name="bad_key", feature_key="nonexistent_col")
+        kept, warnings = validate_feature_keys([cand], {"rsi_14", "macd_diff"})
+        assert kept == []
+        assert len(warnings) == 1
+        assert "nonexistent_col" in warnings[0]
+
+    def test_candidate_with_valid_feature_key_is_kept(self):
+        """feature_key in available_feature_keys → kept."""
+        cand = self._make_cand(name="good", feature_key="rsi_14")
+        kept, warnings = validate_feature_keys([cand], {"rsi_14", "macd_diff"})
+        assert len(kept) == 1
+        assert kept[0]["name"] == "good"
+        assert warnings == []
+
+    def test_returns_warnings_for_discarded_candidates(self):
+        """One warning per discarded candidate."""
+        cands = [
+            self._make_cand("ok", "rsi_14"),
+            self._make_cand("no_key", None),
+            self._make_cand("bad", "missing_col"),
+        ]
+        kept, warnings = validate_feature_keys(cands, {"rsi_14"})
+        assert len(kept) == 1
+        assert kept[0]["name"] == "ok"
+        assert len(warnings) == 2
+
+    def test_empty_candidates_returns_empty(self):
+        """Empty input → empty output, no warnings."""
+        kept, warnings = validate_feature_keys([], {"rsi_14"})
+        assert kept == []
+        assert warnings == []
+
+    def test_empty_available_keys_discards_all(self):
+        """No available keys → every candidate is discarded."""
+        cands = [self._make_cand("a", "rsi_14"), self._make_cand("b", "macd_diff")]
+        kept, warnings = validate_feature_keys(cands, set())
+        assert kept == []
+        assert len(warnings) == 2

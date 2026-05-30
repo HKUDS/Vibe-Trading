@@ -64,6 +64,9 @@ import re
 import subprocess
 from datetime import datetime, timezone
 
+# ── Third-party ────────────────────────────────────────────────────────────────
+import pandas as pd
+
 # ── Internal imports ───────────────────────────────────────────────────────────
 from pipeline.config import _REPO_ROOT as _CFG_REPO_ROOT, ResearchConfig, load_config
 from lib.sources import SOURCE_REGISTRY, TRANSFORM_REGISTRY
@@ -187,6 +190,46 @@ def filter_invalid_candidates(
         valid.append(cand)
 
     return valid, warnings
+
+
+def validate_feature_keys(
+    candidates: list[dict],
+    available_feature_keys: set[str],
+) -> tuple[list[dict], list[str]]:
+    """Filter out candidates whose feature_key is None/missing or not in the feature store.
+
+    Args:
+        candidates:             List of raw candidate dicts (already passed through
+                                filter_invalid_candidates and Pydantic validation or
+                                still raw dicts — feature_key is the only field checked).
+        available_feature_keys: Set of column names present in the features parquet.
+
+    Returns:
+        ``(kept, warnings)`` where ``kept`` is the subset of candidates with a
+        valid feature_key and ``warnings`` is a list of human-readable strings,
+        one per discarded candidate.
+    """
+    kept: list[dict] = []
+    warnings: list[str] = []
+
+    for i, cand in enumerate(candidates):
+        name = cand.get("name", f"<candidate[{i}]>")
+        feature_key = cand.get("feature_key")
+        if feature_key is None:
+            warnings.append(
+                f"[stage0] Discarded candidate '{name}': "
+                "feature_key is None or missing — must be set to a column in the feature store."
+            )
+            continue
+        if feature_key not in available_feature_keys:
+            warnings.append(
+                f"[stage0] Discarded candidate '{name}': "
+                f"feature_key='{feature_key}' not found in feature store columns."
+            )
+            continue
+        kept.append(cand)
+
+    return kept, warnings
 
 
 def cache_hit(manifests_dir: Path, sym: str, cache_days: int) -> bool:
@@ -372,14 +415,15 @@ def run_swarm(vars_dict: dict, timeout: int = SWARM_TIMEOUT_S) -> str:
 
 
 def _build_swarm_vars(
-    sym_name: str, okx_swap: str, cfg: ResearchConfig
+    sym_name: str, okx_swap: str, cfg: ResearchConfig, manifests_dir: Path
 ) -> tuple[dict[str, str], list[str], list[str]]:
     """Build the user_vars dict for the crypto_factor_lab swarm.
 
     Args:
-        sym_name: Short lowercase symbol name, e.g. "eth".
-        okx_swap: OKX perpetual swap ticker, e.g. "ETH-USDT-SWAP".
-        cfg:      Loaded ResearchConfig.
+        sym_name:      Short lowercase symbol name, e.g. "eth".
+        okx_swap:      OKX perpetual swap ticker, e.g. "ETH-USDT-SWAP".
+        cfg:           Loaded ResearchConfig.
+        manifests_dir: Path to research/manifests/ (for evidence/features paths).
 
     Returns:
         Tuple of (vars_dict, available_sources, available_transforms) where
@@ -400,6 +444,8 @@ def _build_swarm_vars(
         "horizons_h": str(list(cfg.horizons_h)),
         "available_sources": ",".join(available_sources),
         "available_transforms": ",".join(available_transforms),
+        "evidence_path": str(manifests_dir / f"evidence_{sym_name}.json"),
+        "features_path": str(manifests_dir / f"features_{sym_name}.parquet"),
     }
     return vars_dict, available_sources, available_transforms
 
@@ -431,6 +477,26 @@ def _process_symbol(
     Returns:
         CandidatesCheckResult for this symbol.
     """
+    # ── 0. Pre-flight: verify stage0a outputs exist ───────────────────────────
+    features_path = manifests_dir / f"features_{sym_name}.parquet"
+    evidence_path = manifests_dir / f"evidence_{sym_name}.json"
+    missing = []
+    if not features_path.exists():
+        missing.append(str(features_path))
+    if not evidence_path.exists():
+        missing.append(str(evidence_path))
+    if missing:
+        print(
+            f"{_RED}[stage0] {sym_name}: stage0a outputs missing — "
+            f"run stage0a_features first. Missing: {missing}{_RESET}",
+            file=sys.stderr,
+        )
+        return _write_failed(
+            manifests_dir,
+            sym_name,
+            "stage0a outputs missing — run stage0a_features first",
+        )
+
     # ── 1. Cache check ────────────────────────────────────────────────────────
     if cache_hit(manifests_dir, sym_name, cfg.discovery_cache_days):
         print(f"[stage0] {sym_name}: cache hit, skipping swarm")
@@ -454,7 +520,9 @@ def _process_symbol(
 
     # ── 2. Build vars and run swarm ───────────────────────────────────────────
     print(f"[stage0] {sym_name}: running swarm...")
-    vars_dict, available_sources, available_transforms = _build_swarm_vars(sym_name, okx_swap, cfg)
+    vars_dict, available_sources, available_transforms = _build_swarm_vars(
+        sym_name, okx_swap, cfg, manifests_dir
+    )
 
     try:
         stdout = run_swarm(vars_dict)
@@ -527,7 +595,43 @@ def _process_symbol(
             "No valid candidates remained after filtering and validation.",
         )
 
-    # ── 6. Write CandidatesManifest ───────────────────────────────────────────
+    # ── 6. Validate feature_key against feature store columns ─────────────────
+    try:
+        feature_columns = pd.read_parquet(features_path, engine="pyarrow").columns.tolist()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[stage0] {sym_name}: could not read features parquet for key validation: {exc}")
+        feature_columns = []
+
+    available_feature_keys = set(feature_columns)
+    # Convert validated FactorCandidate objects back to dicts for validate_feature_keys
+    validated_dicts = [c.model_dump() for c in validated_candidates]
+    kept_dicts, fk_warnings = validate_feature_keys(validated_dicts, available_feature_keys)
+    for warn in fk_warnings:
+        print(warn)
+
+    if not kept_dicts:
+        return _write_failed(
+            manifests_dir,
+            sym_name,
+            "No candidates with valid feature_key remained",
+        )
+
+    # Re-validate kept dicts back into FactorCandidate objects
+    validated_candidates = []
+    for d in kept_dicts:
+        try:
+            validated_candidates.append(FactorCandidate.model_validate(d))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[stage0] {sym_name}: re-validation error after feature_key filter: {exc}")
+
+    if not validated_candidates:
+        return _write_failed(
+            manifests_dir,
+            sym_name,
+            "No candidates with valid feature_key remained",
+        )
+
+    # ── 7. Write CandidatesManifest ───────────────────────────────────────────
     manifest = CandidatesManifest(
         symbol=sym_name,
         generated_at=datetime.now(timezone.utc),
