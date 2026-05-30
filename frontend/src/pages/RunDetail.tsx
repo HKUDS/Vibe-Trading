@@ -97,7 +97,21 @@ export function RunDetail() {
       </div>
     );
   }
-  if (!run) return <div className="p-8 text-red-500">Run not found</div>;
+  if (!run) return (
+    <div className="p-8 space-y-2">
+      <p className="text-red-500 font-medium">Run not found</p>
+      <p className="text-sm text-muted-foreground">
+        The run directory may have been removed, or your browser may not have API access configured.
+        Check that the API authentication key is set in Settings if accessing remotely.
+      </p>
+      <button
+        onClick={() => navigate(-1)}
+        className="text-sm text-primary hover:underline inline-flex items-center gap-1.5"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" /> Go back
+      </button>
+    </div>
+  );
 
   const ok = run.status === "success";
 
