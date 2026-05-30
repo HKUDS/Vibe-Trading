@@ -186,6 +186,43 @@ def _entry_logic_note(n_factors: int) -> str:
     return "AND-logic (logic=all) — 2-factor consensus."
 
 
+def _factor_is_trend(factor) -> bool:
+    """Whether a factor should be traded WITH its signal (trend) vs against it.
+
+    Decided by the sign of the factor's MEASURED IC at the horizon with the
+    largest |IC| (the most informative horizon). Positive IC -> trend (a high
+    factor value precedes a rise, so go long when the value is high). Negative
+    IC -> contrarian (a high value precedes a fall, so go long when it is low).
+
+    Measured IC is used in preference to the LLM's expected_ic_sign because the
+    latter can be wrong (e.g. an agent labelled funding `+` when the measured IC
+    was negative). Factors with no IC data default to contrarian (legacy
+    behaviour).
+    """
+    ics = {h: v for h, v in (getattr(factor, "ic_by_horizon", None) or {}).items() if v is not None}
+    if not ics:
+        return False
+    best_h = max(ics, key=lambda h: abs(ics[h]))
+    return ics[best_h] > 0
+
+
+def _entry_condition(factor, direction: str) -> str:
+    """Build one DSL entry condition for a factor in the given trade direction.
+
+    A long entry fires at the percentile extreme that precedes a rise for this
+    factor (high for trend factors, low for contrarian); a short entry fires at
+    the opposite extreme. This fixes the prior bug where every factor was traded
+    contrarian regardless of its IC sign, which inverted positive-IC factors.
+    """
+    trend = _factor_is_trend(factor)
+    long_high = trend  # trend longs the high extreme; contrarian longs the low
+    if direction == "long":
+        op_value = ">= 80" if long_high else "<= 20"
+    else:  # short
+        op_value = "<= 20" if long_high else ">= 80"
+    return f"{factor.name}_percentile_90d {op_value} persist 2/3"
+
+
 def select_usable_factors(manifest: FactorManifest) -> list[FactorEntry]:
     """Return factors whose verdict is NOT ``reject``, preserving input order.
 
@@ -382,26 +419,28 @@ def build_strategy_spec(
         "indicators": indicators,
         "entry_long": {
             "description": (
-                "Enter long when the retained factors align in a "
-                "fear / short-crowded (contrarian) regime with persistence. "
+                "Enter long when each retained factor sits at the extreme that "
+                "its measured IC sign says precedes a rise (trend factors high, "
+                "contrarian factors low), with persistence. "
                 f"{_entry_logic_note(len(factor_names))}"
             ),
             "logic": entry_logic,
             "conditions": [
-                f"{name}_percentile_90d <= 20 persist 2/3"
-                for name in factor_names
+                _entry_condition(f, direction="long")
+                for f in usable_factors
             ],
         },
         "entry_short": {
             "description": (
-                "Enter short when the retained factors align in a "
-                "greed / long-crowded (contrarian) regime with persistence. "
+                "Enter short when each retained factor sits at the opposite "
+                "extreme (trend factors low, contrarian factors high), with "
+                "persistence. "
                 f"{_entry_logic_note(len(factor_names))}"
             ),
             "logic": entry_logic,
             "conditions": [
-                f"{name}_percentile_90d >= 80 persist 2/3"
-                for name in factor_names
+                _entry_condition(f, direction="short")
+                for f in usable_factors
             ],
         },
         "exit_rules": [
