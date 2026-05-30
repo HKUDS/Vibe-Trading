@@ -495,6 +495,7 @@ def _optimize_strategy(
     manifests_dir: Path,
     max_combos: int,
     seed: int,
+    window: tuple[str, str] | None = None,
 ) -> OptimizationCheckResult:
     print(f"\n{'='*60}\n[stage4] Strategy: {strategy_id}\n{'='*60}")
 
@@ -524,7 +525,13 @@ def _optimize_strategy(
           f"sampling: {len(combos)}  seed={seed}")
 
     base_config = build_run_config(symbol=entry.symbol, cfg=cfg)
-    # If a regime/oos override is desired in future, route through here.
+    # Restrict the sweep to a TRAIN window for walk-forward validation: tune on
+    # this window only, then test the best params on a held-out window. Without
+    # this, the sweep optimizes over the full period and any later "OOS" slice
+    # is data the tuning already saw (circular).
+    if window is not None:
+        base_config["start_date"], base_config["end_date"] = window
+        print(f"  Train window override: {window[0]} .. {window[1]}")
 
     results: list[ComboResult] = []
     for i, overrides in enumerate(combos):
@@ -581,7 +588,18 @@ def main() -> None:
                         help=f"max combos per strategy (default {DEFAULT_MAX_COMBOS})")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED,
                         help=f"RNG seed for combo sampling (default {DEFAULT_SEED})")
+    parser.add_argument("--train-start", default=None,
+                        help="Walk-forward TRAIN window start (YYYY-MM-DD). Restricts the "
+                             "sweep backtest window so the best params are tuned on train only.")
+    parser.add_argument("--train-end", default=None,
+                        help="Walk-forward TRAIN window end (YYYY-MM-DD).")
     args = parser.parse_args()
+
+    window: tuple[str, str] | None = None
+    if bool(args.train_start) ^ bool(args.train_end):
+        parser.error("--train-start and --train-end must be given together.")
+    if args.train_start and args.train_end:
+        window = (args.train_start, args.train_end)
 
     cfg = load_config()
     runs_map = load_strategy_runs()
@@ -613,6 +631,7 @@ def main() -> None:
                 runs_root=runs_root, strategies_dir=strategies_dir,
                 manifests_dir=manifests_dir,
                 max_combos=args.max, seed=args.seed,
+                window=window,
             )
         except Exception as exc:  # noqa: BLE001
             result = OptimizationCheckResult(strategy_id=strategy_id, ok=False,
