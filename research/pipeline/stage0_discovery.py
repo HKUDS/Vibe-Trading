@@ -173,6 +173,14 @@ def filter_invalid_candidates(
         src = cand.get("data_source", "")
         tfm = cand.get("transform", "")
 
+        # Evidence-driven candidates identify factors by feature_key, not by the
+        # legacy data_source/transform registry pair. When a feature_key is
+        # present, defer validation to validate_feature_keys (which checks the
+        # key exists in the feature store) and skip the legacy registry gate.
+        if cand.get("feature_key"):
+            valid.append(cand)
+            continue
+
         if src not in source_set:
             warnings.append(
                 f"[stage0] Filtered candidate '{name}': "
@@ -377,10 +385,12 @@ def run_swarm(vars_dict: dict, timeout: int = SWARM_TIMEOUT_S) -> str:
         subprocess.CalledProcessError: If the CLI exits non-zero.
     """
     agent_dir = _CFG_REPO_ROOT / "agent"
-    cli_path = agent_dir / "cli.py"
     vars_json = json.dumps(vars_dict, ensure_ascii=False)
 
-    cmd = [sys.executable, str(cli_path), "--swarm-run", SWARM_PRESET, vars_json]
+    # Invoke the CLI as a module (``python -m cli``) with cwd=agent so its
+    # ``cli.*`` package imports resolve. The legacy entrypoint handles
+    # ``--swarm-run``. (There is no standalone ``agent/cli.py`` file.)
+    cmd = [sys.executable, "-m", "cli", "--swarm-run", SWARM_PRESET, vars_json]
     print(
         f"[stage0] invoking swarm: {SWARM_PRESET}  "
         f"(cwd={agent_dir}, timeout={timeout}s)"

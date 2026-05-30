@@ -25,7 +25,7 @@ agents:
 
       ## 提案格式
       針對 `{target_universe}` 標的，從 evidence 表中選擇或組合 3–6 個候選因子，每個候選必須包含：
-      - `feature_key`：對應 feature store 的欄名
+      - `feature_key`：**必須逐字照抄** evidence 表中 `feature_key` 欄已存在的值（嚴禁自創 store 中不存在的名稱）。若要組合新因子，必先用 `append_feature_column` 寫入 store 後才能以該新欄名提案。
       - `name`：因子名稱（英文 snake_case）
       - `formula`：自然語言描述 + 偽程式碼公式
       - `expected_ic_sign`：依 evidence 資料判斷，填 `+`、`-`、或 `?`（不確定）
@@ -69,13 +69,32 @@ agents:
          - 提案的 expected_ic_sign 是否與 evidence 表中的實際 IC 方向一致？
          - 是否有硬編碼先驗覆蓋了 evidence 資料？
 
-      ## 輸出格式
+      ## 審查結論
       對每個候選因子給出明確結論：
       - **PASS**：符合所有條件，可進入下一階段
-      - **REVISE**：指出具體需要修改的欄位與修改方向
+      - **REVISE**：指出具體需要修改的欄位與修改方向（你必須在最終 JSON 中套用此修改）
       - **REJECT**：說明拒絕原因（例如 look-ahead、過擬合、無經濟邏輯）
 
-      以繁體中文輸出，格式清晰，逐因子條列。
+      以繁體中文輸出審查理由，格式清晰，逐因子條列。
+
+      ## 最終輸出（必須，供下游程式解析）
+      審查說明之後，你必須輸出**一個** ```json fenced 區塊，內含**通過審查（PASS 或套用 REVISE 後）的候選因子陣列**，REJECT 的不要放入。
+      每個候選為一個物件，欄位如下（缺一不可）：
+      - `feature_key`（string）：**必須逐字照抄** evidence 表（`{evidence_path}`）中 `feature_key` 欄已存在的值之一（例如 `stablecoin_supply_z`、`funding_rate_raw`、`obv`、`rsi_14` 等），**嚴禁自創新名稱**（如 `funding_rate_arbitrage` 這種 store 中不存在的鍵會被下游程式直接丟棄）。唯一例外：researcher 已實際用 `append_feature_column` 把新複合欄寫入 feature store，且你能確認該欄名存在。
+      - `name`（string，英文 snake_case）
+      - `formula`（string）
+      - `expected_ic_sign`：只能是 `"+"`、`"-"`、`"?"` 之一
+      - `economic_logic`（string）
+      - `horizons_h`（整數陣列，例 `[24,72]`）
+      - `category`：只能是以下之一 → `funding`、`basis`、`oi`、`momentum`、`volatility`、`stablecoin`、`whale`、`skew`。evidence 表的 `trend`/`volume` 不在允許清單，須映射到最接近者（趨勢類→`momentum`、量能類→`oi` 或 `volatility`，依經濟意義選）。
+
+      範例（僅示意格式）：
+      ```json
+      [
+        {"feature_key": "stablecoin_supply_z", "name": "stablecoin_supply_zscore", "formula": "z-score(stablecoin_supply, 30d)", "expected_ic_sign": "+", "economic_logic": "穩定幣供給擴張代表場外資金待入，後續買壓推升價格。", "horizons_h": [72,168], "category": "stablecoin"}
+      ]
+      ```
+      除此 JSON 區塊外不要再輸出其他 fenced code block，以免下游誤解析。
     tools: [bash, read_file, write_file, load_skill]
     skills: [perp-funding-basis, okx-market, crypto-derivatives]
     max_iterations: 50
@@ -90,7 +109,7 @@ tasks:
 
   - id: task-skeptic
     agent_id: skeptic
-    prompt_template: "審查 researcher 提出的候選因子，針對過擬合風險、正交性、因果有效性（無 look-ahead）、經濟邏輯逐一評估。對每個因子給出 PASS / REVISE / REJECT 結論。"
+    prompt_template: "審查 researcher 提出的候選因子，針對過擬合風險、正交性、因果有效性（無 look-ahead）、經濟邏輯逐一評估。對每個因子給出 PASS / REVISE / REJECT 結論。最後務必輸出一個 ```json 區塊，內含通過審查的候選因子陣列（每個含 feature_key、name、formula、expected_ic_sign、economic_logic、horizons_h、category），供下游 stage0 程式解析。"
     depends_on: [task-research]
     input_from:
       proposals: task-research

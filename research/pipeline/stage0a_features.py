@@ -369,8 +369,8 @@ def _process_symbol(
         log.info("%s: fetching OHLCV candles from OKX...", sym)
         candles = fetch_candles(
             symbol=sym_cfg.okx_swap,
+            days=cfg.period,
             bar=cfg.interval,
-            limit=cfg.period * 24,  # period in days × 24h
         )
         if candles is None or candles.empty:
             log.error("%s: candles are empty — skipping symbol", sym)

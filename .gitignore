@@ -109,6 +109,9 @@ research/strategies/code/*/test_signal_engine.py
 research/strategy_runs.json.bak
 research/manifests/factor_values_*.parquet
 research/manifests/factor_values_*.meta.json
+research/manifests/features_*.parquet
+research/manifests/features_*.meta.json
+research/manifests/evidence_*.json
 
 # Pipeline-generated logs
 stage*.log
