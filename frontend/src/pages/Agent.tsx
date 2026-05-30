@@ -338,7 +338,7 @@ export function Agent() {
               const runData = await api.getRun(runId);
               if (isReportWorthyRun(runData)) {
                 fetchedMetrics = runData.metrics;
-                fetchedCurve = runData.equity_curve?.map((e) => ({ time: e.time, equity: e.equity }));
+                fetchedCurve = runData.equity_curve?.map((e) => ({ time: e.time, equity: Number(e.equity) }));
               }
             } catch { /* run may be unavailable — still show link */ }
             agentMsgs.push({
@@ -476,7 +476,7 @@ export function Agent() {
             const runData = await api.getRun(runId);
             if (isReportWorthyRun(runData)) {
               runMetrics = runData.metrics;
-              runCurve = runData.equity_curve?.map(e => ({ time: e.time, equity: e.equity }));
+              runCurve = runData.equity_curve?.map(e => ({ time: e.time, equity: Number(e.equity) }));
             }
           } catch { /* run data unavailable — still show link */ }
           s.addMessage({
