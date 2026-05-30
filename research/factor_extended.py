@@ -45,7 +45,7 @@ import pandas as pd
 
 # ── Internal imports ───────────────────────────────────────────────────────────
 from lib.ccxt_data import fetch_oi_history_bybit, fetch_funding_history_multiyear
-from lib.coingecko_data import fetch_stablecoin_supply
+from lib.defillama_data import fetch_stablecoin_supply
 from lib.factor_io import load_features, dump_factor_values
 from lib.factor_metrics import FactorResult, add_forward_returns, evaluate_factor
 from lib.okx_data import fetch_candles, fetch_funding_history
@@ -382,11 +382,10 @@ def run_symbol(sym: SymbolConfig, cfg: ResearchConfig, manifests_dir: Path) -> N
     fng = fetch_fear_greed(days=period_days)
     print(f"     rows: {len(fng)}  range: {fng.index.min()} ~ {fng.index.max()}")
 
-    # CoinGecko free tier caps daily history at 365 days per call.
-    cg_days = min(period_days, 365)
-    print(f"[5/5] CoinGecko stablecoin supply (last {cg_days}d — capped by free tier)")
+    # DefiLlama serves full multi-year history (no 365-day cap).
+    print(f"[5/5] DefiLlama stablecoin supply (last {period_days}d)")
     try:
-        stablecoin = fetch_stablecoin_supply(days=cg_days)
+        stablecoin = fetch_stablecoin_supply(days=period_days)
         if stablecoin.empty:
             print("     WARN: stablecoin supply empty, downstream candidates referencing it will skip")
         else:

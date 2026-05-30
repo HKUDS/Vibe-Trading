@@ -310,7 +310,7 @@ def _fetch_non_price_data(
     except ImportError:
         fetch_oi_history_bybit = None  # type: ignore[assignment]
 
-    from lib.coingecko_data import fetch_stablecoin_supply
+    from lib.defillama_data import fetch_stablecoin_supply
 
     funding_df: pd.DataFrame | None = None
     oi_df: pd.DataFrame | None = None
@@ -340,7 +340,7 @@ def _fetch_non_price_data(
 
     # ── Stablecoin supply ────────────────────────────────────────────────────
     try:
-        stablecoin_df = fetch_stablecoin_supply(days=min(period_days, 365))
+        stablecoin_df = fetch_stablecoin_supply(days=period_days)
         log.info("%s: fetched stablecoin supply (%d rows)", sym_cfg.name, len(stablecoin_df))
     except Exception as exc:
         log.warning(
