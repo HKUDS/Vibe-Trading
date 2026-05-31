@@ -106,7 +106,8 @@ export const api = {
       body: JSON.stringify(settings),
     }),
   listInvestmentOSCandidates: () => request<InvestmentOSCandidatesResponse>("/api/investment-os/candidates"),
-  listInvestmentOSMemos: () => request<InvestmentOSMemosResponse>("/api/investment-os/memos"),
+  listInvestmentOSMemos: (includeDiscarded = false) =>
+    request<InvestmentOSMemosResponse>(`/api/investment-os/memos${includeDiscarded ? "?include_discarded=true" : ""}`),
   getInvestmentOSMemo: (id: string) => request<InvestmentOSMemoContentResponse>(`/api/investment-os/memos/${encodeURIComponent(id)}`),
   updateInvestmentOSMemoStatus: (id: string, status: InvestmentOSMemoStatus) =>
     request<InvestmentOSMemo>(`/api/investment-os/memos/${encodeURIComponent(id)}/status`, {
@@ -115,6 +116,10 @@ export const api = {
     }),
   discardInvestmentOSMemo: (id: string) =>
     request<InvestmentOSMemo>(`/api/investment-os/memos/${encodeURIComponent(id)}/discard`, {
+      method: "POST",
+    }),
+  restoreInvestmentOSMemo: (id: string) =>
+    request<InvestmentOSMemo>(`/api/investment-os/memos/${encodeURIComponent(id)}/restore`, {
       method: "POST",
     }),
   createStockCoreMemo: (payload: StockCoreMemoRequest) =>

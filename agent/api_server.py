@@ -212,7 +212,7 @@ class InvestmentOSMemoContentResponse(BaseModel):
 class InvestmentOSMemoStatusRequest(BaseModel):
     """Update non-destructive research memo workflow status."""
 
-    status: str = Field(..., description="Allowed values: draft, superseded, archived")
+    status: str = Field(..., description="Allowed values: draft, superseded, archived, discarded")
 
 
 class LLMProviderOption(BaseModel):
@@ -1340,15 +1340,20 @@ async def get_investment_os_candidates():
 
 
 @app.get("/api/investment-os/memos", response_model=InvestmentOSMemosResponse)
-async def list_investment_os_memos():
+async def list_investment_os_memos(include_discarded: bool = Query(False, description="Include discarded memo drafts.")):
     """Return recent non-destructive Investment OS research memo metadata."""
     research_dir = _investment_os_research_dir()
     if not research_dir.exists():
         return InvestmentOSMemosResponse(memos=[], source="missing")
 
     statuses = _load_investment_os_memo_statuses(research_dir)
+    memo_files = [path for path in research_dir.glob("*.md") if _is_investment_os_memo_file(path)]
+    if include_discarded:
+        discarded_dir = _investment_os_discarded_dir(research_dir)
+        if discarded_dir.exists():
+            memo_files.extend(path for path in discarded_dir.glob("*.md") if _is_investment_os_memo_file(path))
     memo_files = sorted(
-        [path for path in research_dir.glob("*.md") if _is_investment_os_memo_file(path)],
+        memo_files,
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
@@ -1362,7 +1367,7 @@ async def list_investment_os_memos():
 async def get_investment_os_memo(memo_id: str):
     """Return a single Investment OS research memo for in-cockpit review."""
     research_dir = _investment_os_research_dir()
-    memo_path = _investment_os_memo_path(memo_id, research_dir)
+    memo_path = _investment_os_memo_path(memo_id, research_dir, include_discarded=True)
     if not memo_path.exists() or not memo_path.is_file():
         raise HTTPException(status_code=404, detail="memo not found")
 
@@ -1422,6 +1427,38 @@ async def discard_investment_os_memo(memo_id: str):
     statuses[discarded_path.name] = "discarded"
     _write_investment_os_memo_statuses(statuses, research_dir)
     return metadata
+
+
+@app.post(
+    "/api/investment-os/memos/{memo_id}/restore",
+    response_model=InvestmentOSMemo,
+    dependencies=[Depends(require_local_or_auth)],
+)
+async def restore_investment_os_memo(memo_id: str):
+    """Restore a discarded memo draft to the active research list as a draft."""
+    safe_id = _validate_investment_os_memo_id(memo_id)
+    research_dir = _investment_os_research_dir()
+    discarded_dir = _investment_os_discarded_dir(research_dir).resolve()
+    discarded_path = (discarded_dir / safe_id).resolve()
+    if discarded_path.parent != discarded_dir:
+        raise HTTPException(status_code=400, detail="invalid memo id")
+    if not discarded_path.exists() or not discarded_path.is_file():
+        raise HTTPException(status_code=404, detail="discarded memo not found")
+
+    research_dir.mkdir(parents=True, exist_ok=True)
+    restored_path = (research_dir / safe_id).resolve()
+    if restored_path.exists():
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        restored_path = (research_dir / f"{discarded_path.stem}-restored-{stamp}{discarded_path.suffix}").resolve()
+    if restored_path.parent != research_dir.resolve():
+        raise HTTPException(status_code=400, detail="invalid restore target")
+
+    discarded_path.replace(restored_path)
+    statuses = _load_investment_os_memo_statuses(research_dir)
+    statuses.pop(discarded_path.name, None)
+    statuses[restored_path.name] = "draft"
+    _write_investment_os_memo_statuses(statuses, research_dir)
+    return _build_investment_os_memo_metadata(restored_path, statuses)
 
 
 def _investment_os_path(env_name: str, fallback_parts: List[str]) -> Path:
@@ -1496,12 +1533,18 @@ def _is_investment_os_memo_file(path: Path) -> bool:
     return path.is_file() and bool(_INVESTMENT_OS_MEMO_ID_RE.fullmatch(path.name))
 
 
-def _investment_os_memo_path(memo_id: str, research_dir: Optional[Path] = None) -> Path:
+def _investment_os_memo_path(memo_id: str, research_dir: Optional[Path] = None, *, include_discarded: bool = False) -> Path:
     safe_id = _validate_investment_os_memo_id(memo_id)
     base_dir = (research_dir or _investment_os_research_dir()).resolve()
     memo_path = (base_dir / safe_id).resolve()
     if memo_path.parent != base_dir:
         raise HTTPException(status_code=400, detail="invalid memo id")
+    if include_discarded and not memo_path.exists():
+        discarded_dir = _investment_os_discarded_dir(base_dir).resolve()
+        discarded_path = (discarded_dir / safe_id).resolve()
+        if discarded_path.parent != discarded_dir:
+            raise HTTPException(status_code=400, detail="invalid memo id")
+        return discarded_path
     return memo_path
 
 
@@ -1536,15 +1579,22 @@ def _extract_investment_os_memo_symbols(content: str, title: str) -> List[str]:
     return symbols
 
 
+def _investment_os_memo_relative_path(file_path: Path) -> str:
+    if file_path.parent.name == ".discarded":
+        return f"research/.discarded/{file_path.name}"
+    return f"research/{file_path.name}"
+
+
 def _build_investment_os_memo_metadata(file_path: Path, statuses: Dict[str, str]) -> InvestmentOSMemo:
     content = _read_text_if_exists(file_path)
     memo_id = file_path.name
     title = _extract_investment_os_memo_title(content, memo_id)
+    default_status = "discarded" if file_path.parent.name == ".discarded" else "draft"
     return InvestmentOSMemo(
         id=memo_id,
-        relative_path=f"research/{memo_id}",
+        relative_path=_investment_os_memo_relative_path(file_path),
         title=title,
-        status=statuses.get(memo_id, "draft"),
+        status=statuses.get(memo_id, default_status),
         actionability_status=_extract_investment_os_actionability(content),
         candidate_symbols=_extract_investment_os_memo_symbols(content, title),
         created_at=_parse_investment_os_memo_created_at(memo_id, file_path),

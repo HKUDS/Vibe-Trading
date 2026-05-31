@@ -91,12 +91,14 @@ export function InvestmentOS() {
   const [selectedMemoLoading, setSelectedMemoLoading] = useState(false);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [discardingId, setDiscardingId] = useState<string | null>(null);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const [showDiscarded, setShowDiscarded] = useState(false);
 
   const loadMemos = useCallback(async () => {
     setMemosLoading(true);
     try {
-      const response = await api.listInvestmentOSMemos();
+      const response = await api.listInvestmentOSMemos(showDiscarded);
       setMemos(response.memos);
       setMemosError(null);
     } catch (error) {
@@ -104,7 +106,7 @@ export function InvestmentOS() {
     } finally {
       setMemosLoading(false);
     }
-  }, []);
+  }, [showDiscarded]);
 
   useEffect(() => {
     let alive = true;
@@ -205,6 +207,21 @@ export function InvestmentOS() {
       setMemosError(error instanceof Error ? error.message : "Failed to discard memo draft");
     } finally {
       setDiscardingId(null);
+    }
+  };
+
+  const restoreMemo = async (memo: InvestmentOSMemo) => {
+    setRestoringId(memo.id);
+    try {
+      const restored = await api.restoreInvestmentOSMemo(memo.id);
+      setMemos((current) => current.map((item) => (item.id === memo.id ? restored : item)));
+      setSelectedMemo((current) => (current?.id === memo.id ? restored : current));
+      setMemosError(null);
+      await loadMemos();
+    } catch (error) {
+      setMemosError(error instanceof Error ? error.message : "Failed to restore memo draft");
+    } finally {
+      setRestoringId(null);
     }
   };
 
@@ -386,15 +403,26 @@ export function InvestmentOS() {
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Research memo workspace</p>
                 <h2 className="text-xl font-semibold">Recent research memos</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => void loadMemos()}
-                disabled={memosLoading}
-                className="inline-flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {memosLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />}
-                Refresh
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDiscarded((current) => !current)}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                    showDiscarded ? "border-warning/40 bg-warning/10 text-warning" : "bg-background text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {showDiscarded ? "Hide discarded" : "Show discarded"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void loadMemos()}
+                  disabled={memosLoading}
+                  className="inline-flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {memosLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />}
+                  Refresh
+                </button>
+              </div>
             </div>
 
             {memosError ? (
@@ -450,15 +478,27 @@ export function InvestmentOS() {
                         <Eye className="h-3.5 w-3.5" />
                         Open review
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => void markSuperseded(memo)}
-                        disabled={memo.status === "superseded" || statusUpdatingId === memo.id}
-                        className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {statusUpdatingId === memo.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                        Mark superseded
-                      </button>
+                      {memo.status === "discarded" ? (
+                        <button
+                          type="button"
+                          onClick={() => void restoreMemo(memo)}
+                          disabled={restoringId === memo.id}
+                          className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {restoringId === memo.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                          Restore draft
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void markSuperseded(memo)}
+                          disabled={memo.status === "superseded" || statusUpdatingId === memo.id}
+                          className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {statusUpdatingId === memo.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                          Mark superseded
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => void copyPath(memo.relative_path)}
@@ -467,15 +507,17 @@ export function InvestmentOS() {
                         <Copy className="h-3.5 w-3.5" />
                         {copiedPath === memo.relative_path ? "Copied" : "Copy path"}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => void discardMemo(memo)}
-                        disabled={discardingId === memo.id}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-danger/30 bg-background px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {discardingId === memo.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                        Discard draft
-                      </button>
+                      {memo.status !== "discarded" ? (
+                        <button
+                          type="button"
+                          onClick={() => void discardMemo(memo)}
+                          disabled={discardingId === memo.id}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-danger/30 bg-background px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {discardingId === memo.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          Discard draft
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </article>
@@ -505,15 +547,27 @@ export function InvestmentOS() {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void markSuperseded(selectedMemo)}
-                    disabled={selectedMemo.status === "superseded" || statusUpdatingId === selectedMemo.id}
-                    className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {statusUpdatingId === selectedMemo.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                    Mark superseded
-                  </button>
+                  {selectedMemo.status === "discarded" ? (
+                    <button
+                      type="button"
+                      onClick={() => void restoreMemo(selectedMemo)}
+                      disabled={restoringId === selectedMemo.id}
+                      className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {restoringId === selectedMemo.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      Restore draft
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void markSuperseded(selectedMemo)}
+                      disabled={selectedMemo.status === "superseded" || statusUpdatingId === selectedMemo.id}
+                      className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {statusUpdatingId === selectedMemo.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      Mark superseded
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => void copyPath(selectedMemo.relative_path)}
@@ -522,15 +576,17 @@ export function InvestmentOS() {
                     <Copy className="h-3.5 w-3.5" />
                     {copiedPath === selectedMemo.relative_path ? "Copied" : "Copy path"}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => void discardMemo(selectedMemo)}
-                    disabled={discardingId === selectedMemo.id}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-danger/30 bg-background px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {discardingId === selectedMemo.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                    Discard draft
-                  </button>
+                  {selectedMemo.status !== "discarded" ? (
+                    <button
+                      type="button"
+                      onClick={() => void discardMemo(selectedMemo)}
+                      disabled={discardingId === selectedMemo.id}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-danger/30 bg-background px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {discardingId === selectedMemo.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      Discard draft
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="max-h-[640px] overflow-auto rounded-lg border bg-background p-4 text-sm leading-6">
