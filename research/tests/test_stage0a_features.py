@@ -485,6 +485,9 @@ class TestDerivedFactors:
                 f"Present keys: {sorted(feature_dict.keys())}"
             )
 
+        non_nan = feature_dict["basis_rel"].notna().sum()
+        assert non_nan > 100, f"basis_rel has only {non_nan} valid rows; suspect all-NaN"
+
     def test_apply_ic_eval_transform_funding_derived_returns_native_8h(self):
         """funding_z and funding_mom must be subsampled to 8h native frequency."""
         idx = pd.date_range("2023-01-01", periods=200, freq="1h", tz="UTC")
@@ -504,9 +507,8 @@ class TestDerivedFactors:
                 f"({non_nan_count} is not < {len(series)})"
             )
             # With 200 hourly rows the 8h periods give at most ceil(200/8)=25 non-NaN points.
-            assert non_nan_count <= 25, (
-                f"{feat_name}: expected at most 25 non-NaN rows from 8h resample, "
-                f"got {non_nan_count}"
+            assert 20 <= non_nan_count <= 25, (
+                f"Expected 20-25 non-NaN rows after 8h resample, got {non_nan_count}"
             )
 
     def test_apply_ic_eval_transform_basis_oi_returns_none_transform(self):
