@@ -67,6 +67,12 @@ class ResearchConfig:
     fees: FeesConfig
     horizons_h: tuple[int, ...]    # forward-return horizons in hours
     discovery_cache_days: int = 7  # stage-0 cache TTL in days (0 = disabled)
+    # ── Walk-forward train/OOS split (optional) ──────────────────────────────
+    # ISO date (YYYY-MM-DD). When set, the backtest period is split into an
+    # in-sample TRAIN window [period_start, oos_start) used for parameter tuning,
+    # and a held-out OOS window [oos_start, today] used only for final validation.
+    # None = no split (legacy: stages tune/backtest on the full period).
+    oos_start: str | None = None
     # ── Evidence-driven indicator pool (Task 1.2) ────────────────────────────
     indicator_pool: tuple[str, ...] = (
         # momentum
@@ -264,6 +270,21 @@ def load_config(path: Path | str | None = None) -> ResearchConfig:
             f"'append_coverage_threshold' must be between 0.0 and 1.0, got {append_coverage_threshold}."
         )
 
+    # ── oos_start (optional walk-forward split) ──────────────────────────────
+    oos_start_raw = raw.get("oos_start")
+    oos_start = None
+    if oos_start_raw is not None:
+        oos_start = str(oos_start_raw)
+        # Validate ISO date format (YYYY-MM-DD).
+        from datetime import date as _date
+
+        try:
+            _date.fromisoformat(oos_start)
+        except ValueError as exc:
+            raise ValueError(
+                f"'oos_start' must be an ISO date (YYYY-MM-DD), got {oos_start!r}."
+            ) from exc
+
     return ResearchConfig(
         symbols=tuple(symbol_configs),
         period=period,
@@ -276,4 +297,5 @@ def load_config(path: Path | str | None = None) -> ResearchConfig:
         indicator_pool=indicator_pool,
         feature_store_path=feature_store_path,
         append_coverage_threshold=append_coverage_threshold,
+        oos_start=oos_start,
     )

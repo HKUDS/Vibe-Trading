@@ -60,12 +60,16 @@ class TestRealStrategyRuns:
         result = load_strategy_runs()
         assert isinstance(result, StrategyRunsMap)
 
-    def test_has_four_strategies(self) -> None:
+    def test_has_strategies(self) -> None:
+        # The live strategy_runs.json evolves as strategies are added/retired, so
+        # assert structure rather than an exact count (the old ==4 assertion was
+        # brittle and coupled to a specific snapshot).
         result = load_strategy_runs()
-        assert len(result.entries) == 4, (
-            f"Expected 4 strategy entries (S1-S4), got {len(result.entries)}: "
-            f"{sorted(result.entries.keys())}"
-        )
+        assert len(result.entries) >= 1, "strategy_runs.json should have at least one strategy"
+        for strategy_id, entry in result.entries.items():
+            assert isinstance(strategy_id, str) and strategy_id
+            assert isinstance(entry, StrategyRunsEntry)
+            assert entry.symbol
 
     def test_all_strategy_ids_have_btc_prefix(self) -> None:
         result = load_strategy_runs()

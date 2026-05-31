@@ -139,6 +139,33 @@ def build_run_config(symbol: str, cfg: ResearchConfig, today: date | None = None
     }
 
 
+def train_window(cfg: ResearchConfig, today: date | None = None) -> tuple[str, str] | None:
+    """Return (train_start, train_end) ISO dates, or None if no oos_start is set.
+
+    Train window = [period_start, oos_start). Used for in-sample parameter tuning
+    when a walk-forward split is configured.
+    """
+    if not cfg.oos_start:
+        return None
+    if today is None:
+        today = date.today()
+    start = today - timedelta(days=cfg.period)
+    return (start.isoformat(), cfg.oos_start)
+
+
+def oos_window(cfg: ResearchConfig, today: date | None = None) -> tuple[str, str] | None:
+    """Return (oos_start, today) ISO dates, or None if no oos_start is set.
+
+    OOS window = [oos_start, today]. Held-out period used only for final
+    validation of tuned params — never seen during tuning.
+    """
+    if not cfg.oos_start:
+        return None
+    if today is None:
+        today = date.today()
+    return (cfg.oos_start, today.isoformat())
+
+
 def find_signal_engine(strategies_code_dir: Path, strategy_id: str) -> Path | None:
     """Look for an existing signal_engine.py for a strategy.
 

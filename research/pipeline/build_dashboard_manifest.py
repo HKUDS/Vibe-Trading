@@ -207,10 +207,20 @@ def build_manifest(
             wm = _backtest_metrics(run_name, runs_root)
             if wm is None:
                 continue
-            year_match = re.search(r"(\d{4})", run_name)
+            # Label preference: a 4-digit year in the run name (e.g. ..._oos_2024),
+            # else the run's actual date range from config.json, else the run name.
+            year_match = re.search(r"_(\d{4})$", run_name)
+            if year_match:
+                label = year_match.group(1)
+            else:
+                cfg_raw = _read_json(runs_root / run_name / "config.json")
+                if cfg_raw and cfg_raw.get("start_date") and cfg_raw.get("end_date"):
+                    label = f"{cfg_raw['start_date']}..{cfg_raw['end_date']}"
+                else:
+                    label = run_name
             wf_windows.append(
                 WalkForwardWindow(
-                    window=year_match.group(1) if year_match else run_name,
+                    window=label,
                     sharpe=wm.sharpe,
                     total_return=wm.total_return,
                 )

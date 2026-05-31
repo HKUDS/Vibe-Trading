@@ -21,6 +21,10 @@ symbols:
 # ─── 資料抓取參數 ──────────────────────────────────────────────────────────────
 period: 1460         # 回溯天數（約 4 年）— funding 改 ccxt 多年源後可拉長；2022-05 起資料
 interval: "1H"       # K 線週期（OKX bar 格式）
+# Walk-forward train/OOS split: 在 oos_start 之前為 in-sample TRAIN 窗（stage4 只在此選參），
+# 之後為 held-out OOS 窗（stage4 自動用 best params 回測驗證，寫入 manifest.walk_forward）。
+# 留空 / 移除 = 不切分（legacy：全期選參）。資料 2022-06 起，此設 ≈ 2.5yr train / 1.4yr OOS。
+oos_start: "2025-01-01"
 data_source: okx     # 資金費率 & K 線來源；OI 固定來自 Bybit
 
 # ─── 回測引擎 ──────────────────────────────────────────────────────────────────

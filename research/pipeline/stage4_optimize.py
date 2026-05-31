@@ -46,6 +46,7 @@ import random
 import re
 import subprocess
 import shutil
+from datetime import date
 from itertools import product
 
 import yaml as _yaml
@@ -56,8 +57,14 @@ from pipeline.strategy_runs import (
     StrategyRunsMap,
     load_strategy_runs,
     update_sweep_run,
+    update_walk_forward_runs,
 )
-from pipeline.stage3_backtest import build_run_config, symbol_to_short
+from pipeline.stage3_backtest import (
+    build_run_config,
+    oos_window,
+    symbol_to_short,
+    train_window,
+)
 
 _DASHBOARD_SCHEMAS = _REPO_ROOT / "dashboard" / "server"
 if str(_DASHBOARD_SCHEMAS) not in sys.path:
@@ -496,6 +503,7 @@ def _optimize_strategy(
     max_combos: int,
     seed: int,
     window: tuple[str, str] | None = None,
+    oos_win: tuple[str, str] | None = None,
 ) -> OptimizationCheckResult:
     print(f"\n{'='*60}\n[stage4] Strategy: {strategy_id}\n{'='*60}")
 
@@ -578,6 +586,35 @@ def _optimize_strategy(
                 file=sys.stderr,
             )
 
+    # ── Walk-forward OOS validation ───────────────────────────────────────────
+    # Run the tuned best params on the held-out OOS window (never seen during
+    # the sweep) and register the run so the manifest's walk_forward block shows
+    # genuine out-of-sample performance. Only when a split (oos_win) is active.
+    if best is not None and oos_win is not None:
+        holdout_name = f"{strategy_id}_oos_holdout"
+        try:
+            oos_config = build_run_config(symbol=entry.symbol, cfg=cfg)
+            oos_config["start_date"], oos_config["end_date"] = oos_win
+            spec_dict = apply_overrides_to_spec(base_spec, best.overrides)
+            signal_code = _compile_signal_code(spec_dict)
+            _scaffold_combo_run(runs_root / holdout_name, oos_config, signal_code)
+            proc = _invoke_backtest(runs_root / holdout_name)
+            if proc.returncode != 0:
+                print(f"  [WARN] OOS holdout backtest failed: exit {proc.returncode}", file=sys.stderr)
+            else:
+                m = _read_metrics(runs_root / holdout_name)
+                if m:
+                    print(
+                        f"  [OOS] held-out {oos_win[0]}..{oos_win[1]}: "
+                        f"sharpe={float(m.get('sharpe', 0) or 0):+.3f}  "
+                        f"return={float(m.get('total_return', 0) or 0) * 100:+.1f}%  "
+                        f"trades={int(float(m.get('trade_count', 0) or 0))}"
+                    )
+                    update_walk_forward_runs(strategy_id, [holdout_name])
+                    print(f"  [OK] strategy_runs.json: {strategy_id}.walk_forward_runs -> [{holdout_name}]")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [WARN] OOS holdout step failed: {exc}", file=sys.stderr)
+
     return verify_optimization(out_path)
 
 
@@ -595,14 +632,21 @@ def main() -> None:
                         help="Walk-forward TRAIN window end (YYYY-MM-DD).")
     args = parser.parse_args()
 
+    cfg = load_config()
+    runs_map = load_strategy_runs()
+
+    # Resolve the TRAIN window for the sweep and the held-out OOS window for
+    # post-tuning validation. Explicit --train-start/--train-end override the
+    # config; otherwise fall back to the config's oos_start split (if any).
     window: tuple[str, str] | None = None
     if bool(args.train_start) ^ bool(args.train_end):
         parser.error("--train-start and --train-end must be given together.")
     if args.train_start and args.train_end:
         window = (args.train_start, args.train_end)
-
-    cfg = load_config()
-    runs_map = load_strategy_runs()
+        oos_win = (args.train_end, date.today().isoformat())
+    else:
+        window = train_window(cfg)          # None unless cfg.oos_start is set
+        oos_win = oos_window(cfg)            # None unless cfg.oos_start is set
 
     runs_root = _REPO_ROOT / "runs"
     strategies_dir = _REPO_ROOT / "research" / "strategies"
@@ -631,7 +675,7 @@ def main() -> None:
                 runs_root=runs_root, strategies_dir=strategies_dir,
                 manifests_dir=manifests_dir,
                 max_combos=args.max, seed=args.seed,
-                window=window,
+                window=window, oos_win=oos_win,
             )
         except Exception as exc:  # noqa: BLE001
             result = OptimizationCheckResult(strategy_id=strategy_id, ok=False,

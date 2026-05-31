@@ -31,10 +31,21 @@
       "btc_s2_oos_2023",
       "btc_s2_oos_2024"
     ],
-    "sweep_run": "btc_s2_stablecoin_trend_sweep_011",
+    "sweep_run": "btc_s2_stablecoin_trend_sweep_082",
     "walk_forward_runs": [
-      "btc_s4_oos_2024",
-      "btc_s4_oos_2025"
+      "btc_s2_stablecoin_trend_oos_holdout"
     ]
+  },
+  "btc_s5_stablecoin_regime": {
+    "symbol": "BTC-USDT-SWAP",
+    "spec_yaml": "research/strategies/strategy_btc_s5_stablecoin_regime.yaml",
+    "base_run": "btc_s5_base",
+    "regime_runs": {},
+    "stress_runs": {},
+    "oos_runs": [
+      "btc_s5_oos_2024",
+      "btc_s5_oos_2025"
+    ],
+    "sweep_run": null
   }
 }

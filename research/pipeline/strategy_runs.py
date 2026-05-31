@@ -356,3 +356,38 @@ def update_sweep_run(
 
     payload = json.dumps(raw, indent=2, ensure_ascii=False) + "\n"
     resolved.write_text(payload, encoding="utf-8")
+
+
+def update_walk_forward_runs(
+    strategy_id: str,
+    walk_forward_runs: list[str],
+    path: Path | str | None = None,
+) -> None:
+    """Set the ``walk_forward_runs`` list for one strategy and write the file back.
+
+    Called by stage 4 after running the tuned best params on the held-out OOS
+    window, so the dashboard manifest builder can surface the genuine
+    out-of-sample result in the ``walk_forward`` block.
+
+    Same file-preserving semantics as :func:`update_sweep_run`.
+    """
+    if not isinstance(walk_forward_runs, list) or not all(
+        isinstance(r, str) for r in walk_forward_runs
+    ):
+        raise TypeError("update_walk_forward_runs: walk_forward_runs must be a list of strings.")
+
+    resolved = Path(path) if path is not None else _DEFAULT_JSON_PATH
+    if not resolved.exists():
+        raise FileNotFoundError(f"strategy_runs.json not found at: {resolved}")
+
+    with resolved.open("r", encoding="utf-8") as fh:
+        raw = json.load(fh)
+
+    if not isinstance(raw, dict):
+        raise TypeError("strategy_runs.json must be a JSON mapping at the top level.")
+    if strategy_id not in raw or strategy_id == "_comment":
+        raise KeyError(f"strategy_runs.json: strategy_id '{strategy_id}' not present.")
+
+    raw[strategy_id]["walk_forward_runs"] = list(walk_forward_runs)
+    payload = json.dumps(raw, indent=2, ensure_ascii=False) + "\n"
+    resolved.write_text(payload, encoding="utf-8")
