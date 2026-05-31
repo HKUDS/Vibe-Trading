@@ -129,10 +129,15 @@ def build_run_config(symbol: str, cfg: ResearchConfig, today: date | None = None
     if today is None:
         today = date.today()
     start = today - timedelta(days=cfg.period)
+    # When a walk-forward split is configured, the base (in-sample) backtest is
+    # the TRAIN window only [start, oos_start); the held-out OOS period is
+    # validated separately via stage 4's walk_forward holdout. This keeps the
+    # in-sample backtest / diagnosis from peeking at out-of-sample data.
+    end_date = cfg.oos_start if cfg.oos_start else today.isoformat()
     return {
         "codes": [symbol],
         "start_date": start.isoformat(),
-        "end_date": today.isoformat(),
+        "end_date": end_date,
         "source": "okx",
         "interval": cfg.interval,
         "engine": "daily",
@@ -359,8 +364,11 @@ def apply_run_window_overrides(
 
     if role in regime_windows:
         start, end = regime_windows[role]
+        # Clip the regime span to the base config's end_date so regime (in-sample)
+        # runs never extend into the held-out OOS period under a walk-forward split.
+        cap = config_dict.get("end_date")
         config_dict["start_date"] = start
-        config_dict["end_date"] = end
+        config_dict["end_date"] = min(end, cap) if cap else end
         return config_dict
 
     m = _OOS_YEAR_RE.search(role)

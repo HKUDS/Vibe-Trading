@@ -27,10 +27,7 @@
       "neutral": "btc_s2_neutral"
     },
     "stress_runs": {},
-    "oos_runs": [
-      "btc_s2_oos_2023",
-      "btc_s2_oos_2024"
-    ],
+    "oos_runs": [],
     "sweep_run": "btc_s2_stablecoin_trend_sweep_082",
     "walk_forward_runs": [
       "btc_s2_stablecoin_trend_oos_holdout"
