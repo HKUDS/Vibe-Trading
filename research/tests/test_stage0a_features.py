@@ -42,6 +42,7 @@ from pipeline.stage0a_features import (
     build_evidence_payload,
     verify_outputs,
     compute_exit_code,
+    apply_ic_eval_transform,
     _INDICATOR_CATEGORY,
     _NON_PRICE_FEATURES,
 )
@@ -109,6 +110,11 @@ def make_synthetic_stablecoin(candles: pd.DataFrame) -> pd.DataFrame:
     daily_idx = candles.index[::24]
     supply = np.cumsum(np.random.randn(len(daily_idx)) * 1e8) + 1e12
     return pd.DataFrame({"stablecoin_supply": supply}, index=daily_idx)
+
+
+def make_spot_close(candles: pd.DataFrame) -> pd.Series:
+    """Synthetic spot close slightly below perp close (positive basis)."""
+    return candles["close"] * 0.999
 
 
 # ─── Shared setup helper ──────────────────────────────────────────────────────
@@ -339,6 +345,78 @@ class TestVerifyOutputsAndExitCode:
         assert compute_exit_code({}) == 0
 
 
+class TestICEvalTransform:
+    """Measurement-layer IC corrections: stationary transform + native-frequency
+    subsample. These fix spurious/inflated IC without mutating stored features."""
+
+    def test_obv_evaluated_as_zscore_not_raw_cumsum(self):
+        """OBV IC must be measured on a stationary z-score, not the raw cumsum level."""
+        from pipeline.stage0a_features import apply_ic_eval_transform
+
+        # Monotonic cumulative series (mimics raw OBV drift).
+        idx = pd.date_range("2023-01-01", periods=2000, freq="1h", tz="UTC")
+        raw = pd.Series(np.cumsum(np.abs(np.random.RandomState(1).randn(2000))), index=idx)
+
+        out, label = apply_ic_eval_transform("obv", raw)
+        assert label == "zscore_720h"
+        # z-score is stationary: bounded, centered near 0, unlike the drifting raw level.
+        valid = out.dropna()
+        assert valid.abs().mean() < 3.0
+        assert abs(valid.mean()) < raw.mean()  # de-trended
+
+    def test_funding_subsampled_to_native_change_points(self):
+        """Funding IC must drop ffill repeats (evaluate only at settlement changes)."""
+        from pipeline.stage0a_features import apply_ic_eval_transform
+
+        idx = pd.date_range("2023-01-01", periods=80, freq="1h", tz="UTC")
+        # 8h settlements ffilled to 1H: each value repeats 8x.
+        native = pd.Series(np.repeat(np.arange(10) * 0.001, 8), index=idx)
+
+        out, label = apply_ic_eval_transform("funding_rate_raw", native)
+        assert label == "native_freq"
+        # Only the 10 distinct settlement points survive as non-NaN.
+        assert out.notna().sum() == 10
+
+    def test_stablecoin_subsampled_to_daily(self):
+        """Stablecoin IC must be measured on a daily grid, not the hourly-varying z."""
+        from pipeline.stage0a_features import apply_ic_eval_transform
+
+        idx = pd.date_range("2023-01-01", periods=240, freq="1h", tz="UTC")  # 10 days
+        series = pd.Series(np.random.RandomState(2).randn(240), index=idx)
+
+        out, label = apply_ic_eval_transform("stablecoin_supply_z", series)
+        assert label == "native_1D"
+        assert out.notna().sum() == 10  # one point per day
+
+    def test_untouched_feature_returned_asis(self):
+        """A stationary price feature (e.g. rsi_14) is evaluated unchanged."""
+        from pipeline.stage0a_features import apply_ic_eval_transform
+
+        idx = pd.date_range("2023-01-01", periods=50, freq="1h", tz="UTC")
+        series = pd.Series(np.random.RandomState(3).randn(50), index=idx)
+        out, label = apply_ic_eval_transform("rsi_14", series)
+        assert label is None
+        pd.testing.assert_series_equal(out, series)
+
+    def test_evidence_entry_records_transform_label(self, tmp_path: Path):
+        """Evidence entries expose which IC-eval transform was applied (transparency)."""
+        cfg = make_config(indicator_pool=("rsi_14", "obv"))
+        candles = make_candles()
+        funding_df = make_synthetic_funding(candles)
+        stablecoin_df = make_synthetic_stablecoin(candles)
+        feature_dict = build_feature_dict(
+            candles=candles, config=cfg, funding_df=funding_df,
+            oi_df=None, stablecoin_df=stablecoin_df,
+        )
+        entries = compute_evidence_entries(candles, feature_dict, cfg.horizons_h)
+        by_key = {e["feature_key"]: e for e in entries}
+
+        assert by_key["obv"]["ic_eval_transform"] == "zscore_720h"
+        assert by_key["funding_rate_raw"]["ic_eval_transform"] == "native_freq"
+        assert by_key["stablecoin_supply_z"]["ic_eval_transform"] == "native_1D"
+        assert by_key["rsi_14"]["ic_eval_transform"] is None
+
+
 class TestBuildFeatureDictAlignedToCandles:
     """Feature series must be aligned to candles.index."""
 
@@ -360,4 +438,105 @@ class TestBuildFeatureDictAlignedToCandles:
         for key, series in feature_dict.items():
             assert len(series) == len(candles), (
                 f"Feature '{key}' length {len(series)} != candles length {len(candles)}"
+            )
+
+
+class TestDerivedFactors:
+    """Tests for the 8 perp-derived factors: basis_*, funding_z/mom, oi_z/divergence/mom."""
+
+    # ── Keys & categories ─────────────────────────────────────────────────────
+
+    _DERIVED_KEYS = (
+        "basis_rel", "basis_z", "basis_mom",
+        "funding_z", "funding_mom",
+        "oi_z", "oi_price_divergence", "oi_mom",
+    )
+
+    _EXPECTED_CATEGORIES = {
+        "basis_rel": "basis",
+        "basis_z": "basis",
+        "basis_mom": "basis",
+        "funding_z": "funding",
+        "funding_mom": "funding",
+        "oi_z": "oi",
+        "oi_price_divergence": "oi",
+        "oi_mom": "oi",
+    }
+
+    def test_build_feature_dict_emits_8_new_keys(self):
+        """build_feature_dict with spot_close/funding_df/oi_df must emit all 8 derived keys."""
+        cfg = make_config()
+        candles = make_candles()
+        funding_df = make_synthetic_funding(candles)
+        oi_df = make_synthetic_oi(candles)
+
+        feature_dict = build_feature_dict(
+            candles=candles,
+            config=cfg,
+            funding_df=funding_df,
+            oi_df=oi_df,
+            stablecoin_df=None,
+            spot_close=make_spot_close(candles),
+        )
+
+        for key in self._DERIVED_KEYS:
+            assert key in feature_dict, (
+                f"Derived factor '{key}' missing from feature_dict. "
+                f"Present keys: {sorted(feature_dict.keys())}"
+            )
+
+    def test_apply_ic_eval_transform_funding_derived_returns_native_8h(self):
+        """funding_z and funding_mom must be subsampled to 8h native frequency."""
+        idx = pd.date_range("2023-01-01", periods=200, freq="1h", tz="UTC")
+        series = pd.Series(np.random.randn(200) * 0.0001, index=idx)
+
+        for feat_name in ("funding_z", "funding_mom"):
+            result_series, label = apply_ic_eval_transform(feat_name, series)
+
+            assert label == "native_8h", (
+                f"{feat_name}: expected transform label 'native_8h', got {label!r}"
+            )
+            # The reindexed result has same length as input but fewer non-NaN rows
+            # (only one point per 8h period is non-NaN after reindex).
+            non_nan_count = result_series.notna().sum()
+            assert non_nan_count < len(series), (
+                f"{feat_name}: expected fewer non-NaN rows after 8h resample "
+                f"({non_nan_count} is not < {len(series)})"
+            )
+            # With 200 hourly rows the 8h periods give at most ceil(200/8)=25 non-NaN points.
+            assert non_nan_count <= 25, (
+                f"{feat_name}: expected at most 25 non-NaN rows from 8h resample, "
+                f"got {non_nan_count}"
+            )
+
+    def test_apply_ic_eval_transform_basis_oi_returns_none_transform(self):
+        """basis_* and oi_* derived factors need no measurement-layer correction."""
+        idx = pd.date_range("2023-01-01", periods=100, freq="1h", tz="UTC")
+        series = pd.Series(np.random.randn(100), index=idx)
+
+        no_correction_keys = (
+            "basis_rel", "basis_z", "basis_mom",
+            "oi_z", "oi_price_divergence", "oi_mom",
+        )
+        for feat_name in no_correction_keys:
+            result_series, label = apply_ic_eval_transform(feat_name, series)
+
+            assert label is None, (
+                f"{feat_name}: expected transform label None, got {label!r}"
+            )
+            pd.testing.assert_series_equal(
+                result_series, series,
+                check_names=False,
+                obj=f"apply_ic_eval_transform('{feat_name}') should return series unchanged",
+            )
+
+    def test_derived_keys_have_categories(self):
+        """All 8 derived keys must be in _INDICATOR_CATEGORY with the correct category."""
+        for key, expected_cat in self._EXPECTED_CATEGORIES.items():
+            assert key in _INDICATOR_CATEGORY, (
+                f"'{key}' missing from _INDICATOR_CATEGORY"
+            )
+            actual_cat = _INDICATOR_CATEGORY[key]
+            assert actual_cat == expected_cat, (
+                f"'{key}': expected category '{expected_cat}', got '{actual_cat}'"
             )
