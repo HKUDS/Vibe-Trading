@@ -98,6 +98,14 @@ class StrategyRunsEntry:
     Null means no sweep has been run yet.
     """
 
+    walk_forward_runs: tuple[str, ...] = ()
+    """
+    Held-out walk-forward validation run directory names (optional).
+    These are out-of-sample runs of the strategy's TUNED params on data the
+    parameter sweep never saw (e.g. years after the train window). They feed the
+    manifest's ``walk_forward`` block. Empty when no walk-forward test exists.
+    """
+
 
 @dataclasses.dataclass(frozen=True)
 class StrategyRunsMap:
@@ -246,6 +254,20 @@ def load_strategy_runs(path: Path | str | None = None) -> StrategyRunsMap:
                 f"'sweep_run' must be a string or null, got {type(sweep_run).__name__}."
             )
 
+        # Optional: held-out walk-forward validation runs (backward-compatible).
+        wf_runs = entry_raw.get("walk_forward_runs", [])
+        if not isinstance(wf_runs, list):
+            raise TypeError(
+                f"strategy_runs.json: entry for strategy_id '{strategy_id}': "
+                f"'walk_forward_runs' must be a JSON array (list), got {type(wf_runs).__name__}."
+            )
+        for i, v in enumerate(wf_runs):
+            if not isinstance(v, str):
+                raise TypeError(
+                    f"strategy_runs.json: entry for strategy_id '{strategy_id}': "
+                    f"'walk_forward_runs[{i}]' must be a string, got {type(v).__name__}."
+                )
+
         entries[strategy_id] = StrategyRunsEntry(
             symbol=symbol,
             spec_yaml=spec_yaml,
@@ -254,6 +276,7 @@ def load_strategy_runs(path: Path | str | None = None) -> StrategyRunsMap:
             stress_runs=types.MappingProxyType(dict(stress_runs)),
             oos_runs=tuple(oos_runs),
             sweep_run=sweep_run,
+            walk_forward_runs=tuple(wf_runs),
         )
 
     return StrategyRunsMap(entries=types.MappingProxyType(entries))

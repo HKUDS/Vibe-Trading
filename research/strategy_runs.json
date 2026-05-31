@@ -31,30 +31,10 @@
       "btc_s2_oos_2023",
       "btc_s2_oos_2024"
     ],
-    "sweep_run": "btc_s2_stablecoin_trend_sweep_011"
-  },
-  "btc_s3_stablecoin_trend_tuned": {
-    "symbol": "BTC-USDT-SWAP",
-    "spec_yaml": "research/strategies/strategy_btc_s3_stablecoin_trend_tuned.yaml",
-    "base_run": "btc_s3_base",
-    "regime_runs": {},
-    "stress_runs": {},
-    "oos_runs": [
-      "btc_s3_oos_2023",
-      "btc_s3_oos_2024"
-    ],
-    "sweep_run": null
-  },
-  "btc_s4_walkforward": {
-    "symbol": "BTC-USDT-SWAP",
-    "spec_yaml": "research/strategies/strategy_btc_s4_walkforward.yaml",
-    "base_run": null,
-    "regime_runs": {},
-    "stress_runs": {},
-    "oos_runs": [
+    "sweep_run": "btc_s2_stablecoin_trend_sweep_011",
+    "walk_forward_runs": [
       "btc_s4_oos_2024",
       "btc_s4_oos_2025"
-    ],
-    "sweep_run": null
+    ]
   }
 }

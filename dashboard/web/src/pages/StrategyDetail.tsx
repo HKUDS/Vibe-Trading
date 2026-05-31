@@ -7,6 +7,7 @@ import {
   type BacktestMetrics,
   type CostStressLevel,
   type RegimeMetrics,
+  type WalkForwardWindow,
   type RecommendedAction,
   type GateBlock,
   type RedFlagCode,
@@ -454,6 +455,44 @@ function RegimeTablePanel({ rows }: { rows: RegimeMetrics[] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Walk-forward panel (前測 — held-out validation of tuned params)
+// ---------------------------------------------------------------------------
+
+function WalkForwardPanel({ rows }: { rows: WalkForwardWindow[] }) {
+  if (rows.length === 0) {
+    return <p className="text-sm text-muted-foreground">無 walk-forward 前測資料</p>;
+  }
+  return (
+    <div>
+      <p className="mb-2 text-xs text-muted-foreground">
+        以調參 (optimization) 參數在訓練窗之後、未參與選參的 held-out 期間回測 —
+        真正的樣本外驗證。
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-xs text-muted-foreground">
+              <th className="py-2 pr-4 text-left">Window</th>
+              <th className="py-2 pr-4 text-right">Sharpe</th>
+              <th className="py-2 text-right">Total Return</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {rows.map((r) => (
+              <tr key={r.window}>
+                <td className="py-2 pr-4 font-medium">{r.window}</td>
+                <td className="py-2 pr-4 text-right tabular-nums">{fmtRatio(r.sharpe)}</td>
+                <td className="py-2 text-right tabular-nums">{fmtPct(r.total_return)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Trade table panel (成交明細)
 // ---------------------------------------------------------------------------
 
@@ -660,6 +699,12 @@ export default function StrategyDetail() {
       {bt && bt.by_regime.length > 0 && (
         <Panel title="Regime 分析">
           <RegimeTablePanel rows={bt.by_regime} />
+        </Panel>
+      )}
+
+      {bt?.walk_forward && bt.walk_forward.windows.length > 0 && (
+        <Panel title="Walk-Forward 前測（held-out）">
+          <WalkForwardPanel rows={bt.walk_forward.windows} />
         </Panel>
       )}
 

@@ -54,7 +54,10 @@ from schemas import (  # noqa: E402
     RegimeMetrics,
     SpecBlock,
     StrategyManifest,
+    WalkForwardBlock,
+    WalkForwardWindow,
 )
+import re  # noqa: E402
 
 import csv  # noqa: E402
 
@@ -195,7 +198,32 @@ def build_manifest(
                         trades=rm.trades,
                     )
                 )
-        backtest = BacktestBlock(in_sample=in_sample, oos=oos, by_regime=by_regime)
+        # walk_forward: held-out validation of the TUNED params on data the
+        # parameter sweep never saw. Each run becomes one window, labelled by the
+        # year parsed from its name (falling back to the run name).
+        walk_forward = None
+        wf_windows: list[WalkForwardWindow] = []
+        for run_name in entry.walk_forward_runs:
+            wm = _backtest_metrics(run_name, runs_root)
+            if wm is None:
+                continue
+            year_match = re.search(r"(\d{4})", run_name)
+            wf_windows.append(
+                WalkForwardWindow(
+                    window=year_match.group(1) if year_match else run_name,
+                    sharpe=wm.sharpe,
+                    total_return=wm.total_return,
+                )
+            )
+        if wf_windows:
+            walk_forward = WalkForwardBlock(
+                source_run=f"runs/{entry.walk_forward_runs[0]}/artifacts",
+                windows=wf_windows,
+            )
+
+        backtest = BacktestBlock(
+            in_sample=in_sample, oos=oos, by_regime=by_regime, walk_forward=walk_forward
+        )
         stage = max(stage, 3)
 
     # ── diagnosis (stage 3-diag) ──────────────────────────────────────────────
