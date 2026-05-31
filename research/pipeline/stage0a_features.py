@@ -65,6 +65,7 @@ from pipeline.config import ResearchConfig, SymbolConfig, load_config
 from lib.indicators import compute_indicator_pool
 from lib.factor_io import dump_features, dump_evidence
 from lib.factor_metrics import add_forward_returns, evaluate_factor, FactorResult
+from lib.derived_factors import basis_factors, funding_factors, oi_factors
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -98,9 +99,76 @@ _INDICATOR_CATEGORY: dict[str, str] = {
     "funding_rate_raw": "funding",
     "oi_change_24h": "oi",
     "stablecoin_supply_z": "stablecoin",
+    # basis
+    "basis_rel": "basis",
+    "basis_z": "basis",
+    "basis_mom": "basis",
+    # funding derived
+    "funding_z": "funding",
+    "funding_mom": "funding",
+    # oi derived
+    "oi_z": "oi",
+    "oi_price_divergence": "oi",
+    "oi_mom": "oi",
 }
 
 _NON_PRICE_FEATURES = {"funding_rate_raw", "oi_change_24h", "stablecoin_supply_z"}
+
+# ─── IC measurement-layer corrections ─────────────────────────────────────────
+# These transforms are applied ONLY when computing screening IC. The stored
+# feature parquet is left untouched (strategies still consume the 1H-aligned
+# series). They exist because raw IC on these features is misleading:
+#
+#   - "obv" is a cumulative sum (non-stationary). Spearman IC on the drifting
+#     level measures spurious trend co-movement, not predictive power. Evaluate
+#     the 30-day (720h) rolling z-score instead.
+#   - "funding_rate_raw" is an 8h settlement forward-filled to the 1H grid: each
+#     value repeats ~8x, inflating sample size and autocorrelation. Evaluate only
+#     at native settlement points (rows where the value changes).
+#   - "stablecoin_supply_z" derives from a daily series ffilled to 1H; the rolling
+#     z varies hourly but carries only daily information. Evaluate on a daily grid.
+_IC_STATIONARY_TRANSFORM: dict[str, str] = {
+    "obv": "zscore_720h",
+}
+_IC_NATIVE_FREQ: dict[str, str] = {
+    "funding_rate_raw": "on_change",
+    "stablecoin_supply_z": "1D",
+    "funding_z": "8h",
+    "funding_mom": "8h",
+}
+
+
+def _rolling_zscore(series: pd.Series, window: int = 720, min_periods: int = 30) -> pd.Series:
+    roll_mean = series.rolling(window, min_periods=min_periods).mean()
+    roll_std = series.rolling(window, min_periods=min_periods).std()
+    return (series - roll_mean) / roll_std.replace(0, float("nan"))
+
+
+def apply_ic_eval_transform(
+    feat_name: str, series: pd.Series
+) -> tuple[pd.Series, str | None]:
+    """Return (series_for_ic, transform_label) for honest screening IC.
+
+    Measurement-layer only — does not mutate the stored feature. Features not
+    listed are returned unchanged with a ``None`` label.
+    """
+    if feat_name in _IC_STATIONARY_TRANSFORM:
+        kind = _IC_STATIONARY_TRANSFORM[feat_name]
+        if kind == "zscore_720h":
+            return _rolling_zscore(series), kind
+
+    if feat_name in _IC_NATIVE_FREQ:
+        rule = _IC_NATIVE_FREQ[feat_name]
+        if rule == "on_change":
+            # Keep value at change points, NaN elsewhere -> dropna in evaluate_factor
+            # restricts IC to native settlement frequency.
+            changed = series.ne(series.shift(1))
+            return series.where(changed), "native_freq"
+        # Otherwise treat as a pandas resample rule (e.g. "1D"): one point per period.
+        native = series.resample(rule).last()
+        return native.reindex(series.index), f"native_{rule}"
+
+    return series, None
 
 
 # ─── Pure-logic helpers ────────────────────────────────────────────────────────
@@ -112,6 +180,7 @@ def build_feature_dict(
     funding_df: pd.DataFrame | None = None,
     oi_df: pd.DataFrame | None = None,
     stablecoin_df: pd.DataFrame | None = None,
+    spot_close: pd.Series | None = None,
 ) -> dict[str, pd.Series]:
     """Compute all features and return as a dict of name → Series.
 
@@ -144,15 +213,17 @@ def build_feature_dict(
     candle_idx = candles.index
 
     # ── funding_rate_raw ─────────────────────────────────────────────────────
+    funding_on_candle: pd.Series | None = None
     if funding_df is not None and not funding_df.empty and "funding_rate" in funding_df.columns:
-        raw = funding_df["funding_rate"].reindex(candle_idx, method="ffill")
-        raw.name = "funding_rate_raw"
-        features["funding_rate_raw"] = raw
+        funding_on_candle = funding_df["funding_rate"].reindex(candle_idx, method="ffill")
+        funding_on_candle.name = "funding_rate_raw"
+        features["funding_rate_raw"] = funding_on_candle
 
     # ── oi_change_24h ─────────────────────────────────────────────────────────
+    oi_on_candle: pd.Series | None = None
     if oi_df is not None and not oi_df.empty and "open_interest" in oi_df.columns:
-        oi_aligned = oi_df["open_interest"].reindex(candle_idx, method="ffill")
-        oi_change = oi_aligned.pct_change(periods=24)
+        oi_on_candle = oi_df["open_interest"].reindex(candle_idx, method="ffill")
+        oi_change = oi_on_candle.pct_change(periods=24)
         oi_change.name = "oi_change_24h"
         features["oi_change_24h"] = oi_change
 
@@ -169,6 +240,14 @@ def build_feature_dict(
         sc_z = (sc_aligned - roll_mean) / roll_std.replace(0, float("nan"))
         sc_z.name = "stablecoin_supply_z"
         features["stablecoin_supply_z"] = sc_z
+
+    # ── Perp-derived factor families ─────────────────────────────────────────
+    if spot_close is not None:
+        features.update(basis_factors(candles["close"], spot_close))
+    if funding_on_candle is not None:
+        features.update(funding_factors(funding_on_candle))
+    if oi_on_candle is not None:
+        features.update(oi_factors(oi_on_candle, candles["close"]))
 
     return features
 
@@ -204,9 +283,13 @@ def compute_evidence_entries(
 
     entries: list[dict] = []
     for feat_name, feat_series in feature_dict.items():
+        # Apply measurement-layer IC correction (stationary transform / native-freq
+        # subsample) so the screening IC is honest. Stored feature is untouched.
+        eval_series, ic_transform = apply_ic_eval_transform(feat_name, feat_series)
+
         # Attach the feature column
         df = base_df.copy()
-        df[feat_name] = feat_series
+        df[feat_name] = eval_series
 
         results: list[FactorResult] = evaluate_factor(df, feat_name, list(horizons_h))
 
@@ -238,6 +321,7 @@ def compute_evidence_entries(
                 "ic_by_horizon": ic_by_horizon,
                 "ir": agg_ir,
                 "sample_size": agg_sample,
+                "ic_eval_transform": ic_transform,
             }
         )
 
@@ -377,10 +461,25 @@ def _process_symbol(
             return False
         log.info("%s: candles fetched (%d rows)", sym, len(candles))
 
-        # ── 2. Fetch non-price data ──────────────────────────────────────────
+        # ── 2. Fetch spot close (for basis) ─────────────────────────────────
+        spot_close: pd.Series | None = None
+        try:
+            spot_instid = sym_cfg.okx_swap.replace("-SWAP", "")
+            spot_df = fetch_candles(
+                symbol=spot_instid,
+                days=cfg.period,
+                bar=cfg.interval,
+            )
+            if spot_df is not None and not spot_df.empty:
+                spot_close = spot_df["close"]
+                log.info("%s: fetched spot candles (%d rows)", sym, len(spot_df))
+        except Exception as exc:
+            log.warning("%s: spot fetch failed: %s — skipping basis_* factors", sym, exc)
+
+        # ── 3. Fetch non-price data ──────────────────────────────────────────
         funding_df, oi_df, stablecoin_df = _fetch_non_price_data(sym_cfg, cfg.period)
 
-        # ── 3. Compute feature dict ──────────────────────────────────────────
+        # ── 4. Compute feature dict ──────────────────────────────────────────
         log.info("%s: computing feature pool...", sym)
         feature_dict = build_feature_dict(
             candles=candles,
@@ -388,21 +487,22 @@ def _process_symbol(
             funding_df=funding_df,
             oi_df=oi_df,
             stablecoin_df=stablecoin_df,
+            spot_close=spot_close,
         )
         if not feature_dict:
             log.error("%s: feature dict is empty — skipping symbol", sym)
             return False
         log.info("%s: computed %d features", sym, len(feature_dict))
 
-        # ── 4. Write feature store ───────────────────────────────────────────
+        # ── 5. Write feature store ───────────────────────────────────────────
         dump_features(sym, feature_dict, manifests_dir)
 
-        # ── 5. Compute multi-horizon IC/IR ───────────────────────────────────
+        # ── 6. Compute multi-horizon IC/IR ───────────────────────────────────
         log.info("%s: computing multi-horizon IC/IR...", sym)
         entries = compute_evidence_entries(candles, feature_dict, cfg.horizons_h)
         sorted_entries = sort_evidence_by_ic(entries)
 
-        # ── 6. Write evidence JSON ───────────────────────────────────────────
+        # ── 7. Write evidence JSON ───────────────────────────────────────────
         evidence_payload = build_evidence_payload(sym, sorted_entries)
         dump_evidence(sym, evidence_payload, manifests_dir)
         log.info(
