@@ -212,6 +212,7 @@ export function Agent() {
   const pendingGoalSessionRef = useRef<string | null>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const lastEventRef = useRef(0);
+  const sseTimeoutMsRef = useRef(90_000);
 
   /* tool_progress coalescing — keep latest payload per-tool, flush once per rAF. */
   const pendingProgressRef = useRef<Map<string, NonNullable<ToolCallEntry["progress"]>>>(new Map());
@@ -687,11 +688,17 @@ export function Agent() {
 
   useEffect(() => () => doDisconnect(), [doDisconnect]);
 
-  /* Safety timeout: if streaming but no SSE event for 90s, reset to idle */
+  useEffect(() => {
+    api.getLLMSettings().then((s) => {
+      sseTimeoutMsRef.current = s.sse_timeout_seconds * 1000;
+    }).catch(() => {});
+  }, []);
+
+  /* Safety timeout: if streaming but no SSE event for sseTimeoutMsRef.current ms, reset to idle */
   useEffect(() => {
     if (status !== "streaming") return;
     const timer = setInterval(() => {
-      if (lastEventRef.current && Date.now() - lastEventRef.current > 90_000 && act().status === "streaming") {
+      if (lastEventRef.current && Date.now() - lastEventRef.current > sseTimeoutMsRef.current && act().status === "streaming") {
         act().setStatus("idle");
         toast.warning("Execution timed out, automatically stopped");
       }

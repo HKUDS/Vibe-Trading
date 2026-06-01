@@ -232,6 +232,7 @@ export interface LLMSettings {
   timeout_seconds: number;
   max_retries: number;
   reasoning_effort: string;
+  sse_timeout_seconds: number;
   env_path: string;
   providers: LLMProviderOption[];
 }

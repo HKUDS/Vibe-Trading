@@ -170,6 +170,7 @@ class LLMSettingsResponse(BaseModel):
     timeout_seconds: int
     max_retries: int
     reasoning_effort: str
+    sse_timeout_seconds: int
     env_path: str
     providers: List[LLMProviderOption]
 
@@ -926,6 +927,7 @@ def _build_llm_settings_response(values: Optional[Dict[str, str]] = None) -> LLM
         timeout_seconds=_coerce_int(env_values.get("TIMEOUT_SECONDS", "120"), 120),
         max_retries=_coerce_int(env_values.get("MAX_RETRIES", "2"), 2),
         reasoning_effort=env_values.get("LANGCHAIN_REASONING_EFFORT", "").strip().lower(),
+        sse_timeout_seconds=_coerce_int(env_values.get("VIBE_TRADING_SSE_TIMEOUT", "90"), 90),
         env_path=_project_relative_path(ENV_PATH),
         providers=LLM_PROVIDERS,
     )
