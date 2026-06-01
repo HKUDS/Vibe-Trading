@@ -79,3 +79,10 @@
   ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
 }
+
+/* Streaming pulse-slide animation for the "running" bar */
+@keyframes pulse-slide {
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(200%); }
+  100% { transform: translateX(-100%); }
+}

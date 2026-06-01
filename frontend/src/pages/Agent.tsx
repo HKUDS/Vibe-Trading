@@ -454,6 +454,20 @@ export function Agent() {
 
       compact: () => { touch(); },
 
+      "attempt.created": () => {
+        touch();
+        // Backend has created a new attempt — ensure streaming state is active
+        // even if we connected mid-stream (SSE replay / page reload).
+        if (act().status !== "streaming") act().setStatus("streaming");
+      },
+
+      "attempt.started": () => {
+        touch();
+        // Backend has begun executing the attempt. Re-affirm streaming state
+        // so the UI shows a working indicator for reconnects and fresh loads.
+        if (act().status !== "streaming") act().setStatus("streaming");
+      },
+
       "attempt.completed": async (d) => {
         touch();
         const s = act();
@@ -1052,7 +1066,7 @@ export function Agent() {
               <AgentAvatar />
               <div className="flex-1 min-w-0 flex items-center gap-2 text-xs text-muted-foreground pt-1">
                 <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
-                <span>Thinking…</span>
+                <span>Agent is working…</span>
               </div>
             </div>
           )}
@@ -1072,6 +1086,16 @@ export function Agent() {
                   <ToolProgressIndicator toolCalls={toolCalls} />
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Persistent streaming pulse bar — always visible while agent is working */}
+          {status === "streaming" && (
+            <div className="flex items-center gap-2 px-1 pt-1">
+              <div className="h-0.5 flex-1 rounded-full bg-primary/20 overflow-hidden">
+                <div className="h-full w-1/3 bg-primary rounded-full animate-[pulse-slide_2s_ease-in-out_infinite]" />
+              </div>
+              <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">running</span>
             </div>
           )}
 
