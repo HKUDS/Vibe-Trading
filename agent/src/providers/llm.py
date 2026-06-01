@@ -281,7 +281,7 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         return OpenAICodexLLM(
             model=name,
             temperature=temperature,
-            timeout=int(os.getenv("TIMEOUT_SECONDS", "120")),
+            timeout=int(os.getenv("TIMEOUT_SECONDS", "300")),
             reasoning_effort=effort or None,
         )
 
@@ -297,7 +297,7 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
     return ChatOpenAIWithReasoning(
         model=name,
         temperature=temperature,
-        timeout=int(os.getenv("TIMEOUT_SECONDS", "120")),
+        timeout=int(os.getenv("TIMEOUT_SECONDS", "300")),
         max_retries=int(os.getenv("MAX_RETRIES", "2")),
         callbacks=callbacks,
         extra_body={"reasoning": {"effort": effort}} if effort else None,

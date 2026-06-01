@@ -123,6 +123,8 @@ export const api = {
   swarmSseUrl: (id: string) => withAuthQuery(`${BASE}/swarm/runs/${id}/events`),
   cancelSwarmRun: (id: string) =>
     request<{ status: string }>(`/swarm/runs/${id}/cancel`, { method: "POST" }),
+  retrySwarmRun: (id: string) =>
+    request<{ id: string; status: string; preset_name: string }>(`/swarm/runs/${id}/retry`, { method: "POST" }),
   getLLMSettings: () => request<LLMSettings>("/settings/llm"),
   updateLLMSettings: (settings: UpdateLLMSettingsRequest) =>
     request<LLMSettings>("/settings/llm", {

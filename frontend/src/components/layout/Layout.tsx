@@ -29,9 +29,7 @@ export function Layout() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("qa-sidebar") === "collapsed");
 
   const activeSessionId = searchParams.get("session");
-  const agentStatus = useAgentStore(s => s.status);
-  const agentSessionId = useAgentStore(s => s.sessionId);
-  const isAnySessionStreaming = agentStatus === "streaming" && !!agentSessionId;
+  const streamingSessionId = useAgentStore(s => s.streamingSessionId);
 
   useEffect(() => {
     localStorage.setItem("qa-sidebar", collapsed ? "collapsed" : "expanded");
@@ -163,7 +161,7 @@ export function Layout() {
                         title={s.title || s.session_id}
                       >
                         <span className="flex items-center gap-1.5">
-                          {isAnySessionStreaming && agentSessionId === s.session_id ? (
+                          {streamingSessionId === s.session_id ? (
                             <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
                           ) : (
                             <span className={cn(
