@@ -156,7 +156,7 @@ class TestMinimaxTemperature:
             "LANGCHAIN_PROVIDER": "minimax",
             "MINIMAX_API_KEY": "minimax-key",
             "MINIMAX_BASE_URL": "https://api.minimax.io/v1",
-            "LANGCHAIN_MODEL_NAME": "MiniMax-M2.7",
+            "LANGCHAIN_MODEL_NAME": "MiniMax-M3",
             "LANGCHAIN_TEMPERATURE": "0.0",
         }
         with patch.dict(os.environ, env, clear=True):
@@ -181,7 +181,7 @@ class TestMinimaxTemperature:
             "LANGCHAIN_PROVIDER": "minimax",
             "MINIMAX_API_KEY": "minimax-key",
             "MINIMAX_BASE_URL": "https://api.minimax.io/v1",
-            "LANGCHAIN_MODEL_NAME": "MiniMax-M2.7",
+            "LANGCHAIN_MODEL_NAME": "MiniMax-M3",
             "LANGCHAIN_TEMPERATURE": "0.7",
         }
         with patch.dict(os.environ, env, clear=True):
