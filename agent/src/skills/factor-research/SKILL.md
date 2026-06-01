@@ -138,3 +138,19 @@ First orthogonalize the factors with the Schmidt process to remove collinearity,
 ```bash
 pip install pandas numpy scipy
 ```
+
+## Calling Zoo Factors
+
+Rather than recompute factors from raw OHLCV every research iteration, prefer reusing the 450+ pre-built alphas in the Alpha Zoo registry. Each alpha is metadata-validated (`AlphaMeta` schema with `theme`, `universe`, `columns_required`, `decay_horizon`, `min_warmup_bars`), shape-checked against `panel["close"]`, and rejected if it emits `+/- inf` or >95% NaN — so the factor CSV you feed to `factor_analysis` is already sanity-checked.
+
+```python
+from src.factors.registry import Registry
+
+registry = Registry()
+ids = registry.list(theme="momentum", universe="equity_cn")  # filter the catalogue
+factor_panel = registry.compute("alpha101_001", panel)        # wide DataFrame, same shape as panel["close"]
+factor_panel.to_csv("factor_alpha101_001.csv")                # ready for factor_analysis tool
+```
+
+For combining several validated alphas into one composite signal, see the `multi-factor` skill's `ZooSignalEngine` (it z-scores, weights, and ranks alphas for you, with per-alpha skip isolation). For browsing the catalogue and inspecting individual `__alpha_meta__` records, see the `alpha-zoo` skill.
+

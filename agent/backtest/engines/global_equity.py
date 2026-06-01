@@ -56,8 +56,12 @@ class GlobalEquityEngine(BaseEngine):
             return max(int(raw_size / 100) * 100, 0)
         return round(max(raw_size, 0.0), 2)
 
-    def calc_commission(self, size: float, price: float, direction: int, is_open: bool) -> float:
-        """US: zero commission. HK: stamp tax + levies."""
+    def calc_commission(self, size: float, price: float, _direction: int, is_open: bool) -> float:
+        """US: zero commission. HK: stamp tax + levies.
+
+        ``_direction`` is unused — reserved for future short-borrow fees
+        (US Reg-T margin, HK SBL costs).
+        """
         if self.market == "hk":
             notional = size * price
             comm = notional * self.hk_commission       # broker commission

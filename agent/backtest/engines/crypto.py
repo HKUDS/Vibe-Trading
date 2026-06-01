@@ -48,8 +48,12 @@ class CryptoEngine(BaseEngine):
         """Crypto supports fractional sizes, round to 6 decimals."""
         return round(max(raw_size, 0.0), 6)
 
-    def calc_commission(self, size: float, price: float, direction: int, is_open: bool) -> float:
-        """Maker/Taker separated. Opens typically hit taker, closes hit maker."""
+    def calc_commission(self, size: float, price: float, _direction: int, is_open: bool) -> float:
+        """Maker/Taker separated. Opens typically hit taker, closes hit maker.
+
+        ``_direction`` is unused — reserved for future funding-rate asymmetry
+        between long/short legs on perp swaps.
+        """
         rate = self.taker_rate if is_open else self.maker_rate
         return size * price * rate
 

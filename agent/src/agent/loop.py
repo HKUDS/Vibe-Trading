@@ -23,9 +23,16 @@ from typing import Any, Callable, Dict, List, Optional
 
 from src.agent.context import ContextBuilder
 from src.agent.memory import WorkspaceMemory
+from src.agent.progress import HeartbeatTimer, ProgressEvent, _set_emitter
 from src.agent.tools import ToolRegistry
 from src.agent.trace import TraceWriter
 from src.core.state import RunStateStore
+from src.goal.context import (
+    format_goal_continuation_prompt,
+    get_current_goal_context,
+    goal_needs_continuation,
+    goal_progress_tuple,
+)
 from src.providers.chat import ChatLLM
 from src.tools.background_tools import get_background_manager
 
@@ -33,6 +40,8 @@ RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
 TOKEN_THRESHOLD = int(os.getenv("TOKEN_THRESHOLD", "40000"))
 KEEP_RECENT = 3
 TOOL_RESULT_LIMIT = 10_000
+HEARTBEAT_INTERVAL_S = float(os.getenv("VT_HEARTBEAT_INTERVAL_S", "3.0"))
+GOAL_MAX_CONTINUATIONS = int(os.getenv("VIBE_TRADING_GOAL_MAX_CONTINUATIONS", "3"))
 
 # Layer 2: Context collapse thresholds
 COLLAPSE_THRESHOLD = int(TOKEN_THRESHOLD * 0.7)
@@ -337,7 +346,16 @@ class AgentLoop:
 
         context = ContextBuilder(self.registry, self.memory,
                                   persistent_memory=self._persistent_memory)
-        messages = context.build_messages(user_message, history)
+        goal_context, active_goal_id = get_current_goal_context(session_id) if session_id else ("", None)
+        llm_user_message = user_message
+        if goal_context:
+            llm_user_message = (
+                f"{goal_context}\n\n"
+                f"<user-message>\n{user_message}\n</user-message>"
+            )
+        goal_store = None
+        goal_turn_accounted = False
+        messages = context.build_messages(llm_user_message, history)
         react_trace: List[Dict[str, Any]] = []
 
         trace = TraceWriter(run_dir)
@@ -345,6 +363,9 @@ class AgentLoop:
 
         iteration = 0
         final_content = ""
+        goal_continuations = 0
+        goal_last_progress: tuple[int, int] | None = None
+        wrap_up_at = max(1, int(self.max_iterations * 0.8))
 
         try:
             while iteration < self.max_iterations:
@@ -379,6 +400,23 @@ class AgentLoop:
 
                 logger.info(f"ReAct iteration {iteration}/{self.max_iterations}")
 
+                # Inject wrap-up nudge when approaching iteration limit.
+                # Skip on the first iteration (tiny budgets) and on the last
+                # iteration (the forced text-only path already guarantees an
+                # answer there) so the nudge never displaces the active-goal
+                # context as the most recent user message.
+                if iteration == wrap_up_at and 1 < iteration < self.max_iterations:
+                    remaining = self.max_iterations - iteration
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"[SYSTEM] You have {remaining} iterations remaining out of "
+                            f"{self.max_iterations}. Please wrap up your work. "
+                            "Stop calling tools and provide your final answer as plain text. "
+                            "If you have partial results, summarize what you have so far."
+                        ),
+                    })
+
                 # Streaming output + collect thinking text
                 thinking_chunks: List[str] = []
 
@@ -386,11 +424,53 @@ class AgentLoop:
                     thinking_chunks.append(delta)
                     self._emit("text_delta", {"delta": delta, "iter": iteration})
 
+                # On last iteration, drop tool definitions to force text output
+                is_last_iteration = (iteration == self.max_iterations)
+                tool_defs = None if is_last_iteration else self.registry.get_definitions()
+                if is_last_iteration:
+                    trace.write({"type": "forced_text_only", "iter": iteration})
+
                 response = self.llm.stream_chat(
                     messages,
-                    tools=self.registry.get_definitions(),
+                    tools=tool_defs,
                     on_text_chunk=_on_text_chunk,
                 )
+                usage = getattr(response, "usage_metadata", None) or {}
+                if usage:
+                    self._emit(
+                        "llm_usage",
+                        {
+                            "input_tokens": int(usage.get("input_tokens") or 0),
+                            "output_tokens": int(usage.get("output_tokens") or 0),
+                            "total_tokens": int(usage.get("total_tokens") or 0),
+                            "iter": iteration,
+                        },
+                    )
+                if active_goal_id and session_id:
+                    token_delta = int(usage.get("total_tokens") or 0) if usage else 0
+                    turn_delta = 0 if goal_turn_accounted else 1
+                    if token_delta or turn_delta:
+                        try:
+                            if goal_store is None:
+                                from src.goal import GoalStore
+
+                                goal_store = GoalStore()
+                            goal_store.account_usage(
+                                session_id=session_id,
+                                goal_id=active_goal_id,
+                                expected_goal_id=active_goal_id,
+                                token_delta=token_delta,
+                                turn_delta=turn_delta,
+                            )
+                            goal_turn_accounted = True
+                            snapshot = goal_store.get_goal_snapshot(active_goal_id)
+                            if snapshot is not None:
+                                self._emit(
+                                    "goal.updated",
+                                    {"goal": snapshot["goal"], "snapshot": snapshot},
+                                )
+                        except Exception as exc:  # noqa: BLE001
+                            logger.debug("Goal usage accounting skipped: %s", exc)
 
                 thinking_text = "".join(thinking_chunks)
                 if thinking_text:
@@ -399,6 +479,67 @@ class AgentLoop:
 
                 if not response.has_tool_calls:
                     final_content = response.content or ""
+                    should_continue_goal = False
+                    continuation_snapshot = None
+                    if active_goal_id and session_id and GOAL_MAX_CONTINUATIONS > 0:
+                        try:
+                            if goal_store is None:
+                                from src.goal import GoalStore
+
+                                goal_store = GoalStore()
+                            continuation_snapshot = goal_store.get_goal_snapshot(active_goal_id)
+                            should_continue_goal = bool(
+                                continuation_snapshot
+                                and goal_needs_continuation(continuation_snapshot)
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            logger.debug("Goal continuation check skipped: %s", exc)
+
+                    if should_continue_goal and continuation_snapshot is not None:
+                        current_progress = goal_progress_tuple(continuation_snapshot)
+                        no_new_progress = (
+                            goal_last_progress is not None
+                            and current_progress <= goal_last_progress
+                        )
+                        if goal_continuations >= GOAL_MAX_CONTINUATIONS or (
+                            no_new_progress and goal_continuations > 0
+                        ):
+                            trace.write(
+                                {
+                                    "type": "goal_continuation_suppressed",
+                                    "iter": iteration,
+                                    "goal_id": active_goal_id,
+                                    "progress": current_progress,
+                                    "continuations": goal_continuations,
+                                }
+                            )
+                        else:
+                            trace.write(
+                                {
+                                    "type": "goal_intermediate_answer",
+                                    "iter": iteration,
+                                    "goal_id": active_goal_id,
+                                    "content": final_content[:2000],
+                                    "progress": current_progress,
+                                }
+                            )
+                            react_trace.append(
+                                {"type": "goal_intermediate_answer", "content": final_content[:500]}
+                            )
+                            messages.append({"role": "assistant", "content": final_content})
+                            messages.append(
+                                {
+                                    "role": "user",
+                                    "content": format_goal_continuation_prompt(
+                                        continuation_snapshot,
+                                        previous_answer=final_content,
+                                    ),
+                                }
+                            )
+                            goal_last_progress = current_progress
+                            goal_continuations += 1
+                            continue
+
                     trace.write({"type": "answer", "iter": iteration, "content": final_content[:2000]})
                     react_trace.append({"type": "answer", "content": final_content[:500]})
                     break
@@ -608,12 +749,10 @@ class AgentLoop:
             trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "args": {k: str(v)[:200] for k, v in args.items()}})
             runnable.append((tc, args))
 
-        # Execute in parallel
+        # Execute in parallel — each worker gets its own heartbeat + progress emitter.
         def _run(tc_args: tuple) -> tuple:
             tc, args = tc_args
-            t0 = _time.perf_counter()
-            result = self.registry.execute(tc.name, args)
-            elapsed_ms = int((_time.perf_counter() - t0) * 1000)
+            result, elapsed_ms = self._invoke_tool(tc.name, args)
             return tc, result, elapsed_ms
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(runnable), 8)) as pool:
@@ -655,11 +794,48 @@ class AgentLoop:
         trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "args": {k: str(v)[:200] for k, v in args.items()}})
         logger.info(f"Tool call: {tc.name}({list(args.keys())})")
 
-        t0 = _time.perf_counter()
-        result = self.registry.execute(tc.name, args)
-        elapsed_ms = int((_time.perf_counter() - t0) * 1000)
+        result, elapsed_ms = self._invoke_tool(tc.name, args)
 
         self._finalize_tool_result(tc, result, elapsed_ms, context, messages, trace, react_trace, iteration)
+
+    def _invoke_tool(self, tool_name: str, args: Dict[str, Any]) -> tuple[str, int]:
+        """Execute a tool with heartbeat + structured progress emission.
+
+        Installs a thread-local progress emitter so the tool may call
+        ``emit_progress()`` without taking a callback parameter, and runs a
+        background heartbeat timer that ticks every ``HEARTBEAT_INTERVAL_S``
+        seconds. Both event streams are forwarded through ``self._emit`` and
+        therefore land in the same SSE bus and CLI dashboard as normal
+        tool events.
+
+        Args:
+            tool_name: Tool name to execute.
+            args: Tool arguments dict.
+
+        Returns:
+            Tuple of (result_str, elapsed_ms).
+        """
+        def _on_progress(event: ProgressEvent) -> None:
+            payload = event.to_dict()
+            payload["tool"] = tool_name
+            self._emit("tool_progress", payload)
+
+        def _on_heartbeat(payload: Dict[str, Any]) -> None:
+            self._emit("tool_heartbeat", payload)
+
+        _set_emitter(_on_progress)
+        t0 = _time.perf_counter()
+        try:
+            with HeartbeatTimer(
+                tool_name=tool_name,
+                interval=HEARTBEAT_INTERVAL_S,
+                emit=_on_heartbeat,
+            ):
+                result = self.registry.execute(tool_name, args)
+        finally:
+            _set_emitter(None)
+        elapsed_ms = int((_time.perf_counter() - t0) * 1000)
+        return result, elapsed_ms
 
     def _finalize_tool_result(
         self,

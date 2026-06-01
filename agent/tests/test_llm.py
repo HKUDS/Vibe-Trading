@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.providers.llm import _extract_balanced_json, _sync_provider_env, build_llm
+from src.providers.llm import _sync_provider_env, build_llm
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +73,15 @@ class TestSyncProviderEnv:
         })
         # Ollama uses "ollama" as fallback key
         assert result["OPENAI_API_KEY"] in ("ollama", "")
-        assert "localhost" in result["OPENAI_API_BASE"]
+        assert result["OPENAI_API_BASE"] == "http://localhost:11434/v1"
+
+    def test_ollama_base_url_appends_v1(self) -> None:
+        result = self._run_sync({
+            "LANGCHAIN_PROVIDER": "ollama",
+            "OLLAMA_BASE_URL": "http://23.152.56.42:11434/",
+        })
+        assert result["OPENAI_API_BASE"] == "http://23.152.56.42:11434/v1"
+        assert result["OPENAI_BASE_URL"] == "http://23.152.56.42:11434/v1"
 
     def test_qwen_alias_to_dashscope(self) -> None:
         result = self._run_sync({
@@ -231,40 +239,3 @@ class TestReasoningEffortPassthrough:
         assert captured["extra_body"]["reasoning"]["effort"] == "high"
 
 
-class TestExtractBalancedJson:
-    def test_simple_json(self) -> None:
-        result = _extract_balanced_json('{"key": "value"}')
-        assert result == {"key": "value"}
-
-    def test_json_embedded_in_text(self) -> None:
-        text = 'Here is the config: {"a": 1, "b": 2} and some more text.'
-        result = _extract_balanced_json(text)
-        assert result == {"a": 1, "b": 2}
-
-    def test_nested_json(self) -> None:
-        text = '{"outer": {"inner": [1, 2, 3]}}'
-        result = _extract_balanced_json(text)
-        assert result["outer"]["inner"] == [1, 2, 3]
-
-    def test_escaped_quotes(self) -> None:
-        text = r'{"msg": "he said \"hello\""}'
-        result = _extract_balanced_json(text)
-        assert result is not None
-        assert "hello" in result["msg"]
-
-    def test_no_json(self) -> None:
-        assert _extract_balanced_json("no json here") is None
-
-    def test_empty_string(self) -> None:
-        assert _extract_balanced_json("") is None
-
-    def test_braces_in_strings(self) -> None:
-        text = '{"pattern": "if (x > 0) { return x; }"}'
-        result = _extract_balanced_json(text)
-        assert result is not None
-        assert "return x" in result["pattern"]
-
-    def test_multiple_objects_returns_first(self) -> None:
-        text = '{"a": 1} {"b": 2}'
-        result = _extract_balanced_json(text)
-        assert result == {"a": 1}

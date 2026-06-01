@@ -1,176 +1,152 @@
 # Contributing to Vibe-Trading
 
-Thanks for your interest in contributing! This guide will help you get started.
+Vibe-Trading is a natural-language finance research AI agent (FastAPI + ReAct
+agent backend, Vite+React frontend, vectorized daily and options backtesting).
+This guide covers contribution governance: the Developer Certificate of Origin
+(DCO) sign-off requirement, the reviewer checklist for Alpha Zoo factor
+contributions, and the quickstart for adding a new alpha.
 
-## Quick Links
+For general project setup (`pip install -e ".[dev]"`, dev servers,
+`pytest --ignore=agent/tests/e2e_backtest`), see the README. For bug reports
+and feature requests, use the GitHub issue templates.
 
-- [Discord](https://discord.gg/2vDYc2w5) — ask questions, discuss ideas
-- [Issues](https://github.com/HKUDS/Vibe-Trading/issues) — bug reports & feature requests
-- [Good First Issues](https://github.com/HKUDS/Vibe-Trading/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) — great starting points
+## Developer Certificate of Origin (DCO)
 
-## Development Setup
+Every commit in a community pull request MUST carry a `Signed-off-by:`
+trailer. We do not require a CLA — the DCO is a lightweight per-commit
+attestation that you wrote the code or have the right to submit it under
+the project's MIT license. Maintainer-direct commits to `main` are not
+subject to the trailer requirement (the maintainer's authorship is
+already attested by the commit's author field), but community PRs are.
 
-```bash
-git clone https://github.com/HKUDS/Vibe-Trading.git
-cd Vibe-Trading
-python -m venv .venv
-source .venv/bin/activate      # Linux/macOS
-# .venv\Scripts\Activate.ps1   # Windows
-
-pip install -e ".[dev]"
-cp agent/.env.example agent/.env
-# Edit agent/.env — set your LLM provider
-```
-
-### Run tests
+Sign your commits with `-s`:
 
 ```bash
-pytest --ignore=agent/tests/e2e_backtest --tb=short -q
+git commit -s -m "feat(factors): add gtja191 alpha 042"
 ```
 
-### Start dev servers
+This appends a trailer like:
 
-```bash
-# Terminal 1: API server
-vibe-trading serve --port 8899
-
-# Terminal 2: Frontend
-cd frontend && npm install && npm run dev
+```
+Signed-off-by: Your Name <you@example.com>
 ```
 
-## Project Structure
+PRs without a `Signed-off-by:` on every commit will be asked to rebase and
+resign. To fix an unsigned series, run
+`git rebase --signoff <base-branch>` and force-push the branch.
 
-| Directory | What lives here | Open to contribute? |
-|-----------|----------------|:-------------------:|
-| `agent/src/skills/` | 74 finance skill definitions (SKILL.md) | Yes |
-| `agent/src/tools/` | 21 agent tools | Yes |
-| `agent/backtest/` | Backtest engines, loaders, optimizers | Yes |
-| `agent/src/swarm/presets/` | 29 swarm preset YAMLs | Yes |
-| `frontend/` | React 19 + Vite web UI | Yes |
-| `agent/src/agent/` | ReAct agent core (loop, context, skills) | Ask first |
-| `agent/src/session/` | Session management | Ask first |
-| `agent/src/providers/` | LLM provider abstraction | Ask first |
+### DCO 1.1 (full text)
 
-> **Core modules** (`agent/`, `session/`, `providers/`) are protected — please open an issue to discuss before modifying.
+```
+Developer Certificate of Origin
+Version 1.1
 
-## How to Contribute
+Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
+1 Letterman Drive
+Suite D4700
+San Francisco, CA, 94129
 
-### Reporting Bugs
+Everyone is permitted to copy and distribute verbatim copies of this
+license document, but changing it is not allowed.
 
-Use the [Bug Report](https://github.com/HKUDS/Vibe-Trading/issues/new?template=bug_report.yml) template. Include:
 
-- Steps to reproduce
-- Expected vs actual behavior
-- Your environment (OS, Python version, provider)
-- Error logs if available
+Developer's Certificate of Origin 1.1
 
-### Suggesting Features
+By making a contribution to this project, I certify that:
 
-Use the [Feature Request](https://github.com/HKUDS/Vibe-Trading/issues/new?template=feature_request.yml) template.
+(a) The contribution was created in whole or in part by me and I
+    have the right to submit it under the open source license
+    indicated in the file; or
 
-### Submitting Code
+(b) The contribution is based upon previous work that, to the best
+    of my knowledge, is covered under an appropriate open source
+    license and I have the right under that license to submit that
+    work with modifications, whether created in whole or in part
+    by me, under the same open source license (unless I am
+    permitted to submit under a different license), as indicated
+    in the file; or
 
-1. **Fork & branch** — create a feature branch from `main`
+(c) The contribution was provided directly to me by some other
+    person who certified (a), (b) or (c) and I have not modified
+    it.
+
+(d) I understand and agree that this project and the contribution
+    are public and that a record of the contribution (including all
+    personal information I submit with it, including my sign-off) is
+    maintained indefinitely and may be redistributed consistent with
+    this project or the open source license(s) involved.
+```
+
+## Alpha PR Reviewer Checklist
+
+This checklist applies to any PR adding or modifying files under
+`agent/src/factors/zoo/**/*.py`. Reviewers MUST verify every box before
+merging. Authors are strongly encouraged to self-check first.
+
+- [ ] **Purity gate**: file passes `pytest agent/tests/factors/test_alpha_purity.py`.
+  The AST scan rejects any imports outside the allowlist
+  (`pandas`, `numpy`, `scipy.*`, `src.factors.base`, `__future__`, `typing`,
+  `math`, `dataclasses`) and any reference to forbidden names: `os`,
+  `subprocess`, `socket`, `urllib`, `requests`, `httpx`, `pathlib`, `Path`,
+  `eval`, `exec`, `compile`, `__import__`, bare `open`, or `getattr` with a
+  second argument beginning with `"__"`.
+- [ ] **Lookahead gate**: file passes `pytest agent/tests/factors/test_lookahead.py`.
+  No negative shifts, no forward leakage. `delta(df, d)` must have `d >= 1`.
+- [ ] **`__alpha_meta__` present** with all required pydantic-validated fields:
+  `id`, `theme`, `formula_latex`, `columns_required`, `universe`, `frequency`,
+  `decay_horizon`, `min_warmup_bars`. Optional: `nickname`, `extras_required`,
+  `requires_sector`, `notes`.
+- [ ] **`compute(panel)` contract**: returns a DataFrame with the same shape
+  as `panel["close"]`, NaN preserved at warmup / missing-data positions,
+  no `+/-inf` values.
+- [ ] **LaTeX matches code**: the `formula_latex` in `__alpha_meta__` and the
+  formula in the module docstring describe what `compute()` actually does.
+- [ ] **Per-zoo `LICENSE.md` updated** to cite the source paper / report and
+  to state that formulas are mathematical facts, not subject to copyright,
+  and that prose / tables / figures from papers and reports are not
+  reproduced in this repo. Do NOT frame the bundled formulas using US
+  affirmative-defense terminology — that is a litigation posture, not a
+  license grant. State the mathematical-facts rationale instead.
+- [ ] **Apache-2 attribution**: if the alpha is adapted from an Apache-2.0
+  upstream (e.g. Microsoft Qlib), the file MUST carry a header of the form
+  `# Adapted from <repo>@<commit-sha>:<path> (Apache-2.0). Copyright (c) <holder>.`
+- [ ] **DCO**: every commit in the PR carries `Signed-off-by:`.
+
+## Adding a New Alpha (Quickstart)
+
+1. Pick the target zoo directory under `agent/src/factors/zoo/` (e.g.
+   `gtja191/`, `alpha101/`, `qlib158/`, `academic/`).
+2. Create `<alpha_id_short>.py` in that directory. Define `__alpha_meta__`
+   (must satisfy the pydantic `AlphaMeta` schema in
+   `agent/src/factors/registry.py`) and a pure `compute(panel)` function
+   that imports only from `src.factors.base` plus the allowlisted stdlib /
+   numpy / pandas / scipy.
+3. Run the purity and lookahead gates locally:
    ```bash
-   git checkout -b feat/my-feature
+   pytest agent/tests/factors/test_alpha_purity.py agent/tests/factors/test_lookahead.py -q
    ```
-
-2. **Make changes** — follow the code standards below
-
-3. **Test** — add or update tests, ensure `pytest` passes
+4. (Optional but recommended) Run a quick bench:
    ```bash
-   pytest --ignore=agent/tests/e2e_backtest --tb=short -q
+   vibe-trading alpha bench --zoo <zoo_id> --universe csi300 --period 2020-2025
    ```
+5. Open a PR. Every commit must include `Signed-off-by:` (use
+   `git commit -s`). Reviewers will walk the checklist above.
 
-4. **Commit** — use [Conventional Commits](https://www.conventionalcommits.org/)
-   ```
-   feat: add RSI divergence skill
-   fix: handle empty DataFrame in backtest loader
-   docs: update CLI reference table
-   test: add crypto engine edge cases
-   ```
+## Code Style
 
-5. **Pull Request** — open a PR against `main` with:
-   - Summary of changes
-   - Related issue number (e.g., `Closes #42`)
-   - Test plan
+- Format with `black`; lint with `ruff` (config in `pyproject.toml`).
+- Type-annotate all public function and method signatures.
+- Google-style docstrings (`Args:` / `Returns:` / `Raises:`).
+- Keep files under 400 lines where practical, 800 hard cap.
+- No hardcoded paths, secrets, or URLs — config via `.env`, YAML, or
+  module-level constants.
+- Delete unused code rather than commenting it out.
 
-## Code Standards
+## Attribution
 
-- **Python**: Google-style docstrings, type hints encouraged
-- **No hardcoding**: config via `.env`, YAML, or constants
-- **Delete unused code** — don't comment-preserve
-- **OKX pairs**: use `BTC-USDT` format (hyphen, uppercase)
-- **UI text**: English. LLM output follows user language
-- **File size**: aim for < 400 lines, max 800
+Do NOT add `Co-Authored-By:` trailers or AI-assistant attribution lines to
+commit messages or PR descriptions. The DCO sign-off is the only required
+trailer; keep commit metadata clean.
 
-## Contribution Roadmap
-
-### Easy: New Skill
-
-Each skill is a single `SKILL.md` file in `agent/src/skills/<category>/<skill-name>/`. Categories: `data-source`, `strategy`, `analysis`, `asset-class`, `crypto`, `flow`, `tool`. Look at existing skills for the format.
-
-### Easy: New Swarm Preset
-
-A YAML file in `agent/src/swarm/presets/` defining agents, roles, and DAG workflow. See existing presets.
-
-### Medium: New Data Source Loader
-
-1. Create `agent/backtest/loaders/<source>.py`
-2. Implement the `DataLoader` Protocol (see `agent/backtest/loaders/base.py`)
-3. Register in `agent/backtest/loaders/registry.py`
-4. Add tests in `agent/tests/`
-
-### Medium: Portfolio Optimizer Constraints
-
-Current optimizers (`agent/backtest/optimizers/`) support basic weight optimization. We need:
-- **Leverage constraints** — max gross exposure limits
-- **Sector/group caps** — weight limits per sector or asset group
-- **Turnover penalties** — transaction cost-aware rebalancing
-- Extend `BaseOptimizer` interface, keep backward compatibility
-
-### Medium: Correlation Heatmap Dashboard
-
-Add a cross-asset correlation matrix component to the frontend:
-- Time-window slider (30d / 60d / 90d / 1Y)
-- Hierarchical clustering for sector grouping
-- ECharts heatmap or custom canvas renderer
-- Wire to a new API endpoint that computes rolling correlations
-
-### Medium: Trust Layer Run Card UI
-
-Backtests now emit `run_card.json` and `run_card.md`. Good follow-up contributions:
-- Surface run-card links in CLI/API/Web UI run summaries
-- Add a Web UI run-card detail view with config hash, strategy hash, data sources, metrics, validation, warnings, and artifact checksums
-- Extend the run-card schema with tool trace and citations once trace capture is promoted into the Trust Layer contract
-
-### Hard: Intraday Backtest Engine
-
-Current engines run on daily bars. We need sub-daily execution:
-- Support 1m / 5m / 15m / 30m / 1H / 4H intervals
-- Handle market session boundaries (pre-market, after-hours, overnight gaps)
-- Intraday margin / buying power tracking
-- Integrate with minute-level data loaders (OKX klines, yfinance intraday)
-- Start from `BaseEngine` — see `agent/backtest/engines/base.py` for the abstract interface
-
-### Hard: Options Volatility Surface & Greeks Visualization
-
-Build 3D implied-vol surface and Greeks charts in the frontend:
-- **Vol surface**: strike vs. expiry vs. implied vol (3D mesh or contour)
-- **Greeks dashboard**: delta, gamma, theta, vega curves across strikes
-- **Skew chart**: 25-delta risk reversal over time
-- Backend: extend `options_pricing_tool.py` to return surface data
-- Frontend: ECharts GL for 3D, or custom WebGL renderer
-
-### Hard: Monte Carlo & Stress Testing
-
-Add scenario simulation and tail-risk analysis:
-- **Monte Carlo**: generate N return paths from fitted distribution, compute VaR/CVaR confidence intervals
-- **Historical stress tests**: replay specific crisis periods (2008, 2020 COVID, 2022 crypto winter)
-- **Regime switching**: HMM-based regime detection (bull/bear/sideways), conditional risk metrics
-- Output: distribution plots, drawdown probability curves, worst-case tables
-- Can be a new tool in `agent/src/tools/` or an extension to the backtest engine
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing, you agree that your contributions are licensed under the
+project's MIT license (see `LICENSE`).

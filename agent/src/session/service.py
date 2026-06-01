@@ -124,50 +124,9 @@ class SessionService:
         asyncio.create_task(self._run_attempt(session, attempt, include_shell_tools=include_shell_tools))
         return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
 
-    async def resume_attempt(self, session_id: str, attempt_id: str, user_input: str) -> Dict[str, Any]:
-        """Resume an attempt that is waiting for user input.
-
-        Args:
-            session_id: Session ID.
-            attempt_id: Attempt ID.
-            user_input: User reply content.
-
-        Returns:
-            Dictionary containing status and attempt_id.
-        """
-        session = self.store.get_session(session_id)
-        if not session:
-            raise ValueError(f"Session {session_id} not found")
-        attempt = self.store.get_attempt(session_id, attempt_id)
-        if not attempt:
-            raise ValueError(f"Attempt {attempt_id} not found")
-        if attempt.status != AttemptStatus.WAITING_USER:
-            raise ValueError(f"Attempt {attempt_id} is not waiting for user input")
-
-        message = Message(session_id=session_id, role="user", content=user_input, linked_attempt_id=attempt_id)
-        self.store.append_message(message)
-
-        # Append the user's reply to the prompt and rerun the attempt.
-        attempt.prompt = f"{attempt.prompt}\n\nUser reply: {user_input}"
-        attempt.status = AttemptStatus.RUNNING
-        self.store.update_attempt(attempt)
-        self.event_bus.emit(session_id, "attempt.resumed", {"attempt_id": attempt_id, "user_input": user_input})
-
-        include_shell_tools = bool(session.config.get("include_shell_tools", False))
-        asyncio.create_task(self._run_attempt(session, attempt, include_shell_tools=include_shell_tools))
-        return {"status": "resumed", "attempt_id": attempt_id}
-
     def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
         """Return the message history."""
         return self.store.get_messages(session_id, limit)
-
-    def get_attempts(self, session_id: str) -> list[Attempt]:
-        """Return all execution attempts."""
-        return self.store.list_attempts(session_id)
-
-    def get_attempt(self, session_id: str, attempt_id: str) -> Optional[Attempt]:
-        """Return a single execution attempt."""
-        return self.store.get_attempt(session_id, attempt_id)
 
     def cancel_current(self, session_id: str) -> bool:
         """Cancel the currently running AgentLoop for a session.
@@ -265,6 +224,7 @@ class SessionService:
 
         session_id = attempt.session_id
         attempt_id = attempt.attempt_id
+        loop = asyncio.get_running_loop()
 
         safe_overrides = sanitize_session_overrides(session_config) if session_config else session_config
         agent_config = load_runtime_agent_config(overrides=safe_overrides)
@@ -278,13 +238,20 @@ class SessionService:
             """Forward MCP server-name collision warnings to the operator event channel."""
             self.event_bus.emit(session_id, "mcp.warning", {"attempt_id": attempt_id, "message": msg})
 
-        agent = AgentLoop(
-            registry=build_registry(
+        registry = await loop.run_in_executor(
+            _AGENT_EXECUTOR,
+            lambda: build_registry(
                 persistent_memory=pm,
                 include_shell_tools=include_shell_tools,
                 agent_config=agent_config,
+                session_id=session_id,
+                event_callback=event_callback,
                 warn_callback=_mcp_collision_warn,
             ),
+        )
+
+        agent = AgentLoop(
+            registry=registry,
             llm=llm,
             event_callback=event_callback,
             max_iterations=50,
@@ -296,7 +263,6 @@ class SessionService:
         history = self._convert_messages_to_history(messages) if messages else None
 
         try:
-            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 _AGENT_EXECUTOR,
                 lambda: agent.run(

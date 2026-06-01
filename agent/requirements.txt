@@ -1,11 +1,11 @@
 # Core LLM & Orchestration
 rich>=13.0.0
 pyyaml>=6.0.0
-langchain>=0.1.0
-langchain-core>=0.1.0
-langchain-openai>=0.0.5
-langgraph>=0.2.50,<0.3
-langgraph-checkpoint>=2.0.0
+langchain>=1.0.0,<2
+langchain-core>=1.0.0,<2
+langchain-openai>=1.0.0,<2
+langgraph>=1.0.10,<1.1
+langgraph-checkpoint>=2.1.0,<5
 python-dotenv>=1.0.0
 httpx>=0.28.0
 oauth-cli-kit>=0.1.3

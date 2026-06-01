@@ -19,6 +19,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+from src.agent.progress import emit_progress
 from src.agent.tools import BaseTool
 from src.security.scanner import with_security_warnings
 from src.tools.path_utils import safe_document_path
@@ -126,15 +127,22 @@ def _read_pdf(path: Path, pages: str) -> str:
     try:
         total_pages = len(doc)
         targets = _parse_pages(pages, total_pages) if pages.strip() else list(range(total_pages))
+        total_targets = len(targets)
         chunks: list[str] = []
         ocr_pages = 0
-        for i in targets:
+        for idx, i in enumerate(targets, start=1):
             if not 0 <= i < total_pages:
                 continue
             page = doc[i]
             text = page.get_textpage().get_text_range().strip()
             if len(text) >= _MIN_TEXT_PER_PAGE:
                 chunks.append(f"--- Page {i + 1} ---\n{text}")
+                emit_progress(
+                    "reading_pdf",
+                    current=idx,
+                    total=total_targets,
+                    message=f"page {i + 1}/{total_pages}",
+                )
                 continue
             # OCR fallback for image pages
             bitmap = page.render(scale=300 / 72)
@@ -145,6 +153,12 @@ def _read_pdf(path: Path, pages: str) -> str:
                 ocr_pages += 1
             elif text:
                 chunks.append(f"--- Page {i + 1} ---\n{text}")
+            emit_progress(
+                "reading_pdf",
+                current=idx,
+                total=total_targets,
+                message=f"page {i + 1}/{total_pages} (OCR)" if ocr_text.strip() else f"page {i + 1}/{total_pages}",
+            )
         full = "\n\n".join(chunks)
         return _envelope(
             path, "pdf", full,
@@ -185,7 +199,14 @@ def _read_excel(path: Path) -> str:
     xls = pd.ExcelFile(path)
     parts: list[str] = []
     sheet_info: list[dict[str, Any]] = []
-    for name in xls.sheet_names:
+    total_sheets = len(xls.sheet_names)
+    for idx, name in enumerate(xls.sheet_names, start=1):
+        emit_progress(
+            "reading_excel",
+            current=idx,
+            total=total_sheets,
+            message=f"sheet {name}",
+        )
         df = xls.parse(name, dtype=str)
         preview = df.head(100).to_string(index=False)
         parts.append(f"--- Sheet: {name} ({len(df)} rows × {len(df.columns)} cols) ---\n{preview}")

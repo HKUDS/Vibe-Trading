@@ -76,8 +76,12 @@ class ChinaAEngine(BaseEngine):
         """Round down to 100-share lots."""
         return max(int(raw_size / 100) * 100, 0)
 
-    def calc_commission(self, size: float, price: float, direction: int, is_open: bool) -> float:
-        """A-share fee structure: commission + stamp tax (sell) + transfer fee."""
+    def calc_commission(self, size: float, price: float, _direction: int, is_open: bool) -> float:
+        """A-share fee structure: commission + stamp tax (sell) + transfer fee.
+
+        ``_direction`` is unused today — reserved for future asymmetric
+        long/short fee schedules (margin trading, securities lending).
+        """
         notional = size * price
         # Commission: 万2.5, min ¥5
         comm = max(notional * self.commission_rate, self.commission_min)
@@ -113,6 +117,9 @@ def _bar_date(bar: pd.Series):
     return None
 
 
+# Note: china_futures and global_futures have variants that prioritise
+# settle/pre_settle (futures-native); see those modules for the
+# futures-specific logic.
 def _calc_pct_change(bar: pd.Series):
     """Calculate price change percentage from bar data."""
     if "pct_chg" in bar.index:

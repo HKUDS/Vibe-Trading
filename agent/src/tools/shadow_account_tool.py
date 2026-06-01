@@ -13,7 +13,6 @@ import json
 import logging
 from dataclasses import asdict
 from datetime import date, timedelta
-from pathlib import Path
 from typing import Any
 
 from src.agent.tools import BaseTool

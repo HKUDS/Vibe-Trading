@@ -43,6 +43,8 @@ data/backup/
 docs/
 !wiki/docs/
 !wiki/docs/**
+docs/screenshots/agent-run.png
+docs/screenshots/boot.png
 data/minutes/
 data/overnight*.log
 data/*.log
@@ -73,3 +75,7 @@ NOTES.md
 AGENTS.md
 
 .DS_Store
+
+# Alpha Zoo wiki artifacts (generated, not source)
+wiki/alpha-library/manifest.json
+wiki/alpha-library/content/

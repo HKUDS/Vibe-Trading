@@ -6,12 +6,14 @@ import json
 import logging
 from typing import Any
 
+import pytest
 from fastmcp.client.client import CallToolResult
 from fastmcp.exceptions import McpError, ToolError
 from mcp import types as mcp_types
 
 from src.config.schema import MCPServerConfig
 from src.tools.mcp import (
+    MCPServerAdapter,
     build_mcp_tool_wrappers,
     format_mcp_server_name_collision_warning,
     make_mcp_tool_name,
@@ -203,7 +205,7 @@ def test_build_mcp_tool_wrappers_honors_local_server_name_override() -> None:
     assert [tool.name for tool in tools] == ["mcp_foo_bar_deadbeef_quote"]
 
 
-def test_remote_tool_execute_retries_transient_timeout_and_strips_run_dir() -> None:
+def test_remote_tool_execute_does_not_retry_timeout_and_strips_run_dir() -> None:
     state = {
         "list_calls": 0,
         "call_calls": 0,
@@ -219,22 +221,19 @@ def test_remote_tool_execute_retries_transient_timeout_and_strips_run_dir() -> N
                 },
             )
         ]],
-        "call_outcomes": [
-            TimeoutError("timed out"),
-            CallToolResult(content=[], structured_content={"price": 12.3}, meta=None, data={"price": 12.3}),
-        ],
+        "call_outcomes": [TimeoutError("timed out")],
     }
 
     tool = build_mcp_tool_wrappers("demo", _make_config(), client_factory=_make_factory(state))[0]
 
     payload = json.loads(tool.execute(symbol="AAPL", run_dir="/tmp/run"))
 
-    assert payload["status"] == "ok"
+    assert payload["status"] == "error"
     assert payload["server"] == "demo"
     assert payload["remote_tool"] == "quote"
     assert payload["tool"] == "mcp_demo_quote"
-    assert payload["structured_content"] == {"price": 12.3}
-    assert state["call_calls"] == 2
+    assert payload["error"] == "timed out"
+    assert state["call_calls"] == 1
     assert state["call_records"][0]["arguments"] == {"symbol": "AAPL"}
     assert state["call_records"][0]["timeout"] == 7
     assert state["call_records"][0]["raise_on_error"] is False
@@ -400,3 +399,99 @@ def test_normalize_mcp_tool_schema_collapses_nested_type_list_with_null() -> Non
     )
 
     assert schema["properties"]["label"]["type"] == "string"
+
+
+def test_build_client_uses_stdio_transport(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class _DummyClient:
+        pass
+
+    def _fake_stdio_transport(**kwargs: Any) -> object:
+        captured["transport"] = "stdio"
+        captured["transport_kwargs"] = kwargs
+        return object()
+
+    def _fake_client(transport: object, **kwargs: Any) -> _DummyClient:
+        captured["client_transport"] = transport
+        captured["client_kwargs"] = kwargs
+        return _DummyClient()
+
+    monkeypatch.setattr("src.tools.mcp.StdioTransport", _fake_stdio_transport)
+    monkeypatch.setattr("src.tools.mcp.Client", _fake_client)
+
+    adapter = MCPServerAdapter("demo", _make_config(command="uvx", args=["demo-server"]))
+    adapter._build_client()
+
+    assert captured["transport"] == "stdio"
+    assert captured["transport_kwargs"]["command"] == "uvx"
+    assert captured["transport_kwargs"]["args"] == ["demo-server"]
+
+
+def test_build_client_uses_sse_transport(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class _DummyClient:
+        pass
+
+    def _fake_sse_transport(**kwargs: Any) -> object:
+        captured["transport"] = "sse"
+        captured["transport_kwargs"] = kwargs
+        return object()
+
+    def _fake_client(transport: object, **kwargs: Any) -> _DummyClient:
+        captured["client_transport"] = transport
+        captured["client_kwargs"] = kwargs
+        return _DummyClient()
+
+    monkeypatch.setattr("src.tools.mcp.SSETransport", _fake_sse_transport)
+    monkeypatch.setattr("src.tools.mcp.Client", _fake_client)
+
+    adapter = MCPServerAdapter(
+        "demo",
+        _make_config(type="sse", command="", args=[], url="http://localhost:8900/sse", headers={"X-Test": "1"}),
+    )
+    adapter._build_client()
+
+    assert captured["transport"] == "sse"
+    assert captured["transport_kwargs"]["url"] == "http://localhost:8900/sse"
+    assert captured["transport_kwargs"]["headers"] == {"X-Test": "1"}
+
+
+def test_build_client_uses_streamable_http_transport(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class _DummyClient:
+        pass
+
+    def _fake_http_transport(**kwargs: Any) -> object:
+        captured["transport"] = "streamableHttp"
+        captured["transport_kwargs"] = kwargs
+        return object()
+
+    def _fake_client(transport: object, **kwargs: Any) -> _DummyClient:
+        captured["client_transport"] = transport
+        captured["client_kwargs"] = kwargs
+        return _DummyClient()
+
+    monkeypatch.setattr("src.tools.mcp.StreamableHttpTransport", _fake_http_transport)
+    monkeypatch.setattr("src.tools.mcp.Client", _fake_client)
+
+    adapter = MCPServerAdapter(
+        "demo",
+        _make_config(type="streamableHttp", command="", args=[], url="http://localhost:8900/mcp"),
+    )
+    adapter._build_client()
+
+    assert captured["transport"] == "streamableHttp"
+    assert captured["transport_kwargs"]["url"] == "http://localhost:8900/mcp"
+
+
+def test_build_client_rejects_url_only_config_without_explicit_type() -> None:
+    config = _make_config(type="sse", command="", args=[], url="http://localhost:8900/sse")
+    config.type = None
+
+    adapter = MCPServerAdapter("demo", config)
+
+    with pytest.raises(ValueError, match="explicit type"):
+        adapter._build_client()

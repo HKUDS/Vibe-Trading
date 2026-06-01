@@ -6,94 +6,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr
 
 from src.agent.tools import BaseTool
+from src.factors.factor_analysis_core import compute_ic_series, compute_group_equity
 
-
-def _compute_ic_series(factor_df: pd.DataFrame, return_df: pd.DataFrame) -> pd.Series:
-    """Compute daily Spearman rank correlation (IC) between factor values and returns.
-
-    Args:
-        factor_df: Factor values; index=date, columns=codes.
-        return_df: Returns; index=date, columns=codes.
-
-    Returns:
-        IC series indexed by date.
-    """
-    common_dates = factor_df.index.intersection(return_df.index)
-    common_codes = factor_df.columns.intersection(return_df.columns)
-    if len(common_dates) == 0 or len(common_codes) == 0:
-        return pd.Series(dtype=float)
-
-    factor_df = factor_df.loc[common_dates, common_codes]
-    return_df = return_df.loc[common_dates, common_codes]
-
-    ic_values = {}
-    for date in common_dates:
-        f = factor_df.loc[date].dropna()
-        r = return_df.loc[date].dropna()
-        shared = f.index.intersection(r.index)
-        if len(shared) < 5:
-            continue
-        corr, _ = spearmanr(f[shared], r[shared])
-        if not np.isnan(corr):
-            ic_values[date] = corr
-
-    return pd.Series(ic_values, dtype=float)
-
-
-def _compute_group_equity(
-    factor_df: pd.DataFrame, return_df: pd.DataFrame, n_groups: int
-) -> pd.DataFrame:
-    """Layered backtest: rank by factor value daily, hold equal-weight, compute cumulative NAV.
-
-    Args:
-        factor_df: Factor values; index=date, columns=codes.
-        return_df: Returns; index=date, columns=codes.
-        n_groups: Number of quantile groups.
-
-    Returns:
-        DataFrame with index=date and columns Group_1 ... Group_N holding cumulative NAV.
-    """
-    common_dates = sorted(factor_df.index.intersection(return_df.index))
-    common_codes = factor_df.columns.intersection(return_df.columns)
-    if len(common_dates) == 0 or len(common_codes) == 0:
-        return pd.DataFrame()
-
-    factor_df = factor_df.loc[common_dates, common_codes]
-    return_df = return_df.loc[common_dates, common_codes]
-
-    group_returns: dict[str, list[float]] = {f"Group_{i+1}": [] for i in range(n_groups)}
-    valid_dates = []
-
-    for date in common_dates:
-        f = factor_df.loc[date].dropna()
-        r = return_df.loc[date].dropna()
-        shared = f.index.intersection(r.index)
-        if len(shared) < n_groups:
-            continue
-        valid_dates.append(date)
-        ranked = f[shared].rank(method="first")
-        bins = pd.qcut(ranked, n_groups, labels=False, duplicates="drop")
-        if bins.nunique() < n_groups:
-            # Not enough distinct values; fall back to equal-width cut
-            bins = pd.cut(ranked, n_groups, labels=False)
-        for g in range(n_groups):
-            members = bins[bins == g].index
-            if len(members) > 0:
-                group_returns[f"Group_{g+1}"].append(r[members].mean())
-            else:
-                group_returns[f"Group_{g+1}"].append(0.0)
-
-    if not valid_dates:
-        return pd.DataFrame()
-
-    ret_df = pd.DataFrame(group_returns, index=valid_dates)
-    equity_df = (1 + ret_df).cumprod()
-    return equity_df
+# Backward-compatible aliases for any external imports of the private names.
+_compute_ic_series = compute_ic_series
+_compute_group_equity = compute_group_equity
 
 
 def run_factor_analysis(
@@ -122,7 +42,7 @@ def run_factor_analysis(
     if factor_df.empty or return_df.empty:
         return json.dumps({"status": "error", "error": "Factor or return data is empty"}, ensure_ascii=False)
 
-    ic_series = _compute_ic_series(factor_df, return_df)
+    ic_series = compute_ic_series(factor_df, return_df)
     if ic_series.empty:
         return json.dumps(
             {"status": "error", "error": "IC computation failed: insufficient shared dates/assets (need at least 5 per day)"},
@@ -147,7 +67,7 @@ def run_factor_analysis(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    equity_df = _compute_group_equity(factor_df, return_df, n_groups)
+    equity_df = compute_group_equity(factor_df, return_df, n_groups)
     if equity_df.empty:
         return json.dumps(
             {"status": "error", "error": "Layered backtest failed: insufficient valid cross-section dates"},

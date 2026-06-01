@@ -73,13 +73,75 @@ def test_load_agent_config_supports_yaml(tmp_path: Path) -> None:
     assert config.mcp_servers["demo"].args == ["demo-server"]
 
 
-def test_schema_rejects_non_stdio_transports() -> None:
+def test_schema_accepts_sse_transport() -> None:
+    config = AgentConfig.model_validate(
+        {
+            "mcpServers": {
+                "demo": {
+                    "type": "sse",
+                    "url": "http://localhost:8900/sse",
+                    "headers": {"Authorization": "Bearer demo"},
+                }
+            }
+        }
+    )
+
+    assert config.mcp_servers["demo"].type == "sse"
+    assert config.mcp_servers["demo"].url == "http://localhost:8900/sse"
+
+
+def test_schema_accepts_streamable_http_transport() -> None:
+    config = AgentConfig.model_validate(
+        {
+            "mcpServers": {
+                "demo": {
+                    "type": "streamableHttp",
+                    "url": "http://localhost:8900/mcp",
+                }
+            }
+        }
+    )
+
+    assert config.mcp_servers["demo"].type == "streamableHttp"
+    assert config.mcp_servers["demo"].url == "http://localhost:8900/mcp"
+
+
+def test_schema_rejects_url_only_http_transport_without_type() -> None:
+    with pytest.raises(ValidationError):
+        AgentConfig.model_validate(
+            {
+                "mcpServers": {
+                    "demo": {
+                        "url": "http://localhost:8900/events",
+                    }
+                }
+            }
+        )
+
+
+def test_schema_rejects_http_transport_with_stdio_fields() -> None:
     with pytest.raises(ValidationError):
         AgentConfig.model_validate(
             {
                 "mcpServers": {
                     "demo": {
                         "type": "sse",
+                        "url": "http://localhost:8900/sse",
+                        "command": "uvx",
+                    }
+                }
+            }
+        )
+
+
+def test_schema_rejects_stdio_with_http_fields() -> None:
+    with pytest.raises(ValidationError):
+        AgentConfig.model_validate(
+            {
+                "mcpServers": {
+                    "demo": {
+                        "type": "stdio",
+                        "command": "uvx",
                         "url": "http://localhost:8900/sse",
                     }
                 }
@@ -141,6 +203,68 @@ def test_runtime_overrides_take_precedence_and_merge_nested_servers(tmp_path: Pa
     assert config.mcp_servers["demo"].enabled_tools == ["alpha"]
     assert config.mcp_servers["audit"].command == "audit-server"
     assert config.mcp_servers["research"].command == "research-server"
+
+
+def test_runtime_overrides_can_replace_server_transport(tmp_path: Path) -> None:
+    config_path = tmp_path / "agent.json"
+    config_path.write_text(
+        """
+        {
+          "mcpServers": {
+            "demo": {
+              "command": "base-server",
+              "args": ["--base"],
+              "toolTimeout": 45,
+              "enabledTools": ["alpha"]
+            }
+          }
+        }
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    config = load_runtime_agent_config(
+        config_path,
+        overrides={
+            "mcpServers": {
+                "demo": {
+                    "type": "sse",
+                    "url": "http://localhost:8900/sse",
+                    "headers": {"Authorization": "Bearer demo"},
+                }
+            }
+        },
+    )
+
+    assert config.mcp_servers["demo"].type == "sse"
+    assert config.mcp_servers["demo"].url == "http://localhost:8900/sse"
+    assert config.mcp_servers["demo"].headers == {"Authorization": "Bearer demo"}
+    assert config.mcp_servers["demo"].command == ""
+    assert config.mcp_servers["demo"].args == []
+    assert config.mcp_servers["demo"].tool_timeout == 45
+    assert config.mcp_servers["demo"].enabled_tools == ["alpha"]
+
+
+def test_runtime_overrides_fall_back_to_base_config_when_merge_is_invalid(tmp_path: Path) -> None:
+    config_path = tmp_path / "agent.json"
+    config_path.write_text(
+        '{"mcpServers": {"demo": {"command": "base-server", "args": ["--base"]}}}',
+        encoding="utf-8",
+    )
+
+    config = load_runtime_agent_config(
+        config_path,
+        overrides={
+            "mcpServers": {
+                "demo": {
+                    "url": "http://localhost:8900/events",
+                }
+            }
+        },
+    )
+
+    assert config.mcp_servers["demo"].command == "base-server"
+    assert config.mcp_servers["demo"].args == ["--base"]
 
 
 def test_explicit_config_path_does_not_mutate_default_runtime_root(tmp_path: Path) -> None:

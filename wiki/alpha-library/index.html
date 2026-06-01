@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline'; img-src 'self' data: https://vibetrading.wiki; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.github.com;">
   <script>
     (function () {
       try {
@@ -17,12 +18,12 @@
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Alpha Library | Vibe-Trading Wiki</title>
-  <meta name="description" content="Alpha Library for Vibe-Trading.">
+  <meta name="description" content="450+ pre-built quant alphas across four zoos: Qlib158, Kakushadze 101, GTJA191, Academic. One-line CLI to benchmark any zoo on your universe.">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Vibe-Trading Wiki">
   <meta property="og:title" content="Alpha Library">
-  <meta property="og:description" content="Alpha Library for Vibe-Trading.">
+  <meta property="og:description" content="450+ pre-built quant alphas across four zoos. One-line CLI to benchmark any zoo on your universe.">
   <meta property="og:image" content="https://vibetrading.wiki/assets/icon.png">
   <meta property="og:url" content="https://vibetrading.wiki/alpha-library/">
   <link rel="canonical" href="https://vibetrading.wiki/alpha-library/">
@@ -32,6 +33,27 @@
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/main.js"></script>
+  <style>
+    .alpha-hero { width: min(1180px, calc(100% - 32px)); margin: 56px auto 32px; }
+    .alpha-hero h1 { font-family: var(--serif); font-size: clamp(2.2rem, 4vw, 3.4rem); margin: 8px 0 14px; letter-spacing: -0.01em; }
+    .alpha-hero p { color: var(--muted); max-width: 720px; line-height: 1.7; font-size: 1.05rem; margin: 0 0 24px; }
+    .alpha-stats { width: min(1180px, calc(100% - 32px)); margin: 8px auto 32px; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+    .alpha-stat { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+    .alpha-stat dt { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 0; }
+    .alpha-stat dd { margin: 6px 0 0; font-family: var(--mono); font-size: 1.7rem; color: var(--ink); }
+    .alpha-stat .small { font-size: 0.78rem; color: var(--muted); font-family: var(--mono); }
+    .alpha-zoos { width: min(1180px, calc(100% - 32px)); margin: 16px auto 56px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+    .alpha-zoo-card { display: flex; flex-direction: column; gap: 10px; padding: 22px 22px 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; color: inherit; transition: border-color 0.15s ease, transform 0.15s ease; }
+    .alpha-zoo-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .alpha-zoo-card .zoo-id { font-family: var(--mono); color: var(--accent); font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    .alpha-zoo-card h3 { margin: 0; font-family: var(--mono); font-size: 1.15rem; }
+    .alpha-zoo-card p { margin: 0; color: var(--muted); font-size: 0.92rem; line-height: 1.55; flex: 1; }
+    .alpha-zoo-card .count { font-family: var(--mono); font-size: 0.85rem; color: var(--accent-2); margin-top: 4px; }
+    .alpha-getstart { width: min(1180px, calc(100% - 32px)); margin: 24px auto 64px; }
+    .alpha-getstart h2 { font-family: var(--mono); font-size: 1.1rem; letter-spacing: 0.02em; margin: 0 0 14px; }
+    .alpha-getstart pre { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; overflow-x: auto; font-family: var(--mono); font-size: 0.92rem; line-height: 1.7; }
+    .alpha-getstart .comment { color: var(--muted); }
+  </style>
 </head>
 <body>
   <header class="site-header" id="site-header">
@@ -59,10 +81,73 @@
     </div>
   </header>
 
-  <main class="section-page">
-    <section class="section-hero section-hero--blank">
+  <main>
+    <section class="alpha-hero">
       <p class="eyebrow">Alpha Library</p>
       <h1>Alpha Library.</h1>
+      <p>450+ pre-built quant alphas across four zoos. One-line CLI to bench any zoo on your universe.</p>
+    </section>
+
+    <dl class="alpha-stats" id="alpha-stats">
+      <div class="alpha-stat">
+        <dt>Total alphas</dt>
+        <dd id="stat-total">--</dd>
+        <span class="small" id="stat-total-sub">loading...</span>
+      </div>
+      <div class="alpha-stat">
+        <dt>Zoos</dt>
+        <dd id="stat-zoos">--</dd>
+        <span class="small">Qlib158 / Kakushadze 101 / GTJA191 / Academic</span>
+      </div>
+      <div class="alpha-stat">
+        <dt>Last generated</dt>
+        <dd id="stat-generated" style="font-size: 0.95rem;">--</dd>
+        <span class="small">via vibe-trading alpha export-manifest</span>
+      </div>
+      <div class="alpha-stat">
+        <dt>Live trading</dt>
+        <dd style="font-size: 0.95rem;">disabled</dd>
+        <span class="small">research only</span>
+      </div>
+    </dl>
+
+    <section class="alpha-zoos" id="alpha-zoos">
+      <a class="alpha-zoo-card" href="content/qlib158/index.html">
+        <span class="zoo-id">qlib158</span>
+        <h3>Qlib Alpha158</h3>
+        <p>Microsoft Qlib's 158 production alphas, ported to the panel API.</p>
+        <span class="count" data-zoo="qlib158">--</span>
+      </a>
+      <a class="alpha-zoo-card" href="content/alpha101/index.html">
+        <span class="zoo-id">alpha101</span>
+        <h3>Kakushadze 101 Formulaic Alphas</h3>
+        <p>The 101 short-horizon formulaic alphas from Kakushadze (2015).</p>
+        <span class="count" data-zoo="alpha101">--</span>
+      </a>
+      <a class="alpha-zoo-card" href="content/gtja191/index.html">
+        <span class="zoo-id">gtja191</span>
+        <h3>GTJA 191</h3>
+        <p>Guotai Junan's 191 alphas — A-share microstructure &amp; volume themes.</p>
+        <span class="count" data-zoo="gtja191">--</span>
+      </a>
+      <a class="alpha-zoo-card" href="content/academic/index.html">
+        <span class="zoo-id">academic</span>
+        <h3>Academic Anomalies</h3>
+        <p>Curated alphas from the academic asset-pricing literature.</p>
+        <span class="count" data-zoo="academic">--</span>
+      </a>
+    </section>
+
+    <section class="alpha-getstart">
+      <h2>Get started</h2>
+      <pre><code><span class="comment"># install</span>
+pip install vibe-trading-ai
+
+<span class="comment"># list every alpha in a zoo</span>
+vibe-trading alpha list --zoo gtja191
+
+<span class="comment"># benchmark a zoo on your universe and period</span>
+vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2020-2025</code></pre>
     </section>
   </main>
 
@@ -74,5 +159,34 @@
     <a href="/research-lab/">Research Lab</a>
     <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
   </footer>
+
+  <script>
+    // Runtime hydration of stats + per-zoo counts from the generated index.json.
+    (function () {
+      fetch("content/index.json", { cache: "no-store" })
+        .then(function (r) { if (!r.ok) throw new Error("index.json " + r.status); return r.json(); })
+        .then(function (data) {
+          var total = document.getElementById("stat-total");
+          var totalSub = document.getElementById("stat-total-sub");
+          var zoos = document.getElementById("stat-zoos");
+          var gen = document.getElementById("stat-generated");
+          if (total) total.textContent = String(data.total_alphas || 0);
+          if (totalSub) totalSub.textContent = "across " + (data.zoo_count || 0) + " zoos";
+          if (zoos) zoos.textContent = String(data.zoo_count || 0);
+          if (gen && data.generated_at) {
+            try { gen.textContent = new Date(data.generated_at).toISOString().slice(0, 10); }
+            catch (e) { gen.textContent = String(data.generated_at).slice(0, 10); }
+          }
+          (data.zoos || []).forEach(function (z) {
+            var el = document.querySelector('.count[data-zoo="' + z.zoo_id + '"]');
+            if (el) el.textContent = z.count + " alphas";
+          });
+        })
+        .catch(function () {
+          var totalSub = document.getElementById("stat-total-sub");
+          if (totalSub) totalSub.textContent = "manifest not generated yet";
+        });
+    })();
+  </script>
 </body>
 </html>

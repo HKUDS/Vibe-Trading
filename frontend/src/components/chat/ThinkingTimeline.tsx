@@ -1,24 +1,8 @@
 import { useState, useEffect, useMemo, memo } from "react";
 import { ChevronDown, ChevronRight, CheckCircle2, XCircle, Circle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useI18n } from "@/lib/i18n";
+import { localizeToolName } from "@/lib/tools";
 import type { AgentMessage } from "@/types/agent";
-
-/* ---------- Tool display name keys (mapped to i18n) ---------- */
-const TOOL_I18N_KEY: Record<string, string> = {
-  load_skill: "toolLoadSkill",
-  write_file: "toolWriteFile",
-  edit_file: "toolEditFile",
-  read_file: "toolReadFile",
-  run_backtest: "toolRunBacktest",
-  bash: "toolBash",
-  read_url: "toolReadUrl",
-  read_document: "toolReadDocument",
-  compact: "toolCompact",
-  create_task: "toolCreateTask",
-  update_task: "toolUpdateTask",
-  spawn_subagent: "toolSpawnSubagent",
-};
 
 interface Props {
   messages: AgentMessage[];
@@ -26,13 +10,11 @@ interface Props {
 }
 
 export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLatest = false }: Props) {
-  const { t } = useI18n();
   const [expanded, setExpanded] = useState(isLatest);
 
   const toolLabel = (tool?: string): string => {
-    if (!tool) return t.toolProcessing;
-    const key = TOOL_I18N_KEY[tool];
-    return key ? (t as Record<string, string>)[key] || tool : tool;
+    if (!tool) return "Processing";
+    return localizeToolName(tool);
   };
 
   useEffect(() => {
@@ -74,8 +56,8 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
 
   const stepCount = steps.length;
   const summaryText = isRunning
-    ? t.thinkingRunning.replace("{tool}", toolLabel(latestTool))
-    : t.thinkingDone.replace("{count}", String(stepCount)) + (totalMs > 0 ? ` · ${(totalMs / 1000).toFixed(1)}s` : "");
+    ? `Running ${toolLabel(latestTool)}...`
+    : `Done · ${stepCount} steps${totalMs > 0 ? ` · ${(totalMs / 1000).toFixed(1)}s` : ""}`;
 
   return (
     <div className="rounded-lg border border-border/40 bg-muted/5 overflow-hidden">
@@ -137,7 +119,7 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
 
               {/* Duration or status */}
               {step.status === "running" ? (
-                <span className="text-[10px] text-primary/60">{t.toolRunning}</span>
+                <span className="text-[10px] text-primary/60">Running</span>
               ) : step.elapsed_ms != null ? (
                 <span className="text-[10px] text-muted-foreground/40 tabular-nums">{(step.elapsed_ms / 1000).toFixed(1)}s</span>
               ) : null}

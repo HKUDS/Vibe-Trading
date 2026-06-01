@@ -47,6 +47,7 @@ _MULTIPLIER: dict[str, float] = {
 }
 
 # ── Margin per contract (approximate USD, initial margin) ──
+# Reference table — future use for margin-call checks. Not yet consumed.
 
 _MARGIN_PER_CONTRACT: dict[str, float] = {
     # Equity index
@@ -178,8 +179,12 @@ class GlobalFuturesEngine(FuturesBaseEngine):
         """Integer contracts, minimum 1."""
         return max(int(raw_size), 0)
 
-    def calc_commission(self, size: float, price: float, direction: int, is_open: bool) -> float:
-        """Per-contract fixed commission (uses _active_symbol for product lookup)."""
+    def calc_commission(self, size: float, price: float, _direction: int, is_open: bool) -> float:
+        """Per-contract fixed commission (uses _active_symbol for product lookup).
+
+        ``_direction`` is unused — reserved for future borrow/financing
+        asymmetry on short positions.
+        """
         if self._comm_override is not None:
             return size * self._comm_override
         return self.calc_commission_for_symbol(self._active_symbol, size, price, is_open)
@@ -215,6 +220,11 @@ class GlobalFuturesEngine(FuturesBaseEngine):
 # ── Helpers ──
 
 
+# Note: china_a uses close/pre_close-only; china_futures prioritises
+# settle/pre_settle. This global-futures variant prefers close/pre_close
+# because CME data feeds (yfinance/IB) expose continuous close more
+# reliably than settlement. See those modules for the equity /
+# China-futures equivalents.
 def _calc_pct_change(bar: pd.Series):
     """Calculate bar price change percentage.
 

@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict, deque
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -22,7 +21,6 @@ import pandas as pd
 from src.agent.tools import BaseTool
 from src.tools.path_utils import safe_user_path
 from src.tools.trade_journal_parsers import (
-    TradeRecord,
     parse_file,
     records_to_dataframe,
 )

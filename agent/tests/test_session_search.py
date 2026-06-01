@@ -114,6 +114,32 @@ class TestSearch:
             # FTS5 snippet markers
             assert "fox" in results[0].snippet.lower()
 
+    def test_index_session_stores_explicit_ts(self, index: SessionSearchIndex) -> None:
+        """When caller passes ts, started_at must reflect it (B2 regression)."""
+        explicit_ts = 1_700_000_000.0  # 2023-11-14 22:13:20 UTC
+        index.index_session("s1", "Backfilled", ts=explicit_ts)
+        conn = index._get_conn()
+        row = conn.execute(
+            "SELECT started_at FROM sessions WHERE id = ?", ("s1",)
+        ).fetchone()
+        assert row is not None
+        assert row[0] == pytest.approx(explicit_ts)
+
+    def test_index_session_preserves_started_at_on_reupsert(
+        self, index: SessionSearchIndex
+    ) -> None:
+        """Re-indexing without ts must keep the original started_at."""
+        original_ts = 1_700_000_000.0
+        index.index_session("s1", "First", ts=original_ts)
+        # Simulate a later title-only update (no ts supplied).
+        index.index_session("s1", "Renamed")
+        conn = index._get_conn()
+        row = conn.execute(
+            "SELECT title, started_at FROM sessions WHERE id = ?", ("s1",)
+        ).fetchone()
+        assert row[0] == "Renamed"
+        assert row[1] == pytest.approx(original_ts)
+
     def test_search_match_to_dict(self, index: SessionSearchIndex) -> None:
         match = SearchMatch(
             session_id="s1", title="Test", started_at="2026-01-01 00:00",

@@ -1,6 +1,6 @@
 """Swarm multi-agent system — data models.
 
-All Pydantic models defined here, shared by store / task_store / mailbox / worker / runtime.
+All Pydantic models defined here, shared by store / task_store / worker / runtime.
 Enums use str+Enum to ensure JSON-serialization compatibility.
 """
 
@@ -122,37 +122,14 @@ class SwarmTask(BaseModel):
     worker_iterations: int = 0
 
 
-class SwarmMessage(BaseModel):
-    """Message passed between agents via the Mailbox file inbox.
-
-    Carries only summaries and artifact paths to avoid context bloat.
-
-    Attributes:
-        id: Unique message ID.
-        type: Message type, e.g. "task_result", "request", "broadcast".
-        from_agent: Sending agent ID.
-        to: Receiving agent ID.
-        content: Message body (summary level).
-        artifact_paths: Associated artifact file paths.
-        timestamp: ISO-format timestamp.
-    """
-
-    id: str
-    type: str
-    from_agent: str
-    to: str
-    content: str
-    artifact_paths: list[str] = Field(default_factory=list)
-    timestamp: str
-
-
 class SwarmEvent(BaseModel):
     """Swarm event log entry.
 
     Appended to events.jsonl; supports SSE streaming and post-run audit.
 
     Attributes:
-        type: Event type, e.g. "run_started", "task_completed", "task_failed".
+        type: Event type, e.g. "run_started", "task_completed", "task_failed",
+            "task_blocked" (upstream not completed → downstream skipped).
         agent_id: Associated agent ID (optional).
         task_id: Associated task ID (optional).
         data: Arbitrary additional data.

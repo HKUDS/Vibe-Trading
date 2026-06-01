@@ -8,51 +8,18 @@ All state (capital, positions, trades) lives in CompositeEngine.
 
 from __future__ import annotations
 
-import re
 from typing import Dict, List
 
 import pandas as pd
 
 from backtest.engines.base import BaseEngine
 from backtest.engines._market_hooks import (
+    _detect_market,
+    _is_china_futures,
     calc_crypto_funding_fee,
     check_crypto_liquidation,
     calc_forex_swap,
 )
-
-
-# ── Market detection (same patterns as runner.py) ──
-
-_MARKET_PATTERNS = [
-    (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "a_share"),
-    (re.compile(r"^(51|15|56)\d{4}\.(SZ|SH)$", re.I), "a_share"),
-    (re.compile(r"^[A-Z]+\.US$", re.I), "us_equity"),
-    (re.compile(r"^\d{3,5}\.HK$", re.I), "hk_equity"),
-    (re.compile(r"^[A-Z]+-USDT$", re.I), "crypto"),
-    (re.compile(r"^[A-Z]+/USDT$", re.I), "crypto"),
-    (re.compile(r"^[A-Za-z]{1,2}\d{3,4}\.(ZCE|DCE|SHFE|INE|CFFEX|GFEX)$", re.I), "futures"),
-    (re.compile(r"^[A-Z]{2,4}[FGHJKMNQUVXZ]\d{1,2}$", re.I), "futures"),
-    (re.compile(r"^[A-Z]{2,4}\d{4}$", re.I), "futures"),
-    (re.compile(r"^[A-Z]{2,4}\.(CME|CBOT|NYMEX|COMEX|ICE|EUREX)$", re.I), "futures"),
-    (re.compile(r"^[A-Z]{3}/[A-Z]{3}$"), "forex"),
-    (re.compile(r"^[A-Z]{6}\.FX$"), "forex"),
-]
-
-_CHINA_EXCHANGES = {"CFFEX", "SHFE", "DCE", "ZCE", "INE", "GFEX"}
-
-
-def _detect_market(code: str) -> str:
-    """Infer market type from symbol format."""
-    for pattern, market in _MARKET_PATTERNS:
-        if pattern.match(code):
-            return market
-    return "a_share"
-
-
-def _is_china_futures(code: str) -> bool:
-    """Check if futures code belongs to a Chinese exchange."""
-    parts = code.upper().split(".")
-    return len(parts) == 2 and parts[1] in _CHINA_EXCHANGES
 
 
 def _build_rule_engines(config: dict, codes: List[str]) -> Dict[str, BaseEngine]:

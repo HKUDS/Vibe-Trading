@@ -135,22 +135,6 @@ class ChatLLM:
         except Exception:
             return self.chat(messages, tools=tools, timeout=timeout)
 
-    async def achat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> LLMResponse:
-        """Async LLM invocation.
-
-        Args:
-            messages: Messages in OpenAI format.
-            tools: Tool definitions (OpenAI function-calling format).
-            timeout: Optional per-call timeout in seconds.
-
-        Returns:
-            ``LLMResponse``.
-        """
-        llm = self._llm.bind_tools(tools) if tools else self._llm
-        config = {"timeout": timeout} if timeout else {}
-        ai_message = await llm.ainvoke(messages, config=config)
-        return self._parse_response(ai_message)
-
     @staticmethod
     def _parse_response(ai_message: Any) -> LLMResponse:
         """Convert a LangChain AIMessage (or AIMessageChunk) to ``LLMResponse``.

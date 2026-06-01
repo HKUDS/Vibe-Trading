@@ -191,8 +191,12 @@ class ChinaFuturesEngine(FuturesBaseEngine):
         """Minimum 1 contract, integer lots only."""
         return max(int(raw_size), 0)
 
-    def calc_commission(self, size: float, price: float, direction: int, is_open: bool) -> float:
-        """Commission varies by product: fixed per-lot or percentage of notional."""
+    def calc_commission(self, size: float, price: float, _direction: int, is_open: bool) -> float:
+        """Commission varies by product: fixed per-lot or percentage of notional.
+
+        ``_direction`` is unused — reserved for future open/close-fee
+        asymmetry (some products charge different rates for close-today).
+        """
         if self._commission_override is not None:
             return size * price * self._commission_override
         return self.calc_commission_for_symbol(self._active_symbol, size, price, is_open)
@@ -243,6 +247,11 @@ class ChinaFuturesEngine(FuturesBaseEngine):
 # ── Helpers ──
 
 
+# Note: china_a uses close/pre_close-only; global_futures prioritises
+# close/pre_close before settle. This China-futures variant prefers
+# settle/pre_settle because tushare reports settlement as the canonical
+# daily price for domestic contracts. See those modules for the equity /
+# global-futures equivalents.
 def _calc_pct_change(bar: pd.Series):
     """Calculate bar price change percentage.
 

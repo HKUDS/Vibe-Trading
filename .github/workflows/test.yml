@@ -25,7 +25,7 @@ jobs:
       - name: Syntax check
         run: |
           cd agent
-          python -m py_compile cli.py
+          python -m compileall -q cli
           python -m py_compile api_server.py
           python -m py_compile mcp_server.py
           python -m py_compile src/agent/loop.py
@@ -33,7 +33,10 @@ jobs:
           python -m py_compile backtest/runner.py
 
       - name: Run tests
-        run: pytest --ignore=agent/tests/e2e_backtest --tb=short -q
+        # test_e2e_harness_v2.py is gated by VIBE_TRADING_RUN_LIVE_E2E
+        # (real-LLM only); list --ignore here so CI's intent is explicit and
+        # the suite never silently switches state on env presence.
+        run: pytest --ignore=agent/tests/e2e_backtest --ignore=agent/tests/test_e2e_harness_v2.py --tb=short -q
 
       - uses: actions/setup-node@v4
         with:

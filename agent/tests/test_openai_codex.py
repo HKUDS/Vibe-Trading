@@ -76,7 +76,10 @@ def test_codex_body_strips_provider_prefix_and_converts_tools() -> None:
 
 
 def test_missing_codex_token_raises_login_hint(monkeypatch: pytest.MonkeyPatch) -> None:
-    import oauth_cli_kit
+    oauth_cli_kit = pytest.importorskip(
+        "oauth_cli_kit",
+        reason="oauth-cli-kit is declared in requirements.txt but optional at runtime",
+    )
 
     def _missing_token() -> None:
         raise RuntimeError("missing")

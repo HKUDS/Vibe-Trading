@@ -155,36 +155,6 @@ def iv_smile_adjustment(S: float, K: float, base_iv: float,
     return max(adj, 0.01)
 
 
-# --- American option early exercise heuristic (v2) ---
-
-
-def american_exercise_value(
-    S: float, K: float, T: float, r: float, sigma: float,
-    option_type: str = "put",
-) -> float:
-    """Check whether early exercise is optimal for American options.
-
-    For American puts: exercise if intrinsic > BS continuation value.
-    For American calls on non-dividend stocks: never exercise early.
-    For American calls with dividends: simplified — exercise if deep ITM
-    and time value < dividend capture.
-
-    Args:
-        S: Spot price.
-        K: Strike price.
-        T: Time to expiry in years.
-        r: Risk-free rate.
-        sigma: Volatility.
-        option_type: "call" or "put".
-
-    Returns:
-        Max of (intrinsic, BS continuation value).
-    """
-    intrinsic = max(K - S, 0.0) if option_type == "put" else max(S - K, 0.0)
-    continuation = bs_price(S, K, T, r, sigma, option_type)
-    return max(intrinsic, continuation)
-
-
 # --- Option positions ---
 
 

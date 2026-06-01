@@ -6,8 +6,11 @@ from pathlib import Path
 import pandas as pd
 
 
+_AGENT_ROOT = Path(__file__).resolve().parents[1]
+
+
 def _load_example_module():
-    path = Path("agent/src/skills/fundamental-filter/example_signal_engine.py")
+    path = _AGENT_ROOT / "src" / "skills" / "fundamental-filter" / "example_signal_engine.py"
     spec = importlib.util.spec_from_file_location("fundamental_filter_example", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

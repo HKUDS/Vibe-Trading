@@ -70,6 +70,10 @@ def _rolling_correlation_matrix(
 
     for code in codes:
         ts = closes[code]
+        # Normalize to date-only (midnight) so that cross-market assets
+        # (e.g. crypto via OKX/CCXT at UTC midnight vs US equity via
+        # yfinance at EDT midnight = 04:00 UTC) align correctly.
+        ts.index = ts.index.normalize()
         rets = ts.pct_change().dropna()
         rets.name = code
         returns_frames.append(rets)
@@ -77,7 +81,15 @@ def _rolling_correlation_matrix(
     # Align all series to a common index (inner join)
     aligned = pd.concat(returns_frames, axis=1).dropna()
     if aligned.empty:
-        raise ValueError("No overlapping return data between assets")
+        ranges = {
+            code: f"{closes[code].index.min()} .. {closes[code].index.max()}"
+            for code in codes
+            if len(closes[code]) > 0
+        }
+        raise ValueError(
+            f"No overlapping return data between assets. "
+            f"Date ranges: {ranges}"
+        )
 
     # Apply the trailing window — only use the last `window` rows of aligned data
     if len(aligned) > window:

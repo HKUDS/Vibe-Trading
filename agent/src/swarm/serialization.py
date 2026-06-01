@@ -31,6 +31,10 @@ def serialize_task(task: Any) -> dict:
         "summary": task.summary,
         "iterations": getattr(task, "worker_iterations", 0),
         "error": redact_internal_paths(getattr(task, "error", None)) or None,
+        "started_at": getattr(task, "started_at", None),
+        "completed_at": getattr(task, "completed_at", None),
+        "depends_on": list(getattr(task, "depends_on", []) or []),
+        "blocked_by": list(getattr(task, "blocked_by", []) or []),
     }
 
 

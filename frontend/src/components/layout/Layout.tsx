@@ -1,25 +1,27 @@
 ﻿import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, ShieldCheck } from "lucide-react";
+import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useI18n } from "@/lib/i18n";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
 import { useAgentStore } from "@/stores/agent";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
 
+// Bump on each release; one place keeps the footer in sync with package.json.
+const APP_VERSION = "v0.1.9";
+
 const NAV = [
-  { to: "/", icon: BarChart3, key: "home" as const },
-  { to: "/agent", icon: Bot, key: "agent" as const },
-  { to: "/settings", icon: Settings, key: "settings" as const },
-  { to: "/correlation", icon: BarChart3, key: "correlation" as const },
-  { to: "/investment-os", icon: ShieldCheck, key: "investmentOS" as const },
+  { to: "/", icon: BarChart3, label: "Home" },
+  { to: "/agent", icon: Bot, label: "Agent" },
+  { to: "/alpha-zoo", icon: Layers, label: "Alpha Zoo" },
+  { to: "/settings", icon: Settings, label: "Settings" },
+  { to: "/correlation", icon: BarChart3, label: "Correlation Matrix" },
+  { to: "/investment-os", icon: ShieldCheck, label: "Investment OS" },
 ];
 
 export function Layout() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
-  const { t } = useI18n();
   const { dark, toggle } = useDarkMode();
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
@@ -28,6 +30,7 @@ export function Layout() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("qa-sidebar") === "collapsed");
 
   const activeSessionId = searchParams.get("session");
+  const streamingSessionId = useAgentStore(s => s.streamingSessionId);
 
   useEffect(() => {
     localStorage.setItem("qa-sidebar", collapsed ? "collapsed" : "expanded");
@@ -83,23 +86,26 @@ export function Layout() {
 
         {/* Nav */}
         <nav className={cn("space-y-0.5", collapsed ? "p-1" : "p-2")}>
-          {NAV.map(({ to, icon: Icon, key }) => (
-            <Link
-              key={to}
-              to={to}
-              className={cn(
-                "flex items-center rounded-md text-sm transition-colors",
-                collapsed ? "justify-center p-2" : "gap-3 px-3 py-2",
-                (to === "/" ? pathname === "/" : pathname.startsWith(to))
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-              title={collapsed ? t[key] : undefined}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {!collapsed && t[key]}
-            </Link>
-          ))}
+          {NAV.map(({ to, icon: Icon, label }) => {
+            const text = label;
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={cn(
+                  "flex items-center rounded-md text-sm transition-colors",
+                  collapsed ? "justify-center p-2" : "gap-3 px-3 py-2",
+                  (to === "/" ? pathname === "/" : pathname.startsWith(to))
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+                title={collapsed ? text : undefined}
+              >
+                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {!collapsed && text}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* Sessions — hidden when collapsed */}
@@ -108,12 +114,12 @@ export function Layout() {
             <div className="flex items-center justify-between px-4 py-2">
               <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <MessageSquare className="h-3.5 w-3.5" />
-                {t.sessions}
+                Sessions
               </span>
               <Link
                 to="/agent"
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                title={t.newChat}
+                title="New Chat"
               >
                 <Plus className="h-3.5 w-3.5" />
               </Link>
@@ -127,7 +133,7 @@ export function Layout() {
                   ))}
                 </div>
               ) : sessions.length === 0 ? (
-                <p className="px-3 py-2 text-xs text-muted-foreground/60">{t.noSessions}</p>
+                <p className="px-3 py-2 text-xs text-muted-foreground/60">No sessions yet</p>
               ) : null}
               {sessions.map((s) => {
                 const isActive = s.session_id === activeSessionId;
@@ -156,18 +162,22 @@ export function Layout() {
                         title={s.title || s.session_id}
                       >
                         <span className="flex items-center gap-1.5">
-                          <span className={cn(
-                            "h-1.5 w-1.5 rounded-full shrink-0",
-                            s.status === "failed" ? "bg-danger" : isActive ? "bg-warning" : "bg-success/60"
-                          )} />
+                          {streamingSessionId === s.session_id ? (
+                            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
+                          ) : (
+                            <span className={cn(
+                              "h-1.5 w-1.5 rounded-full shrink-0",
+                              isActive ? "bg-primary/70" : "bg-muted-foreground/40"
+                            )} />
+                          )}
                           {s.title || s.session_id.slice(0, 16)}
                         </span>
                       </Link>
                     )}
                     {!isRenaming && isDeleting ? (
                       <div className="absolute right-0.5 flex items-center gap-0.5">
-                        <button onClick={() => deleteSession(s.session_id)} className="p-1 text-danger hover:bg-danger/10 rounded text-[10px] font-medium">{t.confirmDelete}</button>
-                        <button onClick={() => setDeleteTarget(null)} className="p-1 text-muted-foreground hover:bg-muted rounded text-[10px]">{t.cancelDelete}</button>
+                        <button onClick={() => deleteSession(s.session_id)} className="p-1 text-danger hover:bg-danger/10 rounded text-[10px] font-medium">Confirm</button>
+                        <button onClick={() => setDeleteTarget(null)} className="p-1 text-muted-foreground hover:bg-muted rounded text-[10px]">Cancel</button>
                       </div>
                     ) : !isRenaming ? (
                       <div className="absolute right-1 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
@@ -181,7 +191,7 @@ export function Layout() {
                         <button
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(s.session_id); }}
                           className="p-1 text-muted-foreground hover:text-danger rounded"
-                          title={t.deleteConfirm}
+                          title="Delete?"
                         >
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -201,7 +211,7 @@ export function Layout() {
         <div className={cn("border-t", collapsed ? "p-1 flex flex-col items-center gap-1" : "p-3 space-y-2")}>
           {collapsed ? (
             <>
-              <button onClick={toggle} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={dark ? t.lightMode : t.darkMode}>
+              <button onClick={toggle} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={dark ? "Light" : "Dark"}>
                 {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
               </button>
               <button onClick={() => setCollapsed(false)} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title="Expand">
@@ -216,7 +226,7 @@ export function Layout() {
                   className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-                  {dark ? t.lightMode : t.darkMode}
+                  {dark ? "Light" : "Dark"}
                 </button>
                 <div className="flex items-center gap-1">
                   <button
@@ -228,7 +238,7 @@ export function Layout() {
                   </button>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground/60">v0.1.7</p>
+              <p className="text-xs text-muted-foreground/60">{APP_VERSION}</p>
             </>
           )}
         </div>

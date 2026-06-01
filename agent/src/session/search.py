@@ -131,18 +131,36 @@ class SessionSearchIndex:
                 pass
         conn.commit()
 
-    def index_session(self, session_id: str, title: str = "") -> None:
+    def index_session(
+        self,
+        session_id: str,
+        title: str = "",
+        ts: Optional[float] = None,
+    ) -> None:
         """Upsert a session record.
 
         Args:
             session_id: Session ID.
             title: Session title.
+            ts: Session start time as a Unix epoch. When ``None``, an
+                existing row keeps its ``started_at`` and a new row is
+                stamped with ``time.time()``. Passing an explicit value
+                (e.g. parsed from the on-disk ``created_at``) overwrites
+                the stored timestamp so that bulk reindex restores the
+                true session start time rather than the reindex moment.
         """
         conn = self._get_conn()
+        # Preserve the existing started_at when the caller does not supply
+        # one — otherwise INSERT OR REPLACE would overwrite the original
+        # session start time on every re-upsert, breaking date-sort/filter.
         conn.execute(
             "INSERT OR REPLACE INTO sessions (id, title, started_at, message_count) "
-            "VALUES (?, ?, ?, COALESCE((SELECT message_count FROM sessions WHERE id = ?), 0))",
-            (session_id, title, time.time(), session_id),
+            "VALUES ("
+            "  ?, ?,"
+            "  COALESCE(?, (SELECT started_at FROM sessions WHERE id = ?), ?),"
+            "  COALESCE((SELECT message_count FROM sessions WHERE id = ?), 0)"
+            ")",
+            (session_id, title, ts, session_id, time.time(), session_id),
         )
         conn.commit()
 
@@ -287,7 +305,7 @@ class SessionSearchIndex:
                 except (ValueError, TypeError):
                     ts = time.time()
 
-                self.index_session(sid, title)
+                self.index_session(sid, title, ts=ts)
 
                 if messages_file.exists():
                     for line in messages_file.read_text(encoding="utf-8").strip().splitlines():

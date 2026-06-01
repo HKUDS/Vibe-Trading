@@ -201,7 +201,3 @@ class Attempt:
         self.status = AttemptStatus.FAILED
         self.completed_at = datetime.now().isoformat()
         self.error = error
-
-    def mark_waiting_user(self) -> None:
-        """Mark the attempt as waiting for user input."""
-        self.status = AttemptStatus.WAITING_USER

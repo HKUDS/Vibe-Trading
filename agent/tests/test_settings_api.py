@@ -18,7 +18,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         "\n".join(
             [
                 "LANGCHAIN_PROVIDER=openrouter",
-                "LANGCHAIN_MODEL_NAME=deepseek/deepseek-v3.2",
+                "LANGCHAIN_MODEL_NAME=deepseek/deepseek-v4-pro",
                 "OPENROUTER_BASE_URL=https://openrouter.ai/api/v1",
                 "OPENROUTER_API_KEY=sk-or-v1-your-key-here",
                 "LANGCHAIN_TEMPERATURE=0.2",
@@ -47,7 +47,7 @@ def test_get_llm_settings_is_side_effect_free_and_hides_placeholders(
     assert response.status_code == 200
     body = response.json()
     assert body["provider"] == "openrouter"
-    assert body["model_name"] == "deepseek/deepseek-v3.2"
+    assert body["model_name"] == "deepseek/deepseek-v4-pro"
     assert body["api_key_configured"] is False
     assert body["api_key_hint"] is None
     assert not Path(body["env_path"]).is_absolute()
@@ -64,7 +64,7 @@ def test_llm_settings_treat_documented_key_placeholders_as_unconfigured(
         "\n".join(
             [
                 "LANGCHAIN_PROVIDER=deepseek",
-                "LANGCHAIN_MODEL_NAME=deepseek-chat",
+                "LANGCHAIN_MODEL_NAME=deepseek-v4-pro",
                 f"DEEPSEEK_API_KEY={placeholder}",
                 "DEEPSEEK_BASE_URL=https://api.deepseek.com/v1",
             ]
@@ -89,7 +89,7 @@ def test_update_llm_settings_persists_project_env(
         "/settings/llm",
         json={
             "provider": "openrouter",
-            "model_name": "deepseek/deepseek-v3.2",
+            "model_name": "deepseek/deepseek-v4-pro",
             "base_url": "https://openrouter.ai/api/v1",
             "api_key": "or-secret-value",
             "temperature": 0.1,

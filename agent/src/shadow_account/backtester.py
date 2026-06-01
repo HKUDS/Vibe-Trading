@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -523,7 +522,3 @@ __all__ = [
     "select_multi_market_codes",
 ]
 
-
-# Re-export for convenience (see __init__.py).
-def _touch_replace_reexport():  # pragma: no cover
-    return replace

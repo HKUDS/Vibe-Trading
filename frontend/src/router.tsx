@@ -19,6 +19,9 @@ const Correlation = lazy(() =>
 const InvestmentOS = lazy(() =>
   import("@/pages/InvestmentOS").then((m) => ({ default: m.InvestmentOS })),
 );
+const AlphaZoo = lazy(() =>
+  import("@/pages/AlphaZoo").then((m) => ({ default: m.AlphaZoo })),
+);
 
 function PageLoader() {
   return (
@@ -47,6 +50,9 @@ export const router = createBrowserRouter([
       { path: "/compare", element: wrap(Compare) },
       { path: "/correlation", element: wrap(Correlation) },
       { path: "/investment-os", element: wrap(InvestmentOS) },
+      { path: "/alpha-zoo", element: wrap(AlphaZoo) },
+      { path: "/alpha-zoo/bench", element: wrap(AlphaZoo) },
+      { path: "/alpha-zoo/:alphaId", element: wrap(AlphaZoo) },
     ],
   },
 ]);

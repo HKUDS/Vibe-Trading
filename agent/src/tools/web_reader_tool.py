@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 import requests
 
+from src.agent.progress import emit_progress
 from src.agent.tools import BaseTool
 from src.security.scanner import with_security_warnings
 
@@ -81,11 +82,16 @@ def read_url(url: str, no_cache: bool = False) -> str:
         headers = {"Accept": "text/markdown"}
         if no_cache:
             headers["x-no-cache"] = "true"
+        emit_progress(
+            "fetching",
+            message=f"GET {target_url[:60]}{'…' if len(target_url) > 60 else ''}",
+        )
         resp = requests.get(
             f"{_JINA_PREFIX}{target_url}",
             headers=headers,
             timeout=_TIMEOUT,
         )
+        emit_progress("parsing", message="extracting markdown")
         if resp.status_code != 200:
             logger.warning("read_url upstream HTTP %s: %s", resp.status_code, resp.text[:500])
             return json.dumps({

@@ -1,11 +1,12 @@
-"""LLM factory and JSON extraction helpers."""
+"""LLM factory."""
 
 from __future__ import annotations
 
-import json
+import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
+from urllib.parse import urlsplit
 
 try:
     from dotenv import load_dotenv
@@ -28,7 +29,7 @@ if ChatOpenAI is not None:
           * _convert_message_to_dict — request serialization (outbound)
         Moonshot/DeepSeek emit `reasoning_content`; OpenRouter relays as
         `reasoning`. Inbound paths normalize to additional_kwargs["reasoning_content"];
-        outbound path re-injects it so strict providers (kimi-k2.5) accept
+        outbound path re-injects it so strict providers (kimi-k2.6) accept
         multi-turn continuations.
         """
 
@@ -70,7 +71,7 @@ if ChatOpenAI is not None:
             """Re-inject reasoning_content and normalize assistant content.
 
             LangChain strips ``reasoning_content`` when serializing AIMessages
-            back to OpenAI wire format. Moonshot kimi-k2.5 also rejects
+            back to OpenAI wire format. Moonshot kimi-k2.6 also rejects
             assistant turns where ``content`` is null or ``reasoning_content``
             is absent, breaking ReAct continuations after a tool call (#39).
             """
@@ -95,7 +96,59 @@ _ENV_CANDIDATES = [
     Path.cwd() / ".env",
 ]
 
+# Index-aligned with _ENV_CANDIDATES. CWE-209: never log the absolute
+# .env path (it leaks the OS username / home / CWD). The label names
+# which slot won - the entire P08 R1 signal - using compile-time
+# constants only.
+_ENV_LABELS = ("~/.vibe-trading/.env", "<AGENT_DIR>/.env", "<CWD>/.env")
+
+logger = logging.getLogger(__name__)
+
 _dotenv_loaded: bool = False
+
+
+def _redact_env_source(loaded: Path | None) -> str:
+    """Map a resolved `.env` candidate to a stable, leak-free label.
+
+    Returns a symbolic slot label (never the absolute path) so a stale
+    or shadowed `.env` stays diagnosable without exposing the OS
+    username, home, or CWD (CWE-209). A candidate outside the fixed
+    list (e.g. one injected by a test) collapses to a generic
+    placeholder rather than echoing a real path.
+    """
+    if loaded is None:
+        return "none (no .env file found)"
+    for label, candidate in zip(_ENV_LABELS, _ENV_CANDIDATES):
+        if loaded == candidate:
+            return label
+    return "<.env>"
+
+
+def _redact_base_url_for_log(raw: str | None) -> str:
+    """Return a diagnostic-safe base URL label for logs."""
+    if not raw or not raw.strip():
+        return "(unset)"
+
+    try:
+        parsed = urlsplit(raw.strip())
+    except ValueError:
+        return "<base-url>"
+
+    if not parsed.scheme or not parsed.hostname:
+        return "<base-url>"
+
+    host = parsed.hostname
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if port is not None:
+        host = f"{host}:{port}"
+
+    return f"{parsed.scheme}://{host}"
 
 
 def _load_env_file(path: Path) -> None:
@@ -118,11 +171,33 @@ def _ensure_dotenv() -> None:
     global _dotenv_loaded
     if _dotenv_loaded:
         return
+    loaded = None
     for candidate in _ENV_CANDIDATES:
         if candidate.exists():
             _load_env_file(candidate)
+            loaded = candidate
             break
     _dotenv_loaded = True
+    # P08 R1: one-time, behavior-preserving diagnostic so a stale or
+    # shadowed .env is observable instead of costing hours. The path is
+    # redacted to a symbolic slot label and the API key is never logged.
+    logger.info(
+        "dotenv resolved from %s | provider=%s model=%s base=%s",
+        _redact_env_source(loaded),
+        os.getenv("LANGCHAIN_PROVIDER", "(unset)"),
+        os.getenv("LANGCHAIN_MODEL_NAME", "(unset)"),
+        _redact_base_url_for_log(os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE")),
+    )
+
+
+def _normalize_ollama_base_url(base_url: str) -> str:
+    """Append ``/v1`` when missing so ChatOpenAI hits Ollama's OpenAI-compatible API."""
+    url = base_url.strip().rstrip("/")
+    if not url:
+        return url
+    if url.endswith("/v1"):
+        return url
+    return f"{url}/v1"
 
 
 def _sync_provider_env() -> None:
@@ -170,6 +245,8 @@ def _sync_provider_env() -> None:
 
     # Resolve base URL: provider-specific env → OPENAI_BASE_URL fallback
     base_url = os.getenv(base_env, "") or os.getenv("OPENAI_BASE_URL", "") or os.getenv("OPENAI_API_BASE", "")
+    if provider == "ollama" and base_url:
+        base_url = _normalize_ollama_base_url(base_url)
 
     if api_key:
         os.environ["OPENAI_API_KEY"] = api_key
@@ -226,43 +303,3 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         extra_body={"reasoning": {"effort": effort}} if effort else None,
     )
 
-
-def _extract_balanced_json(text: str) -> Optional[Dict[str, Any]]:
-    """Extract the outermost JSON object from text using bracket balancing.
-
-    Args:
-        text: Text that may embed a JSON object.
-
-    Returns:
-        Parsed dict, or None on failure.
-    """
-    start = -1
-    depth = 0
-    in_string = False
-    escape = False
-
-    for i, ch in enumerate(text):
-        if escape:
-            escape = False
-            continue
-        if ch == "\\" and in_string:
-            escape = True
-            continue
-        if ch == '"':
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0 and start >= 0:
-                candidate = text[start : i + 1]
-                try:
-                    return json.loads(candidate)
-                except json.JSONDecodeError:
-                    start = -1
-    return None

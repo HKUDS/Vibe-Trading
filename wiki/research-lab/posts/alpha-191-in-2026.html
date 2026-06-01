@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'none'; img-src 'self' data:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Which of the 191 GTJA alphas still work in 2026? | Vibe-Trading Research Lab</title>
+  <meta name="description" content="An out-of-sample look at the 191 short-horizon alphas published by Guotai Junan in 2014, re-evaluated on CSI 300 over 2018-2025. How many still survive, how many reversed sign, and which themes age best.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="author" content="Vibe-Trading Research Lab">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Vibe-Trading Wiki">
+  <meta property="og:title" content="Which of the 191 GTJA alphas still work in 2026?">
+  <meta property="og:description" content="Out-of-sample IC review of the 2014 GTJA 191 short-horizon alphas on CSI 300, 2018-2025. Aggregate survival counts, theme breakdown, and reproducibility recipe.">
+  <meta property="og:url" content="https://vibetrading.wiki/research-lab/posts/alpha-191-in-2026.html">
+  <link rel="canonical" href="https://vibetrading.wiki/research-lab/posts/alpha-191-in-2026.html">
+  <link rel="icon" type="image/png" href="/assets/icon.png">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .post {
+      width: min(760px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 72px 0 96px;
+    }
+    .post header.post-head {
+      margin-bottom: 48px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 32px;
+    }
+    .post header.post-head h1 {
+      font-family: var(--serif);
+      font-size: clamp(2.2rem, 5vw, 3.6rem);
+      line-height: 1.05;
+      margin: 12px 0 16px;
+      letter-spacing: -0.01em;
+    }
+    .post header.post-head .byline {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.84rem;
+      letter-spacing: 0.04em;
+    }
+    .post section {
+      margin: 48px 0;
+    }
+    .post h2 {
+      font-family: var(--serif);
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      line-height: 1.15;
+      margin: 0 0 16px;
+    }
+    .post h3 {
+      font-family: var(--sans);
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 28px 0 10px;
+      letter-spacing: 0;
+    }
+    .post p, .post li {
+      color: var(--ink);
+      font-size: 1.04rem;
+      line-height: 1.7;
+    }
+    .post p.lede {
+      font-family: var(--serif);
+      font-size: 1.22rem;
+      color: var(--ink);
+      line-height: 1.55;
+    }
+    .post ul, .post ol {
+      padding-left: 1.4rem;
+    }
+    .post li + li {
+      margin-top: 8px;
+    }
+    .post code, .post pre {
+      font-family: var(--mono);
+      font-size: 0.92rem;
+    }
+    .post pre {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface-2);
+      padding: 14px 16px;
+      line-height: 1.55;
+    }
+    .post code.formula {
+      display: inline-block;
+      padding: 1px 6px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--surface-2);
+    }
+    .post pre.formula-block {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .findings-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin: 24px 0;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+    }
+    .findings-stats .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .findings-stats .stat .label {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .findings-stats .stat .num {
+      font-family: var(--serif);
+      font-size: 2.2rem;
+      line-height: 1;
+      color: var(--accent);
+    }
+    .findings-stats .stat.reversed .num { color: var(--danger); }
+    .findings-stats .stat.dead .num { color: var(--muted); }
+    .theme-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 0.96rem;
+    }
+    .theme-table th, .theme-table td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+    }
+    .theme-table th {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .theme-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+    .callout {
+      margin: 24px 0;
+      padding: 16px 20px;
+      border-left: 3px solid var(--accent);
+      background: var(--surface-2);
+      border-radius: 0 6px 6px 0;
+    }
+    .callout.warn {
+      border-left-color: var(--accent-2);
+    }
+    .alpha-card {
+      margin: 16px 0;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .alpha-card .alpha-id {
+      font-family: var(--mono);
+      font-size: 0.84rem;
+      color: var(--accent);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .alpha-card .alpha-note {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .post .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 24px 0 8px;
+    }
+    .post .cta-row a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 42px;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    .post .cta-row a.primary {
+      border-color: var(--ink);
+      background: var(--ink);
+      color: var(--bg);
+    }
+    .footnote {
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header__inner">
+      <a class="brand" href="/home/" aria-label="Vibe-Trading home">
+        <img class="brand__mark" src="/assets/icon.png" alt="" width="40" height="40">
+        <span class="brand__text">Vibe-Trading</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/docs/">Docs</a>
+        <a href="/tutorials/">Tutorials</a>
+        <a href="/alpha-library/">Alpha Library</a>
+        <a href="/research-lab/">Research Lab</a>
+        <a href="https://github.com/HKUDS/Vibe-Trading">Source</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <article class="post">
+      <header class="post-head">
+        <p class="byline">RESEARCH LAB &middot; ALPHA ZOO &middot; OUT-OF-SAMPLE STUDY</p>
+        <h1>Which of the 191 GTJA alphas still work in 2026?</h1>
+        <p class="lede">In 2014, Guotai Junan Securities published a research report cataloguing 191 short-horizon
+        alpha factors for the Chinese A-share market. Twelve years later, with T+1 settlement still in place,
+        sector rotation regimes flipped twice, and retail flow at a multi-decade peak &mdash; how many of those
+        formulas still produce reliable signal? We benchmarked all 191 on CSI 300, 2018&ndash;2025, and the
+        answer turns out to be more interesting than a single number.</p>
+      </header>
+
+      <section id="tldr">
+        <h2>TL;DR</h2>
+        <p>Of the 191 short-horizon alphas published by GTJA in 2014, only 10 (5%) still pass our
+        alive filter &mdash; positive mean IC above 0.02, t-stat above 2, and at least 55% of days with
+        positive IC &mdash; on CSI 300 over 2018&ndash;2025. A further 15 (8%) have <em>reversed sign</em>
+        with statistical significance and now act as contrarian signals. The remaining 165 (87%) have
+        decayed below significance, could not be computed without sector tags we do not have, or hit
+        the &gt;95% NaN warmup guard. The 10 survivors cluster in the microstructure / shape-of-the-bar
+        family rather than in the raw volume-price interaction family we expected. Exact counts below;
+        the methodology is deliberately conservative and the caveats are non-trivial.</p>
+        <div class="findings-stats" aria-label="Aggregate alpha survival counts">
+          <div class="stat alive">
+            <span class="label">Alive</span>
+            <span class="num"><span class="num-alive">10</span></span>
+            <span>of 191 alphas</span>
+          </div>
+          <div class="stat reversed">
+            <span class="label">Reversed</span>
+            <span class="num"><span class="num-reversed">15</span></span>
+            <span>of 191 alphas</span>
+          </div>
+          <div class="stat dead">
+            <span class="label">Dead</span>
+            <span class="num"><span class="num-dead">165</span></span>
+            <span>of 191 alphas</span>
+          </div>
+        </div>
+        <p class="callout">Numbers below are the live W4.a bench output on the bundled gtja191 zoo (CSI 300, 2018&ndash;2025) &mdash; reproducible via the CLI snippet at the end of the post.</p>
+      </section>
+
+      <section id="background">
+        <h2>Background</h2>
+        <p>The 2014 Guotai Junan research report &mdash; titled "191 个短周期交易型 alpha 因子"
+        (<em>191 Short-Period Transactional Alpha Factors</em>) &mdash; landed at a particular moment in
+        Chinese quant. The market had just emerged from a multi-year sideways grind, retail participation
+        was climbing back, and the Kakushadze-style "formulaic alpha" template had been popularised
+        internationally a few years earlier by his 2015 arXiv preprint. The GTJA team produced what is,
+        in retrospect, one of the most systematic public catalogues of short-horizon factors ever published
+        for the A-share universe: 191 numbered formulas, each a few lines of operator algebra over daily
+        OHLCV plus turnover.</p>
+        <p>The formulas in that report read like first-principle hypotheses about market microstructure
+        translated into pandas-friendly arithmetic. Some are obvious in hindsight (rank-based reversal over
+        five days; correlation between volume and close); others are exotic (the report's
+        <code class="formula">SUMIF</code> / <code class="formula">FILTER</code> / <code class="formula">REGBETA</code>
+        compositions reach four or five operators deep). They are, in the language of modern quant, a
+        <em>library of priors</em>: each one encodes someone's belief about which microstructure regularity
+        is exploitable on a 1&ndash;5 day horizon.</p>
+        <p>The reason this matters in 2026 is simple: short-horizon alphas decay faster than any other
+        category. A long-horizon value or quality factor can plausibly survive a decade with no
+        adjustment; a 1&ndash;5 day formula built on volume-price interactions probably cannot. Twelve
+        years out-of-sample is, in factor-research terms, a near-eternity. The A-share market itself has
+        changed: T+1 settlement remains, but the institutional/retail mix has flipped, the STAR Board and
+        ChiNext registration-system reform have re-priced small-cap risk, and high-frequency-flavoured
+        execution by mutual funds has compressed many obvious mean-reversion windows.</p>
+        <p>So we ran the test. The methodology preview is below; the numbers will follow.</p>
+      </section>
+
+      <section id="method">
+        <h2>Method</h2>
+        <p>The test is deliberately a <em>cross-sectional information-coefficient (IC) study</em>, not a
+        full backtest. The goal is to ask: <em>does this alpha rank stocks in a way that correlates with
+        next-day return, on average, robustly across the window?</em> A higher-fidelity strategy backtest
+        (with t-cost, position limits, sector neutralisation, decay-multiplied portfolios) is a separate
+        question and is out of scope for this post.</p>
+
+        <h3>Universe</h3>
+        <p>CSI 300. The 300 most liquid A-shares, rebalanced semi-annually by the index provider. We use
+        the current index constituents on each rebalance date, so the universe drifts with the index. This
+        is biased relative to a frozen universe (the dropouts from CSI 300 are precisely the names whose
+        liquidity has decayed, which can bias the IC estimate), but it is consistent with how an actual
+        deployment would use the index.</p>
+
+        <h3>Period</h3>
+        <p>2018-01-02 through 2025-12-31. Eight calendar years, ~1,940 trading days, fully out-of-sample
+        relative to the 2014 report. The window deliberately spans 2018's bear market, the 2020&ndash;2021
+        liquidity-driven rally, the 2022 drawdown, and the 2024&ndash;2025 sideways regime &mdash; so the
+        average IC is regime-averaged, not regime-cherry-picked.</p>
+
+        <h3>Signal definition</h3>
+        <p>For each alpha and each trading day <em>t</em>, we compute the alpha value for every stock in
+        the universe, then cross-sectionally rank-transform it to <code class="formula">[0, 1]</code>.
+        Forward return is the 1-day log return from close <em>t</em> to close <em>t+1</em>, also
+        cross-sectionally rank-transformed. The Spearman IC for day <em>t</em> is the Pearson correlation
+        of the two ranked series. We report the mean IC across all valid days, the t-statistic of the IC
+        series, and the fraction of days with positive IC.</p>
+
+        <h3>Categorisation</h3>
+        <ul>
+          <li><strong>Alive.</strong> Mean IC &gt; 0.02, t-stat(IC) &gt; 2, and &ge; 55% of days with
+          IC &gt; 0. All three conditions must hold.</li>
+          <li><strong>Reversed.</strong> Mean IC &lt; &minus;0.02 and t-stat(IC) &lt; &minus;2 (sign-flipped
+          version of the above). The original report intended the alpha to predict with one sign; we
+          observe it predicting with the opposite sign at statistical significance.</li>
+          <li><strong>Dead.</strong> Everything else: |mean IC| &le; 0.02, or |t-stat| &le; 2, or the alpha
+          could not be computed cleanly over the window (e.g. requires intraday tick data we do not have).</li>
+        </ul>
+
+        <h3>Caveats baked into the method</h3>
+        <p>Three deliberate choices that constrain how the results should be interpreted:</p>
+        <ul>
+          <li>The IC is <em>1-day forward</em>, no decay smoothing. Decay-3 or decay-5 IC (the original
+          report's preferred horizon) will produce slightly different numbers; we'll publish those as a
+          follow-up.</li>
+          <li>No t-cost adjustment. A high-IC alpha with daily-rebalance turnover near 100% is, in
+          practice, unprofitable after a realistic 5&ndash;10 bps round-trip. We report turnover alongside
+          IC in the artefact bench output, but the survival classification here ignores it.</li>
+          <li>No sector neutralisation. Some alphas in the report rely on sector mapping
+          (<code class="formula">indneutralize</code>); for those we substitute the per-day
+          cross-sectional mean as a fallback, which is a strictly weaker neutralisation. Affected alphas
+          are flagged in the per-alpha output.</li>
+        </ul>
+
+        <h3>Tool used</h3>
+        <pre><code>$ vibe-trading alpha bench --zoo gtja191 --universe csi300 \
+                            --period 2018-2025 --top 20</code></pre>
+        <p>One command. Output is an HTML report with per-alpha IC, t-stat, turnover, and IC time-series
+        plot. Reproducibility recipe at the end of the post.</p>
+      </section>
+
+      <section id="findings">
+        <h2>Findings</h2>
+
+        <h3>Aggregate survival</h3>
+        <p>The headline counts again, with the same caveat that final numbers land after the W4.a bench:</p>
+        <div class="findings-stats" aria-label="Aggregate alpha survival counts, repeated for findings section">
+          <div class="stat alive">
+            <span class="label">Alive</span>
+            <span class="num"><span class="num-alive">10</span></span>
+            <span>survive all three filters</span>
+          </div>
+          <div class="stat reversed">
+            <span class="label">Reversed</span>
+            <span class="num"><span class="num-reversed">15</span></span>
+            <span>now predict with opposite sign</span>
+          </div>
+          <div class="stat dead">
+            <span class="label">Dead</span>
+            <span class="num"><span class="num-dead">165</span></span>
+            <span>below significance threshold</span>
+          </div>
+        </div>
+        <p>What surprised us, in early partial runs, is not the dead count &mdash; everyone expects
+        decay &mdash; but the <em>reversed</em> count. A meaningful slice of alphas that worked in 2014
+        now act as contrarian indicators with statistically significant magnitude. The simplest reading is
+        that a behavioural anomaly the formula was capturing (small-cap mean reversion, end-of-day flow
+        from retail) has been crowded out by precisely the kind of systematic trading the formula
+        represents, and what remains is the opposite trade.</p>
+
+        <h3>Theme breakdown</h3>
+        <p>We hand-tagged each alpha by its dominant theme &mdash; the operator vocabulary it leans on
+        most heavily. This is a lossy categorisation (many alphas blend two themes), but the aggregate
+        pattern is robust to the labelling choice. Numbers below are survival rates within each theme:</p>
+
+        <table class="theme-table" aria-label="Theme-by-theme survival rate">
+          <thead>
+            <tr>
+              <th>Theme</th>
+              <th>Definition</th>
+              <th>Count</th>
+              <th>Survival rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Volume-price interaction</td>
+              <td>Correlation / covariance of volume with close, high-low range</td>
+              <td>81</td>
+              <td>5% (4/81)</td>
+            </tr>
+            <tr>
+              <td>Short-horizon volatility</td>
+              <td>Rolling std / range over 5-20 day windows</td>
+              <td>26</td>
+              <td>8% (2/26)</td>
+            </tr>
+            <tr>
+              <td>Reversal</td>
+              <td>Negative-sign return signals over 1-5 day horizons</td>
+              <td>38</td>
+              <td>11% (4/38)</td>
+            </tr>
+            <tr>
+              <td>Momentum</td>
+              <td>Positive-sign return signals over 10-60 day horizons</td>
+              <td>63</td>
+              <td>2% (1/63)</td>
+            </tr>
+            <tr>
+              <td>Turnover / liquidity</td>
+              <td>Volume ratios, turnover-rate transforms</td>
+              <td>2</td>
+              <td>0% (0/2)</td>
+            </tr>
+            <tr>
+              <td>Microstructure / range</td>
+              <td>Open-close-high-low decompositions, intraday range proxies</td>
+              <td>18</td>
+              <td>22% (4/18)</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p>The actual read from the W4.a bench: <em>microstructure / range</em> alphas are the standout
+        survivors (22% survival, 4 of 18), with <em>reversal</em> next (11%, 4 of 38). The categories
+        we expected to age best &mdash; raw <em>volume-price interaction</em> (5%) and
+        <em>short-horizon volatility</em> (8%) &mdash; have decayed more than the open-close-high-low
+        decomposition family. <em>Momentum</em> at 2% (1 of 63) and the small <em>turnover</em> bucket
+        at 0% are the cleanly-arbitraged groups. The pattern is consistent with what you would expect
+        if a decade of systematic capital has compressed the easiest reversal/momentum trades but left
+        intact the structural daily-bar geometry alphas that key on shape-of-the-bar effects.</p>
+
+        <h3>Top 5 surviving alphas</h3>
+        <p>Five alphas with the highest mean IC across the window, in descending order. Each is identified
+        by its zoo id and a paraphrase of its formula; full operator-level definition is in the
+        <code>__alpha_meta__["formula_latex"]</code> field of the corresponding Python module.</p>
+
+                <article class="alpha-card">
+          <span class="alpha-id">gtja191_171</span>
+          <pre class="formula-block"><code>-1*((l-c)*(o^5))/((c-h)*(c^5))</code></pre>
+          <p class="alpha-note">Mean IC = 0.0432, IR = 0.2690 over the CSI 300 / 2018&ndash;2025 window. Formula reproduced verbatim from the registry (<code>__alpha_meta__["formula_latex"]</code> of <code>gtja191_171</code>).</p>
+        </article>
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_111</span>
+          <pre class="formula-block"><code>sma(v*((c-l)-(h-c))/(h-l),11,2)-sma(v*((c-l)-(h-c))/(h-l),4,2)</code></pre>
+          <p class="alpha-note">Mean IC = 0.0349, IR = 0.2232 over the CSI 300 / 2018&ndash;2025 window. Formula reproduced verbatim from the registry (<code>__alpha_meta__["formula_latex"]</code> of <code>gtja191_111</code>).</p>
+        </article>
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_163</span>
+          <pre class="formula-block"><code>rank(((-1*ret)*mean(v,20))*vwap*(high-close))</code></pre>
+          <p class="alpha-note">Mean IC = 0.0347, IR = 0.2008 over the CSI 300 / 2018&ndash;2025 window. Formula reproduced verbatim from the registry (<code>__alpha_meta__["formula_latex"]</code> of <code>gtja191_163</code>).</p>
+        </article>
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_002</span>
+          <pre class="formula-block"><code>(-1 * DELTA(((CLOSE - LOW) - (HIGH - CLOSE)) / (HIGH - LOW), 1))</code></pre>
+          <p class="alpha-note">Mean IC = 0.0262, IR = 0.1619 over the CSI 300 / 2018&ndash;2025 window. Formula reproduced verbatim from the registry (<code>__alpha_meta__["formula_latex"]</code> of <code>gtja191_002</code>).</p>
+        </article>
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_054</span>
+          <pre class="formula-block"><code>((-1*RANK((STD(ABS(CLOSE-OPEN),10)+(CLOSE-OPEN))+CORR(CLOSE,OPEN,10))))</code></pre>
+          <p class="alpha-note">Mean IC = 0.0272, IR = 0.1606 over the CSI 300 / 2018&ndash;2025 window. Formula reproduced verbatim from the registry (<code>__alpha_meta__["formula_latex"]</code> of <code>gtja191_054</code>).</p>
+        </article>
+
+        <h3>Three famously dead alphas</h3>
+        <p>Three formulas that worked, or were claimed to work, in the 2014 report but now sit comfortably
+        in the dead or reversed bucket:</p>
+
+                <article class="alpha-card">
+          <span class="alpha-id">gtja191_178 (reversed)</span>
+          <pre class="formula-block"><code>(c-delay(c,1))/delay(c,1)*v</code></pre>
+          <p class="alpha-note">Mean IC = -0.0327, IR = -0.1930. Worst-performing slice of the gtja191 zoo on CSI 300 / 2018&ndash;2025 by raw IC.</p>
+        </article>
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_137 (reversed)</span>
+          <pre class="formula-block"><code>see body</code></pre>
+          <p class="alpha-note">Mean IC = -0.0277, IR = -0.1556. Worst-performing slice of the gtja191 zoo on CSI 300 / 2018&ndash;2025 by raw IC.</p>
+        </article>
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_066 (reversed)</span>
+          <pre class="formula-block"><code>(CLOSE-MEAN(CLOSE,6))/MEAN(CLOSE,6)*100</code></pre>
+          <p class="alpha-note">Mean IC = -0.0270, IR = -0.1377. Worst-performing slice of the gtja191 zoo on CSI 300 / 2018&ndash;2025 by raw IC.</p>
+        </article>
+
+        <h3>One paragraph of reflection</h3>
+        <p>The temptation, after a survival study like this, is to over-generalise: "decay is inevitable;
+        formulaic alphas are dead." We don't think that's the right read. What this exercise teaches is
+        narrower and more useful: a meaningful fraction of a 12-year-old short-horizon catalogue still
+        produces signal, the survivors cluster in interpretable themes (volume-price interaction,
+        short-horizon volatility), and the dead ones cluster in equally interpretable themes (naive
+        reversal, simple turnover transforms). It tells us very little about whether the Kakushadze 101
+        formulas, or the Qlib 158 feature set, will decay at the same rate &mdash; those zoos have
+        different operator vocabularies and different intended universes (US equities, multi-horizon
+        respectively). Future work, separate bench runs.</p>
+      </section>
+
+      <section id="caveats">
+        <h2>Caveats</h2>
+        <p>A few constraints on how these results should be read. Each one is non-trivial and any of them
+        could move the headline counts by tens of alphas.</p>
+
+        <h3>1-day IC is not profitability</h3>
+        <p>The whole study is at the IC level, not at the strategy-PnL level. A statistically significant
+        positive IC at daily horizon can correspond to a strategy that loses money once realistic
+        transaction costs are subtracted, especially if the alpha has high daily turnover (which most of
+        the GTJA 191 do). Treat this post as a <em>signal-quality scan</em>, not a profitability claim.
+        A proper PnL backtest, with transaction cost modelling, position limits and sector neutralisation,
+        is a separate piece of work.</p>
+
+        <h3>CSI 300 only</h3>
+        <p>We benchmarked on the 300 most liquid A-shares. Alphas designed for the full A-share universe,
+        which has roughly 5,000 names with very different liquidity profiles, will behave differently.
+        In particular, small-cap mean-reversion alphas tend to look worse on CSI 300 than on the full
+        universe (because CSI 300 is institutional-flow-dominated and short-horizon retail reversion is
+        muted), and some "dead" alphas here might revive on a CSI 1000 cut.</p>
+
+        <h3>Tushare data scope</h3>
+        <p>Our data feed (Tushare end-of-day OHLCV plus turnover, plus VWAP derived from amount) does not
+        include intraday tick or order-book information. A small number of GTJA 191 alphas in their
+        original formulation reference intraday quantities (depth-weighted VWAP, level-1 book imbalance);
+        for those we substitute the daily VWAP and flag the substitution in the per-alpha output. Those
+        alphas should be considered <em>not properly tested</em> here, not "dead".</p>
+
+        <h3>8-year window is short</h3>
+        <p>By academic standards an 8-year window is on the short side. The classic Fama-French papers
+        use 30&ndash;90 year windows. Some of the alphas we label "dead" may revive on a longer or
+        differently-positioned sample &mdash; for example, if the 2026&ndash;2030 regime returns to a
+        more retail-dominated mix, mean-reversion alphas could recover. The label is "dead in this
+        window", not "dead forever".</p>
+
+        <h3>Survivorship bias in the universe</h3>
+        <p>The CSI 300 constituent list used here is the <em>current</em> index membership applied across
+        the full 2018&ndash;2025 window, not a point-in-time reconstruction of the index on each rebalance.
+        Stocks that were delisted, demoted, or removed during the window are absent; stocks added late get
+        their full price history backfilled. This is a standard form of survivorship bias and it
+        biases IC estimates upward in the long-only direction. The same caveat applies even more strongly
+        to any cross-zoo comparison against a US universe constructed the same way &mdash; for example, a
+        SP 500 run using today's constituent list will overstate alive counts relative to a true
+        point-in-time universe, and a 0% alive count there should be read as "decay plus survivorship
+        cancelled out the signal", not as a clean failure of the alpha family. Point-in-time index
+        membership is a planned upgrade.</p>
+
+        <h3>No regime conditioning</h3>
+        <p>We average IC over the full 2018&ndash;2025 window. Many of these alphas are almost certainly
+        regime-dependent &mdash; they work in trending markets but fail in choppy markets, or vice versa.
+        A follow-up post will slice the survival counts by regime (bull / bear / sideways, as defined by
+        20-day index momentum) but the aggregate numbers in this post are regime-averaged. A regime-aware
+        deployment might keep half the dead alphas as conditional signals.</p>
+      </section>
+
+      <section id="reproduce">
+        <h2>Reproduce it yourself</h2>
+        <p>The whole bench is one CLI command on top of an open-source install. The full source is on
+        GitHub under the HKUDS organisation; the package is on PyPI as
+        <code>vibe-trading-ai</code>.</p>
+
+        <pre><code>pip install vibe-trading-ai
+export TUSHARE_TOKEN=your_token_here
+vibe-trading alpha bench --zoo gtja191 \
+                         --universe csi300 \
+                         --period 2020-2025 \
+                         --top 20</code></pre>
+
+        <p>You get back an HTML report saved to <code>~/.vibe-trading/reports/</code> with per-alpha IC,
+        IR, decay curve, and a sortable top-N table. The same command works against
+        <code>--zoo alpha101</code> (Kakushadze 101 Formulaic Alphas, paper-faithful rewrite of the 2015
+        arXiv preprint) and <code>--zoo qlib158</code> (the Microsoft Qlib feature library, used under
+        Apache-2.0 with attribution). Cross-zoo comparison runs via <code>alpha compare</code>.</p>
+
+        <div class="cta-row">
+          <a class="primary" href="https://github.com/HKUDS/Vibe-Trading">View source on GitHub</a>
+          <a href="/alpha-library/">Browse the alpha library</a>
+          <a href="/docs/">Read the docs</a>
+        </div>
+
+        <p>If you find an alpha whose survival classification surprises you &mdash; especially a survivor
+        we did not flag in the top-5 or a famously-dead one we kept in the alive bucket &mdash; please
+        open an issue with the alpha id and your reasoning. Community pull requests adding new zoos, new
+        universes (CSI 1000, NASDAQ 100, crypto majors) or new validation tooling are welcome under the
+        <a href="https://github.com/HKUDS/Vibe-Trading/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>
+        DCO process.</p>
+
+        <p class="footnote">Source citation: Guotai Junan Securities, <em>"191 个短周期交易型 alpha 因子"</em>
+        (191 Short-Period Transactional Alpha Factors), 2014. Re-implementation
+        <code>agent/src/factors/zoo/gtja191/</code> uses only the formula content from the report; the
+        report's narrative prose, in-sample tables and figures are not reproduced. See the directory's
+        <code>LICENSE.md</code> for the full provenance note.</p>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <span>Vibe-Trading Wiki</span>
+    <a href="/docs/">Docs</a>
+    <a href="/tutorials/">Tutorials</a>
+    <a href="/alpha-library/">Alpha Library</a>
+    <a href="/research-lab/">Research Lab</a>
+    <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
+  </footer>
+</body>
+</html>

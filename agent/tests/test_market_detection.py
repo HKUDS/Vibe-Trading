@@ -1,9 +1,17 @@
-"""Tests for runner market detection, source mapping, and code normalization."""
+"""Tests for runner market detection, source mapping, and code normalization.
+
+Also covers the audit-2026-05-18 B1 routing bug: composite.py previously
+had a truncated ``_is_china_futures`` that only inspected the exchange
+suffix, so a bare ``RB2410`` was misrouted to GlobalFuturesEngine. After
+the consolidation in ``_market_hooks``, both the suffix form and the
+bare product-code form must resolve identically.
+"""
 
 from __future__ import annotations
 
 import pytest
 
+from backtest.engines._market_hooks import _is_china_futures
 from backtest.runner import (
     _detect_market,
     _detect_source,
@@ -143,3 +151,81 @@ class TestNormalizeCodes:
         codes = ["000001.SZ", "AAPL.US"]
         assert _normalize_codes(codes, "tushare") == codes
         assert _normalize_codes(codes, "yfinance") == codes
+
+
+# ---------------------------------------------------------------------------
+# _is_china_futures — audit-2026-05-18 B1 bug fix coverage
+# ---------------------------------------------------------------------------
+
+
+class TestIsChinaFutures:
+    """Regression suite for the composite.py truncated-routing bug.
+
+    Before the fix, a bare ``RB2410`` returned False (composite.py only
+    checked the exchange suffix) and was misrouted to GlobalFuturesEngine.
+    Both forms must now agree.
+    """
+
+    def test_bare_uppercase_product(self) -> None:
+        # The bug case: bare uppercase code with no suffix.
+        assert _is_china_futures("RB2410") is True
+
+    def test_bare_lowercase_product(self) -> None:
+        assert _is_china_futures("rb2410") is True
+
+    def test_suffix_lowercase(self) -> None:
+        assert _is_china_futures("rb2410.SHFE") is True
+
+    def test_suffix_uppercase(self) -> None:
+        assert _is_china_futures("RB2410.SHFE") is True
+
+    def test_global_with_exchange_suffix(self) -> None:
+        # NYMEX is not a Chinese exchange.
+        assert _is_china_futures("CL.NYMEX") is False
+
+    def test_global_month_code_form(self) -> None:
+        # CLZ4 = global futures month-code form, no Chinese product.
+        assert _is_china_futures("CLZ4") is False
+
+    # ── Audit-2026-05-18 regression guard: non-CN exchange must short-circuit ──
+    # Without the guard, codes like ``M2412.CBOT`` (US soybean meal) would
+    # extract product letter ``m`` (lowercased), find it in the CN product
+    # table (China bean meal), and return True.
+
+    def test_us_meal_on_cbot_not_chinese(self) -> None:
+        assert _is_china_futures("M2412.CBOT") is False
+
+    def test_us_cotton_on_ice_not_chinese(self) -> None:
+        # ICE Cotton — letter prefix ``cf`` collides with CN Cotton (CFEX).
+        assert _is_china_futures("CF2412.ICE") is False
+
+    def test_us_gold_on_comex_not_chinese(self) -> None:
+        # COMEX gold — letter prefix ``au`` collides with CN Au (SHFE).
+        assert _is_china_futures("AU2412.COMEX") is False
+
+    def test_eurex_short_code_not_chinese(self) -> None:
+        # EUREX FGBL — letter prefix ``fg`` collides with CN flat glass.
+        assert _is_china_futures("FG2412.EUREX") is False
+
+    def test_bare_cn_collision_product_still_chinese(self) -> None:
+        # Heuristic still fires when there is no exchange suffix.
+        assert _is_china_futures("CF2412") is True
+        assert _is_china_futures("M2412") is True
+
+
+# ---------------------------------------------------------------------------
+# _detect_market — task-required exhaustive assertions
+# ---------------------------------------------------------------------------
+
+
+class TestDetectMarketRequired:
+    """Spot-check assertions called out explicitly by the audit task."""
+
+    def test_bare_chinese_futures_is_futures(self) -> None:
+        assert _detect_market("RB2410") == "futures"
+
+    def test_a_share_with_sz_suffix(self) -> None:
+        assert _detect_market("000001.SZ") == "a_share"
+
+    def test_crypto_hyphen_form(self) -> None:
+        assert _detect_market("BTC-USDT") == "crypto"

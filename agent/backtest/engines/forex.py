@@ -15,7 +15,9 @@ from __future__ import annotations
 import pandas as pd
 
 from backtest.engines.base import BaseEngine
-from backtest.engines._market_hooks import calc_forex_swap
+# ``_normalize_symbol`` lives in ``_market_hooks`` (single source of truth);
+# re-imported here so external callers (tests) keep their existing import path.
+from backtest.engines._market_hooks import _normalize_symbol, calc_forex_swap
 
 
 # ── Typical spreads in pips (1 pip = 0.0001 for most pairs, 0.01 for JPY) ──
@@ -51,23 +53,6 @@ def _pip_value(symbol: str) -> float:
     return 0.01 if quote.upper() == "JPY" else 0.0001
 
 
-def _normalize_symbol(symbol: str) -> str:
-    """Normalize forex symbol to 'XXX/YYY' format.
-
-    Args:
-        symbol: Raw symbol (e.g. 'EURUSD.FX', 'EUR/USD', 'EURUSD').
-
-    Returns:
-        Normalized pair (e.g. 'EUR/USD').
-    """
-    s = symbol.replace(".FX", "").replace(".", "").strip()
-    if "/" in s:
-        return s.upper()
-    if len(s) == 6:
-        return f"{s[:3]}/{s[3:]}".upper()
-    return s.upper()
-
-
 class ForexEngine(BaseEngine):
     """Forex engine for spot / CFD pairs.
 
@@ -100,11 +85,13 @@ class ForexEngine(BaseEngine):
         """
         return max(int(raw_size / 1000) * 1000, 0)
 
-    def calc_commission(self, size: float, price: float, direction: int, is_open: bool) -> float:
+    def calc_commission(self, size: float, price: float, _direction: int, is_open: bool) -> float:
         """Forex: spread is the cost, embedded in slippage. No explicit commission.
 
         Some ECN brokers charge per-lot commission; for simplicity, zero here.
         The cost is captured via apply_slippage (half-spread applied to execution).
+        ``_direction`` is unused — reserved for future ECN per-lot fee
+        modelling (asymmetric long/short funding).
         """
         return 0.0
 

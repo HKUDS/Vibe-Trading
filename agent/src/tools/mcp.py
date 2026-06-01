@@ -14,9 +14,13 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Coroutine, Iterable, Protocol, TypeVar
 
 from fastmcp.client import Client
+from fastmcp.client.auth import OAuth
 from fastmcp.client.client import CallToolResult
+from fastmcp.client.transports.http import StreamableHttpTransport
+from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import StdioTransport
 from fastmcp.exceptions import McpError, ToolError
+from key_value.aio.stores.filetree import FileTreeStore
 from mcp import types as mcp_types
 
 from src.agent.tools import BaseTool
@@ -80,13 +84,22 @@ ClientFactory = Callable[[], AsyncMCPClient]
 
 @dataclass(frozen=True)
 class MCPRemoteToolSpec:
-    """Resolved metadata for one remote MCP tool."""
+    """Resolved metadata for one remote MCP tool.
+
+    Attributes:
+        annotations: Server-asserted MCP tool annotations (``readOnlyHint`` /
+            ``destructiveHint`` / etc.), or ``None`` when the server omits them.
+            These are advisory hints from a possibly-untrusted server and must
+            never be the sole basis for relaxing safety — the live classification
+            layer (P1) treats them as one tier behind the curated map.
+    """
 
     server_name: str
     remote_name: str
     local_name: str
     description: str
     parameters: dict[str, Any]
+    annotations: mcp_types.ToolAnnotations | None = None
 
 
 def build_mcp_tool_wrappers(
@@ -241,6 +254,31 @@ def normalize_mcp_tool_schema(schema: dict[str, Any] | None) -> dict[str, Any]:
     return normalized
 
 
+def _build_token_store(cache_dir: str) -> FileTreeStore:
+    """Build a persistent OAuth token store rooted at ``cache_dir``.
+
+    The directory is created (with parents) and locked down to ``0700`` so only
+    the owning user can read the cached refresh tokens. ``FileTreeStore`` is a
+    pure-stdlib ``AsyncKeyValue`` backend (no ``diskcache`` dependency) and uses
+    atomic same-directory temp-file renames for write safety. The OAuth provider
+    persists refreshed tokens back through this store, giving silent refresh
+    across CLI sessions.
+
+    Args:
+        cache_dir: Token cache directory. A leading ``~`` is expanded.
+
+    Returns:
+        A ``FileTreeStore`` rooted at the resolved cache directory.
+    """
+    from pathlib import Path
+
+    path = Path(cache_dir).expanduser()
+    path.mkdir(parents=True, exist_ok=True)
+    # 0700: owner-only. Tokens are secrets; no group/other access.
+    os.chmod(path, 0o700)
+    return FileTreeStore(data_directory=path)
+
+
 class MCPServerAdapter:
     """Synchronous wrapper around the async FastMCP client."""
 
@@ -295,6 +333,7 @@ class MCPServerAdapter:
                     local_name=local_name,
                     description=(tool.description or f"Remote MCP tool {tool.name} from {self.server_name}."),
                     parameters=normalize_mcp_tool_schema(getattr(tool, "inputSchema", None)),
+                    annotations=getattr(tool, "annotations", None),
                 )
             )
 
@@ -343,19 +382,51 @@ class MCPServerAdapter:
             }
 
     def _build_client(self) -> AsyncMCPClient:
-        """Create the default FastMCP stdio client.
+        """Create the default FastMCP client from MCP transport config.
 
         Returns:
             Configured async FastMCP client.
         """
-        env = os.environ.copy()
-        env.update(self.server_config.env)
-        transport = StdioTransport(
-            command=self.server_config.command,
-            args=list(self.server_config.args),
-            env=env,
-            keep_alive=False,
-        )
+        transport_type = self.server_config.resolved_transport()
+
+        if transport_type == "stdio":
+            env = os.environ.copy()
+            env.update(self.server_config.env)
+            transport = StdioTransport(
+                command=self.server_config.command,
+                args=list(self.server_config.args),
+                env=env,
+                keep_alive=False,
+            )
+        elif transport_type == "sse":
+            transport = SSETransport(
+                url=self.server_config.url,
+                headers=dict(self.server_config.headers) or None,
+            )
+        else:
+            auth = None
+            if self.server_config.auth is not None:
+                oauth_config = self.server_config.auth
+                # `mcp_url` is intentionally omitted — StreamableHttpTransport
+                # calls `auth._bind(self.url)` so the URL fills in from the
+                # transport. Token cache is persistent (FileTreeStore), so the
+                # channel stays authorized across CLI invocations and refresh is
+                # handled inside the MCP lib's OAuthClientProvider.
+                auth = OAuth(
+                    scopes=list(oauth_config.scopes) or None,
+                    client_name=oauth_config.client_name,
+                    token_storage=_build_token_store(oauth_config.cache_dir),
+                    callback_port=oauth_config.callback_port,
+                    client_id=oauth_config.client_id,
+                    client_secret=oauth_config.client_secret,
+                    client_metadata_url=oauth_config.client_metadata_url,
+                )
+            transport = StreamableHttpTransport(
+                url=self.server_config.url,
+                headers=dict(self.server_config.headers) or None,
+                auth=auth,
+            )
+
         # Use a minimum of 30 s for init_timeout so cold-start servers (pip
         # install, docker pull, slow imports) do not trip the same short
         # deadline as a per-call tool_timeout.
@@ -388,7 +459,7 @@ class MCPServerAdapter:
             return await client.list_tools()
 
     async def _call_tool(self, remote_name: str, arguments: dict[str, Any]) -> CallToolResult:
-        """Call a remote tool with timeout and a single transient retry.
+        """Call a remote tool with timeout and no automatic retry.
 
         Args:
             remote_name: Remote tool name.
@@ -409,7 +480,10 @@ class MCPServerAdapter:
                     raise_on_error=False,
                 )
 
-        return await self._run_with_retry(f"call_tool:{remote_name}", _invoke)
+        # Remote MCP tools are arbitrary and may mutate external state. If a
+        # timeout / connection drop happens after the server has already
+        # committed the action, retrying here would duplicate the side effect.
+        return await _invoke()
 
     async def _run_with_retry(
         self,

@@ -1,0 +1,29 @@
+# Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
+# (Apache-2.0). Copyright (c) Microsoft Corporation.
+"""qlib158 CORD30: formula = \\mathrm{ts\\_corr}(\\mathrm{close}/\\mathrm{close}_{{-1}}, \\log((\\mathrm{volume}+1)/(\\mathrm{volume}_{{-1}}+1)), 30)."""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+from src.factors.base import safe_div, ts_corr
+
+__alpha_meta__ = {
+    'id': 'qlib158_cord30',
+    'theme': ['volume', 'microstructure'],
+    'formula_latex': '\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}/\\\\mathrm{close}_{{-1}}, \\\\log((\\\\mathrm{volume}+1)/(\\\\mathrm{volume}_{{-1}}+1)), 30)',
+    'columns_required': ['close', 'volume'],
+    'universe': ['equity_us', 'equity_cn', 'equity_hk'],
+    'frequency': ['1d'],
+    'decay_horizon': 30,
+    'min_warmup_bars': 30,
+}
+
+
+def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Return qlib158 CORD30 on the supplied OHLCV panel."""
+    c = panel['close']
+    v = panel['volume']
+    c_ret = safe_div(c, c.shift(1))
+    v_ret = safe_div(v + 1.0, v.shift(1) + 1.0)
+    logvr = np.log(v_ret)
+    return ts_corr(c_ret, logvr, 30)
