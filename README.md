@@ -706,6 +706,12 @@ skills:
     command: vibe-trading-mcp
 ```
 
+For a first research-only smoke test, confirm tool discovery and run a market
+data or backtest request before selecting a trading connector profile. Core
+research tools can run without broker credentials; connector-backed `trading_*`
+tools should be used only after you intentionally select and check a connector
+profile. `run_swarm` requires an LLM key.
+
 </details>
 
 <details>
