@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers } from "lucide-react";
+import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
@@ -29,6 +29,7 @@ export function Layout() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("qa-sidebar") === "collapsed");
 
   const activeSessionId = searchParams.get("session");
+  const streamingSessionId = useAgentStore(s => s.streamingSessionId);
 
   useEffect(() => {
     localStorage.setItem("qa-sidebar", collapsed ? "collapsed" : "expanded");
@@ -160,10 +161,14 @@ export function Layout() {
                         title={s.title || s.session_id}
                       >
                         <span className="flex items-center gap-1.5">
-                          <span className={cn(
-                            "h-1.5 w-1.5 rounded-full shrink-0",
-                            s.status === "failed" ? "bg-danger" : isActive ? "bg-warning" : "bg-success/60"
-                          )} />
+                          {streamingSessionId === s.session_id ? (
+                            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
+                          ) : (
+                            <span className={cn(
+                              "h-1.5 w-1.5 rounded-full shrink-0",
+                              isActive ? "bg-primary/70" : "bg-muted-foreground/40"
+                            )} />
+                          )}
                           {s.title || s.session_id.slice(0, 16)}
                         </span>
                       </Link>

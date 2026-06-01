@@ -10,6 +10,10 @@ interface AgentState {
   status: "idle" | "streaming" | "error";
   streamingText: string;
 
+  /** The session currently streaming on the backend. Survives switchSession
+   *  so the sidebar spinner persists when the user navigates away. */
+  streamingSessionId: string | null;
+
   toolCalls: ToolCallEntry[];
 
   sseStatus: "disconnected" | "connected" | "reconnecting";
@@ -46,6 +50,7 @@ export const useAgentStore = create<AgentState>((set) => ({
   sessionId: null,
   status: "idle",
   streamingText: "",
+  streamingSessionId: null,
   toolCalls: [],
   sseStatus: "disconnected",
   sseRetryAttempt: 0,
@@ -57,7 +62,16 @@ export const useAgentStore = create<AgentState>((set) => ({
   appendDelta: (delta) =>
     set((s) => ({ streamingText: s.streamingText + delta })),
 
-  setStatus: (status) => set({ status }),
+  setStatus: (status) =>
+    set((s) => {
+      const patch: Partial<AgentState> = { status };
+      if (status === "streaming" && s.sessionId) {
+        patch.streamingSessionId = s.sessionId;
+      } else if (status !== "streaming" && s.streamingSessionId === s.sessionId) {
+        patch.streamingSessionId = null;
+      }
+      return patch;
+    }),
   setSessionId: (sessionId) => set({ sessionId }),
   loadHistory: (msgs) => set({ messages: msgs }),
 
@@ -85,14 +99,17 @@ export const useAgentStore = create<AgentState>((set) => ({
 
   switchSession: (sid, msgs) => {
     _id = 0;
-    set({
+    set((s) => ({
       sessionId: sid,
       messages: msgs || [],
       status: "idle",
       streamingText: "",
       toolCalls: [],
       sessionLoading: !msgs,
-    });
+      // Preserve streamingSessionId so the sidebar spinner stays visible
+      // when switching away from a running session.
+      streamingSessionId: s.streamingSessionId,
+    }));
   },
 
   setSessionLoading: (sessionLoading) => set({ sessionLoading }),
@@ -102,6 +119,7 @@ export const useAgentStore = create<AgentState>((set) => ({
     set({
       messages: [], status: "idle", streamingText: "",
       sessionId: null, toolCalls: [], sessionLoading: false,
+      streamingSessionId: null,
     });
   },
 }));
