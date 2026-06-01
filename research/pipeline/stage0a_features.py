@@ -221,8 +221,9 @@ def build_feature_dict(
 
     # ── oi_change_24h ─────────────────────────────────────────────────────────
     oi_on_candle: pd.Series | None = None
-    if oi_df is not None and not oi_df.empty and "open_interest" in oi_df.columns:
-        oi_on_candle = oi_df["open_interest"].reindex(candle_idx, method="ffill")
+    _oi_col = next((c for c in ("open_interest", "oi") if oi_df is not None and c in oi_df.columns), None)
+    if oi_df is not None and not oi_df.empty and _oi_col is not None:
+        oi_on_candle = oi_df[_oi_col].reindex(candle_idx, method="ffill")
         oi_change = oi_on_candle.pct_change(periods=24)
         oi_change.name = "oi_change_24h"
         features["oi_change_24h"] = oi_change
