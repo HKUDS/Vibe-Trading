@@ -11,6 +11,8 @@ services:
       - INVESTMENT_OS_INVESTMENT_POLICY_PATH=/investment-os/docs/investment-policy.md
       - INVESTMENT_OS_RISK_POLICY_PATH=/investment-os/docs/risk-policy.md
       - INVESTMENT_OS_RESEARCH_DIR=/investment-os/research
+      - INVESTMENT_OS_DEEPQUANT_SUMMARY_PATH=/investment-os/reports/deepquant/latest-summary.json
+      - INVESTMENT_OS_DEEPQUANT_ROOT=/deepquant-workshop/DeepQuantProjects
     volumes:
       - vibe-runs:/app/agent/runs
       - vibe-sessions:/app/agent/sessions
@@ -18,6 +20,8 @@ services:
       - ../investment-os/docs/investment-policy.md:/investment-os/docs/investment-policy.md:ro
       - ../investment-os/docs/risk-policy.md:/investment-os/docs/risk-policy.md:ro
       - ../investment-os/research:/investment-os/research
+      - ../investment-os/reports:/investment-os/reports:ro
+      - ../Deepquant-workshop:/deepquant-workshop:ro
     restart: unless-stopped
 
   frontend:

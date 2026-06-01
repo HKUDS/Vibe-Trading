@@ -106,6 +106,7 @@ export const api = {
       body: JSON.stringify(settings),
     }),
   listInvestmentOSCandidates: () => request<InvestmentOSCandidatesResponse>("/api/investment-os/candidates"),
+  getInvestmentOSDeepQuantSummary: () => request<InvestmentOSDeepQuantSummary>("/api/investment-os/deepquant/summary"),
   listInvestmentOSMemos: (includeDiscarded = false) =>
     request<InvestmentOSMemosResponse>(`/api/investment-os/memos${includeDiscarded ? "?include_discarded=true" : ""}`),
   getInvestmentOSMemo: (id: string) => request<InvestmentOSMemoContentResponse>(`/api/investment-os/memos/${encodeURIComponent(id)}`),
@@ -215,6 +216,24 @@ export interface InvestmentOSCandidate {
 export interface InvestmentOSCandidatesResponse {
   stock_core_candidates: InvestmentOSCandidate[];
   source: "file" | "fallback";
+}
+
+export interface InvestmentOSDeepQuantSummary {
+  adapter_version?: string | null;
+  schema_version?: string | null;
+  status: string;
+  source: "file" | "missing";
+  generated_at?: string | null;
+  deepquant_root?: string | null;
+  source_path?: string | null;
+  model_count: number;
+  portfolio_count: number;
+  symbols: string[];
+  model_family_counts: Record<string, number>;
+  actionability_counts: Record<string, number>;
+  evidence_gap_count: number;
+  evidence_gaps: string[];
+  warnings: string[];
 }
 
 export type InvestmentOSMemoStatus = "draft" | "superseded" | "archived" | "discarded";

@@ -202,6 +202,26 @@ class InvestmentOSMemosResponse(BaseModel):
     source: str
 
 
+class InvestmentOSDeepQuantSummaryResponse(BaseModel):
+    """Read-only DeepQuant static inventory summary from Investment OS."""
+
+    adapter_version: Optional[str] = None
+    schema_version: Optional[str] = None
+    status: str
+    source: str
+    generated_at: Optional[str] = None
+    deepquant_root: Optional[str] = None
+    source_path: Optional[str] = None
+    model_count: int = 0
+    portfolio_count: int = 0
+    symbols: List[str] = Field(default_factory=list)
+    model_family_counts: Dict[str, int] = Field(default_factory=dict)
+    actionability_counts: Dict[str, int] = Field(default_factory=dict)
+    evidence_gap_count: int = 0
+    evidence_gaps: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+
+
 class InvestmentOSMemoContentResponse(BaseModel):
     """Investment OS research memo content response."""
 
@@ -1339,6 +1359,32 @@ async def get_investment_os_candidates():
     return InvestmentOSCandidatesResponse(stock_core_candidates=candidates, source=source)
 
 
+@app.get(
+    "/api/investment-os/deepquant/summary",
+    response_model=InvestmentOSDeepQuantSummaryResponse,
+)
+async def get_investment_os_deepquant_summary():
+    """Return read-only DeepQuant static inventory summary from Investment OS."""
+    summary_path = _investment_os_deepquant_summary_path()
+    if not summary_path.exists() or not summary_path.is_file():
+        return InvestmentOSDeepQuantSummaryResponse(
+            status="missing",
+            source="missing",
+            evidence_gap_count=1,
+            evidence_gaps=("DeepQuant static snapshot has not been generated or mounted.",),
+        )
+
+    try:
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to load DeepQuant summary: {exc}")
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=500, detail="DeepQuant summary must be a JSON object")
+
+    return InvestmentOSDeepQuantSummaryResponse(source="file", **payload)
+
+
 @app.get("/api/investment-os/memos", response_model=InvestmentOSMemosResponse)
 async def list_investment_os_memos(include_discarded: bool = Query(False, description="Include discarded memo drafts.")):
     """Return recent non-destructive Investment OS research memo metadata."""
@@ -1488,6 +1534,13 @@ _INVESTMENT_OS_MEMO_STATUSES = {"draft", "superseded", "archived", "discarded"}
 
 def _investment_os_research_dir() -> Path:
     return _investment_os_path("INVESTMENT_OS_RESEARCH_DIR", ["research"])
+
+
+def _investment_os_deepquant_summary_path() -> Path:
+    return _investment_os_path(
+        "INVESTMENT_OS_DEEPQUANT_SUMMARY_PATH",
+        ["reports", "deepquant", "latest-summary.json"],
+    )
 
 
 def _investment_os_memo_status_path(research_dir: Optional[Path] = None) -> Path:
