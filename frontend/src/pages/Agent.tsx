@@ -421,6 +421,8 @@ export function Agent() {
 
       tool_heartbeat: (d) => {
         touch();
+        // Keep streaming state alive during long-running tools (swarm, backtest)
+        if (act().status !== "streaming") act().setStatus("streaming");
         const toolName = String(d.tool || "");
         if (!toolName) return;
         act().updateToolCall(toolName, {
