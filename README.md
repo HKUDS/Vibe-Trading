@@ -675,7 +675,7 @@ Settings reads are side-effect free: `GET /settings/llm` and `GET /settings/data
 
 ## 🔌 MCP Plugin
 
-Vibe-Trading exposes 35 MCP tools for any MCP-compatible client. Runs as a stdio subprocess — no server setup needed. Core research tools work with zero API keys for HK/US/crypto; trading connector tools use the selected connector profile, and `run_swarm` needs an LLM key.
+Vibe-Trading exposes 36 MCP tools for any MCP-compatible client. Runs as a stdio subprocess — no server setup needed. Core research tools work with zero API keys for HK/US/crypto; trading connector tools use the selected connector profile, and `run_swarm` needs an LLM key.
 
 <details>
 <summary><b>Claude Desktop</b></summary>
@@ -943,7 +943,7 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli/                        # CLI package — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server — 35 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 36 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core

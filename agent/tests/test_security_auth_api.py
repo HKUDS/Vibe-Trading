@@ -305,6 +305,7 @@ def test_swarm_run_endpoints_reject_traversal_run_id() -> None:
         ("get", "/swarm/runs/foo.bar"),
         ("get", "/swarm/runs/foo.bar/events"),
         ("post", "/swarm/runs/foo.bar/cancel"),
+        ("post", "/swarm/runs/foo.bar/retry"),
     ):
         response = getattr(client, method)(path)
         assert response.status_code == 400, f"{method.upper()} {path} should be rejected"

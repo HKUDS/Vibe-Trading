@@ -1285,6 +1285,60 @@ def reap_stale_runs() -> str:
     return json.dumps({"reaped": reaped}, ensure_ascii=False, indent=2)
 
 
+@mcp.tool
+def retry_run(run_id: str) -> str:
+    """Retry a failed, stale, or cancelled swarm run.
+
+    Re-launches a brand-new run with the same preset and variables as the
+    original; the original run is left untouched as a record. Use this after
+    spotting a ``failed`` or stale run via ``list_runs``. A still-``running``
+    run cannot be retried — cancel or reap it first.
+
+    Args:
+        run_id: ID of the run to retry (from ``list_runs`` / ``get_swarm_status``).
+
+    Returns:
+        JSON payload for the newly created run (``run_id`` / ``status`` /
+        ``preset`` …), or an ``error`` object if the run is missing or active.
+    """
+    from src.config import load_swarm_agent_config
+    from src.swarm.models import RunStatus
+    from src.swarm.runtime import SwarmRuntime
+
+    store = _get_swarm_store()
+    loaded = store.load_run(run_id)
+    if loaded is None:
+        return json.dumps({"status": "error", "error": f"Run {run_id} not found"}, ensure_ascii=False)
+
+    # Reconcile first so a zombie "running" run whose host died is demoted
+    # before we gate on status; only a genuinely active run blocks retry.
+    reconciled = store.reconcile_run(loaded, write=True)
+    if reconciled.status == RunStatus.running:
+        return json.dumps(
+            {"status": "error", "error": "Cannot retry a running run. Cancel or reap it first."},
+            ensure_ascii=False,
+        )
+
+    agent_config = load_swarm_agent_config()
+    runtime = SwarmRuntime(store=store, agent_config=agent_config)
+    try:
+        new_run = runtime.start_run(
+            reconciled.preset_name,
+            reconciled.user_vars or {},
+            include_shell_tools=_include_shell_tools,
+        )
+    except FileNotFoundError as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
+    except ValueError as exc:
+        return json.dumps({"status": "error", "error": f"DAG validation failed: {exc}"}, ensure_ascii=False)
+
+    return json.dumps(
+        _build_run_payload(store, new_run.id, new_run.preset_name, timed_out=False),
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Trade journal tool
 # ---------------------------------------------------------------------------

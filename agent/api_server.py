@@ -2239,6 +2239,39 @@ async def cancel_swarm_run(run_id: str):
     return {"status": "cancelled"}
 
 
+@app.post("/swarm/runs/{run_id}/retry", dependencies=[Depends(require_auth)])
+async def retry_swarm_run(run_id: str, http_request: Request):
+    """Retry a failed, stale, or cancelled swarm run.
+
+    Creates a new run with the same preset and user_vars as the original.
+    """
+    _validate_path_param(run_id, "run_id")
+    runtime = _get_swarm_runtime()
+    loaded = runtime._store.load_run(run_id)
+    if not loaded:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+    # Reconcile first so a stale "running" run whose host died gets demoted
+    # before we gate on status; only a genuinely active run blocks retry.
+    from src.swarm.models import RunStatus
+
+    reconciled = runtime._store.reconcile_run(loaded, write=True)
+    if reconciled.status == RunStatus.running:
+        raise HTTPException(status_code=409, detail="Cannot retry a running run. Cancel it first.")
+
+    try:
+        new_run = runtime.start_run(
+            reconciled.preset_name,
+            reconciled.user_vars or {},
+            include_shell_tools=_shell_tools_enabled_for_request(http_request),
+        )
+        return {"id": new_run.id, "status": new_run.status.value, "preset_name": new_run.preset_name}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 # ============================================================================
 # Live trading channel — consent commit + kill switch
 # ============================================================================
