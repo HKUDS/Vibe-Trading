@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { AlertTriangle, ArrowRight, Copy, Eye, FileText, Globe2, Loader2, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, Copy, Cpu, Eye, FileText, Globe2, Loader2, ShieldCheck, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { api, type InvestmentOSCandidate, type InvestmentOSMemo, type StockCoreMemoResponse } from "@/lib/api";
+import { api, type InvestmentOSCandidate, type InvestmentOSDeepQuantSummary, type InvestmentOSMemo, type StockCoreMemoResponse } from "@/lib/api";
 
 const fallbackCandidates: InvestmentOSCandidate[] = [
   {
@@ -61,6 +61,12 @@ function memoStatusClass(status: string) {
   return "border-primary/30 bg-primary/10 text-primary";
 }
 
+function deepQuantStatusClass(status: string) {
+  if (status === "ok") return "border-primary/30 bg-primary/10 text-primary";
+  if (status === "missing" || status === "not_configured") return "border-warning/30 bg-warning/10 text-warning";
+  return "border-danger/30 bg-danger/10 text-danger";
+}
+
 function formatDateTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -94,6 +100,9 @@ export function InvestmentOS() {
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const [showDiscarded, setShowDiscarded] = useState(false);
+  const [deepQuantSummary, setDeepQuantSummary] = useState<InvestmentOSDeepQuantSummary | null>(null);
+  const [deepQuantLoading, setDeepQuantLoading] = useState(true);
+  const [deepQuantError, setDeepQuantError] = useState<string | null>(null);
 
   const loadMemos = useCallback(async () => {
     setMemosLoading(true);
@@ -130,6 +139,24 @@ export function InvestmentOS() {
   useEffect(() => {
     void loadMemos();
   }, [loadMemos]);
+
+  useEffect(() => {
+    let alive = true;
+    api.getInvestmentOSDeepQuantSummary()
+      .then((response) => {
+        if (!alive) return;
+        setDeepQuantSummary(response);
+        setDeepQuantError(null);
+      })
+      .catch((error) => {
+        if (!alive) return;
+        setDeepQuantError(error instanceof Error ? error.message : "Failed to load DeepQuant summary");
+      })
+      .finally(() => {
+        if (alive) setDeepQuantLoading(false);
+      });
+    return () => { alive = false; };
+  }, []);
 
   const toggleSymbol = (symbol: string) => {
     setSelectedSymbols((current) => (
@@ -298,6 +325,148 @@ export function InvestmentOS() {
               Vibe-Trading can host research workflows, but human-only approval remains
               the boundary for portfolio action.
             </p>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+          <div className="flex flex-col gap-3 border-b p-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">DeepQuant On-Pilot</p>
+              <h2 className="text-xl font-semibold">Read-only execution-engine inventory</h2>
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-xs text-muted-foreground">
+              {deepQuantLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Cpu className="h-3.5 w-3.5" />}
+              Snapshot source: {deepQuantSummary?.source === "file" ? "Investment OS report" : "not mounted"}
+            </div>
+          </div>
+
+          {deepQuantError ? (
+            <div className="mx-5 mt-5 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+              DeepQuant summary API unavailable. {deepQuantError}
+            </div>
+          ) : null}
+
+          <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="space-y-5">
+              {deepQuantLoading && !deepQuantSummary ? (
+                <div className="flex items-center gap-2 rounded-lg border bg-background p-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading DeepQuant static inventory...
+                </div>
+              ) : null}
+
+              {deepQuantSummary ? (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-lg border bg-background p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
+                      <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${deepQuantStatusClass(deepQuantSummary.status)}`}>
+                        {deepQuantSummary.status}
+                      </span>
+                    </div>
+                    <div className="rounded-lg border bg-background p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Models</p>
+                      <p className="mt-2 text-2xl font-semibold">{deepQuantSummary.model_count}</p>
+                    </div>
+                    <div className="rounded-lg border bg-background p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Portfolios</p>
+                      <p className="mt-2 text-2xl font-semibold">{deepQuantSummary.portfolio_count}</p>
+                    </div>
+                    <div className="rounded-lg border bg-background p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Evidence gaps</p>
+                      <p className="mt-2 text-2xl font-semibold">{deepQuantSummary.evidence_gap_count}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border bg-background p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Symbols</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {deepQuantSummary.symbols.length > 0 ? deepQuantSummary.symbols.map((symbol) => (
+                        <span key={symbol} className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 font-mono text-xs font-medium text-primary">
+                          {symbol}
+                        </span>
+                      )) : (
+                        <span className="text-sm text-muted-foreground">No symbols found in the mounted snapshot.</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-lg border bg-background p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Model families</p>
+                      <div className="mt-3 space-y-2 text-sm">
+                        {Object.entries(deepQuantSummary.model_family_counts).length > 0 ? Object.entries(deepQuantSummary.model_family_counts).map(([family, count]) => (
+                          <div key={family} className="flex items-center justify-between gap-3">
+                            <span className="font-mono text-muted-foreground">{family}</span>
+                            <span className="font-semibold">{count}</span>
+                          </div>
+                        )) : <p className="text-muted-foreground">No model families reported.</p>}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border bg-background p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Actionability</p>
+                      <div className="mt-3 space-y-2 text-sm">
+                        {Object.entries(deepQuantSummary.actionability_counts).length > 0 ? Object.entries(deepQuantSummary.actionability_counts).map(([status, count]) => (
+                          <div key={status} className="flex items-center justify-between gap-3">
+                            <span className="font-mono text-warning">{status}</span>
+                            <span className="font-semibold">{count}</span>
+                          </div>
+                        )) : <p className="text-muted-foreground">No actionability counts reported.</p>}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            <aside className="space-y-4 rounded-lg border bg-background p-4">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Control boundary</p>
+                <h3 className="mt-1 font-semibold">Inventory only</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  This panel reads a generated JSON snapshot from Investment OS. It does not parse DeepQuant live,
+                  mutate config, promote models, start bots, or place orders.
+                </p>
+              </div>
+
+              {deepQuantSummary?.generated_at ? (
+                <div className="rounded-md border bg-card p-3 text-sm">
+                  <span className="text-muted-foreground">Generated: </span>
+                  <span className="font-medium">{formatDateTime(deepQuantSummary.generated_at)}</span>
+                </div>
+              ) : null}
+
+              {deepQuantSummary?.adapter_version || deepQuantSummary?.schema_version ? (
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-md border bg-card p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Adapter</p>
+                    <p className="mt-1 font-mono">{deepQuantSummary.adapter_version ?? "unknown"}</p>
+                  </div>
+                  <div className="rounded-md border bg-card p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Schema</p>
+                    <p className="mt-1 font-mono">{deepQuantSummary.schema_version ?? "unknown"}</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {deepQuantSummary?.warnings.length ? (
+                <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+                  <p className="font-medium">Warnings</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-4">
+                    {deepQuantSummary.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                  </ul>
+                </div>
+              ) : null}
+
+              {deepQuantSummary?.evidence_gaps.length ? (
+                <div className="rounded-md border bg-card p-3 text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">Open gaps</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-4">
+                    {deepQuantSummary.evidence_gaps.map((gap) => <li key={gap}>{gap}</li>)}
+                  </ul>
+                </div>
+              ) : null}
+            </aside>
           </div>
         </section>
 
