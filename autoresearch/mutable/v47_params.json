@@ -1,12 +1,12 @@
 {
   "candidate_id": "candidate_mutable_v47",
   "strategy_family": "ztrade_v47_weak_guard_62_70",
-  "score": 257.3316,
+  "score": 260.33,
   "params": {
     "allow_leverage": false,
     "alpha_qlib_cntd10_score_weight": 0.0,
     "alpha_qlib_cntd20_score_weight": 0.0,
-    "alpha_qlib_cntd5_score_weight": 0.25,
+    "alpha_qlib_cntd5_score_weight": 0.3,
     "alpha_qlib_cord10_score_weight": 0.0,
     "alpha_qlib_kup_score_weight": 0.0,
     "alpha_qlib_max_positions": 5,
@@ -18,10 +18,10 @@
     "alpha_qlib_rsv10_filter_enable": true,
     "alpha_qlib_rsv10_max": 0.80078125,
     "alpha_qlib_rsv10_min": 0.45,
-    "alpha_qlib_rsv10_score_weight": 0.0,
+    "alpha_qlib_rsv10_score_weight": 0.1,
     "alpha_qlib_std10_score_weight": 0.0,
     "alpha_qlib_vma10_score_weight": 0.05,
-    "bear_position_weight": 1.0,
+    "bear_position_weight": 0.5,
     "bull_continuation_below_ma_ratio_max": 0.25,
     "bull_continuation_down_ratio_max": 0.55,
     "bull_continuation_entry_gain_max_pct": 2.0,
@@ -34,7 +34,7 @@
     "bull_continuation_rsv10_max": 0.93,
     "bull_continuation_rsv10_min": 0.8,
     "bull_continuation_volume_ratio_min": 1.0,
-    "bull_position_weight": 4.0,
+    "bull_position_weight": 4.5,
     "early_failure_exit_enable": true,
     "early_failure_gap_guard_capitulation_below_ma_ratio_max": 0.4,
     "early_failure_gap_guard_capitulation_down_ratio_max": 0.0,
@@ -53,10 +53,10 @@
     "entry_day_gain_max_pct": 1.9234375,
     "regime_entry_day_gain_max_pct_bear": 5.0,
     "regime_position_sizing_enable": true,
-    "s1_max_age": 3,
+    "s1_max_age": 4,
     "s1_stale_age_min": null,
     "s1_stale_volume_ratio_min": null,
     "s1_volume_ratio_min": 1.0,
-    "s1_window": 5
+    "s1_window": 12
   }
 }
