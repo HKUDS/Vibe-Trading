@@ -106,7 +106,7 @@ class ZtradeCsvLoader:
 def run_synthetic_research(
     run_dir: str | Path,
     *,
-    max_iterations: int = 4,
+    candidate_iterations: int = 4,
     use_mutable_candidate: bool = False,
     workspace_dir: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -121,7 +121,7 @@ def run_synthetic_research(
     karpathy_workspace = initialize_karpathy_workspace(workspace_dir, mode="synthetic_smoke")
     candidates = _candidate_definitions(
         Path(karpathy_workspace["root"]),
-        max_iterations=max_iterations,
+        candidate_iterations=candidate_iterations,
         use_mutable_candidate=use_mutable_candidate,
     )
     rows: list[MetricRow] = []
@@ -139,7 +139,12 @@ def run_synthetic_research(
             row = _run_one_window(root, candidate_id, str(candidate["role"]), params, window)
             rows.append(row)
         if candidate_id != BASELINE_ID:
-            verdict = evaluate_candidate(rows, baseline_id=BASELINE_ID, candidate_id=candidate_id)
+            verdict = evaluate_candidate(
+                rows,
+                baseline_id=BASELINE_ID,
+                candidate_id=candidate_id,
+                expected_window_count=len(ROLLING_WINDOWS),
+            )
             experiment_records.append(
                 {
                     "candidate_id": candidate_id,
@@ -165,6 +170,7 @@ def run_synthetic_research(
         "iterations": experiment_records,
         "best_candidate": best,
         "karpathy_workspace": karpathy_workspace,
+        "run_status": _run_status("synthetic_smoke", candidate_defs=candidates, windows=ROLLING_WINDOWS),
     }
     (root / "metrics_rows.json").write_text(
         json.dumps(summary["rows"], ensure_ascii=False, indent=2) + "\n",
@@ -178,6 +184,10 @@ def run_synthetic_research(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    (root / "run_status.json").write_text(
+        json.dumps(summary["run_status"], ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     workspace_root = Path(karpathy_workspace["root"])
     write_results_tsv(workspace_root, experiment_records)
     write_latest_state(workspace_root, summary)
@@ -188,7 +198,7 @@ def run_ztrade_csv_research(
     run_dir: str | Path,
     *,
     data_dir: str | Path,
-    max_iterations: int = 4,
+    candidate_iterations: int = 4,
     max_symbols: int = 50,
     windows: list[dict[str, Any]] | None = None,
     use_mutable_candidate: bool = False,
@@ -206,7 +216,7 @@ def run_ztrade_csv_research(
     loader = ZtradeCsvLoader(data_dir)
     candidate_defs = _candidate_definitions(
         Path(karpathy_workspace["root"]),
-        max_iterations=max_iterations,
+        candidate_iterations=candidate_iterations,
         use_mutable_candidate=use_mutable_candidate,
     )
     active_windows = windows or ZTRADE_CSV_WINDOWS
@@ -229,6 +239,7 @@ def run_ztrade_csv_research(
             start_date=str(window["start"]),
             end_date=str(window["end"]),
             max_symbols=max_symbols,
+            min_rows=1,
         )
         if not universe:
             raise ValueError(f"no ztrade CSV universe for window {window['id']}")
@@ -249,7 +260,12 @@ def run_ztrade_csv_research(
             )
             rows.append(row)
         if candidate_id != BASELINE_ID:
-            verdict = evaluate_candidate(rows, baseline_id=BASELINE_ID, candidate_id=candidate_id)
+            verdict = evaluate_candidate(
+                rows,
+                baseline_id=BASELINE_ID,
+                candidate_id=candidate_id,
+                expected_window_count=len(active_windows),
+            )
             experiment_records.append(
                 {
                     "candidate_id": candidate_id,
@@ -278,6 +294,7 @@ def run_ztrade_csv_research(
         "iterations": experiment_records,
         "best_candidate": best,
         "karpathy_workspace": karpathy_workspace,
+        "run_status": _run_status("ztrade_csv", candidate_defs=candidate_defs, windows=active_windows),
     }
     (root / "metrics_rows.json").write_text(
         json.dumps(summary["rows"], ensure_ascii=False, indent=2) + "\n",
@@ -291,6 +308,10 @@ def run_ztrade_csv_research(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    (root / "run_status.json").write_text(
+        json.dumps(summary["run_status"], ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     workspace_root = Path(karpathy_workspace["root"])
     write_results_tsv(workspace_root, experiment_records)
     write_latest_state(workspace_root, summary)
@@ -300,11 +321,11 @@ def run_ztrade_csv_research(
 def _candidate_definitions(
     root: Path,
     *,
-    max_iterations: int,
+    candidate_iterations: int,
     use_mutable_candidate: bool,
 ) -> list[dict[str, Any]]:
     if not use_mutable_candidate:
-        return SEARCH_SPACE[: max(1, max_iterations + 1)]
+        return SEARCH_SPACE[: max(1, candidate_iterations + 1)]
     baseline = SEARCH_SPACE[0]
     return [baseline, mutable_candidate_definition(root)]
 
@@ -379,6 +400,8 @@ def _run_one_window(
         "slippage": 0.001,
         "validation": {"walk_forward": {"n_windows": 3}},
     }
+    if params.get("allow_leverage"):
+        config["leverage"] = max(1.0, float(params.get("bull_position_weight", 1.0)) / 4.0)
     (run_path / "config.json").write_text(
         json.dumps(config, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -398,7 +421,10 @@ def _run_one_window(
         candidate_id=candidate_id,
         window_id=window_id,
         role=role,
+        start=str(window["start"]),
+        end=str(data_map[codes[0]].index[-1].date()),
         return_pct=round(float(metrics["total_return"]) * 100.0, 6),
+        annual_return_pct=round(float(metrics.get("annual_return", 0.0)) * 100.0, 6),
         max_drawdown_pct=round(abs(float(metrics["max_drawdown"])) * 100.0, 6),
         trade_count=int(metrics["trade_count"]),
         win_rate=round(float(metrics["win_rate"]), 6),
@@ -439,6 +465,8 @@ def _run_one_csv_window(
         "slippage": 0.001,
         "_run_card_effective_sources": ["ztrade_csv"],
     }
+    if params.get("allow_leverage"):
+        config["leverage"] = max(1.0, float(params.get("bull_position_weight", 1.0)) / 4.0)
     (run_path / "config.json").write_text(
         json.dumps(config, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -458,7 +486,10 @@ def _run_one_csv_window(
         candidate_id=candidate_id,
         window_id=window_id,
         role=role,
+        start=str(window["start"]),
+        end=str(window["end"]),
         return_pct=round(float(metrics["total_return"]) * 100.0, 6),
+        annual_return_pct=round(float(metrics.get("annual_return", 0.0)) * 100.0, 6),
         max_drawdown_pct=round(abs(float(metrics["max_drawdown"])) * 100.0, 6),
         trade_count=int(metrics["trade_count"]),
         win_rate=round(float(metrics["win_rate"]), 6),
@@ -527,6 +558,35 @@ def _best_candidate(records: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not keepers:
         return None
     return max(keepers, key=lambda item: float(item.get("score", 0.0)))
+
+
+def _run_status(
+    mode: str,
+    *,
+    candidate_defs: list[dict[str, Any]],
+    windows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    jobs = [
+        {
+            "id": f"{candidate['id']}/{window['id']}",
+            "candidate_id": str(candidate["id"]),
+            "window_id": str(window["id"]),
+            "start": str(window["start"]),
+            "end": str(window.get("end", "")),
+            "status": "completed",
+            "error": None,
+        }
+        for candidate in candidate_defs
+        for window in windows
+    ]
+    return {
+        "mode": mode,
+        "total_jobs": len(jobs),
+        "completed": len(jobs),
+        "failed": 0,
+        "pct_complete": 100.0,
+        "jobs": jobs,
+    }
 
 
 def _bare_code(code: str) -> str:

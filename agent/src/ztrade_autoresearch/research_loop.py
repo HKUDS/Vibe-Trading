@@ -29,6 +29,7 @@ ALPHA_CONTEXT_REL = "context/alpha_zoo_context.json"
 SWARM_REQUEST_REL = "proposals/swarm_proposal_request.json"
 LATEST_STATE_REL = "latest_state.json"
 LATEST_STATE_TEMPLATE_REL = "latest_state.template.json"
+LOOP_CONFIG_REL = "loop_config.json"
 MUTABLE_CANDIDATE_ID = "candidate_mutable_v47"
 
 RESULTS_COLUMNS = [
@@ -41,6 +42,11 @@ RESULTS_COLUMNS = [
     "max_drawdown_delta",
     "trade_retention",
     "candidate_trades",
+    "candidate_weighted_win_rate",
+    "candidate_mean_annual_return_pct",
+    "fixed_loss_window_ratio",
+    "bear_return_delta",
+    "bear_loss_window_ratio",
     "failed_gates",
     "rationale",
 ]
@@ -52,7 +58,7 @@ SWARM_ROLES = [
     },
     {
         "role": "v47_researcher",
-        "purpose": "Map each idea onto the current v47 parameter surface before requesting any expansion.",
+        "purpose": "Map each idea onto the current v47 parameter, indicator-composition, or regime-sizing surface before requesting any expansion.",
     },
     {
         "role": "regime_analyst",
@@ -86,185 +92,44 @@ PARAM_BOUNDS: dict[str, tuple[float | None, float | None]] = {
     "early_failure_gap_guard_capitulation_down_ratio_max": (0.0, 1.0),
     "early_failure_weak_breadth_below_ma_ratio_max": (0.0, 1.0),
     "early_failure_weak_breadth_down_ratio_max": (0.0, 1.0),
+    "alpha_qlib_roc10_min": (-1.0, 10.0),
+    "alpha_qlib_roc10_max": (-1.0, 10.0),
+    "alpha_qlib_rsv10_min": (0.0, 1.0),
+    "alpha_qlib_rsv10_max": (0.0, 1.0),
+    "entry_day_gain_max_pct": (-10.0, 15.0),
+    "regime_entry_day_gain_max_pct_bear": (-10.0, 15.0),
+    "alpha_qlib_roc10_score_weight": (0.0, 1.0),
+    "alpha_qlib_mom20_score_weight": (0.0, 1.0),
+    "alpha_qlib_cntd5_score_weight": (0.0, 1.0),
+    "alpha_qlib_cntd10_score_weight": (0.0, 1.0),
+    "alpha_qlib_cntd20_score_weight": (0.0, 1.0),
+    "alpha_qlib_vma10_score_weight": (0.0, 1.0),
+    "alpha_qlib_rsv10_score_weight": (0.0, 1.0),
+    "alpha_qlib_std10_score_weight": (0.0, 1.0),
+    "alpha_qlib_kup_score_weight": (0.0, 1.0),
+    "alpha_qlib_cord10_score_weight": (0.0, 1.0),
+    "alpha_qlib_max_positions": (4, 16),
+    "bull_continuation_roc10_min": (-1.0, 10.0),
+    "bull_continuation_roc10_max": (-1.0, 10.0),
+    "bull_continuation_mom20_min": (-1.0, 10.0),
+    "bull_continuation_rsv10_min": (0.0, 1.0),
+    "bull_continuation_rsv10_max": (0.0, 1.0),
+    "bull_continuation_entry_gain_max_pct": (-10.0, 15.0),
+    "bull_continuation_volume_ratio_min": (0.0, 10.0),
+    "bull_continuation_market_min_coverage": (0, 5000),
+    "bull_continuation_below_ma_ratio_max": (0.0, 1.0),
+    "bull_continuation_down_ratio_max": (0.0, 1.0),
+    "bull_continuation_max_hold_days": (0, 60),
+    "bull_position_weight": (0.0, 30.0),
+    "bear_position_weight": (0.0, 30.0),
 }
 
-PROGRAM_MD = """# ztrade Karpathy-Style Autoresearch Program
+PROGRAM_MD_FALLBACK = """# ztrade Karpathy-Style Autoresearch Program
 
-You are driving a long-running quant research loop in the style of
-Karpathy/autoresearch.
-
-## Objective
-
-Improve the ztrade v47 strategy family under a fixed, code-owned judge.
-The first research surface is v47 parameter tuning only.
-
-## Loop
-
-1. Read every file in the Required Context section before changing anything.
-2. If this is a fresh workspace, run the baseline/default v47 evaluation first
-   before proposing any parameter change.
-3. Think with the local Alpha Zoo context and the swarm proposal request.
-4. Mutate exactly one allowed candidate surface:
-   `autoresearch/mutable/v47_params.json`.
-5. Run the fixed ztrade autoresearch evaluator through the Required Evaluator
-   Invocation section. Do not invent another backtest or scoring path.
-6. Let the evaluator append `results.tsv` and refresh `latest_state.json`.
-7. Keep the candidate only when the evaluator returns KEEP and all required
-   gates pass. Otherwise discard or revise in the next iteration.
-8. NEVER STOP after a single iteration. Continue proposing, evaluating, and
-   keeping/discarding until a human explicitly stops the session, a hard blocker
-   repeats, or a configured loop limit is reached.
-
-## Required Context
-
-Before each iteration, read these project-level files:
-
-- `autoresearch/program.md`
-- `autoresearch/evaluator_contract.md`
-- `autoresearch/results.tsv` if present; otherwise create it from
-  `autoresearch/results.template.tsv`
-- `autoresearch/latest_state.json` if present; otherwise create it from
-  `autoresearch/latest_state.template.json`
-- `autoresearch/best/v47_params.json`
-- `autoresearch/mutable/v47_params.json`
-- `autoresearch/context/alpha_zoo_context.json`
-- `autoresearch/proposals/swarm_proposal_request.json`
-
-Every iteration must also inspect these code-owned judge files before proposing
-or evaluating a candidate:
-
-- `agent/src/ztrade_autoresearch/protocol.py`
-- `agent/src/ztrade_autoresearch/evaluator.py`
-- `agent/src/ztrade_autoresearch/runner.py`
-- `agent/src/tools/ztrade_autoresearch_tool.py`
-
-## Required Evaluator Invocation
-
-Use the existing ztrade autoresearch evaluator only. The normal CSV command is:
-
-```bash
-RUN_ID="$(date +%Y%m%d_%H%M%S)"
-RUN_DIR="agent/runs/ztrade_autoresearch_${RUN_ID}"
-export RUN_DIR
-mkdir -p "$RUN_DIR/logs"
-PYTHONPATH=agent uv run python - <<'PY' > "$RUN_DIR/logs/autoresearch_stdout.log" 2> "$RUN_DIR/logs/autoresearch_stderr.log"
-import os
-from pathlib import Path
-from src.ztrade_autoresearch.runner import run_ztrade_csv_research
-
-run_ztrade_csv_research(
-    Path(os.environ["RUN_DIR"]),
-    data_dir="/Users/wdblink/Code/my_repo/ztrade/data",
-    max_iterations=1,
-    max_symbols=200,
-    use_mutable_candidate=True,
-)
-PY
-```
-
-For baseline-first sanity on a fresh workspace, do not mutate params. Run the
-same evaluator with static search disabled after baseline:
-
-```bash
-RUN_ID="$(date +%Y%m%d_%H%M%S)"
-RUN_DIR="agent/runs/ztrade_autoresearch_baseline_${RUN_ID}"
-export RUN_DIR
-mkdir -p "$RUN_DIR/logs"
-PYTHONPATH=agent uv run python - <<'PY' > "$RUN_DIR/logs/autoresearch_stdout.log" 2> "$RUN_DIR/logs/autoresearch_stderr.log"
-import os
-from pathlib import Path
-from src.ztrade_autoresearch.runner import run_ztrade_csv_research
-
-run_ztrade_csv_research(
-    Path(os.environ["RUN_DIR"]),
-    data_dir="/Users/wdblink/Code/my_repo/ztrade/data",
-    max_iterations=0,
-    max_symbols=200,
-    use_mutable_candidate=False,
-)
-PY
-```
-
-The tool-equivalent invocation is `ztrade_autoresearch` with:
-
-```json
-{
-  "mode": "ztrade_csv",
-  "data_dir": "/Users/wdblink/Code/my_repo/ztrade/data",
-  "max_iterations": 1,
-  "max_symbols": 200,
-  "use_mutable_candidate": true
-}
-```
-
-## Baseline First
-
-Before the first parameter mutation in a new research run, evaluate the default
-v47 baseline using the baseline-first command above. This run should produce
-baseline rows and no candidate verdict. Do not treat an empty `results.tsv` as
-evidence that parameter search should start immediately.
-
-## Git Advance/Revert Discipline
-
-Each candidate iteration must be recoverable:
-
-1. Start from a clean or understood worktree.
-2. Record the current commit hash and mutable params before editing.
-3. Edit only `autoresearch/mutable/v47_params.json`.
-4. Run the required evaluator.
-5. If verdict is KEEP, update `autoresearch/best/v47_params.json` and commit
-   the kept candidate with a message that includes the evaluator score.
-6. If verdict is DISCARD/BLOCKED, revert `autoresearch/mutable/v47_params.json`
-   to the previous best candidate. Do not commit discarded params.
-
-Do not use destructive repository-wide commands. Revert only the mutable
-candidate file unless a human explicitly requests broader reset behavior.
-
-## Logging
-
-Every evaluator invocation must write stdout and stderr under that run's
-`logs/` directory. Do not stream full backtest output into the chat context.
-Summarize the verdict, score, failed gates, and run directory instead.
-
-## Timeouts and Crashes
-
-If an evaluator run exceeds 90 minutes, stop that run, mark the candidate
-BLOCKED in notes, inspect stderr, and continue with a simpler candidate. If the
-run crashes, first check whether the crash is caused by the candidate params. A
-small candidate-surface fix is allowed; evaluator/protocol/backtest fixes are
-not allowed during the research loop.
-
-## Simplicity Criterion
-
-Prefer simpler changes when scores are similar. A small return or win-rate
-improvement is not enough if it requires a wider mutable surface, opaque factor
-addition, or fragile one-window behavior.
-
-## Immutable Judge
-
-Do not modify data loaders, data windows, benchmark rows, evaluator gates,
-backtest execution, cost/slippage/T+1 assumptions, run-card hashing, or frozen
-test rules during a research run.
-
-## Proposal Layer
-
-Swarm agents and Alpha Zoo are inside the Think step:
-
-- Swarm may analyze history, explain failure modes, challenge overfitting, and
-  propose one next experiment.
-- Alpha Zoo is the explainable idea library for factors and factor families.
-- Neither swarm nor Alpha Zoo may decide KEEP/DISCARD.
-- Neither may directly expand the official search space.
-
-Search-space expansion is allowed only as a written proposal after repeated
-plateau evidence under v47 parameter tuning. The proposal must be evaluated by
-a separate human or code-review step before becoming mutable surface.
-
-## Current Allowed Surface
-
-Only `autoresearch/mutable/v47_params.json` may be edited by the loop.
-All keys must be existing v47 parameter keys and must stay within the
-machine-checked bounds in the project code.
+This fallback exists only for isolated tests or packaged executions where the
+repo-level autoresearch/program.md file is unavailable. In a normal checkout,
+initialize_karpathy_workspace copies autoresearch/program.md as the single
+agent-facing loop contract.
 """
 
 EVALUATOR_CONTRACT_MD = """# ztrade Autoresearch Evaluator Contract
@@ -290,17 +155,24 @@ windows. It computes return delta, drawdown delta, loss-window count, trade
 retention, positive-return concentration, and minimum trade count. A candidate
 is KEEP only if every gate passes.
 
+CSV evaluation windows are the frozen bull/bear windows generated in
+`agent/src/ztrade_autoresearch/protocol.py` from the user-defined bull intervals
+between `2023-12-28` and `2026-05-27`; all non-bull dates in that span are bear
+windows. Do not edit these windows during autoresearch.
+
 Alternate scoring paths are forbidden. Do not compute your own KEEP/DISCARD
 outside `agent/src/ztrade_autoresearch/evaluator.py`.
 
 ## Required Mutable Input
 
-The only editable candidate input for V1 is:
+The only editable candidate input for the active run is:
 
 `autoresearch/mutable/v47_params.json`
 
-It must contain existing v47 parameter keys only. Bounds are enforced by
-`agent/src/ztrade_autoresearch/research_loop.py`.
+It must contain strategy parameter keys declared by
+`agent/src/ztrade_autoresearch/protocol.py`, including current v47 parameters,
+candidate-only Alpha Zoo indicator controls, and regime-aware position sizing
+controls. Bounds are enforced by `agent/src/ztrade_autoresearch/research_loop.py`.
 
 ## Required Proposal Input
 
@@ -318,6 +190,24 @@ updates project-level runtime state:
 
 - `autoresearch/results.tsv` is append-only experiment history.
 - `autoresearch/latest_state.json` is refreshed to the latest evaluator state.
+- `autoresearch/reports/iteration_<N>_<candidate_id>.md` records each
+  iteration's swarm analysis, strategy diff, per-window historical returns,
+  aggregate return, verdict diagnostics, and next-iteration plan.
+
+Loop completion may be claimed only when a human asks to stop/pause/summarize,
+or when the current candidate's evaluator diagnostics show both
+`candidate_trade_weighted_win_rate > 0.50` and
+`candidate_mean_annual_return_pct > 30.0`.
+
+Leverage is forbidden for future mutable candidates. `allow_leverage` must stay
+`false`; any leveraged result is archive-only evidence and cannot satisfy the
+active stop contract.
+
+Runbook-derived promotion/veto diagnostics are also part of the fixed judge:
+paired-window coverage, fixed-window loss ratio, bear-window return delta,
+bear-window loss ratio, bear-window drawdown delta, trade retention, and
+improvement concentration. Incomplete `run_status.json` or stale reused
+artifacts cannot support KEEP, stop-target, or promotion claims.
 
 These files are runtime outputs and should not be committed. The tracked
 templates are:
@@ -347,12 +237,13 @@ def initialize_karpathy_workspace(
     for rel in ("mutable", "best", "context", "proposals", "archive"):
         (research_dir / rel).mkdir(parents=True, exist_ok=True)
 
-    _write_text(root_path / PROGRAM_REL, PROGRAM_MD)
+    _write_text(root_path / PROGRAM_REL, _program_md())
     _write_text(root_path / EVALUATOR_CONTRACT_REL, EVALUATOR_CONTRACT_MD)
     _write_json_if_missing(root_path / MUTABLE_PARAMS_REL, _params_payload(DEFAULT_V47_PARAMS))
     _write_json_if_missing(root_path / BEST_PARAMS_REL, _params_payload(DEFAULT_V47_PARAMS))
     _write_text(root_path / RESULTS_TEMPLATE_REL, "\t".join(RESULTS_COLUMNS) + "\n")
     _write_text_if_missing(root_path / RESULTS_TSV_REL, "\t".join(RESULTS_COLUMNS) + "\n")
+    _write_json(root_path / LOOP_CONFIG_REL, _default_loop_config())
     _write_json(
         root_path / ALPHA_CONTEXT_REL,
         build_alpha_zoo_context(limit_per_bucket=4),
@@ -376,6 +267,7 @@ def initialize_karpathy_workspace(
         "swarm_proposal_request": str(root_path / SWARM_REQUEST_REL),
         "latest_state": str(root_path / LATEST_STATE_REL),
         "latest_state_template": str(root_path / LATEST_STATE_TEMPLATE_REL),
+        "loop_config": str(root_path / LOOP_CONFIG_REL),
         "mutable_candidate_id": MUTABLE_CANDIDATE_ID,
     }
 
@@ -422,6 +314,11 @@ def write_results_tsv(root: str | Path, records: list[dict[str, Any]]) -> str:
                     _tsv(diagnostics.get("average_max_drawdown_delta", "")),
                     _tsv(diagnostics.get("trade_retention", "")),
                     _tsv(diagnostics.get("candidate_trades", "")),
+                    _tsv(diagnostics.get("candidate_trade_weighted_win_rate", "")),
+                    _tsv(diagnostics.get("candidate_mean_annual_return_pct", "")),
+                    _tsv(diagnostics.get("loss_window_ratio", "")),
+                    _tsv(diagnostics.get("bear_return_delta", "")),
+                    _tsv(diagnostics.get("bear_loss_window_ratio", "")),
                     _tsv(failed),
                     _tsv(record.get("rationale", "")),
                 ]
@@ -529,6 +426,8 @@ def validate_v47_params(params: dict[str, Any]) -> dict[str, Any]:
 
     validated = dict(DEFAULT_V47_PARAMS)
     for key, value in params.items():
+        if key == "allow_leverage" and value is True:
+            raise ValueError("allow_leverage is disabled by the current autoresearch protocol")
         default = DEFAULT_V47_PARAMS[key]
         if isinstance(default, bool):
             if not isinstance(value, bool):
@@ -573,6 +472,35 @@ def _initial_latest_state(mode: str) -> dict[str, Any]:
         "candidate_count": 0,
         "strategy_family": STRATEGY_FAMILY,
         "next_allowed_mutation": f"{AUTORESEARCH_DIRNAME}/{MUTABLE_PARAMS_REL}",
+    }
+
+
+def _program_md() -> str:
+    program_path = default_karpathy_workspace_root() / PROGRAM_REL
+    if program_path.exists():
+        return program_path.read_text(encoding="utf-8")
+    return PROGRAM_MD_FALLBACK
+
+
+def _default_loop_config() -> dict[str, Any]:
+    return {
+        "context_memory": {
+            "continuation_state_path": "autoresearch/context/continuation_state.md",
+            "recent_report_count": 5,
+            "require_pack_before_context_boundary": True,
+        },
+        "progress_report_every_iterations": 5,
+        "stop_conditions": {
+            "allow_human_stop_pause_or_summary": True,
+            "candidate_mean_annual_return_pct_min": 30.0,
+            "candidate_trade_weighted_win_rate_min": 0.5,
+            "require_both_performance_thresholds": True,
+        },
+        "notes": [
+            "Per-invocation evaluator count is defined by autoresearch/program.md",
+            "Only human stop/pause/summary or both performance thresholds may stop the loop",
+            "Tool, time, or context pressure must trigger context packaging and memory recovery, then continue",
+        ],
     }
 
 

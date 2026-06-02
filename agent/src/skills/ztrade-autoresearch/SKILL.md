@@ -31,7 +31,7 @@ Use the `ztrade_autoresearch` tool for the deterministic synthetic smoke:
 ```json
 {
   "run_dir": "agent/runs/ztrade_autoresearch_smoke",
-  "max_iterations": 4
+  "candidate_iterations": 4
 }
 ```
 
@@ -60,7 +60,7 @@ Use local ztrade CSV history with:
   "run_dir": "agent/runs/ztrade_autoresearch_csv",
   "mode": "ztrade_csv",
   "data_dir": "/Users/wdblink/Code/my_repo/ztrade/data",
-  "max_iterations": 4,
+  "candidate_iterations": 4,
   "max_symbols": 200
 }
 ```

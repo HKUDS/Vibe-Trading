@@ -31,6 +31,8 @@ class _Position:
     entry_score: float
     buy_trade_i: int = 0
     red_count: int = 0
+    entry_market_weak: bool = False
+    entry_source: str = "s1"
 
 
 @dataclass
@@ -67,6 +69,41 @@ class ZTradeV47SignalEngine:
         early_failure_weak_breadth_guard_enable: bool = True,
         early_failure_weak_breadth_below_ma_ratio_max: float = 0.62,
         early_failure_weak_breadth_down_ratio_max: float = 0.70,
+        alpha_qlib_roc10_filter_enable: bool = False,
+        alpha_qlib_roc10_min: float = -1.0,
+        alpha_qlib_roc10_max: float = 10.0,
+        alpha_qlib_rsv10_filter_enable: bool = False,
+        alpha_qlib_rsv10_min: float = 0.0,
+        alpha_qlib_rsv10_max: float = 1.0,
+        entry_day_gain_max_pct: float | None = None,
+        regime_entry_day_gain_max_pct_bear: float | None = None,
+        alpha_qlib_roc10_score_weight: float = 0.0,
+        alpha_qlib_mom20_score_weight: float = 0.0,
+        alpha_qlib_cntd5_score_weight: float = 0.0,
+        alpha_qlib_cntd10_score_weight: float = 0.0,
+        alpha_qlib_cntd20_score_weight: float = 0.0,
+        alpha_qlib_vma10_score_weight: float = 0.0,
+        alpha_qlib_rsv10_score_weight: float = 0.0,
+        alpha_qlib_std10_score_weight: float = 0.0,
+        alpha_qlib_kup_score_weight: float = 0.0,
+        alpha_qlib_cord10_score_weight: float = 0.0,
+        alpha_qlib_max_positions: int | None = None,
+        bull_continuation_fallback_enable: bool = False,
+        bull_continuation_roc10_min: float = 0.02,
+        bull_continuation_roc10_max: float = 0.20,
+        bull_continuation_mom20_min: float = 0.03,
+        bull_continuation_rsv10_min: float = 0.55,
+        bull_continuation_rsv10_max: float = 0.95,
+        bull_continuation_entry_gain_max_pct: float = 5.0,
+        bull_continuation_volume_ratio_min: float = 0.8,
+        bull_continuation_market_min_coverage: int = 0,
+        bull_continuation_below_ma_ratio_max: float = 1.0,
+        bull_continuation_down_ratio_max: float = 1.0,
+        bull_continuation_max_hold_days: int = 0,
+        regime_position_sizing_enable: bool = False,
+        bull_position_weight: float = 1.0,
+        bear_position_weight: float = 1.0,
+        allow_leverage: bool = False,
         # selector/backtest defaults used by ztrade V3
         max_positions: int = 4,
         max_hold_days: int = 20,
@@ -116,8 +153,45 @@ class ZTradeV47SignalEngine:
         self.early_failure_weak_breadth_guard_enable = bool(early_failure_weak_breadth_guard_enable)
         self.early_failure_weak_breadth_below_ma_ratio_max = float(early_failure_weak_breadth_below_ma_ratio_max)
         self.early_failure_weak_breadth_down_ratio_max = float(early_failure_weak_breadth_down_ratio_max)
+        self.alpha_qlib_roc10_filter_enable = bool(alpha_qlib_roc10_filter_enable)
+        self.alpha_qlib_roc10_min = float(alpha_qlib_roc10_min)
+        self.alpha_qlib_roc10_max = float(alpha_qlib_roc10_max)
+        self.alpha_qlib_rsv10_filter_enable = bool(alpha_qlib_rsv10_filter_enable)
+        self.alpha_qlib_rsv10_min = float(alpha_qlib_rsv10_min)
+        self.alpha_qlib_rsv10_max = float(alpha_qlib_rsv10_max)
+        self.entry_day_gain_max_pct = None if entry_day_gain_max_pct is None else float(entry_day_gain_max_pct)
+        self.regime_entry_day_gain_max_pct_bear = (
+            None if regime_entry_day_gain_max_pct_bear is None else float(regime_entry_day_gain_max_pct_bear)
+        )
+        self.alpha_qlib_roc10_score_weight = float(alpha_qlib_roc10_score_weight)
+        self.alpha_qlib_mom20_score_weight = float(alpha_qlib_mom20_score_weight)
+        self.alpha_qlib_cntd5_score_weight = float(alpha_qlib_cntd5_score_weight)
+        self.alpha_qlib_cntd10_score_weight = float(alpha_qlib_cntd10_score_weight)
+        self.alpha_qlib_cntd20_score_weight = float(alpha_qlib_cntd20_score_weight)
+        self.alpha_qlib_vma10_score_weight = float(alpha_qlib_vma10_score_weight)
+        self.alpha_qlib_rsv10_score_weight = float(alpha_qlib_rsv10_score_weight)
+        self.alpha_qlib_std10_score_weight = float(alpha_qlib_std10_score_weight)
+        self.alpha_qlib_kup_score_weight = float(alpha_qlib_kup_score_weight)
+        self.alpha_qlib_cord10_score_weight = float(alpha_qlib_cord10_score_weight)
+        self.alpha_qlib_max_positions = None if alpha_qlib_max_positions is None else int(alpha_qlib_max_positions)
+        self.bull_continuation_fallback_enable = bool(bull_continuation_fallback_enable)
+        self.bull_continuation_roc10_min = float(bull_continuation_roc10_min)
+        self.bull_continuation_roc10_max = float(bull_continuation_roc10_max)
+        self.bull_continuation_mom20_min = float(bull_continuation_mom20_min)
+        self.bull_continuation_rsv10_min = float(bull_continuation_rsv10_min)
+        self.bull_continuation_rsv10_max = float(bull_continuation_rsv10_max)
+        self.bull_continuation_entry_gain_max_pct = float(bull_continuation_entry_gain_max_pct)
+        self.bull_continuation_volume_ratio_min = float(bull_continuation_volume_ratio_min)
+        self.bull_continuation_market_min_coverage = int(bull_continuation_market_min_coverage)
+        self.bull_continuation_below_ma_ratio_max = float(bull_continuation_below_ma_ratio_max)
+        self.bull_continuation_down_ratio_max = float(bull_continuation_down_ratio_max)
+        self.bull_continuation_max_hold_days = int(bull_continuation_max_hold_days)
+        self.regime_position_sizing_enable = bool(regime_position_sizing_enable)
+        self.bull_position_weight = float(bull_position_weight)
+        self.bear_position_weight = float(bear_position_weight)
+        self.allow_leverage = bool(allow_leverage)
 
-        self.max_positions = int(max_positions)
+        self.max_positions = self.alpha_qlib_max_positions or int(max_positions)
         self.max_hold_days = int(max_hold_days)
         self.brick_min_value = float(brick_min_value)
         self.max_window = int(max_window)
@@ -157,14 +231,17 @@ class ZTradeV47SignalEngine:
 
             self._execute_pending(ts, i, frames, positions, pending)
             self._detect_exits(ts, i, frames, market_state, positions, pending)
-            self._select_buys(ts, i, dates, frames, positions, pending)
+            self._select_buys(ts, i, dates, frames, positions, pending, market_state=market_state)
 
-            weight_sum = sum(max(0.1, self._position_weight(pos)) for pos in positions.values())
+            raw_weights = {code: max(0.0, self._position_weight(pos)) for code, pos in positions.items()}
+            weight_sum = sum(raw_weights.values())
+            denominator = float(self.max_positions) if self.regime_position_sizing_enable else weight_sum
             for code, pos in positions.items():
                 if ts in signals[code].index:
-                    signals[code].at[ts] = max(0.1, self._position_weight(pos)) / (weight_sum or 1.0)
+                    signals[code].at[ts] = raw_weights[code] / (denominator or 1.0)
 
-        return {code: series.fillna(0.0).clip(0.0, 1.0) for code, series in signals.items()}
+        upper = None if self.allow_leverage else 1.0
+        return {code: series.fillna(0.0).clip(lower=0.0, upper=upper) for code, series in signals.items()}
 
     def _execute_pending(
         self,
@@ -215,7 +292,10 @@ class ZTradeV47SignalEngine:
             current_red_count = _count_consecutive_red(frame, ts, pos.buy_i)
             if current_red_count > 0:
                 pos.red_count = current_red_count
-            if self.max_hold_days > 0 and current_i - pos.buy_i >= self.max_hold_days:
+            max_hold_days = self.max_hold_days
+            if pos.entry_source == "continuation" and self.bull_continuation_max_hold_days > 0:
+                max_hold_days = self.bull_continuation_max_hold_days
+            if max_hold_days > 0 and current_i - pos.buy_i >= max_hold_days:
                 positions.pop(code, None)
                 continue
             if not bool(row.get("绿柱", False)):
@@ -238,6 +318,8 @@ class ZTradeV47SignalEngine:
         frames: dict[str, pd.DataFrame],
         positions: dict[str, _Position],
         pending: dict[str, _PendingSell],
+        *,
+        market_state: pd.DataFrame | None = None,
     ) -> None:
         del i
         del dates
@@ -245,14 +327,39 @@ class ZTradeV47SignalEngine:
         if available <= 0:
             return
         factors: dict[str, dict[str, float]] = {}
+        entry_sources: dict[str, str] = {}
         for code, frame in frames.items():
             if code in positions or code in pending or ts not in frame.index:
                 continue
             hist = frame.loc[:ts].tail(max(self.max_window + 120, 200))
-            passed, data = self._passes_filters(hist)
+            state = _state_at(market_state if market_state is not None else pd.DataFrame(), ts)
+            market_weak = bool(state.get("is_weak", False)) if state else False
+            passed, data = self._passes_filters(hist, market_weak=market_weak)
             if passed and data is not None:
                 factors[code] = data
-        composite = _compute_composite_score(factors)
+                entry_sources[code] = "s1"
+            elif (
+                self.bull_continuation_fallback_enable
+                and not market_weak
+                and self._bull_continuation_market_ok(state)
+            ):
+                fallback = self._passes_bull_continuation_filters(hist)
+                if fallback is not None:
+                    factors[code] = fallback
+                    entry_sources[code] = "continuation"
+        composite = _compute_composite_score(
+            factors,
+            alpha_qlib_roc10_score_weight=self.alpha_qlib_roc10_score_weight,
+            alpha_qlib_mom20_score_weight=self.alpha_qlib_mom20_score_weight,
+            alpha_qlib_cntd5_score_weight=self.alpha_qlib_cntd5_score_weight,
+            alpha_qlib_cntd10_score_weight=self.alpha_qlib_cntd10_score_weight,
+            alpha_qlib_cntd20_score_weight=self.alpha_qlib_cntd20_score_weight,
+            alpha_qlib_vma10_score_weight=self.alpha_qlib_vma10_score_weight,
+            alpha_qlib_rsv10_score_weight=self.alpha_qlib_rsv10_score_weight,
+            alpha_qlib_std10_score_weight=self.alpha_qlib_std10_score_weight,
+            alpha_qlib_kup_score_weight=self.alpha_qlib_kup_score_weight,
+            alpha_qlib_cord10_score_weight=self.alpha_qlib_cord10_score_weight,
+        )
         ranked = sorted(composite.items(), key=lambda item: item[1], reverse=True)
         opened = 0
         for code, score in ranked:
@@ -270,15 +377,17 @@ class ZTradeV47SignalEngine:
                 buy_price=buy_price,
                 entry_score=float(score),
                 buy_trade_i=buy_i,
+                entry_market_weak=market_weak,
+                entry_source=entry_sources.get(code, "s1"),
             )
             opened += 1
             if opened >= available:
                 break
 
-    def _passes_filters(self, hist: pd.DataFrame) -> tuple[bool, dict[str, float] | None]:
+    def _passes_filters(self, hist: pd.DataFrame, *, market_weak: bool = False) -> tuple[bool, dict[str, float] | None]:
         if hist.empty or len(hist) < 12:
             return False, None
-        if not self._passes_backtest_prefilter(hist):
+        if not self._passes_backtest_prefilter(hist, market_weak=market_weak):
             return False, None
         if self._has_s1_bear_volume(hist):
             return False, None
@@ -290,10 +399,135 @@ class ZTradeV47SignalEngine:
             return False, None
         if not _weekly_short_line_ok(hist):
             return False, None
+        roc10 = _qlib_roc10(hist["close"]).iloc[-1]
+        if pd.isna(roc10):
+            return False, None
+        if self.alpha_qlib_roc10_filter_enable and (
+            float(roc10) < self.alpha_qlib_roc10_min or float(roc10) > self.alpha_qlib_roc10_max
+        ):
+            return False, None
+        cntd10 = _qlib_cntd10(hist["close"]).iloc[-1]
+        if pd.isna(cntd10):
+            return False, None
+        mom20 = _qlib_mom20(hist["close"]).iloc[-1]
+        if pd.isna(mom20):
+            return False, None
+        cntd5 = _qlib_cntd5(hist["close"]).iloc[-1]
+        if pd.isna(cntd5):
+            return False, None
+        cntd20 = _qlib_cntd20(hist["close"]).iloc[-1]
+        if pd.isna(cntd20):
+            return False, None
+        vma10 = _qlib_vma10(hist["volume"]).iloc[-1]
+        if pd.isna(vma10):
+            return False, None
+        rsv10 = _qlib_rsv10(hist).iloc[-1]
+        if pd.isna(rsv10):
+            return False, None
+        if self.alpha_qlib_rsv10_filter_enable and (
+            float(rsv10) < self.alpha_qlib_rsv10_min or float(rsv10) > self.alpha_qlib_rsv10_max
+        ):
+            return False, None
+        std10 = _qlib_std10(hist["close"]).iloc[-1]
+        if pd.isna(std10):
+            return False, None
+        kup = _qlib_kup(hist).iloc[-1]
+        if pd.isna(kup):
+            return False, None
+        cord10 = _qlib_cord10(hist).iloc[-1]
+        if pd.isna(cord10):
+            return False, None
+        factors["qlib_roc10"] = float(roc10)
+        factors["qlib_mom20"] = float(mom20)
+        factors["qlib_cntd5"] = float(cntd5)
+        factors["qlib_cntd10"] = float(cntd10)
+        factors["qlib_cntd20"] = float(cntd20)
+        factors["qlib_vma10"] = float(vma10)
+        factors["qlib_rsv10"] = float(rsv10)
+        factors["qlib_std10"] = float(std10)
+        factors["qlib_kup"] = float(kup)
+        factors["qlib_cord10"] = float(cord10)
         factors["near_score"] = near_score
         return True, factors
 
-    def _passes_backtest_prefilter(self, hist: pd.DataFrame) -> bool:
+    def _bull_continuation_market_ok(self, state: dict[str, Any]) -> bool:
+        covered = int(state.get("covered", 0)) if state else 0
+        if covered < self.bull_continuation_market_min_coverage:
+            return False
+        below = float(state.get("below_ma_ratio", 0.0)) if state else 0.0
+        down = float(state.get("down_ratio", 0.0)) if state else 0.0
+        return (
+            below <= self.bull_continuation_below_ma_ratio_max
+            and down <= self.bull_continuation_down_ratio_max
+        )
+
+    def _passes_bull_continuation_filters(self, hist: pd.DataFrame) -> dict[str, float] | None:
+        if hist.empty or len(hist) < 30:
+            return None
+        close = pd.to_numeric(hist["close"], errors="coerce")
+        volume = pd.to_numeric(hist["volume"], errors="coerce")
+        current_close = float(close.iloc[-1])
+        prev_close = float(close.iloc[-2])
+        if pd.isna(current_close) or pd.isna(prev_close) or current_close <= 0 or prev_close <= 0:
+            return None
+        change_pct = (current_close / prev_close - 1.0) * 100.0
+        if change_pct < -10.0 or change_pct > self.bull_continuation_entry_gain_max_pct:
+            return None
+
+        daily_ok, near_score = self._passes_daily_zx_lines(hist)
+        if not daily_ok or not _weekly_short_line_ok(hist):
+            return None
+
+        roc10 = _qlib_roc10(close).iloc[-1]
+        mom20 = _qlib_mom20(close).iloc[-1]
+        rsv10 = _qlib_rsv10(hist).iloc[-1]
+        if pd.isna(roc10) or pd.isna(mom20) or pd.isna(rsv10):
+            return None
+        if float(roc10) < self.bull_continuation_roc10_min or float(roc10) > self.bull_continuation_roc10_max:
+            return None
+        if float(mom20) < self.bull_continuation_mom20_min:
+            return None
+        if float(rsv10) < self.bull_continuation_rsv10_min or float(rsv10) > self.bull_continuation_rsv10_max:
+            return None
+
+        prev_volume = volume.iloc[-21:-1]
+        avg_volume = float(prev_volume.mean()) if not prev_volume.empty else 0.0
+        current_volume = float(volume.iloc[-1])
+        if avg_volume <= 0 or pd.isna(current_volume):
+            return None
+        vol_ratio = current_volume / avg_volume
+        if vol_ratio < self.bull_continuation_volume_ratio_min:
+            return None
+
+        cntd10 = _qlib_cntd10(close).iloc[-1]
+        cntd5 = _qlib_cntd5(close).iloc[-1]
+        cntd20 = _qlib_cntd20(close).iloc[-1]
+        vma10 = _qlib_vma10(volume).iloc[-1]
+        std10 = _qlib_std10(close).iloc[-1]
+        kup = _qlib_kup(hist).iloc[-1]
+        cord10 = _qlib_cord10(hist).iloc[-1]
+        if any(pd.isna(x) for x in (cntd10, cntd5, cntd20, vma10, std10, kup, cord10)):
+            return None
+
+        return {
+            "brick_ratio": 1.0,
+            "vol_ratio": vol_ratio,
+            "dif_val": 0.0,
+            "gain_margin": max(0.0, self.bull_continuation_entry_gain_max_pct - change_pct),
+            "qlib_roc10": float(roc10),
+            "qlib_mom20": float(mom20),
+            "qlib_cntd5": float(cntd5),
+            "qlib_cntd10": float(cntd10),
+            "qlib_cntd20": float(cntd20),
+            "qlib_vma10": float(vma10),
+            "qlib_rsv10": float(rsv10),
+            "qlib_std10": float(std10),
+            "qlib_kup": float(kup),
+            "qlib_cord10": float(cord10),
+            "near_score": near_score,
+        }
+
+    def _passes_backtest_prefilter(self, hist: pd.DataFrame, *, market_weak: bool = False) -> bool:
         """Mirror ztrade V3's mandatory fast prefilter before full selector scoring."""
         if len(hist) < 21:
             return False
@@ -308,6 +542,11 @@ class ZTradeV47SignalEngine:
             return False
         change_pct = (current_close - prev_close) / prev_close * 100.0
         if change_pct < -10.0 or change_pct > 15.0:
+            return False
+        gain_cap = self.entry_day_gain_max_pct
+        if market_weak and self.regime_entry_day_gain_max_pct_bear is not None:
+            gain_cap = self.regime_entry_day_gain_max_pct_bear
+        if gain_cap is not None and change_pct > gain_cap:
             return False
         lookback = min(6, signal_pos)
         if lookback >= 3:
@@ -521,8 +760,9 @@ class ZTradeV47SignalEngine:
         return ""
 
     def _position_weight(self, pos: _Position) -> float:
-        del pos
-        return 1.0
+        if not self.regime_position_sizing_enable:
+            return 1.0
+        return self.bear_position_weight if pos.entry_market_weak else self.bull_position_weight
 
 
 class SignalEngine(ZTradeV47SignalEngine):
@@ -552,6 +792,16 @@ def _with_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out["dif"] = _compute_dif(out)
     out["short_line"] = _short_line(out["close"])
     out["multi_line"] = _zx_multi_line(out["close"])
+    out["qlib_roc10"] = _qlib_roc10(out["close"])
+    out["qlib_mom20"] = _qlib_mom20(out["close"])
+    out["qlib_cntd5"] = _qlib_cntd5(out["close"])
+    out["qlib_cntd10"] = _qlib_cntd10(out["close"])
+    out["qlib_cntd20"] = _qlib_cntd20(out["close"])
+    out["qlib_vma10"] = _qlib_vma10(out["volume"])
+    out["qlib_rsv10"] = _qlib_rsv10(out)
+    out["qlib_std10"] = _qlib_std10(out["close"])
+    out["qlib_kup"] = _qlib_kup(out)
+    out["qlib_cord10"] = _qlib_cord10(out)
     return out
 
 
@@ -594,6 +844,84 @@ def _compute_dif(df: pd.DataFrame, fast: int = 12, slow: int = 26) -> pd.Series:
     ema_fast = df["close"].ewm(span=fast, adjust=False).mean()
     ema_slow = df["close"].ewm(span=slow, adjust=False).mean()
     return ema_fast - ema_slow
+
+
+def _qlib_roc10(close: pd.Series) -> pd.Series:
+    """Project Alpha Zoo qlib158_roc10: close_t / close_{t-10} - 1."""
+    close = pd.to_numeric(close, errors="coerce")
+    return close / close.shift(10) - 1.0
+
+
+def _qlib_mom20(close: pd.Series) -> pd.Series:
+    """Project Alpha Zoo 20-day momentum: close_t / close_{t-20} - 1."""
+    close = pd.to_numeric(close, errors="coerce")
+    return close / close.shift(20) - 1.0
+
+
+def _qlib_cntd10(close: pd.Series) -> pd.Series:
+    """Project Alpha Zoo qlib158_cntd10: count(up days) - count(down days)."""
+    return _qlib_cntd(close, 10)
+
+
+def _qlib_cntd5(close: pd.Series) -> pd.Series:
+    """Project Alpha Zoo qlib158_cntd5: count(up days) - count(down days)."""
+    return _qlib_cntd(close, 5)
+
+
+def _qlib_cntd20(close: pd.Series) -> pd.Series:
+    """Project Alpha Zoo qlib158_cntd20: count(up days) - count(down days)."""
+    return _qlib_cntd(close, 20)
+
+
+def _qlib_cntd(close: pd.Series, window: int) -> pd.Series:
+    close = pd.to_numeric(close, errors="coerce")
+    diff = close.diff()
+    up = (diff > 0).astype(float)
+    down = (diff < 0).astype(float)
+    return up.rolling(window=window, min_periods=window).sum() - down.rolling(
+        window=window, min_periods=window
+    ).sum()
+
+
+def _qlib_vma10(volume: pd.Series) -> pd.Series:
+    """Project Alpha Zoo qlib158_vma10: mean(volume, 10) / volume."""
+    volume = pd.to_numeric(volume, errors="coerce")
+    return volume.rolling(window=10, min_periods=10).mean() / volume.replace(0, pd.NA)
+
+
+def _qlib_rsv10(frame: pd.DataFrame) -> pd.Series:
+    """Project Alpha Zoo qlib158_rsv10: close position in the 10-day high-low range."""
+    close = pd.to_numeric(frame["close"], errors="coerce")
+    high = pd.to_numeric(frame["high"], errors="coerce")
+    low = pd.to_numeric(frame["low"], errors="coerce")
+    low_min = low.rolling(window=10, min_periods=10).min()
+    high_max = high.rolling(window=10, min_periods=10).max()
+    denominator = (high_max - low_min).where((high_max - low_min) != 0)
+    return (close - low_min) / denominator
+
+
+def _qlib_std10(close: pd.Series) -> pd.Series:
+    """Project Alpha Zoo qlib158_std10: std(close, 10) / close."""
+    close = pd.to_numeric(close, errors="coerce")
+    return close.rolling(window=10, min_periods=10).std() / close.replace(0, pd.NA)
+
+
+def _qlib_kup(frame: pd.DataFrame) -> pd.Series:
+    """Project Alpha Zoo qlib158_kup: upper shadow divided by open."""
+    open_ = pd.to_numeric(frame["open"], errors="coerce")
+    high = pd.to_numeric(frame["high"], errors="coerce")
+    close = pd.to_numeric(frame["close"], errors="coerce")
+    upper = open_.where(open_ >= close, close)
+    return (high - upper) / open_.replace(0, pd.NA)
+
+
+def _qlib_cord10(frame: pd.DataFrame) -> pd.Series:
+    """Project Alpha Zoo qlib158_cord10: corr(close return, log volume change, 10)."""
+    close = pd.to_numeric(frame["close"], errors="coerce")
+    volume = pd.to_numeric(frame["volume"], errors="coerce")
+    close_ret = close / close.shift(1)
+    volume_log_ret = np.log((volume + 1.0) / (volume.shift(1) + 1.0))
+    return close_ret.rolling(window=10, min_periods=10).corr(volume_log_ret)
 
 
 def _short_line(close: pd.Series) -> pd.Series:
@@ -674,7 +1002,20 @@ def _state_at(market_state: pd.DataFrame, ts: pd.Timestamp) -> dict[str, Any]:
     return dict(market_state.iloc[idx])
 
 
-def _compute_composite_score(factor_data: dict[str, dict[str, float]]) -> dict[str, float]:
+def _compute_composite_score(
+    factor_data: dict[str, dict[str, float]],
+    *,
+    alpha_qlib_roc10_score_weight: float = 0.0,
+    alpha_qlib_mom20_score_weight: float = 0.0,
+    alpha_qlib_cntd5_score_weight: float = 0.0,
+    alpha_qlib_cntd10_score_weight: float = 0.0,
+    alpha_qlib_cntd20_score_weight: float = 0.0,
+    alpha_qlib_vma10_score_weight: float = 0.0,
+    alpha_qlib_rsv10_score_weight: float = 0.0,
+    alpha_qlib_std10_score_weight: float = 0.0,
+    alpha_qlib_kup_score_weight: float = 0.0,
+    alpha_qlib_cord10_score_weight: float = 0.0,
+) -> dict[str, float]:
     if not factor_data:
         return {}
     codes = list(factor_data)
@@ -682,10 +1023,116 @@ def _compute_composite_score(factor_data: dict[str, dict[str, float]]) -> dict[s
     vol = _percentile_rank([factor_data[c]["vol_ratio"] for c in codes])
     dif = _percentile_rank([factor_data[c]["dif_val"] for c in codes])
     gain = _percentile_rank([factor_data[c]["gain_margin"] for c in codes])
+    roc10 = _percentile_rank([factor_data[c].get("qlib_roc10", 0.0) for c in codes])
+    mom20 = _percentile_rank([factor_data[c].get("qlib_mom20", 0.0) for c in codes])
+    cntd5_reversal = _percentile_rank([-factor_data[c].get("qlib_cntd5", 0.0) for c in codes])
+    cntd10_reversal = _percentile_rank([-factor_data[c].get("qlib_cntd10", 0.0) for c in codes])
+    cntd20_reversal = _percentile_rank([-factor_data[c].get("qlib_cntd20", 0.0) for c in codes])
+    vma10_expansion = _percentile_rank([-factor_data[c].get("qlib_vma10", 0.0) for c in codes])
+    rsv10 = _percentile_rank([factor_data[c].get("qlib_rsv10", 0.0) for c in codes])
+    std10_low_vol = _percentile_rank([-factor_data[c].get("qlib_std10", 0.0) for c in codes])
+    kup_low_shadow = _percentile_rank([-factor_data[c].get("qlib_kup", 0.0) for c in codes])
+    cord10_confirmation = _percentile_rank([factor_data[c].get("qlib_cord10", 0.0) for c in codes])
+    alpha_weight = max(0.0, min(1.0, float(alpha_qlib_roc10_score_weight)))
+    mom20_weight = max(0.0, min(1.0 - alpha_weight, float(alpha_qlib_mom20_score_weight)))
+    cntd5_weight = max(0.0, min(1.0 - alpha_weight - mom20_weight, float(alpha_qlib_cntd5_score_weight)))
+    cntd_weight = max(
+        0.0,
+        min(1.0 - alpha_weight - mom20_weight - cntd5_weight, float(alpha_qlib_cntd10_score_weight)),
+    )
+    cntd20_weight = max(
+        0.0,
+        min(1.0 - alpha_weight - mom20_weight - cntd5_weight - cntd_weight, float(alpha_qlib_cntd20_score_weight)),
+    )
+    vma_weight = max(
+        0.0,
+        min(
+            1.0 - alpha_weight - mom20_weight - cntd5_weight - cntd_weight - cntd20_weight,
+            float(alpha_qlib_vma10_score_weight),
+        ),
+    )
+    rsv_weight = max(
+        0.0,
+        min(
+            1.0 - alpha_weight - mom20_weight - cntd5_weight - cntd_weight - cntd20_weight - vma_weight,
+            float(alpha_qlib_rsv10_score_weight),
+        ),
+    )
+    std_weight = max(
+        0.0,
+        min(
+            1.0
+            - alpha_weight
+            - mom20_weight
+            - cntd5_weight
+            - cntd_weight
+            - cntd20_weight
+            - vma_weight
+            - rsv_weight,
+            float(alpha_qlib_std10_score_weight),
+        ),
+    )
+    kup_weight = max(
+        0.0,
+        min(
+            1.0
+            - alpha_weight
+            - mom20_weight
+            - cntd5_weight
+            - cntd_weight
+            - cntd20_weight
+            - vma_weight
+            - rsv_weight
+            - std_weight,
+            float(alpha_qlib_kup_score_weight),
+        ),
+    )
+    cord_weight = max(
+        0.0,
+        min(
+            1.0
+            - alpha_weight
+            - mom20_weight
+            - cntd5_weight
+            - cntd_weight
+            - cntd20_weight
+            - vma_weight
+            - rsv_weight
+            - std_weight
+            - kup_weight,
+            float(alpha_qlib_cord10_score_weight),
+        ),
+    )
+    base_weight = (
+        1.0
+        - alpha_weight
+        - mom20_weight
+        - cntd5_weight
+        - cntd_weight
+        - cntd20_weight
+        - vma_weight
+        - rsv_weight
+        - std_weight
+        - kup_weight
+        - cord_weight
+    )
     result = {}
     for i, code in enumerate(codes):
         near = float(factor_data[code].get("near_score", 0.0))
-        result[code] = near * 0.30 + brick[i] * 0.35 + vol[i] * 0.15 + dif[i] * 0.15 + gain[i] * 0.05
+        base_score = near * 0.30 + brick[i] * 0.35 + vol[i] * 0.15 + dif[i] * 0.15 + gain[i] * 0.05
+        result[code] = (
+            base_score * base_weight
+            + roc10[i] * alpha_weight
+            + mom20[i] * mom20_weight
+            + cntd5_reversal[i] * cntd5_weight
+            + cntd10_reversal[i] * cntd_weight
+            + cntd20_reversal[i] * cntd20_weight
+            + vma10_expansion[i] * vma_weight
+            + rsv10[i] * rsv_weight
+            + std10_low_vol[i] * std_weight
+            + kup_low_shadow[i] * kup_weight
+            + cord10_confirmation[i] * cord_weight
+        )
     return result
 
 

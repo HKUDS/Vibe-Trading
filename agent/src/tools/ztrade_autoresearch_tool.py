@@ -32,7 +32,7 @@ class ZTradeAutoResearchTool(BaseTool):
                 "type": "string",
                 "description": "ztrade local CSV data directory, required when mode=ztrade_csv.",
             },
-            "max_iterations": {
+            "candidate_iterations": {
                 "type": "integer",
                 "description": "Number of candidate iterations after the baseline, default 4.",
             },
@@ -68,7 +68,7 @@ class ZTradeAutoResearchTool(BaseTool):
             summary = run_ztrade_csv_research(
                 kwargs["run_dir"],
                 data_dir=data_dir,
-                max_iterations=int(kwargs.get("max_iterations", 4)),
+                candidate_iterations=int(kwargs.get("candidate_iterations", 4)),
                 max_symbols=int(kwargs.get("max_symbols", 50)),
                 use_mutable_candidate=bool(kwargs.get("use_mutable_candidate", False)),
                 workspace_dir=kwargs.get("workspace_dir"),
@@ -76,7 +76,7 @@ class ZTradeAutoResearchTool(BaseTool):
         else:
             summary = run_synthetic_research(
                 kwargs["run_dir"],
-                max_iterations=int(kwargs.get("max_iterations", 4)),
+                candidate_iterations=int(kwargs.get("candidate_iterations", 4)),
                 use_mutable_candidate=bool(kwargs.get("use_mutable_candidate", False)),
                 workspace_dir=kwargs.get("workspace_dir"),
             )
