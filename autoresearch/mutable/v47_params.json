@@ -1,7 +1,7 @@
 {
   "candidate_id": "candidate_mutable_v47",
   "strategy_family": "ztrade_v47_weak_guard_62_70",
-  "score": 260.33,
+  "score": 273.25,
   "params": {
     "allow_leverage": false,
     "alpha_qlib_cntd10_score_weight": 0.0,
@@ -34,14 +34,14 @@
     "bull_continuation_rsv10_max": 0.93,
     "bull_continuation_rsv10_min": 0.8,
     "bull_continuation_volume_ratio_min": 1.0,
-    "bull_position_weight": 4.5,
+    "bull_position_weight": 4.8,
     "early_failure_exit_enable": true,
     "early_failure_gap_guard_capitulation_below_ma_ratio_max": 0.4,
     "early_failure_gap_guard_capitulation_down_ratio_max": 0.0,
     "early_failure_gap_guard_capitulation_pct": 0.0,
     "early_failure_gap_guard_pct": 20.0,
-    "early_failure_loss_pct": 1.0,
-    "early_failure_market_below_ma_ratio_min": 0.180078125,
+    "early_failure_loss_pct": 0.9,
+    "early_failure_market_below_ma_ratio_min": 0.1,
     "early_failure_market_down_ratio_min": 0.0,
     "early_failure_market_ma_window": 40,
     "early_failure_market_min_coverage": 200,
@@ -56,7 +56,7 @@
     "s1_max_age": 4,
     "s1_stale_age_min": null,
     "s1_stale_volume_ratio_min": null,
-    "s1_volume_ratio_min": 1.0,
+    "s1_volume_ratio_min": 1.05,
     "s1_window": 12
   }
 }
