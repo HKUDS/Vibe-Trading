@@ -96,3 +96,6 @@ autoresearch/latest_state.json
 autoresearch/logs/
 autoresearch/*.log
 >>>>>>> c01ff4d (Align ztrade autoresearch protocol with Karpathy loop)
+
+# ztrade autoresearch — branch-specific continuation notes (runtime, not protocol)
+autoresearch/context/continuation_state.md
