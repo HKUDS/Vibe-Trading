@@ -10,6 +10,11 @@ For general project setup (`pip install -e ".[dev]"`, dev servers,
 `pytest --ignore=agent/tests/e2e_backtest`), see the README. For bug reports
 and feature requests, use the GitHub issue templates.
 
+For AI-assisted or automation-assisted contributions, also see
+[`AGENT_CONTRIBUTOR_GUIDE.md`](AGENT_CONTRIBUTOR_GUIDE.md). It summarizes safe
+local checks, higher-risk broker/MCP/credential surfaces, and the expected PR
+risk notes for agent-authored changes.
+
 ## Developer Certificate of Origin (DCO)
 
 Every commit in a community pull request MUST carry a `Signed-off-by:`
