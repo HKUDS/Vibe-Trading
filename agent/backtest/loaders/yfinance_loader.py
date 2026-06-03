@@ -47,6 +47,11 @@ def _to_yfinance_symbol(code: str) -> str:
         digits = upper[:-3]
         width = max(4, len(digits))
         return f"{digits.zfill(width)}.HK"
+    # Crypto: BTC-USDT -> BTC-USD, ETH-USDT -> ETH-USD, etc.
+    if upper.endswith("-USDT"):
+        return upper[:-5] + "-USD"
+    if upper.endswith("-USDC"):
+        return upper[:-5] + "-USD"
     return upper
 
 
@@ -194,7 +199,7 @@ class DataLoader:
     """Fetch HK/US equity bars from Yahoo Finance via yfinance."""
 
     name = "yfinance"
-    markets = {"us_equity", "hk_equity"}
+    markets = {"us_equity", "hk_equity", "crypto"}
     requires_auth = False
 
     def is_available(self) -> bool:

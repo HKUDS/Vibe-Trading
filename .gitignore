@@ -4,6 +4,16 @@ __pycache__/
 .pytest_cache/
 *.pyc
 
+# Coverage reports
+.coverage
+coverage.xml
+
+# Node dependencies (root level)
+node_modules/
+
+# Backtest output artifacts
+results/
+
 .env
 agent/.env
 

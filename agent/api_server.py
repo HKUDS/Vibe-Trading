@@ -651,10 +651,13 @@ def _validate_api_auth(
     allow_query: bool = False,
 ) -> None:
     """Validate configured auth, preserving loopback-only dev mode."""
+    # Loopback clients are always trusted, even when API_AUTH_KEY is set.
+    # The key only gates non-local (LAN/remote) access.
+    if _is_local_client(request):
+        return
+
     api_key = _configured_api_key()
     if not api_key:
-        if _is_local_client(request):
-            return
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="API_AUTH_KEY is required for non-local API access",

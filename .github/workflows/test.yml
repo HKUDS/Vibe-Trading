@@ -36,7 +36,7 @@ jobs:
         # test_e2e_harness_v2.py is gated by VIBE_TRADING_RUN_LIVE_E2E
         # (real-LLM only); list --ignore here so CI's intent is explicit and
         # the suite never silently switches state on env presence.
-        run: pytest --ignore=agent/tests/e2e_backtest --ignore=agent/tests/test_e2e_harness_v2.py --tb=short -q
+        run: pytest --ignore=agent/tests/e2e_backtest --ignore=agent/tests/test_e2e_harness_v2.py --cov=agent --cov-report=term-missing --cov-report=xml --tb=short -q
 
       - uses: actions/setup-node@v4
         with:
@@ -49,3 +49,8 @@ jobs:
           cd frontend
           npm ci
           npm run build
+
+      - name: Frontend tests
+        run: |
+          cd frontend
+          npx vitest run --reporter=verbose

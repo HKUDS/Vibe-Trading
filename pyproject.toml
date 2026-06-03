@@ -113,6 +113,24 @@ target-version = "py311"
 line-length = 120
 src = ["agent"]
 
+[tool.coverage.run]
+source = ["agent"]
+omit = [
+    "agent/tests/*",
+    "agent/tests/**/*",
+    "agent/**/__init__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+fail_under = 0
+exclude_also = [
+    "if __name__ == .__main__.",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
+
 [tool.ruff.lint]
 select = ["E", "F", "W"]
 ignore = ["E501"]

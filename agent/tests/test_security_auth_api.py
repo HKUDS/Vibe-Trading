@@ -127,6 +127,29 @@ def test_configured_api_key_accepts_bearer_for_sensitive_reads(
     assert response.status_code == 200
 
 
+def test_loopback_bypasses_auth_even_when_api_key_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Loopback clients are always trusted — the API key only gates remote access."""
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+
+    local = _local_client()
+    remote = _remote_client()
+
+    # Loopback: no bearer needed → should succeed
+    local_response = local.get("/runs")
+    assert local_response.status_code == 200
+
+    # Remote without bearer: still rejected
+    remote_response = remote.get("/runs")
+    assert remote_response.status_code == 401
+
+    # Remote with bearer: accepted
+    remote_bearer = remote.get("/runs", headers={"Authorization": "Bearer secret"})
+    assert remote_bearer.status_code == 200
+
+
 def test_configured_api_key_required_for_session_event_stream(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
