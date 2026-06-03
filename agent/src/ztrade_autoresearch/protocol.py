@@ -71,6 +71,10 @@ DEFAULT_V47_PARAMS: dict[str, Any] = {
     "bull_position_weight": 1.0,
     "bear_position_weight": 1.0,
     "allow_leverage": False,
+    # Proposal: v47 search-space expansion (commit f8ac736) — per-trade risk knobs
+    "per_trade_stop_loss_pct": 5.0,
+    "per_trade_take_profit_pct": None,
+    "rr_min_filter": 0.0,
 }
 
 
@@ -149,6 +153,12 @@ class GateConfig:
     trade_retention_min: float = 0.80
     concentration_max: float = 0.60
     min_trades: int = 2
+    # Proposal: v47 search-space expansion (commit f8ac736) — anti-overfit gates
+    # from the 趋势起爆点 framework:
+    #   false_ignition_miss_rate_max = "假启动误收率" cap
+    #   per_window_r2_min = bull-window R:R coverage floor
+    false_ignition_miss_rate_max: float = 0.30
+    per_window_r2_min: float = 0.50
 
 
 DEFAULT_GATES = GateConfig()

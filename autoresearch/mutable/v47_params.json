@@ -33,7 +33,7 @@
     "bull_continuation_roc10_min": 0.05,
     "bull_continuation_rsv10_max": 0.93,
     "bull_continuation_rsv10_min": 0.8,
-    "bull_continuation_volume_ratio_min": 1.0,
+    "bull_continuation_volume_ratio_min": 0.95,
     "bull_position_weight": 4.8,
     "early_failure_exit_enable": true,
     "early_failure_gap_guard_capitulation_below_ma_ratio_max": 0.4,
@@ -57,6 +57,9 @@
     "s1_stale_age_min": null,
     "s1_stale_volume_ratio_min": null,
     "s1_volume_ratio_min": 1.05,
-    "s1_window": 12
+    "s1_window": 12,
+    "per_trade_stop_loss_pct": 100.0,
+    "per_trade_take_profit_pct": null,
+    "rr_min_filter": 0.0
   }
 }

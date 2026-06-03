@@ -104,6 +104,11 @@ class ZTradeV47SignalEngine:
         bull_position_weight: float = 1.0,
         bear_position_weight: float = 1.0,
         allow_leverage: bool = False,
+        # Proposal: v47 search-space expansion (commit f8ac736) — per-trade
+        # risk knobs. None for take_profit means "no upper bound".
+        per_trade_stop_loss_pct: float = 5.0,
+        per_trade_take_profit_pct: float | None = None,
+        rr_min_filter: float = 0.0,
         # selector/backtest defaults used by ztrade V3
         max_positions: int = 4,
         max_hold_days: int = 20,
@@ -137,6 +142,12 @@ class ZTradeV47SignalEngine:
         self.early_failure_exit_enable = bool(early_failure_exit_enable)
         self.early_failure_max_hold_days = int(early_failure_max_hold_days)
         self.early_failure_loss_pct = float(early_failure_loss_pct)
+        # Proposal: v47 search-space expansion (commit f8ac736) — per-trade risk
+        self.per_trade_stop_loss_pct = float(per_trade_stop_loss_pct)
+        self.per_trade_take_profit_pct = (
+            float(per_trade_take_profit_pct) if per_trade_take_profit_pct is not None else None
+        )
+        self.rr_min_filter = float(rr_min_filter)
         self.early_failure_market_weak_enable = bool(early_failure_market_weak_enable)
         self.early_failure_market_ma_window = int(early_failure_market_ma_window)
         self.early_failure_market_min_coverage = int(early_failure_market_min_coverage)
@@ -298,6 +309,19 @@ class ZTradeV47SignalEngine:
             if max_hold_days > 0 and current_i - pos.buy_i >= max_hold_days:
                 positions.pop(code, None)
                 continue
+            # Proposal: v47 search-space expansion (commit f8ac736) — per-trade
+            # take-profit + stop-loss checks BEFORE the green-bar exit logic.
+            # These run on every bar, regardless of green/red state, so they
+            # cut losers before the green-bar confirmation arrives.
+            row_close = float(row.get("close", 0.0))
+            if pos.buy_price > 0 and row_close > 0:
+                live_pnl = (row_close / pos.buy_price - 1.0) * 100.0
+                if self.per_trade_take_profit_pct is not None and live_pnl >= self.per_trade_take_profit_pct:
+                    positions.pop(code, None)
+                    continue
+                if self.per_trade_stop_loss_pct > 0 and live_pnl <= -self.per_trade_stop_loss_pct:
+                    positions.pop(code, None)
+                    continue
             if not bool(row.get("绿柱", False)):
                 continue
             close = float(row["close"])

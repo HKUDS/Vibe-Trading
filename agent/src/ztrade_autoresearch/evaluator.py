@@ -79,6 +79,25 @@ def evaluate_candidate(
     candidate_sum_return = sum(candidate.return_pct for _, candidate in pairs)
     baseline_sum_return = sum(baseline.return_pct for baseline, _ in pairs)
 
+    # Proposal: v47 search-space expansion (commit f8ac736) — anti-overfit gates
+    # from the 趋势起爆点 framework.
+    # false_ignition_miss_rate: of bull-regime windows (where strategy claims
+    # to have a "trend ignition" advantage), what fraction actually lost? A
+    # candidate that loses in bull windows is missing real ignitions.
+    bull_pairs = [(b, c) for b, c in pairs if c.regime == "bull"]
+    bull_deltas = [c.return_pct - b.return_pct for b, c in bull_pairs]
+    bull_loss_windows = sum(1 for d in bull_deltas if d < 0)
+    false_ignition_miss_rate = (
+        bull_loss_windows / len(bull_pairs) if bull_pairs else 0.0
+    )
+    # per_window_r2: bull-window aggregate gain / (2 * bear-window aggregate
+    # loss). The framework says high R:R = big wins cover small losses. A
+    # value >= 0.50 means bull gains are at least 1.0x bear losses (after
+    # weighting bear loss x2 to be conservative). 0.5 is the gate floor.
+    bull_gain = sum(d for d in bull_deltas if d > 0)
+    bear_loss = abs(sum(d for d in bear_deltas if d < 0))
+    per_window_r2 = bull_gain / (2.0 * bear_loss + 0.001)
+
     gate_results = {
         "coverage": expected_window_count is None or len(pairs) == expected_window_count,
         "return_delta": return_delta >= gates.return_delta_min_pct,
@@ -91,6 +110,9 @@ def evaluate_candidate(
         "trade_retention": retention >= gates.trade_retention_min,
         "concentration": concentration <= gates.concentration_max,
         "min_trades": candidate_trades >= gates.min_trades,
+        # Proposal gates (Proposal v47 search-space expansion)
+        "false_ignition_miss_rate": false_ignition_miss_rate <= gates.false_ignition_miss_rate_max,
+        "per_window_r2": per_window_r2 >= gates.per_window_r2_min,
     }
     diagnostics = {
         "windows": len(pairs),
@@ -113,6 +135,9 @@ def evaluate_candidate(
         "baseline_mean_annual_return_pct": round(baseline_mean_annual_return, 6),
         "candidate_sum_return_pct": round(candidate_sum_return, 6),
         "baseline_sum_return_pct": round(baseline_sum_return, 6),
+        "false_ignition_miss_rate": round(false_ignition_miss_rate, 6),
+        "bull_loss_windows": bull_loss_windows,
+        "per_window_r2": round(per_window_r2, 6),
         "stop_target_met": candidate_weighted_win_rate > 0.50 and candidate_mean_annual_return > 30.0,
     }
     return GateVerdict(
