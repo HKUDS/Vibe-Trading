@@ -870,7 +870,7 @@ class AgentLoop:
         truncated = result[:TOOL_RESULT_LIMIT]
         messages.append(context.format_tool_result(tc.id, tc.name, truncated))
 
-        trace.write({"type": "tool_result", "iter": iteration, "tool": tc.name, "call_id": tc.id, "status": status, "elapsed_ms": elapsed_ms, "result": result})
+        trace.write({"type": "tool_result", "iter": iteration, "tool": tc.name, "call_id": tc.id, "status": status, "elapsed_ms": elapsed_ms, "preview": result[:200]})
         react_trace.append({"type": "tool_call", "tool": tc.name, "result_preview": result[:200]})
         self._emit("tool_result", {"tool": tc.name, "status": status, "elapsed_ms": elapsed_ms, "preview": result[:200]})
 
