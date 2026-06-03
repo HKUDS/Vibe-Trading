@@ -1,12 +1,12 @@
 {
   "candidate_id": "candidate_mutable_v47",
   "strategy_family": "ztrade_v47_weak_guard_62_70",
-  "score": 273.25,
+  "score": 276.92,
   "params": {
     "allow_leverage": false,
     "alpha_qlib_cntd10_score_weight": 0.0,
-    "alpha_qlib_cntd20_score_weight": 0.0,
-    "alpha_qlib_cntd5_score_weight": 0.3,
+    "alpha_qlib_cntd20_score_weight": 0.05,
+    "alpha_qlib_cntd5_score_weight": 0.25,
     "alpha_qlib_cord10_score_weight": 0.0,
     "alpha_qlib_kup_score_weight": 0.0,
     "alpha_qlib_max_positions": 5,
