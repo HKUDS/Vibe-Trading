@@ -25,11 +25,13 @@ from src.live.order_guard import LiveOrderGuardTool
 from src.tools.mcp import MCPRemoteTool
 from src.trading.connectors.alpaca.classification import ALPACA_TOOL_CLASS
 from src.trading.connectors.binance.classification import BINANCE_TOOL_CLASS
+from src.trading.connectors.dhan.classification import DHAN_TOOL_CLASS
 from src.trading.connectors.futu.classification import FUTU_TOOL_CLASS
 from src.trading.connectors.ibkr.classification import IBKR_TOOL_CLASS
 from src.trading.connectors.longbridge.classification import LONGBRIDGE_TOOL_CLASS
 from src.trading.connectors.okx.classification import OKX_TOOL_CLASS
 from src.trading.connectors.robinhood.classification import ROBINHOOD_TOOL_CLASS
+from src.trading.connectors.shoonya.classification import SHOONYA_TOOL_CLASS
 from src.trading.connectors.tiger.classification import TIGER_TOOL_CLASS
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,8 @@ _BROKER_CURATED_MAPS = {
     "okx": OKX_TOOL_CLASS,
     "binance": BINANCE_TOOL_CLASS,
     "futu": FUTU_TOOL_CLASS,
+    "dhan": DHAN_TOOL_CLASS,
+    "shoonya": SHOONYA_TOOL_CLASS,
 }
 
 

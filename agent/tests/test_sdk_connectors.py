@@ -16,12 +16,16 @@ from src.trading.connectors.alpaca import sdk as al
 from src.trading.connectors.alpaca.classification import ALPACA_TOOL_CLASS
 from src.trading.connectors.binance import sdk as bn
 from src.trading.connectors.binance.classification import BINANCE_TOOL_CLASS
+from src.trading.connectors.dhan import sdk as dh
+from src.trading.connectors.dhan.classification import DHAN_TOOL_CLASS
 from src.trading.connectors.futu import sdk as ft
 from src.trading.connectors.futu.classification import FUTU_TOOL_CLASS
 from src.trading.connectors.longbridge import sdk as lb
 from src.trading.connectors.longbridge.classification import LONGBRIDGE_TOOL_CLASS
 from src.trading.connectors.okx import sdk as ox
 from src.trading.connectors.okx.classification import OKX_TOOL_CLASS
+from src.trading.connectors.shoonya import sdk as sh
+from src.trading.connectors.shoonya.classification import SHOONYA_TOOL_CLASS
 from src.trading.connectors.tiger import sdk as tg
 from src.trading.connectors.tiger.classification import TIGER_TOOL_CLASS
 
@@ -34,7 +38,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_sdk_profiles_registered() -> None:
-    """All six broker connectors register paper and read-only live profiles."""
+    """All broker connectors register paper and read-only live profiles."""
     ids = {p.id for p in profiles.list_profiles()}
     assert {
         "tiger-paper-sdk", "tiger-live-sdk-readonly",
@@ -43,7 +47,22 @@ def test_sdk_profiles_registered() -> None:
         "okx-paper-sdk", "okx-live-sdk-readonly",
         "binance-paper-sdk", "binance-live-sdk-readonly",
         "futu-paper-sdk", "futu-live-sdk-readonly",
+        "dhan-paper-sdk", "dhan-live-sdk-readonly",
+        "shoonya-paper-sdk", "shoonya-live-sdk-readonly",
     } <= ids
+
+
+def test_no_discriminator_brokers_expose_no_live_trade_profile() -> None:
+    """Brokers without a runtime paper/live discriminator (Longbridge, Dhan,
+    Shoonya) must NOT register any live order-placing profile — the Longbridge
+    precedent. A ``*-live-trade`` profile here would be a red-line regression."""
+    ids = {p.id for p in profiles.list_profiles()}
+    for broker in ("longbridge", "dhan", "shoonya"):
+        assert f"{broker}-live-trade" not in ids
+        # No live profile for these brokers may advertise an order capability.
+        for p in profiles.list_profiles():
+            if p.connector == broker and p.environment == "live":
+                assert not any(".place" in cap or "requires_mandate" in cap for cap in p.capabilities)
 
 
 @pytest.mark.parametrize(
@@ -61,6 +80,10 @@ def test_sdk_profiles_registered() -> None:
         ("binance-live-sdk-readonly", "binance", "live"),
         ("futu-paper-sdk", "futu", "paper"),
         ("futu-live-sdk-readonly", "futu", "live"),
+        ("dhan-paper-sdk", "dhan", "paper"),
+        ("dhan-live-sdk-readonly", "dhan", "live"),
+        ("shoonya-paper-sdk", "shoonya", "paper"),
+        ("shoonya-live-sdk-readonly", "shoonya", "live"),
     ],
 )
 def test_sdk_profiles_are_readonly_broker_sdk(profile_id, connector, environment) -> None:
@@ -358,6 +381,8 @@ def test_okx_invalid_profile_rejected() -> None:
         ("okx", "place_order"),
         ("binance", "create_order"),
         ("futu", "place_order"),
+        ("dhan", "place_order"),
+        ("shoonya", "place_order"),
     ],
 )
 def test_order_ops_write_pinned_via_registry(broker, order_op) -> None:
@@ -461,3 +486,101 @@ def test_okx_history_maps_candles_and_period(monkeypatch) -> None:
     assert len(out["bars"]) == 1
     bar = out["bars"][0]
     assert bar["open"] == "100" and bar["close"] == "105" and bar["confirm"] == "1"
+
+
+# --------------------------------------------------------------------------- #
+# Dhan + Shoonya: structural paper-only cap (no runtime discriminator)
+#
+# Like Longbridge, these brokers expose no sandbox / no runtime paper/live
+# discriminator (same token/login reaches the same real account). The order
+# path is therefore structurally capped at paper: any non-paper config is
+# refused at the first line, so a flipped ``profile`` override can never reach a
+# live order. Paper orders are simulated locally (neither broker has a sandbox).
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("mod, Config", [(dh, dh.DhanConfig), (sh, sh.ShoonyaConfig)])
+@pytest.mark.parametrize("profile", ["live", "live-readonly"])
+def test_in_broker_place_order_refuses_non_paper(mod, Config, profile) -> None:
+    """A non-paper config is refused before any SDK call (fail-closed)."""
+    result = mod.place_order(Config(profile=profile), symbol="RELIANCE", side="buy", quantity=1)
+    assert result["status"] == "error"
+    assert "paper-only" in result["error"]
+
+
+@pytest.mark.parametrize("mod, Config", [(dh, dh.DhanConfig), (sh, sh.ShoonyaConfig)])
+def test_in_broker_cancel_order_refuses_non_paper(mod, Config) -> None:
+    result = mod.cancel_order(Config(profile="live"), "ORD1")
+    assert result["status"] == "error"
+    assert "paper-only" in result["error"]
+
+
+@pytest.mark.parametrize("mod, Config", [(dh, dh.DhanConfig), (sh, sh.ShoonyaConfig)])
+def test_in_broker_paper_place_order_simulated_locally(mod, Config) -> None:
+    """Paper config simulates locally — no real money, no SDK call."""
+    result = mod.place_order(Config(profile="paper"), symbol="RELIANCE", side="buy", quantity=10)
+    assert result["status"] == "ok"
+    assert result["is_paper"] is True
+    assert result["order_status"] == "simulated_fill"
+    assert result["paper_guard"] == "simulated_locally"
+
+
+@pytest.mark.parametrize("mod, Config", [(dh, dh.DhanConfig), (sh, sh.ShoonyaConfig)])
+def test_in_broker_paper_cancel_order_simulated(mod, Config) -> None:
+    result = mod.cancel_order(Config(profile="paper"), "ORD1")
+    assert result["status"] == "ok"
+    assert result["cancelled"] is True
+    assert result["is_paper"] is True
+
+
+def test_in_broker_order_ops_classified_write() -> None:
+    for name in ("place_order", "modify_order", "cancel_order"):
+        assert DHAN_TOOL_CLASS[name] is ToolClass.WRITE
+        assert SHOONYA_TOOL_CLASS[name] is ToolClass.WRITE
+    for name in ("get_positions", "get_holdings"):
+        assert DHAN_TOOL_CLASS[name] is ToolClass.READ
+        assert SHOONYA_TOOL_CLASS[name] is ToolClass.READ
+
+
+def test_dhan_redacts_access_token() -> None:
+    cfg = dh.DhanConfig(client_id="C1", access_token="tok-abcdefgh-secret")
+    pub = dh._public_config(cfg)
+    assert "secret" not in str(pub)
+    assert pub["access_token"].endswith("***")
+
+
+def test_shoonya_redacts_secrets() -> None:
+    cfg = sh.ShoonyaConfig(
+        user_id="USER1", password="pw", vendor_code="V", api_secret="sec", totp_secret="totp"
+    )
+    pub = sh._public_config(cfg)
+    for secret in ("password", "api_secret", "totp_secret"):
+        assert pub[secret] == "***redacted***"
+    assert "sec" not in str(pub) or pub["api_secret"] == "***redacted***"
+    assert pub["user_id"].endswith("***")
+
+
+def test_dhan_invalid_profile_rejected() -> None:
+    with pytest.raises(dh.DhanConfigError):
+        dh.DhanConfig.from_mapping({"profile": "go-live"})
+
+
+def test_shoonya_invalid_profile_rejected() -> None:
+    with pytest.raises(sh.ShoonyaConfigError):
+        sh.ShoonyaConfig.from_mapping({"profile": "go-live"})
+
+
+def test_dhan_service_unconfigured(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(dh, "get_runtime_root", lambda: tmp_path)
+    result = service.check_connection("dhan-paper-sdk")
+    assert result["status"] == "error"
+    assert result["connector"] == "dhan"
+    assert result["transport"] == "broker_sdk"
+
+
+def test_shoonya_service_unconfigured(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(sh, "get_runtime_root", lambda: tmp_path)
+    result = service.check_connection("shoonya-paper-sdk")
+    assert result["status"] == "error"
+    assert result["connector"] == "shoonya"
+    assert result["transport"] == "broker_sdk"
