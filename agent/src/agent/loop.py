@@ -746,7 +746,7 @@ class AgentLoop:
         for tc in tool_calls:
             args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
             self._emit("tool_call", {"tool": tc.name, "arguments": {k: str(v)[:200] for k, v in args.items()}, "iter": iteration})
-            trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "args": {k: str(v)[:200] for k, v in args.items()}})
+            trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": {k: str(v) for k, v in args.items()}})
             runnable.append((tc, args))
 
         # Execute in parallel — each worker gets its own heartbeat + progress emitter.
@@ -791,7 +791,7 @@ class AgentLoop:
         args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
 
         self._emit("tool_call", {"tool": tc.name, "arguments": {k: str(v)[:200] for k, v in args.items()}, "iter": iteration})
-        trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "args": {k: str(v)[:200] for k, v in args.items()}})
+        trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": {k: str(v) for k, v in args.items()}})
         logger.info(f"Tool call: {tc.name}({list(args.keys())})")
 
         result, elapsed_ms = self._invoke_tool(tc.name, args)
@@ -870,7 +870,7 @@ class AgentLoop:
         truncated = result[:TOOL_RESULT_LIMIT]
         messages.append(context.format_tool_result(tc.id, tc.name, truncated))
 
-        trace.write({"type": "tool_result", "iter": iteration, "tool": tc.name, "status": status, "elapsed_ms": elapsed_ms, "preview": result[:200]})
+        trace.write({"type": "tool_result", "iter": iteration, "tool": tc.name, "call_id": tc.id, "status": status, "elapsed_ms": elapsed_ms, "result": result})
         react_trace.append({"type": "tool_call", "tool": tc.name, "result_preview": result[:200]})
         self._emit("tool_result", {"tool": tc.name, "status": status, "elapsed_ms": elapsed_ms, "preview": result[:200]})
 
