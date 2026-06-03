@@ -20,6 +20,8 @@ _SDK_CONNECTOR_MODULES = {
     "okx": "src.trading.connectors.okx.sdk",
     "binance": "src.trading.connectors.binance.sdk",
     "futu": "src.trading.connectors.futu.sdk",
+    "dhan": "src.trading.connectors.dhan.sdk",
+    "shoonya": "src.trading.connectors.shoonya.sdk",
 }
 
 
@@ -202,6 +204,8 @@ _CONNECTOR_INSTRUMENT = {
     "tiger": ("equity", None),
     "longbridge": ("equity", None),
     "futu": ("equity", None),
+    "dhan": ("equity", "in_equity"),
+    "shoonya": ("equity", "in_equity"),
 }
 
 
