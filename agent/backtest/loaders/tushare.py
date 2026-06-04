@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from backtest.loaders.base import validate_date_range
+from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.registry import register
 
 
@@ -62,28 +62,61 @@ class DataLoader:
 
         sd = start_date.replace("-", "")
         ed = end_date.replace("-", "")
+        cache_fields = list(fields or [])
         result: Dict[str, pd.DataFrame] = {}
 
+        # Every code goes through the opt-in cache helper, which is a direct
+        # passthrough when the cache is disabled. Fundamentals are merged inside
+        # the cached unit so a cached entry already carries its extra columns.
         for code in codes:
-            try:
-                df = self.api.daily(ts_code=code, start_date=sd, end_date=ed)
-                if df is None or df.empty:
-                    continue
-                df = df.sort_values("trade_date")
-                df["trade_date"] = pd.to_datetime(df["trade_date"])
-                df = df.set_index("trade_date")
-                df = df.rename(columns={"vol": "volume"})
-                for col in ["open", "high", "low", "close", "volume"]:
-                    if col in df.columns:
-                        df[col] = pd.to_numeric(df[col], errors="coerce")
-                ohlcv = df[["open", "high", "low", "close", "volume"]].dropna(
-                    subset=["open", "high", "low", "close"]
-                )
-                result[code] = ohlcv
-            except Exception as exc:
-                print(f"[WARN] failed to fetch {code}: {exc}")
+            def _fetch_one(code: str = code) -> Optional[pd.DataFrame]:
+                try:
+                    df = self._fetch_daily_frame(code, sd, ed)
+                    if df is None:
+                        return None
+                    merged = self._merge_basic_fields(
+                        {code: df}, [code], start_date, end_date, cache_fields
+                    )
+                    return merged.get(code)
+                except Exception as exc:
+                    print(f"[WARN] failed to fetch {code}: {exc}")
+                    return None
 
-        return self._merge_basic_fields(result, codes, start_date, end_date, fields)
+            df = cached_loader_fetch(
+                source=self.name,
+                symbol=code,
+                timeframe="1D",
+                start_date=start_date,
+                end_date=end_date,
+                fields=cache_fields,
+                fetch=_fetch_one,
+            )
+            if df is not None and not df.empty:
+                result[code] = df
+
+        return result
+
+    def _fetch_daily_frame(
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
+    ) -> Optional[pd.DataFrame]:
+        """Fetch and normalize one daily OHLCV frame."""
+        df = self.api.daily(ts_code=code, start_date=start_date, end_date=end_date)
+        if df is None or df.empty:
+            return None
+        df = df.sort_values("trade_date")
+        df["trade_date"] = pd.to_datetime(df["trade_date"])
+        df = df.set_index("trade_date")
+        df = df.rename(columns={"vol": "volume"})
+        for col in ["open", "high", "low", "close", "volume"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        ohlcv = df[["open", "high", "low", "close", "volume"]].dropna(
+            subset=["open", "high", "low", "close"]
+        )
+        return ohlcv
 
     def _merge_basic_fields(
         self,

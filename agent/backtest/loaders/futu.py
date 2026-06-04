@@ -8,7 +8,12 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from backtest.loaders.base import NoAvailableSourceError, validate_date_range
+from backtest.loaders.base import (
+    NoAvailableSourceError,
+    loader_cache_get,
+    loader_cache_put,
+    validate_date_range,
+)
 from backtest.loaders.registry import register
 
 logger = logging.getLogger(__name__)
@@ -133,6 +138,29 @@ class FutuLoader:
             return {}
         validate_date_range(start_date, end_date)
 
+        results: Dict[str, pd.DataFrame] = {}
+
+        # Serve cached symbols first; only open a FutuOpenD connection when at
+        # least one symbol is uncached, so a fully-cached request needs no
+        # running gateway.
+        pending: List[str] = []
+        for code in codes:
+            cached = loader_cache_get(
+                source=self.name,
+                symbol=code,
+                timeframe=interval,
+                start_date=start_date,
+                end_date=end_date,
+                fields=None,
+            )
+            if cached is not None:
+                results[code] = cached.copy()
+            else:
+                pending.append(code)
+
+        if not pending:
+            return results
+
         try:
             import futu  # noqa: PLC0415
             ktype = _to_futu_ktype(interval)
@@ -142,9 +170,8 @@ class FutuLoader:
                 f"Cannot connect to FutuOpenD at {self._host}:{self._port}: {exc}"
             ) from exc
 
-        results: Dict[str, pd.DataFrame] = {}
         try:
-            for code in codes:
+            for code in pending:
                 futu_code = _to_futu_symbol(code)
                 ret, data = ctx.request_history_kline(
                     futu_code,
@@ -156,7 +183,17 @@ class FutuLoader:
                 if ret != futu.RET_OK:
                     logger.warning("Futu returned error for %s: %s", futu_code, data)
                     continue
-                results[code] = _normalize_frame(data)
+                normalized = _normalize_frame(data)
+                loader_cache_put(
+                    source=self.name,
+                    symbol=code,
+                    timeframe=interval,
+                    start_date=start_date,
+                    end_date=end_date,
+                    fields=None,
+                    frame=normalized,
+                )
+                results[code] = normalized
         finally:
             ctx.close()
 
