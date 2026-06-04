@@ -429,10 +429,14 @@ def build_backtest_block(
         _benchmark_from_row(entry.base_run, base_row) if base_row is not None else None
     )
 
-    # ── OOS from first oos_run ──────────────────────────────────────────────────
+    # ── OOS: prefer explicit oos_runs, else fall back to walk_forward_runs ──
     oos: BacktestMetrics | None = None
+    oos_run_name: str | None = None
     if entry.oos_runs:
         oos_run_name = entry.oos_runs[0]
+    elif entry.walk_forward_runs:
+        oos_run_name = entry.walk_forward_runs[0]
+    if oos_run_name is not None:
         oos_metrics_path = runs_root / oos_run_name / "artifacts" / "metrics.csv"
         oos = metrics_csv_to_backtest_metrics(oos_run_name, oos_metrics_path)
 
@@ -671,6 +675,40 @@ def build_strategy_manifest(
     return json.loads(manifest.model_dump_json())
 
 
+def emit_manifest_for_strategy(
+    strategy_id: str,
+    entry: StrategyRunsEntry,
+    runs_root: Path,
+    manifests_dir: Path,
+) -> Path:
+    """Build and write manifest.json for one strategy.
+
+    Calls build_strategy_manifest(...), creates the output directory if
+    needed, serialises the result to JSON, and returns the written path.
+
+    Args:
+        strategy_id:   Strategy identifier.
+        entry:         StrategyRunsEntry from strategy_runs.json.
+        runs_root:     <repo_root>/runs/ directory.
+        manifests_dir: research/manifests/ directory.
+
+    Returns:
+        Path to the written manifest.json file.
+    """
+    manifest_dict = build_strategy_manifest(
+        strategy_id=strategy_id,
+        symbol=entry.symbol,
+        entry=entry,
+        runs_root=runs_root,
+        manifests_dir=manifests_dir,
+    )
+    out_dir = manifests_dir / strategy_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "manifest.json"
+    out_path.write_text(json.dumps(manifest_dict, indent=2, default=str), encoding="utf-8")
+    return out_path
+
+
 def verify_manifest(manifest_path: Path) -> ManifestCheckResult:
     """Verify that manifest.json exists and validates against StrategyManifest schema.
 
@@ -816,24 +854,23 @@ def main() -> None:
         print(f"{'=' * 60}")
 
         try:
-            manifest_dict = build_strategy_manifest(
-                strategy_id=strategy_id,
-                symbol=entry.symbol,
-                entry=entry,
-                runs_root=runs_root,
-                manifests_dir=manifests_dir,
-            )
-
             if args.dry_run:
+                # Validate manifest construction without writing any files.
+                build_strategy_manifest(
+                    strategy_id=strategy_id,
+                    symbol=entry.symbol,
+                    entry=entry,
+                    runs_root=runs_root,
+                    manifests_dir=manifests_dir,
+                )
                 print(f"  [DRY-RUN] manifest valid, not written")
                 result = ManifestCheckResult(strategy_id=strategy_id, ok=True)
             else:
-                out_dir = manifests_dir / strategy_id
-                out_dir.mkdir(parents=True, exist_ok=True)
-                out_path = out_dir / "manifest.json"
-                out_path.write_text(
-                    json.dumps(manifest_dict, indent=2, ensure_ascii=False),
-                    encoding="utf-8",
+                out_path = emit_manifest_for_strategy(
+                    strategy_id=strategy_id,
+                    entry=entry,
+                    runs_root=runs_root,
+                    manifests_dir=manifests_dir,
                 )
                 print(f"  [OK] wrote {out_path}")
                 result = verify_manifest(out_path)

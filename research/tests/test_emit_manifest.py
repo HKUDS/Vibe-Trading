@@ -50,6 +50,7 @@ from emit_manifest import (  # noqa: E402
     compute_exit_code,
     compute_gate,
     derive_red_flags,
+    emit_manifest_for_strategy,
     metrics_csv_to_backtest_metrics,
     print_summary,
     verify_manifest,
@@ -98,6 +99,7 @@ def _make_entry(
     symbol: str = "BTC-USDT-SWAP",
     spec_yaml: str = "research/strategies/s1.yaml",
     sweep_run: str | None = None,
+    walk_forward_runs: tuple[str, ...] = (),
 ) -> StrategyRunsEntry:
     import types
 
@@ -109,6 +111,7 @@ def _make_entry(
         stress_runs=types.MappingProxyType(stress_runs or {}),
         oos_runs=oos_runs,
         sweep_run=sweep_run,
+        walk_forward_runs=walk_forward_runs,
     )
 
 
@@ -1001,3 +1004,63 @@ class TestDeterminePipelineStage:
         (manifests_dir / "selection.json").write_text(json.dumps(selection), encoding="utf-8")
         stage = _determine_pipeline_stage("s1", manifests_dir)
         assert stage == 4
+
+
+# ─── (k) emit_manifest_for_strategy ───────────────────────────────────────────
+
+
+class TestEmitManifestForStrategy:
+
+    def test_returns_path_file_exists_schema_valid(self, tmp_path):
+        """valid inputs → returned path is correct, file exists, content validates."""
+        runs_root = tmp_path / "runs"
+        manifests_dir = tmp_path / "manifests"
+        manifests_dir.mkdir()
+
+        # Create a minimal metrics.csv so BacktestBlock is populated.
+        base_csv = runs_root / "base_run" / "artifacts" / "metrics.csv"
+        _write_metrics_csv(base_csv, _good_metrics_row())
+
+        entry = _make_entry(base_run="base_run", oos_runs=())
+        strategy_id = "test_strat"
+
+        returned_path = emit_manifest_for_strategy(
+            strategy_id=strategy_id,
+            entry=entry,
+            runs_root=runs_root,
+            manifests_dir=manifests_dir,
+        )
+
+        # Returned path must point to manifests_dir / strategy_id / manifest.json
+        assert returned_path == manifests_dir / strategy_id / "manifest.json"
+
+        # File must exist on disk
+        assert returned_path.exists()
+
+        # Content must validate against StrategyManifest schema
+        StrategyManifest.model_validate_json(returned_path.read_text(encoding="utf-8"))
+
+    def test_output_dir_created_automatically(self, tmp_path):
+        """strategy sub-directory must be created automatically if it did not exist."""
+        runs_root = tmp_path / "runs"
+        manifests_dir = tmp_path / "manifests"
+        manifests_dir.mkdir()
+
+        strategy_id = "new_strat"
+        strat_dir = manifests_dir / strategy_id
+
+        # Confirm the sub-directory does NOT exist before the call.
+        assert not strat_dir.exists()
+
+        entry = _make_entry(base_run=None)
+
+        emit_manifest_for_strategy(
+            strategy_id=strategy_id,
+            entry=entry,
+            runs_root=runs_root,
+            manifests_dir=manifests_dir,
+        )
+
+        # Sub-directory and manifest.json must now exist.
+        assert strat_dir.exists()
+        assert (strat_dir / "manifest.json").exists()
