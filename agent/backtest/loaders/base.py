@@ -1,4 +1,4 @@
-"""DataLoader Protocol, shared exceptions, and bounded-retry helpers.
+"""DataLoader Protocol, shared exceptions, retry helpers, and loader cache.
 
 The retry/budget helpers are the canonical pattern for any loader that calls
 a flaky external API: a wall-clock deadline plus a small backoff schedule
@@ -9,10 +9,17 @@ re-implementing the loop.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
+import os
 import time
+from pathlib import Path
 from typing import Callable, Protocol, TypeVar, runtime_checkable
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 class NoAvailableSourceError(Exception):
@@ -121,6 +128,249 @@ def retry_with_budget(
                 ) from exc
             time.sleep(min(backoff[attempt], max(0.0, remaining)))
     raise AssertionError("unreachable: retry loop must return or raise")  # pragma: no cover
+
+
+# ---------------------------------------------------------------------------
+# Opt-in local loader cache.
+# ---------------------------------------------------------------------------
+
+LOADER_CACHE_ENV = "VIBE_TRADING_DATA_CACHE"
+_LOADER_CACHE_TRUE_VALUES = {"1", "true", "yes", "on"}
+_LOADER_CACHE_VERSION = 1
+
+
+def loader_cache_enabled() -> bool:
+    """Return whether the local market-data cache is explicitly enabled."""
+    return os.getenv(LOADER_CACHE_ENV, "").strip().lower() in _LOADER_CACHE_TRUE_VALUES
+
+
+def make_loader_cache_key(
+    *,
+    source: str,
+    symbol: str,
+    timeframe: str,
+    start_date: str,
+    end_date: str,
+    fields: list[str] | tuple[str, ...] | None = None,
+    as_of_date: str | None = None,
+) -> str:
+    """Build a stable content-addressed key for one loader payload."""
+    payload = _loader_cache_payload(
+        source=source,
+        symbol=symbol,
+        timeframe=timeframe,
+        start_date=start_date,
+        end_date=end_date,
+        fields=fields,
+        as_of_date=as_of_date,
+    )
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
+def loader_cache_path(
+    *,
+    source: str,
+    symbol: str,
+    timeframe: str,
+    start_date: str,
+    end_date: str,
+    fields: list[str] | tuple[str, ...] | None = None,
+    as_of_date: str | None = None,
+) -> Path:
+    """Return the parquet cache path for one loader payload."""
+    key = make_loader_cache_key(
+        source=source,
+        symbol=symbol,
+        timeframe=timeframe,
+        start_date=start_date,
+        end_date=end_date,
+        fields=fields,
+        as_of_date=as_of_date,
+    )
+    source_dir = _sanitize_cache_segment(source)
+    return Path.home() / ".vibe-trading" / "cache" / "loaders" / source_dir / f"{key}.parquet"
+
+
+def cached_loader_fetch(
+    *,
+    source: str,
+    symbol: str,
+    timeframe: str,
+    start_date: str,
+    end_date: str,
+    fields: list[str] | tuple[str, ...] | None,
+    fetch: Callable[[], pd.DataFrame | None],
+    as_of_date: str | None = None,
+) -> pd.DataFrame | None:
+    """Fetch one DataFrame through the opt-in local cache.
+
+    Cache read/write failures are intentionally non-fatal: a bad local entry
+    falls back to the provider, and write failures simply leave the run
+    uncached.
+    """
+    if not loader_cache_enabled():
+        return fetch()
+
+    cache_path = loader_cache_path(
+        source=source,
+        symbol=symbol,
+        timeframe=timeframe,
+        start_date=start_date,
+        end_date=end_date,
+        fields=fields,
+        as_of_date=as_of_date,
+    )
+    cached = _read_loader_cache_frame(cache_path)
+    if cached is not None:
+        return cached
+
+    frame = fetch()
+    if isinstance(frame, pd.DataFrame) and not frame.empty:
+        _write_loader_cache_frame(cache_path, frame)
+    return frame
+
+
+def _loader_cache_payload(
+    *,
+    source: str,
+    symbol: str,
+    timeframe: str,
+    start_date: str,
+    end_date: str,
+    fields: list[str] | tuple[str, ...] | None,
+    as_of_date: str | None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "version": _LOADER_CACHE_VERSION,
+        "source": str(source),
+        "symbol": str(symbol),
+        "timeframe": str(timeframe),
+        "start_date": _normalize_cache_date(start_date),
+        "end_date": _normalize_cache_date(end_date),
+        "fields": [str(field) for field in (fields or ())],
+    }
+    if as_of_date is not None:
+        payload["as_of_date"] = _normalize_cache_date(as_of_date)
+    return payload
+
+
+def _normalize_cache_date(value: str) -> str:
+    return pd.Timestamp(value).strftime("%Y-%m-%d")
+
+
+def _sanitize_cache_segment(value: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in value.strip().lower())
+    return cleaned or "unknown"
+
+
+def _loader_cache_metadata_path(cache_path: Path) -> Path:
+    return cache_path.with_suffix(cache_path.suffix + ".json")
+
+
+def _read_loader_cache_frame(cache_path: Path) -> pd.DataFrame | None:
+    if not cache_path.is_file():
+        return None
+
+    metadata_path = _loader_cache_metadata_path(cache_path)
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - local cache miss is non-fatal
+        logger.warning("loader cache metadata read failed for %s: %s", cache_path.name, exc)
+        return None
+
+    con = None
+    try:
+        import duckdb
+
+        con = duckdb.connect(database=":memory:")
+        frame = con.execute(
+            f"SELECT * FROM read_parquet({_duckdb_sql_string(cache_path)})"
+        ).fetchdf()
+    except Exception as exc:  # noqa: BLE001 - corrupt cache falls back to provider
+        logger.warning("loader cache read failed for %s: %s", cache_path.name, exc)
+        return None
+    finally:
+        if con is not None:
+            con.close()
+
+    index_columns = metadata.get("index_columns") or []
+    if index_columns:
+        missing = [column for column in index_columns if column not in frame.columns]
+        if missing:
+            logger.warning("loader cache %s missing index column(s): %s", cache_path.name, missing)
+            return None
+        frame = frame.set_index(index_columns)
+        frame.index.names = metadata.get("index_names") or index_columns
+    return frame
+
+
+def _write_loader_cache_frame(cache_path: Path, frame: pd.DataFrame) -> None:
+    metadata_path = _loader_cache_metadata_path(cache_path)
+    tmp_path = cache_path.with_name(f"{cache_path.name}.{os.getpid()}.tmp")
+    tmp_metadata_path = metadata_path.with_name(f"{metadata_path.name}.{os.getpid()}.tmp")
+
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_frame, metadata = _frame_for_loader_cache(frame)
+
+        import duckdb
+
+        con = duckdb.connect(database=":memory:")
+        try:
+            con.register("cache_frame", cache_frame)
+            con.execute(f"COPY cache_frame TO {_duckdb_sql_string(tmp_path)} (FORMAT PARQUET)")
+        finally:
+            con.close()
+
+        tmp_metadata_path.write_text(
+            json.dumps(metadata, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        os.replace(tmp_path, cache_path)
+        os.replace(tmp_metadata_path, metadata_path)
+    except Exception as exc:  # noqa: BLE001 - cache write failures should not fail fetches
+        logger.warning("loader cache write failed for %s: %s", cache_path.name, exc)
+        for path in (tmp_path, tmp_metadata_path):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+
+
+def _frame_for_loader_cache(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, object]]:
+    cache_frame = frame.copy()
+    original_index_names = list(cache_frame.index.names)
+    index_columns = _cache_index_columns(cache_frame)
+    cache_frame.index = cache_frame.index.set_names(index_columns)
+    metadata: dict[str, object] = {
+        "version": _LOADER_CACHE_VERSION,
+        "index_columns": index_columns,
+        "index_names": original_index_names,
+    }
+    return cache_frame.reset_index(), metadata
+
+
+def _cache_index_columns(frame: pd.DataFrame) -> list[str]:
+    columns = {str(column) for column in frame.columns}
+    used: set[str] = set()
+    index_columns: list[str] = []
+    for pos, name in enumerate(frame.index.names):
+        base = str(name) if name is not None else f"__vibe_loader_index_{pos}__"
+        candidate = base
+        suffix = 1
+        while candidate in columns or candidate in used:
+            candidate = f"{base}_{suffix}"
+            suffix += 1
+        index_columns.append(candidate)
+        used.add(candidate)
+    return index_columns
+
+
+def _duckdb_sql_string(path: Path) -> str:
+    return "'" + str(path).replace("'", "''") + "'"
 
 
 @runtime_checkable
