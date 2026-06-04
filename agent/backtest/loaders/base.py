@@ -9,11 +9,13 @@ re-implementing the loop.
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
 import logging
 import os
 import time
+import uuid
 from pathlib import Path
 from typing import Callable, Protocol, TypeVar, runtime_checkable
 
@@ -136,7 +138,9 @@ def retry_with_budget(
 
 LOADER_CACHE_ENV = "VIBE_TRADING_DATA_CACHE"
 _LOADER_CACHE_TRUE_VALUES = {"1", "true", "yes", "on"}
-_LOADER_CACHE_VERSION = 1
+# Bump when the key payload or on-disk layout changes so stale entries are
+# simply never matched (old files become unreachable garbage, safe to delete).
+_LOADER_CACHE_VERSION = 2
 
 
 def loader_cache_enabled() -> bool:
@@ -152,7 +156,6 @@ def make_loader_cache_key(
     start_date: str,
     end_date: str,
     fields: list[str] | tuple[str, ...] | None = None,
-    as_of_date: str | None = None,
 ) -> str:
     """Build a stable content-addressed key for one loader payload."""
     payload = _loader_cache_payload(
@@ -162,7 +165,6 @@ def make_loader_cache_key(
         start_date=start_date,
         end_date=end_date,
         fields=fields,
-        as_of_date=as_of_date,
     )
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()
@@ -176,7 +178,6 @@ def loader_cache_path(
     start_date: str,
     end_date: str,
     fields: list[str] | tuple[str, ...] | None = None,
-    as_of_date: str | None = None,
 ) -> Path:
     """Return the parquet cache path for one loader payload."""
     key = make_loader_cache_key(
@@ -186,10 +187,82 @@ def loader_cache_path(
         start_date=start_date,
         end_date=end_date,
         fields=fields,
-        as_of_date=as_of_date,
     )
     source_dir = _sanitize_cache_segment(source)
     return Path.home() / ".vibe-trading" / "cache" / "loaders" / source_dir / f"{key}.parquet"
+
+
+def loader_cache_range_is_final(end_date: str) -> bool:
+    """Return whether ``end_date`` is settled enough to cache.
+
+    The key is content-addressed on ``end_date`` but not on wall-clock fetch
+    time, so caching a range whose last bar is still forming (``end_date`` today
+    or in the future) would pin a provisional bar and serve it on every later
+    run. Only fully-elapsed days (strictly before today) are cacheable.
+    """
+    try:
+        end = pd.Timestamp(end_date).normalize().date()
+    except Exception:  # noqa: BLE001 - an unparseable date is treated as not cacheable
+        return False
+    return end < dt.date.today()
+
+
+def loader_cache_get(
+    *,
+    source: str,
+    symbol: str,
+    timeframe: str,
+    start_date: str,
+    end_date: str,
+    fields: list[str] | tuple[str, ...] | None = None,
+) -> pd.DataFrame | None:
+    """Return a cached DataFrame for one payload, or ``None`` on any miss.
+
+    Misses include: cache disabled, range not yet settled, entry absent, or a
+    corrupt entry. A corrupt entry is non-fatal — the caller falls back to the
+    live provider.
+    """
+    if not loader_cache_enabled() or not loader_cache_range_is_final(end_date):
+        return None
+    cache_path = loader_cache_path(
+        source=source,
+        symbol=symbol,
+        timeframe=timeframe,
+        start_date=start_date,
+        end_date=end_date,
+        fields=fields,
+    )
+    return _read_loader_cache_frame(cache_path)
+
+
+def loader_cache_put(
+    *,
+    source: str,
+    symbol: str,
+    timeframe: str,
+    start_date: str,
+    end_date: str,
+    fields: list[str] | tuple[str, ...] | None,
+    frame: pd.DataFrame | None,
+) -> None:
+    """Write one non-empty DataFrame to the cache; a no-op when not cacheable.
+
+    Skips a disabled cache, an unsettled range, and empty/non-DataFrame results.
+    Write failures are swallowed so a fetch never fails because of the cache.
+    """
+    if not loader_cache_enabled() or not loader_cache_range_is_final(end_date):
+        return
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return
+    cache_path = loader_cache_path(
+        source=source,
+        symbol=symbol,
+        timeframe=timeframe,
+        start_date=start_date,
+        end_date=end_date,
+        fields=fields,
+    )
+    _write_loader_cache_frame(cache_path, frame)
 
 
 def cached_loader_fetch(
@@ -201,33 +274,35 @@ def cached_loader_fetch(
     end_date: str,
     fields: list[str] | tuple[str, ...] | None,
     fetch: Callable[[], pd.DataFrame | None],
-    as_of_date: str | None = None,
 ) -> pd.DataFrame | None:
     """Fetch one DataFrame through the opt-in local cache.
 
-    Cache read/write failures are intentionally non-fatal: a bad local entry
-    falls back to the provider, and write failures simply leave the run
-    uncached.
+    Convenience wrapper over :func:`loader_cache_get` / :func:`loader_cache_put`
+    for the common per-symbol loader loop: return the cached frame when present,
+    otherwise call ``fetch`` and cache a non-empty result. Cache read/write
+    failures are non-fatal and fall back to ``fetch``.
     """
-    if not loader_cache_enabled():
-        return fetch()
-
-    cache_path = loader_cache_path(
+    cached = loader_cache_get(
         source=source,
         symbol=symbol,
         timeframe=timeframe,
         start_date=start_date,
         end_date=end_date,
         fields=fields,
-        as_of_date=as_of_date,
     )
-    cached = _read_loader_cache_frame(cache_path)
     if cached is not None:
         return cached
 
     frame = fetch()
-    if isinstance(frame, pd.DataFrame) and not frame.empty:
-        _write_loader_cache_frame(cache_path, frame)
+    loader_cache_put(
+        source=source,
+        symbol=symbol,
+        timeframe=timeframe,
+        start_date=start_date,
+        end_date=end_date,
+        fields=fields,
+        frame=frame,
+    )
     return frame
 
 
@@ -239,9 +314,8 @@ def _loader_cache_payload(
     start_date: str,
     end_date: str,
     fields: list[str] | tuple[str, ...] | None,
-    as_of_date: str | None,
 ) -> dict[str, object]:
-    payload: dict[str, object] = {
+    return {
         "version": _LOADER_CACHE_VERSION,
         "source": str(source),
         "symbol": str(symbol),
@@ -250,9 +324,6 @@ def _loader_cache_payload(
         "end_date": _normalize_cache_date(end_date),
         "fields": [str(field) for field in (fields or ())],
     }
-    if as_of_date is not None:
-        payload["as_of_date"] = _normalize_cache_date(as_of_date)
-    return payload
 
 
 def _normalize_cache_date(value: str) -> str:
@@ -302,13 +373,40 @@ def _read_loader_cache_frame(cache_path: Path) -> pd.DataFrame | None:
             return None
         frame = frame.set_index(index_columns)
         frame.index.names = metadata.get("index_names") or index_columns
+        frame = _restore_cache_index_dtypes(frame, metadata.get("index_dtypes"))
+    frame.columns.name = metadata.get("columns_name")
+    return frame
+
+
+def _restore_cache_index_dtypes(frame: pd.DataFrame, index_dtypes: object) -> pd.DataFrame:
+    """Best-effort restore of the per-level index dtypes recorded at write time.
+
+    Cosmetic and non-fatal: duckdb parquet may rewrite datetime resolution, so
+    we cast each level back to its original dtype. A failed cast leaves the
+    duckdb-provided dtype rather than failing the read.
+    """
+    if not isinstance(index_dtypes, list) or frame.index.nlevels != len(index_dtypes):
+        return frame
+    try:
+        if frame.index.nlevels == 1:
+            frame.index = frame.index.astype(index_dtypes[0])
+        else:
+            for level, dtype in enumerate(index_dtypes):
+                frame.index = frame.index.set_levels(
+                    frame.index.levels[level].astype(dtype), level=level
+                )
+    except Exception:  # noqa: BLE001 - index dtype restore is cosmetic
+        logger.debug("loader cache index dtype restore skipped: %s", index_dtypes)
     return frame
 
 
 def _write_loader_cache_frame(cache_path: Path, frame: pd.DataFrame) -> None:
     metadata_path = _loader_cache_metadata_path(cache_path)
-    tmp_path = cache_path.with_name(f"{cache_path.name}.{os.getpid()}.tmp")
-    tmp_metadata_path = metadata_path.with_name(f"{metadata_path.name}.{os.getpid()}.tmp")
+    # pid + uuid so two concurrent writers of the same key never share a tmp
+    # path; os.replace then swaps each file in atomically.
+    unique = f"{os.getpid()}.{uuid.uuid4().hex}"
+    tmp_path = cache_path.with_name(f"{cache_path.name}.{unique}.tmp")
+    tmp_metadata_path = metadata_path.with_name(f"{metadata_path.name}.{unique}.tmp")
 
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -343,12 +441,23 @@ def _write_loader_cache_frame(cache_path: Path, frame: pd.DataFrame) -> None:
 def _frame_for_loader_cache(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, object]]:
     cache_frame = frame.copy()
     original_index_names = list(cache_frame.index.names)
+    columns_name = cache_frame.columns.name
+    index_dtypes = [
+        str(cache_frame.index.get_level_values(level).dtype)
+        for level in range(cache_frame.index.nlevels)
+    ]
     index_columns = _cache_index_columns(cache_frame)
     cache_frame.index = cache_frame.index.set_names(index_columns)
     metadata: dict[str, object] = {
         "version": _LOADER_CACHE_VERSION,
         "index_columns": index_columns,
         "index_names": original_index_names,
+        # Preserve the columns-axis name (e.g. yfinance leaves "Price") and the
+        # per-level index dtypes so a cached frame round-trips byte-identical to
+        # a freshly fetched one (duckdb parquet otherwise rewrites datetime
+        # resolution, e.g. [s] -> [us]).
+        "columns_name": None if columns_name is None else str(columns_name),
+        "index_dtypes": index_dtypes,
     }
     return cache_frame.reset_index(), metadata
 

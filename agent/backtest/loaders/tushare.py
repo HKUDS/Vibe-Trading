@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from backtest.loaders.base import cached_loader_fetch, loader_cache_enabled, validate_date_range
+from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.registry import register
 
 
@@ -60,49 +60,22 @@ class DataLoader:
         if interval != "1D":
             return self._fetch_minutes(codes, start_date, end_date, interval)
 
-        if loader_cache_enabled():
-            return self._fetch_daily_with_cache(codes, start_date, end_date, fields)
-
         sd = start_date.replace("-", "")
         ed = end_date.replace("-", "")
-        result: Dict[str, pd.DataFrame] = {}
-
-        for code in codes:
-            try:
-                df = self._fetch_daily_frame(code, sd, ed)
-                if df is None:
-                    continue
-                result[code] = df
-            except Exception as exc:
-                print(f"[WARN] failed to fetch {code}: {exc}")
-
-        return self._merge_basic_fields(result, codes, start_date, end_date, fields)
-
-    def _fetch_daily_with_cache(
-        self,
-        codes: List[str],
-        start_date: str,
-        end_date: str,
-        fields: Optional[List[str]],
-    ) -> Dict[str, pd.DataFrame]:
-        """Fetch daily bars through the opt-in local cache."""
-        result: Dict[str, pd.DataFrame] = {}
         cache_fields = list(fields or [])
+        result: Dict[str, pd.DataFrame] = {}
 
+        # Every code goes through the opt-in cache helper, which is a direct
+        # passthrough when the cache is disabled. Fundamentals are merged inside
+        # the cached unit so a cached entry already carries its extra columns.
         for code in codes:
-            def _fetch_one() -> Optional[pd.DataFrame]:
+            def _fetch_one(code: str = code) -> Optional[pd.DataFrame]:
                 try:
-                    sd = start_date.replace("-", "")
-                    ed = end_date.replace("-", "")
                     df = self._fetch_daily_frame(code, sd, ed)
                     if df is None:
                         return None
                     merged = self._merge_basic_fields(
-                        {code: df},
-                        [code],
-                        start_date,
-                        end_date,
-                        cache_fields,
+                        {code: df}, [code], start_date, end_date, cache_fields
                     )
                     return merged.get(code)
                 except Exception as exc:
@@ -116,10 +89,9 @@ class DataLoader:
                 start_date=start_date,
                 end_date=end_date,
                 fields=cache_fields,
-                as_of_date=end_date if cache_fields else None,
                 fetch=_fetch_one,
             )
-            if df is not None:
+            if df is not None and not df.empty:
                 result[code] = df
 
         return result

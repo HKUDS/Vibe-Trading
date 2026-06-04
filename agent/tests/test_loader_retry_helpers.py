@@ -16,6 +16,7 @@ inherit the same guarantees:
 
 from __future__ import annotations
 
+import datetime as dt
 import sys
 import time
 from types import SimpleNamespace
@@ -30,7 +31,10 @@ from backtest.loaders.base import (
     LOADER_CACHE_ENV,
     cached_loader_fetch,
     check_budget,
+    loader_cache_get,
     loader_cache_path,
+    loader_cache_put,
+    loader_cache_range_is_final,
     make_loader_cache_key,
     retry_with_budget,
 )
@@ -239,7 +243,7 @@ def test_loader_cache_disabled_by_default_bypasses_home(tmp_path, monkeypatch):
     assert not (home / ".vibe-trading").exists()
 
 
-def test_loader_cache_key_partitions_symbol_date_fields_and_as_of():
+def test_loader_cache_key_partitions_source_symbol_timeframe_date_and_fields():
     base_args = {
         "source": "tushare",
         "symbol": "000001.SZ",
@@ -247,14 +251,15 @@ def test_loader_cache_key_partitions_symbol_date_fields_and_as_of():
         "start_date": "2025-01-01",
         "end_date": "2025-01-03",
         "fields": ["pe"],
-        "as_of_date": "2025-01-03",
     }
     key = make_loader_cache_key(**base_args)
 
+    assert make_loader_cache_key(**{**base_args, "source": "akshare"}) != key
     assert make_loader_cache_key(**{**base_args, "symbol": "600519.SH"}) != key
+    assert make_loader_cache_key(**{**base_args, "timeframe": "1H"}) != key
+    assert make_loader_cache_key(**{**base_args, "start_date": "2024-12-31"}) != key
     assert make_loader_cache_key(**{**base_args, "end_date": "2025-01-04"}) != key
     assert make_loader_cache_key(**{**base_args, "fields": ["pb"]}) != key
-    assert make_loader_cache_key(**{**base_args, "as_of_date": "2025-01-04"}) != key
 
 
 def test_loader_cache_happy_path_writes_then_reuses(
@@ -278,7 +283,6 @@ def test_loader_cache_happy_path_writes_then_reuses(
         "start_date": "2025-01-01",
         "end_date": "2025-01-03",
         "fields": ["pe"],
-        "as_of_date": "2025-01-03",
     }
     first = cached_loader_fetch(**kwargs, fetch=fetch)
     second = cached_loader_fetch(**kwargs, fetch=fetch)
@@ -376,3 +380,96 @@ def test_tushare_daily_fetch_uses_opt_in_cache_for_bars_and_fields(
     assert api.daily_basic_calls == 1
     pd.testing.assert_frame_equal(first["000001.SZ"], second["000001.SZ"])
     assert list(first["000001.SZ"].columns) == ["open", "high", "low", "close", "volume", "pe"]
+
+
+def test_loader_cache_range_is_final_only_for_settled_past():
+    today = dt.date.today()
+    yesterday = (today - dt.timedelta(days=1)).isoformat()
+    tomorrow = (today + dt.timedelta(days=1)).isoformat()
+
+    assert loader_cache_range_is_final(yesterday) is True
+    assert loader_cache_range_is_final(today.isoformat()) is False
+    assert loader_cache_range_is_final(tomorrow) is False
+    # An unparseable end date is conservatively treated as not cacheable.
+    assert loader_cache_range_is_final("not-a-date") is False
+
+
+def test_loader_cache_skips_unsettled_today_range(tmp_path, monkeypatch):
+    """A range ending today must never be cached: its last bar is still forming."""
+    monkeypatch.setenv(LOADER_CACHE_ENV, "1")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    today = dt.date.today().isoformat()
+    start = (dt.date.today() - dt.timedelta(days=5)).isoformat()
+    kwargs = {
+        "source": "okx",
+        "symbol": "BTC-USDT",
+        "timeframe": "1D",
+        "start_date": start,
+        "end_date": today,
+        "fields": None,
+    }
+
+    loader_cache_put(**kwargs, frame=_cache_frame())
+
+    assert loader_cache_get(**kwargs) is None
+    assert not loader_cache_path(**kwargs).exists()
+    assert not (tmp_path / ".vibe-trading").exists()
+
+
+def test_loader_cache_real_duckdb_round_trip(tmp_path, monkeypatch):
+    """Exercise the real duckdb -> parquet -> duckdb path (CI mocks duckdb elsewhere)."""
+    pytest.importorskip("duckdb")
+    monkeypatch.setenv(LOADER_CACHE_ENV, "1")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    frame = _cache_frame()
+    kwargs = {
+        "source": "yfinance",
+        "symbol": "AAPL.US",
+        "timeframe": "1D",
+        "start_date": "2025-01-01",
+        "end_date": "2025-01-03",
+        "fields": None,
+    }
+
+    assert loader_cache_get(**kwargs) is None  # cold miss
+    loader_cache_put(**kwargs, frame=frame)
+    restored = loader_cache_get(**kwargs)
+
+    assert restored is not None
+    assert loader_cache_path(**kwargs).is_file()
+    assert restored.index.name == "trade_date"
+    # The cache preserves columns name and per-level index dtype, so a real
+    # duckdb round-trip is byte-identical to the source frame.
+    pd.testing.assert_frame_equal(restored, frame)
+
+
+def test_yfinance_loader_serves_second_fetch_from_cache(tmp_path, monkeypatch, fake_duckdb):
+    """A batch loader (yfinance) must skip its bulk download on a full cache hit."""
+    monkeypatch.setenv(LOADER_CACHE_ENV, "1")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    import backtest.loaders.yfinance_loader as yfl
+
+    calls = {"n": 0}
+
+    def fake_download(tickers, start_date, end_date, interval):
+        calls["n"] += 1
+        return pd.DataFrame(
+            {
+                "Open": [1.0, 2.0],
+                "High": [1.5, 2.5],
+                "Low": [0.5, 1.5],
+                "Close": [1.2, 2.2],
+                "Volume": [100, 200],
+            },
+            index=pd.DatetimeIndex(["2025-01-02", "2025-01-03"], name="Date"),
+        )
+
+    monkeypatch.setattr(yfl, "_download_history", fake_download)
+
+    loader = yfl.DataLoader()
+    first = loader.fetch(["AAPL.US"], "2025-01-01", "2025-01-03")
+    second = loader.fetch(["AAPL.US"], "2025-01-01", "2025-01-03")
+
+    assert calls["n"] == 1  # second fetch is served from cache, no re-download
+    assert "AAPL.US" in first and "AAPL.US" in second
+    pd.testing.assert_frame_equal(first["AAPL.US"], second["AAPL.US"])

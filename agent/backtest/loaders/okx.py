@@ -13,6 +13,7 @@ import pandas as pd
 import requests
 
 from backtest.loaders.base import (
+    cached_loader_fetch,
     check_budget,
     retry_with_budget,
     validate_date_range,
@@ -85,7 +86,17 @@ class DataLoader:
         result: Dict[str, pd.DataFrame] = {}
         for symbol in codes:
             try:
-                df = self._fetch_candles(symbol, start_ts, end_ts, interval, max_pages)
+                df = cached_loader_fetch(
+                    source=self.name,
+                    symbol=symbol,
+                    timeframe=interval,
+                    start_date=start_date,
+                    end_date=end_date,
+                    fields=None,
+                    fetch=lambda symbol=symbol: self._fetch_candles(
+                        symbol, start_ts, end_ts, interval, max_pages
+                    ),
+                )
                 if df is not None and not df.empty:
                     result[symbol] = df
             except Exception as exc:
