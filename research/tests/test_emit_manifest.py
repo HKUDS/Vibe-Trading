@@ -704,6 +704,148 @@ class TestOosSourceFallback:
         assert bt.oos is None
 
 
+# ─── (e3) TestOosAwareGate ─────────────────────────────────────────────────────
+
+
+class TestOosAwareGate:
+    """Tests for OOS-aware gate evaluation in compute_gate."""
+
+    def _make_oos_backtest(
+        self,
+        oos_sharpe: float = 1.016,
+        oos_drawdown: float = 0.091,
+        oos_trades: int = 49,
+        oos_pf: float = 1.539,
+        is_sharpe: float = 2.0,
+        include_stress: bool = False,
+        stress_sharpe: float | None = None,
+    ) -> "BacktestBlock":
+        from schemas import BacktestMetrics, BacktestBlock, CostStressBlock, CostStressLevel
+
+        in_s = BacktestMetrics(
+            source_run="base_run",
+            sharpe=is_sharpe,
+            max_drawdown=0.08,
+            trades=200,
+            profit_factor=2.0,
+        )
+        oos = BacktestMetrics(
+            source_run="oos_run",
+            sharpe=oos_sharpe,
+            max_drawdown=oos_drawdown,
+            trades=oos_trades,
+            profit_factor=oos_pf,
+        )
+        cost_stress = None
+        if include_stress and stress_sharpe is not None:
+            cost_stress = CostStressBlock(
+                source_run="stress_run",
+                levels=[CostStressLevel(
+                    label="3x_fees",
+                    source_run="stress_run",
+                    fee_multiplier=3.0,
+                    sharpe=stress_sharpe,
+                )],
+            )
+        return BacktestBlock(in_sample=in_s, oos=oos, cost_stress=cost_stress)
+
+    def test_oos_sharpe_1016_passes_with_threshold_10(self):
+        """OOS sharpe 1.016 → min_sharpe actual=1.016 threshold=1.0 passed."""
+        bt = self._make_oos_backtest(oos_sharpe=1.016)
+        gate = compute_gate(bt)
+        sharpe_t = next(t for t in gate.thresholds if t.name == "min_sharpe")
+        assert sharpe_t.threshold == pytest.approx(1.0)
+        assert sharpe_t.actual == pytest.approx(1.016)
+        assert sharpe_t.passed is True
+
+    def test_oos_trades_49_passes_with_threshold_30(self):
+        """OOS trades 49 → min_trades threshold=30 passed."""
+        bt = self._make_oos_backtest(oos_trades=49)
+        gate = compute_gate(bt)
+        trades_t = next(t for t in gate.thresholds if t.name == "min_trades")
+        assert trades_t.threshold == pytest.approx(30.0)
+        assert trades_t.actual == pytest.approx(49.0)
+        assert trades_t.passed is True
+
+    def test_oos_drawdown_091_passes(self):
+        """OOS dd 0.091 → max_drawdown passed (≤ 0.10)."""
+        bt = self._make_oos_backtest(oos_drawdown=0.091)
+        gate = compute_gate(bt)
+        dd_t = next(t for t in gate.thresholds if t.name == "max_drawdown")
+        assert dd_t.threshold == pytest.approx(0.10)
+        assert dd_t.actual == pytest.approx(0.091)
+        assert dd_t.passed is True
+
+    def test_legacy_thresholds_unchanged_when_no_oos(self):
+        """Legacy (oos None): min_sharpe threshold=1.5, min_trades threshold=100."""
+        from schemas import BacktestMetrics, BacktestBlock, CostStressBlock, CostStressLevel
+
+        in_s = BacktestMetrics(
+            source_run="base",
+            sharpe=1.6,
+            max_drawdown=0.08,
+            trades=120,
+            profit_factor=2.0,
+        )
+        cost_stress = CostStressBlock(
+            source_run="s",
+            levels=[CostStressLevel(
+                label="3x_fees", source_run="s", fee_multiplier=3.0, sharpe=1.0
+            )],
+        )
+        bt = BacktestBlock(in_sample=in_s, oos=None, cost_stress=cost_stress)
+        gate = compute_gate(bt)
+        sharpe_t = next(t for t in gate.thresholds if t.name == "min_sharpe")
+        trades_t = next(t for t in gate.thresholds if t.name == "min_trades")
+        assert sharpe_t.threshold == pytest.approx(1.5)
+        assert trades_t.threshold == pytest.approx(100.0)
+        # In-sample values used
+        assert sharpe_t.actual == pytest.approx(1.6)
+        assert trades_t.actual == pytest.approx(120.0)
+
+    def test_no_stress_alpha_fatal_false_fatal_fail_not_set(self):
+        """No stress data → alpha_not_fee_illusion fatal=false; fatal_fail not set."""
+        bt = self._make_oos_backtest(include_stress=False)
+        gate = compute_gate(bt)
+        alpha_t = next(t for t in gate.thresholds if t.name == "alpha_not_fee_illusion")
+        assert alpha_t.fatal is False
+        assert alpha_t.actual is None
+        assert gate.fatal_fail is False
+
+    def test_stress_negative_alpha_fatal_true_fatal_fail_true(self):
+        """Stress worst -0.5 → alpha_not_fee_illusion fatal=true, passed=false, fatal_fail=true."""
+        bt = self._make_oos_backtest(include_stress=True, stress_sharpe=-0.5)
+        gate = compute_gate(bt)
+        alpha_t = next(t for t in gate.thresholds if t.name == "alpha_not_fee_illusion")
+        assert alpha_t.fatal is True
+        assert alpha_t.passed is False
+        assert gate.fatal_fail is True
+
+    def test_stress_positive_alpha_passed(self):
+        """Stress worst 0.4 → alpha_not_fee_illusion passed=true."""
+        bt = self._make_oos_backtest(include_stress=True, stress_sharpe=0.4)
+        gate = compute_gate(bt)
+        alpha_t = next(t for t in gate.thresholds if t.name == "alpha_not_fee_illusion")
+        assert alpha_t.passed is True
+        assert alpha_t.fatal is True
+
+    def test_eth_s5_shaped_no_fatal_fail(self):
+        """eth_s5-shaped: OOS sharpe 1.016, dd 0.091, trades 49, pf 1.539, no stress → fatal_fail=false."""
+        bt = self._make_oos_backtest(
+            oos_sharpe=1.016,
+            oos_drawdown=0.091,
+            oos_trades=49,
+            oos_pf=1.539,
+            include_stress=False,
+        )
+        gate = compute_gate(bt)
+        assert gate.fatal_fail is False
+        # oos_sharpe_positive passes (1.016 > 0)
+        oos_t = next(t for t in gate.thresholds if t.name == "oos_sharpe_positive")
+        assert oos_t.passed is True
+        assert oos_t.fatal is True
+
+
 # ─── (f) build_strategy_manifest ───────────────────────────────────────────────
 
 
