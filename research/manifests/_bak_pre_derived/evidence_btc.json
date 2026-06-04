@@ -1,0 +1,319 @@
+{
+  "caveat": "僅篩選用途；未做交易成本與 multiple-testing 校正",
+  "evidence": [
+    {
+      "category": "stablecoin",
+      "feature_key": "stablecoin_supply_z",
+      "ic_by_horizon": {
+        "8": 0.08792929663503636,
+        "24": 0.03718173260157845,
+        "72": 0.07791839693820178,
+        "168": 0.07926987206815582
+      },
+      "ic_eval_transform": "native_1D",
+      "ir": 3.26351110837146,
+      "sample_size": 1459
+    },
+    {
+      "category": "funding",
+      "feature_key": "funding_z",
+      "ic_by_horizon": {
+        "8": -0.029499304177394835,
+        "24": -0.03428135387660181,
+        "72": -0.050838617263432175,
+        "168": -0.02718061200140212
+      },
+      "ic_eval_transform": "native_8h",
+      "ir": -0.5603520458030966,
+      "sample_size": 4334
+    },
+    {
+      "category": "volatility",
+      "feature_key": "atr_14",
+      "ic_by_horizon": {
+        "8": 0.009672763554807933,
+        "24": 0.0007489234459310512,
+        "72": -0.0257317927539277,
+        "168": -0.04770774105562124
+      },
+      "ic_eval_transform": null,
+      "ir": -0.07571953664974782,
+      "sample_size": 35032
+    },
+    {
+      "category": "basis",
+      "feature_key": "basis_rel",
+      "ic_by_horizon": {
+        "8": -0.0018667742752866518,
+        "24": 0.007917340618095419,
+        "72": 0.018087540701481074,
+        "168": 0.04630855589984325
+      },
+      "ic_eval_transform": null,
+      "ir": -0.475226461965119,
+      "sample_size": 35032
+    },
+    {
+      "category": "trend",
+      "feature_key": "sma_cross_10_30",
+      "ic_by_horizon": {
+        "8": -0.04081932224461286,
+        "24": -0.026538811602392163,
+        "72": -0.004251615681407716,
+        "168": -0.0184970053264962
+      },
+      "ic_eval_transform": null,
+      "ir": -0.6008367993976296,
+      "sample_size": 35003
+    },
+    {
+      "category": "volume",
+      "feature_key": "obv",
+      "ic_by_horizon": {
+        "8": 0.0038259199098006832,
+        "24": 0.007652553940443396,
+        "72": 0.038276715300712257,
+        "168": 0.03699971352758566
+      },
+      "ic_eval_transform": "zscore_720h",
+      "ir": -0.8708050058453645,
+      "sample_size": 35003
+    },
+    {
+      "category": "funding",
+      "feature_key": "funding_rate_raw",
+      "ic_by_horizon": {
+        "8": -0.011928354566695451,
+        "24": -0.019128704153139102,
+        "72": -0.03654981334071967,
+        "168": -0.01007759486995315
+      },
+      "ic_eval_transform": "native_freq",
+      "ir": -1.004514767805145,
+      "sample_size": 3470
+    },
+    {
+      "category": "trend",
+      "feature_key": "ema_cross_9_21",
+      "ic_by_horizon": {
+        "8": -0.03534661657468272,
+        "24": -0.027062615131058416,
+        "72": -0.004894203903084052,
+        "168": -0.02359362439627974
+      },
+      "ic_eval_transform": null,
+      "ir": -0.6701337075658392,
+      "sample_size": 35012
+    },
+    {
+      "category": "volatility",
+      "feature_key": "rolling_std_20",
+      "ic_by_horizon": {
+        "8": 0.011357835856660831,
+        "24": 0.004500869079511773,
+        "72": -0.005186397151639962,
+        "168": -0.03245417855669425
+      },
+      "ic_eval_transform": null,
+      "ir": 0.05498827674184591,
+      "sample_size": 35013
+    },
+    {
+      "category": "momentum",
+      "feature_key": "roc_10",
+      "ic_by_horizon": {
+        "8": -0.018845160202712707,
+        "24": -0.03169754684653319,
+        "72": 0.003104882500063571,
+        "168": -0.012458421500018656
+      },
+      "ic_eval_transform": null,
+      "ir": -0.5997120269842839,
+      "sample_size": 35022
+    },
+    {
+      "category": "momentum",
+      "feature_key": "rsi_14",
+      "ic_by_horizon": {
+        "8": -0.03097653080866103,
+        "24": -0.02460616893072521,
+        "72": 0.009413795104917808,
+        "168": -0.016341301131070934
+      },
+      "ic_eval_transform": null,
+      "ir": -0.6194699323352608,
+      "sample_size": 35019
+    },
+    {
+      "category": "momentum",
+      "feature_key": "macd_diff",
+      "ic_by_horizon": {
+        "8": -0.010030235783930738,
+        "24": -0.02667005507867819,
+        "72": -0.001248835785987066,
+        "168": -0.003047095739297809
+      },
+      "ic_eval_transform": null,
+      "ir": -0.16527778781109465,
+      "sample_size": 34999
+    },
+    {
+      "category": "momentum",
+      "feature_key": "stoch_k",
+      "ic_by_horizon": {
+        "8": -0.02116889364548051,
+        "24": -0.025778918866989863,
+        "72": 0.00029618812750347524,
+        "168": -0.01834219563609739
+      },
+      "ic_eval_transform": null,
+      "ir": -0.5465390256266145,
+      "sample_size": 35019
+    },
+    {
+      "category": "basis",
+      "feature_key": "basis_mom",
+      "ic_by_horizon": {
+        "8": -0.022077863762217688,
+        "24": -0.020036850575065226,
+        "72": -0.01050371652434419,
+        "168": -0.008229012232719192
+      },
+      "ic_eval_transform": null,
+      "ir": -0.2709648386308638,
+      "sample_size": 35008
+    },
+    {
+      "category": "basis",
+      "feature_key": "basis_z",
+      "ic_by_horizon": {
+        "8": -0.01995059473067667,
+        "24": -0.01741582362921432,
+        "72": -0.021829851560231588,
+        "168": 0.005053214505416303
+      },
+      "ic_eval_transform": null,
+      "ir": -0.35498484121139035,
+      "sample_size": 34673
+    },
+    {
+      "category": "volume",
+      "feature_key": "mfi_14",
+      "ic_by_horizon": {
+        "8": -0.004431917986876588,
+        "24": -0.0038286167363793923,
+        "72": 0.021635765941469716,
+        "168": 0.005584376687333125
+      },
+      "ic_eval_transform": null,
+      "ir": -0.32876504681302415,
+      "sample_size": 35019
+    },
+    {
+      "category": "funding",
+      "feature_key": "funding_mom",
+      "ic_by_horizon": {
+        "8": -0.02153500661036921,
+        "24": -0.02118335368171141,
+        "72": -0.012211939724097553,
+        "168": -0.009075382764352028
+      },
+      "ic_eval_transform": "native_8h",
+      "ir": -0.5751545540432758,
+      "sample_size": 4376
+    },
+    {
+      "category": "trend",
+      "feature_key": "adx_14",
+      "ic_by_horizon": {
+        "8": 0.008481868196972808,
+        "24": 0.021370881686353992,
+        "72": 0.012793092653412035,
+        "168": 0.0098553493865777
+      },
+      "ic_eval_transform": null,
+      "ir": 0.11485045334763967,
+      "sample_size": 35032
+    },
+    {
+      "category": "volatility",
+      "feature_key": "bb_width_20",
+      "ic_by_horizon": {
+        "8": 0.014324363839193024,
+        "24": 0.016151892668672233,
+        "72": 0.01770723840983983,
+        "168": 0.007745583036459016
+      },
+      "ic_eval_transform": null,
+      "ir": 0.20347183658776094,
+      "sample_size": 35013
+    },
+    {
+      "category": "volume",
+      "feature_key": "volume_zscore_20",
+      "ic_by_horizon": {
+        "8": 0.016742801863404457,
+        "24": 0.004356271133041462,
+        "72": 0.01122100702224363,
+        "168": 0.0024215870688993105
+      },
+      "ic_eval_transform": null,
+      "ir": 0.1988865464402563,
+      "sample_size": 35013
+    },
+    {
+      "category": "oi",
+      "feature_key": "oi_change_24h",
+      "ic_by_horizon": {
+        "8": null,
+        "24": null,
+        "72": null,
+        "168": null
+      },
+      "ic_eval_transform": null,
+      "ir": null,
+      "sample_size": 168
+    },
+    {
+      "category": "oi",
+      "feature_key": "oi_z",
+      "ic_by_horizon": {
+        "8": null,
+        "24": null,
+        "72": null,
+        "168": null
+      },
+      "ic_eval_transform": null,
+      "ir": null,
+      "sample_size": 0
+    },
+    {
+      "category": "oi",
+      "feature_key": "oi_price_divergence",
+      "ic_by_horizon": {
+        "8": null,
+        "24": null,
+        "72": null,
+        "168": null
+      },
+      "ic_eval_transform": null,
+      "ir": null,
+      "sample_size": 168
+    },
+    {
+      "category": "oi",
+      "feature_key": "oi_mom",
+      "ic_by_horizon": {
+        "8": null,
+        "24": null,
+        "72": null,
+        "168": null
+      },
+      "ic_eval_transform": null,
+      "ir": null,
+      "sample_size": 120
+    }
+  ],
+  "generated_at": "2026-06-01T12:55:54.275245+00:00",
+  "symbol": "btc"
+}

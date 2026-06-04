@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "symbol": "BTC",
+  "generated_at": "2026-05-30T11:02:37.619959Z",
+  "period_days": 1460,
+  "horizons_h": [
+    8,
+    24,
+    72,
+    168
+  ],
+  "factors": [
+    {
+      "name": "stablecoin_supply_zscore",
+      "ic_by_horizon": {
+        "8": 0.02946438017022467,
+        "24": 0.039828625505687325,
+        "72": 0.06571109374986651,
+        "168": 0.06839174048561622
+      },
+      "ir": -0.27946908245496055,
+      "sample_size": 34830,
+      "cross_regime_ic": null,
+      "stability": null,
+      "verdict": "ensemble_only"
+    },
+    {
+      "name": "funding_rate_raw",
+      "ic_by_horizon": {
+        "8": -0.006989711395674789,
+        "24": -0.02010399793130218,
+        "72": -0.03627627280741868,
+        "168": -0.021791668629532916
+      },
+      "ir": -0.7485324140306449,
+      "sample_size": 34963,
+      "cross_regime_ic": null,
+      "stability": null,
+      "verdict": "ensemble_only"
+    },
+    {
+      "name": "on_balance_volume",
+      "ic_by_horizon": {
+        "8": 0.0015342614920010314,
+        "24": -0.011177645709723566,
+        "72": -0.034365994548438444,
+        "168": -0.06623392932239466
+      },
+      "ir": -1.5269719412400053,
+      "sample_size": 34872,
+      "cross_regime_ic": null,
+      "stability": null,
+      "verdict": "ensemble_only"
+    },
+    {
+      "name": "relative_strength_index_14",
+      "ic_by_horizon": {
+        "8": -0.03079774767587559,
+        "24": -0.02433008173992341,
+        "72": 0.00969340495720197,
+        "168": -0.015329810628754829
+      },
+      "ir": -0.7334632310324517,
+      "sample_size": 35019,
+      "cross_regime_ic": null,
+      "stability": null,
+      "verdict": "ensemble_only"
+    }
+  ]
+}

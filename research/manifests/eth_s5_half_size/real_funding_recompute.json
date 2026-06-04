@@ -1,0 +1,66 @@
+{
+  "train": {
+    "run": "train",
+    "n_trades": 86,
+    "total_settlements": 404,
+    "starting_capital": 1000000.0,
+    "span_days": 843,
+    "engine_metrics": {
+      "total_return": 0.3602550621984235,
+      "annual_return": 0.1263273976512513,
+      "sharpe": 1.1889188374029411,
+      "max_drawdown": -0.1487411473266458,
+      "final_value": 1360255.0621984235
+    },
+    "funding_cost_USD": {
+      "fixed_assumption": 9812.41697141585,
+      "real_series": -2003.0283787913163,
+      "delta_USD": 11815.445350207165
+    },
+    "adjusted_estimate": {
+      "total_pnl_engine": 399720.03400000004,
+      "total_pnl_adjusted": 411535.4793502072,
+      "final_value_adjusted": 1411535.4793502071,
+      "total_return_adjusted": 0.4115354793502072,
+      "annual_return_adjusted": 0.16094908883624903,
+      "sharpe_adjusted_estimate": 4.58262289805366
+    },
+    "per_trade_summary": {
+      "median_funding_real_USD": 15.803488651685006,
+      "median_funding_fixed_USD": 171.51943896095412,
+      "median_hold_settlements": 4.0
+    }
+  },
+  "oos": {
+    "run": "oos",
+    "n_trades": 49,
+    "total_settlements": 148,
+    "starting_capital": 1000000.0,
+    "span_days": 467,
+    "engine_metrics": {
+      "total_return": 0.1359543843053643,
+      "annual_return": 0.0941694269444244,
+      "sharpe": 1.015787459260432,
+      "max_drawdown": -0.0912804881664194,
+      "final_value": 1135954.3843053642
+    },
+    "funding_cost_USD": {
+      "fixed_assumption": -5230.096695001879,
+      "real_series": -3076.8026954647357,
+      "delta_USD": -2153.293999537143
+    },
+    "adjusted_estimate": {
+      "total_pnl_engine": 147130.26599999997,
+      "total_pnl_adjusted": 144976.97200046282,
+      "final_value_adjusted": 1144976.972000463,
+      "total_return_adjusted": 0.1449769720004628,
+      "annual_return_adjusted": 0.11161560537930404,
+      "sharpe_adjusted_estimate": 2.8893142694373224
+    },
+    "per_trade_summary": {
+      "median_funding_real_USD": -34.262861732673734,
+      "median_funding_fixed_USD": -51.32862863625124,
+      "median_hold_settlements": 4.0
+    }
+  }
+}

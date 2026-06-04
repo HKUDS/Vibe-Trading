@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "symbol": "btc",
+  "generated_at": "2026-05-30T03:50:16.729283Z",
+  "source_swarm_run": null,
+  "candidates": [
+    {
+      "name": "stablecoin_supply_zscore",
+      "formula": "z-score(stablecoin_supply, 30d)",
+      "feature_key": "stablecoin_supply_z",
+      "data_source": null,
+      "transform": null,
+      "expected_ic_sign": "+",
+      "economic_logic": "穩定幣供給擴張代表場外資金待入，後續買壓推升價格。",
+      "horizons_h": [
+        72,
+        168
+      ],
+      "category": "stablecoin"
+    },
+    {
+      "name": "funding_rate_raw",
+      "formula": "funding_rate",
+      "feature_key": "funding_rate_raw",
+      "data_source": null,
+      "transform": null,
+      "expected_ic_sign": "+",
+      "economic_logic": "資金費率反映市場情緒，正值表示多頭支付空頭。",
+      "horizons_h": [
+        24,
+        72
+      ],
+      "category": "funding"
+    },
+    {
+      "name": "on_balance_volume",
+      "formula": "OBV",
+      "feature_key": "obv",
+      "data_source": null,
+      "transform": null,
+      "expected_ic_sign": "+",
+      "economic_logic": "OBV \n反映資金流向，與價格趨勢一致時可預測未來走勢。",
+      "horizons_h": [
+        24,
+        72
+      ],
+      "category": "momentum"
+    },
+    {
+      "name": "relative_strength_index_14",
+      "formula": "RSI(14)",
+      "feature_key": "rsi_14",
+      "data_source": null,
+      "transform": null,
+      "expected_ic_sign": "-",
+      "economic_logic": "RSI \n反映市場超買超賣狀態。",
+      "horizons_h": [
+        24,
+        72
+      ],
+      "category": "momentum"
+    }
+  ]
+}
