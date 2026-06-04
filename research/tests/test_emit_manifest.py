@@ -643,6 +643,54 @@ class TestBuildBacktestBlock:
         assert RedFlagCode.UNDERPERFORMS_HODL in flags
 
 
+# ─── (e2) TestOosSourceFallback ────────────────────────────────────────────────
+
+
+class TestOosSourceFallback:
+
+    def test_walk_forward_used_when_oos_runs_empty(self, tmp_path):
+        """oos_runs empty + walk_forward_runs present → oos populated from wf run."""
+        runs_root = tmp_path / "runs"
+        base_csv = runs_root / "base" / "artifacts" / "metrics.csv"
+        wf_csv = runs_root / "wf_oos" / "artifacts" / "metrics.csv"
+        _write_metrics_csv(base_csv, _good_metrics_row())
+        _write_metrics_csv(wf_csv, _good_metrics_row())
+        entry = _make_entry(base_run="base", oos_runs=(), walk_forward_runs=("wf_oos",))
+        bt = build_backtest_block(entry, runs_root)
+        assert bt is not None
+        assert bt.oos is not None
+        assert bt.oos.source_run == "wf_oos"
+
+    def test_oos_runs_takes_precedence_over_walk_forward(self, tmp_path):
+        """When both oos_runs and walk_forward_runs present, oos_runs wins."""
+        runs_root = tmp_path / "runs"
+        base_csv = runs_root / "base" / "artifacts" / "metrics.csv"
+        oos_csv = runs_root / "explicit_oos" / "artifacts" / "metrics.csv"
+        wf_csv = runs_root / "wf_run" / "artifacts" / "metrics.csv"
+        _write_metrics_csv(base_csv, _good_metrics_row())
+        _write_metrics_csv(oos_csv, _good_metrics_row())
+        _write_metrics_csv(wf_csv, _good_metrics_row())
+        entry = _make_entry(
+            base_run="base",
+            oos_runs=("explicit_oos",),
+            walk_forward_runs=("wf_run",),
+        )
+        bt = build_backtest_block(entry, runs_root)
+        assert bt is not None
+        assert bt.oos is not None
+        assert bt.oos.source_run == "explicit_oos"
+
+    def test_oos_none_when_both_empty(self, tmp_path):
+        """oos_runs and walk_forward_runs both empty → oos is None."""
+        runs_root = tmp_path / "runs"
+        base_csv = runs_root / "base" / "artifacts" / "metrics.csv"
+        _write_metrics_csv(base_csv, _good_metrics_row())
+        entry = _make_entry(base_run="base", oos_runs=(), walk_forward_runs=())
+        bt = build_backtest_block(entry, runs_root)
+        assert bt is not None
+        assert bt.oos is None
+
+
 # ─── (f) build_strategy_manifest ───────────────────────────────────────────────
 
 
