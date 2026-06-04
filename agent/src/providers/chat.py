@@ -31,11 +31,13 @@ class ToolCallRequest:
         id: Tool call ID (used to match tool_result messages).
         name: Tool name.
         arguments: Tool argument dict.
+        thought_signature: Gemini thinking-model signature to echo on the next turn.
     """
 
     id: str
     name: str
     arguments: Dict[str, Any]
+    thought_signature: Optional[str] = None
 
 
 @dataclass
@@ -136,6 +138,32 @@ class ChatLLM:
             return self.chat(messages, tools=tools, timeout=timeout)
 
     @staticmethod
+    def _tool_call_thought_signature_maps(ai_message: Any) -> tuple[dict[str, str], dict[int, str]]:
+        """Return Gemini thought signatures captured by ``ChatOpenAIWithReasoning``."""
+        by_id: dict[str, str] = {}
+        by_index: dict[int, str] = {}
+        additional_kwargs = getattr(ai_message, "additional_kwargs", {})
+        entries = additional_kwargs.get("tool_call_thought_signatures", [])
+
+        if isinstance(entries, dict):
+            entries = [entries]
+        if not isinstance(entries, list):
+            return by_id, by_index
+
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            signature = entry.get("thought_signature")
+            if not signature:
+                continue
+            if entry.get("id"):
+                by_id[str(entry["id"])] = signature
+            index = entry.get("index")
+            if isinstance(index, int):
+                by_index[index] = signature
+        return by_id, by_index
+
+    @staticmethod
     def _parse_response(ai_message: Any) -> LLMResponse:
         """Convert a LangChain AIMessage (or AIMessageChunk) to ``LLMResponse``.
 
@@ -159,11 +187,20 @@ class ChatLLM:
                 usage = dict(usage)
             except (TypeError, ValueError):
                 usage = None
+        thought_signatures_by_id, thought_signatures_by_index = (
+            ChatLLM._tool_call_thought_signature_maps(ai_message)
+        )
         return LLMResponse(
             content=ai_message.content,
             tool_calls=[
-                ToolCallRequest(id=tc["id"], name=tc["name"], arguments=tc["args"])
-                for tc in ai_message.tool_calls
+                ToolCallRequest(
+                    id=tc["id"],
+                    name=tc["name"],
+                    arguments=tc["args"],
+                    thought_signature=thought_signatures_by_id.get(str(tc["id"]))
+                    or thought_signatures_by_index.get(index),
+                )
+                for index, tc in enumerate(ai_message.tool_calls)
             ],
             reasoning_content=ai_message.additional_kwargs.get("reasoning_content"),
             finish_reason=_dedupe_finish_reason(

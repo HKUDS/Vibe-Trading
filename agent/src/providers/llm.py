@@ -34,9 +34,122 @@ if ChatOpenAI is not None:
         """
 
         @staticmethod
-        def _capture(src: Any, msg: Any) -> None:
+        def _extract_tool_call_thought_signature(tool_call: Any) -> Optional[str]:
+            if not isinstance(tool_call, dict):
+                return None
+
+            extra_content = tool_call.get("extra_content")
+            if isinstance(extra_content, dict):
+                google = extra_content.get("google")
+                if isinstance(google, dict):
+                    value = google.get("thought_signature") or google.get("thoughtSignature")
+                    if value:
+                        return value
+
+            function = tool_call.get("function")
+            containers = [tool_call]
+            if isinstance(function, dict):
+                containers.append(function)
+            for container in containers:
+                value = container.get("thought_signature") or container.get("thoughtSignature")
+                if value:
+                    return value
+            return None
+
+        @classmethod
+        def _collect_tool_call_thought_signatures(cls, tool_calls: Any) -> list[dict[str, Any]]:
+            if not isinstance(tool_calls, list):
+                return []
+
+            signatures = []
+            for fallback_index, tool_call in enumerate(tool_calls):
+                signature = cls._extract_tool_call_thought_signature(tool_call)
+                if not signature or not isinstance(tool_call, dict):
+                    continue
+
+                index = tool_call.get("index")
+                entry: dict[str, Any] = {
+                    "index": index if isinstance(index, int) else fallback_index,
+                    "thought_signature": signature,
+                }
+                if tool_call.get("id"):
+                    entry["id"] = tool_call["id"]
+                signatures.append(entry)
+            return signatures
+
+        @classmethod
+        def _capture(cls, src: Any, msg: Any) -> None:
+            if not isinstance(src, dict):
+                return
             if value := src.get("reasoning_content") or src.get("reasoning"):
                 msg.additional_kwargs["reasoning_content"] = value
+            if signatures := cls._collect_tool_call_thought_signatures(src.get("tool_calls")):
+                msg.additional_kwargs["tool_call_thought_signatures"] = signatures
+
+        @classmethod
+        def _signature_maps(cls, message: Any) -> tuple[dict[str, str], dict[int, str]]:
+            by_id: dict[str, str] = {}
+            by_index: dict[int, str] = {}
+            additional_kwargs = getattr(message, "additional_kwargs", {})
+
+            entries = additional_kwargs.get("tool_call_thought_signatures", [])
+            if isinstance(entries, dict):
+                entries = [entries]
+            if isinstance(entries, list):
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    signature = entry.get("thought_signature")
+                    if not signature:
+                        continue
+                    if entry.get("id"):
+                        by_id[str(entry["id"])] = signature
+                    index = entry.get("index")
+                    if isinstance(index, int):
+                        by_index[index] = signature
+
+            raw_tool_calls = additional_kwargs.get("tool_calls")
+            if isinstance(raw_tool_calls, list):
+                for index, tool_call in enumerate(raw_tool_calls):
+                    signature = cls._extract_tool_call_thought_signature(tool_call)
+                    if not signature or not isinstance(tool_call, dict):
+                        continue
+                    if tool_call.get("id"):
+                        by_id[str(tool_call["id"])] = signature
+                    by_index[index] = signature
+
+            return by_id, by_index
+
+        @staticmethod
+        def _set_tool_call_thought_signature(tool_call: Any, signature: str) -> None:
+            if not isinstance(tool_call, dict):
+                return
+            extra_content = tool_call.get("extra_content")
+            if not isinstance(extra_content, dict):
+                extra_content = {}
+                tool_call["extra_content"] = extra_content
+            google = extra_content.get("google")
+            if not isinstance(google, dict):
+                google = {}
+                extra_content["google"] = google
+            google["thought_signature"] = signature
+
+        @classmethod
+        def _inject_tool_call_thought_signatures(cls, outbound: Any, source_message: Any) -> None:
+            if not isinstance(outbound, list):
+                return
+
+            by_id, by_index = cls._signature_maps(source_message)
+            if not by_id and not by_index:
+                return
+
+            for index, tool_call in enumerate(outbound):
+                signature = None
+                if isinstance(tool_call, dict) and tool_call.get("id"):
+                    signature = by_id.get(str(tool_call["id"]))
+                signature = signature or by_index.get(index)
+                if signature:
+                    cls._set_tool_call_thought_signature(tool_call, signature)
 
         def _create_chat_result(self, response, generation_info=None):  # type: ignore[override]
             result = super()._create_chat_result(response, generation_info)
@@ -80,9 +193,11 @@ if ChatOpenAI is not None:
             for i, m in enumerate(payload["messages"]):
                 if m.get("role") != "assistant":
                     continue
+                source_message = messages[i]
                 if m.get("content") is None:
                     m["content"] = ""
-                m["reasoning_content"] = messages[i].additional_kwargs.get("reasoning_content", "")
+                m["reasoning_content"] = source_message.additional_kwargs.get("reasoning_content", "")
+                self._inject_tool_call_thought_signatures(m.get("tool_calls"), source_message)
             return payload
 else:
     ChatOpenAIWithReasoning = None  # type: ignore
@@ -302,4 +417,3 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         callbacks=callbacks,
         extra_body={"reasoning": {"effort": effort}} if effort else None,
     )
-
