@@ -122,6 +122,9 @@ def _make_good_backtest(
     is_pf: float = 2.0,
     is_return: float = 0.40,
     oos_sharpe: float | None = 1.5,
+    oos_drawdown: float | None = 0.08,
+    oos_trades: int | None = 200,
+    oos_pf: float | None = 2.0,
     include_stress: bool = True,
 ) -> BacktestBlock:
     from schemas import BenchmarkBlock, CostStressBlock, CostStressLevel
@@ -135,7 +138,13 @@ def _make_good_backtest(
         total_return=is_return,
     )
     oos = (
-        BacktestMetrics(source_run="oos_run", sharpe=oos_sharpe)
+        BacktestMetrics(
+            source_run="oos_run",
+            sharpe=oos_sharpe,
+            max_drawdown=oos_drawdown,
+            trades=oos_trades,
+            profit_factor=oos_pf,
+        )
         if oos_sharpe is not None
         else None
     )
@@ -267,22 +276,26 @@ class TestComputeGate:
         assert gate.fatal_fail is False
 
     def test_sharpe_fail_sets_overall_pass_false(self):
-        bt = _make_good_backtest(is_sharpe=0.5)
+        # OOS-aware: gate evaluates oos_sharpe against walk-forward threshold (1.0)
+        bt = _make_good_backtest(oos_sharpe=0.5)
         gate = compute_gate(bt)
         assert gate.overall_pass is False
 
     def test_drawdown_fail_sets_overall_pass_false(self):
-        bt = _make_good_backtest(is_drawdown=0.20)
+        # OOS-aware: gate evaluates oos_drawdown
+        bt = _make_good_backtest(oos_drawdown=0.20)
         gate = compute_gate(bt)
         assert gate.overall_pass is False
 
     def test_trades_fail_sets_overall_pass_false(self):
-        bt = _make_good_backtest(is_trades=50)
+        # OOS-aware: gate evaluates oos_trades against OOS threshold (30)
+        bt = _make_good_backtest(oos_trades=5)
         gate = compute_gate(bt)
         assert gate.overall_pass is False
 
     def test_profit_factor_fail_sets_overall_pass_false(self):
-        bt = _make_good_backtest(is_pf=1.2)
+        # OOS-aware: gate evaluates oos_pf
+        bt = _make_good_backtest(oos_pf=1.2)
         gate = compute_gate(bt)
         assert gate.overall_pass is False
 

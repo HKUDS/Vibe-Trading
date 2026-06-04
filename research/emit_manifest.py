@@ -60,6 +60,7 @@ from schemas import (  # noqa: E402
     GATE_MIN_PROFIT_FACTOR,
     GATE_MIN_SHARPE,
     GATE_MIN_TRADES,
+    GATE_MIN_WALK_FORWARD_SHARPE,
     GateBlock,
     GateThreshold,
     GenerationBlock,
@@ -74,6 +75,9 @@ from schemas import (  # noqa: E402
 
 # Use the config module's _REPO_ROOT as the canonical repo root
 _REPO_ROOT = _CFG_REPO_ROOT
+
+# OOS trade gate — consistent with stage3-diag OOS fallback gate of 30
+GATE_OOS_MIN_TRADES: int = 30
 
 
 # ─── Data container ────────────────────────────────────────────────────────────
@@ -156,7 +160,9 @@ def metrics_csv_to_backtest_metrics(
 def compute_gate(backtest: BacktestBlock) -> GateBlock:
     """Compute GateBlock from a BacktestBlock.
 
-    Uses in_sample metrics for most thresholds; oos for oos_sharpe_positive.
+    When OOS metrics are present, evaluates thresholds against OOS (held-out)
+    data with walk-forward thresholds. Legacy path (no OOS) uses in-sample
+    metrics and original thresholds unchanged.
 
     Args:
         backtest: Assembled BacktestBlock (must have in_sample populated).
@@ -167,21 +173,25 @@ def compute_gate(backtest: BacktestBlock) -> GateBlock:
     is_m = backtest.in_sample
     oos_m = backtest.oos
 
+    oos_mode = oos_m is not None
+    eval_metrics = oos_m if oos_mode else is_m
+
     thresholds: list[GateThreshold] = []
 
     # ── min_sharpe ──────────────────────────────────────────────────────────────
-    sharpe_actual = is_m.sharpe
-    sharpe_passed = (sharpe_actual is not None) and (sharpe_actual >= GATE_MIN_SHARPE)
+    sharpe_threshold = GATE_MIN_WALK_FORWARD_SHARPE if oos_mode else GATE_MIN_SHARPE
+    sharpe_actual = eval_metrics.sharpe
+    sharpe_passed = (sharpe_actual is not None) and (sharpe_actual >= sharpe_threshold)
     thresholds.append(GateThreshold(
         name="min_sharpe",
-        threshold=GATE_MIN_SHARPE,
+        threshold=sharpe_threshold,
         actual=sharpe_actual,
         passed=sharpe_passed,
         fatal=False,
     ))
 
     # ── max_drawdown ────────────────────────────────────────────────────────────
-    dd_actual = is_m.max_drawdown
+    dd_actual = eval_metrics.max_drawdown
     dd_passed = (dd_actual is not None) and (dd_actual <= GATE_MAX_DRAWDOWN)
     thresholds.append(GateThreshold(
         name="max_drawdown",
@@ -192,18 +202,19 @@ def compute_gate(backtest: BacktestBlock) -> GateBlock:
     ))
 
     # ── min_trades ──────────────────────────────────────────────────────────────
-    trades_actual = float(is_m.trades) if is_m.trades is not None else None
-    trades_passed = (trades_actual is not None) and (trades_actual >= GATE_MIN_TRADES)
+    trades_threshold = GATE_OOS_MIN_TRADES if oos_mode else GATE_MIN_TRADES
+    trades_actual = float(eval_metrics.trades) if eval_metrics.trades is not None else None
+    trades_passed = (trades_actual is not None) and (trades_actual >= trades_threshold)
     thresholds.append(GateThreshold(
         name="min_trades",
-        threshold=float(GATE_MIN_TRADES),
+        threshold=float(trades_threshold),
         actual=trades_actual,
         passed=trades_passed,
         fatal=False,
     ))
 
     # ── min_profit_factor ───────────────────────────────────────────────────────
-    pf_actual = is_m.profit_factor
+    pf_actual = eval_metrics.profit_factor
     pf_passed = (pf_actual is not None) and (pf_actual >= GATE_MIN_PROFIT_FACTOR)
     thresholds.append(GateThreshold(
         name="min_profit_factor",
@@ -224,9 +235,7 @@ def compute_gate(backtest: BacktestBlock) -> GateBlock:
         fatal=True,
     ))
 
-    # ── alpha_not_fee_illusion (FATAL) ──────────────────────────────────────────
-    # Worst-case stress-run sharpe must be > 0 (alpha survives fee escalation).
-    # Conservative: if no stress runs exist, cannot pass this gate.
+    # ── alpha_not_fee_illusion (fatal only when stress data exists) ─────────────
     worst_stress_sharpe: float | None = None
     if backtest.cost_stress is not None and backtest.cost_stress.levels:
         stress_sharpes = [
@@ -234,13 +243,14 @@ def compute_gate(backtest: BacktestBlock) -> GateBlock:
         ]
         if stress_sharpes:
             worst_stress_sharpe = min(stress_sharpes)
-    afi_passed = (worst_stress_sharpe is not None) and (worst_stress_sharpe > 0.0)
+    has_stress = worst_stress_sharpe is not None
+    afi_passed = has_stress and worst_stress_sharpe > 0.0
     thresholds.append(GateThreshold(
         name="alpha_not_fee_illusion",
         threshold=0.0,
         actual=worst_stress_sharpe,
         passed=afi_passed,
-        fatal=True,
+        fatal=has_stress,
     ))
 
     overall_pass = all(t.passed for t in thresholds)
