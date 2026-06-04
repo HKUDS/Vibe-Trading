@@ -40,7 +40,7 @@
       "role": "factor_librarian"
     },
     {
-      "purpose": "Map each idea onto the current v47 parameter surface before requesting any expansion.",
+      "purpose": "Map each idea onto the current v47 parameter, indicator-composition, or regime-sizing surface before requesting any expansion.",
       "role": "v47_researcher"
     },
     {
