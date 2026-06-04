@@ -1,6 +1,7 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { copy } from "@/i18n/display";
 
 function Thrower({ message }: { message: string }): React.ReactElement {
   throw new Error(message);
@@ -56,6 +57,6 @@ describe("ErrorBoundary", () => {
         <ThrowEmpty />
       </ErrorBoundary>,
     );
-    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+    expect(screen.getByText(copy.common.unavailable)).toBeInTheDocument();
   });
 });

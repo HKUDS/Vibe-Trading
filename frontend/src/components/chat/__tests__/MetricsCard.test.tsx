@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { MetricsCard } from "../MetricsCard";
+import { metricLabels } from "@/i18n/display";
 
 describe("MetricsCard", () => {
   const sampleMetrics = {
@@ -18,10 +19,10 @@ describe("MetricsCard", () => {
 
   it("renders metric labels", () => {
     render(<MetricsCard metrics={sampleMetrics} />);
-    expect(screen.getByText("Total Return")).toBeInTheDocument();
+    expect(screen.getByText(metricLabels["total_return"])).toBeInTheDocument();
     expect(screen.getByText("Sharpe")).toBeInTheDocument();
-    expect(screen.getByText("Max DD")).toBeInTheDocument();
-    expect(screen.getByText("Trades")).toBeInTheDocument();
+    expect(screen.getByText(metricLabels["max_drawdown"])).toBeInTheDocument();
+    expect(screen.getByText(metricLabels["trade_count"])).toBeInTheDocument();
   });
 
   it("renders formatted metric values", () => {
@@ -42,8 +43,8 @@ describe("MetricsCard", () => {
     render(<MetricsCard metrics={manyMetrics} compact />);
 
     // Should show the first 6 labels from DISPLAY_ORDER that exist
-    expect(screen.getByText("Total Return")).toBeInTheDocument();
-    expect(screen.getByText("Trades")).toBeInTheDocument();
+    expect(screen.getByText(metricLabels["total_return"])).toBeInTheDocument();
+    expect(screen.getByText(metricLabels["trade_count"])).toBeInTheDocument();
     // Should NOT show 7th+ metric
     expect(screen.queryByText("Calmar")).not.toBeInTheDocument();
   });

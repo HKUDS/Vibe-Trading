@@ -3,6 +3,7 @@ import { ShieldCheck, ShieldAlert, Wallet, OctagonX, SlidersHorizontal, Check, X
 import { toast } from "sonner";
 import { api, type MandateProfile, type MandateProposal } from "@/lib/api";
 import { AgentAvatar } from "./AgentAvatar";
+import { copy } from "@/i18n/display";
 
 interface Props {
   proposal: MandateProposal;
@@ -26,11 +27,12 @@ function formatUsd(value: number): string {
 }
 
 function formatLeverage(leverage: MandateProfile["leverage"]): string {
+  const text = copy.pages.agent.mandate;
   if (typeof leverage === "number") {
-    return leverage <= 1 ? "no leverage" : `${leverage}× leverage`;
+    return leverage <= 1 ? text.noLeverage : `${leverage}× ${text.leverageSuffix}`;
   }
   const lowered = leverage.toLowerCase();
-  return lowered === "none" || lowered === "" ? "no leverage" : leverage;
+  return lowered === "none" || lowered === "" ? text.noLeverage : leverage;
 }
 
 function formatUniverse(universe: MandateProfile["universe"]): string {
@@ -60,6 +62,7 @@ function ProfileTile({
   onAdjustCancel: () => void;
 }) {
   const [adjustText, setAdjustText] = useState("");
+  const text = copy.pages.agent.mandate;
 
   const submit = () => {
     const text = adjustText.trim();
@@ -89,32 +92,32 @@ function ProfileTile({
           onClick={onAdjustToggle}
           disabled={disabled}
           className="inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-          title="Adjust this mandate"
+          title={text.adjustTitle}
         >
           <SlidersHorizontal className="h-3 w-3" />
-          Adjust
+          {text.adjust}
         </button>
       </div>
 
       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
         <div className="col-span-2">
-          <dt className="text-muted-foreground">Universe</dt>
+          <dt className="text-muted-foreground">{text.universe}</dt>
           <dd className="font-medium text-foreground">{formatUniverse(profile.universe)}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Max order</dt>
+          <dt className="text-muted-foreground">{text.maxOrder}</dt>
           <dd className="font-mono font-medium text-foreground">{formatUsd(profile.max_order_usd)}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Daily cap</dt>
-          <dd className="font-mono font-medium text-foreground">{profile.daily_trade_cap} trades/day</dd>
+          <dt className="text-muted-foreground">{text.dailyCap}</dt>
+          <dd className="font-mono font-medium text-foreground">{profile.daily_trade_cap} {text.tradesPerDay}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Leverage</dt>
+          <dt className="text-muted-foreground">{text.leverage}</dt>
           <dd className="font-medium text-foreground">{formatLeverage(profile.leverage)}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Instruments</dt>
+          <dt className="text-muted-foreground">{text.instruments}</dt>
           <dd className="font-medium text-foreground">{profile.instruments.join(", ") || "—"}</dd>
         </div>
       </dl>
@@ -138,7 +141,7 @@ function ProfileTile({
                 onAdjustCancel();
               }
             }}
-            placeholder="e.g. keep this but raise the daily cap to 10"
+            placeholder={text.adjustPlaceholder}
             className="w-full rounded-lg border bg-background px-3 py-1.5 text-xs text-foreground outline-none focus:ring-2 focus:ring-primary/30"
           />
           <div className="flex justify-end gap-2">
@@ -148,7 +151,7 @@ function ProfileTile({
               className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               <X className="h-3 w-3" />
-              Cancel
+              {copy.common.cancel}
             </button>
             <button
               type="button"
@@ -157,7 +160,7 @@ function ProfileTile({
               className="inline-flex items-center gap-1 rounded-lg bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground transition-opacity disabled:opacity-40"
             >
               <Check className="h-3 w-3" />
-              Send adjustment
+              {text.sendAdjustment}
             </button>
           </div>
         </div>
@@ -169,7 +172,7 @@ function ProfileTile({
           className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-          {busy ? "Committing…" : `Commit “${profile.label}”`}
+          {busy ? text.committing : text.commit(profile.label)}
         </button>
       )}
     </div>
@@ -187,13 +190,14 @@ function ProfileTile({
 export const MandateProposalCard = memo(function MandateProposalCard({ proposal, committed, onAdjust }: Props) {
   const [busyOrdinal, setBusyOrdinal] = useState<number | null>(null);
   const [adjustingOrdinal, setAdjustingOrdinal] = useState<number | null>(null);
+  const text = copy.pages.agent.mandate;
 
   const handleCommit = useCallback(
     async (ordinal: number) => {
       if (busyOrdinal != null) return;
       const broker = proposal.account?.broker?.trim().toLowerCase();
       if (!broker) {
-        toast.error("Cannot commit mandate: connector broker is missing. Ask the agent to regenerate the proposal.");
+        toast.error(text.missingBroker);
         return;
       }
       setBusyOrdinal(ordinal);
@@ -210,10 +214,10 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
         // SSE event arrives; no optimistic state-write here.
       } catch (error) {
         setBusyOrdinal(null);
-        toast.error(error instanceof Error ? error.message : "Failed to commit mandate.");
+        toast.error(error instanceof Error ? error.message : text.commitFailed);
       }
     },
-    [busyOrdinal, proposal.account?.broker, proposal.proposal_id, proposal.session_id],
+    [busyOrdinal, proposal.account?.broker, proposal.proposal_id, proposal.session_id, text],
   );
 
   // Collapsed state: a compact active-mandate badge (same visual family as the goal badge).
@@ -229,15 +233,15 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
           <span className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
             <ShieldCheck className="h-3 w-3 shrink-0" />
             <span className="shrink-0">
-              Mandate {committed.selected_ordinal != null ? `#${committed.selected_ordinal} ` : ""}active
+              Mandate {committed.selected_ordinal != null ? `#${committed.selected_ordinal} ` : ""}{text.active}
             </span>
             {maxOrder != null && (
-              <span className="shrink-0 font-mono text-[11px]">· ≤{formatUsd(maxOrder)}/order</span>
+              <span className="shrink-0 font-mono text-[11px]">· ≤{formatUsd(maxOrder)}{text.perOrder}</span>
             )}
-            {dailyCap != null && <span className="shrink-0 font-mono text-[11px]">· {dailyCap}/day</span>}
+            {dailyCap != null && <span className="shrink-0 font-mono text-[11px]">· {dailyCap}{text.perDay}</span>}
             {expires && (
               <span className="shrink-0 text-[10px] text-muted-foreground">
-                · expires {expires.toLocaleDateString()}
+                · {text.expires} {expires.toLocaleDateString()}
               </span>
             )}
           </span>
@@ -260,14 +264,14 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
           )}
           <div className="min-w-0">
             <p className="text-sm font-semibold text-foreground">
-              {isReauth ? "Re-authorize connector mandate" : "Connector runtime mandate"}
+              {isReauth ? text.reauthorize : text.runtimeMandate}
             </p>
             {proposal.intent_normalized && (
               <p className="text-xs text-muted-foreground">{proposal.intent_normalized}</p>
             )}
             {proposal.account && (
               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {proposal.account.broker} · {proposal.account.type} account · funded by {proposal.account.funded_by}
+                {text.accountLine(proposal.account.broker, proposal.account.type, proposal.account.funded_by)}
               </p>
             )}
           </div>

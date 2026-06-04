@@ -5,13 +5,13 @@ import {
   formatTimestamp,
   abbreviateNum,
   DISPLAY_ORDER,
-  METRIC_LABELS,
 } from "../formatters";
+import { metricLabels } from "@/i18n/display";
 
 describe("getMetricLabel", () => {
   it("returns human label for known keys", () => {
     expect(getMetricLabel("sharpe")).toBe("Sharpe");
-    expect(getMetricLabel("max_drawdown")).toBe("Max DD");
+    expect(getMetricLabel("max_drawdown")).toBe(metricLabels["max_drawdown"]);
   });
 
   it("returns raw key for unknown keys", () => {
@@ -150,10 +150,9 @@ describe("abbreviateNum", () => {
 });
 
 describe("DISPLAY_ORDER", () => {
-  it("contains all keys from METRIC_LABELS", () => {
-    const labelKeys = Object.keys(METRIC_LABELS);
-    for (const key of labelKeys) {
-      expect(DISPLAY_ORDER).toContain(key);
+  it("has labels for every primary display key", () => {
+    for (const key of DISPLAY_ORDER) {
+      expect(metricLabels[key]).toBeTruthy();
     }
   });
 });

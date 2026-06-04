@@ -3,6 +3,7 @@ import { Database, KeyRound, Loader2, RotateCcw, Save, Server, SlidersHorizontal
 import { toast } from "sonner";
 import { api, isAuthRequiredError, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
 import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
+import { copy } from "@/i18n/display";
 
 interface LLMFormState {
   provider: string;
@@ -56,13 +57,13 @@ export function Settings() {
         setSettingsLoadError(null);
       })
       .catch((error) => {
-        const message = error instanceof Error ? error.message : "Unknown error";
+        const message = error instanceof Error ? error.message : copy.common.unknownError;
         setSettingsLoadError(message);
         if (isAuthRequiredError(error)) {
           toast.error(message);
         } else {
-          toast.error(`Failed to load LLM settings: ${message}`);
-          toast.error(`Failed to load data source settings: ${message}`);
+          toast.error(copy.pages.settings.loadLLMFailed(message));
+          toast.error(copy.pages.settings.loadDataSourcesFailed(message));
         }
       })
       .finally(() => {
@@ -102,7 +103,7 @@ export function Settings() {
   const submitLocalApiKey = (event: FormEvent) => {
     event.preventDefault();
     setApiAuthKey(localApiKey);
-    toast.success("Local API key saved");
+    toast.success(copy.pages.agent.localKeySaved);
     window.location.reload();
   };
 
@@ -120,9 +121,9 @@ export function Settings() {
       setForm(toForm(updated));
       setApiKey("");
       setClearApiKey(false);
-      toast.success("LLM settings saved");
+      toast.success(copy.pages.agent.llmSaved);
     } catch (error) {
-      toast.error(`Failed to save LLM settings: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toast.error(copy.pages.settings.saveLLMFailed(error instanceof Error ? error.message : copy.common.unknownError));
     } finally {
       setSaving(false);
     }
@@ -139,9 +140,9 @@ export function Settings() {
       setDataSettings(updated);
       setTushareToken("");
       setClearTushareToken(false);
-      toast.success("Data source settings saved");
+      toast.success(copy.pages.agent.dataSourceSaved);
     } catch (error) {
-      toast.error(`Failed to save data source settings: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toast.error(copy.pages.settings.saveDataSourcesFailed(error instanceof Error ? error.message : copy.common.unknownError));
     } finally {
       setDataSaving(false);
     }
@@ -152,19 +153,19 @@ export function Settings() {
       <div className="mb-4 space-y-1">
         <div className="flex items-center gap-2">
           <KeyRound className="h-4 w-4 text-primary" />
-          <h2 className="text-base font-semibold">{"Local API access"}</h2>
+          <h2 className="text-base font-semibold">{copy.pages.settings.localApiAccess}</h2>
         </div>
-        <p className="text-sm text-muted-foreground">{"For remote or private Web UI deployments, enter the server API key once in this browser. Localhost use can stay blank."}</p>
+        <p className="text-sm text-muted-foreground">{copy.pages.settings.localApiHint}</p>
       </div>
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
         <label className="grid gap-2">
-          <span className={labelClass}>{"Server API key"}</span>
+          <span className={labelClass}>{copy.pages.settings.serverApiKey}</span>
           <input
             type="password"
             value={localApiKey}
             onChange={(event) => setLocalApiKeyState(event.target.value)}
             className={fieldClass}
-            placeholder={"Stored only in this browser. Leave blank to clear it."}
+            placeholder={copy.pages.settings.browserStorageHint}
             autoComplete="current-password"
           />
         </label>
@@ -173,10 +174,10 @@ export function Settings() {
           className="inline-flex items-center justify-center gap-2 self-end rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90"
         >
           <Save className="h-4 w-4" />
-          {"Save local key"}
+          {copy.pages.settings.saveLocalKey}
         </button>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">{"Stored only in this browser. Leave blank to clear it."}</p>
+      <p className="mt-2 text-xs text-muted-foreground">{copy.pages.settings.browserStorageHint}</p>
     </form>
   );
 
@@ -184,20 +185,20 @@ export function Settings() {
     return (
       <div className="mx-auto max-w-5xl space-y-6 p-6">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight">{"Settings"}</h1>
-          <p className="max-w-3xl text-sm text-muted-foreground">{"Configure model credentials and market data source tokens for this local project."}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{copy.pages.settings.title}</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">{copy.pages.settings.subtitle}</p>
         </div>
         {localApiAccessSection}
         <div className="flex min-h-32 items-center justify-center rounded-lg border bg-card p-5 text-sm text-muted-foreground">
           {settingsLoadError ? (
             <div className="text-center">
-              <div className="font-medium text-foreground">{"Settings are unavailable"}</div>
+              <div className="font-medium text-foreground">{copy.pages.settings.unavailable}</div>
               <div className="mt-1">{settingsLoadError}</div>
             </div>
           ) : (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {"Loading..."}
+              {copy.common.loading}
             </>
           )}
         </div>
@@ -206,41 +207,41 @@ export function Settings() {
   }
 
   const keyStatus = settings.api_key_configured
-    ? "Configured"
+    ? copy.common.configured
     : settings.api_key_required
-      ? "Leave blank to keep the current key"
+      ? copy.pages.settings.keepCurrentKey
       : selectedProvider?.auth_type === "oauth" && selectedProvider.login_command
         ? `This provider uses OAuth. Run: ${selectedProvider.login_command}`
-        : "This provider does not require an API key.";
+        : copy.pages.settings.noApiKeyRequired;
   const apiKeyDisabled = !selectedProvider?.api_key_required || clearApiKey;
   const tushareStatus = dataSettings.tushare_token_configured
-    ? "Configured"
-    : "Leave blank to keep the current token";
+    ? copy.common.configured
+    : copy.pages.settings.keepCurrentToken;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{"Settings"}</h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">{"Configure model credentials and market data source tokens for this local project."}</p>
+        <h1 className="text-2xl font-semibold tracking-tight">{copy.pages.settings.title}</h1>
+        <p className="max-w-3xl text-sm text-muted-foreground">{copy.pages.settings.subtitle}</p>
       </div>
 
       {localApiAccessSection}
 
       <div className="space-y-2">
-        <h2 className="text-lg font-semibold tracking-tight">{"LLM Settings"}</h2>
-        <p className="max-w-3xl text-sm text-muted-foreground">{"Choose the model used by the agent and save it to the project-local agent/.env file."}</p>
+        <h2 className="text-lg font-semibold tracking-tight">{copy.pages.settings.llmSettings}</h2>
+        <p className="max-w-3xl text-sm text-muted-foreground">{copy.pages.settings.llmHint}</p>
       </div>
 
       <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
         <section className="rounded-lg border bg-card p-5 shadow-sm">
           <div className="mb-5 flex items-center gap-2">
             <Server className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold">{"Connection"}</h2>
+            <h2 className="text-base font-semibold">{copy.pages.settings.connection}</h2>
           </div>
 
           <div className="grid gap-4">
             <label className="grid gap-2">
-              <span className={labelClass}>{"Provider"}</span>
+              <span className={labelClass}>{copy.pages.settings.provider}</span>
               <select
                 value={form.provider}
                 onChange={(event) => onProviderChange(event.target.value)}
@@ -250,11 +251,11 @@ export function Settings() {
                   <option key={provider.name} value={provider.name}>{provider.label}</option>
                 ))}
               </select>
-              <span className={hintClass}>{"Changing providers updates the recommended model and endpoint."}</span>
+              <span className={hintClass}>{copy.pages.settings.providerHint}</span>
             </label>
 
             <label className="grid gap-2">
-              <span className={labelClass}>{"Model"}</span>
+              <span className={labelClass}>{copy.pages.settings.model}</span>
               <div className="flex gap-2">
                 <input
                   value={form.model_name}
@@ -266,17 +267,17 @@ export function Settings() {
                   type="button"
                   onClick={() => applyProviderDefaults()}
                   className="inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                  title={"Use provider defaults"}
+                  title={copy.pages.settings.providerDefaults}
                 >
                   <RotateCcw className="h-4 w-4" />
-                  <span className="hidden sm:inline">{"Use provider defaults"}</span>
+                  <span className="hidden sm:inline">{copy.pages.settings.providerDefaults}</span>
                 </button>
               </div>
-              <span className={hintClass}>{"Use the exact model id required by your provider."}</span>
+              <span className={hintClass}>{copy.pages.settings.modelHint}</span>
             </label>
 
             <label className="grid gap-2">
-              <span className={labelClass}>{"Base URL"}</span>
+              <span className={labelClass}>{copy.pages.settings.baseUrl}</span>
               <input
                 value={form.base_url}
                 onChange={(event) => setForm({ ...form, base_url: event.target.value })}
@@ -288,7 +289,7 @@ export function Settings() {
 
             <label className="grid gap-2">
               <span className={labelClass}>
-                {selectedProvider?.auth_type === "oauth" ? "OAuth" : "API key"}
+                {selectedProvider?.auth_type === "oauth" ? "OAuth" : copy.pages.settings.apiKey}
               </span>
               <div className="relative">
                 <KeyRound className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -315,7 +316,7 @@ export function Settings() {
                       }}
                       className="h-3.5 w-3.5 accent-primary"
                     />
-                    {"Clear saved API key"}
+                    {copy.pages.settings.clearApiKey}
                   </label>
                 ) : null}
               </div>
@@ -326,7 +327,7 @@ export function Settings() {
         <section className="rounded-lg border bg-card p-5 shadow-sm">
           <div className="mb-5 flex items-center gap-2">
             <SlidersHorizontal className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold">{"Generation"}</h2>
+            <h2 className="text-base font-semibold">{copy.pages.settings.generation}</h2>
           </div>
 
           <div className="grid gap-4">
@@ -344,7 +345,7 @@ export function Settings() {
             </label>
 
             <label className="grid gap-2">
-              <span className={labelClass}>{"Timeout seconds"}</span>
+              <span className={labelClass}>{copy.pages.settings.timeoutSeconds}</span>
               <input
                 type="number"
                 min={1}
@@ -357,7 +358,7 @@ export function Settings() {
             </label>
 
             <label className="grid gap-2">
-              <span className={labelClass}>{"Max retries"}</span>
+              <span className={labelClass}>{copy.pages.settings.maxRetries}</span>
               <input
                 type="number"
                 min={0}
@@ -370,23 +371,23 @@ export function Settings() {
             </label>
 
             <label className="grid gap-2">
-              <span className={labelClass}>{"Reasoning effort"}</span>
+              <span className={labelClass}>{copy.pages.settings.reasoningEffort}</span>
               <select
                 value={form.reasoning_effort}
                 onChange={(event) => setForm({ ...form, reasoning_effort: event.target.value })}
                 className={fieldClass}
               >
-                <option value="">{"Off"}</option>
+                <option value="">{copy.pages.settings.off}</option>
                 <option value="low">low</option>
                 <option value="medium">medium</option>
                 <option value="high">high</option>
                 <option value="max">max</option>
               </select>
-              <span className={hintClass}>{"How hard the model thinks before answering. Higher is more thorough but slower; leave Off for fastest replies."}</span>
+              <span className={hintClass}>{copy.pages.settings.reasoningHint}</span>
             </label>
 
             <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{"Saved to"}: </span>
+              <span className="font-medium text-foreground">{copy.pages.settings.savedTo}: </span>
               <span className="break-all font-mono">{settings.env_path}</span>
             </div>
 
@@ -396,7 +397,7 @@ export function Settings() {
               className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {saving ? "Saving..." : "Save settings"}
+              {saving ? copy.common.saving : copy.pages.settings.saveSettings}
             </button>
           </div>
         </section>
@@ -406,15 +407,15 @@ export function Settings() {
         <div className="mb-5 space-y-1">
           <div className="flex items-center gap-2">
             <Database className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold">{"Data Source Settings"}</h2>
+            <h2 className="text-base font-semibold">{copy.pages.settings.dataSourceSettings}</h2>
           </div>
-          <p className="text-sm text-muted-foreground">{"Configure optional market data credentials used by backtests and research agents."}</p>
+          <p className="text-sm text-muted-foreground">{copy.pages.settings.dataSourceHint}</p>
         </div>
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
           <div className="grid gap-4">
             <label className="grid gap-2">
-              <span className={labelClass}>{"Tushare token"}</span>
+              <span className={labelClass}>{copy.pages.settings.tushareToken}</span>
               <div className="relative">
                 <KeyRound className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <input
@@ -428,7 +429,7 @@ export function Settings() {
                 />
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className={hintClass}>{"Used for China A-share, futures, fund, and macro data. If unset, the project falls back to AKShare where available."}</span>
+                <span className={hintClass}>{copy.pages.settings.tushareHint}</span>
                 <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                   <input
                     type="checkbox"
@@ -439,13 +440,13 @@ export function Settings() {
                     }}
                     className="h-3.5 w-3.5 accent-primary"
                   />
-                  {"Clear saved Tushare token"}
+                  {copy.pages.settings.clearTushareToken}
                 </label>
               </div>
             </label>
 
             <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{"Saved to"}: </span>
+              <span className="font-medium text-foreground">{copy.pages.settings.savedTo}: </span>
               <span className="break-all font-mono">{dataSettings.env_path}</span>
             </div>
 
@@ -455,7 +456,7 @@ export function Settings() {
               className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {dataSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {dataSaving ? "Saving..." : "Save data source settings"}
+              {dataSaving ? copy.common.saving : copy.pages.settings.saveDataSources}
             </button>
           </div>
 
@@ -463,15 +464,15 @@ export function Settings() {
             <div className="mb-3 flex items-center justify-between gap-3">
               <span className="text-sm font-medium">{"BaoStock"}</span>
               <span className={`rounded-full px-2 py-0.5 text-xs ${dataSettings.baostock_supported ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
-                {dataSettings.baostock_supported ? "Loader available" : "No project loader"}
+                {dataSettings.baostock_supported ? copy.pages.settings.loaderAvailable : copy.pages.settings.noProjectLoader}
               </span>
             </div>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p>{dataSettings.baostock_message}</p>
               <p>
                 {dataSettings.baostock_installed
-                  ? "Python package installed"
-                  : "Python package not installed"}
+                  ? copy.pages.settings.packageInstalled
+                  : copy.pages.settings.packageMissing}
               </p>
             </div>
           </div>

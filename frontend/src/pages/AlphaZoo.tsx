@@ -38,6 +38,7 @@ import {
 import { echarts } from "@/lib/echarts";
 import { getChartTheme } from "@/lib/chart-theme";
 import { useDarkMode } from "@/hooks/useDarkMode";
+import { copy } from "@/i18n/display";
 
 /* ---------- Constants ---------- */
 
@@ -128,6 +129,7 @@ export function AlphaZoo() {
 /* ---------- Browse view ---------- */
 
 function BrowseView() {
+  const alphaText = copy.pages.alphaZoo;
   const [alphas, setAlphas] = useState<AlphaSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [zooFilter, setZooFilter] = useState<string>("");
@@ -155,7 +157,7 @@ function BrowseView() {
       })
       .catch((err: unknown) => {
         if (!alive) return;
-        const msg = err instanceof Error ? err.message : "Failed to load alphas";
+        const msg = err instanceof Error ? err.message : alphaText.loadAlphasFailed;
         toast.error(msg);
         setAlphas([]);
         setTotal(0);
@@ -194,13 +196,10 @@ function BrowseView() {
           <Layers className="h-3.5 w-3.5" aria-hidden="true" /> Alpha Zoo
         </div>
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-          {total > 0 ? total : 452} pre-built quant alphas across 4 zoos
+          {alphaText.heroTitle(total > 0 ? total : 452)}
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Browse formula-driven cross-sectional signals from Qlib, the
-          Kakushadze 101 set, GTJA 191, and the academic anomaly literature.
-          Click any alpha to read its formula and source code, or run a bench
-          to score the whole zoo on a universe and period.
+          {alphaText.heroSubtitle}
         </p>
       </div>
 
@@ -239,7 +238,7 @@ function BrowseView() {
       <div className="flex flex-col md:flex-row md:items-end gap-3 border rounded-xl p-4 bg-card">
         <div className="flex-1 min-w-0">
           <label htmlFor="alpha-search" className="text-xs text-muted-foreground block mb-1">
-            Search
+            {alphaText.search}
           </label>
           <div className="relative">
             <Search
@@ -253,7 +252,7 @@ function BrowseView() {
                 setSearch(e.target.value);
                 setVisibleCount(PAGE_SIZE);
               }}
-              placeholder="Filter by id or nickname…"
+              placeholder={alphaText.searchPlaceholder}
               className="w-full pl-9 pr-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
@@ -266,7 +265,7 @@ function BrowseView() {
             onChange={(e) => setZooFilter(e.target.value)}
             className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
-            <option value="">All zoos</option>
+            <option value="">{alphaText.allZoos}</option>
             {ZOO_CARDS.map((z) => (
               <option key={z.id} value={z.id}>
                 {z.title}
@@ -284,7 +283,7 @@ function BrowseView() {
             onChange={(e) => setThemeFilter(e.target.value)}
             className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
-            <option value="">All themes</option>
+            <option value="">{alphaText.allThemes}</option>
             {themeOptions.map((tname) => (
               <option key={tname} value={tname}>
                 {tname}
@@ -302,7 +301,7 @@ function BrowseView() {
             onChange={(e) => setUniverseFilter(e.target.value)}
             className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
-            <option value="">All universes</option>
+            <option value="">{alphaText.allUniverses}</option>
             {UNIVERSE_OPTIONS.map((u) => (
               <option key={u.value} value={u.value}>
                 {u.label}
@@ -314,7 +313,7 @@ function BrowseView() {
           to="/alpha-zoo/bench"
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
         >
-          <Play className="h-3.5 w-3.5" aria-hidden="true" /> Run benchmark
+          <Play className="h-3.5 w-3.5" aria-hidden="true" /> {alphaText.runBenchmark}
         </Link>
       </div>
 
@@ -348,13 +347,13 @@ function BrowseView() {
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin inline mr-2" aria-hidden="true" />
-                    Loading alphas…
+                    {copy.common.loading}
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                    No alphas match the current filters.
+                    {alphaText.noMatches}
                   </td>
                 </tr>
               ) : (
@@ -395,14 +394,14 @@ function BrowseView() {
         {!loading && visible.length < filtered.length && (
           <div className="border-t p-3 flex items-center justify-between text-xs text-muted-foreground">
             <span>
-              Showing {visible.length} of {filtered.length}
+              {alphaText.showing(visible.length, filtered.length)}
             </span>
             <button
               type="button"
               onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
               className="px-3 py-1 rounded-md border hover:bg-muted hover:text-foreground transition"
             >
-              Load more
+              {alphaText.loadMore}
             </button>
           </div>
         )}
@@ -418,6 +417,7 @@ interface DetailProps {
 }
 
 function DetailView({ alphaId }: DetailProps) {
+  const alphaText = copy.pages.alphaZoo;
   const [detail, setDetail] = useState<AlphaDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -434,7 +434,7 @@ function DetailView({ alphaId }: DetailProps) {
       })
       .catch((err: unknown) => {
         if (!alive) return;
-        const msg = err instanceof Error ? err.message : "Failed to load alpha";
+        const msg = err instanceof Error ? err.message : alphaText.loadAlphaFailed;
         setError(msg);
       })
       .finally(() => {
@@ -448,7 +448,7 @@ function DetailView({ alphaId }: DetailProps) {
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin mr-2" aria-hidden="true" /> Loading {alphaId}…
+        <Loader2 className="h-4 w-4 animate-spin mr-2" aria-hidden="true" /> {alphaText.detailLoading(alphaId)}
       </div>
     );
   }
@@ -457,13 +457,13 @@ function DetailView({ alphaId }: DetailProps) {
     return (
       <div className="p-8 max-w-3xl mx-auto space-y-4">
         <Link to="/alpha-zoo" className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Back to Alpha Zoo
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> {alphaText.backToZoo}
         </Link>
         <div className="border rounded-xl p-6 bg-card">
           <h2 className="font-semibold text-sm mb-1 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-warning" aria-hidden="true" /> Could not load alpha
+            <AlertTriangle className="h-4 w-4 text-warning" aria-hidden="true" /> {alphaText.couldNotLoadAlpha}
           </h2>
-          <p className="text-sm text-muted-foreground">{error || "Unknown error"}</p>
+          <p className="text-sm text-muted-foreground">{error || alphaText.unknownError}</p>
         </div>
       </div>
     );
@@ -488,14 +488,14 @@ function DetailView({ alphaId }: DetailProps) {
           to="/alpha-zoo"
           className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
         >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Back to Alpha Zoo
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> {alphaText.backToZoo}
         </Link>
         <button
           type="button"
           onClick={() => navigate(benchHref)}
           className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition"
         >
-          <Play className="h-3.5 w-3.5" aria-hidden="true" /> Run benchmark
+          <Play className="h-3.5 w-3.5" aria-hidden="true" /> {alphaText.runBenchmark}
         </button>
       </div>
 
@@ -518,7 +518,7 @@ function DetailView({ alphaId }: DetailProps) {
       <section className="space-y-2">
         <h2 className="text-sm font-medium text-muted-foreground">Formula</h2>
         <pre className="border rounded-xl bg-muted/30 p-4 overflow-x-auto text-xs leading-relaxed">
-          <code>{formulaLatex || "(no formula provided)"}</code>
+          <code>{formulaLatex || alphaText.noFormula}</code>
         </pre>
       </section>
 
@@ -543,13 +543,13 @@ function DetailView({ alphaId }: DetailProps) {
 
       {/* Source code */}
       <section className="space-y-2">
-        <h2 className="text-sm font-medium text-muted-foreground">Source code</h2>
+        <h2 className="text-sm font-medium text-muted-foreground">{alphaText.sourceCode}</h2>
         <details className="border rounded-xl bg-card group">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium hover:bg-muted/40 select-none">
-            View source ({(detail.source_code || "").split("\n").length} lines)
+            {alphaText.viewSource((detail.source_code || "").split("\n").length)}
           </summary>
           <pre className="border-t bg-muted/30 p-4 overflow-x-auto text-xs leading-relaxed">
-            <code>{detail.source_code || "(no source available)"}</code>
+            <code>{detail.source_code || alphaText.noSource}</code>
           </pre>
         </details>
       </section>
@@ -577,6 +577,7 @@ interface BenchProgress {
 }
 
 function BenchView() {
+  const alphaText = copy.pages.alphaZoo;
   // Read prefill from query string (set by Detail "Run bench" button).
   const { search: locSearch } = useLocation();
   const initial = useMemo(() => {
@@ -631,14 +632,12 @@ function BenchView() {
       setJobId(res.job_id);
       attachStream(res.job_id);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to start bench";
+      const msg = err instanceof Error ? err.message : alphaText.benchStartFailed;
       // BTC-USDT is single-asset — surface inline rather than as a toast,
       // because the form is the action context and the message includes a
       // concrete suggestion for the user's next step.
       if (msg.toLowerCase().includes("single-asset")) {
-        setFormError(
-          `${msg} Try \`sp500\` or \`csi300\` for a meaningful cross-sectional IC.`,
-        );
+        setFormError(alphaText.singleAssetHint(msg));
       } else {
         toast.error(msg);
       }
@@ -687,7 +686,7 @@ function BenchView() {
         sourceRef.current = null;
         return;
       }
-      let msg = "Bench stream error";
+      let msg = alphaText.benchStreamError;
       try {
         const data = JSON.parse((e as MessageEvent).data || "{}");
         if (typeof data.message === "string") msg = data.message;
@@ -709,19 +708,18 @@ function BenchView() {
         to="/alpha-zoo"
         className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
       >
-        <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Back to Alpha Zoo
+        <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> {alphaText.backToZoo}
       </Link>
 
       <div className="space-y-1">
         <div className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wide">
-          <Play className="h-3.5 w-3.5" aria-hidden="true" /> Benchmark runner
+          <Play className="h-3.5 w-3.5" aria-hidden="true" /> {alphaText.benchRunner}
         </div>
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-          Score a zoo on a universe
+          {alphaText.benchTitle}
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Computes IC / IR for every alpha in the selected zoo over the chosen
-          universe and period, then bucketizes them as alive / reversed / dead.
+          {alphaText.benchSubtitle}
         </p>
       </div>
 
@@ -798,11 +796,11 @@ function BenchView() {
           >
             {busy ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> Running…
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> {alphaText.running}
               </>
             ) : (
               <>
-                <Play className="h-3.5 w-3.5" aria-hidden="true" /> Run benchmark
+                <Play className="h-3.5 w-3.5" aria-hidden="true" /> {alphaText.runBenchmark}
               </>
             )}
           </button>
@@ -835,6 +833,7 @@ function ProgressPanel({
   jobId: string | null;
   progress: BenchProgress | null;
 }) {
+  const alphaText = copy.pages.alphaZoo;
   const pct = progress && progress.n_total > 0
     ? Math.min(100, Math.round((progress.n_done / progress.n_total) * 100))
     : 0;
@@ -843,7 +842,7 @@ function ProgressPanel({
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-          {jobId ? `Job ${jobId.slice(0, 12)}…` : "Submitting…"}
+          {jobId ? `Job ${jobId.slice(0, 12)}...` : alphaText.submitting}
         </span>
         {progress && (
           <span className="font-mono tabular-nums">
@@ -859,7 +858,7 @@ function ProgressPanel({
       </div>
       {progress?.current_alpha_id && (
         <p className="text-xs text-muted-foreground font-mono truncate">
-          Computing: {progress.current_alpha_id}
+          {alphaText.computing(progress.current_alpha_id)}
         </p>
       )}
     </div>
@@ -957,6 +956,7 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
 }
 
 function TopTable({ title, rows }: { title: string; rows: AlphaBenchTopRow[] }) {
+  const alphaText = copy.pages.alphaZoo;
   return (
     <div className="border rounded-xl overflow-hidden bg-card">
       <div className="px-4 py-2.5 border-b bg-muted/40">
@@ -964,7 +964,7 @@ function TopTable({ title, rows }: { title: string; rows: AlphaBenchTopRow[] }) 
       </div>
       {rows.length === 0 ? (
         <div className="px-4 py-6 text-xs text-muted-foreground text-center">
-          No rows.
+          {alphaText.noRows}
         </div>
       ) : (
         <table className="w-full text-sm">

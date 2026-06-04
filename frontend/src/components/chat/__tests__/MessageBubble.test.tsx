@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageBubble } from "../MessageBubble";
 import type { AgentMessage } from "@/types/agent";
+import { copy } from "@/i18n/display";
 
 // Mock react-markdown (heavy dependency, renders raw content in tests)
 vi.mock("react-markdown", () => ({
@@ -76,7 +77,7 @@ describe("MessageBubble", () => {
           onRetry={vi.fn()}
         />,
       );
-      expect(screen.getByText(/Try simplifying the strategy/)).toBeInTheDocument();
+      expect(screen.getByText(copy.message.retryHints.timeout)).toBeInTheDocument();
     });
   });
 

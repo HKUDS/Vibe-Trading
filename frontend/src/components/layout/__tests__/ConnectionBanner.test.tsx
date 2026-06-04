@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { ConnectionBanner } from "../ConnectionBanner";
+import { copy } from "@/i18n/display";
 
 describe("ConnectionBanner", () => {
   it("renders nothing when status is connected", () => {
@@ -14,13 +15,12 @@ describe("ConnectionBanner", () => {
 
   it("shows reconnecting message with attempt number", () => {
     render(<ConnectionBanner status="reconnecting" retryAttempt={3} />);
-    expect(screen.getByText(/reconnecting/i)).toBeInTheDocument();
-    expect(screen.getByText(/attempt 3/)).toBeInTheDocument();
+    expect(screen.getByText(copy.status.reconnecting(3))).toBeInTheDocument();
   });
 
   it("defaults to attempt 1 when retryAttempt is not provided", () => {
     render(<ConnectionBanner status="reconnecting" />);
-    expect(screen.getByText(/attempt 1/)).toBeInTheDocument();
+    expect(screen.getByText(copy.status.reconnecting(1))).toBeInTheDocument();
   });
 
   it("has warning styling", () => {

@@ -1,4 +1,5 @@
 import { authHeaders, withAuthQuery } from "@/lib/apiAuth";
+import { copy } from "@/i18n/display";
 
 const BASE = "";
 
@@ -13,7 +14,7 @@ export class ApiError extends Error {
 }
 
 export const AUTH_REQUIRED_MESSAGE =
-  "Remote API access requires an API key. Add it in Settings, or run the backend on localhost for local-only use.";
+  copy.pages.agent.errors.authRequired;
 
 export function isAuthRequiredError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);

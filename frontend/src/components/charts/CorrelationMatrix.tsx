@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { echarts } from "@/lib/echarts";
 import { getChartTheme } from "@/lib/chart-theme";
+import { copy } from "@/i18n/display";
 
 interface Props {
   labels: string[];
@@ -102,7 +103,7 @@ export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
   }, [labels, matrix]);
 
   if (labels.length === 0) {
-    return <div className="text-muted-foreground text-sm p-4">No correlation data</div>;
+    return <div className="text-muted-foreground text-sm p-4">{copy.charts.noCorrelation}</div>;
   }
   return <div ref={ref} style={{ height }} />;
 }

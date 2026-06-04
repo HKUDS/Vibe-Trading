@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { ToolProgressIndicator } from "../ToolProgressIndicator";
 import type { ToolCallEntry } from "@/types/agent";
+import { copy } from "@/i18n/display";
 
 function makeTc(overrides: Partial<ToolCallEntry> = {}): ToolCallEntry {
   return {
@@ -39,7 +40,7 @@ describe("ToolProgressIndicator", () => {
       makeTc({ id: "tc-2", tool: "write_file" }),
     ];
     render(<ToolProgressIndicator toolCalls={tcs} />);
-    expect(screen.getByText("2 tools running")).toBeInTheDocument();
+    expect(screen.getByText(copy.toolProgress.toolsRunning(2))).toBeInTheDocument();
     expect(screen.getByText(/Run command/)).toBeInTheDocument();
     expect(screen.getByText(/Generate code/)).toBeInTheDocument();
   });
@@ -52,7 +53,7 @@ describe("ToolProgressIndicator", () => {
       makeTc({ id: "tc-4", tool: "read_file" }),
     ];
     render(<ToolProgressIndicator toolCalls={tcs} />);
-    expect(screen.getByText(/… \+2 more/)).toBeInTheDocument();
+    expect(screen.getByText(copy.toolProgress.overflow(2))).toBeInTheDocument();
   });
 
   it("shows determinate progress bar when progress data exists", () => {

@@ -7,6 +7,7 @@ import { MetricsCard } from "./MetricsCard";
 import { MiniEquityChart } from "@/components/charts/MiniEquityChart";
 import { PineScriptViewer } from "./PineScriptViewer";
 import type { AgentMessage } from "@/types/agent";
+import { copy } from "@/i18n/display";
 
 interface Props {
   msg: AgentMessage;
@@ -80,7 +81,7 @@ export const RunCompleteCard = memo(function RunCompleteCard({ msg }: Props) {
               className="text-sm text-primary hover:underline inline-flex items-center gap-1.5 font-medium"
             >
               <BarChart3 className="h-3.5 w-3.5" />
-              Full Report →
+              {copy.cards.fullReport} →
             </Link>
           )}
           {pineExists && (
@@ -90,7 +91,7 @@ export const RunCompleteCard = memo(function RunCompleteCard({ msg }: Props) {
               className="text-sm text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1.5 font-medium disabled:opacity-50"
             >
               {pineLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Code2 className="h-3.5 w-3.5" />}
-              Pine Script
+              {copy.cards.pineScript}
             </button>
           )}
           {msg.shadowId && (
@@ -101,7 +102,7 @@ export const RunCompleteCard = memo(function RunCompleteCard({ msg }: Props) {
               className="text-sm text-teal-600 dark:text-teal-400 hover:underline inline-flex items-center gap-1.5 font-medium"
             >
               <FileText className="h-3.5 w-3.5" />
-              Shadow Report
+              {copy.cards.shadowReport}
             </a>
           )}
         </div>

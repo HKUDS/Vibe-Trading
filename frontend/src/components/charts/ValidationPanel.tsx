@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { ValidationData } from "@/lib/api";
+import { copy } from "@/i18n/display";
 
 interface Props {
   data: ValidationData;
@@ -170,7 +171,7 @@ export function ValidationPanel({ data }: Props) {
   const hasWF = !!data.walk_forward;
 
   if (!hasMC && !hasBS && !hasWF) {
-    return <p className="p-8 text-sm text-muted-foreground">No validation data available.</p>;
+    return <p className="p-8 text-sm text-muted-foreground">{copy.charts.noValidation}</p>;
   }
 
   return (

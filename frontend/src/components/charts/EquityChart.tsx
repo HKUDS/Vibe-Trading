@@ -4,6 +4,7 @@ import { getChartTheme } from "@/lib/chart-theme";
 import { abbreviateNum } from "@/lib/formatters";
 import { echarts, CHART_GROUP, connectCharts } from "@/lib/echarts";
 import { useDarkMode } from "@/hooks/useDarkMode";
+import { copy } from "@/i18n/display";
 
 interface Props {
   data: EquityPoint[];
@@ -49,8 +50,8 @@ export function EquityChart({ data, height = 300 }: Props) {
       },
       toolbox: {
         feature: {
-          saveAsImage: { title: "Save" },
-          restore: { title: "Reset" },
+          saveAsImage: { title: copy.common.save },
+          restore: { title: copy.common.reset },
         },
         right: 8, top: 0,
         iconStyle: { borderColor: t.textColor },
@@ -106,7 +107,7 @@ export function EquityChart({ data, height = 300 }: Props) {
   }, [data, dark]);
 
   if (data.length === 0) {
-    return <div className="text-muted-foreground text-sm p-4">No equity data</div>;
+    return <div className="text-muted-foreground text-sm p-4">{copy.charts.noEquity}</div>;
   }
   return <div ref={ref} style={{ height }} />;
 }
