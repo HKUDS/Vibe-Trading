@@ -58,7 +58,7 @@
     "bull_position_weight": 5.0,
     "bear_position_weight": 0.7,
     "allow_leverage": false,
-    "per_trade_stop_loss_pct": 100.0,
+    "per_trade_stop_loss_pct": 5.0,
     "per_trade_take_profit_pct": null,
     "rr_min_filter": 0.0
   }
