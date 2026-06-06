@@ -30,7 +30,7 @@ class ChinaAEngine(BaseEngine):
 
     def __init__(self, config: dict):
         config = {**config}
-        config.setdefault("leverage", 1.0)
+        config["leverage"] = 1.0
         super().__init__(config)
         self.commission_rate: float = config.get("commission_rate", 0.00025)
         self.commission_min: float = config.get("commission_min", 5.0)

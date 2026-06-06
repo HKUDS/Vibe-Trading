@@ -65,7 +65,7 @@ from src.ztrade_autoresearch.runner import run_ztrade_csv_research
 run_ztrade_csv_research(
     Path(os.environ["RUN_DIR"]),
     data_dir="/Users/wdblink/Code/my_repo/ztrade/data",
-    max_iterations=1,
+    candidate_iterations=1,
     max_symbols=200,
     use_mutable_candidate=True,
 )
@@ -88,7 +88,7 @@ from src.ztrade_autoresearch.runner import run_ztrade_csv_research
 run_ztrade_csv_research(
     Path(os.environ["RUN_DIR"]),
     data_dir="/Users/wdblink/Code/my_repo/ztrade/data",
-    max_iterations=0,
+    candidate_iterations=0,
     max_symbols=200,
     use_mutable_candidate=False,
 )
@@ -101,7 +101,7 @@ The tool-equivalent invocation is `ztrade_autoresearch` with:
 {
   "mode": "ztrade_csv",
   "data_dir": "/Users/wdblink/Code/my_repo/ztrade/data",
-  "max_iterations": 1,
+  "candidate_iterations": 1,
   "max_symbols": 200,
   "use_mutable_candidate": true
 }
@@ -149,6 +149,61 @@ not allowed during the research loop.
 Prefer simpler changes when scores are similar. A small return or win-rate
 improvement is not enough if it requires a wider mutable surface, opaque factor
 addition, or fragile one-window behavior.
+
+## Session Budget and Stop Contract
+
+Tool limits, elapsed time, context pressure, and temporary fatigue are not stop conditions.
+Continue the loop until a human asks to stop/pause/summarize, a
+hard blocker repeats, a configured loop limit is reached, or the evaluator
+proves both promotion targets:
+
+- `candidate_trade_weighted_win_rate > 0.50`
+- candidate mean annualized return is greater than `30%`
+- `allow_leverage=false`
+
+## Iteration Report Contract
+
+Every iteration report must include:
+
+- `Candidate Protocol Freeze`
+- exact candidate file and run directory
+- one allowed parameter experiment
+- parameter diff with baseline value and candidate value
+- `candidate_return_pct` by window
+- `candidate_trade_weighted_win_rate`
+- evaluator verdict, failed gates, and reuse status
+- a concrete next parameter experiment when the candidate is not final
+
+Do not write vague continuation language. If you continue, name the next
+specific allowed parameter experiment and why it targets the failed diagnostic.
+
+## Result Reuse and Force-Rerun Rules
+
+Do not reuse stale artifacts when `autoresearch/mutable/v47_params.json`, the
+run directory, or evaluator inputs changed. A result can support KEEP only when
+its run status is complete and its candidate params match the frozen protocol
+section in the report.
+
+## Promotion and Veto Gates
+
+Promotion requires all fixed evaluator gates to pass. Veto any result with
+leverage, incomplete paired-window coverage, stale artifacts, hand-edited
+results, or evaluator/protocol/data-window changes made after seeing output.
+
+## Context Packaging and Memory Recovery
+
+Before context pressure causes loss of task state, write a compact continuation
+note to `autoresearch/context/continuation_state.md`. It must preserve the last
+accepted params, the latest evaluator verdict, failed gates, and the next
+allowed parameter experiment.
+
+## Common Anti-Patterns
+
+- inventing an alternate score outside `agent/src/ztrade_autoresearch/evaluator.py`
+- changing frozen windows, loader behavior, costs, or gates during a run
+- treating tool/time/context pressure as a stop condition
+- keeping a candidate that passes return but fails promotion gates
+- broadening the mutable surface without a separate written proposal
 
 ## Immutable Judge
 

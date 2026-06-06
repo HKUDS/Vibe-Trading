@@ -123,6 +123,9 @@ def test_default_v47_params_match_reference_profile() -> None:
         "bull_position_weight": 1.0,
         "bear_position_weight": 1.0,
         "allow_leverage": False,
+        "per_trade_stop_loss_pct": 5.0,
+        "per_trade_take_profit_pct": None,
+        "rr_min_filter": 0.0,
     }
 
 
@@ -530,10 +533,10 @@ def test_v47_bull_continuation_max_hold_applies_only_to_fallback_positions() -> 
     assert "cont" not in positions
 
 
-def test_china_a_engine_respects_explicit_leverage_config() -> None:
+def test_china_a_engine_forces_leverage_to_one() -> None:
     engine = ChinaAEngine({"initial_cash": 1_000_000, "leverage": 3.0})
 
-    assert engine.default_leverage == pytest.approx(3.0)
+    assert engine.default_leverage == pytest.approx(1.0)
 
 
 def test_v47_ranking_and_active_start_do_not_carry_warmup_positions() -> None:

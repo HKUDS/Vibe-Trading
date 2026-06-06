@@ -67,3 +67,32 @@ Use local ztrade CSV history with:
 
 The CSV mode uses a 180-day indicator warmup and blocks signals before each
 evaluation window starts.
+
+## Promotion: Local Paper Simulation
+
+After a candidate has passed the fixed evaluator and is written to
+`autoresearch/best/v47_params.json`, use `ztrade_paper_sim` to promote it into
+a broker-free live-like run directory:
+
+```json
+{
+  "run_dir": "agent/runs/ztrade_paper_demo",
+  "mode": "ztrade_csv",
+  "data_dir": "/Users/wdblink/Code/my_repo/ztrade/data",
+  "max_symbols": 200
+}
+```
+
+The tool writes:
+
+- `config.json`
+- `code/signal_engine.py`
+- `artifacts/equity.csv`
+- `artifacts/positions.csv`
+- `artifacts/trades.csv`
+- `artifacts/paper_state.json`
+- `run_card.json`
+
+This is a local paper account only. It never connects to a broker, order
+gateway, vn.py gateway, or live account. Use `vnpy-export` separately when a
+human explicitly wants a vn.py CTA template for external deployment review.

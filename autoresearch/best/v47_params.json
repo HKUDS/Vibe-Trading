@@ -1,7 +1,7 @@
 {
   "candidate_id": "candidate_mutable_v47",
   "strategy_family": "ztrade_v47_weak_guard_62_70",
-  "score": 276.92,
+  "score": 381.89663,
   "params": {
     "s1_window": 8,
     "s1_volume_ratio_min": 1.05,
