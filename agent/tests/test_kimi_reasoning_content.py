@@ -584,6 +584,75 @@ class TestChatOpenAIWithReasoningOutboundPayload:
         assistant_msg = next(m for m in payload["messages"] if m["role"] == "assistant")
         assert assistant_msg["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "sig-a"
 
+    def _payload_via_runtime(self, instance: Any, dict_history: list) -> dict:
+        """Mirror ``invoke``: convert the raw OpenAI-format input first (where
+        ``_convert_input`` re-attaches signatures), then build the request payload
+        from the converted messages — exactly the runtime order."""
+        converted = instance._convert_input(dict_history).to_messages()
+        return instance._get_request_payload(converted)
+
+    def test_reattaches_thought_signature_from_raw_dict_input(self) -> None:
+        """Regression: the AgentLoop replays history as OpenAI-format dicts (not
+        AIMessage objects). LangChain's ``_convert_dict_to_message`` discards the
+        ``extra_content`` Gemini signature, so the #176 in-memory machinery alone
+        leaves the outbound payload unsigned and Gemini 400s on the next turn.
+        ``_convert_input`` must lift the signature back onto the converted message.
+        """
+        from src.agent.context import ContextBuilder
+        from src.agent.loop import _attach_tool_call_thought_signatures
+        from src.providers.chat import ToolCallRequest
+
+        instance = self._instance(model="gemini-3-pro-preview")
+        tool_calls = [
+            ToolCallRequest(id="c1", name="load_skill",
+                            arguments={"name": "momentum"}, thought_signature="sig-a"),
+        ]
+        assistant = ContextBuilder.format_assistant_tool_calls(tool_calls)
+        _attach_tool_call_thought_signatures(assistant, tool_calls)
+        history = [
+            {"role": "user", "content": "load momentum"},
+            assistant,
+            {"role": "tool", "tool_call_id": "c1", "content": "loaded"},
+        ]
+
+        payload = self._payload_via_runtime(instance, history)
+
+        assistant_msg = next(m for m in payload["messages"] if m["role"] == "assistant")
+        assert assistant_msg["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "sig-a"
+
+    def test_parallel_dict_input_keeps_first_signature_only(self) -> None:
+        """Gemini signs only the first of N parallel calls. The natural state
+        (first signed, rest genuinely absent) must round-trip unchanged through
+        the dict path — Gemini accepts the single signature for the whole block,
+        so we must neither drop the first nor fabricate the others.
+        """
+        from src.agent.context import ContextBuilder
+        from src.agent.loop import _attach_tool_call_thought_signatures
+        from src.providers.chat import ToolCallRequest
+
+        instance = self._instance(model="gemini-3-pro-preview")
+        tool_calls = [
+            ToolCallRequest(id="c1", name="load_skill", arguments={"name": "a"}, thought_signature="sig-a"),
+            ToolCallRequest(id="c2", name="load_skill", arguments={"name": "b"}, thought_signature=None),
+            ToolCallRequest(id="c3", name="load_skill", arguments={"name": "c"}, thought_signature=None),
+        ]
+        assistant = ContextBuilder.format_assistant_tool_calls(tool_calls)
+        _attach_tool_call_thought_signatures(assistant, tool_calls)
+        history = [
+            {"role": "user", "content": "load a, b, c"},
+            assistant,
+            {"role": "tool", "tool_call_id": "c1", "content": "ok"},
+            {"role": "tool", "tool_call_id": "c2", "content": "ok"},
+            {"role": "tool", "tool_call_id": "c3", "content": "ok"},
+        ]
+
+        payload = self._payload_via_runtime(instance, history)
+
+        tcs = next(m for m in payload["messages"] if m["role"] == "assistant")["tool_calls"]
+        assert tcs[0]["extra_content"]["google"]["thought_signature"] == "sig-a"
+        assert "extra_content" not in tcs[1]
+        assert "extra_content" not in tcs[2]
+
     def test_injects_empty_reasoning_content_when_absent(self) -> None:
         """kimi-k2.6 requires reasoning_content on every assistant turn."""
         from langchain_core.messages import AIMessage, HumanMessage

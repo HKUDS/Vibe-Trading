@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlsplit
@@ -85,6 +86,44 @@ if ChatOpenAI is not None:
                 msg.additional_kwargs["reasoning_content"] = value
             if signatures := cls._collect_tool_call_thought_signatures(src.get("tool_calls")):
                 msg.additional_kwargs["tool_call_thought_signatures"] = signatures
+
+        def _convert_input(self, input: Any) -> Any:  # type: ignore[override]
+            """Re-attach Gemini thought signatures dropped by dict->message conversion.
+
+            The AgentLoop replays history as OpenAI-format dicts, stamping the
+            signature into ``tool_calls[i].extra_content.google.thought_signature``
+            (loop.py ``_attach_tool_call_thought_signatures``). LangChain's
+            ``_convert_dict_to_message`` discards ``extra_content`` entirely, so by
+            the time ``_get_request_payload`` runs the signature is gone and Gemini
+            rejects the next turn with a ``missing thought_signature`` 400.
+
+            ``_convert_input`` is the single chokepoint both ``invoke`` and
+            ``stream`` call once at entry, while ``input`` is still raw dicts. Here
+            we lift the signatures back onto the converted ``AIMessage`` in the
+            same ``additional_kwargs["tool_call_thought_signatures"]`` shape the
+            in-memory (#176) path produces, so the existing ``_signature_maps`` /
+            ``_inject_tool_call_thought_signatures`` machinery handles both paths
+            identically. The ``isinstance(raw, dict)`` guard makes it a no-op when
+            re-invoked on already-converted ``BaseMessage`` objects (idempotent).
+            """
+            prompt_value = super()._convert_input(input)
+            if isinstance(input, Sequence) and not isinstance(input, (str, bytes)):
+                messages = prompt_value.to_messages()
+                if len(messages) == len(input):
+                    for raw, msg in zip(input, messages):
+                        if (
+                            isinstance(raw, dict)
+                            and getattr(msg, "type", None) == "ai"
+                            and not getattr(msg, "additional_kwargs", {}).get(
+                                "tool_call_thought_signatures"
+                            )
+                        ):
+                            sigs = self._collect_tool_call_thought_signatures(
+                                raw.get("tool_calls")
+                            )
+                            if sigs:
+                                msg.additional_kwargs["tool_call_thought_signatures"] = sigs
+            return prompt_value
 
         @classmethod
         def _signature_maps(cls, message: Any) -> tuple[dict[str, str], dict[int, str]]:
