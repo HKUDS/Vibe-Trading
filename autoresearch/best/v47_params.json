@@ -41,7 +41,7 @@
     "alpha_qlib_std10_score_weight": 0.0,
     "alpha_qlib_kup_score_weight": 0.0,
     "alpha_qlib_cord10_score_weight": 0.0,
-    "alpha_qlib_max_positions": 5,
+    "alpha_qlib_max_positions": 4,
     "bull_continuation_fallback_enable": true,
     "bull_continuation_roc10_min": 0.05,
     "bull_continuation_roc10_max": 0.18,
