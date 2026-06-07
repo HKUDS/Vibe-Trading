@@ -1,0 +1,756 @@
+{
+  "buckets": {
+    "academic:momentum": [
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 60,
+        "formula_latex": "\\mathrm{zscore}_{x}\\bigl((\\mathrm{close}_t - \\mathrm{close}_{t-252})/\\mathrm{close}_{t-252} - (\\mathrm{close}_t - \\mathrm{close}_{t-21})/\\mathrm{close}_{t-21}\\bigr)",
+        "id": "academic_carhart_mom",
+        "min_warmup_bars": 252,
+        "nickname": "Carhart 1997 momentum — 12m-1m return",
+        "notes": "Carhart (1997) UMD momentum factor. 12-month return minus 1-month return, cross-sectional z-score per date for long-short ranking. Top z-scores = winners. Constructed directly from prices, so this matches the original definition modulo the z-score wrapper. Canonical 252d window; declared decay_horizon=60 due to registry schema cap (le=60); real signal horizon=252.",
+        "theme": [
+          "momentum"
+        ],
+        "zoo": "academic"
+      },
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 21,
+        "formula_latex": "\\mathrm{zscore}_{x}\\bigl((\\mathrm{close}_t - \\mathrm{close}_{t-21}) / \\mathrm{close}_{t-21}\\bigr)",
+        "id": "academic_mkt_rf",
+        "min_warmup_bars": 21,
+        "nickname": "[PRICE PROXY] Market factor (Sharpe 1964) — 21d demeaned return",
+        "notes": "[PRICE PROXY] for the Sharpe (1964) / Fama-French market factor (MKT-RF). The original definition uses value-weighted market excess returns; here we use a 21-day per-stock total return and cross-sectional z-score per date for long-short ranking. Top z-scores = strong recent winners; bottom = losers.",
+        "theme": [
+          "momentum"
+        ],
+        "zoo": "academic"
+      }
+    ],
+    "gtja191:liquidity": [
+      {
+        "columns_required": [
+          "close",
+          "amount"
+        ],
+        "decay_horizon": 20,
+        "formula_latex": "mean(amount,20)",
+        "id": "gtja191_132",
+        "min_warmup_bars": 20,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "liquidity"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "close",
+          "amount"
+        ],
+        "decay_horizon": 20,
+        "formula_latex": "see body",
+        "id": "gtja191_144",
+        "min_warmup_bars": 21,
+        "nickname": null,
+        "notes": "SUMIF -> (x*cond).rolling(n).sum(); COUNT -> cond.rolling(n).sum().",
+        "theme": [
+          "liquidity"
+        ],
+        "zoo": "gtja191"
+      }
+    ],
+    "gtja191:microstructure": [
+      {
+        "columns_required": [
+          "close",
+          "high",
+          "low"
+        ],
+        "decay_horizon": 1,
+        "formula_latex": "(-1 * DELTA(((CLOSE - LOW) - (HIGH - CLOSE)) / (HIGH - LOW), 1))",
+        "id": "gtja191_002",
+        "min_warmup_bars": 2,
+        "nickname": null,
+        "notes": "Daily change in close-position-within-range.",
+        "theme": [
+          "reversal",
+          "microstructure"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "close",
+          "volume",
+          "amount"
+        ],
+        "decay_horizon": 3,
+        "formula_latex": "((RANK(MAX((VWAP-CLOSE),3)) + RANK(MIN((VWAP-CLOSE),3))) * RANK(DELTA(VOLUME,3)))",
+        "id": "gtja191_007",
+        "min_warmup_bars": 4,
+        "nickname": null,
+        "notes": "VWAP via A-share amount/volume (equity_cn convention).",
+        "theme": [
+          "volume",
+          "microstructure"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "high",
+          "low",
+          "volume"
+        ],
+        "decay_horizon": 7,
+        "formula_latex": "SMA(((HIGH+LOW)/2-(DELAY(HIGH,1)+DELAY(LOW,1))/2)*(HIGH-LOW)/VOLUME,7,2)",
+        "id": "gtja191_009",
+        "min_warmup_bars": 8,
+        "nickname": null,
+        "notes": "SMA(n=7, m=2) of midpoint change times range / volume.",
+        "theme": [
+          "volume",
+          "microstructure"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "close",
+          "high",
+          "low",
+          "volume"
+        ],
+        "decay_horizon": 6,
+        "formula_latex": "SUM(((CLOSE-LOW)-(HIGH-CLOSE))/(HIGH-LOW)*VOLUME,6)",
+        "id": "gtja191_011",
+        "min_warmup_bars": 7,
+        "nickname": null,
+        "notes": "Accumulated money-flow-multiplier × volume over 6 days.",
+        "theme": [
+          "volume",
+          "microstructure"
+        ],
+        "zoo": "gtja191"
+      }
+    ],
+    "gtja191:momentum": [
+      {
+        "columns_required": [
+          "close",
+          "high",
+          "low"
+        ],
+        "decay_horizon": 6,
+        "formula_latex": "SUM((CLOSE=DELAY(CLOSE,1)?0:CLOSE-(CLOSE>DELAY(CLOSE,1)?MIN(LOW,DELAY(CLOSE,1)):MAX(HIGH,DELAY(CLOSE,1)))),6)",
+        "id": "gtja191_003",
+        "min_warmup_bars": 7,
+        "nickname": null,
+        "notes": "Wilder-style accumulation of signed daily moves over 6 days.",
+        "theme": [
+          "momentum"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "close",
+          "volume"
+        ],
+        "decay_horizon": 8,
+        "formula_latex": "((((SUM(CLOSE,8)/8)+STD(CLOSE,8))<(SUM(CLOSE,2)/2))?(-1):((SUM(CLOSE,2)/2<(SUM(CLOSE,8)/8-STD(CLOSE,8)))?1:((1<(VOLUME/MEAN(VOLUME,20)))?1:(-1))))",
+        "id": "gtja191_004",
+        "min_warmup_bars": 20,
+        "nickname": null,
+        "notes": "Breakout signal: short-MA vs long-MA +/- 1 std, volume-relative tiebreaker. Output in {-1, +1}.",
+        "theme": [
+          "momentum",
+          "volume"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 5,
+        "formula_latex": "CLOSE - DELAY(CLOSE,5)",
+        "id": "gtja191_014",
+        "min_warmup_bars": 6,
+        "nickname": null,
+        "notes": "Simple 5d momentum = delta(close, 5).",
+        "theme": [
+          "momentum"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 5,
+        "formula_latex": "CLOSE/DELAY(CLOSE,5)",
+        "id": "gtja191_018",
+        "min_warmup_bars": 6,
+        "nickname": null,
+        "notes": "5d price ratio.",
+        "theme": [
+          "momentum"
+        ],
+        "zoo": "gtja191"
+      }
+    ],
+    "gtja191:reversal": [
+      {
+        "columns_required": [
+          "volume",
+          "close",
+          "open"
+        ],
+        "decay_horizon": 6,
+        "formula_latex": "(-1 * CORR(RANK(DELTA(LOG(VOLUME), 1)), RANK(((CLOSE - OPEN) / OPEN)), 6))",
+        "id": "gtja191_001",
+        "min_warmup_bars": 7,
+        "nickname": null,
+        "notes": "Standard GTJA #1: lag-1 log-volume change rank vs intraday return rank, 6d corr.",
+        "theme": [
+          "volume",
+          "reversal"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "close",
+          "high",
+          "low"
+        ],
+        "decay_horizon": 1,
+        "formula_latex": "(-1 * DELTA(((CLOSE - LOW) - (HIGH - CLOSE)) / (HIGH - LOW), 1))",
+        "id": "gtja191_002",
+        "min_warmup_bars": 2,
+        "nickname": null,
+        "notes": "Daily change in close-position-within-range.",
+        "theme": [
+          "reversal",
+          "microstructure"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "open",
+          "high"
+        ],
+        "decay_horizon": 4,
+        "formula_latex": "(RANK(SIGN(DELTA((OPEN*0.85+HIGH*0.15), 4))) * -1)",
+        "id": "gtja191_006",
+        "min_warmup_bars": 5,
+        "nickname": null,
+        "notes": "Sign of 4d change of weighted price; cross-sectionally ranked, negated.",
+        "theme": [
+          "reversal"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "high",
+          "low",
+          "volume",
+          "amount"
+        ],
+        "decay_horizon": 4,
+        "formula_latex": "RANK(DELTA(((HIGH+LOW)/2)*0.2 + VWAP*0.8, 4)) * -1",
+        "id": "gtja191_008",
+        "min_warmup_bars": 5,
+        "nickname": null,
+        "notes": "Negated rank of 4d change in mid-vwap composite.",
+        "theme": [
+          "reversal"
+        ],
+        "zoo": "gtja191"
+      }
+    ],
+    "gtja191:volatility": [
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 5,
+        "formula_latex": "RANK(MAX(((RET<0)?STD(RET,20):CLOSE)^2,5))",
+        "id": "gtja191_010",
+        "min_warmup_bars": 21,
+        "nickname": null,
+        "notes": "Per-day return = pct_change(1) via (close - delay(close,1))/delay(close,1).",
+        "theme": [
+          "volatility",
+          "reversal"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 20,
+        "formula_latex": "SMA((CLOSE>DELAY(CLOSE,1)?STD(CLOSE,20):0),20,1)/(SMA((CLOSE>DELAY(CLOSE,1)?STD(CLOSE,20):0),20,1) + SMA((CLOSE<=DELAY(CLOSE,1)?STD(CLOSE,20):0),20,1)) * 100",
+        "id": "gtja191_023",
+        "min_warmup_bars": 22,
+        "nickname": null,
+        "notes": "Up-volatility share. SMA(20, m=1) of STD(20) over up/down days.",
+        "theme": [
+          "volatility"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 20,
+        "formula_latex": "WMA((REGRESI(CLOSE/DELAY(CLOSE,1)-1, MKT_RET, SMB, HML, 60))^2, 20)",
+        "id": "gtja191_030",
+        "min_warmup_bars": 21,
+        "nickname": null,
+        "notes": "Multi-factor REGRESI not implementable in pure-fn zoo; degraded to WMA of squared daily return (idio proxy). See notes.",
+        "theme": [
+          "volatility"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "high",
+          "volume"
+        ],
+        "decay_horizon": 10,
+        "formula_latex": "((-1*RANK(STD(HIGH,10)))*CORR(HIGH,VOLUME,10))",
+        "id": "gtja191_042",
+        "min_warmup_bars": 11,
+        "nickname": null,
+        "notes": "Negative rank of 10d std(high) times 10d corr(high, volume).",
+        "theme": [
+          "volume",
+          "volatility"
+        ],
+        "zoo": "gtja191"
+      }
+    ],
+    "gtja191:volume": [
+      {
+        "columns_required": [
+          "volume",
+          "close",
+          "open"
+        ],
+        "decay_horizon": 6,
+        "formula_latex": "(-1 * CORR(RANK(DELTA(LOG(VOLUME), 1)), RANK(((CLOSE - OPEN) / OPEN)), 6))",
+        "id": "gtja191_001",
+        "min_warmup_bars": 7,
+        "nickname": null,
+        "notes": "Standard GTJA #1: lag-1 log-volume change rank vs intraday return rank, 6d corr.",
+        "theme": [
+          "volume",
+          "reversal"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "close",
+          "volume"
+        ],
+        "decay_horizon": 8,
+        "formula_latex": "((((SUM(CLOSE,8)/8)+STD(CLOSE,8))<(SUM(CLOSE,2)/2))?(-1):((SUM(CLOSE,2)/2<(SUM(CLOSE,8)/8-STD(CLOSE,8)))?1:((1<(VOLUME/MEAN(VOLUME,20)))?1:(-1))))",
+        "id": "gtja191_004",
+        "min_warmup_bars": 20,
+        "nickname": null,
+        "notes": "Breakout signal: short-MA vs long-MA +/- 1 std, volume-relative tiebreaker. Output in {-1, +1}.",
+        "theme": [
+          "momentum",
+          "volume"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "volume",
+          "high"
+        ],
+        "decay_horizon": 5,
+        "formula_latex": "(-1 * TSMAX(CORR(TSRANK(VOLUME,5), TSRANK(HIGH,5), 5), 3))",
+        "id": "gtja191_005",
+        "min_warmup_bars": 13,
+        "nickname": null,
+        "notes": "Max over 3 days of 5d corr of TSRANK(volume,5) and TSRANK(high,5).",
+        "theme": [
+          "volume"
+        ],
+        "zoo": "gtja191"
+      },
+      {
+        "columns_required": [
+          "close",
+          "volume",
+          "amount"
+        ],
+        "decay_horizon": 3,
+        "formula_latex": "((RANK(MAX((VWAP-CLOSE),3)) + RANK(MIN((VWAP-CLOSE),3))) * RANK(DELTA(VOLUME,3)))",
+        "id": "gtja191_007",
+        "min_warmup_bars": 4,
+        "nickname": null,
+        "notes": "VWAP via A-share amount/volume (equity_cn convention).",
+        "theme": [
+          "volume",
+          "microstructure"
+        ],
+        "zoo": "gtja191"
+      }
+    ],
+    "qlib158:microstructure": [
+      {
+        "columns_required": [
+          "close",
+          "volume"
+        ],
+        "decay_horizon": 10,
+        "formula_latex": "\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}/\\\\mathrm{close}_{{-1}}, \\\\log((\\\\mathrm{volume}+1)/(\\\\mathrm{volume}_{{-1}}+1)), 10)",
+        "id": "qlib158_cord10",
+        "min_warmup_bars": 10,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "volume",
+          "microstructure"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "close",
+          "volume"
+        ],
+        "decay_horizon": 20,
+        "formula_latex": "\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}/\\\\mathrm{close}_{{-1}}, \\\\log((\\\\mathrm{volume}+1)/(\\\\mathrm{volume}_{{-1}}+1)), 20)",
+        "id": "qlib158_cord20",
+        "min_warmup_bars": 20,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "volume",
+          "microstructure"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "close",
+          "volume"
+        ],
+        "decay_horizon": 30,
+        "formula_latex": "\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}/\\\\mathrm{close}_{{-1}}, \\\\log((\\\\mathrm{volume}+1)/(\\\\mathrm{volume}_{{-1}}+1)), 30)",
+        "id": "qlib158_cord30",
+        "min_warmup_bars": 30,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "volume",
+          "microstructure"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "close",
+          "volume"
+        ],
+        "decay_horizon": 5,
+        "formula_latex": "\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}/\\\\mathrm{close}_{{-1}}, \\\\log((\\\\mathrm{volume}+1)/(\\\\mathrm{volume}_{{-1}}+1)), 5)",
+        "id": "qlib158_cord5",
+        "min_warmup_bars": 5,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "volume",
+          "microstructure"
+        ],
+        "zoo": "qlib158"
+      }
+    ],
+    "qlib158:momentum": [
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 10,
+        "formula_latex": "(\\\\mathrm{close}_t - \\\\mathrm{close}_{{t-10}}) / (10\\\\,\\\\mathrm{close})",
+        "id": "qlib158_beta10",
+        "min_warmup_bars": 10,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "momentum"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 20,
+        "formula_latex": "(\\\\mathrm{close}_t - \\\\mathrm{close}_{{t-20}}) / (20\\\\,\\\\mathrm{close})",
+        "id": "qlib158_beta20",
+        "min_warmup_bars": 20,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "momentum"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 30,
+        "formula_latex": "(\\\\mathrm{close}_t - \\\\mathrm{close}_{{t-30}}) / (30\\\\,\\\\mathrm{close})",
+        "id": "qlib158_beta30",
+        "min_warmup_bars": 30,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "momentum"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 5,
+        "formula_latex": "(\\\\mathrm{close}_t - \\\\mathrm{close}_{{t-5}}) / (5\\\\,\\\\mathrm{close})",
+        "id": "qlib158_beta5",
+        "min_warmup_bars": 5,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "momentum"
+        ],
+        "zoo": "qlib158"
+      }
+    ],
+    "qlib158:reversal": [
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 10,
+        "formula_latex": "\\\\mathrm{CNTP}_10 - \\\\mathrm{CNTN}_10",
+        "id": "qlib158_cntd10",
+        "min_warmup_bars": 10,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "reversal"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 20,
+        "formula_latex": "\\\\mathrm{CNTP}_20 - \\\\mathrm{CNTN}_20",
+        "id": "qlib158_cntd20",
+        "min_warmup_bars": 20,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "reversal"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 30,
+        "formula_latex": "\\\\mathrm{CNTP}_30 - \\\\mathrm{CNTN}_30",
+        "id": "qlib158_cntd30",
+        "min_warmup_bars": 30,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "reversal"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "close"
+        ],
+        "decay_horizon": 5,
+        "formula_latex": "\\\\mathrm{CNTP}_5 - \\\\mathrm{CNTN}_5",
+        "id": "qlib158_cntd5",
+        "min_warmup_bars": 5,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "reversal"
+        ],
+        "zoo": "qlib158"
+      }
+    ],
+    "qlib158:volatility": [
+      {
+        "columns_required": [
+          "volume"
+        ],
+        "decay_horizon": 10,
+        "formula_latex": "\\\\mathrm{ts\\\\_mean}(\\\\mathrm{volume}, 10) / \\\\mathrm{volume}",
+        "id": "qlib158_vma10",
+        "min_warmup_bars": 10,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "volume",
+          "volatility"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "volume"
+        ],
+        "decay_horizon": 20,
+        "formula_latex": "\\\\mathrm{ts\\\\_mean}(\\\\mathrm{volume}, 20) / \\\\mathrm{volume}",
+        "id": "qlib158_vma20",
+        "min_warmup_bars": 20,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "volume",
+          "volatility"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "volume"
+        ],
+        "decay_horizon": 30,
+        "formula_latex": "\\\\mathrm{ts\\\\_mean}(\\\\mathrm{volume}, 30) / \\\\mathrm{volume}",
+        "id": "qlib158_vma30",
+        "min_warmup_bars": 30,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "volume",
+          "volatility"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "volume"
+        ],
+        "decay_horizon": 5,
+        "formula_latex": "\\\\mathrm{ts\\\\_mean}(\\\\mathrm{volume}, 5) / \\\\mathrm{volume}",
+        "id": "qlib158_vma5",
+        "min_warmup_bars": 5,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "volume",
+          "volatility"
+        ],
+        "zoo": "qlib158"
+      }
+    ],
+    "qlib158:volume": [
+      {
+        "columns_required": [
+          "close",
+          "volume"
+        ],
+        "decay_horizon": 10,
+        "formula_latex": "\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}/\\\\mathrm{close}_{{-1}}, \\\\log((\\\\mathrm{volume}+1)/(\\\\mathrm{volume}_{{-1}}+1)), 10)",
+        "id": "qlib158_cord10",
+        "min_warmup_bars": 10,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "volume",
+          "microstructure"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "close",
+          "volume"
+        ],
+        "decay_horizon": 20,
+        "formula_latex": "\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}/\\\\mathrm{close}_{{-1}}, \\\\log((\\\\mathrm{volume}+1)/(\\\\mathrm{volume}_{{-1}}+1)), 20)",
+        "id": "qlib158_cord20",
+        "min_warmup_bars": 20,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "volume",
+          "microstructure"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "close",
+          "volume"
+        ],
+        "decay_horizon": 30,
+        "formula_latex": "\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}/\\\\mathrm{close}_{{-1}}, \\\\log((\\\\mathrm{volume}+1)/(\\\\mathrm{volume}_{{-1}}+1)), 30)",
+        "id": "qlib158_cord30",
+        "min_warmup_bars": 30,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "volume",
+          "microstructure"
+        ],
+        "zoo": "qlib158"
+      },
+      {
+        "columns_required": [
+          "close",
+          "volume"
+        ],
+        "decay_horizon": 5,
+        "formula_latex": "\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}/\\\\mathrm{close}_{{-1}}, \\\\log((\\\\mathrm{volume}+1)/(\\\\mathrm{volume}_{{-1}}+1)), 5)",
+        "id": "qlib158_cord5",
+        "min_warmup_bars": 5,
+        "nickname": null,
+        "notes": "",
+        "theme": [
+          "volume",
+          "microstructure"
+        ],
+        "zoo": "qlib158"
+      }
+    ]
+  },
+  "health": {
+    "errors": [],
+    "failed": 0,
+    "loaded": 452
+  },
+  "policy": "metadata only; use as proposal context, not as evaluator or automatic search space",
+  "status": "ok"
+}
