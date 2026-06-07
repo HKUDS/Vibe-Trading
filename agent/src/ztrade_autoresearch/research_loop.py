@@ -53,20 +53,54 @@ RESULTS_COLUMNS = [
 
 SWARM_ROLES = [
     {
-        "role": "factor_librarian",
-        "purpose": "Use Alpha Zoo metadata to nominate explainable factor ideas; do not invent factors.",
+        "role": "factor_miner",
+        "preset": "factor_research_committee",
+        "agent_id": "factor_miner",
+        "purpose": (
+            "Nominate explainable factor or parameter ideas from Alpha Zoo metadata and current "
+            "evaluator diagnostics; include economic logic, formula, data requirements, "
+            "expected IC direction, and transformation notes."
+        ),
+    },
+    {
+        "role": "factor_combiner",
+        "preset": "factor_research_committee",
+        "agent_id": "factor_combiner",
+        "purpose": (
+            "Map factor ideas onto the approved current best strategy mutable surface; reason "
+            "about correlation, orthogonalization, neutralization, weighting, turnover, and "
+            "whether a search-space expansion is required."
+        ),
     },
     {
         "role": "v47_researcher",
-        "purpose": "Map each idea onto the current v47 parameter, indicator-composition, or regime-sizing surface before requesting any expansion.",
+        "purpose": (
+            "Translate the selected idea into exactly one mutation of "
+            "autoresearch/mutable/v47_params.json whenever it fits the existing v47 surface."
+        ),
     },
     {
         "role": "regime_analyst",
         "purpose": "Compare bull, bear, chop, and live-like windows using only evaluator artifacts.",
     },
     {
-        "role": "overfit_skeptic",
-        "purpose": "Reject ideas that depend on frozen-test peeking, evaluator edits, or one-window luck.",
+        "role": "factor_validator",
+        "preset": "factor_research_committee",
+        "agent_id": "factor_validator",
+        "purpose": (
+            "Pre-mutation statistical challenge and post-KEEP factor validity review: IC/ICIR, "
+            "quintile monotonicity where available, decay, robustness, multiple-testing risk, "
+            "and overfitting warnings."
+        ),
+    },
+    {
+        "role": "backtest_reviewer",
+        "preset": "factor_research_committee",
+        "agent_id": "backtest_reviewer",
+        "purpose": (
+            "Pre-mutation backtest-risk challenge and post-KEEP credibility review: bias checks, "
+            "transaction cost realism, sample-size risk, stress behavior, and live-like feasibility."
+        ),
     },
     {
         "role": "proposal_writer",
@@ -74,27 +108,37 @@ SWARM_ROLES = [
     },
 ]
 
-# Advisory reviewers — invoked ONLY when search-space expansion is triggered
-# (current best strategy's parameter tuning enters plateau, default 50 consecutive
-# no-KEEP iterations). Both reviewers must return `recommend` for the expansion
-# to enter the mutable surface. Neither may compute or override KEEP/DISCARD.
+# Advisory reviewers — invoked in two places:
+# 1. Search-space expansion review: both reviewers must return `recommend` for
+#    a new surface to enter the mutable protocol.
+# 2. Post-KEEP review: after the fixed evaluator returns KEEP, either reviewer
+#    may return `VETO` or `NEEDS_MORE_EVIDENCE` to block promotion to best.
+# Neither reviewer may compute or override the evaluator's KEEP/DISCARD verdict.
 #
 # system_prompt paths are loaded from
 # `agent/src/swarm/presets/factor_research_committee.yaml` on demand via
 # `inspect_preset("factor_research_committee")`. See
-# `autoresearch/program.md#search-space-expansion-review`.
+# `autoresearch/program.md#search-space-expansion-review` and
+# `autoresearch/program.md#post-keep-agent-review`.
 ADVISORY_REVIEWERS: dict[str, dict[str, str]] = {
     "factor_validator": {
         "preset": "factor_research_committee",
         "agent_id": "factor_validator",
-        "purpose": "IC/ICIR/五分位/robustness 复核 — Output: Effectiveness Rating (Effective/Marginal/Ineffective).",
-        "trigger": "plateau_then_expansion",
+        "purpose": (
+            "IC/ICIR/五分位/robustness 复核；search-space expansion output: "
+            "Effectiveness Rating; post-KEEP output: PASS/VETO/NEEDS_MORE_EVIDENCE."
+        ),
+        "trigger": "plateau_then_expansion_or_post_keep",
     },
     "backtest_reviewer": {
         "preset": "factor_research_committee",
         "agent_id": "backtest_reviewer",
-        "purpose": "overfit/look-ahead/survivorship/transaction cost/stress test 复核 — Output: Live Deployment Recommendation.",
-        "trigger": "plateau_then_expansion",
+        "purpose": (
+            "overfit/look-ahead/survivorship/transaction cost/stress test 复核；"
+            "search-space expansion output: Live Deployment Recommendation; "
+            "post-KEEP output: PASS/VETO/NEEDS_MORE_EVIDENCE."
+        ),
+        "trigger": "plateau_then_expansion_or_post_keep",
     },
 }
 
@@ -169,10 +213,8 @@ source of truth remains the Python code listed below.
   `agent/src/ztrade_autoresearch/evaluator.py`
 - Backtest execution and artifact writing:
   `agent/src/ztrade_autoresearch/runner.py`
-
-(There is no `agent/src/tools/ztrade_autoresearch_tool.py` wrapper in the
-current checkout. The loop calls the evaluator directly via
-`python -m src.ztrade_autoresearch.runner run_ztrade_csv_research`.)
+- Tool wrapper:
+  `agent/src/tools/ztrade_autoresearch_tool.py`
 
 ## Current Judge
 
@@ -180,6 +222,10 @@ The evaluator compares one candidate against `ztrade_v47_baseline` on paired
 windows. It computes return delta, drawdown delta, loss-window count, trade
 retention, positive-return concentration, and minimum trade count. A candidate
 is KEEP only if every gate passes.
+
+Evaluator KEEP is a necessary condition for promotion, not a sufficient one.
+After KEEP, the candidate must pass Post-KEEP Agent Review before
+`autoresearch/best/v47_params.json` may be updated.
 
 CSV evaluation windows are the frozen bull/bear windows generated in
 `agent/src/ztrade_autoresearch/protocol.py` from the user-defined bull intervals
@@ -191,8 +237,8 @@ outside `agent/src/ztrade_autoresearch/evaluator.py`.
 
 Advisory reviewers (`factor_validator` and `backtest_reviewer`, defined in
 `agent/src/swarm/presets/factor_research_committee.yaml`) may not compute or
-override verdicts; their outputs are proposal-time only and are loaded from
-`autoresearch/proposals/advisory_verdicts/` when present.
+override evaluator verdicts. They may veto promotion after an evaluator KEEP
+through the Post-KEEP Agent Review described in `autoresearch/program.md`.
 
 ## Required Mutable Input
 
@@ -223,6 +269,22 @@ current best strategy parameter tuning. See
 `autoresearch/program.md#search-space-expansion-review` for the trigger
 condition.
 
+## Required Post-KEEP Review
+
+When the evaluator returns KEEP, the iteration report must include the review
+outputs from:
+
+- `factor_validator`: statistical/factor validity review, including IC/ICIR,
+  grouped monotonicity where available, decay, robustness, multiple-testing
+  risk, and overfitting warnings.
+- `backtest_reviewer`: backtest credibility review, including bias checks,
+  sample-size/parameter-count risk, transaction cost realism, stress behavior,
+  and live-like feasibility.
+
+Each reviewer must return `PASS`, `VETO`, or `NEEDS_MORE_EVIDENCE`.
+`VETO` and `NEEDS_MORE_EVIDENCE` block promotion but do not rewrite the fixed
+evaluator's KEEP verdict.
+
 ## Required Output
 
 Each evaluator run writes normal run artifacts under `agent/runs/...` and
@@ -232,7 +294,8 @@ updates project-level runtime state:
 - `autoresearch/latest_state.json` is refreshed to the latest evaluator state.
 - `autoresearch/reports/iteration_<N>_<candidate_id>.md` records each
   iteration's swarm analysis, strategy diff, per-window historical returns,
-  aggregate return, verdict diagnostics, and next-iteration plan.
+  aggregate return, verdict diagnostics, post-KEEP review when applicable, and
+  next-iteration plan.
 
 Loop completion may be claimed only when a human asks to stop/pause/summarize,
 or when the current candidate's evaluator diagnostics show both
@@ -248,6 +311,9 @@ paired-window coverage, fixed-window loss ratio, bear-window return delta,
 bear-window loss ratio, bear-window drawdown delta, trade retention, and
 improvement concentration. Incomplete `run_status.json` or stale reused
 artifacts cannot support KEEP, stop-target, or promotion claims.
+
+Promotion additionally fails when either post-KEEP reviewer returns `VETO` or
+`NEEDS_MORE_EVIDENCE`.
 
 These files are runtime outputs and should not be committed. The tracked
 templates are:
@@ -415,19 +481,42 @@ def build_swarm_proposal_request(
             "mutation_surface": f"{AUTORESEARCH_DIRNAME}/{MUTABLE_PARAMS_REL}",
             "param_changes": {"parameter_name": "new value"},
             "alpha_zoo_references": ["optional alpha ids used as idea support"],
+            "factor_mining_rationale": "economic logic, formula/window, transformation notes, and data requirements",
+            "factor_combination_notes": "correlation/orthogonalization/neutralization/weighting considerations",
             "overfit_objections": ["specific risks"],
             "expected_evaluator_effect": "return/win-rate/drawdown/trade-count expectation",
             "advisory_review_required": False,
+            "post_keep_review_required_after_keep": True,
+            "factor_validation_review": {
+                "verdict": "PASS|VETO|NEEDS_MORE_EVIDENCE after evaluator KEEP",
+                "key_checks": ["IC/ICIR or proxy evidence", "robustness", "overfitting risk"],
+                "veto_reasons": [],
+                "required_follow_up_evidence": [],
+            },
+            "backtest_review": {
+                "verdict": "PASS|VETO|NEEDS_MORE_EVIDENCE after evaluator KEEP",
+                "key_checks": ["bias checks", "transaction costs", "stress behavior", "live-like feasibility"],
+                "veto_reasons": [],
+                "required_follow_up_evidence": [],
+            },
+            "audit_verdict": "PASS when neither post-KEEP reviewer vetoes; otherwise VETO or NEEDS_MORE_EVIDENCE",
+            "audit_veto_reasons": [],
         },
         "advisory_reviewers": ADVISORY_REVIEWERS,
+        "post_keep_review": {
+            "required_after_evaluator_keep": True,
+            "reviewers": ["factor_validator", "backtest_reviewer"],
+            "blocking_verdicts": ["VETO", "NEEDS_MORE_EVIDENCE"],
+            "promotion_rule": "evaluator KEEP plus no blocking reviewer verdict",
+        },
         "hard_limits": [
             "read-only analysis only",
             "do not edit evaluator, protocol, data windows, or backtest engine",
             "do not decide KEEP or DISCARD",
             f"do not edit {AUTORESEARCH_DIRNAME}/{MUTABLE_PARAMS_REL}; emit proposed changes only",
             "emit one proposal only",
-            "factor_validator and backtest_reviewer are advisory only; no KEEP/DISCARD authority",
-            "do not invoke advisory reviewers during routine current best strategy micro-tuning; only when plateau-then-expansion is triggered",
+            "factor_validator and backtest_reviewer cannot compute KEEP/DISCARD; they may only veto promotion after evaluator KEEP",
+            "do not update best after KEEP until post-KEEP review has no VETO/NEEDS_MORE_EVIDENCE",
         ],
     }
 
@@ -534,6 +623,13 @@ def _default_loop_config() -> dict[str, Any]:
             "require_pack_before_context_boundary": True,
         },
         "progress_report_every_iterations": 5,
+        "post_keep_review": {
+            "required_after_evaluator_keep": True,
+            "reviewers": ["factor_validator", "backtest_reviewer"],
+            "blocking_verdicts": ["VETO", "NEEDS_MORE_EVIDENCE"],
+            "pass_verdict": "PASS",
+            "promotion_rule": "Evaluator KEEP plus no factor_validator/backtest_reviewer VETO or NEEDS_MORE_EVIDENCE.",
+        },
         "search_space_expansion_plateau_threshold": 50,
         "stop_conditions": {
             "allow_human_stop_pause_or_summary": True,
@@ -546,6 +642,7 @@ def _default_loop_config() -> dict[str, Any]:
             "Only human stop/pause/summary or both performance thresholds may stop the loop",
             "Tool, time, or context pressure must trigger context packaging and memory recovery, then continue",
             "Search-space expansion requires advisory review (factor_validator + backtest_reviewer both returning recommend); see program.md#search-space-expansion-review",
+            "Evaluator KEEP requires post-KEEP review; factor_validator/backtest_reviewer VETO or NEEDS_MORE_EVIDENCE blocks promotion to best",
         ],
     }
 

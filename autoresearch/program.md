@@ -8,8 +8,8 @@ Karpathy/autoresearch.
 Improve the **current best strategy family** (currently the v47 family,
 weak-guard 62-70 profile) under a fixed, code-owned judge. The first
 research surface is **current best strategy parameter tuning only**.
-Search-space expansion requires advisory review by `factor_validator` and
-`backtest_reviewer`.
+Search-space expansion and Evaluator-KEEP promotion both require review by
+`factor_validator` and `backtest_reviewer`.
 
 ## Loop
 
@@ -23,9 +23,13 @@ Search-space expansion requires advisory review by `factor_validator` and
 5. Run the fixed ztrade autoresearch evaluator through the Required Evaluator
    Invocation section. Do not invent another backtest or scoring path.
 6. Let the evaluator append `results.tsv` and refresh `latest_state.json`.
-7. Keep the candidate only when the evaluator returns KEEP and all required
-   gates pass. Otherwise discard or revise in the next iteration.
-8. NEVER STOP after a single iteration. Continue proposing, evaluating, and
+7. If the evaluator returns KEEP and all required gates pass, run the
+   Post-KEEP Agent Review. Only promote the candidate when the review does not
+   veto it.
+8. If the evaluator returns DISCARD/BLOCKED, or the Post-KEEP Agent Review
+   returns VETO/NEEDS_MORE_EVIDENCE, do not update best; discard or revise in
+   the next iteration.
+9. NEVER STOP after a single iteration. Continue proposing, evaluating, and
    keeping/discarding until a human explicitly stops the session, a hard blocker
    repeats, or a configured loop limit is reached.
 
@@ -50,10 +54,10 @@ or evaluating a candidate:
 - `agent/src/ztrade_autoresearch/protocol.py`
 - `agent/src/ztrade_autoresearch/evaluator.py`
 - `agent/src/ztrade_autoresearch/runner.py`
+- `agent/src/tools/ztrade_autoresearch_tool.py`
 
-(There is no `agent/src/tools/ztrade_autoresearch_tool.py` wrapper in the
-current checkout; the loop calls the evaluator directly via
-`python -m src.ztrade_autoresearch.runner run_ztrade_csv_research`.)
+The direct Python invocation below is authoritative for long research loops.
+The tool wrapper is a convenience interface and must call the same runner.
 
 ## Required Evaluator Invocation
 
@@ -77,6 +81,18 @@ run_ztrade_csv_research(
     use_mutable_candidate=True,
 )
 PY
+```
+
+The tool-equivalent invocation is `ztrade_autoresearch` with:
+
+```json
+{
+  "mode": "ztrade_csv",
+  "data_dir": "/Users/wdblink/Code/my_repo/ztrade/data",
+  "candidate_iterations": 1,
+  "max_symbols": 200,
+  "use_mutable_candidate": true
+}
 ```
 
 For baseline-first sanity on a fresh workspace, do not mutate params. Run the
@@ -150,10 +166,10 @@ official mutable surface. They emit **proposals only**.
      - sector neutralization (within-sector Z-score, e.g. Shenwan Level-1 for
        A-shares)
      - multiple testing correction (Bonferroni / FDR)
-   - These roles are **not** called on every iteration. They are invoked
-     only when the current best strategy's parameter tuning enters a
-     documented plateau and a search-space expansion proposal has been
-     approved by the advisory reviewers below.
+   - These roles are advisory. `factor_miner` and `factor_combiner` are
+     invoked for plateau-triggered search-space expansion proposals. They may
+     also be cited in routine proposals when mapping an existing Alpha Zoo
+     idea onto the already-approved v47 mutable surface.
 
 3. **Data Analysis Cluster** (read-only, available every iteration)
 
@@ -218,8 +234,42 @@ surface **only when both** reviewers return `recommend`. If either returns
 `improve` or `reject`, the loop returns to v47 micro-tuning and the proposal
 is archived under `autoresearch/proposals/archive/`.
 
-Advisory reviewers may not compute or override KEEP/DISCARD verdicts; their
-outputs are proposal-time only.
+Advisory reviewers may not compute or override KEEP/DISCARD verdicts. For
+search-space expansion they control whether a new surface can enter the
+mutable protocol.
+
+## Post-KEEP Agent Review
+
+Evaluator KEEP is necessary but not sufficient for promotion. After
+`agent/src/ztrade_autoresearch/evaluator.py` returns KEEP, the candidate enters
+a post-KEEP review by the same committee reviewers from
+`agent/src/swarm/presets/factor_research_committee.yaml`:
+
+- **`factor_validator`** reviews factor/statistical validity. It must check
+  IC/ICIR/t-statistics where factor data exists, quintile or grouped
+  monotonicity, decay and turnover, cross-regime stability, OOS degradation,
+  market-cap segmentation where available, multiple-testing risk, and whether
+  the candidate looks too good to be true.
+- **`backtest_reviewer`** reviews backtest credibility. It must check
+  overfitting, parameter count vs. sample size, parameter sensitivity, frozen
+  window coverage, look-ahead bias, survivorship bias, liquidity constraints,
+  transaction cost realism, drawdown behavior, stress windows, and live-like
+  feasibility.
+
+Each reviewer must emit one of:
+
+- `PASS` — no blocking issue found; promotion may continue if the other
+  reviewer also does not veto.
+- `VETO` — a blocking issue was found; do not update
+  `autoresearch/best/v47_params.json`.
+- `NEEDS_MORE_EVIDENCE` — evidence is insufficient; do not update best. The
+  next iteration must collect the missing evidence or run a more conservative
+  candidate.
+
+**Promotion rule**: update `autoresearch/best/v47_params.json` only when the
+fixed evaluator returns KEEP and neither post-KEEP reviewer returns `VETO` or
+`NEEDS_MORE_EVIDENCE`. A review veto does not rewrite the evaluator verdict;
+it blocks promotion of that otherwise-KEEP candidate.
 
 ## Immutable Judge
 
@@ -229,7 +279,8 @@ test rules during a research run.
 
 The sole KEEP/DISCARD authority is
 `agent/src/ztrade_autoresearch/evaluator.py`. No agent, no LLM, no advisory
-reviewer may compute or override a KEEP/DISCARD verdict.
+reviewer may compute or override a KEEP/DISCARD verdict. Post-KEEP reviewers
+may only veto promotion after the evaluator has already returned KEEP.
 
 ## Git Advance/Revert Discipline
 
@@ -239,10 +290,14 @@ Each candidate iteration must be recoverable:
 2. Record the current commit hash and mutable params before editing.
 3. Edit only `autoresearch/mutable/v47_params.json`.
 4. Run the required evaluator.
-5. If verdict is KEEP, update `autoresearch/best/v47_params.json` and commit
-   the kept candidate with a message that includes the evaluator score.
-6. If verdict is DISCARD/BLOCKED, revert `autoresearch/mutable/v47_params.json`
-   to the previous best candidate. Do not commit discarded params.
+5. If verdict is KEEP, run the Post-KEEP Agent Review before updating best.
+6. If verdict is KEEP and neither reviewer returns `VETO` or
+   `NEEDS_MORE_EVIDENCE`, update `autoresearch/best/v47_params.json` and commit
+   the kept candidate with a message that includes the evaluator score and
+   audit verdict.
+7. If verdict is DISCARD/BLOCKED, or KEEP is vetoed by post-KEEP review, revert
+   `autoresearch/mutable/v47_params.json` to the previous best candidate. Do
+   not commit discarded or audit-vetoed params.
 
 Do not use destructive repository-wide commands. Revert only the mutable
 candidate file unless a human explicitly requests broader reset behavior.
@@ -289,6 +344,9 @@ Every iteration report must include:
 - `candidate_return_pct` by window
 - `candidate_trade_weighted_win_rate`
 - evaluator verdict, failed gates, and reuse status
+- post-KEEP review status when evaluator verdict is KEEP:
+  `factor_validation_review`, `backtest_review`, `audit_verdict`,
+  `audit_veto_reasons`, and `required_follow_up_evidence`
 - a concrete next parameter experiment when the candidate is not final
 
 Do not write vague continuation language. If you continue, name the next
@@ -303,9 +361,11 @@ section in the report.
 
 ## Promotion and Veto Gates
 
-Promotion requires all fixed evaluator gates to pass. Veto any result with
-leverage, incomplete paired-window coverage, stale artifacts, hand-edited
-results, or evaluator/protocol/data-window changes made after seeing output.
+Promotion requires all fixed evaluator gates to pass and the Post-KEEP Agent
+Review to return no veto. Veto any result with leverage, incomplete
+paired-window coverage, stale artifacts, hand-edited results,
+evaluator/protocol/data-window changes made after seeing output, or a
+`VETO`/`NEEDS_MORE_EVIDENCE` from either post-KEEP reviewer.
 
 ## Context Packaging and Memory Recovery
 
@@ -320,11 +380,15 @@ allowed parameter experiment.
 - changing frozen windows, loader behavior, costs, or gates during a run
 - treating tool/time/context pressure as a stop condition
 - keeping a candidate that passes return but fails promotion gates
+- promoting an Evaluator-KEEP candidate without post-KEEP
+  `factor_validator`/`backtest_reviewer` review
+- promoting a candidate after either post-KEEP reviewer returns `VETO` or
+  `NEEDS_MORE_EVIDENCE`
 - broadening the mutable surface without an approved advisory review
   (factor_validator + backtest_reviewer both returning `recommend`)
 - asking an advisory reviewer to compute or override a KEEP/DISCARD verdict
-- invoking `factor_miner` / `factor_combiner` outside the plateau-then-expansion
-  trigger condition
+- using `factor_miner` / `factor_combiner` to broaden the mutable surface
+  outside the plateau-then-expansion review path
 - using `alpha_zoo_context.json` as an evaluator or as automatic search space
   (it is proposal-time metadata only)
 

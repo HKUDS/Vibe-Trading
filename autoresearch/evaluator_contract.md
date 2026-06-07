@@ -11,10 +11,8 @@ source of truth remains the Python code listed below.
   `agent/src/ztrade_autoresearch/evaluator.py`
 - Backtest execution and artifact writing:
   `agent/src/ztrade_autoresearch/runner.py`
-
-(There is no `agent/src/tools/ztrade_autoresearch_tool.py` wrapper in the
-current checkout. The loop calls the evaluator directly via
-`python -m src.ztrade_autoresearch.runner run_ztrade_csv_research`.)
+- Tool wrapper:
+  `agent/src/tools/ztrade_autoresearch_tool.py`
 
 ## Current Judge
 
@@ -22,6 +20,10 @@ The evaluator compares one candidate against `ztrade_v47_baseline` on paired
 windows. It computes return delta, drawdown delta, loss-window count, trade
 retention, positive-return concentration, and minimum trade count. A candidate
 is KEEP only if every gate passes.
+
+Evaluator KEEP is a necessary condition for promotion, not a sufficient one.
+After KEEP, the candidate must pass Post-KEEP Agent Review before
+`autoresearch/best/v47_params.json` may be updated.
 
 CSV evaluation windows are the frozen bull/bear windows generated in
 `agent/src/ztrade_autoresearch/protocol.py` from the user-defined bull intervals
@@ -33,8 +35,8 @@ outside `agent/src/ztrade_autoresearch/evaluator.py`.
 
 Advisory reviewers (`factor_validator` and `backtest_reviewer`, defined in
 `agent/src/swarm/presets/factor_research_committee.yaml`) may not compute or
-override verdicts; their outputs are proposal-time only and are loaded from
-`autoresearch/proposals/advisory_verdicts/` when present.
+override evaluator verdicts. They may veto promotion after an evaluator KEEP
+through the Post-KEEP Agent Review described in `autoresearch/program.md`.
 
 ## Required Mutable Input
 
@@ -65,6 +67,22 @@ current best strategy parameter tuning. See
 `autoresearch/program.md#search-space-expansion-review` for the trigger
 condition.
 
+## Required Post-KEEP Review
+
+When the evaluator returns KEEP, the iteration report must include the review
+outputs from:
+
+- `factor_validator`: statistical/factor validity review, including IC/ICIR,
+  grouped monotonicity where available, decay, robustness, multiple-testing
+  risk, and overfitting warnings.
+- `backtest_reviewer`: backtest credibility review, including bias checks,
+  sample-size/parameter-count risk, transaction cost realism, stress behavior,
+  and live-like feasibility.
+
+Each reviewer must return `PASS`, `VETO`, or `NEEDS_MORE_EVIDENCE`.
+`VETO` and `NEEDS_MORE_EVIDENCE` block promotion but do not rewrite the fixed
+evaluator's KEEP verdict.
+
 ## Required Output
 
 Each evaluator run writes normal run artifacts under `agent/runs/...` and
@@ -74,7 +92,8 @@ updates project-level runtime state:
 - `autoresearch/latest_state.json` is refreshed to the latest evaluator state.
 - `autoresearch/reports/iteration_<N>_<candidate_id>.md` records each
   iteration's swarm analysis, strategy diff, per-window historical returns,
-  aggregate return, verdict diagnostics, and next-iteration plan.
+  aggregate return, verdict diagnostics, post-KEEP review when applicable, and
+  next-iteration plan.
 
 Loop completion may be claimed only when a human asks to stop/pause/summarize,
 or when the current candidate's evaluator diagnostics show both
@@ -90,6 +109,9 @@ paired-window coverage, fixed-window loss ratio, bear-window return delta,
 bear-window loss ratio, bear-window drawdown delta, trade retention, and
 improvement concentration. Incomplete `run_status.json` or stale reused
 artifacts cannot support KEEP, stop-target, or promotion claims.
+
+Promotion additionally fails when either post-KEEP reviewer returns `VETO` or
+`NEEDS_MORE_EVIDENCE`.
 
 These files are runtime outputs and should not be committed. The tracked
 templates are:

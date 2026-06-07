@@ -18,6 +18,10 @@ This skill is for ztrade strategy research, not live trading.
   surface.
 - Swarm and Alpha Zoo may participate in the Think/proposal step, but only as
   read-only analysis context. KEEP/DISCARD remains the fixed evaluator's job.
+- `factor_validator` and `backtest_reviewer` from
+  `agent/src/swarm/presets/factor_research_committee.yaml` review every
+  evaluator-KEEP candidate before it can be promoted to best. They cannot
+  rewrite KEEP/DISCARD, but `VETO` or `NEEDS_MORE_EVIDENCE` blocks promotion.
 
 ## Starting Point
 
@@ -49,7 +53,10 @@ The tool initializes the repo-level workspace by default:
 - `autoresearch/latest_state.json`
 
 The coding agent should edit only `autoresearch/mutable/v47_params.json`, rerun
-the fixed evaluator, then keep or discard based on the evaluator verdict.
+the fixed evaluator, then apply the Post-KEEP Agent Review before keeping any
+candidate. Evaluator DISCARD/BLOCKED candidates are discarded immediately;
+Evaluator KEEP candidates require no `VETO` or `NEEDS_MORE_EVIDENCE` from both
+post-KEEP reviewers before `autoresearch/best/v47_params.json` may be updated.
 Each `run_dir` remains only the fixed evaluator output directory. Pass
 `workspace_dir` only for tests or intentionally isolated research workspaces.
 
@@ -70,9 +77,9 @@ evaluation window starts.
 
 ## Promotion: Local Paper Simulation
 
-After a candidate has passed the fixed evaluator and is written to
-`autoresearch/best/v47_params.json`, use `ztrade_paper_sim` to promote it into
-a broker-free live-like run directory:
+After a candidate has passed the fixed evaluator, passed Post-KEEP Agent
+Review, and is written to `autoresearch/best/v47_params.json`, use
+`ztrade_paper_sim` to promote it into a broker-free live-like run directory:
 
 ```json
 {

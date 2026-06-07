@@ -727,8 +727,11 @@ def test_karpathy_workspace_preserves_mutable_candidate_and_writes_proposal_cont
     assert [record["candidate_id"] for record in iterations] == [MUTABLE_CANDIDATE_ID]
 
     program = (workspace_dir / "program.md").read_text(encoding="utf-8")
-    assert "Swarm agents and Alpha Zoo are inside the Think step" in program
+    assert "Search-space expansion and Evaluator-KEEP promotion both require review" in program
     assert "Required Evaluator Invocation" in program
+    assert "Post-KEEP Agent Review" in program
+    assert "factor_validator" in program
+    assert "backtest_reviewer" in program
     assert "NEVER STOP after a single iteration" in program
     assert "Baseline First" in program
     assert "Git Advance/Revert Discipline" in program
@@ -758,7 +761,11 @@ def test_karpathy_workspace_preserves_mutable_candidate_and_writes_proposal_cont
 
     evaluator_contract = (workspace_dir / "evaluator_contract.md").read_text(encoding="utf-8")
     assert "agent/src/ztrade_autoresearch/evaluator.py" in evaluator_contract
+    assert "agent/src/tools/ztrade_autoresearch_tool.py" in evaluator_contract
     assert "Alternate scoring paths are forbidden" in evaluator_contract
+    assert "Required Post-KEEP Review" in evaluator_contract
+    assert "VETO" in evaluator_contract
+    assert "NEEDS_MORE_EVIDENCE" in evaluator_contract
     assert "Do not hand-edit evaluator results" in evaluator_contract
     assert "autoresearch/results.template.tsv" in evaluator_contract
     assert "autoresearch/reports/iteration_<N>_<candidate_id>.md" in evaluator_contract
@@ -772,15 +779,22 @@ def test_karpathy_workspace_preserves_mutable_candidate_and_writes_proposal_cont
 
     swarm_request = json.loads((workspace_dir / "proposals" / "swarm_proposal_request.json").read_text())
     assert [role["role"] for role in swarm_request["roles"]] == [
-        "factor_librarian",
+        "factor_miner",
+        "factor_combiner",
         "v47_researcher",
         "regime_analyst",
-        "overfit_skeptic",
+        "factor_validator",
+        "backtest_reviewer",
         "proposal_writer",
     ]
+    assert swarm_request["post_keep_review"]["required_after_evaluator_keep"] is True
+    assert swarm_request["post_keep_review"]["blocking_verdicts"] == ["VETO", "NEEDS_MORE_EVIDENCE"]
     assert "autoresearch/evaluator_contract.md" in swarm_request["inputs"]
     assert "autoresearch/results.template.tsv" in swarm_request["inputs"]
     assert "do not decide KEEP or DISCARD" in swarm_request["hard_limits"]
+    assert "do not update best after KEEP until post-KEEP review has no VETO/NEEDS_MORE_EVIDENCE" in swarm_request[
+        "hard_limits"
+    ]
 
     ledger = (workspace_dir / "results.tsv").read_text(encoding="utf-8")
     assert ledger.splitlines()[0].startswith("iteration\tcandidate_id\tverdict")
@@ -796,6 +810,13 @@ def test_karpathy_workspace_preserves_mutable_candidate_and_writes_proposal_cont
     )
     assert loop_config["context_memory"]["recent_report_count"] == 5
     assert loop_config["context_memory"]["require_pack_before_context_boundary"] is True
+    assert loop_config["post_keep_review"]["required_after_evaluator_keep"] is True
+    assert loop_config["post_keep_review"]["reviewers"] == ["factor_validator", "backtest_reviewer"]
+    assert loop_config["post_keep_review"]["blocking_verdicts"] == ["VETO", "NEEDS_MORE_EVIDENCE"]
+    assert (
+        loop_config["post_keep_review"]["promotion_rule"]
+        == "Evaluator KEEP plus no factor_validator/backtest_reviewer VETO or NEEDS_MORE_EVIDENCE."
+    )
     assert not (run_dir / "autoresearch").exists()
 
 

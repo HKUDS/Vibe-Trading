@@ -8,8 +8,22 @@
     "Per-invocation evaluator count is defined by autoresearch/program.md",
     "Only human stop/pause/summary or both performance thresholds may stop the loop",
     "Tool, time, or context pressure must trigger context packaging and memory recovery, then continue",
-    "Search-space expansion requires advisory review (factor_validator + backtest_reviewer both returning recommend); see program.md#search-space-expansion-review"
+    "Search-space expansion requires advisory review (factor_validator + backtest_reviewer both returning recommend); see program.md#search-space-expansion-review",
+    "Evaluator KEEP requires post-KEEP review; factor_validator/backtest_reviewer VETO or NEEDS_MORE_EVIDENCE blocks promotion to best"
   ],
+  "post_keep_review": {
+    "blocking_verdicts": [
+      "VETO",
+      "NEEDS_MORE_EVIDENCE"
+    ],
+    "pass_verdict": "PASS",
+    "promotion_rule": "Evaluator KEEP plus no factor_validator/backtest_reviewer VETO or NEEDS_MORE_EVIDENCE.",
+    "required_after_evaluator_keep": true,
+    "reviewers": [
+      "factor_validator",
+      "backtest_reviewer"
+    ]
+  },
   "progress_report_every_iterations": 5,
   "search_space_expansion_plateau_threshold": 50,
   "stop_conditions": {
