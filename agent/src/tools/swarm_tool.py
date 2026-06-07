@@ -123,12 +123,12 @@ _PRESET_KEYWORDS: list[tuple[str, list[str], float]] = [
     (
         "derivatives_strategy_desk",
         [
-            r"\boption\b",
-            "call",
-            "put",
-            "Greeks",
+            r"\boptions?\b",
+            r"\bcall\s+options?\b",
+            r"\bput\s+options?\b",
+            r"\bGreeks?\b",
             r"implied\s+vol",
-            "IV",
+            r"\bIV\b",
             "期权",
             "衍生品",
         ],
@@ -374,6 +374,11 @@ def _match_preset(prompt: str) -> str:
     Returns:
         Best matching preset name.
     """
+    normalized_prompt = re.sub(r"[\s-]+", "_", prompt.strip().lower())
+    for preset_name, _, _ in _PRESET_KEYWORDS:
+        if re.search(rf"(?<![a-z0-9]){re.escape(preset_name)}(?![a-z0-9])", normalized_prompt):
+            return preset_name
+
     scores: dict[str, float] = {}
     for preset_name, keywords, boost in _PRESET_KEYWORDS:
         score = 0.0
