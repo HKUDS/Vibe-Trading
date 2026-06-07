@@ -585,14 +585,30 @@ class SwarmTool(BaseTool):
     is_readonly = False
     repeatable = True  # loop.py dedups by tool name; each prompt is a distinct run (#42)
 
-    def __init__(self, *, include_shell_tools: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        include_shell_tools: bool = False,
+        event_callback: Any | None = None,
+    ) -> None:
         """Initialize the swarm launcher.
 
         Args:
             include_shell_tools: Whether worker registries may include shell
                 execution tools requested by presets.
+            event_callback: Optional session event bridge used by the web chat.
         """
         self.include_shell_tools = include_shell_tools
+        self._event_callback = event_callback
+
+    def _emit_session_event(self, event_type: str, data: dict[str, Any]) -> None:
+        """Forward swarm status to the hosting session SSE channel if present."""
+        if self._event_callback is None:
+            return
+        try:
+            self._event_callback(event_type, data)
+        except Exception:
+            logger.warning("Failed to forward %s to session event stream", event_type, exc_info=True)
 
     def execute(self, **kwargs: Any) -> str:
         """Start a swarm run: auto-match preset, extract variables, wait for completion.
@@ -638,10 +654,25 @@ class SwarmTool(BaseTool):
             agent_config=agent_config,
         )
 
+        pending_live_events: list[dict[str, Any]] = []
+        run_id_holder: dict[str, str | None] = {"run_id": None}
+
         try:
+            def _live_callback(event: Any) -> None:
+                payload = event.model_dump()
+                current_run_id = run_id_holder["run_id"]
+                if current_run_id is None:
+                    pending_live_events.append(payload)
+                    return
+                self._emit_session_event(
+                    "swarm.event",
+                    {"run_id": current_run_id, "event": payload},
+                )
+
             run = runtime.start_run(
                 preset,
                 variables,
+                live_callback=_live_callback if self._event_callback is not None else None,
                 include_shell_tools=self.include_shell_tools,
             )
         except FileNotFoundError as exc:
@@ -661,7 +692,25 @@ class SwarmTool(BaseTool):
             )
 
         run_id = run.id
+        run_id_holder["run_id"] = run_id
         logger.info("SwarmTool: started run %s (preset=%s)", run_id, preset)
+        self._emit_session_event(
+            "swarm.started",
+            {
+                "run_id": run_id,
+                "preset": preset,
+                "variables": variables,
+                "status": run.status.value,
+                "agents": [agent.model_dump() for agent in run.agents],
+                "tasks": [task.model_dump() for task in run.tasks],
+            },
+        )
+        for event_payload in pending_live_events:
+            self._emit_session_event(
+                "swarm.event",
+                {"run_id": run_id, "event": event_payload},
+            )
+        pending_live_events.clear()
 
         t0 = time.monotonic()
         while time.monotonic() - t0 < _MAX_WAIT_SECONDS:

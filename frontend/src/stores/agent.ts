@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentMessage, ToolCallEntry } from "@/types/agent";
+import type { AgentMessage, SwarmRunStatus, ToolCallEntry } from "@/types/agent";
 
 const SESSION_CACHE_MAX = 5;
 const _sessionCache = new Map<string, AgentMessage[]>();
@@ -27,6 +27,8 @@ interface AgentState {
 
   addToolCall: (entry: ToolCallEntry) => void;
   updateToolCall: (id: string, update: Partial<ToolCallEntry>) => void;
+  upsertSwarmStatus: (status: SwarmRunStatus) => void;
+  updateSwarmStatus: (runId: string, updater: (status: SwarmRunStatus) => SwarmRunStatus) => void;
 
   cacheSession: (sid: string, msgs: AgentMessage[]) => void;
   getCachedSession: (sid: string) => AgentMessage[] | undefined;
@@ -81,6 +83,37 @@ export const useAgentStore = create<AgentState>((set) => ({
     set((s) => ({
       toolCalls: s.toolCalls.map((tc) => tc.id === id ? { ...tc, ...update } : tc),
     })),
+  upsertSwarmStatus: (swarmStatus) =>
+    set((s) => {
+      const idx = s.messages.findIndex((m) => m.type === "swarm_status" && m.swarmRunId === swarmStatus.runId);
+      if (idx >= 0) {
+        const messages = [...s.messages];
+        messages[idx] = { ...messages[idx], swarmStatus, timestamp: Date.now() };
+        return { messages };
+      }
+      return {
+        messages: [
+          ...s.messages,
+          {
+            id: `swarm_${swarmStatus.runId}`,
+            type: "swarm_status",
+            content: "",
+            swarmRunId: swarmStatus.runId,
+            swarmStatus,
+            timestamp: Date.now(),
+          },
+        ],
+      };
+    }),
+  updateSwarmStatus: (runId, updater) =>
+    set((s) => {
+      const idx = s.messages.findIndex((m) => m.type === "swarm_status" && m.swarmRunId === runId && m.swarmStatus);
+      if (idx < 0) return {};
+      const messages = [...s.messages];
+      const current = messages[idx].swarmStatus!;
+      messages[idx] = { ...messages[idx], swarmStatus: updater(current), timestamp: Date.now() };
+      return { messages };
+    }),
 
   cacheSession: (sid, msgs) => {
     _sessionCache.delete(sid);

@@ -15,6 +15,12 @@ import { ConversationTimeline } from "@/components/chat/ConversationTimeline";
 import { ToolProgressIndicator } from "@/components/chat/ToolProgressIndicator";
 import { MandateProposalCard } from "@/components/chat/MandateProposalCard";
 import { RunnerStatus } from "@/components/chat/RunnerStatus";
+import { SwarmStatusCard } from "@/components/chat/SwarmStatusCard";
+import {
+  applySwarmEvent,
+  buildSwarmStatusFromStarted,
+  buildSwarmStatusFromToolResultPreview,
+} from "@/lib/swarmStatus";
 
 /* ---------- Message grouping ---------- */
 type MsgGroup =
@@ -431,6 +437,12 @@ export function Agent() {
           elapsed_s: undefined,
           progress: undefined,
         });
+        if (toolName === "run_swarm") {
+          const fallback = buildSwarmStatusFromToolResultPreview(String(d.preview || ""));
+          if (fallback && !act().messages.some((m) => m.type === "swarm_status" && m.swarmRunId === fallback.runId)) {
+            act().upsertSwarmStatus(fallback);
+          }
+        }
       },
 
       tool_heartbeat: (d) => {
@@ -562,6 +574,24 @@ export function Agent() {
       "goal.created": () => {
         touch();
         loadGoalSnapshot(sid);
+      },
+
+      "swarm.started": (d) => {
+        touch();
+        const status = buildSwarmStatusFromStarted(d);
+        if (!status) return;
+        act().upsertSwarmStatus(status);
+        scrollToBottom();
+      },
+
+      "swarm.event": (d) => {
+        touch();
+        if (act().status !== "streaming") act().setStatus("streaming");
+        const runId = String(d.run_id || "");
+        const event = d.event;
+        if (!runId || !event) return;
+        act().updateSwarmStatus(runId, (current) => applySwarmEvent(current, event));
+        scrollToBottom();
       },
 
       "goal.evidence": () => {
@@ -944,6 +974,8 @@ export function Agent() {
         lines.push(`## Error (${time})`, ``, msg.content, ``);
       } else if (msg.type === "tool_call") {
         lines.push(`> Tool call: ${msg.tool || "unknown"}`, ``);
+      } else if (msg.type === "swarm_status") {
+        lines.push(`> Swarm status: ${msg.swarmStatus?.preset || "swarm"} ${msg.swarmStatus?.status || ""}`, ``);
       } else if (msg.type === "run_complete") {
         lines.push(`> Backtest complete: ${msg.runId || ""}`, ``);
       }
@@ -1084,6 +1116,13 @@ export function Agent() {
               );
             }
             const msgIdx = messages.indexOf(g.msg);
+            if (g.msg.type === "swarm_status" && g.msg.swarmStatus) {
+              return (
+                <div key={row.key} data-msg-idx={msgIdx}>
+                  <SwarmStatusCard status={g.msg.swarmStatus} />
+                </div>
+              );
+            }
             return (
               <div key={row.key} data-msg-idx={msgIdx}>
                 <MessageBubble msg={g.msg} onRetry={g.msg.type === "error" ? handleRetry : undefined} />
@@ -1092,7 +1131,7 @@ export function Agent() {
           })}
 
           {/* Pre-stream placeholder: visible after Send, before first SSE event */}
-          {status === "streaming" && !streamingText && toolCalls.length === 0 && (
+          {status === "streaming" && !streamingText && toolCalls.length === 0 && !messages.some((m) => m.type === "swarm_status" && m.swarmStatus?.status === "running") && (
             <div className="flex gap-3">
               <AgentAvatar />
               <div className="flex-1 min-w-0 flex items-center gap-2 text-xs text-muted-foreground pt-1">

@@ -591,3 +591,95 @@ def test_worker_source_wires_heartbeat_around_tool_execute():
     exec_idx = source.find("registry.execute(", timer_idx)
     next_dedent = source.find("\n        ", exec_idx)  # exit the `with` block
     assert 0 < timer_idx < exec_idx < next_dedent
+
+
+def test_swarm_tool_forwards_started_and_live_events(monkeypatch):
+    """Web chat sessions should receive a status card seed plus live swarm events."""
+    import src.tools.swarm_tool as swarm_tool
+
+    run = _base_run("r-web-chat")
+    run.status = RunStatus.running
+    captured: list[tuple[str, dict]] = []
+
+    class FakeStore:
+        def __init__(self, base_dir):
+            self.base_dir = base_dir
+
+        def load_run(self, run_id):
+            return run if run_id == run.id else None
+
+        def reconcile_run(self, loaded, write=False):
+            return loaded
+
+    class FakeRuntime:
+        def __init__(self, store, max_workers=4, agent_config=None):
+            self._store = store
+
+        def start_run(self, preset, variables, live_callback=None, include_shell_tools=False):
+            assert live_callback is not None
+            live_callback(
+                SwarmEvent(
+                    type="task_started",
+                    agent_id="analyst",
+                    task_id="t1",
+                    data={},
+                    timestamp=_iso(datetime.now(timezone.utc)),
+                )
+            )
+            return run
+
+    monkeypatch.setattr(swarm_tool, "_MAX_WAIT_SECONDS", 0)
+    monkeypatch.setattr(swarm_tool, "_match_preset", lambda prompt: "demo")
+    monkeypatch.setattr(swarm_tool, "_build_variables", lambda preset, prompt: {"goal": prompt})
+    monkeypatch.setattr("src.config.load_swarm_agent_config", lambda: None)
+    monkeypatch.setattr("src.swarm.store.SwarmStore", FakeStore)
+    monkeypatch.setattr("src.swarm.runtime.SwarmRuntime", FakeRuntime)
+
+    tool = swarm_tool.SwarmTool(event_callback=lambda etype, data: captured.append((etype, data)))
+    payload = json.loads(tool.execute(prompt="analyze AAPL"))
+
+    assert payload["run_id"] == "r-web-chat"
+    assert captured[0][0] == "swarm.started"
+    assert captured[0][1]["run_id"] == "r-web-chat"
+    assert captured[0][1]["agents"][0]["id"] == "analyst"
+    assert captured[1][0] == "swarm.event"
+    assert captured[1][1]["run_id"] == "r-web-chat"
+    assert captured[1][1]["event"]["type"] == "task_started"
+
+
+def test_swarm_tool_without_session_callback_preserves_plain_runtime(monkeypatch):
+    """No session bridge means no live callback is installed."""
+    import src.tools.swarm_tool as swarm_tool
+
+    run = _base_run("r-no-session")
+    run.status = RunStatus.running
+
+    class FakeStore:
+        def __init__(self, base_dir):
+            self.base_dir = base_dir
+
+        def load_run(self, run_id):
+            return run if run_id == run.id else None
+
+        def reconcile_run(self, loaded, write=False):
+            return loaded
+
+    class FakeRuntime:
+        def __init__(self, store, max_workers=4, agent_config=None):
+            self._store = store
+
+        def start_run(self, preset, variables, live_callback=None, include_shell_tools=False):
+            assert live_callback is None
+            return run
+
+    monkeypatch.setattr(swarm_tool, "_MAX_WAIT_SECONDS", 0)
+    monkeypatch.setattr(swarm_tool, "_match_preset", lambda prompt: "demo")
+    monkeypatch.setattr(swarm_tool, "_build_variables", lambda preset, prompt: {"goal": prompt})
+    monkeypatch.setattr("src.config.load_swarm_agent_config", lambda: None)
+    monkeypatch.setattr("src.swarm.store.SwarmStore", FakeStore)
+    monkeypatch.setattr("src.swarm.runtime.SwarmRuntime", FakeRuntime)
+
+    payload = json.loads(swarm_tool.SwarmTool().execute(prompt="analyze AAPL"))
+
+    assert payload["run_id"] == "r-no-session"
+    assert payload["status"] == "running"
