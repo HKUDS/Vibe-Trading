@@ -1,0 +1,35 @@
+{
+  "context_memory": {
+    "continuation_state_path": "autoresearch/context/continuation_state.md",
+    "recent_report_count": 5,
+    "require_pack_before_context_boundary": true
+  },
+  "notes": [
+    "Per-invocation evaluator count is defined by autoresearch/program.md",
+    "Only human stop/pause/summary or both performance thresholds may stop the loop",
+    "Tool, time, or context pressure must trigger context packaging and memory recovery, then continue",
+    "Search-space expansion requires advisory review (factor_validator + backtest_reviewer both returning recommend); see program.md#search-space-expansion-review",
+    "Evaluator KEEP requires post-KEEP review; factor_validator/backtest_reviewer VETO or NEEDS_MORE_EVIDENCE blocks promotion to best"
+  ],
+  "post_keep_review": {
+    "blocking_verdicts": [
+      "VETO",
+      "NEEDS_MORE_EVIDENCE"
+    ],
+    "pass_verdict": "PASS",
+    "promotion_rule": "Evaluator KEEP plus no factor_validator/backtest_reviewer VETO or NEEDS_MORE_EVIDENCE.",
+    "required_after_evaluator_keep": true,
+    "reviewers": [
+      "factor_validator",
+      "backtest_reviewer"
+    ]
+  },
+  "progress_report_every_iterations": 5,
+  "search_space_expansion_plateau_threshold": 50,
+  "stop_conditions": {
+    "allow_human_stop_pause_or_summary": true,
+    "candidate_mean_annual_return_pct_min": 30.0,
+    "candidate_trade_weighted_win_rate_min": 0.5,
+    "require_both_performance_thresholds": true
+  }
+}

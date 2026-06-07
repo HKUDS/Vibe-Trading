@@ -1,0 +1,10 @@
+{
+  "baseline_id": "ztrade_v47_baseline",
+  "best_candidate": null,
+  "candidate_count": 0,
+  "iterations": [],
+  "mode": "ztrade_csv",
+  "next_allowed_mutation": "autoresearch/mutable/v47_params.json",
+  "row_count": 0,
+  "strategy_family": "ztrade_v47_weak_guard_62_70"
+}

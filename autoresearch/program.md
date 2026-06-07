@@ -1,0 +1,429 @@
+# ztrade Karpathy-Style Autoresearch Program
+
+You are driving a long-running quant research loop in the style of
+Karpathy/autoresearch.
+
+## Objective
+
+Improve the **current best strategy family** (currently the v47 family,
+weak-guard 62-70 profile) under a fixed, code-owned judge. The first
+research surface is **current best strategy parameter tuning only**.
+Search-space expansion and Evaluator-KEEP promotion both require review by
+`factor_validator` and `backtest_reviewer`.
+
+## Loop
+
+1. Read every file in the Required Context section before changing anything.
+2. If this is a fresh workspace, run the baseline/default v47 evaluation first
+   before proposing any parameter change.
+3. Think with the Scheme Generation Layer (see below) and the swarm proposal
+   request. Compose a one-mutation proposal.
+4. Mutate exactly one allowed candidate surface:
+   `autoresearch/mutable/v47_params.json`.
+5. Run the fixed ztrade autoresearch evaluator through the Required Evaluator
+   Invocation section. Do not invent another backtest or scoring path.
+6. Let the evaluator append `results.tsv` and refresh `latest_state.json`.
+7. If the evaluator returns KEEP and all required gates pass, run the
+   Post-KEEP Agent Review. Only promote the candidate when the review does not
+   veto it.
+8. If the evaluator returns DISCARD/BLOCKED, or the Post-KEEP Agent Review
+   returns VETO/NEEDS_MORE_EVIDENCE, do not update best; discard or revise in
+   the next iteration.
+9. NEVER STOP after a single iteration. Continue proposing, evaluating, and
+   keeping/discarding until a human explicitly stops the session, a hard blocker
+   repeats, or a configured loop limit is reached.
+
+## Required Context
+
+Before each iteration, read these project-level files:
+
+- `autoresearch/program.md`
+- `autoresearch/evaluator_contract.md`
+- `autoresearch/results.tsv` if present; otherwise create it from
+  `autoresearch/results.template.tsv`
+- `autoresearch/latest_state.json` if present; otherwise create it from
+  `autoresearch/latest_state.template.json`
+- `autoresearch/best/v47_params.json`
+- `autoresearch/mutable/v47_params.json`
+- `autoresearch/context/alpha_zoo_context.json`
+- `autoresearch/proposals/swarm_proposal_request.json`
+
+Every iteration must also inspect these code-owned judge files before proposing
+or evaluating a candidate:
+
+- `agent/src/ztrade_autoresearch/protocol.py`
+- `agent/src/ztrade_autoresearch/evaluator.py`
+- `agent/src/ztrade_autoresearch/runner.py`
+- `agent/src/tools/ztrade_autoresearch_tool.py`
+
+The direct Python invocation below is authoritative for long research loops.
+The tool wrapper is a convenience interface and must call the same runner.
+
+## Required Evaluator Invocation
+
+Use the existing ztrade autoresearch evaluator only. The normal CSV command is:
+
+```bash
+RUN_ID="$(date +%Y%m%d_%H%M%S)"
+RUN_DIR="agent/runs/ztrade_autoresearch_${RUN_ID}"
+export RUN_DIR
+mkdir -p "$RUN_DIR/logs"
+PYTHONPATH=agent uv run python - <<'PY' > "$RUN_DIR/logs/autoresearch_stdout.log" 2> "$RUN_DIR/logs/autoresearch_stderr.log"
+import os
+from pathlib import Path
+from src.ztrade_autoresearch.runner import run_ztrade_csv_research
+
+run_ztrade_csv_research(
+    Path(os.environ["RUN_DIR"]),
+    data_dir="/Users/wdblink/Code/my_repo/ztrade/data",
+    candidate_iterations=1,
+    max_symbols=200,
+    use_mutable_candidate=True,
+)
+PY
+```
+
+The tool-equivalent invocation is `ztrade_autoresearch` with:
+
+```json
+{
+  "mode": "ztrade_csv",
+  "data_dir": "/Users/wdblink/Code/my_repo/ztrade/data",
+  "candidate_iterations": 1,
+  "max_symbols": 200,
+  "use_mutable_candidate": true
+}
+```
+
+For baseline-first sanity on a fresh workspace, do not mutate params. Run the
+same evaluator with static search disabled after baseline:
+
+```bash
+RUN_ID="$(date +%Y%m%d_%H%M%S)"
+RUN_DIR="agent/runs/ztrade_autoresearch_baseline_${RUN_ID}"
+export RUN_DIR
+mkdir -p "$RUN_DIR/logs"
+PYTHONPATH=agent uv run python - <<'PY' > "$RUN_DIR/logs/autoresearch_stdout.log" 2> "$RUN_DIR/logs/autoresearch_stderr.log"
+import os
+from pathlib import Path
+from src.ztrade_autoresearch.runner import run_ztrade_csv_research
+
+run_ztrade_csv_research(
+    Path(os.environ["RUN_DIR"]),
+    data_dir="/Users/wdblink/Code/my_repo/ztrade/data",
+    candidate_iterations=0,
+    max_symbols=200,
+    use_mutable_candidate=False,
+)
+PY
+```
+
+## Baseline First
+
+Before the first parameter mutation in a new research run, evaluate the default
+v47 baseline using the baseline-first command above. This run should produce
+baseline rows and no candidate verdict. Do not treat an empty `results.tsv` as
+evidence that parameter search should start immediately.
+
+## Scheme Generation Layer
+
+The Think step is composed of four cooperating components. None of them may
+decide KEEP/DISCARD, edit the evaluator/protocol/data windows, or expand the
+official mutable surface. They emit **proposals only**.
+
+1. **Factor Library** (read-only advisory)
+
+   - Production registry: `agent/src/factors/registry.py` — 452 alphas across
+     `academic`, `alpha101`, `gtja191`, `qlib158`. Pydantic `extra="forbid"`,
+     200KB module cap, frozen metadata (`decay_horizon: int = Field(ge=0, le=60)`).
+   - Context snapshot: `autoresearch/context/alpha_zoo_context.json` — 44
+     metadata records across 11 buckets, generated by
+     `build_alpha_zoo_context(limit_per_bucket=4)` in
+     `agent/src/ztrade_autoresearch/research_loop.py`. The snapshot is
+     metadata-only; it is **not** an automatic search space.
+   - Public API: `Registry.list(zoo, theme, universe)`, `Registry.get(alpha_id)`,
+     `Registry.compute(alpha_id, panel)`, `Registry.health()`,
+     `Registry.export_manifest()`.
+   - Use it to nominate `alpha_zoo_references` in proposals; never as the
+     authoritative evaluator.
+
+2. **Auto Factor Discoverer** (advisory, plateau-triggered)
+
+   - `factor_miner` (from `agent/src/swarm/presets/factor_research_committee.yaml`):
+     nominates 5-10 candidate factors with economic logic, calculation formula,
+     data requirements, expected IC direction.
+   - `factor_combiner` (from the same preset): designs optimal factor
+     combination (equal / IC-weighted / ICIR-weighted / risk-parity / ML
+     blending), correlation management (Gram-Schmidt orthogonalization, PCA),
+     stock-selection rules, sector/market-cap neutralization.
+   - **Standardized transformation techniques** that any candidate strategy
+     should apply (not yet wired into v47 — see Sub-plan §7):
+     - cross-sectional Z-score
+     - rank percentile
+     - median winsorization
+     - time-window scan across multiple lookbacks
+     - orthogonalization (Gram-Schmidt) to reduce correlation
+     - sector neutralization (within-sector Z-score, e.g. Shenwan Level-1 for
+       A-shares)
+     - multiple testing correction (Bonferroni / FDR)
+   - These roles are advisory. `factor_miner` and `factor_combiner` are
+     invoked for plateau-triggered search-space expansion proposals. They may
+     also be cited in routine proposals when mapping an existing Alpha Zoo
+     idea onto the already-approved v47 mutable surface.
+
+3. **Data Analysis Cluster** (read-only, available every iteration)
+
+   - `agent/src/tools/factor_analysis_tool.py` — IC / ICIR / quintile /
+     turnover / decay / robustness computation.
+   - `agent/src/skills/quant-statistics/SKILL.md` — IC ≥ 0.03, ICIR ≥ 0.5,
+     t-statistic ≥ 2.0, multiple-testing correction.
+   - `agent/src/skills/factor-research/SKILL.md` — factor mining standards,
+     validation benchmarks.
+   - `agent/src/skills/multi-factor/SKILL.md` — multi-factor combination
+     framework.
+   - The cluster produces, per iteration, a snapshot of IC matrix,
+     regime split (bull / bear / chop / live-like), and trade retention
+     for the current candidate. Use it to challenge the v47 mapper's
+     proposal before it becomes a mutation.
+
+4. **v47 Mapper (5 SWARM_ROLES)** — runs on every iteration
+
+   - `factor_librarian` — use Factor Library metadata to nominate explainable
+     factor ideas; do not invent factors.
+   - `v47_researcher` — map each idea onto the current best strategy's
+     parameter, indicator-composition, or regime-sizing surface before
+     requesting any expansion.
+   - `regime_analyst` — compare bull, bear, chop, and live-like windows using
+     only evaluator artifacts.
+   - `overfit_skeptic` — reject ideas that depend on frozen-test peeking,
+     evaluator edits, or one-window luck.
+   - `proposal_writer` — emit one structured experiment proposal that mutates
+     only the allowed surface.
+
+The four components together produce a single proposal per iteration; the
+proposal is what the loop mutates. Components 1 and 3 are read-only context;
+components 2 and 4 are advisory prompts.
+
+## Search-Space Expansion Review
+
+When the **current best strategy's** parameter tuning enters a documented
+plateau (default threshold: 50 consecutive iterations with no KEEP verdict),
+the loop may request a search-space expansion. The expansion is **not** a
+free-form edit; it is a written proposal reviewed by two advisory agents
+defined in `agent/src/swarm/presets/factor_research_committee.yaml`.
+
+- **`factor_validator`** — performs IC analysis (mean ≥ 0.03, ICIR ≥ 0.5,
+  t-statistic ≥ 2.0), quintile backtest (monotonicity, long-short return),
+  factor decay curve, and robustness tests (OOS, sub-period, market-cap
+  segments, multiple-testing correction). Outputs an
+  `Effectiveness Rating` (Effective / Marginal / Ineffective).
+
+- **`backtest_reviewer`** — reviews backtest credibility: parameter count
+  vs. sample size, IS/OOS performance gap, parameter sensitivity (±10%),
+  look-ahead bias, survivorship bias, liquidity bias, transaction cost
+  realism, cross-regime performance, stress tests. Outputs a
+  `Live Deployment Recommendation` (Recommend deployment / Deploy after
+  improvement / Do not deploy).
+
+**Trigger condition**: `latest_state.json.stop_target_met == false` AND
+consecutive no-KEEP iterations ≥ `loop_config.search_space_expansion_plateau_threshold`
+(default 50).
+
+**Advisory verdict rule**: a search-space expansion enters the mutable
+surface **only when both** reviewers return `recommend`. If either returns
+`improve` or `reject`, the loop returns to v47 micro-tuning and the proposal
+is archived under `autoresearch/proposals/archive/`.
+
+Advisory reviewers may not compute or override KEEP/DISCARD verdicts. For
+search-space expansion they control whether a new surface can enter the
+mutable protocol.
+
+## Post-KEEP Agent Review
+
+Evaluator KEEP is necessary but not sufficient for promotion. After
+`agent/src/ztrade_autoresearch/evaluator.py` returns KEEP, the candidate enters
+a post-KEEP review by the same committee reviewers from
+`agent/src/swarm/presets/factor_research_committee.yaml`:
+
+- **`factor_validator`** reviews factor/statistical validity. It must check
+  IC/ICIR/t-statistics where factor data exists, quintile or grouped
+  monotonicity, decay and turnover, cross-regime stability, OOS degradation,
+  market-cap segmentation where available, multiple-testing risk, and whether
+  the candidate looks too good to be true.
+- **`backtest_reviewer`** reviews backtest credibility. It must check
+  overfitting, parameter count vs. sample size, parameter sensitivity, frozen
+  window coverage, look-ahead bias, survivorship bias, liquidity constraints,
+  transaction cost realism, drawdown behavior, stress windows, and live-like
+  feasibility.
+
+Each reviewer must emit one of:
+
+- `PASS` — no blocking issue found; promotion may continue if the other
+  reviewer also does not veto.
+- `VETO` — a blocking issue was found; do not update
+  `autoresearch/best/v47_params.json`.
+- `NEEDS_MORE_EVIDENCE` — evidence is insufficient; do not update best. The
+  next iteration must collect the missing evidence or run a more conservative
+  candidate.
+
+**Promotion rule**: update `autoresearch/best/v47_params.json` only when the
+fixed evaluator returns KEEP and neither post-KEEP reviewer returns `VETO` or
+`NEEDS_MORE_EVIDENCE`. A review veto does not rewrite the evaluator verdict;
+it blocks promotion of that otherwise-KEEP candidate.
+
+## Immutable Judge
+
+Do not modify data loaders, data windows, benchmark rows, evaluator gates,
+backtest execution, cost/slippage/T+1 assumptions, run-card hashing, or frozen
+test rules during a research run.
+
+The sole KEEP/DISCARD authority is
+`agent/src/ztrade_autoresearch/evaluator.py`. No agent, no LLM, no advisory
+reviewer may compute or override a KEEP/DISCARD verdict. Post-KEEP reviewers
+may only veto promotion after the evaluator has already returned KEEP.
+
+## Git Advance/Revert Discipline
+
+Each candidate iteration must be recoverable:
+
+1. Start from a clean or understood worktree.
+2. Record the current commit hash and mutable params before editing.
+3. Edit only `autoresearch/mutable/v47_params.json`.
+4. Run the required evaluator.
+5. If verdict is KEEP, run the Post-KEEP Agent Review before updating best.
+6. If verdict is KEEP and neither reviewer returns `VETO` or
+   `NEEDS_MORE_EVIDENCE`, update `autoresearch/best/v47_params.json` and commit
+   the kept candidate with a message that includes the evaluator score and
+   audit verdict.
+7. If verdict is DISCARD/BLOCKED, or KEEP is vetoed by post-KEEP review, revert
+   `autoresearch/mutable/v47_params.json` to the previous best candidate. Do
+   not commit discarded or audit-vetoed params.
+
+Do not use destructive repository-wide commands. Revert only the mutable
+candidate file unless a human explicitly requests broader reset behavior.
+
+## Logging
+
+Every evaluator invocation must write stdout and stderr under that run's
+`logs/` directory. Do not stream full backtest output into the chat context.
+Summarize the verdict, score, failed gates, and run directory instead.
+
+## Timeouts and Crashes
+
+If an evaluator run exceeds 90 minutes, stop that run, mark the candidate
+BLOCKED in notes, inspect stderr, and continue with a simpler candidate. If the
+run crashes, first check whether the crash is caused by the candidate params. A
+small candidate-surface fix is allowed; evaluator/protocol/backtest fixes are
+not allowed during the research loop.
+
+## Simplicity Criterion
+
+Prefer simpler changes when scores are similar. A small return or win-rate
+improvement is not enough if it requires a wider mutable surface, opaque factor
+addition, or fragile one-window behavior.
+
+## Session Budget and Stop Contract
+
+Tool limits, elapsed time, context pressure, and temporary fatigue are not stop conditions.
+Continue the loop until a human asks to stop/pause/summarize, a
+hard blocker repeats, a configured loop limit is reached, or the evaluator
+proves both promotion targets:
+
+- `candidate_trade_weighted_win_rate > 0.50`
+- candidate mean annualized return is greater than `30%`
+- `allow_leverage=false`
+
+## Iteration Report Contract
+
+Every iteration report must include:
+
+- `Candidate Protocol Freeze`
+- exact candidate file and run directory
+- one allowed parameter experiment
+- parameter diff with baseline value and candidate value
+- `candidate_return_pct` by window
+- `candidate_trade_weighted_win_rate`
+- evaluator verdict, failed gates, and reuse status
+- post-KEEP review status when evaluator verdict is KEEP:
+  `factor_validation_review`, `backtest_review`, `audit_verdict`,
+  `audit_veto_reasons`, and `required_follow_up_evidence`
+- a concrete next parameter experiment when the candidate is not final
+
+Do not write vague continuation language. If you continue, name the next
+specific allowed parameter experiment and why it targets the failed diagnostic.
+
+## Result Reuse and Force-Rerun Rules
+
+Do not reuse stale artifacts when `autoresearch/mutable/v47_params.json`, the
+run directory, or evaluator inputs changed. A result can support KEEP only when
+its run status is complete and its candidate params match the frozen protocol
+section in the report.
+
+## Promotion and Veto Gates
+
+Promotion requires all fixed evaluator gates to pass and the Post-KEEP Agent
+Review to return no veto. Veto any result with leverage, incomplete
+paired-window coverage, stale artifacts, hand-edited results,
+evaluator/protocol/data-window changes made after seeing output, or a
+`VETO`/`NEEDS_MORE_EVIDENCE` from either post-KEEP reviewer.
+
+## Context Packaging and Memory Recovery
+
+Before context pressure causes loss of task state, write a compact continuation
+note to `autoresearch/context/continuation_state.md`. It must preserve the last
+accepted params, the latest evaluator verdict, failed gates, and the next
+allowed parameter experiment.
+
+## Common Anti-Patterns
+
+- inventing an alternate score outside `agent/src/ztrade_autoresearch/evaluator.py`
+- changing frozen windows, loader behavior, costs, or gates during a run
+- treating tool/time/context pressure as a stop condition
+- keeping a candidate that passes return but fails promotion gates
+- promoting an Evaluator-KEEP candidate without post-KEEP
+  `factor_validator`/`backtest_reviewer` review
+- promoting a candidate after either post-KEEP reviewer returns `VETO` or
+  `NEEDS_MORE_EVIDENCE`
+- broadening the mutable surface without an approved advisory review
+  (factor_validator + backtest_reviewer both returning `recommend`)
+- asking an advisory reviewer to compute or override a KEEP/DISCARD verdict
+- using `factor_miner` / `factor_combiner` to broaden the mutable surface
+  outside the plateau-then-expansion review path
+- using `alpha_zoo_context.json` as an evaluator or as automatic search space
+  (it is proposal-time metadata only)
+
+## Current Allowed Surface
+
+Only `autoresearch/mutable/v47_params.json` may be edited by the loop under
+routine current best strategy parameter tuning. All keys must be existing v47
+parameter keys and must stay within the machine-checked bounds in
+`agent/src/ztrade_autoresearch/research_loop.py:PARAM_BOUNDS`.
+
+Search-space expansion beyond this surface requires an approved advisory
+review (see "Search-Space Expansion Review" above) and a written proposal
+captured under `autoresearch/proposals/`.
+
+### Schema v2 (effective 2026-06-03, per proposal f8ac736)
+
+Three new mutable parameters were approved to break the 22-23% ann ceiling:
+
+| Key                          | Type        | Default | Range       | Purpose                                  |
+|------------------------------|-------------|---------|-------------|------------------------------------------|
+| `per_trade_stop_loss_pct`    | float       | 5.0     | 1.0 - 20.0  | Per-trade hard stop (from entry price)    |
+| `per_trade_take_profit_pct`  | float/None  | None    | None / 2-50 | Optional profit target (None=disabled)   |
+| `rr_min_filter`              | float       | 0.0     | 0.0 - 5.0   | Min expected R:R at signal time (0=off)  |
+
+Two new evaluator gates were added to enforce anti-overfit discipline (from
+the 趋势起爆点 framework):
+
+| Gate                            | Default | Floor/Cap | Meaning                                    |
+|---------------------------------|---------|-----------|--------------------------------------------|
+| `false_ignition_miss_rate_max`  | 0.30    | ≤ 0.30    | Bull-window loss-rate cap (假启动误收率)   |
+| `per_window_r2_min`             | 0.50    | ≥ 0.50    | Bull-gain / (2 * bear-loss) ratio floor    |
+
+These gates pass cleanly on the iter 585 candidate (false_ign=0.08, R2=6.13+).
+The per-trade stop/take-profit, however, do not lift ann above the
+pre-schema 23.56% baseline; in fact, even with stop=100 (effectively off),
+the new every-bar exit check introduces a 0.78pp regression (ann 22.78%)
+vs. the pre-schema 23.56%. This suggests the new code path interacts subtly
+with the green-bar-driven exit logic and is a candidate for follow-up review.

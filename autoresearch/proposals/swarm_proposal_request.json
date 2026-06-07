@@ -1,0 +1,131 @@
+{
+  "advisory_reviewers": {
+    "backtest_reviewer": {
+      "agent_id": "backtest_reviewer",
+      "preset": "factor_research_committee",
+      "purpose": "overfit/look-ahead/survivorship/transaction cost/stress test 复核；search-space expansion output: Live Deployment Recommendation; post-KEEP output: PASS/VETO/NEEDS_MORE_EVIDENCE.",
+      "trigger": "plateau_then_expansion_or_post_keep"
+    },
+    "factor_validator": {
+      "agent_id": "factor_validator",
+      "preset": "factor_research_committee",
+      "purpose": "IC/ICIR/五分位/robustness 复核；search-space expansion output: Effectiveness Rating; post-KEEP output: PASS/VETO/NEEDS_MORE_EVIDENCE.",
+      "trigger": "plateau_then_expansion_or_post_keep"
+    }
+  },
+  "data_dir": "/Users/wdblink/Code/my_repo/ztrade/data",
+  "hard_limits": [
+    "read-only analysis only",
+    "do not edit evaluator, protocol, data windows, or backtest engine",
+    "do not decide KEEP or DISCARD",
+    "do not edit autoresearch/mutable/v47_params.json; emit proposed changes only",
+    "emit one proposal only",
+    "factor_validator and backtest_reviewer cannot compute KEEP/DISCARD; they may only veto promotion after evaluator KEEP",
+    "do not update best after KEEP until post-KEEP review has no VETO/NEEDS_MORE_EVIDENCE"
+  ],
+  "inputs": [
+    "autoresearch/program.md",
+    "autoresearch/evaluator_contract.md",
+    "autoresearch/results.tsv",
+    "autoresearch/results.template.tsv",
+    "autoresearch/latest_state.json",
+    "autoresearch/latest_state.template.json",
+    "autoresearch/context/alpha_zoo_context.json",
+    "autoresearch/mutable/v47_params.json"
+  ],
+  "max_symbols": 200,
+  "mode": "ztrade_csv",
+  "post_keep_review": {
+    "blocking_verdicts": [
+      "VETO",
+      "NEEDS_MORE_EVIDENCE"
+    ],
+    "promotion_rule": "evaluator KEEP plus no blocking reviewer verdict",
+    "required_after_evaluator_keep": true,
+    "reviewers": [
+      "factor_validator",
+      "backtest_reviewer"
+    ]
+  },
+  "required_output": {
+    "advisory_review_required": false,
+    "alpha_zoo_references": [
+      "optional alpha ids used as idea support"
+    ],
+    "audit_verdict": "PASS when neither post-KEEP reviewer vetoes; otherwise VETO or NEEDS_MORE_EVIDENCE",
+    "audit_veto_reasons": [],
+    "backtest_review": {
+      "key_checks": [
+        "bias checks",
+        "transaction costs",
+        "stress behavior",
+        "live-like feasibility"
+      ],
+      "required_follow_up_evidence": [],
+      "verdict": "PASS|VETO|NEEDS_MORE_EVIDENCE after evaluator KEEP",
+      "veto_reasons": []
+    },
+    "expected_evaluator_effect": "return/win-rate/drawdown/trade-count expectation",
+    "factor_combination_notes": "correlation/orthogonalization/neutralization/weighting considerations",
+    "factor_mining_rationale": "economic logic, formula/window, transformation notes, and data requirements",
+    "factor_validation_review": {
+      "key_checks": [
+        "IC/ICIR or proxy evidence",
+        "robustness",
+        "overfitting risk"
+      ],
+      "required_follow_up_evidence": [],
+      "verdict": "PASS|VETO|NEEDS_MORE_EVIDENCE after evaluator KEEP",
+      "veto_reasons": []
+    },
+    "hypothesis": "one falsifiable hypothesis",
+    "mutation_surface": "autoresearch/mutable/v47_params.json",
+    "overfit_objections": [
+      "specific risks"
+    ],
+    "param_changes": {
+      "parameter_name": "new value"
+    },
+    "post_keep_review_required_after_keep": true,
+    "proposal_id": "short stable id"
+  },
+  "roles": [
+    {
+      "agent_id": "factor_miner",
+      "preset": "factor_research_committee",
+      "purpose": "Nominate explainable factor or parameter ideas from Alpha Zoo metadata and current evaluator diagnostics; include economic logic, formula, data requirements, expected IC direction, and transformation notes.",
+      "role": "factor_miner"
+    },
+    {
+      "agent_id": "factor_combiner",
+      "preset": "factor_research_committee",
+      "purpose": "Map factor ideas onto the approved current best strategy mutable surface; reason about correlation, orthogonalization, neutralization, weighting, turnover, and whether a search-space expansion is required.",
+      "role": "factor_combiner"
+    },
+    {
+      "purpose": "Translate the selected idea into exactly one mutation of autoresearch/mutable/v47_params.json whenever it fits the existing v47 surface.",
+      "role": "v47_researcher"
+    },
+    {
+      "purpose": "Compare bull, bear, chop, and live-like windows using only evaluator artifacts.",
+      "role": "regime_analyst"
+    },
+    {
+      "agent_id": "factor_validator",
+      "preset": "factor_research_committee",
+      "purpose": "Pre-mutation statistical challenge and post-KEEP factor validity review: IC/ICIR, quintile monotonicity where available, decay, robustness, multiple-testing risk, and overfitting warnings.",
+      "role": "factor_validator"
+    },
+    {
+      "agent_id": "backtest_reviewer",
+      "preset": "factor_research_committee",
+      "purpose": "Pre-mutation backtest-risk challenge and post-KEEP credibility review: bias checks, transaction cost realism, sample-size risk, stress behavior, and live-like feasibility.",
+      "role": "backtest_reviewer"
+    },
+    {
+      "purpose": "Emit one structured experiment proposal that mutates only the allowed surface.",
+      "role": "proposal_writer"
+    }
+  ],
+  "status": "proposal_request"
+}
