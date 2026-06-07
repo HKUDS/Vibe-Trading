@@ -1,11 +1,29 @@
 {
+  "status": "proposal_request",
+  "mode": "ztrade_csv",
   "data_dir": "/Users/wdblink/Code/my_repo/ztrade/data",
-  "hard_limits": [
-    "read-only analysis only",
-    "do not edit evaluator, protocol, data windows, or backtest engine",
-    "do not decide KEEP or DISCARD",
-    "do not edit autoresearch/mutable/v47_params.json; emit proposed changes only",
-    "emit one proposal only"
+  "max_symbols": 200,
+  "roles": [
+    {
+      "role": "factor_librarian",
+      "purpose": "Use Alpha Zoo metadata to nominate explainable factor ideas; do not invent factors."
+    },
+    {
+      "role": "v47_researcher",
+      "purpose": "Map each idea onto the current v47 parameter, indicator-composition, or regime-sizing surface before requesting any expansion."
+    },
+    {
+      "role": "regime_analyst",
+      "purpose": "Compare bull, bear, chop, and live-like windows using only evaluator artifacts."
+    },
+    {
+      "role": "overfit_skeptic",
+      "purpose": "Reject ideas that depend on frozen-test peeking, evaluator edits, or one-window luck."
+    },
+    {
+      "role": "proposal_writer",
+      "purpose": "Emit one structured experiment proposal that mutates only the allowed surface."
+    }
   ],
   "inputs": [
     "autoresearch/program.md",
@@ -17,44 +35,43 @@
     "autoresearch/context/alpha_zoo_context.json",
     "autoresearch/mutable/v47_params.json"
   ],
-  "max_symbols": 200,
-  "mode": "ztrade_csv",
   "required_output": {
-    "alpha_zoo_references": [
-      "optional alpha ids used as idea support"
-    ],
-    "expected_evaluator_effect": "return/win-rate/drawdown/trade-count expectation",
+    "proposal_id": "short stable id",
     "hypothesis": "one falsifiable hypothesis",
     "mutation_surface": "autoresearch/mutable/v47_params.json",
-    "overfit_objections": [
-      "specific risks"
-    ],
     "param_changes": {
       "parameter_name": "new value"
     },
-    "proposal_id": "short stable id"
+    "alpha_zoo_references": [
+      "optional alpha ids used as idea support"
+    ],
+    "overfit_objections": [
+      "specific risks"
+    ],
+    "expected_evaluator_effect": "return/win-rate/drawdown/trade-count expectation",
+    "advisory_review_required": false
   },
-  "roles": [
-    {
-      "purpose": "Use Alpha Zoo metadata to nominate explainable factor ideas; do not invent factors.",
-      "role": "factor_librarian"
+  "advisory_reviewers": {
+    "factor_validator": {
+      "preset": "factor_research_committee",
+      "agent_id": "factor_validator",
+      "purpose": "IC/ICIR/五分位/robustness 复核 — Output: Effectiveness Rating (Effective/Marginal/Ineffective).",
+      "trigger": "plateau_then_expansion"
     },
-    {
-      "purpose": "Map each idea onto the current v47 parameter, indicator-composition, or regime-sizing surface before requesting any expansion.",
-      "role": "v47_researcher"
-    },
-    {
-      "purpose": "Compare bull, bear, chop, and live-like windows using only evaluator artifacts.",
-      "role": "regime_analyst"
-    },
-    {
-      "purpose": "Reject ideas that depend on frozen-test peeking, evaluator edits, or one-window luck.",
-      "role": "overfit_skeptic"
-    },
-    {
-      "purpose": "Emit one structured experiment proposal that mutates only the allowed surface.",
-      "role": "proposal_writer"
+    "backtest_reviewer": {
+      "preset": "factor_research_committee",
+      "agent_id": "backtest_reviewer",
+      "purpose": "overfit/look-ahead/survivorship/transaction cost/stress test 复核 — Output: Live Deployment Recommendation.",
+      "trigger": "plateau_then_expansion"
     }
-  ],
-  "status": "proposal_request"
+  },
+  "hard_limits": [
+    "read-only analysis only",
+    "do not edit evaluator, protocol, data windows, or backtest engine",
+    "do not decide KEEP or DISCARD",
+    "do not edit autoresearch/mutable/v47_params.json; emit proposed changes only",
+    "emit one proposal only",
+    "factor_validator and backtest_reviewer are advisory only; no KEEP/DISCARD authority",
+    "do not invoke advisory reviewers during routine current best strategy micro-tuning; only when plateau-then-expansion is triggered"
+  ]
 }

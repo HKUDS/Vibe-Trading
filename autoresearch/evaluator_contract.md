@@ -11,8 +11,10 @@ source of truth remains the Python code listed below.
   `agent/src/ztrade_autoresearch/evaluator.py`
 - Backtest execution and artifact writing:
   `agent/src/ztrade_autoresearch/runner.py`
-- Tool wrapper:
-  `agent/src/tools/ztrade_autoresearch_tool.py`
+
+(There is no `agent/src/tools/ztrade_autoresearch_tool.py` wrapper in the
+current checkout. The loop calls the evaluator directly via
+`python -m src.ztrade_autoresearch.runner run_ztrade_csv_research`.)
 
 ## Current Judge
 
@@ -28,6 +30,11 @@ windows. Do not edit these windows during autoresearch.
 
 Alternate scoring paths are forbidden. Do not compute your own KEEP/DISCARD
 outside `agent/src/ztrade_autoresearch/evaluator.py`.
+
+Advisory reviewers (`factor_validator` and `backtest_reviewer`, defined in
+`agent/src/swarm/presets/factor_research_committee.yaml`) may not compute or
+override verdicts; their outputs are proposal-time only and are loaded from
+`autoresearch/proposals/advisory_verdicts/` when present.
 
 ## Required Mutable Input
 
@@ -48,6 +55,15 @@ Read this file before proposing the next experiment:
 
 Swarm and Alpha Zoo can propose hypotheses. They cannot decide KEEP/DISCARD,
 edit evaluator code, or expand the official mutable surface directly.
+
+Search-space expansion proposals must include the verdicts of both
+`factor_validator` and `backtest_reviewer` under
+`autoresearch/proposals/advisory_verdicts/`. Both reviewers must return
+`recommend` for the expansion to enter the mutable surface; if either returns
+`improve` or `reject`, the proposal is archived and the loop returns to
+current best strategy parameter tuning. See
+`autoresearch/program.md#search-space-expansion-review` for the trigger
+condition.
 
 ## Required Output
 

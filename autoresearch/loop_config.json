@@ -7,9 +7,11 @@
   "notes": [
     "Per-invocation evaluator count is defined by autoresearch/program.md",
     "Only human stop/pause/summary or both performance thresholds may stop the loop",
-    "Tool, time, or context pressure must trigger context packaging and memory recovery, then continue"
+    "Tool, time, or context pressure must trigger context packaging and memory recovery, then continue",
+    "Search-space expansion requires advisory review (factor_validator + backtest_reviewer both returning recommend); see program.md#search-space-expansion-review"
   ],
   "progress_report_every_iterations": 5,
+  "search_space_expansion_plateau_threshold": 50,
   "stop_conditions": {
     "allow_human_stop_pause_or_summary": true,
     "candidate_mean_annual_return_pct_min": 30.0,

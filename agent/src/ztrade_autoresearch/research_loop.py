@@ -74,6 +74,30 @@ SWARM_ROLES = [
     },
 ]
 
+# Advisory reviewers — invoked ONLY when search-space expansion is triggered
+# (current best strategy's parameter tuning enters plateau, default 50 consecutive
+# no-KEEP iterations). Both reviewers must return `recommend` for the expansion
+# to enter the mutable surface. Neither may compute or override KEEP/DISCARD.
+#
+# system_prompt paths are loaded from
+# `agent/src/swarm/presets/factor_research_committee.yaml` on demand via
+# `inspect_preset("factor_research_committee")`. See
+# `autoresearch/program.md#search-space-expansion-review`.
+ADVISORY_REVIEWERS: dict[str, dict[str, str]] = {
+    "factor_validator": {
+        "preset": "factor_research_committee",
+        "agent_id": "factor_validator",
+        "purpose": "IC/ICIR/五分位/robustness 复核 — Output: Effectiveness Rating (Effective/Marginal/Ineffective).",
+        "trigger": "plateau_then_expansion",
+    },
+    "backtest_reviewer": {
+        "preset": "factor_research_committee",
+        "agent_id": "backtest_reviewer",
+        "purpose": "overfit/look-ahead/survivorship/transaction cost/stress test 复核 — Output: Live Deployment Recommendation.",
+        "trigger": "plateau_then_expansion",
+    },
+}
+
 PARAM_BOUNDS: dict[str, tuple[float | None, float | None]] = {
     "s1_window": (3, 30),
     "s1_volume_ratio_min": (0.5, 3.0),
@@ -145,8 +169,10 @@ source of truth remains the Python code listed below.
   `agent/src/ztrade_autoresearch/evaluator.py`
 - Backtest execution and artifact writing:
   `agent/src/ztrade_autoresearch/runner.py`
-- Tool wrapper:
-  `agent/src/tools/ztrade_autoresearch_tool.py`
+
+(There is no `agent/src/tools/ztrade_autoresearch_tool.py` wrapper in the
+current checkout. The loop calls the evaluator directly via
+`python -m src.ztrade_autoresearch.runner run_ztrade_csv_research`.)
 
 ## Current Judge
 
@@ -162,6 +188,11 @@ windows. Do not edit these windows during autoresearch.
 
 Alternate scoring paths are forbidden. Do not compute your own KEEP/DISCARD
 outside `agent/src/ztrade_autoresearch/evaluator.py`.
+
+Advisory reviewers (`factor_validator` and `backtest_reviewer`, defined in
+`agent/src/swarm/presets/factor_research_committee.yaml`) may not compute or
+override verdicts; their outputs are proposal-time only and are loaded from
+`autoresearch/proposals/advisory_verdicts/` when present.
 
 ## Required Mutable Input
 
@@ -182,6 +213,15 @@ Read this file before proposing the next experiment:
 
 Swarm and Alpha Zoo can propose hypotheses. They cannot decide KEEP/DISCARD,
 edit evaluator code, or expand the official mutable surface directly.
+
+Search-space expansion proposals must include the verdicts of both
+`factor_validator` and `backtest_reviewer` under
+`autoresearch/proposals/advisory_verdicts/`. Both reviewers must return
+`recommend` for the expansion to enter the mutable surface; if either returns
+`improve` or `reject`, the proposal is archived and the loop returns to
+current best strategy parameter tuning. See
+`autoresearch/program.md#search-space-expansion-review` for the trigger
+condition.
 
 ## Required Output
 
@@ -377,13 +417,17 @@ def build_swarm_proposal_request(
             "alpha_zoo_references": ["optional alpha ids used as idea support"],
             "overfit_objections": ["specific risks"],
             "expected_evaluator_effect": "return/win-rate/drawdown/trade-count expectation",
+            "advisory_review_required": False,
         },
+        "advisory_reviewers": ADVISORY_REVIEWERS,
         "hard_limits": [
             "read-only analysis only",
             "do not edit evaluator, protocol, data windows, or backtest engine",
             "do not decide KEEP or DISCARD",
             f"do not edit {AUTORESEARCH_DIRNAME}/{MUTABLE_PARAMS_REL}; emit proposed changes only",
             "emit one proposal only",
+            "factor_validator and backtest_reviewer are advisory only; no KEEP/DISCARD authority",
+            "do not invoke advisory reviewers during routine current best strategy micro-tuning; only when plateau-then-expansion is triggered",
         ],
     }
 
@@ -490,6 +534,7 @@ def _default_loop_config() -> dict[str, Any]:
             "require_pack_before_context_boundary": True,
         },
         "progress_report_every_iterations": 5,
+        "search_space_expansion_plateau_threshold": 50,
         "stop_conditions": {
             "allow_human_stop_pause_or_summary": True,
             "candidate_mean_annual_return_pct_min": 30.0,
@@ -500,6 +545,7 @@ def _default_loop_config() -> dict[str, Any]:
             "Per-invocation evaluator count is defined by autoresearch/program.md",
             "Only human stop/pause/summary or both performance thresholds may stop the loop",
             "Tool, time, or context pressure must trigger context packaging and memory recovery, then continue",
+            "Search-space expansion requires advisory review (factor_validator + backtest_reviewer both returning recommend); see program.md#search-space-expansion-review",
         ],
     }
 
