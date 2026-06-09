@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.session.models import Attempt, Message, Session
+
+logger = logging.getLogger(__name__)
 
 
 class SessionStore:
@@ -145,6 +149,8 @@ class SessionStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(message.to_dict(), ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
 
     def get_messages(self, session_id: str, limit: int = 100) -> List[Message]:
         """Read all messages for a session.
@@ -162,7 +168,14 @@ class SessionStore:
         messages: List[Message] = []
         for line in path.read_text(encoding="utf-8").strip().splitlines():
             if line.strip():
-                messages.append(Message.from_dict(json.loads(line)))
+                try:
+                    messages.append(Message.from_dict(json.loads(line)))
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "Skipping corrupted message line in session %s: %s",
+                        session_id,
+                        line[:200],
+                    )
         return messages[-limit:]
 
     # ---- Attempt CRUD ----

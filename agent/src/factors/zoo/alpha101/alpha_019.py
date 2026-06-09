@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: Kakushadze Alpha #19
+# 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第19号因子，详见公式定义。
+# 典型用途: 作为多因子模型中的alpha信号，经中性化处理后用于选股或股指期货交易。
+# ============================================================
 """Kakushadze Alpha #19.
 
 Formula (paper appendix): (-1*sign((close-delay(close,7))+delta(close,7))) * (1+rank(1+sum(returns,250)))

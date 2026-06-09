@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: K线偏移(标准化振幅)
+# 简要说明: (2*close - high - low) / (high - low)，收盘在日内振幅中的偏移比率。
+# 典型用途: 范围在[-1,1]之间，接近1表示强势收盘，接近-1表示弱势收盘。
+# ============================================================
 """qlib158 KSFT2: formula = (2\\,\\mathrm{close} - \\mathrm{high} - \\mathrm{low}) / (\\mathrm{high} - \\mathrm{low})."""
 from __future__ import annotations
 

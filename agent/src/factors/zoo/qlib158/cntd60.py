@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 涨跌天数差 60日
+# 简要说明: CNTP_60 - CNTN_60，60日内上涨天数与下跌天数之差。
+# 典型用途: 综合衡量60日内的涨跌方向，正值表示多头天数占优。
+# ============================================================
 """qlib158 CNTD60: formula = \\mathrm{CNTP}_60 - \\mathrm{CNTN}_60."""
 from __future__ import annotations
 

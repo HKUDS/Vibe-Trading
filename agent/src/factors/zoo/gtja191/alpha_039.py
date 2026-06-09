@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA #39 - 量价反转排名
+# 简要说明: (-1*RANK(CORR(RANK(HIGH),RANK(VOLUME),7)) * RANK(CORR(RANK(LOW),RANK(VOLUME),7)))，高低价与成交量秩相关的乘积取负排名。
+# 典型用途: 综合上下两端量价关系的反转信号。
+# ============================================================
 """GTJA Alpha #39.
 
 Formula: ((RANK(DECAYLINEAR(DELTA(CLOSE,2),8)) - RANK(DECAYLINEAR(CORR(((VWAP*0.3)+(OPEN*0.7)),SUM(MEAN(VOLUME,180),37),14),12)))*-1)

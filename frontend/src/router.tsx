@@ -48,6 +48,7 @@ export const router = createBrowserRouter([
       { path: "/correlation", element: wrap(Correlation) },
       { path: "/alpha-zoo", element: wrap(AlphaZoo) },
       { path: "/alpha-zoo/bench", element: wrap(AlphaZoo) },
+      { path: "/alpha-zoo/compare", element: wrap(AlphaZoo) },
       { path: "/alpha-zoo/:alphaId", element: wrap(AlphaZoo) },
     ],
   },

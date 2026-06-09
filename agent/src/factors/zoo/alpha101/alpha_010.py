@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: Alpha #10 - 连续价格变动
+# 简要说明: rank((0 < ts_min(delta(close, 1), 4)) ? delta(close, 1) : ((ts_max(delta(close, 1), 4) < 0) ? delta(close, 1) : (-1 * delta(close, 1))))，类似Alpha #9的4日版本。
+# 典型用途: 短期价格变动的趋势或反转判断，用于短线交易。
+# ============================================================
 """Kakushadze Alpha #10.
 
 Formula (paper appendix): rank((0<ts_min(delta(close,1),4))?delta(close,1):((ts_max(delta(close,1),4)<0)?delta(close,1):(-1*delta(close,1))))

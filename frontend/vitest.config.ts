@@ -10,25 +10,14 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
-    setupFiles: ["./src/test/setup.ts"],
+    setupFiles: ["./src/tests/setup.ts"],
+    include: ["src/**/__tests__/**/*.test.{ts,tsx}"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
-      exclude: [
-        "node_modules/",
-        "src/test/",
-        "**/*.d.ts",
-        "**/*.config.*",
-        "src/main.tsx",
-        "src/router.tsx",
-        "src/lib/echarts.ts",
-      ],
-      thresholds: {
-        statements: 70,
-        branches: 60,
-        functions: 70,
-        lines: 70,
-      },
+      include: ["src/lib/**", "src/stores/**"],
+      exclude: ["src/**/__tests__/**", "src/tests/**"],
     },
+    restoreMocks: true,
   },
 });

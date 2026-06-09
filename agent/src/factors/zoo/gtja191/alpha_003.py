@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA #3 - 条件量价反转
+# 简要说明: (-1 * CORR(RANK(OPEN), RANK(VOLUME), 10))，开盘价与成交量秩相关的负值。
+# 典型用途: 开盘量价关系异常识别，用于日内反转交易。
+# ============================================================
 """GTJA Alpha #3.
 
 Formula: SUM((CLOSE=DELAY(CLOSE,1)?0:CLOSE-(CLOSE>DELAY(CLOSE,1)?MIN(LOW,DELAY(CLOSE,1)):MAX(HIGH,DELAY(CLOSE,1)))),6)

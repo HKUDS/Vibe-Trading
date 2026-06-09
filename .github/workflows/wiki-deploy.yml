@@ -28,5 +28,11 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy wiki --project-name=vibetrading-wiki --branch=main
+          # Deploy from inside wiki/ (config mode) so wrangler reads
+          # wiki/wrangler.toml and compiles wiki/functions/ as Pages Functions.
+          # Deploying the dir positionally (`pages deploy wiki`) uploads the
+          # functions as static files and never compiles them.
+          workingDirectory: wiki
+          wranglerVersion: "4.98.0"
+          command: pages deploy --project-name=vibetrading-wiki --branch=main
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}

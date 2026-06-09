@@ -15,6 +15,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from backtest.loaders.base import (
+    cached_loader_fetch,
     check_budget,
     retry_with_budget,
     validate_date_range,
@@ -35,6 +36,28 @@ _INTERVAL_MAP = {
 # scheduling is delegated to :mod:`backtest.loaders.base`.
 _CCXT_TIMEOUT_MS = int(os.getenv("CCXT_TIMEOUT_MS", "15000"))
 _CCXT_FETCH_BUDGET_S = float(os.getenv("CCXT_FETCH_BUDGET_S", "60"))
+
+
+def _first_proxy_env(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _ccxt_proxy_config() -> dict[str, str]:
+    """Build CCXT proxy settings from conventional proxy environment variables."""
+    all_proxy = _first_proxy_env("ALL_PROXY", "all_proxy")
+    http_proxy = _first_proxy_env("HTTP_PROXY", "http_proxy") or all_proxy
+    https_proxy = _first_proxy_env("HTTPS_PROXY", "https_proxy") or all_proxy or http_proxy
+
+    proxies: dict[str, str] = {}
+    if http_proxy:
+        proxies["http"] = http_proxy
+    if https_proxy:
+        proxies["https"] = https_proxy
+    return proxies
 
 
 @register
@@ -64,7 +87,12 @@ class DataLoader:
         if exchange_cls is None:
             logger.warning("Unknown CCXT exchange %s, falling back to binance", exchange_id)
             exchange_cls = ccxt.binance
-        return exchange_cls({"enableRateLimit": True, "timeout": _CCXT_TIMEOUT_MS})
+
+        config = {"enableRateLimit": True, "timeout": _CCXT_TIMEOUT_MS}
+        proxies = _ccxt_proxy_config()
+        if proxies:
+            config["proxies"] = proxies
+        return exchange_cls(config)
 
     def fetch(
         self,
@@ -89,16 +117,34 @@ class DataLoader:
         """
         validate_date_range(start_date, end_date)
 
-        exchange = self._get_exchange()
         timeframe = _INTERVAL_MAP.get(interval, "1d")
         since_ms = int(pd.Timestamp(start_date).timestamp() * 1000)
         end_ms = int((pd.Timestamp(end_date) + pd.Timedelta(days=1)).timestamp() * 1000)
+
+        # Build the exchange lazily so a full cache hit never imports ccxt or
+        # opens an exchange object.
+        exchange_holder: Dict[str, object] = {}
+
+        def get_exchange():
+            if "exchange" not in exchange_holder:
+                exchange_holder["exchange"] = self._get_exchange()
+            return exchange_holder["exchange"]
 
         result: Dict[str, pd.DataFrame] = {}
         for code in codes:
             try:
                 ccxt_symbol = code.replace("-", "/").upper()
-                df = self._fetch_one(exchange, ccxt_symbol, timeframe, since_ms, end_ms)
+                df = cached_loader_fetch(
+                    source=self.name,
+                    symbol=code,
+                    timeframe=interval,
+                    start_date=start_date,
+                    end_date=end_date,
+                    fields=None,
+                    fetch=lambda ccxt_symbol=ccxt_symbol: self._fetch_one(
+                        get_exchange(), ccxt_symbol, timeframe, since_ms, end_ms
+                    ),
+                )
                 if df is not None and not df.empty:
                     result[code] = df
             except Exception as exc:

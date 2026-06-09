@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 最小价 10日
+# 简要说明: ts_min(low, 10) / close，10日最低价与当前收盘价的比率。
+# 典型用途: 衡量当前价格相对于10日最低点的位置，接近1表示接近近期低点。
+# ============================================================
 """qlib158 MIN10: formula = \\mathrm{ts\\_min}(\\mathrm{low}, 10) / \\mathrm{close}."""
 from __future__ import annotations
 

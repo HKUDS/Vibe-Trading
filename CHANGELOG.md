@@ -11,6 +11,58 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+## [0.1.9] — 2026-06-01
+
+### Added
+- **Connector-first broker profiles (IBKR + Robinhood).** Trading access now
+  starts from a selectable connector profile rather than separate broker/live
+  entry points; `vibe-trading connector list/use/check/account/positions/orders/quote/history`
+  and the MCP `trading_*` tools share the selected profile, with paper/live as
+  a property under the connector. IBKR is usable immediately as a local
+  read-only TWS / IB Gateway profile; the official IBKR remote MCP path is
+  seeded as an OAuth `mcp.read` probe until stable read tool names ship.
+  Robinhood Agentic Trading is a bounded connector behind OAuth, a committed
+  mandate, an order guard, an audit ledger, and an instant halt switch.
+- **Research Goal runtime.** Long-running, research-only goals with auditable
+  checklist criteria, budgets, and a `/goal` CLI command, plus REST + MCP
+  endpoints (`start_research_goal`, `get_research_goal`, `add_goal_evidence`,
+  `update_research_goal_status`) and a Web `GoalDrawer`.
+- **Swarm `retry_run`.** Re-launch a failed/stale/cancelled run with the
+  original preset + variables; exposed as both `POST /swarm/runs/{id}/retry`
+  and an MCP `retry_run` tool (the `list_runs → retry` loop). 36 MCP tools now.
+- **Operator-configured external MCP tools in swarm workers** (#142) and
+  **remote MCP transports** for the built-in agent.
+- **`mootdx` A-share OHLCV loader** — native 通达信 TCP, no token, sits between
+  tushare and akshare in the fallback chain. CCXT loader now reads proxy env
+  for restricted networks (#126).
+- **Hypothesis Registry CLI** — `list / show / invalidate`.
+- **Strict alpha-bench mode** with a mandatory random control (#143).
+
+### Changed
+- **CLI split into the `agent/cli/` package** (from a 3216-LOC single file),
+  with a refreshed interactive terminal UI (figlet banner + activity rail) and
+  a single `cli/_version.py` version source.
+- Swarm status reconciles from live task files on every read; `run_swarm`
+  sends MCP progress heartbeats, and the stale-run reaper uses per-run
+  thresholds (#132).
+- Refreshed provider default model ids; bumped `langgraph` for CVE-2026-28277.
+
+### Fixed
+- **`--version` no longer drifts (#156).** The version derives from package
+  metadata, falling back to reading `pyproject.toml` directly — no hardcoded
+  constant left to forget on release.
+- **Session running-status indicator** now survives reconnect / page reload /
+  sidebar navigation; **swarm DAG** blocks downstream tasks when an upstream
+  task fails (#145).
+- **Robustness pass:** pre-flight validation for LLM-generated signal engines
+  with clean JSON errors (#149), graceful agent-loop exit at the iteration
+  budget instead of an output-less `failed` (#148), `flush + fsync` session
+  message writes that skip corrupted JSONL lines on read (#147), and IME Enter
+  handling in the Web composer (#146).
+- **Full Report** link now always renders when a `runId` exists, even cross-browser
+  (#150); SSE idle timeout is configurable via `VIBE_TRADING_SSE_TIMEOUT` (#157);
+  cross-market correlation normalizes timestamps so crypto-vs-equity pairs align (#158).
+
 ## [0.1.8] — 2026-05-17
 
 ### Added — Alpha Zoo (450+ pre-built quant alphas)

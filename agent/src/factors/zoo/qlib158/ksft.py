@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: K线偏移(标准化开盘价)
+# 简要说明: (2*close - high - low) / open，衡量收盘价偏离日内中心的程度。
+# 典型用途: K线形态识别，正偏移表明收盘偏向高价位区间。
+# ============================================================
 """qlib158 KSFT: formula = (2\\,\\mathrm{close} - \\mathrm{high} - \\mathrm{low}) / \\mathrm{open}."""
 from __future__ import annotations
 

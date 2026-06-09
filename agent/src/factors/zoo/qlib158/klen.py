@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: K线长度
+# 简要说明: (high - low) / open，衡量当日K线实体振幅相对于开盘价的比率。
+# 典型用途: 用于识别日内波动幅度较大的股票，结合其他因子判断异常交易行为。
+# ============================================================
 """qlib158 KLEN: formula = (\\mathrm{high} - \\mathrm{low}) / \\mathrm{open}."""
 from __future__ import annotations
 

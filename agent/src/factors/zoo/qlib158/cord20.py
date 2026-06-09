@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 收益率-量变化相关性 20日
+# 简要说明: ts_corr(close/close_prev, log(v/v_prev), 20)，20日收益率与成交量变化率的相关系数。
+# 典型用途: 衡量20日价格变动与成交量变动的相关性，反映量价配合程度。
+# ============================================================
 """qlib158 CORD20: formula = \\mathrm{ts\\_corr}(\\mathrm{close}/\\mathrm{close}_{{-1}}, \\log((\\mathrm{volume}+1)/(\\mathrm{volume}_{{-1}}+1)), 20)."""
 from __future__ import annotations
 

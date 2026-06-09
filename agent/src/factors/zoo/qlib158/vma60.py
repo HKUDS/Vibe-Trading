@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 成交量均线比 60日
+# 简要说明: ts_mean(volume, 60) / volume，60日平均成交量与当日成交量的比率。
+# 典型用途: 判断当日成交量的相对大小，大于1表示缩量，小于1表示放量。
+# ============================================================
 """qlib158 VMA60: formula = \\mathrm{ts\\_mean}(\\mathrm{volume}, 60) / \\mathrm{volume}."""
 from __future__ import annotations
 

@@ -11,7 +11,10 @@ import os
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from src.agent.context import ContextBuilder
+from src.agent.loop import _attach_tool_call_thought_signatures
 from src.providers.chat import ChatLLM, ToolCallRequest, _dedupe_finish_reason
 from src.providers.llm import ChatOpenAIWithReasoning
 
@@ -59,6 +62,47 @@ class TestParseResponseSingleSource:
         assert response.finish_reason == "tool_calls"
         assert response.tool_calls[0].id == "tc_1"
         assert response.tool_calls[0].arguments == {"command": "pwd"}
+
+    def test_tool_call_thought_signatures_are_preserved_by_id_and_index(self) -> None:
+        ai_message = SimpleNamespace(
+            content="",
+            tool_calls=[
+                {"id": "tc_1", "name": "bash", "args": {"command": "pwd"}},
+                {"id": "tc_2", "name": "read_file", "args": {"path": "README.md"}},
+            ],
+            additional_kwargs={
+                "tool_call_thought_signatures": [
+                    {"id": "tc_1", "index": 0, "thought_signature": "sig-a"},
+                    {"index": 1, "thought_signature": "sig-b"},
+                ],
+            },
+            response_metadata={"finish_reason": "tool_calls"},
+        )
+
+        response = ChatLLM._parse_response(ai_message)
+
+        assert response.tool_calls[0].thought_signature == "sig-a"
+        assert response.tool_calls[1].thought_signature == "sig-b"
+
+    def test_missing_tool_call_thought_signature_stays_none(self) -> None:
+        ai_message = SimpleNamespace(
+            content="",
+            tool_calls=[
+                {"id": "tc_1", "name": "bash", "args": {"command": "pwd"}},
+                {"id": "tc_2", "name": "read_file", "args": {"path": "README.md"}},
+            ],
+            additional_kwargs={
+                "tool_call_thought_signatures": [
+                    {"id": "tc_1", "index": 0, "thought_signature": "sig-a"},
+                ],
+            },
+            response_metadata={"finish_reason": "tool_calls"},
+        )
+
+        response = ChatLLM._parse_response(ai_message)
+
+        assert response.tool_calls[0].thought_signature == "sig-a"
+        assert response.tool_calls[1].thought_signature is None
 
 
 class TestDedupeFinishReason:
@@ -110,10 +154,55 @@ class TestContextBuilderToolCallReplay:
         assert "reasoning_content" not in message
 
 
+class TestAgentLoopToolCallReplay:
+    """Gemini tool-call thought_signature flows back into the next assistant message."""
+
+    def test_attaches_thought_signatures_to_matching_tool_calls(self) -> None:
+        tool_calls = [
+            ToolCallRequest(
+                id="tc_1",
+                name="bash",
+                arguments={"command": "pwd"},
+                thought_signature="sig-a",
+            ),
+            ToolCallRequest(
+                id="tc_2",
+                name="read_file",
+                arguments={"path": "README.md"},
+                thought_signature="sig-b",
+            ),
+        ]
+        message = ContextBuilder.format_assistant_tool_calls(tool_calls, content="")
+
+        _attach_tool_call_thought_signatures(message, tool_calls)
+
+        assert message["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "sig-a"
+        assert message["tool_calls"][1]["extra_content"]["google"]["thought_signature"] == "sig-b"
+
+    def test_unsigned_tool_calls_are_left_untouched(self) -> None:
+        tool_calls = [
+            ToolCallRequest(
+                id="tc_1",
+                name="bash",
+                arguments={"command": "pwd"},
+                thought_signature="sig-a",
+            ),
+            ToolCallRequest(id="tc_2", name="read_file", arguments={"path": "README.md"}),
+        ]
+        message = ContextBuilder.format_assistant_tool_calls(tool_calls, content="")
+
+        _attach_tool_call_thought_signatures(message, tool_calls)
+
+        assert message["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "sig-a"
+        assert "extra_content" not in message["tool_calls"][1]
+
+
 class TestChatOpenAIWithReasoningNonStreaming:
     """_create_chat_result path: invoke / ainvoke."""
 
     def _instance(self, model: str = "kimi-k2-thinking") -> Any:
+        if ChatOpenAIWithReasoning is None:
+            pytest.skip("langchain-openai is not installed")
         os.environ.setdefault("OPENAI_API_KEY", "sk-test")
         return ChatOpenAIWithReasoning(model=model, api_key="sk-test")
 
@@ -151,6 +240,49 @@ class TestChatOpenAIWithReasoningNonStreaming:
         assert result.generations[0].message.additional_kwargs["reasoning_content"] == \
             "step-by-step reasoning from provider"
 
+    def test_preserves_tool_call_thought_signatures_on_response(self) -> None:
+        instance = self._instance(model="gemini-3-pro-preview")
+        response = {
+            "id": "chatcmpl-test",
+            "model": "gemini-3-pro-preview",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "tc_1",
+                                "type": "function",
+                                "extra_content": {"google": {"thought_signature": "sig-a"}},
+                                "function": {
+                                    "name": "bash",
+                                    "arguments": '{"command":"pwd"}',
+                                },
+                            },
+                            {
+                                "id": "tc_2",
+                                "type": "function",
+                                "function": {
+                                    "name": "read_file",
+                                    "arguments": '{"path":"README.md"}',
+                                },
+                            },
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+
+        result = instance._create_chat_result(response)
+        parsed = ChatLLM._parse_response(result.generations[0].message)
+
+        assert parsed.tool_calls[0].thought_signature == "sig-a"
+        assert parsed.tool_calls[1].thought_signature is None
+
     def test_no_reasoning_content_when_absent(self) -> None:
         """OpenAI / Claude / Groq-style responses leave additional_kwargs clean."""
         instance = self._instance(model="gpt-4")
@@ -180,6 +312,8 @@ class TestChatOpenAIWithReasoningStreaming:
     """
 
     def _instance(self, model: str = "kimi-k2-thinking") -> Any:
+        if ChatOpenAIWithReasoning is None:
+            pytest.skip("langchain-openai is not installed")
         os.environ.setdefault("OPENAI_API_KEY", "sk-test")
         return ChatOpenAIWithReasoning(model=model, api_key="sk-test")
 
@@ -234,6 +368,46 @@ class TestChatOpenAIWithReasoningStreaming:
 
         assert gen_chunk is not None
         assert "reasoning_content" not in gen_chunk.message.additional_kwargs
+
+    def test_preserves_tool_call_thought_signature_on_streaming_delta(self) -> None:
+        from langchain_core.messages import AIMessageChunk
+
+        instance = self._instance(model="gemini-3-pro-preview")
+        chunk = self._delta_chunk(
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": "tc_1",
+                        "type": "function",
+                        "extra_content": {"google": {"thought_signature": "sig-a"}},
+                        "function": {
+                            "name": "bash",
+                            "arguments": '{"command":"pwd"}',
+                        },
+                    },
+                    {
+                        "index": 1,
+                        "id": "tc_2",
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": '{"path":"README.md"}',
+                        },
+                    },
+                ],
+            },
+            model="gemini-3-pro-preview",
+        )
+
+        gen_chunk = instance._convert_chunk_to_generation_chunk(chunk, AIMessageChunk, None)
+
+        assert gen_chunk is not None
+        assert gen_chunk.message.additional_kwargs["tool_call_thought_signatures"] == [
+            {"id": "tc_1", "index": 0, "thought_signature": "sig-a"},
+        ]
 
     def test_openrouter_field_name_reasoning_maps_to_reasoning_content(self) -> None:
         """OpenRouter relays Kimi/DeepSeek with delta.reasoning (not reasoning_content).
@@ -302,6 +476,8 @@ class TestChatOpenAIWithReasoningOutboundPayload:
     """
 
     def _instance(self, model: str = "kimi-k2-0905-preview") -> Any:
+        if ChatOpenAIWithReasoning is None:
+            pytest.skip("langchain-openai is not installed")
         os.environ.setdefault("OPENAI_API_KEY", "sk-test")
         return ChatOpenAIWithReasoning(model=model, api_key="sk-test")
 
@@ -353,6 +529,129 @@ class TestChatOpenAIWithReasoningOutboundPayload:
 
         assistant_msg = next(m for m in payload["messages"] if m["role"] == "assistant")
         assert assistant_msg["content"] == ""
+        assert "extra_content" not in assistant_msg["tool_calls"][0]
+
+    def test_reinjects_tool_call_thought_signature_from_additional_kwargs(self) -> None:
+        """Captured Gemini signatures survive LangChain's tool-call serialization."""
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        instance = self._instance(model="gemini-3-pro-preview")
+        history = [
+            HumanMessage(content="hi"),
+            AIMessage(
+                content="",
+                additional_kwargs={
+                    "tool_call_thought_signatures": [
+                        {"id": "c1", "index": 0, "thought_signature": "sig-a"},
+                    ],
+                    "tool_calls": [
+                        {"id": "c1", "type": "function",
+                         "function": {"name": "t", "arguments": "{}"}},
+                    ],
+                },
+            ),
+        ]
+
+        payload = instance._get_request_payload(history)
+
+        assistant_msg = next(m for m in payload["messages"] if m["role"] == "assistant")
+        assert assistant_msg["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "sig-a"
+
+    def test_reinjects_tool_call_thought_signature_from_raw_tool_call(self) -> None:
+        """Loop-provided raw tool calls carry Gemini's OpenAI-compat extra_content."""
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        instance = self._instance(model="gemini-3-pro-preview")
+        history = [
+            HumanMessage(content="hi"),
+            AIMessage(
+                content="",
+                additional_kwargs={
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "type": "function",
+                            "extra_content": {"google": {"thought_signature": "sig-a"}},
+                            "function": {"name": "t", "arguments": "{}"},
+                        },
+                    ],
+                },
+            ),
+        ]
+
+        payload = instance._get_request_payload(history)
+
+        assistant_msg = next(m for m in payload["messages"] if m["role"] == "assistant")
+        assert assistant_msg["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "sig-a"
+
+    def _payload_via_runtime(self, instance: Any, dict_history: list) -> dict:
+        """Mirror ``invoke``: convert the raw OpenAI-format input first (where
+        ``_convert_input`` re-attaches signatures), then build the request payload
+        from the converted messages — exactly the runtime order."""
+        converted = instance._convert_input(dict_history).to_messages()
+        return instance._get_request_payload(converted)
+
+    def test_reattaches_thought_signature_from_raw_dict_input(self) -> None:
+        """Regression: the AgentLoop replays history as OpenAI-format dicts (not
+        AIMessage objects). LangChain's ``_convert_dict_to_message`` discards the
+        ``extra_content`` Gemini signature, so the #176 in-memory machinery alone
+        leaves the outbound payload unsigned and Gemini 400s on the next turn.
+        ``_convert_input`` must lift the signature back onto the converted message.
+        """
+        from src.agent.context import ContextBuilder
+        from src.agent.loop import _attach_tool_call_thought_signatures
+        from src.providers.chat import ToolCallRequest
+
+        instance = self._instance(model="gemini-3-pro-preview")
+        tool_calls = [
+            ToolCallRequest(id="c1", name="load_skill",
+                            arguments={"name": "momentum"}, thought_signature="sig-a"),
+        ]
+        assistant = ContextBuilder.format_assistant_tool_calls(tool_calls)
+        _attach_tool_call_thought_signatures(assistant, tool_calls)
+        history = [
+            {"role": "user", "content": "load momentum"},
+            assistant,
+            {"role": "tool", "tool_call_id": "c1", "content": "loaded"},
+        ]
+
+        payload = self._payload_via_runtime(instance, history)
+
+        assistant_msg = next(m for m in payload["messages"] if m["role"] == "assistant")
+        assert assistant_msg["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "sig-a"
+
+    def test_parallel_dict_input_keeps_first_signature_only(self) -> None:
+        """Gemini signs only the first of N parallel calls. The natural state
+        (first signed, rest genuinely absent) must round-trip unchanged through
+        the dict path — Gemini accepts the single signature for the whole block,
+        so we must neither drop the first nor fabricate the others.
+        """
+        from src.agent.context import ContextBuilder
+        from src.agent.loop import _attach_tool_call_thought_signatures
+        from src.providers.chat import ToolCallRequest
+
+        instance = self._instance(model="gemini-3-pro-preview")
+        tool_calls = [
+            ToolCallRequest(id="c1", name="load_skill", arguments={"name": "a"}, thought_signature="sig-a"),
+            ToolCallRequest(id="c2", name="load_skill", arguments={"name": "b"}, thought_signature=None),
+            ToolCallRequest(id="c3", name="load_skill", arguments={"name": "c"}, thought_signature=None),
+        ]
+        assistant = ContextBuilder.format_assistant_tool_calls(tool_calls)
+        _attach_tool_call_thought_signatures(assistant, tool_calls)
+        history = [
+            {"role": "user", "content": "load a, b, c"},
+            assistant,
+            {"role": "tool", "tool_call_id": "c1", "content": "ok"},
+            {"role": "tool", "tool_call_id": "c2", "content": "ok"},
+            {"role": "tool", "tool_call_id": "c3", "content": "ok"},
+        ]
+
+        payload = self._payload_via_runtime(instance, history)
+
+        tcs = next(m for m in payload["messages"] if m["role"] == "assistant")["tool_calls"]
+        assert tcs[0]["extra_content"]["google"]["thought_signature"] == "sig-a"
+        assert "extra_content" not in tcs[1]
+        assert "extra_content" not in tcs[2]
 
     def test_injects_empty_reasoning_content_when_absent(self) -> None:
         """kimi-k2.6 requires reasoning_content on every assistant turn."""

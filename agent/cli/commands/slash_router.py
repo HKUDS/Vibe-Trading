@@ -36,6 +36,7 @@ SLASH_COMMANDS: tuple[Command, ...] = (
     Command("model",   "Switch LLM provider and model",              "cli.commands.chat"),
     Command("memory",  "Show / manage persistent memory",            "cli.commands.memory"),
     Command("history", "Browse and resume prior sessions",           "cli.commands.session"),
+    Command("goal",    "Start / inspect a finance research goal",    "cli.commands.goal"),
     Command("search",  "Full-text search across all sessions",       "cli.commands.session"),
     Command("swarm",   "Multi-agent presets (committee / quant / risk)", "cli.commands.chat"),
     Command("skill",   "List / load / unload skills",                "cli.commands.show"),

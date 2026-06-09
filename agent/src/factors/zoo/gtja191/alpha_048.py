@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA #48 - 量价极值
+# 简要说明: (-1*RANK(CORR(RANK(HIGH),RANK(VOLUME),6))*RANK(CORR(RANK(LOW),RANK(VOLUME),6)))，高低价与成交量的双相关性排名。
+# 典型用途: 上下两端量价关系的一致性或背离判断。
+# ============================================================
 """GTJA Alpha #48.
 
 Formula: -1*((RANK((SIGN((CLOSE-DELAY(CLOSE,1)))+SIGN((DELAY(CLOSE,1)-DELAY(CLOSE,2)))+SIGN((DELAY(CLOSE,2)-DELAY(CLOSE,3))))))*SUM(VOLUME,5))/SUM(VOLUME,20)

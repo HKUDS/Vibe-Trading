@@ -269,7 +269,7 @@ class StreamRenderer:
 
     def _print_tool_line(self, call: ToolCall) -> None:
         line = Text()
-        line.append("⏺", style=Theme.success)
+        line.append("●", style=Theme.success)
         line.append("  ")
         line.append(beautify_tool_name(call.name), style=Theme.label)
         args_preview = summarize_args(
@@ -304,7 +304,7 @@ class StreamRenderer:
             self._spinner = None
         lines = body.splitlines() or [""]
         head = Text()
-        head.append("⏺ ", style=Theme.primary)
+        head.append("● ", style=Theme.primary)
         head.append(lines[0])
         self._console.print(head)
         for line in lines[1:]:

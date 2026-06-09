@@ -1,7 +1,7 @@
 ---
 name: vibe-trading
-version: 0.1.8
-description: Professional finance research toolkit — backtesting (7 engines + benchmark comparison panel), factor analysis, Alpha Zoo (452 pre-built alphas across qlib158/alpha101/gtja191/academic), options pricing, 75 finance skills, 29 multi-agent swarm teams, Trade Journal analyzer, and Shadow Account (extract → backtest → render) across 6 data sources (tushare, yfinance, okx, akshare, ccxt, futu).
+version: 0.1.9
+description: Professional finance research toolkit — backtesting (7 engines + benchmark comparison panel), factor analysis, Alpha Zoo (452 pre-built alphas across qlib158/alpha101/gtja191/academic), options pricing, 77 finance skills, 29 multi-agent swarm teams, Trade Journal analyzer, and Shadow Account (extract → backtest → render) across 7 data sources (tushare, yfinance, okx, akshare, mootdx, ccxt, futu).
 dependencies:
   python: ">=3.11"
   pip:
@@ -23,7 +23,7 @@ mcp:
 
 # Vibe-Trading
 
-Professional finance research toolkit with AI-powered backtesting (7 engines), multi-agent teams, 75 specialized skills, the **Alpha Zoo** (452 pre-built quantitative alphas across qlib158 / alpha101 / gtja191 / academic with one-line CLI benchmarking), and the Shadow Account loop — extract your implicit trading rules from a journal, backtest them across A股/港股/美股/crypto, then see where they would have served you better.
+Professional finance research toolkit with AI-powered backtesting (7 engines), multi-agent teams, 77 specialized skills, the **Alpha Zoo** (452 pre-built quantitative alphas across qlib158 / alpha101 / gtja191 / academic with one-line CLI benchmarking), and the Shadow Account loop — extract your implicit trading rules from a journal, backtest them across A股/港股/美股/crypto, then see where they would have served you better.
 
 ## Setup
 
@@ -53,7 +53,7 @@ Add to your agent's MCP config:
 
 ### API Key Requirements
 
-**21 of 22 MCP tools work with zero API keys.** After `pip install`, backtesting, market data, factor analysis, options pricing, chart patterns, web search, document reading, trade journal analysis, shadow-account extraction/backtest/report, the Alpha Zoo (452 pre-built alphas), and all 75 skills are ready to use for HK/US equities and crypto.
+Core research MCP tools work with zero API keys for HK/US/crypto. After `pip install`, backtesting, market data, factor analysis, options pricing, chart patterns, web search, document reading, trade journal analysis, shadow-account extraction/backtest/report, the Alpha Zoo (452 pre-built alphas), and all 77 skills are ready to use. IBKR tools require a local TWS / IB Gateway session; `run_swarm` requires an LLM key.
 
 | Feature | Key needed | When |
 |---------|-----------|------|
@@ -73,7 +73,7 @@ Feed a CSV broker export (同花顺 / 东财 / 富途 / generic), and the agent 
 5. `scan_shadow_signals` — list today's symbols that match your shadow's entry cadence (research only).
 
 ### Backtesting
-Create and run quantitative strategies across 7 engines (ChinaA, GlobalEquity, Crypto, ChinaFutures, GlobalFutures, Forex + options) with 6 data sources:
+Create and run quantitative strategies across 7 engines (ChinaA, GlobalEquity, Crypto, ChinaFutures, GlobalFutures, Forex + options) with 7 data sources:
 - **HK/US equities** via yfinance (free, no API key)
 - **Cryptocurrency** via OKX or CCXT/100+ exchanges (free, no API key)
 - **China A-shares** via Tushare (token) or AKShare (free fallback)
@@ -108,7 +108,7 @@ One-line cross-sectional IC / IR / alive-reversed-dead categorisation across fou
 
 Each alpha ships with `__alpha_meta__` (formula LaTeX + theme + universe + warmup + columns required), guarded by an AST purity gate + 300-row lookahead sentinel test. Use the `vibe-trading alpha {list,show,bench,compare,export-manifest}` CLI, the `/alpha/*` REST routes (browser at `/alpha-zoo`), or compose multi-factor signals via `ZooSignalEngine.from_zoo(...)`.
 
-### Finance Skills (75)
+### Finance Skills (77)
 Comprehensive knowledge base covering:
 - Technical analysis (candlestick, Elliott wave, Ichimoku, SMC, harmonic, chanlun)
 - Quantitative methods (factor research, ML strategy, pair trading, multi-factor)
@@ -121,12 +121,16 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (22)
+## Available MCP Tools (35)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
-| `list_skills` | List all 75 finance skills | None |
+| `list_skills` | List all 77 finance skills | None |
 | `load_skill` | Load full skill documentation | None |
+| `start_research_goal` | Create an auditable research goal | None |
+| `get_research_goal` | Read the current research goal | None |
+| `add_goal_evidence` | Attach evidence to a research goal | None |
+| `update_research_goal_status` | Update goal lifecycle status | None |
 | `backtest` | Run vectorized backtest engine | None* |
 | `factor_analysis` | IC/IR analysis + layered backtest | None* |
 | `analyze_options` | Black-Scholes price + Greeks | None |
@@ -147,8 +151,17 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `get_swarm_status` | Poll swarm run status without blocking | None |
 | `get_run_result` | Get final report and task summaries | None |
 | `list_runs` | List recent swarm runs with metadata | None |
+| `reap_stale_runs` | Finalize stale swarm runs | None |
+| `trading_connections` | List selectable connector profiles | None |
+| `trading_select_connection` | Select the default connector profile | None |
+| `trading_check` | Check connector readiness | Connector app/OAuth |
+| `trading_account` | Read account summary from selected connector | Connector app/OAuth |
+| `trading_positions` | Read positions from selected connector | Connector app/OAuth |
+| `trading_orders` | Read open orders from selected connector | Connector app/OAuth |
+| `trading_quote` | Read a quote snapshot from selected connector | Connector app/OAuth |
+| `trading_history` | Read historical bars from selected connector | Connector app/OAuth |
 
-<sub>*A-share symbols require `TUSHARE_TOKEN`. HK/US/crypto are free.</sub>
+<sub>*A-share symbols require `TUSHARE_TOKEN`. HK/US/crypto are free. Trading connector rows use the selected connector profile, e.g. IBKR local TWS/Gateway or Robinhood MCP OAuth.</sub>
 
 ## Quick Start
 
@@ -156,7 +169,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 pip install vibe-trading-ai
 ```
 
-That's it — no API keys needed for HK/US/crypto markets. Start using `backtest`, `get_market_data`, `analyze_options`, `analyze_trade_journal`, `extract_shadow_strategy`, `web_search`, the **Alpha Zoo** (`vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025`), and all 75 skills immediately.
+That's it — no API keys needed for HK/US/crypto markets. Start using `backtest`, `get_market_data`, `analyze_options`, `analyze_trade_journal`, `extract_shadow_strategy`, `web_search`, the **Alpha Zoo** (`vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025`), and all 77 skills immediately.
 
 ## Loading Tools from External MCP Servers
 
@@ -181,7 +194,57 @@ Create `~/.vibe-trading/agent.json`:
 }
 ```
 
-Remote tools appear automatically in every `vibe-trading run` / `vibe-trading chat` call. They are injected after local tools under stable names: `mcp_<server>_<tool>`.
+Ordinary external MCP tools appear automatically in every `vibe-trading run` / `vibe-trading chat` call. They are injected after local tools under stable names: `mcp_<server>_<tool>`. Live-broker MCP servers are consumed through the connector-scoped `trading_*` tools instead of exposing raw `mcp_<broker>_*` tools to the agent.
+
+### Official IBKR MCP read-only probe
+
+Add Interactive Brokers' official MCP endpoint as a read-only external server:
+
+```json
+{
+  "mcpServers": {
+    "ibkr": {
+      "type": "streamableHttp",
+      "url": "https://api.ibkr.com/v1/api/mcp",
+      "auth": {
+        "type": "oauth",
+        "scopes": ["mcp.read"],
+        "clientName": "Vibe-Trading",
+        "cacheDir": "~/.vibe-trading/live/ibkr/oauth"
+      },
+      "enabledTools": ["*"]
+    }
+  }
+}
+```
+
+Authorize it with `vibe-trading connector authorize ibkr-live-official-mcp-readonly`. The wildcard is accepted
+only for this `mcp.read` probe. Generic `trading_account` and `trading_positions`
+calls stay disabled until IBKR publishes stable read tool names that Vibe-Trading
+can map safely; `mcp.write` requires an explicit tool allowlist and live
+order-guard handling. If IBKR issues a pre-registered OAuth client, add
+`clientId` and `clientSecret` inside `auth`.
+
+### Trading connector profiles
+
+The public trading surface is connector-first. Choose a connector profile, then
+paper/live is just an attribute under that connector.
+
+```bash
+pip install "vibe-trading-ai[ibkr]"
+vibe-trading connector list
+vibe-trading connector use ibkr-paper-local
+vibe-trading connector configure ibkr-paper-local --yes
+vibe-trading connector check
+vibe-trading connector account
+vibe-trading connector positions
+vibe-trading connector orders
+vibe-trading connector quote AAPL
+vibe-trading connector history AAPL --duration "30 D" --bar-size "1 day"
+```
+
+Default ports are TWS paper `7497`, IB Gateway paper `4002`, TWS live-readonly
+`7496`, and IB Gateway live-readonly `4001`.
 
 ### Config fields
 

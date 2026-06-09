@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA #43 - 收益递归平均
+# 简要说明: SUM((CLOSE>DELAY(CLOSE,1)?VOLUME:0),26)/SUM((CLOSE<=DELAY(CLOSE,1)?VOLUME:0),26)*100，类似Alpha#40的变种。
+# 典型用途: 上涨量与下跌量的比值，用于评估市场参与者的方向偏好。
+# ============================================================
 """GTJA Alpha #43.
 
 Formula: SUM((CLOSE>DELAY(CLOSE,1)?VOLUME:(CLOSE<DELAY(CLOSE,1)?-VOLUME:0)),6)

@@ -66,8 +66,26 @@ start_service() {
   fi
 
   printf "starting %s...\n" "$service"
-  nohup "$@" >"$(log_file "$service")" 2>&1 </dev/null &
-  echo "$!" >"$(pid_file "$service")"
+  "$PYTHON_BIN" - "$(log_file "$service")" "$(pid_file "$service")" "$@" <<'PY'
+import subprocess
+import sys
+
+log_path = sys.argv[1]
+pid_path = sys.argv[2]
+cmd = sys.argv[3:]
+
+log = open(log_path, "ab", buffering=0)
+proc = subprocess.Popen(
+    cmd,
+    stdin=subprocess.DEVNULL,
+    stdout=log,
+    stderr=subprocess.STDOUT,
+    start_new_session=True,
+    close_fds=True,
+)
+with open(pid_path, "w", encoding="utf-8") as fh:
+    fh.write(str(proc.pid))
+PY
   printf "%s pid %s, log %s\n" "$service" "$(cat "$(pid_file "$service")")" "$(log_file "$service")"
 }
 
@@ -84,11 +102,9 @@ stop_service() {
   pid="$(cat "$file")"
   if kill -0 "$pid" 2>/dev/null; then
     printf "stopping %s (pid %s)...\n" "$service" "$pid"
-    pkill -TERM -P "$pid" 2>/dev/null || true
-    kill "$pid" 2>/dev/null || true
+    kill -TERM "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
     sleep 0.5
-    pkill -KILL -P "$pid" 2>/dev/null || true
-    kill -KILL "$pid" 2>/dev/null || true
+    kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
   fi
   rm -f "$file"
 }
@@ -129,20 +145,47 @@ wait_for_url() {
   return 1
 }
 
-cmd_up() {
+service_url() {
+  case "$1" in
+    backend) printf "http://127.0.0.1:%s/health" "$BACKEND_PORT" ;;
+    frontend) printf "http://127.0.0.1:%s" "$FRONTEND_PORT" ;;
+    *) return 2 ;;
+  esac
+}
+
+start_backend() {
+  if ! is_running backend && url_ok "$(service_url backend)"; then
+    rm -f "$(pid_file backend)"
+    printf "backend already reachable at %s (external)\n" "$(service_url backend)"
+    return
+  fi
   start_service backend env PYTHONPATH="$ROOT/agent" "$PYTHON_BIN" -c 'import cli, sys; raise SystemExit(cli.main(sys.argv[1:]))' serve \
     --host "$BACKEND_HOST" \
     --port "$BACKEND_PORT"
+}
+
+start_frontend() {
+  if ! is_running frontend && url_ok "$(service_url frontend)"; then
+    rm -f "$(pid_file frontend)"
+    printf "frontend already reachable at %s (external)\n" "$(service_url frontend)"
+    return
+  fi
   start_service frontend bash -lc '
     set -euo pipefail
     cd "$1"
     if ! [[ -d node_modules ]]; then
       npm install
     fi
+    export VITE_API_URL="${VITE_API_URL:-http://127.0.0.1:$4}"
     exec npm run dev -- --host "$2" --port "$3"
-  ' bash "$ROOT/frontend" "$FRONTEND_HOST" "$FRONTEND_PORT"
-  if ! wait_for_url backend "http://127.0.0.1:$BACKEND_PORT/health" 30 || \
-     ! wait_for_url frontend "http://127.0.0.1:$FRONTEND_PORT" 30; then
+  ' bash "$ROOT/frontend" "$FRONTEND_HOST" "$FRONTEND_PORT" "$BACKEND_PORT"
+}
+
+cmd_up() {
+  start_backend
+  start_frontend
+  if ! wait_for_url backend "$(service_url backend)" 30 || \
+     ! wait_for_url frontend "$(service_url frontend)" 30; then
     cmd_stop
     exit 1
   fi
@@ -159,22 +202,13 @@ cmd_restart() {
   case "$service" in
     backend)
       stop_service backend
-      start_service backend env PYTHONPATH="$ROOT/agent" "$PYTHON_BIN" -c 'import cli, sys; raise SystemExit(cli.main(sys.argv[1:]))' serve \
-        --host "$BACKEND_HOST" \
-        --port "$BACKEND_PORT"
-      wait_for_url backend "http://127.0.0.1:$BACKEND_PORT/health" 30
+      start_backend
+      wait_for_url backend "$(service_url backend)" 30
       ;;
     frontend)
       stop_service frontend
-      start_service frontend bash -lc '
-        set -euo pipefail
-        cd "$1"
-        if ! [[ -d node_modules ]]; then
-          npm install
-        fi
-        exec npm run dev -- --host "$2" --port "$3"
-      ' bash "$ROOT/frontend" "$FRONTEND_HOST" "$FRONTEND_PORT"
-      wait_for_url frontend "http://127.0.0.1:$FRONTEND_PORT" 30
+      start_frontend
+      wait_for_url frontend "$(service_url frontend)" 30
       ;;
     all)
       cmd_stop
@@ -191,6 +225,8 @@ cmd_status() {
   for service in backend frontend; do
     if is_running "$service"; then
       printf "%-8s running pid=%s log=%s\n" "$service" "$(cat "$(pid_file "$service")")" "$(log_file "$service")"
+    elif url_ok "$(service_url "$service")"; then
+      printf "%-8s reachable external url=%s\n" "$service" "$(service_url "$service")"
     else
       printf "%-8s stopped\n" "$service"
     fi

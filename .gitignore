@@ -4,6 +4,16 @@ __pycache__/
 .pytest_cache/
 *.pyc
 
+# Coverage reports
+.coverage
+coverage.xml
+
+# Node dependencies (root level)
+node_modules/
+
+# Backtest output artifacts
+results/
+
 .env
 agent/.env
 
@@ -27,6 +37,7 @@ wiki/dist/
 wiki/.astro/
 wiki/.vite/
 wiki/.wrangler/
+.wrangler/
 wiki/.cache/
 .vibe-dev/
 .vibe-record/
@@ -40,7 +51,12 @@ data/.duckdb_tmp/
 data/parquet/
 data/backup/
 
-# Internal docs (plans, specs) — keep project docs, ignore data/
+# Internal docs (plans, specs)
+docs/
+!wiki/docs/
+!wiki/docs/**
+docs/screenshots/agent-run.png
+docs/screenshots/boot.png
 data/minutes/
 data/overnight*.log
 data/*.log

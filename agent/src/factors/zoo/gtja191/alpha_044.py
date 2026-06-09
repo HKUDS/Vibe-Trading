@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA #44 - 条件量价积
+# 简要说明: (-1*RANK(CORR(HIGH,MEAN(VOLUME,20),5)) + RANK(CORR(RANK(LOW),RANK(MEAN(VOLUME,20)),6)))，两种量价关系的差值排名。
+# 典型用途: 不同维度量价关系的综合比较。
+# ============================================================
 """GTJA Alpha #44.
 
 Formula: (TSRANK(DECAYLINEAR(CORR(LOW,MEAN(VOLUME,10),7),6),4)+TSRANK(DECAYLINEAR(DELTA(VWAP,3),10),15))

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.tools.path_utils import safe_path, safe_run_dir, safe_user_path
+from src.tools.path_utils import safe_document_path, safe_path, safe_run_dir, safe_run_id, safe_user_path
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +104,17 @@ class TestSafeUserPath:
             safe_user_path("//evil-server/share/passwd.csv")
 
 
+class TestSafeDocumentPath:
+    def test_upload_handle_resolves_to_agent_uploads(self) -> None:
+        result = safe_document_path("uploads/local.csv")
+
+        assert result == (Path(__file__).resolve().parents[1] / "uploads" / "local.csv").resolve()
+
+    def test_upload_handle_traversal_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="outside allowed document roots"):
+            safe_document_path("uploads/../api_server.py")
+
+
 # ---------------------------------------------------------------------------
 # safe_run_dir — tool/backtest run roots
 # ---------------------------------------------------------------------------
@@ -134,3 +145,26 @@ class TestSafeRunDir:
         result = safe_run_dir(str(agent_runs))
 
         assert result == agent_runs.resolve()
+
+
+class TestSafeRunId:
+    def test_configured_run_id_accepted(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
+        run_dir = tmp_path / "run_123"
+        run_dir.mkdir()
+
+        result = safe_run_id("run_123")
+
+        assert result == run_dir.resolve()
+
+    def test_path_shaped_run_id_rejected(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
+
+        with pytest.raises(ValueError, match="bare run directory name"):
+            safe_run_id("../api_server.py")
+
+    def test_missing_run_id_rejected(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
+
+        with pytest.raises(ValueError, match="was not found"):
+            safe_run_id("missing_run")

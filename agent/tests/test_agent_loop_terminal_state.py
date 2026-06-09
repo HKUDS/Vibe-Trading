@@ -138,3 +138,44 @@ def test_session_service_renders_meaningful_error_from_result(tmp_path: Path) ->
     assert ui_error != "unknown"
     assert "max iterations" in ui_error
     assert "2" in ui_error
+
+
+class _StubLLMAlwaysToolCalls:
+    """LLM stub that returns tool calls until tools=None forces text."""
+
+    def __init__(self) -> None:
+        self._counter = 0
+
+    def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[Any] | None = None,
+        on_text_chunk: Callable[[str], None] | None = None,
+    ) -> _StubLLMResponse:
+        resp = _StubLLMResponse()
+        if tools is not None:
+            self._counter += 1
+            resp.has_tool_calls = True
+            resp.tool_calls = [
+                type("TC", (), {"id": f"tc_{self._counter}", "name": "compact", "arguments": {}})()
+            ]
+        else:
+            resp.content = "Final answer from forced text-only."
+            resp.has_tool_calls = False
+        return resp
+
+    def chat(self, messages: list[dict[str, Any]], **_: Any) -> _StubLLMResponse:
+        return _StubLLMResponse()
+
+
+def test_force_text_only_on_last_iteration(tmp_path: Path) -> None:
+    """When the LLM keeps calling tools, the last iteration forces text-only
+    output by passing tools=None, producing a final answer instead of failure."""
+    agent = _build_agent(
+        _StubLLMAlwaysToolCalls(), max_iter=5, tmp_run_dir=tmp_path / "run"
+    )
+    result = agent.run(user_message="do something")
+
+    assert result["status"] == "success"
+    assert "Final answer" in result["content"]
+    assert result["iterations"] == 5

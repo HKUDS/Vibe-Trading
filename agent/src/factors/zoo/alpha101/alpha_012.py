@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: Kakushadze Alpha #12
+# 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第12号因子，详见公式定义。
+# 典型用途: 作为多因子模型中的alpha信号，经中性化处理后用于选股或股指期货交易。
+# ============================================================
 """Kakushadze Alpha #12.
 
 Formula (paper appendix): sign(delta(volume,1)) * (-1 * delta(close,1))

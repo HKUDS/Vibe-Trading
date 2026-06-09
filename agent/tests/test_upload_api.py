@@ -39,8 +39,11 @@ def test_upload_under_limit_succeeds(client: TestClient, tmp_path: Path) -> None
     body = response.json()
     assert body["status"] == "ok"
     assert body["filename"] == "note.txt"
+    assert body["file_path"].startswith("uploads/")
+    assert not Path(body["file_path"]).is_absolute()
+    assert str(tmp_path) not in response.text
 
-    saved = Path(body["file_path"])
+    saved = _existing_uploads(tmp_path)[0]
     assert saved.exists()
     assert saved.read_bytes() == payload
     assert saved.parent == tmp_path.resolve()
@@ -79,3 +82,22 @@ def test_upload_blocked_extension_returns_400(client: TestClient, tmp_path: Path
     assert _existing_uploads(tmp_path) == []
 
 
+def test_upload_storage_error_does_not_expose_server_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    blocked_path = tmp_path / "uploads-as-file"
+    blocked_path.write_text("not a directory", encoding="utf-8")
+    monkeypatch.setattr(api_server, "UPLOADS_DIR", blocked_path)
+    monkeypatch.setattr(api_server, "MAX_UPLOAD_SIZE", 4 * 1024)
+    monkeypatch.setattr(api_server, "_UPLOAD_CHUNK_SIZE", 1024)
+    client = TestClient(api_server.app)
+
+    response = client.post(
+        "/upload",
+        files={"file": ("note.txt", b"x", "text/plain")},
+    )
+
+    assert response.status_code == 500
+    assert "Upload failed while storing the file" in response.json()["detail"]
+    assert str(tmp_path) not in response.text

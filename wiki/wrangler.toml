@@ -1,0 +1,15 @@
+# Cloudflare Pages config for vibetrading.wiki.
+#
+# The site is static; these settings only wire the analytics Pages Functions
+# (functions/) to their D1 counter. The production binding is also set at the
+# project level so it applies to CI deploys. Used directly when deploying or
+# previewing from this directory: `cd wiki && wrangler pages dev` / `pages deploy`.
+
+name = "vibetrading-wiki"
+compatibility_date = "2026-01-01"
+pages_build_output_dir = "."
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vibetrading-analytics"
+database_id = "3c1eca42-91e1-45e9-adcf-400559ba1b99"

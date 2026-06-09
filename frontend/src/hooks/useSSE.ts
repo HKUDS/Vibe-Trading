@@ -81,7 +81,12 @@ export function useSSE(config?: SSEConfig) {
     // Only subscribe to event types the backend actually emits
     const knownTypes = [
       "text_delta", "thinking_done", "tool_call", "tool_result", "compact",
-      "attempt.completed", "attempt.failed",
+      "tool_heartbeat", "tool_progress", "llm_usage",
+      "swarm.started", "swarm.event",
+      "attempt.created", "attempt.started", "attempt.completed", "attempt.failed",
+      "message.received", "session.created",
+      "goal.created", "goal.evidence", "goal.updated",
+      "mandate.proposal", "mandate.committed", "live.halted", "live.resumed", "live.action",
       "heartbeat", "done",
     ];
 

@@ -112,8 +112,41 @@ function initHeaderScroll() {
   window.addEventListener("scroll", sync, { passive: true });
 }
 
+function formatTrafficCount(n) {
+  n = Number(n) || 0;
+  if (n < 1000) return String(n);
+  return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}`.replace(/\.0$/, "") + "K";
+}
+
+// Render the footer traffic counter from /api/stats (agent vs human visitors to
+// this site, counted server-side by the Pages middleware, plus PyPI installs).
+// The block stays hidden until real data arrives, so it never shows dashes.
+function initTraffic() {
+  const block = document.getElementById("footer-traffic");
+  if (!block) return;
+  fetch("/api/stats")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((stats) => {
+      if (!stats) return;
+      const set = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+      };
+      if (stats.web) {
+        set("vt-agents", formatTrafficCount(stats.web.agent));
+        set("vt-humans", formatTrafficCount(stats.web.human));
+      }
+      if (stats.pypi) set("vt-installs", formatTrafficCount(stats.pypi.last_month));
+      block.hidden = false;
+    })
+    .catch(() => {
+      /* stats unavailable — leave the block hidden */
+    });
+}
+
 initTheme();
 initStars();
 initInstallTabs();
 initHeaderScroll();
 applyLocale();
+initTraffic();

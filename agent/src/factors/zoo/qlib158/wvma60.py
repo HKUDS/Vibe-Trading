@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 成交量加权波动 60日
+# 简要说明: ts_std(ret*v, 60) / ts_mean(|ret|*v, 60)，成交量加权的价格波动归一化指标。
+# 典型用途: 衡量成交量调整后的价格波动性，值越高表示相对于成交量的价格波动越大。
+# ============================================================
 """qlib158 WVMA60: formula = \\mathrm{ts\\_std}(\\mathrm{ret}\\cdot v, 60) / \\mathrm{ts\\_mean}(|\\mathrm{ret}|\\cdot v, 60)."""
 from __future__ import annotations
 

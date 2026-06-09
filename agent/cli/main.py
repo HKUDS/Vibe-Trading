@@ -32,6 +32,58 @@ from cli.intro import print_banner
 from cli.onboard import run_onboarding
 from cli.theme import Theme, get_console
 
+
+def _register_live_slash_commands() -> None:
+    """Surface connector live-trading slash commands in the shared registry.
+
+    Discoverability fix (SPEC.md Consent §4 + §9 audit): ``/connector``,
+    ``/halt`` and ``/resume`` are privileged kill-switch / runner surface actions intercepted
+    in the REPL input path (never dispatched to the model), so they were absent
+    from the slash registry — meaning ``/help``, the typeahead completer, and the
+    fuzzy matcher never listed them. We append them here, at this module's import
+    time, which runs on every interactive startup *before* the lazily-imported
+    ``cli.commands.help`` / ``cli.completer`` first read the registry. Both of
+    those read ``slash_router.SLASH_COMMANDS`` (help) / call ``match_commands``
+    (completer) which resolve the connector module attribute, so the single
+    reassignment here surfaces the commands in all three places.
+
+    The registry is a tuple of frozen dataclasses, so we build a NEW tuple rather
+    than mutate in place. Registration is idempotent — re-import (e.g. in tests)
+    never duplicates rows.
+    """
+    from cli.commands import slash_router
+
+    existing = {cmd.name for cmd in slash_router.SLASH_COMMANDS}
+    additions = (
+        slash_router.Command(
+            "connector", "Trading connector profiles (status / start / halt)", "cli.main"
+        ),
+        slash_router.Command(
+            "halt", "Kill switch — halt ALL live trading now", "cli.main"
+        ),
+        slash_router.Command(
+            "resume", "Clear the kill switch (re-enable live trading)", "cli.main"
+        ),
+    )
+    new = tuple(cmd for cmd in additions if cmd.name not in existing)
+    if not new:
+        return
+    # Insert the connector group just before ``quit`` (the conventional last row) so
+    # the kill switch sits with the other safety-relevant commands.
+    commands = list(slash_router.SLASH_COMMANDS)
+    quit_idx = next(
+        (i for i, c in enumerate(commands) if c.name == "quit"), len(commands)
+    )
+    commands[quit_idx:quit_idx] = list(new)
+    slash_router.SLASH_COMMANDS = tuple(commands)
+    # ``/stop`` is the kill-switch alias of ``/halt`` (SPEC Consent §4) so the
+    # fuzzy matcher / find_exact resolve it.
+    if "stop" not in slash_router._ALIASES:
+        slash_router._ALIASES = {**slash_router._ALIASES, "stop": "halt"}
+
+
+_register_live_slash_commands()
+
 _ENV_PATH = Path.home() / ".vibe-trading" / ".env"
 # Best-effort fallbacks used only when the probe genuinely fails (missing
 # dependency, broken install). The numbers track the actual bundled counts
@@ -217,7 +269,18 @@ def _maybe_run_onboarding() -> bool:
 def _show_banner() -> None:
     """Print the welcome banner using best-effort stat probes."""
     stats = _collect_banner_stats()
-    print_banner(get_console(), **stats)
+    console = get_console()
+    print_banner(console, **stats)
+    # Discoverability one-liner (SPEC.md §9 audit): point users at the
+    # connector channel + its CLI surface. Live profiles are opt-in and read-only by
+    # default, so this is a pointer, not an enablement.
+    console.print(
+        "  [dim]Live trading (opt-in, read-only by default): "
+        "[/dim][bold]/connector[/bold][dim] in chat · "
+        "[/dim][bold]vibe-trading connector --help[/bold][dim] · "
+        "[/dim][bold]/halt[/bold][dim] = kill switch.[/dim]"
+    )
+    console.print()
 
 
 # ---------------------------------------------------------------------------
@@ -235,17 +298,27 @@ class InteractiveContext:
             agent for follow-up context.
         max_iter: ReAct iteration ceiling.
         debug: Whether the ``/debug`` panel is currently shown.
+        last_recap_history_len: Number of history messages covered by the
+            most recently printed deterministic recap.
         pending_prompt: Optional prompt queued by a slash handler
             (``/journal``, ``/shadow``) that the loop should execute as
             the next user turn. Consumed by :func:`_interactive_loop`
             and cleared.
+        pending_proposal: The most recent live-trading ``mandate.proposal``
+            payload emitted by the agent during this session, awaiting the
+            user's pick or adjust reply. A numeric pick is intercepted in the
+            REPL input path and committed directly via the commit endpoint —
+            the model never sees the pick (SPEC.md Consent §2). ``None`` when
+            no proposal is outstanding.
     """
 
     session_id: Optional[str] = None
     history: List[Dict[str, str]] = field(default_factory=list)
     max_iter: int = 50
     debug: bool = False
+    last_recap_history_len: int = 0
     pending_prompt: Optional[str] = None
+    pending_proposal: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -575,7 +648,7 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
     persistent memory, and the ReAct engine remain untouched — we only
     swap in the Rich dashboard and persist the turn to ``SessionStore``.
     """
-    from cli._legacy import _RunDashboard, _print_result, _run_agent
+    from cli._legacy import _RunDashboard, _run_agent
     from rich.live import Live
 
     console = get_console()
@@ -586,6 +659,14 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
 
     start = time.perf_counter()
     dashboard = _RunDashboard(user_input, ctx.max_iter)
+    # Capture the latest live-trading mandate proposal emitted this turn so the
+    # REPL can intercept the user's pick before the model (SPEC.md Consent §2).
+    captured_proposal: Dict[str, Any] = {}
+
+    def _capture_proposal(payload: Dict[str, Any]) -> None:
+        captured_proposal.clear()
+        captured_proposal.update(payload)
+
     # ``transient=False`` — keep the final timeline visible after the run
     # completes. Audit item 4.
     try:
@@ -601,8 +682,12 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
                 history=ctx.history[-_HISTORY_RETAINED_TURNS:],
                 max_iter=ctx.max_iter,
                 dashboard=dashboard,
+                session_id=ctx.session_id or "",
+                proposal_sink=_capture_proposal,
             )
+            dashboard.finish(result, time.perf_counter() - start)
     except (KeyboardInterrupt, BrokenPipeError):
+        dashboard.close()
         # BrokenPipe: caller did ``vibe-trading chat | head`` and the
         # downstream pipe closed mid-render. Print may itself fail on
         # the closed fd, so swallow that defensively too.
@@ -613,7 +698,14 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
         return
 
     elapsed = time.perf_counter() - start
-    _print_result(result, elapsed)
+    _print_interactive_result(console, result, elapsed)
+
+    # Render any mandate proposal AFTER the Live dashboard has closed so the
+    # numbered choice block isn't clobbered by the live region, and arm the
+    # REPL to intercept the next reply (SPEC.md Consent §2).
+    if captured_proposal:
+        ctx.pending_proposal = dict(captured_proposal)
+        _render_mandate_proposal(console, ctx.pending_proposal)
 
     ctx.history.append({"role": "user", "content": user_input})
     answer = (result.get("content") or "").strip()
@@ -625,11 +717,334 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
         _print_debug_summary(console, result, elapsed, ctx)
 
 
+def _print_interactive_result(console: Any, result: Dict[str, Any], elapsed: float) -> None:
+    """Print the assistant answer after the rail without boxed run panels."""
+
+    from cli.ui.transcript import render_answer, render_elapsed_status
+
+    content = (result.get("content") or "").strip()
+    if content:
+        console.print(render_answer(content))
+        console.print()
+    console.print(render_elapsed_status(elapsed))
+    run_id = result.get("run_id")
+    if run_id:
+        console.print(f"[dim]/show {run_id} · {elapsed:.1f}s[/dim]")
+
+
+def _print_recap_if_needed(console: Any, ctx: InteractiveContext) -> None:
+    """Print a dim recap once per completed turn."""
+
+    if len(ctx.history) <= ctx.last_recap_history_len:
+        return
+    from cli.ui.transcript import render_recap
+
+    recap = render_recap(ctx.history)
+    if recap is not None:
+        console.print()
+        console.print(recap)
+    ctx.last_recap_history_len = len(ctx.history)
+
+
 def _print_input_hint(console: Any, hint: str) -> None:
     """Render the bottom hint bar in muted style."""
     from cli.components.hint_bar import render_hint_bar
 
     console.print(render_hint_bar(left=hint, right="Ctrl+D · /quit to exit"))
+
+
+# ---------------------------------------------------------------------------
+# Live trading channel — REPL intercepts (SPEC.md Consent §2, §4)
+#
+# Two privileged surface actions are intercepted in the REPL input path BEFORE
+# the agent loop is ever entered, so neither depends on the model cooperating:
+#
+#   1. Kill switch — a bare "停"/"stop"/"kill" turn, or the /halt /stop slash
+#      commands, trip the HALT sentinel directly. The model never sees them.
+#   2. Mandate pick — when a `mandate.proposal` is outstanding, a bare numeric
+#      reply ("1"/"2"/"3") is a COMMIT: it calls the commit endpoint directly
+#      and the model never sees the pick. An "按 2，但…"-style adjust reply is
+#      re-routed to the agent (PROPOSE re-render), not committed.
+# ---------------------------------------------------------------------------
+
+#: Bare turns that trip the kill switch when typed alone (case-insensitive).
+_HALT_WORDS = frozenset({"停", "停止", "stop", "kill", "halt", "停手"})
+
+_DEFAULT_LIVE_BROKER = "robinhood"
+
+
+def _is_halt_turn(text: str) -> bool:
+    """Return True if ``text`` is a bare kill-switch turn.
+
+    Matches a turn whose entire content (trimmed, trailing punctuation removed,
+    lower-cased) is one of :data:`_HALT_WORDS`. A longer sentence that merely
+    *mentions* "stop" is NOT a halt turn — it routes to the agent normally.
+
+    Args:
+        text: The raw user input line (already stripped of surrounding space).
+
+    Returns:
+        ``True`` if the turn should trip the kill switch.
+    """
+    token = text.strip().strip(".!。！ ").lower()
+    return token in _HALT_WORDS
+
+
+def _trip_halt_from_repl(console: Any, *, reason: str) -> None:
+    """Trip the global kill switch from the REPL and print a notice.
+
+    This is the surface action behind a bare "停"/"stop" turn and the
+    ``/halt`` / ``/stop`` slash commands. It writes the HALT sentinel via
+    :func:`src.live.halt.trip_halt` — independent of the agent loop, so it works
+    even mid-stream.
+
+    Args:
+        console: Rich console for the confirmation notice.
+        reason: Human-readable reason recorded in the sentinel.
+    """
+    try:
+        from src.live.halt import trip_halt
+
+        path = trip_halt(by="cli", reason=reason)
+    except Exception as exc:  # noqa: BLE001 — never let a halt failure kill the loop
+        console.print(f"[bold red]Failed to trip kill switch:[/bold red] {exc}")
+        return
+    console.print(
+        "[bold red]Live trading halted[/bold red] — all live order tools are now "
+        "disabled until you run [bold]/resume[/bold] or [bold]vibe-trading connector resume[/bold]."
+    )
+    console.print(f"[dim]HALT sentinel: {path}[/dim]")
+
+
+def _clear_halt_from_repl(console: Any) -> None:
+    """Clear the global kill switch from the REPL (``/resume``).
+
+    Clearing the halt is a privileged surface action — an explicit re-enable,
+    never an agent tool (SPEC.md Consent §4). It is intercepted in the input
+    path so the model never performs it. Mirrors ``vibe-trading connector resume``
+    with no broker (the global scope).
+
+    Args:
+        console: Rich console for the confirmation notice.
+    """
+    try:
+        from src.live.halt import clear_halt
+
+        cleared = clear_halt()
+    except Exception as exc:  # noqa: BLE001 — never let a resume failure kill the loop
+        console.print(f"[bold red]Failed to clear kill switch:[/bold red] {exc}")
+        return
+    if cleared:
+        console.print(
+            "[green]Live trading re-enabled[/green] — the global kill switch is cleared."
+        )
+    else:
+        console.print("[dim]No active global halt to clear.[/dim]")
+
+
+def _run_connector_command_from_repl(console: Any, args: list[str]) -> None:
+    """Run a ``/connector ...`` subcommand from the REPL via the dispatcher.
+
+    ``/connector`` is a thin in-REPL bridge to the ``vibe-trading connector``
+    subcommand group (SPEC.md §9 Decision 1): ``/connector status``,
+    ``/connector start``, ``/connector stop``, ``/connector halt``, etc. It parses the
+    arguments through the same argparse surface as the non-interactive CLI and
+    dispatches to the same privileged handlers — none of which is an agent tool.
+    A bare ``/connector`` defaults to ``status`` so the most common read is one
+    keystroke away.
+
+    Args:
+        console: Rich console for error messages.
+        args: Tokens following ``/connector`` (e.g. ``["status", "robinhood-live-mcp"]``).
+    """
+    from cli._legacy import _build_parser, _dispatch_connector
+
+    argv = ["connector", *(args or ["status"])]
+    parser = _build_parser()
+    try:
+        parsed = parser.parse_args(argv)
+    except SystemExit:
+        # argparse already printed usage to stderr; keep the REPL alive.
+        console.print("[dim]Usage: /connector [list|status|start|stop|halt|resume|revoke][/dim]")
+        return
+    try:
+        _dispatch_connector(parsed)
+    except Exception as exc:  # noqa: BLE001 — never let a connector command kill the loop
+        console.print(f"[bold red]/connector failed:[/bold red] {exc}")
+
+
+def _is_numeric_pick(text: str) -> Optional[int]:
+    """Return the chosen ordinal if ``text`` is a bare numeric pick, else None.
+
+    Only a turn that is *exactly* a positive integer (e.g. ``"2"``) counts as a
+    pick. Anything with extra words ("按 2 但每日笔数提到 10") is an adjust reply,
+    not a pick, and must route back through PROPOSE.
+
+    Args:
+        text: The raw user input line.
+
+    Returns:
+        The 1-based ordinal, or ``None`` when ``text`` is not a bare pick.
+    """
+    token = text.strip().strip(".。 ")
+    if token.isdigit():
+        value = int(token)
+        if value >= 1:
+            return value
+    return None
+
+
+def _render_mandate_proposal(console: Any, proposal: Dict[str, Any]) -> None:
+    """Print the numbered mandate-proposal choice block (SPEC.md Consent §2).
+
+    Renders the agent's candidate mandate profiles as a numbered list with their
+    concrete limits, plus the funding note and the kill-switch note. The user
+    replies with a bare number to commit, or an adjust sentence to re-propose.
+
+    Args:
+        console: Rich console.
+        proposal: The ``mandate.proposal`` event payload.
+    """
+    intent = proposal.get("intent_normalized") or "live trading"
+    account = proposal.get("account") or {}
+    acct_type = account.get("type")
+    acct_suffix = f" ({acct_type} account)" if acct_type else ""
+    profiles = proposal.get("profiles") or []
+
+    console.print()
+    if proposal.get("reauth_for"):
+        console.print(
+            f'[bold]AI proposes widening your mandate for "{intent}"{acct_suffix}:[/bold]'
+        )
+    else:
+        console.print(
+            f'[bold]AI proposes {len(profiles)} mandate(s) for "{intent}"{acct_suffix}:[/bold]'
+        )
+    console.print()
+
+    for profile in profiles:
+        ordinal = profile.get("ordinal", "?")
+        label = profile.get("label", "")
+        universe = profile.get("universe")
+        if isinstance(universe, (list, tuple)):
+            universe = "/".join(str(s) for s in universe)
+        bits = []
+        if universe:
+            bits.append(f"univ: {universe}")
+        if profile.get("max_order_usd") is not None:
+            bits.append(f"≤${profile['max_order_usd']}/order")
+        if profile.get("daily_trade_cap") is not None:
+            bits.append(f"{profile['daily_trade_cap']} trades/day")
+        leverage = profile.get("leverage")
+        if leverage in (None, "none", "None", 1, 1.0):
+            bits.append("no leverage")
+        elif leverage is not None:
+            bits.append(f"leverage {leverage}")
+        line = "  · ".join(bits)
+        console.print(f"  [bold cyan][{ordinal}][/bold cyan] {label}  {line}")
+        notes = profile.get("notes")
+        if notes:
+            console.print(f"      [dim]{notes}[/dim]")
+
+    console.print()
+    funding_note = proposal.get("funding_note") or (
+        "Funding is set by YOU in the broker; the agent cannot move money."
+    )
+    halt_note = proposal.get("halt_note") or '随时一句 "停" = kill switch, halts everything.'
+    console.print(f"  [dim]{funding_note}[/dim]")
+    console.print(f"  [dim]{halt_note}[/dim]")
+    console.print(
+        '  [bold]Pick a number to commit, or say "按 2 但每日笔数提到 10" to adjust.[/bold]'
+    )
+    console.print()
+
+
+def _commit_mandate(proposal: Dict[str, Any], selected_ordinal: int) -> Dict[str, Any]:
+    """Commit a mandate selection via the surface commit endpoint.
+
+    This is the single privileged write that activates a mandate. The pick is a
+    SURFACE action — it goes straight to ``POST /mandate/commit`` (owned by the
+    commit-endpoint parcel) and is NEVER fed to the model. ``consent_ack`` is set
+    here because the user's keypress *is* the affirmative consent.
+
+    The endpoint base URL is read from ``VIBE_TRADING_API_URL`` (falling back to
+    ``http://127.0.0.1:8000``); a per-request override is not accepted from the
+    proposal payload so the model cannot redirect the commit.
+
+    Args:
+        proposal: The outstanding ``mandate.proposal`` payload (binds the commit
+            to the exact rendered options via ``proposal_id``).
+        selected_ordinal: The 1-based profile the user picked.
+
+    Returns:
+        The decoded commit response (``mandate_id`` / ``consent_record_id`` on
+        success), or an ``{"status": "error", ...}`` envelope on failure.
+    """
+    import httpx
+
+    base = os.environ.get("VIBE_TRADING_API_URL", "http://127.0.0.1:8000").rstrip("/")
+    body = {
+        "proposal_id": proposal.get("proposal_id"),
+        "selected_ordinal": selected_ordinal,
+        "adjustments": None,
+        "session_id": proposal.get("session_id"),
+        "consent_ack": True,
+    }
+    try:
+        response = httpx.post(f"{base}/mandate/commit", json=body, timeout=30.0)
+        response.raise_for_status()
+        return response.json()
+    except Exception as exc:  # noqa: BLE001 — surface a clean error to the user
+        return {"status": "error", "error": str(exc)}
+
+
+def _handle_proposal_reply(text: str, ctx: InteractiveContext) -> bool:
+    """Intercept a reply while a mandate proposal is outstanding.
+
+    Must be called only when ``ctx.pending_proposal`` is set. A bare numeric pick
+    is a COMMIT (calls the endpoint directly, the model never sees it); any other
+    reply is an ADJUST and is routed back to the agent for a fresh proposal.
+
+    Args:
+        text: The raw user input line.
+        ctx: The interactive context (proposal is cleared on a successful pick).
+
+    Returns:
+        ``True`` if the reply was a numeric pick and was handled here (the caller
+        must NOT route it to the agent). ``False`` for an adjust reply, which the
+        caller routes to the agent normally (keeping the proposal pending until a
+        fresh one replaces it).
+    """
+    console = get_console()
+    ordinal = _is_numeric_pick(text)
+    if ordinal is None:
+        # Adjust path — re-render via PROPOSE. Leave the proposal pending; the
+        # agent will emit a fresh one that overwrites it.
+        return False
+
+    proposal = ctx.pending_proposal or {}
+    profiles = proposal.get("profiles") or []
+    valid_ordinals = {p.get("ordinal") for p in profiles}
+    if valid_ordinals and ordinal not in valid_ordinals:
+        console.print(
+            f"[yellow]No option [{ordinal}] in this proposal.[/yellow] "
+            f"Pick one of: {', '.join(str(o) for o in sorted(o for o in valid_ordinals if o is not None))}, "
+            "or type an adjust sentence."
+        )
+        return True
+
+    console.print(f"[dim]Committing mandate option [{ordinal}]…[/dim]")
+    result = _commit_mandate(proposal, ordinal)
+    if result.get("status") == "error":
+        console.print(f"[red]Commit failed:[/red] {result.get('error')}")
+        console.print("[dim]The proposal is still open — pick again once the issue is resolved.[/dim]")
+        return True
+
+    # Success — clear the proposal so subsequent turns route normally.
+    ctx.pending_proposal = None
+    mandate_id = result.get("mandate_id") or "?"
+    console.print(f"[green]Mandate {mandate_id} active.[/green]")
+    return True
 
 
 def _interactive_loop(max_iter: int) -> int:
@@ -640,8 +1055,9 @@ def _interactive_loop(max_iter: int) -> int:
     """
     console = get_console()
 
-    # Warm up the preflight in a background thread so the wait is hidden.
-    _start_preflight_async()
+    # Keep the first prompt frame uncontested. The preflight renderer writes to
+    # stdout, so running it here races prompt_toolkit on cold start and can make
+    # the prompt appear only after the user presses Enter.
 
     ctx = InteractiveContext(max_iter=max_iter)
 
@@ -656,7 +1072,7 @@ def _interactive_loop(max_iter: int) -> int:
 
     # Build the prompt session once so history + completer persist.
     try:
-        from cli.input import ctrl_c_within_window, make_session
+        from cli.input import ctrl_c_within_window, get_user_input, make_session
     except Exception as exc:  # noqa: BLE001 — fall back gracefully if prompt_toolkit broken
         console.print(f"[red]Failed to initialise input layer: {exc}[/red]")
         console.print("[dim]Falling back to legacy interactive loop.[/dim]")
@@ -669,11 +1085,11 @@ def _interactive_loop(max_iter: int) -> int:
         return 0
 
     session = make_session()
-    _print_input_hint(console, "↑/↓ history · / for commands · Esc-Enter newline")
 
     while True:
+        _print_recap_if_needed(console, ctx)
         try:
-            user_input = session.prompt("> ")
+            user_input = get_user_input(session=session)
         except KeyboardInterrupt:
             # Should not reach here — the keybinding raises EOFError instead.
             continue
@@ -697,8 +1113,38 @@ def _interactive_loop(max_iter: int) -> int:
         if not text:
             continue
 
+        # Kill switch — intercept a bare "停"/"stop"/"kill" turn BEFORE the
+        # agent loop so it trips even if a turn is mid-stream and never depends
+        # on the model cooperating (SPEC.md Consent §4).
+        if _is_halt_turn(text):
+            _trip_halt_from_repl(console, reason=f"repl turn: {text}")
+            ctx.pending_proposal = None
+            continue
+
+        # Mandate pick — when a proposal is outstanding, a bare numeric reply
+        # is a COMMIT handled here (the model never sees it). An adjust reply
+        # falls through to the agent for a fresh proposal (SPEC.md Consent §2).
+        if ctx.pending_proposal is not None and not text.startswith("/"):
+            if _handle_proposal_reply(text, ctx):
+                continue
+
         # Slash command path.
         if text.startswith("/"):
+            # /halt /stop /resume /connector are privileged live-trading surface
+            # actions handled in the input path, never dispatched to the model
+            # (SPEC.md Consent §4 / §9 Decision 1).
+            slash_tokens = text.lstrip("/").split()
+            slash_name = slash_tokens[0].lower() if slash_tokens else ""
+            if slash_name in {"halt", "stop"}:
+                _trip_halt_from_repl(console, reason=f"/{slash_name}")
+                ctx.pending_proposal = None
+                continue
+            if slash_name == "resume":
+                _clear_halt_from_repl(console)
+                continue
+            if slash_name == "connector":
+                _run_connector_command_from_repl(console, slash_tokens[1:])
+                continue
             rc = _dispatch_slash(text, ctx)
             if rc == 2:
                 break

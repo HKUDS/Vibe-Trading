@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 下影线相对比率
+# 简要说明: (min(open,close) - low) / (high - low)，衡量下影线在整根K线中的占比。
+# 典型用途: 用于识别探底回升形态，下影线占比高表明下方支撑强劲。
+# ============================================================
 """qlib158 KLOW2: formula = (\\min(\\mathrm{open}, \\mathrm{close}) - \\mathrm{low}) / (\\mathrm{high} - \\mathrm{low})."""
 from __future__ import annotations
 

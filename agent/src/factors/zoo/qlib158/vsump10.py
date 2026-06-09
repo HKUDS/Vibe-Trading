@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 成交量上涨强度 10日
+# 简要说明: sum(max(delta_v, 0)) / sum(|delta_v|)，10日内正成交量变化占比。
+# 典型用途: 衡量10日内成交量放大日的比例，反映买盘活跃程度。
+# ============================================================
 """qlib158 VSUMP10: formula = \\sum \\max(\\Delta v, 0) / \\sum |\\Delta v|."""
 from __future__ import annotations
 

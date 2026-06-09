@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: Alpha #9 - 量价平滑差
+# 简要说明: ((0 < ts_min(delta(close, 1), 5)) ? delta(close, 1) : ((ts_max(delta(close, 1), 5) < 0) ? delta(close, 1) : (-1 * delta(close, 1))))，条件方向价格变化。
+# 典型用途: 在连续上涨或下跌趋势中跟随趋势，震荡市中反向操作。
+# ============================================================
 """Kakushadze Alpha #9.
 
 Formula (paper appendix): (0<ts_min(delta(close,1),5))?delta(close,1):((ts_max(delta(close,1),5)<0)?delta(close,1):(-1*delta(close,1)))

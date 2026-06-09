@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: K线中部相对位置
+# 简要说明: (close - open) / (high - low)，收盘价在当日振幅中的相对位置。
+# 典型用途: 衡量收盘强度，值接近1表示收盘接近最高点，多方主导。
+# ============================================================
 """qlib158 KMID2: formula = (\\mathrm{close} - \\mathrm{open}) / (\\mathrm{high} - \\mathrm{low})."""
 from __future__ import annotations
 

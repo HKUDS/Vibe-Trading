@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import math
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from src.factors.factor_analysis_core import compute_ic_series
 from src.factors.registry import (
@@ -77,6 +77,7 @@ def run_bench(
     top: int = 20,
     on_progress: ProgressCb | None = None,
     registry: Registry | None = None,
+    only: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     """Run a bench end-to-end and return the API-shaped summary.
 
@@ -91,6 +92,10 @@ def run_bench(
             (success or skip). Signature: ``(n_done, n_total, alpha_id)``.
         registry: Optional pre-built registry (test injection); defaults to a
             fresh ``Registry()``.
+        only: Optional subset of alpha ids to evaluate. When provided, the zoo's
+            alpha list is restricted to this set — used by ``alpha compare`` to
+            bench just a handful of named alphas instead of the whole zoo. Ids
+            not registered under ``zoo`` are silently dropped from the subset.
 
     Returns:
         Dict with keys: ``status``, ``zoo``, ``universe``, ``period``,
@@ -113,6 +118,15 @@ def run_bench(
         entry["error"] = f"no alphas registered under zoo={zoo!r}"
         entry["wall_seconds"] = round(time.monotonic() - start, 2)
         return entry
+
+    if only is not None:
+        only_set = {str(aid) for aid in only}
+        alpha_ids = [aid for aid in alpha_ids if aid in only_set]
+        if not alpha_ids:
+            entry["status"] = "error"
+            entry["error"] = f"none of the requested alphas are registered under zoo={zoo!r}"
+            entry["wall_seconds"] = round(time.monotonic() - start, 2)
+            return entry
 
     try:
         panel = _load_universe_panel(universe, period)

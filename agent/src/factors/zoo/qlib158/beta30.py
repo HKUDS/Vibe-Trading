@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: Beta系数 30日
+# 简要说明: ts_cov(close, ts_mean(close, 30), 30) / ts_var(close, 30)，个股相对于自身的30日Beta。
+# 典型用途: 衡量个股在30日窗口内的弹性/风险，高Beta意味着高波动和高弹性。
+# ============================================================
 """qlib158 BETA30: formula = (\\mathrm{close}_t - \\mathrm{close}_{{t-30}}) / (30\\,\\mathrm{close})."""
 from __future__ import annotations
 

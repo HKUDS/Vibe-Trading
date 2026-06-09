@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA #28 - 量价加速度
+# 简要说明: (-1*RANK(DELTA(CORR(HIGH,MEAN(VOLUME,60),5),1))*RANK(CORR(CLOSE,MEAN(VOLUME,50),1)))，量价相关性变化与当前相关性的乘积。
+# 典型用途: 量价关系的加速度指标，变化加速预示趋势加强。
+# ============================================================
 """GTJA Alpha #28.
 
 Formula: 3*SMA((CLOSE-TSMIN(LOW,9))/(TSMAX(HIGH,9)-TSMIN(LOW,9))*100,3,1)-2*SMA(SMA((CLOSE-TSMIN(LOW,9))/(TSMAX(HIGH,9)-TSMIN(LOW,9))*100,3,1),3,1)

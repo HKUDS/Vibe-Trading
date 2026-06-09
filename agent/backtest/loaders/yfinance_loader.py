@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Union
 import pandas as pd
 import yfinance as yf
 
-from backtest.loaders.base import validate_date_range
+from backtest.loaders.base import loader_cache_get, loader_cache_put, validate_date_range
 from backtest.loaders.registry import register
 
 _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
@@ -47,6 +47,11 @@ def _to_yfinance_symbol(code: str) -> str:
         digits = upper[:-3]
         width = max(4, len(digits))
         return f"{digits.zfill(width)}.HK"
+    # Crypto: BTC-USDT -> BTC-USD, ETH-USDT -> ETH-USD, etc.
+    if upper.endswith("-USDT"):
+        return upper[:-5] + "-USD"
+    if upper.endswith("-USDC"):
+        return upper[:-5] + "-USD"
     return upper
 
 
@@ -194,7 +199,7 @@ class DataLoader:
     """Fetch HK/US equity bars from Yahoo Finance via yfinance."""
 
     name = "yfinance"
-    markets = {"us_equity", "hk_equity"}
+    markets = {"us_equity", "hk_equity", "crypto"}
     requires_auth = False
 
     def is_available(self) -> bool:
@@ -243,15 +248,36 @@ class DataLoader:
         unique_symbols = list(symbol_groups.keys())
         results: Dict[str, pd.DataFrame] = {}
 
+        # Serve cached symbols first so a fully-cached request skips the bulk
+        # download entirely; only uncached symbols hit the network.
+        pending: List[str] = []
+        for symbol in unique_symbols:
+            cached = loader_cache_get(
+                source=self.name,
+                symbol=symbol,
+                timeframe=requested_interval,
+                start_date=start_date,
+                end_date=end_date,
+                fields=None,
+            )
+            if cached is not None:
+                for original_code in symbol_groups[symbol]:
+                    results[original_code] = cached.copy()
+            else:
+                pending.append(symbol)
+
+        if not pending:
+            return results
+
         try:
-            bulk_data = _download_history(unique_symbols, start_date, end_date, yf_interval)
+            bulk_data = _download_history(pending, start_date, end_date, yf_interval)
         except Exception as exc:
-            print(f"[WARN] yfinance bulk download failed for {unique_symbols}: {exc}")
+            print(f"[WARN] yfinance bulk download failed for {pending}: {exc}")
             bulk_data = pd.DataFrame()
 
-        for symbol in unique_symbols:
+        for symbol in pending:
             try:
-                symbol_frame = _extract_symbol_frame(bulk_data, symbol, len(unique_symbols))
+                symbol_frame = _extract_symbol_frame(bulk_data, symbol, len(pending))
                 if symbol_frame.empty:
                     symbol_frame = _download_history(symbol, start_date, end_date, yf_interval)
 
@@ -260,6 +286,15 @@ class DataLoader:
                     print(f"[WARN] yfinance returned no usable data for {symbol}")
                     continue
 
+                loader_cache_put(
+                    source=self.name,
+                    symbol=symbol,
+                    timeframe=requested_interval,
+                    start_date=start_date,
+                    end_date=end_date,
+                    fields=None,
+                    frame=normalized,
+                )
                 for original_code in symbol_groups[symbol]:
                     results[original_code] = normalized.copy()
             except Exception as exc:

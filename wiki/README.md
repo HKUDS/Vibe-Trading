@@ -25,4 +25,10 @@ Direct docs URLs such as `/docs/latest/getting-started/vibe-trading-overview` ar
 - Output directory: `.`
 - Custom domain: `vibetrading.wiki`
 
-The site is intentionally static. No server, database, or build step is required.
+The site is static and needs no build step. The only dynamic piece is a small
+analytics layer in `functions/` (Cloudflare Pages Functions): `_middleware.js`
+classifies each page request as AI-agent / bot / human by User-Agent and counts
+it into a D1 database (`vibetrading-analytics`, binding `DB`), and
+`api/stats.js` serves the footer's aggregate counts alongside public PyPI and
+GitHub numbers. The counter is anonymous and first-party — no cookies, no
+per-visitor identifier, no IP retention.

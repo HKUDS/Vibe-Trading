@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 涨跌天数差 5日
+# 简要说明: CNTP_5 - CNTN_5，5日内上涨天数与下跌天数之差。
+# 典型用途: 综合衡量5日内的涨跌方向，正值表示多头天数占优。
+# ============================================================
 """qlib158 CNTD5: formula = \\mathrm{CNTP}_5 - \\mathrm{CNTN}_5."""
 from __future__ import annotations
 

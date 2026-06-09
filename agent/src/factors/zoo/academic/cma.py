@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: 投资风格因子 (CMA)
+# 简要说明: Fama-French五因子模型中的投资因子(Conservative Minus Aggressive)，做多保守投资做空激进投资公司的收益。
+# 典型用途: 捕获低投资公司相对于高投资公司的超额收益。
+# ============================================================
 """academic CMA: investment factor as inverse 60-day volume growth.
 
 Reference:

@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA #22 - 均线截距
+# 简要说明: REGBETA(MEAN(CLOSE,6), SEQUENCE(6)) * 5 + REGRESI(MEAN(CLOSE,6), SEQUENCE(6))，6日均线的趋势拟合值。
+# 典型用途: 均线趋势的预测值，用于趋势跟踪。
+# ============================================================
 """GTJA Alpha #22.
 
 Formula: SMA(((CLOSE-MEAN(CLOSE,6))/MEAN(CLOSE,6) - DELAY((CLOSE-MEAN(CLOSE,6))/MEAN(CLOSE,6),3)),12,1)

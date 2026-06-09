@@ -19,7 +19,7 @@ EXPECTED_PROVIDER_DEFAULTS = {
     "qwen": "qwen-plus-latest",
     "zhipu": "glm-5.1",
     "moonshot": "kimi-k2.6",
-    "minimax": "MiniMax-M2.7",
+    "minimax": "MiniMax-M3",
     "mimo": "MiMo-72B-A27B",
     "zai": "glm-5.1",
 }

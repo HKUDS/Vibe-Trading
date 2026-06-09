@@ -26,6 +26,7 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -117,7 +118,7 @@ def test_mcp_server_imports_without_raising() -> None:
 def test_mcp_server_exposes_expected_tool_count() -> None:
     """The MCP server FastMCP instance must expose the expected number of tools.
 
-    22 tools are documented. We use >= 20 as the floor to tolerate minor
+    35 tools are documented. We use >= 30 as the floor to tolerate minor
     additions or future removals without breaking this regression gate.
     Uses the public async list_tools() API so this test is stable across
     fastmcp version upgrades.
@@ -130,8 +131,8 @@ def test_mcp_server_exposes_expected_tool_count() -> None:
     tools = asyncio.run(mcp_instance.list_tools())
     tool_count = len(tools)
 
-    assert tool_count >= 20, (
-        f"Expected at least 20 MCP server tools, found {tool_count}. "
+    assert tool_count >= 30, (
+        f"Expected at least 30 MCP server tools, found {tool_count}. "
         "Check whether any tools were accidentally removed from mcp_server.py."
     )
 
@@ -160,9 +161,82 @@ def test_mcp_server_exposes_well_known_tool_names() -> None:
         "read_file",
         "list_swarm_presets",
         "run_swarm",
+        "retry_run",
+        "start_research_goal",
+        "get_research_goal",
+        "add_goal_evidence",
+        "update_research_goal_status",
+        "trading_connections",
+        "trading_select_connection",
+        "trading_check",
+        "trading_account",
+        "trading_positions",
+        "trading_orders",
+        "trading_quote",
+        "trading_history",
     }
     missing = expected - registered
     assert not missing, (
         f"MCP server is missing well-known tools: {missing}. "
         "A tool may have been accidentally renamed or removed."
     )
+
+
+class _RecordingRegistry:
+    """Tiny registry stub that records MCP wrapper payloads."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def execute(self, name: str, payload: dict[str, Any]) -> str:
+        self.calls.append((name, payload))
+        return "{}"
+
+
+def test_trading_mcp_wrappers_do_not_send_implicit_local_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No-arg trading_* MCP calls must not override profile defaults."""
+    mod = _import_mcp_server()
+    registry = _RecordingRegistry()
+    monkeypatch.setattr(mod, "_get_registry", lambda: registry)
+
+    mod.trading_check()
+    mod.trading_account()
+    mod.trading_positions()
+    mod.trading_orders()
+
+    assert registry.calls == [
+        ("trading_check", {}),
+        ("trading_account", {}),
+        ("trading_positions", {}),
+        ("trading_orders", {"include_executions": False}),
+    ]
+
+
+def test_trading_mcp_wrappers_forward_explicit_local_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit local override fields are still forwarded to the backend."""
+    mod = _import_mcp_server()
+    registry = _RecordingRegistry()
+    monkeypatch.setattr(mod, "_get_registry", lambda: registry)
+
+    mod.trading_account(
+        connection="ibkr-paper-local",
+        host="localhost",
+        port=4002,
+        client_id=123,
+        account="DU12345",
+    )
+    mod.trading_check(account="DU12345")
+
+    assert registry.calls == [
+        (
+            "trading_account",
+            {
+                "connection": "ibkr-paper-local",
+                "host": "localhost",
+                "port": 4002,
+                "client_id": 123,
+                "account": "DU12345",
+            },
+        ),
+        ("trading_check", {"account": "DU12345"}),
+    ]

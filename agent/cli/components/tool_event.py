@@ -2,9 +2,9 @@
 
 Layout (matches design_proposal §3.5):
 
-    ⏺ Get Financials ("AAPL", quarterly, last 8 quarters)         1.4s · 8 quarters
+    ● Get Financials ("AAPL", quarterly, last 8 quarters)         1.4s · 8 quarters
 
-* ``⏺`` (U+23FA media-record) marker, color-coded by status:
+* ``●`` (U+25CF black circle) marker, color-coded by status:
     running → ``--warning`` amber (pulse via Rich style ``blink`` when
               the terminal advertises it, otherwise solid amber)
     ok      → ``--success`` green, solid
@@ -174,7 +174,7 @@ def render_tool_event(
         # raising; CLI rendering should never crash the agent loop.
         status = "running"
 
-    marker = Text("⏺ ", style=_STATUS_STYLE[status])
+    marker = Text("● ", style=_STATUS_STYLE[status])
     line = Text()
     line.append(marker)
     line.append(_pretty_tool_name(name), style="bold")

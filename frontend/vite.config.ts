@@ -8,13 +8,15 @@ const PROXY_PATHS = [
   "/swarm/runs",
   "/settings/llm",
   "/settings/data-sources",
+  "/mandate",
+  "/live",
   "/upload",
   "/shadow-reports",
 ];
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const apiTarget = env.VITE_API_URL || "http://localhost:8899";
+  const apiTarget = env.VITE_API_URL || "http://127.0.0.1:8899";
   const apiProxy = { target: apiTarget, changeOrigin: true };
   const apiProxyWithHtmlFallback = {
     ...apiProxy,

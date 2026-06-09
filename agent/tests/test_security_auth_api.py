@@ -37,6 +37,28 @@ def test_remote_write_requires_api_key_when_key_unset() -> None:
     assert "API_AUTH_KEY" in response.json()["detail"]
 
 
+def test_remote_goal_endpoints_require_api_key_when_key_unset() -> None:
+    client = _remote_client()
+
+    cases = [
+        ("post", "/sessions/abcdef012345/goal", {"objective": "Evaluate NVDA", "criteria": ["Define thesis"]}),
+        ("get", "/sessions/abcdef012345/goal", None),
+        (
+            "post",
+            "/sessions/abcdef012345/goal/evidence",
+            {
+                "goal_id": "goal_123",
+                "expected_goal_id": "goal_123",
+                "text": "Evidence",
+            },
+        ),
+    ]
+    for method, path, body in cases:
+        kwargs = {"json": body} if body is not None else {}
+        response = getattr(client, method)(path, **kwargs)
+        assert response.status_code == 403, f"{method.upper()} {path}"
+
+
 def test_local_dev_write_allowed_when_key_unset() -> None:
     response = _local_client().post("/sessions", json={})
 
@@ -84,6 +106,7 @@ def test_configured_api_key_required_for_sensitive_reads(
     for path in [
         "/runs",
         "/sessions",
+        "/sessions/abcdef012345/goal",
         "/swarm/runs",
     ]:
         response = client.get(path)
@@ -102,6 +125,29 @@ def test_configured_api_key_accepts_bearer_for_sensitive_reads(
     )
 
     assert response.status_code == 200
+
+
+def test_loopback_bypasses_auth_even_when_api_key_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Loopback clients are always trusted — the API key only gates remote access."""
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+
+    local = _local_client()
+    remote = _remote_client()
+
+    # Loopback: no bearer needed → should succeed
+    local_response = local.get("/runs")
+    assert local_response.status_code == 200
+
+    # Remote without bearer: still rejected
+    remote_response = remote.get("/runs")
+    assert remote_response.status_code == 401
+
+    # Remote with bearer: accepted
+    remote_bearer = remote.get("/runs", headers={"Authorization": "Bearer secret"})
+    assert remote_bearer.status_code == 200
 
 
 def test_configured_api_key_required_for_session_event_stream(
@@ -253,6 +299,13 @@ def test_session_endpoints_reject_traversal_session_id() -> None:
         ("post", "/sessions/foo.bar/messages", {"content": "x"}),
         ("get", "/sessions/foo.bar/messages", None),
         ("post", "/sessions/foo.bar/cancel", None),
+        ("post", "/sessions/foo.bar/goal", {"objective": "x", "criteria": ["y"]}),
+        ("get", "/sessions/foo.bar/goal", None),
+        (
+            "post",
+            "/sessions/foo.bar/goal/evidence",
+            {"goal_id": "goal_123", "expected_goal_id": "goal_123", "text": "x"},
+        ),
     ]
     for method, path, body in cases:
         kwargs = {"json": body} if body is not None else {}
@@ -275,6 +328,7 @@ def test_swarm_run_endpoints_reject_traversal_run_id() -> None:
         ("get", "/swarm/runs/foo.bar"),
         ("get", "/swarm/runs/foo.bar/events"),
         ("post", "/swarm/runs/foo.bar/cancel"),
+        ("post", "/swarm/runs/foo.bar/retry"),
     ):
         response = getattr(client, method)(path)
         assert response.status_code == 400, f"{method.upper()} {path} should be rejected"

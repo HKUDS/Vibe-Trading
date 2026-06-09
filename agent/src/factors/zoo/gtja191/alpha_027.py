@@ -1,3 +1,9 @@
+
+# ============================================================
+# 中文名称: GTJA #27 - 加权前日收盘
+# 简要说明: (-1*RANK((DELTA(CORR(HIGH,MEAN(VOLUME,60),5),1))*RANK(CORR(CLOSE,MEAN(VOLUME,50),1))))，量价相关变化的组合排名。
+# 典型用途: 量价关系的一阶变化信号，用于趋势转折点检测。
+# ============================================================
 """GTJA Alpha #27.
 
 Formula: WMA((CLOSE-DELAY(CLOSE,3))/DELAY(CLOSE,3)*100 + (CLOSE-DELAY(CLOSE,6))/DELAY(CLOSE,6)*100, 12)

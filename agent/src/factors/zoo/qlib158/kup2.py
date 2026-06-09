@@ -1,5 +1,10 @@
 # Adapted from microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0:qlib/contrib/data/handler.py
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
+# ============================================================
+# 中文名称: 上影线相对比率
+# 简要说明: (high - max(open,close)) / (high - low)，衡量上影线在整根K线中的占比。
+# 典型用途: 用于识别冲高回落形态，上影线占比高表明上方阻力较大。
+# ============================================================
 """qlib158 KUP2: formula = (\\mathrm{high} - \\max(\\mathrm{open}, \\mathrm{close})) / (\\mathrm{high} - \\mathrm{low})."""
 from __future__ import annotations
 

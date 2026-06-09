@@ -13,6 +13,10 @@
 </p>
 
 <p align="center">
+  <a href="https://trendshift.io/repositories/25527" target="_blank"><img src="https://trendshift.io/api/badge/repositories/25527" alt="HKUDS%2FVibe-Trading | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=flat" alt="FastAPI">
   <img src="https://img.shields.io/badge/Frontend-React%2019-61DAFB?style=flat&logo=react&logoColor=white" alt="React">
@@ -46,12 +50,31 @@
 
 ## 📰 الأخبار
 
-- **2026-05-22** 🧭 **استعادة Swarm + إبقاء MCP حياً**: أصبحت حالة Swarm تُصالح من ملفات المهام الحية عند كل قراءة، لذلك تستعيد عروض API/MCP/SSE/list التشغيلات التي تعطلت أو صارت stale بدلاً من عرض لقطة `running` للأبد. يرسل `run_swarm` نبضات MCP progress أثناء polling، مع إطار أول ثابت `swarm_started run_id=<id>` كي يستطيع العملاء استعادة المقبض بعد سقوط النقل؛ كما يصدر worker نبضات خلال LLM streaming وgrounding fetch وتنفيذ الأدوات. يستخدم stale-run reaper عتبات خاصة بكل run ويستنتج الحالة النهائية من حالات المهام. لم يعد `SwarmTool` يلغي team ما زال يعمل لمجرد انتهاء wait budget، ويمكن لعملاء MCP استدعاء `reap_stale_runs()` للتنظيف الصريح. حدّثت دفعة DX اليوم أيضاً النماذج الافتراضية للمزودين، وواءمت فحص CI syntax مع حزمة `agent/cli/` الجديدة. تغطي 22 اختباراً انحدارياً جديداً hydration، واستعادة الحالات النهائية، وجمع التشغيلات stale، وإيقاع keepalive، وتحمل env parsing، وربط heartbeat؛ ومجموعة swarm/MCP الكاملة عند 169 passed و4 skipped.
-- **2026-05-21** 🧱 **إعادة هيكلة حزمة CLI**: تقسيم `agent/cli.py` (3216 سطراً) إلى حزمة `agent/cli/` — واجهة تفاعلية، موجّه slash، مكوّنات Rich، وطبقة `_legacy.py` تحافظ على كل الأوامر الفرعية وتعيد تصدير كل الرموز العامة فتبقى `cli.cmd_*` / `cli._INIT_ENV_PATH` / `cli.Confirm` كما هي. Middleware جديد في FastAPI يخدم قشرة SPA عند فتح `/runs/{id}` أو `/correlation` مباشرة من المتصفح، مع نفس التضييق في بروكسي Vite للتطوير. توحيد سلسلة الإصدار عبر `cli/_version.py` (إنهاء الانحراف بين `--version` والبانر)، استعادة `python -m cli` عبر `__main__.py`، وتضييق بوابة chat بحيث تصل `chat --help` / `chat extra` إلى argparse القديم بدلاً من ابتلاع REPL لها.
-- **2026-05-20** 🔬 **Hypothesis Registry CLI**: استكمال جانب CLI لـ Hypothesis Registry الذي شُحن backend فقط في 2026-05-16. يُخرج `vibe-trading hypothesis list` جدول Rich أو JSON (مع فلتر `--status` و`--limit`)؛ يعرض `show <id>` لوحة تفاصيل تتضمن run cards المرتبطة؛ يقلب `invalidate <id> --note "..."` الحالة إلى `rejected` ويُبقي ملاحظات الإبطال السابقة عند حذف `--note`. متغير البيئة `VIBE_TRADING_HYPOTHESES_PATH` ما زال مدعوماً، مع إضافة `--path` لكل استدعاء. تغطي 22 اختباراً جديداً الربط، إخراج JSON، فلتر الحالة، الحد، أخطاء معرّف مفقود، وثبات الملاحظات.
+- **2026-06-09** 🔑 **رسالة خطأ أوضح عند فتح واجهة الويب من جهاز آخر**: عند الوصول إلى المحادثة من عميل غير loopback (جهاز آخر، أو مضيف جهاز افتراضي، أو هاتف على شبكتك المحلية) دون ضبط `API_AUTH_KEY`، كانت كل النقاط الحساسة——إرسال رسالة، قائمة الجلسات، حالة live——تُعيد `403`، لكن المحادثة كانت تعرض فقط رسالة عامة «Failed to send message, please retry.». أصبح مسار الإرسال الآن يُظهر السبب الحقيقي——*«Remote API access requires an API key. Add it in Settings, or run the backend on localhost for local-only use.»*——كما يوضّح إعداد واجهة الويب في README الفرق بين localhost والشبكة المحلية والحلول الثلاثة (التصفّح عبر `localhost` على نفس الجهاز؛ ضبط `API_AUTH_KEY` وإدخاله مرة في Settings؛ أو `VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1` لبوابة مضيف Docker Desktop) ([#191](https://github.com/HKUDS/Vibe-Trading/issues/191)، شكراً @mafia23).
+- **2026-06-08** 🔧 **إصلاح استدعاء الأدوات متعدد الأدوار في Gemini 3.x**: يكتمل بهذا إصلاح نماذج التفكير Gemini 3.x. غطّى تبادل 6/05 ([#176](https://github.com/HKUDS/Vibe-Trading/pull/176)) السجلّ في الذاكرة فقط، لكن حلقة الـ agent الفعلية تعيد تشغيل السجل على هيئة dict بصيغة OpenAI حيث كانت LangChain تُسقِط `thought_signature` لكل استدعاء أداة قبل بناء الطلب——فظلّت استدعاءات الأدوات متعددة الأدوار تفشل بـ `missing thought_signature` (خطأ 400). أصبح يُعاد إرفاقه الآن عند نقطة الاختناق الوحيدة `_convert_input` التي يمر بها كل من `invoke` و`stream` (بما في ذلك الاستدعاءات المتوازية، حيث يُوقّع الأول فقط من بين N) ([#184](https://github.com/HKUDS/Vibe-Trading/pull/184)، شكراً @ngoanpv).
+- **2026-06-07** 🐝 **حالة swarm حيّة في مسار المحادثة**: عندما يُطلق الـ agent سربًا متعدد الوكلاء (لجنة الاستثمار، مكتب الكَمّ، لجنة المخاطر، …)، تعرض المحادثة الآن **بطاقة حالة** مضمّنة تبث حالة كل worker——انتظار / تشغيل / اكتمال / فشل / محظور / إعادة محاولة——في الوقت الفعلي، بنفس وضوح كل وكيل الذي توفّره لوحة swarm المستقلة. تُجسّر أحداث وقت التشغيل إلى تدفّق SSE للجلسة دون تغيير واجهة `/swarm/runs` القائمة، وتُستعاد البطاقة المنتهية من نتيجة `run_swarm` النهائية عند إعادة الاتصال أو إعادة تشغيل السجل ([#188](https://github.com/HKUDS/Vibe-Trading/pull/188)، شكراً @BillDin). وصار توجيه الـ preset أدقّ: إذ يتقدّم الـ preset المُسمّى صراحةً (مثل `investment_committee`، بشرطة سفلية أو بدونها) على ترتيب الكلمات المفتاحية، ولم تعد الكلمة `IV` للمشتقات تُطابِق خطأً داخل كلمات عادية مثل «g**iv**en» ([#189](https://github.com/HKUDS/Vibe-Trading/pull/189)، شكراً @BillDin).
 <details>
 <summary>أخبار سابقة</summary>
 
+- **2026-06-06** ⚖️ **مقارنة Alpha — عبر CLI وWeb UI وREST وagent**: يقارن `alpha compare` الجديد قائمة مختارة يدويًا من عوامل Alpha Zoo بعضها ببعض على نفس universe والفترة، ثم يرتّبها حسب متوسط/انحراف IC وIR ونسبة IC>0 أو عدد العينات — مع إظهار فجوة كل عامل عن المتصدّر. وخلافًا لـ bench لكامل الـ zoo، فإنه يقيّم **العوامل التي تسمّيها فقط** (مرشّح المجموعة الجزئية الجديد `run_bench(only=…)`)، فمقارنة ثلاثة عوامل لم تعد تُشغّل كل الـ 191 في الـ zoo. نواة مشتركة واحدة تشغّل كل الواجهات: `vibe-trading alpha compare <id1> <id2> … --sort ir` (CLI)، و**عرض Compare** في واجهة Alpha Zoo على الويب (حدّد العوامل في الكتالوج → مقارنة بنقرة واحدة مع جدول ترتيب متدفّق)، و`POST /alpha/compare` + SSE (REST)، وأداة `alpha_compare` للـ agent للقراءة فقط (**47 أداة** الآن).
+- **2026-06-05** 🇮🇳 **connectors لـ Dhan + Shoonya (الهند) — 10 وسطاء إجمالاً**: تضيف طبقة التداول التي تعتمد أولاً على connectors وسيطين هنديين هما **Dhan** و**Shoonya** (أسهم NSE/BSE + المشتقات F&O)، ليصبح الإجمالي عشرة وسطاء. كلاهما **paper + قراءة فقط** — كما هي حال Longbridge، لا تكشف واجهتاهما عن مميِّز زمن تشغيل بين paper وlive، لذا يرفض `place_order` / `cancel_order` أي إعداد غير paper من السطر الأول (القاعدة: أي وسيط بلا حارس بنيوي paper/live يُقيَّد إلى paper + قراءة فقط) ([#181](https://github.com/HKUDS/Vibe-Trading/pull/181)، يغلق [#174](https://github.com/HKUDS/Vibe-Trading/issues/174)). كما تُصلح هذه الدورة **نماذج التفكير Gemini 2.5 / 3.x**: صار `thoughtSignature` لكل استدعاء أداة يُعاد تمريره عبر المسار المتوافق مع OpenAI، فلم تعد استدعاءات الدوال متعددة الأدوار تفشل بـ `INVALID_ARGUMENT` ([#176](https://github.com/HKUDS/Vibe-Trading/pull/176)، يغلق [#170](https://github.com/HKUDS/Vibe-Trading/issues/170)، شكراً @mvanhorn و@jliu6789). وأُضيفت docstrings صينية إلى جميع عوامل **Alpha Zoo البالغة 452** ([#180](https://github.com/HKUDS/Vibe-Trading/pull/180)، شكراً @LeeCQiang)، وانضمت إلى CI **حزمة اختبارات للواجهة الأمامية (197 اختبار vitest)** إضافة إلى اختبارات أمان للواجهة الخلفية تغطي المصادقة / اجتياز المسارات / CORS ([#175](https://github.com/HKUDS/Vibe-Trading/pull/175)، شكراً @sambazhu).
+- **2026-06-04** 🗃️ **تخزين مؤقت محلي اختياري لجميع مصادر البيانات السبعة**: مفتاح جديد `VIBE_TRADING_DATA_CACHE` يتيح لكل loader للاختبار الخلفي——tushare وokx وccxt وakshare وmootdx وyfinance وfutu——تخزين الأشرطة التاريخية المستقرة مؤقتاً ضمن `~/.vibe-trading/cache` (المجلد الرئيسي للمستخدم، ولا يُكتب أبداً داخل المستودع)، بحيث تتخطى عمليات الاختبار الخلفي المتكررة والطويلة المدى / عبر الأسواق الشبكة وتتجنب حدود معدّل المزوّد. معطّل افتراضياً. تتخطى محمّلات الدُّفعات والاتصال (yfinance، futu) التنزيل المجمّع / اتصال FutuOpenD بالكامل عند إصابة المخزن المؤقت كلياً، ولا يخزّن حارس القِدَم أبداً نطاقاً ينتهي اليوم (شريطه الأخير ما زال قيد التكوين)، وتعود الإطارات المخزّنة مطابِقة بايتاً ببايت لما يُجلب حديثاً ([#177](https://github.com/HKUDS/Vibe-Trading/pull/177)، شكراً @mvanhorn). كما وصل دليل مساهمين جديد للـ PRs المدعومة بالذكاء الاصطناعي / الأتمتة، يوضّح الفحوص المحلية الآمنة والأسطح عالية الخطورة لـ broker/MCP/بيانات الاعتماد ([#173](https://github.com/HKUDS/Vibe-Trading/pull/173)).
+- **2026-06-03** 🧹 **فرز المجتمع + ربط التتبع**: تحمل الآن إدخالات تتبع استدعاء الأدوات `call_id` الأصلي، بحيث يمكن مطابقة `tool_result` مع `tool_call` المقابل عند إعادة تشغيل تتبع التشغيل — وتبقى معاينات الوسائط مقتطعة للحفاظ على صغر حجم ملفات التتبع ([#168](https://github.com/HKUDS/Vibe-Trading/pull/168)، شكراً @zwrong). لم تعد تعليقات الكود المصدري تشير إلى مسار وثائق داخلي لا يستطيع المساهمون الخارجيون العثور عليه ([#166](https://github.com/HKUDS/Vibe-Trading/issues/166)، شكراً @jaleelpersonal). كما تم توضيح أن تحذير محلّل تبعيات `langchain-community` أثناء التثبيت هو مجرد إشعار غير ضار عن حزمة متبقية وليس فشلاً ([#167](https://github.com/HKUDS/Vibe-Trading/issues/167))، وتم تنظيم معالجة ذهاب وإياب `thoughtSignature` لاستدعاءات الدوال في Gemini 2.5/3.0 كمهمة `help wanted` مع خطة إصلاح كاملة ([#170](https://github.com/HKUDS/Vibe-Trading/issues/170)، شكراً @jliu6789).
+- **2026-06-02** 🔌 **ستة connectors وسطاء جديدة (Tiger / Longbridge / Alpaca / OKX / Binance / Futu)**: تكتسب طبقة التداول التي تعتمد أولاً على connectors ناقلاً مباشراً عبر SDK إلى جانب IBKR (محلي) وRobinhood (MCP). يكشف كل connector عن حساب / مراكز / أوامر / quote / تاريخ للقراءة فقط، بالإضافة إلى وضع أوامر على حساب PAPER — اختبر استراتيجياتك عبر حسابات paper الخاصة بهؤلاء الوسطاء. كما يدعم خمسة منها (Tiger وAlpaca وOKX وBinance وFutu) وضع أوامر محدوداً ومحكوماً بـ mandate خلف نفس نموذج السلامة المطبّق على Robinhood: mandate يلتزم به المستخدم (نطاق الرموز / حجم الأمر / التعرّض / الرافعة / الحد اليومي)، وkill switch على مستوى الملفات، وبوّابة استباقية قبل التداول تُغلَق عند الفشل، وسجل تدقيق كامل. أما Longbridge فهو للقراءة فقط + paper حصراً (لا تكشف واجهته عن مميِّز زمن تشغيل بين paper وlive). كل تمييز بين paper وlive هو حارس بنيوي خاص بكل وسيط. أدوات جديدة `trading_place_order` / `trading_cancel_order`؛ وأُضيفت فئتا الأصول HK وأسهم A إلى universe الخاص بـ mandate. تجريبي / الاستخدام على مسؤوليتك.
+- **2026-06-01** 🚀 **إصدار v0.1.9** (`pip install -U vibe-trading-ai`): يجمع كل ما استُجد منذ 0.1.8. ملفات وسطاء تعتمد أولاً على connectors (IBKR محلي للقراءة فقط من TWS / IB Gateway + Robinhood Agentic Trading خلف OAuth وmandate مُلتزم وorder guard وسجل تدقيق وhalt فوري). زمن تشغيل Research Goal عبر CLI / REST / MCP / Web. تحديث swarm — reconcile حيّ + إبقاء MCP حياً، وأدوات MCP لعمّال swarm يضبطها المشغّل، وتحكم عشوائي صارم في alpha-bench، و`retry_run` جديد لإعادة تشغيل runs الفاشلة/القديمة (الآن **36 أداة MCP**). إعادة هيكلة حزمة `agent/cli/` مع واجهة طرفية محدّثة، ومحمّل `mootdx` لأسهم A بدون توكن، وجولة متانة عبر backtest / agent loop / sessions. أصبح `--version` يطابق دائماً الحزمة المثبّتة، مصلحاً انحراف 0.1.8 ([#156](https://github.com/HKUDS/Vibe-Trading/issues/156)).
+- **2026-05-31** 🔌 **بنية وسطاء تعتمد أولاً على connectors (IBKR + Robinhood)**: يبدأ الوصول إلى التداول الآن من connector profile قابل للاختيار، لا من مداخل منفصلة للوسيط أو live. أوامر `vibe-trading connector list/use/check/account/positions/orders/quote/history` وأدوات MCP `trading_*` تشترك في نفس profile المحدد، حيث تكون paper/live مجرد خاصية ضمن connector. يمكن استخدام IBKR فوراً عبر profile محلي للقراءة فقط من TWS / IB Gateway، بينما يُزرع مسار MCP الرسمي البعيد لـ IBKR كتحقق OAuth بنطاق `mcp.read` إلى أن تتوفر أسماء أدوات قراءة مستقرة. يظل Robinhood Agentic Trading هو connector MCP حيّاً ومحدوداً خلف OAuth وmandate مُلتزم وorder guard وسجل تدقيق وhalt فوري.
+- **2026-05-30** 🧰 **جولة متانة — backtest وagent loop وsession**: تمرّ الآن signal engines المولّدة بواسطة LLM بتحقق مسبق من الواجهة قبل الإنشاء، فتلتقط مبكراً الأخطاء الشائعة مثل self-import الدائري، وغياب `generate()`، ووسائط `__init__` بلا قيم افتراضية، ونوع الإرجاع الخاطئ، وتُرجِع أخطاء JSON قابلة للتنفيذ بدل traceback خام ([#149](https://github.com/HKUDS/Vibe-Trading/pull/149))؛ ومتابعةٌ لاحقة توجّه أخطاء تحقق AST على مستوى المصدر عبر نفس مغلّف JSON النظيف. لم يعد agent loop يستنزف الخمسين تكراراً ليصل إلى حالة `failed` بلا أي مخرجات — فهو يحاكي أسلوب swarm worker المُجرَّب: يحقن wrap-up nudge عند 80% من ميزانية التكرار ويُسقط تعريفات الأدوات في التكرار الأخير لفرض إجابة نصية ([#148](https://github.com/HKUDS/Vibe-Trading/pull/148))، مع حارس يجعله يُطلَق في المنتصف فقط كي لا يزيح سياق research-goal. كتابة رسائل الجلسة تجري الآن `flush + fsync` بعد كل append حتى تنجو ردود الـ AI الباهظة من تعطّل أثناء الكتابة، ويتخطّى مسار القراءة أسطر JSONL التالفة (مع تسجيل أول 200 حرف للاسترداد) بدل إعطاء 500 لنقطة `/messages` كاملة ([#147](https://github.com/HKUDS/Vibe-Trading/pull/147)). كما أصلح محرّر الإدخال في الويب معالجة Enter مع IME بحيث لا يؤدي Enter لتأكيد التركيب إلى إرسال في منتصف الكلمة ([#146](https://github.com/HKUDS/Vibe-Trading/pull/146)).
+- **2026-05-29** 🔐 **دعم Robinhood Agentic Trading (اختياري، استقلالية محدودة)**: أُضيف دعم Robinhood Agentic Trading (MCP عن بُعد، OAuth). مُعطَّل وللقراءة فقط افتراضياً؛ ويتداول الوكيل تلقائياً فقط ضمن mandate يلتزم به المستخدم (الرموز / حجم الأمر / التعرّض / الرافعة / الحد اليومي)، مع kill switch فوري على مستوى الملفات، وتصفية استباقية للمراكز، وانتهاء صلاحية تلقائي لـ mandate، وسجل تدقيق كامل، و runner مستقل دائم. لا حفظ للأموال ولا تشغيل لمنصة تداول — الوسيط يحتفظ بالأموال وينفّذ، ونحن ننقل النية فقط. تجريبي / الاستخدام على مسؤوليتك.
+- **2026-05-28** 🧪 **سلامة Swarm + بوّابة alpha صارمة + MCP لعمّال swarm**: يحجب Swarm DAG الآن المهام المتفرعة عندما تفشل المهمة الأعلى ([#145](https://github.com/HKUDS/Vibe-Trading/pull/145)). دالة `run_bench_strict()` الجديدة تضيف فوق بوّابة IC تحكماً عشوائياً بنفس universe + قسمة train/test OOS لاصطياد العوامل التي تتبع beta السوق فقط ([#143](https://github.com/HKUDS/Vibe-Trading/pull/143)، شكراً @Soli22de). يستطيع عمّال Swarm الآن استدعاء أدوات من خوادم MCP خارجية يضبطها المشغل، مع تثبيت حدود الثقة باختبارات مخصصة ([#142](https://github.com/HKUDS/Vibe-Trading/pull/142)، شكراً @shadowinlife).
+- **2026-05-27** 📊 **مصدر بيانات A-share عبر mootdx + تحسين الإخراج**: محمّل `mootdx` الجديد يتحدث بروتوكول 通达信 TCP الأصلي لبيانات OHLCV لأسهم A (بدون مصادقة، بدون قيود معدل لكل IP، يومي + intraday مع pagination تراجع بـ 25 صفحة)، ويُدرج بين tushare وakshare في سلسلة fallback ([#107](https://github.com/HKUDS/Vibe-Trading/issues/107)). محمّل CCXT يقرأ الآن `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY` ليعمل جلب بيانات Binance/OKX العامة من الشبكات المقيدة ([#126](https://github.com/HKUDS/Vibe-Trading/pull/126)، شكراً @ruok808). عرض الإجابة النهائية أزال أيضاً فواصل `---` الأفقية القبيحة بعرض كامل على CLI وWeb: يحث system prompt الآن agent على استخدام جداول markdown وعناوين `##`، يجرّد CLI renderer أسطر HR المستقلة كدفاع متعمق، ويخفي chat bubble أي `<hr>` ينفذ عبر ([#139](https://github.com/HKUDS/Vibe-Trading/issues/139)، شكراً @sdwxm188).
+- **2026-05-26** ✅ **إغلاق دورة حياة Research Goal**: أصبح Goal mode يعمل كمنفّذ مهام حقيقي: إنشاء goal من Web UI ينشئ الجلسة أو يربطها ويرسل kickoff turn فوراً؛ يمكن متابعة active goals وتعديلها وإلغاؤها وإكمالها عبر Web/API/CLI/MCP؛ ويتقدم agent loop من لقطة goal الحالية (criteria وevidence وclaims وopen items) بدلاً من الاعتماد على prompt الأصلي فقط. عندما تكون criteria covered لكن goal لا يزال active، ينتقل النظام إلى audit/status update بدلاً من التوقف الصامت، مع تغطية انحدارية عبر backend وCLI وMCP وfrontend events.
+
+- **2026-05-25** 🧼 **واجهة Chat أنظف + سير composer**: أصبحت واجهة Web UI تترك التركيز للمدخل التالي: انتقلت أوضاع upload وswarm وresearch-goal إلى قائمة `+` في composer بدلاً من لوحات عائمة تقاطع المحادثة. يظهر السياق النشط فوق حقل الإدخال كشرائح compact، ولا تتوسع تفاصيل goal إلا inline عند النقر على الشريحة. أزيلت طبقة i18n المخصصة القديمة لصالح نصوص إنجليزية مباشرة، وتظهر بطاقة Full Report فقط للتشغيلات ذات تقرير فعلي، كما أصبح تشغيل التطوير المحلي وتقارير الحالة أكثر ثباتاً لاختبارات browser smoke.
+- **2026-05-24** 🎯 **Research Goal runtime**: أضيفت طبقة Research Goal مرتبطة بالجلسة عبر backend وCLI وAPI/MCP وSSE وWeb UI. تحفظ الأهداف claims وacceptance criteria وevidence rows وbudgets وcompletion policy؛ تستطيع agent tools إنشاء الأهداف وإضافة evidence؛ أصبح `/goal` مدخل CLI؛ تعرض REST/MCP لقطات goal وكتابات evidence؛ وتحافظ SSE على حداثة حالة chat clients. أغلقت إصلاحات audit اللاحقة مسارات verified evidence، ومنعت live-trading risk tiers عبر agent tools، وربطت goals المنشأة من CLI بالمنعطفات اللاحقة، ونظفت goal ledger عند حذف الجلسة، ووصلت replay-all، وأصلحت race في frontend snapshot بين الجلسات.
+- **2026-05-23** 🖥️ **تحديث CLI التفاعلي**: تفتح واجهة الطرفية الآن ببانر Vibe-Trading أكبر، وفاصل prompt أوضح، وملخص للدورة السابقة، وتوقيت بعد التشغيل، ومسار نشاط بأسلوب Claude Code لعمل الوكيل الحي. تُعرض استدعاءات الأدوات، وجلب الويب/البيانات، وأفعال نمط shell، وإجابات Markdown، وجداول pipe كسجل أكثر قابلية للقراءة، بينما تحافظ تشغيلات pipe أو non-TTY على إخراج نصي مناسب للأتمتة. أصبحت لقطات CLI المولدة artifacts محلية بدلاً من ملفات docs ملتزم بها، مما يبقي المستودع أخف.
+- **2026-05-22** 🧭 **استعادة Swarm + إبقاء MCP حياً**: أصبحت حالة Swarm تُصالح من ملفات المهام الحية عند كل قراءة، لذلك تستعيد عروض API/MCP/SSE/list التشغيلات التي تعطلت أو صارت stale بدلاً من عرض لقطة `running` للأبد. يرسل `run_swarm` نبضات MCP progress أثناء polling، مع إطار أول ثابت `swarm_started run_id=<id>` كي يستطيع العملاء استعادة المقبض بعد سقوط النقل؛ كما يصدر worker نبضات خلال LLM streaming وgrounding fetch وتنفيذ الأدوات. يستخدم stale-run reaper عتبات خاصة بكل run ويستنتج الحالة النهائية من حالات المهام. لم يعد `SwarmTool` يلغي team ما زال يعمل لمجرد انتهاء wait budget، ويمكن لعملاء MCP استدعاء `reap_stale_runs()` للتنظيف الصريح. حدّثت دفعة DX اليوم أيضاً النماذج الافتراضية للمزودين، وواءمت فحص CI syntax مع حزمة `agent/cli/` الجديدة. تغطي 22 اختباراً انحدارياً جديداً hydration، واستعادة الحالات النهائية، وجمع التشغيلات stale، وإيقاع keepalive، وتحمل env parsing، وربط heartbeat؛ ومجموعة swarm/MCP الكاملة عند 169 passed و4 skipped.
+- **2026-05-21** 🧱 **إعادة هيكلة حزمة CLI**: تقسيم `agent/cli.py` (3216 سطراً) إلى حزمة `agent/cli/` — واجهة تفاعلية، موجّه slash، مكوّنات Rich، وطبقة `_legacy.py` تحافظ على كل الأوامر الفرعية وتعيد تصدير كل الرموز العامة فتبقى `cli.cmd_*` / `cli._INIT_ENV_PATH` / `cli.Confirm` كما هي. Middleware جديد في FastAPI يخدم قشرة SPA عند فتح `/runs/{id}` أو `/correlation` مباشرة من المتصفح، مع نفس التضييق في بروكسي Vite للتطوير. توحيد سلسلة الإصدار عبر `cli/_version.py` (إنهاء الانحراف بين `--version` والبانر)، استعادة `python -m cli` عبر `__main__.py`، وتضييق بوابة chat بحيث تصل `chat --help` / `chat extra` إلى argparse القديم بدلاً من ابتلاع REPL لها.
+- **2026-05-20** 🔬 **Hypothesis Registry CLI**: استكمال جانب CLI لـ Hypothesis Registry الذي شُحن backend فقط في 2026-05-16. يُخرج `vibe-trading hypothesis list` جدول Rich أو JSON (مع فلتر `--status` و`--limit`)؛ يعرض `show <id>` لوحة تفاصيل تتضمن run cards المرتبطة؛ يقلب `invalidate <id> --note "..."` الحالة إلى `rejected` ويُبقي ملاحظات الإبطال السابقة عند حذف `--note`. متغير البيئة `VIBE_TRADING_HYPOTHESES_PATH` ما زال مدعوماً، مع إضافة `--path` لكل استدعاء. تغطي 22 اختباراً جديداً الربط، إخراج JSON، فلتر الحالة، الحد، أخطاء معرّف مفقود، وثبات الملاحظات.
 - **2026-05-19** ✨ **تغذية راجعة حيّة للأدوات + إلغاء سلس**: لم تعد الأدوات الطويلة (backtests، PDF كبيرة، عمّال swarm) تبدو متجمدة. كل استدعاء أداة يُصدر الآن نبضة قلب كل 3 ثوانٍ، بالإضافة إلى تقدّم مرحلي مهيكل — يُظهر `run_backtest` علامات الأطوار (`validate` / `simulate` / `finalize`)، ويُحدّث `read_document` عدّاد كل صفحة على PDF أو كل ورقة على Excel، ويُعلِم `read_url` بمرحلتي `fetch` / `parse`. تعرض لوحة Rich Live في CLI دوّاراً Unicode وشريط تقدّم ASCII وETA، وتُكدّس حتى 3 أدوات متوازية مفهرسة بالاسم. تضيف الواجهة الأمامية مكوّن `ToolProgressIndicator` جديد مع تجميع rAF، وARIA `role="status"` + `<progress>` أصلي مخفي لقارئات الشاشة، وSVG `ProgressRing` حتمي عندما يكون المجموع معروفاً. أول `Ctrl+C` أثناء تشغيل CLI يستدعي الآن `agent.cancel()` للخروج السلس (تكتمل الخطوة الحالية وتُغلق التتبعات بنظافة)، والثاني خلال ثانيتين يفرض الإنهاء. تم استخراج عناصر أساسية قابلة لإعادة الاستخدام: `ProgressBar.tsx` و`lib/tools.ts` (تعيين i18n لأسماء الأدوات المشترك).
 - **2026-05-18** 🧹 **تنظيف + إصلاح 3 أخطاء كامنة**: لم يعد `CompositeEngine` يوجّه رموز العقود الآجلة الصينية بدون لاحقة (مثل `RB2410`) إلى `GlobalFuturesEngine` بشكل خاطئ — انتقل `_is_china_futures` إلى وحدة `_market_hooks` المشتركة مع تطبيع حالة جدول المنتجات + حارس لبورصة غير صينية، وأُضيفت 9 حالات اختبار انحدار. تحفظ فهارس FTS5 للجلسات الآن الطوابع الزمنية، فيمكن لبحث الجلسات الفرز بالتاريخ، ونفس التغيير أصلح مسار إعادة الإدراج الذي كان يستبدل `started_at` بساعة الحائط في كل مرة. أُضيف `/alpha` المفقود إلى بروكسي تطوير Vite، فتُحلّ صفحة AlphaZoo الآن على `npm run dev`. تم تقييد `tests/test_e2e_harness_v2.py` (مجموعة e2e بـ LLM حقيقي) خلف `VIBE_TRADING_RUN_LIVE_E2E=1` كي لا تغيّر CI شكلها بناءً على وجود مفتاح البيئة. أُضيفت إلى ruff قاعدة `per-file-ignores` لمكتبة المعاملات (الضوضاء F401 من 3783 إلى 0)، وفُعِّلت `noUnusedLocals` / `noUnusedParameters` في tsconfig الواجهة كحواجز انحدار، وحُذف 76 سطراً من نموذج `vw = vwap(...)` غير المستخدم في ملفات `gtja191`. الصافي **-918 سطراً**.
 - **2026-05-17** 🧬 **Alpha Zoo v1 (0.1.8)**: 452 ألفا كمّي جاهز عبر 4 zoos — `qlib158` (ميزات Alpha158 من Microsoft Qlib، إسناد Apache-2.0)، `alpha101` (إعادة تنفيذ "101 Formulaic Alphas" من Kakushadze بناءً على ورقة arXiv:1601.00991)، `gtja191` (تقرير بحث Guotai Junan 2014 لعوامل تداول قصيرة الأجل)، `academic` (Fama-French 5 + Carhart momentum كـ proxy قائم على الأسعار). سطر أوامر واحد للـ bench على أي universe: `vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025`. تتضمن بوابة AST للنقاء، اختبار حماية lookahead، عزل الشبكة عبر `pytest-socket`، LICENSE.md لكل zoo، وسير عمل توقيع DCO لمساهمات المجتمع. تقديم Alpha Library تلقائياً على [vibetrading.wiki/alpha-library/](https://vibetrading.wiki/alpha-library/)، مع منشور Research Lab [Which of the 191 GTJA alphas still work in 2026?](https://vibetrading.wiki/research-lab/posts/alpha-191-in-2026.html).
@@ -146,7 +169,7 @@
 
 Vibe-Trading مساحة عمل بحثية مفتوحة المصدر تحول الأسئلة المالية إلى تحليل قابل للتشغيل. يربط المطالبات باللغة الطبيعية بمحملات بيانات السوق، وتوليد الاستراتيجيات، ومحركات الاختبار الرجعي، والتقارير، والتصدير، وذاكرة البحث الدائمة.
 
-صُمم للبحث والمحاكاة والاختبار الرجعي. لا ينفذ صفقات حية.
+صُمم للبحث والمحاكاة والاختبار الرجعي — وعند اختيارك، يتيح أيضاً تداولاً مستقلاً عبر وسيط تُصرّح به بنفسك (مثل Robinhood Agentic Trading). لا يحتفظ بأي أموال، ولا يتداول أبداً خارج الحدود التي تضعها، ويمكنك إيقافه فوراً.
 
 ---
 
@@ -223,15 +246,15 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 القوائم التفصيلية مطوية أدناه حتى يبقى README سهل القراءة. افتحها عندما تريد فحص اللبنات المتاحة.
 
 <details>
-<summary><b>مكتبة المهارات المالية</b> <sub>75 مهارة عبر 8 فئات</sub></summary>
+<summary><b>مكتبة المهارات المالية</b> <sub>77 مهارة عبر 8 فئات</sub></summary>
 
-- 📊 75 مهارة مالية متخصصة منظمة في 8 فئات
+- 📊 77 مهارة مالية متخصصة منظمة في 8 فئات
 - 🌐 تغطية كاملة من الأسواق التقليدية إلى الكريبتو وDeFi
 - 🔬 قدرات شاملة من مصادر البيانات إلى البحث الكمي
 
 | الفئة | المهارات | أمثلة |
 |----------|--------|----------|
-| Data Source | 6 | `data-routing`, `tushare`, `yfinance`, `okx-market`, `akshare`, `ccxt` |
+| Data Source | 7 | `data-routing`, `tushare`, `yfinance`, `okx-market`, `akshare`, `mootdx`, `ccxt` |
 | Strategy | 17 | `strategy-generate`, `cross-market-strategy`, `technical-basic`, `candlestick`, `ichimoku`, `elliott-wave`, `smc`, `multi-factor`, `ml-strategy` |
 | Analysis | 17 | `factor-research`, `macro-analysis`, `global-macro`, `valuation-model`, `earnings-forecast`, `credit-analysis`, `dividend-analysis` |
 | Asset Class | 9 | `options-strategy`, `options-advanced`, `convertible-bond`, `etf-analysis`, `asset-allocation`, `sector-rotation` |
@@ -359,7 +382,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 
 > **مزودو LLM المدعومون:** OpenRouter, OpenAI, DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, Xiaomi MIMO, Z.ai, Ollama (local). راجع `.env.example` للإعداد.
 
-> **نصيحة:** تعمل كل الأسواق دون مفاتيح API بفضل fallback التلقائي. yfinance (HK/US)، وOKX (crypto)، وAKShare (A-shares, US, HK, futures, forex) مجانية. رمز Tushare اختياري، إذ يغطي AKShare أسهم A كبديل مجاني.
+> **نصيحة:** تعمل كل الأسواق دون مفاتيح API بفضل fallback التلقائي. yfinance (HK/US)، وOKX (crypto)، وmootdx (أسهم A، اتصال TCP مباشر بدون قيود IP)، وAKShare (A-shares, US, HK, futures, forex) كلها مجانية. رمز Tushare اختياري — mootdx هو الـ fallback الموصى به لأسهم A بدون رمز، بينما يوفر AKShare احتياطياً أوسع تغطية.
 
 ### المسار A: Docker (دون إعداد)
 
@@ -410,6 +433,9 @@ cd frontend && npm install && npm run dev
 cd frontend && npm run build && cd ..
 vibe-trading serve --port 8899     # FastAPI serves dist/ as static files
 ```
+
+> [!NOTE]
+> يرتبط `vibe-trading serve` بالعنوان `0.0.0.0` لكنه يثق فقط بطلبات loopback افتراضيًا: فتح الواجهة على **نفس الجهاز** (`http://localhost:8899`) يعمل دون أي إعداد. إذا تصفّحت من **جهاز آخر أو مضيف جهاز افتراضي أو هاتف على شبكتك المحلية**، فستُعيد النقاط الحساسة الرمز `403` وتظهر في المحادثة رسالة “Remote API access requires an API key” — عيّن مفتاح `API_AUTH_KEY` قويًا في `agent/.env`، ثم أعد التشغيل وأدخل المفتاح نفسه مرة واحدة في **Settings**. (بوابة مضيف Docker Desktop: عيّن `VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1` مع الإبقاء على ربط المنفذ الافتراضي `127.0.0.1`.)
 
 </details>
 
@@ -477,7 +503,7 @@ vibe-trading alpha list    # استعرض 452 ألفا جاهز؛ متاح show 
 | الأمر | الوصف |
 |---------|-------------|
 | `/help` | عرض كل الأوامر |
-| `/skills` | عرض كل المهارات المالية الـ 75 |
+| `/skills` | عرض كل المهارات المالية الـ 77 |
 | `/swarm` | عرض إعدادات فرق السرب الـ 29 |
 | `/swarm run <preset> [vars_json]` | تشغيل فريق سرب مع بث مباشر |
 | `/swarm list` | سجل تشغيلات السرب |
@@ -664,7 +690,7 @@ vibe-trading serve --port 8899
 
 ## 🔌 MCP Plugin
 
-يعرض Vibe-Trading 22 أداة MCP لأي عميل متوافق مع MCP. يعمل كعملية stdio فرعية، دون إعداد خادم. **21 من أصل 22 أداة تعمل دون أي مفاتيح API** (HK/US/crypto). يحتاج `run_swarm` وحده إلى مفتاح LLM.
+يعرض Vibe-Trading 36 أداة MCP لأي عميل متوافق مع MCP. يعمل كعملية stdio فرعية، دون إعداد خادم. أدوات البحث الأساسية تعمل دون أي مفاتيح API لأسواق HK/US/crypto؛ وأدوات connector للتداول تستخدم profile الموصل المختار، ويحتاج `run_swarm` وحده إلى مفتاح LLM.
 
 <details>
 <summary><b>Claude Desktop</b></summary>
@@ -706,7 +732,7 @@ vibe-trading-mcp --transport sse  # SSE for web clients
 
 </details>
 
-**أدوات MCP المعروضة (22):** `list_skills`, `load_skill`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `get_market_data`, `web_search`, `read_url`, `read_document`, `read_file`, `write_file`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `list_swarm_presets`, `run_swarm`, `get_swarm_status`, `get_run_result`, `list_runs`.
+**أدوات MCP المعروضة (36):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`.
 
 <details>
 <summary><b>التثبيت من ClawHub (أمر واحد)</b></summary>
@@ -726,7 +752,7 @@ npx clawhub@latest install vibe-trading --force
 <details>
 <summary><b>OpenSpace — مهارات ذاتية التطور</b></summary>
 
-كل المهارات المالية الـ 75 منشورة على [open-space.cloud](https://open-space.cloud) وتتطور ذاتياً عبر محرك التطور الذاتي في OpenSpace.
+كل المهارات المالية الـ 77 منشورة على [open-space.cloud](https://open-space.cloud) وتتطور ذاتياً عبر محرك التطور الذاتي في OpenSpace.
 
 للاستخدام مع OpenSpace، أضف خادمي MCP إلى إعداد وكيلك:
 
@@ -748,7 +774,7 @@ npx clawhub@latest install vibe-trading --force
 }
 ```
 
-سيكتشف OpenSpace كل المهارات الـ 75 تلقائياً، مما يتيح auto-fix وauto-improve والمشاركة المجتمعية. ابحث عن مهارات Vibe-Trading عبر `search_skills("finance backtest")` في أي وكيل متصل بـ OpenSpace.
+سيكتشف OpenSpace كل المهارات الـ 77 تلقائياً، مما يتيح auto-fix وauto-improve والمشاركة المجتمعية. ابحث عن مهارات Vibe-Trading عبر `search_skills("finance backtest")` في أي وكيل متصل بـ OpenSpace.
 
 </details>
 
@@ -764,13 +790,13 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli/                        # CLI package — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server — 22 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 36 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core
 │   │   │   ├── loop.py             #   5-layer compression + read/write tool batching
 │   │   │   ├── context.py          #   system prompt + auto-recall from persistent memory
-│   │   │   ├── skills.py           #   skill loader (75 bundled + user-created via CRUD)
+│   │   │   ├── skills.py           #   skill loader (77 bundled + user-created via CRUD)
 │   │   │   ├── tools.py            #   tool base class + registry
 │   │   │   ├── memory.py           #   lightweight workspace state per run
 │   │   │   ├── frontmatter.py      #   shared YAML frontmatter parser
@@ -797,7 +823,7 @@ Vibe-Trading/
 │   │   ├── api/                    # وحدات مسارات FastAPI
 │   │   │   └── alpha_routes.py     #   /alpha/list, /alpha/{id}, /alpha/bench, SSE stream
 │   │   │
-│   │   ├── skills/                 # 75 finance skills in 8 categories (SKILL.md each)
+│   │   ├── skills/                 # 77 finance skills in 8 categories (SKILL.md each)
 │   │   ├── swarm/                  # Swarm DAG execution engine
 │   │   │   └── presets/            #   29 swarm preset YAML definitions
 │   │   ├── session/                # Multi-turn chat + FTS5 session search
@@ -805,7 +831,7 @@ Vibe-Trading/
 │   │
 │   └── backtest/                   # Backtest engines
 │       ├── engines/                #   7 engines + composite cross-market engine + options_portfolio
-│       ├── loaders/                #   6 sources: tushare, okx, yfinance, akshare, ccxt, futu
+│       ├── loaders/                #   7 sources: tushare, okx, yfinance, akshare, mootdx, ccxt, futu
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + auto-fallback chains
 │       └── optimizers/             #   MVO, equal vol, max div, risk parity
@@ -891,17 +917,21 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 
 شكراً لكل من ساهم في Vibe-Trading!
 
-مساهمو واعتمادات دورة v0.1.8 الأخيرة:
+مساهمو واعتمادات دورة v0.1.9 الأخيرة:
 
-- @GTC2080 / TaoMu — Web UI Settings وواجهات إعداد provider/data-source (#57)
-- @BigNounce90 — تعزيز validation CLI لمدخل `run_dir` في الاختبار الرجعي (#60)
-- @shadowinlife — مهارة A-share pre-ST filter (#63)
-- @MB-Ndhlovu — لوحة خريطة الارتباط الحرارية وإصلاحات المراجعة (#64, #66)
-- @ykykj — خيار مزود OpenAI Codex OAuth (#65)
-- @RuifengFu — شريط حالة CLI التفاعلي وتحرير prompt (#69)
-- @SiMinus — أمر فحص swarm preset (#73)
-- @warren618 / Haozhe Wu — تعزيز الأمان، وتكامل الإصدار، والوثائق، وDocker، والتغليف، وسير التطوير المحلي
-- lemi9090 (S2W) — بحث أمني منسق، وتحقق، ودعم الإفصاح
+- @toanalien — تقوية session JSONL ضد الأعطال (#147)، وخروج لطيف من حلقة الوكيل عند نفاد ميزانية التكرارات (#148)، وتحقق مسبق من signal engines المولّدة بالـ LLM (#149)، وروابط Full Report عبر المتصفحات (#150)
+- @ai7eam-dev — محاذاة الطوابع الزمنية للارتباط عبر الأسواق (#158)، ومؤشر حالة تشغيل الجلسة + إعادة تشغيل swarm (#159 → #160)
+- @shadowinlife — خوادم MCP عن بُعد عبر SSE/HTTP (#125)، وأدوات MCP خارجية يضبطها المشغّل في عمّال swarm (#142)
+- @DoubleSky123 — مهلة خمول SSE قابلة للضبط (#157)
+- @ArthurXi — معالجة إرسال Enter في IME داخل محرّر الويب (#146)
+- @omcdecor-cyber — حجب المهام المتفرعة عند فشل المهمة الأعلى في swarm DAG (#145)
+- @Soli22de — وضع alpha-bench صارم بتحكم عشوائي إلزامي (#143)
+- @ruok808 — دعم متغيرات البيئة للوكيل في محمّل CCXT (#126)
+- @faizack — تطبيع عنوان Ollama البعيد الأساسي (#129)
+- @fightZy — إصلاح تحميل سجل جلسات الوكيل (#136)
+- @lcwSeven — قبول أسماء universe قصيرة في واجهة قائمة alpha (#137)
+- @Teerapat-Vatpitak — تسجيل مصدر .env بعد التحليل (#124)
+- @warren618 / Haozhe Wu — ملفات وسطاء تعتمد أولاً على connectors، وقناة Robinhood Agentic Trading، وزمن تشغيل Research Goal، وswarm reconcile + retry_run، وإعادة هيكلة agent/cli، ومحمّل mootdx، وتكامل الإصدار
 
 <a href="https://github.com/HKUDS/Vibe-Trading/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=HKUDS/Vibe-Trading" />
@@ -911,7 +941,7 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 
 ## إخلاء المسؤولية
 
-Vibe-Trading مخصص للبحث والمحاكاة والاختبار الرجعي فقط. ليس نصيحة استثمارية ولا ينفذ صفقات حية. الأداء السابق لا يضمن النتائج المستقبلية.
+Vibe-Trading برنامج للبحث والتداول. ليس نصيحة استثمارية، ولا يحتفظ بأي أموال، ولا يشغّل أي منصة تنفيذ. يحدث التداول فقط عبر قناة وسيط تُصرّح بها صراحةً (مثل Robinhood Agentic Trading)، ضمن الحدود التي تضعها، ويمكنك إيقافه في أي وقت. قدرة التداول عبر الوسيط هذه تجريبية ولم نتحقق منها على حساب وسيط حقيقي — استخدمها على مسؤوليتك. الأداء السابق لا يضمن النتائج المستقبلية.
 
 ## الرخصة
 

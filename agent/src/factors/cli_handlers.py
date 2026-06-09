@@ -64,6 +64,7 @@ except Exception:  # pragma: no cover — rich is a project dep, fallback only
     TextColumn = None  # type: ignore[assignment]
     TimeElapsedColumn = None  # type: ignore[assignment]
 
+from src.factors.compare_runner import SORT_KEYS as _COMPARE_SORT_KEYS, compare_alphas
 from src.factors.registry import Registry, RegistryError
 
 
@@ -696,13 +697,43 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
         return _handle_exception(args, "alpha bench failed", exc)
 
 
-def cmd_alpha_compare(args: argparse.Namespace) -> int:
-    """``vibe-trading alpha compare <id1> [<id2> ...] | --all | --zoo X``.
+def _render_compare_table(ranking: list[dict[str, Any]], sort_key: str) -> None:
+    """Print a head-to-head ranking table to stderr (nice-to-have, never fatal)."""
+    if _stderr_console is None or Table is None:
+        return
+    delta_key = f"delta_{sort_key}_vs_best"
+    table = Table(title=f"alpha compare — ranked by {sort_key}")
+    for col, justify in (
+        ("#", "right"), ("alpha", "left"), ("zoo", "left"), ("IC mean", "right"),
+        ("IC std", "right"), ("IR", "right"), ("IC>0", "right"), ("n", "right"),
+        (f"Δ {sort_key}", "right"),
+    ):
+        table.add_column(col, justify=justify)
+    for r in ranking:
+        table.add_row(
+            str(r["rank"]),
+            str(r["id"]),
+            str(r.get("zoo") or ""),
+            f"{r.get('ic_mean', 0.0):.4f}",
+            f"{r.get('ic_std', 0.0):.4f}",
+            f"{r.get('ir', 0.0):.4f}",
+            f"{r.get('ic_positive_ratio', 0.0):.3f}",
+            str(r.get("ic_count", 0)),
+            f"{r.get(delta_key, 0.0):+.4f}",
+        )
+    _stderr_console.print(table)
 
-    Stub for W4; reports validated targets so callers can wire scripts.
+
+def cmd_alpha_compare(args: argparse.Namespace) -> int:
+    """``vibe-trading alpha compare <id1> <id2> ... | --all | --zoo X``.
+
+    Bench a hand-picked set of alphas head-to-head and print a ranked
+    comparison (IC mean/std, IR, IC>0 ratio, sample count) plus a JSON
+    envelope. Only the named alphas are evaluated — the zoo-wide loop is
+    restricted via ``run_bench(only=...)`` — so comparing three alphas does
+    not bench all 191 in their zoo.
     """
     try:
-        targets: list[str]
         reg = Registry()
         if getattr(args, "compare_all", False):
             targets = reg.list()
@@ -711,20 +742,45 @@ def cmd_alpha_compare(args: argparse.Namespace) -> int:
         else:
             targets = list(args.alpha_ids or [])
 
+        # De-duplicate, preserving first-seen order.
+        seen: set[str] = set()
+        targets = [t for t in targets if not (t in seen or seen.add(t))]
+
         if not targets:
             _err(
                 "alpha compare: no targets supplied "
                 "(pass alpha ids, or --all for every alpha, or --zoo X to filter)"
             )
             return 1
+        if len(targets) < 2:
+            _err(
+                f"alpha compare: need at least 2 alphas to compare "
+                f"(got {len(targets)}: {', '.join(targets)})"
+            )
+            return 1
 
-        _print(f"compare targets ({len(targets)}): {', '.join(targets)}")
-        _print(
-            "[yellow]alpha compare not yet implemented (W4)[/yellow]"
-            if _console
-            else "alpha compare not yet implemented (W4)"
+        sort_key = getattr(args, "sort", "ir") or "ir"
+        envelope = compare_alphas(
+            targets, args.universe, args.period, sort=sort_key, registry=reg
         )
-        print(json.dumps({"status": "stub", "targets": targets, "reason": "W4 not implemented"}, indent=2))
+        print(json.dumps(envelope, indent=2, default=str))
+
+        if envelope.get("status") != "ok":
+            _err(f"alpha compare: {envelope.get('error', 'comparison failed')}")
+            return 1
+
+        ranking = envelope["ranking"]
+        _render_compare_table(ranking, sort_key)
+        summary = (
+            f"✓ Compared {envelope['n_compared']} alphas — winner: {envelope['winner']} "
+            f"({sort_key}={ranking[0].get(sort_key, 0.0):.4f})"
+        )
+        if envelope["n_skipped"]:
+            summary += f"; {envelope['n_skipped']} skipped"
+        if _stderr_console is not None:
+            _stderr_console.print(summary, style="green")
+        else:
+            print(summary, file=sys.stderr)
         return 0
     except Exception as exc:  # noqa: BLE001
         return _handle_exception(args, "alpha compare failed", exc)
@@ -868,8 +924,8 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
         help="Skip the 'bench every alpha?' prompt when --zoo is omitted",
     )
 
-    p_compare = alpha_sub.add_parser("compare", help="Compare alphas (W4 stub)")
-    p_compare.add_argument("alpha_ids", nargs="*", help="Alpha ids to compare")
+    p_compare = alpha_sub.add_parser("compare", help="Compare alphas head-to-head")
+    p_compare.add_argument("alpha_ids", nargs="*", help="Alpha ids to compare (>= 2)")
     p_compare.add_argument(
         "--all",
         dest="compare_all",
@@ -880,6 +936,23 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
         "--zoo",
         default=None,
         help="Filter comparison to one zoo (e.g. alpha101)",
+    )
+    p_compare.add_argument(
+        "--universe",
+        default="csi300",
+        choices=_UNIVERSE_CHOICES,
+        help=f"Universe (default: csi300; one of {', '.join(_UNIVERSE_CHOICES)})",
+    )
+    p_compare.add_argument(
+        "--period",
+        default="2020-2025",
+        help="Period spec: YYYY-YYYY or YYYY-MM-DD/YYYY-MM-DD (e.g. 2020-2025)",
+    )
+    p_compare.add_argument(
+        "--sort",
+        default="ir",
+        choices=list(_COMPARE_SORT_KEYS),
+        help=f"Rank by which metric (default: ir; one of {', '.join(_COMPARE_SORT_KEYS)})",
     )
 
     p_export = alpha_sub.add_parser("export-manifest", help="Export registry manifest as JSON")

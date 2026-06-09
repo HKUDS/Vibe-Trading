@@ -1,7 +1,41 @@
 /** Chat message types */
 export type AgentMessageType =
   | "user" | "thinking" | "tool_call" | "tool_result"
-  | "answer" | "error" | "run_complete" | "compact";
+  | "answer" | "error" | "run_complete" | "compact" | "swarm_status";
+
+export type SwarmAgentDisplayStatus =
+  | "waiting"
+  | "running"
+  | "done"
+  | "failed"
+  | "blocked"
+  | "retry"
+  | "cancelled";
+
+export interface SwarmAgentStatus {
+  agentId: string;
+  taskId?: string;
+  role?: string;
+  status: SwarmAgentDisplayStatus;
+  tool?: string;
+  elapsed_s?: number;
+  iterations?: number;
+  startedAt?: number;
+  lastText?: string;
+  error?: string;
+  layer?: number;
+}
+
+export interface SwarmRunStatus {
+  runId: string;
+  preset: string;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled" | "unknown";
+  currentLayer: number;
+  totalLayers: number;
+  startedAt: number;
+  completedAt?: number;
+  agents: SwarmAgentStatus[];
+}
 
 export interface AgentMessage {
   id: string;
@@ -13,6 +47,8 @@ export interface AgentMessage {
   elapsed_ms?: number;
   timestamp: number;
   runId?: string;
+  swarmRunId?: string;
+  swarmStatus?: SwarmRunStatus;
   metrics?: Record<string, number>;
   equityCurve?: Array<{ time: string; equity: number | string }>;
   /** Phase label for thinking entries */

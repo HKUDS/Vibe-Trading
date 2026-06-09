@@ -7,7 +7,7 @@ Wraps a :class:`PromptSession` with:
       a plain Enter on a balanced buffer submits.
     * Ctrl+C with three-state semantics (clear buffer → exit hint → exit)
     * A surrogate-safe :class:`FileHistory` subclass for Windows users
-    * UTF-8 stdout reconfigure on Windows so the brand glyph ``⏺`` and the
+    * UTF-8 stdout reconfigure on Windows so the brand glyph ``●`` and the
       Rich box-drawing characters print without ``UnicodeEncodeError``
 
 Cancel-during-generation lives outside the input loop — that is owned by
@@ -18,6 +18,7 @@ editing* and *idle* states.
 from __future__ import annotations
 
 import sys
+import shutil
 import time
 from pathlib import Path
 from typing import Optional
@@ -26,6 +27,10 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.layout.containers import Window
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.dimension import Dimension
+from prompt_toolkit.styles import Style
 
 
 # Sentinel raised by the Ctrl+C path so the caller can distinguish
@@ -71,6 +76,32 @@ def _strip_surrogates(text: str) -> str:
 
 
 # ---------------------------------------------------------------- session ----
+
+
+class _VibePromptSession(PromptSession):
+    """PromptSession with a prompt-height that hugs the edited text."""
+
+    def _create_layout(self):  # type: ignore[no-untyped-def]
+        layout = super()._create_layout()
+        # prompt_toolkit's bottom_toolbar is a screen-bottom status bar. Insert
+        # our divider directly after the input container so it hugs the prompt.
+        layout.container.children.insert(1, _prompt_divider_window())
+        return layout
+
+    def _get_default_buffer_control_height(self) -> Dimension:  # type: ignore[override]
+        line_count = self.default_buffer.document.line_count
+        return Dimension.exact(max(1, line_count))
+
+
+def _prompt_divider_window() -> Window:
+    return Window(
+        FormattedTextControl(
+            lambda: FormattedText([("class:prompt-border", _prompt_rule())])
+        ),
+        height=1,
+        style="class:prompt-border",
+        dont_extend_height=True,
+    )
 
 
 def _force_utf8_stdout() -> None:
@@ -252,7 +283,7 @@ def make_session(history_path: Optional[Path] = None) -> PromptSession:
     from cli.completer import SlashCompleter
 
     ctrl_c_state = _CtrlCState()
-    session = PromptSession(
+    session = _VibePromptSession(
         history=SafeFileHistory(str(path)),
         completer=SlashCompleter(),
         complete_while_typing=True,
@@ -260,6 +291,13 @@ def make_session(history_path: Optional[Path] = None) -> PromptSession:
         enable_history_search=True,
         mouse_support=False,
         multiline=True,
+        reserve_space_for_menu=0,
+        style=Style.from_dict(
+            {
+                "prompt": "#258bff bold",
+                "prompt-border": "#4b5563",
+            }
+        ),
     )
     # Expose the state so the outer loop can implement two-press exit.
     setattr(session, "vibe_ctrl_c_state", ctrl_c_state)
@@ -270,7 +308,7 @@ def make_session(history_path: Optional[Path] = None) -> PromptSession:
 
 
 def get_user_input(
-    prompt_message: str = "> ",
+    prompt_message: str = "❯ ",
     *,
     session: Optional[PromptSession] = None,
 ) -> str:
@@ -284,8 +322,18 @@ def get_user_input(
         EOFError: When the user hits Ctrl+D, or Ctrl+C on an empty line.
     """
     sess = session or make_session()
-    formatted = FormattedText([("class:prompt", prompt_message)])
+    formatted = FormattedText(
+        [
+            ("class:prompt-border", _prompt_rule() + "\n"),
+            ("class:prompt", prompt_message),
+        ]
+    )
     return sess.prompt(formatted)
+
+
+def _prompt_rule() -> str:
+    cols = shutil.get_terminal_size((88, 24)).columns
+    return "─" * max(10, cols)
 
 
 def ctrl_c_within_window(session: PromptSession, window_sec: float = _EXIT_HINT_GAP_SEC) -> bool:

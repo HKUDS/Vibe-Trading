@@ -351,6 +351,20 @@ class BaseEngine(ABC):
 
         # 2. Generate signals
         signal_map = signal_engine.generate(data_map)
+        if not isinstance(signal_map, dict):
+            print(json.dumps({"error": (
+                f"SignalEngine.generate() must return Dict[str, pd.Series], "
+                f"got {type(signal_map).__name__}. "
+                "Return a dict mapping symbol codes to pandas Series of signals."
+            )}))
+            sys.exit(1)
+        for _code, _sig in signal_map.items():
+            if not isinstance(_sig, pd.Series):
+                print(json.dumps({"error": (
+                    f"SignalEngine.generate() returned {type(_sig).__name__} for '{_code}', "
+                    "expected pd.Series. Each value must be a pandas Series with DatetimeIndex."
+                )}))
+                sys.exit(1)
         valid_codes = sorted(c for c in signal_map if c in data_map)
         if not valid_codes:
             print(json.dumps({"error": "No valid signals generated"}))

@@ -1,24 +1,9 @@
 import { useRef, type JSX } from "react";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useI18n } from "@/lib/i18n";
 import { ProgressBar } from "@/components/chat/ProgressBar";
 import { localizeToolName } from "@/lib/tools";
 import type { ToolCallEntry } from "@/types/agent";
-
-/**
- * Resolve a tool name to its user-facing label via the active i18n bundle.
- * Mirrors the pattern in ThinkingTimeline.tsx (`toolLabel`): localizeToolName
- * returns an i18n key when one is mapped, otherwise the raw tool name.
- */
-function useLocalizedToolName(): (tool: string) => string {
-  const { t } = useI18n();
-  return (tool: string) => {
-    const key = localizeToolName(tool);
-    if (key === tool) return tool;
-    return (t as Record<string, string>)[key] || tool;
-  };
-}
 
 /* ---------- ETA tracking (per-tool) ---------- */
 interface EtaSample {
@@ -80,7 +65,6 @@ interface RowProps {
 }
 
 function ToolRow({ entry, stepIndex, totalSteps, isHeader, connector = "none", eta }: RowProps): JSX.Element {
-  const localizeName = useLocalizedToolName();
   const progress = entry.progress;
   const hasDeterminate = !!(progress && typeof progress.current === "number" && typeof progress.total === "number" && progress.total > 0);
   const stage = progress?.stage || "";
@@ -94,7 +78,7 @@ function ToolRow({ entry, stepIndex, totalSteps, isHeader, connector = "none", e
         ? <ProgressRing current={progress!.current!} total={progress!.total!} />
         : <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />;
 
-  const localized = localizeName(entry.tool);
+  const localized = localizeToolName(entry.tool);
   const stepLabel = isHeader
     ? `${totalSteps} tools running`
     : `Step ${stepIndex} · ${localized}`;

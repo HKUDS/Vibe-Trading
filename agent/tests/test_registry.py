@@ -124,6 +124,13 @@ class TestFallbackChains:
         for market, chain in FALLBACK_CHAINS.items():
             assert len(chain) > 0, f"Fallback chain for {market} is empty"
 
+    def test_crypto_chain_includes_yfinance_fallback(self) -> None:
+        """yfinance is the third-tier fallback for crypto when OKX and CCXT fail."""
+        assert "yfinance" in FALLBACK_CHAINS["crypto"]
+        # OKX and CCXT should still be preferred
+        assert FALLBACK_CHAINS["crypto"][:2] == ["okx", "ccxt"]
+        assert FALLBACK_CHAINS["crypto"][-1] == "yfinance"
+
 
 # ---------------------------------------------------------------------------
 # resolve_loader
