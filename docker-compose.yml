@@ -8,10 +8,13 @@ services:
     environment:
       - VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1
       # Ollama runs on the host; from inside the container "localhost" is the
-      # container itself, so reach the host via host.docker.internal instead.
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # container itself, so default to reaching the host via host.docker.internal.
+      # Override by exporting OLLAMA_BASE_URL (or setting it in a top-level .env)
+      # when Ollama runs elsewhere or on a different port.
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     extra_hosts:
       # Maps host.docker.internal -> host gateway (needed on Linux; harmless on Docker Desktop).
+      # Requires Docker Engine >= 20.10 / Compose v2 (host-gateway support).
       - "host.docker.internal:host-gateway"
     volumes:
       - vibe-runs:/app/agent/runs
