@@ -265,6 +265,52 @@ Detailed inventories are folded below to keep the main README scannable. Open th
 </details>
 
 <details>
+<summary><b>Custom Data Source</b> <sub>register your own historical OHLCV loader</sub></summary>
+
+Need a market or vendor we don't ship a loader for? Add your own historical-bar
+loader and select it with `source="<name>"`. The steps edit package source, so
+run from a clone (`pip install -e .`).
+
+1. **Write the loader** — create `agent/backtest/loaders/<name>_loader.py` with a
+   class that satisfies `DataLoaderProtocol` (duck-typed, no base class needed)
+   and is tagged with `@register`:
+
+   ```python
+   import pandas as pd
+   from backtest.loaders.registry import register
+
+   @register
+   class DataLoader:
+       name = "mysource"            # the value you pass as source=
+       markets = {"us_equity"}      # a_share/us_equity/hk_equity/crypto/futures/fund/macro/forex
+       requires_auth = False
+
+       def is_available(self) -> bool:
+           return True              # token present? network reachable?
+
+       def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+           # return {symbol: DataFrame indexed by trade_date,
+           #         columns: open, high, low, close, volume}
+           ...
+   ```
+
+2. **Register the module** so `@register` fires — add
+   `"backtest.loaders.<name>_loader"` to `_loader_modules` in
+   `agent/backtest/loaders/registry.py`.
+3. **Allow the name** through config validation — add `"mysource"` to
+   `_VALID_SOURCES` in `agent/backtest/runner.py`.
+4. *(Optional)* slot it into a market's `FALLBACK_CHAINS` in `registry.py` so
+   `source="auto"` can reach it.
+5. **Use it** — `source="mysource"` in a backtest config, or via the CLI / agent.
+
+> **Real-time ticks / order-book depth are out of scope for loaders** — the
+> loader layer is point-in-time historical bars only. Live market data flows
+> through the broker connectors instead: `okx` / `binance` / `ccxt` for crypto,
+> `futu` / `tiger` for equities.
+
+</details>
+
+<details>
 <summary><b>Preset Trading Teams</b> <sub>29 swarm presets</sub></summary>
 
 - 🏢 29 ready-to-use agent teams

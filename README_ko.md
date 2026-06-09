@@ -266,6 +266,50 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 </details>
 
 <details>
+<summary><b>커스텀 데이터 소스</b> <sub>직접 만든 과거 OHLCV loader 등록</sub></summary>
+
+loader를 기본 제공하지 않는 시장이나 벤더가 필요하신가요? 직접 과거 봉 loader를
+추가하고 `source="<name>"`으로 선택하세요. 아래 단계는 패키지 소스를 수정하므로
+clone에서 실행하세요(`pip install -e .`).
+
+1. **loader 작성** —— `agent/backtest/loaders/<name>_loader.py`를 만들고
+   `DataLoaderProtocol`을 만족하는 클래스(duck-typed, 기반 클래스 불필요)를 정의한 뒤
+   `@register`를 붙입니다:
+
+   ```python
+   import pandas as pd
+   from backtest.loaders.registry import register
+
+   @register
+   class DataLoader:
+       name = "mysource"            # the value you pass as source=
+       markets = {"us_equity"}      # a_share/us_equity/hk_equity/crypto/futures/fund/macro/forex
+       requires_auth = False
+
+       def is_available(self) -> bool:
+           return True              # token present? network reachable?
+
+       def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+           # return {symbol: DataFrame indexed by trade_date,
+           #         columns: open, high, low, close, volume}
+           ...
+   ```
+
+2. **모듈 등록** 으로 `@register`가 실행되게 —— `agent/backtest/loaders/registry.py`의
+   `_loader_modules`에 `"backtest.loaders.<name>_loader"`를 추가합니다.
+3. **이름 허용** 으로 설정 검증 통과 —— `agent/backtest/runner.py`의
+   `_VALID_SOURCES`에 `"mysource"`를 추가합니다.
+4. *(선택)* `registry.py`의 특정 시장 `FALLBACK_CHAINS`에 넣으면
+   `source="auto"`로도 도달할 수 있습니다.
+5. **사용** —— 백테스트 설정에서 `source="mysource"`, 또는 CLI / agent를 통해.
+
+> **실시간 ticks / 호가창 depth는 loader 범위 밖입니다** —— loader 계층은
+> point-in-time 과거 봉만 다룹니다. 실시간 시장 데이터는 broker connector를
+> 통합니다: 암호화폐는 `okx` / `binance` / `ccxt`, 주식은 `futu` / `tiger`.
+
+</details>
+
+<details>
 <summary><b>프리셋 트레이딩 팀</b> <sub>29개 swarm preset</sub></summary>
 
 - 🏢 바로 사용할 수 있는 29개 에이전트 팀

@@ -266,6 +266,50 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 </details>
 
 <details>
+<summary><b>مصدر بيانات مخصص</b> <sub>سجّل loader تاريخيًا خاصًا بك لبيانات OHLCV</sub></summary>
+
+تحتاج إلى سوق أو مزوّد لا نوفّر له loader جاهزًا؟ أضِف loader تاريخيًا خاصًا بك
+واخترْه عبر `source="<name>"`. الخطوات التالية تعدّل مصدر الحزمة، لذا شغّلها من
+نسخة clone (`pip install -e .`).
+
+1. **اكتب الـ loader** —— أنشئ `agent/backtest/loaders/<name>_loader.py` مع صنف
+   يحقّق `DataLoaderProtocol` (duck-typed، دون صنف أساس) ووسمه بـ `@register`:
+
+   ```python
+   import pandas as pd
+   from backtest.loaders.registry import register
+
+   @register
+   class DataLoader:
+       name = "mysource"            # the value you pass as source=
+       markets = {"us_equity"}      # a_share/us_equity/hk_equity/crypto/futures/fund/macro/forex
+       requires_auth = False
+
+       def is_available(self) -> bool:
+           return True              # token present? network reachable?
+
+       def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+           # return {symbol: DataFrame indexed by trade_date,
+           #         columns: open, high, low, close, volume}
+           ...
+   ```
+
+2. **سجّل الوحدة** كي يعمل `@register` —— أضِف `"backtest.loaders.<name>_loader"`
+   إلى `_loader_modules` في `agent/backtest/loaders/registry.py`.
+3. **اسمح بالاسم** ليجتاز التحقق من الإعدادات —— أضِف `"mysource"` إلى
+   `_VALID_SOURCES` في `agent/backtest/runner.py`.
+4. *(اختياري)* أدرِجه ضمن `FALLBACK_CHAINS` لأحد الأسواق في `registry.py` كي
+   يصل إليه `source="auto"`.
+5. **استخدمه** —— `source="mysource"` في إعداد الباك-تست، أو عبر CLI / agent.
+
+> **بيانات الـ ticks اللحظية / عمق دفتر الأوامر خارج نطاق الـ loaders** —— طبقة
+> الـ loader تتعامل فقط مع الأشرطة التاريخية point-in-time. تتدفق بيانات السوق
+> اللحظية عبر broker connectors بدلًا من ذلك: `okx` / `binance` / `ccxt`
+> للعملات المشفّرة، و`futu` / `tiger` للأسهم.
+
+</details>
+
+<details>
 <summary><b>فرق تداول جاهزة</b> <sub>29 إعداد سرب مسبق</sub></summary>
 
 - 🏢 29 فريق وكلاء جاهزاً للاستخدام

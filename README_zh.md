@@ -265,6 +265,48 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 </details>
 
 <details>
+<summary><b>自定义数据源</b> <sub>注册你自己的历史 OHLCV loader</sub></summary>
+
+需要一个我们没有内置 loader 的市场或数据商？自己加一个历史 K 线 loader，用
+`source="<name>"` 选用即可。以下步骤会改动包源码，请从 clone 运行（`pip install -e .`）。
+
+1. **编写 loader** —— 新建 `agent/backtest/loaders/<name>_loader.py`，写一个满足
+   `DataLoaderProtocol` 的类（duck-typed，无需基类），并打上 `@register`：
+
+   ```python
+   import pandas as pd
+   from backtest.loaders.registry import register
+
+   @register
+   class DataLoader:
+       name = "mysource"            # the value you pass as source=
+       markets = {"us_equity"}      # a_share/us_equity/hk_equity/crypto/futures/fund/macro/forex
+       requires_auth = False
+
+       def is_available(self) -> bool:
+           return True              # token present? network reachable?
+
+       def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+           # return {symbol: DataFrame indexed by trade_date,
+           #         columns: open, high, low, close, volume}
+           ...
+   ```
+
+2. **注册模块** 让 `@register` 生效 —— 把 `"backtest.loaders.<name>_loader"` 加进
+   `agent/backtest/loaders/registry.py` 的 `_loader_modules`。
+3. **放行名称** 通过配置校验 —— 把 `"mysource"` 加进 `agent/backtest/runner.py`
+   的 `_VALID_SOURCES`。
+4. *（可选）* 把它放进 `registry.py` 中某个市场的 `FALLBACK_CHAINS`，让
+   `source="auto"` 也能命中它。
+5. **使用** —— 在回测配置里写 `source="mysource"`，或经 CLI / agent 调用。
+
+> **实时 ticks / 盘口深度不在 loader 范围内** —— loader 层只负责 point-in-time
+> 历史 K 线。实时行情走 broker connector：加密用 `okx` / `binance` / `ccxt`，
+> 股票用 `futu` / `tiger`。
+
+</details>
+
+<details>
 <summary><b>Preset Trading Teams</b> <sub>29 个 swarm presets</sub></summary>
 
 - 🏢 29 个开箱即用的智能体团队

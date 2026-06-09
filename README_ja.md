@@ -266,6 +266,50 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 </details>
 
 <details>
+<summary><b>カスタムデータソース</b> <sub>独自の過去 OHLCV loader を登録</sub></summary>
+
+loader を同梱していない市場やベンダーが必要ですか？独自の過去バー loader を追加し、
+`source="<name>"` で選択できます。以下の手順はパッケージのソースを編集するため、
+clone から実行してください（`pip install -e .`）。
+
+1. **loader を書く** —— `agent/backtest/loaders/<name>_loader.py` を作成し、
+   `DataLoaderProtocol` を満たすクラス（duck-typed、基底クラス不要）を定義して
+   `@register` を付けます：
+
+   ```python
+   import pandas as pd
+   from backtest.loaders.registry import register
+
+   @register
+   class DataLoader:
+       name = "mysource"            # the value you pass as source=
+       markets = {"us_equity"}      # a_share/us_equity/hk_equity/crypto/futures/fund/macro/forex
+       requires_auth = False
+
+       def is_available(self) -> bool:
+           return True              # token present? network reachable?
+
+       def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+           # return {symbol: DataFrame indexed by trade_date,
+           #         columns: open, high, low, close, volume}
+           ...
+   ```
+
+2. **モジュールを登録** して `@register` を発火させる —— `agent/backtest/loaders/registry.py`
+   の `_loader_modules` に `"backtest.loaders.<name>_loader"` を追加します。
+3. **名前を許可** して設定バリデーションを通す —— `agent/backtest/runner.py` の
+   `_VALID_SOURCES` に `"mysource"` を追加します。
+4. *（任意）* `registry.py` のある市場の `FALLBACK_CHAINS` に組み込むと、
+   `source="auto"` からも到達できます。
+5. **使う** —— バックテスト設定で `source="mysource"`、または CLI / agent 経由で。
+
+> **リアルタイムの ticks / 板情報（depth）は loader の対象外です** —— loader 層は
+> point-in-time の過去バーのみを扱います。リアルタイム市場データは broker connector
+> を通します：暗号資産は `okx` / `binance` / `ccxt`、株式は `futu` / `tiger`。
+
+</details>
+
+<details>
 <summary><b>Preset Trading Teams</b> <sub>29 swarm presets</sub></summary>
 
 - 🏢 すぐ使える 29 の agent teams
