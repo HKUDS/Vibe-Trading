@@ -4,7 +4,7 @@ import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, 
 import { toast } from "sonner";
 import { useAgentStore } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
-import { ApiError, api, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LiveStatus } from "@/lib/api";
+import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LiveStatus } from "@/lib/api";
 import { isReportWorthyRun } from "@/lib/runReports";
 import type { AgentMessage, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
@@ -828,10 +828,11 @@ export function Agent() {
       }
       setupSSE(sid);
       await api.sendMessage(sid, finalPrompt);
-    } catch {
+    } catch (error) {
       act().setStatus("error");
-      toast.error("Failed to send message, please retry.");
-      act().addMessage({ id: "", type: "error", content: "Failed to send message, please retry.", timestamp: Date.now() });
+      const message = isAuthRequiredError(error) ? AUTH_REQUIRED_MESSAGE : "Failed to send message, please retry.";
+      toast.error(message);
+      act().addMessage({ id: "", type: "error", content: message, timestamp: Date.now() });
     }
   };
 
@@ -937,10 +938,11 @@ export function Agent() {
     try {
       setupSSE(sessionId);
       await api.sendMessage(sessionId, prompt);
-    } catch {
+    } catch (error) {
       act().setStatus("error");
-      toast.error("Failed to continue goal, please retry.");
-      act().addMessage({ id: "", type: "error", content: "Failed to continue goal, please retry.", timestamp: Date.now() });
+      const message = isAuthRequiredError(error) ? AUTH_REQUIRED_MESSAGE : "Failed to continue goal, please retry.";
+      toast.error(message);
+      act().addMessage({ id: "", type: "error", content: message, timestamp: Date.now() });
     }
   }, [forceScrollToBottom, goalSnapshot, sessionId, setupSSE, status]);
 
