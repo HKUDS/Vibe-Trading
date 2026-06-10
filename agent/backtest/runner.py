@@ -62,6 +62,7 @@ class BacktestConfigSchema(BaseModel):
     interval: str = "1D"
     engine: str = "daily"
     fundamental_fields: Optional[Dict[str, List[str]]] = None
+    event_feeds: Optional[List[str]] = None
 
     @field_validator("codes")
     @classmethod
@@ -115,6 +116,15 @@ class BacktestConfigSchema(BaseModel):
                 raise ValueError("fundamental_fields table names must be non-empty strings")
             if any(not field.strip() for field in fields):
                 raise ValueError("fundamental_fields field names must be non-empty strings")
+        return v
+
+    @field_validator("event_feeds")
+    @classmethod
+    def valid_event_feeds(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is None:
+            return v
+        if any(not feed.strip() for feed in v):
+            raise ValueError("event_feeds must not contain empty feed names")
         return v
 
     @model_validator(mode="after")

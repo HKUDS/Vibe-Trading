@@ -20,6 +20,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 
+from backtest.loaders.rsshub_events import (
+    RSSHubEventProvider,
+    enrich_price_frames_with_events,
+)
 from backtest.loaders.tushare_fundamentals import (
     TushareFundamentalProvider,
     enrich_price_frames_with_fundamentals,
@@ -202,6 +206,49 @@ def _maybe_enrich_fundamentals(
         ) from exc
 
 
+def _normalise_event_feeds(config: Dict[str, Any]) -> list[str]:
+    """Read the optional RSSHub feed-name list from backtest config."""
+    raw_feeds = config.get("event_feeds")
+    if raw_feeds in (None, [], {}):
+        return []
+    if isinstance(raw_feeds, str):
+        raw_feeds = [raw_feeds]
+    if not isinstance(raw_feeds, Iterable):
+        raise ValueError("event_feeds must be a list of RSSHub feed names")
+
+    feeds = [str(feed).strip() for feed in raw_feeds]
+    if any(not feed for feed in feeds):
+        raise ValueError("event_feeds must not contain empty feed names")
+    return feeds
+
+
+def _maybe_enrich_events(
+    data_map: Dict[str, pd.DataFrame],
+    config: Dict[str, Any],
+) -> Dict[str, pd.DataFrame]:
+    """Attach a point-in-time-safe ``event_score`` column before signal generation."""
+    feeds = _normalise_event_feeds(config)
+    if not feeds:
+        return data_map
+
+    try:
+        provider = RSSHubEventProvider()
+        if not provider.is_available():
+            raise RuntimeError(f"RSSHub base URL not configured (set ${'RSSHUB_BASE_URL'})")
+        return enrich_price_frames_with_events(
+            data_map,
+            provider,
+            as_of=config.get("end_date", ""),
+            feeds=feeds,
+            decay_lambda=float(config.get("event_decay_lambda", 0.1)),
+            lookback=int(config.get("event_lookback", 30)),
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            f"event_feeds requested but RSSHub enrichment failed: {exc}"
+        ) from exc
+
+
 # ─── Base Engine ───
 
 
@@ -348,6 +395,7 @@ class BaseEngine(ABC):
             print(json.dumps({"error": "No data fetched"}))
             sys.exit(1)
         data_map = _maybe_enrich_fundamentals(data_map, config)
+        data_map = _maybe_enrich_events(data_map, config)
 
         # 2. Generate signals
         signal_map = signal_engine.generate(data_map)
