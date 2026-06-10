@@ -1392,9 +1392,17 @@ def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: boo
 
 
 def _build_history_from_trace(run_dir: Path) -> List[Dict[str, str]]:
-    """Build conversation history from trace.jsonl."""
+    """Build conversation history from trace.jsonl.
+
+    Checks sessions/<run_id>/ first (new location), then falls back to
+    runs/<run_id>/ (legacy location).
+    """
     from src.agent.trace import TraceWriter
-    entries = TraceWriter.read(run_dir)
+
+    trace_dir = TraceWriter.find_trace_dir(run_dir.name, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR)
+    if trace_dir is None or not (trace_dir / "trace.jsonl").exists():
+        return []
+    entries = TraceWriter.read(trace_dir)
     history: List[Dict[str, str]] = []
     for e in entries:
         if e.get("type") == "start" and e.get("prompt"):
@@ -1414,12 +1422,17 @@ def cmd_continue(
 ) -> int:
     """Continue an existing run."""
     run_dir = RUNS_DIR / run_id
-    if not run_dir.exists():
+    session_trace_dir = SESSIONS_DIR / run_id
+    if not run_dir.exists() and not session_trace_dir.exists():
         if no_rich:
             print(f"Run {run_id} not found")
             return EXIT_USAGE_ERROR
         console.print(f"[red]Run {run_id} not found[/red]")
         return EXIT_USAGE_ERROR
+
+    # Ensure run_dir exists (for artifact storage) even if trace is in sessions/
+    if not run_dir.exists():
+        run_dir.mkdir(parents=True, exist_ok=True)
 
     history = _build_history_from_trace(run_dir)
     if not json_mode and no_rich:
@@ -2222,7 +2235,8 @@ def cmd_show(run_id: str) -> None:
         lines.extend(f"  {k}: {v}" for k, v in metrics.items())
 
     from src.agent.trace import TraceWriter
-    entries = TraceWriter.read(run_dir)
+    trace_dir = TraceWriter.find_trace_dir(run_id, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR)
+    entries = TraceWriter.read(trace_dir) if trace_dir else []
     answers = [e["content"] for e in entries if e.get("type") == "answer" and e.get("content")]
     if answers:
         summary = answers[-1][:200]
@@ -2281,12 +2295,12 @@ def cmd_trace(run_id: str) -> None:
     """Replay trace.jsonl to show full execution."""
     from src.agent.trace import TraceWriter
 
-    run_dir = RUNS_DIR / run_id
-    if not run_dir.exists():
-        console.print(f"[red]{run_id} not found[/red]")
+    trace_dir = TraceWriter.find_trace_dir(run_id, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR)
+    if trace_dir is None or not (trace_dir / "trace.jsonl").exists():
+        console.print(f"[red]{run_id}/trace.jsonl not found[/red]")
         return
 
-    entries = TraceWriter.read(run_dir)
+    entries = TraceWriter.read(trace_dir)
     if not entries:
         console.print(f"[red]{run_id}/trace.jsonl is empty or missing[/red]")
         return
@@ -2317,13 +2331,21 @@ def cmd_trace(run_id: str) -> None:
             ok = status == "ok"
             mark = "\u2713" if ok else "\u2717"
             color = "green" if ok else "red"
-            preview = entry.get("preview", "")[:80]
-            console.print(f"[dim]{ts_str}[/dim] {iter_tag}[{color}]{mark} {tool}[/{color}] [dim]{elapsed}ms[/dim]  {preview}")
+            # New format: result (inline) or result_preview (offloaded)
+            preview = (entry.get("result_preview") or entry.get("result") or "")[:80]
+            offloaded = "result_path" in entry
+            size_hint = f" [{entry.get('result_size', 0)//1024}K offloaded]" if offloaded else ""
+            console.print(f"[dim]{ts_str}[/dim] {iter_tag}[{color}]{mark} {tool}[/{color}] [dim]{elapsed}ms[/dim]  {preview}{size_hint}")
         elif etype == "tool_skipped":
             console.print(f"[dim]{ts_str}[/dim] {iter_tag}[yellow]\u2298 {entry.get('tool', '')} (skipped)[/yellow]")
+        elif etype == "message":
+            role = entry.get("role", "?")
+            content = entry.get("content", "")
+            role_color = "cyan" if role == "user" else "green"
+            console.print(f"\n[dim]{ts_str}[/dim] {iter_tag}[bold {role_color}]{role.upper()}[/bold {role_color}] {content[:120]}")
         elif etype == "answer":
             content = entry.get("content", "")
-            console.print(f"\n[dim]{ts_str}[/dim] {iter_tag}[bold green]ANSWER[/bold green]\n{content[:500]}")
+            console.print(f"\n[dim]{ts_str}[/dim] {iter_tag}[bold green]ANSWER[/bold green]\n{content}")
         elif etype == "end":
             status = entry.get("status", "?")
             iters = entry.get("iterations", "?")

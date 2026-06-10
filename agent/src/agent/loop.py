@@ -37,6 +37,7 @@ from src.providers.chat import ChatLLM
 from src.tools.background_tools import get_background_manager
 
 RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
+SESSIONS_DIR = Path(__file__).resolve().parents[2] / "sessions"
 TOKEN_THRESHOLD = int(os.getenv("TOKEN_THRESHOLD", "40000"))
 KEEP_RECENT = 3
 TOOL_RESULT_LIMIT = 10_000
@@ -389,8 +390,15 @@ class AgentLoop:
         messages = context.build_messages(llm_user_message, history)
         react_trace: List[Dict[str, Any]] = []
 
-        trace = TraceWriter(run_dir)
-        trace.write({"type": "start", "prompt": user_message[:500]})
+        # Trace location: sessions/<session_id>/ when session_id is valid,
+        # otherwise falls back to runs/<run_dir>/ for one-off -p mode.
+        if session_id:
+            trace_dir = SESSIONS_DIR / session_id
+        else:
+            trace_dir = run_dir
+        trace = TraceWriter(trace_dir)
+        trace.write({"type": "start", "prompt": user_message})
+        trace.write({"type": "message", "role": "user", "content": user_message})
 
         iteration = 0
         final_content = ""
@@ -505,7 +513,7 @@ class AgentLoop:
 
                 thinking_text = "".join(thinking_chunks)
                 if thinking_text:
-                    trace.write({"type": "thinking", "iter": iteration, "content": thinking_text[:2000]})
+                    trace.write({"type": "thinking", "iter": iteration, "content": thinking_text})
                     self._emit("thinking_done", {"iter": iteration, "content": thinking_text[:500]})
 
                 if not response.has_tool_calls:
@@ -550,10 +558,11 @@ class AgentLoop:
                                     "type": "goal_intermediate_answer",
                                     "iter": iteration,
                                     "goal_id": active_goal_id,
-                                    "content": final_content[:2000],
+                                    "content": final_content,
                                     "progress": current_progress,
                                 }
                             )
+                            trace.write({"type": "message", "role": "assistant", "content": final_content})
                             react_trace.append(
                                 {"type": "goal_intermediate_answer", "content": final_content[:500]}
                             )
@@ -571,7 +580,8 @@ class AgentLoop:
                             goal_continuations += 1
                             continue
 
-                    trace.write({"type": "answer", "iter": iteration, "content": final_content[:2000]})
+                    trace.write({"type": "answer", "iter": iteration, "content": final_content})
+                    trace.write({"type": "message", "role": "assistant", "content": final_content})
                     react_trace.append({"type": "answer", "content": final_content[:500]})
                     break
 
@@ -777,7 +787,7 @@ class AgentLoop:
         for tc in tool_calls:
             args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
             self._emit("tool_call", {"tool": tc.name, "arguments": {k: str(v)[:200] for k, v in args.items()}, "iter": iteration})
-            trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": {k: str(v)[:200] for k, v in args.items()}})
+            trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": {k: str(v) for k, v in args.items()}})
             runnable.append((tc, args))
 
         # Execute in parallel — each worker gets its own heartbeat + progress emitter.
@@ -822,7 +832,7 @@ class AgentLoop:
         args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
 
         self._emit("tool_call", {"tool": tc.name, "arguments": {k: str(v)[:200] for k, v in args.items()}, "iter": iteration})
-        trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": {k: str(v)[:200] for k, v in args.items()}})
+        trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": {k: str(v) for k, v in args.items()}})
         logger.info(f"Tool call: {tc.name}({list(args.keys())})")
 
         result, elapsed_ms = self._invoke_tool(tc.name, args)
@@ -901,7 +911,14 @@ class AgentLoop:
         truncated = result[:TOOL_RESULT_LIMIT]
         messages.append(context.format_tool_result(tc.id, tc.name, truncated))
 
-        trace.write({"type": "tool_result", "iter": iteration, "tool": tc.name, "call_id": tc.id, "status": status, "elapsed_ms": elapsed_ms, "preview": result[:200]})
+        trace.write_tool_result(
+            call_id=tc.id,
+            result=result,
+            tool_name=tc.name,
+            status=status,
+            elapsed_ms=elapsed_ms,
+            iteration=iteration,
+        )
         react_trace.append({"type": "tool_call", "tool": tc.name, "result_preview": result[:200]})
         self._emit("tool_result", {"tool": tc.name, "status": status, "elapsed_ms": elapsed_ms, "preview": result[:200]})
 
@@ -924,8 +941,9 @@ class AgentLoop:
             trace: TraceWriter.
             focus_topic: Optional topic to prioritize in the summary.
         """
-        # Save full transcript before compressing
-        transcript_path = run_dir / f"transcript_{int(_time.time())}.jsonl"
+        # Save full transcript before compressing (uses trace dir so session-based
+        # runs store transcripts alongside trace.jsonl)
+        transcript_path = trace.dir_path / f"transcript_{int(_time.time())}.jsonl"
         with open(transcript_path, "w", encoding="utf-8") as f:
             for msg in messages:
                 f.write(json.dumps(msg, default=str, ensure_ascii=False) + "\n")
@@ -982,7 +1000,7 @@ class AgentLoop:
         self._previous_summary = summary
 
         tokens_before = estimate_tokens(messages)
-        trace.write({"type": "compact", "tokens_before": tokens_before, "summary": summary[:500],
+        trace.write({"type": "compact", "tokens_before": tokens_before, "summary": summary,
                       "focus_topic": focus_topic or "(none)"})
         self._emit("compact", {"tokens_before": tokens_before, "summary": summary[:200]})
 
