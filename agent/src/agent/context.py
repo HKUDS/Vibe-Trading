@@ -43,7 +43,9 @@ Decide which workflow to use based on the request:
 5. Do NOT write run_backtest.py. The engine is built-in.
 
 **Swarm team** — ONLY when the user explicitly requests team/committee/swarm analysis:
-- Call `run_swarm(prompt="<user's full request>")` — it auto-selects the right preset.
+- Call `run_swarm(prompt="<user's full request>", preset_name="<explicit preset>")` when the user names a preset/team, e.g. `investment_committee`.
+- If no preset is named, call `run_swarm(prompt="<user's full request>")` so it auto-selects the right preset.
+- For follow-up wording like "continue", "finish the report", or "continue from ...", do NOT start a fresh swarm from that fragment. Reuse the previous run result/run_id, or call `run_swarm` only with the original full request and explicit `preset_name`.
 - Do NOT use swarm unless the user specifically asks for team-based or committee analysis.
 
 **Analysis / research** — user wants factor analysis, options pricing, market data, or general research:
