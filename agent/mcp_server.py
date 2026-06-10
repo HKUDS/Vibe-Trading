@@ -32,9 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -45,6 +43,13 @@ if str(AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(AGENT_DIR))
 
 from fastmcp import Context, FastMCP
+from src.market_data import (
+    DEFAULT_MAX_ROWS,
+    cap_rows,
+    detect_source,
+    fetch_market_data_json,
+    get_loader,
+)
 
 mcp = FastMCP("Vibe-Trading")
 
@@ -994,29 +999,13 @@ async def run_swarm(
 # Market data tool
 # ---------------------------------------------------------------------------
 
-DEFAULT_MAX_ROWS = 250
-
-_SOURCE_PATTERNS = [
-    (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "tushare"),
-    (re.compile(r"^[A-Z]+\.US$", re.I), "yfinance"),
-    (re.compile(r"^\d{3,5}\.HK$", re.I), "yfinance"),
-    (re.compile(r"^[A-Z]+-USDT$", re.I), "okx"),
-    (re.compile(r"^[A-Z]+/USDT$", re.I), "ccxt"),
-]
-
-
 def _detect_source(code: str) -> str:
-    for pattern, source in _SOURCE_PATTERNS:
-        if pattern.match(code):
-            return source
-    return "tushare"
+    return detect_source(code)
 
 
 def _get_loader(source: str):
     """Get loader class via registry with fallback support."""
-    from backtest.loaders.registry import get_loader_cls_with_fallback
-
-    return get_loader_cls_with_fallback(source)
+    return get_loader(source)
 
 
 def _cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
@@ -1030,23 +1019,7 @@ def _cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
     cap are returned unchanged (plain list) — small queries are
     byte-identical.
     """
-    n = len(records)
-    if max_rows < 0:
-        max_rows = DEFAULT_MAX_ROWS  # negative invalid -> enforce cap, never unbounded
-    if max_rows == 0 or n <= max_rows:
-        return records
-    step = math.ceil(n / max_rows)
-    sampled = records[::step]
-    if sampled[-1] is not records[-1]:
-        sampled = sampled + [records[-1]]
-    return {
-        "rows": n,
-        "returned": len(sampled),
-        "truncated": True,
-        "policy": f"every-{step}th-row (even stride; last bar pinned)",
-        "hint": "narrow the date range, coarsen interval, or set max_rows=0 for all rows",
-        "data": sampled,
-    }
+    return cap_rows(records, max_rows)
 
 
 @mcp.tool
@@ -1080,47 +1053,15 @@ def get_market_data(
             plus truncation metadata. Set max_rows=0 for all rows
             (unbounded, legacy behavior).
     """
-    results = {}
-
-    if source == "auto":
-        groups: dict[str, list[str]] = {}
-        for code in codes:
-            src = _detect_source(code)
-            groups.setdefault(src, []).append(code)
-    else:
-        groups = {source: list(codes)}
-
-    for src, src_codes in groups.items():
-        loader_cls = _get_loader(src)
-        loader = loader_cls()
-        try:
-            data_map = loader.fetch(src_codes, start_date, end_date, interval=interval)
-        except Exception:
-            # A loader blow-up for one group must not lose already-resolved
-            # symbols or surface as an opaque MCP error; those codes fall
-            # through to _unresolved below (P05).
-            logger.exception("market-data loader %r failed for %s; codes fall through to _unresolved", src, src_codes)
-            data_map = {}
-        for symbol, df in data_map.items():
-            records = df.reset_index().to_dict(orient="records")
-            for r in records:
-                for k, v in r.items():
-                    if hasattr(v, "isoformat"):
-                        r[k] = v.isoformat()
-                    elif hasattr(v, "item"):
-                        r[k] = v.item()
-            results[symbol] = _cap_rows(records, max_rows)
-
-    # P05: a typo / wrong-suffix / delisted / no-data symbol used to vanish
-    # silently (the dict only held winners), indistinguishable from "no data".
-    # Surface every requested code that produced nothing under a reserved key.
-    # Additive: omitted entirely when all codes resolved, so the happy-path
-    # payload is byte-identical to before.
-    unresolved = [c for c in codes if c not in results]
-    if unresolved:
-        results["_unresolved"] = unresolved
-
-    return json.dumps(results, ensure_ascii=False, indent=2)
+    return fetch_market_data_json(
+        codes=codes,
+        start_date=start_date,
+        end_date=end_date,
+        source=source,
+        interval=interval,
+        max_rows=max_rows,
+        loader_resolver=_get_loader,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -11,22 +11,32 @@ yfinance is an open-source Python wrapper for Yahoo Finance, providing global ma
 
 The project has a built-in yfinance DataLoader (`backtest/loaders/yfinance_loader.py`). When backtesting, set `source: "yfinance"` or `source: "auto"` to invoke it automatically.
 
+For OHLCV bars in agent/swarm work, prefer the `get_market_data` tool when it is available. It routes through the project loader layer, normalizes symbols, removes malformed OHLC rows, and returns strict JSON. Use direct `yfinance` calls mainly for data outside OHLCV coverage such as company info, financial statements, options, holders, and insider transactions.
+
 ## Quick Start
 
-```bash
-pip install yfinance pandas
+Preferred OHLCV tool call:
+
+```json
+{
+  "codes": ["AAPL.US", "700.HK"],
+  "start_date": "2025-01-01",
+  "end_date": "2026-01-01",
+  "source": "yfinance",
+  "interval": "1D"
+}
 ```
 
+If you must write a Python script for OHLCV, use the DataLoader instead of raw `yf.download`:
+
 ```python
-import yfinance as yf
+from backtest.loaders.registry import get_loader_cls_with_fallback
 
-# Apple daily bars for the past year
-df = yf.download("AAPL", start="2025-01-01", end="2026-01-01", progress=False)
-print(df.head())
+loader = get_loader_cls_with_fallback("yfinance")()
+data = loader.fetch(["AAPL.US", "700.HK"], "2025-01-01", "2026-01-01", interval="1D")
 
-# Tencent (HK-listed)
-df = yf.download("0700.HK", start="2025-01-01", end="2026-01-01", progress=False)
-print(df.head())
+for symbol, df in data.items():
+    print(symbol, df.tail())
 ```
 
 ## Ticker Format Conversion
@@ -49,19 +59,31 @@ The project uses a unified ticker format. The DataLoader automatically converts 
 
 ### 1. Historical OHLCV
 
+Prefer `get_market_data` for OHLCV whenever the tool is available:
+
+```json
+{
+  "codes": ["AAPL.US", "MSFT.US", "GOOGL.US"],
+  "start_date": "2025-01-01",
+  "end_date": "2026-01-01",
+  "source": "yfinance",
+  "interval": "1D",
+  "max_rows": 250
+}
+```
+
+For script-based OHLCV analysis, use the loader:
+
 ```python
-import yfinance as yf
-import pandas as pd
+from backtest.loaders.registry import get_loader_cls_with_fallback
+
+loader = get_loader_cls_with_fallback("yfinance")()
 
 # Single stock
-df = yf.download("AAPL", start="2025-01-01", end="2026-01-01", progress=False)
-
-# Batch download
-df = yf.download(["AAPL", "MSFT", "GOOGL"], start="2025-01-01", end="2026-01-01", progress=False)
+single = loader.fetch(["AAPL.US"], "2025-01-01", "2026-01-01", interval="1D")
 
 # Specific interval
-df = yf.download("AAPL", start="2026-03-01", end="2026-03-30",
-                 interval="1h", progress=False)  # 1m/5m/15m/30m/1h/1d/1wk/1mo
+hourly = loader.fetch(["AAPL.US"], "2026-03-01", "2026-03-30", interval="1H")
 ```
 
 **Supported intervals:**

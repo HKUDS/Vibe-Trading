@@ -202,6 +202,17 @@ def build_worker_prompt(
         # instruction to prefer these prices over training data.
         prompt_parts.append(grounding_block)
 
+    if "get_market_data" in (agent_spec.tools or []):
+        prompt_parts.append(
+            "## Market Data Tool Policy\n\n"
+            "For OHLCV price bars, recent closes, volume, technical indicators, "
+            "or return calculations, call `get_market_data` before writing raw "
+            "provider scripts. It uses the repository loader layer, normalizes "
+            "symbols, drops malformed OHLC rows, and returns strict JSON. Use "
+            "raw yfinance scripts only for fields outside OHLCV coverage, such "
+            "as fundamentals, holders, options, or corporate metadata."
+        )
+
     # Universal anti-fabrication rule. The grounding_block carries a similar
     # instruction but only renders when user_vars supplies explicit symbols.
     # Free-form prompts ("look at A-share short-term sentiment") otherwise

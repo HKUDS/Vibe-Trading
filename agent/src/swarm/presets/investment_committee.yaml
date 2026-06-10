@@ -44,7 +44,7 @@ agents:
       7. **Main risk to the bull case** — Honestly list 2–3 scenarios that would invalidate the bull thesis
 
       Use factor_analysis for quant support; use load_skill for frameworks.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis]
     skills: [technical-basic, fundamental-filter, yfinance, earnings-revision, sentiment-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -97,7 +97,7 @@ agents:
       7. **What would disprove the bear case** — Signals that would invalidate the bear thesis (i.e., bull-side rebuttal points)
 
       Use factor_analysis for risk-factor views; use load_skill for risk frameworks.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis]
     skills: [technical-basic, fundamental-filter, yfinance, risk-analysis, volatility]
     max_iterations: 50
     timeout_seconds: 1800
