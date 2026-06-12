@@ -125,6 +125,50 @@ def test_json_and_markdown_files_are_written(tmp_path: Path) -> None:
     assert "sample warning" in markdown
 
 
+def test_api_run_response_filters_chart_symbol_payload(tmp_path: Path) -> None:
+    import api_server
+
+    run_dir = tmp_path / "run_001"
+    artifacts_dir = run_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    (run_dir / "state.json").write_text('{"status": "success"}\n', encoding="utf-8")
+    (artifacts_dir / "price_series.csv").write_text(
+        "\n".join(
+            [
+                "time,code,open,high,low,close,volume",
+                "2024-01-02,AAA,1,2,0.5,1.5,100",
+                "2024-01-02,BBB,3,4,2.5,3.5,200",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (artifacts_dir / "trades.csv").write_text(
+        "\n".join(
+            [
+                "timestamp,code,side,price,qty,reason",
+                "2024-01-02,AAA,BUY,1.5,10,alpha",
+                "2024-01-02,BBB,SELL,3.5,5,beta",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    default_response = api_server._build_response_from_run_dir(run_dir, elapsed=0.0, include_analysis=True)
+    filtered_response = api_server._build_response_from_run_dir(
+        run_dir,
+        elapsed=0.0,
+        include_analysis=True,
+        chart_symbol="BBB",
+    )
+
+    assert default_response.chart_symbols == ["AAA", "BBB"]
+    assert list(default_response.price_series or {}) == ["AAA"]
+    assert list(filtered_response.price_series or {}) == ["BBB"]
+    assert {marker["code"] for marker in filtered_response.trade_markers or []} == {"BBB"}
+    assert filtered_response.artifacts_trades_csv is None
+    assert filtered_response.artifacts_equity_csv is None
+
+
 def test_api_run_response_includes_run_card(tmp_path: Path) -> None:
     import api_server
 

@@ -74,7 +74,12 @@ function appendQueryParam(url: string, key: string, value: string): string {
 export const api = {
   uploadFile,
   listRuns: () => request<RunListItem[]>("/runs"),
-  getRun: (id: string) => request<RunData>(`/runs/${id}`),
+  getRun: (id: string, params: RunDetailParams = {}) => {
+    const q = new URLSearchParams();
+    if (params.chart_symbol) q.set("chart_symbol", params.chart_symbol);
+    const qs = q.toString();
+    return request<RunData>(`/runs/${id}${qs ? `?${qs}` : ""}`);
+  },
   getRunCode: (id: string) => request<Record<string, string>>(`/runs/${id}/code`),
   getRunPine: (id: string) => request<PineScriptResult>(`/runs/${id}/pine`),
   listSessions: () => request<SessionItem[]>("/sessions"),
@@ -286,6 +291,10 @@ export interface RunListItem {
   end_date?: string;
 }
 
+export interface RunDetailParams {
+  chart_symbol?: string;
+}
+
 export interface PriceBar {
   time: string;
   timestamp?: string;
@@ -368,6 +377,7 @@ export interface RunData {
   run_directory?: string;
   run_stage?: string;
   run_context?: Record<string, unknown>;
+  chart_symbols?: string[];
 
   metrics?: BacktestMetrics;
   artifacts?: ArtifactInfo[];

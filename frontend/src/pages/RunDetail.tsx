@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -12,6 +12,7 @@ import {
   FileCheck2,
   Fingerprint,
   List,
+  Loader2,
   ShieldCheck,
   XCircle,
 } from "lucide-react";
@@ -29,6 +30,11 @@ import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 const rehypePlugins = [rehypeHighlight];
 
 type Tab = "chart" | "trades" | "runCard" | "code" | "validation";
+type ChartPayload = Pick<RunData, "price_series" | "indicator_series" | "trade_markers">;
+type ChartCache = Record<string, ChartPayload>;
+type ChartLoadProgress = { done: number; total: number };
+
+const MULTI_CHART_PAGE_SIZE = 8;
 
 function downloadCsv(filename: string, csvContent: string) {
   const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
@@ -62,6 +68,33 @@ function buildMetricsCsv(metrics: BacktestMetrics): string {
   return [header, ...rows].join("\n");
 }
 
+function cacheFromRun(run: RunData | null, requestedSymbol?: string): ChartCache {
+  if (!run?.price_series) return {};
+  const cache: ChartCache = {};
+  const markerRows = run.trade_markers || [];
+  for (const [symbol, bars] of Object.entries(run.price_series)) {
+    cache[symbol] = {
+      price_series: { [symbol]: bars },
+      indicator_series: run.indicator_series?.[symbol] ? { [symbol]: run.indicator_series[symbol] } : {},
+      trade_markers: markerRows.filter((marker) => !marker.code || marker.code === symbol),
+    };
+  }
+  if (requestedSymbol && !cache[requestedSymbol]) {
+    cache[requestedSymbol] = { price_series: {}, indicator_series: {}, trade_markers: [] };
+  }
+  return cache;
+}
+
+function mergeChartCache(current: ChartCache, next: ChartCache): ChartCache {
+  return { ...current, ...next };
+}
+
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
+
 export function RunDetail() {
   const { runId } = useParams<{ runId: string }>();
   const navigate = useNavigate();
@@ -69,6 +102,15 @@ export function RunDetail() {
   const [code, setCode] = useState<Record<string, string>>({});
   const [tab, setTab] = useState<Tab>("chart");
   const [loading, setLoading] = useState(true);
+  const [selectedSymbol, setSelectedSymbol] = useState("");
+  const [chartPickerSymbol, setChartPickerSymbol] = useState("");
+  const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
+  const [chartCache, setChartCache] = useState<ChartCache>({});
+  const [chartLoadingSymbols, setChartLoadingSymbols] = useState<Record<string, boolean>>({});
+  const [bulkChartLoading, setBulkChartLoading] = useState(false);
+  const [bulkChartProgress, setBulkChartProgress] = useState<ChartLoadProgress>({ done: 0, total: 0 });
+  const chartCacheRef = useRef<ChartCache>({});
+  const cancelBulkChartLoadRef = useRef(false);
 
   const hasValidation = !!run?.validation;
   const hasRunCard = !!run?.run_card;
@@ -85,7 +127,17 @@ export function RunDetail() {
     Promise.all([
       api.getRun(runId).catch(() => null),
       api.getRunCode(runId).catch(() => ({})),
-    ]).then(([r, c]) => { setRun(r); setCode(c || {}); }).finally(() => setLoading(false));
+    ]).then(([r, c]) => {
+      setRun(r);
+      setCode(c || {});
+      const firstSymbol = r?.chart_symbols?.[0] || Object.keys(r?.price_series || {})[0] || "";
+      setSelectedSymbol(firstSymbol);
+      setChartPickerSymbol(firstSymbol);
+      setSelectedSymbols(firstSymbol ? [firstSymbol] : []);
+      const initialCache = cacheFromRun(r, firstSymbol);
+      chartCacheRef.current = initialCache;
+      setChartCache(initialCache);
+    }).finally(() => setLoading(false));
   }, [runId]);
 
   if (loading) {
@@ -114,6 +166,82 @@ export function RunDetail() {
   );
 
   const ok = run.status === "success";
+
+  async function loadChartSymbol(symbol: string) {
+    if (!runId || !symbol) return;
+    if (chartCacheRef.current[symbol]?.price_series?.[symbol]?.length) return;
+    setChartLoadingSymbols((prev) => ({ ...prev, [symbol]: true }));
+    try {
+      const nextRun = await api.getRun(runId, { chart_symbol: symbol });
+      const nextCache = cacheFromRun(nextRun, symbol);
+      const mergedCache = mergeChartCache(chartCacheRef.current, nextCache);
+      chartCacheRef.current = mergedCache;
+      setChartCache(mergedCache);
+      setRun((prev) => prev ? {
+        ...prev,
+        chart_symbols: nextRun.chart_symbols?.length ? nextRun.chart_symbols : prev.chart_symbols,
+        equity_curve: nextRun.equity_curve?.length ? nextRun.equity_curve : prev.equity_curve,
+      } : nextRun);
+    } finally {
+      setChartLoadingSymbols((prev) => {
+        const next = { ...prev };
+        delete next[symbol];
+        return next;
+      });
+    }
+  }
+
+  async function handleAddChartSymbol(symbol: string) {
+    if (!symbol) return;
+    setSelectedSymbol(symbol);
+    setChartPickerSymbol(symbol);
+    setSelectedSymbols((prev) => prev.includes(symbol) ? prev : [...prev, symbol]);
+    await loadChartSymbol(symbol);
+  }
+
+  async function handleCurrentChartOnly(symbol: string) {
+    if (!symbol) return;
+    setSelectedSymbol(symbol);
+    setChartPickerSymbol(symbol);
+    setSelectedSymbols([symbol]);
+    await loadChartSymbol(symbol);
+  }
+
+  function handleRemoveChartSymbol(symbol: string) {
+    const nextSymbols = selectedSymbols.filter((item) => item !== symbol);
+    setSelectedSymbols(nextSymbols);
+    if (selectedSymbol === symbol) {
+      const fallback = nextSymbols[0] || run?.chart_symbols?.[0] || "";
+      setSelectedSymbol(fallback);
+      setChartPickerSymbol(fallback);
+    }
+  }
+
+  async function handleLoadAllChartSymbols() {
+    const symbols = run?.chart_symbols || [];
+    if (symbols.length === 0 || bulkChartLoading) return;
+    cancelBulkChartLoadRef.current = false;
+    setBulkChartLoading(true);
+    setBulkChartProgress({ done: 0, total: symbols.length });
+    try {
+      for (let index = 0; index < symbols.length; index += 1) {
+        if (cancelBulkChartLoadRef.current) break;
+        const symbol = symbols[index];
+        setSelectedSymbol(symbol);
+        setChartPickerSymbol(symbol);
+        setSelectedSymbols((prev) => prev.includes(symbol) ? prev : [...prev, symbol]);
+        await loadChartSymbol(symbol);
+        setBulkChartProgress({ done: index + 1, total: symbols.length });
+        await yieldToBrowser();
+      }
+    } finally {
+      setBulkChartLoading(false);
+    }
+  }
+
+  function handleCancelLoadAllCharts() {
+    cancelBulkChartLoadRef.current = true;
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -173,7 +301,24 @@ export function RunDetail() {
 
       <div className="flex-1 overflow-auto">
         <ErrorBoundary>
-          {tab === "chart" && <ChartTab run={run} />}
+          {tab === "chart" && (
+            <ChartTab
+              run={run}
+              selectedSymbol={selectedSymbol}
+              chartPickerSymbol={chartPickerSymbol}
+              selectedSymbols={selectedSymbols}
+              chartCache={chartCache}
+              loadingSymbols={chartLoadingSymbols}
+              bulkLoading={bulkChartLoading}
+              bulkProgress={bulkChartProgress}
+              onPickSymbol={setChartPickerSymbol}
+              onAddSymbol={handleAddChartSymbol}
+              onCurrentOnly={handleCurrentChartOnly}
+              onRemoveSymbol={handleRemoveChartSymbol}
+              onLoadAll={handleLoadAllChartSymbols}
+              onCancelLoadAll={handleCancelLoadAllCharts}
+            />
+          )}
           {tab === "trades" && <TradesTab run={run} />}
           {tab === "validation" && run.validation && <ValidationPanel data={run.validation} />}
           {tab === "runCard" && run.run_card && <RunCardTab card={run.run_card} />}
@@ -325,11 +470,56 @@ function shortHash(value: string): string {
   return value.length > 16 ? `${value.slice(0, 12)}...${value.slice(-6)}` : value;
 }
 
-function ChartTab({ run }: { run: RunData }) {
-  const entries = run.price_series ? Object.entries(run.price_series) : [];
+function ChartTab({
+  run,
+  selectedSymbol,
+  chartPickerSymbol,
+  selectedSymbols,
+  chartCache,
+  loadingSymbols,
+  bulkLoading,
+  bulkProgress,
+  onPickSymbol,
+  onAddSymbol,
+  onCurrentOnly,
+  onRemoveSymbol,
+  onLoadAll,
+  onCancelLoadAll,
+}: {
+  run: RunData;
+  selectedSymbol: string;
+  chartPickerSymbol: string;
+  selectedSymbols: string[];
+  chartCache: ChartCache;
+  loadingSymbols: Record<string, boolean>;
+  bulkLoading: boolean;
+  bulkProgress: ChartLoadProgress;
+  onPickSymbol: (symbol: string) => void;
+  onAddSymbol: (symbol: string) => void;
+  onCurrentOnly: (symbol: string) => void;
+  onRemoveSymbol: (symbol: string) => void;
+  onLoadAll: () => void;
+  onCancelLoadAll: () => void;
+}) {
+  const [visibleChartCount, setVisibleChartCount] = useState(MULTI_CHART_PAGE_SIZE);
+  const chartSymbols = run.chart_symbols || [];
+  const activeSymbols = selectedSymbols.length ? selectedSymbols : selectedSymbol ? [selectedSymbol] : [];
+  const entries = activeSymbols.flatMap((symbol) => {
+    const payload = chartCache[symbol];
+    const bars = payload?.price_series?.[symbol];
+    return bars?.length ? [{ symbol, bars, payload }] : [];
+  });
+  const visibleEntries = entries.slice(0, visibleChartCount);
+  const loadingSelectedSymbols = activeSymbols.filter((symbol) => loadingSymbols[symbol] && !chartCache[symbol]?.price_series?.[symbol]?.length);
   const hasEquity = run.equity_curve && run.equity_curve.length > 0;
+  const progressPct = bulkProgress.total > 0 ? Math.round((bulkProgress.done / bulkProgress.total) * 100) : 0;
+  const pickerValue = chartPickerSymbol || selectedSymbol || chartSymbols[0] || "";
 
-  if (entries.length === 0 && !hasEquity) {
+  useEffect(() => {
+    setVisibleChartCount(selectedSymbols.length > 1 ? MULTI_CHART_PAGE_SIZE : 1);
+  }, [selectedSymbols.join("|")]);
+
+  if (entries.length === 0 && loadingSelectedSymbols.length === 0 && !hasEquity) {
     return (
       <div className="p-8 text-center text-muted-foreground space-y-2">
         <p className="text-sm">No chart data available</p>
@@ -340,12 +530,131 @@ function ChartTab({ run }: { run: RunData }) {
 
   return (
     <div className="p-4 space-y-4">
-      {entries.map(([sym, bars]) => (
-        <div key={sym}>
-          <h3 className="text-sm font-medium mb-1">{sym}</h3>
-          <CandlestickChart data={bars} markers={run.trade_markers?.filter(m => m.code === sym)} indicators={run.indicator_series?.[sym]} height={500} />
+      {chartSymbols.length > 1 && (
+        <div className="space-y-3 rounded-md border bg-card p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-xs font-medium uppercase text-muted-foreground">Chart symbols</label>
+            <select
+              value={pickerValue}
+              onChange={(event) => onPickSymbol(event.target.value)}
+              disabled={bulkLoading}
+              className="rounded-md border bg-background px-2 py-1 text-sm outline-none transition focus:border-primary disabled:opacity-60"
+            >
+              {chartSymbols.map((symbol) => (
+                <option key={symbol} value={symbol}>{symbol}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => onAddSymbol(pickerValue)}
+              disabled={!pickerValue || bulkLoading || !!loadingSymbols[pickerValue]}
+              className="rounded-md border px-2.5 py-1 text-xs font-medium transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => onCurrentOnly(pickerValue)}
+              disabled={!pickerValue || bulkLoading || !!loadingSymbols[pickerValue]}
+              className="rounded-md border px-2.5 py-1 text-xs font-medium transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Current only
+            </button>
+            <button
+              type="button"
+              onClick={onLoadAll}
+              disabled={bulkLoading || chartSymbols.length === 0}
+              className="rounded-md border px-2.5 py-1 text-xs font-medium transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Load all
+            </button>
+            {bulkLoading && (
+              <button
+                type="button"
+                onClick={onCancelLoadAll}
+                className="rounded-md border border-amber-500/30 px-2.5 py-1 text-xs font-medium text-amber-700 transition hover:bg-amber-500/10 dark:text-amber-300"
+              >
+                Cancel
+              </button>
+            )}
+            {loadingSymbols[pickerValue] && (
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading {pickerValue}
+              </span>
+            )}
+            <span className="ml-auto text-xs text-muted-foreground">
+              {activeSymbols.length} selected / {chartSymbols.length} available; charts load progressively.
+            </span>
+          </div>
+
+          {bulkProgress.total > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>{bulkLoading ? "Loading charts" : "Chart load progress"}</span>
+                <span>{bulkProgress.done} / {bulkProgress.total} ({progressPct}%)</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div className="h-full bg-primary transition-[width]" style={{ width: `${progressPct}%` }} />
+              </div>
+            </div>
+          )}
+
+          {activeSymbols.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {activeSymbols.slice(0, 48).map((symbol) => (
+                <button
+                  key={symbol}
+                  type="button"
+                  onClick={() => onRemoveSymbol(symbol)}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition hover:bg-muted",
+                    symbol === selectedSymbol ? "border-primary/50 text-primary" : "text-muted-foreground"
+                  )}
+                  title={`Remove ${symbol}`}
+                >
+                  {loadingSymbols[symbol] && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {symbol}
+                  <span aria-hidden="true">x</span>
+                </button>
+              ))}
+              {activeSymbols.length > 48 && (
+                <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground">
+                  +{activeSymbols.length - 48} more selected
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {loadingSelectedSymbols.map((symbol) => (
+        <div key={`loading-${symbol}`} className="rounded-md border bg-card p-4 text-sm text-muted-foreground">
+          <span className="inline-flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading {symbol}
+          </span>
         </div>
       ))}
+      {visibleEntries.map(({ symbol, bars, payload }) => (
+        <div key={symbol}>
+          <h3 className="text-sm font-medium mb-1">{symbol}</h3>
+          <CandlestickChart data={bars} markers={limitedMarkers(payload.trade_markers?.filter(m => !m.code || m.code === symbol))} indicators={payload.indicator_series?.[symbol]} height={500} />
+        </div>
+      ))}
+      {entries.length > visibleEntries.length && (
+        <div className="rounded-md border bg-card p-3 text-center">
+          <button
+            type="button"
+            onClick={() => setVisibleChartCount((count) => Math.min(entries.length, count + MULTI_CHART_PAGE_SIZE))}
+            className="rounded-md border px-3 py-1.5 text-sm font-medium transition hover:bg-muted"
+          >
+            Show {Math.min(MULTI_CHART_PAGE_SIZE, entries.length - visibleEntries.length)} more charts
+          </button>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Showing {visibleEntries.length} of {entries.length} loaded charts to keep the page responsive.
+          </p>
+        </div>
+      )}
       {hasEquity && (
         <div>
           <h3 className="text-sm font-medium mb-1">Equity & Drawdown</h3>
@@ -354,6 +663,11 @@ function ChartTab({ run }: { run: RunData }) {
       )}
     </div>
   );
+}
+
+function limitedMarkers(markers: RunData["trade_markers"]): RunData["trade_markers"] {
+  if (!markers || markers.length <= 1000) return markers;
+  return markers.slice(-1000);
 }
 
 function TradesTab({ run }: { run: RunData }) {

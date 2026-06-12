@@ -250,7 +250,7 @@ def collect_run_logs(run_dir: Path, line_limit: int = 200) -> List[Dict[str, Any
     return entries
 
 
-def build_trade_markers(trades: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def build_trade_markers(trades: List[Dict[str, Any]], symbols: Optional[set[str]] = None) -> List[Dict[str, Any]]:
     """Normalize trade rows into frontend marker objects.
 
     Args:
@@ -261,13 +261,16 @@ def build_trade_markers(trades: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     markers: List[Dict[str, Any]] = []
     for row in trades:
+        code = str(row.get("code") or "")
+        if symbols is not None and code not in symbols:
+            continue
         side = str(row.get("side") or "").upper()
         timestamp = str(row.get("timestamp") or "")
         markers.append(
             {
                 "time": timestamp[:10],
                 "timestamp": timestamp,
-                "code": row.get("code"),
+                "code": code or row.get("code"),
                 "side": side,
                 "price": _safe_float(row.get("price")),
                 "qty": _safe_float(row.get("qty")),
@@ -443,7 +446,7 @@ def reconstruct_price_series(run_dir: Path) -> List[Dict[str, Any]]:
     return _flatten_data_map(data_map, start_date=start_date)
 
 
-def build_run_analysis(run_dir: Path) -> Dict[str, Any]:
+def build_run_analysis(run_dir: Path, symbols: Optional[List[str]] = None) -> Dict[str, Any]:
     """Build the analysis payload consumed by the run detail page.
 
     Args:
@@ -453,15 +456,22 @@ def build_run_analysis(run_dir: Path) -> Dict[str, Any]:
         A serializable dictionary of chart, trade, and log data.
     """
     price_rows = load_price_series(run_dir)
+    all_symbols = sorted({str(row.get("code") or "") for row in price_rows if row.get("code")})
+    requested_symbols = [symbol for symbol in (symbols or []) if symbol]
+    selected_symbols = requested_symbols or all_symbols[:1]
+    selected_symbol_set = set(selected_symbols)
+    if selected_symbol_set:
+        price_rows = [row for row in price_rows if str(row.get("code") or "") in selected_symbol_set]
     periods = infer_indicator_periods(run_dir)
     trades = load_csv_records(run_dir / "artifacts" / "trades.csv")
 
     return {
         "run_stage": infer_run_stage(run_dir),
         "run_context": load_run_context(run_dir),
+        "chart_symbols": all_symbols,
         "price_series": group_price_rows(price_rows),
         "indicator_series": build_indicator_series(price_rows, periods) if price_rows else {},
-        "trade_markers": build_trade_markers(trades),
+        "trade_markers": build_trade_markers(trades, selected_symbol_set if selected_symbol_set else None),
         "run_logs": collect_run_logs(run_dir),
     }
 
