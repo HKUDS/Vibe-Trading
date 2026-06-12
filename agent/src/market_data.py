@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_ROWS = 250
 
 _SOURCE_PATTERNS = [
-    (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "tushare"),
+    (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "baostock"),
     (re.compile(r"^[A-Z]+\.US$", re.I), "yfinance"),
     (re.compile(r"^\d{3,5}\.HK$", re.I), "yfinance"),
     (re.compile(r"^[A-Z]+-USDT$", re.I), "okx"),

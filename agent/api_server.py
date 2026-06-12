@@ -679,6 +679,9 @@ def _is_local_client(request: Request) -> bool:
         return False
     if ip.is_loopback:
         return True
+    # Trust private/local network ranges (WSL, Docker, LAN)
+    if ip.is_private:
+        return True
     return _trusted_docker_loopback_ip(ip)
 
 
