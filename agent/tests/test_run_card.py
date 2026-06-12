@@ -130,6 +130,8 @@ def test_api_run_response_includes_run_card(tmp_path: Path) -> None:
 
     run_dir = tmp_path / "run_001"
     run_dir.mkdir()
+    artifacts_dir = run_dir / "artifacts"
+    artifacts_dir.mkdir()
     (run_dir / "state.json").write_text('{"status": "success"}\n', encoding="utf-8")
     run_card = {
         "schema_version": "0.1",
@@ -143,10 +145,22 @@ def test_api_run_response_includes_run_card(tmp_path: Path) -> None:
         "artifacts": [{"path": "artifacts/metrics.csv", "size_bytes": 42, "sha256": "feed"}],
     }
     (run_dir / "run_card.json").write_text(json.dumps(run_card), encoding="utf-8")
+    llm_usage = {
+        "schema_version": "0.1",
+        "provider": "openai",
+        "model": "gpt-test",
+        "input_tokens": 100,
+        "output_tokens": 25,
+        "total_tokens": 125,
+        "calls": 1,
+        "iterations": [{"iter": 1, "input_tokens": 100, "output_tokens": 25, "total_tokens": 125}],
+    }
+    (artifacts_dir / "llm_usage.json").write_text(json.dumps(llm_usage), encoding="utf-8")
 
     response = api_server._build_response_from_run_dir(run_dir, elapsed=0.0)
 
     assert response.run_card == run_card
+    assert response.llm_usage == llm_usage
 
 
 def test_runner_artifact_spec_surfaces_run_card_paths() -> None:

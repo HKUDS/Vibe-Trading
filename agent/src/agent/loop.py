@@ -20,6 +20,7 @@ import os
 import queue
 import threading
 import time as _time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -47,6 +48,7 @@ REASONING_DELTA_MIN_INTERVAL_S = float(os.getenv("VT_REASONING_DELTA_MIN_INTERVA
 STREAM_RETRY_DELAY_S = float(os.getenv("VT_STREAM_RETRY_DELAY_S", "1.0"))
 TOOL_TIMEOUT_SECONDS = float(os.getenv("VIBE_TRADING_TOOL_TIMEOUT_SECONDS", "1800"))
 GOAL_MAX_CONTINUATIONS = int(os.getenv("VIBE_TRADING_GOAL_MAX_CONTINUATIONS", "3"))
+LLM_USAGE_ARTIFACT = Path("artifacts") / "llm_usage.json"
 
 # Layer 2: Context collapse thresholds
 COLLAPSE_THRESHOLD = int(TOKEN_THRESHOLD * 0.7)
@@ -78,6 +80,97 @@ def estimate_tokens(messages: list) -> int:
         Estimated token count.
     """
     return len(json.dumps(messages, default=str, ensure_ascii=False)) // 4
+
+
+def _coerce_usage_int(value: Any) -> int:
+    """Coerce provider token counts to non-negative ints."""
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _normalize_llm_usage(usage: Any) -> dict[str, int] | None:
+    """Normalize provider ``usage_metadata`` into the persisted schema."""
+    if usage is None:
+        return None
+    if not isinstance(usage, dict):
+        try:
+            usage = dict(usage)
+        except (TypeError, ValueError):
+            return None
+
+    input_tokens = _coerce_usage_int(usage.get("input_tokens"))
+    output_tokens = _coerce_usage_int(usage.get("output_tokens"))
+    total_tokens = _coerce_usage_int(usage.get("total_tokens"))
+    if total_tokens == 0 and (input_tokens or output_tokens):
+        total_tokens = input_tokens + output_tokens
+
+    if not (input_tokens or output_tokens or total_tokens):
+        return None
+
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
+def _new_llm_usage_summary(llm: Any) -> dict[str, Any]:
+    """Create a run-scoped LLM usage accumulator without prompt content."""
+    model = getattr(llm, "model_name", None) or os.getenv("LANGCHAIN_MODEL_NAME") or None
+    provider = os.getenv("LANGCHAIN_PROVIDER") or None
+    return {
+        "schema_version": "0.1",
+        "provider": provider,
+        "model": model,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "calls": 0,
+        "iterations": [],
+    }
+
+
+def _write_llm_usage_artifact(run_dir: Path, summary: dict[str, Any]) -> None:
+    """Persist LLM usage as a run artifact."""
+    path = run_dir / LLM_USAGE_ARTIFACT
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        **summary,
+        "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    tmp_path.replace(path)
+
+
+def _record_llm_usage(
+    run_dir: Path,
+    summary: dict[str, Any],
+    usage: Any,
+    iteration: int,
+) -> dict[str, int] | None:
+    """Accumulate and persist one provider usage event."""
+    normalized = _normalize_llm_usage(usage)
+    if normalized is None:
+        return None
+
+    summary["input_tokens"] = int(summary.get("input_tokens") or 0) + normalized["input_tokens"]
+    summary["output_tokens"] = int(summary.get("output_tokens") or 0) + normalized["output_tokens"]
+    summary["total_tokens"] = int(summary.get("total_tokens") or 0) + normalized["total_tokens"]
+    summary["calls"] = int(summary.get("calls") or 0) + 1
+    summary.setdefault("iterations", []).append({"iter": iteration, **normalized})
+
+    try:
+        _write_llm_usage_artifact(run_dir, summary)
+    except OSError as exc:
+        logger.debug("LLM usage artifact write skipped: %s", exc)
+
+    return normalized
 
 
 def _microcompact(messages: list) -> None:
@@ -410,6 +503,7 @@ class AgentLoop:
         goal_continuations = 0
         goal_last_progress: tuple[int, int] | None = None
         wrap_up_at = max(1, int(self.max_iterations * 0.8))
+        llm_usage_summary = _new_llm_usage_summary(self.llm)
 
         try:
             while iteration < self.max_iterations:
@@ -535,19 +629,23 @@ class AgentLoop:
                         on_text_chunk=_on_text_chunk,
                         on_reasoning_chunk=_on_reasoning_chunk,
                     )
-                usage = getattr(response, "usage_metadata", None) or {}
-                if usage:
+                usage = getattr(response, "usage_metadata", None)
+                usage_delta = _record_llm_usage(
+                    run_dir,
+                    llm_usage_summary,
+                    usage,
+                    iteration,
+                )
+                if usage_delta:
                     self._emit(
                         "llm_usage",
                         {
-                            "input_tokens": int(usage.get("input_tokens") or 0),
-                            "output_tokens": int(usage.get("output_tokens") or 0),
-                            "total_tokens": int(usage.get("total_tokens") or 0),
+                            **usage_delta,
                             "iter": iteration,
                         },
                     )
                 if active_goal_id and session_id:
-                    token_delta = int(usage.get("total_tokens") or 0) if usage else 0
+                    token_delta = int(usage_delta.get("total_tokens") or 0) if usage_delta else 0
                     turn_delta = 0 if goal_turn_accounted else 1
                     if token_delta or turn_delta:
                         try:

@@ -23,6 +23,12 @@ describe("isReportWorthyRun", () => {
     ).toBe(true);
   });
 
+  it("returns true when llm_usage has keys", () => {
+    expect(
+      isReportWorthyRun(makeRunData({ llm_usage: { total_tokens: 1234 } })),
+    ).toBe(true);
+  });
+
   it("returns true when equity_curve is non-empty", () => {
     expect(
       isReportWorthyRun(makeRunData({ equity_curve: [{ time: "2024-01-01", equity: 10000 }] })),
@@ -74,6 +80,9 @@ describe("isReportWorthyRun", () => {
     ).toBe(true);
     expect(
       isReportWorthyRun(makeRunData({ artifacts: [{ name: "strategy.pine", path: "/tmp/s.pine" }] })),
+    ).toBe(true);
+    expect(
+      isReportWorthyRun(makeRunData({ artifacts: [{ name: "llm_usage.json", path: "/tmp/u.json" }] })),
     ).toBe(true);
   });
 

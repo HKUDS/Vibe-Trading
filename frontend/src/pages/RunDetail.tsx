@@ -11,6 +11,7 @@ import {
   Download,
   FileCheck2,
   Fingerprint,
+  Gauge,
   List,
   ShieldCheck,
   XCircle,
@@ -133,6 +134,7 @@ export function RunDetail() {
         </div>
         {run.prompt && <p className="text-sm text-muted-foreground">{run.prompt}</p>}
         {run.metrics && <MetricsCard metrics={run.metrics as Record<string, number>} />}
+        {run.llm_usage && <LLMUsageCard usage={run.llm_usage} />}
 
         <div className="flex items-center gap-1">
           {TABS.filter(t => !t.hidden).map(({ id, label, icon: Icon }) => (
@@ -181,6 +183,27 @@ export function RunDetail() {
         </ErrorBoundary>
       </div>
     </div>
+  );
+}
+
+function LLMUsageCard({ usage }: { usage: NonNullable<RunData["llm_usage"]> }) {
+  const calls = typeof usage.calls === "number" ? usage.calls : usage.iterations?.length || 0;
+  const providerModel = [usage.provider, usage.model].filter(Boolean).join(" / ") || "Unknown provider";
+
+  return (
+    <section className="rounded-md border bg-card p-3">
+      <div className="mb-3 flex items-center gap-2 text-sm font-medium">
+        <Gauge className="h-4 w-4 text-muted-foreground" />
+        Agent Usage
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <RunCardStat label="Input tokens" value={formatTokenCount(usage.input_tokens)} />
+        <RunCardStat label="Output tokens" value={formatTokenCount(usage.output_tokens)} />
+        <RunCardStat label="Total tokens" value={formatTokenCount(usage.total_tokens)} />
+        <RunCardStat label="LLM calls" value={String(calls)} />
+      </div>
+      <div className="mt-2 truncate text-xs text-muted-foreground">{providerModel}</div>
+    </section>
   );
 }
 
@@ -319,6 +342,11 @@ function formatBytes(value: number): string {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatTokenCount(value: unknown): string {
+  const numeric = typeof value === "number" ? value : Number(value || 0);
+  return Number.isFinite(numeric) ? Math.round(numeric).toLocaleString() : "0";
 }
 
 function shortHash(value: string): string {

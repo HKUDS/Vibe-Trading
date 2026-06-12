@@ -11,6 +11,7 @@ exits without hitting any real API.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -23,11 +24,17 @@ from src.providers.chat import ProviderStreamError
 class _StubLLMResponse:
     """Minimal stand-in for ChatLLM's response object."""
 
-    def __init__(self) -> None:
-        self.content = ""
+    def __init__(
+        self,
+        *,
+        content: str = "",
+        usage_metadata: dict[str, int] | None = None,
+    ) -> None:
+        self.content = content
         self.tool_calls: list[Any] = []
         self.reasoning_content: str | None = None
         self.has_tool_calls = False
+        self.usage_metadata = usage_metadata
 
 
 class _StubLLMNoFinal:
@@ -75,6 +82,27 @@ class _StubLLMCancelMidStream:
 
     def chat(self, messages: list[dict[str, Any]], **_: Any) -> _StubLLMResponse:
         return _StubLLMResponse()
+
+
+class _StubLLMWithUsage:
+    """LLM stub that returns a final answer with provider usage metadata."""
+
+    model_name = "stub-model"
+
+    def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[Any] | None = None,
+        on_text_chunk: Callable[[str], None] | None = None,
+        on_reasoning_chunk: Callable[[str], None] | None = None,
+    ) -> _StubLLMResponse:
+        return _StubLLMResponse(
+            content="final answer",
+            usage_metadata={"input_tokens": 10, "output_tokens": 5},
+        )
+
+    def chat(self, messages: list[dict[str, Any]], **_: Any) -> _StubLLMResponse:
+        return _StubLLMResponse(content="final answer")
 
 
 def _build_agent(llm: Any, max_iter: int = 3, tmp_run_dir: Path | None = None) -> AgentLoop:
@@ -140,6 +168,30 @@ def test_session_service_renders_meaningful_error_from_result(tmp_path: Path) ->
     assert ui_error != "unknown"
     assert "empty_model_response" in ui_error
     assert "iteration 1" in ui_error
+
+
+def test_usage_metadata_is_persisted_to_run_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Provider token usage should be available after the live SSE event is gone."""
+    monkeypatch.setenv("LANGCHAIN_PROVIDER", "pytest-provider")
+    monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "env-model")
+    agent = _build_agent(_StubLLMWithUsage(), max_iter=2, tmp_run_dir=tmp_path / "run")
+
+    result = agent.run(user_message="anything")
+
+    assert result["status"] == "success"
+    usage_path = tmp_path / "run" / "artifacts" / "llm_usage.json"
+    payload = json.loads(usage_path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "0.1"
+    assert payload["provider"] == "pytest-provider"
+    assert payload["model"] == "stub-model"
+    assert payload["input_tokens"] == 10
+    assert payload["output_tokens"] == 5
+    assert payload["total_tokens"] == 15
+    assert payload["calls"] == 1
+    assert payload["iterations"] == [
+        {"iter": 1, "input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+    ]
+    assert payload["updated_at"].endswith("Z")
 
 
 class _StubLLMAlwaysToolCalls:
