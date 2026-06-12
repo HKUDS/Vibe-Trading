@@ -73,7 +73,13 @@ function appendQueryParam(url: string, key: string, value: string): string {
 
 export const api = {
   uploadFile,
-  listRuns: () => request<RunListItem[]>("/runs"),
+  listRuns: (params: RunListParams = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.with_usage !== undefined) q.set("with_usage", params.with_usage ? "true" : "false");
+    const qs = q.toString();
+    return request<RunListItem[]>(`/runs${qs ? `?${qs}` : ""}`);
+  },
   getRun: (id: string) => request<RunData>(`/runs/${id}`),
   getRunCode: (id: string) => request<Record<string, string>>(`/runs/${id}/code`),
   getRunPine: (id: string) => request<PineScriptResult>(`/runs/${id}/pine`),
@@ -284,6 +290,12 @@ export interface RunListItem {
   codes?: string[];
   start_date?: string;
   end_date?: string;
+  llm_usage?: LLMUsageSummary | null;
+}
+
+export interface RunListParams {
+  limit?: number;
+  with_usage?: boolean;
 }
 
 export interface PriceBar {

@@ -97,6 +97,10 @@ class RunInfo(BaseModel):
     codes: List[str] = Field(default_factory=list)
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    llm_usage: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional persisted AgentLoop usage summary for dashboards",
+    )
 
 
 class RunResponse(BaseModel):
@@ -1247,7 +1251,10 @@ async def get_run_result(run_id: str):
 
 
 @app.get("/runs", response_model=List[RunInfo], dependencies=[Depends(require_auth)])
-async def list_runs(limit: int = 20):
+async def list_runs(
+    limit: int = 20,
+    with_usage: bool = Query(False, description="Include compact artifacts/llm_usage.json summaries"),
+):
     """List recent runs with summary fields."""
     limit = min(max(1, limit), 100)
     runs_dir = RUNS_DIR
@@ -1342,6 +1349,7 @@ async def list_runs(limit: int = 20):
             codes=run_context.get("codes") or [],
             start_date=run_context.get("start_date"),
             end_date=run_context.get("end_date"),
+            llm_usage=_load_json_file(d / "artifacts" / "llm_usage.json") if with_usage else None,
         ))
 
     return results

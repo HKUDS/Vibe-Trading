@@ -55,28 +55,23 @@ describe("Usage dashboard", () => {
 
   it("aggregates persisted usage across recent runs", async () => {
     apiMock.listRuns.mockResolvedValue([
-      makeRun(),
-      makeRun({ run_id: "run-2", prompt: "Use a different model" }),
+      makeRun({ llm_usage: makeDetail().llm_usage }),
+      makeRun({
+        run_id: "run-2",
+        prompt: "Use a different model",
+        llm_usage: {
+          provider: "openai",
+          model: "gpt-4.1",
+          input_tokens: 250,
+          output_tokens: 50,
+          total_tokens: 300,
+          calls: 1,
+          iterations: [{ iter: 1, input_tokens: 250, output_tokens: 50, total_tokens: 300 }],
+        },
+      }),
       makeRun({ run_id: "no-usage" }),
     ]);
-    apiMock.getRun.mockImplementation((runId: string) => {
-      if (runId === "run-2") {
-        return Promise.resolve(makeDetail({
-          run_id: "run-2",
-          llm_usage: {
-            provider: "openai",
-            model: "gpt-4.1",
-            input_tokens: 250,
-            output_tokens: 50,
-            total_tokens: 300,
-            calls: 1,
-            iterations: [{ iter: 1, input_tokens: 250, output_tokens: 50, total_tokens: 300 }],
-          },
-        }));
-      }
-      if (runId === "no-usage") return Promise.resolve({ run_id: runId, status: "success" });
-      return Promise.resolve(makeDetail());
-    });
+    apiMock.getRun.mockResolvedValue({ run_id: "no-usage", status: "success" });
 
     renderUsage();
 
@@ -91,6 +86,18 @@ describe("Usage dashboard", () => {
     expect(screen.getByText("gpt-4.1")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /run-1/ })).toHaveAttribute("href", "/runs/run-1");
     expect(document.body.textContent || "").not.toContain("$");
+    expect(apiMock.listRuns).toHaveBeenCalledWith({ limit: 100, with_usage: true });
+    expect(apiMock.getRun).toHaveBeenCalledTimes(1);
+    expect(apiMock.getRun).toHaveBeenCalledWith("no-usage");
+  });
+
+  it("uses compact /runs llm_usage without loading full run details", async () => {
+    apiMock.listRuns.mockResolvedValue([makeRun({ llm_usage: makeDetail().llm_usage })]);
+
+    renderUsage();
+
+    expect(await screen.findByText("run-1")).toBeInTheDocument();
+    expect(apiMock.getRun).not.toHaveBeenCalled();
   });
 
   it("shows an empty state when recent runs have no usage artifact", async () => {

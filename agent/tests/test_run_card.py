@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from pathlib import Path
@@ -161,6 +162,31 @@ def test_api_run_response_includes_run_card(tmp_path: Path) -> None:
 
     assert response.run_card == run_card
     assert response.llm_usage == llm_usage
+
+
+def test_api_list_runs_can_include_compact_llm_usage(tmp_path: Path, monkeypatch) -> None:
+    import api_server
+
+    monkeypatch.setattr(api_server, "RUNS_DIR", tmp_path)
+    run_dir = tmp_path / "20260612_120000_00_usage"
+    artifacts_dir = run_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    (run_dir / "state.json").write_text('{"status": "success"}\n', encoding="utf-8")
+    llm_usage = {
+        "provider": "openai",
+        "model": "gpt-test",
+        "input_tokens": 100,
+        "output_tokens": 25,
+        "total_tokens": 125,
+        "calls": 1,
+    }
+    (artifacts_dir / "llm_usage.json").write_text(json.dumps(llm_usage), encoding="utf-8")
+
+    without_usage = asyncio.run(api_server.list_runs(limit=10, with_usage=False))
+    with_usage = asyncio.run(api_server.list_runs(limit=10, with_usage=True))
+
+    assert without_usage[0].llm_usage is None
+    assert with_usage[0].llm_usage == llm_usage
 
 
 def test_runner_artifact_spec_surfaces_run_card_paths() -> None:
