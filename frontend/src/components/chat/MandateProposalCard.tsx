@@ -1,3 +1,4 @@
+import i18n from '@/i18n';
 import { memo, useCallback, useState } from "react";
 import { ShieldCheck, ShieldAlert, Wallet, OctagonX, SlidersHorizontal, Check, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -98,23 +99,23 @@ function ProfileTile({
 
       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
         <div className="col-span-2">
-          <dt className="text-muted-foreground">Universe</dt>
+          <dt className="text-muted-foreground">{i18n.t("mandate.universe")}</dt>
           <dd className="font-medium text-foreground">{formatUniverse(profile.universe)}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Max order</dt>
+          <dt className="text-muted-foreground">{i18n.t("mandate.maxOrder")}</dt>
           <dd className="font-mono font-medium text-foreground">{formatUsd(profile.max_order_usd)}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Daily cap</dt>
+          <dt className="text-muted-foreground">{i18n.t("mandate.dailyCap")}</dt>
           <dd className="font-mono font-medium text-foreground">{profile.daily_trade_cap} trades/day</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Leverage</dt>
+          <dt className="text-muted-foreground">{i18n.t("mandate.leverage")}</dt>
           <dd className="font-medium text-foreground">{formatLeverage(profile.leverage)}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Instruments</dt>
+          <dt className="text-muted-foreground">{i18n.t("mandate.instruments")}</dt>
           <dd className="font-medium text-foreground">{profile.instruments.join(", ") || "—"}</dd>
         </div>
       </dl>
@@ -260,7 +261,7 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
           )}
           <div className="min-w-0">
             <p className="text-sm font-semibold text-foreground">
-              {isReauth ? "Re-authorize connector mandate" : "Connector runtime mandate"}
+              {isReauth ? i18n.t("mandate.reauthMandate") : i18n.t("mandate.runtimeMandate")}
             </p>
             {proposal.intent_normalized && (
               <p className="text-xs text-muted-foreground">{proposal.intent_normalized}</p>

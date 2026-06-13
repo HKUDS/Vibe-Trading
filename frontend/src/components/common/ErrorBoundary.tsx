@@ -1,3 +1,4 @@
+import i18n from "@/i18n";
 import { Component, type ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
 
@@ -16,7 +17,7 @@ export class ErrorBoundary extends Component<Props, State> {
       return this.props.fallback ?? (
         <div className="flex items-center gap-2 p-4 rounded-lg border border-destructive/30 bg-destructive/5 text-sm text-destructive">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>{this.state.error?.message || "Something went wrong"}</span>
+          <span>{this.state.error?.message || i18n.t("errorBoundary.somethingWrong")}</span>
         </div>
       );
     }

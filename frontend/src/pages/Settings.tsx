@@ -1,3 +1,4 @@
+import i18n from "@/i18n";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Database, KeyRound, Loader2, RotateCcw, Save, Server, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
@@ -32,6 +33,7 @@ function toForm(settings: LLMSettings): LLMFormState {
 }
 
 export function Settings() {
+  
   const [settings, setSettings] = useState<LLMSettings | null>(null);
   const [dataSettings, setDataSettings] = useState<DataSourceSettings | null>(null);
   const [form, setForm] = useState<LLMFormState | null>(null);
@@ -173,7 +175,7 @@ export function Settings() {
           className="inline-flex items-center justify-center gap-2 self-end rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90"
         >
           <Save className="h-4 w-4" />
-          {"Save local key"}
+          {i18n.t("settings.save")}
         </button>
       </div>
       <p className="mt-2 text-xs text-muted-foreground">{"Stored only in this browser. Leave blank to clear it."}</p>
@@ -240,7 +242,7 @@ export function Settings() {
 
           <div className="grid gap-4">
             <label className="grid gap-2">
-              <span className={labelClass}>{"Provider"}</span>
+              <span className={labelClass}>{i18n.t("settings.provider")}</span>
               <select
                 value={form.provider}
                 onChange={(event) => onProviderChange(event.target.value)}
@@ -276,7 +278,7 @@ export function Settings() {
             </label>
 
             <label className="grid gap-2">
-              <span className={labelClass}>{"Base URL"}</span>
+              <span className={labelClass}>{i18n.t("settings.baseUrl")}</span>
               <input
                 value={form.base_url}
                 onChange={(event) => setForm({ ...form, base_url: event.target.value })}
@@ -331,7 +333,7 @@ export function Settings() {
 
           <div className="grid gap-4">
             <label className="grid gap-2">
-              <span className={labelClass}>{"Temperature"}</span>
+              <span className={labelClass}>{i18n.t("settings.temperature")}</span>
               <input
                 type="number"
                 min={0}
@@ -344,7 +346,7 @@ export function Settings() {
             </label>
 
             <label className="grid gap-2">
-              <span className={labelClass}>{"Timeout seconds"}</span>
+              <span className={labelClass}>{i18n.t("settings.timeoutSeconds")}</span>
               <input
                 type="number"
                 min={1}
@@ -370,7 +372,7 @@ export function Settings() {
             </label>
 
             <label className="grid gap-2">
-              <span className={labelClass}>{"Reasoning effort"}</span>
+              <span className={labelClass}>{i18n.t("settings.reasoningEffort")}</span>
               <select
                 value={form.reasoning_effort}
                 onChange={(event) => setForm({ ...form, reasoning_effort: event.target.value })}
@@ -386,7 +388,7 @@ export function Settings() {
             </label>
 
             <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{"Saved to"}: </span>
+              <span className="font-medium text-foreground">{i18n.t("settings.saved")}: </span>
               <span className="break-all font-mono">{settings.env_path}</span>
             </div>
 
@@ -396,7 +398,7 @@ export function Settings() {
               className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {saving ? "Saving..." : "Save settings"}
+              {saving ? i18n.t("settings.saving") : i18n.t("settings.save")}
             </button>
           </div>
         </section>
@@ -445,7 +447,7 @@ export function Settings() {
             </label>
 
             <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{"Saved to"}: </span>
+              <span className="font-medium text-foreground">{i18n.t("settings.saved")}: </span>
               <span className="break-all font-mono">{dataSettings.env_path}</span>
             </div>
 
@@ -455,7 +457,7 @@ export function Settings() {
               className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {dataSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {dataSaving ? "Saving..." : "Save data source settings"}
+              {dataSaving ? i18n.t("settings.saving") : "Save data source settings"}
             </button>
           </div>
 

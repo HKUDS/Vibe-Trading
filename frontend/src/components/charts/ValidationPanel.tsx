@@ -1,3 +1,4 @@
+import i18n from '@/i18n';
 import { cn } from "@/lib/utils";
 import type { ValidationData } from "@/lib/api";
 
@@ -41,7 +42,7 @@ function MonteCarloSection({ mc }: { mc: NonNullable<ValidationData["monte_carlo
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <h4 className="text-sm font-semibold">Monte Carlo Permutation Test</h4>
-        <Badge value={sig ? "Significant" : "Not Significant"} good={sig} />
+        <Badge value={sig ? i18n.t("validation.significant") : i18n.t("validation.notSignificant")} good={sig} />
       </div>
       <p className="text-xs text-muted-foreground">
         Shuffled trade order {mc.n_simulations.toLocaleString()} times to test if Sharpe is better than random.
@@ -170,7 +171,7 @@ export function ValidationPanel({ data }: Props) {
   const hasWF = !!data.walk_forward;
 
   if (!hasMC && !hasBS && !hasWF) {
-    return <p className="p-8 text-sm text-muted-foreground">No validation data available.</p>;
+    return <p className="p-8 text-sm text-muted-foreground">{i18n.t("validation.noData")}</p>;
   }
 
   return (

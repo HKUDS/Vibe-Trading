@@ -1,3 +1,4 @@
+import i18n from '@/i18n';
 import { memo, useCallback, useEffect, useState } from "react";
 import {
   Activity,
@@ -294,7 +295,7 @@ export const RunnerStatus = memo(function RunnerStatus({ status, unavailable, ha
         aria-expanded={open}
       >
         <Activity className="h-3 w-3 shrink-0" />
-        <span className="shrink-0">Connector runtime</span>
+        <span className="shrink-0">{i18n.t("runnerStatus.connectorRuntime")}</span>
         <span className="truncate text-muted-foreground">
           {authorizedCount > 0 ? `${authorizedCount} connected` : "no connector connected"}
         </span>

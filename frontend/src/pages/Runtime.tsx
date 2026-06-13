@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   Activity,
   AlertTriangle,
@@ -19,6 +21,7 @@ import { cn } from "@/lib/utils";
 const RUNTIME_POLL_INTERVAL_MS = 15_000;
 
 export function Runtime() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<LiveStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -33,12 +36,12 @@ export function Runtime() {
       setStatus(next);
     } catch (err) {
       setStatus(null);
-      setError(err instanceof Error ? err.message : "Runtime status unavailable.");
+      setError(err instanceof Error ? err.message : t("runtime.statusUnavailable"));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     loadStatus("initial");
@@ -55,13 +58,13 @@ export function Runtime() {
           <div className="space-y-3">
             <div className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground">
               <Activity className="h-3.5 w-3.5" />
-              Runtime Monitor
+              {t("runtime.monitorBadge")}
             </div>
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">Live / Paper Runtime Status</h1>
+              <h1 className="text-3xl font-bold tracking-tight">{t("runtime.title")}</h1>
               <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-                Read-only status from <span className="font-mono">/live/status</span>. This page does not authorize connectors,
-                start runners, stop runners, submit orders, cancel orders, or change mandates.
+                {t("runtime.subtitlePre")} <span className="font-mono">/live/status</span>
+                {t("runtime.subtitlePost")}
               </p>
             </div>
           </div>
@@ -72,7 +75,7 @@ export function Runtime() {
             className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition hover:bg-muted disabled:opacity-50"
           >
             {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Refresh
+            {t("runtime.refresh")}
           </button>
         </section>
 
@@ -88,12 +91,10 @@ export function Runtime() {
           <section className="rounded-md border border-amber-500/30 bg-amber-500/5 p-5">
             <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
               <AlertTriangle className="h-5 w-5" />
-              Runtime status unavailable
+              {t("runtime.unavailableTitle")}
             </div>
             <p className="mt-2 text-sm text-muted-foreground">{error}</p>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Treat connector runtime as unavailable until the backend provides a current status snapshot.
-            </p>
+            <p className="mt-2 text-xs text-muted-foreground">{t("runtime.unavailableHint")}</p>
           </section>
         ) : null}
 
@@ -101,21 +102,21 @@ export function Runtime() {
           <>
             <section className="grid gap-3 md:grid-cols-4">
               <SummaryTile
-                label="Global Halt"
-                value={status.global_halted ? "Halted" : "Clear"}
+                label={t("runtime.globalHalt")}
+                value={status.global_halted ? t("runtime.halted") : t("runtime.clear")}
                 tone={status.global_halted ? "danger" : "success"}
                 icon={status.global_halted ? OctagonX : CheckCircle2}
               />
-              <SummaryTile label="Brokers" value={String(summary.brokerCount)} tone="neutral" icon={Activity} />
+              <SummaryTile label={t("runtime.brokers")} value={String(summary.brokerCount)} tone="neutral" icon={Activity} />
               <SummaryTile
-                label="Authorized"
+                label={t("runtime.authorized")}
                 value={String(summary.authorizedCount)}
                 tone={summary.authorizedCount > 0 ? "success" : "neutral"}
                 icon={summary.authorizedCount > 0 ? Wifi : WifiOff}
               />
               <SummaryTile
-                label="Runners"
-                value={`${summary.runningCount} running`}
+                label={t("runtime.runners")}
+                value={t("runtime.running", { count: summary.runningCount })}
                 tone={summary.runningCount > 0 && !status.global_halted ? "success" : "neutral"}
                 icon={summary.runningCount > 0 ? Activity : Clock3}
               />
@@ -124,15 +125,13 @@ export function Runtime() {
             {status.brokers.length === 0 ? (
               <section className="rounded-md border border-dashed p-8 text-center">
                 <ShieldOff className="mx-auto h-8 w-8 text-muted-foreground" />
-                <h2 className="mt-3 font-medium">No runtime profiles reported</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  The backend did not return any recognized live or paper broker profiles.
-                </p>
+                <h2 className="mt-3 font-medium">{t("runtime.noProfilesTitle")}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{t("runtime.noProfilesBody")}</p>
               </section>
             ) : (
               <section className="grid gap-4">
                 {status.brokers.map((broker) => (
-                  <BrokerRuntimeCard key={broker.auth.broker} broker={broker} globalHalted={status.global_halted} />
+                  <BrokerRuntimeCard key={broker.auth.broker} broker={broker} globalHalted={status.global_halted} t={t} />
                 ))}
               </section>
             )}
@@ -177,13 +176,13 @@ function SummaryTile({ label, value, tone, icon: Icon }: SummaryTileProps) {
   );
 }
 
-function BrokerRuntimeCard({ broker, globalHalted }: { broker: LiveBrokerStatus; globalHalted: boolean }) {
+function BrokerRuntimeCard({ broker, globalHalted, t }: { broker: LiveBrokerStatus; globalHalted: boolean; t: TFunction }) {
   const brokerKey = broker.auth.broker;
   const runnerAlive = broker.runner?.alive ?? false;
   const halted = globalHalted || broker.halted;
   const mandate = broker.mandate ?? null;
-  const risk = deriveRiskState(broker, globalHalted);
-  const mandateCountdown = formatCountdown(mandate?.expires_at);
+  const risk = deriveRiskState(broker, globalHalted, t);
+  const mandateCountdown = formatCountdown(mandate?.expires_at, t);
 
   return (
     <article className="rounded-md border p-4">
@@ -192,39 +191,42 @@ function BrokerRuntimeCard({ broker, globalHalted }: { broker: LiveBrokerStatus;
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-semibold capitalize">{brokerKey}</h2>
             <StatusPill
-              label={broker.auth.oauth_token_present ? "auth present" : "auth missing"}
+              label={broker.auth.oauth_token_present ? t("runtime.authPresent") : t("runtime.authMissing")}
               tone={broker.auth.oauth_token_present ? "success" : "neutral"}
             />
-            <StatusPill label={runnerAlive ? "runner alive" : "runner stopped"} tone={runnerAlive ? "success" : "neutral"} />
-            {halted ? <StatusPill label="halted" tone="danger" /> : null}
+            <StatusPill
+              label={runnerAlive ? t("runtime.runnerAlive") : t("runtime.runnerStopped")}
+              tone={runnerAlive ? "success" : "neutral"}
+            />
+            {halted ? <StatusPill label={t("runtime.haltedPill")} tone="danger" /> : null}
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
-            {broker.auth.is_live_broker ? "Recognized connector profile" : "Unknown connector profile"} · Last tick{" "}
-            {formatLastTick(broker.runner?.last_tick, broker.runner?.last_tick_age_seconds)}
+            {broker.auth.is_live_broker ? t("runtime.recognizedProfile") : t("runtime.unknownProfile")} · {t("runtime.lastTick")}{" "}
+            {formatLastTick(broker.runner?.last_tick, broker.runner?.last_tick_age_seconds, t)}
           </p>
         </div>
         <StatusPill label={risk.label} tone={risk.tone} />
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <RuntimePanel title="Authorization" icon={broker.auth.oauth_token_present ? Wifi : WifiOff}>
-          <KeyValue label="OAuth token" value={broker.auth.oauth_token_present ? "present" : "missing"} />
-          <KeyValue label="Profile type" value={broker.auth.is_live_broker ? "recognized" : "unknown"} />
+        <RuntimePanel title={t("runtime.authorization")} icon={broker.auth.oauth_token_present ? Wifi : WifiOff}>
+          <KeyValue label={t("runtime.oauthToken")} value={broker.auth.oauth_token_present ? t("runtime.present") : t("runtime.missing")} />
+          <KeyValue label={t("runtime.profileType")} value={broker.auth.is_live_broker ? t("runtime.recognized") : t("runtime.unknown")} />
         </RuntimePanel>
 
-        <RuntimePanel title="Mandate" icon={mandate ? ShieldCheck : ShieldOff}>
+        <RuntimePanel title={t("runtime.mandate")} icon={mandate ? ShieldCheck : ShieldOff}>
           {mandate ? (
             <>
-              <KeyValue label="Account" value={mandate.account_ref || "unrecorded"} />
-              <KeyValue label="Expiry" value={mandate.expired ? "expired" : mandateCountdown} />
-              <KeyValue label="Limits" value={summarizeLimits(mandate.limits)} />
+              <KeyValue label={t("runtime.account")} value={mandate.account_ref || t("runtime.unrecorded")} />
+              <KeyValue label={t("runtime.expiry")} value={mandate.expired ? t("runtime.expired") : mandateCountdown} />
+              <KeyValue label={t("runtime.limits")} value={summarizeLimits(mandate.limits, t)} />
             </>
           ) : (
-            <p className="text-sm text-muted-foreground">No active mandate reported.</p>
+            <p className="text-sm text-muted-foreground">{t("runtime.noMandate")}</p>
           )}
         </RuntimePanel>
 
-        <RuntimePanel title="Runtime Risk State" icon={risk.icon}>
+        <RuntimePanel title={t("runtime.riskStateTitle")} icon={risk.icon}>
           <p className="text-sm text-muted-foreground">{risk.description}</p>
         </RuntimePanel>
       </div>
@@ -278,7 +280,7 @@ function summarizeRuntime(status: LiveStatus | null) {
   };
 }
 
-function deriveRiskState(broker: LiveBrokerStatus, globalHalted: boolean): {
+function deriveRiskState(broker: LiveBrokerStatus, globalHalted: boolean, t: TFunction): {
   label: string;
   tone: "success" | "danger" | "warning" | "neutral";
   icon: typeof Activity;
@@ -286,53 +288,53 @@ function deriveRiskState(broker: LiveBrokerStatus, globalHalted: boolean): {
 } {
   if (globalHalted || broker.halted) {
     return {
-      label: "risk halted",
+      label: t("runtime.riskHalted"),
       tone: "danger",
       icon: OctagonX,
-      description: "The kill switch is tripped for this profile. Treat connector runtime as stopped until status clears.",
+      description: t("runtime.riskHaltedDesc"),
     };
   }
   if (broker.runner?.alive && broker.mandate && !broker.mandate.expired) {
     return {
-      label: "runtime active",
+      label: t("runtime.riskActive"),
       tone: "success",
       icon: Activity,
-      description: "Runner is alive and an unexpired mandate is present. This page is still read-only status only.",
+      description: t("runtime.riskActiveDesc"),
     };
   }
   if (broker.auth.oauth_token_present && broker.mandate && !broker.mandate.expired) {
     return {
-      label: "ready but idle",
+      label: t("runtime.riskIdle"),
       tone: "warning",
       icon: Clock3,
-      description: "Authorization and mandate are present, but the runner is not alive.",
+      description: t("runtime.riskIdleDesc"),
     };
   }
   return {
-    label: "dormant",
+    label: t("runtime.riskDormant"),
     tone: "neutral",
     icon: ShieldOff,
-    description: "Connector runtime is not ready for autonomous operation because authorization, mandate, or runner liveness is missing.",
+    description: t("runtime.riskDormantDesc"),
   };
 }
 
-function summarizeLimits(limits: LiveMandateLimits | undefined): string {
-  if (!limits) return "limits unavailable";
+function summarizeLimits(limits: LiveMandateLimits | undefined, t: TFunction): string {
+  if (!limits) return t("runtime.limitsUnavailable");
   const parts: string[] = [];
-  if (typeof limits.max_order_notional_usd === "number") parts.push(`$${limits.max_order_notional_usd.toLocaleString()}/order`);
-  if (typeof limits.max_total_exposure_usd === "number") parts.push(`$${limits.max_total_exposure_usd.toLocaleString()} exposure`);
-  if (typeof limits.max_trades_per_day === "number") parts.push(`${limits.max_trades_per_day}/day`);
-  if (typeof limits.max_leverage === "number") parts.push(`${limits.max_leverage}x leverage`);
+  if (typeof limits.max_order_notional_usd === "number") parts.push(`$${limits.max_order_notional_usd.toLocaleString()}${t("runtime.perOrder")}`);
+  if (typeof limits.max_total_exposure_usd === "number") parts.push(`$${limits.max_total_exposure_usd.toLocaleString()} ${t("runtime.exposure")}`);
+  if (typeof limits.max_trades_per_day === "number") parts.push(`${limits.max_trades_per_day}${t("runtime.perDay")}`);
+  if (typeof limits.max_leverage === "number") parts.push(`${limits.max_leverage}${t("runtime.leverageSuffix")}`);
   if (limits.allowed_instruments?.length) parts.push(limits.allowed_instruments.join(", "));
-  return parts.join(" · ") || "limits unavailable";
+  return parts.join(" · ") || t("runtime.limitsUnavailable");
 }
 
-function formatCountdown(iso: string | undefined): string {
-  if (!iso) return "unknown";
+function formatCountdown(iso: string | undefined, t: TFunction): string {
+  if (!iso) return t("runtime.unknown");
   const target = new Date(iso).getTime();
-  if (!Number.isFinite(target)) return "unknown";
+  if (!Number.isFinite(target)) return t("runtime.unknown");
   const deltaSec = Math.round((target - Date.now()) / 1000);
-  if (deltaSec <= 0) return "expired";
+  if (deltaSec <= 0) return t("runtime.expired");
   const days = Math.floor(deltaSec / 86_400);
   const hours = Math.floor((deltaSec % 86_400) / 3600);
   if (days > 0) return `${days}d ${hours}h`;
@@ -340,19 +342,19 @@ function formatCountdown(iso: string | undefined): string {
   return `${Math.max(1, Math.floor(deltaSec / 60))}m`;
 }
 
-function formatLastTick(value: string | number | null | undefined, ageSeconds: number | null | undefined): string {
+function formatLastTick(value: string | number | null | undefined, ageSeconds: number | null | undefined, t: TFunction): string {
   if (typeof ageSeconds === "number" && Number.isFinite(ageSeconds)) {
-    if (ageSeconds < 60) return `${Math.round(ageSeconds)}s ago`;
-    if (ageSeconds < 3600) return `${Math.floor(ageSeconds / 60)}m ago`;
-    return `${Math.floor(ageSeconds / 3600)}h ago`;
+    if (ageSeconds < 60) return `${Math.round(ageSeconds)}s ${t("runtime.ago")}`;
+    if (ageSeconds < 3600) return `${Math.floor(ageSeconds / 60)}m ${t("runtime.ago")}`;
+    return `${Math.floor(ageSeconds / 3600)}h ${t("runtime.ago")}`;
   }
-  if (value == null || value === "") return "never";
+  if (value == null || value === "") return t("runtime.never");
   const timestamp = typeof value === "number"
     ? (value < 1_000_000_000_000 ? value * 1000 : value)
     : new Date(value).getTime();
-  if (!Number.isFinite(timestamp)) return "unknown";
+  if (!Number.isFinite(timestamp)) return t("runtime.unknown");
   const deltaSec = Math.round((Date.now() - timestamp) / 1000);
-  if (deltaSec < 60) return `${Math.max(0, deltaSec)}s ago`;
-  if (deltaSec < 3600) return `${Math.floor(deltaSec / 60)}m ago`;
-  return `${Math.floor(deltaSec / 3600)}h ago`;
+  if (deltaSec < 60) return `${Math.max(0, deltaSec)}s ${t("runtime.ago")}`;
+  if (deltaSec < 3600) return `${Math.floor(deltaSec / 60)}m ${t("runtime.ago")}`;
+  return `${Math.floor(deltaSec / 3600)}h ${t("runtime.ago")}`;
 }

@@ -97,6 +97,12 @@ ibkr = [
 deepseek = [
     "langchain-deepseek>=1.0.0,<2",
 ]
+ashare = [
+    # Free, no-auth A-share source over BaoStock's TCP protocol; bypasses the
+    # HTTP CDN IP blocks that affect eastmoney-backed sources. The Tencent
+    # A-share loader needs no extra dependency (stdlib HTTP only).
+    "baostock>=0.8.8",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",

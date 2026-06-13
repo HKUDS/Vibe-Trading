@@ -35,7 +35,7 @@ class MarketDataTool(BaseTool):
             },
             "source": {
                 "type": "string",
-                "description": "Data source: auto, yfinance, okx, tushare, akshare, or ccxt.",
+                "description": "Data source: auto, yfinance, okx, tushare, baostock, tencent, akshare, or ccxt.",
                 "default": "auto",
             },
             "interval": {

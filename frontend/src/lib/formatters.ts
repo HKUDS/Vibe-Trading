@@ -1,4 +1,6 @@
-export const METRIC_LABELS: Record<string, string> = {
+import i18n from '@/i18n';
+
+const METRIC_LABELS_EN: Record<string, string> = {
   total_return: "Total Return",
   annual_return: "Annual",
   sharpe: "Sharpe",
@@ -16,8 +18,32 @@ export const METRIC_LABELS: Record<string, string> = {
   information_ratio: "IR",
 };
 
+const METRIC_LABELS_ZH: Record<string, string> = {
+  total_return: "总收益率",
+  annual_return: "年化",
+  sharpe: "夏普比率",
+  max_drawdown: "最大回撤",
+  win_rate: "胜率",
+  trade_count: "交易次数",
+  final_value: "最终净值",
+  calmar: "卡尔马",
+  sortino: "索提诺",
+  profit_loss_ratio: "盈亏比",
+  max_consecutive_loss: "最大连续亏损",
+  avg_holding_days: "平均持仓天数",
+  benchmark_return: "基准收益",
+  excess_return: "超额收益",
+  information_ratio: "IR",
+};
+
+// Canonical metric key set (English labels). Kept exported so consumers and
+// tests have a stable label map; localized lookups go through getMetricLabel.
+export const METRIC_LABELS = METRIC_LABELS_EN;
+
 export function getMetricLabel(k: string): string {
-  return METRIC_LABELS[k] || k;
+  const lang = i18n.language;
+  if (lang.startsWith('zh')) return METRIC_LABELS_ZH[k] || METRIC_LABELS_EN[k] || k;
+  return METRIC_LABELS_EN[k] || k;
 }
 
 const PCT_KEYS = ["total_return", "annual_return", "win_rate", "max_drawdown", "benchmark_return", "excess_return"];

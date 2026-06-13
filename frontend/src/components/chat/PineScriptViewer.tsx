@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { memo, useState, useCallback } from "react";
 import { X, Copy, Check, ExternalLink } from "lucide-react";
 
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }: Props) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -36,7 +38,7 @@ export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold">Pine Script v6</span>
+            <span className="text-sm font-semibold">{t("pineViewer.pineScript")}</span>
             <span className="text-xs text-muted-foreground">strategy.pine</span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -45,7 +47,7 @@ export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
             >
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-              {copied ? "Copied" : "Copy"}
+              {copied ? t("pineViewer.copied") : t("pineViewer.copy")}
             </button>
             <a
               href="https://www.tradingview.com/pine-script-docs/welcome/"
@@ -75,7 +77,7 @@ export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }
         {/* Footer */}
         <div className="px-4 py-2.5 border-t bg-muted/30">
           <p className="text-xs text-muted-foreground">
-            TradingView Pine Editor &rarr; New blank indicator &rarr; Paste code &rarr; Add to Chart
+            {t("pineViewer.footer")}
           </p>
         </div>
       </div>

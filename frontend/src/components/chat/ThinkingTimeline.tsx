@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useMemo, memo } from "react";
 import { ChevronDown, ChevronRight, CheckCircle2, XCircle, Circle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -10,10 +11,11 @@ interface Props {
 }
 
 export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLatest = false }: Props) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(isLatest);
 
   const toolLabel = (tool?: string): string => {
-    if (!tool) return "Processing";
+    if (!tool) return t('thinking.processing');
     return localizeToolName(tool);
   };
 
@@ -56,8 +58,8 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
 
   const stepCount = steps.length;
   const summaryText = isRunning
-    ? `Running ${toolLabel(latestTool)}...`
-    : `Done · ${stepCount} steps${totalMs > 0 ? ` · ${(totalMs / 1000).toFixed(1)}s` : ""}`;
+    ? `${t('thinking.running')} ${toolLabel(latestTool)}...`
+    : `${t('thinking.done')} · ${t('thinking.steps', { count: stepCount })}${totalMs > 0 ? ` · ${(totalMs / 1000).toFixed(1)}s` : ""}`;
 
   return (
     <div className="rounded-lg border border-border/40 bg-muted/5 overflow-hidden">
@@ -119,7 +121,7 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
 
               {/* Duration or status */}
               {step.status === "running" ? (
-                <span className="text-[10px] text-primary/60">Running</span>
+                <span className="text-[10px] text-primary/60">{t('thinking.running')}</span>
               ) : step.elapsed_ms != null ? (
                 <span className="text-[10px] text-muted-foreground/40 tabular-nums">{(step.elapsed_ms / 1000).toFixed(1)}s</span>
               ) : null}
