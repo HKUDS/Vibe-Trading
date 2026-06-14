@@ -21,7 +21,12 @@ logger = logging.getLogger(__name__)
 
 
 def _is_a_share(code: str) -> bool:
-    return code.upper().endswith((".SZ", ".SH"))
+    # Support both baostock native format (sh.601398) and tushare-style suffix (601398.SH)
+    code_lower = code.lower()
+    return (
+        code_lower.startswith(("sh.", "sz."))
+        or code.upper().endswith((".SZ", ".SH"))
+    )
 
 
 @register
@@ -101,16 +106,21 @@ class DataLoader:
         if not _is_a_share(code):
             return None
 
-        # BaoStock format: sh.601595 or sz.000001
-        parts = code.upper().split(".")
-        symbol = parts[0]
-        suffix = parts[1] if len(parts) > 1 else ""
-        if suffix == "SH":
-            bs_code = f"sh.{symbol}"
-        elif suffix == "SZ":
-            bs_code = f"sz.{symbol}"
+        # Support baostock native format (sh.601398 / sz.000001)
+        # and tushare-style suffix (601398.SH / 000001.SZ)
+        code_lower = code.lower()
+        if code_lower.startswith("sh.") or code_lower.startswith("sz."):
+            bs_code = code_lower
         else:
-            return None
+            parts = code.upper().split(".")
+            symbol = parts[0]
+            suffix = parts[1] if len(parts) > 1 else ""
+            if suffix == "SH":
+                bs_code = f"sh.{symbol}"
+            elif suffix == "SZ":
+                bs_code = f"sz.{symbol}"
+            else:
+                return None
 
         rs = bs.query_history_k_data_plus(
             bs_code,
