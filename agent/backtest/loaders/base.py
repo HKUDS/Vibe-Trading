@@ -56,6 +56,38 @@ DEFAULT_BACKOFF: tuple[float, ...] = (0.5, 1.5, 4.0)
 DEFAULT_MAX_RETRIES = 3
 
 
+def positive_env_int(name: str, default: int) -> int:
+    """Read a positive integer env var, warning and falling back on invalid values."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("invalid %s=%r, using default %s", name, raw, default)
+        return default
+    if value <= 0:
+        logger.warning("non-positive %s=%r, using default %s", name, raw, default)
+        return default
+    return value
+
+
+def positive_env_float(name: str, default: float) -> float:
+    """Read a positive float env var, warning and falling back on invalid values."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning("invalid %s=%r, using default %s", name, raw, default)
+        return default
+    if value <= 0:
+        logger.warning("non-positive %s=%r, using default %s", name, raw, default)
+        return default
+    return value
+
+
 def check_budget(deadline: float, label: str, budget_s: float | None = None) -> None:
     """Raise :class:`TimeoutError` if the monotonic clock has crossed ``deadline``.
 

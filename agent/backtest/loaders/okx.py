@@ -5,7 +5,6 @@ Supports 1m/5m/15m/30m/1H/4H/1D.
 Up to 300 bars per request; paginates with ``after`` for longer history.
 """
 
-import os
 import time
 from typing import Dict, List, Optional
 
@@ -15,6 +14,8 @@ import requests
 from backtest.loaders.base import (
     cached_loader_fetch,
     check_budget,
+    positive_env_float,
+    positive_env_int,
     retry_with_budget,
     validate_date_range,
 )
@@ -26,8 +27,8 @@ _MAX_PER_PAGE = 300
 # budget, so a transient blip dropped the whole symbol and a slow tier
 # could stall ~max_pages*timeout. Bound it like the ccxt loader; retry
 # scheduling is delegated to :mod:`backtest.loaders.base`.
-_OKX_TIMEOUT = int(os.getenv("OKX_TIMEOUT_S", "15"))
-_OKX_FETCH_BUDGET_S = float(os.getenv("OKX_FETCH_BUDGET_S", "60"))
+_OKX_TIMEOUT = positive_env_int("OKX_TIMEOUT_S", 15)
+_OKX_FETCH_BUDGET_S = positive_env_float("OKX_FETCH_BUDGET_S", 60.0)
 
 
 @register

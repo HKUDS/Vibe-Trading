@@ -10,6 +10,8 @@ the happy path still issues one request per page (no behavior change).
 
 from __future__ import annotations
 
+import importlib
+
 import pandas as pd
 import pytest
 import requests
@@ -92,3 +94,34 @@ def test_wallclock_budget_enforced(monkeypatch):
     monkeypatch.setattr(okx.requests, "get", _Seq([requests.ConnectionError("slow")]))
     with pytest.raises(TimeoutError):
         DataLoader()._fetch_candles("BTC-USDT", S, E, "1D", 20)
+
+
+def test_invalid_timeout_env_values_fall_back_on_reload(monkeypatch, caplog):
+    monkeypatch.setenv("OKX_TIMEOUT_S", "abc")
+    monkeypatch.setenv("OKX_FETCH_BUDGET_S", "nope")
+    try:
+        with caplog.at_level("WARNING", logger="backtest.loaders.base"):
+            module = importlib.reload(okx)
+
+        assert module._OKX_TIMEOUT == 15
+        assert module._OKX_FETCH_BUDGET_S == 60.0
+        assert "OKX_TIMEOUT_S" in caplog.text
+        assert "OKX_FETCH_BUDGET_S" in caplog.text
+    finally:
+        monkeypatch.delenv("OKX_TIMEOUT_S", raising=False)
+        monkeypatch.delenv("OKX_FETCH_BUDGET_S", raising=False)
+        importlib.reload(okx)
+
+
+def test_valid_timeout_env_values_are_honored_on_reload(monkeypatch):
+    monkeypatch.setenv("OKX_TIMEOUT_S", "7")
+    monkeypatch.setenv("OKX_FETCH_BUDGET_S", "2.5")
+    try:
+        module = importlib.reload(okx)
+
+        assert module._OKX_TIMEOUT == 7
+        assert module._OKX_FETCH_BUDGET_S == 2.5
+    finally:
+        monkeypatch.delenv("OKX_TIMEOUT_S", raising=False)
+        monkeypatch.delenv("OKX_FETCH_BUDGET_S", raising=False)
+        importlib.reload(okx)

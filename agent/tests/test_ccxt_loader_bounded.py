@@ -10,6 +10,8 @@ the happy path is unchanged (one call per page).
 
 from __future__ import annotations
 
+import importlib
+
 import pandas as pd
 import pytest
 
@@ -90,3 +92,34 @@ def test_wallclock_budget_enforced(monkeypatch):
 def test_get_exchange_sets_explicit_timeout():
     ex = DataLoader()._get_exchange()
     assert ex.timeout == cl._CCXT_TIMEOUT_MS
+
+
+def test_invalid_timeout_env_values_fall_back_on_reload(monkeypatch, caplog):
+    monkeypatch.setenv("CCXT_TIMEOUT_MS", "abc")
+    monkeypatch.setenv("CCXT_FETCH_BUDGET_S", "nope")
+    try:
+        with caplog.at_level("WARNING", logger="backtest.loaders.base"):
+            module = importlib.reload(cl)
+
+        assert module._CCXT_TIMEOUT_MS == 15_000
+        assert module._CCXT_FETCH_BUDGET_S == 60.0
+        assert "CCXT_TIMEOUT_MS" in caplog.text
+        assert "CCXT_FETCH_BUDGET_S" in caplog.text
+    finally:
+        monkeypatch.delenv("CCXT_TIMEOUT_MS", raising=False)
+        monkeypatch.delenv("CCXT_FETCH_BUDGET_S", raising=False)
+        importlib.reload(cl)
+
+
+def test_valid_timeout_env_values_are_honored_on_reload(monkeypatch):
+    monkeypatch.setenv("CCXT_TIMEOUT_MS", "1234")
+    monkeypatch.setenv("CCXT_FETCH_BUDGET_S", "2.5")
+    try:
+        module = importlib.reload(cl)
+
+        assert module._CCXT_TIMEOUT_MS == 1234
+        assert module._CCXT_FETCH_BUDGET_S == 2.5
+    finally:
+        monkeypatch.delenv("CCXT_TIMEOUT_MS", raising=False)
+        monkeypatch.delenv("CCXT_FETCH_BUDGET_S", raising=False)
+        importlib.reload(cl)

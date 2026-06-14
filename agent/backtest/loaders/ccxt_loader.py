@@ -17,6 +17,8 @@ import pandas as pd
 from backtest.loaders.base import (
     cached_loader_fetch,
     check_budget,
+    positive_env_float,
+    positive_env_int,
     retry_with_budget,
     validate_date_range,
 )
@@ -34,8 +36,8 @@ _INTERVAL_MAP = {
 # minutes. Cap each HTTP call, bound transient retries, and enforce a hard
 # wall-clock budget so the fetch fails fast instead of hanging. Retry
 # scheduling is delegated to :mod:`backtest.loaders.base`.
-_CCXT_TIMEOUT_MS = int(os.getenv("CCXT_TIMEOUT_MS", "15000"))
-_CCXT_FETCH_BUDGET_S = float(os.getenv("CCXT_FETCH_BUDGET_S", "60"))
+_CCXT_TIMEOUT_MS = positive_env_int("CCXT_TIMEOUT_MS", 15_000)
+_CCXT_FETCH_BUDGET_S = positive_env_float("CCXT_FETCH_BUDGET_S", 60.0)
 
 
 def _first_proxy_env(*names: str) -> str:
