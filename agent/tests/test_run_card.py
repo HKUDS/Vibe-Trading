@@ -149,6 +149,86 @@ def test_api_run_response_includes_run_card(tmp_path: Path) -> None:
     assert response.run_card == run_card
 
 
+def _write_chart_artifacts(run_dir: Path) -> None:
+    artifacts = run_dir / "artifacts"
+    artifacts.mkdir(parents=True)
+    (run_dir / "state.json").write_text('{"status": "success"}\n', encoding="utf-8")
+    (run_dir / "req.json").write_text(
+        json.dumps({"context": {"codes": ["AAPL", "MSFT"], "start_date": "2025-01-01", "end_date": "2025-01-02"}}),
+        encoding="utf-8",
+    )
+    (artifacts / "price_series.csv").write_text(
+        "timestamp,code,open,high,low,close,volume\n"
+        "2025-01-01,AAPL,1,2,1,2,100\n"
+        "2025-01-01,MSFT,3,4,3,4,200\n",
+        encoding="utf-8",
+    )
+    (artifacts / "trades.csv").write_text(
+        "timestamp,code,side,price,qty,reason\n"
+        "2025-01-01,AAPL,BUY,2,10,entry\n"
+        "2025-01-01,MSFT,SELL,4,5,exit\n",
+        encoding="utf-8",
+    )
+
+
+def test_api_run_response_default_chart_payload_is_unchanged(tmp_path: Path) -> None:
+    import api_server
+
+    run_dir = tmp_path / "run_chart_default"
+    run_dir.mkdir()
+    _write_chart_artifacts(run_dir)
+
+    response = api_server._build_response_from_run_dir(run_dir, elapsed=0.0, include_analysis=True)
+    payload = response.model_dump()
+
+    assert "chart_symbols" not in payload
+    assert set(response.price_series or {}) == {"AAPL", "MSFT"}
+    assert {marker["code"] for marker in response.trade_markers or []} == {"AAPL", "MSFT"}
+
+
+def test_api_run_response_summary_chart_payload_discovers_symbols(tmp_path: Path) -> None:
+    import api_server
+
+    run_dir = tmp_path / "run_chart_summary"
+    run_dir.mkdir()
+    _write_chart_artifacts(run_dir)
+    chart_symbols: list[str] = []
+
+    response = api_server._build_response_from_run_dir(
+        run_dir,
+        elapsed=0.0,
+        include_analysis=True,
+        chart_payload="summary",
+        chart_symbols_out=chart_symbols,
+    )
+
+    assert chart_symbols == ["AAPL", "MSFT"]
+    assert response.price_series == {}
+    assert response.indicator_series == {}
+    assert response.trade_markers == []
+
+
+def test_api_run_response_can_filter_chart_symbol(tmp_path: Path) -> None:
+    import api_server
+
+    run_dir = tmp_path / "run_chart_symbol"
+    run_dir.mkdir()
+    _write_chart_artifacts(run_dir)
+    chart_symbols: list[str] = []
+
+    response = api_server._build_response_from_run_dir(
+        run_dir,
+        elapsed=0.0,
+        include_analysis=True,
+        chart_symbol="AAPL",
+        chart_symbols_out=chart_symbols,
+    )
+
+    assert chart_symbols == ["AAPL", "MSFT"]
+    assert set(response.price_series or {}) == {"AAPL"}
+    assert {marker["code"] for marker in response.trade_markers or []} == {"AAPL"}
+
+
 def test_runner_artifact_spec_surfaces_run_card_paths() -> None:
     runner = Runner()
 
