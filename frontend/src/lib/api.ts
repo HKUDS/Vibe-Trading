@@ -73,7 +73,7 @@ function appendQueryParam(url: string, key: string, value: string): string {
 
 export const api = {
   uploadFile,
-  listRuns: () => request<RunListItem[]>("/runs"),
+  listRuns: (limit?: number) => request<RunListItem[]>(`/runs${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`),
   getRun: (id: string) => request<RunData>(`/runs/${id}`),
   getRunCode: (id: string) => request<Record<string, string>>(`/runs/${id}/code`),
   getRunPine: (id: string) => request<PineScriptResult>(`/runs/${id}/pine`),
