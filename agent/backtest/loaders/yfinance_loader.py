@@ -68,6 +68,11 @@ def _to_yfinance_interval(interval: str) -> str:
     return _INTERVAL_MAP.get(normalized, normalized.lower())
 
 
+def _to_yfinance_exclusive_end(end_date: str) -> str:
+    """Convert the project-inclusive end date to yfinance's exclusive end."""
+    return (pd.Timestamp(end_date).normalize() + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+
+
 def _download_history(
     tickers: Union[List[str], str],
     start_date: str,
@@ -240,6 +245,7 @@ class DataLoader:
 
         requested_interval = str(interval or "1D").strip()
         yf_interval = _to_yfinance_interval(requested_interval)
+        yf_end_date = _to_yfinance_exclusive_end(end_date)
 
         symbol_groups: Dict[str, List[str]] = defaultdict(list)
         for code in codes:
@@ -270,7 +276,7 @@ class DataLoader:
             return results
 
         try:
-            bulk_data = _download_history(pending, start_date, end_date, yf_interval)
+            bulk_data = _download_history(pending, start_date, yf_end_date, yf_interval)
         except Exception as exc:
             print(f"[WARN] yfinance bulk download failed for {pending}: {exc}")
             bulk_data = pd.DataFrame()
@@ -279,7 +285,7 @@ class DataLoader:
             try:
                 symbol_frame = _extract_symbol_frame(bulk_data, symbol, len(pending))
                 if symbol_frame.empty:
-                    symbol_frame = _download_history(symbol, start_date, end_date, yf_interval)
+                    symbol_frame = _download_history(symbol, start_date, yf_end_date, yf_interval)
 
                 normalized = _normalize_frame(symbol_frame, requested_interval)
                 if normalized.empty:
