@@ -149,6 +149,26 @@ def test_api_run_response_includes_run_card(tmp_path: Path) -> None:
     assert response.run_card == run_card
 
 
+def test_api_run_response_includes_llm_usage(tmp_path: Path) -> None:
+    import api_server
+
+    run_dir = tmp_path / "run_001"
+    run_dir.mkdir()
+    (run_dir / "state.json").write_text('{"status": "success"}\n', encoding="utf-8")
+    llm_usage = {
+        "provider": "deepseek",
+        "model": "deepseek-v3.2",
+        "totals": {"input_tokens": 100, "output_tokens": 25, "total_tokens": 125, "calls": 1},
+        "per_iteration": [{"iter": 1, "input_tokens": 100, "output_tokens": 25, "total_tokens": 125}],
+        "updated_at": "2026-06-14T00:00:00Z",
+    }
+    (run_dir / "llm_usage.json").write_text(json.dumps(llm_usage), encoding="utf-8")
+
+    response = api_server._build_response_from_run_dir(run_dir, elapsed=0.0)
+
+    assert response.llm_usage == llm_usage
+
+
 def test_runner_artifact_spec_surfaces_run_card_paths() -> None:
     runner = Runner()
 

@@ -114,6 +114,7 @@ class RunResponse(BaseModel):
     metrics: Optional[BacktestMetrics] = Field(None, description="Backtest metrics")
     artifacts: List[Artifact] = Field(default_factory=list, description="Run artifacts")
     run_card: Optional[Dict[str, Any]] = Field(None, description="Trust Layer run card payload")
+    llm_usage: Optional[Dict[str, Any]] = Field(None, description="Provider-reported AgentLoop usage summary")
 
     equity_curve: Optional[List[Dict[str, Any]]] = Field(None, description="Equity preview")
     trade_log: Optional[List[Dict[str, Any]]] = Field(None, description="Trade preview")
@@ -1112,6 +1113,13 @@ def _build_response_from_run_dir(run_dir: Path, elapsed: float, *, include_analy
     if run_card_path.exists():
         try:
             response.run_card = json.loads(run_card_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    llm_usage_path = run_dir / "llm_usage.json"
+    if llm_usage_path.exists():
+        try:
+            response.llm_usage = json.loads(llm_usage_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
 

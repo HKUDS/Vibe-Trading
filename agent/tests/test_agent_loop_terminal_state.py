@@ -11,6 +11,7 @@ exits without hitting any real API.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -45,6 +46,25 @@ class _StubLLMNoFinal:
         on_reasoning_chunk: Callable[[str], None] | None = None,
     ) -> _StubLLMResponse:
         return _StubLLMResponse()
+
+    def chat(self, messages: list[dict[str, Any]], **_: Any) -> _StubLLMResponse:
+        return _StubLLMResponse()
+
+
+class _StubLLMWithUsage:
+    model_name = "stub-model"
+
+    def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[Any] | None = None,
+        on_text_chunk: Callable[[str], None] | None = None,
+        on_reasoning_chunk: Callable[[str], None] | None = None,
+    ) -> _StubLLMResponse:
+        response = _StubLLMResponse()
+        response.content = "done"
+        response.usage_metadata = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+        return response
 
     def chat(self, messages: list[dict[str, Any]], **_: Any) -> _StubLLMResponse:
         return _StubLLMResponse()
@@ -140,6 +160,30 @@ def test_session_service_renders_meaningful_error_from_result(tmp_path: Path) ->
     assert ui_error != "unknown"
     assert "empty_model_response" in ui_error
     assert "iteration 1" in ui_error
+
+
+def test_usage_metadata_is_persisted_to_run_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Provider usage should remain auditable after the live SSE event is gone."""
+    monkeypatch.setenv("LANGCHAIN_PROVIDER", "pytest-provider")
+    agent = _build_agent(_StubLLMWithUsage(), max_iter=2, tmp_run_dir=tmp_path / "run")
+
+    result = agent.run(user_message="anything")
+
+    assert result["status"] == "success"
+    usage_path = tmp_path / "run" / "llm_usage.json"
+    payload = json.loads(usage_path.read_text(encoding="utf-8"))
+    assert payload["provider"] == "pytest-provider"
+    assert payload["model"] == "stub-model"
+    assert payload["totals"] == {
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+        "calls": 1,
+    }
+    assert payload["per_iteration"] == [
+        {"iter": 1, "input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+    ]
+    assert payload["updated_at"].endswith("Z")
 
 
 class _StubLLMAlwaysToolCalls:
