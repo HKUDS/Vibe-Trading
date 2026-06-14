@@ -1278,6 +1278,7 @@ async def get_run_result(
             detail=f"Run {run_id} not found"
         )
 
+    wants_chart_meta = bool(chart_payload or chart_symbol)
     chart_symbols: List[str] = []
     response = _build_response_from_run_dir(
         run_dir,
@@ -1285,10 +1286,10 @@ async def get_run_result(
         include_analysis=True,
         chart_symbol=chart_symbol,
         chart_payload=chart_payload or "full",
-        chart_symbols_out=chart_symbols,
+        chart_symbols_out=chart_symbols if wants_chart_meta else None,
     )
 
-    if chart_payload or chart_symbol:
+    if wants_chart_meta:
         payload = _run_response_payload(response)
         payload["chart_symbols"] = chart_symbols
         return JSONResponse(payload)
