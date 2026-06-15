@@ -17,6 +17,7 @@ import signal
 import time
 import csv
 import uuid
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -642,6 +643,65 @@ def _auth_credential_from_header_or_query(
     if allow_query and query_api_key:
         return query_api_key
     return ""
+
+
+def _is_loopback_origin(origin: str) -> bool:
+    """Return whether a browser Origin header names a loopback web UI."""
+    try:
+        parsed = urllib.parse.urlsplit(origin)
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    host = parsed.hostname.rstrip(".").lower()
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _reject_cross_site_browser_request(request: Request) -> None:
+    """Reject unsafe browser requests from non-loopback origins.
+
+    CORS protects response reads, not blind form/fetch side effects. Keep local
+    CLI/curl clients working while refusing browser-originated cross-site POSTs
+    to local control-plane actions such as shutdown.
+    """
+    sec_fetch_site = request.headers.get("sec-fetch-site", "").lower()
+    if sec_fetch_site == "cross-site":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-site request denied")
+
+    origin = request.headers.get("origin")
+    if origin and not _is_loopback_origin(origin):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-site request denied")
+
+
+def _require_shutdown_authorization(
+    *,
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials],
+) -> None:
+    """Authorize the local shutdown control-plane action.
+
+    Loopback peer IP alone is not enough for this browser-reachable, destructive
+    action. When API_AUTH_KEY is configured, require the Bearer token even for
+    loopback requests; otherwise preserve local dev-mode shutdown for direct
+    loopback clients while rejecting cross-site browser requests.
+    """
+    _reject_cross_site_browser_request(request)
+    api_key = _configured_api_key()
+    if api_key:
+        token = _auth_credential_from_header_or_query(cred, None, allow_query=False)
+        if not token or not hmac.compare_digest(token, api_key):
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+        return
+    if not _is_local_client(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API_AUTH_KEY is required for non-local API access",
+        )
 
 
 def _validate_api_auth(
@@ -1550,9 +1610,14 @@ def _terminate_current_process() -> None:
     os.kill(os.getpid(), signal.SIGTERM)
 
 
-@app.post("/system/shutdown", dependencies=[Depends(require_auth)])
-async def shutdown_local_api(background_tasks: BackgroundTasks, request: Request):
-    """Shut down the local API server when requested from loopback clients."""
+@app.post("/system/shutdown")
+async def shutdown_local_api(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
+):
+    """Shut down the local API server after explicit local authorization."""
+    _require_shutdown_authorization(request=request, cred=cred)
     client_host = request.client.host if request.client else ""
     if client_host not in {"127.0.0.1", "::1", "localhost"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Local access only")

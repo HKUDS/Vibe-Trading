@@ -215,6 +215,57 @@ def test_cors_origins_accept_explicit_remote_origins() -> None:
     assert origins == ["https://app.example.com", "https://admin.example.com"]
 
 
+def test_loopback_shutdown_requires_bearer_when_api_key_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Loopback alone must not authorize the browser-reachable shutdown action."""
+    called: list[bool] = []
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+    monkeypatch.setattr(api_server, "_terminate_current_process", lambda: called.append(True))
+
+    response = _local_client().post("/system/shutdown")
+
+    assert response.status_code == 401
+    assert called == []
+
+
+def test_loopback_shutdown_rejects_cross_site_browser_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CORS is not enough; unsafe cross-site browser POSTs must be rejected."""
+    called: list[bool] = []
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+    monkeypatch.setattr(api_server, "_terminate_current_process", lambda: called.append(True))
+
+    response = _local_client().post(
+        "/system/shutdown",
+        headers={"Origin": "https://attacker.example"},
+    )
+
+    assert response.status_code == 403
+    assert called == []
+
+
+def test_loopback_shutdown_accepts_valid_bearer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: list[bool] = []
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+    monkeypatch.setattr(api_server, "_terminate_current_process", lambda: called.append(True))
+
+    response = _local_client().post(
+        "/system/shutdown",
+        headers={"Authorization": "Bearer secret", "Origin": "http://127.0.0.1:8899"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "shutting-down"
+    assert called == [True]
+
+
 # ============================================================================
 # Path-parameter validation (run_id / session_id)
 # ============================================================================
