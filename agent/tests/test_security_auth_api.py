@@ -229,6 +229,37 @@ def test_dns_rebound_swarm_run_does_not_enable_shell_tools_by_default(
     assert captured["include_shell_tools"] is False
 
 
+def test_dns_rebound_session_message_does_not_enable_shell_tools_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeSessionService:
+        async def send_message(self, session_id: str, content: str, include_shell_tools: bool = False):
+            captured["session_id"] = session_id
+            captured["content"] = content
+            captured["include_shell_tools"] = include_shell_tools
+            return {"message_id": "msg-test", "attempt_id": "attempt-test"}
+
+    monkeypatch.setattr(api_server, "_get_session_service", lambda: FakeSessionService())
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+
+    response = _local_client().post(
+        "/sessions/abcdef012345/messages",
+        headers={
+            "Host": "attacker.example:8899",
+            "Origin": "http://attacker.example:8899",
+        },
+        json={"content": "SESSION_DNS_REBIND_PROOF_PAYLOAD"},
+    )
+
+    assert response.status_code == 200
+    assert captured["session_id"] == "abcdef012345"
+    assert captured["content"] == "SESSION_DNS_REBIND_PROOF_PAYLOAD"
+    assert captured["include_shell_tools"] is False
+
+
 def test_default_cors_origins_are_loopback_only() -> None:
     origins = api_server._parse_cors_origins(None)
 

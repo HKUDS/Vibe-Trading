@@ -733,8 +733,8 @@ def _shell_tools_enabled_for_request(request: Request) -> bool:
     # Shell-capable tools execute commands on the host as the API process user.
     # Do not infer that privilege from peer IP alone: browser DNS rebinding can
     # make attacker-controlled pages appear as loopback clients. Operators who
-    # intentionally want API-started swarm workers to receive shell tools must
-    # opt in explicitly.
+    # intentionally want API-started agents or swarm workers to receive shell
+    # tools must opt in explicitly.
     return _env_shell_tools_enabled()
 
 
