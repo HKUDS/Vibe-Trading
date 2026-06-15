@@ -724,6 +724,21 @@ export function Agent() {
         loadSessionMessages(urlSessionId, gen);
       }
       setupSSE(urlSessionId);
+    } else if (urlSessionId && urlSessionId === curSid && sseSessionRef.current !== urlSessionId) {
+      // #229: returning to the SAME session after the page was unmounted (user
+      // navigated away and back). The store kept our messages, but the unmount
+      // cleanup tore down the SSE stream, so a running attempt stopped updating
+      // and the UI looked frozen until the safety timeout fired. Re-hydrate like
+      // a reload: reset the transient streaming view first (so replay=active
+      // rebuilds the in-flight turn from the backend ring buffer instead of
+      // duplicating deltas onto the preserved text), refresh committed history
+      // (covers an attempt that finished while we were away), then re-subscribe.
+      const gen = genRef.current + 1;
+      genRef.current = gen;
+      const seed = curMsgs.length > 0 ? curMsgs : getCachedSession(urlSessionId);
+      switchSession(urlSessionId, seed);
+      loadSessionMessages(urlSessionId, gen);
+      setupSSE(urlSessionId);
     } else if (!urlSessionId && curSid) {
       genRef.current += 1;
       doDisconnect();
