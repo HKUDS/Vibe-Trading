@@ -33,7 +33,7 @@ import pandas as pd
 from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
-from backtest.loaders.base import retry_with_budget
+from backtest.loaders.base import positive_env_float, retry_with_budget
 
 logger = logging.getLogger(__name__)
 
@@ -409,8 +409,8 @@ class RSSHubEventProvider:
         else:
             route = spec.route_template
         url = f"{self.base_url}{route}"
-        timeout = float(os.getenv(RSSHUB_TIMEOUT_ENV, DEFAULT_TIMEOUT_S))
-        budget = float(os.getenv(RSSHUB_BUDGET_ENV, DEFAULT_BUDGET_S))
+        timeout = positive_env_float(RSSHUB_TIMEOUT_ENV, DEFAULT_TIMEOUT_S)
+        budget = positive_env_float(RSSHUB_BUDGET_ENV, DEFAULT_BUDGET_S)
         client = self._client or self._default_client()
         deadline = time.monotonic() + budget
 
