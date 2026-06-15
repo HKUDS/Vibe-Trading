@@ -172,10 +172,10 @@ def test_session_event_stream_accepts_query_token_for_browser_eventsource(
     assert response.status_code in {404, 501}
 
 
-def test_shell_tools_allowed_for_loopback_api_request() -> None:
+def test_shell_tools_disabled_for_loopback_api_request_by_default() -> None:
     request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
 
-    assert api_server._shell_tools_enabled_for_request(request)
+    assert not api_server._shell_tools_enabled_for_request(request)
 
 
 def test_shell_tools_disabled_for_remote_api_request_by_default() -> None:
@@ -184,13 +184,49 @@ def test_shell_tools_disabled_for_remote_api_request_by_default() -> None:
     assert not api_server._shell_tools_enabled_for_request(request)
 
 
-def test_shell_tools_remote_api_request_accepts_explicit_opt_in(
+def test_shell_tools_api_request_accepts_explicit_opt_in(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    request = SimpleNamespace(client=SimpleNamespace(host="203.0.113.10"))
+    request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
     monkeypatch.setenv("VIBE_TRADING_ENABLE_SHELL_TOOLS", "1")
 
     assert api_server._shell_tools_enabled_for_request(request)
+
+
+def test_dns_rebound_swarm_run_does_not_enable_shell_tools_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeRuntime:
+        def start_run(self, preset_name: str, user_vars: dict, include_shell_tools: bool = False):
+            captured["preset_name"] = preset_name
+            captured["user_vars"] = user_vars
+            captured["include_shell_tools"] = include_shell_tools
+            return SimpleNamespace(
+                id="swarm-test-no-shell",
+                status=SimpleNamespace(value="running"),
+                preset_name=preset_name,
+            )
+
+    monkeypatch.setattr(api_server, "_get_swarm_runtime", lambda: FakeRuntime())
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+
+    response = _local_client().post(
+        "/swarm/runs",
+        headers={
+            "Host": "attacker.example:8899",
+            "Origin": "http://attacker.example:8899",
+        },
+        json={
+            "preset_name": "technical_analysis_panel",
+            "user_vars": {"target": "NVDA", "timeframe": "1d"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["include_shell_tools"] is False
 
 
 def test_default_cors_origins_are_loopback_only() -> None:

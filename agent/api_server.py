@@ -730,7 +730,12 @@ def _env_shell_tools_enabled() -> bool:
 
 def _shell_tools_enabled_for_request(request: Request) -> bool:
     """Return whether this API request may expose shell tools to the agent."""
-    return _is_local_client(request) or _env_shell_tools_enabled()
+    # Shell-capable tools execute commands on the host as the API process user.
+    # Do not infer that privilege from peer IP alone: browser DNS rebinding can
+    # make attacker-controlled pages appear as loopback clients. Operators who
+    # intentionally want API-started swarm workers to receive shell tools must
+    # opt in explicitly.
+    return _env_shell_tools_enabled()
 
 
 async def require_local_or_auth(
