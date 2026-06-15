@@ -753,6 +753,31 @@ async def require_local_or_auth(
         )
 
 
+async def require_settings_write_auth(
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
+) -> None:
+    """Require explicit authorization before changing credential-routing settings.
+
+    Settings writes can redirect stored provider credentials to a different
+    endpoint. When an API key is configured, loopback peer IP alone is not a
+    sufficient user-intent signal because a browser can reach local APIs after
+    DNS rebinding.
+    """
+    api_key = _configured_api_key()
+    if api_key:
+        token = _auth_credential_from_header_or_query(cred, None, allow_query=False)
+        if not token or not hmac.compare_digest(token, api_key):
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+        return
+
+    if not _is_local_client(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Settings writes require API_AUTH_KEY or a local loopback client",
+        )
+
+
 # ============================================================================
 # Workflow Factory
 # ============================================================================
@@ -1408,7 +1433,7 @@ async def get_llm_settings():
     return _build_llm_settings_response()
 
 
-@app.put("/settings/llm", response_model=LLMSettingsResponse, dependencies=[Depends(require_local_or_auth)])
+@app.put("/settings/llm", response_model=LLMSettingsResponse, dependencies=[Depends(require_settings_write_auth)])
 async def update_llm_settings(payload: UpdateLLMSettingsRequest):
     """Persist project-local LLM settings and update the running process."""
     provider_name = payload.provider.strip().lower()
@@ -1479,7 +1504,7 @@ async def get_data_source_settings():
 @app.put(
     "/settings/data-sources",
     response_model=DataSourceSettingsResponse,
-    dependencies=[Depends(require_local_or_auth)],
+    dependencies=[Depends(require_settings_write_auth)],
 )
 async def update_data_source_settings(payload: UpdateDataSourceSettingsRequest):
     """Persist project-local data source credentials and update the running process."""
