@@ -478,6 +478,16 @@ _DEFAULT_CORS_ORIGINS = [
     "http://127.0.0.1:8000",
 ]
 
+_DEFAULT_LOOPBACK_HOSTS = frozenset({
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "[::1]",
+    # Starlette/FastAPI TestClient default host; included so unit tests exercise
+    # the API without having to override Host on every request.
+    "testserver",
+})
+
 
 def _parse_cors_origins(raw: Optional[str]) -> List[str]:
     """Parse CORS origins and reject credentialed wildcard configuration.
@@ -504,6 +514,37 @@ def _parse_cors_origins(raw: Optional[str]) -> List[str]:
     return origins
 
 
+def _parse_extra_loopback_hosts(raw: Optional[str]) -> set[str]:
+    """Return additional trusted Host names for loopback API traffic."""
+    if raw is None or not raw.strip():
+        return set()
+    return {host.strip().lower().rstrip(".") for host in raw.split(",") if host.strip()}
+
+
+_EXTRA_LOOPBACK_HOSTS = _parse_extra_loopback_hosts(os.getenv("API_ALLOWED_HOSTS"))
+
+
+def _host_without_port(host: str) -> str:
+    """Normalize a Host header to a lowercase hostname without a port."""
+    value = host.strip().lower().rstrip(".")
+    if not value:
+        return ""
+    if value.startswith("["):
+        end = value.find("]")
+        if end != -1:
+            return value[: end + 1]
+        return value
+    if value.count(":") == 1:
+        return value.rsplit(":", 1)[0]
+    return value
+
+
+def _is_allowed_loopback_host(host: str) -> bool:
+    """Return whether ``host`` is allowed for loopback-trusted API requests."""
+    normalized = _host_without_port(host)
+    return normalized in _DEFAULT_LOOPBACK_HOSTS or normalized in _EXTRA_LOOPBACK_HOSTS
+
+
 # CORS: override with CORS_ORIGINS (comma-separated explicit origins)
 _CORS_ORIGINS = _parse_cors_origins(os.getenv("CORS_ORIGINS"))
 
@@ -514,6 +555,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _reject_untrusted_loopback_host(request: Request, call_next):
+    """Block DNS-rebinding Host headers before loopback auth bypasses run."""
+    if _is_local_client(request) and not _is_allowed_loopback_host(request.headers.get("host", "")):
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"detail": "Untrusted local API host"},
+        )
+    return await call_next(request)
 
 
 # ----------------------------------------------------------------------------

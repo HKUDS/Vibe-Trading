@@ -150,6 +150,109 @@ def test_loopback_bypasses_auth_even_when_api_key_configured(
     assert remote_bearer.status_code == 200
 
 
+def test_loopback_rejects_rebound_host_before_auth_bypass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A loopback peer is not enough when Host is attacker-controlled."""
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+
+    response = _local_client().get(
+        "/runs",
+        headers={"Host": "attacker.example:8899", "Origin": "http://attacker.example:8899"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Untrusted local API host"
+
+
+def test_remote_untrusted_host_still_uses_bearer_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Host gate only narrows loopback trust; remote clients still use API_AUTH_KEY."""
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+
+    response = _remote_client().get(
+        "/runs",
+        headers={"Host": "attacker.example:8899", "Origin": "http://attacker.example:8899"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_rebound_host_cannot_start_live_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DNS-rebound loopback JSON requests must not reach live-runner control."""
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+    monkeypatch.setattr(api_server, "_active_mandate_state", lambda broker: SimpleNamespace(expired=False))
+
+    reached = {"factory": False}
+
+    class DummyRunner:
+        async def run_loop(self):
+            return None
+
+    def build_runner(broker: str) -> DummyRunner:
+        reached["factory"] = True
+        return DummyRunner()
+
+    monkeypatch.setattr(api_server, "_runner_factory", build_runner)
+    monkeypatch.setattr("src.trading.service.broker_supports_live_runner", lambda broker: True)
+    monkeypatch.setattr("src.live.halt.halt_flag_set", lambda broker=None: False)
+    api_server._runner_tasks.clear()
+
+    response = _local_client().post(
+        "/live/runner/start",
+        headers={
+            "Host": "attacker.example:8899",
+            "Origin": "http://attacker.example:8899",
+            "Content-Type": "application/json",
+        },
+        json={"broker": "robinhood", "session_id": "proof-session"},
+    )
+
+    assert response.status_code == 403
+    assert reached["factory"] is False
+    assert "robinhood" not in api_server._runner_tasks
+
+
+def test_allowed_loopback_host_can_start_live_runner_dev_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Allowed local hosts preserve the loopback dev-mode runner control path."""
+    monkeypatch.setattr(api_server, "_active_mandate_state", lambda broker: SimpleNamespace(expired=False))
+
+    reached = {"factory": False}
+
+    class DummyRunner:
+        async def run_loop(self):
+            return None
+
+    def build_runner(broker: str) -> DummyRunner:
+        reached["factory"] = True
+        return DummyRunner()
+
+    monkeypatch.setattr(api_server, "_runner_factory", build_runner)
+    monkeypatch.setattr("src.trading.service.broker_supports_live_runner", lambda broker: True)
+    monkeypatch.setattr("src.live.halt.halt_flag_set", lambda broker=None: False)
+    api_server._runner_tasks.clear()
+
+    response = _local_client().post(
+        "/live/runner/start",
+        headers={"Host": "127.0.0.1:8899", "Content-Type": "application/json"},
+        json={"broker": "robinhood", "session_id": "proof-session"},
+    )
+
+    assert response.status_code == 200
+    assert reached["factory"] is True
+    task = api_server._runner_tasks.pop("robinhood", None)
+    if task is not None and not task.done():
+        task.cancel()
+
+
 def test_configured_api_key_required_for_session_event_stream(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
