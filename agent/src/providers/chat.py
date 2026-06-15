@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from src.providers.llm import build_llm
 
@@ -159,6 +159,7 @@ class ChatLLM:
         on_text_chunk: Optional[Any] = None,
         on_reasoning_chunk: Optional[Any] = None,
         timeout: Optional[int] = None,
+        should_cancel: Optional[Callable[[], bool]] = None,
     ) -> LLMResponse:
         """Stream the LLM and optionally forward text deltas (e.g. thinking).
 
@@ -172,6 +173,9 @@ class ChatLLM:
             on_text_chunk: Optional callback ``(delta: str) -> None``.
             on_reasoning_chunk: Optional callback ``(delta: str) -> None``.
             timeout: Optional per-call timeout in seconds.
+            should_cancel: Optional predicate polled per chunk; when it returns
+                True the stream stops early and the partial response is returned.
+                Lets a caller abort a live stream promptly (cooperative cancel).
 
         Returns:
             Parsed ``LLMResponse``.
@@ -181,6 +185,8 @@ class ChatLLM:
             config = {"timeout": timeout} if timeout else {}
             accumulated = None
             for chunk in llm.stream(messages, config=config):
+                if should_cancel and should_cancel():
+                    break
                 if chunk.content and on_text_chunk:
                     on_text_chunk(chunk.content)
                 reasoning = getattr(chunk, "additional_kwargs", {}).get("reasoning_content")

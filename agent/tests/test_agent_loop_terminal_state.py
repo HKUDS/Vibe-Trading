@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable
 
 import pytest
@@ -44,6 +45,7 @@ class _StubLLMNoFinal:
         tools: list[Any] | None = None,
         on_text_chunk: Callable[[str], None] | None = None,
         on_reasoning_chunk: Callable[[str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> _StubLLMResponse:
         return _StubLLMResponse()
 
@@ -60,6 +62,7 @@ class _StubLLMWithUsage:
         tools: list[Any] | None = None,
         on_text_chunk: Callable[[str], None] | None = None,
         on_reasoning_chunk: Callable[[str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> _StubLLMResponse:
         response = _StubLLMResponse()
         response.content = "done"
@@ -86,11 +89,12 @@ class _StubLLMCancelMidStream:
         tools: list[Any] | None = None,
         on_text_chunk: Callable[[str], None] | None = None,
         on_reasoning_chunk: Callable[[str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> _StubLLMResponse:
         # Set _cancelled on the bound agent so the next loop iteration check
         # picks it up.  We still need a valid response so the current
         # iteration completes cleanly.
-        self._agent_ref[0]._cancelled = True
+        self._agent_ref[0]._cancel_event.set()
         return _StubLLMResponse()
 
     def chat(self, messages: list[dict[str, Any]], **_: Any) -> _StubLLMResponse:
@@ -148,6 +152,60 @@ def test_cancelled_terminal_returns_reason(tmp_path: Path) -> None:
     assert result["max_iterations"] == 3
 
 
+class _StubLLMCancelWithToolCalls:
+    """LLM stub that cancels mid-stream while returning a tool-calling response.
+
+    Mimics the user pressing Stop during the model's turn. The loop must end
+    the run as cancelled WITHOUT executing the turn's tool calls (#229).
+    """
+
+    def __init__(self, agent_ref: "list[AgentLoop]") -> None:
+        self._agent_ref = agent_ref
+
+    def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[Any] | None = None,
+        on_text_chunk: Callable[[str], None] | None = None,
+        on_reasoning_chunk: Callable[[str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> _StubLLMResponse:
+        self._agent_ref[0]._cancel_event.set()
+        resp = _StubLLMResponse()
+        resp.has_tool_calls = True
+        resp.tool_calls = [SimpleNamespace(id="c1", name="get_market_data", arguments={})]
+        return resp
+
+    def chat(self, messages: list[dict[str, Any]], **_: Any) -> _StubLLMResponse:
+        return _StubLLMResponse()
+
+
+def test_cancel_mid_stream_skips_tool_execution(tmp_path: Path) -> None:
+    """Cancelling during the stream ends the run before any tool runs (#229)."""
+    agent_ref: list[AgentLoop] = []
+    agent = _build_agent(
+        _StubLLMCancelWithToolCalls(agent_ref),
+        max_iter=3,
+        tmp_run_dir=tmp_path / "run",
+    )
+    agent_ref.append(agent)
+
+    processed = {"tools": False}
+    original = agent._process_tool_calls
+
+    def _spy(*args: Any, **kwargs: Any):
+        processed["tools"] = True
+        return original(*args, **kwargs)
+
+    agent._process_tool_calls = _spy  # type: ignore[method-assign]
+
+    result = agent.run(user_message="anything")
+
+    assert result["status"] == "cancelled"
+    assert result["reason"] == "cancelled by user"
+    assert processed["tools"] is False
+
+
 def test_session_service_renders_meaningful_error_from_result(tmp_path: Path) -> None:
     """End-to-end guard for the original UI symptom in #114: with the new
     `reason` field populated, `result.get('reason', 'unknown')` returns the
@@ -198,6 +256,7 @@ class _StubLLMAlwaysToolCalls:
         tools: list[Any] | None = None,
         on_text_chunk: Callable[[str], None] | None = None,
         on_reasoning_chunk: Callable[[str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> _StubLLMResponse:
         resp = _StubLLMResponse()
         if tools is not None:
@@ -224,6 +283,7 @@ class _StubLLMIgnoresForcedTextOnly:
         tools: list[Any] | None = None,
         on_text_chunk: Callable[[str], None] | None = None,
         on_reasoning_chunk: Callable[[str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> _StubLLMResponse:
         resp = _StubLLMResponse()
         resp.has_tool_calls = True
@@ -243,6 +303,7 @@ class _StubLLMStreamFailure:
         tools: list[Any] | None = None,
         on_text_chunk: Callable[[str], None] | None = None,
         on_reasoning_chunk: Callable[[str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> _StubLLMResponse:
         raise ProviderStreamError(
             provider="deepseek",

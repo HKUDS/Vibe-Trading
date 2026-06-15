@@ -84,6 +84,46 @@ def test_reasoning_only_chunks_emit_progress_without_final_answer_text() -> None
     assert response.reasoning_content == "thinking more"
 
 
+def test_should_cancel_stops_stream_early() -> None:
+    """A should_cancel predicate breaks the chunk loop; later chunks are dropped."""
+    fake = _FakeStreamingLLM([
+        _FakeChunk(content="a"),
+        _FakeChunk(content="b"),
+        _FakeChunk(content="c"),
+    ])
+    seen: list[str] = []
+    calls = {"n": 0}
+
+    def should_cancel() -> bool:
+        # Polled at the top of each chunk: let the first through, cancel after.
+        n = calls["n"]
+        calls["n"] += 1
+        return n >= 1
+
+    response = _client(fake).stream_chat(
+        [{"role": "user", "content": "hi"}],
+        on_text_chunk=seen.append,
+        should_cancel=should_cancel,
+    )
+
+    assert seen == ["a"]
+    assert response.content == "a"
+
+
+def test_should_cancel_absent_consumes_full_stream() -> None:
+    """Without should_cancel the stream is consumed in full (no behavior change)."""
+    fake = _FakeStreamingLLM([_FakeChunk(content="x"), _FakeChunk(content="y")])
+    seen: list[str] = []
+
+    response = _client(fake).stream_chat(
+        [{"role": "user", "content": "hi"}],
+        on_text_chunk=seen.append,
+    )
+
+    assert seen == ["x", "y"]
+    assert response.content == "xy"
+
+
 def test_stream_failure_raises_provider_error_without_silent_fallback() -> None:
     fake = _FakeStreamingLLM(exc=RuntimeError("stream exploded"))
 

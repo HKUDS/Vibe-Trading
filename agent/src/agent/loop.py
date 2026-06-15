@@ -453,7 +453,7 @@ class AgentLoop:
         self._event_callback = event_callback
         self.max_iterations = max_iterations
         self._called_ok: set[str] = set()
-        self._cancelled: bool = False
+        self._cancel_event = threading.Event()
         self._previous_summary: str = ""
         self._persistent_memory = persistent_memory
         self._run_iteration: int = 0
@@ -461,9 +461,11 @@ class AgentLoop:
     def cancel(self) -> None:
         """Cancel the current loop.
 
-        The main loop exits on the next iteration check.
+        Sets a thread-safe flag polled at every iteration boundary, per LLM
+        stream chunk, and between tool batches, so a running turn stops at the
+        next cooperative checkpoint instead of only at the next iteration.
         """
-        self._cancelled = True
+        self._cancel_event.set()
 
     def run(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None, session_id: str = "") -> Dict[str, Any]:
         """Run the ReAct loop synchronously.
@@ -477,7 +479,7 @@ class AgentLoop:
             Execution result dict.
         """
         # Reset per-run state (safe for reuse across multiple run() calls)
-        self._cancelled = False
+        self._cancel_event.clear()
         self._called_ok = set()
         self._previous_summary = ""
 
@@ -537,7 +539,7 @@ class AgentLoop:
 
         try:
             while iteration < self.max_iterations:
-                if self._cancelled:
+                if self._cancel_event.is_set():
                     trace.write({"type": "cancelled", "iter": self._run_iteration + 1})
                     logger.info("AgentLoop cancelled by user")
                     break
@@ -628,6 +630,7 @@ class AgentLoop:
                         tools=tool_defs,
                         on_text_chunk=_on_text_chunk,
                         on_reasoning_chunk=_on_reasoning_chunk,
+                        should_cancel=self._cancel_event.is_set,
                     )
                 except ProviderStreamError as exc:
                     # One retry for transient mid-stream failures (connection
@@ -660,7 +663,14 @@ class AgentLoop:
                         tools=tool_defs,
                         on_text_chunk=_on_text_chunk,
                         on_reasoning_chunk=_on_reasoning_chunk,
+                        should_cancel=self._cancel_event.is_set,
                     )
+
+                # Cancelled mid-stream: discard this turn's partial response and
+                # end the run now, without executing any of its tool calls.
+                if self._cancel_event.is_set():
+                    break
+
                 usage = getattr(response, "usage_metadata", None)
                 usage_delta = _record_llm_usage(
                     run_dir,
@@ -853,7 +863,7 @@ class AgentLoop:
         # returned dict so SessionService can surface a meaningful UI
         # message instead of "Execution failed: unknown" (issue #114).
         final_reason: str | None = None
-        if self._cancelled:
+        if self._cancel_event.is_set():
             final_reason = "cancelled by user"
             state_store.mark_failure(run_dir, final_reason)
             final_status = "cancelled"
@@ -929,6 +939,10 @@ class AgentLoop:
         focus_topic = ""
         to_execute = []
 
+        # Cancelled before this turn's tools ran — skip execution entirely.
+        if self._cancel_event.is_set():
+            return compact_requested, focus_topic
+
         for tc in tool_calls:
             # Layer 4: compact tool — mark then defer execution
             if tc.name == "compact":
@@ -1000,6 +1014,10 @@ class AgentLoop:
             batches.append(("parallel", current_ro))
 
         for mode, batch in batches:
+            # Stop launching further tool batches once cancelled — the current
+            # batch (if any) finishes, but no new work starts.
+            if self._cancel_event.is_set():
+                break
             if mode == "parallel" and len(batch) > 1:
                 self._execute_parallel(batch, context, messages, trace, react_trace, iteration)
             else:

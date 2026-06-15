@@ -36,6 +36,7 @@ class _ReasoningBurstLLM:
         tools: list[Any] | None = None,
         on_text_chunk: Callable[[str], None] | None = None,
         on_reasoning_chunk: Callable[[str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> _StubLLMResponse:
         assert on_reasoning_chunk is not None
         for _ in range(CHUNK_COUNT):
