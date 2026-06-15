@@ -7,6 +7,7 @@ import pytest
 
 from backtest.loaders.rsshub_events import (
     DEFAULT_FEEDS,
+    DEFAULT_TIMEOUT_S,
     EVENT_COLUMNS,
     EventProviderError,
     FeedSpec,
@@ -56,9 +57,11 @@ class _FakeClient:
     def __init__(self, payload: str) -> None:
         self.payload = payload
         self.calls: list[str] = []
+        self.timeouts: list[float | None] = []
 
     def get(self, url: str, timeout: float | None = None) -> _FakeResponse:
         self.calls.append(url)
+        self.timeouts.append(timeout)
         return _FakeResponse(self.payload)
 
 
@@ -228,6 +231,36 @@ def test_all_feeds_unreachable_raises(monkeypatch) -> None:
     )
     with pytest.raises(EventProviderError):
         provider.query_events(["AAA"], as_of="2024-01-31")
+
+
+def test_malformed_timeout_env_falls_back_to_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RSSHUB_TIMEOUT_S", "not-a-float")
+    client = _FakeClient(_RSS)
+    provider = RSSHubEventProvider(
+        "https://rsshub.local",
+        feeds=[FeedSpec("news", "/stock/news/{code}", "sentiment")],
+        client=client,
+    )
+
+    frame = provider.query_events(["AAA"], as_of="2024-01-31")
+
+    assert not frame.empty
+    assert client.timeouts == [DEFAULT_TIMEOUT_S]
+
+
+def test_malformed_budget_env_falls_back_to_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RSSHUB_FETCH_BUDGET_S", "not-a-float")
+    client = _FakeClient(_RSS)
+    provider = RSSHubEventProvider(
+        "https://rsshub.local",
+        feeds=[FeedSpec("news", "/stock/news/{code}", "sentiment")],
+        client=client,
+    )
+
+    frame = provider.query_events(["AAA"], as_of="2024-01-31")
+
+    assert not frame.empty
+    assert client.timeouts == [DEFAULT_TIMEOUT_S]
 
 
 def test_reachable_but_empty_feed_does_not_raise() -> None:

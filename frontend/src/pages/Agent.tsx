@@ -407,6 +407,37 @@ export function Agent() {
     }
   }, [forceScrollToBottom]);
 
+  const refreshSessionMessages = useCallback(async (sid: string) => {
+    const gen = genRef.current + 1;
+    genRef.current = gen;
+    await loadSessionMessages(sid, gen);
+  }, [loadSessionMessages]);
+
+  const syncCompletedAttempt = useCallback(async (sid: string, attemptId?: string) => {
+    if (!attemptId) return false;
+    for (let i = 0; i < 3; i += 1) {
+      try {
+        const storedMessages = await api.getSessionMessages(sid);
+        const completed = storedMessages.some(
+          (message) => message.role === "assistant" && message.linked_attempt_id === attemptId,
+        );
+        if (completed) {
+          if (act().sessionId !== sid) return true;
+          setReasoningActive(false);
+          act().clearStreaming();
+          act().setStatus("idle");
+          useAgentStore.setState({ toolCalls: [] });
+          await refreshSessionMessages(sid);
+          return true;
+        }
+      } catch {
+        return false;
+      }
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 800));
+    }
+    return false;
+  }, [refreshSessionMessages]);
+
   const setupSSE = useCallback((sid: string) => {
     if (sseSessionRef.current === sid) return;
     disconnect();
@@ -842,7 +873,8 @@ export function Agent() {
         act().setStatus("streaming");
         forceScrollToBottom();
         setupSSE(sid);
-        await api.sendMessage(sid, kickoff);
+        const sent = await api.sendMessage(sid, kickoff);
+        void syncCompletedAttempt(sid, sent.attempt_id);
       } catch (error) {
         act().setStatus("idle");
         toast.error(error instanceof Error ? error.message : t('agent.failedToStartGoal'));
@@ -877,7 +909,8 @@ export function Agent() {
         setSearchParams({ session: sid }, { replace: true });
       }
       setupSSE(sid);
-      await api.sendMessage(sid, finalPrompt);
+      const sent = await api.sendMessage(sid, finalPrompt);
+      void syncCompletedAttempt(sid, sent.attempt_id);
     } catch (error) {
       act().setStatus("error");
       const message = isAuthRequiredError(error) ? AUTH_REQUIRED_MESSAGE : t('agent.failedToSend');
@@ -988,14 +1021,15 @@ export function Agent() {
     inputRef.current?.focus();
     try {
       setupSSE(sessionId);
-      await api.sendMessage(sessionId, prompt);
+      const sent = await api.sendMessage(sessionId, prompt);
+      void syncCompletedAttempt(sessionId, sent.attempt_id);
     } catch (error) {
       act().setStatus("error");
       const message = isAuthRequiredError(error) ? AUTH_REQUIRED_MESSAGE : t('agent.failedToContinue');
       toast.error(message);
       act().addMessage({ id: "", type: "error", content: message, timestamp: Date.now() });
     }
-  }, [forceScrollToBottom, goalSnapshot, sessionId, setupSSE, status]);
+  }, [forceScrollToBottom, goalSnapshot, sessionId, setupSSE, status, syncCompletedAttempt]);
 
   const handleRetry = useCallback((errorMsg: AgentMessage) => {
     if (status === "streaming") return;
