@@ -633,5 +633,10 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         "vibe_provider": provider,
     }
     if caps.default_headers:
-        kwargs["default_headers"] = dict(caps.default_headers)
+        headers = dict(caps.default_headers)
+        if caps.name == "moonshot":
+            custom_ua = os.getenv("MOONSHOT_USER_AGENT", "").strip()
+            if custom_ua:
+                headers["User-Agent"] = custom_ua
+        kwargs["default_headers"] = headers
     return ChatOpenAIWithReasoning(**kwargs)
