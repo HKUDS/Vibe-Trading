@@ -83,6 +83,15 @@
     "api_key_required": true
   },
   {
+    "name": "glm",
+    "label": "GLM (Zhipu)",
+    "api_key_env": "ZHIPU_API_KEY",
+    "base_url_env": "ZHIPU_BASE_URL",
+    "default_model": "glm-5.1",
+    "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
+    "api_key_required": true
+  },
+  {
     "name": "moonshot",
     "label": "Moonshot / Kimi",
     "api_key_env": "MOONSHOT_API_KEY",

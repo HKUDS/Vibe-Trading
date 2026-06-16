@@ -18,6 +18,7 @@ EXPECTED_PROVIDER_DEFAULTS = {
     "dashscope": "qwen-plus-latest",
     "qwen": "qwen-plus-latest",
     "zhipu": "glm-5.1",
+    "glm": "glm-5.1",
     "moonshot": "kimi-k2.6",
     "minimax": "MiniMax-M3",
     "mimo": "MiMo-72B-A27B",

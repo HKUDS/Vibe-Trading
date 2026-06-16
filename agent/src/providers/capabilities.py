@@ -70,6 +70,8 @@ _MOONSHOT_CAPABILITIES = ProviderCapabilities(
     default_headers={"User-Agent": _KIMI_USER_AGENT},
 )
 
+_ZHIPU_CAPABILITIES = ProviderCapabilities("zhipu", "ZHIPU_API_KEY", "ZHIPU_BASE_URL")
+
 _OPENAI_CODEX_CAPABILITIES = ProviderCapabilities("openai-codex", None, "OPENAI_CODEX_BASE_URL")
 
 
@@ -98,7 +100,8 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
     "groq": ProviderCapabilities("groq", "GROQ_API_KEY", "GROQ_BASE_URL"),
     "dashscope": ProviderCapabilities("dashscope", "DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"),
     "qwen": ProviderCapabilities("qwen", "DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"),
-    "zhipu": ProviderCapabilities("zhipu", "ZHIPU_API_KEY", "ZHIPU_BASE_URL"),
+    "zhipu": _ZHIPU_CAPABILITIES,
+    "glm": _ZHIPU_CAPABILITIES,
     "moonshot": _MOONSHOT_CAPABILITIES,
     "kimi": _MOONSHOT_CAPABILITIES,
     "minimax": ProviderCapabilities("minimax", "MINIMAX_API_KEY", "MINIMAX_BASE_URL"),
@@ -118,6 +121,8 @@ def _infer_from_model(model: str) -> str | None:
         return "gemini"
     if lowered.startswith("deepseek"):
         return "deepseek"
+    if lowered.startswith("glm"):
+        return "zhipu"
     if "kimi" in lowered or "moonshot" in lowered:
         return "moonshot"
     return None
