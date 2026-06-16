@@ -40,7 +40,6 @@ dependencies = [
     "scikit-learn>=1.3.0",
     "joblib>=1.3.0",
     "smartmoneyconcepts>=0.0.1",
-    "pyharmonics>=1.5.0",
     "tushare>=1.2.89",
     "requests>=2.31.0",
     "yfinance>=0.2.30",
@@ -103,6 +102,9 @@ ashare = [
     # HTTP CDN IP blocks that affect eastmoney-backed sources. The Tencent
     # A-share loader needs no extra dependency (stdlib HTTP only).
     "baostock>=0.8.8",
+]
+harmonic = [
+    "pyharmonics>=1.5.0",
 ]
 dev = [
     "pytest>=7.0",

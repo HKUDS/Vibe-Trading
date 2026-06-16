@@ -26,8 +26,11 @@ The Fibonacci geometry school uses precise ratio relationships to identify price
 ## Dependencies
 
 ```bash
-pip install pyharmonics pandas numpy requests
+pip install "vibe-trading-ai[harmonic]"
 ```
+
+`pyharmonics` is optional. If the extra is not installed, the example signal
+engine falls back to the bundled detector.
 
 ## Parameters
 
