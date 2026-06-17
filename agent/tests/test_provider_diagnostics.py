@@ -129,6 +129,47 @@ def test_kimi_user_agent_header_is_moonshot_only() -> None:
     assert "default_headers" not in captured
 
 
+def test_kimi_user_agent_respects_moonshot_user_agent_env_var() -> None:
+    """MOONSHOT_USER_AGENT should override the default User-Agent header."""
+    import src.providers.llm as llm_mod
+
+    llm_mod._dotenv_loaded = True
+    captured: dict = {}
+
+    class _FakeChatOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    env = {
+        "LANGCHAIN_PROVIDER": "moonshot",
+        "MOONSHOT_API_KEY": "mk-test",
+        "MOONSHOT_BASE_URL": "https://api.moonshot.ai/v1",
+        "LANGCHAIN_MODEL_NAME": "kimi-k2.6",
+        "MOONSHOT_USER_AGENT": "MyCustomAgent/2.0",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+            llm_mod._recent_caps = None  # ensure fresh build reads env
+            build_llm()
+
+    assert captured["default_headers"]["User-Agent"] == "MyCustomAgent/2.0"
+
+    captured.clear()
+    del env["MOONSHOT_USER_AGENT"]
+    with patch.dict(os.environ, env, clear=True):
+        with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+            build_llm()
+
+    assert captured["default_headers"]["User-Agent"].startswith("Vibe-Trading/")
+
+
+def test_kimi_inference_respects_custom_user_agent() -> None:
+    """Model name inference to moonshot should still use the override User-Agent."""
+    moonshot = get_provider_capabilities(None, "kimi-k2.6")
+    assert moonshot.name == "moonshot"
+    assert "User-Agent" in moonshot.default_headers
+
+
 def test_deepseek_native_adapter_is_used_when_available(monkeypatch) -> None:
     """DeepSeek should prefer the optional native adapter when installed."""
     import sys

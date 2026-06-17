@@ -466,8 +466,7 @@ class AgentLoop:
                 notifs = bg.drain_notifications()
                 if notifs:
                     notif_text = "\n".join(f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs)
-                    messages.append({"role": "user", "content": f"<background-results>\n{notif_text}\n</background-results>"})
-                    messages.append({"role": "assistant", "content": "Noted background results."})
+                    messages.append({"role": "user", "content": f"<background-results>\n{notif_text}\n</background-results>\n\n<system>Continue processing with the background results above.</system>"})
 
                 # Layer 1: microcompact (every iteration)
                 _microcompact(messages)
@@ -1315,8 +1314,7 @@ class AgentLoop:
 
         messages.clear()
         messages.append(system_msg)
-        messages.append({"role": "user", "content": compressed})
-        messages.append({"role": "assistant", "content": "Understood. Continuing from the summary."})
+        messages.append({"role": "user", "content": f"{compressed}\n\n<system>Continue from the summary above.</system>"})
         messages.extend(tail)
 
         # Fix orphaned tool pairs in the reconstructed message list
