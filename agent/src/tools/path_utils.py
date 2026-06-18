@@ -99,6 +99,7 @@ def _default_run_roots() -> list[Path]:
         swarm_runs_root(),
         cwd / "runs",
         home / ".vibe-trading" / "shadow_runs",
+        home / ".vibe-trading" / "runs",
     ]
 
 

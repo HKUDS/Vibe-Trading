@@ -54,8 +54,9 @@ class RunResearchAutopilotTool(BaseTool):
     description = (
         "Start a research goal from a saved hypothesis. "
         "Reads the hypothesis, creates a goal with the thesis as objective "
-        "and backtest-relevant criteria. Returns a goal snapshot you can "
-        "continue from with backtest/evidence tools."
+        "and backtest-relevant criteria. NOTE: this replaces the session's "
+        "current research goal. Returns a goal snapshot you can continue "
+        "from with backtest/evidence tools."
     )
     is_readonly = False
     repeatable = True
@@ -73,6 +74,23 @@ class RunResearchAutopilotTool(BaseTool):
         },
         "required": ["hypothesis_id"],
     }
+
+    def __init__(
+        self,
+        *,
+        default_session_id: str | None = None,
+        event_callback: Any = None,
+    ) -> None:
+        """Initialize the autopilot tool.
+
+        Args:
+            default_session_id: Session id injected by the host runtime, so the
+                tool can create a goal without the LLM ever knowing the id.
+            event_callback: Optional host callback, accepted for registry
+                construction parity with the goal tools (currently unused).
+        """
+        self._default_session_id = default_session_id
+        self._event_callback = event_callback
 
     def execute(self, **kwargs: Any) -> str:
         try:
@@ -94,7 +112,9 @@ class RunResearchAutopilotTool(BaseTool):
                     ensure_ascii=False,
                 )
 
-            session_id = str(kwargs.get("session_id", "")).strip()
+            session_id = str(
+                kwargs.get("session_id") or self._default_session_id or ""
+            ).strip()
             if not session_id:
                 return json.dumps(
                     {
@@ -180,6 +200,34 @@ _UNIVERSE_CODES: dict[str, list[str]] = {
 def _lookup_codes(universe: str) -> list[str]:
     key = universe.strip().lower().replace("-", " ").replace("_", " ")
     return _UNIVERSE_CODES.get(key, [universe])
+
+
+def _resolve_source(data_sources: list[str] | None) -> tuple[str, str | None]:
+    """Pick a valid loader source from the hypothesis, else fall back to ``auto``.
+
+    A hypothesis ``data_sources`` entry is free text, so an unrecognised value
+    would otherwise only fail deep inside the backtest runner with a confusing
+    message. Validate it up front and degrade to ``auto`` with a warning the
+    agent can surface.
+
+    Args:
+        data_sources: The hypothesis ``data_sources`` list (may be empty/None).
+
+    Returns:
+        A ``(source, warning)`` tuple; ``warning`` is ``None`` when the source
+        is valid or the source whitelist cannot be imported.
+    """
+    candidate = (data_sources or ["auto"])[0]
+    try:
+        from backtest.loaders.registry import VALID_SOURCES
+    except Exception:  # pragma: no cover - registry import is environment-stable
+        return candidate, None
+    if candidate in VALID_SOURCES:
+        return candidate, None
+    return "auto", (
+        f"hypothesis data_source {candidate!r} is not a known loader source; "
+        "fell back to 'auto'"
+    )
 
 
 def _validate_backtest_dates(start_date: str, end_date: str) -> None:
@@ -279,7 +327,7 @@ class GenerateBacktestConfigTool(BaseTool):
             _validate_backtest_dates(start_date, end_date)
 
             codes = _lookup_codes(hypothesis.universe)
-            source = (hypothesis.data_sources or ["auto"])[0]
+            source, source_warning = _resolve_source(hypothesis.data_sources)
 
             config = {
                 "codes": codes,
@@ -297,25 +345,26 @@ class GenerateBacktestConfigTool(BaseTool):
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
 
-            return _ok(
-                {
-                    "run_dir": str(run_dir),
-                    "config": config,
-                    "config_path": str(config_path),
-                    "hypothesis": {
-                        "hypothesis_id": hypothesis.hypothesis_id,
-                        "title": hypothesis.title,
-                        "signal_definition": hypothesis.signal_definition,
-                        "universe": hypothesis.universe,
-                        "data_sources": hypothesis.data_sources,
-                    },
-                    "next_step": (
-                        "Config written. Next: use write_file to create "
-                        "code/signal_engine.py from the signal_definition above, "
-                        "then call backtest(run_dir=...)."
-                    ),
-                }
-            )
+            payload: dict[str, Any] = {
+                "run_dir": str(run_dir),
+                "config": config,
+                "config_path": str(config_path),
+                "hypothesis": {
+                    "hypothesis_id": hypothesis.hypothesis_id,
+                    "title": hypothesis.title,
+                    "signal_definition": hypothesis.signal_definition,
+                    "universe": hypothesis.universe,
+                    "data_sources": hypothesis.data_sources,
+                },
+                "next_step": (
+                    "Config written. Next: use write_file to create "
+                    "code/signal_engine.py from the signal_definition above, "
+                    "then call backtest(run_dir=...)."
+                ),
+            }
+            if source_warning:
+                payload["warning"] = source_warning
+            return _ok(payload)
 
         except Exception as exc:
             return _error(exc)

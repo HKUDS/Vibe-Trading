@@ -88,6 +88,11 @@ def _normalize_columns(
         df["trade_date"] = pd.to_datetime(df[date_col], format=date_fmt, errors="coerce")
     else:
         df["trade_date"] = pd.to_datetime(df[date_col], errors="coerce")
+    # Drop any timezone so the tz-naive date-range filter in ``_fetch_one`` never
+    # raises "Invalid comparison between tz-aware and tz-naive" (which was caught
+    # and swallowed into a silently empty result for tz-aware parquet/CSV inputs).
+    if getattr(df["trade_date"].dt, "tz", None) is not None:
+        df["trade_date"] = df["trade_date"].dt.tz_localize(None)
     df = df.dropna(subset=["trade_date"])
     df = df.set_index("trade_date").sort_index()
 

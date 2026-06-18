@@ -93,3 +93,50 @@ def test_local_loader_fetches_duckdb_without_path(
 
     assert set(frames) == {"MYINDEX"}
     assert list(frames["MYINDEX"]["close"]) == [10.5, 12.5]
+
+
+def test_local_loader_handles_timezone_aware_timestamps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tz-aware timestamps must not crash the date filter into an empty result.
+
+    Regression: the date-range filter compared a tz-naive Timestamp against a
+    tz-aware index, which raised TypeError that was swallowed into empty data.
+    """
+    csv_path = tmp_path / "tz_aapl.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "Date,Open,High,Low,Close,Volume",
+                "2026-01-01T00:00:00+00:00,10,11,9,10.5,1000",
+                "2026-01-02T00:00:00+00:00,12,13,11,12.5,1500",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    _configure(
+        monkeypatch,
+        tmp_path,
+        [
+            {
+                "symbol": "AAPL.US",
+                "type": "csv",
+                "path": str(csv_path),
+                "columns": {
+                    "date": "Date",
+                    "open": "Open",
+                    "high": "High",
+                    "low": "Low",
+                    "close": "Close",
+                    "volume": "Volume",
+                },
+            }
+        ],
+    )
+
+    frames = local_loader.DataLoader().fetch(
+        ["local:AAPL.US"], "2026-01-01", "2026-01-02"
+    )
+
+    assert set(frames) == {"AAPL.US"}
+    assert list(frames["AAPL.US"]["close"]) == [10.5, 12.5]
