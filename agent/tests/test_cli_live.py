@@ -403,7 +403,7 @@ class TestNumericPick:
 
 def _proposal() -> Dict[str, Any]:
     return {
-        "proposal_id": "mp_test",
+        "proposal_id": "mp_" + "3" * 32,
         "session_id": "sess_1",
         "intent_normalized": "aggressive tech, ~$5000",
         "account": {"broker": "robinhood", "type": "cash"},
@@ -427,7 +427,7 @@ class TestProposalPickIntercept:
         commit.assert_called_once()
         # The commit binds the exact rendered proposal + the picked ordinal.
         called_proposal, called_ordinal = commit.call_args.args
-        assert called_proposal["proposal_id"] == "mp_test"
+        assert called_proposal["proposal_id"] == "mp_" + "3" * 32
         assert called_ordinal == 2
         # Successful commit clears the pending proposal.
         assert ctx.pending_proposal is None
@@ -487,7 +487,7 @@ class TestProposalPickIntercept:
         assert result["mandate_id"] == "m1"
         assert captured["url"].endswith("/mandate/commit")
         assert captured["body"]["selected_ordinal"] == 2
-        assert captured["body"]["proposal_id"] == "mp_test"
+        assert captured["body"]["proposal_id"] == "mp_" + "3" * 32
         assert captured["body"]["consent_ack"] is True
 
 
@@ -581,7 +581,7 @@ class TestProposalArmingRelay:
         directly). Drives the event THROUGH the real ``on_event`` relay and
         asserts the full proposal is reloaded from disk into the sink.
         """
-        proposal_id = "mp_armtest01"
+        proposal_id = "mp_" + "4" * 32
         _write_proposal_to_disk(live_root, proposal_id)
 
         captured: Dict[str, Any] = {}
@@ -616,7 +616,7 @@ class TestProposalArmingRelay:
         ``_handle_proposal_reply`` and routed to the commit endpoint, NOT the
         agent.
         """
-        proposal_id = "mp_e2e01"
+        proposal_id = "mp_" + "5" * 32
         _write_proposal_to_disk(live_root, proposal_id)
 
         # 1) Arm through the real relay.

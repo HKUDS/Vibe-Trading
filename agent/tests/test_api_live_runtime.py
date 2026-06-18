@@ -261,7 +261,7 @@ def _seed_proposal(tmp_path: Path, proposal_id: str, broker: str = "robinhood") 
 
 def test_c1_relay_builds_mandate_proposal_frame(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
-    proposal_id = "mp_01ABCdef"
+    proposal_id = "mp_" + "1" * 32
     _seed_proposal(tmp_path, proposal_id)
 
     event = SimpleNamespace(
@@ -306,7 +306,7 @@ def test_c1_relay_returns_none_when_proposal_missing(tmp_path: Path, monkeypatch
         data={
             "tool": "propose_mandate_profiles",
             "status": "ok",
-            "preview": json.dumps({"proposal_id": "mp_missing01"})[:200],
+            "preview": json.dumps({"proposal_id": "mp_" + "2" * 32})[:200],
         },
     )
     assert api_server._mandate_proposal_frame_from_tool_result(event) is None

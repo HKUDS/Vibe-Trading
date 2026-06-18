@@ -967,6 +967,7 @@ No IBKR order-placement tool is registered.
 | `url` | string | required for `sse` / `streamableHttp` | Remote SSE / streamable HTTP endpoint URL. Not used for stdio servers. |
 | `headers` | object | `{}` | Extra HTTP headers for `sse` / `streamableHttp` servers only. |
 | `toolTimeout` | number | `30` | Per-tool call timeout in seconds |
+| `initTimeout` | number | unset (`max(toolTimeout, 30)`) | MCP initialize / OAuth authorization timeout in seconds. Use this for slow browser authorization without widening ordinary tool calls. |
 | `enabledTools` | array | `["*"]` | Tool allowlist. Use `["*"]` to expose all tools from the server |
 
 Config file location: `~/.vibe-trading/agent.json` (JSON or YAML).

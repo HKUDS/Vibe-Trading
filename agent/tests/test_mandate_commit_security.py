@@ -11,6 +11,8 @@ import pytest
 import src.live.paths as paths
 from src.live.mandate.commit import CommitError, commit_mandate, save_proposal
 
+pytestmark = pytest.mark.unit
+
 
 def _proposal(proposal_id: str) -> dict[str, object]:
     """Return a minimal valid proposal payload for commit_mandate."""

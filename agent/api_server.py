@@ -354,7 +354,7 @@ class CommitMandateRequest(BaseModel):
     """
 
     broker: str = Field(..., min_length=1, max_length=64)
-    proposal_id: str = Field(..., min_length=1, max_length=128)
+    proposal_id: str = Field(..., pattern=r"^mp_[0-9a-f]{32}$")
     selected_ordinal: int = Field(..., ge=1, le=10)
     adjustments: Optional[Dict[str, Any]] = None
     consent_ack: bool = Field(..., description="Explicit affirmative; must be true")
@@ -2528,7 +2528,7 @@ def _emit_live_event(session_id: Optional[str], event_type: str, data: Dict[str,
 # ``mandate.proposal`` frame. No protected touch.
 
 _PROPOSAL_TOOL_NAME = "propose_mandate_profiles"
-_PROPOSAL_ID_RE = re.compile(r'"proposal_id"\s*:\s*"(mp_[0-9a-zA-Z]+)"')
+_PROPOSAL_ID_RE = re.compile(r'"proposal_id"\s*:\s*"(mp_[0-9a-f]{32})"')
 
 
 def _load_full_proposal(proposal_id: str) -> Optional[Dict[str, Any]]:
