@@ -84,6 +84,68 @@ def test_reasoning_only_chunks_emit_progress_without_final_answer_text() -> None
     assert response.reasoning_content == "thinking more"
 
 
+def test_parse_dsml_tool_call_content_as_structured_tool_call() -> None:
+    """DeepSeek-style DSML content must drive the ReAct tool path (#261)."""
+    content = (
+        '<｜｜DSML｜｜tool_calls> '
+        '<｜｜DSML｜｜invoke name="bash"> '
+        '<｜｜DSML｜｜parameter name="command" string="true">'
+        "python -c \"print('vibe-dsml-ok')\""
+        "</｜｜DSML｜｜parameter> "
+        "</｜｜DSML｜｜invoke> "
+        "</｜｜DSML｜｜tool_calls>/"
+    )
+
+    response = ChatLLM._parse_response(_FakeChunk(content=content))
+
+    assert response.content == ""
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].id == "dsml_call_1"
+    assert response.tool_calls[0].name == "bash"
+    assert response.tool_calls[0].arguments == {
+        "command": "python -c \"print('vibe-dsml-ok')\""
+    }
+    assert response.finish_reason == "tool_calls"
+
+
+def test_parse_dsml_tool_call_requires_pure_tool_call_payload() -> None:
+    """Do not execute DSML examples embedded inside normal assistant text."""
+    content = (
+        "Here is the syntax:\n"
+        '<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="bash">'
+        '<｜｜DSML｜｜parameter name="command">pwd</｜｜DSML｜｜parameter>'
+        "</｜｜DSML｜｜invoke></｜｜DSML｜｜tool_calls>"
+    )
+
+    response = ChatLLM._parse_response(_FakeChunk(content=content))
+
+    assert response.content == content
+    assert response.tool_calls == []
+    assert response.finish_reason == "stop"
+
+
+def test_stream_dsml_tool_call_content_is_not_emitted_as_text() -> None:
+    """DSML tool-call payloads should not flash as assistant text in CLI/UI."""
+    content = (
+        '<｜｜DSML｜｜tool_calls>'
+        '<｜｜DSML｜｜invoke name="bash">'
+        '<｜｜DSML｜｜parameter name="command">pwd</｜｜DSML｜｜parameter>'
+        "</｜｜DSML｜｜invoke>"
+        "</｜｜DSML｜｜tool_calls>"
+    )
+    fake = _FakeStreamingLLM([_FakeChunk(content=content)])
+    text_chunks: list[str] = []
+
+    response = _client(fake).stream_chat(
+        [{"role": "user", "content": "hi"}],
+        on_text_chunk=text_chunks.append,
+    )
+
+    assert text_chunks == []
+    assert response.content == ""
+    assert response.tool_calls[0].name == "bash"
+
+
 def test_should_cancel_stops_stream_early() -> None:
     """A should_cancel predicate breaks the chunk loop; later chunks are dropped."""
     fake = _FakeStreamingLLM([

@@ -5,7 +5,9 @@ ChatLLM is designed specifically for the AgentLoop ReAct cycle.
 
 from __future__ import annotations
 
+import html
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -118,6 +120,89 @@ def _redact_provider_error(message: str) -> str:
     return redacted
 
 
+_DSML_BAR = r"(?:\|\||｜｜)"
+_DSML_TAG = rf"{_DSML_BAR}\s*DSML\s*{_DSML_BAR}"
+_DSML_TOOL_CALLS_RE = re.compile(
+    rf"<\s*{_DSML_TAG}\s*tool_calls\s*>(?P<body>.*?)"
+    rf"</\s*{_DSML_TAG}\s*tool_calls\s*>",
+    re.DOTALL,
+)
+_DSML_INVOKE_RE = re.compile(
+    rf"<\s*{_DSML_TAG}\s*invoke\b(?P<attrs>[^>]*)>(?P<body>.*?)"
+    rf"</\s*{_DSML_TAG}\s*invoke\s*>",
+    re.DOTALL,
+)
+_DSML_PARAMETER_RE = re.compile(
+    rf"<\s*{_DSML_TAG}\s*parameter\b(?P<attrs>[^>]*)>(?P<body>.*?)"
+    rf"</\s*{_DSML_TAG}\s*parameter\s*>",
+    re.DOTALL,
+)
+_DSML_ATTR_RE = re.compile(r"""([A-Za-z_][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+_DSML_PREFIXES = ("<||dsml||tool_calls", "<｜｜dsml｜｜tool_calls")
+
+
+def _parse_dsml_attrs(raw: str) -> dict[str, str]:
+    """Parse attributes from a DSML tag."""
+    attrs: dict[str, str] = {}
+    for match in _DSML_ATTR_RE.finditer(raw):
+        attrs[match.group(1)] = html.unescape(match.group(2) or match.group(3) or "")
+    return attrs
+
+
+def _is_possible_dsml_tool_call_prefix(content: str) -> bool:
+    """Return True while buffered stream text could still be a DSML call."""
+    compact = re.sub(r"\s+", "", content.lstrip()[:80]).lower()
+    if not compact:
+        return True
+    return any(prefix.startswith(compact) or compact.startswith(prefix) for prefix in _DSML_PREFIXES)
+
+
+def _parse_dsml_tool_calls(content: Any) -> list[ToolCallRequest]:
+    """Parse DeepSeek-style DSML tool calls embedded as assistant content.
+
+    Some OpenAI-compatible relays/models return tool calls as a textual DSML
+    block rather than LangChain ``AIMessage.tool_calls``. Treat only pure DSML
+    tool-call payloads as executable so examples embedded in normal prose never
+    cross into the tool path.
+    """
+    if not isinstance(content, str):
+        return []
+
+    stripped = content.strip()
+    blocks = list(_DSML_TOOL_CALLS_RE.finditer(stripped))
+    if not blocks:
+        return []
+
+    outside = _DSML_TOOL_CALLS_RE.sub("", stripped).strip()
+    if outside not in {"", "/"}:
+        return []
+
+    tool_calls: list[ToolCallRequest] = []
+    for block in blocks:
+        for invoke in _DSML_INVOKE_RE.finditer(block.group("body")):
+            invoke_attrs = _parse_dsml_attrs(invoke.group("attrs"))
+            name = invoke_attrs.get("name", "").strip()
+            if not name:
+                continue
+
+            arguments: dict[str, Any] = {}
+            for param in _DSML_PARAMETER_RE.finditer(invoke.group("body")):
+                param_attrs = _parse_dsml_attrs(param.group("attrs"))
+                param_name = param_attrs.get("name", "").strip()
+                if param_name:
+                    arguments[param_name] = html.unescape(param.group("body")).strip()
+
+            tool_calls.append(
+                ToolCallRequest(
+                    id=f"dsml_call_{len(tool_calls) + 1}",
+                    name=name,
+                    arguments=arguments,
+                )
+            )
+
+    return tool_calls
+
+
 class ChatLLM:
     """LLM chat client with function calling support.
 
@@ -184,18 +269,32 @@ class ChatLLM:
             llm = self._llm.bind_tools(tools) if tools else self._llm
             config = {"timeout": timeout} if timeout else {}
             accumulated = None
+            pending_text = ""
+            possible_dsml_text = True
             for chunk in llm.stream(messages, config=config):
                 if should_cancel and should_cancel():
                     break
                 if chunk.content and on_text_chunk:
-                    on_text_chunk(chunk.content)
+                    if possible_dsml_text:
+                        pending_text += chunk.content
+                        if _is_possible_dsml_tool_call_prefix(pending_text):
+                            pass
+                        else:
+                            possible_dsml_text = False
+                            on_text_chunk(pending_text)
+                            pending_text = ""
+                    else:
+                        on_text_chunk(chunk.content)
                 reasoning = getattr(chunk, "additional_kwargs", {}).get("reasoning_content")
                 if reasoning and not chunk.content and on_reasoning_chunk:
                     on_reasoning_chunk(reasoning)
                 accumulated = chunk if accumulated is None else accumulated + chunk
             if accumulated is None:
                 return LLMResponse(content="", tool_calls=[], finish_reason="stop")
-            return self._parse_response(accumulated)
+            response = self._parse_response(accumulated)
+            if pending_text and not (response.has_tool_calls and response.content == ""):
+                on_text_chunk(pending_text)
+            return response
         except Exception as exc:
             provider = os.getenv("LANGCHAIN_PROVIDER", "openai").strip().lower() or "openai"
             model = self.model_name or os.getenv("LANGCHAIN_MODEL_NAME", "").strip() or "(unset)"
@@ -254,21 +353,29 @@ class ChatLLM:
         thought_signatures_by_id, thought_signatures_by_index = (
             ChatLLM._tool_call_thought_signature_maps(ai_message)
         )
+        native_tool_calls = [
+            ToolCallRequest(
+                id=tc["id"],
+                name=tc["name"],
+                arguments=tc["args"],
+                thought_signature=thought_signatures_by_id.get(str(tc["id"]))
+                or thought_signatures_by_index.get(index),
+            )
+            for index, tc in enumerate(ai_message.tool_calls)
+        ]
+        dsml_tool_calls = [] if native_tool_calls else _parse_dsml_tool_calls(ai_message.content)
+        tool_calls = native_tool_calls or dsml_tool_calls
+
         return LLMResponse(
-            content=ai_message.content,
-            tool_calls=[
-                ToolCallRequest(
-                    id=tc["id"],
-                    name=tc["name"],
-                    arguments=tc["args"],
-                    thought_signature=thought_signatures_by_id.get(str(tc["id"]))
-                    or thought_signatures_by_index.get(index),
-                )
-                for index, tc in enumerate(ai_message.tool_calls)
-            ],
+            content="" if dsml_tool_calls else ai_message.content,
+            tool_calls=tool_calls,
             reasoning_content=ai_message.additional_kwargs.get("reasoning_content"),
-            finish_reason=_dedupe_finish_reason(
-                ai_message.response_metadata.get("finish_reason", "stop")
+            finish_reason=(
+                "tool_calls"
+                if dsml_tool_calls
+                else _dedupe_finish_reason(
+                    ai_message.response_metadata.get("finish_reason", "stop")
+                )
             ),
             usage_metadata=usage,
         )
