@@ -199,6 +199,7 @@ class DataSourceSettingsResponse(BaseModel):
     baostock_supported: bool
     baostock_installed: bool
     baostock_message: str
+    tavily_api_key_configured: bool
     env_path: str
 
 
@@ -207,6 +208,8 @@ class UpdateDataSourceSettingsRequest(BaseModel):
 
     tushare_token: Optional[str] = None
     clear_tushare_token: bool = False
+    tavily_api_key: Optional[str] = None
+    clear_tavily_api_key: bool = False
 
 
 # ---- V4 Session Models ----
@@ -929,6 +932,7 @@ LLM_PROVIDER_BY_NAME = {provider.name: provider for provider in LLM_PROVIDERS}
 LLM_REASONING_EFFORTS = {"", "low", "medium", "high", "max"}
 LLM_API_KEY_PLACEHOLDERS = {"", "sk-or-v1-your-key-here", "sk-xxx", "xxx", "gsk_xxx"}
 TUSHARE_TOKEN_PLACEHOLDERS = {"", "your-tushare-token"}
+TAVILY_API_KEY_PLACEHOLDERS = {"", "your-tavily-api-key"}
 
 
 def _ensure_agent_env_file() -> Path:
@@ -1097,6 +1101,8 @@ def _build_data_source_settings_response(values: Optional[Dict[str, str]] = None
     env_values = values if values is not None else _read_settings_env_values()
     token = env_values.get("TUSHARE_TOKEN", "")
     token_configured = _is_configured_secret(token, TUSHARE_TOKEN_PLACEHOLDERS)
+    tavily_key = env_values.get("TAVILY_API_KEY", "")
+    tavily_configured = _is_configured_secret(tavily_key, TAVILY_API_KEY_PLACEHOLDERS)
     supported = _baostock_supported()
     installed = _baostock_installed()
     if supported:
@@ -1111,6 +1117,7 @@ def _build_data_source_settings_response(values: Optional[Dict[str, str]] = None
         baostock_supported=supported,
         baostock_installed=installed,
         baostock_message=baostock_message,
+        tavily_api_key_configured=tavily_configured,
         env_path=_project_relative_path(ENV_PATH),
     )
 
@@ -1635,6 +1642,13 @@ async def update_data_source_settings(payload: UpdateDataSourceSettingsRequest):
     elif "TUSHARE_TOKEN" in current_values:
         updates["TUSHARE_TOKEN"] = current_values["TUSHARE_TOKEN"]
 
+    if payload.clear_tavily_api_key:
+        updates["TAVILY_API_KEY"] = ""
+    elif payload.tavily_api_key is not None and payload.tavily_api_key.strip():
+        updates["TAVILY_API_KEY"] = payload.tavily_api_key.strip()
+    elif "TAVILY_API_KEY" in current_values:
+        updates["TAVILY_API_KEY"] = current_values["TAVILY_API_KEY"]
+
     if updates:
         _write_env_values(ENV_PATH, updates)
         token = updates.get("TUSHARE_TOKEN", "").strip()
@@ -1642,6 +1656,11 @@ async def update_data_source_settings(payload: UpdateDataSourceSettingsRequest):
             os.environ["TUSHARE_TOKEN"] = token
         else:
             os.environ.pop("TUSHARE_TOKEN", None)
+        tavily_key = updates.get("TAVILY_API_KEY", "").strip()
+        if _is_configured_secret(tavily_key, TAVILY_API_KEY_PLACEHOLDERS):
+            os.environ["TAVILY_API_KEY"] = tavily_key
+        else:
+            os.environ.pop("TAVILY_API_KEY", None)
 
     return _build_data_source_settings_response(_read_env_values(ENV_PATH))
 

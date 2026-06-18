@@ -7,7 +7,7 @@ import json
 import sys
 from contextlib import contextmanager
 from types import ModuleType
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -139,3 +139,83 @@ def test_max_results_capped_at_10(monkeypatch):
         WebSearchTool().execute(query="q", max_results=50)
 
     assert seen["max_results"] == 10
+
+
+# ---------------------------------------------------------------------------
+# Tavily fallback tests
+# ---------------------------------------------------------------------------
+
+def _make_tavily_module(search_impl):
+    """Build a fake ``tavily`` module whose TavilyClient().search delegates to search_impl."""
+    module = ModuleType("tavily")
+
+    class FakeTavilyClient:
+        def __init__(self, api_key):
+            self.api_key = api_key
+
+        def search(self, query, max_results=5):
+            return search_impl(query, max_results=max_results)
+
+    module.TavilyClient = FakeTavilyClient
+    return module
+
+
+def test_tavily_fallback_used_when_ddgs_fails(monkeypatch):
+    """When all ddgs attempts fail, Tavily is used as a non-preferred fallback."""
+    monkeypatch.setattr("src.tools.web_search_tool.time.sleep", lambda *_: None)
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
+
+    def text_impl(query, max_results, **kwargs):
+        raise RuntimeError("Ratelimit 429")
+
+    def tavily_search(query, max_results=5):
+        return {"results": [{"title": "Tavily", "url": "http://t", "content": "result"}]}
+
+    monkeypatch.setitem(sys.modules, "tavily", _make_tavily_module(tavily_search))
+    # Ensure importlib.util.find_spec("tavily") reports the module as available.
+    import importlib.util as _util
+    monkeypatch.setattr(_util, "find_spec", lambda name: name == "tavily" or MagicMock())
+
+    with _patch_ddgs(monkeypatch, text_impl):
+        out = json.loads(WebSearchTool().execute(query="test"))
+
+    assert out["status"] == "ok"
+    assert out["backends"] == "tavily"
+    assert out["results"][0]["title"] == "Tavily"
+
+
+def test_tavily_not_used_when_ddgs_succeeds(monkeypatch):
+    """Tavily is NOT called when ddgs succeeds — it is non-preferred."""
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
+    tavily_called = {"called": False}
+
+    def text_impl(query, max_results, **kwargs):
+        return [{"title": "DDG", "href": "http://d", "body": "snippet"}]
+
+    def tavily_search(query, max_results=5):
+        tavily_called["called"] = True
+        return {"results": []}
+
+    monkeypatch.setitem(sys.modules, "tavily", _make_tavily_module(tavily_search))
+
+    with _patch_ddgs(monkeypatch, text_impl):
+        out = json.loads(WebSearchTool().execute(query="test"))
+
+    assert out["status"] == "ok"
+    assert out["backends"] != "tavily"
+    assert not tavily_called["called"]
+
+
+def test_tavily_not_used_when_key_not_configured(monkeypatch):
+    """When TAVILY_API_KEY is absent, the tool falls through to a plain error (not Tavily)."""
+    monkeypatch.setattr("src.tools.web_search_tool.time.sleep", lambda *_: None)
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+
+    def text_impl(query, max_results, **kwargs):
+        raise RuntimeError("Ratelimit 429")
+
+    with _patch_ddgs(monkeypatch, text_impl):
+        out = json.loads(WebSearchTool().execute(query="test"))
+
+    assert out["status"] == "error"
+    assert "VIBE_TRADING_SEARCH_BACKENDS" in out["error"]

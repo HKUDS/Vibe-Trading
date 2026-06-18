@@ -42,6 +42,8 @@ export function Settings() {
   const [clearApiKey, setClearApiKey] = useState(false);
   const [tushareToken, setTushareToken] = useState("");
   const [clearTushareToken, setClearTushareToken] = useState(false);
+  const [tavilyApiKey, setTavilyApiKey] = useState("");
+  const [clearTavilyApiKey, setClearTavilyApiKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dataSaving, setDataSaving] = useState(false);
@@ -137,10 +139,14 @@ export function Settings() {
       const updated = await api.updateDataSourceSettings({
         tushare_token: tushareToken.trim() || undefined,
         clear_tushare_token: clearTushareToken,
+        tavily_api_key: tavilyApiKey.trim() || undefined,
+        clear_tavily_api_key: clearTavilyApiKey,
       });
       setDataSettings(updated);
       setTushareToken("");
       setClearTushareToken(false);
+      setTavilyApiKey("");
+      setClearTavilyApiKey(false);
       toast.success("Data source settings saved");
     } catch (error) {
       toast.error(`Failed to save data source settings: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -218,6 +224,9 @@ export function Settings() {
   const tushareStatus = dataSettings.tushare_token_configured
     ? "Configured"
     : "Leave blank to keep the current token";
+  const tavilyStatus = dataSettings.tavily_api_key_configured
+    ? "Configured"
+    : "Leave blank to keep the current key";
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
@@ -442,6 +451,37 @@ export function Settings() {
                     className="h-3.5 w-3.5 accent-primary"
                   />
                   {"Clear saved Tushare token"}
+                </label>
+              </div>
+            </label>
+
+            <label className="grid gap-2">
+              <span className={labelClass}>{"Tavily API key"}</span>
+              <div className="relative">
+                <KeyRound className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="password"
+                  value={tavilyApiKey}
+                  onChange={(event) => setTavilyApiKey(event.target.value)}
+                  className={`${fieldClass} pl-9`}
+                  placeholder={tavilyStatus}
+                  autoComplete="current-password"
+                  disabled={clearTavilyApiKey}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className={hintClass}>{"Non-preferred fallback web search engine. Used only when all free backends (DuckDuckGo, Google, Bing, etc.) are unavailable. Get a key at tavily.com."}</span>
+                <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={clearTavilyApiKey}
+                    onChange={(event) => {
+                      setClearTavilyApiKey(event.target.checked);
+                      if (event.target.checked) setTavilyApiKey("");
+                    }}
+                    className="h-3.5 w-3.5 accent-primary"
+                  />
+                  {"Clear saved Tavily key"}
                 </label>
               </div>
             </label>

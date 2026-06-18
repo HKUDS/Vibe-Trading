@@ -270,12 +270,15 @@ export interface DataSourceSettings {
   baostock_supported: boolean;
   baostock_installed: boolean;
   baostock_message: string;
+  tavily_api_key_configured: boolean;
   env_path: string;
 }
 
 export interface UpdateDataSourceSettingsRequest {
   tushare_token?: string;
   clear_tushare_token?: boolean;
+  tavily_api_key?: string;
+  clear_tavily_api_key?: boolean;
 }
 
 // --- Types matching backend API contracts ---

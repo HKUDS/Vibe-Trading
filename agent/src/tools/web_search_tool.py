@@ -7,6 +7,10 @@ cloud / shared IPs (issue #231: ``web_search`` showed ❌ while the run still
 succeeded via ``read_url``), so we pass an explicit ordered backend list and let
 ddgs fall through a throttled engine to the next one, with a short retry/backoff
 on top for transient failures.
+
+Tavily (https://tavily.com) is supported as a non-preferred fallback: it is
+tried only when all ddgs backends have been exhausted.  Set ``TAVILY_API_KEY``
+in the environment (or agent/.env) and install ``tavily-python`` to enable it.
 """
 
 from __future__ import annotations
@@ -29,6 +33,36 @@ _DEFAULT_BACKENDS = "duckduckgo, google, bing, brave, mojeek, yahoo"
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE_SECONDS = 0.8
 
+_TAVILY_KEY_PLACEHOLDERS = {"", "your-tavily-api-key"}
+
+
+def _tavily_available() -> bool:
+    """Return True if tavily-python is installed and TAVILY_API_KEY is configured."""
+    try:
+        import importlib.util
+        if importlib.util.find_spec("tavily") is None:
+            return False
+    except Exception:
+        return False
+    key = os.getenv("TAVILY_API_KEY", "").strip()
+    return key not in _TAVILY_KEY_PLACEHOLDERS
+
+
+def _search_via_tavily(query: str, max_results: int) -> list[dict]:
+    """Run a Tavily search and return results in the standard title/url/snippet format."""
+    from tavily import TavilyClient  # type: ignore[import-untyped]
+
+    client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
+    response = client.search(query, max_results=max_results)
+    return [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "snippet": r.get("content", ""),
+        }
+        for r in response.get("results", [])
+    ]
+
 
 class WebSearchTool(BaseTool):
     """Search the web via ddgs across several free engines and return top results."""
@@ -48,8 +82,9 @@ class WebSearchTool(BaseTool):
             return False
     description = (
         "Search the web across free engines (DuckDuckGo, Google, Bing, Brave, "
-        "Mojeek, Yahoo). Returns top results with title, URL, and snippet. Use "
-        "this to find information, news, or URLs before reading them with read_url."
+        "Mojeek, Yahoo) with Tavily as a non-preferred fallback when all free "
+        "engines are unavailable. Returns top results with title, URL, and snippet. "
+        "Use this to find information, news, or URLs before reading them with read_url."
     )
     parameters = {
         "type": "object",
@@ -150,6 +185,35 @@ class WebSearchTool(BaseTool):
                 fields=("results.*.title", "results.*.snippet"),
             )
             return json.dumps(payload, ensure_ascii=False)
+
+        # Tavily fallback — tried only after all ddgs backends are exhausted.
+        # Tavily is non-preferred: the free engines are always tried first.
+        if _tavily_available():
+            try:
+                results = _search_via_tavily(query, max_results)
+                payload: dict = {
+                    "status": "ok",
+                    "query": query,
+                    "backends": "tavily",
+                    "results": results,
+                }
+                payload = with_security_warnings(
+                    payload,
+                    fields=("results.*.title", "results.*.snippet"),
+                )
+                return json.dumps(payload, ensure_ascii=False)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("web_search Tavily fallback failed: %s", exc)
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": (
+                            f"Web search failed on all backends including Tavily fallback: {exc}. "
+                            "Retry shortly or read a known URL directly with read_url."
+                        ),
+                    },
+                    ensure_ascii=False,
+                )
 
         return json.dumps(
             {
