@@ -50,6 +50,7 @@ sse-starlette>=1.6.0
 fastmcp>=2.0.0
 
 # Web Search
+tavily-python>=0.7.0
 ddgs>=6.0.0
 
 # Shadow Account HTML/PDF Report
