@@ -86,7 +86,10 @@ class RememberTool(BaseTool):
         if not title or not content:
             return json.dumps({"status": "error", "error": "title and content required"})
         memory_type = kwargs.get("memory_type", "project")
-        path = self._memory.add(title, content, memory_type, description=title)
+        try:
+            path = self._memory.add(title, content, memory_type, description=title)
+        except ValueError as exc:
+            return json.dumps({"status": "error", "error": str(exc)})
         return json.dumps({"status": "ok", "message": f"Saved: {title}", "path": str(path)})
 
     def _recall(self, kwargs: dict) -> str:

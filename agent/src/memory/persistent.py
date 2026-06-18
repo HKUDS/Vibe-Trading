@@ -288,6 +288,10 @@ class PersistentMemory:
         if not stripped_name:
             raise ValueError("memory name must not be empty or whitespace-only")
 
+        if memory_type not in MEMORY_TYPES:
+            allowed = ", ".join(MEMORY_TYPES)
+            raise ValueError(f"memory_type must be one of: {allowed}")
+
         # Preserve non-Latin script characters in the slug — collapsing
         # them all to ``_`` caused two same-length non-Latin names to share a
         # filename and silently overwrite each other (PR #95 + #104).
