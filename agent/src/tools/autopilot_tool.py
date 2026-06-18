@@ -6,7 +6,9 @@ Phase 2: Auto-generates backtest config.json from hypothesis metadata.
 
 from __future__ import annotations
 
+import hashlib
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,14 @@ def _ok(payload: dict[str, Any]) -> str:
 
 def _error(exc: Exception) -> str:
     return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
+
+
+def _get_hypothesis(hypothesis_id: str):
+    """Return a hypothesis by id, or None when absent."""
+    for hypothesis in HypothesisRegistry().list():
+        if hypothesis.hypothesis_id == hypothesis_id:
+            return hypothesis
+    return None
 
 
 _AUTOPILOT_OBJECTIVE_TEMPLATE = """<hypothesis-id>{hypothesis_id}</hypothesis-id>
@@ -73,8 +83,7 @@ class RunResearchAutopilotTool(BaseTool):
                     ensure_ascii=False,
                 )
 
-            registry = HypothesisRegistry()
-            hypothesis = registry.get(hypothesis_id)
+            hypothesis = _get_hypothesis(hypothesis_id)
             if hypothesis is None:
                 return json.dumps(
                     {
@@ -157,7 +166,8 @@ _UNIVERSE_CODES: dict[str, list[str]] = {
     "sse50": ["000016.SH"],
     "szse comp": ["399001.SZ"],
     "sse comp": ["000001.SH"],
-    "chiNext": ["399006.SZ"],
+    "chinext": ["399006.SZ"],
+    "chi next": ["399006.SZ"],
     "s&p 500": ["SPY.US"],
     "sp500": ["SPY.US"],
     "nasdaq": ["QQQ.US"],
@@ -170,6 +180,26 @@ _UNIVERSE_CODES: dict[str, list[str]] = {
 def _lookup_codes(universe: str) -> list[str]:
     key = universe.strip().lower().replace("-", " ").replace("_", " ")
     return _UNIVERSE_CODES.get(key, [universe])
+
+
+def _validate_backtest_dates(start_date: str, end_date: str) -> None:
+    """Validate backtest dates before writing any run artifacts."""
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError("start_date must be YYYY-MM-DD") from exc
+    try:
+        end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError("end_date must be YYYY-MM-DD") from exc
+    if start > end:
+        raise ValueError("start_date must be on or before end_date")
+
+
+def _run_dir_for_hypothesis(hypothesis_id: str) -> Path:
+    """Return a path-contained run directory for any persisted hypothesis id."""
+    suffix = hashlib.sha256(hypothesis_id.encode("utf-8")).hexdigest()[:12]
+    return Path.home() / ".vibe-trading" / "runs" / f"autopilot_{suffix}"
 
 
 class GenerateBacktestConfigTool(BaseTool):
@@ -223,8 +253,7 @@ class GenerateBacktestConfigTool(BaseTool):
                     ensure_ascii=False,
                 )
 
-            registry = HypothesisRegistry()
-            hypothesis = registry.get(hypothesis_id)
+            hypothesis = _get_hypothesis(hypothesis_id)
             if hypothesis is None:
                 return json.dumps(
                     {
@@ -247,6 +276,7 @@ class GenerateBacktestConfigTool(BaseTool):
 
             start_date = str(kwargs.get("start_date", "")).strip()
             end_date = str(kwargs.get("end_date", "")).strip()
+            _validate_backtest_dates(start_date, end_date)
 
             codes = _lookup_codes(hypothesis.universe)
             source = (hypothesis.data_sources or ["auto"])[0]
@@ -259,7 +289,7 @@ class GenerateBacktestConfigTool(BaseTool):
                 "interval": "1D",
             }
 
-            run_dir = Path.home() / ".vibe-trading" / "runs" / f"autopilot_{hypothesis_id[-8:]}"
+            run_dir = _run_dir_for_hypothesis(hypothesis_id)
             run_dir.mkdir(parents=True, exist_ok=True)
             (run_dir / "code").mkdir(parents=True, exist_ok=True)
 
