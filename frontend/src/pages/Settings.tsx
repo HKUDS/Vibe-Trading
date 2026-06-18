@@ -465,9 +465,8 @@ export function Settings() {
                   onChange={(event) => setTavilyApiKey(event.target.value)}
                   className={`${fieldClass} pl-9`}
                   placeholder={tavilyStatus}
-                  autoComplete="current-password"
+                  autoComplete="off"
                   disabled={clearTavilyApiKey}
-                />
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className={hintClass}>{"Non-preferred fallback web search engine. Used only when all free backends (DuckDuckGo, Google, Bing, etc.) are unavailable. Get a key at tavily.com."}</span>
