@@ -252,7 +252,7 @@ def _save_handcrafted_proposal(
     Lets a test exercise commit-time validation against a profile the clamping
     proposer would never emit (e.g. one that breaches an alias-keyed ceiling).
     """
-    proposal_id = "mp_handcrafted_h9"
+    proposal_id = "mp_" + "9" * 32
     save_proposal(
         {
             "type": "mandate.proposal",
