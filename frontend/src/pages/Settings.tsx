@@ -469,7 +469,7 @@ export function Settings() {
                   disabled={clearTavilyApiKey}
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className={hintClass}>{"Non-preferred fallback web search engine. Used only when all free backends (DuckDuckGo, Google, Bing, etc.) are unavailable. Get a key at tavily.com."}</span>
+                <span className={hintClass}>{"Preferred search source when configured. Free backends (DuckDuckGo, Google, Bing, etc.) are used as fallback. Get a key at tavily.com."}</span>
                 <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                   <input
                     type="checkbox"

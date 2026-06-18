@@ -1,4 +1,4 @@
-"""Tests for WebSearchTool: multi-backend fallback, retry, and error handling.
+"""Tests for WebSearchTool: Tavily-preferred search with ddgs fallback, retry, and error handling.
 
 Covers issue #231 — a single rate-limited engine (DuckDuckGo) should no longer
 fail the whole search. All tests mock ``ddgs.DDGS`` so no network calls are made.
@@ -142,7 +142,7 @@ def test_max_results_capped_at_10(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Tavily fallback tests
+# Tavily preferred-source tests
 # ---------------------------------------------------------------------------
 
 def _make_tavily_module(search_impl):
@@ -160,19 +160,19 @@ def _make_tavily_module(search_impl):
     return module
 
 
-def test_tavily_fallback_used_when_ddgs_fails(monkeypatch):
-    """When all ddgs attempts fail, Tavily is used as a non-preferred fallback."""
-    monkeypatch.setattr("src.tools.web_search_tool.time.sleep", lambda *_: None)
+def test_tavily_used_as_preferred_source(monkeypatch):
+    """When Tavily is configured, it is used as the preferred (first-tried) source."""
     monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
+    ddgs_called = {"called": False}
 
     def text_impl(query, max_results, **kwargs):
-        raise RuntimeError("Ratelimit 429")
+        ddgs_called["called"] = True
+        return [{"title": "DDG", "href": "http://d", "body": "snippet"}]
 
     def tavily_search(query, max_results=5):
         return {"results": [{"title": "Tavily", "url": "http://t", "content": "result"}]}
 
     monkeypatch.setitem(sys.modules, "tavily", _make_tavily_module(tavily_search))
-    # Ensure importlib.util.find_spec("tavily") reports the module as available.
     import importlib.util as _util
     monkeypatch.setattr(_util, "find_spec", lambda name: name == "tavily" or MagicMock())
 
@@ -182,32 +182,35 @@ def test_tavily_fallback_used_when_ddgs_fails(monkeypatch):
     assert out["status"] == "ok"
     assert out["backends"] == "tavily"
     assert out["results"][0]["title"] == "Tavily"
+    # ddgs should NOT have been called because Tavily succeeded first
+    assert not ddgs_called["called"]
 
 
-def test_tavily_not_used_when_ddgs_succeeds(monkeypatch):
-    """Tavily is NOT called when ddgs succeeds — it is non-preferred."""
+def test_ddgs_used_when_tavily_fails(monkeypatch):
+    """When Tavily is configured but fails, ddgs is used as a fallback."""
+    monkeypatch.setattr("src.tools.web_search_tool.time.sleep", lambda *_: None)
     monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
-    tavily_called = {"called": False}
 
     def text_impl(query, max_results, **kwargs):
         return [{"title": "DDG", "href": "http://d", "body": "snippet"}]
 
     def tavily_search(query, max_results=5):
-        tavily_called["called"] = True
-        return {"results": []}
+        raise RuntimeError("Tavily service unavailable")
 
     monkeypatch.setitem(sys.modules, "tavily", _make_tavily_module(tavily_search))
+    import importlib.util as _util
+    monkeypatch.setattr(_util, "find_spec", lambda name: name == "tavily" or MagicMock())
 
     with _patch_ddgs(monkeypatch, text_impl):
         out = json.loads(WebSearchTool().execute(query="test"))
 
     assert out["status"] == "ok"
     assert out["backends"] != "tavily"
-    assert not tavily_called["called"]
+    assert out["results"][0]["title"] == "DDG"
 
 
 def test_tavily_not_used_when_key_not_configured(monkeypatch):
-    """When TAVILY_API_KEY is absent, the tool falls through to a plain error (not Tavily)."""
+    """When TAVILY_API_KEY is absent, the tool goes directly to ddgs."""
     monkeypatch.setattr("src.tools.web_search_tool.time.sleep", lambda *_: None)
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
 
