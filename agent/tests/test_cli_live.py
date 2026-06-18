@@ -344,6 +344,29 @@ class TestLiveAuthorize:
         build.assert_called_once()
         assert build.call_args.args[0] == "robinhood"
 
+    def test_authorize_uses_long_init_budget_without_widening_tool_timeout(self) -> None:
+        """Old user configs without initTimeout still get enough OAuth time."""
+        from cli._legacy import cmd_live_authorize
+        from src.config.schema import MCPServerConfig
+
+        cfg = MCPServerConfig.model_validate(
+            {
+                "type": "streamableHttp",
+                "url": "https://agent.robinhood.com/mcp/trading",
+                "auth": {"type": "oauth", "scopes": ["trading.read"]},
+                "enabledTools": ["get_account"],
+            }
+        )
+        with patch("cli._legacy._live_server_config", return_value=cfg), patch(
+            "src.tools.mcp.build_mcp_tool_wrappers", return_value=[1]
+        ) as build:
+            assert cmd_live_authorize("robinhood") == 0
+
+        passed_cfg = build.call_args.args[1]
+        assert cfg.init_timeout is None
+        assert passed_cfg.init_timeout == 300
+        assert passed_cfg.tool_timeout == 30
+
 
 # ---------------------------------------------------------------------------
 # REPL intercept helpers

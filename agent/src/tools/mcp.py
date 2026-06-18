@@ -429,8 +429,13 @@ class MCPServerAdapter:
 
         # Use a minimum of 30 s for init_timeout so cold-start servers (pip
         # install, docker pull, slow imports) do not trip the same short
-        # deadline as a per-call tool_timeout.
-        init_timeout = max(self.server_config.tool_timeout, 30.0)
+        # deadline as a per-call tool_timeout. OAuth-heavy servers may set an
+        # explicit init_timeout without widening ordinary tool-call timeout.
+        init_timeout = (
+            self.server_config.init_timeout
+            if self.server_config.init_timeout is not None
+            else max(self.server_config.tool_timeout, 30.0)
+        )
         return Client(
             transport,
             name=self.server_name,

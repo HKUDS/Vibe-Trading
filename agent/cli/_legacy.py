@@ -2741,6 +2741,7 @@ def cmd_provider_login(provider: str) -> int:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_LIVE_BROKER = "robinhood"
+_LIVE_AUTHORIZE_INIT_TIMEOUT_SECONDS = 300.0
 
 
 def _live_api_base() -> str:
@@ -2844,6 +2845,14 @@ def cmd_live_authorize(broker: str) -> int:
     try:
         from src.tools.mcp import build_mcp_tool_wrappers
 
+        configured_init_timeout = getattr(server_config, "init_timeout", None)
+        if (
+            configured_init_timeout is None
+            or float(configured_init_timeout) < _LIVE_AUTHORIZE_INIT_TIMEOUT_SECONDS
+        ) and hasattr(server_config, "model_copy"):
+            server_config = server_config.model_copy(
+                update={"init_timeout": _LIVE_AUTHORIZE_INIT_TIMEOUT_SECONDS}
+            )
         tools = build_mcp_tool_wrappers(key, server_config)
     except Exception as exc:  # noqa: BLE001 — surface any handshake failure
         console.print(f"[red]Authorization failed:[/red] {exc}")

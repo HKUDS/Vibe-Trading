@@ -85,6 +85,25 @@ def test_server_config_carries_auth() -> None:
     assert cfg.resolved_transport() == "streamableHttp"
 
 
+def test_server_config_round_trips_init_timeout_snake_and_camel() -> None:
+    snake = MCPServerConfig.model_validate(
+        {
+            "type": "streamableHttp",
+            "url": "https://agent.robinhood.com/mcp/trading",
+            "init_timeout": 300,
+        }
+    )
+    camel = MCPServerConfig.model_validate(
+        {
+            "type": "streamableHttp",
+            "url": "https://agent.robinhood.com/mcp/trading",
+            "initTimeout": 300,
+        }
+    )
+    assert snake == camel
+    assert snake.init_timeout == 300
+
+
 def test_override_carries_auth() -> None:
     override = MCPServerConfigOverride.model_validate(
         {"auth": {"type": "oauth", "scopes": ["trading.read"]}}
@@ -97,6 +116,8 @@ def test_robinhood_seed_is_readonly_and_oauth() -> None:
     rh = cfg.mcp_servers["robinhood"]
     assert rh.resolved_transport() == "streamableHttp"
     assert rh.auth is not None and rh.auth.type == "oauth"
+    assert rh.init_timeout == 300
+    assert rh.tool_timeout == 30
     assert "*" not in rh.enabled_tools
     assert rh.enabled_tools  # non-empty explicit allowlist
     assert "robinhood" in LIVE_BROKER_SERVER_KEYS
@@ -200,8 +221,12 @@ def test_non_live_broker_still_allows_wildcard() -> None:
 # --------------------------------------------------------------------------- #
 # _build_client OAuth wiring
 # --------------------------------------------------------------------------- #
+def _build_client(server_config: MCPServerConfig):
+    return MCPServerAdapter("robinhood", server_config)._build_client()
+
+
 def _build_transport(server_config: MCPServerConfig):
-    return MCPServerAdapter("robinhood", server_config)._build_client().transport
+    return _build_client(server_config).transport
 
 
 def test_build_client_yields_oauth_streamable_transport() -> None:
@@ -231,6 +256,38 @@ def test_build_client_yields_oauth_streamable_transport() -> None:
     assert transport.auth._client_id == "client-id"
     assert transport.auth._client_secret == "client-secret"
     assert transport.auth._client_metadata_url == "https://example.com/oauth/client.json"
+
+
+def test_build_client_uses_explicit_init_timeout_without_widening_tool_timeout() -> None:
+    cfg = MCPServerConfig.model_validate(
+        {
+            "type": "streamableHttp",
+            "url": "https://agent.robinhood.com/mcp/trading",
+            "tool_timeout": 7,
+            "init_timeout": 300,
+            "auth": {"type": "oauth", "scopes": ["trading.read"]},
+        }
+    )
+
+    client = _build_client(cfg)
+
+    assert client._init_timeout == 300
+    assert client._session_kwargs["read_timeout_seconds"].total_seconds() == 7
+
+
+def test_build_client_keeps_default_init_timeout_floor() -> None:
+    cfg = MCPServerConfig.model_validate(
+        {
+            "type": "streamableHttp",
+            "url": "https://kb/mcp",
+            "tool_timeout": 7,
+        }
+    )
+
+    client = _build_client(cfg)
+
+    assert client._init_timeout == 30
+    assert client._session_kwargs["read_timeout_seconds"].total_seconds() == 7
 
 
 def test_static_header_http_path_unchanged() -> None:
