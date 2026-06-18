@@ -30,6 +30,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -46,6 +47,7 @@ DEFAULT_MANDATE_LIFETIME_DAYS = 30
 _MANDATE_FILENAME = "mandate.json"
 _PROPOSALS_DIRNAME = "proposals"
 _CONSENT_DIRNAME = "consent"
+_PROPOSAL_ID_RE = re.compile(r"^mp_[0-9a-f]{32}$")
 
 #: Maps every accepted alias of a clamped limit to its CANONICAL name. The
 #: proposal profile, the ceiling snapshot, and the clamp in
@@ -150,6 +152,19 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def _proposal_path(broker: str, proposal_id: str) -> Path:
+    """Return the contained proposal path for a valid opaque proposal id."""
+    if not _PROPOSAL_ID_RE.fullmatch(proposal_id):
+        raise ValueError("proposal_id must be a bare mp_<32 hex> identifier")
+    base = _proposals_dir(broker).resolve()
+    path = (base / f"{proposal_id}.json").resolve()
+    try:
+        path.relative_to(base)
+    except ValueError as exc:  # pragma: no cover - regex is the primary guard
+        raise ValueError("proposal_id escapes the proposals directory") from exc
+    return path
+
+
 # ---------------------------------------------------------------------------
 # PROPOSE state — proposal persistence (read-only; grants no authority)
 # ---------------------------------------------------------------------------
@@ -179,13 +194,17 @@ def save_proposal(proposal: Mapping[str, Any]) -> None:
     broker = str((proposal.get("account") or {}).get("broker") or "").strip()
     if not broker:
         raise ValueError("proposal must carry account.broker")
-    path = _proposals_dir(broker) / f"{proposal_id}.json"
+    path = _proposal_path(broker, proposal_id)
     _atomic_write_json(path, dict(proposal))
 
 
 def _load_proposal(broker: str, proposal_id: str) -> dict[str, Any] | None:
     """Load a persisted proposal, or ``None`` when absent/unreadable."""
-    path = _proposals_dir(broker) / f"{proposal_id}.json"
+    try:
+        path = _proposal_path(broker, proposal_id)
+    except ValueError as exc:
+        logger.warning("proposal %s for %s is invalid: %s", proposal_id, broker, exc)
+        return None
     if not path.is_file():
         return None
     try:
@@ -199,8 +218,8 @@ def _load_proposal(broker: str, proposal_id: str) -> dict[str, Any] | None:
 def _invalidate_proposal(broker: str, proposal_id: str) -> None:
     """Delete a proposal so it can never be committed twice (idempotency)."""
     try:
-        (_proposals_dir(broker) / f"{proposal_id}.json").unlink()
-    except FileNotFoundError:
+        _proposal_path(broker, proposal_id).unlink()
+    except (FileNotFoundError, ValueError):
         pass
 
 
