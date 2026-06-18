@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import yaml
 
-from backtest.loaders.base import cached_loader_fetch, validate_date_range
+from backtest.loaders.base import cached_loader_fetch, validate_date_range, validate_ohlc
 from backtest.loaders.registry import register
 
 logger = logging.getLogger(__name__)
@@ -104,6 +104,7 @@ def _normalize_columns(
     for col in ohlcv_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     df = df.dropna(subset=["open", "high", "low", "close"])
+    df = validate_ohlc(df)
     for col in ohlcv_cols:
         df[col] = df[col].astype("float64")
 

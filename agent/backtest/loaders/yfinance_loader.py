@@ -8,7 +8,12 @@ from typing import Dict, List, Optional, Union
 import pandas as pd
 import yfinance as yf
 
-from backtest.loaders.base import loader_cache_get, loader_cache_put, validate_date_range
+from backtest.loaders.base import (
+    loader_cache_get,
+    loader_cache_put,
+    validate_date_range,
+    validate_ohlc,
+)
 from backtest.loaders.registry import register
 
 _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
@@ -182,6 +187,7 @@ def _normalize_frame(frame: pd.DataFrame, requested_interval: str) -> pd.DataFra
     normalized = normalized.sort_index()
     normalized["volume"] = normalized["volume"].fillna(0.0)
     normalized = normalized.dropna(subset=["open", "high", "low", "close"])
+    normalized = validate_ohlc(normalized)
 
     if requested_interval == "4H" and not normalized.empty:
         normalized = normalized.resample("4h").agg(

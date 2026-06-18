@@ -47,6 +47,59 @@ def validate_date_range(start_date: str, end_date: str) -> None:
         raise ValueError(f"start_date ({start_date}) > end_date ({end_date})")
 
 
+def validate_ohlc(frame: pd.DataFrame, *, strategy: str = "drop") -> pd.DataFrame:
+    """Drop, flag, or reject bars that violate OHLC invariants.
+
+    Loaders only drop NaN rows, so structurally dirty bars — ``high < low``,
+    a non-positive price, or a high/low that fails to bracket open/close —
+    flow straight into the backtest and surface downstream as NaN/inf metrics
+    that break the strict (``allow_nan=False``) JSON serializers. This is the
+    canonical loader-boundary check; call it after the existing ``dropna`` so a
+    single sanity pass guards every source.
+
+    Args:
+        frame: OHLCV frame with at least ``open``/``high``/``low``/``close``
+            columns. NaN handling is left to the caller's ``dropna``.
+        strategy: ``"drop"`` (remove offending rows, default), ``"warn"``
+            (log and keep), or ``"raise"`` (raise on any violation).
+
+    Returns:
+        The frame with invalid rows removed (``"drop"``) or unchanged
+        (``"warn"``). A frame that is empty or lacks OHLC columns is returned
+        as-is.
+
+    Raises:
+        ValueError: ``strategy="raise"`` and at least one bar is invalid.
+    """
+    required = ("open", "high", "low", "close")
+    if frame.empty or not all(col in frame.columns for col in required):
+        return frame
+
+    open_, high, low, close = (frame[c] for c in required)
+    invalid = (
+        (high < low)
+        | (high < open_)
+        | (high < close)
+        | (low > open_)
+        | (low > close)
+        | (open_ <= 0)
+        | (high <= 0)
+        | (low <= 0)
+        | (close <= 0)
+    )
+    n_invalid = int(invalid.sum())
+    if n_invalid == 0:
+        return frame
+
+    if strategy == "raise":
+        raise ValueError(f"{n_invalid} bar(s) violate OHLC invariants")
+    if strategy == "warn":
+        logger.warning("OHLC validation: %d bar(s) violate invariants (kept)", n_invalid)
+        return frame
+    logger.warning("OHLC validation: dropping %d invalid bar(s)", n_invalid)
+    return frame[~invalid]
+
+
 # ---------------------------------------------------------------------------
 # Bounded retry / budget helpers (shared by ccxt_loader, okx, and any future
 # loader calling a flaky external API).
