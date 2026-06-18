@@ -42,6 +42,16 @@ def test_retry_run_missing_returns_error(tmp_path, monkeypatch):
     assert "not found" in payload["error"].lower()
 
 
+def test_retry_run_rejects_path_shaped_run_id(tmp_path, monkeypatch):
+    store = SwarmStore(base_dir=tmp_path)
+    monkeypatch.setattr(mcp_server, "_get_swarm_store", lambda: store)
+
+    payload = json.loads(mcp_server.retry_run("../outside/victim"))
+
+    assert payload["status"] == "error"
+    assert "run_id" in payload["error"]
+
+
 def test_retry_run_refuses_running_run(tmp_path, monkeypatch):
     store = SwarmStore(base_dir=tmp_path)
     run = _make_run("r-running", RunStatus.running)

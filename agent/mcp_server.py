@@ -1141,7 +1141,10 @@ def get_swarm_status(run_id: str) -> str:
         run_id: The run ID returned by run_swarm.
     """
     store = _get_swarm_store()
-    run = store.load_run(run_id)
+    try:
+        run = store.load_run(run_id)
+    except ValueError as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
     if run is None:
         return json.dumps({"status": "error", "error": f"Run {run_id} not found"}, ensure_ascii=False)
     reconciled = store.reconcile_run(run, write=True)
@@ -1165,7 +1168,10 @@ def get_run_result(run_id: str) -> str:
         run_id: The run ID returned by run_swarm.
     """
     store = _get_swarm_store()
-    run = store.load_run(run_id)
+    try:
+        run = store.load_run(run_id)
+    except ValueError as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
     if run is None:
         return json.dumps({"status": "error", "error": f"Run {run_id} not found"}, ensure_ascii=False)
     reconciled = store.reconcile_run(run, write=True)
@@ -1249,7 +1255,10 @@ def retry_run(run_id: str) -> str:
     from src.swarm.runtime import SwarmRuntime
 
     store = _get_swarm_store()
-    loaded = store.load_run(run_id)
+    try:
+        loaded = store.load_run(run_id)
+    except ValueError as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
     if loaded is None:
         return json.dumps({"status": "error", "error": f"Run {run_id} not found"}, ensure_ascii=False)
 
