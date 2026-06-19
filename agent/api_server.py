@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from rich.console import Console
 
+from cli._version import __version__ as APP_VERSION
 from src.goal.context import default_goal_criteria
 from src.ui_services import build_run_analysis, load_run_context
 
@@ -465,7 +466,7 @@ class LiveStatusResponse(BaseModel):
 app = FastAPI(
     title="Vibe-Trading API",
     description="Vibe-Trading API: natural-language finance research, backtesting, and swarm workflows",
-    version="5.0.0",
+    version=APP_VERSION,
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -1732,7 +1733,7 @@ async def api_info():
     """Service metadata."""
     return {
         "service": "Vibe-Trading API",
-        "version": "5.0.0",
+        "version": APP_VERSION,
         "docs": "/docs",
         "health": "/health",
     }

@@ -43,8 +43,11 @@ build/
 dist/
 
 # Project docs
+# NOTE: `*` never crosses `/` in Docker ignore matching, so `/*.md` (anchored)
+# excludes only ROOT-level markdown. Nested skill docs (agent/src/skills/**/*.md)
+# and agent/SKILL.md are intentionally NOT excluded — they ship in the image.
 CLAUDE.md
 CONTRIBUTING.md
-*.md
+/*.md
 !README.md
 !LICENSE

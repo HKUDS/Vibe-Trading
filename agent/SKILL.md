@@ -1,6 +1,6 @@
 ---
 name: vibe-trading
-version: 0.1.9
+version: 0.1.10
 description: Professional finance research toolkit — backtesting (7 engines + benchmark comparison panel), factor analysis, Alpha Zoo (452 pre-built alphas across qlib158/alpha101/gtja191/academic), options pricing, 79 finance skills, 29 multi-agent swarm teams, Trade Journal analyzer, and Shadow Account (extract → backtest → render) across 18 market-data sources (tushare, yfinance, okx, akshare, baostock, tencent, mootdx, ccxt, futu, local, eastmoney, sina, stooq, yahoo, plus optional-key finnhub/alphavantage/tiingo/fmp).
 dependencies:
   python: ">=3.11"
@@ -173,6 +173,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `get_run_result` | Get final report and task summaries | None |
 | `list_runs` | List recent swarm runs with metadata | None |
 | `reap_stale_runs` | Finalize stale swarm runs | None |
+| `retry_run` | Re-run a failed/stale swarm run | LLM key |
 | `trading_connections` | List selectable connector profiles | None |
 | `trading_select_connection` | Select the default connector profile | None |
 | `trading_check` | Check connector readiness | Connector app/OAuth |

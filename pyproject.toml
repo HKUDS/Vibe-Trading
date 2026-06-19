@@ -1,6 +1,6 @@
 [project]
 name = "vibe-trading-ai"
-version = "0.1.9"
+version = "0.1.10"
 description = "Natural-language finance research AI agent with backtesting"
 requires-python = ">=3.11"
 license = "MIT"
@@ -50,7 +50,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "python-multipart>=0.0.18",
     "sse-starlette>=1.6.0",
-    "fastmcp>=2.0.0",
+    "fastmcp>=2.14.0",
     "ddgs>=6.0.0",
     "jinja2>=3.1.0",
     "matplotlib>=3.7.0",
@@ -81,6 +81,7 @@ include = ["src*", "backtest*", "cli*"]
     "skills/**/*.md",
     "skills/**/*.yaml",
     "skills/**/*.json",
+    "skills/**/*.py",
     "providers/*.json",
     "swarm/presets/*.yaml",
     "shadow_account/templates/*.j2",
