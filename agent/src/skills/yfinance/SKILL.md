@@ -13,6 +13,34 @@ The project has a built-in yfinance DataLoader (`backtest/loaders/yfinance_loade
 
 For OHLCV bars in agent/swarm work, prefer the `get_market_data` tool when it is available. It routes through the project loader layer, normalizes symbols, removes malformed OHLC rows, and returns strict JSON. Use direct `yfinance` calls mainly for data outside OHLCV coverage such as company info, financial statements, options, holders, and insider transactions.
 
+## Deep Yahoo Interfaces (references/)
+
+Beyond the `yfinance` package, the project ships a built-in **Yahoo public-API
+client** (`backtest.loaders.yahoo_client`) and two read-only agent tools that
+sit on top of it. These reach Yahoo's own unauthenticated JSON endpoints
+directly via `requests` (no `yfinance` install needed), share one throttled
+HTTP gate (Yahoo rate-limits by source IP), and handle the cookie+crumb
+handshake automatically. Each interface has its own reference doc — read the
+one you need rather than loading them all:
+
+| Doc | Covers |
+|-----|--------|
+| [yahoo_client.get_chart](yfinance/references/yahoo_client_get_chart.md) | Direct v8 OHLCV bars (range or epoch window) |
+| [yahoo_client.get_quote_summary](yfinance/references/yahoo_client_get_quote_summary.md) | v10 quoteSummary modules (key stats, financials, ownership) |
+| [yahoo_client.get_options](yfinance/references/yahoo_client_get_options.md) | v7 option chain (expirations + calls/puts) |
+| [yahoo_client.search](yfinance/references/yahoo_client_search.md) | v1 instrument search by ticker/name |
+| [get_options_chain tool](yfinance/references/tool_get_options_chain.md) | Agent tool: US options ladder envelope |
+| [get_stock_profile tool](yfinance/references/tool_get_stock_profile.md) | Agent tool: company profile/estimates/ownership envelope |
+
+> Path convention: `read_file` resolves paths with `skills/` as the root, so
+> every link above is written with the **skill-name prefix** (`yfinance/references/...`).
+> Omitting the prefix makes the read fail. Reuse this `yfinance/references/...`
+> form for any new reference docs.
+
+The Yahoo client uses the project ticker convention (`AAPL.US` → `AAPL`,
+`00700.HK` → `0700.HK`); see the [Ticker Format Conversion](#ticker-format-conversion)
+table below — the same rules apply across all of the interfaces above.
+
 ## Quick Start
 
 Preferred OHLCV tool call:
@@ -182,56 +210,6 @@ usdcny = yf.download("CNY=X", start="2025-01-01", end="2026-01-01", progress=Fal
 usdhkd = yf.download("HKD=X", start="2025-01-01", end="2026-01-01", progress=False)
 eurusd = yf.download("EURUSD=X", start="2025-01-01", end="2026-01-01", progress=False)
 ```
-
-## Popular Ticker Reference
-
-### US Stocks
-
-| Ticker | Company |
-|--------|---------|
-| AAPL | Apple |
-| MSFT | Microsoft |
-| GOOGL | Alphabet (Google) |
-| AMZN | Amazon |
-| NVDA | NVIDIA |
-| META | Meta Platforms |
-| TSLA | Tesla |
-| BRK-B | Berkshire Hathaway |
-
-### HK Stocks
-
-| Project Format | yfinance Format | Company |
-|---------------|----------------|---------|
-| 700.HK | 0700.HK | Tencent |
-| 9988.HK | 9988.HK | Alibaba |
-| 9618.HK | 9618.HK | JD.com |
-| 3690.HK | 3690.HK | Meituan |
-| 1810.HK | 1810.HK | Xiaomi |
-| 2318.HK | 2318.HK | Ping An |
-
-### Major Indices
-
-| Ticker | Index |
-|--------|-------|
-| ^GSPC | S&P 500 |
-| ^DJI | Dow Jones Industrial Average |
-| ^IXIC | NASDAQ Composite |
-| ^HSI | Hang Seng Index |
-| ^N225 | Nikkei 225 |
-| ^FTSE | FTSE 100 |
-
-### Sector ETFs
-
-| Ticker | Sector |
-|--------|--------|
-| XLK | Technology |
-| XLF | Financials |
-| XLE | Energy |
-| XLV | Healthcare |
-| XLY | Consumer Discretionary |
-| XLP | Consumer Staples |
-| XLI | Industrials |
-| XLU | Utilities |
 
 ## Backtest Usage
 

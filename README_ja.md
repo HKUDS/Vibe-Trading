@@ -50,11 +50,13 @@
 
 ## 📰 ニュース
 
+- **2026-06-19** 🌍 **グローバルデータレイヤー — 新規 8 データソース + 18 個の読み取り専用データツール**：市場データの loader レジストリが 10 から 18 ソースへ拡大しました——無料の直接 API 追加 4 件（**Eastmoney**、**Sina**、**Stooq**、そして直接 HTTP の **Yahoo** クライアント）に加え、任意のキー必須な米国プロバイダ 4 件（**Finnhub**、**Alpha Vantage**、**Tiingo**、**FMP**）で、fallback チェーンは IP-ban リスク順に並べ替えました。その上に **18 個の新しい読み取り専用データツール**が乗り、OHLCV を越えてファンダメンタルズやフローにまで到達します——資金フロー、龍虎榜、北向き（Stock-Connect）フロー、信用取引、大口取引（ブロックトレード）、株主数、ロックアップ解除、セクター構成、調査レポート、ニュース、SEC 提出書類（EDGAR + XBRL）、財務諸表、オプションチェーン、機関投資家の保有、全市場スクリーニング、シンボル検索を、A 株 / 米国 / 香港にまたがって、すべて MCP 経由で公開します。集約された `data-routing` インデックスとソース別の `eastmoney` / `sec-edgar` skill がこのレイヤーを文書化し、ライブ LLM ルーティング + データのスモークパスでエンドツーエンド検証済みです。
 - **2026-06-18** 🔬 **Research Autopilot 第1フェーズ + ローカル Data Bridge ローダー、加えて Discord セキュリティ通知**：2 つの新しい agent ツールが **Hypothesis Registry → Research Goal → backtest** の経路を端から端までつなぎます——`run_research_autopilot` は `hypothesis_id` を research goal に変換し（テーゼを目的に、backtest 向けの受け入れ基準、次のステップのヒント付き）、`generate_backtest_config` は hypothesis の universe とデータソースから backtest の `config.json` を自動生成するので、agent はアイデア → `signal_engine.py` → 実行まで一直線に進めます（現在 **50 ツール**）（[#260](https://github.com/HKUDS/Vibe-Trading/pull/260)、@Robin1987China さんに感謝）。新しい **`local` データローダー**は、自分の **CSV / Parquet / DuckDB** ファイルから直接 OHLCV を読み込みます：`~/.vibe-trading/data-bridge/config.yaml` でシンボルをファイルに対応付け、シンボルに `local:` を前置するとローカルデータへルーティングされ、通常の fallback チェーンにも対応します（[#252](https://github.com/HKUDS/Vibe-Trading/pull/252)、@Robin1987China さんに感謝）。直後の追従修正で、両者が抱えていた実行時の欠陥を修正しました——Autopilot はホストの `session_id` を受け取れず（毎回エラー）、`generate_backtest_config` は `safe_run_dir` が拒否する run ルートに書き込み、ローカルローダーは tz-naive なタイムスタンプ比較で tz-aware 入力を黙って空にしていました（[#266](https://github.com/HKUDS/Vibe-Trading/pull/266)）。DeepSeek の `DSML` でラップされた tool call が正しくパースされるようになり（[#261](https://github.com/HKUDS/Vibe-Trading/issues/261)）、Robinhood OAuth ハンドシェイクの初期化タイムアウトが延長され、MCP `initTimeout` 設定キーもドキュメント化されました（[#263](https://github.com/HKUDS/Vibe-Trading/pull/263)）。さらに識別子の封じ込め強化が一括で入りました：永続メモリの型バリデーション（[#257](https://github.com/HKUDS/Vibe-Trading/pull/257)）、MCP swarm run-id の封じ込め（[#258](https://github.com/HKUDS/Vibe-Trading/pull/258)）、そして relay・preview・commit ゲート間で一貫して強制される厳格な `mp_[0-9a-f]{32}` mandate proposal-id フォーマット（[#256](https://github.com/HKUDS/Vibe-Trading/pull/256)、[#264](https://github.com/HKUDS/Vibe-Trading/pull/264)）。⚠️ **セキュリティ通知**：以前のコミュニティ招待は、現在私たちが管理していないサーバーに解決され、偽の Collab.Land ウォレット「認証」フィッシング詐欺を実行しています——すべての README と issue テンプレートから削除され、**唯一**の公式 Discord は HKUDS コミュニティサーバー（[discord.gg/6TdQnT5xcF](https://discord.gg/6TdQnT5xcF)）になりました。Vibe-Trading が暗号ウォレットの「認証」や接続を求めることは決してありません。
 - **2026-06-17** 🧩 **インストール互換性 + Opus/Kimi プロバイダ修正**：通常の `pip install vibe-trading-ai` では、任意機能の `pyharmonics` / `ta` 依存チェーンを引かなくなりました。harmonic detection は `vibe-trading-ai[harmonic]` extra の背後に移しつつ、同梱 fallback detector はそのまま使えます（[#250](https://github.com/HKUDS/Vibe-Trading/pull/250)、[#249](https://github.com/HKUDS/Vibe-Trading/issues/249) をクローズ）。Agent loop は Opus 4.8+ が拒否する assistant-prefill handoff message を送らなくなり、Kimi/Moonshot は `MOONSHOT_USER_AGENT` で client `User-Agent` を上書きできます（[#248](https://github.com/HKUDS/Vibe-Trading/pull/248)、[#246](https://github.com/HKUDS/Vibe-Trading/issues/246) と [#204](https://github.com/HKUDS/Vibe-Trading/issues/204) をクローズ）。follow-up tests は background-result と auto-compact の handoff 経路を直接カバーします（[#251](https://github.com/HKUDS/Vibe-Trading/pull/251)）。
-- **2026-06-16** 🛡️ **セキュリティ/API 強化 + GLM/Zhipu alias**：Settings 書き込みは認証設定時に auth 必須になりました（[#245](https://github.com/HKUDS/Vibe-Trading/pull/245)）；API session の shell-capable tools は明示的な `VIBE_TRADING_ENABLE_SHELL_TOOLS=1` opt-in が必要です（[#243](https://github.com/HKUDS/Vibe-Trading/pull/243)）；API key 設定時の local shutdown も auth 必須です（[#241](https://github.com/HKUDS/Vibe-Trading/pull/241)）；loopback に見えるが信頼できない Host は local 扱いせず拒否します（[#242](https://github.com/HKUDS/Vibe-Trading/pull/242)）。実行時の細部も改善: Web chat は完了済み attempts と同期し（[#236](https://github.com/HKUDS/Vibe-Trading/pull/236)）、run card は非有限メトリクスを strict JSON として出力（[#238](https://github.com/HKUDS/Vibe-Trading/pull/238)）、不正な `RSSHUB_TIMEOUT_S` / `RSSHUB_FETCH_BUDGET_S` は安全に fallback（[#240](https://github.com/HKUDS/Vibe-Trading/pull/240)）、ddgs retry fallback は regression coverage 付きです（[#239](https://github.com/HKUDS/Vibe-Trading/pull/239)）。GLM/Zhipu は first-class provider alias となり、model-name inference も追加されました（[#247](https://github.com/HKUDS/Vibe-Trading/pull/247)、[#237](https://github.com/HKUDS/Vibe-Trading/issues/237) をクローズ）。
 <details>
 <summary>過去のニュース</summary>
+
+- **2026-06-16** 🛡️ **セキュリティ/API 強化 + GLM/Zhipu alias**：Settings 書き込みは認証設定時に auth 必須になりました（[#245](https://github.com/HKUDS/Vibe-Trading/pull/245)）；API session の shell-capable tools は明示的な `VIBE_TRADING_ENABLE_SHELL_TOOLS=1` opt-in が必要です（[#243](https://github.com/HKUDS/Vibe-Trading/pull/243)）；API key 設定時の local shutdown も auth 必須です（[#241](https://github.com/HKUDS/Vibe-Trading/pull/241)）；loopback に見えるが信頼できない Host は local 扱いせず拒否します（[#242](https://github.com/HKUDS/Vibe-Trading/pull/242)）。実行時の細部も改善: Web chat は完了済み attempts と同期し（[#236](https://github.com/HKUDS/Vibe-Trading/pull/236)）、run card は非有限メトリクスを strict JSON として出力（[#238](https://github.com/HKUDS/Vibe-Trading/pull/238)）、不正な `RSSHUB_TIMEOUT_S` / `RSSHUB_FETCH_BUDGET_S` は安全に fallback（[#240](https://github.com/HKUDS/Vibe-Trading/pull/240)）、ddgs retry fallback は regression coverage 付きです（[#239](https://github.com/HKUDS/Vibe-Trading/pull/239)）。GLM/Zhipu は first-class provider alias となり、model-name inference も追加されました（[#247](https://github.com/HKUDS/Vibe-Trading/pull/247)、[#237](https://github.com/HKUDS/Vibe-Trading/issues/237) をクローズ）。
 
 - **2026-06-15** 🧭 **Web 検索の堅牢化 + Web UI のラン継続性修正**：`web_search` は単一エンジンがレート制限されても失敗しなくなりました——複数の無料・キー不要のエンジン（DuckDuckGo、Google、Bing、Brave、Mojeek、Yahoo）を順に照会し、リトライ/バックオフを行い、「結果なし」をエラーではなく空の回答として扱い、すべてのエンジンが制限された場合は素っ気ない ❌ ではなく実行可能なメッセージを返します（エンジン一覧は `VIBE_TRADING_SEARCH_BACKENDS` で上書き可能）（[#232](https://github.com/HKUDS/Vibe-Trading/pull/232)、[#231](https://github.com/HKUDS/Vibe-Trading/issues/231) をクローズ、@Ethan-sun01 さんに感謝）。Web UI では、ラン中にページを切り替えても固まらなくなりました——チャットは戻った際にライブストリームへ再購読し、見逃した進捗を再生します（[#234](https://github.com/HKUDS/Vibe-Trading/pull/234)）——そして停止ボタンはイテレーション境界だけでなく、ストリーミング中やツール間でも有効になりました（[#235](https://github.com/HKUDS/Vibe-Trading/pull/235)）。これにより [#229](https://github.com/HKUDS/Vibe-Trading/issues/229) の両方が解決します（@kalkinj さんに感謝）。baostock loader は tushare 形式の `601398.SH` に加え、ネイティブの `sh.601398` / `sz.000001` コードも受け付けるようになりました（[#230](https://github.com/HKUDS/Vibe-Trading/pull/230)、@bhlt さんに感謝）。
 
@@ -252,6 +254,34 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 
 ---
 
+## 📡 データソースとスマートフォールバック
+
+1 回の `get_market_data` 呼び出しで **18 のマーケットデータソース**にアクセスできます。`source: "auto"` を指定すれば、loader が銘柄に応じてソースを選び、**IP 規制リスク**の順に並んだ市場別チェーンをたどります。規制を受けない公開ソースを先に、スロットリングや key を要するソースを最後に試します。設定不要、単一障害点なし。
+
+| Source | Markets | Auth | Role |
+|--------|---------|------|------|
+| `tencent` · `mootdx` | A-share | none | never IP-banned (`mootdx` = 通达信 TCP) |
+| `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
+| `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
+| `tushare` | A / futures / fund / macro | token | richest A-share |
+| `yahoo` · `sina` · `stooq` | US (/HK) | none | direct chart/quotes/options · K-line to 1984 · EOD CSV |
+| `yfinance` | US / HK | none | wrapper |
+| `finnhub` · `alphavantage` · `tiingo` · `fmp` | US | key | optional providers |
+| `okx` · `ccxt` | crypto | none | OKX + 100+ exchanges |
+| `futu` | HK / A | OpenD | optional local FutuOpenD |
+| `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
+
+**フォールバックチェーン（IP 規制リスク順）：**
+
+- **A 株** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `local`
+- **米国株** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `akshare` · `local`
+- **香港株** → `eastmoney` · `yahoo` · `futu` · `yfinance` · `akshare` · `local`
+- **暗号資産** → `okx` · `ccxt` · `yfinance` · `local` &nbsp;·&nbsp; *(先物 / ファンド / マクロ / FX → `tushare`/`akshare` → `local`)*
+
+OHLCV にとどまらず、**18 の読み取り専用データツール**がファンダメンタルズと資金フローまで踏み込みます。資金フロー、龍虎榜、北向資金、信用取引、大口取引、株主数、ロックアップ、セクター、調査レポート、ニュース、SEC filings、財務諸表、オプションチェーン、機関投資家保有、市場スクリーニング、銘柄検索、マクロまで、すべて MCP 経由で公開されます。明示的な `local:` 銘柄が暗黙のうちにネットワークソースへフォールバックすることは決してありません。
+
+---
+
 ## 🔩 詳細な機能
 
 メイン README を読みやすく保つため、詳細な一覧は以下に折りたたんでいます。利用できる構成要素を確認したいときに開いてください。
@@ -265,7 +295,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 
 | Category | Skills | Examples |
 |----------|--------|----------|
-| Data Source | 7 | `data-routing`, `tushare`, `yfinance`, `okx-market`, `akshare`, `mootdx`, `ccxt` |
+| Data Source | 9 | `data-routing`, `tushare`, `yfinance`, `okx-market`, `akshare`, `mootdx`, `ccxt`, `eastmoney`, `sec-edgar` |
 | Strategy | 17 | `strategy-generate`, `cross-market-strategy`, `technical-basic`, `candlestick`, `ichimoku`, `elliott-wave`, `smc`, `multi-factor`, `ml-strategy` |
 | Analysis | 17 | `factor-research`, `macro-analysis`, `global-macro`, `valuation-model`, `earnings-forecast`, `credit-analysis`, `dividend-analysis` |
 | Asset Class | 9 | `options-strategy`, `options-advanced`, `convertible-bond`, `etf-analysis`, `asset-allocation`, `sector-rotation` |
@@ -842,7 +872,7 @@ Vibe-Trading/
 ├── agent/                          # バックエンド (Python)
 │   ├── cli/                        # CLI パッケージ — インタラクティブ TUI + サブコマンド
 │   ├── api_server.py               # FastAPI サーバー — runs、sessions、upload、swarm、SSE
-│   ├── mcp_server.py               # MCP サーバー — OpenClaw / Claude Desktop 向け 36 tools
+│   ├── mcp_server.py               # MCP サーバー — OpenClaw / Claude Desktop 向け 54 tools
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct エージェントコア
@@ -883,7 +913,7 @@ Vibe-Trading/
 │   │
 │   └── backtest/                   # バックテストエンジン
 │       ├── engines/                #   7 エンジン + クロスマーケット composite engine + options_portfolio
-│       ├── loaders/                #   7 ソース: tushare、okx、yfinance、akshare、mootdx、ccxt、futu
+│       ├── loaders/                #   18 ソース: tushare、okx、yfinance、akshare、baostock、tencent、mootdx、ccxt、futu、local、eastmoney、sina、stooq、yahoo、finnhub、alphavantage、tiingo、fmp
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + 自動フォールバックチェーン
 │       └── optimizers/             #   MVO、equal vol、max div、risk parity

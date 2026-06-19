@@ -50,11 +50,13 @@
 
 ## 📰 الأخبار
 
+- **2026-06-19** 🌍 **طبقة بيانات عالمية —— 8 مصادر جديدة + 18 أداة بيانات للقراءة فقط**: يكبر سجلّ محمّلات بيانات السوق من 10 مصادر إلى 18 —— أربع إضافات مجانية مباشرة عبر الـ API (**Eastmoney** و**Sina** و**Stooq** وعميل **Yahoo** مباشر عبر HTTP)، إضافةً إلى أربعة مزوّدين أمريكيين اختياريين محكومين بمفتاح (**Finnhub** و**Alpha Vantage** و**Tiingo** و**FMP**)، مع إعادة ترتيب سلاسل fallback حسب خطر حظر الـ IP. وفوقها تجلس **18 أداة بيانات جديدة للقراءة فقط** تتجاوز OHLCV إلى الأساسيات والتدفقات —— تدفق الأموال، ولوحة التنين والنمر، وتدفق الشمال (Stock-Connect)، والتداول بالهامش، والصفقات الكتلية، وعدد المساهمين، وانتهاء فترات الحظر، وعضوية القطاعات، وتقارير البحث، والأخبار، وملفّات SEC (EDGAR + XBRL)، والقوائم المالية، وسلاسل الخيارات، والحيازات المؤسسية، وفرز كامل السوق، والبحث عن الرموز —— عبر أسواق الأسهم الصينية / الأمريكية / هونغ كونغ، وكلّها مكشوفة عبر MCP. ويوثّق هذه الطبقة فهرس `data-routing` موحّد إضافةً إلى مهارتي `eastmoney` / `sec-edgar` لكل مصدر، وقد تم التحقق منها من طرف إلى طرف عبر تمرير حيّ لتوجيه LLM + اختبار بيانات سريع.
 - **2026-06-18** 🔬 **المرحلة الأولى من Research Autopilot + محمّل Data Bridge محلي، إضافةً إلى تنبيه أمني بشأن Discord**: تربط أداتان جديدتان للوكيل مسار **Hypothesis Registry → Research Goal → backtest** من طرف إلى طرف — تحوّل `run_research_autopilot` رقم `hypothesis_id` إلى research goal (الأطروحة كهدف، ومعايير قبول موجّهة للـ backtest، وتلميحات للخطوة التالية)، وتكتب `generate_backtest_config` ملف `config.json` للـ backtest تلقائياً من universe ومصادر بيانات الفرضية، فيستطيع الوكيل الانتقال مباشرةً من الفكرة → `signal_engine.py` → التشغيل (الآن **50 أداة**) ([#260](https://github.com/HKUDS/Vibe-Trading/pull/260)، شكراً @Robin1987China). ويقرأ **محمّل البيانات `local`** الجديد بيانات OHLCV مباشرةً من ملفاتك **CSV / Parquet / DuckDB**: اربط الرموز بالملفات في `~/.vibe-trading/data-bridge/config.yaml` وأضف بادئة `local:` للرمز ليُوجَّه إلى بياناتك المحلية، مع دعم سلسلة fallback المعتادة ([#252](https://github.com/HKUDS/Vibe-Trading/pull/252)، شكراً @Robin1987China). وأصلح تتبّع سريع عيوب وقت التشغيل التي رافقت كليهما — لم يكن Autopilot يتلقى `session_id` المضيف (تخفق كل استدعاء)، وكتبت `generate_backtest_config` ضمن جذر run يرفضه `safe_run_dir`، وأفرغ المحمّل المحلي بصمت مدخلات tz-aware عند مقارنة طابع زمني tz-naive ([#266](https://github.com/HKUDS/Vibe-Trading/pull/266)). وتُحلَّل الآن استدعاءات أدوات DeepSeek المغلّفة بـ `DSML` بشكل صحيح ([#261](https://github.com/HKUDS/Vibe-Trading/issues/261))، وحصلت مصافحة Robinhood OAuth على مهلة تهيئة أطول مع توثيق مفتاح إعداد MCP `initTimeout` ([#263](https://github.com/HKUDS/Vibe-Trading/pull/263))، ونزلت دفعة من تقوية احتواء المعرّفات: التحقق من نوع الذاكرة الدائمة ([#257](https://github.com/HKUDS/Vibe-Trading/pull/257))، واحتواء معرّفات تشغيل swarm في MCP ([#258](https://github.com/HKUDS/Vibe-Trading/pull/258))، وفرض صيغة صارمة `mp_[0-9a-f]{32}` لمعرّف mandate proposal-id باتساق عبر relay وpreview وبوابة commit ([#256](https://github.com/HKUDS/Vibe-Trading/pull/256)، [#264](https://github.com/HKUDS/Vibe-Trading/pull/264)). ⚠️ **تنبيه أمني**: دعوة المجتمع القديمة تشير الآن إلى خادم لم نعد نتحكم به ويُشغّل عملية تصيّد بانتحال "تحقّق" محفظة Collab.Land — أُزيلت من كل ملفات README ومن قالب المشكلات، وأصبح خادم HKUDS المجتمعي ([discord.gg/6TdQnT5xcF](https://discord.gg/6TdQnT5xcF)) هو Discord الرسمي **الوحيد**. لن يطلب منك Vibe-Trading أبداً "التحقّق" من محفظة عملات رقمية أو ربطها.
 - **2026-06-17** 🧩 **توافق التثبيت + إصلاحات مزوّدي Opus/Kimi**: لم يعد التثبيت الأساسي `pip install vibe-trading-ai` يجلب سلسلة الاعتماد الاختيارية `pyharmonics` / `ta`؛ أصبح كشف الأنماط التوافقية خلف extra باسم `vibe-trading-ai[harmonic]` مع بقاء detector المضمّن متاحاً ([#250](https://github.com/HKUDS/Vibe-Trading/pull/250)، يغلق [#249](https://github.com/HKUDS/Vibe-Trading/issues/249)). ولم يعد Agent loop يرسل رسائل assistant-prefill handoff التي يرفضها Opus 4.8+، كما يمكن لـ Kimi/Moonshot تجاوز `User-Agent` عبر `MOONSHOT_USER_AGENT` ([#248](https://github.com/HKUDS/Vibe-Trading/pull/248)، يغلق [#246](https://github.com/HKUDS/Vibe-Trading/issues/246) و[#204](https://github.com/HKUDS/Vibe-Trading/issues/204))؛ وتغطي اختبارات المتابعة مساري background-result وauto-compact handoff مباشرة ([#251](https://github.com/HKUDS/Vibe-Trading/pull/251)).
-- **2026-06-16** 🛡️ **تعزيز الأمان/API + alias لـ GLM/Zhipu**: تتطلب كتابات Settings المصادقة عند تفعيلها ([#245](https://github.com/HKUDS/Vibe-Trading/pull/245))؛ وتتطلب أدوات shell-capable في جلسات API تفعيلًا صريحًا عبر `VIBE_TRADING_ENABLE_SHELL_TOOLS=1` ([#243](https://github.com/HKUDS/Vibe-Trading/pull/243))؛ ويتطلب local shutdown المصادقة عند ضبط API key ([#241](https://github.com/HKUDS/Vibe-Trading/pull/241))؛ وتُرفض Host التي تبدو كـ loopback لكنها غير موثوقة بدل معاملتها كمحلية ([#242](https://github.com/HKUDS/Vibe-Trading/pull/242)). كما صُقلت تفاصيل التشغيل: يتزامن Web chat مع المحاولات المكتملة ([#236](https://github.com/HKUDS/Vibe-Trading/pull/236))، وتُصدر run cards صيغة strict JSON للمقاييس غير المنتهية ([#238](https://github.com/HKUDS/Vibe-Trading/pull/238))، وتتراجع قيم `RSSHUB_TIMEOUT_S` / `RSSHUB_FETCH_BUDGET_S` المشوهة بأمان ([#240](https://github.com/HKUDS/Vibe-Trading/pull/240))، وثُبّت fallback إعادة المحاولة في ddgs باختبار انحدار ([#239](https://github.com/HKUDS/Vibe-Trading/pull/239)). وأصبح GLM/Zhipu alias من الدرجة الأولى مع استنتاج اسم النموذج ([#247](https://github.com/HKUDS/Vibe-Trading/pull/247)، يغلق [#237](https://github.com/HKUDS/Vibe-Trading/issues/237)).
 <details>
 <summary>أخبار سابقة</summary>
+
+- **2026-06-16** 🛡️ **تعزيز الأمان/API + alias لـ GLM/Zhipu**: تتطلب كتابات Settings المصادقة عند تفعيلها ([#245](https://github.com/HKUDS/Vibe-Trading/pull/245))؛ وتتطلب أدوات shell-capable في جلسات API تفعيلًا صريحًا عبر `VIBE_TRADING_ENABLE_SHELL_TOOLS=1` ([#243](https://github.com/HKUDS/Vibe-Trading/pull/243))؛ ويتطلب local shutdown المصادقة عند ضبط API key ([#241](https://github.com/HKUDS/Vibe-Trading/pull/241))؛ وتُرفض Host التي تبدو كـ loopback لكنها غير موثوقة بدل معاملتها كمحلية ([#242](https://github.com/HKUDS/Vibe-Trading/pull/242)). كما صُقلت تفاصيل التشغيل: يتزامن Web chat مع المحاولات المكتملة ([#236](https://github.com/HKUDS/Vibe-Trading/pull/236))، وتُصدر run cards صيغة strict JSON للمقاييس غير المنتهية ([#238](https://github.com/HKUDS/Vibe-Trading/pull/238))، وتتراجع قيم `RSSHUB_TIMEOUT_S` / `RSSHUB_FETCH_BUDGET_S` المشوهة بأمان ([#240](https://github.com/HKUDS/Vibe-Trading/pull/240))، وثُبّت fallback إعادة المحاولة في ddgs باختبار انحدار ([#239](https://github.com/HKUDS/Vibe-Trading/pull/239)). وأصبح GLM/Zhipu alias من الدرجة الأولى مع استنتاج اسم النموذج ([#247](https://github.com/HKUDS/Vibe-Trading/pull/247)، يغلق [#237](https://github.com/HKUDS/Vibe-Trading/issues/237)).
 
 - **2026-06-15** 🧭 **متانة بحث الويب + إصلاحات استمرارية التشغيل في واجهة الويب**: لم يعد `web_search` يفشل عند تقييد مزوّد بحث واحد——إذ يستعلم الآن عدة محركات مجانية بلا مفاتيح بالترتيب (DuckDuckGo، Google، Bing، Brave، Mojeek، Yahoo) مع إعادة محاولة/تراجع، ويعامل "لا نتائج" كإجابة فارغة لا كخطأ، ويعيد رسالة قابلة للتنفيذ بدل ❌ مجرّدة عندما تُقيَّد كل المحركات (يمكن تجاوز قائمة المحركات عبر `VIBE_TRADING_SEARCH_BACKENDS`) ([#232](https://github.com/HKUDS/Vibe-Trading/pull/232)، يغلق [#231](https://github.com/HKUDS/Vibe-Trading/issues/231)، شكراً @Ethan-sun01). وفي واجهة الويب، لم يعد تبديل الصفحات أثناء التشغيل يُجمِّده——إذ تعيد المحادثة الاشتراك في البث الحي وتعيد تشغيل التقدّم الفائت عند العودة ([#234](https://github.com/HKUDS/Vibe-Trading/pull/234))——وأصبح زر الإيقاف يسري أثناء البث وبين الأدوات لا عند حدود التكرار فقط ([#235](https://github.com/HKUDS/Vibe-Trading/pull/235))، ما يغلق شِقَّي [#229](https://github.com/HKUDS/Vibe-Trading/issues/229) (شكراً @kalkinj). كما أصبح محمّل baostock يقبل الرموز الأصلية `sh.601398` / `sz.000001` إلى جانب صيغة tushare `601398.SH` ([#230](https://github.com/HKUDS/Vibe-Trading/pull/230)، شكراً @bhlt).
 
@@ -252,6 +254,34 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 
 ---
 
+## 📡 مصادر البيانات والتراجع الذكي
+
+استدعاء واحد لـ `get_market_data`، **18 مصدر بيانات سوقية**. اضبط `source: "auto"` — يختار المُحمّل حسب الرمز، ثم يسير عبر سلسلة لكل سوق مرتبة بحسب **خطر حظر عنوان IP**: المصادر العامة التي لا تُحظر أبداً أولاً، والمصادر المُقيّدة أو المحمية بمفتاح أخيراً. بلا أي إعداد، ولا نقطة فشل واحدة.
+
+| Source | Markets | Auth | Role |
+|--------|---------|------|------|
+| `tencent` · `mootdx` | A-share | none | never IP-banned (`mootdx` = 通达信 TCP) |
+| `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
+| `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
+| `tushare` | A / futures / fund / macro | token | richest A-share |
+| `yahoo` · `sina` · `stooq` | US (/HK) | none | direct chart/quotes/options · K-line to 1984 · EOD CSV |
+| `yfinance` | US / HK | none | wrapper |
+| `finnhub` · `alphavantage` · `tiingo` · `fmp` | US | key | optional providers |
+| `okx` · `ccxt` | crypto | none | OKX + 100+ exchanges |
+| `futu` | HK / A | OpenD | optional local FutuOpenD |
+| `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
+
+**سلاسل التراجع (بحسب خطر حظر عنوان IP):**
+
+- **أسهم A** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `local`
+- **أسهم US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `akshare` · `local`
+- **أسهم HK** → `eastmoney` · `yahoo` · `futu` · `yfinance` · `akshare` · `local`
+- **الكريبتو** → `okx` · `ccxt` · `yfinance` · `local` &nbsp;·&nbsp; *(العقود الآجلة / الصناديق / الاقتصاد الكلي / الفوركس → `tushare`/`akshare` → `local`)*
+
+إلى جانب OHLCV، تصل **18 أداة بيانات للقراءة فقط** إلى الأساسيات والتدفقات — تدفق الأموال، والتنين والنمر، والتدفق الشمالي، والهامش، والصفقات الكتلية، وعدد المساهمين، وفترة الإغلاق، والقطاعات، وتقارير الأبحاث، والأخبار، وإيداعات SEC، والقوائم المالية، وسلاسل الخيارات، والحيازات المؤسسية، وفحص السوق، والبحث عن الرموز، والاقتصاد الكلي — وكلها مكشوفة عبر MCP. ولا يتراجع رمز `local:` صريح أبداً وبصمت إلى مصدر شبكي.
+
+---
+
 ## 🔩 القدرات التفصيلية
 
 القوائم التفصيلية مطوية أدناه حتى يبقى README سهل القراءة. افتحها عندما تريد فحص اللبنات المتاحة.
@@ -265,7 +295,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 
 | الفئة | المهارات | أمثلة |
 |----------|--------|----------|
-| Data Source | 7 | `data-routing`, `tushare`, `yfinance`, `okx-market`, `akshare`, `mootdx`, `ccxt` |
+| Data Source | 9 | `data-routing`, `tushare`, `yfinance`, `okx-market`, `akshare`, `mootdx`, `ccxt`, `eastmoney`, `sec-edgar` |
 | Strategy | 17 | `strategy-generate`, `cross-market-strategy`, `technical-basic`, `candlestick`, `ichimoku`, `elliott-wave`, `smc`, `multi-factor`, `ml-strategy` |
 | Analysis | 17 | `factor-research`, `macro-analysis`, `global-macro`, `valuation-model`, `earnings-forecast`, `credit-analysis`, `dividend-analysis` |
 | Asset Class | 9 | `options-strategy`, `options-advanced`, `convertible-bond`, `etf-analysis`, `asset-allocation`, `sector-rotation` |
@@ -845,7 +875,7 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli/                        # CLI package — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server — 36 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 54 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core
@@ -886,7 +916,7 @@ Vibe-Trading/
 │   │
 │   └── backtest/                   # Backtest engines
 │       ├── engines/                #   7 engines + composite cross-market engine + options_portfolio
-│       ├── loaders/                #   7 sources: tushare, okx, yfinance, akshare, mootdx, ccxt, futu
+│       ├── loaders/                #   18 sources: tushare, okx, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + auto-fallback chains
 │       └── optimizers/             #   MVO, equal vol, max div, risk parity
