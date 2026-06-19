@@ -3269,6 +3269,112 @@ register_alpha_routes(app)
 
 
 # ============================================================================
+# Scheduled Research Routes
+# ============================================================================
+#
+# Three lightweight CRUD endpoints backed by ScheduledResearchJobStore.
+# Execution wiring is intentionally deferred: these endpoints only record
+# and expose scheduled-research jobs; no run is triggered here.
+
+
+_scheduled_research_store: Optional["ScheduledResearchJobStore"] = None
+
+
+def _get_scheduled_research_store() -> "ScheduledResearchJobStore":
+    """Return the singleton ScheduledResearchJobStore, creating it on first call."""
+    global _scheduled_research_store
+    if _scheduled_research_store is None:
+        from src.scheduled_research.store import ScheduledResearchJobStore
+
+        _scheduled_research_store = ScheduledResearchJobStore()
+    return _scheduled_research_store
+
+
+class CreateScheduledRunRequest(BaseModel):
+    """Request body for POST /scheduled-runs."""
+
+    id: Optional[str] = Field(None, description="Job id; auto-generated UUID when omitted")
+    prompt: str = Field(..., min_length=1, description="Research prompt or backtest description")
+    schedule: str = Field(..., min_length=1, description="Interval-ms or 5-field cron expression")
+    next_run_at: Optional[int] = Field(None, description="Epoch-ms for next run; defaults to now")
+    config: Dict[str, Any] = Field(default_factory=dict, description="Optional backtest parameters")
+
+
+class ScheduledRunResponse(BaseModel):
+    """API response for a single scheduled job."""
+
+    id: str
+    prompt: str
+    schedule: str
+    next_run_at: int
+    status: str
+    created_at: int
+    config: Dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post(
+    "/scheduled-runs",
+    response_model=ScheduledRunResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_auth)],
+)
+async def create_scheduled_run(request: CreateScheduledRunRequest) -> ScheduledRunResponse:
+    """Create (or replace) a scheduled research job.
+
+    The job is persisted immediately. No execution is triggered.
+    """
+    import time
+
+    from src.scheduled_research.models import JobStatus, ScheduledResearchJob
+    from src.scheduled_research.models import validate_schedule
+
+    try:
+        validate_schedule(request.schedule)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    now_ms = int(time.time() * 1000)
+    job = ScheduledResearchJob(
+        id=request.id or str(uuid.uuid4()),
+        prompt=request.prompt,
+        schedule=request.schedule,
+        next_run_at=request.next_run_at if request.next_run_at is not None else now_ms,
+        status=JobStatus.PENDING,
+        created_at=now_ms,
+        config=request.config,
+    )
+    _get_scheduled_research_store().upsert(job)
+    return ScheduledRunResponse(**job.to_dict())
+
+
+@app.get(
+    "/scheduled-runs",
+    response_model=List[ScheduledRunResponse],
+    dependencies=[Depends(require_auth)],
+)
+async def list_scheduled_runs(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    limit: int = Query(50, ge=1, le=200),
+) -> List[ScheduledRunResponse]:
+    """List scheduled research jobs, optionally filtered by status."""
+    jobs = _get_scheduled_research_store().list_jobs(status=status_filter, limit=limit)
+    return [ScheduledRunResponse(**j.to_dict()) for j in jobs]
+
+
+@app.delete(
+    "/scheduled-runs/{job_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_auth)],
+)
+async def delete_scheduled_run(job_id: str) -> None:
+    """Cancel (delete) a scheduled research job by id."""
+    _validate_path_param(job_id, "job_id")
+    removed = _get_scheduled_research_store().delete(job_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"scheduled run {job_id} not found")
+
+
+# ============================================================================
 # Main Entry Point
 # ============================================================================
 
