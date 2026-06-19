@@ -999,21 +999,25 @@ Contributions を歓迎します。ガイドラインは [CONTRIBUTING.md](CONTR
 
 Vibe-Trading に貢献してくださった皆さまに感謝します。
 
-最近の v0.1.9 cycle contributors and credits:
+最近の v0.1.10 cycle contributors and credits:
 
-- @toanalien — session JSONL crash-hardening (#147), graceful agent-loop exit at the iteration budget (#148), pre-flight validation for LLM-generated signal engines (#149), and cross-browser Full Report links (#150)
-- @ai7eam-dev — cross-market correlation timestamp alignment (#158) and the session running-status indicator + swarm retry (#159 → #160)
-- @shadowinlife — remote MCP servers over SSE/HTTP (#125) and operator-configured external MCP tools in swarm workers (#142)
-- @DoubleSky123 — configurable SSE idle timeout (#157)
-- @ArthurXi — IME Enter submission handling in the Web composer (#146)
-- @omcdecor-cyber — swarm DAG gating when an upstream task fails (#145)
-- @Soli22de — strict alpha-bench mode with a mandatory random control (#143)
-- @ruok808 — proxy-env support in the CCXT loader (#126)
-- @faizack — remote Ollama base-URL normalization (#129)
-- @fightZy — agent session history loading fix (#136)
-- @lcwSeven — short universe names in the alpha list endpoint (#137)
-- @Teerapat-Vatpitak — resolved .env-source logging (#124)
-- @warren618 / Haozhe Wu — connector-first broker profiles, the Robinhood Agentic Trading channel, Research Goal runtime, swarm reconcile + retry_run, the agent/cli refactor, the mootdx loader, and release integration
+- @Hinotoi-agent — a security-hardening wave: local-shutdown auth (#241), loopback-host rebinding rejection (#242), agent shell-tool opt-in (#243), settings-write auth (#245), mandate proposal-id containment (#256), persistent-memory type validation (#257), and MCP swarm run-id containment (#258)
+- @mvanhorn — the opt-in local data cache (#177), Gemini thoughtSignature round-trip over OpenAI-compat tool calls (#176), the custom data loader guide (#194), and the glm/zhipu provider alias + model-name inference (#247)
+- @gyx09212214-prog — loader robustness for malformed crypto/RSSHub timeout env vars (#227, #240), requested yfinance end-date inclusion (#226), strict run-card JSON for non-finite metrics (#238), and ddgs retry-fallback coverage (#239)
+- @BillDin — swarm agent status in the chat UI (#188), explicit preset-name handling (#189), the loader-backed market-data tool for swarm workers (#199), and preset-context continuations (#200)
+- @Robin1987China — the Research Autopilot goal-hypothesis bridge (#260), the local CSV/Parquet/DuckDB data loader (#252), and an assistant-prefill fix + configurable Kimi User-Agent (#248)
+- @LemonCANDY42 — the read-only runtime status dashboard (#210), persisted AgentLoop usage artifacts (#223), and opt-in Run Detail chart payloads (#225)
+- @zwrong — the trace.jsonl overhaul with zero truncation + offload (#206) and session-id on exit + `resume <session-id>` (#218)
+- @forge-builder — the AI contributor guide (#173) and the OpenClaw MCP research-only smoke-test docs (#165)
+- @skloxo — Chinese (zh-CN) frontend localization (adopted from #217)
+- @LeeCQiang — Chinese docstrings across all 452 Alpha Zoo factors (#180)
+- @KaiLuettmann — GHCR pre-built image publishing on release (#187)
+- @ngoanpv — Gemini thought_signature preservation through the AgentLoop dict path (#184)
+- @ShahNewazKhan — Docker host-Ollama reachability via host.docker.internal (#196)
+- @sambazhu — frontend sync of completed chat attempts (#236)
+- @bhlt — baostock-native code format support (#230)
+- @octo-patch — MiniMax M3 default model upgrade (#162)
+- @warren618 / Haozhe Wu — the global data layer (8 sources + 18 read-only data tools), the 10 broker SDK connectors, the alpha-compare full stack, the provider-reliability overhaul, multi-engine web_search fallback, responsive Stop + SSE reconnect, and release integration
 
 <a href="https://github.com/HKUDS/Vibe-Trading/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=HKUDS/Vibe-Trading" />

@@ -1002,21 +1002,25 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 
 شكراً لكل من ساهم في Vibe-Trading!
 
-مساهمو واعتمادات دورة v0.1.9 الأخيرة:
+مساهمو واعتمادات دورة v0.1.10 الأخيرة:
 
-- @toanalien — تقوية session JSONL ضد الأعطال (#147)، وخروج لطيف من حلقة الوكيل عند نفاد ميزانية التكرارات (#148)، وتحقق مسبق من signal engines المولّدة بالـ LLM (#149)، وروابط Full Report عبر المتصفحات (#150)
-- @ai7eam-dev — محاذاة الطوابع الزمنية للارتباط عبر الأسواق (#158)، ومؤشر حالة تشغيل الجلسة + إعادة تشغيل swarm (#159 → #160)
-- @shadowinlife — خوادم MCP عن بُعد عبر SSE/HTTP (#125)، وأدوات MCP خارجية يضبطها المشغّل في عمّال swarm (#142)
-- @DoubleSky123 — مهلة خمول SSE قابلة للضبط (#157)
-- @ArthurXi — معالجة إرسال Enter في IME داخل محرّر الويب (#146)
-- @omcdecor-cyber — حجب المهام المتفرعة عند فشل المهمة الأعلى في swarm DAG (#145)
-- @Soli22de — وضع alpha-bench صارم بتحكم عشوائي إلزامي (#143)
-- @ruok808 — دعم متغيرات البيئة للوكيل في محمّل CCXT (#126)
-- @faizack — تطبيع عنوان Ollama البعيد الأساسي (#129)
-- @fightZy — إصلاح تحميل سجل جلسات الوكيل (#136)
-- @lcwSeven — قبول أسماء universe قصيرة في واجهة قائمة alpha (#137)
-- @Teerapat-Vatpitak — تسجيل مصدر .env بعد التحليل (#124)
-- @warren618 / Haozhe Wu — ملفات وسطاء تعتمد أولاً على connectors، وقناة Robinhood Agentic Trading، وزمن تشغيل Research Goal، وswarm reconcile + retry_run، وإعادة هيكلة agent/cli، ومحمّل mootdx، وتكامل الإصدار
+- @Hinotoi-agent — موجة تقوية أمنية: مصادقة الإيقاف المحلي (#241)، ورفض إعادة ربط مضيف الاسترجاع (#242)، وتفعيل صريح لأدوات shell للوكيل (#243)، ومصادقة كتابة الإعدادات (#245)، واحتواء mandate proposal-id (#256)، والتحقق من أنواع الذاكرة الدائمة (#257)، واحتواء MCP swarm run-id (#258)
+- @mvanhorn — ذاكرة تخزين بيانات محلية اختيارية (#177)، وذهاب وإياب Gemini thoughtSignature عبر استدعاءات أدوات متوافقة مع OpenAI (#176)، ودليل مصدر بيانات مخصّص (#194)، واسم بديل لمزوّد glm/zhipu + استنتاج اسم النموذج (#247)
+- @gyx09212214-prog — متانة المحمّل أمام متغيّرات بيئة مهلة crypto/RSSHub المشوّهة (#227، #240)، وتضمين تاريخ النهاية المطلوب في yfinance (#226)، وJSON صارم لمقاييس run-card غير المنتهية (#238)، وتغطية إعادة محاولة ddgs (#239)
+- @BillDin — عرض حالة وكيل swarm في واجهة الدردشة (#188)، ومعالجة أسماء preset الصريحة (#189)، وأداة بيانات السوق المعتمدة على المحمّل لعمّال swarm (#199)، واستمرارية سياق preset (#200)
+- @Robin1987China — جسر الفرضية-الهدف لـ Research Autopilot (#260)، ومحمّل بيانات CSV/Parquet/DuckDB المحلي (#252)، وإصلاح assistant-prefill + User-Agent قابل للضبط لـ Kimi (#248)
+- @LemonCANDY42 — لوحة حالة وقت التشغيل للقراءة فقط (#210)، وحفظ منتجات استخدام AgentLoop (#223)، وحمولات مخططات Run Detail الاختيارية (#225)
+- @zwrong — إعادة هيكلة trace.jsonl بلا اقتطاع + offload (#206)، وعرض session-id عند الخروج + `resume <session-id>` (#218)
+- @forge-builder — دليل المساهم بالذكاء الاصطناعي (#173)، ووثائق اختبار OpenClaw MCP للقراءة فقط (#165)
+- @skloxo — توطين الواجهة الأمامية بالصينية (zh-CN) (مُعتمد من #217)
+- @LeeCQiang — docstrings صينية عبر جميع عوامل Alpha Zoo الـ 452 (#180)
+- @KaiLuettmann — نشر صورة GHCR مُسبقة البناء عند الإصدار (#187)
+- @ngoanpv — الحفاظ على Gemini thought_signature عبر مسار dict في AgentLoop (#184)
+- @ShahNewazKhan — الوصول إلى Ollama المضيف عبر host.docker.internal (#196)
+- @sambazhu — مزامنة الواجهة الأمامية لمحاولات الدردشة المكتملة (#236)
+- @bhlt — دعم تنسيق رمز baostock الأصلي (#230)
+- @octo-patch — ترقية نموذج MiniMax M3 الافتراضي (#162)
+- @warren618 / Haozhe Wu — طبقة البيانات العالمية (8 مصادر + 18 أداة بيانات للقراءة فقط)، و10 موصّلات وسطاء SDK، وحزمة alpha compare الكاملة، وإصلاح موثوقية المزوّدين، وfallback متعدد المحركات لـ web_search، وStop تفاعلي + إعادة اتصال SSE، وتكامل الإصدار
 
 <a href="https://github.com/HKUDS/Vibe-Trading/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=HKUDS/Vibe-Trading" />
