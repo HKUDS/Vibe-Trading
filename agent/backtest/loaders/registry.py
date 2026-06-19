@@ -72,6 +72,7 @@ def _ensure_registered() -> None:
         "backtest.loaders.okx",
         "backtest.loaders.yfinance_loader",
         "backtest.loaders.finmind_loader",
+        "backtest.loaders.shioaji_loader",
         "backtest.loaders.akshare_loader",
         "backtest.loaders.baostock_loader",
         "backtest.loaders.tencent_loader",
