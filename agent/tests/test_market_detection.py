@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from backtest.engines._market_hooks import _is_china_futures
+from backtest.engines._market_hooks import _is_china_futures, _is_taiwan_futures
 from backtest.runner import (
     _detect_market,
     _detect_source,
@@ -55,11 +55,16 @@ class TestDetectMarket:
             ("ETH-USDT", "crypto"),
             ("BTC/USDT", "crypto"),
             # Futures
+            ("TXF.TAIFEX", "tw_futures"),
+            ("TXO.TAIFEX", "tw_options"),
             ("IF2406.CFFEX", "futures"),
             ("AU2412.SHFE", "futures"),
             ("C2409.DCE", "futures"),
             ("CF2409.ZCE", "futures"),
             ("SC2406.INE", "futures"),
+            # Taiwan stock
+            ("2330.TW", "tw_stock"),
+            ("6488.TWO", "tw_stock"),
             # Forex
             ("EUR/USD", "forex"),
             ("USD/JPY", "forex"),
@@ -73,6 +78,8 @@ class TestDetectMarket:
         assert _detect_market("000001.sz") == "a_share"
         assert _detect_market("aapl.us") == "us_equity"
         assert _detect_market("btc-usdt") == "crypto"
+        assert _detect_market("txf.taifex") == "tw_futures"
+        assert _detect_market("2330.tw") == "tw_stock"
 
     def test_unknown_defaults_to_a_share(self) -> None:
         assert _detect_market("UNKNOWN") == "a_share"
@@ -213,6 +220,17 @@ class TestIsChinaFutures:
         assert _is_china_futures("M2412") is True
 
 
+class TestIsTaiwanFutures:
+    def test_taifex_contract_suffix(self) -> None:
+        assert _is_taiwan_futures("TXF.TAIFEX") is True
+
+    def test_taifex_option_not_futures(self) -> None:
+        assert _is_taiwan_futures("TXO.TAIFEX") is False
+
+    def test_non_taifex_symbol_not_futures(self) -> None:
+        assert _is_taiwan_futures("IF2406.CFFEX") is False
+
+
 # ---------------------------------------------------------------------------
 # _detect_market — task-required exhaustive assertions
 # ---------------------------------------------------------------------------
@@ -229,3 +247,12 @@ class TestDetectMarketRequired:
 
     def test_crypto_hyphen_form(self) -> None:
         assert _detect_market("BTC-USDT") == "crypto"
+
+    def test_taiwan_stock(self) -> None:
+        assert _detect_market("2330.TW") == "tw_stock"
+
+    def test_taiwan_futures(self) -> None:
+        assert _detect_market("TXF.TAIFEX") == "tw_futures"
+
+    def test_taiwan_options(self) -> None:
+        assert _detect_market("TXO.TAIFEX") == "tw_options"

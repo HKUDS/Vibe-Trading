@@ -23,6 +23,9 @@ from backtest.models import Position
 # ── Symbol -> market classification (shared by runner.py + composite.py) ──
 
 _MARKET_PATTERNS = [
+    (re.compile(r"^TXO\w*\.TAIFEX$", re.I), "tw_options"),
+    (re.compile(r"^(TXF|MXF|TE|TF|GBF|XIF|MTX)\w*\.TAIFEX$", re.I), "tw_futures"),
+    (re.compile(r"^\d{4,6}\.(TW|TWO)$", re.I), "tw_stock"),
     (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "a_share"),
     (re.compile(r"^(51|15|56)\d{4}\.(SZ|SH)$", re.I), "a_share"),
     (re.compile(r"^[A-Z]+\.US$", re.I), "us_equity"),
@@ -51,14 +54,59 @@ _CHINA_EXCHANGES = {"CFFEX", "SHFE", "DCE", "ZCE", "INE", "GFEX"}
 # before lookup so callers can pass any case (``RB2410`` and ``rb2410``
 # both resolve correctly).
 _CN_FUTURES_PRODUCTS = {
-    "if", "ic", "ih", "im", "t", "tf", "ts", "tl",
-    "au", "ag", "cu", "al", "zn", "pb", "ni", "sn", "ss",
-    "rb", "hc", "i", "j", "jm",
-    "sc", "fu", "lu", "bu", "nr",
-    "c", "cs", "m", "y", "a", "p", "jd", "lh",
-    "cf", "sr", "ta", "ma", "ap", "rm", "oi",
-    "pp", "l", "v", "eg", "eb", "pf", "sa", "fg", "ur",
-    "si", "lc",
+    "if",
+    "ic",
+    "ih",
+    "im",
+    "t",
+    "tf",
+    "ts",
+    "tl",
+    "au",
+    "ag",
+    "cu",
+    "al",
+    "zn",
+    "pb",
+    "ni",
+    "sn",
+    "ss",
+    "rb",
+    "hc",
+    "i",
+    "j",
+    "jm",
+    "sc",
+    "fu",
+    "lu",
+    "bu",
+    "nr",
+    "c",
+    "cs",
+    "m",
+    "y",
+    "a",
+    "p",
+    "jd",
+    "lh",
+    "cf",
+    "sr",
+    "ta",
+    "ma",
+    "ap",
+    "rm",
+    "oi",
+    "pp",
+    "l",
+    "v",
+    "eg",
+    "eb",
+    "pf",
+    "sa",
+    "fg",
+    "ur",
+    "si",
+    "lc",
 }
 
 
@@ -109,6 +157,10 @@ def _is_china_futures(code: str) -> bool:
     return False
 
 
+def _is_taiwan_futures(symbol: str) -> bool:
+    return bool(re.match(r"^(TXF|MXF|TE|TF|GBF|XIF|MTX)\w*\.TAIFEX$", symbol, re.I))
+
+
 def _detect_submarket(codes: List[str]) -> str:
     """Detect US vs HK from symbol suffixes.
 
@@ -122,6 +174,7 @@ def _detect_submarket(codes: List[str]) -> str:
         if code.upper().endswith(".HK"):
             return "hk"
     return "us"
+
 
 # ── Crypto: OKX tiered maintenance margin table (simplified) ──
 
@@ -228,12 +281,22 @@ def check_crypto_liquidation(
 # ── Forex: swap tables ──
 
 _SWAP_LONG: dict[str, float] = {
-    "EUR/USD": -6.5, "GBP/USD": -3.0, "USD/JPY": 8.0, "USD/CHF": 4.0,
-    "AUD/USD": -2.0, "USD/CAD": 2.0, "NZD/USD": -1.5,
+    "EUR/USD": -6.5,
+    "GBP/USD": -3.0,
+    "USD/JPY": 8.0,
+    "USD/CHF": 4.0,
+    "AUD/USD": -2.0,
+    "USD/CAD": 2.0,
+    "NZD/USD": -1.5,
 }
 _SWAP_SHORT: dict[str, float] = {
-    "EUR/USD": 3.5, "GBP/USD": -1.0, "USD/JPY": -12.0, "USD/CHF": -8.0,
-    "AUD/USD": -1.0, "USD/CAD": -5.0, "NZD/USD": -2.0,
+    "EUR/USD": 3.5,
+    "GBP/USD": -1.0,
+    "USD/JPY": -12.0,
+    "USD/CHF": -8.0,
+    "AUD/USD": -1.0,
+    "USD/CAD": -5.0,
+    "NZD/USD": -2.0,
 }
 
 
