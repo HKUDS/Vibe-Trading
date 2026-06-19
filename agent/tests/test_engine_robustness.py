@@ -368,6 +368,16 @@ class TestBacktestConfigSchema:
             )
             assert c.source == src
 
+    def test_finmind_and_shioaji_sources_accepted(self) -> None:
+        for src in ("finmind", "shioaji"):
+            c = BacktestConfigSchema(
+                codes=["2330.TW"],
+                start_date="2025-01-01",
+                end_date="2025-06-01",
+                source=src,
+            )
+            assert c.source == src
+
     def test_valid_sources_covers_all_registered_loaders(self) -> None:
         """Every registered loader name must be an accepted config source, so a
         new loader can never be silently rejected by the config schema."""

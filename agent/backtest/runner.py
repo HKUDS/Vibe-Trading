@@ -302,6 +302,9 @@ _MARKET_TO_SOURCE = {
     "hk_equity": "yfinance",
     "crypto": "okx",
     "futures": "tushare",
+    "tw_stock": "shioaji",
+    "tw_futures": "shioaji",
+    "tw_options": "shioaji",
     "fund": "tushare",
     "macro": "akshare",
     "forex": "akshare",
@@ -565,6 +568,14 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
     if "forex" in markets:
         from backtest.engines.forex import ForexEngine
         return ForexEngine(config)
+
+    if "tw_futures" in markets:
+        from backtest.engines.taiwan_futures import TaiwanFuturesEngine
+        return TaiwanFuturesEngine(config)
+
+    if "tw_stock" in markets:
+        from backtest.engines.taiwan_stock import TaiwanStockEngine
+        return TaiwanStockEngine(config)
 
     # Original routing (Wave 1)
     if source in ("okx", "ccxt"):

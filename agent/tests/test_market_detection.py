@@ -9,11 +9,17 @@ bare product-code form must resolve identically.
 
 from __future__ import annotations
 
+import sys
+from types import ModuleType
+
 import pytest
 
 from backtest.engines._market_hooks import _is_china_futures, _is_taiwan_futures
+from backtest.metrics import calc_bars_per_year
 from backtest.runner import (
+    _create_market_engine,
     _detect_market,
+    _detect_primary_source,
     _detect_source,
     _group_codes_by_market,
     _group_codes_by_source,
@@ -102,11 +108,46 @@ class TestDetectSource:
             ("0700.HK", "yfinance"),
             ("BTC-USDT", "okx"),
             ("IF2406.CFFEX", "tushare"),
+            ("2330.TW", "shioaji"),
+            ("TXF.TAIFEX", "shioaji"),
+            ("TXO.TAIFEX", "shioaji"),
             ("EUR/USD", "akshare"),
         ],
     )
     def test_source_mapping(self, code: str, expected_source: str) -> None:
         assert _detect_source(code) == expected_source
+
+
+class TestTaiwanRunnerRouting:
+    def test_detect_primary_source_uses_shioaji_for_taiwan_auto(self) -> None:
+        assert _detect_primary_source(["2330.TW"], "auto") == "shioaji"
+        assert calc_bars_per_year("1D", _detect_primary_source(["2330.TW"], "auto")) == 252
+
+    def test_create_market_engine_routes_tw_stock(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        module = ModuleType("backtest.engines.taiwan_stock")
+
+        class TaiwanStockEngine:
+            def __init__(self, config):
+                self.config = config
+
+        module.TaiwanStockEngine = TaiwanStockEngine
+        monkeypatch.setitem(sys.modules, "backtest.engines.taiwan_stock", module)
+
+        engine = _create_market_engine("shioaji", {"initial_cash": 100_000}, ["2330.TW"])
+        assert isinstance(engine, TaiwanStockEngine)
+
+    def test_create_market_engine_routes_tw_futures(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        module = ModuleType("backtest.engines.taiwan_futures")
+
+        class TaiwanFuturesEngine:
+            def __init__(self, config):
+                self.config = config
+
+        module.TaiwanFuturesEngine = TaiwanFuturesEngine
+        monkeypatch.setitem(sys.modules, "backtest.engines.taiwan_futures", module)
+
+        engine = _create_market_engine("shioaji", {"initial_cash": 100_000}, ["TXF.TAIFEX"])
+        assert isinstance(engine, TaiwanFuturesEngine)
 
 
 # ---------------------------------------------------------------------------

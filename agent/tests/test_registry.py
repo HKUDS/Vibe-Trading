@@ -117,7 +117,19 @@ class TestProtocol:
 
 class TestFallbackChains:
     def test_all_expected_markets_present(self) -> None:
-        expected = {"a_share", "us_equity", "hk_equity", "crypto", "futures", "fund", "macro", "forex"}
+        expected = {
+            "a_share",
+            "us_equity",
+            "hk_equity",
+            "crypto",
+            "futures",
+            "tw_stock",
+            "tw_futures",
+            "tw_options",
+            "fund",
+            "macro",
+            "forex",
+        }
         assert expected == set(FALLBACK_CHAINS.keys())
 
     def test_chains_are_non_empty(self) -> None:
@@ -131,6 +143,11 @@ class TestFallbackChains:
         assert FALLBACK_CHAINS["crypto"][:2] == ["okx", "ccxt"]
         assert FALLBACK_CHAINS["crypto"][-1] == "yfinance"
 
+    def test_taiwan_market_chains(self) -> None:
+        assert FALLBACK_CHAINS["tw_stock"] == ["shioaji", "finmind", "yfinance"]
+        assert FALLBACK_CHAINS["tw_futures"] == ["shioaji", "finmind"]
+        assert FALLBACK_CHAINS["tw_options"] == ["shioaji", "finmind"]
+
 
 # ---------------------------------------------------------------------------
 # resolve_loader
@@ -138,6 +155,27 @@ class TestFallbackChains:
 
 
 class TestResolveLoader:
+    def test_taiwan_markets_fall_back_to_finmind(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from backtest.loaders import registry as reg
+        from backtest.loaders.finmind_loader import DataLoader as FinMindLoader
+
+        monkeypatch.setenv("FINMIND_TOKEN", "test-token")
+        monkeypatch.setattr(reg, "_ensure_registered", lambda: None)
+
+        with patch.dict(LOADER_REGISTRY, {"finmind": FinMindLoader}, clear=True):
+            with patch.dict(
+                FALLBACK_CHAINS,
+                {
+                    "tw_stock": ["shioaji", "finmind", "yfinance"],
+                    "tw_futures": ["shioaji", "finmind"],
+                    "tw_options": ["shioaji", "finmind"],
+                },
+                clear=False,
+            ):
+                assert resolve_loader("tw_stock").name == "finmind"
+                assert resolve_loader("tw_futures").name == "finmind"
+                assert resolve_loader("tw_options").name == "finmind"
+
     def test_returns_first_available(self) -> None:
         with patch.dict(LOADER_REGISTRY, {
             "fake_unavailable": _FakeUnavailableLoader,
