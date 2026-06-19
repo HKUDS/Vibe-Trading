@@ -2,6 +2,9 @@
 
 Phase 1: Connects the Hypothesis Registry to the Research Goal runtime.
 Phase 2: Auto-generates backtest config.json from hypothesis metadata.
+Phase 3: Scaffolds a contract-correct signal_engine.py stub and links
+    backtest run-card metrics back to the hypothesis, closing the
+    hypothesis -> backtest -> evidence loop.
 """
 
 from __future__ import annotations
@@ -364,6 +367,299 @@ class GenerateBacktestConfigTool(BaseTool):
             }
             if source_warning:
                 payload["warning"] = source_warning
+            return _ok(payload)
+
+        except Exception as exc:
+            return _error(exc)
+
+
+_SIGNAL_ENGINE_TEMPLATE = '''"""Auto-scaffolded signal engine for hypothesis {hypothesis_id}.
+
+Title: {title}
+
+Implement your signal in ``SignalEngine.generate``. The default below holds
+no position (a flat 0.0 signal) so the backtest runner contract is satisfied
+and you can run a smoke backtest immediately, then replace the body with real
+logic derived from the signal definition.
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+
+
+class SignalEngine:
+    """Signal engine consumed by the backtest runner.
+
+    The runner instantiates this class with no arguments and calls
+    ``generate(data_map)`` once per backtest.
+    """
+
+    def generate(self, data_map: dict[str, "pd.DataFrame"]) -> dict[str, "pd.Series"]:
+        """Return a signal Series per code.
+
+        Signal definition to implement:
+            {signal_definition}
+
+        Args:
+            data_map: Mapping of code -> OHLCV (and any factor) DataFrame.
+
+        Returns:
+            Mapping of code -> pd.Series of target signals aligned to the
+            frame index. The default returns a flat 0.0 (no position) signal.
+        """
+        signals: dict[str, "pd.Series"] = {{}}
+        for code, frame in data_map.items():
+            signals[code] = pd.Series(0.0, index=frame.index)
+        return signals
+'''
+
+
+class ScaffoldSignalEngineTool(BaseTool):
+    """Write a contract-correct ``signal_engine.py`` stub for a hypothesis.
+
+    The backtest runner requires a ``SignalEngine`` class that is
+    constructible with no arguments and exposes ``generate(self, data_map)``.
+    This tool emits exactly that, with a runnable flat-signal default and the
+    hypothesis ``signal_definition`` embedded as a docstring, so the agent can
+    fill in real logic instead of re-deriving the boilerplate.
+    """
+
+    name = "scaffold_signal_engine"
+    description = (
+        "Write a contract-correct code/signal_engine.py stub into a backtest "
+        "run directory for a saved hypothesis. The stub satisfies the backtest "
+        "runner contract (no-arg SignalEngine, generate(data_map) -> dict of "
+        "pd.Series) with a flat no-position default and the signal_definition "
+        "embedded as a docstring. Replace the generate body with real logic, "
+        "then call backtest(run_dir=...)."
+    )
+    is_readonly = False
+    repeatable = True
+    parameters = {
+        "type": "object",
+        "properties": {
+            "hypothesis_id": {
+                "type": "string",
+                "description": "ID of a previously created research hypothesis",
+            },
+            "run_dir": {
+                "type": "string",
+                "description": "Backtest run directory (from generate_backtest_config)",
+            },
+            "overwrite": {
+                "type": "boolean",
+                "description": "Overwrite an existing signal_engine.py (default false)",
+            },
+        },
+        "required": ["hypothesis_id", "run_dir"],
+    }
+
+    def execute(self, **kwargs: Any) -> str:
+        try:
+            hypothesis_id = str(kwargs.get("hypothesis_id", "")).strip()
+            if not hypothesis_id:
+                return json.dumps(
+                    {"status": "error", "error": "hypothesis_id is required"},
+                    ensure_ascii=False,
+                )
+
+            run_dir_raw = str(kwargs.get("run_dir", "")).strip()
+            if not run_dir_raw:
+                return json.dumps(
+                    {"status": "error", "error": "run_dir is required"},
+                    ensure_ascii=False,
+                )
+
+            from src.tools.path_utils import safe_run_dir
+
+            try:
+                run_path = safe_run_dir(run_dir_raw)
+            except ValueError as exc:
+                return json.dumps(
+                    {"status": "error", "error": str(exc)}, ensure_ascii=False
+                )
+
+            hypothesis = _get_hypothesis(hypothesis_id)
+            if hypothesis is None:
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": f"Hypothesis not found: {hypothesis_id}",
+                        "hint": "Use search_hypotheses to list available hypotheses.",
+                    },
+                    ensure_ascii=False,
+                )
+
+            overwrite = bool(kwargs.get("overwrite", False))
+            code_dir = run_path / "code"
+            code_dir.mkdir(parents=True, exist_ok=True)
+            signal_path = code_dir / "signal_engine.py"
+            if signal_path.exists() and not overwrite:
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": f"signal_engine.py already exists: {signal_path}",
+                        "hint": "Pass overwrite=true to replace it.",
+                    },
+                    ensure_ascii=False,
+                )
+
+            signal_definition = (
+                hypothesis.signal_definition.strip()
+                or "(no signal_definition set on the hypothesis)"
+            )
+            source = _SIGNAL_ENGINE_TEMPLATE.format(
+                hypothesis_id=hypothesis.hypothesis_id,
+                title=hypothesis.title,
+                signal_definition=signal_definition,
+            )
+            signal_path.write_text(source, encoding="utf-8")
+
+            return _ok(
+                {
+                    "signal_engine_path": str(signal_path),
+                    "run_dir": str(run_path),
+                    "hypothesis": {
+                        "hypothesis_id": hypothesis.hypothesis_id,
+                        "title": hypothesis.title,
+                        "signal_definition": hypothesis.signal_definition,
+                    },
+                    "next_step": (
+                        "Stub written with a flat no-position default. Edit the "
+                        "generate() body to implement the signal_definition, then "
+                        "call backtest(run_dir=...)."
+                    ),
+                }
+            )
+
+        except Exception as exc:
+            return _error(exc)
+
+
+class LinkAutopilotBacktestTool(BaseTool):
+    """Read run_card.json metrics and link the run to a hypothesis.
+
+    After a backtest completes, its metrics live in ``run_card.json``. The
+    existing ``link_backtest`` tool requires the agent to hand-extract that
+    metrics dict. This tool reads the run card, extracts the scalar metrics,
+    and links the run in one step, returning the metrics for thesis evaluation.
+    """
+
+    name = "link_autopilot_backtest"
+    description = (
+        "Read run_card.json from a completed backtest run directory, extract "
+        "its metrics, and link the run to a research hypothesis. Returns the "
+        "metrics so you can evaluate them against the thesis. Use this after "
+        "the backtest tool succeeds."
+    )
+    is_readonly = False
+    repeatable = True
+    parameters = {
+        "type": "object",
+        "properties": {
+            "hypothesis_id": {
+                "type": "string",
+                "description": "ID of the hypothesis this backtest tests",
+            },
+            "run_dir": {
+                "type": "string",
+                "description": "Backtest run directory containing run_card.json",
+            },
+            "notes": {
+                "type": "string",
+                "description": "Optional note about this backtest link",
+            },
+        },
+        "required": ["hypothesis_id", "run_dir"],
+    }
+
+    def execute(self, **kwargs: Any) -> str:
+        try:
+            hypothesis_id = str(kwargs.get("hypothesis_id", "")).strip()
+            if not hypothesis_id:
+                return json.dumps(
+                    {"status": "error", "error": "hypothesis_id is required"},
+                    ensure_ascii=False,
+                )
+
+            run_dir_raw = str(kwargs.get("run_dir", "")).strip()
+            if not run_dir_raw:
+                return json.dumps(
+                    {"status": "error", "error": "run_dir is required"},
+                    ensure_ascii=False,
+                )
+
+            from src.tools.path_utils import safe_run_dir
+
+            try:
+                run_path = safe_run_dir(run_dir_raw)
+            except ValueError as exc:
+                return json.dumps(
+                    {"status": "error", "error": str(exc)}, ensure_ascii=False
+                )
+
+            card_path = run_path / "run_card.json"
+            if not card_path.exists():
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": f"run_card.json not found in {run_path}",
+                        "hint": "Run the backtest tool first; it writes run_card.json.",
+                    },
+                    ensure_ascii=False,
+                )
+
+            try:
+                card = json.loads(card_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": f"run_card.json parse error: {exc}",
+                    },
+                    ensure_ascii=False,
+                )
+
+            warning: str | None = None
+            metrics = card.get("metrics") if isinstance(card, dict) else None
+            if not isinstance(metrics, dict):
+                metrics = {}
+                warning = "run_card.json had no 'metrics' object; linked with empty metrics"
+
+            try:
+                hypothesis = HypothesisRegistry().link_backtest(
+                    hypothesis_id,
+                    backtest_run_dir=str(run_path),
+                    metrics=metrics,
+                    notes=str(kwargs.get("notes", "")),
+                )
+            except KeyError:
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": f"Hypothesis not found: {hypothesis_id}",
+                        "hint": "Use search_hypotheses to list available hypotheses.",
+                    },
+                    ensure_ascii=False,
+                )
+
+            payload: dict[str, Any] = {
+                "metrics": metrics,
+                "run_dir": str(run_path),
+                "hypothesis": {
+                    "hypothesis_id": hypothesis.hypothesis_id,
+                    "title": hypothesis.title,
+                    "status": hypothesis.status,
+                    "run_cards_count": len(hypothesis.run_cards),
+                },
+                "next_step": (
+                    "Backtest linked. Evaluate the metrics against the thesis, "
+                    "then record_evidence / add_goal_evidence to close the loop."
+                ),
+            }
+            if warning:
+                payload["warning"] = warning
             return _ok(payload)
 
         except Exception as exc:
