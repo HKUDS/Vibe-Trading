@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from src.config.paths import get_runtime_root
 from src.scheduled_research.models import ScheduledResearchJob, validate_schedule
 
 logger = logging.getLogger(__name__)
@@ -29,9 +30,12 @@ _SCHEMA_VERSION = 1
 def _default_store_path() -> Path:
     """Return the default path for the scheduled-research store.
 
-    Lives alongside other agent-level JSON state under ``agent/data/``.
+    Roots job state under the user runtime dir (``~/.vibe-trading`` by
+    default), never inside the repo working tree — the same root the live
+    runtime, swarm config, and persistent memory resolve via
+    :func:`src.config.paths.get_runtime_root`.
     """
-    return Path(__file__).resolve().parent.parent.parent / "data" / _STORE_FILENAME
+    return get_runtime_root() / "scheduled_research" / _STORE_FILENAME
 
 
 class CorruptStoreError(RuntimeError):

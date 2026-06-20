@@ -75,6 +75,25 @@ class TestValidateSchedule:
         with pytest.raises(ValueError):
             validate_schedule("*/0 * * * *")  # step of 0 is not allowed
 
+    def test_rejects_out_of_range_minute(self) -> None:
+        with pytest.raises(ValueError):
+            validate_schedule("99 * * * *")  # minute > 59
+
+    def test_rejects_out_of_range_hour(self) -> None:
+        with pytest.raises(ValueError):
+            validate_schedule("0 25 * * *")  # hour > 23
+
+    def test_rejects_zero_day_of_month(self) -> None:
+        with pytest.raises(ValueError):
+            validate_schedule("0 0 0 * *")  # day-of-month is 1-31
+
+    def test_rejects_out_of_range_step(self) -> None:
+        with pytest.raises(ValueError):
+            validate_schedule("*/99 * * * *")  # minute step > 59
+
+    def test_accepts_boundary_values(self) -> None:
+        validate_schedule("59 23 31 12 6")  # all field maxima
+
 
 # ---------------------------------------------------------------------------
 # Store CRUD tests

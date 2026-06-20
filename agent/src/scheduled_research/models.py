@@ -26,6 +26,10 @@ from typing import Any, Dict
 _INTERVAL_MS_RE = re.compile(r"^[1-9][0-9]*$")
 _CRON_FIELD_RE = re.compile(r"^(\*|\*/[1-9][0-9]*|[0-9]+)$")
 _CRON_PARTS = 5
+# Inclusive (low, high) bounds per cron field: minute hour day-of-month month
+# day-of-week. A bare number and a ``*/n`` step are both validated against the
+# field's high bound so out-of-range values (e.g. minute ``99``) are rejected.
+_CRON_BOUNDS = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 6))
 
 
 def validate_schedule(schedule: str) -> None:
@@ -47,9 +51,14 @@ def validate_schedule(schedule: str) -> None:
     parts = schedule.strip().split()
     if len(parts) != _CRON_PARTS:
         raise ValueError(f"schedule must be a positive integer (ms) or a 5-field cron string; got: {schedule!r}")
-    for p in parts:
-        if not _CRON_FIELD_RE.fullmatch(p):
-            raise ValueError(f"cron field {p!r} is not valid; each field must be *, */n, or a number")
+    for part, (low, high) in zip(parts, _CRON_BOUNDS):
+        if not _CRON_FIELD_RE.fullmatch(part):
+            raise ValueError(f"cron field {part!r} is not valid; each field must be *, */n, or a number")
+        if part == "*":
+            continue
+        value = int(part[2:]) if part.startswith("*/") else int(part)
+        if not low <= value <= high:
+            raise ValueError(f"cron field {part!r} is out of range; expected {low}-{high}")
 
 
 # ---------------------------------------------------------------------------
