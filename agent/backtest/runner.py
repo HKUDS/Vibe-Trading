@@ -32,7 +32,7 @@ from backtest.loaders.registry import (
     get_loader_cls_with_fallback,
     resolve_loader,
 )
-from backtest.loaders.base import NoAvailableSourceError
+from backtest.loaders.base import NoAvailableSourceError, validate_ohlc
 # Symbol classification lives in ``_market_hooks`` so runner.py and
 # composite.py share a single source of truth (audit-2026-05-18 B1+C1+C2).
 # ``_detect_market`` is also re-exported here for back-compat with
@@ -494,6 +494,10 @@ def main(run_dir: Path) -> None:
                     source = fb_name
                     loader = fb_loader
                     break
+
+    # Loader-boundary OHLC sanity for every source, centralized at the one
+    # point all fetch paths converge (auto / single / runtime fallback).
+    data_map = _sanitize_data_map(data_map)
     if not data_map:
         print(json.dumps({"error": "No data fetched"}))
         sys.exit(1)
@@ -653,6 +657,26 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
         merged.update(result)
 
     return merged
+
+
+def _sanitize_data_map(data_map: dict) -> dict:
+    """Drop structurally-invalid OHLC bars from every fetched frame.
+
+    Each loader only drops NaN rows, so a bar that violates the OHLC
+    invariants (``high < low``, a non-positive price, or a high/low that fails
+    to bracket open/close) can still reach the backtest and surface as NaN/inf
+    metrics. Applying :func:`validate_ohlc` here — the single point every
+    fetched map converges through — guards every source uniformly (``auto``,
+    single-source, runtime fallback, and any future loader), so the per-loader
+    checks no longer have to be added one at a time.
+
+    Args:
+        data_map: ``code -> DataFrame`` map as returned by a loader fetch.
+
+    Returns:
+        The same mapping with each frame's invalid bars removed.
+    """
+    return {code: validate_ohlc(frame) for code, frame in data_map.items()}
 
 
 class _AutoLoader:

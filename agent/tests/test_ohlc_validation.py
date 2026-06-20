@@ -111,3 +111,29 @@ def test_local_loader_drops_dirty_bar(
 
     df = frames["AAA.US"]
     assert list(df["close"]) == [10.5, 12.5]  # the dirty 2026-01-02 bar is gone
+
+
+def test_sanitize_data_map_guards_every_source() -> None:
+    """The runner's central pass drops dirty bars from any loader's frame.
+
+    This is the catch-all boundary: a loader that never calls ``validate_ohlc``
+    itself (the large majority) still cannot leak a structurally-invalid bar
+    into the backtest, because every fetched map converges through here.
+    """
+    from backtest.runner import _sanitize_data_map
+
+    data_map = {
+        "AAA.US": _frame(
+            [
+                (10.0, 11.0, 9.0, 10.5, 1000.0),  # valid
+                (10.0, 8.0, 9.0, 10.5, 1500.0),   # high < low -> dropped
+            ]
+        ),
+        "BBB.US": _frame([(12.0, 13.0, 11.0, 12.5, 1200.0)]),  # all valid
+    }
+
+    cleaned = _sanitize_data_map(data_map)
+
+    assert list(cleaned["AAA.US"]["close"]) == [10.5]  # dirty bar gone
+    assert list(cleaned["BBB.US"]["close"]) == [12.5]  # untouched
+    assert set(cleaned) == {"AAA.US", "BBB.US"}
