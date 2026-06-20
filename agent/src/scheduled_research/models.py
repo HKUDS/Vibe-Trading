@@ -12,7 +12,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 # ---------------------------------------------------------------------------
 # Schedule validation
@@ -93,6 +93,8 @@ class ScheduledResearchJob:
             execution. Defaults to the current time when the job is created.
         status: Current lifecycle status.
         created_at: Epoch-millisecond timestamp of job creation.
+        last_run_at: Epoch-millisecond timestamp of the most recent executor
+            attempt, or ``None`` when the job has not fired yet.
         config: Opaque dict for future backtest parameters.
     """
 
@@ -102,6 +104,7 @@ class ScheduledResearchJob:
     next_run_at: int = field(default_factory=lambda: int(time.time() * 1000))
     status: JobStatus = JobStatus.PENDING
     created_at: int = field(default_factory=lambda: int(time.time() * 1000))
+    last_run_at: Optional[int] = None
     config: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -118,6 +121,7 @@ class ScheduledResearchJob:
             "next_run_at": self.next_run_at,
             "status": self.status.value,
             "created_at": self.created_at,
+            "last_run_at": self.last_run_at,
             "config": self.config,
         }
 
@@ -145,6 +149,9 @@ class ScheduledResearchJob:
         created_at = data["created_at"]
         if not isinstance(next_run_at, int) or not isinstance(created_at, int):
             raise TypeError("'next_run_at' and 'created_at' must be integers (epoch ms)")
+        last_run_at = data.get("last_run_at")
+        if last_run_at is not None and not isinstance(last_run_at, int):
+            raise TypeError("'last_run_at' must be an integer (epoch ms) or null")
         status = JobStatus(data["status"])
         raw_config = data.get("config")
         config: Dict[str, Any] = raw_config if isinstance(raw_config, dict) else {}
@@ -155,5 +162,6 @@ class ScheduledResearchJob:
             next_run_at=next_run_at,
             status=status,
             created_at=created_at,
+            last_run_at=last_run_at,
             config=config,
         )

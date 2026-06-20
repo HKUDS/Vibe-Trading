@@ -631,6 +631,13 @@ async def _run_startup_preflight() -> None:
     from src.preflight import run_preflight
 
     run_preflight(console)
+    _start_scheduled_research_executor()
+
+
+@app.on_event("shutdown")
+async def _stop_scheduled_research_on_shutdown() -> None:
+    """Stop the scheduled research executor on server shutdown."""
+    await _stop_scheduled_research_executor()
 
 
 # ============================================================================
@@ -3272,12 +3279,16 @@ register_alpha_routes(app)
 # Scheduled Research Routes
 # ============================================================================
 #
-# Three lightweight CRUD endpoints backed by ScheduledResearchJobStore.
-# Execution wiring is intentionally deferred: these endpoints only record
-# and expose scheduled-research jobs; no run is triggered here.
+# Lightweight CRUD endpoints backed by ScheduledResearchJobStore. The endpoint
+# handlers only record and expose jobs; the optional executor lifecycle is
+# guarded separately by VIBE_TRADING_ENABLE_SCHEDULER.
 
+
+_SCHEDULED_RESEARCH_SCHEDULER_ENV = "VIBE_TRADING_ENABLE_SCHEDULER"
+_SCHEDULED_RESEARCH_TRUE_VALUES = {"1", "true", "yes", "on"}
 
 _scheduled_research_store: Optional["ScheduledResearchJobStore"] = None
+_scheduled_research_executor: Optional["ScheduledResearchExecutor"] = None
 
 
 def _get_scheduled_research_store() -> "ScheduledResearchJobStore":
@@ -3288,6 +3299,56 @@ def _get_scheduled_research_store() -> "ScheduledResearchJobStore":
 
         _scheduled_research_store = ScheduledResearchJobStore()
     return _scheduled_research_store
+
+
+def _scheduled_research_scheduler_enabled() -> bool:
+    """Return whether scheduled research execution is enabled."""
+    return os.getenv(_SCHEDULED_RESEARCH_SCHEDULER_ENV, "").strip().lower() in _SCHEDULED_RESEARCH_TRUE_VALUES
+
+
+async def _dispatch_scheduled_research_job(job: "ScheduledResearchJob") -> None:
+    """Enqueue one scheduled research job through the session runtime.
+
+    ``send_message`` queues the agent attempt and returns once accepted; it
+    does not wait for that agent run to reach a terminal status. The executor's
+    ``COMPLETED`` state for this dispatch path means "successfully enqueued."
+    """
+    svc = _get_session_service()
+    if not svc:
+        raise RuntimeError("Session runtime not enabled")
+    # Pass a copy so the session runtime's internal config writes (e.g.
+    # include_shell_tools) do not mutate the persisted scheduled-run config.
+    session = svc.create_session(title=f"scheduled-research:{job.id}", config=dict(job.config))
+    logger.info("dispatching scheduled research job %s via session %s", job.id, session.session_id)
+    await svc.send_message(session.session_id, job.prompt)
+
+
+def _get_scheduled_research_executor() -> "ScheduledResearchExecutor":
+    """Return the singleton scheduled research executor."""
+    global _scheduled_research_executor
+    if _scheduled_research_executor is None:
+        from src.scheduled_research.executor import ScheduledResearchExecutor
+
+        _scheduled_research_executor = ScheduledResearchExecutor(
+            _get_scheduled_research_store(),
+            _dispatch_scheduled_research_job,
+            enabled=_scheduled_research_scheduler_enabled(),
+        )
+    return _scheduled_research_executor
+
+
+def _start_scheduled_research_executor() -> None:
+    """Start scheduled research execution when explicitly enabled."""
+    if not _scheduled_research_scheduler_enabled():
+        return
+    _get_scheduled_research_executor().start()
+
+
+async def _stop_scheduled_research_executor() -> None:
+    """Stop scheduled research execution if it was started."""
+    executor = _scheduled_research_executor
+    if executor is not None:
+        await executor.stop()
 
 
 class CreateScheduledRunRequest(BaseModel):
