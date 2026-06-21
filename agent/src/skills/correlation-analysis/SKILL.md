@@ -248,6 +248,9 @@ def sector_clustering(
 
 ## Mode 4: Realized Correlation
 
+> **Authoritative Source**: This section is the single source of truth for regime classification rules.
+> Other files (e.g., `agent/src/agent/context.py` Layer 3, `docs/trade-attribution-design.md`) reference this definition.
+
 **Use case**: Compute rolling correlation time series and analyze conditional correlation by market regime (bull / bear / high-volatility) to discover how correlation evolves dynamically.
 
 ```python
@@ -280,8 +283,10 @@ def realized_correlation(
         rolling_corrs[f"roll_{w}d"] = df["y"].rolling(w).corr(df["x"])
 
     # Regime labels.
+    # N-day rolling mean (N = 252 for US equity; use 244 for A-share, 365 for crypto)
     bm_ret_252 = df["bm"].rolling(252).mean()
     bm_vol = df["bm"].rolling(vol_window).std()
+    # N-day rolling mean of volatility (N = 252 for US equity; use 244 for A-share, 365 for crypto)
     bm_vol_mean = bm_vol.rolling(252).mean()
 
     df["regime"] = "sideways"
@@ -305,6 +310,22 @@ def realized_correlation(
         "conditional_corr": cond_corr,
     }
 ```
+
+**Market-Adaptive Window (N)**:
+The rolling window for regime classification adapts to market type:
+- US equity: N = 252 (standard trading days per year)
+- A-share (China): N = 244 (fewer trading days due to holidays)
+- Crypto: N = 365 (24/7 market)
+
+The default value 252 in the function signature targets US equity.
+Callers for other markets should adjust the rolling windows accordingly.
+
+**Fallback for Short Data**:
+If available data length is shorter than N days (the market-equivalent annual window),
+regime classification falls back to fixed-threshold definitions:
+- Bull: cumulative benchmark return over the available period > +10%
+- Bear: cumulative benchmark return over the available period < -10%
+- High-vol / Sideways: not applicable in fallback mode
 
 ### Typical Correlation Behavior by Market Regime
 
