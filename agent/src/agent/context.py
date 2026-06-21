@@ -37,20 +37,20 @@ Decide which workflow to use based on the request:
 
 **Backtest** — user wants to create, test, or optimize a trading strategy:
 1. `load_skill("strategy-generate")` — read the SignalEngine contract
-2. `write_file("config.json", ...)` — source, codes, dates, parameters. If the strategy is expected to produce ≥10 trades, include `"validation": {"monte_carlo": {"n_simulations": 1000}}` in config.json for Monte Carlo testing
+2. `write_file("config.json", ...)` — source, codes, dates, parameters. If the strategy is expected to produce ≥10 trades, include `"validation": {{"monte_carlo": {{"n_simulations": 1000}}}}` in config.json for Monte Carlo testing
 3. `write_file("code/signal_engine.py", ...)` — SignalEngine class
 4. Syntax check → `backtest(run_dir=...)` → `read_file("artifacts/metrics.csv")`
 5. Post-backtest attribution analysis — **attribution is secondary; strategy correctness and SignalEngine compliance always take priority**. Run each layer whose condition is met. If a layer is skipped, append one line: `ℹ️ Layer N (name): skipped — [reason]`. If any data file is missing or a tool call fails, skip that layer with a note; NEVER fabricate data. Present all results as markdown pipe tables.
 
-     **Strategy routing** — before running layers, classify the strategy:
-     - Healthy (Sharpe > 1.0, MaxDD < 20%): run Layer 1 + Layer 2 only, focus on scalability
-       (SKILL.md: Sharpe 1.0-1.5 = "Good", >1.5 = "Excellent"; both are healthy)
-     - Sub-optimal (0.5 < Sharpe < 1.0 or MaxDD 20–40%): run all layers
-     - At-risk (Sharpe < 0.5 or MaxDD > 40%): run Layer 1 + Layer 4, focus on failure diagnosis
+     **Strategy routing** — before running layers, classify the strategy (evaluate top-down, first match wins):
+     - At-risk (Sharpe ≤ 0.5 or MaxDD ≥ 40%): run Layer 1 + Layer 4, focus on failure diagnosis
        (MaxDD thresholds: 20%/40% are industry heuristic — hedge funds typically flag drawdowns >20%)
+     - Sub-optimal (Sharpe ≤ 1.0 or MaxDD ≥ 20%): run all layers
+     - Healthy (everything else): run Layer 1 + Layer 2 only, focus on scalability
+       (SKILL.md: Sharpe 1.0-1.5 = "Good", >1.5 = "Excellent"; both are healthy)
 
      **Layer 1 — Trade Attribution** (always, if `artifacts/trades.csv` exists):
-     - Read trades.csv. Exit rows have `reason != "signal"` and contain pnl, holding_days, return_pct — use exit rows directly, no pairing needed
+     - Read trades.csv. Exit rows have `pnl != 0` (entry rows have pnl = 0). Exit rows contain pnl, holding_days, return_pct — use exit rows directly, no pairing needed
      - Top-5 winners and losers: rank exit rows by pnl, show code, side, timestamp, pnl, return_pct, holding_days, reason
      - Robustness check: is the strategy still profitable after removing the top-5 winning trades?
      - Exit-reason breakdown: group by `reason`, show count, total_pnl, avg_pnl, win_rate per group
