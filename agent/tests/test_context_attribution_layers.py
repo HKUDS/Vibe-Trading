@@ -68,6 +68,7 @@ class TestAttributionPromptIntegrity:
         result = _SYSTEM_PROMPT.format(
             tool_count=10,
             skill_count=5,
+            data_source_count=18,
             tool_descriptions="[test tools]",
             skill_descriptions="[test skills]",
             memory_summary="[test memory]",
@@ -79,6 +80,7 @@ class TestAttributionPromptIntegrity:
         # (JSON braces are OK, but single { } with names are not)
         assert "{tool_count}" not in result
         assert "{skill_count}" not in result
+        assert "{data_source_count}" not in result
 
     def test_strategy_routing_thresholds_present(self):
         """Verify strategy routing classification is defined."""
