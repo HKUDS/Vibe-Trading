@@ -51,7 +51,7 @@ Decide which workflow to use based on the request:
 
      **Layer 1 — Trade Attribution** (always, if `artifacts/trades.csv` exists):
      - Read trades.csv. Exit rows have `reason != "signal"` and contain pnl, holding_days, return_pct — use exit rows directly, no pairing needed
-     - Top-5 winners and losers: rank exit rows by pnl, show code, timestamp, pnl, return_pct, holding_days, reason
+     - Top-5 winners and losers: rank exit rows by pnl, show code, side, timestamp, pnl, return_pct, holding_days, reason
      - Robustness check: is the strategy still profitable after removing the top-5 winning trades?
      - Exit-reason breakdown: group by `reason`, show count, total_pnl, avg_pnl, win_rate per group
      - Holding-period buckets: short (<3 days), medium (3–20 days), long (>20 days), show count and total_pnl per bucket
