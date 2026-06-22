@@ -350,6 +350,7 @@
   "alphaZoo": {
     "title": "Alpha 动物园",
     "prebuiltAlpha": "{{count}} 个预构建量化 Alpha，覆盖 4 个动物园",
+    "prebuiltAlphaLoading": "预构建量化 Alpha，覆盖 4 个动物园",
     "browseDesc": "浏览来自 Qlib、Kakushadze 101 公式集、GTJA 191 以及学术异象文献的公式驱动截面信号。点击任意 Alpha 查看公式和源码，或运行基准测试在特定市场和时间段上评分整个动物园。",
     "search": "搜索",
     "searchPlaceholder": "按 ID 或昵称筛选…",

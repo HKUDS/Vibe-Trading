@@ -350,6 +350,7 @@
   "alphaZoo": {
     "title": "Alpha Zoo",
     "prebuiltAlpha": "{{count}} pre-built quant alphas across 4 zoos",
+    "prebuiltAlphaLoading": "Pre-built quant alphas across 4 zoos",
     "browseDesc": "Browse formula-driven cross-sectional signals from Qlib, the Kakushadze 101 set, GTJA 191, and the academic anomaly literature. Click any alpha to read its formula and source code, or run a bench to score the whole zoo on a universe and period.",
     "search": "Search",
     "searchPlaceholder": "Filter by id or nickname…",

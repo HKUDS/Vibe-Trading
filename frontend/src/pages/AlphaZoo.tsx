@@ -215,7 +215,9 @@ function BrowseView() {
           <Layers className="h-3.5 w-3.5" aria-hidden="true" /> Alpha Zoo
         </div>
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-          {total > 0 ? total : 452} {i18n.t("alphaZoo.prebuiltAlpha", { count: total > 0 ? total : 452 })}
+          {loading
+            ? i18n.t("alphaZoo.prebuiltAlphaLoading")
+            : i18n.t("alphaZoo.prebuiltAlpha", { count: total })}
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
           Browse formula-driven cross-sectional signals from Qlib, the
