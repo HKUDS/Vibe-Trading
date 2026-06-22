@@ -197,7 +197,7 @@ It is designed for research, simulation, and backtesting — and, when you choos
 | **Improve repeated research** | Persistent memory and editable skills turn useful routines into reusable workflows. |
 | **Run analyst teams** | Multi-agent research reviews for investment, quant, crypto, macro, and risk workflows. |
 | **Ship usable artifacts** | Reports, TradingView Pine Script, TDX, MetaTrader 5, MCP tools, and later research sessions. |
-| **Bench a pre-built alpha zoo** | One-line IC + alive/reversed/dead categorisation across 452 alphas (Qlib 158 + Kakushadze 101 + GTJA 191 + FF5 + Carhart) on your universe. |
+| **Bench a pre-built alpha zoo** | One-line IC + alive/reversed/dead categorisation across 456 alphas (Qlib 158 + Kakushadze 101 + GTJA 191 + FF5 + Carhart + Jegadeesh reversal + George-Hwang 52-week-high + Amihud illiquidity + Harvey-Siddique skew) on your universe. |
 
 ---
 
@@ -288,9 +288,9 @@ Beyond OHLCV, **18 read-only data tools** reach into fundamentals & flow — fun
 Detailed inventories are folded below to keep the main README scannable. Open them when you want to inspect the available building blocks.
 
 <details>
-<summary><b>Finance Skill Library</b> <sub>77 skills across 8 categories</sub></summary>
+<summary><b>Finance Skill Library</b> <sub>79 skills across 8 categories</sub></summary>
 
-- 📊 77 specialized finance skills organized into 8 categories
+- 📊 79 specialized finance skills organized into 8 categories
 - 🌐 Complete coverage from traditional markets to crypto & DeFi
 - 🔬 Comprehensive capabilities spanning data sourcing to quantitative research
 
@@ -379,9 +379,9 @@ run from a clone (`pip install -e .`).
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>452 pre-built quant alphas across 4 zoos</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>456 pre-built quant alphas across 4 zoos</sub></summary>
 
-- 🧬 452 cross-sectional alphas, lookahead-banned at the operator layer
+- 🧬 456 cross-sectional alphas, lookahead-banned at the operator layer
 - 📈 IC + IR + alive/reversed/dead categorisation in one CLI command
 - 🔬 AST purity gate + 300-row lookahead sentinel test + `pytest-socket` network kill-switch
 - 📦 Apache-2 attribution for Qlib; per-zoo `LICENSE.md` declaring formulas as mathematical content
@@ -392,7 +392,7 @@ run from a clone (`pip install -e .`).
 | **qlib158** | 154 | Microsoft Qlib `Alpha158` (Apache-2.0, commit-pinned) | Apache-2.0 |
 | **alpha101** | 101 | Kakushadze (2015), "101 Formulaic Alphas", arXiv:1601.00991 | Formulas are mathematical content |
 | **gtja191** | 191 | Guotai Junan (2014), "191 Short-period Trading Alpha Factors" | Formulas are mathematical content |
-| **academic** | 6 | Fama-French 5 + Carhart momentum (price-based proxies) | Public academic literature |
+| **academic** | 10 | Fama-French 5 + Carhart momentum + Jegadeesh reversal + George-Hwang 52-week-high + Amihud illiquidity + Harvey-Siddique skew (price-based proxies) | Public academic literature |
 
 Run `vibe-trading alpha list` to browse, `vibe-trading alpha show <id>` for formulas + source, `vibe-trading alpha bench --zoo X --universe Y --period Z` to score a whole zoo.
 
@@ -529,8 +529,10 @@ cd frontend && npm run build && cd ..
 vibe-trading serve --port 8899     # FastAPI serves dist/ as static files
 ```
 
+Then open `http://localhost:8899` — the backend serves the built frontend and handles API requests on the same port.
+
 > [!NOTE]
-> `vibe-trading serve` binds `0.0.0.0` and is loopback-only by default: opening the UI on the **same machine** (`http://localhost:8899`) works with zero config. If you browse from **another machine, a VM host, or a phone on your LAN**, sensitive endpoints return `403` and the chat shows "Remote API access requires an API key" — set a strong `API_AUTH_KEY` in `agent/.env`, restart, and enter the same key once in **Settings**. (Docker Desktop's host gateway: set `VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1` with the default `127.0.0.1` port bind.)
+> In production mode `vibe-trading serve` binds `0.0.0.0` and is loopback-only by default: opening the UI on the **same machine** (`http://localhost:8899`) works with zero config. If you browse from **another machine, a VM host, or a phone on your LAN**, sensitive endpoints return `403` and the chat shows "Remote API access requires an API key" — set a strong `API_AUTH_KEY` in `agent/.env`, restart, and enter the same key once in **Settings**. (Docker Desktop's host gateway: set `VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1` with the default `127.0.0.1` port bind.)
 
 </details>
 
@@ -601,7 +603,7 @@ vibe-trading provider doctor  # print redacted provider/proxy/package diagnostic
 | Command | Description |
 |---------|-------------|
 | `/help` | Show all commands |
-| `/skills` | List all 77 finance skills |
+| `/skills` | List all 79 finance skills |
 | `/swarm` | List 29 swarm team presets |
 | `/swarm run <preset> [vars_json]` | Run a swarm team with live streaming |
 | `/swarm list` | Swarm run history |
@@ -788,7 +790,7 @@ Settings reads are side-effect free: `GET /settings/llm` and `GET /settings/data
 
 ## 🔌 MCP Plugin
 
-Vibe-Trading exposes 36 MCP tools for any MCP-compatible client. Runs as a stdio subprocess — no server setup needed. Core research tools work with zero API keys for HK/US/crypto; trading connector tools use the selected connector profile, and `run_swarm` needs an LLM key.
+Vibe-Trading exposes 54 MCP tools for any MCP-compatible client. Runs as a stdio subprocess — no server setup needed. Core research tools work with zero API keys for HK/US/crypto; trading connector tools use the selected connector profile, and `run_swarm` needs an LLM key.
 
 <details>
 <summary><b>Claude Desktop</b></summary>
@@ -836,7 +838,7 @@ vibe-trading-mcp --transport sse  # SSE for web clients
 
 </details>
 
-**MCP tools exposed (36):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`.
+**MCP tools exposed (54):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`.
 
 ### SWARM external MCP tools
 
@@ -1078,7 +1080,7 @@ Vibe-Trading/
 │   │   ├── memory/                 # Cross-session persistent memory
 │   │   │   └── persistent.py       #   file-based memory (~/.vibe-trading/memory/)
 │   │   │
-│   │   ├── tools/                  # 31 auto-discovered agent tools
+│   │   ├── tools/                  # 49 auto-discovered agent tools
 │   │   │   ├── backtest_tool.py    #   run backtests
 │   │   │   ├── remember_tool.py    #   cross-session memory (save/recall/forget)
 │   │   │   ├── skill_writer_tool.py #  skill CRUD (save/patch/delete/file)

@@ -76,7 +76,7 @@
 - **2026-06-04** 🗃️ **全部 7 个数据源的可选本地缓存**：新增 `VIBE_TRADING_DATA_CACHE` 开关，让每个回测 loader——tushare、okx、ccxt、akshare、mootdx、yfinance、futu——把已结算的历史 bar 缓存到 `~/.vibe-trading/cache`（用户主目录，绝不写入仓库），让重复以及长周期 / 跨市场回测跳过网络、避开数据源限流。默认关闭。批量与连接型 loader（yfinance、futu）在缓存全部命中时完全跳过批量下载 / FutuOpenD 连接；结算守卫绝不缓存截止到当天的区间（最后一根 bar 还在形成中）；缓存帧与实时拉取的结果逐字节一致（[#177](https://github.com/HKUDS/Vibe-Trading/pull/177)，感谢 @mvanhorn）。同时还落地了一份面向 AI / 自动化辅助 PR 的贡献者指南，梳理了安全的本地检查项与高风险的 broker/MCP/凭证操作面（[#173](https://github.com/HKUDS/Vibe-Trading/pull/173)）。
 - **2026-06-03** 🧹 **社区 triage + trace 关联**：工具调用的 trace 条目现在带上原始 `call_id`，回放 run trace 时可以把 `tool_result` 对回它的 `tool_call`——入参预览仍保持截断，避免 trace 文件膨胀（[#168](https://github.com/HKUDS/Vibe-Trading/pull/168)，感谢 @zwrong）。源码注释不再指向外部贡献者找不到的内部文档路径（[#166](https://github.com/HKUDS/Vibe-Trading/issues/166)，感谢 @jaleelpersonal）。另外澄清了安装时的 `langchain-community` 依赖解析告警只是残留旧包的无害提示、并非安装失败（[#167](https://github.com/HKUDS/Vibe-Trading/issues/167)），并把 Gemini 2.5/3.0 函数调用的 `thoughtSignature` 往返梳理成一条带完整修复方案的 `help wanted` 任务（[#170](https://github.com/HKUDS/Vibe-Trading/issues/170)，感谢 @jliu6789）。
 - **2026-06-02** 🔌 **六个新券商 connector（老虎 / 长桥 / Alpaca / OKX / 币安 / 富途）**：connector-first 交易层在 IBKR（本地）和 Robinhood（MCP）之外，新增一条直连 SDK 传输。每个 connector 都暴露只读的账户 / 持仓 / 订单 / 行情 / 历史，外加模拟账户下单——把你的策略放到这些券商的模拟盘上跑。其中五个（老虎、Alpaca、OKX、币安、富途）还支持在用户提交的 mandate（标的/单量/敞口/杠杆/每日笔数）约束下的有界下单，沿用与 Robinhood 同一套安全模型：用户提交的 mandate、文件级即时 kill switch、fail-closed 的下单前门禁，以及完整审计账本。长桥仅支持模拟盘 + 只读（其 API 不暴露运行时的模拟/正式判别标识）。每一处模拟/正式的区分都是按券商落实的结构性守卫——账户 id 格式、host 隔离、demo 标志或 trade environment。新增 `trading_place_order` / `trading_cancel_order` 工具；mandate universe 也补上了港股和 A 股资产类别。实验性 / 风险自负。
-- **2026-06-01** 🚀 **v0.1.9 发布**（`pip install -U vibe-trading-ai`）：汇总 0.1.8 以来的全部更新。Connector-first 券商 profile（IBKR 本地只读 TWS / IB Gateway + Robinhood Agentic Trading，受 OAuth、已提交 mandate、order guard、审计账本和即时 halt 约束）。Research Goal 运行时贯通 CLI / REST / MCP / Web。一轮 swarm 升级——实时 reconcile + MCP keepalive、operator 配置的 worker MCP 工具、严格 alpha-bench 随机控制，以及新增 `retry_run` 重跑失败/过期 run（现 **36 个 MCP 工具**）。`agent/cli/` 包重构 + 刷新的终端 UI、`mootdx` 免 token A 股 loader，以及 backtest / agent loop / session 的健壮性增强。`--version` 现在始终与已安装版本一致，修复 0.1.8 漂移（[#156](https://github.com/HKUDS/Vibe-Trading/issues/156)）。
+- **2026-06-01** 🚀 **v0.1.9 发布**（`pip install -U vibe-trading-ai`）：汇总 0.1.8 以来的全部更新。Connector-first 券商 profile（IBKR 本地只读 TWS / IB Gateway + Robinhood Agentic Trading，受 OAuth、已提交 mandate、order guard、审计账本和即时 halt 约束）。Research Goal 运行时贯通 CLI / REST / MCP / Web。一轮 swarm 升级——实时 reconcile + MCP keepalive、operator 配置的 worker MCP 工具、严格 alpha-bench 随机控制，以及新增 `retry_run` 重跑失败/过期 run（现 **54 个 MCP 工具**）。`agent/cli/` 包重构 + 刷新的终端 UI、`mootdx` 免 token A 股 loader，以及 backtest / agent loop / session 的健壮性增强。`--version` 现在始终与已安装版本一致，修复 0.1.8 漂移（[#156](https://github.com/HKUDS/Vibe-Trading/issues/156)）。
 - **2026-05-31** 🔌 **Connector-first 券商架构（IBKR + Robinhood）**：交易接入现在从可选择的 connector profile 开始，不再拆成分散的券商入口和 live 入口。`vibe-trading connector list/use/check/account/positions/orders/quote/history` 与 MCP `trading_*` 工具共享同一个选中的 profile；paper/live 只是该 connector 下的属性。IBKR 可立即通过本地只读 TWS / IB Gateway profile 使用；官方 IBKR 远程 MCP 先作为 OAuth `mcp.read` 探测种子，等待稳定 read 工具名后再映射。Robinhood Agentic Trading 仍是有界 live MCP connector，必须经过 OAuth、已提交 mandate、order guard、审计账本和即时 halt。
 - **2026-05-30** 🧰 **健壮性专项 — backtest、agent loop、session**：LLM 生成的 signal engine 现在会在实例化前先过接口预检，提前抓出循环 self-import、缺失 `generate()`、`__init__` 参数没有默认值、返回类型错误等常见问题，并给出可操作的 JSON 报错而非原始 traceback（[#149](https://github.com/HKUDS/Vibe-Trading/pull/149)）；后续一并把源码级 AST 校验的报错也走同一套干净的 JSON 信封。agent loop 不再把 50 次迭代全烧光后留下一个没有任何输出的 `failed` 状态——它复用 swarm worker 已验证的做法：在迭代预算 80% 处注入 wrap-up nudge，并在最后一次迭代丢掉 tool 定义以强制产出文本答案（[#148](https://github.com/HKUDS/Vibe-Trading/pull/148)），且只在中途触发，绝不挤掉 research-goal 上下文。session 消息写入现在每次 append 后 `flush + fsync`，让昂贵的 AI 回复能在写到一半崩溃时存活；读取端则跳过损坏的 JSONL 行（记录前 200 字符以便人工恢复），而不是让整个 `/messages` 端点 500（[#147](https://github.com/HKUDS/Vibe-Trading/pull/147)）。Web 输入框也修了 IME 回车处理，让中日韩输入法的确认上屏回车不再误触发提交（[#146](https://github.com/HKUDS/Vibe-Trading/pull/146)）。
 - **2026-05-29** 🔐 **支持 Robinhood Agentic Trading（可选开启、有界自主）**：新增对 Robinhood Agentic Trading 的支持（远程 MCP，OAuth）。默认关闭且只读；仅在用户提交的 mandate（标的/单量/敞口/杠杆/每日笔数）内自主交易，配文件级即时 kill switch、抢占式平仓、mandate 自动过期、完整审计账本，以及一个持久自主 runner。无托管、无场所——券商持有资金并执行，我们只中继意图。实验性 / 风险自负。
@@ -92,7 +92,7 @@
 - **2026-05-20** 🔬 **Hypothesis Registry CLI**：补齐了 5-16 上线但只有后端的 Hypothesis Registry 的 CLI 侧。`vibe-trading hypothesis list` 输出 Rich 表格或 JSON（支持 `--status` 过滤、`--limit`）；`show <id>` 渲染详情面板，包含已 link 的 run card；`invalidate <id> --note "..."` 把 status 翻成 `rejected`，省略 `--note` 时保留原有 invalidation notes。沿用 `VIBE_TRADING_HYPOTHESES_PATH` 环境变量，并新增按调用覆盖的 `--path`。22 个新单测覆盖 wiring、JSON 输出、状态过滤、limit、缺 id 报错、备注持久化。
 - **2026-05-19** ✨ **工具实时反馈 + 优雅取消**：长时间运行的工具（回测、大 PDF、swarm worker）不再看起来卡死。每个工具调用现在会发出 3 秒一次的心跳，以及结构化的阶段进度 —— `run_backtest` 输出阶段标记（`validate` / `simulate` / `finalize`），`read_document` 在 PDF 上按页打点 / Excel 上按工作表打点，`read_url` 标记 `fetch` / `parse`。CLI 的 Rich Live 面板渲染 Unicode 转轮、ASCII 进度条、ETA，按工具名最多堆叠 3 个并行工具；前端 chat 新增 `ToolProgressIndicator`，rAF 合并刷新、ARIA `role="status"` + 隐藏的原生 `<progress>` 供屏幕阅读器使用，已知总数时切换为 determinate 的 `ProgressRing` SVG。CLI 中第一次 `Ctrl+C` 现在会调 `agent.cancel()` 优雅退出（当前步骤跑完、trace 干净关闭）；2 秒内第二次 `Ctrl+C` 强制退出。顺手抽出可复用基础件：`ProgressBar.tsx` 和 `lib/tools.ts`（共享工具名 i18n 映射）。
 - **2026-05-18** 🧹 **清理一次 + 3 个潜伏 bug 修复**：`CompositeEngine` 不再把无交易所后缀的中国期货代码（如 `RB2410`）错误路由到 `GlobalFuturesEngine` —— `_is_china_futures` 移到共享的 `_market_hooks` 模块，产品代码表做了大小写归一并加入非中国交易所守卫，新增 9 条回归用例。session FTS5 索引现在会持久化时间戳，跨 session 搜索可按日期排序；同一改动也修复了 re-upsert 路径每次都用 wall-clock 覆盖 `started_at` 的副作用 bug。前端 Vite dev proxy 补上漏配的 `/alpha`，AlphaZoo 页在 `npm run dev` 下不再 404。`tests/test_e2e_harness_v2.py`（真 LLM 的 e2e 套件）现在用 `VIBE_TRADING_RUN_LIVE_E2E=1` 做环境门控，CI 不再因为有无 LLM key 而静默切状态。Ruff 为 factor zoo 添加 `per-file-ignores`（3783 → 0 F401 噪音），前端 tsconfig 打开 `noUnusedLocals` / `noUnusedParameters` 做回归护栏，并删掉了 76 个 `gtja191` alpha 文件里没用上的 `vw = vwap(...)` 残留。净 **-918 行**。
-- **2026-05-17** 🧬 **Alpha Zoo v1（0.1.8）**：内置 452 个量化 alpha，覆盖 4 个 zoo —— `qlib158`（Microsoft Qlib 的 Alpha158 特征，Apache-2.0 出处声明）、`alpha101`（Kakushadze 的 "101 Formulaic Alphas"，从 arXiv:1601.00991 论文公式重写）、`gtja191`（国君证券 2014 短周期交易型因子研报）、`academic`（Fama-French 5 因子 + Carhart 动量的价格代理实现）。一行 CLI 就能在自己的 universe 上跑横评：`vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025`。配套设施包括 AST 纯函数门禁、lookahead 防护测试、`pytest-socket` 网络隔离、每个 zoo 一份 LICENSE.md、社区贡献用的 DCO 签名流程；Alpha Library 自动渲染上线 [vibetrading.wiki/alpha-library/](https://vibetrading.wiki/alpha-library/)；Research Lab 同步发布 [《191 个 GTJA alpha 哪些在 2026 还能用》](https://vibetrading.wiki/research-lab/posts/alpha-191-in-2026.html)。
+- **2026-05-17** 🧬 **Alpha Zoo v1（0.1.8）**：内置 456 个量化 alpha，覆盖 4 个 zoo —— `qlib158`（Microsoft Qlib 的 Alpha158 特征，Apache-2.0 出处声明）、`alpha101`（Kakushadze 的 "101 Formulaic Alphas"，从 arXiv:1601.00991 论文公式重写）、`gtja191`（国君证券 2014 短周期交易型因子研报）、`academic`（Fama-French 5 因子 + Carhart 动量 + Jegadeesh 反转 + George-Hwang 52 周高 + Amihud 非流动性 + Harvey-Siddique 偏度的价格代理实现）。一行 CLI 就能在自己的 universe 上跑横评：`vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025`。配套设施包括 AST 纯函数门禁、lookahead 防护测试、`pytest-socket` 网络隔离、每个 zoo 一份 LICENSE.md、社区贡献用的 DCO 签名流程；Alpha Library 自动渲染上线 [vibetrading.wiki/alpha-library/](https://vibetrading.wiki/alpha-library/)；Research Lab 同步发布 [《191 个 GTJA alpha 哪些在 2026 还能用》](https://vibetrading.wiki/research-lab/posts/alpha-191-in-2026.html）。
 - **2026-05-16** 🧪 **研究主干更新**：新增后端 Hypothesis Registry，提供 `create_hypothesis`、`update_hypothesis`、`link_backtest`、`search_hypotheses`；外部内容读取工具现在会附加 warning-only 的 `security_warnings`；Shadow Account 扫描也从旧的日历 phase stub 升级为确定性的 OHLCV 特征评估。
 - **2026-05-15** 🪪 Run 详情页现在会在 metrics 和 artifacts 旁边渲染 Trust Layer 的 run card，把 2026-05-12 已落地的 `run_card.json` 工作补齐到 UI 一侧。`PersistentMemory.add()` 也根据 #108/#109/#110 的 triage，在长度限制、空 / 纯空白 name、以及 C0/C1 控制字节三条路径上做了加固（[#112](https://github.com/HKUDS/Vibe-Trading/pull/112)，感谢 @Teerapat-Vatpitak）。
 - **2026-05-14** 🌐 公开 Wiki 已上线 [vibetrading.wiki](https://vibetrading.wiki/)，包含 docs、tutorials、Research Lab 和 Alpha Library，并通过 Cloudflare Pages 部署。持久记忆也可以通过 CLI 使用 `vibe-trading memory list/show/search/forget` 检查（[#102](https://github.com/HKUDS/Vibe-Trading/pull/102)，感谢 @Teerapat-Vatpitak）；记忆 tokenizer/slug 现在支持泰语、阿拉伯语、希伯来语和西里尔文字（[#104](https://github.com/HKUDS/Vibe-Trading/pull/104)）。
@@ -288,9 +288,9 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 为保持主 README 易读，详细清单折叠在下方。需要检查可用构件时可展开查看。
 
 <details>
-<summary><b>Finance Skill Library</b> <sub>8 个类别中的 77 个 skills</sub></summary>
+<summary><b>Finance Skill Library</b> <sub>8 个类别中的 79 个 skills</sub></summary>
 
-- 📊 77 个专业金融 skills，分布在 8 个类别中
+- 📊 79 个专业金融 skills，分布在 8 个类别中
 - 🌐 覆盖传统市场、加密与 DeFi
 - 🔬 从数据源到量化研究的完整能力链路
 
@@ -388,7 +388,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 | **qlib158** | 154 | Microsoft Qlib `Alpha158`（Apache-2.0，锁定 commit） | Apache-2.0 |
 | **alpha101** | 101 | Kakushadze (2015), "101 Formulaic Alphas", arXiv:1601.00991 | 公式属于数学内容 |
 | **gtja191** | 191 | 国君证券 (2014)《191 个短周期交易型 alpha 因子》研报 | 公式属于数学内容 |
-| **academic** | 6 | Fama-French 5 因子 + Carhart 动量（基于价格的代理实现） | 公开学术文献 |
+| **academic** | 10 | Fama-French 5 因子 + Carhart 动量 + Jegadeesh 反转 + George-Hwang 52 周高 + Amihud 非流动性 + Harvey-Siddique 偏度（基于价格的代理实现） | 公开学术文献 |
 
 运行 `vibe-trading alpha list` 浏览全部因子，`vibe-trading alpha show <id>` 查看公式与源码，`vibe-trading alpha bench --zoo X --universe Y --period Z` 给一整个 zoo 打分。
 
@@ -589,7 +589,7 @@ vibe-trading alpha list    # 浏览 452 个预置 alpha；支持 show / bench / 
 | 命令 | 说明 |
 |------|------|
 | `/help` | 显示所有命令 |
-| `/skills` | 列出全部 77 个 finance skills |
+| `/skills` | 列出全部 79 个 finance skills |
 | `/swarm` | 列出 29 个 swarm team presets |
 | `/swarm run <preset> [vars_json]` | 运行一个 swarm team，并实时流式展示 |
 | `/swarm list` | Swarm 运行历史 |
@@ -773,7 +773,7 @@ Settings 读取无副作用：`GET /settings/llm` 和 `GET /settings/data-source
 
 ## 🔌 MCP Plugin
 
-Vibe-Trading 为任何 MCP-compatible client 暴露 36 个 MCP tools。它作为 stdio subprocess 运行，无需 server setup。核心 research tools 对港股/美股/加密零 API key 可用；trading connector tools 使用当前选择的 connector profile；只有 `run_swarm` 需要 LLM key。
+Vibe-Trading 为任何 MCP-compatible client 暴露 54 个 MCP tools。它作为 stdio subprocess 运行，无需 server setup。核心 research tools 对港股/美股/加密零 API key 可用；trading connector tools 使用当前选择的 connector profile；只有 `run_swarm` 需要 LLM key。
 
 <details>
 <summary><b>Claude Desktop</b></summary>
@@ -897,16 +897,16 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo 网络搜索
 │   │   │   └── ...                 #   bash、文件 I/O、因子分析、期权、alpha 浏览 + 横评等
 │   │   │
-│   │   ├── factors/                # Alpha Zoo —— 4 个 zoo 共 452 个 alpha
+│   │   ├── factors/                # Alpha Zoo —— 4 个 zoo 共 456 个 alpha
 │   │   │   ├── base.py             #   19 个算子（rank/scale/ts_*/delta/decay_linear/safe_div/vwap）
 │   │   │   ├── registry.py         #   纯 AST 元数据加载 + 惰性计算 + sanity 校验
 │   │   │   ├── bench_runner.py     #   IC + alive/reversed/dead 分类
-│   │   │   └── zoo/                #   qlib158 (154) + alpha101 (101) + gtja191 (191) + academic (6)
+│   │   │   └── zoo/                #   qlib158 (154) + alpha101 (101) + gtja191 (191) + academic (10)
 │   │   │
 │   │   ├── api/                    # FastAPI 路由模块
 │   │   │   └── alpha_routes.py     #   /alpha/list、/alpha/{id}、/alpha/bench、SSE 流
 │   │   │
-│   │   ├── skills/                 # 8 个类别共 77 个 finance skills（每个一份 SKILL.md）
+│   │   ├── skills/                 # 8 个类别共 79 个 finance skills（每个一份 SKILL.md）
 │   │   ├── swarm/                  # Swarm DAG 执行引擎
 │   │   │   └── presets/            #   29 个 swarm preset YAML 定义
 │   │   ├── session/                # 多轮对话 + FTS5 session 搜索
