@@ -28,6 +28,47 @@ def _existing_uploads(uploads_dir: Path) -> list[Path]:
     return [p for p in uploads_dir.iterdir() if p.is_file()]
 
 
+def test_cross_site_browser_upload_is_rejected_even_from_loopback(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+
+    response = client.post(
+        "/upload",
+        headers={
+            "Host": "127.0.0.1:8899",
+            "Origin": "https://evil.example",
+            "Sec-Fetch-Site": "cross-site",
+        },
+        files={"file": ("poc.txt", b"x" * 1024, "text/plain")},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Cross-site request denied"
+    assert _existing_uploads(tmp_path) == []
+
+
+def test_loopback_upload_without_browser_origin_still_allowed_when_key_configured(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+
+    response = client.post(
+        "/upload",
+        headers={"Host": "127.0.0.1:8899"},
+        files={"file": ("note.txt", b"safe", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    assert len(_existing_uploads(tmp_path)) == 1
+
+
 def test_upload_under_limit_succeeds(client: TestClient, tmp_path: Path) -> None:
     payload = b"x" * (2 * 1024)  # 2 KB, well under the 4 KB limit
     response = client.post(
