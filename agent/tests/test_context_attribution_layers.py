@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import builtins
+
 import pytest
+
+from backtest.loaders.registry import VALID_SOURCES
+from src.agent.context import ContextBuilder
 
 
 @pytest.mark.unit
@@ -106,3 +111,24 @@ class TestAttributionPromptIntegrity:
         # The internal docs/ tree is gitignored and never published; the module
         # must not point at a file that won't exist in the distributed repo.
         assert "docs/" not in source
+
+
+@pytest.mark.unit
+class TestCountDataSources:
+    """Regression tests for dynamic data-source count in the system prompt."""
+
+    def test_count_data_sources_matches_registry(self) -> None:
+        """Live count derives from VALID_SOURCES minus the auto selector."""
+        assert ContextBuilder._count_data_sources() == len(VALID_SOURCES - {"auto"})
+
+    def test_count_data_sources_import_failure_returns_18(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Import failures fall back to 18 without propagating."""
+        real_import = builtins.__import__
+
+        def failing_import(name, globals=None, locals=None, fromlist=(), level=0):  # noqa: ANN001
+            if name == "backtest.loaders.registry":
+                raise ImportError("simulated registry import failure")
+            return real_import(name, globals, locals, fromlist, level)
+
+        monkeypatch.setattr(builtins, "__import__", failing_import)
+        assert ContextBuilder._count_data_sources() == 18
