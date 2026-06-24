@@ -722,19 +722,43 @@ def _is_loopback_origin(origin: str) -> bool:
         return False
 
 
+def _origin_matches_request_host(origin: str, request: Request) -> bool:
+    """Return whether ``origin`` is the same site serving this request."""
+    try:
+        parsed = urllib.parse.urlsplit(origin)
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+
+    origin_host = parsed.hostname.rstrip(".").lower()
+    origin_port = parsed.port
+    request_host = _host_without_port(request.headers.get("host", ""))
+    if origin_host != request_host:
+        return False
+
+    if origin_port is None:
+        origin_port = 443 if parsed.scheme == "https" else 80
+    request_port = request.url.port
+    if request_port is None:
+        request_port = 443 if request.url.scheme == "https" else 80
+    return origin_port == request_port
+
+
 def _reject_cross_site_browser_request(request: Request) -> None:
-    """Reject unsafe browser requests from non-loopback origins.
+    """Reject unsafe browser requests from untrusted cross-site origins.
 
     CORS protects response reads, not blind form/fetch side effects. Keep local
-    CLI/curl clients working while refusing browser-originated cross-site POSTs
-    to local control-plane actions such as shutdown.
+    CLI/curl clients and same-origin browser UI deployments working while
+    refusing browser-originated cross-site POSTs to local control-plane actions
+    such as shutdown.
     """
     sec_fetch_site = request.headers.get("sec-fetch-site", "").lower()
     if sec_fetch_site == "cross-site":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-site request denied")
 
     origin = request.headers.get("origin")
-    if origin and not _is_loopback_origin(origin):
+    if origin and not (_is_loopback_origin(origin) or _origin_matches_request_host(origin, request)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-site request denied")
 
 
