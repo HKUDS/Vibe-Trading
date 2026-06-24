@@ -9,7 +9,7 @@ import { useAgentStore } from "@/stores/agent";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
 
 // Bump on each release; one place keeps the footer in sync with package.json.
-const APP_VERSION = "v0.1.10";
+const APP_VERSION = "v0.1.10-s1";
 
 export function Layout() {
   const { t, i18n: i18nHook } = useTranslation();
@@ -117,7 +117,7 @@ export function Layout() {
             <div className="flex items-center justify-between px-4 py-2">
               <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <MessageSquare className="h-3.5 w-3.5" />
-                Sessions
+                {t('layout.sessions')}
               </span>
               <Link
                 to="/agent"
@@ -229,7 +229,7 @@ export function Layout() {
                   className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-                  {dark ? "Light" : "Dark"}
+                  {dark ? t('layout.light') : t('layout.dark')}
                 </button>
                 <div className="flex items-center gap-1">
                   <button

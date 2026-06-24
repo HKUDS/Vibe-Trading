@@ -282,7 +282,7 @@ export function RunDetail() {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-muted transition-colors"
                 title={i18n.t("runDetail.downloadTradesCsv")}
               >
-                <Download className="h-3.5 w-3.5" /> Download Trades CSV
+                <Download className="h-3.5 w-3.5" /> {i18n.t("runDetail.downloadTradesCsv")}
               </button>
             )}
             {run.metrics && (
@@ -291,7 +291,7 @@ export function RunDetail() {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-muted transition-colors"
                 title={i18n.t("runDetail.downloadMetricsCsv")}
               >
-                <Download className="h-3.5 w-3.5" /> Download Metrics CSV
+                <Download className="h-3.5 w-3.5" /> {i18n.t("runDetail.downloadMetricsCsv")}
               </button>
             )}
           </div>
@@ -348,7 +348,7 @@ function RunCardTab({ card }: { card: RunCard }) {
         <section className="rounded-md border border-amber-500/25 bg-amber-500/5 p-3">
           <div className="mb-2 flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-300">
             <AlertTriangle className="h-4 w-4" />
-            Warnings
+            {i18n.t("runDetail.warnings")}
           </div>
           <ul className="space-y-1 text-xs text-muted-foreground">
             {warnings.map((warning, index) => <li key={index}>{warning}</li>)}
