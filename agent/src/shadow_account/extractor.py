@@ -7,10 +7,11 @@ Pipeline:
     → LLM-light natural-language translation (template fallback if no LLM)
 
 Design constraints:
-    * No external price-data calls in v1. All features are derivable from
-      the journal itself (holding_days, pnl_pct, entry hour/weekday, market).
-      Price-dependent features (prior_N_return, rsi) are stubbed with None
-      and dropped from the feature matrix if unavailable.
+    * No *mandatory* external price-data calls. Journal-derived features
+      (holding_days, pnl_pct, entry hour/weekday, market) always work offline.
+      Price-context features (entry_rsi14, prior_5d_return) are read as-of the
+      buy date via the backtest loader registry and degrade to NaN — dropped
+      from the feature matrix — whenever price data is unavailable.
     * Must survive tiny samples: <5 profitable roundtrips → explicit error.
       <2 clusters → degrade to a single-cluster heuristic rule.
     * Rules are immutable ShadowRule objects — codegen's only input.
@@ -37,6 +38,23 @@ DEFAULT_MAX_RULES = 5
 DEFAULT_MIN_SUPPORT = 3
 _NUMERIC_FEATURES = ("holding_days", "pnl_pct", "entry_hour", "entry_weekday")
 _CATEGORICAL_FEATURES = ("market",)
+
+# Price-context features attached as-of buy_dt (NaN when price data unavailable).
+_PRICE_FEATURES = ("entry_rsi14", "prior_5d_return")
+_RSI_PERIOD = 14
+_PRIOR_RETURN_WINDOW = 5
+# Calendar buffer added before the earliest buy_dt so the RSI warmup has enough
+# trading bars even across weekends/holidays.
+_PRICE_LOOKBACK_DAYS = 40
+
+# Journal market label → backtest loader-registry market key. Labels with no
+# mapping (e.g. "other") skip the price fetch and degrade to NaN.
+_MARKET_KEY_MAP = {
+    "china_a": "a_share",
+    "us": "us_equity",
+    "hk": "hk_equity",
+    "crypto": "crypto",
+}
 
 
 # ---------------- Public API ----------------
@@ -126,6 +144,155 @@ def extract_shadow_profile(
 
 # ---------------- Feature engineering ----------------
 
+def _compute_rsi(close: pd.Series, period: int = _RSI_PERIOD) -> pd.Series:
+    """Causal Wilder-EWM RSI.
+
+    Mirrors the shape of ``compute_rsi`` in
+    ``agent/src/skills/technical-basic/example_signal_engine.py:13`` — that
+    module lives under a hyphenated (non-importable) skills directory, so the
+    formula is re-implemented here rather than imported. Causal by construction:
+    ``RSI[t]`` depends only on closes dated ``<= t``.
+
+    Args:
+        close: Close-price series indexed by date.
+        period: RSI lookback period.
+
+    Returns:
+        RSI series (0-100), NaN for the warmup window.
+    """
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = (-delta).clip(lower=0)
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
+    rs = avg_gain / avg_loss
+    return 100 - 100 / (1 + rs)
+
+
+def _fetch_price_history(
+    symbol: str,
+    market: str,
+    *,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> pd.DataFrame | None:
+    """Fetch daily OHLCV for one symbol via the backtest loader registry.
+
+    Uses the same access path as the backtest runner (``resolve_loader`` +
+    the loader ``fetch`` protocol). Any failure — unmapped market, no available
+    source, empty result, symbol absent from the returned map — degrades to
+    ``None`` so the caller can drop the price features rather than raise.
+
+    Args:
+        symbol: Journal symbol, passed to the loader as-is (no cross-market
+            normalization in v1).
+        market: Journal market label (e.g. ``"china_a"``).
+        start: Inclusive fetch start (already buffered for indicator warmup).
+        end: Inclusive fetch end — never later than the roundtrip's buy_dt, so
+            look-ahead is structurally impossible.
+
+    Returns:
+        A ``trade_date``-indexed OHLCV frame, or ``None`` when unavailable.
+    """
+    market_key = _MARKET_KEY_MAP.get(market)
+    if market_key is None:
+        return None
+    try:
+        from backtest.loaders.base import NoAvailableSourceError
+        from backtest.loaders.registry import resolve_loader
+
+        loader = resolve_loader(market_key)
+        data_map = loader.fetch(
+            [symbol],
+            start.strftime("%Y-%m-%d"),
+            end.strftime("%Y-%m-%d"),
+            interval="1D",
+        )
+    except NoAvailableSourceError as exc:
+        logger.debug("No price source for %s (%s): %s", symbol, market, exc)
+        return None
+    except Exception as exc:  # pragma: no cover — loader/network edge cases
+        logger.debug("Price fetch failed for %s (%s): %s", symbol, market, exc)
+        return None
+
+    frame = data_map.get(symbol)
+    if frame is None or frame.empty or "close" not in frame.columns:
+        return None
+    return frame
+
+
+def _as_of_index(frame: pd.DataFrame, buy_dt: pd.Timestamp) -> pd.DataFrame:
+    """Slice a price frame to bars dated on or before *buy_dt*.
+
+    The loader frame is indexed by a tz-naive ``DatetimeIndex`` at day
+    granularity; ``buy_dt`` carries a time-of-day and may be tz-aware. Normalize
+    to a tz-naive date before slicing, otherwise the ``.loc`` comparison raises.
+    """
+    as_of = pd.Timestamp(buy_dt)
+    if as_of.tzinfo is not None:
+        as_of = as_of.tz_localize(None)
+    as_of = as_of.normalize()
+    return frame.loc[:as_of]
+
+
+def _price_features_as_of(
+    frame: pd.DataFrame | None,
+    buy_dt: pd.Timestamp,
+) -> dict[str, float]:
+    """Compute price-context features as-of *buy_dt* from a price frame.
+
+    Every value is read from bars dated ``<= buy_dt`` only; bars in the
+    ``(buy_dt, sell_dt]`` exit window are never consulted. Insufficient history
+    leaves the affected feature as ``NaN``.
+    """
+    out: dict[str, float] = {name: float("nan") for name in _PRICE_FEATURES}
+    if frame is None:
+        return out
+
+    history = _as_of_index(frame, buy_dt)
+    close = history["close"].dropna()
+    if close.empty:
+        return out
+
+    if len(close) >= _RSI_PERIOD:
+        rsi = _compute_rsi(close).iloc[-1]
+        out["entry_rsi14"] = float(rsi) if pd.notna(rsi) else float("nan")
+
+    if len(close) >= _PRIOR_RETURN_WINDOW + 1:
+        ret = close.pct_change(_PRIOR_RETURN_WINDOW).iloc[-1]
+        out["prior_5d_return"] = float(ret) if pd.notna(ret) else float("nan")
+
+    return out
+
+
+def _attach_price_features(
+    rows: list[dict[str, Any]],
+) -> None:
+    """Attach price-context features in place, batching one fetch per symbol.
+
+    Groups roundtrips by symbol, fetches each symbol's price window once over
+    ``[min(buy_dt) - buffer, max(buy_dt)]``, then reads each roundtrip's
+    features as-of its own buy_dt. Mutates each row dict with the price-feature
+    keys (NaN when unavailable).
+    """
+    by_symbol: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_symbol.setdefault(row["symbol"], []).append(row)
+
+    for symbol, sym_rows in by_symbol.items():
+        market = sym_rows[0]["market"]
+        buy_dts = [pd.Timestamp(r["buy_dt"]) for r in sym_rows]
+        end = max(buy_dts)
+        start = min(buy_dts) - pd.Timedelta(days=_PRICE_LOOKBACK_DAYS)
+        if end.tzinfo is not None:
+            end = end.tz_localize(None)
+        if start.tzinfo is not None:
+            start = start.tz_localize(None)
+        frame = _fetch_price_history(symbol, market, start=start, end=end)
+        for row in sym_rows:
+            row.update(_price_features_as_of(frame, pd.Timestamp(row["buy_dt"])))
+
+
 def _compute_features(
     roundtrips: list[dict[str, Any]],
     trades_df: pd.DataFrame,
@@ -133,7 +300,8 @@ def _compute_features(
     """Compute a features row per profitable roundtrip.
 
     Columns: symbol, market, holding_days, pnl, pnl_pct, entry_hour,
-    entry_weekday, buy_dt, sell_dt.
+    entry_weekday, buy_dt, sell_dt, plus price-context features (entry_rsi14,
+    prior_5d_return) read as-of buy_dt — NaN when price data is unavailable.
     """
     market_by_symbol = (
         trades_df.drop_duplicates("symbol").set_index("symbol")["market"].to_dict()
@@ -153,10 +321,30 @@ def _compute_features(
             "buy_dt": buy_dt,
             "sell_dt": sell_dt,
         })
+    _attach_price_features(rows)
     return pd.DataFrame(rows)
 
 
 # ---------------- Cluster + decision-tree rule extraction ----------------
+
+def _promoted_numeric_features(
+    features_df: pd.DataFrame,
+    *,
+    min_support: int,
+) -> tuple[str, ...]:
+    """Return the numeric feature set used for clustering.
+
+    Always includes the journal-derived ``_NUMERIC_FEATURES``. A price feature
+    joins only when it is present (non-NaN) for at least ``min_support`` rows —
+    too-sparse price features are excluded so clustering behaves exactly as the
+    journal-only baseline when price data is largely unavailable.
+    """
+    promoted = list(_NUMERIC_FEATURES)
+    for name in _PRICE_FEATURES:
+        if name in features_df.columns and features_df[name].notna().sum() >= min_support:
+            promoted.append(name)
+    return tuple(promoted)
+
 
 def _extract_rules(
     features_df: pd.DataFrame,
@@ -169,7 +357,10 @@ def _extract_rules(
     if len(features_df) < min_support:
         return [_heuristic_single_rule(features_df, min_support, llm_translator)]
 
-    cluster_labels = _auto_cluster(features_df, max_k=min(max_rules, 5))
+    numeric_features = _promoted_numeric_features(features_df, min_support=min_support)
+    cluster_labels = _auto_cluster(
+        features_df, max_k=min(max_rules, 5), numeric_features=numeric_features,
+    )
     rules: list[ShadowRule] = []
     total_profitable = len(features_df)
     used_markets: set[str] = set()
@@ -199,17 +390,30 @@ def _extract_rules(
     return rules
 
 
-def _auto_cluster(features_df: pd.DataFrame, *, max_k: int) -> np.ndarray:
+def _auto_cluster(
+    features_df: pd.DataFrame,
+    *,
+    max_k: int,
+    numeric_features: tuple[str, ...] = _NUMERIC_FEATURES,
+) -> np.ndarray:
     """Pick a cluster count via simple silhouette heuristic (fallback k=2).
 
-    Uses only numeric features; scales by z-score to avoid holding_days
-    dominating pnl_pct.
+    Uses the supplied numeric features; scales by z-score to avoid any single
+    feature dominating. Promoted price features may carry NaNs for rows whose
+    price data was unavailable; those are median-imputed so the KMeans input is
+    complete and stays row-aligned with ``features_df`` (StandardScaler/KMeans
+    reject NaN). Imputation only affects *grouping* — ``_cluster_to_rule`` never
+    reads price features — so a neutral median cannot distort rule bounds.
     """
     from sklearn.cluster import KMeans
     from sklearn.preprocessing import StandardScaler
 
-    numeric = features_df[list(_NUMERIC_FEATURES)].astype(float).to_numpy()
-    if len(numeric) <= 2 or max_k < 2:
+    numeric_df = features_df[list(numeric_features)].astype(float)
+    numeric_df = numeric_df.fillna(numeric_df.median(numeric_only=True))
+    # A feature that is all-NaN stays NaN after median fill — drop such columns.
+    numeric_df = numeric_df.dropna(axis=1, how="all")
+    numeric = numeric_df.to_numpy()
+    if len(numeric) <= 2 or max_k < 2 or numeric.shape[1] == 0:
         return np.zeros(len(numeric), dtype=int)
     scaled = StandardScaler().fit_transform(numeric)
 

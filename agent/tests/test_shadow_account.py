@@ -38,6 +38,29 @@ from src.shadow_account.extractor import MIN_PROFITABLE_ROUNDTRIPS
 
 # ---------------- Helpers ----------------
 
+@pytest.fixture(autouse=True)
+def _offline_prices(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default every test to an offline price source.
+
+    `_compute_features` now reaches the loader registry for price-context
+    features. Without this, the suite could make real network calls in a
+    connected environment (auth-free loaders like stooq/yahoo). Forcing
+    `resolve_loader` to raise keeps the suite deterministic and network-free;
+    extraction degrades to NaN price features exactly as in production offline.
+    Tests that exercise the price path override this with a fixture loader.
+    """
+    from backtest.loaders.base import NoAvailableSourceError
+
+    def _no_source(market: str):
+        raise NoAvailableSourceError(f"offline test: no source for {market}")
+
+    # Patch at the source module: `_fetch_price_history` imports `resolve_loader`
+    # locally at call time, so the binding to override lives in the registry.
+    monkeypatch.setattr(
+        "backtest.loaders.registry.resolve_loader", _no_source,
+    )
+
+
 def _write_journal(path: Path, rows: list[dict]) -> Path:
     """Write a plain-utf8 Tonghuashun-style CSV the parser can ingest."""
     df = pd.DataFrame(rows)
@@ -595,3 +618,343 @@ def test_attribution_is_zero_without_journal(
     assert result.attribution.noise_trades_pnl == 0.0
     assert result.real_total_pnl == 0.0
     assert result.attribution.counterfactual_trades == ()
+
+
+# ---------------- Price-context features (as-of buy_dt) ----------------
+
+from src.shadow_account.extractor import (  # noqa: E402
+    _MARKET_KEY_MAP,
+    _attach_price_features,
+    _compute_rsi,
+    _price_features_as_of,
+    _promoted_numeric_features,
+)
+
+
+def _price_frame(dates: list[str], closes: list[float]) -> pd.DataFrame:
+    """Build a tz-naive trade_date-indexed OHLCV frame like a loader returns."""
+    idx = pd.to_datetime(dates)
+    return pd.DataFrame(
+        {
+            "open": closes,
+            "high": [c * 1.01 for c in closes],
+            "low": [c * 0.99 for c in closes],
+            "close": closes,
+            "volume": [1_000_000] * len(closes),
+        },
+        index=pd.DatetimeIndex(idx, name="trade_date"),
+    )
+
+
+class _FixtureLoader:
+    """Minimal loader returning a fixed frame for any requested symbol."""
+
+    def __init__(self, frame: pd.DataFrame) -> None:
+        self._frame = frame
+
+    def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+        # Mirror real loaders: only return bars within [start, end].
+        lo, hi = pd.Timestamp(start_date), pd.Timestamp(end_date)
+        sliced = self._frame.loc[lo:hi]
+        return {code: sliced.copy() for code in codes}
+
+
+@pytest.fixture
+def with_price_loader(monkeypatch: pytest.MonkeyPatch):
+    """Override the offline default with a fixture loader the test controls."""
+
+    def _install(frame: pd.DataFrame) -> None:
+        loader = _FixtureLoader(frame)
+        monkeypatch.setattr(
+            "backtest.loaders.registry.resolve_loader", lambda market: loader,
+        )
+
+    return _install
+
+
+@pytest.mark.unit
+def test_compute_rsi_is_causal_and_bounded() -> None:
+    rising = pd.Series(range(1, 40), dtype=float)
+    rsi = _compute_rsi(rising)
+    assert rsi.isna().sum() == 14  # warmup window
+    assert 99.0 <= float(rsi.iloc[-1]) <= 100.0  # monotonic up → RSI ~100
+    # Causality: truncating future bars does not change an earlier RSI value.
+    at_20_full = float(_compute_rsi(rising).iloc[20])
+    at_20_trunc = float(_compute_rsi(rising.iloc[:21]).iloc[-1])
+    assert at_20_full == pytest.approx(at_20_trunc)
+
+
+@pytest.mark.unit
+def test_price_features_as_of_reads_only_past_bars() -> None:
+    dates = [f"2026-02-{d:02d}" for d in range(1, 21)]
+    closes = [10.0 + 0.1 * i for i in range(20)]  # steadily rising
+    frame = _price_frame(dates, closes)
+    buy_dt = pd.Timestamp("2026-02-20 10:30:00")
+
+    feats = _price_features_as_of(frame, buy_dt)
+    assert not pd.isna(feats["entry_rsi14"])
+    # prior_5d_return over a +0.1/step ramp ending at 11.9 vs 5 steps back (11.4)
+    assert feats["prior_5d_return"] == pytest.approx((11.9 - 11.4) / 11.4, rel=1e-6)
+
+
+@pytest.mark.unit
+def test_price_features_no_lookahead_past_buy_dt() -> None:
+    """Appending bars dated after buy_dt must not change feature values."""
+    dates = [f"2026-02-{d:02d}" for d in range(1, 21)]
+    closes = [10.0 + 0.1 * i for i in range(20)]
+    buy_dt = pd.Timestamp("2026-02-20 10:30:00")
+
+    base = _price_features_as_of(_price_frame(dates, closes), buy_dt)
+
+    future_dates = dates + [f"2026-02-{d:02d}" for d in range(21, 26)]
+    future_closes = closes + [99.0, 1.0, 99.0, 1.0, 99.0]  # wild future moves
+    extended = _price_features_as_of(_price_frame(future_dates, future_closes), buy_dt)
+
+    assert extended["entry_rsi14"] == pytest.approx(base["entry_rsi14"])
+    assert extended["prior_5d_return"] == pytest.approx(base["prior_5d_return"])
+
+
+@pytest.mark.unit
+def test_price_features_tz_aware_buy_dt_does_not_raise() -> None:
+    dates = [f"2026-02-{d:02d}" for d in range(1, 21)]
+    closes = [10.0 + 0.1 * i for i in range(20)]
+    frame = _price_frame(dates, closes)
+
+    naive = _price_features_as_of(frame, pd.Timestamp("2026-02-20 10:30:00"))
+    aware = _price_features_as_of(
+        frame, pd.Timestamp("2026-02-20 10:30:00", tz="Asia/Shanghai"),
+    )
+    assert aware["entry_rsi14"] == pytest.approx(naive["entry_rsi14"])
+    assert aware["prior_5d_return"] == pytest.approx(naive["prior_5d_return"])
+
+
+@pytest.mark.unit
+def test_price_features_insufficient_history_is_nan() -> None:
+    frame = _price_frame(["2026-02-01", "2026-02-02", "2026-02-03"], [10.0, 10.1, 10.2])
+    feats = _price_features_as_of(frame, pd.Timestamp("2026-02-03"))
+    assert pd.isna(feats["entry_rsi14"])  # <14 closes
+    assert pd.isna(feats["prior_5d_return"])  # <6 closes
+
+
+@pytest.mark.unit
+def test_attach_price_features_unmapped_market_is_nan() -> None:
+    rows = [{"symbol": "X", "market": "other", "buy_dt": pd.Timestamp("2026-02-20")}]
+    _attach_price_features(rows)  # "other" has no registry mapping → no fetch
+    assert pd.isna(rows[0]["entry_rsi14"])
+    assert pd.isna(rows[0]["prior_5d_return"])
+
+
+@pytest.mark.unit
+def test_extract_with_price_features_promotes_into_clustering(
+    profitable_journal: Path, with_price_loader, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 60 daily bars so RSI(14) + prior-5d are well-defined as-of every buy_dt.
+    dates = pd.bdate_range("2025-12-01", periods=60).strftime("%Y-%m-%d").tolist()
+    closes = [10.0 + 0.05 * i for i in range(60)]
+    with_price_loader(_price_frame(dates, closes))
+
+    # Capture what `_compute_features` produced and which numeric features the
+    # clusterer was actually handed — a rule count alone can't prove promotion.
+    import src.shadow_account.extractor as extractor
+
+    captured: dict[str, object] = {}
+    orig_features = extractor._compute_features
+    orig_cluster = extractor._auto_cluster
+
+    def spy_features(roundtrips, trades_df):
+        df = orig_features(roundtrips, trades_df)
+        captured["features_df"] = df
+        return df
+
+    def spy_cluster(features_df, *, max_k, numeric_features=extractor._NUMERIC_FEATURES):
+        captured["numeric_features"] = numeric_features
+        return orig_cluster(
+            features_df, max_k=max_k, numeric_features=numeric_features,
+        )
+
+    monkeypatch.setattr(extractor, "_compute_features", spy_features)
+    monkeypatch.setattr(extractor, "_auto_cluster", spy_cluster)
+
+    profile = extract_shadow_profile(profitable_journal, min_support=2)
+    assert isinstance(profile, ShadowProfile)
+    assert len(profile.rules) >= 1
+
+    # Price columns were actually attached and populated (not all-NaN)...
+    fdf = captured["features_df"]
+    assert "entry_rsi14" in fdf.columns and "prior_5d_return" in fdf.columns
+    assert fdf["entry_rsi14"].notna().any()
+    assert fdf["prior_5d_return"].notna().any()
+    # ...and both were promoted into the clustering feature set.
+    numeric = captured["numeric_features"]
+    assert "entry_rsi14" in numeric
+    assert "prior_5d_return" in numeric
+
+
+@pytest.mark.unit
+def test_sparse_price_features_fall_back_to_journal_only(
+    profitable_journal: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With prices offline (autouse), promotion is skipped and rules still form."""
+    import src.shadow_account.extractor as extractor
+
+    captured: dict[str, object] = {}
+    orig_cluster = extractor._auto_cluster
+
+    def spy_cluster(features_df, *, max_k, numeric_features=extractor._NUMERIC_FEATURES):
+        captured["numeric_features"] = numeric_features
+        return orig_cluster(
+            features_df, max_k=max_k, numeric_features=numeric_features,
+        )
+
+    monkeypatch.setattr(extractor, "_auto_cluster", spy_cluster)
+
+    profile = extract_shadow_profile(profitable_journal, min_support=2)
+    assert len(profile.rules) >= 1
+    # No price source → no price feature promoted → journal-only clustering.
+    assert tuple(captured["numeric_features"]) == extractor._NUMERIC_FEATURES
+
+
+@pytest.mark.unit
+def test_promoted_features_threshold() -> None:
+    df = pd.DataFrame({
+        "holding_days": [1.0, 2.0, 3.0, 4.0],
+        "pnl_pct": [0.1, 0.2, 0.1, 0.2],
+        "entry_hour": [10, 11, 10, 11],
+        "entry_weekday": [1, 2, 3, 4],
+        "entry_rsi14": [55.0, 60.0, float("nan"), float("nan")],  # 2 present
+        "prior_5d_return": [0.01, 0.02, 0.03, 0.04],  # 4 present
+    })
+    promoted = _promoted_numeric_features(df, min_support=3)
+    assert "prior_5d_return" in promoted  # 4 >= 3
+    assert "entry_rsi14" not in promoted  # 2 < 3
+    assert set(_MARKET_KEY_MAP) == {"china_a", "us", "hk", "crypto"}
+
+
+# ---- Degradation branches in the price-fetch / attach path ----
+
+from src.shadow_account.extractor import (  # noqa: E402
+    _auto_cluster,
+    _fetch_price_history,
+)
+
+
+@pytest.mark.unit
+def test_fetch_price_history_symbol_absent_from_map(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Loader available but returns no entry for the requested symbol → None."""
+
+    class _EmptyMapLoader:
+        def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+            return {}  # symbol not present
+
+    monkeypatch.setattr(
+        "backtest.loaders.registry.resolve_loader", lambda market: _EmptyMapLoader(),
+    )
+    out = _fetch_price_history(
+        "600519", "china_a",
+        start=pd.Timestamp("2026-01-01"), end=pd.Timestamp("2026-02-01"),
+    )
+    assert out is None
+
+
+@pytest.mark.unit
+def test_fetch_price_history_empty_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Loader returns an empty frame for the symbol → None."""
+
+    class _EmptyFrameLoader:
+        def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+            return {c: pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+                    for c in codes}
+
+    monkeypatch.setattr(
+        "backtest.loaders.registry.resolve_loader", lambda market: _EmptyFrameLoader(),
+    )
+    out = _fetch_price_history(
+        "600519", "china_a",
+        start=pd.Timestamp("2026-01-01"), end=pd.Timestamp("2026-02-01"),
+    )
+    assert out is None
+
+
+@pytest.mark.unit
+def test_fetch_price_history_loader_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A loader that raises mid-fetch degrades to None, never propagates."""
+
+    class _BoomLoader:
+        def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr(
+        "backtest.loaders.registry.resolve_loader", lambda market: _BoomLoader(),
+    )
+    out = _fetch_price_history(
+        "600519", "china_a",
+        start=pd.Timestamp("2026-01-01"), end=pd.Timestamp("2026-02-01"),
+    )
+    assert out is None
+
+
+@pytest.mark.unit
+def test_attach_price_features_batches_one_fetch_per_symbol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two roundtrips on the same symbol trigger exactly one loader fetch."""
+    dates = pd.bdate_range("2025-12-01", periods=60).strftime("%Y-%m-%d").tolist()
+    frame = _price_frame(dates, [10.0 + 0.05 * i for i in range(60)])
+
+    calls: list[list[str]] = []
+
+    class _CountingLoader:
+        def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+            calls.append(list(codes))
+            lo, hi = pd.Timestamp(start_date), pd.Timestamp(end_date)
+            return {c: frame.loc[lo:hi].copy() for c in codes}
+
+    monkeypatch.setattr(
+        "backtest.loaders.registry.resolve_loader", lambda market: _CountingLoader(),
+    )
+    rows = [
+        {"symbol": "600519", "market": "china_a", "buy_dt": pd.Timestamp("2026-02-10")},
+        {"symbol": "600519", "market": "china_a", "buy_dt": pd.Timestamp("2026-02-20")},
+    ]
+    _attach_price_features(rows)
+    assert len(calls) == 1  # one symbol → one fetch despite two roundtrips
+    assert all(not pd.isna(r["entry_rsi14"]) for r in rows)
+
+
+@pytest.mark.unit
+def test_auto_cluster_median_imputes_partial_nan() -> None:
+    """A promoted feature with some NaN rows is median-imputed, not crashed."""
+    df = pd.DataFrame({
+        "holding_days": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        "pnl_pct": [0.1, 0.2, 0.1, 0.2, 0.1, 0.2],
+        "entry_hour": [10, 11, 10, 11, 10, 11],
+        "entry_weekday": [1, 2, 3, 4, 0, 1],
+        "prior_5d_return": [0.01, 0.02, float("nan"), 0.04, 0.05, float("nan")],
+    })
+    labels = _auto_cluster(
+        df, max_k=3,
+        numeric_features=("holding_days", "pnl_pct", "entry_hour",
+                          "entry_weekday", "prior_5d_return"),
+    )
+    # No exception (NaN would crash StandardScaler/KMeans); one label per row.
+    assert len(labels) == len(df)
+
+
+@pytest.mark.unit
+def test_auto_cluster_all_nan_feature_is_dropped() -> None:
+    """An all-NaN promoted column is dropped, leaving journal features to cluster."""
+    df = pd.DataFrame({
+        "holding_days": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        "pnl_pct": [0.1, 0.2, 0.1, 0.2, 0.1, 0.2],
+        "entry_hour": [10, 11, 10, 11, 10, 11],
+        "entry_weekday": [1, 2, 3, 4, 0, 1],
+        "entry_rsi14": [float("nan")] * 6,  # all NaN
+    })
+    labels = _auto_cluster(
+        df, max_k=3,
+        numeric_features=("holding_days", "pnl_pct", "entry_hour",
+                          "entry_weekday", "entry_rsi14"),
+    )
+    assert len(labels) == len(df)
+
+
