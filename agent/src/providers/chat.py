@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from src.providers.content_filter import is_content_filter_triggered
 from src.providers.llm import build_llm
 
 
@@ -377,8 +378,8 @@ class ChatLLM:
                 ai_message.response_metadata.get("finish_reason", "stop")
             )
         )
-        content_filter_triggered = (
-            ai_message.response_metadata.get("finish_reason") == "content_filter"
+        content_filter_triggered = is_content_filter_triggered(
+            ai_message.response_metadata.get("finish_reason")
         )
 
         return LLMResponse(

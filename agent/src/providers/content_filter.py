@@ -29,6 +29,37 @@ CONTENT_FILTER_SKIP_MESSAGE = (
     "next one. Do not retry the same content."
 )
 
+# Gemini surfaces content moderation via uppercase FinishReason enum values
+# (SAFETY, RECITATION, BLOCKLIST, ...) instead of OpenAI's lowercase
+# "content_filter". Google's OpenAI-compatible endpoint passes these through
+# unmapped, so the detector must recognise both vocabularies. See issue #307.
+GEMINI_SAFETY_FINISH_REASONS = frozenset({
+    "SAFETY",
+    "RECITATION",
+    "BLOCKLIST",
+    "PROHIBITED_CONTENT",
+    "SPII",
+    "IMAGE_SAFETY",
+    "IMAGE_PROHIBITED_CONTENT",
+    "IMAGE_RECITATION",
+})
+
+
+def is_content_filter_triggered(finish_reason: object) -> bool:
+    """Return True when ``finish_reason`` indicates content moderation blocked the response.
+
+    Recognises both OpenAI's ``"content_filter"`` and Gemini's uppercase
+    safety FinishReason enum (``"SAFETY"``, ``"RECITATION"``, ...). The
+    comparison is case-insensitive on the Gemini side so a provider that
+    lowercases the value still matches. Non-string values (None, missing)
+    return False.
+    """
+    if not isinstance(finish_reason, str):
+        return False
+    if finish_reason == "content_filter":
+        return True
+    return finish_reason.upper() in GEMINI_SAFETY_FINISH_REASONS
+
 
 def get_content_filter_threshold() -> float:
     """Return the configured content-filter warning threshold.
