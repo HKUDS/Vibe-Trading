@@ -724,8 +724,9 @@ class AgentLoop:
 
                 if not response.has_tool_calls:
                     final_content = response.content or ""
-                    # Check if this was a content filter hit — skip and continue
-                    if response.content_filter_triggered:
+                    # Check if this was a content filter hit — skip and continue.
+                    # Use getattr for duck-typed response objects from mock LLMs.
+                    if getattr(response, "content_filter_triggered", False):
                         content_filter_count += 1
                         trace.write({"type": "content_filter_skipped", "iter": current_iter})
                         messages.append({

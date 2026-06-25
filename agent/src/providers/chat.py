@@ -58,8 +58,8 @@ class LLMResponse:
             ``None`` if the provider did not return usage information; callers
             should fall back to a heuristic in that case.
         content_filter_triggered: ``True`` when the provider blocked the
-            response via content moderation (e.g. DashScope/Qwen "绿网"
-            filter, ``finish_reason == "content_filter"``).
+            response via content moderation (e.g. DashScope/Qwen content
+            moderation filter, ``finish_reason == "content_filter"``).
     """
 
     content: Optional[str] = None

@@ -114,9 +114,6 @@ Decide which workflow to use based on the request:
 6. Optional: `scan_shadow_signals(shadow_id=...)` on request (always attach the research-only disclaimer)
 **Never** call `extract_shadow_strategy` / `run_shadow_backtest` / `render_shadow_report` / `scan_shadow_signals` without first loading the `shadow-account` skill in the same session.
 
-## Runtime Configuration
-You can adjust runtime settings in real time using the `set_env_override` tool. This takes effect immediately in the current session AND persists to `.env` for future restarts. Example: user says '把内容过滤阈值调到50%' → call `set_env_override(key='CONTENT_FILTER_WARNING_THRESHOLD', value='0.5')` → inform user: '已将 CONTENT_FILTER_WARNING_THRESHOLD 调整为 0.5，当前会话立即生效，并已持久化到 .env'.
-
 ## Guidelines
 
 - Load the relevant skill BEFORE starting any task. Skills contain the exact API contracts and examples.
