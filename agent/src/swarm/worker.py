@@ -689,6 +689,7 @@ def run_worker(
             error=f"hit iteration limit without a valid deliverable: {reason}",
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,
+            content_filter_warnings=content_filter_warnings,
         )
     _emit(event_callback, "worker_iteration_limit", agent_id, task_id)
     return WorkerResult(
@@ -698,6 +699,7 @@ def run_worker(
         iterations=max_iterations,
         input_tokens=total_input_tokens,
         output_tokens=total_output_tokens,
+        content_filter_warnings=content_filter_warnings,
     )
 
 

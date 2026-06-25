@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from src.providers.chat import LLMResponse
+from src.providers.chat import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmEvent, SwarmTask, WorkerResult
 import src.swarm.worker as worker_mod
 from src.swarm.worker import run_worker
@@ -28,6 +28,12 @@ FINAL_TEXT = (
 class _EmptyRegistry:
     def get_definitions(self) -> list[dict]:
         return []
+
+    def execute(self, name: str, args: dict) -> str:
+        return "ok"
+
+    def get(self, name: str):
+        return None
 
 
 class _ScriptedChatLLM:
@@ -56,6 +62,7 @@ def _run(
     tmp_path: Path,
     llm: _ScriptedChatLLM,
     event_callback=None,
+    max_iterations: int = 5,
 ) -> WorkerResult:
     monkeypatch.setattr(worker_mod, "_STREAM_RETRY_DELAY_S", 0.0)
     agent = SwarmAgentSpec(
@@ -64,7 +71,7 @@ def _run(
         system_prompt="You synthesize upstream findings.",
         tools=[],
         skills=[],
-        max_iterations=5,
+        max_iterations=max_iterations,
         timeout_seconds=60,
     )
     task = SwarmTask(id="t1", agent_id="analyst", prompt_template="Summarize.")
@@ -167,3 +174,35 @@ def test_no_content_filter_uses_existing_finalization(monkeypatch, tmp_path):
     assert llm.calls == 1
     cf_events = [e for e in events if e.type == "content_filter_skipped"]
     assert len(cf_events) == 0
+
+
+def _tool_response(idx: int) -> LLMResponse:
+    return LLMResponse(
+        content="searching...",
+        tool_calls=[ToolCallRequest(id=f"tc{idx}", name="web_search", arguments={"q": "test"})],
+    )
+
+
+def test_content_filter_warning_in_result(monkeypatch, tmp_path):
+    """4/10 iterations content-filtered (40%) -> WorkerResult.content_filter_warnings contains warning."""
+    responses = [
+        LLMResponse(content="", content_filter_triggered=True) if i < 4 else _tool_response(i)
+        for i in range(10)
+    ]
+    llm = _ScriptedChatLLM(responses)
+
+    result = _run(monkeypatch, tmp_path, llm, max_iterations=10)
+
+    assert len(result.content_filter_warnings) == 1
+    assert "4/10" in result.content_filter_warnings[0]
+    assert "40%" in result.content_filter_warnings[0]
+
+
+def test_content_filter_no_warning_below_threshold(monkeypatch, tmp_path):
+    """0/10 iterations content-filtered -> WorkerResult.content_filter_warnings is empty."""
+    responses = [_tool_response(i) for i in range(10)]
+    llm = _ScriptedChatLLM(responses)
+
+    result = _run(monkeypatch, tmp_path, llm, max_iterations=10)
+
+    assert result.content_filter_warnings == []

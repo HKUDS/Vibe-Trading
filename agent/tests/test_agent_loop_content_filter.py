@@ -11,7 +11,7 @@ from typing import Any, Callable
 
 import pytest
 
-from src.providers.chat import LLMResponse
+from src.providers.chat import LLMResponse, ToolCallRequest
 
 
 class _ContentFilterLoopLLM:
@@ -180,3 +180,78 @@ def test_empty_content_no_filter_still_breaks(
     assert len(empty_entries) == 1
     filter_entries = [e for e in trace if e.get("type") == "content_filter_skipped"]
     assert len(filter_entries) == 0
+
+
+class _RatioFilterLoopLLM:
+    """LLM stub producing content_filter on first N calls, tool calls to keep
+    the loop going, then final content on the last call.
+
+    Call pattern (1-indexed):
+      calls 1..filter_count       → content_filter_triggered
+      calls filter_count+1..total-1 → fake tool call (keeps loop alive)
+      call total                  → final content (breaks loop)
+    """
+
+    def __init__(
+        self,
+        filter_count: int,
+        total_iterations: int,
+        final_content: str = "Final answer.",
+    ) -> None:
+        self._filter_count = filter_count
+        self._total = total_iterations
+        self._final_content = final_content
+        self.calls = 0
+
+    def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[Any] | None = None,
+        on_text_chunk: Callable[[str], None] | None = None,
+        on_reasoning_chunk: Callable[[str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> LLMResponse:
+        self.calls += 1
+        if self.calls <= self._filter_count:
+            return LLMResponse(content="", content_filter_triggered=True)
+        if self.calls < self._total:
+            return LLMResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id=f"call_{self.calls}", name="_noop", arguments={}
+                    )
+                ],
+            )
+        if on_text_chunk:
+            on_text_chunk(self._final_content)
+        return LLMResponse(content=self._final_content)
+
+    def chat(self, messages: list[dict[str, Any]], **_: Any) -> LLMResponse:
+        return LLMResponse(content="")
+
+
+def test_content_filter_warning_in_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """5/10 iterations hit content_filter (50%) → warning surfaced in result."""
+    llm = _RatioFilterLoopLLM(filter_count=5, total_iterations=10)
+
+    result = _run(monkeypatch, tmp_path, llm, max_iterations=10)
+
+    assert "content_filter_warnings" in result
+    warnings = result["content_filter_warnings"]
+    assert len(warnings) == 1
+    assert "50%" in warnings[0]
+    assert "provider" in warnings[0].lower()
+
+
+def test_content_filter_no_warning_below_threshold(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """0/10 iterations hit content_filter → no warning key in result."""
+    llm = _ContentFilterLoopLLM(filter_count=0, final_content="Clean run.")
+
+    result = _run(monkeypatch, tmp_path, llm, max_iterations=10)
+
+    assert "content_filter_warnings" not in result

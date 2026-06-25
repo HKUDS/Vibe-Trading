@@ -491,6 +491,7 @@ class BaseEngine(ABC):
             m,
             data_sources=_run_card_data_sources(config, loader),
             strategy_path=run_dir / "code" / "signal_engine.py",
+            warnings=config.get("content_filter_warnings") or None,
         )
 
         # Print scalar metrics (skip nested dicts for JSON compat)
