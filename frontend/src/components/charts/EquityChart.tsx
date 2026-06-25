@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import i18n from "@/i18n";
 import type { EquityPoint } from "@/lib/api";
 import { getChartTheme } from "@/lib/chart-theme";
 import { abbreviateNum } from "@/lib/formatters";
@@ -106,7 +107,7 @@ export function EquityChart({ data, height = 300 }: Props) {
   }, [data, dark]);
 
   if (data.length === 0) {
-    return <div className="text-muted-foreground text-sm p-4">No equity data</div>;
+    return <div className="text-muted-foreground text-sm p-4">{i18n.t("charts.noEquityData")}</div>;
   }
   return <div ref={ref} style={{ height }} />;
 }

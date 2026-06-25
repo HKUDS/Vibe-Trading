@@ -56,7 +56,7 @@ export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }
               className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               <ExternalLink className="h-3 w-3" />
-              Docs
+              {t("pineViewer.docs")}
             </a>
             <button
               onClick={onClose}

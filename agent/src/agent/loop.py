@@ -1,7 +1,7 @@
 """AgentLoop: ReAct core loop.
 
 Five-layer context management:
-  Layer 1 (microcompact)     — silently prunes old tool results each iteration
+  Layer 1 (microcompact)     — prunes old tool results once under memory pressure
   Layer 2 (context_collapse) — folds long text blocks without LLM call (zero cost)
   Layer 3 (auto_compact)     — LLM structured summary with token-budget tail protection
   Layer 4 (compact tool)     — model explicitly calls the compact tool to trigger L3
@@ -51,6 +51,12 @@ STREAM_RETRY_DELAY_S = float(os.getenv("VT_STREAM_RETRY_DELAY_S", "1.0"))
 TOOL_TIMEOUT_SECONDS = float(os.getenv("VIBE_TRADING_TOOL_TIMEOUT_SECONDS", "1800"))
 GOAL_MAX_CONTINUATIONS = int(os.getenv("VIBE_TRADING_GOAL_MAX_CONTINUATIONS", "3"))
 LLM_USAGE_ARTIFACT = "llm_usage.json"
+
+# Layer 1: microcompact only prunes old tool results once the transcript is
+# under real memory pressure. Below this it would clear tool history on every
+# iteration even on short runs, discarding results the model may still need to
+# reference (metrics, file contents, search hits).
+MICROCOMPACT_THRESHOLD = int(TOKEN_THRESHOLD * 0.5)
 
 # Layer 2: Context collapse thresholds
 COLLAPSE_THRESHOLD = int(TOKEN_THRESHOLD * 0.7)
@@ -555,11 +561,19 @@ class AgentLoop:
                     notif_text = "\n".join(f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs)
                     messages.append({"role": "user", "content": f"<background-results>\n{notif_text}\n</background-results>\n\n<system>Continue processing with the background results above.</system>"})
 
-                # Layer 1: microcompact (every iteration)
-                _microcompact(messages)
+                # Estimate transcript size once; each compaction layer below
+                # escalates only when its own token threshold is crossed.
+                tokens = estimate_tokens(messages)
+
+                # Layer 1: microcompact — prune old tool results only under
+                # memory pressure, so short, low-pressure runs keep their full
+                # tool history available for the model to reference instead of
+                # having every result past the most recent few cleared.
+                if tokens > MICROCOMPACT_THRESHOLD:
+                    _microcompact(messages)
+                    tokens = estimate_tokens(messages)
 
                 # Layer 2: context collapse (fold long text, zero API cost)
-                tokens = estimate_tokens(messages)
                 if tokens > COLLAPSE_THRESHOLD:
                     _context_collapse(messages)
                     tokens = estimate_tokens(messages)

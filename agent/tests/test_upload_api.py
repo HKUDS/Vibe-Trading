@@ -69,6 +69,67 @@ def test_loopback_upload_without_browser_origin_still_allowed_when_key_configure
     assert len(_existing_uploads(tmp_path)) == 1
 
 
+def test_remote_same_origin_browser_upload_with_api_key_is_allowed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(api_server, "UPLOADS_DIR", tmp_path)
+    monkeypatch.setattr(api_server, "MAX_UPLOAD_SIZE", 4 * 1024)
+    monkeypatch.setattr(api_server, "_UPLOAD_CHUNK_SIZE", 1024)
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+    remote_client = TestClient(
+        api_server.app,
+        base_url="http://192.168.1.10:8899",
+        client=("192.168.1.20", 50000),
+    )
+
+    response = remote_client.post(
+        "/upload",
+        headers={
+            "Host": "192.168.1.10:8899",
+            "Origin": "http://192.168.1.10:8899",
+            "Sec-Fetch-Site": "same-origin",
+            "Authorization": "Bearer secret",
+        },
+        files={"file": ("note.txt", b"remote", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    assert len(_existing_uploads(tmp_path)) == 1
+
+
+def test_remote_cross_origin_browser_upload_with_api_key_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(api_server, "UPLOADS_DIR", tmp_path)
+    monkeypatch.setattr(api_server, "MAX_UPLOAD_SIZE", 4 * 1024)
+    monkeypatch.setattr(api_server, "_UPLOAD_CHUNK_SIZE", 1024)
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+    remote_client = TestClient(
+        api_server.app,
+        base_url="http://192.168.1.10:8899",
+        client=("192.168.1.20", 50000),
+    )
+
+    response = remote_client.post(
+        "/upload",
+        headers={
+            "Host": "192.168.1.10:8899",
+            "Origin": "https://evil.example",
+            "Sec-Fetch-Site": "same-site",
+            "Authorization": "Bearer secret",
+        },
+        files={"file": ("poc.txt", b"x" * 1024, "text/plain")},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Cross-site request denied"
+    assert _existing_uploads(tmp_path) == []
+
+
 def test_upload_under_limit_succeeds(client: TestClient, tmp_path: Path) -> None:
     payload = b"x" * (2 * 1024)  # 2 KB, well under the 4 KB limit
     response = client.post(

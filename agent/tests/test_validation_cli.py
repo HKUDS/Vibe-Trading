@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import math
 from pathlib import Path
 import tempfile
 
@@ -41,3 +43,42 @@ def test_accepts_existing_directory() -> None:
         parsed = validation._parse_run_dir(["validation", run_dir])
 
     assert parsed == Path(run_dir)
+
+
+def test_main_writes_strict_json_for_non_finite_results(tmp_path: Path, monkeypatch, capsys) -> None:
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (tmp_path / "config.json").write_text('{"initial_cash": 1000}', encoding="utf-8")
+
+    monkeypatch.setattr(validation, "_load_equity", lambda _run_dir: object())
+    monkeypatch.setattr(validation, "_load_trades", lambda _run_dir: [])
+    monkeypatch.setattr(
+        validation,
+        "monte_carlo_test",
+        lambda *_args, **_kwargs: {"actual_sharpe": math.nan},
+    )
+    monkeypatch.setattr(
+        validation,
+        "bootstrap_sharpe_ci",
+        lambda *_args, **_kwargs: {"ci": [math.inf, -math.inf, 1.0]},
+    )
+    monkeypatch.setattr(
+        validation,
+        "walk_forward_analysis",
+        lambda *_args, **_kwargs: {"windows": [{"sharpe": math.nan}]},
+    )
+
+    result = validation.main(tmp_path)
+
+    raw = (artifacts / "validation.json").read_text(encoding="utf-8")
+    stdout = capsys.readouterr().out
+    assert "NaN" not in raw
+    assert "Infinity" not in raw
+    assert "NaN" not in stdout
+    assert "Infinity" not in stdout
+
+    loaded = json.loads(raw)
+    assert loaded == result
+    assert loaded["monte_carlo"]["actual_sharpe"] is None
+    assert loaded["bootstrap"]["ci"] == [None, None, 1.0]
+    assert loaded["walk_forward"]["windows"][0]["sharpe"] is None

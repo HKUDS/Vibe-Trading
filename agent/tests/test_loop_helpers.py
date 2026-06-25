@@ -12,6 +12,7 @@ from src.agent.loop import (
     KEEP_RECENT,
     COLLAPSE_PRESERVE_RECENT,
     COLLAPSE_TEXT_MIN,
+    MICROCOMPACT_THRESHOLD,
     estimate_tokens,
     _microcompact,
     _context_collapse,
@@ -19,6 +20,12 @@ from src.agent.loop import (
     _is_tool_success,
     _normalize_tool_run_dir,
 )
+
+
+def _apply_microcompact_gate(messages: list) -> None:
+    """Mirror AgentLoop layer-1 gate (``loop.py`` ~572-573)."""
+    if estimate_tokens(messages) > MICROCOMPACT_THRESHOLD:
+        _microcompact(messages)
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +108,41 @@ class TestMicrocompact:
         _microcompact(messages)
         assert messages[0]["content"] == "x" * 500
         assert messages[1]["content"] == "x" * 500
+
+
+class TestMicrocompactThresholdGate:
+    """Layer 1 only runs once transcript size crosses MICROCOMPACT_THRESHOLD."""
+
+    def test_no_op_at_or_below_threshold(self) -> None:
+        messages = [{"role": "system", "content": "sys"}]
+        for i in range(KEEP_RECENT + 5):
+            messages.append(
+                {"role": "tool", "content": f"{'x' * 200} result_{i}", "tool_call_id": f"tc_{i}"}
+            )
+
+        assert estimate_tokens(messages) <= MICROCOMPACT_THRESHOLD
+
+        originals = [m["content"] for m in messages]
+        _apply_microcompact_gate(messages)
+        assert [m["content"] for m in messages] == originals
+
+    def test_prunes_above_threshold(self) -> None:
+        messages = [{"role": "system", "content": "sys"}]
+        messages.append({"role": "user", "content": "x" * (MICROCOMPACT_THRESHOLD * 4 + 1000)})
+        for i in range(KEEP_RECENT + 5):
+            messages.append(
+                {"role": "tool", "content": f"{'y' * 200} result_{i}", "tool_call_id": f"tc_{i}"}
+            )
+
+        assert estimate_tokens(messages) > MICROCOMPACT_THRESHOLD
+
+        _apply_microcompact_gate(messages)
+
+        tool_msgs = [m for m in messages if m.get("role") == "tool"]
+        cleared = [m for m in tool_msgs if m["content"] == "[cleared]"]
+        preserved = [m for m in tool_msgs if m["content"] != "[cleared]"]
+        assert len(cleared) == 5
+        assert len(preserved) == KEEP_RECENT
 
 
 # ---------------------------------------------------------------------------

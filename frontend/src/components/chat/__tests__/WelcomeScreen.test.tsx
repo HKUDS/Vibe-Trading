@@ -21,7 +21,7 @@ describe("WelcomeScreen", () => {
 
   it("renders example categories", () => {
     render(<WelcomeScreen onExample={onExample} />);
-    expect(screen.getByText("Multi-Market Backtest")).toBeInTheDocument();
+    expect(screen.getByText("A-Share Backtest")).toBeInTheDocument();
     expect(screen.getByText("Research & Analysis")).toBeInTheDocument();
     expect(screen.getByText("Swarm Teams")).toBeInTheDocument();
   });
@@ -29,7 +29,7 @@ describe("WelcomeScreen", () => {
   it("calls onExample with prompt when an example button is clicked", async () => {
     render(<WelcomeScreen onExample={onExample} />);
     const user = userEvent.setup();
-    await user.click(screen.getByText("Cross-Market Portfolio"));
+    await user.click(screen.getByText("A-Share Portfolio Optimization"));
     expect(onExample).toHaveBeenCalledTimes(1);
     expect(onExample).toHaveBeenCalledWith(
       expect.stringContaining("risk-parity portfolio"),

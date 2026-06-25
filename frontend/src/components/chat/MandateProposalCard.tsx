@@ -90,10 +90,10 @@ function ProfileTile({
           onClick={onAdjustToggle}
           disabled={disabled}
           className="inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-          title="Adjust this mandate"
+          title={i18n.t("mandate.adjustTitle")}
         >
           <SlidersHorizontal className="h-3 w-3" />
-          Adjust
+          {i18n.t("mandate.adjust")}
         </button>
       </div>
 
@@ -139,7 +139,7 @@ function ProfileTile({
                 onAdjustCancel();
               }
             }}
-            placeholder="e.g. keep this but raise the daily cap to 10"
+            placeholder={i18n.t("mandate.adjustPlaceholder")}
             className="w-full rounded-lg border bg-background px-3 py-1.5 text-xs text-foreground outline-none focus:ring-2 focus:ring-primary/30"
           />
           <div className="flex justify-end gap-2">
