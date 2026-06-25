@@ -255,3 +255,16 @@ def test_content_filter_no_warning_below_threshold(
     result = _run(monkeypatch, tmp_path, llm, max_iterations=10)
 
     assert "content_filter_warnings" not in result
+
+
+def test_content_filter_circuit_breaker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """10 consecutive content filters trip the circuit breaker → run fails early."""
+    llm = _ContentFilterLoopLLM(filter_count=15, final_content="Never reached.")
+
+    result = _run(monkeypatch, tmp_path, llm, max_iterations=20)
+
+    assert result["status"] == "failed"
+    assert "circuit_breaker" in result.get("reason", "")
+    assert result["iterations"] <= 11

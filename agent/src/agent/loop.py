@@ -37,6 +37,11 @@ from src.goal.context import (
     goal_progress_tuple,
 )
 from src.providers.chat import ChatLLM, ProviderStreamError
+from src.providers.content_filter import (
+    CONTENT_FILTER_SKIP_MESSAGE,
+    MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS,
+    compute_content_filter_warnings,
+)
 from src.tools.background_tools import get_background_manager
 from src.tools.redaction import redact_payload
 
@@ -532,6 +537,8 @@ class AgentLoop:
         iteration = 0
         final_content = ""
         content_filter_count = 0
+        consecutive_content_filter_count = 0
+        content_filter_circuit_breaker = False
         empty_model_response_iter: int | None = None
         llm_usage_summary = _new_llm_usage_summary(self.llm)
         goal_continuations = 0
@@ -722,22 +729,34 @@ class AgentLoop:
                     )
                     self._emit("thinking_done", {"iter": current_iter, "content": thinking_text[:500]})
 
+                # Content-filter skip: provider blocked the response — continue
+                # to the next iteration instead of finalising on empty/garbage
+                # content.  Checked *before* the tool-call branch so a filtered
+                # response never executes its (likely empty) tool calls.
+                # Use getattr for duck-typed response objects from mock LLMs.
+                if getattr(response, "content_filter_triggered", False):
+                    content_filter_count += 1
+                    consecutive_content_filter_count += 1
+                    if consecutive_content_filter_count >= MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS:
+                        trace.write({
+                            "type": "content_filter_circuit_breaker",
+                            "iter": current_iter,
+                            "count": content_filter_count,
+                        })
+                        content_filter_circuit_breaker = True
+                        break
+                    trace.write({"type": "content_filter_skipped", "iter": current_iter})
+                    messages.append({
+                        "role": "system",
+                        "content": CONTENT_FILTER_SKIP_MESSAGE,
+                    })
+                    continue
+
+                # Not filtered — reset the consecutive-skip counter.
+                consecutive_content_filter_count = 0
+
                 if not response.has_tool_calls:
                     final_content = response.content or ""
-                    # Check if this was a content filter hit — skip and continue.
-                    # Use getattr for duck-typed response objects from mock LLMs.
-                    if getattr(response, "content_filter_triggered", False):
-                        content_filter_count += 1
-                        trace.write({"type": "content_filter_skipped", "iter": current_iter})
-                        messages.append({
-                            "role": "user",
-                            "content": (
-                                "[SYSTEM] The previous response was blocked by content "
-                                "moderation. Skip the current item and continue with the "
-                                "next one. Do not retry the same content."
-                            ),
-                        })
-                        continue
                     if not final_content:
                         empty_model_response_iter = iteration
                         trace.write(
@@ -881,6 +900,14 @@ class AgentLoop:
             final_reason = "cancelled by user"
             state_store.mark_failure(run_dir, final_reason)
             final_status = "cancelled"
+        elif content_filter_circuit_breaker:
+            final_reason = (
+                f"content_filter_circuit_breaker: "
+                f"{MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS} consecutive LLM "
+                "responses were blocked by content moderation"
+            )
+            state_store.mark_failure(run_dir, final_reason)
+            final_status = "failed"
         elif (run_dir / "artifacts" / "metrics.csv").exists() or final_content:
             state_store.mark_success(run_dir)
             final_status = "success"
@@ -924,17 +951,11 @@ class AgentLoop:
         if final_reason is not None:
             result["reason"] = final_reason
 
-        # Content filter ratio tracking
-        total_iterations = max(1, iteration)
-        content_filter_ratio = content_filter_count / total_iterations
-        threshold = float(os.getenv("CONTENT_FILTER_WARNING_THRESHOLD", "0.05"))
-        if content_filter_ratio > threshold:
-            result["content_filter_warnings"] = [
-                f"{content_filter_count}/{total_iterations} LLM responses"
-                f" ({content_filter_ratio:.0%}) were blocked by content moderation."
-                " Consider switching to a provider with less aggressive filtering"
-                " for event-driven analysis."
-            ]
+        cf_warnings = compute_content_filter_warnings(
+            content_filter_count, max(1, iteration),
+        )
+        if cf_warnings:
+            result["content_filter_warnings"] = cf_warnings
 
         return result
 

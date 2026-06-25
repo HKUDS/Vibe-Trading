@@ -257,6 +257,7 @@ def _map_finish_reason(status: str | None) -> str:
         "incomplete": "length",
         "failed": "error",
         "cancelled": "error",
+        "content_filter": "content_filter",
     }.get(status or "completed", "stop")
 
 

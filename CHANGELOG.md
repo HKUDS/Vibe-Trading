@@ -7,6 +7,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Content-filter resilience for event-driven backtests.** When an LLM
+  provider (e.g. DashScope/Qwen) blocks a response via content moderation
+  (`finish_reason == "content_filter"`), the agent loop and swarm worker
+  now skip that iteration and continue instead of breaking on empty
+  content. A configurable ratio threshold
+  (`CONTENT_FILTER_WARNING_THRESHOLD`, default 5%) surfaces a warning in
+  the run result and `run_card.json` recommending a less aggressive
+  provider. A consecutive-skip circuit breaker (10 consecutive blocks)
+  ends the run early to avoid wasting the iteration budget. A preflight
+  check reports the configured threshold. The OpenAI Codex provider now
+  maps `content_filter` status through `_map_finish_reason`.
+
 ### Changed
 
 ### Fixed

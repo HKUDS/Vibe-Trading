@@ -206,3 +206,15 @@ def test_content_filter_no_warning_below_threshold(monkeypatch, tmp_path):
     result = _run(monkeypatch, tmp_path, llm, max_iterations=10)
 
     assert result.content_filter_warnings == []
+
+
+def test_content_filter_circuit_breaker(monkeypatch, tmp_path):
+    """10 consecutive content filters trip the circuit breaker → worker fails early."""
+    responses = [LLMResponse(content="", content_filter_triggered=True) for _ in range(15)]
+    llm = _ScriptedChatLLM(responses)
+
+    result = _run(monkeypatch, tmp_path, llm, max_iterations=20)
+
+    assert result.status == "failed"
+    assert "circuit_breaker" in (result.error or "")
+    assert result.iterations <= 11

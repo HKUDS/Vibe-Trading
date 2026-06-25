@@ -20,6 +20,11 @@ from src.agent.skills import SkillsLoader
 from src.agent.tools import ToolRegistry
 from src.config.schema import AgentConfig
 from src.providers.chat import ChatLLM, LLMResponse, ProviderStreamError
+from src.providers.content_filter import (
+    CONTENT_FILTER_SKIP_MESSAGE,
+    MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS,
+    compute_content_filter_warnings,
+)
 from src.swarm.models import (
     SwarmAgentSpec,
     SwarmEvent,
@@ -66,34 +71,6 @@ def _stream_retry_delay_s() -> float:
 _HEARTBEAT_INTERVAL_S = _heartbeat_interval_s()
 _STREAM_RETRY_DELAY_S = _stream_retry_delay_s()
 _MAX_TOKEN_ESTIMATE = 60_000
-
-
-def _compute_content_filter_warnings(
-    content_filter_count: int, iteration: int,
-) -> list[str]:
-    """Compute content filter warnings based on hit ratio.
-
-    Args:
-        content_filter_count: Number of LLM responses blocked by content
-            moderation so far.
-        iteration: Current (zero-based) iteration index.
-
-    Returns:
-        List of warning strings (empty when below threshold or no hits).
-    """
-    if content_filter_count == 0:
-        return []
-    total_iterations = max(1, iteration + 1)
-    content_filter_ratio = content_filter_count / total_iterations
-    threshold = float(os.getenv("CONTENT_FILTER_WARNING_THRESHOLD", "0.05"))
-    if content_filter_ratio > threshold:
-        return [
-            f"{content_filter_count}/{total_iterations} LLM responses"
-            f" ({content_filter_ratio:.0%}) were blocked by content moderation."
-            " Consider switching to a provider with less aggressive filtering"
-            " for event-driven analysis."
-        ]
-    return []
 
 
 def _emit(
@@ -421,6 +398,7 @@ def run_worker(
     _KEEP_RECENT_TOOLS = 3
     data_tool_calls = 0
     content_filter_count = 0
+    consecutive_content_filter_count = 0
 
     for iteration in range(max_iterations):
         # Microcompact: clear old tool results to prevent token bloat
@@ -446,8 +424,8 @@ def run_worker(
                 iterations=iteration,
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
-                content_filter_warnings=_compute_content_filter_warnings(
-                    content_filter_count, iteration,
+                content_filter_warnings=compute_content_filter_warnings(
+                    content_filter_count, iteration + 1,
                 ),
             )
 
@@ -465,8 +443,8 @@ def run_worker(
                 iterations=iteration,
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
-                content_filter_warnings=_compute_content_filter_warnings(
-                    content_filter_count, iteration,
+                content_filter_warnings=compute_content_filter_warnings(
+                    content_filter_count, iteration + 1,
                 ),
             )
 
@@ -570,8 +548,8 @@ def run_worker(
                 error=error_msg,
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
-                content_filter_warnings=_compute_content_filter_warnings(
-                    content_filter_count, iteration,
+                content_filter_warnings=compute_content_filter_warnings(
+                    content_filter_count, iteration + 1,
                 ),
             )
 
@@ -588,6 +566,33 @@ def run_worker(
         # the next iteration instead of finalising on empty/garbage content.
         if response.content_filter_triggered:
             content_filter_count += 1
+            consecutive_content_filter_count += 1
+            if consecutive_content_filter_count >= MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS:
+                _emit(
+                    event_callback,
+                    "content_filter_circuit_breaker",
+                    agent_id,
+                    task_id,
+                    {"count": content_filter_count},
+                )
+                summary = _resolve_summary(artifact_dir, last_assistant_content or "")
+                _write_summary(artifact_dir, summary)
+                return WorkerResult(
+                    status="failed",
+                    summary=summary,
+                    artifact_paths=_collect_artifacts(artifact_dir),
+                    iterations=iteration + 1,
+                    error=(
+                        f"content_filter_circuit_breaker: "
+                        f"{MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS} consecutive "
+                        "LLM responses were blocked by content moderation"
+                    ),
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
+                    content_filter_warnings=compute_content_filter_warnings(
+                        content_filter_count, iteration + 1,
+                    ),
+                )
             _emit(
                 event_callback,
                 "content_filter_skipped",
@@ -597,13 +602,11 @@ def run_worker(
             )
             messages.append({
                 "role": "system",
-                "content": (
-                    "[SYSTEM] The previous response was blocked by content "
-                    "moderation. Skip the current item and continue with the "
-                    "next one. Do not retry the same content."
-                ),
+                "content": CONTENT_FILTER_SKIP_MESSAGE,
             })
             continue
+
+        consecutive_content_filter_count = 0
 
         # If no tool calls, this is the final response
         if not response.has_tool_calls:
@@ -627,8 +630,8 @@ def run_worker(
                     error=f"output contract not met: {reason}",
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
-                    content_filter_warnings=_compute_content_filter_warnings(
-                        content_filter_count, iteration,
+                    content_filter_warnings=compute_content_filter_warnings(
+                        content_filter_count, iteration + 1,
                     ),
                 )
             _emit(event_callback, "worker_completed", agent_id, task_id, {"iterations": iteration + 1})
@@ -639,8 +642,8 @@ def run_worker(
                 iterations=iteration + 1,
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
-                content_filter_warnings=_compute_content_filter_warnings(
-                    content_filter_count, iteration,
+                content_filter_warnings=compute_content_filter_warnings(
+                    content_filter_count, iteration + 1,
                 ),
             )
 
@@ -699,8 +702,8 @@ def run_worker(
             )
 
     # Content filter ratio tracking
-    content_filter_warnings = _compute_content_filter_warnings(
-        content_filter_count, iteration,
+    content_filter_warnings = compute_content_filter_warnings(
+        content_filter_count, iteration + 1,
     )
 
     # Hit iteration limit — use last meaningful content as summary

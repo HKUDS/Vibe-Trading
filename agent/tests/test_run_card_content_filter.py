@@ -53,7 +53,7 @@ def test_no_content_filter_warnings_yields_empty_warnings(tmp_path: Path) -> Non
     }
     warnings = config.get("content_filter_warnings") or None
 
-    card = write_run_card(
+    write_run_card(
         tmp_path,
         config,
         {"sharpe": 1.2},
