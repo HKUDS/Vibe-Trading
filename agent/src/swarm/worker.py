@@ -68,6 +68,34 @@ _STREAM_RETRY_DELAY_S = _stream_retry_delay_s()
 _MAX_TOKEN_ESTIMATE = 60_000
 
 
+def _compute_content_filter_warnings(
+    content_filter_count: int, iteration: int,
+) -> list[str]:
+    """Compute content filter warnings based on hit ratio.
+
+    Args:
+        content_filter_count: Number of LLM responses blocked by content
+            moderation so far.
+        iteration: Current (zero-based) iteration index.
+
+    Returns:
+        List of warning strings (empty when below threshold or no hits).
+    """
+    if content_filter_count == 0:
+        return []
+    total_iterations = max(1, iteration + 1)
+    content_filter_ratio = content_filter_count / total_iterations
+    threshold = float(os.getenv("CONTENT_FILTER_WARNING_THRESHOLD", "0.05"))
+    if content_filter_ratio > threshold:
+        return [
+            f"{content_filter_count}/{total_iterations} LLM responses"
+            f" ({content_filter_ratio:.0%}) were blocked by content moderation."
+            " Consider switching to a provider with less aggressive filtering"
+            " for event-driven analysis."
+        ]
+    return []
+
+
 def _emit(
     callback: Callable[[SwarmEvent], None] | None,
     event_type: str,
@@ -418,6 +446,9 @@ def run_worker(
                 iterations=iteration,
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
+                content_filter_warnings=_compute_content_filter_warnings(
+                    content_filter_count, iteration,
+                ),
             )
 
         # Check token estimate
@@ -434,6 +465,9 @@ def run_worker(
                 iterations=iteration,
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
+                content_filter_warnings=_compute_content_filter_warnings(
+                    content_filter_count, iteration,
+                ),
             )
 
         # Inject wrap-up nudge when approaching iteration limit
@@ -536,6 +570,9 @@ def run_worker(
                 error=error_msg,
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
+                content_filter_warnings=_compute_content_filter_warnings(
+                    content_filter_count, iteration,
+                ),
             )
 
         # Accumulate token counts
@@ -590,6 +627,9 @@ def run_worker(
                     error=f"output contract not met: {reason}",
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
+                    content_filter_warnings=_compute_content_filter_warnings(
+                        content_filter_count, iteration,
+                    ),
                 )
             _emit(event_callback, "worker_completed", agent_id, task_id, {"iterations": iteration + 1})
             return WorkerResult(
@@ -599,6 +639,9 @@ def run_worker(
                 iterations=iteration + 1,
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
+                content_filter_warnings=_compute_content_filter_warnings(
+                    content_filter_count, iteration,
+                ),
             )
 
         # Append assistant message with tool calls
@@ -656,16 +699,9 @@ def run_worker(
             )
 
     # Content filter ratio tracking
-    total_iterations = max(1, iteration + 1)
-    content_filter_ratio = content_filter_count / total_iterations
-    threshold = float(os.getenv("CONTENT_FILTER_WARNING_THRESHOLD", "0.05"))
-
-    content_filter_warnings: list[str] = []
-    if content_filter_ratio > threshold:
-        content_filter_warnings = [
-            f"{content_filter_count}/{total_iterations} LLM responses ({content_filter_ratio:.0%}) were blocked by content moderation. "
-            f"Consider switching to a provider with less aggressive filtering for event-driven analysis."
-        ]
+    content_filter_warnings = _compute_content_filter_warnings(
+        content_filter_count, iteration,
+    )
 
     # Hit iteration limit — use last meaningful content as summary
     summary = _best_summary(messages, last_assistant_content) or f"Worker hit iteration limit ({max_iterations} iterations)"
