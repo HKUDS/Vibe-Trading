@@ -213,3 +213,4 @@ class WorkerResult(BaseModel):
     error: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    content_filter_warnings: list[str] = Field(default_factory=list)

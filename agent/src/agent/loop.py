@@ -531,6 +531,7 @@ class AgentLoop:
 
         iteration = 0
         final_content = ""
+        content_filter_count = 0
         empty_model_response_iter: int | None = None
         llm_usage_summary = _new_llm_usage_summary(self.llm)
         goal_continuations = 0
@@ -723,6 +724,19 @@ class AgentLoop:
 
                 if not response.has_tool_calls:
                     final_content = response.content or ""
+                    # Check if this was a content filter hit — skip and continue
+                    if response.content_filter_triggered:
+                        content_filter_count += 1
+                        trace.write({"type": "content_filter_skipped", "iter": current_iter})
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "[SYSTEM] The previous response was blocked by content "
+                                "moderation. Skip the current item and continue with the "
+                                "next one. Do not retry the same content."
+                            ),
+                        })
+                        continue
                     if not final_content:
                         empty_model_response_iter = iteration
                         trace.write(
@@ -908,6 +922,19 @@ class AgentLoop:
         }
         if final_reason is not None:
             result["reason"] = final_reason
+
+        # Content filter ratio tracking
+        total_iterations = max(1, iteration)
+        content_filter_ratio = content_filter_count / total_iterations
+        threshold = float(os.getenv("CONTENT_FILTER_WARNING_THRESHOLD", "0.05"))
+        if content_filter_ratio > threshold:
+            result["content_filter_warnings"] = [
+                f"{content_filter_count}/{total_iterations} LLM responses"
+                f" ({content_filter_ratio:.0%}) were blocked by content moderation."
+                " Consider switching to a provider with less aggressive filtering"
+                " for event-driven analysis."
+            ]
+
         return result
 
     # -- Tool execution with read/write batching --------------------------------

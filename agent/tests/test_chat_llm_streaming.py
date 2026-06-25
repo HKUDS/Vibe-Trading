@@ -243,3 +243,25 @@ def test_provider_stream_error_retryable_classification(
     err = ProviderStreamError(provider="kimi", model="kimi-k2.6", original=original)
     assert err.status_code == status_code
     assert err.retryable is expected
+
+
+def test_content_filter_triggered_flag() -> None:
+    """content_filter finish_reason sets content_filter_triggered=True."""
+    response = ChatLLM._parse_response(
+        _FakeChunk(content="", finish_reason="content_filter")
+    )
+
+    assert response.content == ""
+    assert response.finish_reason == "content_filter"
+    assert response.content_filter_triggered is True
+
+
+def test_content_filter_triggered_flag_false_on_stop() -> None:
+    """Normal stop reason leaves content_filter_triggered=False."""
+    response = ChatLLM._parse_response(
+        _FakeChunk(content="text", finish_reason="stop")
+    )
+
+    assert response.content == "text"
+    assert response.finish_reason == "stop"
+    assert response.content_filter_triggered is False

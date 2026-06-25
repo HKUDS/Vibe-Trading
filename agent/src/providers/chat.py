@@ -57,6 +57,9 @@ class LLMResponse:
             ``{"input_tokens": int, "output_tokens": int, "total_tokens": int}``.
             ``None`` if the provider did not return usage information; callers
             should fall back to a heuristic in that case.
+        content_filter_triggered: ``True`` when the provider blocked the
+            response via content moderation (e.g. DashScope/Qwen "绿网"
+            filter, ``finish_reason == "content_filter"``).
     """
 
     content: Optional[str] = None
@@ -64,6 +67,7 @@ class LLMResponse:
     reasoning_content: Optional[str] = None
     finish_reason: str = "stop"
     usage_metadata: Optional[Dict[str, int]] = None
+    content_filter_triggered: bool = False
 
     @property
     def has_tool_calls(self) -> bool:
@@ -366,16 +370,22 @@ class ChatLLM:
         dsml_tool_calls = [] if native_tool_calls else _parse_dsml_tool_calls(ai_message.content)
         tool_calls = native_tool_calls or dsml_tool_calls
 
+        finish_reason = (
+            "tool_calls"
+            if dsml_tool_calls
+            else _dedupe_finish_reason(
+                ai_message.response_metadata.get("finish_reason", "stop")
+            )
+        )
+        content_filter_triggered = (
+            ai_message.response_metadata.get("finish_reason") == "content_filter"
+        )
+
         return LLMResponse(
             content="" if dsml_tool_calls else ai_message.content,
             tool_calls=tool_calls,
             reasoning_content=ai_message.additional_kwargs.get("reasoning_content"),
-            finish_reason=(
-                "tool_calls"
-                if dsml_tool_calls
-                else _dedupe_finish_reason(
-                    ai_message.response_metadata.get("finish_reason", "stop")
-                )
-            ),
+            finish_reason=finish_reason,
             usage_metadata=usage,
+            content_filter_triggered=content_filter_triggered,
         )

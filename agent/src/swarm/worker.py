@@ -392,6 +392,7 @@ def run_worker(
 
     _KEEP_RECENT_TOOLS = 3
     data_tool_calls = 0
+    content_filter_count = 0
 
     for iteration in range(max_iterations):
         # Microcompact: clear old tool results to prevent token bloat
@@ -546,6 +547,27 @@ def run_worker(
         if response.content and len(response.content.strip()) > 20:
             last_assistant_content = response.content
 
+        # Content-filter skip: provider blocked the response — continue to
+        # the next iteration instead of finalising on empty/garbage content.
+        if response.content_filter_triggered:
+            content_filter_count += 1
+            _emit(
+                event_callback,
+                "content_filter_skipped",
+                agent_id,
+                task_id,
+                {"iteration": iteration, "content_filter_count": content_filter_count},
+            )
+            messages.append({
+                "role": "system",
+                "content": (
+                    "[SYSTEM] The previous response was blocked by content "
+                    "moderation. Skip the current item and continue with the "
+                    "next one. Do not retry the same content."
+                ),
+            })
+            continue
+
         # If no tool calls, this is the final response
         if not response.has_tool_calls:
             summary = response.content or last_assistant_content or "(no summary)"
@@ -632,6 +654,18 @@ def run_worker(
             messages.append(
                 ContextBuilder.format_tool_result(tc.id, tc.name, result[:10_000])
             )
+
+    # Content filter ratio tracking
+    total_iterations = max(1, iteration + 1)
+    content_filter_ratio = content_filter_count / total_iterations
+    threshold = float(os.getenv("CONTENT_FILTER_WARNING_THRESHOLD", "0.05"))
+
+    content_filter_warnings: list[str] = []
+    if content_filter_ratio > threshold:
+        content_filter_warnings = [
+            f"{content_filter_count}/{total_iterations} LLM responses ({content_filter_ratio:.0%}) were blocked by content moderation. "
+            f"Consider switching to a provider with less aggressive filtering for event-driven analysis."
+        ]
 
     # Hit iteration limit — use last meaningful content as summary
     summary = _best_summary(messages, last_assistant_content) or f"Worker hit iteration limit ({max_iterations} iterations)"
