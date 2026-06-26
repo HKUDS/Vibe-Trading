@@ -131,7 +131,19 @@ class PlatformManager:
         # None found, create a new session
         adapter = self._adapters.get(incoming.platform)
         display_name = getattr(adapter, "display_name", incoming.platform.capitalize())
-        title = f"{display_name} 会话 ({incoming.chat_id[:8]})"
+        
+        # 自动将会话标题从首条真实消息生成
+        clean_content = " ".join(incoming.content.split())
+        for prefix in ("/goal", "/plan", "/research", "/run"):
+            if clean_content.lower().startswith(prefix):
+                clean_content = clean_content[len(prefix):].strip()
+                break
+        
+        if clean_content:
+            title = f"💬 {clean_content[:15]}..." if len(clean_content) > 15 else f"💬 {clean_content}"
+        else:
+            title = f"{display_name} 会话 ({incoming.chat_id[:8]})"
+            
         config = {
             "platform": incoming.platform,
             "platform_chat_id": incoming.chat_id,
