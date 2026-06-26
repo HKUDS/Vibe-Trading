@@ -475,6 +475,12 @@ def main(run_dir: Path) -> None:
             fields=config.get("extra_fields") or None,
             interval=interval,
         )
+        if data_map and len(data_map) < len(codes):
+            missing = set(codes) - set(data_map.keys())
+            logger.warning(
+                "source=%s returned data for %d/%d symbols; missing: %s",
+                source, len(data_map), len(codes), missing,
+            )
         # Runtime fallback: try next sources in chain when primary returns empty
         if not data_map and codes:
             market = _detect_market(codes[0])

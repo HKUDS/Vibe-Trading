@@ -9,11 +9,40 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from backtest.loaders._symbol_utils import _ETF_PREFIXES, _is_etf_listed
 from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.registry import register
 
 
 TUSHARE_TOKEN_PLACEHOLDERS = {"", "your-tushare-token"}
+
+
+def _is_index(code: str) -> bool:
+    """Detect A-share index symbols (000xxx.SH, 000300.SH, 399xxx.SZ)."""
+    upper = code.upper()
+    if upper.endswith(".SH"):
+        digits = upper.split(".")[0]
+        return len(digits) == 6 and digits.isdigit() and digits.startswith("000")
+    if upper.endswith(".SZ"):
+        digits = upper.split(".")[0]
+        return len(digits) == 6 and digits.isdigit() and digits.startswith("399")
+    return False
+
+
+def _is_hk_equity(code: str) -> bool:
+    """Detect Hong Kong equity symbols (e.g. 00700.HK)."""
+    return code.upper().endswith(".HK")
+
+
+def _is_us_equity(code: str) -> bool:
+    """Detect US equity symbols (e.g. AAPL.US)."""
+    return code.upper().endswith(".US")
+
+
+def _is_crypto(code: str) -> bool:
+    """Detect crypto symbols (e.g. BTC-USDT, ETH/USDT)."""
+    upper = code.upper()
+    return upper.endswith("-USDT") or upper.endswith("/USDT")
 
 
 @register
@@ -102,9 +131,26 @@ class DataLoader:
         start_date: str,
         end_date: str,
     ) -> Optional[pd.DataFrame]:
-        """Fetch and normalize one daily OHLCV frame."""
-        df = self.api.daily(ts_code=code, start_date=start_date, end_date=end_date)
+        """Fetch and normalize one daily OHLCV frame, routing by symbol type."""
+        if _is_us_equity(code) or _is_crypto(code):
+            print(f"[WARN] tushare does not support {code} (US/crypto); skipping")
+            return None
+
+        if _is_etf_listed(code):
+            endpoint_name = "fund_daily"
+            df = self.api.fund_daily(ts_code=code, start_date=start_date, end_date=end_date)
+        elif _is_index(code):
+            endpoint_name = "index_daily"
+            df = self.api.index_daily(ts_code=code, start_date=start_date, end_date=end_date)
+        elif _is_hk_equity(code):
+            endpoint_name = "hk_daily"
+            df = self.api.hk_daily(ts_code=code, start_date=start_date, end_date=end_date)
+        else:
+            endpoint_name = "daily"
+            df = self.api.daily(ts_code=code, start_date=start_date, end_date=end_date)
+
         if df is None or df.empty:
+            print(f"[WARN] tushare returned empty for {code} via {endpoint_name}")
             return None
         df = df.sort_values("trade_date")
         df["trade_date"] = pd.to_datetime(df["trade_date"])
@@ -146,6 +192,15 @@ class DataLoader:
         active_codes = [c for c in codes if c in result]
 
         for code in active_codes:
+            if (
+                _is_etf_listed(code)
+                or _is_index(code)
+                or _is_hk_equity(code)
+                or _is_us_equity(code)
+                or _is_crypto(code)
+            ):
+                # daily_basic is stock-only; skip fundamental enrichment for non-stock symbols
+                continue
             try:
                 basic = self.api.daily_basic(
                     ts_code=code,
@@ -193,6 +248,19 @@ class DataLoader:
         result: Dict[str, pd.DataFrame] = {}
 
         for code in codes:
+            if _is_etf_listed(code):
+                # tushare has no fund_mins endpoint; ETF intraday is unavailable
+                print(f"[WARN] tushare does not support intraday data for {code} (ETF); skipping")
+                continue
+            if _is_index(code) or _is_hk_equity(code) or _is_us_equity(code) or _is_crypto(code):
+                sym_type = (
+                    "index" if _is_index(code)
+                    else "HK" if _is_hk_equity(code)
+                    else "US" if _is_us_equity(code)
+                    else "crypto"
+                )
+                print(f"[WARN] tushare does not support intraday data for {code} ({sym_type}); skipping")
+                continue
             try:
                 df = self.api.stk_mins(ts_code=code, freq=freq, start_date=sd, end_date=ed)
                 if df is None or df.empty:
