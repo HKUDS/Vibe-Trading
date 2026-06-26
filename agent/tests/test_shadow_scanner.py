@@ -119,3 +119,66 @@ def test_scan_today_signals_respects_per_market_cap() -> None:
     )
 
     assert [match["symbol"] for match in matches] == ["AAPL", "MSFT"]
+
+
+def _ramp(n: int, start: float, step: float) -> list[float]:
+    """Monotonic close series of length n — drives RSI toward an extreme."""
+    return [start + step * i for i in range(n)]
+
+
+@pytest.mark.unit
+def test_scan_today_signals_matches_rsi_range_condition() -> None:
+    """An RSI ``{min,max}`` bound must be honored by the scanner (PR #314).
+
+    Before the fix, ``entry_rsi14`` mapped to no feature and the bound was
+    silently dropped; a steady uptrend pins RSI near 100 and should match a
+    wide [50, 100] band.
+    """
+    profile = _profile({"market": "us", "entry_rsi14": {"min": 50.0, "max": 100.0}})
+    closes = _ramp(20, 10.0, 0.2)  # >= 14 bars so RSI is defined
+    target = pd.Timestamp("2026-04-01") + pd.Timedelta(days=len(closes) - 1)
+    frames = {"AAPL": _bars(closes)}
+
+    matches = scan_today_signals(profile, target_date=target.date(), price_frames=frames)
+
+    assert [m["symbol"] for m in matches] == ["AAPL"]
+
+
+@pytest.mark.unit
+def test_scan_today_signals_rejects_out_of_band_rsi() -> None:
+    """A steady uptrend (RSI ~100) must fail a low-RSI [0, 30] band."""
+    profile = _profile({"market": "us", "entry_rsi14": {"min": 0.0, "max": 30.0}})
+    closes = _ramp(20, 10.0, 0.2)
+    target = pd.Timestamp("2026-04-01") + pd.Timedelta(days=len(closes) - 1)
+    frames = {"AAPL": _bars(closes)}
+
+    assert scan_today_signals(profile, target_date=target.date(), price_frames=frames) == []
+
+
+@pytest.mark.unit
+def test_scan_today_signals_honors_prior_return_dict_band() -> None:
+    """``prior_5d_return`` as a ``{min,max}`` dict must range-check momentum.
+
+    Before the fix the dict reached ``_to_float`` and returned ``None`` → the
+    bound was skipped. The 5-day return here is 11.4/10 - 1 = 0.14, inside the
+    band; a too-high floor must reject it.
+    """
+    closes = [10, 10.2, 10.4, 10.5, 10.7, 11.4]
+    frames = {"AAPL": _bars(closes)}
+
+    inside = _profile({"market": "us", "prior_5d_return": {"min": 0.10, "max": 0.20}})
+    assert [m["symbol"] for m in scan_today_signals(
+        inside, target_date="2026-04-06", price_frames=frames)] == ["AAPL"]
+
+    outside = _profile({"market": "us", "prior_5d_return": {"min": 0.50, "max": 1.0}})
+    assert scan_today_signals(outside, target_date="2026-04-06", price_frames=frames) == []
+
+
+@pytest.mark.unit
+def test_scan_today_signals_no_match_when_rsi_history_insufficient() -> None:
+    """Too few bars to compute RSI → the RSI-bearing rule cannot match."""
+    profile = _profile({"market": "us", "entry_rsi14": {"min": 0.0, "max": 100.0}})
+    frames = {"AAPL": _bars(_ramp(6, 10.0, 0.2))}  # < 14 bars, RSI undefined
+
+    assert scan_today_signals(profile, target_date="2026-04-06", price_frames=frames) == []
+

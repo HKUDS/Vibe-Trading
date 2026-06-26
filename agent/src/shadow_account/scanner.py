@@ -16,6 +16,8 @@ from src.shadow_account.models import ShadowProfile, ShadowRule
 
 PriceFetcher = Callable[..., pd.DataFrame | None]
 
+_RSI_PERIOD = 14
+
 
 def scan_today_signals(
     profile: ShadowProfile,
@@ -190,7 +192,28 @@ def _compute_features(bars: pd.DataFrame, rule: ShadowRule) -> dict[str, float |
             baseline = volume.iloc[-volume_window - 1:-1].mean()
             if baseline > 0:
                 features["volume_ratio"] = float(volume.iloc[-1] / baseline)
+
+    if len(close) >= _RSI_PERIOD:
+        rsi = _compute_rsi(close).iloc[-1]
+        if pd.notna(rsi):
+            features["entry_rsi14"] = float(rsi)
     return features
+
+
+def _compute_rsi(close: pd.Series, period: int = _RSI_PERIOD) -> pd.Series:
+    """Causal Wilder-EWM RSI.
+
+    Mirrors ``_compute_rsi`` in ``extractor.py`` so the scanner evaluates the
+    same RSI that produced the extracted ``entry_rsi14`` bounds. Causal by
+    construction: ``RSI[t]`` depends only on closes dated ``<= t``.
+    """
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = (-delta).clip(lower=0)
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
+    rs = avg_gain / avg_loss
+    return 100 - 100 / (1 + rs)
 
 
 def _window_from_rule(rule: ShadowRule, default: int) -> int:
@@ -211,6 +234,8 @@ def _feature_for_condition_key(key: str) -> str | None:
     key_lower = str(key).lower()
     if key_lower in {"market", "ma_window", "volume_window"}:
         return None
+    if "rsi" in key_lower:
+        return "entry_rsi14"
     if "above_ma" in key_lower or "price_above" in key_lower or "close_gt_ma" in key_lower:
         return "price_above_ma"
     if "volume" in key_lower or "turnover" in key_lower:
@@ -228,6 +253,14 @@ def _compare(value: float | bool, condition: Any) -> bool:
         if isinstance(condition, str):
             return value == (condition.strip().lower() not in {"false", "0", "no"})
         return value == bool(condition)
+
+    if isinstance(condition, dict):
+        lo, hi = _to_float(condition.get("min")), _to_float(condition.get("max"))
+        if lo is not None and value < lo:
+            return False
+        if hi is not None and value > hi:
+            return False
+        return True
 
     if isinstance(condition, (tuple, list)) and len(condition) >= 2:
         op, threshold = str(condition[0]), _to_float(condition[1])

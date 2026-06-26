@@ -30,13 +30,30 @@ def _market_of(code: str) -> str:
 
 
 class SignalEngine:
-    """Shadow Account signal engine (rule-replay, daily timeframe).
+    """Shadow Account signal engine (conditional entry, daily timeframe).
 
-    For each code we pick the first rule whose market matches, then emit
-    a long signal (= rule.weight) for ``hold_days`` bars every
-    ``2 * hold_days`` bars — a deliberate period-replay of the user's
-    profitable holding cadence. Non-matching codes yield a zero series.
+    For each code we pick the first rule whose market matches, then check
+    per-bar entry conditions: hour window, plus optionally RSI range and
+    prior-return range (read from the rule dict — absent keys skip the
+    check). When all conditions pass we enter a position and hold for the
+    rule's holding days. Non-matching codes yield a zero series.
     """
+
+    @staticmethod
+    def _compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
+        """Causal Wilder-EWM RSI (mirrors ``compute_rsi`` in example_signal_engine.py:13)."""
+        delta = close.diff()
+        gain = delta.clip(lower=0)
+        loss = (-delta).clip(lower=0)
+        avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
+        avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
+        rs = avg_gain / avg_loss
+        return 100 - 100 / (1 + rs)
+
+    @staticmethod
+    def _compute_prior_return(close: pd.Series, window: int = 5) -> pd.Series:
+        """Trailing close-to-close return over *window* bars."""
+        return close.pct_change(window)
 
     def generate(self, data_map: dict) -> dict:
         signals: dict[str, pd.Series] = {}
@@ -44,7 +61,12 @@ class SignalEngine:
             sig = pd.Series(0.0, index=df.index)
             rule = self._pick_rule(code)
             if rule is not None:
-                sig = self._replay_rule(df.index, rule)
+                close = df["close"]
+                rsi = self._compute_rsi(close)
+                prior_ret = self._compute_prior_return(close)
+                sig = self._conditional_entry(
+                    df.index, rsi, prior_ret, rule,
+                )
             signals[code] = sig
         return signals
 
@@ -53,18 +75,49 @@ class SignalEngine:
         for rule in RULES:
             if rule["market"] == market or rule["market"] == "other":
                 return rule
-        # Fallback: first rule, regardless of market match.
         return RULES[0] if RULES else None
 
     @staticmethod
-    def _replay_rule(index: pd.Index, rule: dict) -> pd.Series:
-        hold = max(1, int(rule["hold_days"]))
-        period = max(2, hold * 2)
+    def _conditional_entry(
+        index: pd.Index,
+        rsi: pd.Series,
+        prior_ret: pd.Series,
+        rule: dict,
+    ) -> pd.Series:
+        hold_days = max(1, int(rule["hold_days"]))
+        hour_min = int(rule["entry_hour_min"])
+        hour_max = int(rule["entry_hour_max"])
         weight = float(rule["weight"])
+
+        rsi_min = rule.get("entry_rsi14_min")
+        rsi_max = rule.get("entry_rsi14_max")
+        ret_min = rule.get("prior_5d_return_min")
+        ret_max = rule.get("prior_5d_return_max")
+
         values = [0.0] * len(index)
-        i = 0
-        while i < len(index):
-            for j in range(i, min(i + hold, len(index))):
-                values[j] = weight
-            i += period
+        remaining_hold = 0
+
+        for i in range(len(index)):
+            if remaining_hold > 0:
+                values[i] = weight
+                remaining_hold -= 1
+                continue
+
+            bar_hour = pd.Timestamp(index[i]).hour
+            if bar_hour < hour_min or bar_hour > hour_max:
+                continue
+
+            if rsi_min is not None and rsi_max is not None:
+                rsi_val = rsi.iloc[i]
+                if pd.isna(rsi_val) or rsi_val < rsi_min or rsi_val > rsi_max:
+                    continue
+
+            if ret_min is not None and ret_max is not None:
+                ret_val = prior_ret.iloc[i]
+                if pd.isna(ret_val) or ret_val < ret_min or ret_val > ret_max:
+                    continue
+
+            values[i] = weight
+            remaining_hold = hold_days - 1
+
         return pd.Series(values, index=index)

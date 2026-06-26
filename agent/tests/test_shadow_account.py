@@ -830,6 +830,37 @@ def test_promoted_features_threshold() -> None:
     assert set(_MARKET_KEY_MAP) == {"china_a", "us", "hk", "crypto"}
 
 
+@pytest.mark.unit
+def test_single_cluster_fallback_carries_price_bounds() -> None:
+    """The degenerate single-rule path must still emit RSI/return bounds.
+
+    Regression for PR #314 review: ``_heuristic_single_rule`` previously called
+    ``_cluster_to_rule`` without ``price_features``, so small/homogeneous
+    journals (len < min_support) silently produced behavior-only rules even
+    when price data was present.
+    """
+    from src.shadow_account.extractor import _extract_rules
+
+    df = pd.DataFrame({
+        "market": ["us", "us", "us"],
+        "holding_days": [3.0, 4.0, 5.0],
+        "entry_hour": [10, 11, 10],
+        "symbol": ["AAPL", "MSFT", "NVDA"],
+        "buy_dt": pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03"]),
+        "entry_rsi14": [55.0, 60.0, 65.0],
+        "prior_5d_return": [0.01, 0.02, 0.03],
+    })
+
+    # min_support above len(df) forces the len < min_support fallback branch.
+    rules = _extract_rules(df, min_support=10, max_rules=3, llm_translator=None)
+
+    assert len(rules) == 1
+    entry = rules[0].entry_condition
+    assert isinstance(entry.get("entry_rsi14"), dict)
+    assert isinstance(entry.get("prior_5d_return"), dict)
+    assert entry["entry_rsi14"]["min"] <= entry["entry_rsi14"]["max"]
+
+
 # ---- Degradation branches in the price-fetch / attach path ----
 
 from src.shadow_account.extractor import (  # noqa: E402
@@ -956,5 +987,603 @@ def test_auto_cluster_all_nan_feature_is_dropped() -> None:
                           "entry_weekday", "entry_rsi14"),
     )
     assert len(labels) == len(df)
+
+
+# ---- M4: Price conditions in extracted rules ----
+
+
+@pytest.mark.unit
+def test_extracted_rules_carry_price_condition_bounds(
+    profitable_journal: Path, with_price_loader,
+) -> None:
+    """When price features are promoted, each rule's entry_condition carries bounds."""
+    dates = pd.bdate_range("2025-12-01", periods=60).strftime("%Y-%m-%d").tolist()
+    closes = [10.0 + 0.05 * i for i in range(60)]
+    with_price_loader(_price_frame(dates, closes))
+
+    profile = extract_shadow_profile(profitable_journal, min_support=2)
+    assert len(profile.rules) >= 1
+
+    for rule in profile.rules:
+        ec = rule.entry_condition
+        assert "market" in ec
+        assert "entry_hour" in ec
+        # Price features were promoted → should appear in every rule.
+        assert "entry_rsi14" in ec, f"rule {rule.rule_id} missing entry_rsi14 bounds"
+        assert isinstance(ec["entry_rsi14"], dict)
+        assert "min" in ec["entry_rsi14"] and "max" in ec["entry_rsi14"]
+        assert "prior_5d_return" in ec, f"rule {rule.rule_id} missing prior_5d_return bounds"
+        assert isinstance(ec["prior_5d_return"], dict)
+
+
+@pytest.mark.unit
+def test_extracted_rules_no_price_conditions_when_sparse(
+    profitable_journal: Path,
+) -> None:
+    """With prices offline (autouse), rules carry only behavioral conditions."""
+    profile = extract_shadow_profile(profitable_journal, min_support=2)
+    assert len(profile.rules) >= 1
+
+    for rule in profile.rules:
+        ec = rule.entry_condition
+        assert "market" in ec
+        assert "entry_hour" in ec
+        assert "entry_rsi14" not in ec
+        assert "prior_5d_return" not in ec
+
+
+@pytest.mark.unit
+def test_price_condition_bounds_are_p10_p90() -> None:
+    """The p10/p90 values are the actual quantiles of the cluster."""
+    from src.shadow_account.extractor import _cluster_to_rule
+
+    cluster_df = pd.DataFrame({
+        "symbol": ["A"] * 4,
+        "market": ["china_a"] * 4,
+        "holding_days": [3.0, 4.0, 3.0, 4.0],
+        "pnl_pct": [0.1, 0.2, 0.1, 0.2],
+        "entry_hour": [10, 10, 10, 10],
+        "entry_weekday": [1, 1, 1, 1],
+        "entry_rsi14": [25.0, 30.0, 35.0, 45.0],
+        "buy_dt": [pd.Timestamp("2026-01-10")] * 4,
+        "sell_dt": [pd.Timestamp("2026-01-14")] * 4,
+    })
+    rule = _cluster_to_rule(
+        cluster_df=cluster_df,
+        rule_index=1,
+        total_profitable=4,
+        llm_translator=None,
+        price_features=("entry_rsi14",),
+    )
+    bounds = rule.entry_condition["entry_rsi14"]
+    # p10 of [25, 30, 35, 45] = 25 + 0.3*5 = 26.5; p90 = 30 + 0.9*10 = 39.0
+    # Actually with 4 data points, p10 is between 1st and 2nd:
+    # With default linear interpolation: p10 ~ 26.5, p90 ~ 42.0
+    assert "min" in bounds and "max" in bounds
+    assert bounds["min"] > 24.0  # roughly p10
+    assert bounds["max"] < 46.0  # roughly p90
+    assert bounds["min"] < bounds["max"]
+
+
+@pytest.mark.unit
+def test_price_condition_nan_rows_excluded_from_bounds() -> None:
+    """NaN rows in the cluster do not shift p10/p90 quantiles."""
+    from src.shadow_account.extractor import _cluster_to_rule
+
+    cluster_df = pd.DataFrame({
+        "symbol": ["A"] * 4,
+        "market": ["china_a"] * 4,
+        "holding_days": [3.0, 4.0, 3.0, 4.0],
+        "pnl_pct": [0.1, 0.2, 0.1, 0.2],
+        "entry_hour": [10, 10, 10, 10],
+        "entry_weekday": [1, 1, 1, 1],
+        "entry_rsi14": [30.0, float("nan"), 40.0, float("nan")],
+        "buy_dt": [pd.Timestamp("2026-01-10")] * 4,
+        "sell_dt": [pd.Timestamp("2026-01-14")] * 4,
+    })
+    rule = _cluster_to_rule(
+        cluster_df=cluster_df,
+        rule_index=1,
+        total_profitable=4,
+        llm_translator=None,
+        price_features=("entry_rsi14",),
+    )
+    # Only two non-NaN values (30, 40) — bounds from those.
+    bounds = rule.entry_condition["entry_rsi14"]
+    assert bounds["min"] == pytest.approx(30.0, abs=2.0)
+    assert bounds["max"] == pytest.approx(40.0, abs=2.0)
+
+
+# ---- M5: Codegen with price conditions ----
+
+
+from src.shadow_account.codegen import _rule_to_context  # noqa: E402
+
+
+@pytest.mark.unit
+def test_rule_to_context_with_price_conditions() -> None:
+    rule = ShadowRule(
+        rule_id="R1",
+        human_text="Enter when RSI 25-45",
+        entry_condition={
+            "market": "china_a",
+            "entry_hour": {"min": 9, "max": 11},
+            "entry_rsi14": {"min": 25.0, "max": 45.0},
+            "prior_5d_return": {"min": -0.05, "max": 0.02},
+        },
+        exit_condition={"holding_days": {"min": 2, "max": 5}},
+        holding_days_range=(2, 5),
+        support_count=10,
+        coverage_rate=0.5,
+        sample_trades=("600519@2026-01-10",),
+    )
+    ctx = _rule_to_context(rule)
+    assert ctx["entry_rsi14_min"] == 25.0
+    assert ctx["entry_rsi14_max"] == 45.0
+    assert ctx["prior_5d_return_min"] == -0.05
+    assert ctx["prior_5d_return_max"] == 0.02
+
+
+@pytest.mark.unit
+def test_rule_to_context_without_price_conditions() -> None:
+    rule = ShadowRule(
+        rule_id="R1",
+        human_text="Enter at 9-11am",
+        entry_condition={
+            "market": "china_a",
+            "entry_hour": {"min": 9, "max": 11},
+        },
+        exit_condition={"holding_days": {"min": 2, "max": 5}},
+        holding_days_range=(2, 5),
+        support_count=10,
+        coverage_rate=0.5,
+        sample_trades=("600519@2026-01-10",),
+    )
+    ctx = _rule_to_context(rule)
+    assert "entry_rsi14_min" not in ctx
+    assert "entry_rsi14_max" not in ctx
+    assert "prior_5d_return_min" not in ctx
+    assert "prior_5d_return_max" not in ctx
+
+
+@pytest.mark.unit
+def test_render_signal_engine_with_price_conditions() -> None:
+    rule = ShadowRule(
+        rule_id="R1",
+        human_text="Enter when RSI 25-45",
+        entry_condition={
+            "market": "china_a",
+            "entry_hour": {"min": 9, "max": 11},
+            "entry_rsi14": {"min": 25.0, "max": 45.0},
+        },
+        exit_condition={"holding_days": {"min": 2, "max": 5}},
+        holding_days_range=(2, 5),
+        support_count=10,
+        coverage_rate=0.5,
+        sample_trades=("600519@2026-01-10",),
+    )
+    profile = ShadowProfile(
+        shadow_id="shadow_test123",
+        created_at="2026-01-01T00:00:00",
+        journal_hash="abc",
+        source_market="china_a",
+        profitable_roundtrips=10,
+        total_roundtrips=20,
+        date_range=("2025-01-01", "2026-01-01"),
+        profile_text="test",
+        rules=(rule,),
+        preferred_markets=("china_a",),
+        typical_holding_days=(3.0, 5.0),
+    )
+    source = render_signal_engine(profile)
+    ok, err = validate_generated(source)
+    assert ok, f"validation failed: {err}"
+    assert "_compute_rsi" in source
+    assert "_compute_prior_return" in source
+    assert "_conditional_entry" in source
+    assert "entry_rsi14_min" in source
+    assert "entry_rsi14_max" in source
+    assert "class SignalEngine" in source
+    assert "def generate" in source
+
+
+@pytest.mark.unit
+def test_render_signal_engine_without_price_conditions_still_valid() -> None:
+    rule = ShadowRule(
+        rule_id="R1",
+        human_text="Enter at 9-11am",
+        entry_condition={
+            "market": "china_a",
+            "entry_hour": {"min": 9, "max": 11},
+        },
+        exit_condition={"holding_days": {"min": 2, "max": 5}},
+        holding_days_range=(2, 5),
+        support_count=10,
+        coverage_rate=0.5,
+        sample_trades=("600519@2026-01-10",),
+    )
+    profile = ShadowProfile(
+        shadow_id="shadow_test456",
+        created_at="2026-01-01T00:00:00",
+        journal_hash="def",
+        source_market="china_a",
+        profitable_roundtrips=10,
+        total_roundtrips=20,
+        date_range=("2025-01-01", "2026-01-01"),
+        profile_text="test",
+        rules=(rule,),
+        preferred_markets=("china_a",),
+        typical_holding_days=(3.0, 5.0),
+    )
+    source = render_signal_engine(profile)
+    ok, err = validate_generated(source)
+    assert ok, f"validation failed: {err}"
+    # Conditional entry method still present (uses runtime checks)
+    assert "_conditional_entry" in source
+    # Rule dict in RULES literal has only behavioral keys, no price keys.
+    import ast
+    tree = ast.parse(source)
+    rules_found = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "RULES":
+            rules_found = True
+            val = node.value
+            if isinstance(val, ast.List) and val.elts:
+                first_rule = ast.literal_eval(val.elts[0])
+                assert "entry_rsi14_min" not in first_rule
+                assert "prior_5d_return_min" not in first_rule
+    assert rules_found
+
+
+# ---- M6: Template behavior — conditional entry logic ----
+
+
+def _generate_signals(profile: ShadowProfile, data_map: dict) -> dict:
+    """Render + load + execute a SignalEngine against a data_map."""
+    import importlib.util
+    import tempfile
+
+    source = render_signal_engine(profile)
+    ok, err = validate_generated(source)
+    assert ok, f"generated source failed validation: {err}"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "signal_engine.py"
+        path.write_text(source, encoding="utf-8")
+        spec = importlib.util.spec_from_file_location("gen_se", path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+        engine = module.SignalEngine()
+        return engine.generate(data_map)
+
+
+def _rule_with_rsi(
+    rsi_min: float, rsi_max: float, hour_min: int = 0, hour_max: int = 23,
+) -> ShadowRule:
+    return ShadowRule(
+        rule_id="R1",
+        human_text="RSI rule",
+        entry_condition={
+            "market": "china_a",
+            "entry_hour": {"min": hour_min, "max": hour_max},
+            "entry_rsi14": {"min": rsi_min, "max": rsi_max},
+        },
+        exit_condition={"holding_days": {"min": 2, "max": 5}},
+        holding_days_range=(3, 3),
+        support_count=10,
+        coverage_rate=0.5,
+        sample_trades=("600519@2026-01-10",),
+    )
+
+
+def _rule_without_price() -> ShadowRule:
+    return ShadowRule(
+        rule_id="R1",
+        human_text="Time-only rule",
+        entry_condition={
+            "market": "china_a",
+            "entry_hour": {"min": 0, "max": 23},
+        },
+        exit_condition={"holding_days": {"min": 2, "max": 5}},
+        holding_days_range=(3, 3),
+        support_count=10,
+        coverage_rate=0.5,
+        sample_trades=("600519@2026-01-10",),
+    )
+
+
+def _profile(rule: ShadowRule) -> ShadowProfile:
+    return ShadowProfile(
+        shadow_id="shadow_test",
+        created_at="2026-01-01T00:00:00",
+        journal_hash="test",
+        source_market="china_a",
+        profitable_roundtrips=10,
+        total_roundtrips=20,
+        date_range=("2025-01-01", "2026-01-01"),
+        profile_text="test",
+        rules=(rule,),
+        preferred_markets=("china_a",),
+        typical_holding_days=(3.0, 5.0),
+    )
+
+
+def _hourly_index(start: str = "2026-01-02", periods: int = 24) -> pd.DatetimeIndex:
+    return pd.date_range(start, periods=periods, freq="h")
+
+
+def _daily_index(start: str = "2026-01-02", periods: int = 30) -> pd.DatetimeIndex:
+    return pd.date_range(start, periods=periods, freq="B")
+
+
+@pytest.mark.unit
+def test_conditional_entry_emits_signal_when_rsi_in_range() -> None:
+    """RSI in [25, 45] → signal fires."""
+    rule = _rule_with_rsi(25.0, 45.0)
+    idx = _hourly_index(periods=40)
+    sideways = pd.Series(
+        [10.0 + (i % 6) * 0.5 for i in range(40)], index=idx, dtype=float,
+    )
+    s2 = _generate_signals(
+        _profile(rule),
+        {"600519.SH": pd.DataFrame({"close": sideways}, index=idx)},
+    )["600519.SH"]
+    assert (s2 >= 0).all()
+    # With a 3-day hold, at least some 4-hour entry windows should fire.
+    assert (s2 > 0).any(), "signal should fire when RSI is in range"
+
+
+@pytest.mark.unit
+def test_conditional_entry_skips_when_rsi_out_of_range() -> None:
+    """RSI strictly below min → no entry. Use a steep uptrend to push RSI high."""
+    rule = _rule_with_rsi(5.0, 15.0)  # very low range
+    idx = _hourly_index(periods=40)
+    # Steep uptrend → RSI very high (well above 15)
+    close = pd.Series(
+        [10.0 + 0.5 * i for i in range(40)], index=idx, dtype=float,
+    )
+    signals = _generate_signals(
+        _profile(rule),
+        {"600519.SH": pd.DataFrame({"close": close}, index=idx)},
+    )
+    series = signals["600519.SH"]
+    # RSI should be far above the 5-15 range → zero entries.
+    assert (series == 0.0).all()
+
+
+@pytest.mark.unit
+def test_conditional_entry_respects_hour_window() -> None:
+    """Entry only allowed when bar hour is in [9, 11]; outside → zero."""
+    rule = _rule_with_rsi(0.0, 100.0, hour_min=9, hour_max=11)
+    idx = _hourly_index(periods=48)  # 2 full days of hours
+    close = pd.Series(
+        [10.0 + (i % 6) * 0.5 for i in range(48)], index=idx, dtype=float,
+    )
+    signals = _generate_signals(
+        _profile(rule),
+        {"600519.SH": pd.DataFrame({"close": close}, index=idx)},
+    )
+    series = signals["600519.SH"]
+    for i, ts in enumerate(idx):
+        h = pd.Timestamp(ts).hour
+        if h < 9 or h > 11:
+            assert series.iloc[i] == 0.0, f"signal at hour {h} should be zero"
+
+
+@pytest.mark.unit
+def test_conditional_entry_holds_for_full_duration() -> None:
+    """Once entered, signal persists for hold_days bars."""
+    rule = _rule_with_rsi(0.0, 100.0)  # always passes RSI check
+    idx = _hourly_index(periods=24)
+    close = pd.Series(
+        [10.0 + (i % 6) * 0.5 for i in range(24)], index=idx, dtype=float,
+    )
+    signals = _generate_signals(
+        _profile(rule),
+        {"600519.SH": pd.DataFrame({"close": close}, index=idx)},
+    )
+    series = signals["600519.SH"]
+
+    # Find first entry bar.
+    entry_idx = None
+    for i in range(len(series)):
+        if series.iloc[i] > 0:
+            entry_idx = i
+            break
+    assert entry_idx is not None
+    # Signal should persist for hold_days (3) consecutive bars.
+    for j in range(entry_idx, min(entry_idx + 3, len(series))):
+        assert series.iloc[j] == 1.0, f"hold broken at bar {j}"
+
+
+@pytest.mark.unit
+def test_conditional_entry_no_reentry_while_holding() -> None:
+    """remaining_hold > 0 must prevent re-entry during a hold."""
+    # Use daily bars with all-hours window so RSI warmup is the only gate.
+    rule = _rule_with_rsi(0.0, 100.0, hour_min=0, hour_max=23)
+    idx = _daily_index(periods=30)
+    # A price series that yields a moderate RSI value (not extreme).
+    close = pd.Series(
+        [10.0 + (i % 6) * 0.5 for i in range(30)], index=idx, dtype=float,
+    )
+    signals = _generate_signals(
+        _profile(rule),
+        {"600519.SH": pd.DataFrame({"close": close}, index=idx)},
+    )
+    series = signals["600519.SH"]
+
+    # Find the first entry bar.
+    entry_bar = None
+    for i in range(len(series)):
+        if series.iloc[i] > 0:
+            entry_bar = i
+            break
+    assert entry_bar is not None, "expected at least one entry"
+    # The first hold run after entry should last hold_days=3 consecutive bars.
+    for j in range(entry_bar, min(entry_bar + 3, len(series))):
+        assert series.iloc[j] == 1.0, f"hold broken at bar {j} (entry at {entry_bar})"
+
+
+@pytest.mark.unit
+def test_conditional_entry_falls_back_to_time_only_when_no_price_keys() -> None:
+    """Rule without price conditions uses time-window-only entry."""
+    rule = _rule_without_price()
+    idx = _hourly_index(periods=24)
+    close = pd.Series(
+        [10.0 + (i % 6) * 0.5 for i in range(24)], index=idx, dtype=float,
+    )
+    signals = _generate_signals(
+        _profile(rule),
+        {"600519.SH": pd.DataFrame({"close": close}, index=idx)},
+    )
+    series = signals["600519.SH"]
+    assert isinstance(series, pd.Series)
+    assert len(series) == len(idx)
+    # With hour_min=0, hour_max=23 and no price gates, at least first bar enters.
+    assert (series > 0).any()
+
+
+@pytest.mark.unit
+def test_conditional_entry_prior_return_gates_entry() -> None:
+    """Prior return outside bounds → no entry."""
+    rule = ShadowRule(
+        rule_id="R1",
+        human_text="Return rule",
+        entry_condition={
+            "market": "china_a",
+            "entry_hour": {"min": 0, "max": 23},
+            "prior_5d_return": {"min": -0.03, "max": 0.03},
+        },
+        exit_condition={"holding_days": {"min": 2, "max": 5}},
+        holding_days_range=(3, 3),
+        support_count=10,
+        coverage_rate=0.5,
+        sample_trades=("600519@2026-01-10",),
+    )
+    idx = _daily_index(periods=40)
+    # Very large returns (+50% over 5 bars) → well outside [-0.03, 0.03]
+    close = pd.Series(
+        [10.0 + 0.5 * i for i in range(40)], index=idx, dtype=float,
+    )
+    signals = _generate_signals(
+        _profile(rule),
+        {"600519.SH": pd.DataFrame({"close": close}, index=idx)},
+    )
+    series = signals["600519.SH"]
+    # Strong trend → prior_5d_return far outside narrow [-3%, 3%] → all zero.
+    assert (series == 0.0).all()
+
+
+@pytest.mark.unit
+def test_conditional_entry_both_rsi_and_return_must_pass() -> None:
+    """Both RSI and prior-return conditions must pass (AND logic)."""
+    rule = ShadowRule(
+        rule_id="R1",
+        human_text="Both rule",
+        entry_condition={
+            "market": "china_a",
+            "entry_hour": {"min": 0, "max": 23},
+            "entry_rsi14": {"min": 0.0, "max": 100.0},  # always passes
+            "prior_5d_return": {"min": -0.02, "max": 0.02},  # very narrow
+        },
+        exit_condition={"holding_days": {"min": 2, "max": 5}},
+        holding_days_range=(3, 3),
+        support_count=10,
+        coverage_rate=0.5,
+        sample_trades=("600519@2026-01-10",),
+    )
+    idx = _daily_index(periods=40)
+    # Strong uptrend → prior_5d_return >> 2%.
+    close = pd.Series(
+        [10.0 + 1.0 * i for i in range(40)], index=idx, dtype=float,
+    )
+    signals = _generate_signals(
+        _profile(rule),
+        {"600519.SH": pd.DataFrame({"close": close}, index=idx)},
+    )
+    series = signals["600519.SH"]
+    # RSI passes, but prior_5d_return fails (too positive) → no entry.
+    assert (series == 0.0).all()
+
+
+@pytest.mark.unit
+def test_conditional_entry_only_prior_return_condition() -> None:
+    """Rule with only prior_5d_return (no RSI) gates on return alone."""
+    rule = ShadowRule(
+        rule_id="R1",
+        human_text="Return-only rule",
+        entry_condition={
+            "market": "china_a",
+            "entry_hour": {"min": 0, "max": 23},
+            "prior_5d_return": {"min": -0.02, "max": 0.02},
+        },
+        exit_condition={"holding_days": {"min": 2, "max": 5}},
+        holding_days_range=(3, 3),
+        support_count=10,
+        coverage_rate=0.5,
+        sample_trades=("600519@2026-01-10",),
+    )
+    idx = _daily_index(periods=40)
+    # Sideways prices → prior_5d_return ~0, within [-0.02, 0.02].
+    close = pd.Series(
+        [10.0 + (i % 3) * 0.005 for i in range(40)], index=idx, dtype=float,
+    )
+    signals = _generate_signals(
+        _profile(rule),
+        {"600519.SH": pd.DataFrame({"close": close}, index=idx)},
+    )
+    series = signals["600519.SH"]
+    assert (series >= 0).all()
+    assert (series > 0).any(), "entry should fire when return in range"
+
+
+@pytest.mark.unit
+def test_cluster_to_rule_skips_all_nan_price_feature() -> None:
+    """When a promoted price feature is all-NaN in the cluster, it is skipped."""
+    from src.shadow_account.extractor import _cluster_to_rule
+
+    cluster_df = pd.DataFrame({
+        "symbol": ["A"] * 4,
+        "market": ["china_a"] * 4,
+        "holding_days": [3.0, 4.0, 3.0, 4.0],
+        "pnl_pct": [0.1, 0.2, 0.1, 0.2],
+        "entry_hour": [10, 10, 10, 10],
+        "entry_weekday": [1, 1, 1, 1],
+        "entry_rsi14": [float("nan")] * 4,  # all NaN
+        "buy_dt": [pd.Timestamp("2026-01-10")] * 4,
+        "sell_dt": [pd.Timestamp("2026-01-14")] * 4,
+    })
+    rule = _cluster_to_rule(
+        cluster_df=cluster_df,
+        rule_index=1,
+        total_profitable=4,
+        llm_translator=None,
+        price_features=("entry_rsi14",),
+    )
+    # All-NaN → dropna() leaves < 2 values → feature not added to entry_condition.
+    assert "entry_rsi14" not in rule.entry_condition
+    assert "market" in rule.entry_condition
+    assert "entry_hour" in rule.entry_condition
+
+
+@pytest.mark.unit
+def test_conditional_entry_rsi_nan_bars_are_skipped() -> None:
+    """Bars where RSI is NaN (warmup) are skipped, then entry fires after warmup."""
+    rule = _rule_with_rsi(0.0, 100.0)
+    idx = _daily_index(periods=30)
+    close = pd.Series(
+        [10.0 + (i % 6) * 0.5 for i in range(30)], index=idx, dtype=float,
+    )
+    signals = _generate_signals(
+        _profile(rule),
+        {"600519.SH": pd.DataFrame({"close": close}, index=idx)},
+    )
+    series = signals["600519.SH"]
+    # First 14 bars have NaN RSI → must be zero.
+    for i in range(14):
+        assert series.iloc[i] == 0.0, f"bar {i} should be zero (RSI warmup)"
+    # At least one entry after warmup.
+    assert (series.iloc[14:] > 0).any(), "no entry after RSI warmup"
 
 

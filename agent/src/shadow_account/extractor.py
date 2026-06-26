@@ -354,10 +354,23 @@ def _extract_rules(
     llm_translator: Any | None,
 ) -> list[ShadowRule]:
     """Cluster profitable roundtrips, derive one rule per dense cluster."""
+    available_price_features = tuple(
+        f for f in _PRICE_FEATURES if f in features_df.columns
+    )
     if len(features_df) < min_support:
-        return [_heuristic_single_rule(features_df, min_support, llm_translator)]
+        return [
+            _heuristic_single_rule(
+                features_df,
+                min_support,
+                llm_translator,
+                price_features=available_price_features,
+            )
+        ]
 
     numeric_features = _promoted_numeric_features(features_df, min_support=min_support)
+    promoted_price_features = tuple(
+        f for f in numeric_features if f in _PRICE_FEATURES
+    )
     cluster_labels = _auto_cluster(
         features_df, max_k=min(max_rules, 5), numeric_features=numeric_features,
     )
@@ -375,6 +388,7 @@ def _extract_rules(
             rule_index=len(rules) + 1,
             total_profitable=total_profitable,
             llm_translator=llm_translator,
+            price_features=promoted_price_features,
         )
         # Deduplicate near-identical rules (same market + same holding band)
         key = (rule.entry_condition.get("market"), rule.holding_days_range)
@@ -386,7 +400,14 @@ def _extract_rules(
             break
 
     if not rules:
-        rules = [_heuristic_single_rule(features_df, min_support, llm_translator)]
+        rules = [
+            _heuristic_single_rule(
+                features_df,
+                min_support,
+                llm_translator,
+                price_features=promoted_price_features,
+            )
+        ]
     return rules
 
 
@@ -439,6 +460,7 @@ def _cluster_to_rule(
     rule_index: int,
     total_profitable: int,
     llm_translator: Any | None,
+    price_features: tuple[str, ...] = (),
 ) -> ShadowRule:
     """Summarize a cluster as one ShadowRule.
 
@@ -458,6 +480,13 @@ def _cluster_to_rule(
         "market": market,
         "entry_hour": {"min": hour_lo, "max": hour_hi},
     }
+    for feature in price_features:
+        if feature in cluster_df.columns:
+            series = cluster_df[feature].dropna()
+            if len(series) >= 2:
+                lo = float(round(series.quantile(0.10), 2))
+                hi = float(round(series.quantile(0.90), 2))
+                entry_condition[feature] = {"min": lo, "max": hi}
     exit_condition: dict[str, Any] = {
         "holding_days": {"min": hold_lo, "max": hold_hi},
     }
@@ -492,13 +521,22 @@ def _heuristic_single_rule(
     features_df: pd.DataFrame,
     min_support: int,
     llm_translator: Any | None,
+    *,
+    price_features: tuple[str, ...] = (),
 ) -> ShadowRule:
-    """Degenerate fallback when clustering/tree yield nothing usable."""
+    """Degenerate fallback when clustering/tree yield nothing usable.
+
+    Forwards ``price_features`` so the single-rule path carries the same
+    RSI/return bounds as the multi-cluster path; ``_cluster_to_rule`` already
+    guards on column presence and ``len(series) >= 2``, so sparse data simply
+    yields a behavior-only rule.
+    """
     return _cluster_to_rule(
         cluster_df=features_df,
         rule_index=1,
         total_profitable=max(len(features_df), min_support),
         llm_translator=llm_translator,
+        price_features=price_features,
     )
 
 

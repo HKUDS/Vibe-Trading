@@ -75,7 +75,7 @@ def _rule_to_context(rule: ShadowRule) -> dict[str, Any]:
     hour = rule.entry_condition.get("entry_hour") or {}
     hold_lo, hold_hi = rule.holding_days_range
     hold_days = max(1, int(round((hold_lo + hold_hi) / 2)))
-    return {
+    ctx: dict[str, Any] = {
         "rule_id": rule.rule_id,
         "market": market,
         "entry_hour_min": int(hour.get("min", 0)),
@@ -83,6 +83,15 @@ def _rule_to_context(rule: ShadowRule) -> dict[str, Any]:
         "hold_days": hold_days,
         "weight": float(rule.weight),
     }
+    for feature in ("entry_rsi14", "prior_5d_return"):
+        bounds = rule.entry_condition.get(feature)
+        if isinstance(bounds, dict):
+            lo = bounds.get("min")
+            hi = bounds.get("max")
+            if isinstance(lo, (int, float)) and isinstance(hi, (int, float)):
+                ctx[feature + "_min"] = float(lo)
+                ctx[feature + "_max"] = float(hi)
+    return ctx
 
 
 def render_signal_engine(profile: ShadowProfile) -> str:
