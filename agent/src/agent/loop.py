@@ -14,6 +14,7 @@ Tool execution:
 from __future__ import annotations
 
 import concurrent.futures
+import copy
 import json
 import logging
 import os
@@ -269,6 +270,41 @@ def _normalize_tool_run_dir(args: dict[str, Any], memory_run_dir: str | None) ->
     if not candidate.is_absolute():
         normalized["run_dir"] = str((Path(memory_run_dir) / candidate).resolve())
     return normalized
+
+
+def _attach_tool_call_thought_signatures(message: dict[str, Any], tool_calls: list) -> dict[str, Any]:
+    """Attach Gemini thought signatures to assistant replay tool calls.
+
+    ``tool_calls`` is the parsed response model used by AgentLoop. The assistant
+    replay message also needs raw tool-call copies in ``additional_kwargs`` so
+    LangChain keeps Gemini-specific metadata when dict history is converted back
+    into ``AIMessage`` objects for the next request.
+    """
+    signatures = {
+        tc.id: extra_content["thought_signature"]
+        for tc in tool_calls
+        if (extra_content := getattr(tc, "extra_content", None))
+        and extra_content.get("thought_signature")
+    }
+    if not signatures:
+        return message
+
+    for raw_tool_call in message.get("tool_calls", []):
+        signature = signatures.get(raw_tool_call.get("id"))
+        if signature:
+            raw_tool_call.setdefault("extra_content", {})["thought_signature"] = signature
+
+    additional_kwargs = message.setdefault("additional_kwargs", {})
+    raw_tool_calls = additional_kwargs.setdefault(
+        "tool_calls",
+        copy.deepcopy(message.get("tool_calls", [])),
+    )
+    for raw_tool_call in raw_tool_calls:
+        signature = signatures.get(raw_tool_call.get("id"))
+        if signature:
+            raw_tool_call.setdefault("extra_content", {})["thought_signature"] = signature
+
+    return message
 
 
 class AgentLoop:
@@ -544,11 +580,15 @@ class AgentLoop:
                     react_trace.append({"type": "answer", "content": final_content[:500]})
                     break
 
+                assistant_message = context.format_assistant_tool_calls(
+                    response.tool_calls,
+                    content=response.content,
+                    reasoning_content=response.reasoning_content or thinking_text or None,
+                )
                 messages.append(
-                    context.format_assistant_tool_calls(
+                    _attach_tool_call_thought_signatures(
+                        assistant_message,
                         response.tool_calls,
-                        content=response.content,
-                        reasoning_content=response.reasoning_content or thinking_text or None,
                     )
                 )
 

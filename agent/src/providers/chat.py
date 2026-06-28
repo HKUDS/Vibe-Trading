@@ -31,11 +31,14 @@ class ToolCallRequest:
         id: Tool call ID (used to match tool_result messages).
         name: Tool name.
         arguments: Tool argument dict.
+        extra_content: Provider-specific tool-call metadata that must be
+            replayed with the assistant turn, such as Gemini thought signatures.
     """
 
     id: str
     name: str
     arguments: Dict[str, Any]
+    extra_content: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -159,15 +162,62 @@ class ChatLLM:
                 usage = dict(usage)
             except (TypeError, ValueError):
                 usage = None
+        additional_kwargs = getattr(ai_message, "additional_kwargs", {}) or {}
+        raw_tool_calls = additional_kwargs.get("tool_calls") or []
+        raw_by_id = {
+            raw.get("id"): raw
+            for raw in raw_tool_calls
+            if isinstance(raw, dict) and raw.get("id")
+        }
         return LLMResponse(
             content=ai_message.content,
             tool_calls=[
-                ToolCallRequest(id=tc["id"], name=tc["name"], arguments=tc["args"])
+                ToolCallRequest(
+                    id=tc["id"],
+                    name=tc["name"],
+                    arguments=tc["args"],
+                    extra_content=_merge_tool_call_extra_content(
+                        tc,
+                        raw_by_id.get(tc["id"]),
+                    ),
+                )
                 for tc in ai_message.tool_calls
             ],
-            reasoning_content=ai_message.additional_kwargs.get("reasoning_content"),
+            reasoning_content=additional_kwargs.get("reasoning_content"),
             finish_reason=_dedupe_finish_reason(
                 ai_message.response_metadata.get("finish_reason", "stop")
             ),
             usage_metadata=usage,
         )
+
+
+def _extract_tool_call_extra_content(raw_tool_call: Any) -> Dict[str, Any]:
+    """Extract provider-specific tool-call metadata LangChain would drop."""
+    if not isinstance(raw_tool_call, dict):
+        return {}
+
+    extra_content: Dict[str, Any] = {}
+    raw_extra = raw_tool_call.get("extra_content")
+    if isinstance(raw_extra, dict):
+        extra_content.update(raw_extra)
+
+    function = raw_tool_call.get("function")
+    if isinstance(function, dict):
+        function_extra = function.get("extra_content")
+        if isinstance(function_extra, dict):
+            extra_content.update(function_extra)
+        if function.get("thought_signature"):
+            extra_content["thought_signature"] = function["thought_signature"]
+
+    if raw_tool_call.get("thought_signature"):
+        extra_content["thought_signature"] = raw_tool_call["thought_signature"]
+
+    return extra_content
+
+
+def _merge_tool_call_extra_content(*raw_tool_calls: Any) -> Dict[str, Any]:
+    """Merge provider metadata from standardized and raw tool-call shapes."""
+    extra_content: Dict[str, Any] = {}
+    for raw_tool_call in raw_tool_calls:
+        extra_content.update(_extract_tool_call_extra_content(raw_tool_call))
+    return extra_content
