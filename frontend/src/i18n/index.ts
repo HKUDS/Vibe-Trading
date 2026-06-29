@@ -48,11 +48,10 @@ i18n
       ko: { translation: ko },
       ar: { translation: ar },
     },
-    // Default to English for everyone on first visit; only an explicit toggle
-    // (persisted to localStorage) switches language. After a manual choice
-    // the navigator value can act as a fallback when the saved language is
-    // removed.
-    fallbackLng: "en",
+    // Default to Chinese when no explicit choice is saved and the browser
+    // locale does not match a supported language. An explicit toggle
+    // (persisted to localStorage) always takes precedence.
+    fallbackLng: "zh-CN",
     supportedLngs: SUPPORTED_LANGUAGES.map((l) => l.code),
     // Allow "en-US" → "en", "ja-JP" → "ja", etc.
     nonExplicitSupportedLngs: true,
