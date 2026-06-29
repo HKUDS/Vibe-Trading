@@ -165,7 +165,7 @@ def _make_console() -> Console:
 
     ``force_terminal`` is *not* set: Rich's own ``isatty`` detection is
     correct and forcing it leaks ANSI escapes into ``docker exec -i`` /
-    piped output (nanobot lesson, issue #3265).
+    piped output (prior terminal-rendering lesson, issue #3265).
 
     ``no_color`` honours ``NO_COLOR`` (https://no-color.org).
     """

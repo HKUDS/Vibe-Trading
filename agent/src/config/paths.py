@@ -69,3 +69,14 @@ def get_data_dir(config_path: Path | None = None) -> Path:
     data_dir = get_config_path(config_path).parent
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
+
+
+def get_workspace_path() -> Path:
+    """Return the workspace path for channel state data.
+
+    For channel adapters that need to persist state (e.g. conversation
+    references, auth tokens), this returns ``~/.vibe-trading/workspace``.
+    """
+    p = get_runtime_root() / "workspace"
+    p.mkdir(parents=True, exist_ok=True)
+    return p

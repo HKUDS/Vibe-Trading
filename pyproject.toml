@@ -47,6 +47,7 @@ dependencies = [
     "ccxt>=4.0.0",
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
+    "websockets>=12.0",
     "pydantic>=2.0.0",
     "python-multipart>=0.0.18",
     "sse-starlette>=1.6.0",
@@ -106,6 +107,75 @@ ashare = [
 ]
 harmonic = [
     "pyharmonics>=1.5.0",
+]
+dingtalk = [
+    "dingtalk-stream>=0.24.0",
+]
+discord = [
+    "discord.py>=2.4.0",
+]
+feishu = [
+    "lark-oapi>=1.4.0",
+    "qrcode>=7.4.2",
+]
+matrix = [
+    "aiohttp>=3.9.0",
+    "matrix-nio[e2e]>=0.25.0",
+    "mistune>=3.0.0",
+    "nh3>=0.2.18",
+]
+mochat = [
+    "msgpack>=1.0.0",
+    "python-socketio[asyncio_client]>=5.11.0",
+]
+msteams = [
+    "cryptography>=42.0.0",
+    "PyJWT[crypto]>=2.8.0",
+]
+napcat = [
+    "aiohttp>=3.9.0",
+    "websockets>=12.0",
+]
+qq = [
+    "aiohttp>=3.9.0",
+    "qq-botpy>=1.2.0",
+]
+slack = [
+    "slack-sdk>=3.33.0",
+    "slackify-markdown>=4.4.0",
+]
+telegram = [
+    "python-telegram-bot>=21.0",
+]
+wecom = [
+    "wecom-aibot-sdk>=1.0.0",
+]
+weixin = [
+    "qrcode>=7.4.2",
+]
+whatsapp = [
+    "neonize>=0.3.18.post0",
+]
+channels = [
+    "aiohttp>=3.9.0",
+    "cryptography>=42.0.0",
+    "dingtalk-stream>=0.24.0",
+    "discord.py>=2.4.0",
+    "lark-oapi>=1.4.0",
+    "matrix-nio[e2e]>=0.25.0",
+    "mistune>=3.0.0",
+    "msgpack>=1.0.0",
+    "neonize>=0.3.18.post0",
+    "nh3>=0.2.18",
+    "PyJWT[crypto]>=2.8.0",
+    "python-socketio[asyncio_client]>=5.11.0",
+    "python-telegram-bot>=21.0",
+    "qrcode>=7.4.2",
+    "qq-botpy>=1.2.0",
+    "slack-sdk>=3.33.0",
+    "slackify-markdown>=4.4.0",
+    "websockets>=12.0",
+    "wecom-aibot-sdk>=1.0.0",
 ]
 dev = [
     "pytest>=7.0",

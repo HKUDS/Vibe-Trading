@@ -1,7 +1,7 @@
 """Live-runtime triggers — when an autonomous tick is due (SPEC §7.5 component 4).
 
 This layers market-session, interval, and event triggers over R1's wall-clock
-scheduler. nanobot is time-only; trading additionally needs market-session
+scheduler. The reference scheduler is time-only; trading additionally needs market-session
 awareness ("is the US equity market open right now?") and event-driven
 predicates (price crossings, fill notifications). This module owns that layer.
 

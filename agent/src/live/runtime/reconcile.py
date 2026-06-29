@@ -1,6 +1,6 @@
 """Crash recovery + position reconciliation (SPEC.md §7.5 component 5).
 
-This is the hardest piece of the persistent runtime and has **no nanobot
+This is the hardest piece of the persistent runtime and has **no reference-agent
 analog**. On startup and before every trading tick the runner must answer one
 question before it is allowed to trade again: *does broker truth match the
 durable last-known state we persisted before the crash?* Trading is not

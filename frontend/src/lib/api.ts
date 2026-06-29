@@ -143,6 +143,14 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  getChannelStatus: () => request<ChannelRuntimeStatus>("/channels/status"),
+  startChannels: () => request<ChannelRuntimeActionResponse>("/channels/start", { method: "POST" }),
+  stopChannels: () => request<ChannelRuntimeActionResponse>("/channels/stop", { method: "POST" }),
+  runChannelPairingCommand: (body: ChannelPairingCommandRequest) =>
+    request<ChannelPairingCommandResponse>("/channels/pairing/command", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // Alpha Zoo API
   listAlphas: (params: AlphaListParams = {}) => {
@@ -276,6 +284,40 @@ export interface DataSourceSettings {
 export interface UpdateDataSourceSettingsRequest {
   tushare_token?: string;
   clear_tushare_token?: boolean;
+}
+
+export interface ChannelAdapterStatus {
+  name: string;
+  display_name: string;
+  configured: boolean;
+  enabled: boolean;
+  available: boolean;
+  loaded: boolean;
+  running: boolean;
+  error?: string;
+  install_hint?: string;
+}
+
+export interface ChannelRuntimeStatus {
+  running: boolean;
+  inbound_queue: number;
+  outbound_queue: number;
+  session_count: number;
+  channels: Record<string, ChannelAdapterStatus>;
+}
+
+export interface ChannelRuntimeActionResponse extends ChannelRuntimeStatus {
+  status: string;
+}
+
+export interface ChannelPairingCommandRequest {
+  channel: string;
+  command: string;
+}
+
+export interface ChannelPairingCommandResponse {
+  channel: string;
+  reply: string;
 }
 
 // --- Types matching backend API contracts ---

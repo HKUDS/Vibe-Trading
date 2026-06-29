@@ -2786,6 +2786,12 @@ def _live_api_base() -> str:
     return os.environ.get("VIBE_TRADING_API_URL", "http://127.0.0.1:8000").rstrip("/")
 
 
+def _api_auth_headers() -> Dict[str, str]:
+    """Return Bearer auth headers for CLI-to-API control calls."""
+    key = (os.environ.get("VIBE_TRADING_API_KEY") or os.environ.get("API_AUTH_KEY") or "").strip()
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
 def _live_api_call(method: str, path: str, *, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Call an R6 live-runner endpoint and decode the JSON response.
 
@@ -2812,6 +2818,173 @@ def _live_api_call(method: str, path: str, *, body: Optional[Dict[str, Any]] = N
         return response.json()
     except Exception as exc:  # noqa: BLE001 — surface a clean error to the user
         return {"status": "error", "error": str(exc)}
+
+
+def _channels_api_call(method: str, path: str, *, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Call an IM channel runtime endpoint on the local API server."""
+    import httpx
+
+    url = f"{_live_api_base()}{path}"
+    headers = _api_auth_headers()
+    try:
+        if method.upper() == "GET":
+            response = httpx.get(url, headers=headers, timeout=10.0)
+        else:
+            response = httpx.post(url, json=body or {}, headers=headers, timeout=10.0)
+        response.raise_for_status()
+        return response.json()
+    except Exception as exc:  # noqa: BLE001 - CLI should explain offline API cleanly
+        return {"status": "error", "error": str(exc)}
+
+
+def _channels_local_status() -> Dict[str, Any]:
+    """Build local channel config/import status without starting adapters."""
+    from src.channels.config import load_channels_config
+    from src.channels.registry import inspect_channels
+
+    config = load_channels_config()
+    return {
+        "running": False,
+        "source": "local_config",
+        "channels": inspect_channels(config),
+    }
+
+
+def _print_channels_status(payload: Dict[str, Any]) -> None:
+    """Render IM channel status."""
+    table = Table(title="IM Channels", box=box.SIMPLE)
+    table.add_column("Channel")
+    table.add_column("Configured")
+    table.add_column("Enabled")
+    table.add_column("Available")
+    table.add_column("Loaded")
+    table.add_column("Running")
+    table.add_column("Recovery")
+    channels = payload.get("channels") if isinstance(payload, dict) else {}
+    if not isinstance(channels, dict):
+        channels = {}
+    for name, item in sorted(channels.items()):
+        if not isinstance(item, dict):
+            continue
+        recovery = item.get("install_hint") or item.get("error") or ""
+        table.add_row(
+            str(name),
+            "yes" if item.get("configured") else "no",
+            "yes" if item.get("enabled") else "no",
+            "yes" if item.get("available") else "no",
+            "yes" if item.get("loaded") else "no",
+            "yes" if item.get("running") else "no",
+            str(recovery),
+        )
+    console.print(table)
+    if payload.get("status") == "error":
+        console.print(f"[yellow]API unavailable:[/yellow] {payload.get('error')}")
+        console.print("[dim]Start the backend with `vibe-trading serve --port 8000`, or inspect local config with this status output.[/dim]")
+
+
+def cmd_channels_status(*, json_mode: bool = False, local: bool = False) -> int:
+    """Show IM channel status."""
+    payload = _channels_local_status() if local else _channels_api_call("GET", "/channels/status")
+    if payload.get("status") == "error":
+        local_payload = _channels_local_status()
+        local_payload["status"] = "error"
+        local_payload["error"] = payload.get("error", "")
+        payload = local_payload
+    if json_mode:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        _print_channels_status(payload)
+    return EXIT_SUCCESS
+
+
+def cmd_channels_start(*, json_mode: bool = False) -> int:
+    """Start configured IM channels through the API runtime."""
+    payload = _channels_api_call("POST", "/channels/start")
+    if json_mode:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    elif payload.get("status") == "error":
+        console.print(f"[red]Failed to start IM channels:[/red] {payload.get('error')}")
+        console.print("[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]")
+        return EXIT_RUN_FAILED
+    else:
+        console.print("[green]IM channels started.[/green]")
+        _print_channels_status(payload)
+    return EXIT_SUCCESS
+
+
+def cmd_channels_stop(*, json_mode: bool = False) -> int:
+    """Stop configured IM channels through the API runtime."""
+    payload = _channels_api_call("POST", "/channels/stop")
+    if json_mode:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    elif payload.get("status") == "error":
+        console.print(f"[red]Failed to stop IM channels:[/red] {payload.get('error')}")
+        console.print("[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]")
+        return EXIT_RUN_FAILED
+    else:
+        console.print("[green]IM channels stopped.[/green]")
+        _print_channels_status(payload)
+    return EXIT_SUCCESS
+
+
+def cmd_channels_pairing(channel: str, command: str) -> int:
+    """Run a pairing command against the shared local pairing store."""
+    from src.channels.pairing import handle_pairing_command
+
+    console.print(handle_pairing_command(channel, command))
+    return EXIT_SUCCESS
+
+
+def cmd_channels_login(channel_name: str, *, force: bool = False) -> int:
+    """Run a channel adapter's interactive login hook when available."""
+    import asyncio
+
+    from src.channels.config import load_channels_config
+    from src.channels.manager import ChannelManager
+    from src.channels.bus.queue import MessageBus
+
+    config = load_channels_config()
+    section = dict(config.get(channel_name, {})) if isinstance(config.get(channel_name), dict) else {}
+    if channel_name == "websocket":
+        console.print("[green]WebSocket channel does not require interactive login.[/green]")
+        console.print("[dim]Configure channels.websocket in ~/.vibe-trading/agent.json, then run `vibe-trading channels start`.[/dim]")
+        return EXIT_SUCCESS
+    if not section:
+        console.print(f"[red]No config found for channel '{channel_name}'.[/red]")
+        console.print("[dim]Add it under channels.<name> in ~/.vibe-trading/agent.json, then retry.[/dim]")
+        return EXIT_USAGE_ERROR
+    section["enabled"] = True
+    manager = ChannelManager({channel_name: section}, MessageBus())
+    adapter = manager.get_channel(channel_name)
+    if adapter is None:
+        status = manager.get_status().get(channel_name, {})
+        recovery = status.get("install_hint") or status.get("error") or "adapter unavailable"
+        console.print(f"[red]Channel '{channel_name}' is unavailable.[/red] {recovery}")
+        return EXIT_RUN_FAILED
+    ok = asyncio.run(adapter.login(force=force))
+    if ok:
+        console.print(f"[green]Channel '{channel_name}' login completed.[/green]")
+        return EXIT_SUCCESS
+    console.print(f"[red]Channel '{channel_name}' login failed.[/red]")
+    return EXIT_RUN_FAILED
+
+
+def _dispatch_channels(args: argparse.Namespace) -> int:
+    """Dispatch IM channel subcommands."""
+    command = args.channels_command
+    if command == "status":
+        return cmd_channels_status(json_mode=args.channels_json, local=args.local)
+    if command == "start":
+        return cmd_channels_start(json_mode=args.channels_json)
+    if command == "stop":
+        return cmd_channels_stop(json_mode=args.channels_json)
+    if command == "pairing":
+        text = " ".join([args.pairing_command, *args.pairing_args]).strip()
+        return cmd_channels_pairing(args.channel, text or "list")
+    if command == "login":
+        return cmd_channels_login(args.channel_name, force=args.force)
+    console.print("[red]channels requires a subcommand.[/red] Try: vibe-trading channels status")
+    return EXIT_USAGE_ERROR
 
 
 def _live_server_config(broker: str):
@@ -4080,6 +4253,29 @@ def _build_parser() -> argparse.ArgumentParser:
     login_parser.add_argument("provider", help="OAuth provider name, e.g. openai-codex")
     provider_subparsers.add_parser("doctor", help="Print redacted provider diagnostics")
 
+    channels_parser = subparsers.add_parser("channels", help="Manage IM channel adapters")
+    channels_subparsers = channels_parser.add_subparsers(dest="channels_command")
+    channels_status = channels_subparsers.add_parser("status", help="Show IM channel status")
+    channels_status.add_argument("--json", dest="channels_json", action="store_true", help="Print JSON")
+    channels_status.add_argument("--local", action="store_true", help="Inspect local config without contacting the API")
+    channels_start = channels_subparsers.add_parser("start", help="Start configured IM channels through the API")
+    channels_start.add_argument("--json", dest="channels_json", action="store_true", help="Print JSON")
+    channels_stop = channels_subparsers.add_parser("stop", help="Stop configured IM channels through the API")
+    channels_stop.add_argument("--json", dest="channels_json", action="store_true", help="Print JSON")
+    channels_login = channels_subparsers.add_parser("login", help="Run a channel adapter login hook")
+    channels_login.add_argument("channel_name", help="Channel name, e.g. weixin, feishu, whatsapp")
+    channels_login.add_argument("--force", action="store_true", help="Ignore existing credentials where supported")
+    channels_pairing = channels_subparsers.add_parser("pairing", help="Manage IM sender pairing")
+    channels_pairing.add_argument("--channel", default="telegram", help="Channel context for list/revoke commands")
+    channels_pairing.add_argument(
+        "pairing_command",
+        nargs="?",
+        default="list",
+        choices=["list", "approve", "deny", "revoke"],
+        help="Pairing command",
+    )
+    channels_pairing.add_argument("pairing_args", nargs="*", help="Pairing command arguments")
+
     list_parser = subparsers.add_parser("list", help="List runs")
     list_parser.add_argument("--limit", dest="list_limit", type=int, default=20, help="Maximum number of runs")
 
@@ -4997,6 +5193,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_provider_doctor()
         console.print("[red]provider requires a subcommand.[/red] Try: vibe-trading provider doctor")
         return EXIT_USAGE_ERROR
+    if args.command == "channels":
+        return _coerce_exit_code(_dispatch_channels(args))
     if args.command == "run":
         return _handle_prompt_command(
             args.run_prompt,

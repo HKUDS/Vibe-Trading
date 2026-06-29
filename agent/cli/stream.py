@@ -5,7 +5,7 @@ Single-agent mode (the only mode demoed in Parcel α): a short-lived
 thinks; tool events and the final answer are emitted as *static* prints so
 they persist on screen after the live area is erased. This avoids the
 "ghost re-paint" bug that plagued Vibe-Trading's earlier Live-based
-dashboards (nanobot lesson, design proposal §3.5).
+dashboards (prior terminal-rendering lesson, design proposal §3.5).
 
 Swarm mode is a stub: callers should fall through to the legacy Rich Live
 dashboard in ``cli/_legacy.py``. The full multi-agent grid lands in Parcel β.
@@ -103,7 +103,7 @@ class ThinkingSpinner:
 
     ``pause()`` is a context manager: stops the underlying ``Live`` (clearing
     its line), yields so the caller can print a static line, then restarts.
-    This is nanobot's pattern and avoids ANSI escape interleaving.
+    This follows the reference renderer pattern and avoids ANSI escape interleaving.
     """
 
     def __init__(self, console: Console | None = None) -> None:

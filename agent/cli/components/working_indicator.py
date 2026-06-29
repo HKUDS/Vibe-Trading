@@ -2,7 +2,7 @@
 
 Wraps :class:`rich.live.Live` with ``transient=True`` so the spinner
 erases itself once the context exits — leaving the answer print
-uncluttered (the bug nanobot called out in their StreamRenderer
+uncluttered (the bug called out in the reference StreamRenderer
 docstring: transient=True avoids the "ghost spinner" duplication).
 
 If :mod:`agent.cli.utils.thinking_verbs` has not landed yet (Parcel α
@@ -62,7 +62,7 @@ class ThinkingSpinner:
     The spinner is ``transient=True`` so it disappears when the block
     exits. Use :meth:`pause` to temporarily hide the spinner while
     printing auxiliary lines (e.g. a tool event row) — borrowed from
-    nanobot's StreamRenderer pattern.
+    the reference StreamRenderer pattern.
     """
 
     def __init__(

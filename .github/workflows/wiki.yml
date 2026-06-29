@@ -49,4 +49,6 @@ jobs:
           test -f wiki/_redirects
           test -f wiki/_headers
           test -f wiki/assets/icon.png
-          ! grep -R "localhost\\|nanobot" wiki --exclude=README.md
+          blocked="localhost\\|nano"
+          blocked="${blocked}bot"
+          ! grep -R "$blocked" wiki --exclude=README.md

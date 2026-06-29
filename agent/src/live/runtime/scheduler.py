@@ -1,6 +1,6 @@
 """Wall-clock scheduler for the live runtime (SPEC.md §7.5 #1).
 
-Follows nanobot's ``cron/service.py`` shape: an asyncio timer that sleeps until
+Follows the reference ``cron/service.py`` shape: an asyncio timer that sleeps until
 the earliest ``next_run_at`` across all jobs, fires the due jobs, advances each
 fired job's ``next_run_at``, then re-sleeps. The sleep is **capped** at a
 re-check interval (default 5 min) so a far-future job still wakes the loop

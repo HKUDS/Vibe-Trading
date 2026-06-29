@@ -424,10 +424,26 @@ class MCPServerConfigOverride(ConfigBase):
     enabled_tools: list[str] | None = None
 
 
+class ChannelsConfig(ConfigBase):
+    """Top-level IM channel config.
+
+    Built-in adapters parse their own per-channel sections. This model keeps
+    the operator file strict for global fields while allowing platform-specific
+    channel keys such as ``telegram`` or ``feishu``.
+    """
+
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="allow")
+
+    send_progress: bool = True
+    send_tool_hints: bool = False
+    send_max_retries: int = Field(default=2, ge=1, le=10)
+
+
 class AgentConfig(ConfigBase):
     """Top-level structured agent config."""
 
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
+    channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
 
     @model_validator(mode="after")
     def validate_live_broker_servers(self) -> "AgentConfig":
@@ -483,3 +499,4 @@ class AgentConfigOverride(ConfigBase):
     )
 
     mcp_servers: dict[str, MCPServerConfigOverride] = Field(default_factory=dict)
+    channels: ChannelsConfig | None = None

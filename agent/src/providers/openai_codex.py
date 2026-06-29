@@ -1,6 +1,6 @@
 """OpenAI Codex OAuth provider.
 
-This provider follows nanobot's OpenAI Codex OAuth path: a ChatGPT account is
+This provider follows the reference OpenAI Codex OAuth path: a ChatGPT account is
 authenticated by oauth-cli-kit, then requests are sent to the ChatGPT Codex
 Responses endpoint. It is intentionally separate from the standard OpenAI API
 key path because ChatGPT OAuth tokens are not OpenAI API keys.

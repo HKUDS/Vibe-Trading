@@ -982,8 +982,8 @@ Vibe-Trading は **[HKUDS](https://github.com/HKUDS)** agent ecosystem の一部
 <table>
   <tr>
     <td align="center" width="20%">
-      <a href="https://github.com/HKUDS/nanobot"><b>NanoBot</b></a><br>
-      <sub>Ultra-Lightweight Personal AI Assistant</sub>
+      <a href="https://github.com/HKUDS"><b>HKUDS Agents</b></a><br>
+      <sub>Open Agent Infrastructure</sub>
     </td>
     <td align="center" width="20%">
       <a href="https://github.com/HKUDS/AI-Trader"><b>AI-Trader</b></a><br>
