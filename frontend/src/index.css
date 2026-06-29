@@ -10,6 +10,13 @@
     --card: 0 0% 100%;
     --card-foreground: 220 20% 10%;
 
+    /* Popover: a slightly elevated surface used for floating menus,
+       tooltips, and the language switcher dropdown. Falls back to a
+       solid white (light) or surface-1 (dark) so dropdowns never
+       appear transparent and let underlying content bleed through. */
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 10%;
+
     /* Brand accent */
     --primary: 27 90% 52%;
     --primary-foreground: 0 0% 100%;
@@ -41,6 +48,9 @@
     --foreground: 220 10% 92%;
     --card: 220 20% 8%;             /* surface-1 */
     --card-foreground: 220 10% 92%;
+
+    --popover: 220 20% 9%;          /* surface-1.5 (slightly lighter than card) */
+    --popover-foreground: 220 10% 92%;
 
     --primary: 27 90% 52%;
     --primary-foreground: 0 0% 100%;
@@ -86,3 +96,6 @@
   50%  { transform: translateX(200%); }
   100% { transform: translateX(-100%); }
 }
+
+/* RTL: mirror directional icons (chevrons, arrows) automatically */
+[dir="rtl"] .rtl\:flip-x { transform: scaleX(-1); }

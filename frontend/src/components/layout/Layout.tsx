@@ -1,18 +1,19 @@
 import { useTranslation } from "react-i18next";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { Activity, BarChart3, Bot, FileText, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2 } from "lucide-react";
+import { Activity, BarChart3, Bot, Check, ChevronDown, FileText, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
 import { useAgentStore } from "@/stores/agent";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
+import { SUPPORTED_LANGUAGES } from "@/i18n";
 
-// Bump on each release; one place keeps the footer in sync with package.json.
-const APP_VERSION = "v0.1.10-s1";
+// APP_VERSION is sourced from i18n locale files (app.version key) to keep a
+// single source of truth across the footer and every localised README.
 
 export function Layout() {
-  const { t, i18n: i18nHook } = useTranslation();
+  const { t } = useTranslation();
 
   const NAV = [
     { to: "/", icon: BarChart3, label: t('layout.home') },
@@ -73,10 +74,10 @@ export function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background rtl:flex-row-reverse">
       {/* Sidebar */}
       <aside className={cn(
-        "border-r bg-card flex flex-col shrink-0 transition-all duration-200",
+        "border-e bg-card flex flex-col shrink-0 transition-all duration-200 overflow-visible",
         collapsed ? "w-12" : "w-64"
       )}>
         {/* Brand */}
@@ -151,16 +152,16 @@ export function Layout() {
                         onChange={(e) => setRenameValue(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") renameSession(s.session_id); if (e.key === "Escape") setRenameTarget(null); }}
                         onBlur={() => renameSession(s.session_id)}
-                        className="flex-1 min-w-0 pl-3 pr-2 py-1 rounded-md text-xs border border-primary bg-background outline-none"
+                        className="flex-1 min-w-0 ps-3 pe-2 py-1 rounded-md text-xs border border-primary bg-background outline-none"
                       />
                     ) : (
                       <Link
                         to={`/agent?session=${s.session_id}`}
                         className={cn(
-                          "flex-1 min-w-0 pl-3 pr-14 py-1.5 rounded-md text-xs transition-colors truncate block border-l-2",
+                          "flex-1 min-w-0 ps-3 pe-14 py-1.5 rounded-md text-xs transition-colors truncate block border-s-2",
                           isActive
-                            ? "border-l-primary bg-primary/10 text-primary font-medium"
-                            : "border-l-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
+                            ? "border-s-primary bg-primary/10 text-primary font-medium"
+                            : "border-s-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
                         )}
                         title={s.title || s.session_id}
                       >
@@ -241,15 +242,9 @@ export function Layout() {
                   </button>
                 </div>
               </div>
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => { i18nHook.changeLanguage(i18nHook.language === "zh-CN" ? "en" : "zh-CN"); }}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Languages className="h-3.5 w-3.5" />
-                  {i18nHook.language === "zh-CN" ? "English" : "中文"}
-                </button>
-                <p className="text-xs text-muted-foreground/60">{APP_VERSION}</p>
+              <div className="flex flex-col gap-1">
+                <LanguageSwitcher />
+                <p className="text-[10px] text-muted-foreground/60">{t('app.version')}</p>
               </div>
             </>
           )}
@@ -263,6 +258,145 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Language switcher — dropdown listing every language registered in
+// src/i18n/index.ts. Persists the choice via i18next's localStorage detector
+// and emits the `languageChanged` event handled in the i18n module to flip
+// <html dir/lang> for RTL languages.
+//
+// Positioning: the menu uses `position: fixed` and is placed at
+// `(triggerLeft, triggerTop - gap)`. This bypasses every ancestor's
+// `overflow: hidden/auto/scroll`, stacking contexts, and CSS direction
+// rules, so the dropdown is *always* fully visible regardless of where
+// the trigger sits in the layout or which language is active. We measure
+// the trigger with getBoundingClientRect() and update on resize/scroll.
+// ---------------------------------------------------------------------------
+function LanguageSwitcher() {
+  const { i18n } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [menuStyle, setMenuStyle] = useState<{ left: number; bottom: number; minWidth: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent | TouchEvent) => {
+      if (
+        triggerRef.current &&
+        !triggerRef.current.contains(e.target as Node) &&
+        !(e.target as HTMLElement).closest?.("[data-lang-menu]")
+      ) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("touchstart", onClick, { passive: true });
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("touchstart", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // Recompute the menu's fixed coordinates whenever it opens, or whenever
+  // the viewport changes (resize / scroll / language switch). The menu is
+  // anchored to the trigger's *left edge* and sits *above* the trigger.
+  useEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const place = () => {
+      const r = triggerRef.current?.getBoundingClientRect();
+      if (!r) return;
+      // Anchor: align the menu's right edge with the trigger's right edge,
+      // then clamp to the viewport so the menu never overflows the screen.
+      const menuWidth = 160; // px — approx longest label "العربية" + padding
+      const gap = 4; // mb-1
+      const desiredLeft = r.right - menuWidth;
+      const maxLeft = window.innerWidth - menuWidth - 8;
+      const minLeft = 8;
+      const left = Math.max(minLeft, Math.min(maxLeft, desiredLeft));
+      setMenuStyle({
+        left,
+        // distance from viewport bottom: viewport height − trigger top + gap
+        bottom: window.innerHeight - r.top + gap,
+        minWidth: menuWidth,
+      });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
+
+  // i18n.language may be a regional variant like "ja-JP" even though only
+  // "ja" is in SUPPORTED_LANGUAGES (nonExplicitSupportedLngs resolves the
+  // resources but keeps the full code). The i18n.languages array contains
+  // both the detected and resolved codes, so we match against any entry.
+  const current =
+    SUPPORTED_LANGUAGES.find((l) => i18n.languages?.includes(l.code)) ??
+    SUPPORTED_LANGUAGES[0];
+
+  return (
+    <div>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Language"
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <Languages className="h-3.5 w-3.5 shrink-0" />
+        <span className="whitespace-nowrap">{current.label}</span>
+        <ChevronDown className={cn("h-3 w-3 shrink-0 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && menuStyle && (
+        <ul
+          data-lang-menu
+          aria-label="Select language"
+          style={{
+            position: "fixed",
+            left: menuStyle.left,
+            bottom: menuStyle.bottom,
+            minWidth: menuStyle.minWidth,
+            zIndex: 60,
+          }}
+          className="rounded-md border border-border bg-popover shadow-lg ring-1 ring-black/5"
+        >
+          {SUPPORTED_LANGUAGES.map((lang) => {
+            const active = lang.code === current.code;
+            return (
+              <li key={lang.code}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    i18n.changeLanguage(lang.code).catch(console.error);
+                    setOpen(false);
+                  }}
+                  aria-current={active || undefined}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors",
+                    active && "text-foreground",
+                  )}
+                >
+                  <span className="flex-1 text-start whitespace-nowrap">{lang.label}</span>
+                  {active && <Check className="h-3 w-3 shrink-0" />}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

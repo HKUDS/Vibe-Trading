@@ -152,22 +152,22 @@ const CATEGORIES: Category[] = [
 ];
 
 const CAPABILITY_CHIP_KEYS = [
-  "financeSkills",
-  "swarmTeams",
-  "autoTools",
-  "markets",
-  "connectors",
-  "timeframes",
-  "optimizers",
-  "riskMetrics",
-  "options",
-  "pdfWeb",
-  "factorML",
-  "journalAnalyzer",
-  "shadowBacktest",
-  "memory",
-  "sessionSearch",
-];
+  "welcome.capabilities.financeSkills",
+  "welcome.capabilities.swarmTeams",
+  "welcome.capabilities.autoTools",
+  "welcome.capabilities.markets",
+  "welcome.capabilities.connectors",
+  "welcome.capabilities.timeframes",
+  "welcome.capabilities.optimizers",
+  "welcome.capabilities.riskMetrics",
+  "welcome.capabilities.options",
+  "welcome.capabilities.pdfWeb",
+  "welcome.capabilities.factorML",
+  "welcome.capabilities.journalAnalyzer",
+  "welcome.capabilities.shadowBacktest",
+  "welcome.capabilities.memory",
+  "welcome.capabilities.sessionSearch",
+] as const;
 
 interface Props {
   onExample: (s: string) => void;
@@ -200,7 +200,7 @@ export function WelcomeScreen({ onExample }: Props) {
             key={key}
             className="px-2.5 py-1 text-xs rounded-full border border-border/60 text-muted-foreground bg-muted/30"
           >
-            {t(`welcome.capabilities.${key}`)}
+            {t(key)}
           </span>
         ))}
       </div>
@@ -213,20 +213,20 @@ export function WelcomeScreen({ onExample }: Props) {
             <div key={cat.labelKey} className="space-y-2">
               <div className={`flex items-center gap-1.5 text-xs font-medium px-1 ${cat.color.split(" ").filter(c => c.startsWith("text-")).join(" ")}`}>
                 {cat.icon}
-                <span>{t(cat.labelKey)}</span>
+                <span>{t(cat.labelKey as any)}</span>
               </div>
               <div className="space-y-1.5">
                 {cat.examples.map((ex) => (
                   <button
                     key={ex.titleKey}
-                    onClick={() => onExample(t(ex.promptKey))}
+                    onClick={() => onExample(t(ex.promptKey as any))}
                     className={`block w-full text-left px-3 py-2.5 rounded-xl border transition-colors ${cat.color}`}
                   >
                     <span className="text-sm font-medium text-foreground leading-snug">
-                      {t(ex.titleKey)}
+                      {t(ex.titleKey as any)}
                     </span>
                     <span className="block text-xs text-muted-foreground mt-0.5 leading-snug">
-                      {t(ex.descKey)}
+                      {t(ex.descKey as any)}
                     </span>
                   </button>
                 ))}
