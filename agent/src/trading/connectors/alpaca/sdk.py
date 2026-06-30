@@ -14,14 +14,21 @@ recorded as ``paper`` in every payload — is the authoritative discriminator.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Mapping
 
 from src.config.paths import get_runtime_root
+from src.trading import tap_forward
 
 CONFIG_FILENAME = "alpaca.json"
+
+# Name of the TAP credential holding the Alpaca {key_id, secret_key} pair.
+# Overridable so a deployment can use a differently-named credential.
+TAP_ALPACA_CREDENTIAL_ENV = "TAP_ALPACA_CREDENTIAL"
+DEFAULT_TAP_ALPACA_CREDENTIAL = "alpaca"
 
 PROFILE_ENVIRONMENTS = {
     "paper": "paper",
@@ -394,6 +401,22 @@ def place_order(
         if limit_value <= 0:
             return {"status": "error", "error": "limit_price must be positive"}
 
+    # Credential isolation (opt-in): when TAP is configured, route the order
+    # through the TAP proxy — human-approved, with the broker secret injected
+    # server-side — instead of the local Alpaca SDK. No TAP env => unchanged
+    # direct-SDK path below. All input validation above still applies.
+    if tap_forward.tap_enabled():
+        return _submit_via_tap(
+            cfg,
+            symbol=clean_symbol,
+            side=side_token,
+            quantity=qty_value,
+            notional=notional_value,
+            order_type=type_token,
+            limit_price=limit_value,
+            time_in_force=tif_token,
+        )
+
     try:
         client = _trading_client(cfg)
         from alpaca.trading.enums import OrderSide, TimeInForce  # type: ignore
@@ -442,6 +465,86 @@ def place_order(
         "limit_price": limit_value,
         "order_status": str(_obj_get(order, "status", "")),
         "filled_qty": _obj_get(order, "filled_qty"),
+    }
+
+
+def _submit_via_tap(
+    cfg: AlpacaConfig,
+    *,
+    symbol: str,
+    side: str,
+    quantity: float | None,
+    notional: float | None,
+    order_type: str,
+    limit_price: float | None,
+    time_in_force: str,
+) -> dict[str, Any]:
+    """Place the order through the TAP proxy instead of the Alpaca SDK.
+
+    The agent process holds no Alpaca secret on this path: the order is POSTed to
+    TAP ``/forward`` with ``<CREDENTIAL:alpaca.key_id>`` / ``.secret_key``
+    placeholders, which TAP injects into the ``APCA-API-*`` headers server-side
+    after a human approves. The upstream host is the connector's own
+    ``cfg.host`` (operator-controlled, not agent-controlled), and the TAP
+    credential's ``allowed_hosts`` pins it — a tampered target is rejected before
+    injection. Returns the same envelope as the direct-SDK path, so the paper
+    path and the live mandate gate are unchanged.
+    """
+    order: dict[str, Any] = {
+        "symbol": symbol,
+        "side": side,
+        "type": order_type,
+        "time_in_force": time_in_force,
+    }
+    if quantity is not None:
+        order["qty"] = str(quantity)
+    else:
+        order["notional"] = str(notional)
+    if order_type == "limit":
+        order["limit_price"] = str(limit_price)
+
+    credential = os.environ.get(TAP_ALPACA_CREDENTIAL_ENV, DEFAULT_TAP_ALPACA_CREDENTIAL)
+    cred_headers = {
+        "APCA-API-KEY-ID": f"<CREDENTIAL:{credential}.key_id>",
+        "APCA-API-SECRET-KEY": f"<CREDENTIAL:{credential}.secret_key>",
+    }
+    target = f"{cfg.host}/v2/orders"
+
+    result = tap_forward.forward(target, "POST", json.dumps(order), cred_headers)
+
+    if not result.get("ok"):
+        decision = result.get("decision")
+        reason = result.get("error") or {
+            "denied": "order denied by approver",
+            "timeout": "approval timed out",
+            "timed_out": "approval timed out",
+        }.get(decision, "order not forwarded by TAP")
+        return {"status": "error", "error": f"TAP: {reason}", "tap_decision": decision}
+
+    payload = result.get("body")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except ValueError:
+            payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    return {
+        "status": "ok",
+        "order_id": str(payload.get("id", "")),
+        "symbol": symbol,
+        "side": side,
+        "profile": cfg.profile,
+        "is_paper": cfg.is_paper,
+        "order_type": order_type,
+        "time_in_force": time_in_force,
+        "quantity": quantity,
+        "notional": notional,
+        "limit_price": limit_price,
+        "order_status": str(payload.get("status", "")),
+        "filled_qty": payload.get("filled_qty"),
+        "via": "tap",
     }
 
 
