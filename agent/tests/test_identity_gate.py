@@ -38,9 +38,16 @@ class TestStructuralVerifier:
         v = StructuralVerifier()
         assert not v.verify("bad").verified
 
+    def test_missing_role(self):
+        v = StructuralVerifier()
+        token = json.dumps({"agent_id": "a", "permissions": ["read"], "expiry": time.time() + 3600})
+        result = v.verify(token)
+        assert not result.verified
+        assert "role" in result.reason
+
     def test_missing_expiry(self):
         v = StructuralVerifier()
-        token = json.dumps({"agent_id": "a", "permissions": ["read"]})
+        token = json.dumps({"agent_id": "a", "role": "trader", "permissions": ["read"]})
         assert not v.verify(token).verified
 
     def test_expired(self):

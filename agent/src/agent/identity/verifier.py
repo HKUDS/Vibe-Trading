@@ -55,6 +55,12 @@ class StructuralVerifier(AgentVerifier):
     fields. Use a real verifier for deployed systems.
     """
 
+    def __init__(self):
+        logger.warning(
+            "StructuralVerifier provides NO security — it accepts any "
+            "well-formed JSON as a valid credential. Use only for development."
+        )
+
     def verify(self, token: str) -> VerificationResult:
         try:
             data = json.loads(token)
@@ -66,6 +72,9 @@ class StructuralVerifier(AgentVerifier):
             return VerificationResult(verified=False, reason="missing agent_id")
 
         role = data.get("role", "")
+        if not role:
+            return VerificationResult(verified=False, reason="missing role")
+
         permissions = data.get("permissions", [])
         expiry = data.get("expiry", 0)
 
