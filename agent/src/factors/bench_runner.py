@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Any, Callable, Iterable
 
 from src.factors.factor_analysis_core import compute_ic_series
@@ -34,6 +36,41 @@ logger = logging.getLogger(__name__)
 
 ProgressCb = Callable[[int, int, str], None]
 """Signature: ``on_progress(n_done, n_total, current_alpha_id)``."""
+
+
+def _compute_single_alpha(args: tuple) -> dict:
+    """Picklable worker for parallel bench.
+
+    On macOS/Linux the panel is shared via fork COW (no copy).
+    On Windows the panel is pickled and sent to each worker.
+    """
+    alpha_id, panel, return_df = args
+    reg = get_default_registry()
+    try:
+        factor_df = reg.compute(alpha_id, panel)
+        ic = compute_ic_series(factor_df, return_df)
+        if ic.empty:
+            return {"skip": {"id": alpha_id, "reason": "empty IC series", "kind": "typed"}}
+        ic_mean = float(ic.mean())
+        ic_std = float(ic.std())
+        ir = ic_mean / ic_std if ic_std > 0 else 0.0
+        meta = reg.get(alpha_id).meta or {}
+        return {
+            "row": {
+                "id": alpha_id,
+                "ic_mean": round(ic_mean, 6),
+                "ic_std": round(ic_std, 6),
+                "ir": round(ir, 4),
+                "ic_positive_ratio": round(float((ic > 0).mean()), 4),
+                "ic_count": int(len(ic)),
+                "theme": meta.get("theme", []),
+                "formula_latex": meta.get("formula_latex", ""),
+            }
+        }
+    except (SkipAlpha, RegistryError, RuntimeError, KeyError, ValueError) as exc:
+        return {"skip": {"id": alpha_id, "reason": str(exc), "kind": "typed"}}
+    except Exception as exc:  # noqa: BLE001
+        return {"skip": {"id": alpha_id, "reason": f"unexpected: {exc}", "kind": "unexpected"}}
 
 
 def t_stat(ic_mean: float, ic_std: float, n: int) -> float:
@@ -147,44 +184,88 @@ def run_bench(
     rows: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     n_total = len(alpha_ids)
-    for idx, aid in enumerate(alpha_ids, start=1):
-        try:
-            factor_df = reg.compute(aid, panel)
-            ic = compute_ic_series(factor_df, return_df)
-            if ic.empty:
-                skipped.append(
-                    {"id": aid, "reason": "empty IC series", "kind": "typed"}
-                )
-            else:
-                ic_mean = float(ic.mean())
-                ic_std = float(ic.std())
-                ir = ic_mean / ic_std if ic_std > 0 else 0.0
-                meta = reg.get(aid).meta or {}
-                rows.append(
-                    {
-                        "id": aid,
-                        "ic_mean": round(ic_mean, 6),
-                        "ic_std": round(ic_std, 6),
-                        "ir": round(ir, 4),
-                        "ic_positive_ratio": round(float((ic > 0).mean()), 4),
-                        "ic_count": int(len(ic)),
-                        "theme": meta.get("theme", []),
-                        "formula_latex": meta.get("formula_latex", ""),
-                    }
-                )
-        except (SkipAlpha, RegistryError, RuntimeError, KeyError, ValueError) as exc:
-            skipped.append({"id": aid, "reason": str(exc), "kind": "typed"})
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("bench: unexpected failure on %s", aid)
-            skipped.append(
-                {"id": aid, "reason": f"unexpected: {exc}", "kind": "unexpected"}
-            )
 
-        if on_progress is not None:
+    n_workers = int(os.environ.get("VIBE_TRADING_BENCH_WORKERS", "0") or os.cpu_count() or 1)
+    use_parallel = n_workers > 1 and n_total > 1
+
+    if use_parallel:
+        ctx_kwargs: dict[str, Any] = {}
+        try:
+            import multiprocessing
+
+            ctx = multiprocessing.get_context("fork")
+            ctx_kwargs["mp_context"] = ctx
+        except (ImportError, ValueError):
+            pass
+
+        work_items = [(aid, panel, return_df) for aid in alpha_ids]
+        future_to_id: dict[Any, str] = {}
+        with ProcessPoolExecutor(max_workers=n_workers, **ctx_kwargs) as pool:
+            for item in work_items:
+                fut = pool.submit(_compute_single_alpha, item)
+                future_to_id[fut] = item[0]
+
+            n_done = 0
+            for fut in as_completed(future_to_id):
+                n_done += 1
+                aid = future_to_id[fut]
+                try:
+                    result = fut.result()
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("bench: worker crash on %s", aid)
+                    skipped.append({"id": aid, "reason": f"worker crash: {exc}", "kind": "unexpected"})
+                    result = None
+
+                if result is not None:
+                    if "row" in result:
+                        rows.append(result["row"])
+                    elif "skip" in result:
+                        skipped.append(result["skip"])
+
+                if on_progress is not None:
+                    try:
+                        on_progress(n_done, n_total, aid)
+                    except Exception:  # noqa: BLE001
+                        logger.exception("on_progress callback raised; ignoring")
+    else:
+        for idx, aid in enumerate(alpha_ids, start=1):
             try:
-                on_progress(idx, n_total, aid)
-            except Exception:  # noqa: BLE001 — never let progress break the loop
-                logger.exception("on_progress callback raised; ignoring")
+                factor_df = reg.compute(aid, panel)
+                ic = compute_ic_series(factor_df, return_df)
+                if ic.empty:
+                    skipped.append(
+                        {"id": aid, "reason": "empty IC series", "kind": "typed"}
+                    )
+                else:
+                    ic_mean = float(ic.mean())
+                    ic_std = float(ic.std())
+                    ir = ic_mean / ic_std if ic_std > 0 else 0.0
+                    meta = reg.get(aid).meta or {}
+                    rows.append(
+                        {
+                            "id": aid,
+                            "ic_mean": round(ic_mean, 6),
+                            "ic_std": round(ic_std, 6),
+                            "ir": round(ir, 4),
+                            "ic_positive_ratio": round(float((ic > 0).mean()), 4),
+                            "ic_count": int(len(ic)),
+                            "theme": meta.get("theme", []),
+                            "formula_latex": meta.get("formula_latex", ""),
+                        }
+                    )
+            except (SkipAlpha, RegistryError, RuntimeError, KeyError, ValueError) as exc:
+                skipped.append({"id": aid, "reason": str(exc), "kind": "typed"})
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("bench: unexpected failure on %s", aid)
+                skipped.append(
+                    {"id": aid, "reason": f"unexpected: {exc}", "kind": "unexpected"}
+                )
+
+            if on_progress is not None:
+                try:
+                    on_progress(idx, n_total, aid)
+                except Exception:  # noqa: BLE001
+                    logger.exception("on_progress callback raised; ignoring")
 
     for row in rows:
         row["_category"] = categorise(row)
