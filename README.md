@@ -1056,6 +1056,48 @@ The agent exposes connector-scoped tools named `trading_connections`,
 Live-broker raw MCP tools are not registered directly as `mcp_<broker>_*`.
 No IBKR order-placement tool is registered.
 
+### 🔐 TAP Mode — credential isolation & human-approved orders
+
+**Opt-in, off by default.** If the `TAP_*` variables below are unset, order
+placement behaves exactly as before (direct broker SDK) — nothing changes.
+
+[TAP](https://tap.human.tech) (Tool Authorization Protocol) is a credential
+proxy: the agent never holds the raw broker API secret, and consequential writes
+are gated on **human approval**. With TAP mode on, an Alpaca order is sent to the
+TAP proxy's `/forward` endpoint instead of the broker SDK; TAP injects the real
+key server-side **after a human approves**, then forwards the order to Alpaca.
+
+- The agent process holds **no Alpaca key** on the order path — it references the
+  secret by name (`<CREDENTIAL:alpaca.key_id>`) and TAP substitutes it.
+- An order **cannot reach the broker without a human approving it**. Even a
+  prompt-injected "buy now" is held for approval; deny it and the order never
+  reaches Alpaca.
+- `allowed_hosts` on the TAP credential pins where the key may be sent, so a
+  tampered target is rejected (403) before injection.
+
+**Enable it:**
+
+1. In the TAP dashboard, create a **multi-secret** credential named `alpaca`
+   holding your Alpaca key pair as fields `key_id` and `secret_key`, with allowed
+   host `paper-api.alpaca.markets` (or the live host), assigned to your agent.
+2. Add to `agent/.env`:
+
+| Variable | Required | Description |
+|----------|:--------:|-------------|
+| `TAP_PROXY_URL` | Yes | TAP proxy base URL (e.g. `https://proxy.tap.human.tech`) |
+| `TAP_AGENT_KEY` | Yes | Your TAP agent API key (secret) |
+| `TAP_ALPACA_CREDENTIAL` | No | TAP credential name for Alpaca (default `alpaca`) |
+| `TAP_APPROVAL_TIMEOUT` | No | Seconds to wait for a human decision (default `300`) |
+
+When an order is placed, approve or deny it in your TAP channel (Telegram /
+dashboard). An approved order is forwarded to Alpaca; a denied or timed-out order
+returns an error and is **never sent**.
+
+**Scope:** currently covers Alpaca **order placement** (the write path). Read
+calls (positions/account/quote) still use the broker SDK, and HMAC-signed brokers
+are follow-ups. The hook is additive — it lives inside the Alpaca connector's
+`place_order()` and leaves the live mandate gate unchanged.
+
 ### Config reference
 
 | Field | Type | Default | Description |
