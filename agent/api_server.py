@@ -2322,110 +2322,19 @@ async def session_events(
 
 
 # ============================================================================
-# File Upload
+# Upload routes — defined in src/api/uploads_routes.py
 # ============================================================================
 
-_BLOCKED_UPLOAD_EXT = {
-    # binaries / executables we should never accept
-    ".exe", ".msi", ".bat", ".cmd", ".com", ".scr", ".app", ".dmg",
-    ".so", ".dll", ".dylib",
-    # executable-adjacent source, shell, config, and template files
-    ".py", ".pyw", ".sh", ".bash", ".zsh", ".fish", ".ps1",
-    ".yaml", ".yml", ".j2", ".jinja", ".jinja2", ".template",
-    # archives — don't auto-extract; user can unpack locally
-    ".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz",
-}
+from src.api.uploads_routes import register_uploads_routes  # noqa: E402
+register_uploads_routes(app)
 
-_BLOCKED_UPLOAD_NAMES = {
-    "dockerfile",
-    "containerfile",
-}
-
-
-_SHADOW_ID_RE = __import__("re").compile(r"^shadow_[0-9a-f]{8}$")
-
-
-@app.get("/shadow-reports/{shadow_id}", dependencies=[Depends(require_auth)])
-async def get_shadow_report(shadow_id: str, format: str = "html"):
-    """Serve a rendered Shadow Account report (HTML by default, PDF if available).
-
-    Reports live under ``~/.vibe-trading/shadow_reports/<shadow_id>.{html,pdf}``.
-    """
-    if not _SHADOW_ID_RE.match(shadow_id):
-        raise HTTPException(status_code=400, detail="invalid shadow_id")
-    if format not in ("html", "pdf"):
-        raise HTTPException(status_code=400, detail="format must be html or pdf")
-
-    reports_dir = Path.home() / ".vibe-trading" / "shadow_reports"
-    path = reports_dir / f"{shadow_id}.{format}"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"Shadow report not found: {shadow_id}.{format}")
-
-    media_type = "text/html; charset=utf-8" if format == "html" else "application/pdf"
-    # Inline so browsers render HTML/PDF directly instead of forcing download.
-    return FileResponse(
-        path,
-        media_type=media_type,
-        headers={"Content-Disposition": f'inline; filename="{shadow_id}.{format}"'},
-    )
-
-
-@app.post("/upload", dependencies=[Depends(require_auth)])
-async def upload_file(file: UploadFile):
-    """Upload any document or data file (max 50MB).
-
-    Accepts most common formats: PDF, Word, Excel, PowerPoint, images,
-    CSV/TSV, plain text, JSON, and TOML. Executables, executable-adjacent
-    source/config/template files, and archives are rejected.
-    """
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Missing filename")
-    filename = Path(file.filename).name
-    ext = Path(filename).suffix.lower()
-    if ext in _BLOCKED_UPLOAD_EXT or filename.lower() in _BLOCKED_UPLOAD_NAMES:
-        raise HTTPException(
-            status_code=400,
-            detail="This file type is not allowed for upload.",
-        )
-
-    safe_name = f"{uuid.uuid4().hex}{ext}"
-    dest = UPLOADS_DIR / safe_name
-    total_size = 0
-
-    try:
-        UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-        with dest.open("wb") as handle:
-            while True:
-                chunk = await file.read(_UPLOAD_CHUNK_SIZE)
-                if not chunk:
-                    break
-                total_size += len(chunk)
-                if total_size > MAX_UPLOAD_SIZE:
-                    handle.close()
-                    if dest.exists():
-                        dest.unlink()
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"File too large (limit {MAX_UPLOAD_SIZE // (1024 * 1024)} MB)",
-                    )
-                handle.write(chunk)
-    except HTTPException:
-        raise
-    except OSError as exc:
-        if dest.exists():
-            dest.unlink()
-        raise HTTPException(
-            status_code=500,
-            detail="Upload failed while storing the file. Please retry or choose a different file.",
-        ) from exc
-    finally:
-        await file.close()
-
-    return {
-        "status": "ok",
-        "file_path": f"uploads/{safe_name}",
-        "filename": filename,
-    }
+# Re-export upload constants for test access via ``api_server.*``
+from src.api.uploads_routes import (  # noqa: E402
+    _BLOCKED_UPLOAD_EXT,
+    _BLOCKED_UPLOAD_NAMES,
+    _SHADOW_ID_RE,
+)
+from src.api.helpers import UPLOADS_DIR, MAX_UPLOAD_SIZE, _UPLOAD_CHUNK_SIZE  # noqa: E402
 
 
 # ============================================================================
