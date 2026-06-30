@@ -181,6 +181,23 @@ def _scheduled_research_scheduler_enabled() -> bool:
     return os.getenv(_SCHEDULED_RESEARCH_SCHEDULER_ENV, "").strip().lower() in _SCHEDULED_RESEARCH_TRUE_VALUES
 
 
+async def _dispatch_scheduled_research_job(job: "ScheduledResearchJob") -> None:
+    """Enqueue one scheduled research job through the session runtime.
+
+    ``send_message`` queues the agent attempt and returns once accepted; it
+    does not wait for that agent run to reach a terminal status. The executor's
+    ``COMPLETED`` state for this dispatch path means "successfully enqueued."
+    """
+    svc = _get_session_service()
+    if not svc:
+        raise RuntimeError("Session runtime not enabled")
+    # Pass a copy so the session runtime's internal config writes (e.g.
+    # include_shell_tools) do not mutate the persisted scheduled-run config.
+    session = svc.create_session(title=f"scheduled-research:{job.id}", config=dict(job.config))
+    logger.info("dispatching scheduled research job %s via session %s", job.id, session.session_id)
+    await svc.send_message(session.session_id, job.prompt)
+
+
 def _get_scheduled_research_executor() -> "ScheduledResearchExecutor":
     """Return the singleton scheduled research executor."""
     global _scheduled_research_executor

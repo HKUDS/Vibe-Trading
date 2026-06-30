@@ -6,7 +6,6 @@ This is a LEAF module — it imports only from stdlib + Pydantic.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
