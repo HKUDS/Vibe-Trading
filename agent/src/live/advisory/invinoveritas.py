@@ -52,6 +52,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "https://api.babyblueviper.com"
 DEFAULT_TIMEOUT_S = 8.0
 
+# The fixed question appended to the rendered account state. Kept as a module
+# constant so the request contract lives in one place (and is assertable in tests).
+_CONTEXT_QUESTION = (
+    "Is this specific order sound right now given the account state and scale?"
+)
+
 # Map the /review verdict vocabulary onto the local advisory Verdict enum.
 # /review can return "revise" (a soft "tighten this before shipping"); it is a
 # concern, not a hard reject, so it maps to APPROVE_WITH_CONCERNS.
@@ -95,6 +101,12 @@ class InvinoveritasAdvisory(PreTradeAdvisoryInterface):
     ) -> None:
         self._api_key = api_key or os.getenv("INVINOVERITAS_API_KEY")
         self._base_url = (base_url or os.getenv("INVINOVERITAS_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
+        if self._api_key and not self._base_url.startswith("https://"):
+            # A non-HTTPS base_url would transmit the bearer api_key in cleartext.
+            logger.warning(
+                "invinoveritas base_url is not HTTPS (%s); the api_key would be sent in cleartext",
+                self._base_url,
+            )
         self._timeout_s = timeout_s
         self._sign = sign
         self._client = client
@@ -220,5 +232,5 @@ class InvinoveritasAdvisory(PreTradeAdvisoryInterface):
             f"funding utilization {context.utilization_ratio:.0%}; "
             f"{context.open_position_count} open position(s); "
             f"total open exposure ${context.total_exposure_usd:,.2f}. "
-            "Is this specific order sound right now given the account state and scale?"
+            f"{_CONTEXT_QUESTION}"
         )

@@ -175,3 +175,39 @@ def test_orchestrator_worst_case_with_invinoveritas_reject() -> None:
     aggregated = orchestrator.review(_context())
     assert aggregated.verdict is Verdict.REJECT
     assert len(aggregated.results) == 2
+
+
+def test_no_api_key_sends_no_auth_header(monkeypatch: Any) -> None:
+    """With no api_key and no env var, no Authorization header is sent (no secret leaks)."""
+    monkeypatch.delenv("INVINOVERITAS_API_KEY", raising=False)
+    captured: list[httpx.Request] = []
+    provider = _provider(_json_handler({"verdict": "approve"}, capture=captured))
+    provider.review(_context())
+    assert len(captured) == 1
+    assert "authorization" not in {k.lower() for k in captured[0].headers}
+
+
+def test_non_json_body_fails_open() -> None:
+    """A 200 with an unparseable body must fail open (ValueError path), never block."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"<html>not json</html>")
+
+    provider = _provider(handler)
+    result = provider.review(_context())
+    assert result.verdict is Verdict.REVIEW_UNAVAILABLE
+    assert "unparseable" in result.summary.lower()
+
+
+def test_env_var_fallback_for_key_and_base_url(monkeypatch: Any) -> None:
+    """api_key and base_url fall back to env vars when not passed explicitly."""
+    monkeypatch.setenv("INVINOVERITAS_API_KEY", "ivk_env_key")
+    monkeypatch.setenv("INVINOVERITAS_BASE_URL", "https://review.example.test")
+    captured: list[httpx.Request] = []
+    # No api_key / base_url passed → constructor must read the env.
+    provider = _provider(_json_handler({"verdict": "approve"}, capture=captured))
+    provider.review(_context())
+    assert len(captured) == 1
+    request = captured[0]
+    assert request.headers["Authorization"] == "Bearer ivk_env_key"
+    assert request.url.host == "review.example.test"
