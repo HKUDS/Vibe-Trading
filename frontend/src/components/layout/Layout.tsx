@@ -337,11 +337,15 @@ function LanguageSwitcher() {
     };
   }, [open]);
 
-  // i18n.language may be a regional variant like "ja-JP" even though only
-  // "ja" is in SUPPORTED_LANGUAGES (nonExplicitSupportedLngs resolves the
-  // resources but keeps the full code). The i18n.languages array contains
-  // both the detected and resolved codes, so we match against any entry.
+  // i18n.language (singular) is the primary active language. We try an exact
+  // match first against SUPPORTED_LANGUAGES. If that fails (e.g. a regional
+  // variant like "ja-JP"), we fall back to i18n.languages (plural) which
+  // includes both the detected and resolved codes. NOTE: i18n.languages
+  // always contains the fallback language ("en"), so it must NOT be the
+  // primary match — otherwise "en" being first in SUPPORTED_LANGUAGES
+  // would always win and the switcher would never show any other language.
   const current =
+    SUPPORTED_LANGUAGES.find((l) => l.code === i18n.language) ??
     SUPPORTED_LANGUAGES.find((l) => i18n.languages?.includes(l.code)) ??
     SUPPORTED_LANGUAGES[0];
 

@@ -54,8 +54,9 @@ i18n
     // removed.
     fallbackLng: "en",
     supportedLngs: SUPPORTED_LANGUAGES.map((l) => l.code),
-    // Allow "en-US" → "en", "ja-JP" → "ja", etc.
-    nonExplicitSupportedLngs: true,
+    // NOTE: Intentionally NOT using nonExplicitSupportedLngs — it strips
+    // region codes from compound language keys like "zh-CN" which causes
+    // isSupportedCode to reject them ("zh-CN" → "zh", not in supportedLngs).
     interpolation: { escapeValue: false },
     detection: {
       // In browsers the navigator.language gives the user's browser locale,
