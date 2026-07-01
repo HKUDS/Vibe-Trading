@@ -5076,6 +5076,29 @@ def cmd_dev(
         )
         return EXIT_USAGE_ERROR
 
+    # `npm run dev` invokes the local Vite binary at
+    # ``frontend/node_modules/.bin/vite``. If ``node_modules`` does not
+    # exist (or is missing the Vite package), npm's bare-script
+    # resolution will print a confusing "vite is not a command" error
+    # and exit. Detect this case up front and point the user at
+    # ``vibe-trading setup`` instead.
+    vite_bin = frontend_dir / "node_modules" / ".bin" / ("vite.cmd" if _is_windows() else "vite")
+    if not vite_bin.exists():
+        console.print(
+            Panel(
+                f"[red]Frontend dependencies not installed.[/red]\n"
+                f"  Missing: [dim]{frontend_dir / 'node_modules'}[/dim]\n\n"
+                "Run this first:\n"
+                "  [cyan]vibe-trading setup[/cyan]\n\n"
+                "[dim]Or, to start the dev mode anyway and install on the fly,\n"
+                "run [bold]vibe-trading setup[/bold] in another terminal.[/dim]",
+                title="vibe-trading dev",
+                border_style="red",
+                padding=(0, 1),
+            )
+        )
+        return EXIT_USAGE_ERROR
+
     node, npm = _resolve_node_and_npm()
     if not node or not npm:
         missing = [name for name, path_ in (("node", node), ("npm", npm)) if not path_]
