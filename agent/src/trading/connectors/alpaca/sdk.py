@@ -13,6 +13,7 @@ recorded as ``paper`` in every payload — is the authoritative discriminator.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import asdict, dataclass
@@ -502,6 +503,18 @@ def _submit_via_tap(
         order["notional"] = str(notional)
     if order_type == "limit":
         order["limit_price"] = str(limit_price)
+
+    # Idempotency: a deterministic client_order_id derived from the order
+    # content, so a retry after an approval-race / poll timeout (where TAP
+    # forwarded the order but the agent saw a timeout) is deduplicated by Alpaca
+    # — a duplicate id is rejected, never double-placed. Trade-off: two
+    # intentionally-identical orders collide; vary any field for a real duplicate.
+    order["client_order_id"] = "tap-" + hashlib.sha256(
+        "|".join(
+            str(x)
+            for x in (cfg.profile, symbol, side, quantity, notional, order_type, limit_price, time_in_force)
+        ).encode()
+    ).hexdigest()[:24]
 
     credential = os.environ.get(TAP_ALPACA_CREDENTIAL_ENV, DEFAULT_TAP_ALPACA_CREDENTIAL)
     cred_headers = {

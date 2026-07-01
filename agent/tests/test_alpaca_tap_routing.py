@@ -69,6 +69,9 @@ def test_place_order_routes_through_tap_when_enabled(monkeypatch) -> None:
     sent = json.loads(captured["body"])
     assert sent["symbol"] == "AAPL" and sent["side"] == "buy" and sent["qty"] == "1.0"
     assert sent["type"] == "limit" and sent["limit_price"] == "1.0"
+    # Idempotency: the order carries a deterministic client_order_id so an
+    # approval-race retry is deduplicated by the broker rather than double-placed.
+    assert sent["client_order_id"].startswith("tap-")
 
 
 def test_denied_order_is_blocked(monkeypatch) -> None:
@@ -88,6 +91,31 @@ def test_denied_order_is_blocked(monkeypatch) -> None:
     assert result["status"] == "error"
     assert result["tap_decision"] == "denied"
     assert "order_id" not in result
+
+
+def test_client_order_id_is_deterministic_for_idempotency(monkeypatch) -> None:
+    """Same order content -> same client_order_id (so an approval-race retry is
+    deduplicated by the broker); a changed field -> a different id (so a genuine
+    second order is not accidentally blocked as a duplicate)."""
+    ids: list[str] = []
+
+    def fake_forward(target, method, body, cred_headers, **_):
+        ids.append(json.loads(body)["client_order_id"])
+        return {"ok": True, "decision": "forwarded", "status": 200,
+                "body": json.dumps({"id": "ord", "status": "new"}), "error": None}
+
+    monkeypatch.setattr(al.tap_forward, "tap_enabled", lambda: True)
+    monkeypatch.setattr(al.tap_forward, "forward", fake_forward)
+
+    kw = dict(symbol="AAPL", side="buy", quantity=1, order_type="limit",
+              limit_price=1, time_in_force="day")
+    al.place_order(_paper_cfg(), **kw)                       # first submit
+    al.place_order(_paper_cfg(), **kw)                       # identical retry
+    al.place_order(_paper_cfg(), **{**kw, "quantity": 2})    # genuinely different
+
+    assert ids[0] == ids[1]                       # retry -> broker dedups it
+    assert ids[2] != ids[0]                       # different order -> new id
+    assert all(i.startswith("tap-") for i in ids)
 
 
 def test_tap_credential_name_is_overridable(monkeypatch) -> None:

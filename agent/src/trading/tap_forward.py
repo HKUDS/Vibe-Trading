@@ -47,12 +47,16 @@ _ENV_CANDIDATES = (
 
 
 def _load_env_into_environ() -> None:
-    """Populate ``os.environ`` from the first existing project ``.env``.
+    """Populate ``os.environ`` with ``TAP_*`` vars from the project ``.env`` files.
 
-    Uses ``setdefault`` (never overrides a real environment variable), so an
-    explicit env var — e.g. injected by docker-compose ``env_file`` — always
-    wins over the file. This lets the TAP config live in the same ``.env`` as
-    the rest of the app's settings. Secret values are not logged.
+    Scans **every** candidate (not just the first that exists) and only sets keys
+    prefixed ``TAP_`` — so if one ``.env`` holds the app's config while a
+    different one holds the TAP vars, both are honoured. (Returning after the
+    first existing file would leave TAP silently disabled when e.g.
+    ``~/.vibe-trading/.env`` exists without the TAP vars but ``agent/.env`` has
+    them.) ``setdefault`` never overrides a real environment variable — e.g. one
+    injected by docker-compose ``env_file`` — and scoping to ``TAP_`` leaves the
+    app's own env loading untouched. Secret values are not logged.
     """
     for candidate in _ENV_CANDIDATES:
         try:
@@ -64,9 +68,8 @@ def _load_env_into_environ() -> None:
                     continue
                 name, value = line.split("=", 1)
                 name = name.strip()
-                if name:
+                if name.startswith("TAP_"):
                     os.environ.setdefault(name, value.strip().strip('"').strip("'"))
-            return
         except OSError:
             continue
 
