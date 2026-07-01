@@ -713,7 +713,7 @@
     "featureBacktest": "Built-in Backtest",
     "featureBacktestDesc": "Multiple data sources covering A-shares quantitative analysis",
     "featureStreaming": "Real-time Streaming",
-    "featureStreamingDesc": "Watch the agent think, call tools, and iterate",
+    "featureStreamingDesc": "Observe the agent’s workflow as it thinks, calls tools, and refines its approach step by step.",
     "featureReplay": "Strategy Replay",
     "featureReplayDesc": "Trade journal analyzer + Shadow Account — extract your rules, backtest them, attribute PnL delta"
   },
