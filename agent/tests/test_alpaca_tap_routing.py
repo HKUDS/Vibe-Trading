@@ -25,6 +25,11 @@ def _paper_cfg() -> "al.AlpacaConfig":
     return al.AlpacaConfig(profile="paper")
 
 
+def _ok(body: str) -> dict:
+    """A TAP forward result for an auto-approved read (GET) — 200 + JSON body."""
+    return {"ok": True, "decision": "immediate", "status": 200, "body": body, "error": None}
+
+
 def test_place_order_routes_through_tap_when_enabled(monkeypatch) -> None:
     captured: dict = {}
 
@@ -146,3 +151,210 @@ def test_tap_disabled_does_not_route_through_tap(monkeypatch) -> None:
     result = al.place_order(_paper_cfg(), symbol="AAPL", side="buy", quantity=1)
 
     assert result.get("via") != "tap"
+
+
+# --------------------------------------------------------------------------- #
+# M1b: reads routed through TAP (credential isolation — a read is a GET, which
+# TAP auto-approves, so there is no human gate; the process just holds no key).
+# Trading reads reuse the SDK field names; the market-data API abbreviates keys,
+# so quote/bars are aliased back before mapping.
+# --------------------------------------------------------------------------- #
+
+
+def _enable_tap(monkeypatch, fake_forward) -> None:
+    monkeypatch.setattr(al.tap_forward, "tap_enabled", lambda: True)
+    monkeypatch.setattr(al.tap_forward, "forward", fake_forward)
+
+
+def test_get_account_snapshot_routes_through_tap(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_forward(target, method, body, cred_headers, **_):
+        captured.update(target=target, method=method, cred_headers=dict(cred_headers))
+        return _ok(json.dumps({
+            "account_number": "PA123", "status": "ACTIVE", "currency": "USD",
+            "cash": "1000", "equity": "1500", "buying_power": "3000",
+            "portfolio_value": "1500", "pattern_day_trader": False, "trading_blocked": False,
+        }))
+
+    _enable_tap(monkeypatch, fake_forward)
+    result = al.get_account_snapshot(_paper_cfg())
+
+    assert captured["method"] == "GET"
+    assert captured["target"] == "https://paper-api.alpaca.markets/v2/account"
+    # Secret referenced by placeholder only — never a raw key on the wire.
+    assert captured["cred_headers"]["APCA-API-KEY-ID"] == "<CREDENTIAL:alpaca.key_id>"
+    assert captured["cred_headers"]["APCA-API-SECRET-KEY"] == "<CREDENTIAL:alpaca.secret_key>"
+    assert result["account"]["account_number"] == "PA123"
+    assert result["account"]["equity"] == "1500"
+
+
+def test_get_positions_routes_through_tap(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_forward(target, method, body, cred_headers, **_):
+        captured.update(target=target, method=method)
+        return _ok(json.dumps([{
+            "symbol": "AAPL", "side": "long", "qty": "10", "avg_entry_price": "100",
+            "market_value": "1100", "current_price": "110", "unrealized_pl": "100",
+            "cost_basis": "1000",
+        }]))
+
+    _enable_tap(monkeypatch, fake_forward)
+    result = al.get_positions(_paper_cfg())
+
+    assert captured["method"] == "GET"
+    assert captured["target"] == "https://paper-api.alpaca.markets/v2/positions"
+    row = result["positions"][0]
+    assert row["symbol"] == "AAPL"
+    assert row["quantity"] == "10"          # qty -> quantity
+    assert row["unrealized_pnl"] == "100"   # unrealized_pl -> unrealized_pnl
+
+
+def test_get_open_orders_routes_through_tap(monkeypatch) -> None:
+    calls: list = []
+
+    def fake_forward(target, method, body, cred_headers, **_):
+        calls.append(target)
+        if "status=open" in target:
+            return _ok(json.dumps([{
+                "id": "o1", "symbol": "AAPL", "side": "buy", "type": "limit",
+                "qty": "1", "limit_price": "10", "status": "new", "submitted_at": "t",
+            }]))
+        return _ok(json.dumps([
+            {"id": "o2", "symbol": "TSLA", "side": "sell", "type": "market",
+             "qty": "2", "filled_qty": "2", "status": "filled", "submitted_at": "t"},
+            {"id": "o3", "symbol": "MSFT", "side": "buy", "type": "market",
+             "qty": "1", "filled_qty": None, "status": "canceled", "submitted_at": "t"},
+        ]))
+
+    _enable_tap(monkeypatch, fake_forward)
+    result = al.get_open_orders(_paper_cfg(), include_executions=True)
+
+    assert all(t.startswith("https://paper-api.alpaca.markets/v2/orders?status=") for t in calls)
+    assert any("status=open" in t for t in calls)
+    assert any("status=closed" in t for t in calls)
+    assert result["open_orders"][0]["order_id"] == "o1"
+    # Only filled orders count as executions (o3 has no filled_qty).
+    assert [e["order_id"] for e in result["executions"]] == ["o2"]
+
+
+def test_get_quote_routes_through_tap_and_normalizes_keys(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_forward(target, method, body, cred_headers, **_):
+        captured.update(target=target, method=method)
+        # Market-data REST abbreviates: bp/ap/bs/as/t (the SDK exposes full names).
+        return _ok(json.dumps({
+            "symbol": "AAPL",
+            "quote": {"bp": 100.0, "ap": 100.5, "bs": 3, "as": 4, "t": "2026-01-01T00:00:00Z"},
+        }))
+
+    _enable_tap(monkeypatch, fake_forward)
+    result = al.get_quote("aapl", config=_paper_cfg())
+
+    assert captured["method"] == "GET"
+    assert captured["target"].startswith("https://data.alpaca.markets/v2/stocks/AAPL/quotes/latest")
+    assert "feed=iex" in captured["target"]
+    q = result["quote"]
+    assert q["bid"] == 100.0    # bp -> bid_price -> bid
+    assert q["ask"] == 100.5    # ap -> ask_price -> ask
+    assert q["bid_size"] == 3
+    assert q["ask_size"] == 4
+
+
+def test_get_historical_bars_routes_through_tap_and_normalizes_keys(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_forward(target, method, body, cred_headers, **_):
+        captured.update(target=target, method=method)
+        return _ok(json.dumps({
+            "symbol": "AAPL",
+            "bars": [{"t": "2026-01-01T00:00:00Z", "o": 1.0, "h": 2.0, "l": 0.5, "c": 1.5, "v": 1000}],
+        }))
+
+    _enable_tap(monkeypatch, fake_forward)
+    result = al.get_historical_bars("aapl", config=_paper_cfg(), period="1d", limit=5)
+
+    assert captured["target"].startswith("https://data.alpaca.markets/v2/stocks/AAPL/bars")
+    assert "timeframe=1Day" in captured["target"]
+    assert "limit=5" in captured["target"]
+    bar = result["bars"][0]
+    assert bar["open"] == 1.0     # o -> open
+    assert bar["high"] == 2.0
+    assert bar["low"] == 0.5
+    assert bar["close"] == 1.5    # c -> close
+    assert bar["volume"] == 1000  # v -> volume
+
+
+def test_read_fails_closed_when_tap_errors(monkeypatch) -> None:
+    # A host-pin rejection / TAP error must not silently yield empty data — the
+    # read raises, mirroring the SDK path raising on an API error.
+    monkeypatch.setattr(al.tap_forward, "tap_enabled", lambda: True)
+    monkeypatch.setattr(
+        al.tap_forward, "forward",
+        lambda *a, **k: {"ok": False, "decision": "error", "status": 403,
+                         "body": None, "error": "host not allowed"},
+    )
+    with pytest.raises(RuntimeError):
+        al.get_positions(_paper_cfg())
+
+
+def test_reads_do_not_route_through_tap_when_disabled(monkeypatch) -> None:
+    # TAP off: the read must take the direct-SDK path and never call forward.
+    monkeypatch.setattr(al.tap_forward, "tap_enabled", lambda: False)
+
+    def boom(*a, **k):
+        raise AssertionError("tap_forward.forward called while TAP disabled")
+
+    monkeypatch.setattr(al.tap_forward, "forward", boom)
+
+    class _FakeClient:
+        def get_all_positions(self):
+            return [{"symbol": "NVDA", "side": "long", "qty": "1", "avg_entry_price": "1",
+                     "market_value": "1", "current_price": "1", "unrealized_pl": "0", "cost_basis": "1"}]
+
+    monkeypatch.setattr(al, "_trading_client", lambda cfg: _FakeClient())
+    result = al.get_positions(_paper_cfg())
+
+    assert result["positions"][0]["symbol"] == "NVDA"   # came from the SDK path
+
+
+# --------------------------------------------------------------------------- #
+# M1b: cancel routed through TAP (a write — human-approved, not auto-approved).
+# --------------------------------------------------------------------------- #
+
+
+def test_cancel_order_routes_through_tap(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_forward(target, method, body, cred_headers, **_):
+        captured.update(target=target, method=method, cred_headers=dict(cred_headers))
+        # A cancel is a write: TAP forwards after approval; Alpaca returns 204.
+        return {"ok": True, "decision": "forwarded", "status": 204, "body": None, "error": None}
+
+    _enable_tap(monkeypatch, fake_forward)
+    result = al.cancel_order(_paper_cfg(), order_id="ord-1", symbol="aapl")
+
+    assert captured["method"] == "DELETE"
+    assert captured["target"] == "https://paper-api.alpaca.markets/v2/orders/ord-1"
+    assert captured["cred_headers"]["APCA-API-SECRET-KEY"] == "<CREDENTIAL:alpaca.secret_key>"
+    assert result["status"] == "ok"
+    assert result["cancelled"] is True
+    assert result["via"] == "tap"
+    assert result["symbol"] == "AAPL"
+
+
+def test_denied_cancel_is_blocked(monkeypatch) -> None:
+    monkeypatch.setattr(al.tap_forward, "tap_enabled", lambda: True)
+    monkeypatch.setattr(
+        al.tap_forward, "forward",
+        lambda *a, **k: {"ok": False, "decision": "denied", "status": None,
+                         "body": None, "error": None},
+    )
+    result = al.cancel_order(_paper_cfg(), order_id="ord-1")
+
+    # Fail closed: a denied cancel is an error and did not cancel anything.
+    assert result["status"] == "error"
+    assert result["tap_decision"] == "denied"
+    assert result.get("cancelled") is not True
