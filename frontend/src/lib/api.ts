@@ -47,7 +47,18 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw await errorFromResponse(res);
   }
   const text = await res.text();
-  return text ? JSON.parse(text) : ({} as T);
+  if (!text) return {} as T;
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    const preview = text.slice(0, 80).replace(/\s+/g, " ");
+    throw new ApiError(
+      `Expected JSON from ${path}, got ${contentType || "unknown content type"}: ${preview}`,
+      res.status,
+    );
+  }
+
+  return JSON.parse(text) as T;
 }
 
 export interface UploadResult {
