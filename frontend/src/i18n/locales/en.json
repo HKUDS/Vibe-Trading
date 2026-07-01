@@ -707,7 +707,7 @@
   "home": {
     "title": "AI-Powered Quant Strategy Research",
     "subtitle": "Describe a trading strategy in natural language. The agent generates code, runs backtests, and optimizes — all in real time.",
-    "startResearch": "Start Research",
+    "startResearch": "Start your vibe Trading journey today",
     "featureAgent": "AI Agent",
     "featureAgentDesc": "Natural language strategy generation with ReAct reasoning",
     "featureBacktest": "Built-in Backtest",
