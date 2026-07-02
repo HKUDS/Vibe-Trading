@@ -108,7 +108,7 @@ class ChannelRuntime:
     async def _handle_inbound(self, msg: InboundMessage) -> None:
         try:
             if self._is_pairing_command(msg.content):
-                reply = handle_pairing_command(msg.channel, msg.content.split(None, 1)[1] if " " in msg.content else "list")
+                reply = handle_pairing_command(msg.channel, self._pairing_subcommand_text(msg.content))
                 await self.bus.publish_outbound(
                     OutboundMessage(
                         channel=msg.channel,
@@ -234,7 +234,13 @@ class ChannelRuntime:
 
     @staticmethod
     def _is_pairing_command(content: str) -> bool:
-        return content.strip() == "/pairing" or content.strip().startswith("/pairing ")
+        stripped = content.strip().lower()
+        return stripped == "/pairing" or stripped.startswith("/pairing ")
+
+    @staticmethod
+    def _pairing_subcommand_text(content: str) -> str:
+        parts = content.strip().split(None, 1)
+        return parts[1] if len(parts) > 1 else "list"
 
     @staticmethod
     def _is_new_session_command(content: str) -> bool:

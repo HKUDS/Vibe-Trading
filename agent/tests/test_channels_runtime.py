@@ -288,7 +288,7 @@ def test_channel_runtime_handles_pairing_commands_without_agent(tmp_path: Path, 
                     channel="telegram",
                     sender_id="owner",
                     chat_id="chat-1",
-                    content="/pairing list",
+                    content="/PAIRING LIST",
                 )
             )
             outbound = await asyncio.wait_for(bus.consume_outbound(), timeout=1)
