@@ -11,6 +11,9 @@ Market rules:
     - Stamp tax 0.1% bilateral + levies
     - Lot-size rounding (simplified to 100 shares)
     - Higher slippage than US
+
+India (NSE/BSE) is handled by the dedicated ``backtest.engines.india_equity``
+``IndiaEquityEngine`` (T+1 delivery, circuit bands, STT/stamp/GST stack).
 """
 
 from __future__ import annotations

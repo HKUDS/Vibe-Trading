@@ -28,6 +28,7 @@ class Market(str, Enum):
     EQUITY_US = "equity_us"
     EQUITY_CN = "equity_cn"
     EQUITY_HK = "equity_hk"
+    EQUITY_IN = "equity_in"
     CRYPTO = "crypto"
     FUTURES = "futures"
 
@@ -249,8 +250,10 @@ def vwap(panel: dict[str, pd.DataFrame], market: Market | str) -> pd.DataFrame:
       scale. We multiply ``amount`` by 1000 (CNY) and divide by
       ``volume * 100`` (shares); ``+1`` keeps the denominator positive on
       suspended bars.
-    - ``equity_us`` / ``equity_hk`` / ``futures``: typical price ``(H + L + C + O) / 4``
-      when ``panel["vwap"]`` is absent.
+    - ``equity_us`` / ``equity_hk`` / ``equity_in`` / ``futures``: typical price
+      ``(H + L + C + O) / 4`` when ``panel["vwap"]`` is absent. India (NSE/BSE)
+      bars from Yahoo carry raw price/volume (no Tushare 千元/手 scaling), so the
+      typical-price form applies unchanged.
     - ``crypto``: prefer ``panel["vwap"]`` if provided, else typical price.
 
     Any missing required column → NaN propagation; never silent zero.

@@ -37,6 +37,9 @@ def _build_rule_engines(config: dict, codes: List[str]) -> Dict[str, BaseEngine]
         elif market == "hk_equity":
             from backtest.engines.global_equity import GlobalEquityEngine
             engines["hk_equity"] = GlobalEquityEngine(config, market="hk")
+        elif market == "india_equity":
+            from backtest.engines.india_equity import IndiaEquityEngine
+            engines["india_equity"] = IndiaEquityEngine(config)
         elif market == "crypto":
             from backtest.engines.crypto import CryptoEngine
             engines["crypto"] = CryptoEngine(config)

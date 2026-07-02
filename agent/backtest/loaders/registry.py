@@ -48,6 +48,7 @@ VALID_SOURCES: set[str] = {
     "alphavantage",
     "tiingo",
     "fmp",
+    "india_broker",
     "local",
     "auto",
 }
@@ -92,6 +93,7 @@ def _ensure_registered() -> None:
         "backtest.loaders.alphavantage_loader",
         "backtest.loaders.tiingo_loader",
         "backtest.loaders.fmp_loader",
+        "backtest.loaders.india_broker_loader",
         "backtest.loaders.local_loader",
     ]
     import importlib
@@ -125,6 +127,7 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
     "a_share":   ["tencent", "mootdx", "eastmoney", "baostock", "akshare", "tushare", "local"],
     "us_equity": ["yahoo", "stooq", "sina", "eastmoney", "yfinance", "tiingo", "fmp", "finnhub", "alphavantage", "akshare", "local"],
     "hk_equity": ["eastmoney", "yahoo", "futu", "yfinance", "akshare", "local"],
+    "india_equity": ["yahoo", "yfinance", "india_broker", "local"],
     "crypto":    ["okx", "ccxt", "yfinance", "local"],
     "futures":   ["tushare", "akshare", "local"],
     "fund":      ["tushare", "akshare", "local"],

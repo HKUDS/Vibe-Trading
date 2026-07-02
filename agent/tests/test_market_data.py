@@ -39,6 +39,11 @@ from src.market_data import (
         ("AAPL.US", "yahoo"),
         ("700.HK", "yahoo"),
         ("00700.HK", "yahoo"),
+        ("RELIANCE.NS", "yahoo"),  # India NSE
+        ("TCS.NS", "yahoo"),
+        ("M&M.NS", "yahoo"),  # ampersand in ticker
+        ("BAJAJ-AUTO.NS", "yahoo"),  # hyphen in ticker
+        ("500325.BO", "yahoo"),  # India BSE (numeric scrip code)
         ("BTC-USDT", "okx"),
         ("ETH/USDT", "ccxt"),
         ("local:my_file", "local"),

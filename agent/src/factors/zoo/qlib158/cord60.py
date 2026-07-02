@@ -17,7 +17,7 @@ __alpha_meta__ = {
     'theme': ['volume', 'microstructure'],
     'formula_latex': '\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}/\\\\mathrm{close}_{{-1}}, \\\\log((\\\\mathrm{volume}+1)/(\\\\mathrm{volume}_{{-1}}+1)), 60)',
     'columns_required': ['close', 'volume'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk'],
+    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in'],
     'frequency': ['1d'],
     'decay_horizon': 60,
     'min_warmup_bars': 60,

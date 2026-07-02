@@ -74,14 +74,17 @@ Feed a CSV broker export (同花顺 / 东财 / 富途 / generic), and the agent 
 5. `scan_shadow_signals` — list today's symbols that match your shadow's entry cadence (research only).
 
 ### Backtesting
-Create and run quantitative strategies across 7 engines (ChinaA, GlobalEquity, Crypto, ChinaFutures, GlobalFutures, Forex + options) with 18 market-data sources (auto-detect + ordered fallback):
+Create and run quantitative strategies across 8 engines (ChinaA, GlobalEquity, IndiaEquity, Crypto, ChinaFutures, GlobalFutures, Forex + options) with 19 market-data sources (auto-detect + ordered fallback):
 - **HK/US equities** via yfinance / stooq / yahoo (free, no API key)
+- **India equities (NSE/BSE)** via yahoo / yfinance using `<SYMBOL>.NS` (NSE, e.g. `RELIANCE.NS`) or `<SCRIP>.BO` (BSE, e.g. `500325.BO`) — free, no API key. The `IndiaEquityEngine` models T+1 delivery, no overnight shorts (set `allow_short` for intraday), configurable circuit bands, 1-share lots, and the STT/stamp-duty/exchange/GST cost stack. Optionally back-fill from your live broker via the `india_broker` source (Shoonya/Dhan; requires broker login).
 - **Cryptocurrency** via OKX or CCXT/100+ exchanges (free, no API key)
 - **China A-shares** via AKShare / baostock / tencent / sina / eastmoney / mootdx (free, no API key) — `TUSHARE_TOKEN` optional for premium quality
 - **Futures, forex, macro** via AKShare (free, no API key)
 - **HK & A-share equities** via Futu (broker login required, optional)
 - **Local CSV/parquet bars** via the `local` loader (offline, no network)
 - **Premium US data** via optional-key finnhub / alphavantage / tiingo / fmp (graceful fallback to free sources)
+
+Factors: the Alpha101 and QLib158 zoos are tagged for the `equity_in` universe, so they compute on NSE/BSE bars (the GTJA191 zoo stays China-only). Live/paper India trading uses the Shoonya / Dhan connectors (paper + read-only live; live order placement is structurally disabled because those brokers expose no paper/live switch).
 
 Example workflow:
 1. Use `list_skills()` to discover strategy patterns

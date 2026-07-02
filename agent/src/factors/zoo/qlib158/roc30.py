@@ -16,7 +16,7 @@ __alpha_meta__ = {
     'theme': ['momentum'],
     'formula_latex': '\\\\mathrm{close}_t / \\\\mathrm{close}_{{t-30}} - 1',
     'columns_required': ['close'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk'],
+    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in'],
     'frequency': ['1d'],
     'decay_horizon': 30,
     'min_warmup_bars': 30,

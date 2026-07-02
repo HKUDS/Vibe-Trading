@@ -14,7 +14,7 @@ from backtest.loaders.yahoo_loader import (
     DataLoader,
     _epoch_seconds,
     _is_intraday_interval,
-    _is_us_or_hk,
+    _is_supported,
     _rows_to_frame,
     _to_yahoo_interval,
 )
@@ -54,20 +54,25 @@ def _intraday_stamped_row(date_str: str, open_, high, low, close, volume):
 
 
 class TestSymbolGating:
-    """_is_us_or_hk only accepts US/HK suffixes."""
+    """_is_supported accepts US/HK/India suffixes only."""
 
     def test_accepts_us(self):
-        assert _is_us_or_hk("AAPL.US") is True
-        assert _is_us_or_hk("aapl.us") is True
+        assert _is_supported("AAPL.US") is True
+        assert _is_supported("aapl.us") is True
 
     def test_accepts_hk(self):
-        assert _is_us_or_hk("00700.HK") is True
-        assert _is_us_or_hk("00700.hk") is True
+        assert _is_supported("00700.HK") is True
+        assert _is_supported("00700.hk") is True
+
+    def test_accepts_india(self):
+        assert _is_supported("RELIANCE.NS") is True
+        assert _is_supported("reliance.ns") is True
+        assert _is_supported("500325.BO") is True
 
     def test_rejects_others(self):
-        assert _is_us_or_hk("601398.SH") is False
-        assert _is_us_or_hk("BTC-USDT") is False
-        assert _is_us_or_hk("") is False
+        assert _is_supported("601398.SH") is False
+        assert _is_supported("BTC-USDT") is False
+        assert _is_supported("") is False
 
 
 class TestIntervalMap:
@@ -229,7 +234,22 @@ class TestFetch:
         assert kwargs["period2"] == _epoch("2024-01-31") + 86400
         assert kwargs["interval"] == "1d"
 
-    def test_non_us_hk_symbol_skipped(self):
+    def test_fetch_india_symbol(self):
+        rows = [
+            _row("2024-01-02", 10, 11, 9, 10.5, 1000),
+            _row("2024-01-03", 10.5, 12, 10, 11.5, 2000),
+        ]
+        with patch(
+            "backtest.loaders.yahoo_loader.yahoo_client.get_chart",
+            return_value=rows,
+        ) as mock_chart:
+            out = DataLoader().fetch(["RELIANCE.NS"], "2024-01-01", "2024-01-31")
+        assert "RELIANCE.NS" in out
+        assert len(out["RELIANCE.NS"]) == 2
+        # NSE symbol passes through to the client verbatim (Yahoo keeps .NS).
+        assert mock_chart.call_args.args[0] == "RELIANCE.NS"
+
+    def test_non_us_hk_india_symbol_skipped(self):
         with patch(
             "backtest.loaders.yahoo_loader.yahoo_client.get_chart"
         ) as mock_chart:
@@ -277,6 +297,6 @@ class TestLoaderMetadata:
     def test_name_and_markets(self):
         loader = DataLoader()
         assert loader.name == "yahoo"
-        assert loader.markets == {"us_equity", "hk_equity"}
+        assert loader.markets == {"us_equity", "hk_equity", "india_equity"}
         assert loader.requires_auth is False
         assert loader.is_available() is True

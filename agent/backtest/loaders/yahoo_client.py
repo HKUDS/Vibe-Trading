@@ -14,6 +14,8 @@ first call that needs them and refreshes them once on a 401 (the documented
 Symbol convention (Vibe-Trading -> Yahoo):
   * US ``AAPL.US`` -> ``AAPL`` (Yahoo carries US tickers bare)
   * HK ``00700.HK`` -> ``0700.HK`` (Yahoo drops the leading zero to 4 digits)
+  * India ``RELIANCE.NS`` / ``500325.BO`` -> unchanged (Yahoo carries the
+    ``.NS``/``.BO`` suffix verbatim)
   * Anything else is passed through unchanged (e.g. ``BTC-USD``, ``^GSPC``).
 
 This module is provider-specific glue only; it returns plain Python
@@ -72,7 +74,8 @@ def map_symbol(symbol: str) -> str:
 
     Returns:
         The Yahoo ticker: ``.US`` suffix stripped; ``.HK`` codes normalized to
-        a 4-digit base (``00700.HK`` -> ``0700.HK``); everything else unchanged.
+        a 4-digit base (``00700.HK`` -> ``0700.HK``); India ``.NS``/``.BO`` and
+        everything else unchanged (Yahoo carries those suffixes verbatim).
     """
     cleaned = symbol.strip()
     upper = cleaned.upper()

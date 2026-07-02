@@ -16,7 +16,7 @@ __alpha_meta__ = {
     'theme': ['reversal'],
     'formula_latex': '\\\\mathrm{SUMP}_w - \\\\mathrm{SUMN}_w',
     'columns_required': ['close'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk'],
+    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in'],
     'frequency': ['1d'],
     'decay_horizon': 60,
     'min_warmup_bars': 60,

@@ -50,6 +50,12 @@ class TestDetectMarket:
             ("0700.HK", "hk_equity"),
             ("9988.HK", "hk_equity"),
             ("00005.HK", "hk_equity"),
+            # India equity (NSE / BSE)
+            ("RELIANCE.NS", "india_equity"),
+            ("TCS.NS", "india_equity"),
+            ("M&M.NS", "india_equity"),  # ampersand
+            ("BAJAJ-AUTO.NS", "india_equity"),  # hyphen
+            ("500325.BO", "india_equity"),  # numeric BSE scrip code
             # Crypto
             ("BTC-USDT", "crypto"),
             ("ETH-USDT", "crypto"),
@@ -93,6 +99,8 @@ class TestDetectSource:
             ("000001.SZ", "tushare"),
             ("AAPL.US", "yfinance"),
             ("0700.HK", "yfinance"),
+            ("RELIANCE.NS", "yahoo"),
+            ("500325.BO", "yahoo"),
             ("BTC-USDT", "okx"),
             ("IF2406.CFFEX", "tushare"),
             ("EUR/USD", "akshare"),

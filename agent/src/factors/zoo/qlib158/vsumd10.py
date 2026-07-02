@@ -16,7 +16,7 @@ __alpha_meta__ = {
     'theme': ['volume', 'volatility'],
     'formula_latex': '\\\\mathrm{VSUMP}_w - \\\\mathrm{VSUMN}_w',
     'columns_required': ['volume'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk'],
+    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in'],
     'frequency': ['1d'],
     'decay_horizon': 10,
     'min_warmup_bars': 10,

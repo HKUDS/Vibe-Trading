@@ -58,10 +58,15 @@ _ASSET_CLASS_MARKET: dict[AssetClass, str] = {
     AssetClass.US_EQUITY: "us_equity",
     AssetClass.US_ETF: "us_equity",
     AssetClass.HK_EQUITY: "hk_equity",
+    AssetClass.IN_EQUITY: "india_equity",
     AssetClass.CRYPTO: "crypto",
     # CN_EQUITY has no loader market wired here, so market-cap / liquidity floors
     # for A-shares fail closed (deny) rather than wave through — intentional. If
     # ever wired, the registry's A-share market key is "a_share" (not "cn_equity").
+    # IN_EQUITY routes to the "india_equity" loader chain (Yahoo) for liquidity
+    # floors; market-cap floors stay US-only (see ``market_cap_usd``), so an
+    # India market-cap floor fails closed like CN — intentional until a metadata
+    # source is wired.
 }
 
 #: Breach ``kind`` values. ``universe``/``instrument`` are structural (DENY);

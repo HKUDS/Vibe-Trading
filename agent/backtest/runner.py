@@ -300,6 +300,7 @@ _MARKET_TO_SOURCE = {
     "a_share": "tushare",
     "us_equity": "yfinance",
     "hk_equity": "yfinance",
+    "india_equity": "yahoo",
     "crypto": "okx",
     "futures": "tushare",
     "fund": "tushare",
@@ -575,6 +576,13 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
     if "forex" in markets:
         from backtest.engines.forex import ForexEngine
         return ForexEngine(config)
+
+    # India equity routing — must precede source-based routing because India's
+    # effective source is ``yahoo``, which has no Wave-1 branch and would
+    # otherwise fall through to the crypto default.
+    if "india_equity" in markets:
+        from backtest.engines.india_equity import IndiaEquityEngine
+        return IndiaEquityEngine(config)
 
     # Original routing (Wave 1)
     if source in ("okx", "ccxt"):
