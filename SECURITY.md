@@ -20,6 +20,12 @@ We will acknowledge your report within **5 business days** and work with you to 
 
 This policy applies to the [HKUDS/Vibe-Trading](https://github.com/HKUDS/Vibe-Trading) repository.
 
+## Generated backtest code
+
+Backtest runs may execute generated Python strategy code locally. Treat generated strategies as local code you review before running. The runner validates run directories and uses a narrow subprocess environment: it preserves OS/Python basics, proxy/certificate settings, allowed run-root configuration, and read-only market-data credentials needed by loaders, but it does not forward LLM provider keys, API server bearer tokens, shell-tool opt-ins, broker trading secrets, or live/advisory toggles by default.
+
+The backtest subprocess is still network-capable so loaders can fetch public or user-authorized market data. Do not run untrusted generated strategies in an environment that exposes sensitive files, secret-bearing proxy variables, or network services you would not trust local code to access.
+
 ## Official channels & impersonation
 
 Vibe-Trading is an open-source finance **research** tool. We will **never** ask you to
