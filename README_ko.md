@@ -50,14 +50,16 @@
 
 ## 📰 뉴스
 
+- **2026-07-01** 🧹 **Security polish + tracker cleanup**: API/Docker/frontend dev defaults를 조정하고, Settings channel과 `zh-CN` edges를 안정화했으며, frontend dependency/CSP alerts를 해결하고 오래된 WhatsApp + paper-trading tracker items를 정리했습니다([#338](https://github.com/HKUDS/Vibe-Trading/pull/338), [#351](https://github.com/HKUDS/Vibe-Trading/pull/351), [#349](https://github.com/HKUDS/Vibe-Trading/pull/349), [#365](https://github.com/HKUDS/Vibe-Trading/pull/365), [#367](https://github.com/HKUDS/Vibe-Trading/pull/367), [#350](https://github.com/HKUDS/Vibe-Trading/pull/350), [#335](https://github.com/HKUDS/Vibe-Trading/pull/335), [#283](https://github.com/HKUDS/Vibe-Trading/issues/283)).
+
 - **2026-06-30** 💬 **리서치 전달을 위한 IM 채널 런타임**: Vibe-Trading은 이제 같은 agent session runtime을 16개 내장 메시지 어댑터에 연결할 수 있습니다 — WebSocket, Telegram, Slack, Discord, Matrix, WhatsApp, Signal, QQ/NapCat, WeChat/WeCom, Feishu/Lark, DingTalk, Teams, email, Mochat. CLI(`vibe-trading channels status/start/stop/login/pairing`), REST(`/channels/status`, `/channels/start`, `/channels/stop`, `/channels/pairing/command`), Web UI Settings 패널이 상태, 복구 힌트, 시작/중지, sender pairing을 제공하며, SDK 기반 어댑터는 `vibe-trading-ai[telegram]` 또는 `vibe-trading-ai[channels]` 같은 extras 뒤에 둡니다([#341](https://github.com/HKUDS/Vibe-Trading/pull/341)).
 
 - **2026-06-29** 🛡️ **Live advisory safety + Trading 212 read-only connector + Windows/Gemini fixes**: live order guards now have an opt-in, broker-agnostic `PreTradeAdvisoryInterface` that records advisory reviews without bypassing the mandate gate, kill switch, or audit trail ([#328](https://github.com/HKUDS/Vibe-Trading/pull/328), closes [#317](https://github.com/HKUDS/Vibe-Trading/issues/317), thanks @shadowinlife). Trading 212 joins the connector layer with read-only account, positions, orders, history, and instrument-metadata support; `place_order` / `cancel_order` still hard-refuse until a structural paper/live boundary exists ([#321](https://github.com/HKUDS/Vibe-Trading/pull/321), closes [#309](https://github.com/HKUDS/Vibe-Trading/issues/309), thanks @mvanhorn). Windows startup avoids the pandas 3.0 `Timestamp` crash via the `<3.0.0` constraint ([#329](https://github.com/HKUDS/Vibe-Trading/pull/329), closes [#324](https://github.com/HKUDS/Vibe-Trading/issues/324), thanks @hannibal-lee); Gemini `thought_signature` dict-history replay was verified/fixed on `main` ([#318](https://github.com/HKUDS/Vibe-Trading/issues/318)); `.US` financial statements now route to SEC EDGAR instead of Eastmoney ([#325](https://github.com/HKUDS/Vibe-Trading/issues/325)); and the Alpha Library landing page got cache/date/selector/noscript/DNS-prefetch hardening while heavier CSP and social-card follow-ups stay tracked ([#323](https://github.com/HKUDS/Vibe-Trading/issues/323)).
 
-- **2026-06-28** 🧰 **크로스 플랫폼 setup/dev + 런타임 및 파일 도구 강화**: `vibe-trading setup` 과 `vibe-trading dev` 가 Windows TypeScript build, 올바른 cwd 에서의 backend 실행, Vite 5899 포트, 종료 시 child process 정리를 제대로 처리합니다([#292](https://github.com/HKUDS/Vibe-Trading/pull/292), @digger-yu 님 감사합니다). Runtime status polling 은 이제 crash 대신 graceful 하게 degrade 하고([#322](https://github.com/HKUDS/Vibe-Trading/issues/322)), MCP OAuth cache key 는 sanitize 되며([#313](https://github.com/HKUDS/Vibe-Trading/issues/313)), OpenAI default 와 Robinhood `agent.json` validation 도 더 엄격해졌습니다([#319](https://github.com/HKUDS/Vibe-Trading/pull/319), [#320](https://github.com/HKUDS/Vibe-Trading/pull/320), @mvanhorn 님 감사합니다). File tools 는 독립 read/write roots 와 확장된 sandbox tests 를 갖췄습니다([#299](https://github.com/HKUDS/Vibe-Trading/pull/299), @skloxo 님 감사합니다).
 <details>
 <summary>이전 뉴스</summary>
 
+- **2026-06-28** 🧰 **크로스 플랫폼 setup/dev + 런타임 및 파일 도구 강화**: `vibe-trading setup` 과 `vibe-trading dev` 가 Windows TypeScript build, 올바른 cwd 에서의 backend 실행, Vite 5899 포트, 종료 시 child process 정리를 제대로 처리합니다([#292](https://github.com/HKUDS/Vibe-Trading/pull/292), @digger-yu 님 감사합니다). Runtime status polling 은 이제 crash 대신 graceful 하게 degrade 하고([#322](https://github.com/HKUDS/Vibe-Trading/issues/322)), MCP OAuth cache key 는 sanitize 되며([#313](https://github.com/HKUDS/Vibe-Trading/issues/313)), OpenAI default 와 Robinhood `agent.json` validation 도 더 엄격해졌습니다([#319](https://github.com/HKUDS/Vibe-Trading/pull/319), [#320](https://github.com/HKUDS/Vibe-Trading/pull/320), @mvanhorn 님 감사합니다). File tools 는 독립 read/write roots 와 확장된 sandbox tests 를 갖췄습니다([#299](https://github.com/HKUDS/Vibe-Trading/pull/299), @skloxo 님 감사합니다).
 - **2026-06-27** 🧯 **콘텐츠 필터 복원력 + Shadow Account feature contract 정리**: event-driven / swarm 실행은 이제 개별 LLM content-moderation hit 를 건너뛰고, filter rate 가 높으면 run card 에 경고하며, Gemini safety finish reason 을 인식해 전체 analysis 를 abort 하지 않습니다([#308](https://github.com/HKUDS/Vibe-Trading/pull/308), [#307](https://github.com/HKUDS/Vibe-Trading/issues/307) 종료, @shadowinlife 님 감사합니다). Shadow Account extraction/codegen 은 하나의 `PRICE_FEATURES` contract 를 공유하고 네 자리 소수 return bounds 를 유지해 rule/codegen drift 와 `prior_5d_return` 정밀도 손실을 막습니다([#316](https://github.com/HKUDS/Vibe-Trading/pull/316), @Robin1987China 님 감사합니다).
 - **2026-06-26** 🎯 **Shadow Account 조건부 진입 + tushare ETF/지수/HK 라우팅**: 추출된 Shadow Account 규칙이 이제 RSI / prior-return 범위를 담아, 생성된 SignalEngine 이 보유 주기를 맹목적으로 반복하지 않고 실제 조건(RSI 가 범위 내, prior-return 이 범위 내)에서 진입합니다([#314](https://github.com/HKUDS/Vibe-Trading/pull/314), [#302](https://github.com/HKUDS/Vibe-Trading/pull/302) follow-up, @Robin1987China 님 감사합니다). tushare loader 도 ETF/LOF 를 `fund_daily()`, 지수를 `index_daily()`, 홍콩 주식을 `hk_daily()` 로 라우팅하며, 비주식에 대해 조용히 빈 값을 반환하는 `daily()` 를 항상 호출하던 동작을 멈추고, 심볼별 빈 결과 + 부분 수집 경고를 추가했습니다([#315](https://github.com/HKUDS/Vibe-Trading/pull/315), [#310](https://github.com/HKUDS/Vibe-Trading/issues/310) 종료, @shadowinlife 님 감사합니다).
 - **2026-06-25** 🧪 **엄격한 validation JSON + 더 안정적인 agent context**: 독립 backtest validation 이 `artifacts/validation.json` 또는 CLI stdout 을 쓰기 전에 중첩된 `NaN` / `Infinity` 값을 정규화해, strict JSON parser 가 validation payload 에서 막히지 않습니다([#306](https://github.com/HKUDS/Vibe-Trading/pull/306), @gyx09212214-prog 님 감사합니다). Agent prompt 도 loader registry 에서 현재 data-source 수를 동적으로 계산하고, `_microcompact()` 는 실제 token pressure 가 있을 때만 실행되어 짧은 실행에서 오래된 tool result 를 너무 일찍 비우지 않습니다([#296](https://github.com/HKUDS/Vibe-Trading/pull/296), [#282](https://github.com/HKUDS/Vibe-Trading/issues/282) 종료, @MarkfuGod 님 감사합니다).
@@ -671,6 +673,17 @@ vibe-trading channels pairing --channel telegram list
 ```
 
 Built-in adapters는 `websocket`, `telegram`, `slack`, `discord`, `matrix`, `whatsapp`, `signal`, `qq`, `napcat`, `weixin`, `wecom`, `feishu`, `dingtalk`, `msteams`, `email`, `mochat`입니다. 개별 플랫폼은 `pip install "vibe-trading-ai[telegram]"`처럼 설치하거나, 전체 채널 세트는 `pip install "vibe-trading-ai[channels]"`로 설치할 수 있습니다.
+
+**채팅 내 슬래시 명령어** (채널 무관, 16개 어댑터 모두 공통):
+
+| 명령어 | 설명 |
+|--------|------|
+| `/new` | 현재 세션 초기화 — 다음 메시지에서 새 대화 시작 |
+| `/reset` | `/new`의 별칭 |
+| `/newsession` | `/new`의 별칭 |
+| `/pairing list` | 대기 중인 sender pairing 요청 표시 |
+
+명령어는 대소문자를 구분하지 않으며, 전체 메시지로 전송해야 합니다 (예: `hello /new`은 초기화가 아닌 일반 메시지로 처리됩니다).
 
 </details>
 

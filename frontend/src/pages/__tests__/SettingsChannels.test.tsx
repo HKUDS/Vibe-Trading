@@ -128,4 +128,18 @@ describe("Settings IM channels panel", () => {
 
     await waitFor(() => expect(apiMock.startChannels).toHaveBeenCalledTimes(1));
   });
+
+  it("still renders LLM and data source settings when channel status fails", async () => {
+    apiMock.getChannelStatus.mockRejectedValue(
+      new Error('Expected JSON from /channels/status, got text/html: <!doctype html>'),
+    );
+
+    render(<Settings />);
+
+    expect(await screen.findByText("LLM Settings")).toBeInTheDocument();
+    expect(screen.getByText("Data Source Settings")).toBeInTheDocument();
+    expect(screen.getByText("IM Channels")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start channels" })).toBeDisabled();
+  });
 });

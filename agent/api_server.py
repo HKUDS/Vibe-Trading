@@ -553,6 +553,14 @@ def _is_allowed_loopback_host(host: str) -> bool:
     return normalized in _DEFAULT_LOOPBACK_HOSTS or normalized in _EXTRA_LOOPBACK_HOSTS
 
 
+def _is_loopback_bind_host(host: str) -> bool:
+    """Return whether ``host`` resolves to a loopback interface."""
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host == "localhost"
+
+
 # CORS: override with CORS_ORIGINS (comma-separated explicit origins)
 _CORS_ORIGINS = _parse_cors_origins(os.getenv("CORS_ORIGINS"))
 
@@ -3578,12 +3586,19 @@ def serve_main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description="Vibe-Trading Server")
     parser.add_argument("--port", type=int, default=8000, help="Listen port (default 8000)")
-    parser.add_argument("--host", default="0.0.0.0", help="Bind address")
+    parser.add_argument("--host", default="127.0.0.1", help="Bind address")
     parser.add_argument("--dev", action="store_true", help="Dev mode: spawn Vite on :5173")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else 2
+
+    if not _is_loopback_bind_host(args.host) and not _configured_api_key():
+        print(
+            f"[warn] Binding to {args.host} without API_AUTH_KEY set. "
+            f"Remote requests are rejected by the loopback peer-IP check, "
+            f"but consider using --host 127.0.0.1 for local-only access."
+        )
 
     frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
     frontend_root = Path(__file__).resolve().parent.parent / "frontend"

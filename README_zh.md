@@ -50,14 +50,16 @@
 
 ## 📰 News
 
+- **2026-07-01** 🧹 **安全打磨 + tracker 清理**：收紧 API/Docker/frontend dev 默认值，修稳 Settings channel 与 `zh-CN` 边界，清掉前端依赖/CSP alerts，并关闭过期的 WhatsApp + paper-trading tracker 项（[#338](https://github.com/HKUDS/Vibe-Trading/pull/338)、[#351](https://github.com/HKUDS/Vibe-Trading/pull/351)、[#349](https://github.com/HKUDS/Vibe-Trading/pull/349)、[#365](https://github.com/HKUDS/Vibe-Trading/pull/365)、[#367](https://github.com/HKUDS/Vibe-Trading/pull/367)、[#350](https://github.com/HKUDS/Vibe-Trading/pull/350)、[#335](https://github.com/HKUDS/Vibe-Trading/pull/335)、[#283](https://github.com/HKUDS/Vibe-Trading/issues/283)）。
+
 - **2026-06-30** 💬 **IM 通道运行时接入研究交付**：Vibe-Trading 现在可把同一套 agent session runtime 接到 16 个内置消息适配器：WebSocket、Telegram、Slack、Discord、Matrix、WhatsApp、Signal、QQ/NapCat、微信/企业微信、飞书/Lark、钉钉、Teams、email、Mochat。CLI（`vibe-trading channels status/start/stop/login/pairing`）、REST（`/channels/status`、`/channels/start`、`/channels/stop`、`/channels/pairing/command`）和 Web UI Settings 面板已覆盖状态、恢复提示、启停与 sender pairing；SDK 型适配器继续通过 `vibe-trading-ai[telegram]` 或 `vibe-trading-ai[channels]` 等 extras 按需安装（[#341](https://github.com/HKUDS/Vibe-Trading/pull/341)）。
 
 - **2026-06-29** 🛡️ **实盘交易安全顾问 + Trading 212 只读连接器 + Windows/Gemini 修复**：实盘下单守卫现在提供可选的、券商无关的 `PreTradeAdvisoryInterface`，在记录顾问审查的同时不绕过 mandate gate、kill switch 或审计追踪（[#328](https://github.com/HKUDS/Vibe-Trading/pull/328)，关闭 [#317](https://github.com/HKUDS/Vibe-Trading/issues/317)，感谢 @shadowinlife）。Trading 212 加入连接器层，支持只读账户、持仓、订单、历史和合约元数据；`place_order` / `cancel_order` 在有结构性 paper/live 边界之前仍硬拒绝（[#321](https://github.com/HKUDS/Vibe-Trading/pull/321)，关闭 [#309](https://github.com/HKUDS/Vibe-Trading/issues/309)，感谢 @mvanhorn）。Windows 启动通过 `<3.0.0` 约束避免 pandas 3.0 `Timestamp` 崩溃（[#329](https://github.com/HKUDS/Vibe-Trading/pull/329)，关闭 [#324](https://github.com/HKUDS/Vibe-Trading/issues/324)，感谢 @hannibal-lee）；Gemini `thought_signature` dict-history 重放已在 `main` 验证修复（[#318](https://github.com/HKUDS/Vibe-Trading/issues/318)）；`.US` 财务报表现在路由到 SEC EDGAR 而非东方财富（[#325](https://github.com/HKUDS/Vibe-Trading/issues/325)）；Alpha Library 着陆页获得 cache/date/selector/noscript/DNS-prefetch 加固，更重的 CSP 和社交卡片跟进工作仍在追踪中（[#323](https://github.com/HKUDS/Vibe-Trading/issues/323)）。
 
-- **2026-06-28** 🧰 **跨平台 setup/dev + 运行态与文件工具加固**：`vibe-trading setup` 和 `vibe-trading dev` 现在能正确处理 Windows TypeScript 构建、从正确 cwd 启动后端、使用 Vite 的 5899 端口，并在退出时干净关闭子进程（[#292](https://github.com/HKUDS/Vibe-Trading/pull/292)，感谢 @digger-yu）。Runtime 状态轮询现在会优雅降级而不是崩溃（[#322](https://github.com/HKUDS/Vibe-Trading/issues/322)）；MCP OAuth cache key 已做脱敏规范化（[#313](https://github.com/HKUDS/Vibe-Trading/issues/313)）；OpenAI 默认模型与 Robinhood `agent.json` 校验进一步收紧（[#319](https://github.com/HKUDS/Vibe-Trading/pull/319)、[#320](https://github.com/HKUDS/Vibe-Trading/pull/320)，感谢 @mvanhorn）；文件工具也补上了独立读/写 roots 与更完整的 sandbox 测试（[#299](https://github.com/HKUDS/Vibe-Trading/pull/299)，感谢 @skloxo）。
 <details>
 <summary>更早的更新</summary>
 
+- **2026-06-28** 🧰 **跨平台 setup/dev + 运行态与文件工具加固**：`vibe-trading setup` 和 `vibe-trading dev` 现在能正确处理 Windows TypeScript 构建、从正确 cwd 启动后端、使用 Vite 的 5899 端口，并在退出时干净关闭子进程（[#292](https://github.com/HKUDS/Vibe-Trading/pull/292)，感谢 @digger-yu）。Runtime 状态轮询现在会优雅降级而不是崩溃（[#322](https://github.com/HKUDS/Vibe-Trading/issues/322)）；MCP OAuth cache key 已做脱敏规范化（[#313](https://github.com/HKUDS/Vibe-Trading/issues/313)）；OpenAI 默认模型与 Robinhood `agent.json` 校验进一步收紧（[#319](https://github.com/HKUDS/Vibe-Trading/pull/319)、[#320](https://github.com/HKUDS/Vibe-Trading/pull/320)，感谢 @mvanhorn）；文件工具也补上了独立读/写 roots 与更完整的 sandbox 测试（[#299](https://github.com/HKUDS/Vibe-Trading/pull/299)，感谢 @skloxo）。
 - **2026-06-27** 🧯 **内容过滤韧性 + Shadow Account 特征契约清理**：事件驱动与 swarm 运行现在会跳过单个 LLM 内容审核命中，在 run card 中提示较高过滤率，并识别 Gemini safety finish reason，而不是让整次分析直接失败（[#308](https://github.com/HKUDS/Vibe-Trading/pull/308)，关闭 [#307](https://github.com/HKUDS/Vibe-Trading/issues/307)，感谢 @shadowinlife）。Shadow Account 抽取与代码生成现在共用同一个 `PRICE_FEATURES` 契约，并保留四位小数的收益边界，避免规则/codegen 漂移以及 `prior_5d_return` 精度损失（[#316](https://github.com/HKUDS/Vibe-Trading/pull/316)，感谢 @Robin1987China）。
 - **2026-06-26** 🎯 **Shadow Account 条件入场 + tushare ETF/指数/港股路由**：抽取出的 Shadow Account 规则现在会带上 RSI / 前期收益的区间，生成的 SignalEngine 据此按真实条件入场（RSI 落在区间内、前期收益落在区间内），不再盲目复现持仓节奏（[#314](https://github.com/HKUDS/Vibe-Trading/pull/314)，承接 [#302](https://github.com/HKUDS/Vibe-Trading/pull/302)，感谢 @Robin1987China）。tushare loader 也会把 ETF/LOF 路由到 `fund_daily()`、指数到 `index_daily()`、港股到 `hk_daily()`，不再一律调用对非股票静默返回空的 `daily()`，并加上每只标的的空结果与部分缺失告警（[#315](https://github.com/HKUDS/Vibe-Trading/pull/315)，关闭 [#310](https://github.com/HKUDS/Vibe-Trading/issues/310)，感谢 @shadowinlife）。
 - **2026-06-25** 🧪 **严格 validation JSON + 更稳的 agent 上下文**：独立回测 validation 现在会在写出 `artifacts/validation.json` 或 CLI stdout 前归一化嵌套的 `NaN` / `Infinity`，严格 JSON 解析器不再被验证载荷卡住（[#306](https://github.com/HKUDS/Vibe-Trading/pull/306)，感谢 @gyx09212214-prog）。Agent prompt 的数据源数量也改为从 loader registry 动态推导，`_microcompact()` 只有在真实 token 压力下才会触发，短运行不会再过早清掉旧工具结果（[#296](https://github.com/HKUDS/Vibe-Trading/pull/296)，关闭 [#282](https://github.com/HKUDS/Vibe-Trading/issues/282)，感谢 @MarkfuGod）。
@@ -665,6 +667,17 @@ vibe-trading channels pairing --channel telegram list
 ```
 
 内置适配器包括 `websocket`、`telegram`、`slack`、`discord`、`matrix`、`whatsapp`、`signal`、`qq`、`napcat`、`weixin`、`wecom`、`feishu`、`dingtalk`、`msteams`、`email` 和 `mochat`。可按需安装单个平台，例如 `pip install "vibe-trading-ai[telegram]"`，也可以一次安装全量通道依赖：`pip install "vibe-trading-ai[channels]"`。
+
+**聊天内斜杠命令**（通道无关，全部 16 个适配器通用）：
+
+| 命令 | 说明 |
+|------|------|
+| `/new` | 重置当前会话——下一条消息将开启一段新对话 |
+| `/reset` | `/new` 的别名 |
+| `/newsession` | `/new` 的别名 |
+| `/pairing list` | 显示待处理的 sender pairing 请求 |
+
+命令不区分大小写，且必须作为整条消息发送（例如 `hello /new` 会被当作普通消息而非重置命令）。
 
 </details>
 

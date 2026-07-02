@@ -142,12 +142,15 @@ class TestCmdDev:
     5173, and launch the backend from AGENT_DIR so the in-repo `cli`
     package is importable."""
 
-    def test_default_frontend_port_is_5899(self) -> None:
+    def test_default_frontend_port_is_5899(self, tmp_path: Path) -> None:
         """Hardcoded wrong-port regression: this is the value users see
         in the banner. Vite config sets 5899; we must not print 5173."""
         # We don't actually run the command (it never returns), just
         # inspect the documented default by calling the function with
         # patched subprocess that raises immediately.
+        # We must fabricate node_modules/.bin/vite so the pre-check in
+        # cmd_dev does not bail out with USAGE_ERROR before Popen runs.
+        frontend_dir = _make_frontend_with_vite(tmp_path)
         with patch("cli._legacy._resolve_node_and_npm", return_value=("/usr/bin/node", "/usr/bin/npm")):
             with patch("cli._legacy.subprocess.Popen") as mock_popen:
                 # Both children "exit" immediately so the wait loop ends.
@@ -155,7 +158,7 @@ class TestCmdDev:
                 proc.poll.return_value = 0
                 mock_popen.return_value = proc
                 with patch.object(cli._legacy.time, "sleep", side_effect=KeyboardInterrupt):
-                    rc = cli._legacy.cmd_dev()
+                    rc = cli._legacy.cmd_dev(frontend_dir=frontend_dir)
 
         # First Popen call: backend. Second: frontend.
         backend_call = mock_popen.call_args_list[0]
@@ -177,8 +180,7 @@ class TestCmdDev:
         assert rc == cli._legacy.EXIT_SUCCESS
 
     def test_custom_frontend_port_propagates(self, tmp_path: Path) -> None:
-        frontend_dir = tmp_path / "frontend"
-        frontend_dir.mkdir()
+        frontend_dir = _make_frontend_with_vite(tmp_path)
         with patch("cli._legacy._resolve_node_and_npm", return_value=("/usr/bin/node", "/usr/bin/npm")):
             with patch("cli._legacy.subprocess.Popen") as mock_popen:
                 proc = MagicMock()
@@ -191,3 +193,17 @@ class TestCmdDev:
         frontend_cmd = frontend_call.args[0]
         port_idx = frontend_cmd.index("--port") + 1
         assert frontend_cmd[port_idx] == "6000"
+
+
+def _make_frontend_with_vite(tmp_path: Path) -> Path:
+    """Create a fake frontend directory with a placeholder Vite binary so
+    that ``cmd_dev``'s pre-flight check (``node_modules/.bin/vite``) passes
+    during unit tests. We don't actually invoke the binary."""
+    frontend_dir = tmp_path / "frontend"
+    frontend_dir.mkdir()
+    is_windows = sys.platform == "win32"
+    bin_dir = frontend_dir / "node_modules" / ".bin"
+    bin_dir.mkdir(parents=True)
+    vite_name = "vite.cmd" if is_windows else "vite"
+    (bin_dir / vite_name).write_text("")  # touch
+    return frontend_dir

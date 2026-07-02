@@ -210,7 +210,7 @@ def handle_pairing_command(channel: str, subcommand_text: str) -> str:
     so it can be used from both the CLI and the agent CommandRouter.
     """
     parts = subcommand_text.split()
-    sub = parts[0] if parts else "list"
+    sub = parts[0].lower() if parts else "list"
     arg = parts[1] if len(parts) > 1 else None
 
     if sub in ("list",):

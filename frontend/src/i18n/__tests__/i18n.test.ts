@@ -3,7 +3,7 @@ import zhCN from "../locales/zh-CN.json";
 import ja from "../locales/ja.json";
 import ko from "../locales/ko.json";
 import ar from "../locales/ar.json";
-import { SUPPORTED_LANGUAGES, isRtl } from "../index";
+import i18n, { SUPPORTED_LANGUAGES, isRtl } from "../index";
 
 // ── helpers ────────────────────────────────────────────────────
 
@@ -139,5 +139,14 @@ describe("i18n utilities", () => {
   it("SUPPORTED_LANGUAGES contains all 5 registered locales", () => {
     const codes = SUPPORTED_LANGUAGES.map((l) => l.code);
     expect(codes).toEqual(["en", "zh-CN", "ja", "ko", "ar"]);
+  });
+
+  it("accepts zh-CN as an explicit supported language", async () => {
+    await i18n.changeLanguage("zh-CN");
+
+    expect(i18n.language).toBe("zh-CN");
+    expect(i18n.languages).toContain("zh-CN");
+
+    await i18n.changeLanguage("en");
   });
 });

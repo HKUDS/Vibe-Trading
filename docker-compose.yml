@@ -32,7 +32,7 @@ services:
     image: node:20
     working_dir: /app
     ports:
-      - "5899:5899"
+      - "127.0.0.1:5899:5899"
     volumes:
       - ./frontend:/app
     environment:
