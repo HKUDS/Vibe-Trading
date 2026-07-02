@@ -276,7 +276,6 @@ def _live_action_frame_from_tool_result(event: Any) -> Optional[str]:
     return frame.to_sse()
 
 
-# ============================================================================
 
 # ============================================================================
 # Registration
@@ -324,6 +323,7 @@ def register_sessions_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
         return svc, session
 
+    # -----------------------------------------------------------------------
     # Session CRUD routes
     # -----------------------------------------------------------------------
 
