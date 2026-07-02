@@ -1071,6 +1071,58 @@ The agent exposes connector-scoped tools named `trading_connections`,
 Live-broker raw MCP tools are not registered directly as `mcp_<broker>_*`.
 No IBKR order-placement tool is registered.
 
+### 🔐 TAP Mode — full credential isolation & human-approved writes
+
+**Opt-in, off by default.** If the `TAP_*` variables below are unset, the
+connector behaves exactly as before (direct broker SDK) — nothing changes.
+
+[TAP](https://tap.human.tech) (Tool Authorization Protocol) is a credential
+proxy: the agent never holds the raw broker API secret, and consequential writes
+are gated on **human approval**. With TAP mode on, **every** Alpaca call — order
+placement, cancel, and the reads (account/positions/orders/quote/bars) — is sent
+to the TAP proxy's `/forward` endpoint instead of the broker SDK; TAP injects the
+real key server-side, then forwards upstream.
+
+- The agent process holds **no Alpaca key at all** — and doesn't even need
+  `alpaca-py` — because the whole egress goes through TAP. The secret is
+  referenced by name (`<CREDENTIAL:alpaca.key_id>`) and TAP substitutes it.
+- **Writes block on human approval.** An order or cancel cannot reach the broker
+  without a human approving it; even a prompt-injected "buy now" is held, and
+  denying it means it never reaches Alpaca. Orders carry a deterministic
+  `client_order_id`, so an approval-race retry is deduplicated rather than
+  double-placed.
+- **Reads auto-approve.** Account/positions/orders/quote/bars are GETs that TAP
+  forwards without a human step — this is credential *isolation* (no key in the
+  process), not a gate, so there's ~zero added friction.
+- `allowed_hosts` on the TAP credential pins where the key may be sent, so a
+  tampered target is rejected (403) before injection.
+
+**Enable it:**
+
+1. In the TAP dashboard, create a **multi-secret** credential named `alpaca`
+   holding your Alpaca key pair as fields `key_id` and `secret_key`, assigned to
+   your agent, with allowed hosts `paper-api.alpaca.markets` (or the live host
+   `api.alpaca.markets`) **and** `data.alpaca.markets` (the market-data host used
+   by quote/bars).
+2. Add to `agent/.env`:
+
+| Variable | Required | Description |
+|----------|:--------:|-------------|
+| `TAP_PROXY_URL` | Yes | TAP proxy base URL (e.g. `https://proxy.tap.human.tech`) |
+| `TAP_AGENT_KEY` | Yes | Your TAP agent API key (secret) |
+| `TAP_ALPACA_CREDENTIAL` | No | TAP credential name for Alpaca (default `alpaca`) |
+| `TAP_APPROVAL_TIMEOUT` | No | Seconds to wait for a human decision (default `300`) |
+
+When a write is placed, approve or deny it in your TAP channel (Telegram /
+dashboard). An approved order/cancel is forwarded to Alpaca; a denied or
+timed-out one returns an error and is **never sent**.
+
+**Scope:** covers Alpaca **order placement, cancel, and all five reads** — the
+full connector egress, so the process holds no key on any path. HMAC-signed
+brokers (Binance/OKX) are follow-ups (client-side signing doesn't fit pure egress
+injection). The hooks are additive — they live inside the Alpaca connector and
+leave the live mandate gate unchanged.
+
 ### Config reference
 
 | Field | Type | Default | Description |
