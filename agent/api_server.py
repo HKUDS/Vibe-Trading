@@ -632,6 +632,17 @@ async def _spa_html_deep_link_fallback(request: Request, call_next):
     return await call_next(request)
 
 
+# ============================================================================
+# Channel routes - defined in src/api/channels_routes.py
+# Lifecycle functions imported early for startup/shutdown hooks
+# ============================================================================
+
+from src.api.channels_routes import (  # noqa: E402
+    _start_channel_runtime,
+    _stop_channel_runtime,
+)
+
+
 @app.on_event("startup")
 async def _run_startup_preflight() -> None:
     """Run preflight checks on server startup."""
@@ -1697,39 +1708,6 @@ async def update_data_source_settings(payload: UpdateDataSourceSettingsRequest):
     return _build_data_source_settings_response(_read_env_values(ENV_PATH))
 
 
-@app.get("/channels/status", dependencies=[Depends(require_auth)])
-async def channels_status():
-    """Return IM channel runtime and adapter status."""
-    runtime = _get_channel_runtime()
-    return runtime.status()
-
-
-@app.post("/channels/start", dependencies=[Depends(require_auth)])
-async def channels_start():
-    """Start configured IM channel adapters."""
-    runtime = await _start_channel_runtime()
-    return {"status": "started", **runtime.status()}
-
-
-@app.post("/channels/stop", dependencies=[Depends(require_auth)])
-async def channels_stop():
-    """Stop configured IM channel adapters."""
-    runtime = _get_channel_runtime()
-    await runtime.stop()
-    return {"status": "stopped", **runtime.status()}
-
-
-@app.post("/channels/pairing/command", dependencies=[Depends(require_auth)])
-async def channels_pairing_command(payload: ChannelPairingCommandRequest):
-    """Run a pairing command against the shared pairing store."""
-    from src.channels.pairing import handle_pairing_command
-
-    return {
-        "channel": payload.channel,
-        "reply": handle_pairing_command(payload.channel, payload.command),
-    }
-
-
 # ============================================================================
 # Session API
 # ============================================================================
@@ -1796,20 +1774,6 @@ def _get_channel_runtime():
         manager=_channel_manager,
     )
     return _channel_runtime
-
-
-async def _start_channel_runtime():
-    """Start the IM channel runtime."""
-    runtime = _get_channel_runtime()
-    await runtime.start(start_manager=True)
-    return runtime
-
-
-async def _stop_channel_runtime() -> None:
-    """Stop the IM channel runtime if it was initialized."""
-    if _channel_runtime is None:
-        return
-    await _channel_runtime.stop()
 
 
 def _get_goal_store():
@@ -2256,6 +2220,20 @@ from src.api.uploads_routes import (  # noqa: E402
     _BLOCKED_UPLOAD_NAMES,
     _SHADOW_ID_RE,
     _UPLOAD_CHUNK_SIZE,
+)
+
+
+# ============================================================================
+# Channel routes registration - after require_auth is defined
+# ============================================================================
+
+from src.api.channels_routes import register_channels_routes  # noqa: E402
+
+register_channels_routes(app)
+
+# Re-export for test monkeypatch compatibility
+from src.api.channels_routes import (  # noqa: F401, E402
+    ChannelPairingCommandRequest,
 )
 
 
