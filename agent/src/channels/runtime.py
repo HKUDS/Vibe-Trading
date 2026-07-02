@@ -119,6 +119,22 @@ class ChannelRuntime:
                 )
                 return
 
+            if self._is_new_session_command(msg.content):
+                old_id = self.reset_session(msg.session_key)
+                if old_id:
+                    reply = "✅ Session reset. Your next message will start a new conversation."
+                else:
+                    reply = "ℹ️ No active session to reset."
+                await self.bus.publish_outbound(
+                    OutboundMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        content=reply,
+                        metadata={"_channel_runtime": True, "session_reset": True},
+                    )
+                )
+                return
+
             session_id = self._session_for(msg)
             result = await self.session_service.send_message(
                 session_id,
@@ -202,9 +218,28 @@ class ChannelRuntime:
         tmp.write_text(json.dumps(self._session_map, indent=2, ensure_ascii=False), encoding="utf-8")
         tmp.replace(self.session_map_path)
 
+    def reset_session(self, session_key: str) -> str | None:
+        """Remove a session mapping so the next message creates a fresh session.
+
+        Args:
+            session_key: The channel:chat_id key to reset.
+
+        Returns:
+            The removed session_id, or None if no mapping existed.
+        """
+        removed = self._session_map.pop(session_key, None)
+        if removed is not None:
+            self._save_session_map()
+        return removed
+
     @staticmethod
     def _is_pairing_command(content: str) -> bool:
         return content.strip() == "/pairing" or content.strip().startswith("/pairing ")
+
+    @staticmethod
+    def _is_new_session_command(content: str) -> bool:
+        """Check if the message is a session reset command (/new, /reset, /newsession)."""
+        return content.strip().lower() in ("/new", "/reset", "/newsession")
 
 
 def _session_id(session: Session | dict[str, Any] | Any) -> str:
