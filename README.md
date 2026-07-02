@@ -682,6 +682,17 @@ vibe-trading channels pairing --channel telegram list
 
 The built-in adapters cover `websocket`, `telegram`, `slack`, `discord`, `matrix`, `whatsapp`, `signal`, `qq`, `napcat`, `weixin`, `wecom`, `feishu`, `dingtalk`, `msteams`, `email`, and `mochat`. Use narrow extras such as `pip install "vibe-trading-ai[telegram]"`, or install the full channel set with `pip install "vibe-trading-ai[channels]"`.
 
+**In-chat slash commands** (channel-agnostic, work in all 16 adapters):
+
+| Command | Description |
+|---------|-------------|
+| `/new` | Reset the current session — the next message starts a fresh conversation |
+| `/reset` | Alias for `/new` |
+| `/newsession` | Alias for `/new` |
+| `/pairing list` | Show pending sender-pairing requests |
+
+Commands are case-insensitive and must be sent as the entire message (e.g. `hello /new` is treated as a regular message, not a reset).
+
 </details>
 
 ---

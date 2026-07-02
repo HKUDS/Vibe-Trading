@@ -672,6 +672,17 @@ vibe-trading channels pairing --channel telegram list
 
 Built-in adapters는 `websocket`, `telegram`, `slack`, `discord`, `matrix`, `whatsapp`, `signal`, `qq`, `napcat`, `weixin`, `wecom`, `feishu`, `dingtalk`, `msteams`, `email`, `mochat`입니다. 개별 플랫폼은 `pip install "vibe-trading-ai[telegram]"`처럼 설치하거나, 전체 채널 세트는 `pip install "vibe-trading-ai[channels]"`로 설치할 수 있습니다.
 
+**채팅 내 슬래시 명령어** (채널 무관, 16개 어댑터 모두 공통):
+
+| 명령어 | 설명 |
+|--------|------|
+| `/new` | 현재 세션 초기화 — 다음 메시지에서 새 대화 시작 |
+| `/reset` | `/new`의 별칭 |
+| `/newsession` | `/new`의 별칭 |
+| `/pairing list` | 대기 중인 sender pairing 요청 표시 |
+
+명령어는 대소문자를 구분하지 않으며, 전체 메시지로 전송해야 합니다 (예: `hello /new`은 초기화가 아닌 일반 메시지로 처리됩니다).
+
 </details>
 
 ---

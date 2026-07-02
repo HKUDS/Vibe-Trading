@@ -672,6 +672,17 @@ vibe-trading channels pairing --channel telegram list
 
 تشمل المحولات المدمجة `websocket` و`telegram` و`slack` و`discord` و`matrix` و`whatsapp` و`signal` و`qq` و`napcat` و`weixin` و`wecom` و`feishu` و`dingtalk` و`msteams` و`email` و`mochat`. يمكنك تثبيت منصة محددة مثل `pip install "vibe-trading-ai[telegram]"` أو تثبيت المجموعة كاملة عبر `pip install "vibe-trading-ai[channels]"`.
 
+**أوامر الشرطة داخل المحادثة** (مستقلة عن القناة، تعمل في جميع المحولات الـ 16):
+
+| الأمر | الوصف |
+|-------|-------|
+| `/new` | إعادة تعيين الجلسة الحالية — الرسالة التالية تبدأ محادثة جديدة |
+| `/reset` | اسم مستعار لـ `/new` |
+| `/newsession` | اسم مستعار لـ `/new` |
+| `/pairing list` | عرض طلبات sender pairing المعلقة |
+
+الأوامر لا تحس بحالة الأحرف ويجب إرسالها كرسالة كاملة (مثلاً `hello /new` تُعامل كرسالة عادية وليس كأمر إعادة تعيين).
+
 </details>
 
 ---

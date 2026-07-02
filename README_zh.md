@@ -666,6 +666,17 @@ vibe-trading channels pairing --channel telegram list
 
 内置适配器包括 `websocket`、`telegram`、`slack`、`discord`、`matrix`、`whatsapp`、`signal`、`qq`、`napcat`、`weixin`、`wecom`、`feishu`、`dingtalk`、`msteams`、`email` 和 `mochat`。可按需安装单个平台，例如 `pip install "vibe-trading-ai[telegram]"`，也可以一次安装全量通道依赖：`pip install "vibe-trading-ai[channels]"`。
 
+**聊天内斜杠命令**（通道无关，全部 16 个适配器通用）：
+
+| 命令 | 说明 |
+|------|------|
+| `/new` | 重置当前会话——下一条消息将开启一段新对话 |
+| `/reset` | `/new` 的别名 |
+| `/newsession` | `/new` 的别名 |
+| `/pairing list` | 显示待处理的 sender pairing 请求 |
+
+命令不区分大小写，且必须作为整条消息发送（例如 `hello /new` 会被当作普通消息而非重置命令）。
+
 </details>
 
 ---

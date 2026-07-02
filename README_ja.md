@@ -669,6 +669,17 @@ vibe-trading channels pairing --channel telegram list
 
 Built-in adapters は `websocket`、`telegram`、`slack`、`discord`、`matrix`、`whatsapp`、`signal`、`qq`、`napcat`、`weixin`、`wecom`、`feishu`、`dingtalk`、`msteams`、`email`、`mochat` です。個別に `pip install "vibe-trading-ai[telegram]"` を使うか、全チャンネル分を `pip install "vibe-trading-ai[channels]"` で入れられます。
 
+**チャット内スラッシュコマンド**（チャンネル非依存、全 16 adapter で共通）：
+
+| コマンド | 説明 |
+|---------|------|
+| `/new` | 現在のセッションをリセット——次のメッセージで新しい会話を開始 |
+| `/reset` | `/new` のエイリアス |
+| `/newsession` | `/new` のエイリアス |
+| `/pairing list` | 保留中の sender pairing リクエストを表示 |
+
+コマンドは大文字小文字を区別せず、メッセージ全体として送信する必要があります（例：`hello /new` はリセットではなく通常メッセージとして処理されます）。
+
 </details>
 
 ---
