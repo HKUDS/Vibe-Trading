@@ -706,14 +706,14 @@
   },
   "home": {
     "title": "AI-Powered Quant Strategy Research",
-    "subtitle": "Describe a trading strategy in natural language. The agent generates code, runs backtests, and optimizes — all in real time.",
-    "startResearch": "Start Research",
+    "subtitle": "Describe a trading strategy in plain language. The agent writes the code, runs backtests, and optimizes the strategy in real time.",
+    "startResearch": "Start your vibe Trading journey today",
     "featureAgent": "AI Agent",
     "featureAgentDesc": "Natural language strategy generation with ReAct reasoning",
     "featureBacktest": "Built-in Backtest",
     "featureBacktestDesc": "Multiple data sources covering A-shares quantitative analysis",
     "featureStreaming": "Real-time Streaming",
-    "featureStreamingDesc": "Watch the agent think, call tools, and iterate",
+    "featureStreamingDesc": "Observe the agent’s workflow as it thinks, calls tools, and refines its approach step by step.",
     "featureReplay": "Strategy Replay",
     "featureReplayDesc": "Trade journal analyzer + Shadow Account — extract your rules, backtest them, attribute PnL delta"
   },
