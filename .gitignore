@@ -90,3 +90,12 @@ AGENTS.md
 # Alpha Zoo wiki artifacts (generated, not source)
 wiki/alpha-library/manifest.json
 wiki/alpha-library/content/
+
+# hybrid_bot local runtime state
+agent/src/trading/hybrid_bot/*.log
+agent/src/trading/hybrid_bot/wallet.json
+agent/src/trading/hybrid_bot/active_positions.json
+agent/src/trading/hybrid_bot/trade_history.json
+agent/src/trading/hybrid_bot/settings.json
+agent/src/trading/hybrid_bot/rejected_signals.json
+agent/src/trading/hybrid_bot/active_basket.json

@@ -67,5 +67,5 @@ EXPOSE 8899
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8899/health')" || exit 1
 
-# Run API server (serves frontend/dist as static files)
-CMD ["vibe-trading", "serve", "--host", "0.0.0.0", "--port", "8899"]
+# Run both API server and custom hybrid_bot dashboard in parallel using bash
+CMD ["bash", "-c", "vibe-trading serve --host 0.0.0.0 --port 8899 & uvicorn agent.src.trading.hybrid_bot.dashboard:app --host 0.0.0.0 --port 8900 & wait -n"]

@@ -51,3 +51,11 @@ CONTRIBUTING.md
 /*.md
 !README.md
 !LICENSE
+
+# hybrid_bot local runtime artifacts (state lives in the runs volume)
+agent/src/trading/hybrid_bot/runner.log
+agent/src/trading/hybrid_bot/wallet.json
+agent/src/trading/hybrid_bot/active_positions.json
+agent/src/trading/hybrid_bot/trade_history.json
+agent/src/trading/hybrid_bot/settings.json
+agent/src/trading/hybrid_bot/rejected_signals.json
