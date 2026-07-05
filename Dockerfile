@@ -60,12 +60,13 @@ RUN useradd --create-home --shell /usr/sbin/nologin vibe \
     && chown -R vibe:vibe /app /home/vibe/.vibe-trading
 USER vibe
 
-# Default port
-EXPOSE 8899
+# Default port (Hugging Face Spaces uses $PORT, default 7860)
+EXPOSE 7860
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8899/health')" || exit 1
+    CMD python -c "import urllib.request, os; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", 7860)}/health')" || exit 1
 
 # Run API server (serves frontend/dist as static files)
-CMD ["vibe-trading", "serve", "--host", "0.0.0.0", "--port", "8899"]
+# Uses $PORT from Hugging Face Spaces, falls back to 7860
+CMD ["sh", "-c", "vibe-trading serve --host 0.0.0.0 --port ${PORT:-7860}"]
