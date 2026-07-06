@@ -88,6 +88,14 @@ class ManifestCache:
                 manifests[name] = manifest
         return cls(manifests, surface=surface)
 
+    def register_tool(self, tool: "BaseTool") -> None:
+        """Add or replace the manifest for a dynamically registered tool."""
+        manifest = discover_tool_manifest(tool, surface=self.surface)
+        if manifest.risk_level == RiskLevel.UNCLASSIFIED:
+            fallback_risk = RiskLevel.R0_READ if manifest.readonly else RiskLevel.R1_WRITE_LOCAL
+            manifest = manifest.model_copy(update={"risk_level": fallback_risk})
+        self._manifests[manifest.name] = manifest
+
     def get(self, name: str) -> ToolManifest:
         manifest = self._manifests.get(name)
         if manifest is not None:

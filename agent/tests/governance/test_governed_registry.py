@@ -28,6 +28,17 @@ class _CountingTool(BaseTool):
         return json.dumps({"status": "ok", "calls": self.calls})
 
 
+class _RemoteReadTool:
+    name = "mcp_counting"
+    description = "remote counting"
+    parameters = {"type": "object", "properties": {}}
+    repeatable = True
+    is_readonly = True
+
+    def execute(self, **kwargs):
+        return json.dumps({"status": "ok", "remote": True})
+
+
 def _registry(tool: _CountingTool | None = None) -> tuple[ToolRegistry, _CountingTool]:
     tool = tool or _CountingTool()
     inner = ToolRegistry()
@@ -145,3 +156,18 @@ def test_mode_off_delegates_directly() -> None:
 
     assert result["calls"] == 1
     assert tool.calls == 1
+
+
+def test_register_preserves_tool_registry_surface_and_manifest() -> None:
+    inner = ToolRegistry()
+    governed = GovernedToolRegistry(
+        inner,
+        manifest_cache=ManifestCache({}, surface=ToolSurface.SWARM),
+        context=RuntimeContext(surface=ToolSurface.SWARM, mode="observe"),
+    )
+
+    governed.register(_RemoteReadTool())
+
+    assert "mcp_counting" in governed
+    assert governed.get("mcp_counting") is inner.get("mcp_counting")
+    assert governed.manifest_cache.get("mcp_counting").risk_level == RiskLevel.R2_NETWORK
