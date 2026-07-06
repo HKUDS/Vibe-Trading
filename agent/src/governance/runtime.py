@@ -44,6 +44,11 @@ class GovernedToolRegistry:
     def get_definitions(self) -> list[dict[str, Any]]:
         return self.inner.get_definitions()
 
+    def register(self, tool: Any) -> None:
+        """Register a tool while keeping governance metadata in sync."""
+        self.inner.register(tool)
+        self.manifest_cache.register_tool(tool)
+
     def set_trace_writer(self, trace_writer: Any | None) -> None:
         self.decision_recorder.set_trace_writer(trace_writer)
 
