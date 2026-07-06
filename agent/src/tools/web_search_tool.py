@@ -30,6 +30,40 @@ _MAX_ATTEMPTS = 3
 _BACKOFF_BASE_SECONDS = 0.8
 
 
+def _aliyun_iqs_search(query: str, max_results: int = 5) -> list[dict] | None:
+    """Search via Alibaba Cloud IQS (cloud-iqs.aliyuncs.com) — official API,
+    structured (title/link/snippet/hostname), CN-direct (~1s), supports a finance
+    category and rerank. Requires ``ALIYUN_IQS_API_KEY``; returns None when unset.
+    Pure stdlib.
+    """
+    key = os.getenv("ALIYUN_IQS_API_KEY", "").strip()
+    if not key:
+        return None
+    import json as _json
+    import urllib.request
+
+    body = _json.dumps({
+        "query": query,
+        "engineType": "Generic",
+        "contents": {"mainText": False, "summary": False, "rerankScore": True},
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://cloud-iqs.aliyuncs.com/search/unified",
+        data=body,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
+    resp = urllib.request.urlopen(req, timeout=10)
+    data = _json.loads(resp.read().decode("utf-8"))
+    out: list[dict] = []
+    for item in data.get("pageItems", [])[:max_results]:
+        out.append({
+            "title": item.get("title", ""),
+            "href": item.get("link", ""),
+            "body": item.get("snippet", ""),
+        })
+    return out
+
+
 def _bing_cn_search(query: str, max_results: int = 5) -> list[dict]:
     """Scrape cn.bing.com organic results — no API key, works where ddgs engines are blocked.
 
@@ -148,6 +182,30 @@ class WebSearchTool(BaseTool):
         query = kwargs["query"]
         max_results = min(int(kwargs.get("max_results", 5)), 10)
         backends = os.getenv("VIBE_TRADING_SEARCH_BACKENDS", _DEFAULT_BACKENDS).strip() or "auto"
+
+        # Fast path: Alibaba Cloud IQS if configured (official API, CN-direct,
+        # ~1s, structured + snippet, best quality). Skip ddgs entirely when IQS
+        # is available — ddgs engines are unreachable from typical CN egress.
+        if os.getenv("ALIYUN_IQS_API_KEY", "").strip():
+            try:
+                raw = _aliyun_iqs_search(query, max_results=max_results)
+                if raw:
+                    payload = {
+                        "status": "ok",
+                        "query": query,
+                        "backends": "aliyun_iqs",
+                        "results": [
+                            {"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", "")}
+                            for r in raw
+                        ],
+                    }
+                    payload = with_security_warnings(
+                        payload, fields=("results.*.title", "results.*.snippet")
+                    )
+                    return json.dumps(payload, ensure_ascii=False)
+                logger.warning("aliyun_iqs returned no results, falling through to ddgs")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("aliyun_iqs failed: %s, falling through to ddgs", exc)
 
         try:
             from ddgs import DDGS
