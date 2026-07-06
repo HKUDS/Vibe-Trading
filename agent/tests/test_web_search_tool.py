@@ -41,6 +41,8 @@ def _patch_ddgs(monkeypatch, text_impl):
 @pytest.fixture(autouse=True)
 def _clear_backend_env(monkeypatch):
     monkeypatch.delenv("VIBE_TRADING_SEARCH_BACKENDS", raising=False)
+    monkeypatch.delenv("VIBE_TRADING_SEARCH_BING_FALLBACK", raising=False)
+    monkeypatch.delenv("ALIYUN_IQS_API_KEY", raising=False)
 
 
 def test_returns_results_and_passes_backend_list(monkeypatch):
@@ -111,6 +113,7 @@ def test_no_results_is_ok_empty_not_error(monkeypatch):
 
 def test_persistent_failure_returns_actionable_error(monkeypatch):
     """When every attempt fails, the error names the retry/env/read_url remedies."""
+    monkeypatch.setenv("VIBE_TRADING_SEARCH_BING_FALLBACK", "0")
     monkeypatch.setattr("src.tools.web_search_tool.time.sleep", lambda *_: None)
     calls = {"n": 0}
 
@@ -125,6 +128,60 @@ def test_persistent_failure_returns_actionable_error(monkeypatch):
     assert calls["n"] == 3  # exhausted all attempts
     assert "VIBE_TRADING_SEARCH_BACKENDS" in out["error"]
     assert "read_url" in out["error"]
+
+
+def test_persistent_failure_uses_cn_fallback_without_network(monkeypatch):
+    """Persistent ddgs failures can fall back to CN search without touching real network in tests."""
+    monkeypatch.setattr("src.tools.web_search_tool.time.sleep", lambda *_: None)
+    calls = {"ddgs": 0, "sogou": 0, "bing_cn": 0}
+
+    def text_impl(query, max_results, **kwargs):
+        calls["ddgs"] += 1
+        raise RuntimeError("Ratelimit 429")
+
+    def fake_sogou(query, max_results=5):
+        calls["sogou"] += 1
+        return [{"title": "fallback", "href": "https://example.test/f", "body": "ok"}]
+
+    def fake_bing_cn(query, max_results=5):
+        calls["bing_cn"] += 1
+        return [{"title": "backup", "href": "https://example.test/b", "body": "ok"}]
+
+    monkeypatch.setattr("src.tools.web_search_tool._sogou_search", fake_sogou)
+    monkeypatch.setattr("src.tools.web_search_tool._bing_cn_search", fake_bing_cn)
+
+    with _patch_ddgs(monkeypatch, text_impl):
+        out = json.loads(WebSearchTool().execute(query="tsla"))
+
+    assert out["status"] == "ok"
+    assert out["backends"] == "sogou_fallback"
+    assert out["results"][0]["url"] == "https://example.test/f"
+    assert calls == {"ddgs": 3, "sogou": 1, "bing_cn": 0}
+
+
+def test_network_failure_fast_fails_to_cn_fallback(monkeypatch):
+    """Network-style ddgs failures skip extra retries and go straight to fallback."""
+    monkeypatch.setattr("src.tools.web_search_tool.time.sleep", lambda *_: None)
+    calls = {"ddgs": 0}
+
+    def text_impl(query, max_results, **kwargs):
+        calls["ddgs"] += 1
+        raise RuntimeError("Connection timed out")
+
+    monkeypatch.setattr(
+        "src.tools.web_search_tool._sogou_search",
+        lambda query, max_results=5: [
+            {"title": "fallback", "href": "https://example.test/f", "body": "ok"}
+        ],
+    )
+    monkeypatch.setattr("src.tools.web_search_tool._bing_cn_search", lambda *_args, **_kwargs: [])
+
+    with _patch_ddgs(monkeypatch, text_impl):
+        out = json.loads(WebSearchTool().execute(query="maotai"))
+
+    assert out["status"] == "ok"
+    assert out["backends"] == "sogou_fallback"
+    assert calls["ddgs"] == 1
 
 
 def test_max_results_capped_at_10(monkeypatch):

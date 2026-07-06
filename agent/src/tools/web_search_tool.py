@@ -30,6 +30,107 @@ _MAX_ATTEMPTS = 3
 _BACKOFF_BASE_SECONDS = 0.8
 
 
+def _aliyun_iqs_search(query: str, max_results: int = 5) -> list[dict] | None:
+    """Search via Alibaba Cloud IQS (cloud-iqs.aliyuncs.com) — official API,
+    structured (title/link/snippet/hostname), CN-direct (~1s), supports a finance
+    category and rerank. Requires ``ALIYUN_IQS_API_KEY``; returns None when unset.
+    Pure stdlib.
+    """
+    key = os.getenv("ALIYUN_IQS_API_KEY", "").strip()
+    if not key:
+        return None
+    import json as _json
+    import urllib.request
+
+    body = _json.dumps({
+        "query": query,
+        "engineType": "Generic",
+        "contents": {"mainText": False, "summary": False, "rerankScore": True},
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://cloud-iqs.aliyuncs.com/search/unified",
+        data=body,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
+    resp = urllib.request.urlopen(req, timeout=10)
+    data = _json.loads(resp.read().decode("utf-8"))
+    out: list[dict] = []
+    for item in data.get("pageItems", [])[:max_results]:
+        out.append({
+            "title": item.get("title", ""),
+            "href": item.get("link", ""),
+            "body": item.get("snippet", ""),
+        })
+    return out
+
+
+def _bing_cn_search(query: str, max_results: int = 5) -> list[dict]:
+    """Scrape cn.bing.com organic results — no API key, works where ddgs engines are blocked.
+
+    Used as a fallback when every ddgs backend times out (common behind restricted
+    egress, e.g. CN hosts without VPN where duckduckgo/google/brave are unreachable
+    but cn.bing.com is). Returns ddgs-shaped dicts (title/href/body) so the caller
+    can treat the two paths uniformly. Pure stdlib — no new dependency.
+    """
+    import re as _re
+    import urllib.parse
+    import urllib.request
+
+    url = "https://cn.bing.com/search?" + urllib.parse.urlencode({"q": query})
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    )
+    html = urllib.request.urlopen(req, timeout=10).read().decode("utf-8", "ignore")
+    blocks = _re.findall(r'<li class="b_algo"[^>]*>(.*?)</li>', html, _re.S)
+    out: list[dict] = []
+    for b in blocks[:max_results]:
+        h2 = _re.search(r"<h2[^>]*>(.*?)</h2>", b, _re.S)
+        if not h2:
+            continue
+        a = _re.search(r'<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>', h2.group(1), _re.S)
+        if not a:
+            continue
+        title = _re.sub(r"<[^>]+>", "", a.group(2)).strip()
+        href = a.group(1)
+        snip_m = _re.search(r"<p[^>]*>(.*?)</p>", b, _re.S)
+        snippet = _re.sub(r"<[^>]+>", "", snip_m.group(1)).strip() if snip_m else ""
+        if title and href.startswith("http"):
+            out.append({"title": title, "href": href, "body": snippet[:180]})
+    return out
+
+
+def _sogou_search(query: str, max_results: int = 5) -> list[dict]:
+    """Scrape sogou.com results — better CN financial query quality than cn.bing.
+
+    Sogou's organic titles hit financial queries precisely (e.g. '茅台 2024 营收
+    1708.99 亿') where cn.bing drifts to regional/tourism results for natural-language
+    queries without a ticker. URLs are sogou jump links (/link?url=...) absolute-ized
+    so a downstream read_url can follow them. Snippet is left empty because the title
+    already carries the key figure. Pure stdlib.
+    """
+    import re as _re
+    import urllib.parse
+    import urllib.request
+
+    url = "https://www.sogou.com/web?" + urllib.parse.urlencode({"query": query})
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    )
+    html = urllib.request.urlopen(req, timeout=10).read().decode("utf-8", "ignore")
+    blocks = _re.split(r'<div class="vrwrap"', html)[1:]
+    out: list[dict] = []
+    for b in blocks[:max_results]:
+        tm = _re.search(r'<a[^>]*target="_blank"[^>]*>(.*?)</a>', b, _re.S)
+        hm = _re.search(r'<a[^>]*href="([^"]*)"', b)
+        title = _re.sub(r"<[^>]+>", "", tm.group(1)).strip() if tm else ""
+        href = hm.group(1) if hm else ""
+        if href.startswith("/"):
+            href = "https://www.sogou.com" + href
+        if title and href:
+            out.append({"title": title, "href": href, "body": ""})
+    return out
+
+
 class WebSearchTool(BaseTool):
     """Search the web via ddgs across several free engines and return top results."""
 
@@ -82,6 +183,30 @@ class WebSearchTool(BaseTool):
         max_results = min(int(kwargs.get("max_results", 5)), 10)
         backends = os.getenv("VIBE_TRADING_SEARCH_BACKENDS", _DEFAULT_BACKENDS).strip() or "auto"
 
+        # Fast path: Alibaba Cloud IQS if configured (official API, CN-direct,
+        # ~1s, structured + snippet, best quality). Skip ddgs entirely when IQS
+        # is available — ddgs engines are unreachable from typical CN egress.
+        if os.getenv("ALIYUN_IQS_API_KEY", "").strip():
+            try:
+                raw = _aliyun_iqs_search(query, max_results=max_results)
+                if raw:
+                    payload = {
+                        "status": "ok",
+                        "query": query,
+                        "backends": "aliyun_iqs",
+                        "results": [
+                            {"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", "")}
+                            for r in raw
+                        ],
+                    }
+                    payload = with_security_warnings(
+                        payload, fields=("results.*.title", "results.*.snippet")
+                    )
+                    return json.dumps(payload, ensure_ascii=False)
+                logger.warning("aliyun_iqs returned no results, falling through to ddgs")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("aliyun_iqs failed: %s, falling through to ddgs", exc)
+
         try:
             from ddgs import DDGS
 
@@ -127,6 +252,12 @@ class WebSearchTool(BaseTool):
                         ensure_ascii=False,
                     )
                 logger.warning("web_search attempt %d/%d failed: %s", attempt, _MAX_ATTEMPTS, exc)
+                # Network/egress errors (timeout, connection refused, unreachable)
+                # won't recover on retry — stop retrying ddgs and fall through to
+                # the cn.bing fallback instead of wasting ~20-30s on more timeouts.
+                err_msg = str(exc).lower()
+                if any(s in err_msg for s in ("timeout", "timed out", "unreachable", "connection", "max retries")):
+                    break
                 if attempt < _MAX_ATTEMPTS:
                     time.sleep(_BACKOFF_BASE_SECONDS * attempt)
                 continue
@@ -151,15 +282,44 @@ class WebSearchTool(BaseTool):
             )
             return json.dumps(payload, ensure_ascii=False)
 
+        # Fallback chain when every ddgs backend is blocked (common behind
+        # restricted egress, e.g. CN hosts without VPN): sogou first (best CN
+        # query quality), then cn.bing (real URLs, broader). Toggle via
+        # VIBE_TRADING_SEARCH_BING_FALLBACK (default on).
+        fb_err = "disabled"
+        if os.getenv("VIBE_TRADING_SEARCH_BING_FALLBACK", "1").strip().lower() in ("1", "true", "yes"):
+            for fb_name, fb_fn in (("sogou", _sogou_search), ("bing_cn", _bing_cn_search)):
+                try:
+                    raw = fb_fn(query, max_results=max_results)
+                    if raw:
+                        payload = {
+                            "status": "ok",
+                            "query": query,
+                            "backends": f"{fb_name}_fallback",
+                            "results": [
+                                {"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", "")}
+                                for r in raw
+                            ],
+                        }
+                        payload = with_security_warnings(
+                            payload, fields=("results.*.title", "results.*.snippet")
+                        )
+                        return json.dumps(payload, ensure_ascii=False)
+                    fb_err = f"{fb_name} returned no results"
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("%s fallback failed: %s", fb_name, exc)
+                    fb_err = f"{fb_name}: {exc}"
+                    continue
         return json.dumps(
             {
                 "status": "error",
                 "error": (
                     f"Web search failed after {_MAX_ATTEMPTS} attempts "
                     f"(backends: {backends if supports_backend else 'duckduckgo'}): {last_error}. "
-                    "Free search engines rate-limit aggressively from cloud/shared IPs — "
-                    "retry shortly, set VIBE_TRADING_SEARCH_BACKENDS to a different engine "
-                    "list (e.g. 'google, bing'), or read a known URL directly with read_url."
+                    f"CN fallbacks (sogou, bing_cn): {fb_err}. "
+                    "Retry shortly, set VIBE_TRADING_SEARCH_BACKENDS to a different engine list, "
+                    "set VIBE_TRADING_SEARCH_BING_FALLBACK=0 to disable CN fallback, or read a "
+                    "known URL directly with read_url."
                 ),
             },
             ensure_ascii=False,
