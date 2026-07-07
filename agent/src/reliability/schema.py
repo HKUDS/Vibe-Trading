@@ -16,6 +16,8 @@ ArtifactType = Literal[
     "alpha_bench_result",
     "scorecard",
     "research_card",
+    "claim_set",
+    "methodology_facts",
 ]
 
 ARTIFACT_TYPES: frozenset[str] = frozenset(
@@ -29,5 +31,7 @@ ARTIFACT_TYPES: frozenset[str] = frozenset(
         "alpha_bench_result",
         "scorecard",
         "research_card",
+        "claim_set",
+        "methodology_facts",
     }
 )
