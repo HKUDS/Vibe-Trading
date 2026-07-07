@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -15,6 +16,8 @@ from src.reliability.config import artifact_root
 from src.reliability.redaction import redact_secrets
 from src.research_card.model import ResearchCard
 from src.tools import build_registry
+
+logger = logging.getLogger(__name__)
 
 
 RESEARCH_API_SCHEMA_VERSION = "1.0.0"
@@ -155,8 +158,9 @@ def _read_payload(record: dict[str, Any]) -> Any:
     root = artifact_root().resolve(strict=False)
     try:
         path.relative_to(root)
-    except ValueError as exc:
-        raise HTTPException(status_code=500, detail="artifact path escapes artifact root") from exc
+    except ValueError:
+        logger.warning("artifact path escapes artifact root: %s", path_text)
+        raise HTTPException(status_code=404, detail="artifact not found") from None
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:

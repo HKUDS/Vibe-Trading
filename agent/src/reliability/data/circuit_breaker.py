@@ -64,12 +64,57 @@ class CircuitBreaker:
         self._upsert_state(source, "CLOSED", 0, None, None)
 
     def record_failure(self, source: str, error: BaseException) -> None:
-        """Record a source failure and open if threshold is reached."""
-        snapshot = self.snapshot(source)
-        failures = snapshot.consecutive_failures + 1
-        state = "OPEN" if failures >= self.failure_threshold else snapshot.state
-        opened_at = time.time() if state == "OPEN" else (snapshot.opened_at.timestamp() if snapshot.opened_at else None)
-        self._upsert_state(source, state, failures, type(error).__name__, opened_at)
+        """Record a source failure and open if threshold is reached.
+
+        Uses an atomic UPDATE to avoid the TOCTOU race where two concurrent
+        failures both read the same count and under-increment.
+        """
+        error_class = type(error).__name__
+        now = time.time()
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                UPDATE circuit_state
+                SET consecutive_failures = consecutive_failures + 1,
+                    last_error_class = ?
+                WHERE source = ?
+                RETURNING consecutive_failures, state, opened_at
+                """,
+                (error_class, source),
+            ).fetchone()
+            if row is None:
+                # Source not yet in table — insert with failures=1
+                conn.execute(
+                    """
+                    INSERT INTO circuit_state (source, state, consecutive_failures, opened_at, last_error_class)
+                    VALUES (?, 'CLOSED', 1, NULL, ?)
+                    ON CONFLICT(source) DO UPDATE SET
+                        consecutive_failures = circuit_state.consecutive_failures + 1,
+                        last_error_class = excluded.last_error_class
+                    """,
+                    (source, error_class),
+                )
+                row = (1, "CLOSED", None)
+                conn.commit()
+                failures = 1
+                state = "CLOSED"
+                opened_at = None
+            else:
+                failures, state, opened_at = row
+                failures = int(failures)
+                conn.commit()
+
+            if failures >= self.failure_threshold and state != "OPEN":
+                conn.execute(
+                    """
+                    UPDATE circuit_state
+                    SET state = 'OPEN', opened_at = ?
+                    WHERE source = ?
+                    """,
+                    (now, source),
+                )
+                conn.commit()
+                opened_at = now
 
     def snapshot(self, source: str) -> CircuitBreakerSnapshot:
         """Return a source state snapshot."""
