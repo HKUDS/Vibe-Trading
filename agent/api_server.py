@@ -790,6 +790,9 @@ def _validate_path_param(value: str, kind: str) -> None:
 from src.api.runs_routes import register_runs_routes  # noqa: E402
 register_runs_routes(app)
 
+from src.api.evidence_routes import register_evidence_routes  # noqa: E402
+register_evidence_routes(app, auth_dependency=require_auth)
+
 # Re-export for test access via api_server.*
 from src.api.runs_routes import (  # noqa: F401, E402
     _load_json_file,

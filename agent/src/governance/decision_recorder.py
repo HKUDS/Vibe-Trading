@@ -15,6 +15,8 @@ from src.governance.evidence_identity import (
     policy_decision_artifact_id_for_key,
     trace_event_id_for_key,
 )
+from src.governance.evidence_index import EvidenceIndexStore
+from src.governance.evidence_outbox import EvidenceOutbox, evidence_outbox_enabled
 from src.reliability.artifacts.store import ArtifactStore
 
 _SECRET_KEY_RE = re.compile(r"(token|key|secret|password|credential|api|auth|broker)", re.IGNORECASE)
@@ -29,10 +31,14 @@ class DecisionRecorder:
         *,
         artifact_store: Any | None = None,
         trace_writer: Any | None = None,
+        evidence_index: EvidenceIndexStore | None = None,
+        evidence_outbox: EvidenceOutbox | None = None,
         generated_by: str = "DecisionRecorder",
     ) -> None:
         self.artifact_store = artifact_store if artifact_store is not None else ArtifactStore()
         self.trace_writer = trace_writer
+        self.evidence_index = evidence_index
+        self.evidence_outbox = evidence_outbox
         self.generated_by = generated_by
 
     def prepare(
@@ -88,6 +94,8 @@ class DecisionRecorder:
         artifact_id = policy_decision_artifact_id_for_key(envelope.evidence_identity.idempotency_key)
         trace_written = False
         artifact_written = False
+        index_written = False
+        outbox_written = False
 
         if self.trace_writer is not None:
             try:
@@ -128,16 +136,34 @@ class DecisionRecorder:
             except Exception as exc:  # noqa: BLE001 - evidence write must not alter policy outcome.
                 errors.append(f"artifact: {exc}")
 
+        if self.evidence_index is not None:
+            try:
+                indexed = self.evidence_index.record_policy_decision(envelope)
+                index_written = indexed is not None
+            except Exception as exc:  # noqa: BLE001 - evidence write must not alter policy outcome.
+                errors.append(f"index: {exc}")
+
+        primary_failed = bool(errors) or not artifact_written
+        if primary_failed and self.evidence_outbox is not None and evidence_outbox_enabled():
+            try:
+                self.evidence_outbox.append(envelope, errors=errors)
+                outbox_written = True
+            except Exception as exc:  # noqa: BLE001 - outbox failure must not alter policy outcome.
+                errors.append(f"outbox: {exc}")
+
         outcome = EvidenceWriteOutcome(
             decision_id=envelope.decision_id,
             trace_written=trace_written,
             artifact_written=artifact_written,
+            index_written=index_written,
+            outbox_written=outbox_written,
             trace_event_id=envelope.evidence_identity.trace_event_id,
             policy_decision_artifact_id=envelope.evidence_identity.policy_decision_artifact_id,
             errors=errors,
             status=_outcome_status(
                 trace_written=trace_written,
                 artifact_written=artifact_written,
+                outbox_written=outbox_written,
                 trace_attempted=self.trace_writer is not None,
                 artifact_attempted=self.artifact_store is not None,
                 errors=errors,
@@ -193,10 +219,13 @@ def _outcome_status(
     *,
     trace_written: bool,
     artifact_written: bool,
+    outbox_written: bool,
     trace_attempted: bool,
     artifact_attempted: bool,
     errors: list[str],
 ) -> str:
+    if outbox_written:
+        return "outbox_pending"
     if not errors:
         return "complete"
     if trace_written and not artifact_written:
@@ -220,4 +249,3 @@ def _redact_params(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_redact_params(item) for item in value]
     return value
-

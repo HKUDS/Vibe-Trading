@@ -151,6 +151,72 @@ class ArtifactStore:
             metadata=json.loads(row[10]),
         )
 
+    def list_records(
+        self,
+        *,
+        run_id: str | None = None,
+        artifact_type: ArtifactType | None = None,
+    ) -> list[ArtifactRecord]:
+        """Return indexed artifact records, optionally filtered by metadata."""
+        if not reliability_enabled() or not self.index_path.exists():
+            return []
+        query = """
+            SELECT
+                artifact_id,
+                artifact_type,
+                schema_version,
+                sha256,
+                uri,
+                path,
+                inline_ref,
+                parent_artifacts_json,
+                created_at,
+                generated_by,
+                metadata_json
+            FROM artifacts
+        """
+        params: list[str] = []
+        conditions: list[str] = []
+        if artifact_type is not None:
+            conditions.append("artifact_type = ?")
+            params.append(artifact_type)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY created_at"
+        with self._connect() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        records = [self._record_from_row(row) for row in rows]
+        if run_id is not None:
+            records = [record for record in records if record.metadata.get("run_id") == run_id]
+        return records
+
+    def read_json(self, artifact_id: str) -> dict[str, Any] | None:
+        """Read a JSON artifact payload by artifact ID."""
+        record = self.get_record(artifact_id)
+        if record is None or record.path is None:
+            return None
+        try:
+            payload = json.loads(Path(record.path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    @staticmethod
+    def _record_from_row(row: tuple[Any, ...]) -> ArtifactRecord:
+        return ArtifactRecord(
+            artifact_id=row[0],
+            artifact_type=row[1],
+            schema_version=row[2],
+            sha256=row[3],
+            uri=row[4],
+            path=row[5],
+            inline_ref=row[6],
+            parent_artifacts=json.loads(row[7]),
+            created_at=row[8],
+            generated_by=row[9],
+            metadata=json.loads(row[10]),
+        )
+
     def _ensure_initialized(self) -> None:
         if self._initialized:
             return
