@@ -1,0 +1,1 @@
+"""Future-data trap demo."""

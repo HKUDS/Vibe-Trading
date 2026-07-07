@@ -1,0 +1,11 @@
+{
+  "demo": "overfit_best_trial_trap",
+  "expected": {
+    "conclusion_level_max": "research_candidate",
+    "evidence_closure_passed": true,
+    "selected_trial_id": "trial_07",
+    "trial_count": 8,
+    "warning_contains": "selection_disclosure"
+  },
+  "note": "This is a compact expectation snapshot. The runner generates final ResearchCard, Scorecard, and EvidenceClosureReport through production builders."
+}

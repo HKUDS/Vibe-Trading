@@ -1,0 +1,13 @@
+{
+  "demo": "future_data_trap",
+  "expected": {
+    "claim_types": ["generalization"],
+    "conclusion_level": "not_reliable",
+    "evidence_closure_passed": true,
+    "methodology_facts": {
+      "pit_safe": false
+    },
+    "triggered_rule_ids": ["pit_violation_hard_fail"]
+  },
+  "note": "This is a compact expectation snapshot. The runner generates final ResearchCard, Scorecard, and EvidenceClosureReport through production builders."
+}

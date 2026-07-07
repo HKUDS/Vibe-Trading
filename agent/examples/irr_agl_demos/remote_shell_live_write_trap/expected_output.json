@@ -1,0 +1,11 @@
+{
+  "demo": "remote_shell_live_write_trap",
+  "expected": {
+    "decision_count": 2,
+    "evidence_closure_passed": true,
+    "inner_tool_executed": false,
+    "shell_execution_counter": 0,
+    "trade_execution_counter": 0
+  },
+  "note": "This is a compact expectation snapshot. The runner generates final ResearchCard, Scorecard, and EvidenceClosureReport through production builders."
+}
