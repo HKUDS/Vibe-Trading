@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.2",
+  "run_id": "legacy_card_run_v12",
+  "conclusion_level": "not_reliable",
+  "hard_failures": [
+    "pit_violation_hard_fail"
+  ],
+  "warnings": [
+    "Legacy card lacks v1.2.1 claim and methodology refs."
+  ],
+  "policy_decision_ids": [
+    "pd_legacy_v12_denied"
+  ]
+}

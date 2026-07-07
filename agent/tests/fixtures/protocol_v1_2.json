@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.2",
+  "protocol_id": "legacy_protocol_v12",
+  "status": "draft",
+  "hypothesis": "Legacy protocol fixture for tolerant v1.2.1 reads.",
+  "universe": {
+    "asset_class": "equity"
+  },
+  "split_policy": {
+    "method": "train_test",
+    "test_start": "2024-01-01",
+    "test_end": "2024-06-30"
+  },
+  "benchmark_policy": {
+    "primary": "SPY"
+  },
+  "cost_model": {
+    "commission_bps": 1.0
+  },
+  "execution_assumptions": {
+    "bar": "close"
+  },
+  "provenance": [
+    {
+      "schema_version": "1.2",
+      "field_path": "hypothesis",
+      "source": "explicit_user",
+      "confidence": 1.0,
+      "evidence_text": "Legacy explicit hypothesis."
+    }
+  ]
+}

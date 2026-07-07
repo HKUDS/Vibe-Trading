@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.1",
+  "run_id": "legacy_run_without_index_v11",
+  "conclusion_level": "exploratory",
+  "hard_failures": [],
+  "warnings": [
+    "Legacy run has artifacts but no RunEvidenceIndex."
+  ]
+}

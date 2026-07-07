@@ -30,7 +30,10 @@ describe("Phase 6 research panels", () => {
   });
 
   it("shows claim audit claim ids and redacts secret-looking values", () => {
-    render(<ClaimAuditPanel claimsResponse={phase6ClaimSetFixture} />);
+    const fixtureWithSyntheticSecret = JSON.parse(JSON.stringify(phase6ClaimSetFixture));
+    fixtureWithSyntheticSecret.claim_set.claims[0].claim_text = "sk-live-should-not-render";
+
+    render(<ClaimAuditPanel claimsResponse={fixtureWithSyntheticSecret} />);
 
     expect(screen.getByText("Claim Audit")).toBeInTheDocument();
     expect(screen.getAllByText("claim_tradable_phase6").length).toBeGreaterThan(0);

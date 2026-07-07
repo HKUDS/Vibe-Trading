@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.2",
+  "run_id": "legacy_scorecard_run_v12",
+  "conclusion_level": "research_candidate",
+  "hard_failures": [],
+  "warnings": [
+    "Legacy scorecard predates triggered rule snapshots."
+  ],
+  "metrics": {
+    "sharpe": 0.42,
+    "trial_count": 3
+  }
+}

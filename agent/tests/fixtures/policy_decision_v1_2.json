@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.2",
+  "run_id": "legacy_policy_run_v12",
+  "decision_id": "pd_legacy_v12_denied",
+  "tool_name": "legacy_shell",
+  "action": "deny",
+  "status": "denied",
+  "mode": "warn",
+  "surface": "remote_api",
+  "risk_level": "R5_SHELL",
+  "reasons": [
+    "Legacy deny record predates v1.2.1 EvidenceIdentity."
+  ],
+  "reason_codes": [
+    "R5_DENIED"
+  ],
+  "redacted_params_preview": {
+    "command": "[REDACTED]"
+  }
+}

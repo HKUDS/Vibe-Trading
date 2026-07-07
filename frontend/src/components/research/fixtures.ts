@@ -55,7 +55,7 @@ export const phase6ClaimSetFixture: ResearchClaimsResponse = {
         schema_version: "1.2.1",
         claim_id: "claim_tradable_phase6",
         claim_type: "tradable",
-        claim_text: "sk-live-should-not-render",
+        claim_text: "Research card claim text is redacted upstream.",
         source: "research_card",
         source_ref: "research_card.structured_claims[0]",
         confidence: 0.9,

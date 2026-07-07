@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.1",
+  "run_id": "legacy_run_without_index_v11",
+  "conclusion_level": "exploratory",
+  "hard_failures": [],
+  "warnings": [
+    "Legacy scorecard has no v1.2.1 triggered rules."
+  ],
+  "metrics": {
+    "trial_count": 1
+  }
+}
