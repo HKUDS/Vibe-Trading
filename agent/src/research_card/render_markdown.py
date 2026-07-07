@@ -45,6 +45,7 @@ def render_research_card_markdown(
     lines.extend(_render_claim_audit(card_model, claim_payload))
     lines.extend(_render_triggered_rules(card_model, scorecard_payload))
     lines.extend(_render_hard_failures(card_model, scorecard_payload))
+    lines.extend(_render_diagnostics_availability(scorecard_payload))
     if facts_payload:
         lines.extend(_render_methodology_facts(facts_payload))
     return "\n".join(lines).rstrip() + "\n"
@@ -154,6 +155,28 @@ def _render_methodology_facts(facts_payload: dict[str, Any]) -> list[str]:
     ):
         if key in facts_payload:
             lines.append(f"- {key}: {_clean(facts_payload.get(key))}")
+    return lines
+
+
+def _render_diagnostics_availability(scorecard_payload: dict[str, Any]) -> list[str]:
+    readiness = scorecard_payload.get("diagnostics_readiness")
+    if not isinstance(readiness, dict):
+        return []
+    lines = ["", "## Diagnostics Availability"]
+    lines.append(f"- note: {_clean(readiness.get('note') or 'readiness only; not production diagnostics')}")
+    gaps = [str(item) for item in readiness.get("readiness_gaps") or []]
+    if gaps:
+        lines.append(f"- readiness_gaps: {_clean(', '.join(gaps))}")
+    else:
+        lines.append("- readiness_gaps: none")
+    for section in ("factor", "portfolio", "execution", "capacity"):
+        summary = readiness.get(section)
+        if not isinstance(summary, dict):
+            continue
+        section_gaps = [str(item) for item in summary.get("readiness_gaps") or []]
+        status = "ready" if not section_gaps else "gaps"
+        detail = ", ".join(section_gaps) if section_gaps else "none"
+        lines.append(f"- {section}: {status} ({_clean(detail)})")
     return lines
 
 

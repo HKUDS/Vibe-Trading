@@ -6,6 +6,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.reliability.quant.diagnostics import (
+    CapacityDiagnosticsSummary,
+    DiagnosticsReadinessReport,
+    ExecutionDiagnosticsSummary,
+    FactorDiagnosticsSummary,
+    PortfolioDiagnosticsSummary,
+)
 from src.reliability.quant.scorecard_explainer import ConclusionLevel, TriggeredRule
 
 SCHEMA_VERSION = "1.2.1"
@@ -29,6 +36,11 @@ class BacktestReliabilityScorecard(BaseModel):
     policy_decision_ids: list[str] = Field(default_factory=list)
     market: str | None = None
     override_attempted: bool = False
+    factor_diagnostics: FactorDiagnosticsSummary | None = None
+    portfolio_diagnostics: PortfolioDiagnosticsSummary | None = None
+    execution_diagnostics: ExecutionDiagnosticsSummary | None = None
+    capacity_diagnostics: CapacityDiagnosticsSummary | None = None
+    diagnostics_readiness: DiagnosticsReadinessReport | None = None
 
     @field_validator("hard_failures", "warnings", "policy_decision_ids", mode="before")
     @classmethod

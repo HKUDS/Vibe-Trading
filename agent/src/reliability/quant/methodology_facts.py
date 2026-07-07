@@ -42,6 +42,12 @@ class MethodologyFactSet(BaseModel):
             raise ValueError("trial_count must be non-negative")
         return value
 
+    def to_diagnostics_readiness_report(self):
+        """Map methodology facts to optional quant diagnostics readiness."""
+        from src.reliability.quant.diagnostics import DiagnosticsReadinessReport
+
+        return DiagnosticsReadinessReport.from_methodology_facts(self)
+
 
 def build_methodology_fact_set(
     *,
