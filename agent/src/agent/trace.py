@@ -49,6 +49,8 @@ OPTIONAL_IRR_TRACE_FIELDS = frozenset({
     "artifact_refs",
     "data_audit_id",
     "policy_decision_id",
+    "evidence_identity",
+    "write_outcome",
     "governance_overhead_ms",
     "warning_codes",
     "hard_failure_codes",

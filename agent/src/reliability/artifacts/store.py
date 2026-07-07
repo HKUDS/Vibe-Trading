@@ -91,6 +91,7 @@ class ArtifactStore:
         metadata: dict[str, Any] | None = None,
         parent_artifacts: list[str] | None = None,
         schema_version: str = ARTIFACT_SCHEMA_VERSION,
+        artifact_id: str | None = None,
     ) -> ArtifactRecord | None:
         """Persist a JSON payload using strict, deterministic serialization."""
         data = json.dumps(
@@ -107,6 +108,47 @@ class ArtifactStore:
             metadata=metadata,
             parent_artifacts=parent_artifacts,
             schema_version=schema_version,
+            artifact_id=artifact_id,
+        )
+
+    def get_record(self, artifact_id: str) -> ArtifactRecord | None:
+        """Return an indexed artifact record by ID, or ``None`` if absent."""
+        if not reliability_enabled() or not self.index_path.exists():
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    artifact_id,
+                    artifact_type,
+                    schema_version,
+                    sha256,
+                    uri,
+                    path,
+                    inline_ref,
+                    parent_artifacts_json,
+                    created_at,
+                    generated_by,
+                    metadata_json
+                FROM artifacts
+                WHERE artifact_id = ?
+                """,
+                (artifact_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return ArtifactRecord(
+            artifact_id=row[0],
+            artifact_type=row[1],
+            schema_version=row[2],
+            sha256=row[3],
+            uri=row[4],
+            path=row[5],
+            inline_ref=row[6],
+            parent_artifacts=json.loads(row[7]),
+            created_at=row[8],
+            generated_by=row[9],
+            metadata=json.loads(row[10]),
         )
 
     def _ensure_initialized(self) -> None:
