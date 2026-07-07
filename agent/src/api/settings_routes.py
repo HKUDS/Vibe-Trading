@@ -155,13 +155,13 @@ def _baostock_installed() -> bool:
     return importlib.util.find_spec("baostock") is not None
 
 
-def _read_settings_env_values() -> Dict[str, str]:
+def _read_settings_env_values(host: Any | None = None) -> Dict[str, str]:
     """Read settings without creating agent/.env.
 
     Prefer the user's active agent/.env.  If it does not exist yet, fall back
     to agent/.env.example for display defaults only.
     """
-    host = _host()
+    host = host if host is not None else _host()
     env_path = host.ENV_PATH
     env_example_path = host.ENV_EXAMPLE_PATH
     read_env = host._read_env_values
@@ -179,10 +179,11 @@ def _read_settings_env_values() -> Dict[str, str]:
 
 def _build_llm_settings_response(
     values: Optional[Dict[str, str]] = None,
+    host: Any | None = None,
 ) -> LLMSettingsResponse:
     """Build the public settings payload from dotenv values."""
-    host = _host()
-    env_values = values if values is not None else _read_settings_env_values()
+    host = host if host is not None else _host()
+    env_values = values if values is not None else _read_settings_env_values(host=host)
     provider_name = env_values.get("LANGCHAIN_PROVIDER", "openai").strip().lower()
     provider = LLM_PROVIDER_BY_NAME.get(provider_name, LLM_PROVIDER_BY_NAME["openai"])
     api_key = env_values.get(provider.api_key_env or "", "") if provider.api_key_env else ""
@@ -217,10 +218,11 @@ def _build_llm_settings_response(
 
 def _build_data_source_settings_response(
     values: Optional[Dict[str, str]] = None,
+    host: Any | None = None,
 ) -> DataSourceSettingsResponse:
     """Build the public data source settings payload."""
-    host = _host()
-    env_values = values if values is not None else _read_settings_env_values()
+    host = host if host is not None else _host()
+    env_values = values if values is not None else _read_settings_env_values(host=host)
     token = env_values.get("TUSHARE_TOKEN", "")
     token_configured = host._is_configured_secret(token, TUSHARE_TOKEN_PLACEHOLDERS)
     # Late-access baostock helpers for monkeypatch compat.
@@ -244,9 +246,9 @@ def _build_data_source_settings_response(
     )
 
 
-def _sync_runtime_env(provider: LLMProviderOption, updates: Dict[str, str]) -> None:
+def _sync_runtime_env(provider: LLMProviderOption, updates: Dict[str, str], host: Any | None = None) -> None:
     """Apply saved LLM settings to the running API process."""
-    host = _host()
+    host = host if host is not None else _host()
     for key, value in updates.items():
         if value:
             os.environ[key] = value
@@ -298,6 +300,10 @@ def register_settings_routes(
         require_local_or_auth = host.require_local_or_auth
     if require_settings_write_auth is None:
         require_settings_write_auth = host.require_settings_write_auth
+    route_host = host
+
+    def bound_host() -> Any:
+        return route_host
 
     # --- Routes ---
 
@@ -308,7 +314,7 @@ def register_settings_routes(
     )
     async def get_llm_settings():
         """Return project-local LLM settings for the Web UI."""
-        return _build_llm_settings_response()
+        return _build_llm_settings_response(host=bound_host())
 
     @app.put(
         "/settings/llm",
@@ -317,7 +323,7 @@ def register_settings_routes(
     )
     async def update_llm_settings(payload: UpdateLLMSettingsRequest):
         """Persist project-local LLM settings and update the running process."""
-        host_ref = _host()
+        host_ref = bound_host()
         provider_name = payload.provider.strip().lower()
         provider = LLM_PROVIDER_BY_NAME.get(provider_name)
         if provider is None:
@@ -344,7 +350,7 @@ def register_settings_routes(
                 detail="Reasoning effort must be low, medium, high, or max",
             )
 
-        current_values = _read_settings_env_values()
+        current_values = _read_settings_env_values(host=host_ref)
         base_url = (
             payload.base_url if payload.base_url is not None else provider.default_base_url
         ).strip()
@@ -387,8 +393,8 @@ def register_settings_routes(
             os.environ.pop("OPENAI_API_KEY", None)
 
         host_ref._write_env_values(host_ref.ENV_PATH, updates)
-        _sync_runtime_env(provider, updates)
-        return _build_llm_settings_response(host_ref._read_env_values(host_ref.ENV_PATH))
+        _sync_runtime_env(provider, updates, host=host_ref)
+        return _build_llm_settings_response(host_ref._read_env_values(host_ref.ENV_PATH), host=host_ref)
 
     @app.get(
         "/settings/data-sources",
@@ -397,7 +403,7 @@ def register_settings_routes(
     )
     async def get_data_source_settings():
         """Return project-local data source credentials for the Web UI."""
-        return _build_data_source_settings_response()
+        return _build_data_source_settings_response(host=bound_host())
 
     @app.put(
         "/settings/data-sources",
@@ -406,8 +412,8 @@ def register_settings_routes(
     )
     async def update_data_source_settings(payload: UpdateDataSourceSettingsRequest):
         """Persist project-local data source credentials and update the running process."""
-        host_ref = _host()
-        current_values = _read_settings_env_values()
+        host_ref = bound_host()
+        current_values = _read_settings_env_values(host=host_ref)
         updates: Dict[str, str] = {}
 
         if payload.clear_tushare_token:
@@ -426,5 +432,6 @@ def register_settings_routes(
                 os.environ.pop("TUSHARE_TOKEN", None)
 
         return _build_data_source_settings_response(
-            host_ref._read_env_values(host_ref.ENV_PATH)
+            host_ref._read_env_values(host_ref.ENV_PATH),
+            host=host_ref,
         )

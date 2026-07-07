@@ -438,7 +438,9 @@ def _is_tool_success(result: str) -> bool:
         if isinstance(data, dict) and data.get("status") == "error":
             return False
     except (json.JSONDecodeError, TypeError):
-        pass
+        lowered = str(result).lower()
+        if "policy_denied" in lowered or "policy denied" in lowered:
+            return False
     return True
 
 

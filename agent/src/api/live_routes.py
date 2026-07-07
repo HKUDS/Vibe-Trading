@@ -21,6 +21,7 @@ event through the EXISTING session EventBus, so the frontend's already-wired
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys as _sys
 import time
@@ -171,6 +172,25 @@ class LiveRunnerUnavailable(RuntimeError):
     """
 
 
+class _LiveConnectorWriteTool:
+    """Pseudo-tool that routes live connector writes through governance."""
+
+    description = "Governed live connector write"
+    parameters = {"type": "object", "properties": {}}
+    repeatable = False
+    is_readonly = False
+    risk_level = "R4_TRADE_WRITE"
+
+    def __init__(self, *, name: str, adapter: Any, remote_tool: str) -> None:
+        self.name = name
+        self._adapter = adapter
+        self._remote_tool = remote_tool
+
+    def execute(self, **kwargs: Any) -> str:
+        result = self._adapter.call_tool(self._remote_tool, dict(kwargs))
+        return json.dumps(result, ensure_ascii=False)
+
+
 # ============================================================================
 # Host resolution — shared deps and monkeypatched symbols
 # ============================================================================
@@ -231,13 +251,13 @@ def _live_broker_adapter(broker: str) -> Any:
     raise LiveRunnerUnavailable(f"no MCP server configured for live broker {broker!r}")
 
 
-def _fetch_broker_ceilings(broker: str) -> Optional[Dict[str, Any]]:
+def _fetch_broker_ceilings(broker: str, host: Any | None = None) -> Optional[Dict[str, Any]]:
     """Best-effort fetch of broker-side account ceilings for the commit re-check.
 
     Returns ``None`` on any failure so the caller falls back to the proposal's
     own snapshot — a commit is never blocked on a broker read.
     """
-    h = _host()
+    h = host if host is not None else _host()
     try:
         adapter = h._live_broker_adapter(broker)
     except LiveRunnerUnavailable:
@@ -352,7 +372,65 @@ def _runner_liveness_state(broker: str) -> RunnerLivenessState:
     return RunnerLivenessState(broker=broker, alive=alive, last_tick=tick, last_tick_age_seconds=age)
 
 
-def _build_live_runner(broker: str) -> Any:
+def _call_live_write_tool_governed(
+    *,
+    broker: str,
+    adapter: Any,
+    remote_tool: str,
+    params: Dict[str, Any],
+    operation: str,
+    host: Any | None = None,
+    state_provider: Any | None = None,
+    decision_recorder: Any | None = None,
+) -> Dict[str, Any]:
+    """Call live connector submit/cancel through GovernedToolRegistry."""
+    from src.agent.tools import ToolRegistry
+    from src.governance.decision_recorder import DecisionRecorder
+    from src.governance.decisions import PolicyDecision
+    from src.governance.runtime import GovernedToolRegistry, RuntimeContext
+
+    class _AllowPolicy:
+        def evaluate(self, *, name: str, params: dict[str, Any], manifest: Any, context: RuntimeContext) -> PolicyDecision:
+            del params, context
+            return PolicyDecision(
+                tool_name=name,
+                action="allow",
+                risk_level=manifest.risk_level,
+                reasons=[],
+                policy_engine_version="live-connector-boundary-v1.2.1",
+            )
+
+    tool_name = f"live_connector_{broker}_{operation}".replace("-", "_")
+    registry = ToolRegistry()
+    registry.register(_LiveConnectorWriteTool(name=tool_name, adapter=adapter, remote_tool=remote_tool))
+    h = host if host is not None else _host()
+    if state_provider is None and h is not None:
+        factory = getattr(h, "_live_governance_state_provider_factory", None)
+        if callable(factory):
+            state_provider = factory(broker=broker, operation=operation, params=dict(params))
+    if decision_recorder is None and h is not None:
+        decision_recorder = getattr(h, "_live_decision_recorder", None)
+    decision_recorder = decision_recorder or DecisionRecorder()
+    governed = GovernedToolRegistry(
+        registry,
+        policy=_AllowPolicy(),
+        decision_recorder=decision_recorder,
+        context=RuntimeContext(
+            mode="warn",
+            surface="live_connector",
+            run_id=f"live_connector_{broker}",
+            state_provider=state_provider,
+        ),
+    )
+    raw_result = governed.execute(tool_name, dict(params))
+    try:
+        decoded = json.loads(raw_result)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return {"status": "ok", "result": raw_result}
+    return decoded if isinstance(decoded, dict) else {"status": "ok", "result": decoded}
+
+
+def _build_live_runner(broker: str, host: Any | None = None) -> Any:
     """Construct a fully-wired ``LiveRunner`` for a broker (SPEC §7.5 R-INT).
 
     Wires the runner to the real surfaces — the public ``SessionService`` agent
@@ -364,7 +442,7 @@ def _build_live_runner(broker: str) -> Any:
     Raises:
         LiveRunnerUnavailable: When the broker channel is not configured.
     """
-    h = _host()
+    h = host if host is not None else _host()
 
     # _runner_factory is monkeypatched on host by tests
     factory = getattr(h, "_runner_factory", None)
@@ -400,8 +478,22 @@ def _build_live_runner(broker: str) -> Any:
 
     def _submit(order: Dict[str, Any]) -> Dict[str, Any]:
         if order.get("action") == "cancel":
-            return adapter.call_tool(cancel_order_tool, order)
-        return adapter.call_tool(submit_order_tool, order)
+            return _call_live_write_tool_governed(
+                broker=broker,
+                adapter=adapter,
+                remote_tool=cancel_order_tool,
+                params=order,
+                operation="cancel_order",
+                host=h,
+            )
+        return _call_live_write_tool_governed(
+            broker=broker,
+            adapter=adapter,
+            remote_tool=submit_order_tool,
+            params=order,
+            operation="submit_order",
+            host=h,
+        )
 
     svc = h._get_session_service()
     session = svc.create_session(title=f"live-runner:{broker}")
@@ -473,6 +565,10 @@ def register_live_routes(
 
     if require_auth is None:
         require_auth = h.require_auth
+    route_host = h
+
+    def host() -> Any:
+        return route_host
 
     # All route handlers resolve monkeypatched symbols from host at call time
     # via ``_host()`` so that ``monkeypatch.setattr(api_server, ...)`` works.
@@ -485,7 +581,7 @@ def register_live_routes(
 
         from src.live.mandate.commit import CommitError, commit_mandate
 
-        broker_ceilings = _host()._fetch_broker_ceilings(payload.broker)
+        broker_ceilings = host()._fetch_broker_ceilings(payload.broker)
 
         try:
             result = commit_mandate(
@@ -504,8 +600,8 @@ def register_live_routes(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        _host()._emit_live_event(payload.session_id, "mandate.committed", result)
-        _host()._emit_live_event(
+        host()._emit_live_event(payload.session_id, "mandate.committed", result)
+        host()._emit_live_event(
             payload.session_id,
             "live.action",
             {"kind": "mandate_committed", "broker": result["broker"], "mandate_id": result["mandate_id"]},
@@ -523,8 +619,8 @@ def register_live_routes(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         result = {"halted": True, "broker": payload.broker, "reason": payload.reason, "sentinel": str(path)}
-        _host()._emit_live_event(payload.session_id, "live.halted", result)
-        _host()._emit_live_event(
+        host()._emit_live_event(payload.session_id, "live.halted", result)
+        host()._emit_live_event(
             payload.session_id,
             "live.action",
             {"kind": "halt_tripped", "broker": payload.broker, "reason": payload.reason},
@@ -542,8 +638,8 @@ def register_live_routes(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         result = {"halted": False, "broker": payload.broker, "cleared": cleared}
-        _host()._emit_live_event(payload.session_id, "live.resumed", result)
-        _host()._emit_live_event(
+        host()._emit_live_event(payload.session_id, "live.resumed", result)
+        host()._emit_live_event(
             payload.session_id,
             "live.action",
             {"kind": "halt_cleared", "broker": payload.broker, "cleared": cleared},
@@ -564,7 +660,7 @@ def register_live_routes(
             brokers = _known_live_brokers()
 
         known = set(_known_live_brokers())
-        h = _host()
+        h = host()
         statuses: List[LiveBrokerStatus] = []
         for key in brokers:
             statuses.append(
@@ -626,7 +722,7 @@ def register_live_routes(
                 detail=f"live runner is not supported for {broker}",
             )
 
-        h = _host()
+        h = host()
         tasks = h._runner_tasks
 
         existing = tasks.get(broker)
@@ -642,7 +738,7 @@ def register_live_routes(
             raise HTTPException(status_code=409, detail="kill switch is tripped; resume before starting the runner")
 
         try:
-            runner = h._build_live_runner(broker)
+            runner = h._build_live_runner(broker, host=h)
         except LiveRunnerUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except Exception as exc:
@@ -676,7 +772,7 @@ def register_live_routes(
                 detail=f"live runner is not supported for {broker}",
             )
 
-        h = _host()
+        h = host()
         tasks = h._runner_tasks
         task = tasks.pop(broker, None)
         if task is None or task.done():

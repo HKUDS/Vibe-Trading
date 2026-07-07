@@ -1,5 +1,6 @@
 import { CheckCircle2, ShieldAlert, XCircle } from "lucide-react";
 import type { EvidenceClosureSummary } from "@/lib/api";
+import { redactResearchText } from "./redaction";
 
 export function EvidenceClosurePanel({ summary }: { summary?: EvidenceClosureSummary | null }) {
   const passed = summary?.passed === true;
@@ -44,7 +45,7 @@ export function EvidenceClosurePanel({ summary }: { summary?: EvidenceClosureSum
           )}
           {problemRefs.length > 0 && (
             <ul className="space-y-1 text-xs text-danger">
-              {problemRefs.map((ref) => <li key={ref}>{ref}</li>)}
+              {problemRefs.map((ref) => <li key={ref}>{redactResearchText(ref)}</li>)}
             </ul>
           )}
         </div>

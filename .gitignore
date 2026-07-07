@@ -52,6 +52,12 @@ data/backup/
 
 # Internal docs (plans, specs)
 docs/
+!docs/
+docs/*
+!docs/irr-agl-v1.2.1-post416-420-security-compat.md
+!docs/irr-agl-v1.2.1-security-static-audit.md
+!docs/irr-agl-v1.2.1-redteam-test-report.md
+!docs/irr-agl-v1.2.1-security-standards-map.md
 !wiki/docs/
 !wiki/docs/**
 docs/screenshots/agent-run.png

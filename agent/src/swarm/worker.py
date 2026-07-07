@@ -772,6 +772,10 @@ def _remote_tool_metadata(registry: ToolRegistry, tool_name: str) -> dict[str, s
     an empty dict so the event payload is unchanged for them.
     """
     tool = registry.get(tool_name)
+    server_name = getattr(tool, "mcp_server_name", None)
+    remote_name = getattr(tool, "mcp_remote_tool_name", None)
+    if server_name and remote_name:
+        return {"server": str(server_name), "remote_tool": str(remote_name)}
     if not isinstance(tool, MCPRemoteTool):
         return {}
     spec = getattr(tool, "_spec", None)

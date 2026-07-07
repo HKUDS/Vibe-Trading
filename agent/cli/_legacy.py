@@ -949,6 +949,7 @@ def _run_agent(
     from src.tools import build_registry
     from src.providers.chat import ChatLLM
     from src.agent.loop import AgentLoop
+    from src.governance.route_coverage import build_governed_tool_registry
 
     # Closure-level state for the no-rich path so dots and progress lines
     # don't shoulder-bump each other (M3) and progress prints are throttled
@@ -1088,14 +1089,21 @@ def _run_agent(
         else:
             console.print(f"[yellow]WARNING:[/yellow] {msg}")
 
+    registry = build_registry(
+        persistent_memory=pm,
+        include_shell_tools=True,
+        agent_config=agent_config,
+        session_id=session_id or None,
+        warn_callback=_mcp_warn,
+    )
+    registry = build_governed_tool_registry(
+        registry,
+        surface="cli",
+        session_id=session_id or None,
+    )
+
     agent = AgentLoop(
-        registry=build_registry(
-            persistent_memory=pm,
-            include_shell_tools=True,
-            agent_config=agent_config,
-            session_id=session_id or None,
-            warn_callback=_mcp_warn,
-        ),
+        registry=registry,
         llm=ChatLLM(),
         event_callback=on_event,
         max_iterations=max_iter,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -217,6 +218,30 @@ def test_authorized_client_can_write_llm_settings_when_api_key_configured(
 
     assert response.status_code == 200
     assert "OPENAI_BASE_URL=https://api.openai.com/v1" in env_path.read_text(encoding="utf-8")
+
+
+def test_authorized_llm_settings_uses_registered_host_if_sys_modules_changes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+    env_path = tmp_path / ".env"
+    wrong_env_path = tmp_path / "wrong.env"
+    env_path.write_text("", encoding="utf-8")
+    wrong_env_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(api_server, "ENV_PATH", env_path)
+    monkeypatch.setitem(sys.modules, "api_server", SimpleNamespace(ENV_PATH=wrong_env_path))
+
+    response = _remote_client().put(
+        "/settings/llm",
+        headers={"Authorization": "Bearer secret"},
+        json=_llm_settings_payload("https://api.openai.com/v1"),
+    )
+
+    assert response.status_code == 200
+    assert "OPENAI_BASE_URL=https://api.openai.com/v1" in env_path.read_text(encoding="utf-8")
+    assert wrong_env_path.read_text(encoding="utf-8") == ""
 
 
 def test_local_dev_can_write_llm_settings_when_api_key_unset(
@@ -523,6 +548,28 @@ def test_loopback_shutdown_accepts_valid_bearer(
     assert response.status_code == 200
     assert response.json()["status"] == "shutting-down"
     assert called == [True]
+
+
+def test_shutdown_uses_registered_host_if_sys_modules_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: list[str] = []
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+    monkeypatch.setattr(api_server, "_terminate_current_process", lambda: called.append("registered"))
+    monkeypatch.setitem(
+        sys.modules,
+        "api_server",
+        SimpleNamespace(_terminate_current_process=lambda: called.append("wrong")),
+    )
+
+    response = _local_client().post(
+        "/system/shutdown",
+        headers={"Authorization": "Bearer secret", "Origin": "http://127.0.0.1:8899"},
+    )
+
+    assert response.status_code == 200
+    assert called == ["registered"]
 
 
 # ============================================================================

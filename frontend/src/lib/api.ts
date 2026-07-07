@@ -1089,6 +1089,58 @@ export interface LiveRunnerResponse {
   was_running?: boolean;
 }
 
+export function normalizeEvidenceClosureReport(
+  payload: Partial<EvidenceClosureReport> & { run_id?: string },
+): EvidenceClosureReport {
+  return {
+    schema_version: payload.schema_version ?? "1.2.1",
+    run_id: payload.run_id ?? "",
+    passed: payload.passed === true,
+    degraded: payload.degraded === true,
+    verified_from: Array.isArray(payload.verified_from) ? payload.verified_from : [],
+    missing_refs: Array.isArray(payload.missing_refs) ? payload.missing_refs : [],
+    dangling_refs: Array.isArray(payload.dangling_refs) ? payload.dangling_refs : [],
+    inconsistent_ids: Array.isArray(payload.inconsistent_ids) ? payload.inconsistent_ids : [],
+    outbox_pending: Array.isArray(payload.outbox_pending) ? payload.outbox_pending : [],
+    degraded_reasons: Array.isArray(payload.degraded_reasons) ? payload.degraded_reasons : [],
+    partial_decisions: Array.isArray(payload.partial_decisions) ? payload.partial_decisions : [],
+    secret_leak_warnings: Array.isArray(payload.secret_leak_warnings) ? payload.secret_leak_warnings : [],
+    lineage_errors: Array.isArray(payload.lineage_errors) ? payload.lineage_errors : [],
+    claim_gate_inconsistencies: Array.isArray(payload.claim_gate_inconsistencies)
+      ? payload.claim_gate_inconsistencies
+      : [],
+    required_refs_present: payload.required_refs_present ?? {},
+    checked_at: payload.checked_at,
+  };
+}
+
+export function normalizeResearchClaimsResponse(
+  payload: Partial<ResearchClaimsResponse> & { run_id?: string },
+): ResearchClaimsResponse {
+  const claimSet = payload.claim_set
+    ? {
+        schema_version: payload.claim_set.schema_version ?? payload.schema_version ?? "1.2.1",
+        claim_set_id: payload.claim_set.claim_set_id,
+        run_id: payload.claim_set.run_id ?? payload.run_id ?? "",
+        claims: Array.isArray(payload.claim_set.claims) ? payload.claim_set.claims : [],
+        extractor_version: payload.claim_set.extractor_version,
+        generated_by: payload.claim_set.generated_by,
+        artifact_ref: payload.claim_set.artifact_ref ?? null,
+      }
+    : null;
+  return {
+    schema_version: payload.schema_version ?? "1.2.1",
+    run_id: payload.run_id ?? claimSet?.run_id ?? "",
+    artifact_ref: payload.artifact_ref ?? null,
+    claim_ids: Array.isArray(payload.claim_ids) ? payload.claim_ids : [],
+    claim_set: claimSet,
+  };
+}
+
+export function hasRawSecretSentinel(value: unknown, sentinel: string): boolean {
+  return JSON.stringify(value).includes(sentinel);
+}
+
 export interface MessageItem {
   message_id: string;
   session_id: string;

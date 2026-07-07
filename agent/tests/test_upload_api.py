@@ -8,7 +8,9 @@ shrink the limit so they exercise the streaming/cleanup paths without allocating
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -67,6 +69,28 @@ def test_loopback_upload_without_browser_origin_still_allowed_when_key_configure
 
     assert response.status_code == 200
     assert len(_existing_uploads(tmp_path)) == 1
+
+
+def test_upload_uses_registered_host_if_sys_modules_changes(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    wrong_dir = tmp_path / "wrong"
+    monkeypatch.setitem(
+        sys.modules,
+        "api_server",
+        SimpleNamespace(UPLOADS_DIR=wrong_dir, MAX_UPLOAD_SIZE=50 * 1024 * 1024, _UPLOAD_CHUNK_SIZE=1024),
+    )
+
+    response = client.post(
+        "/upload",
+        files={"file": ("note.txt", b"safe", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    assert len(_existing_uploads(tmp_path)) == 1
+    assert not wrong_dir.exists()
 
 
 def test_remote_same_origin_browser_upload_with_api_key_is_allowed(

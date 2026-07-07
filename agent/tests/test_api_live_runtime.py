@@ -14,6 +14,7 @@ All tests run against stubbed runner/liveness state — no real agent or broker.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -98,6 +99,25 @@ def test_live_status_reflects_active_mandate(tmp_path: Path, monkeypatch) -> Non
     client = _client(tmp_path, monkeypatch)
     monkeypatch.setattr(
         api_server, "_active_mandate_state", lambda broker: _valid_mandate_state(broker)
+    )
+
+    response = client.get("/live/status", params={"broker": "robinhood"})
+
+    assert response.status_code == 200
+    rh = response.json()["brokers"][0]
+    assert rh["mandate"]["expired"] is False
+    assert rh["mandate"]["limits"]["max_order_notional_usd"] == 750.0
+
+
+def test_live_status_uses_registered_host_if_sys_modules_changes(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        api_server, "_active_mandate_state", lambda broker: _valid_mandate_state(broker)
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "api_server",
+        SimpleNamespace(_active_mandate_state=lambda broker: None),
     )
 
     response = client.get("/live/status", params={"broker": "robinhood"})
@@ -359,6 +379,40 @@ def test_build_live_runner_wires_a_real_runner(tmp_path, monkeypatch) -> None:
     assert runner.runner_id == "robinhood"
 
 
+def test_build_live_runner_uses_exporting_module_if_sys_modules_changes(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
+    monkeypatch.setattr(api_server, "_runner_factory", None, raising=False)
+
+    class _StubAdapter:
+        def call_tool(self, name, args):
+            return {"status": "ok", "result": {}}
+
+    class _StubSession:
+        session_id = "live-sess-1"
+
+    class _StubSvc:
+        event_bus = SimpleNamespace(emit=lambda *a, **k: None)
+
+        def create_session(self, title=""):
+            return _StubSession()
+
+        async def send_message(self, sid, content, **kw):
+            return {"message_id": "m1", "attempt_id": "a1"}
+
+    monkeypatch.setattr(api_server, "_live_broker_adapter", lambda broker: _StubAdapter())
+    monkeypatch.setattr(api_server, "_get_session_service", lambda: _StubSvc())
+    monkeypatch.setitem(
+        sys.modules,
+        "api_server",
+        SimpleNamespace(_live_broker_adapter=lambda broker: (_ for _ in ()).throw(RuntimeError("wrong host"))),
+    )
+
+    runner = api_server._build_live_runner("robinhood")
+
+    assert runner.broker == "robinhood"
+    assert runner.runner_id == "robinhood"
+
+
 def test_runner_start_returns_503_when_broker_unavailable(tmp_path, monkeypatch) -> None:
     client = _client(tmp_path, monkeypatch)
     monkeypatch.setattr(
@@ -432,6 +486,28 @@ def test_fetch_broker_ceilings_derives_from_account(tmp_path, monkeypatch) -> No
 
     monkeypatch.setattr(api_server, "_live_broker_adapter", lambda broker: _StubAdapter())
     ceilings = api_server._fetch_broker_ceilings("robinhood")
+    assert ceilings == {
+        "account_funding_usd": 4200.0,
+        "max_order_notional_usd": 4200.0,
+        "max_total_exposure_usd": 4200.0,
+    }
+
+
+def test_fetch_broker_ceilings_uses_exporting_module_if_sys_modules_changes(tmp_path, monkeypatch) -> None:
+    class _StubAdapter:
+        def call_tool(self, name, args):
+            assert name == "get_portfolio"
+            return {"status": "ok", "result": {"buying_power": 4200.0}}
+
+    monkeypatch.setattr(api_server, "_live_broker_adapter", lambda broker: _StubAdapter())
+    monkeypatch.setitem(
+        sys.modules,
+        "api_server",
+        SimpleNamespace(_live_broker_adapter=lambda broker: (_ for _ in ()).throw(RuntimeError("wrong host"))),
+    )
+
+    ceilings = api_server._fetch_broker_ceilings("robinhood")
+
     assert ceilings == {
         "account_funding_usd": 4200.0,
         "max_order_notional_usd": 4200.0,

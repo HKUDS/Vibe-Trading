@@ -14,6 +14,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 
+from src.reliability.redaction import redact_secrets
+
 
 # ---------------------------------------------------------------------------
 # Helper functions (module-level; host Pydantic models resolved via sys.modules)
@@ -150,7 +152,7 @@ def _build_response_from_run_dir(
     run_card_path = run_dir / "run_card.json"
     if run_card_path.exists():
         try:
-            response.run_card = json.loads(run_card_path.read_text(encoding="utf-8"))
+            response.run_card = redact_secrets(json.loads(run_card_path.read_text(encoding="utf-8")))
         except (json.JSONDecodeError, OSError):
             pass
 

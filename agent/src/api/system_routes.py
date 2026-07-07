@@ -66,14 +66,13 @@ def register_system_routes(
     _security = host._security
     _require_shutdown_authorization = host._require_shutdown_authorization
     _app_version = app_version if app_version is not None else host.APP_VERSION
+    route_host = host
 
     def _get_terminate_process():
         """Late-access _terminate_current_process for test monkeypatch compat."""
-        h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
-        if h is not None:
-            fn = getattr(h, "_terminate_current_process", None)
-            if fn is not None:
-                return fn
+        fn = getattr(route_host, "_terminate_current_process", None)
+        if fn is not None:
+            return fn
         return _terminate_current_process
 
     # --- Routes ---

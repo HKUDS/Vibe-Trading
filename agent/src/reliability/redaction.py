@@ -27,6 +27,10 @@ _SECRET_KEY_FRAGMENTS = (
 _BEARER_RE = re.compile(r"^\s*bearer\s+[A-Za-z0-9._~+/=-]{16,}\s*$", re.IGNORECASE)
 _KEY_PREFIX_RE = re.compile(r"^\s*(sk|rk|pk|ghp|gho|ghu|github_pat)-[A-Za-z0-9_\-]{20,}\s*$", re.IGNORECASE)
 _LONG_RANDOM_RE = re.compile(r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)[A-Za-z0-9_\-+/=]{40,}$")
+_INLINE_SECRET_RE = re.compile(
+    r"\b(api[_-]?key|token|password|credential|authorization)\s*[:=]\s*[^,\s]+",
+    re.IGNORECASE,
+)
 
 
 def redact_secrets(value: Any) -> Any:
@@ -55,4 +59,9 @@ def _key_is_secret_like(key: str) -> bool:
 
 
 def _value_is_secret_like(value: str) -> bool:
-    return bool(_BEARER_RE.match(value) or _KEY_PREFIX_RE.match(value) or _LONG_RANDOM_RE.match(value))
+    return bool(
+        _BEARER_RE.match(value)
+        or _KEY_PREFIX_RE.match(value)
+        or _LONG_RANDOM_RE.match(value)
+        or _INLINE_SECRET_RE.search(value)
+    )

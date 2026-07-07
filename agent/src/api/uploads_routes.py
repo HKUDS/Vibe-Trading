@@ -70,26 +70,22 @@ def register_uploads_routes(
                 "pass require_auth explicitly"
             )
         require_auth = host.require_auth
+    else:
+        import sys as _sys
 
-    # Resolve host attributes at call time so existing tests and operator
+        host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+    route_host = host
+
+    # Resolve attributes from the registration host so existing tests and operator
     # overrides like ``monkeypatch.setattr(api_server, "UPLOADS_DIR", ...)`` work.
     def _host_uploads_dir() -> Path:
-        import sys as _sys
-
-        host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
-        return host.UPLOADS_DIR if host else UPLOADS_DIR
+        return route_host.UPLOADS_DIR if route_host else UPLOADS_DIR
 
     def _host_max_upload_size() -> int:
-        import sys as _sys
-
-        host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
-        return host.MAX_UPLOAD_SIZE if host else MAX_UPLOAD_SIZE
+        return route_host.MAX_UPLOAD_SIZE if route_host else MAX_UPLOAD_SIZE
 
     def _host_chunk_size() -> int:
-        import sys as _sys
-
-        host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
-        return host._UPLOAD_CHUNK_SIZE if host else _UPLOAD_CHUNK_SIZE
+        return route_host._UPLOAD_CHUNK_SIZE if route_host else _UPLOAD_CHUNK_SIZE
 
     @app.get("/shadow-reports/{shadow_id}", dependencies=[Depends(require_auth)])
     async def get_shadow_report(shadow_id: str, format: str = "html"):

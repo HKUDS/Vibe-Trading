@@ -979,15 +979,25 @@ from src.api.live_routes import (  # noqa: F401, E402
     _runner_tasks,
     _runner_factory,
     _emit_live_event,
-    _fetch_broker_ceilings,
+    _fetch_broker_ceilings as _live_routes_fetch_broker_ceilings,
     _known_live_brokers,
     _oauth_token_present,
     _active_mandate_state,
     _runner_liveness_state,
     _live_broker_adapter,
-    _build_live_runner,
+    _build_live_runner as _live_routes_build_live_runner,
     _drive_runner,
 )
+
+_API_SERVER_MODULE = _sys.modules[__name__]
+
+
+def _build_live_runner(broker: str, host: object | None = None):
+    return _live_routes_build_live_runner(broker, host=host or _API_SERVER_MODULE)
+
+
+def _fetch_broker_ceilings(broker: str, host: object | None = None):
+    return _live_routes_fetch_broker_ceilings(broker, host=host or _API_SERVER_MODULE)
 
 # ============================================================================
 # Alpha Zoo routes (Web UI) — defined in src/api/alpha_routes.py
