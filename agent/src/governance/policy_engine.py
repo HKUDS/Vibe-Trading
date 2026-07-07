@@ -251,6 +251,8 @@ def _decision(
 
 
 def _check_state(context: RuntimeContext, check: str) -> bool:
+    if not context.state_authoritative:
+        return False
     if check in context.live_state:
         return bool(context.live_state[check])
     if check in context.user_auth_state:

@@ -31,7 +31,18 @@ def test_manifest_contains_all_phase0_inventory_tools() -> None:
     inventory_names = {row["name"] for row in inventory}
     manifest_names = {cache.get(name).name for name in inventory_names}
     assert manifest_names == inventory_names
-    assert all(cache.get(name).risk_level != RiskLevel.UNCLASSIFIED for name in inventory_names)
+    unclassified = [
+        name
+        for name in sorted(inventory_names)
+        if cache.get(name).risk_level.value == RiskLevel.UNCLASSIFIED.value
+    ]
+    assert unclassified == []
+
+
+def test_registry_discovery_ignores_test_module_tool_subclasses() -> None:
+    registry = build_registry(include_shell_tools=True, interactive=False)
+
+    assert "sample_read" not in registry.tool_names
 
 
 def test_bash_is_r5_shell() -> None:
@@ -58,6 +69,27 @@ def test_unknown_new_tool_is_unclassified() -> None:
 
     manifest = discover_tool_manifest(NewTool(), surface=ToolSurface.CLI)
 
+    assert manifest.risk_level == RiskLevel.UNCLASSIFIED
+
+
+def test_unknown_readonly_registered_tool_stays_unclassified() -> None:
+    class UnknownReadonlyTool(BaseTool):
+        name = "unknown_readonly_tool"
+        description = "claims readonly but has no reviewed namespace"
+        parameters = {"type": "object", "properties": {}}
+        is_readonly = True
+
+        def execute(self, **kwargs):
+            return "{}"
+
+    inner = ToolRegistry()
+    cache = ManifestCache({}, surface=ToolSurface.CLI)
+    governed = GovernedToolRegistry(inner, manifest_cache=cache)
+
+    governed.register(UnknownReadonlyTool())
+
+    manifest = cache.get("unknown_readonly_tool")
+    assert manifest.readonly is True
     assert manifest.risk_level == RiskLevel.UNCLASSIFIED
 
 

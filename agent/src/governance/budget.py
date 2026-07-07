@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from threading import Lock
 
 from pydantic import BaseModel, Field
 
@@ -41,33 +42,41 @@ class BudgetManager:
 
     def __init__(self, snapshot: BudgetSnapshot | None = None) -> None:
         self.snapshot = snapshot or BudgetSnapshot()
+        self._lock = Lock()
 
     def record_tool_call(self, *, risk_level: RiskLevel) -> None:
-        self._check_runtime()
-        self._increment("tool_calls", "max_tool_calls")
-        if risk_level == RiskLevel.R2_NETWORK:
-            self._increment("network_calls", "max_network_calls")
+        with self._lock:
+            self._check_runtime()
+            self._increment("tool_calls", "max_tool_calls")
+            if risk_level == RiskLevel.R2_NETWORK:
+                self._increment("network_calls", "max_network_calls")
 
     def record_parallel_readonly_call(self) -> None:
-        self._increment("parallel_readonly_calls", "max_parallel_readonly_calls")
+        with self._lock:
+            self._increment("parallel_readonly_calls", "max_parallel_readonly_calls")
 
     def record_bytes_read(self, byte_count: int) -> None:
-        self.snapshot.bytes_read += max(0, int(byte_count))
-        self._check_limit("bytes_read", "max_bytes_read")
+        with self._lock:
+            self.snapshot.bytes_read += max(0, int(byte_count))
+            self._check_limit("bytes_read", "max_bytes_read")
 
     def record_artifact_written(self, byte_count: int = 0) -> None:
-        self._increment("artifacts_written", "max_artifacts_written")
-        self.snapshot.artifact_bytes_written += max(0, int(byte_count))
+        with self._lock:
+            self._increment("artifacts_written", "max_artifacts_written")
+            self.snapshot.artifact_bytes_written += max(0, int(byte_count))
 
     def record_llm_tokens_or_cost(self, amount: float) -> None:
-        self.snapshot.llm_tokens_or_cost += max(0.0, float(amount))
-        self._check_limit("llm_tokens_or_cost", "max_llm_tokens_or_cost")
+        with self._lock:
+            self.snapshot.llm_tokens_or_cost += max(0.0, float(amount))
+            self._check_limit("llm_tokens_or_cost", "max_llm_tokens_or_cost")
 
     def record_backtest_trial(self) -> None:
-        self._increment("backtest_trials", "max_backtest_trials")
+        with self._lock:
+            self._increment("backtest_trials", "max_backtest_trials")
 
     def record_external_mcp_call(self) -> None:
-        self._increment("external_mcp_calls", "max_external_mcp_calls")
+        with self._lock:
+            self._increment("external_mcp_calls", "max_external_mcp_calls")
 
     def _increment(self, field_name: str, limit_name: str) -> None:
         setattr(self.snapshot, field_name, int(getattr(self.snapshot, field_name)) + 1)

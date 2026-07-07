@@ -81,11 +81,7 @@ class ManifestCache:
             get_tool = getattr(registry, "get", None)
             tool = get_tool(name) if callable(get_tool) else None
             if tool is not None:
-                manifest = discover_tool_manifest(tool, surface=surface)
-                if manifest.risk_level == RiskLevel.UNCLASSIFIED:
-                    fallback_risk = RiskLevel.R0_READ if manifest.readonly else RiskLevel.R1_WRITE_LOCAL
-                    manifest = manifest.model_copy(update={"risk_level": fallback_risk})
-                manifests[name] = manifest
+                manifests[name] = discover_tool_manifest(tool, surface=surface)
         return cls(manifests, surface=surface)
 
     def get(self, name: str) -> ToolManifest:
@@ -110,9 +106,6 @@ class ManifestCache:
         """Register a manifest for a tool added after cache construction."""
 
         manifest = discover_tool_manifest(tool, surface=self.surface)
-        if manifest.risk_level == RiskLevel.UNCLASSIFIED:
-            fallback_risk = RiskLevel.R0_READ if manifest.readonly else RiskLevel.R1_WRITE_LOCAL
-            manifest = manifest.model_copy(update={"risk_level": fallback_risk})
         self._manifests[manifest.name] = manifest
         return manifest
 

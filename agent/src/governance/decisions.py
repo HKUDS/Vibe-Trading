@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
@@ -28,6 +29,25 @@ class RuntimeContext(BaseModel):
     user_auth_state: dict[str, Any] = Field(default_factory=dict)
     live_state: dict[str, Any] = Field(default_factory=dict)
     budget_state: dict[str, Any] = Field(default_factory=dict)
+    state_authoritative: bool = False
+
+    def with_authoritative_state(
+        self,
+        *,
+        live_state: Mapping[str, Any] | None = None,
+        user_auth_state: Mapping[str, Any] | None = None,
+        budget_state: Mapping[str, Any] | None = None,
+    ) -> "RuntimeContext":
+        """Return a copy with provider-supplied state for policy checks."""
+
+        return self.model_copy(
+            update={
+                "live_state": dict(live_state or {}),
+                "user_auth_state": dict(user_auth_state or {}),
+                "budget_state": dict(budget_state or {}),
+                "state_authoritative": True,
+            }
+        )
 
 
 class ParamAudit(BaseModel):

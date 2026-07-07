@@ -55,7 +55,7 @@ def _discover_subclasses() -> list[type[BaseTool]]:
     queue = deque(BaseTool.__subclasses__())
     while queue:
         cls = queue.popleft()
-        if cls.name:
+        if cls.name and cls.__module__.startswith("src.tools."):
             classes.append(cls)
         queue.extend(cls.__subclasses__())
 
@@ -75,6 +75,12 @@ def build_registry(
     _mcp_server_tool_name_segments: Mapping[str, str] | None = None,
 ) -> ToolRegistry:
     """Build the tool registry via auto-discovery, optionally enriched with MCP tools.
+
+    This is a raw registry factory. Production execution entry points that run
+    user- or agent-selected tools must wrap the returned registry with
+    ``govern_registry`` before handing it to ``AgentLoop`` or calling
+    ``execute``. Keep this helper raw for schema generation, inventory, tests,
+    and low-level assembly.
 
     Local tools are discovered and registered first. When ``agent_config``
     provides one or more MCP server definitions, remote tools are appended
@@ -247,6 +253,11 @@ def build_registry(
 
 def build_filtered_registry(tool_names: list[str], *, include_shell_tools: bool = False) -> ToolRegistry:
     """Build a ToolRegistry with only specified tools.
+
+    This is a raw local-only helper for tests, schema/inventory, and legacy
+    assembly paths. Production execution entry points must prefer a governed
+    builder such as :func:`build_swarm_registry` or explicitly wrap the result
+    with ``govern_registry`` before executing tools.
 
     Local-tools-only filtered builder. Swarm workers should call
     :func:`build_swarm_registry` instead so they can opt into remote MCP

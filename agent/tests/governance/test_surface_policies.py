@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from src.agent.tools import BaseTool, ToolRegistry
 from src.governance.decisions import RuntimeContext
 from src.governance.discovery import ManifestCache
+from src.governance.errors import PolicyDenied
 from src.governance.manifest import RiskLevel, ToolManifest, ToolSurface
 from src.governance.policy_engine import PolicyEngine
 from src.governance.runtime import GovernedToolRegistry
@@ -23,6 +26,23 @@ class _LiveGuardStillRunsTool(BaseTool):
     def execute(self, **kwargs):
         self.calls += 1
         return json.dumps({"status": "blocked", "reason": "live guard denied"})
+
+
+class _StaticStateProvider:
+    def __init__(self, *, live_state: dict[str, bool] | None = None) -> None:
+        self.live_state = live_state or {}
+
+    def get_live_state(self, context: RuntimeContext) -> dict[str, bool]:
+        del context
+        return dict(self.live_state)
+
+    def get_user_auth_state(self, context: RuntimeContext) -> dict[str, bool]:
+        del context
+        return {}
+
+    def get_budget_state(self, context: RuntimeContext) -> dict[str, bool]:
+        del context
+        return {}
 
 
 def _manifest(
@@ -101,7 +121,7 @@ def test_swarm_cannot_inject_mcp_url_via_prompt() -> None:
     assert decision.rule_id == "P35"
 
 
-def test_r4_requires_live_guard_but_does_not_replace_it() -> None:
+def test_r4_rejects_forged_runtime_context_live_state() -> None:
     engine = PolicyEngine()
     manifest = _manifest(
         name="trading_place_order",
@@ -125,8 +145,8 @@ def test_r4_requires_live_guard_but_does_not_replace_it() -> None:
             },
         ),
     )
-    assert decision.action == "allow"
-    assert "live_order_guard" in decision.required_checks
+    assert decision.action == "deny"
+    assert decision.rule_id == "P40"
 
     tool = _LiveGuardStillRunsTool()
     inner = ToolRegistry()
@@ -137,6 +157,41 @@ def test_r4_requires_live_guard_but_does_not_replace_it() -> None:
         context=RuntimeContext(
             surface=ToolSurface.LIVE_CONNECTOR,
             mode="enforce",
+            live_state={
+                "mandate_active": True,
+                "kill_switch_clear": True,
+                "explicit_user_consent": True,
+                "live_order_guard": True,
+                "connector_profile_selected": True,
+            },
+        ),
+    )
+
+    with pytest.raises(PolicyDenied):
+        governed.execute("trading_place_order", {"symbol": "AAPL"})
+    assert tool.calls == 0
+
+
+def test_r4_requires_authoritative_provider_but_does_not_replace_live_guard() -> None:
+    manifest = _manifest(
+        name="trading_place_order",
+        surface=ToolSurface.LIVE_CONNECTOR,
+        risk=RiskLevel.R4_TRADE_WRITE,
+        readonly=False,
+    )
+
+    tool = _LiveGuardStillRunsTool()
+    inner = ToolRegistry()
+    inner.register(tool)
+    governed = GovernedToolRegistry(
+        inner,
+        manifest_cache=ManifestCache({"trading_place_order": manifest}, surface=ToolSurface.LIVE_CONNECTOR),
+        context=RuntimeContext(
+            surface=ToolSurface.LIVE_CONNECTOR,
+            mode="enforce",
+            live_state={"mandate_active": False},
+        ),
+        state_provider=_StaticStateProvider(
             live_state={
                 "mandate_active": True,
                 "kill_switch_clear": True,

@@ -41,3 +41,16 @@ class DecisionRecorder:
         self.records.append(record)
         if self.trace_writer is not None and hasattr(self.trace_writer, "write"):
             self.trace_writer.write(record)
+
+    def record_warning(self, decision: PolicyDecision, *, trace_status: str = "warned") -> None:
+        record = {
+            "type": "policy_warning",
+            "status": trace_status,
+            "decision_id": decision.decision_id,
+            "tool_name": decision.tool_name,
+            "rule_id": decision.rule_id,
+            "reasons": list(decision.reasons),
+        }
+        self.records.append(record)
+        if self.trace_writer is not None and hasattr(self.trace_writer, "write"):
+            self.trace_writer.write(record)
