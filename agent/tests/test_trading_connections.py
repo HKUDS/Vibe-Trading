@@ -9,7 +9,7 @@ import pytest
 
 from src.trading import profiles, service
 from src.tools import build_registry
-from src.tools.trading_connector_tool import TradingSelectConnectionTool
+from src.tools.trading_connector_tool import TradingPlaceOrderTool, TradingSelectConnectionTool
 
 pytestmark = pytest.mark.unit
 
@@ -80,6 +80,45 @@ def test_select_connection_tool_returns_canonical_profile_id(
     assert payload["status"] == "ok"
     assert payload["selected_profile"] == "ibkr-paper-local"
     assert profiles.load_selected_profile_id() == "ibkr-paper-local"
+
+
+def test_place_order_tool_treats_zero_unused_sizing_field_as_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LLM-filled zero quantity/notional fields must not violate sizing XOR."""
+    calls: list[dict] = []
+
+    def fake_place_order(symbol, connection, **kwargs):  # noqa: ANN001
+        calls.append({"symbol": symbol, "connection": connection, **kwargs})
+        return {"status": "ok", "echo": kwargs}
+
+    monkeypatch.setattr("src.tools.trading_connector_tool.place_order", fake_place_order)
+
+    quantity_result = json.loads(
+        TradingPlaceOrderTool().execute(
+            symbol="NVDA",
+            connection="alpaca-paper-trade",
+            side="buy",
+            quantity=2,
+            notional=0,
+        )
+    )
+    notional_result = json.loads(
+        TradingPlaceOrderTool().execute(
+            symbol="NVDA",
+            connection="alpaca-paper-trade",
+            side="buy",
+            quantity=0,
+            notional=50,
+        )
+    )
+
+    assert quantity_result["status"] == "ok"
+    assert notional_result["status"] == "ok"
+    assert calls[0]["quantity"] == 2.0
+    assert calls[0]["notional"] is None
+    assert calls[1]["quantity"] is None
+    assert calls[1]["notional"] == 50.0
 
 
 def test_live_broker_mcp_wrappers_are_hidden_from_agent_registry(monkeypatch: pytest.MonkeyPatch) -> None:

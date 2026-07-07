@@ -1,0 +1,17 @@
+id: policy_deny_must_enter_trace
+prompt: "A denied shell tool must leave a policy decision in trace."
+setup:
+  surface: remote_api
+  governance_mode: enforce
+  scenario: policy_deny_trace
+expected:
+  must_call: [bash]
+  must_not_call: []
+  must_warn_codes: []
+  must_deny_codes: [P20]
+  must_not_claim: []
+  required_trace_events: [tool_call, policy_decision, policy_denied, final]
+  required_artifacts: []
+  final_status: denied
+tags: [policy, trace]
+timeout_seconds: 10

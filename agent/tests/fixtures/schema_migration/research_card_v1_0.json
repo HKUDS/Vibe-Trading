@@ -1,0 +1,236 @@
+{
+  "card_id": "rc_schema_fixture_v1",
+  "schema_version": "1.0.0",
+  "title": "Schema migration fixture research card",
+  "protocol_ref": "694d6dbcae0b2e02d66046cd231f1396f0eb8fc0f6eaa0feb2b5a531dda60711",
+  "hypothesis": "A simple momentum factor has positive out-of-sample IC after costs.",
+  "universe": {
+    "asset_class": "us_equity",
+    "universe_name": "sp500_historical_fixture",
+    "point_in_time": true
+  },
+  "data_sources": [
+    {
+      "audit_id": "audit_schema_fixture_v1",
+      "source": "local:fixture",
+      "selected_source": "local:fixture",
+      "fallback_chain": [
+        "local:fixture"
+      ],
+      "runtime_source": "local:fixture",
+      "row_count": 10000,
+      "symbol_count": 2,
+      "field_coverage": {
+        "open": 1.0,
+        "high": 1.0,
+        "low": 1.0,
+        "close": 1.0,
+        "volume": 1.0
+      },
+      "all_sources_open": false
+    }
+  ],
+  "data_audit_refs": [
+    "audit_schema_fixture_v1"
+  ],
+  "policy_decision_refs": [],
+  "tool_trace_refs": [
+    "trace://fixture/tool-trace-1"
+  ],
+  "backtest_refs": [
+    "backtest://fixture/run-1"
+  ],
+  "alpha_bench_refs": [
+    "alpha://fixture/strict-1"
+  ],
+  "scorecard": {
+    "scorecard_id": "sc_schema_fixture_v1",
+    "schema_version": "1.0.0",
+    "protocol_ref": "694d6dbcae0b2e02d66046cd231f1396f0eb8fc0f6eaa0feb2b5a531dda60711",
+    "data_audit_refs": [
+      "audit_schema_fixture_v1"
+    ],
+    "backtest_refs": [
+      "backtest://fixture/run-1"
+    ],
+    "alpha_bench_refs": [
+      "alpha://fixture/strict-1"
+    ],
+    "score": 0.896154,
+    "score_breakdown": {
+      "benchmark": 1.0,
+      "capacity": 0.8,
+      "cost_model": 1.0,
+      "cost_sensitivity": 0.75,
+      "crowding_risk": 0.6,
+      "execution_realism": 1.0,
+      "ic_stability": 0.8,
+      "oos_split": 1.0,
+      "pit_clean": 1.0,
+      "random_control": 1.0,
+      "regime_stability": 0.7,
+      "trial_count": 1.0,
+      "universe_pit": 1.0
+    },
+    "conclusion_cap": "research_candidate",
+    "crowding": {
+      "crowding_tier": "industry_known",
+      "crowding_risk": "medium",
+      "crowding_proxy": "public momentum family",
+      "stress_periods_tested": [
+        "2020-03",
+        "2022-01"
+      ]
+    },
+    "regime_ic": {
+      "regime_ic": {
+        "bull_market": 0.041,
+        "bear_market": 0.012,
+        "sideways": 0.022,
+        "full_sample": 0.031
+      },
+      "regime_frequency": {
+        "bull_market": 0.42,
+        "bear_market": 0.23,
+        "sideways": 0.35
+      },
+      "regime_stability_score": 0.7
+    },
+    "walk_forward": {
+      "fold_count": 4,
+      "effective_fold_count": 4,
+      "oos_ic_mean": 0.024,
+      "is_ic_mean": 0.036,
+      "oos_is_ic_ratio": 0.666667,
+      "negative_oos_fold_ratio": 0.0,
+      "oos_sharpe": 0.9,
+      "passed": true,
+      "failure_reasons": []
+    },
+    "ic_horizons": [
+      {
+        "horizon": 1,
+        "ic_mean": 0.031,
+        "rank_ic_mean": 0.028
+      },
+      {
+        "horizon": 5,
+        "ic_mean": 0.027,
+        "rank_ic_mean": 0.024
+      },
+      {
+        "horizon": 20,
+        "ic_mean": 0.018,
+        "rank_ic_mean": 0.016
+      }
+    ],
+    "cost_sensitivity": {
+      "bps_grid": [
+        0,
+        5,
+        10,
+        25,
+        50,
+        100
+      ],
+      "net_return_by_bps": {
+        "0": 0.18,
+        "5": 0.15,
+        "10": 0.12,
+        "25": 0.05,
+        "50": -0.02,
+        "100": -0.15
+      }
+    },
+    "capacity": {
+      "adv_participation_grid": [
+        0.05,
+        0.1,
+        0.2
+      ],
+      "passed_max_participation": 0.1
+    },
+    "execution_realism": {
+      "signal_time": true,
+      "decision_time": true,
+      "order_time": true,
+      "fill_time": true,
+      "price_time": true
+    },
+    "neutralized_ic": {
+      "ic_raw": 0.031,
+      "ic_industry_neutral": 0.027,
+      "ic_size_neutral": 0.025,
+      "ic_double_neutral": 0.022
+    },
+    "random_control": {
+      "source": "bench_runner_strict",
+      "random_control": true,
+      "random_ic_mean": 0.001,
+      "alpha_t_full": 2.1,
+      "alpha_t_train": 1.9,
+      "alpha_t_test": 1.3
+    },
+    "warnings": [
+      {
+        "code": "QUANT_NEUTRALIZED_IC_STYLE_EXPOSURE",
+        "severity": "warning",
+        "message": "neutralized IC is lower than raw IC; style exposure should be monitored",
+        "metadata": {
+          "largest_drop": "size"
+        }
+      }
+    ],
+    "hard_failures": [],
+    "experimental_metrics": {
+      "dsr": 0.42,
+      "pbo": 0.18
+    }
+  },
+  "key_metrics": {
+    "ic_mean": 0.031,
+    "turnover": 0.22
+  },
+  "benchmark": {
+    "primary": "SPY",
+    "excess_return": 0.04
+  },
+  "cost_model": {
+    "commission_bps": 1.0,
+    "slippage_bps": 5.0,
+    "stress_bps": [
+      0,
+      5,
+      10,
+      25,
+      50,
+      100
+    ]
+  },
+  "execution_assumptions": {
+    "signal_time_field": "signal_time",
+    "decision_delay": "1D",
+    "order_type": "market_on_open",
+    "fill_price": "next_open"
+  },
+  "oos_results": {
+    "walk_forward_folds": 4,
+    "oos_ic_mean": 0.024
+  },
+  "warnings": [
+    {
+      "code": "QUANT_NEUTRALIZED_IC_STYLE_EXPOSURE",
+      "severity": "warning",
+      "message": "neutralized IC is lower than raw IC; style exposure should be monitored",
+      "metadata": {
+        "largest_drop": "size"
+      }
+    }
+  ],
+  "hard_failures": [],
+  "reproducibility": {
+    "artifact_graph_root": "artifact://fixture/research-card-v1",
+    "trial_count": 3
+  },
+  "conclusion_level": "research_candidate"
+}

@@ -74,6 +74,97 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _maybe_audited_loader(
+    loader: Any,
+    *,
+    requested_source: str,
+    selected_source: str,
+    codes: list[str],
+    interval: str,
+):
+    """Wrap a loader with observe-mode data audit metadata when enabled."""
+    try:
+        from src.reliability.config import reliability_enabled
+    except Exception:
+        return loader
+
+    if not reliability_enabled():
+        return loader
+
+    try:
+        from src.reliability.data.contracts import DataSetContract
+        from src.reliability.data.loader_wrapper import AuditedDataLoader
+        from src.reliability.data.source_manifest import SourceManifest
+    except Exception:
+        logger.exception("failed to initialize data audit wrapper; using raw loader")
+        return loader
+
+    selected = str(getattr(loader, "name", selected_source))
+    manifest = SourceManifest(
+        requested_source=requested_source,
+        selected_source=selected,
+        fallback_chain=[selected],
+        attempted_sources=[selected],
+        runtime_source=selected,
+        cache_hit=False,
+    )
+    return AuditedDataLoader(
+        loader,
+        source=requested_source,
+        selected_source=selected,
+        source_manifest=manifest,
+        dataset_contract=DataSetContract(
+            dataset_id=f"{selected}:ohlcv:{interval}",
+            asset_class=_infer_asset_class(codes),
+            frequency=interval,
+            calendar=selected,
+            fields=["open", "high", "low", "close", "volume"],
+            timezone=_infer_timezone(codes),
+        ),
+        dataset_kind="ohlcv",
+        market_rule_config={
+            "asset_class": _infer_asset_class(codes),
+        },
+    )
+
+
+def _attach_audit_metadata(results: dict[str, Any], loader: Any) -> None:
+    report = getattr(loader, "last_audit_report", None)
+    if report is None:
+        return
+
+    metadata = results.setdefault("_metadata", {})
+    audit_ids = metadata.setdefault("data_audit_ids", [])
+    if report.audit_id not in audit_ids:
+        audit_ids.append(report.audit_id)
+
+    refs = metadata.setdefault("artifact_refs", [])
+    refs.extend(ref.model_dump(mode="json") for ref in report.artifact_refs)
+
+
+def _infer_asset_class(codes: list[str]) -> str:
+    if any(re.match(r"^\d{6}\.(SZ|SH|BJ)$", code, re.I) for code in codes):
+        return "ashare"
+    if any(re.match(r"^[A-Z]+\.US$", code, re.I) for code in codes):
+        return "us_equity"
+    if any(re.match(r"^\d{3,5}\.HK$", code, re.I) for code in codes):
+        return "hk_equity"
+    if any(re.match(r"^[A-Z]+[-/]USDT$", code, re.I) for code in codes):
+        return "crypto"
+    return "other"
+
+
+def _infer_timezone(codes: list[str]) -> str:
+    asset_class = _infer_asset_class(codes)
+    if asset_class == "ashare":
+        return "Asia/Shanghai"
+    if asset_class in {"us_equity", "crypto"}:
+        return "UTC"
+    if asset_class == "hk_equity":
+        return "Asia/Hong_Kong"
+    return "UTC"
+
+
 def fetch_market_data(
     *,
     codes: list[str],
@@ -98,6 +189,13 @@ def fetch_market_data(
     for src, src_codes in groups.items():
         loader_cls = loader_resolver(src)
         loader = loader_cls()
+        loader = _maybe_audited_loader(
+            loader,
+            requested_source=source,
+            selected_source=src,
+            codes=src_codes,
+            interval=interval,
+        )
         try:
             data_map = loader.fetch(src_codes, start_date, end_date, interval=interval)
         except Exception:
@@ -107,6 +205,7 @@ def fetch_market_data(
                 src_codes,
             )
             data_map = {}
+        _attach_audit_metadata(results, loader)
         for symbol, df in data_map.items():
             records = df.reset_index().to_dict(orient="records")
             for row in records:

@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import signal
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Security, status
@@ -83,7 +83,7 @@ def register_system_routes(
         return HealthResponse(
             status="healthy",
             service="Vibe-Trading API",
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
 
     @app.get("/correlation")
@@ -131,7 +131,7 @@ def register_system_routes(
         return {
             "status": "shutting-down",
             "service": "Vibe-Trading API",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     @app.get("/skills")

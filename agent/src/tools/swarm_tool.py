@@ -235,6 +235,22 @@ _PRESET_KEYWORDS: list[tuple[str, list[str], float]] = [
         0.9,
     ),
     (
+        "value_investing_committee",
+        [
+            r"value\s+investing",
+            "价值投资",
+            r"\bbuffett\b",
+            "巴菲特",
+            r"\bmunger\b",
+            "芒格",
+            "段永平",
+            "李录",
+            "四大师",
+            r"four\s+master",
+        ],
+        0.9,
+    ),
+    (
         "investment_committee",
         [
             r"investment\s+committee",
@@ -609,6 +625,7 @@ def _build_variables(preset_name: str, prompt: str) -> dict[str, str]:
         "geopolitical_war_room": {"crisis": g, "market": market},
         "pairs_research_lab": {"market": market, "sector": _extract_sector(prompt)},
         "investment_committee": {"target": g, "market": market},
+        "value_investing_committee": {"company": g, "market": market},
         "macro_strategy_forum": {"market": market, "horizon": "quarterly"},
         "statistical_arbitrage_desk": {"market": market, "goal": g, "sector": _extract_sector(prompt)},
         "sentiment_intelligence_team": {"market": market, "timeframe": "daily"},

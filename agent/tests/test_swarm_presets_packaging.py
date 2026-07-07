@@ -19,7 +19,7 @@ from src.swarm.presets import PRESETS_DIR, list_presets, load_preset
 
 # Lock to the canonical roster shipped today. Bump intentionally if a preset
 # is added or removed so a release that silently drops files is caught here.
-EXPECTED_PRESET_COUNT = 29
+EXPECTED_PRESET_COUNT = 30
 
 
 def test_presets_dir_lives_inside_swarm_package() -> None:
@@ -37,6 +37,14 @@ def test_list_presets_returns_full_roster() -> None:
         f"expected {EXPECTED_PRESET_COUNT} presets, got {len(presets)} — "
         "check pyproject package-data and that YAMLs were not dropped"
     )
+
+
+def test_value_investing_committee_is_routable() -> None:
+    """value_investing_committee must be in the routing table, not just on disk."""
+    from src.tools.swarm_tool import _PRESET_NAMES, _normalize_preset_name
+
+    assert "value_investing_committee" in _PRESET_NAMES
+    assert _normalize_preset_name("value_investing_committee") == "value_investing_committee"
 
 
 def test_every_preset_yaml_is_loadable() -> None:

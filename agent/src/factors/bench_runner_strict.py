@@ -608,4 +608,20 @@ def run_bench_strict(
             "wall_seconds": round(time.monotonic() - start, 2),
         }
     )
+    _attach_quant_scorecard_summary(entry)
     return entry
+
+
+def _attach_quant_scorecard_summary(entry: dict[str, Any]) -> None:
+    """Attach optional Phase 5 scorecard metadata from strict bench output."""
+    try:
+        from src.reliability.config import reliability_enabled
+
+        if not reliability_enabled():
+            return
+        from src.reliability.quant.scorecard import build_alpha_bench_scorecard
+
+        card = build_alpha_bench_scorecard(entry)
+        entry["scorecard"] = card.model_dump(mode="json")
+    except Exception:  # noqa: BLE001
+        logger.exception("strict bench: failed to attach quant scorecard summary")

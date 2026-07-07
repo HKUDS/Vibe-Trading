@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.factors.base import Alpha
 from src.factors.bench_runner_strict import (
     StrictThresholds,
     _shuffle_within_rows,
@@ -28,6 +29,7 @@ from src.factors.bench_runner_strict import (
     run_bench_strict,
     t_stat,
 )
+from src.factors.registry import Registry
 
 
 # ── Helper builders ─────────────────────────────────────────────────────────
@@ -485,6 +487,46 @@ def test_run_bench_strict_rows_drop_underscore_prefixed_sort_keys(
             assert not k.startswith("_") or k == "_category", (
                 f"underscore-prefixed key leaked into wire row: {k!r}"
             )
+
+
+def test_run_bench_strict_accepts_dynamically_registered_alpha(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Phase 5 strict bench must keep the factor registry registration path open."""
+    _stub_panel(monkeypatch)
+    source = tmp_path / "dynamic_alpha.py"
+    source.write_text(
+        "def compute(panel):\n"
+        "    return panel['close'].pct_change().fillna(0.0)\n",
+        encoding="utf-8",
+    )
+    registry = Registry(zoo_root=tmp_path / "empty_zoo")
+    registry.register(
+        Alpha(
+            id="dynamic_001",
+            zoo="dynamic",
+            module_path="dynamic_alpha",
+            meta={
+                "theme": ["momentum"],
+                "formula_latex": "close.pct_change()",
+                "columns_required": ["close"],
+            },
+        ),
+        source_path=source,
+    )
+
+    result = run_bench_strict(
+        zoo="dynamic",
+        universe="csi300",
+        period="2024-2024",
+        random_control=False,
+        registry=registry,
+    )
+
+    assert result["status"] == "ok"
+    assert result["n_alphas_tested"] == 1
+    assert result["rows"][0]["id"] == "dynamic_001"
 
 
 def test_compute_random_ic_series_inner_joins_seed_dates() -> None:

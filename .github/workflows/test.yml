@@ -32,11 +32,14 @@ jobs:
           python -m py_compile src/tools/__init__.py
           python -m py_compile backtest/runner.py
 
+      - name: Run deterministic agent evals without network
+        run: pytest --disable-socket agent/tests/agent_eval -q
+
       - name: Run tests
         # test_e2e_harness_v2.py is gated by VIBE_TRADING_RUN_LIVE_E2E
         # (real-LLM only); list --ignore here so CI's intent is explicit and
         # the suite never silently switches state on env presence.
-        run: pytest --ignore=agent/tests/e2e_backtest --ignore=agent/tests/test_e2e_harness_v2.py --cov=agent --cov-report=term-missing --cov-report=xml --tb=short -q
+        run: pytest --ignore=agent/tests/agent_eval --ignore=agent/tests/e2e_backtest --ignore=agent/tests/test_e2e_harness_v2.py --cov=agent --cov-report=term-missing --cov-report=xml --tb=short -q
 
       - uses: actions/setup-node@v6
         with:

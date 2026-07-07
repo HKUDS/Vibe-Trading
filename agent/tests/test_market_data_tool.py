@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 
 import pandas as pd
+import pytest
 
-from src.market_data import fetch_market_data_json
+from src.market_data import fetch_market_data, fetch_market_data_json
 from src.swarm.models import SwarmAgentSpec
 from src.swarm.presets import list_presets, load_preset
 from src.swarm.worker import build_worker_prompt
@@ -26,7 +27,7 @@ def test_market_data_json_is_strict_when_loader_returns_nan():
     df.index.name = "trade_date"
 
     class _Loader:
-        def fetch(self, codes, start, end, interval="1D"):
+        def fetch(self, codes, start, end, interval="1D", fields=None):
             return {"X.US": df}
 
     text = fetch_market_data_json(
@@ -40,6 +41,44 @@ def test_market_data_json_is_strict_when_loader_returns_nan():
     assert "NaN" not in text
     payload = json.loads(text)
     assert payload["X.US"][0]["high"] is None
+
+
+def test_market_data_response_includes_optional_data_audit_metadata(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("VIBE_TRADING_RELIABILITY_MODE", "observe")
+    monkeypatch.setenv("VIBE_TRADING_ARTIFACT_ROOT", str(tmp_path / "artifacts"))
+    idx = pd.date_range("2026-01-01", periods=1, freq="D")
+    df = pd.DataFrame(
+        {
+            "open": [1.0],
+            "high": [1.2],
+            "low": [0.9],
+            "close": [1.1],
+            "volume": [100],
+        },
+        index=idx,
+    )
+
+    class _Loader:
+        name = "yahoo"
+
+        def fetch(self, codes, start, end, interval="1D", fields=None):
+            return {"X.US": df}
+
+    payload = fetch_market_data(
+        codes=["X.US"],
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        source="yahoo",
+        loader_resolver=lambda source: _Loader,
+    )
+
+    assert "X.US" in payload
+    metadata = payload["_metadata"]
+    assert metadata["data_audit_ids"][0].startswith("audit_")
+    assert metadata["artifact_refs"][0]["artifact_type"] == "data_audit"
 
 
 def test_swarm_registry_can_expose_local_get_market_data_tool():

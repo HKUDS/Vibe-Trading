@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from backtest.loaders import eastmoney_client
@@ -46,7 +46,7 @@ _PAGE_SIZE = 200
 
 def _today() -> date:
     """Return today's date (indirection kept for test monkeypatching)."""
-    return datetime.now().date()
+    return datetime.now(timezone.utc).date()
 
 
 def _compact(d: date) -> str:

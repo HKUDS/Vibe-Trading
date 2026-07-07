@@ -37,6 +37,7 @@ from src.goal.context import (
     goal_needs_continuation,
     goal_progress_tuple,
 )
+from src.governance.errors import PolicyDenied
 from src.providers.chat import ChatLLM, ProviderStreamError
 from src.providers.content_filter import (
     CONTENT_FILTER_SKIP_MESSAGE,
@@ -444,6 +445,17 @@ def _is_tool_success(result: str) -> bool:
     return True
 
 
+def _policy_denied_payload(result: str) -> dict[str, Any] | None:
+    """Return a parsed policy-denied payload if a tool result carries one."""
+    try:
+        data = json.loads(result)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if isinstance(data, dict) and data.get("error_code") == "policy_denied":
+        return data
+    return None
+
+
 def _normalize_tool_run_dir(args: dict[str, Any], memory_run_dir: str | None) -> dict[str, Any]:
     """Normalize ``run_dir`` in tool args to an absolute path when possible.
 
@@ -561,6 +573,9 @@ class AgentLoop:
 
         trace_dir = SESSIONS_DIR / session_id if session_id else run_dir
         trace = TraceWriter(trace_dir)
+        set_trace_writer = getattr(self.registry, "set_trace_writer", None)
+        if callable(set_trace_writer):
+            set_trace_writer(trace)
         if self._run_iteration == 0 and trace.path.exists():
             existing = TraceWriter.read(trace_dir)
             self._run_iteration = max(
@@ -1310,7 +1325,10 @@ class AgentLoop:
             _set_emitter(_on_progress)
             try:
                 with _heartbeat_timer():
-                    result = self.registry.execute(tool_name, args)
+                    try:
+                        result = self.registry.execute(tool_name, args)
+                    except PolicyDenied as exc:
+                        result = exc.user_safe_message
             finally:
                 finished.set()
                 _set_emitter(None)
@@ -1325,6 +1343,8 @@ class AgentLoop:
             _set_emitter(_on_progress)
             try:
                 result_queue.put((self.registry.execute(tool_name, args), None))
+            except PolicyDenied as exc:
+                result_queue.put((exc.user_safe_message, None))
             except BaseException as exc:  # noqa: BLE001 - propagate through caller thread
                 result_queue.put((None, exc))
             finally:
@@ -1397,7 +1417,8 @@ class AgentLoop:
         """
         self._update_memory(tc.name)
 
-        success = _is_tool_success(result)
+        policy_payload = _policy_denied_payload(result)
+        success = False if policy_payload else _is_tool_success(result)
         if success:
             self._called_ok.add(tc.name)
 
@@ -1414,6 +1435,19 @@ class AgentLoop:
             elapsed_ms=elapsed_ms,
             iteration=iteration,
         )
+        if policy_payload:
+            trace.write(
+                {
+                    "type": "policy_denied",
+                    "iter": iteration,
+                    "tool": tc.name,
+                    "call_id": tc.id,
+                    "status": policy_payload.get("trace_status", "denied"),
+                    "shadow": bool(policy_payload.get("shadow")),
+                    "decision_id": policy_payload.get("decision_id"),
+                    "rule_id": policy_payload.get("rule_id"),
+                }
+            )
         preview = trace_result[:200]
         react_trace.append({"type": "tool_call", "tool": tc.name, "result_preview": preview})
         self._emit("tool_result", {"tool": tc.name, "status": status, "elapsed_ms": elapsed_ms, "preview": preview})

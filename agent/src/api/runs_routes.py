@@ -156,6 +156,13 @@ def _build_response_from_run_dir(
         except (json.JSONDecodeError, OSError):
             pass
 
+    research_card_path = run_dir / "research_card.json"
+    if research_card_path.exists():
+        try:
+            response.research_card = json.loads(research_card_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
     llm_usage_path = run_dir / "llm_usage.json"
     if llm_usage_path.exists():
         try:

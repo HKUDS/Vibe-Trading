@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -13,24 +14,34 @@ class FakeSessionService:
     """SessionService placeholder for channel status tests."""
 
 
-def _client(tmp_path: Path, monkeypatch) -> TestClient:
+def _client(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    channels_config: dict[str, object] | None = None,
+) -> TestClient:
     import src.channels.config as channel_config
     import src.channels.pairing.store as pairing_store
+
+    config_path = tmp_path / "agent.json"
+    config_path.write_text(
+        json.dumps({"channels": channels_config or {}}),
+        encoding="utf-8",
+    )
+    config = channel_config.load_channels_config(config_path)
+    config.update(
+        {
+            "websocket": {"enabled": False, "allow_from": ["*"]},
+            "telegram": {"enabled": False},
+            "slack": {"enabled": True},
+        }
+    )
 
     monkeypatch.setattr(api_server, "_channel_runtime", None)
     monkeypatch.setattr(api_server, "_channel_bus", None)
     monkeypatch.setattr(api_server, "_channel_manager", None)
     monkeypatch.setattr(api_server, "_get_session_service", lambda: FakeSessionService())
-    monkeypatch.setattr(
-        channel_config,
-        "load_channels_config",
-        lambda: {
-            "send_max_retries": 1,
-            "websocket": {"enabled": False, "allow_from": ["*"]},
-            "telegram": {"enabled": False},
-            "slack": {"enabled": True},
-        },
-    )
+    monkeypatch.setattr(channel_config, "load_channels_config", lambda: dict(config))
     monkeypatch.setattr(pairing_store, "_store_path", lambda: tmp_path / "pairing.json")
     return TestClient(api_server.app, client=("127.0.0.1", 50000))
 
@@ -47,6 +58,20 @@ def test_channels_status_reports_all_configured_adapters(tmp_path: Path, monkeyp
     assert payload["channels"]["telegram"]["enabled"] is False
     assert payload["channels"]["slack"]["enabled"] is True
     assert "available" in payload["channels"]["slack"]
+    assert "reply_timeout_s" not in payload["channels"]
+    assert "send_max_retries" not in payload["channels"]
+    assert api_server._channel_runtime is not None
+    assert api_server._channel_runtime.config.reply_timeout_s == 600.0
+
+
+def test_channels_runtime_uses_configured_reply_timeout(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch, channels_config={"reply_timeout_s": 42})
+
+    response = client.get("/channels/status")
+
+    assert response.status_code == 200
+    assert api_server._channel_runtime is not None
+    assert api_server._channel_runtime.config.reply_timeout_s == 42
 
 
 def test_channels_start_stop_are_controlled_runtime_actions(tmp_path: Path, monkeypatch) -> None:

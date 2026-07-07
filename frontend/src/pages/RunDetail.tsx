@@ -22,7 +22,9 @@ import {
   api,
   type BacktestMetrics,
   type EvidenceClosureSummary,
+  type PolicyDecisionRecord,
   type PolicyDecisionsResponse,
+  type ResearchCard,
   type ResearchClaimsResponse,
   type RunCard,
   type RunData,
@@ -35,10 +37,14 @@ import { MetricsCard } from "@/components/chat/MetricsCard";
 import { ClaimAuditPanel } from "@/components/research/ClaimAuditPanel";
 import { EvidenceClosurePanel } from "@/components/research/EvidenceClosurePanel";
 import { PolicyDecisionsPanel } from "@/components/research/PolicyDecisionsPanel";
-import { QuantScorecardPanel } from "@/components/research/QuantScorecardPanel";
 import { ValidationPanel } from "@/components/charts/ValidationPanel";
 import { Skeleton, SkeletonMetrics, SkeletonChart } from "@/components/common/Skeleton";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { DataProvenancePanel, type DataSourceSummary } from "@/components/research/DataProvenancePanel";
+import { PITWarningsPanel } from "@/components/research/PITWarningsPanel";
+import { QuantScorecardPanel, type QuantScorecardSummary } from "@/components/research/QuantScorecardPanel";
+import { ResearchCardPanel } from "@/components/research/ResearchCardPanel";
+import { redactResearchPayload, redactResearchText } from "@/components/research/redaction";
 
 const rehypePlugins = [rehypeHighlight];
 
@@ -123,7 +129,7 @@ export function RunDetail() {
   const cancelBulkChartLoadRef = useRef(false);
 
   const hasValidation = !!run?.validation;
-  const hasRunCard = !!run?.run_card;
+  const hasRunCard = !!run?.run_card || !!run?.research_card;
   const TABS: { id: Tab; label: string; icon: typeof BarChart3; hidden?: boolean }[] = [
     { id: "chart", label: i18n.t("runDetail.chart"), icon: BarChart3 },
     { id: "trades", label: i18n.t("runDetail.trades"), icon: List },
@@ -357,9 +363,10 @@ export function RunDetail() {
           )}
           {tab === "trades" && <TradesTab run={run} />}
           {tab === "validation" && run.validation && <ValidationPanel data={run.validation} />}
-          {tab === "runCard" && run.run_card && (
+          {tab === "runCard" && hasRunCard && (
             <RunCardTab
               card={run.run_card}
+              researchCard={run.research_card || null}
               evidenceSummary={evidenceSummary}
               policyDecisions={policyDecisions}
               claimsResponse={claimsResponse}
@@ -374,30 +381,49 @@ export function RunDetail() {
 
 function RunCardTab({
   card,
+  researchCard,
   evidenceSummary,
   policyDecisions,
   claimsResponse,
 }: {
-  card: RunCard;
+  card?: RunCard;
+  researchCard?: ResearchCard | null;
   evidenceSummary?: EvidenceClosureSummary | null;
   policyDecisions?: PolicyDecisionsResponse | null;
   claimsResponse?: ResearchClaimsResponse | null;
 }) {
-  const backtest = card.backtest || {};
-  const reproducibility = card.reproducibility || {};
-  const metrics = card.metrics || {};
-  const artifacts = card.artifacts || [];
-  const warnings = card.warnings || [];
-  const dataSources = card.data_sources || [];
-  const cardEvidenceSummary = evidenceSummary || card.evidence_closure_summary || null;
-  const policyDecisionIds = card.policy_decision_ids || [];
-  const claimIds = card.claim_ids || [];
+  const backtest = card?.backtest || {};
+  const reproducibility = card?.reproducibility || {};
+  const metrics = card?.metrics || {};
+  const artifacts = card?.artifacts || [];
+  const warnings = card?.warnings || [];
+  const dataSources = card?.data_sources || [];
+  const cardEvidenceSummary = evidenceSummary || card?.evidence_closure_summary || null;
+  const policyDecisionIds =
+    card?.policy_decision_ids ||
+    policyDecisions?.decision_ids ||
+    researchCard?.policy_decision_refs ||
+    [];
+  const claimIds = card?.claim_ids || claimsResponse?.claim_ids || [];
+  const researchPolicies = (researchCard?.policy_decisions as PolicyDecisionRecord[] | undefined) || [];
+  const cardPolicies = researchPolicies.length > 0 ? researchPolicies : policyDecisions?.decisions || [];
 
   return (
     <div className="p-4 space-y-4">
+      <ResearchCardPanel card={researchCard || null} />
+
+      {researchCard && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <DataProvenancePanel dataSources={researchCard.data_sources as DataSourceSummary[] | undefined} />
+          <PITWarningsPanel warnings={researchCard.warnings} hardFailures={researchCard.hard_failures} />
+          <PolicyDecisionsPanel decisions={cardPolicies} />
+          <QuantScorecardPanel scorecard={researchCard.scorecard as QuantScorecardSummary | undefined} />
+        </div>
+      )}
+
       <div className="grid gap-3 md:grid-cols-4">
-        <RunCardStat label={i18n.t("runDetail.schema")} value={card.schema_version || "unknown"} />
-        <RunCardStat label={i18n.t("runDetail.generated")} value={formatRunCardValue(card.generated_at)} />
+        <RunCardStat label={i18n.t("runDetail.schema")} value={card?.schema_version || "unknown"} />
+        <RunCardStat label={i18n.t("runDetail.generated")} value={formatRunCardValue(card?.generated_at)} />
         <RunCardStat label={i18n.t("runDetail.dataSources")} value={dataSources.length ? dataSources.join(", ") : "None recorded"} />
         <RunCardStat label={i18n.t("runDetail.warnings")} value={String(warnings.length)} tone={warnings.length ? "warning" : "normal"} />
       </div>
@@ -409,7 +435,7 @@ function RunCardTab({
             {i18n.t("runDetail.warnings")}
           </div>
           <ul className="space-y-1 text-xs text-muted-foreground">
-            {warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+            {warnings.map((warning, index) => <li key={index}>{redactResearchText(warning)}</li>)}
           </ul>
         </section>
       )}
@@ -435,9 +461,9 @@ function RunCardTab({
           <KeyValueTable data={metrics} empty={i18n.t("runDetail.noScalarMetrics")} />
         </RunCardPanel>
         <RunCardPanel title={i18n.t("runDetail.validationPayload")} icon={ShieldCheck}>
-          {card.validation ? (
+          {card?.validation ? (
             <pre className="max-h-80 overflow-auto rounded-md bg-muted/40 p-3 text-xs leading-relaxed">
-              {JSON.stringify(card.validation, null, 2)}
+              {JSON.stringify(redactResearchPayload(card.validation), null, 2)}
             </pre>
           ) : (
             <p className="text-sm text-muted-foreground">{i18n.t("runDetail.noValidationPayload")}</p>
@@ -459,9 +485,9 @@ function RunCardTab({
               <tbody>
                 {artifacts.map((artifact) => (
                   <tr key={`${artifact.path}-${artifact.sha256}`} className="border-b last:border-0">
-                    <td className="py-2 pr-4 font-mono text-xs">{artifact.path}</td>
+                    <td className="py-2 pr-4 font-mono text-xs">{redactResearchText(artifact.path)}</td>
                     <td className="py-2 pr-4 tabular-nums text-muted-foreground">{formatBytes(artifact.size_bytes)}</td>
-                    <td className="py-2 font-mono text-xs text-muted-foreground">{shortHash(artifact.sha256)}</td>
+                    <td className="py-2 font-mono text-xs text-muted-foreground">{redactResearchText(shortHash(artifact.sha256))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -479,7 +505,9 @@ function RunCardStat({ label, value, tone = "normal" }: { label: string; value: 
   return (
     <div className="rounded-md border bg-card p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={cn("mt-1 truncate text-sm font-medium", tone === "warning" ? "text-amber-700 dark:text-amber-300" : "")}>{value}</div>
+      <div className={cn("mt-1 truncate text-sm font-medium", tone === "warning" ? "text-amber-700 dark:text-amber-300" : "")}>
+        {redactResearchText(value)}
+      </div>
     </div>
   );
 }
@@ -516,10 +544,10 @@ function KeyValueTable({ data, empty, monospaceValues = false }: { data: Record<
 }
 
 function formatRunCardValue(value: unknown): string {
-  if (Array.isArray(value)) return value.join(", ");
+  if (Array.isArray(value)) return value.map((item) => redactResearchText(item)).join(", ");
   if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(4);
-  if (typeof value === "object" && value !== null) return JSON.stringify(value);
-  return String(value ?? "");
+  if (typeof value === "object" && value !== null) return redactResearchText(JSON.stringify(redactResearchPayload(value)));
+  return redactResearchText(String(value ?? ""));
 }
 
 function formatBytes(value: number): string {

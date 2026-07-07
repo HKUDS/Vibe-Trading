@@ -1,4 +1,4 @@
-"""Markdown rendering for v1.2.1 Research Cards."""
+"""Stable Markdown renderer for Research Cards."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from src.reliability.claims.model import ClaimSet
 from src.reliability.quant.methodology_facts import MethodologyFactSet
 from src.reliability.quant.scorecard import BacktestReliabilityScorecard
-from src.research_card.model import ResearchCard
+from src.research_card.model import ResearchCard, StructuredFailure, StructuredWarning
 
 _SECRET_VALUE_RE = re.compile(
     r"(?i)(sk-[a-z0-9_-]{8,}|bearer\s+[a-z0-9._-]{8,}|api[_-]?key\s*[:=]\s*[^,\s]+|token\s*[:=]\s*[^,\s]+)"
@@ -24,21 +24,25 @@ def render_research_card_markdown(
     methodology_facts: MethodologyFactSet | dict[str, Any] | None = None,
     scorecard: BacktestReliabilityScorecard | dict[str, Any] | None = None,
 ) -> str:
-    """Render a Research Card with Phase 6 evidence contract sections."""
+    """Render a deterministic Markdown Research Card snapshot."""
     card_model = card if isinstance(card, ResearchCard) else ResearchCard.model_validate(card)
+    if _use_legacy_markdown(card_model, claim_set=claim_set, methodology_facts=methodology_facts, scorecard=scorecard):
+        return _render_legacy_markdown(card_model)
+
     claim_payload = _dump_model(claim_set)
     facts_payload = _dump_model(methodology_facts)
-    scorecard_payload = _dump_model(scorecard)
+    scorecard_payload = _dump_model(scorecard or card_model.scorecard)
     lines: list[str] = [
-        f"# Research Card {card_model.run_id or ''}".rstrip(),
+        f"# Research Card {card_model.run_id or card_model.title or ''}".rstrip(),
         "",
         f"- schema_version: {_clean(card_model.schema_version)}",
+        f"- conclusion_level: {_clean(card_model.conclusion_level)}",
     ]
-    if card_model.conclusion_level:
-        lines.append(f"- conclusion_level: {_clean(card_model.conclusion_level)}")
+    if card_model.hypothesis:
+        lines.extend(["", "## Hypothesis", "", _clean(card_model.hypothesis)])
     if card_model.warnings:
         lines.extend(["", "## Warnings"])
-        lines.extend(f"- {_clean(item)}" for item in card_model.warnings)
+        lines.extend(f"- {_display_warning(item)}" for item in card_model.warnings)
 
     lines.extend(_render_evidence_closure(card_model))
     lines.extend(_render_policy_decisions(card_model))
@@ -49,6 +53,34 @@ def render_research_card_markdown(
     if facts_payload:
         lines.extend(_render_methodology_facts(facts_payload))
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_legacy_markdown(card: ResearchCard) -> str:
+    lines = [
+        f"# Research Card: {card.title}",
+        "",
+        f"- Card ID: `{card.card_id}`",
+        f"- Schema Version: `{card.schema_version}`",
+        f"- Conclusion: `{card.conclusion_level}`",
+    ]
+    if card.protocol_ref:
+        lines.append(f"- Protocol: `{card.protocol_ref}`")
+    if card.scorecard is not None:
+        lines.append(f"- Scorecard: `{card.scorecard.scorecard_id}`")
+    lines.extend(["", "## Hypothesis", "", _clean(card.hypothesis or "Not recorded.")])
+    if card.key_metrics:
+        lines.extend(["", "## Key Metrics", ""])
+        for key, value in sorted(card.key_metrics.items()):
+            lines.append(f"- {_clean(key)}: {_clean(value)}")
+    if card.warnings:
+        lines.extend(["", "## Warnings", ""])
+        for warning in card.warnings:
+            lines.append(f"- {_display_warning(warning)}")
+    if card.hard_failures:
+        lines.extend(["", "## Hard Failures", ""])
+        for failure in card.hard_failures:
+            lines.append(f"- {_display_failure(failure)}")
+    return "\n".join(lines) + "\n"
 
 
 def _render_evidence_closure(card: ResearchCard) -> list[str]:
@@ -76,9 +108,10 @@ def _render_evidence_closure(card: ResearchCard) -> list[str]:
 
 def _render_policy_decisions(card: ResearchCard) -> list[str]:
     lines = ["", "## Policy Decisions"]
-    if not card.policy_decision_ids:
+    decision_ids = card.policy_decision_ids or card.policy_decision_refs
+    if not decision_ids:
         return [*lines, "- none recorded"]
-    lines.extend(f"- {_clean(decision_id)}" for decision_id in card.policy_decision_ids)
+    lines.extend(f"- {_clean(decision_id)}" for decision_id in decision_ids)
     return lines
 
 
@@ -134,10 +167,10 @@ def _render_hard_failures(card: ResearchCard, scorecard_payload: dict[str, Any])
     lines = ["", "## Hard Failures"]
     failures = list(card.hard_failures)
     if not failures and isinstance(scorecard_payload.get("hard_failures"), list):
-        failures = [item for item in scorecard_payload["hard_failures"] if isinstance(item, str)]
+        failures = list(scorecard_payload["hard_failures"])
     if not failures:
         return [*lines, "- none"]
-    lines.extend(f"- {_clean(item)}" for item in failures)
+    lines.extend(f"- {_display_failure(item)}" for item in failures)
     return lines
 
 
@@ -180,6 +213,29 @@ def _render_diagnostics_availability(scorecard_payload: dict[str, Any]) -> list[
     return lines
 
 
+def _use_legacy_markdown(
+    card: ResearchCard,
+    *,
+    claim_set: Any,
+    methodology_facts: Any,
+    scorecard: Any,
+) -> bool:
+    return not any(
+        [
+            claim_set,
+            methodology_facts,
+            scorecard,
+            card.evidence_closure_summary,
+            card.policy_decision_ids,
+            card.claim_ids,
+            card.triggered_rules,
+            card.claim_set_ref,
+            card.methodology_fact_ref,
+            card.scorecard_ref,
+        ]
+    )
+
+
 def _dump_model(value: BaseModel | dict[str, Any] | None) -> dict[str, Any]:
     if value is None:
         return {}
@@ -187,6 +243,21 @@ def _dump_model(value: BaseModel | dict[str, Any] | None) -> dict[str, Any]:
         dumped = value.model_dump(mode="json")
         return dumped if isinstance(dumped, dict) else {}
     return dict(value)
+
+
+def _display_warning(value: StructuredWarning | str) -> str:
+    if isinstance(value, StructuredWarning):
+        return f"`{_clean(value.code)}` ({_clean(value.severity)}): {_clean(value.message)}"
+    return _clean(value)
+
+
+def _display_failure(value: StructuredFailure | dict[str, Any] | str) -> str:
+    if isinstance(value, StructuredFailure):
+        return f"`{_clean(value.code)}` ({_clean(value.severity)}): {_clean(value.message)}"
+    if isinstance(value, dict) and value.get("code"):
+        severity = value.get("severity") or "hard_failure"
+        return f"`{_clean(value.get('code'))}` ({_clean(severity)}): {_clean(value.get('message') or '')}"
+    return _clean(value)
 
 
 def _clean(value: Any) -> str:

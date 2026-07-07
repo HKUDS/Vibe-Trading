@@ -530,6 +530,7 @@ def run_options_backtest(
         data_sources=[str(getattr(loader, "name", config.get("source", "")))],
         strategy_path=run_dir / "code" / "signal_engine.py",
         warnings=config.get("content_filter_warnings") or None,
+        artifact_refs=config.get("_irr_artifact_refs") or None,
     )
 
     print(json.dumps(metrics, indent=2))

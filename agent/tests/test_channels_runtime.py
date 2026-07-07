@@ -13,6 +13,7 @@ from src.channels.bus.events import InboundMessage, OutboundMessage
 from src.channels.bus.queue import MessageBus
 from src.channels.manager import ChannelManager
 from src.channels.registry import discover_channel_names, inspect_channels
+from src.config.schema import ChannelsConfig
 from src.channelsui.cli_apps_api import normalize_cli_app_mentions
 from src.channelsui.gateway_services import build_gateway_services
 from src.channelsui.mcp_presets_api import normalize_mcp_preset_mentions
@@ -116,11 +117,29 @@ def test_registry_reports_all_built_in_channels_with_dependency_recovery() -> No
     assert all(item["install_hint"].startswith("pip install") for item in missing)
 
 
+def test_registry_ignores_global_channel_settings() -> None:
+    statuses = inspect_channels(
+        ChannelsConfig.model_validate(
+            {
+                "replyTimeoutS": 120,
+                "sendMaxRetries": 1,
+                "telegram": {"enabled": True},
+            }
+        )
+    )
+
+    assert "telegram" in statuses
+    assert "reply_timeout_s" not in statuses
+    assert "send_max_retries" not in statuses
+    assert "model_dump" not in statuses
+
+
 def test_channel_manager_status_includes_every_configured_adapter() -> None:
     bus = MessageBus()
     manager = ChannelManager(
         {
             "send_max_retries": 1,
+            "reply_timeout_s": 600.0,
             "websocket": {"enabled": True, "host": "127.0.0.1", "port": 0, "allow_from": ["*"]},
             "telegram": {"enabled": False},
             "slack": {"enabled": True},
@@ -130,6 +149,8 @@ def test_channel_manager_status_includes_every_configured_adapter() -> None:
 
     status = manager.get_status()
 
+    assert "send_max_retries" not in status
+    assert "reply_timeout_s" not in status
     assert status["websocket"]["loaded"] is True
     assert status["websocket"]["enabled"] is True
     assert status["telegram"]["configured"] is True

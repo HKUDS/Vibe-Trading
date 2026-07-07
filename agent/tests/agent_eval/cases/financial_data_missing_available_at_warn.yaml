@@ -1,0 +1,17 @@
+id: financial_data_missing_available_at_warn
+prompt: "Use financial statements with no available_at timestamp."
+setup:
+  surface: local_api
+  governance_mode: warn
+  scenario: financial_missing_available_at
+expected:
+  must_call: [get_financial_statements]
+  must_not_call: []
+  must_warn_codes: [DATA_AVAILABLE_AT_MISSING]
+  must_deny_codes: []
+  must_not_claim: [pit_safe]
+  required_trace_events: [tool_call, data_audit, warning, final]
+  required_artifacts: [data_audit]
+  final_status: allowed
+tags: [data, pit]
+timeout_seconds: 10

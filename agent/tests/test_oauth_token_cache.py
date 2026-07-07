@@ -26,11 +26,13 @@ from src.tools.mcp import _build_token_store
 pytestmark = pytest.mark.unit
 
 
-def _assert_owner_only_mode_on_posix(cache: Path) -> None:
-    assert cache.is_dir()
+def _assert_owner_only_mode(path: Path) -> None:
     if os.name == "nt":
+        # Windows exposes ACLs through a different API and reports directories
+        # as 0777 via stat.S_IMODE even after os.chmod(0o700).
+        assert path.is_dir()
         return
-    mode = stat.S_IMODE(os.stat(cache).st_mode)
+    mode = stat.S_IMODE(os.stat(path).st_mode)
     assert mode == 0o700, f"expected owner-only 0700, got {oct(mode)}"
 
 
@@ -40,7 +42,8 @@ def test_build_token_store_creates_dir_0700(tmp_path: Path) -> None:
 
     _build_token_store(str(cache))
 
-    _assert_owner_only_mode_on_posix(cache)
+    assert cache.is_dir()
+    _assert_owner_only_mode(cache)
 
 
 def test_build_token_store_expands_user(monkeypatch, tmp_path: Path) -> None:
@@ -60,7 +63,7 @@ def test_build_token_store_idempotent_on_existing_dir(tmp_path: Path) -> None:
     _build_token_store(str(cache))
     # Second call must not raise on an already-existing directory.
     _build_token_store(str(cache))
-    _assert_owner_only_mode_on_posix(cache)
+    _assert_owner_only_mode(cache)
 
 
 def test_token_persists_across_store_instances(tmp_path: Path) -> None:

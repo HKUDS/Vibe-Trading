@@ -485,6 +485,13 @@ class BaseEngine(ABC):
         )
 
         # 9. Trust Layer run card
+        try:
+            from src.reliability.quant.scorecard import write_backtest_scorecard_artifact
+
+            write_backtest_scorecard_artifact(config=config, metrics=m, run_dir=run_dir)
+        except Exception:  # noqa: BLE001
+            logger.exception("failed to generate quant reliability scorecard")
+
         from backtest.run_card import write_run_card
         write_run_card(
             run_dir,
@@ -493,6 +500,8 @@ class BaseEngine(ABC):
             data_sources=_run_card_data_sources(config, loader),
             strategy_path=run_dir / "code" / "signal_engine.py",
             warnings=config.get("content_filter_warnings") or None,
+            artifact_refs=config.get("_irr_artifact_refs") or None,
+            scorecard_refs=config.get("_quant_scorecard_refs") or None,
         )
 
         # Print scalar metrics (skip nested dicts for JSON compat)

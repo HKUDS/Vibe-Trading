@@ -124,7 +124,8 @@
       "docWebResearch": "ドキュメント & Web リサーチ",
       "tradeJournal": "トレードジャーナル",
       "tradingConnectors": "トレーディングコネクタ",
-      "shadowAccount": "シャドウアカウント"
+      "shadowAccount": "シャドウアカウント",
+      "valueInvesting": "バリュー投資"
     },
     "examples": {
       "crossMarketPortfolio": "A株ポートフォリオ最適化",
@@ -137,6 +138,18 @@
       "multiFactorAlphaDesc": "300 銘柄に対する IC 重み付きファクター合成",
       "optionsGreeks": "オプション Greeks 分析",
       "optionsGreeksDesc": "Black-Scholes 価格モデルに基づく Delta/Gamma/Theta/Vega 分析",
+      "valueCommittee": "バリュー投資委員会",
+      "valueCommitteeDesc": "Buffett / Munger / Duan Yongping / Li Lu の4視点で1銘柄を討論",
+      "valueCommitteePrompt": "run_swarm で value_investing_committee プリセットを使い、Tencent (00700.HK) を分析してください: Buffett は moat と価格、Munger は反転思考、Duan Yongping は事業と経営陣、Li Lu は10年確度を評価し、議長が合意点と矛盾点を統合してください",
+      "bottleneckHunter": "サプライチェーン・ボトルネックハンター",
+      "bottleneckHunterDesc": "大きなトレンドの Layer 2/3 ボトルネックから隠れた勝者を探す",
+      "bottleneckHunterPrompt": "bottleneck-hunter スキルを使い、AI インフラ (光通信 / レーザー / InP 基板) の Layer 2/3 サプライチェーン・ボトルネック機会を探し、各ボトルネックを採点して、バリュエーションゲートを通過する候補企業を挙げてください",
+      "thesisTracker": "投資テーシス・トラッカー",
+      "thesisTrackerDesc": "保有銘柄に5文のテーシス、レッドライン、評価アンカーを作成",
+      "thesisTrackerPrompt": "thesis-tracker スキルを使い、Kweichow Moutai (600519.SH) の投資テーシスを作ってください: 5文の中核テーシス、反証可能な仮説、レッドライン、評価アンカーを financial_rigor で検証してください",
+      "valuationCheck": "精密バリュエーション検算",
+      "valuationCheckDesc": "厳密な十進演算で PE / PB / ROE / 時価総額を検証 (浮動小数点誤差なし)",
+      "valuationCheckPrompt": "financial_rigor ツールで Kweichow Moutai の評価を検証してください: 価格 1500、EPS 68.6、1株当たり純資産 180 から PE、PB、ROE を厳密に計算し、3年の3シナリオ評価 (成長率 12%/8%/0%、PE 22/18/14) も実行してください",
       "investmentCommittee": "投資委員会レビュー",
       "investmentCommitteeDesc": "マルチエージェント討論: ロング vs ショート、リスクレビュー、PM 決定",
       "quantStrategyDesk": "クォント戦略デスク",

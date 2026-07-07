@@ -123,3 +123,22 @@ same-market sources automatically. Only set a concrete source when the user asks
   is unavailable — route to a free same-market source instead of erroring out.
 - A single failing symbol or transient HTTP error is reported inside the envelope;
   it never aborts the surrounding batch.
+
+## Data Verification Discipline
+
+When a number will drive a conclusion (valuation, screening, report), do not trust a
+single source. Cross-check it:
+
+- **Verify material figures across ≥2 independent sources** before citing them.
+  Prioritize original disclosures (company annual/quarterly reports, exchange filings)
+  over third-party aggregators.
+- **Flag any deviation >1%** between sources as a ⚠️ caliber mismatch — usually a
+  definition difference (GAAP vs Non-GAAP, consolidated vs parent-only, currency,
+  TTM vs annual). Do not silently pick one; state both and which you adopt.
+- **Use the `financial_rigor` tool's `cross_validate` command** to do this exactly:
+  pass `{source: value, ...}` and it returns the median consensus + per-source
+  deviation + an `all_consistent` flag at a configurable tolerance (default 2%).
+- **Mark unverified numbers** as "single-source" or "estimate" — never present an
+  uncorroborated figure as established fact.
+
+This discipline is what separates analysis from aggregation.

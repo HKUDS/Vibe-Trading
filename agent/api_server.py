@@ -115,6 +115,7 @@ class RunResponse(BaseModel):
     metrics: Optional[BacktestMetrics] = Field(None, description="Backtest metrics")
     artifacts: List[Artifact] = Field(default_factory=list, description="Run artifacts")
     run_card: Optional[Dict[str, Any]] = Field(None, description="Trust Layer run card payload")
+    research_card: Optional[Dict[str, Any]] = Field(None, description="IRR-AGL research card payload")
     llm_usage: Optional[Dict[str, Any]] = Field(None, description="Provider-reported AgentLoop usage summary")
 
     equity_curve: Optional[List[Dict[str, Any]]] = Field(None, description="Equity preview")
@@ -864,6 +865,7 @@ def _get_channel_runtime():
         bus=_channel_bus,
         session_service=svc,
         manager=_channel_manager,
+        reply_timeout_s=config["reply_timeout_s"],
     )
     return _channel_runtime
 
@@ -882,6 +884,7 @@ from src.api.sessions_routes import (  # noqa: F401, E402
     _live_action_frame_from_tool_result,
     _mandate_proposal_frame_from_tool_result,
 )
+
 
 
 # ============================================================================
@@ -1005,6 +1008,9 @@ def _fetch_broker_ceilings(broker: str, host: object | None = None):
 
 from src.api.alpha_routes import register_alpha_routes  # noqa: E402
 register_alpha_routes(app)
+
+from src.research_card.api import register_research_card_routes  # noqa: E402
+register_research_card_routes(app)
 
 
 # ============================================================================

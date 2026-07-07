@@ -210,18 +210,17 @@ def run_bench(
         logger.warning("invalid VIBE_TRADING_BENCH_WORKERS; falling back to sequential")
         n_workers = 1
     n_workers = max(1, min(n_workers, n_total))
+    ctx_kwargs: dict[str, Any] = {}
     use_parallel = registry is None and n_workers > 1 and n_total > 1
-
     if use_parallel:
-        ctx_kwargs: dict[str, Any] = {}
         try:
             import multiprocessing
 
-            ctx = multiprocessing.get_context("fork")
-            ctx_kwargs["mp_context"] = ctx
+            ctx_kwargs["mp_context"] = multiprocessing.get_context("fork")
         except (ImportError, ValueError):
-            pass
+            use_parallel = False
 
+    if use_parallel:
         future_to_id: dict[Any, str] = {}
         with ProcessPoolExecutor(
             max_workers=n_workers,

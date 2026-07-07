@@ -124,7 +124,8 @@
       "docWebResearch": "بحث المستندات والويب",
       "tradeJournal": "يومية التداول",
       "tradingConnectors": "موصلات التداول",
-      "shadowAccount": "الحساب الظلّي"
+      "shadowAccount": "الحساب الظلّي",
+      "valueInvesting": "استثمار القيمة"
     },
     "examples": {
       "crossMarketPortfolio": "تحسين محفظة أسهم A",
@@ -137,6 +138,18 @@
       "multiFactorAlphaDesc": "تركيب عوامل مرجّحة بـ IC عبر 300 سهم",
       "optionsGreeks": "تحليل Greeks للخيارات",
       "optionsGreeksDesc": "تسعير Black-Scholes مع تحليل Delta/Gamma/Theta/Vega",
+      "valueCommittee": "لجنة استثمار القيمة",
+      "valueCommitteeDesc": "نقاش أربعة أساتذة حول سهم واحد: Buffett / Munger / Duan Yongping / Li Lu",
+      "valueCommitteePrompt": "استخدم run_swarm مع الإعداد المسبق value_investing_committee لتحليل Tencent (00700.HK): Buffett حول الخندق والسعر، Munger حول التفكير العكسي، Duan Yongping حول العمل والإدارة، Li Lu حول يقين 10 سنوات، ثم يلخّص الرئيس نقاط الاتفاق والتعارض",
+      "bottleneckHunter": "صياد اختناقات سلسلة الإمداد",
+      "bottleneckHunterDesc": "العثور على فائزين مخفيين في اختناقات Layer 2/3 داخل اتجاه فائق",
+      "bottleneckHunterPrompt": "استخدم مهارة bottleneck-hunter للعثور على فرص اختناق Layer 2/3 في بنية الذكاء الاصطناعي (البصريات / الليزر / ركائز InP)، قيّم كل اختناق واسرد الشركات المرشحة التي تجتاز بوابة التقييم",
+      "thesisTracker": "متتبع أطروحة الاستثمار",
+      "thesisTrackerDesc": "اكتب أطروحة من 5 جمل + خطوط حمراء + مراسي تقييم لحيازة",
+      "thesisTrackerPrompt": "استخدم مهارة thesis-tracker لبناء أطروحة استثمارية لـ Kweichow Moutai (600519.SH): أطروحة أساسية من 5 جمل، افتراضات قابلة للدحض، خطوط حمراء، ومراسي تقييم، مع التحقق عبر financial_rigor",
+      "valuationCheck": "فحص تقييم دقيق",
+      "valuationCheckDesc": "تحقق من PE / PB / ROE / القيمة السوقية بحساب عشري دقيق دون انجراف عائم",
+      "valuationCheckPrompt": "استخدم أداة financial_rigor للتحقق من تقييم Kweichow Moutai: السعر 1500، EPS 68.6، القيمة الدفترية للسهم 180 — احسب PE وPB وROE بدقة، ثم تقييمًا بثلاثة سيناريوهات (نمو 12%/8%/0%، PE 22/18/14، 3 سنوات)",
       "investmentCommittee": "مراجعة لجنة الاستثمار",
       "investmentCommitteeDesc": "نقاش متعدد الوكلاء: شراء مقابل بيع، مراجعة المخاطر، قرار مدير المحفظة",
       "quantStrategyDesk": "مكتب استراتيجية الكمّ",

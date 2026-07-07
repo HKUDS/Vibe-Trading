@@ -11,6 +11,7 @@ import re
 import threading
 from copy import deepcopy
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Coroutine, Iterable, Protocol, TypeVar
 
 from fastmcp.client import Client
@@ -297,9 +298,7 @@ def _build_token_store(cache_dir: str) -> FileTreeStore:
     Returns:
         A ``FileTreeStore`` rooted at the resolved cache directory.
     """
-    from pathlib import Path
-
-    path = Path(cache_dir).expanduser()
+    path = _expand_cache_dir(cache_dir)
     path.mkdir(parents=True, exist_ok=True)
     # 0700: owner-only. Tokens are secrets; no group/other access.
     os.chmod(path, 0o700)
@@ -307,6 +306,20 @@ def _build_token_store(cache_dir: str) -> FileTreeStore:
         data_directory=path,
         key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(path),
     )
+
+
+def _expand_cache_dir(cache_dir: str) -> Path:
+    """Expand cache roots while honoring HOME for test isolation on Windows."""
+    value = str(cache_dir)
+    if value == "~":
+        raw_home = os.getenv("HOME")
+        if raw_home:
+            return Path(raw_home)
+    if value.startswith("~/") or value.startswith("~\\"):
+        raw_home = os.getenv("HOME")
+        if raw_home:
+            return Path(raw_home) / value[2:]
+    return Path(value).expanduser()
 
 
 class MCPServerAdapter:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ci_grep_gates.sh — repo-wide safety floor enforced in CI.
 #
-# Three gates run sequentially; any failure exits non-zero and names the
+# Four gates run sequentially; any failure exits non-zero and names the
 # offending files. Run locally before pushing:
 #
 #     bash tools/ci_grep_gates.sh
@@ -15,6 +15,8 @@
 #   (b) No literal "WorldQuant" anywhere (trademark; spec.md §License).
 #   (c) No per-stock-code data leaking into the wiki/alpha-library tree
 #       (spec.md §"Vendor 数据 ToS").
+#   (d) No deprecated `datetime.utcnow(` usage or bare `datetime.now()` calls
+#       in Python sources; `datetime.now(timezone.utc)` is allowed.
 #
 # Exclusions: .git, node_modules, __pycache__, .venv, dist, build, this
 # script itself. The HTML scan in (c) is scoped to wiki/alpha-library/**
@@ -95,6 +97,32 @@ if [ -d "wiki" ]; then
     fi
 else
     echo "${YELLOW}skip${NC}: no wiki/ directory"
+fi
+
+# -------------------------------------------------------------- gate (d)
+echo "[gate d] no deprecated datetime.utcnow() / bare datetime.now() calls ..."
+TARGET_FILES=(
+  agent/api_server.py
+  agent/src/agent/context.py
+  agent/src/api/system_routes.py
+  agent/src/channels/mochat.py
+  agent/src/goal/store.py
+  agent/src/session/models.py
+  agent/src/swarm/worker.py
+  agent/src/tools/lockup_expiry_tool.py
+  agent/src/trading/connectors/dhan/sdk.py
+  agent/src/trading/connectors/shoonya/sdk.py
+)
+D_HITS=$(grep -Hn -E 'datetime\.utcnow\(|datetime\.now\(' "${TARGET_FILES[@]}" 2>/dev/null \
+    | grep -v "$SELF" \
+    | grep -vE 'datetime\.now\([^)]*(timezone\.utc|tz=timezone\.utc)' \
+    || true)
+if [ -n "$D_HITS" ]; then
+    echo "${RED}FAIL${NC}: deprecated datetime.utcnow() or bare datetime.now() found:"
+    echo "$D_HITS"
+    FAILED=1
+else
+    echo "${GREEN}ok${NC}"
 fi
 
 # --------------------------------------------------------------- result

@@ -12,12 +12,23 @@ from types import ModuleType
 from typing import Any
 from typing import TYPE_CHECKING
 
+from src.config.schema import ChannelsConfig
+
 if TYPE_CHECKING:
     from src.channels.base import BaseChannel
 
 logger = logging.getLogger(__name__)
 
 _INTERNAL = frozenset({"base", "bus", "config", "manager", "pairing", "registry", "runtime", "utils"})
+_LEGACY_GLOBAL_CONFIG_KEYS = frozenset(
+    {"restrictToWorkspace", "restrict_to_workspace", "showReasoning", "show_reasoning"}
+)
+_GLOBAL_CONFIG_KEYS = frozenset(
+    key
+    for name, field in ChannelsConfig.model_fields.items()
+    for key in (name, field.alias)
+    if key
+) | _LEGACY_GLOBAL_CONFIG_KEYS
 
 _INSTALL_HINTS: dict[str, str] = {
     "dingtalk": "pip install 'vibe-trading-ai[dingtalk]'",
@@ -163,6 +174,22 @@ def _config_section(config: Any, name: str) -> Any:
     return getattr(config, name, None)
 
 
+def _configured_channel_names(config: Any) -> set[str]:
+    if isinstance(config, Mapping):
+        return {str(key) for key in config.keys() if str(key) not in _GLOBAL_CONFIG_KEYS}
+    model_dump = getattr(config, "model_dump", None)
+    if callable(model_dump):
+        return _configured_channel_names(model_dump(mode="json", by_alias=False))
+    return {
+        key
+        for key in dir(config)
+        if not key.startswith("_")
+        and key not in _GLOBAL_CONFIG_KEYS
+        and key not in {"model_config", "model_fields"}
+        and not callable(getattr(config, key, None))
+    }
+
+
 def inspect_channels(config: Any | None = None) -> dict[str, dict[str, Any]]:
     """Inspect all built-in channels and annotate configured/enabled state.
 
@@ -174,14 +201,8 @@ def inspect_channels(config: Any | None = None) -> dict[str, dict[str, Any]]:
         Mapping from channel name to JSON-serializable status metadata.
     """
     names = set(discover_channel_names())
-    if isinstance(config, Mapping):
-        names.update(str(key) for key in config.keys())
-    elif config is not None:
-        names.update(
-            key
-            for key in dir(config)
-            if not key.startswith("_") and key not in {"model_config", "model_fields"}
-        )
+    if config is not None:
+        names.update(_configured_channel_names(config))
 
     statuses: dict[str, dict[str, Any]] = {}
     for name in sorted(names):

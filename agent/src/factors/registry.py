@@ -4,6 +4,7 @@ Design contract (frozen — referenced by W3 zoo-porting agents):
     AlphaMeta (pydantic, ``extra="forbid", frozen=True``) — see fields below
     Registry.list(zoo=None, theme=None, universe=None) -> list[str]
     Registry.get(alpha_id) -> Alpha
+    Registry.register(alpha, source_path=None) -> None
     Registry.compute(alpha_id, panel) -> pd.DataFrame
     Registry.health() -> dict   # {loaded, failed, errors}
     Registry.export_manifest() -> dict
@@ -242,6 +243,25 @@ class Registry:
             raise KeyError(f"alpha_id {alpha_id!r} not in registry")
         return self._alphas[alpha_id]
 
+    def register(self, alpha: Alpha, *, source_path: Path | None = None) -> None:
+        """Register an alpha handle dynamically without changing compute semantics."""
+        if alpha.id in self._alphas:
+            raise RegistryError(f"{alpha.id}: duplicate alpha id")
+        self._alphas[alpha.id] = alpha
+        if source_path is not None:
+            py_path = Path(source_path)
+            try:
+                size = py_path.stat().st_size
+            except OSError as exc:
+                self._alphas.pop(alpha.id, None)
+                raise RegistryError(f"{alpha.id}: cannot stat source: {exc}") from exc
+            if size > _MAX_PY_BYTES:
+                self._alphas.pop(alpha.id, None)
+                raise RegistryError(
+                    f"{alpha.id}: source {size}B exceeds {_MAX_PY_BYTES}B cap"
+                )
+            self._py_paths[alpha.id] = py_path
+
     def get_source(self, alpha_id: str) -> str:
         """Return the raw .py source of a registered alpha (size-capped).
 
@@ -313,7 +333,7 @@ class Registry:
         return self._validate_output(alpha_id, result, panel)
 
     def _load_module(self, alpha: Alpha) -> ModuleType:
-        if not self._use_filesystem_loader:
+        if not self._use_filesystem_loader or alpha.id not in self._py_paths:
             return importlib.import_module(alpha.module_path)
         py_file = self._py_paths[alpha.id]
         cached = sys.modules.get(alpha.module_path)

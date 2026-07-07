@@ -210,6 +210,7 @@ def wrap_live_broker_tools(
         tool_class = classify_tool(spec.remote_name, spec.annotations, curated)
         if tool_class is ToolClass.READ:
             tool.is_readonly = True
+            tool.live_classification = "READ"
             result.append(tool)
         elif tool_class in {ToolClass.WRITE, ToolClass.UNKNOWN} and halted:
             # WRITE/UNKNOWN + halt tripped -> do not even hand it to the model.
@@ -220,5 +221,7 @@ def wrap_live_broker_tools(
             )
         else:
             # WRITE or UNKNOWN -> mandate-gated (fail-closed for UNKNOWN).
-            result.append(LiveOrderGuardTool(tool._adapter, spec, broker=broker))
+            guarded = LiveOrderGuardTool(tool._adapter, spec, broker=broker)
+            guarded.live_classification = "UNKNOWN" if tool_class is ToolClass.UNKNOWN else "WRITE"
+            result.append(guarded)
     return result

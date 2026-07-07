@@ -1,0 +1,115 @@
+{
+  "protocol_id": "rp_schema_fixture_v1",
+  "protocol_hash": "694d6dbcae0b2e02d66046cd231f1396f0eb8fc0f6eaa0feb2b5a531dda60711",
+  "schema_version": "1.0.0",
+  "status": "registered",
+  "goal_id": "goal_schema_fixture",
+  "session_id": "session_schema_fixture",
+  "hypothesis_id": "hyp_schema_fixture",
+  "hypothesis": "A simple momentum factor has positive out-of-sample IC after costs.",
+  "universe": {
+    "asset_class": "us_equity",
+    "universe_name": "sp500_historical_fixture",
+    "symbols": [
+      "AAPL",
+      "MSFT"
+    ],
+    "historical_membership_source": "fixture:sp500_historical_membership",
+    "point_in_time": true,
+    "filters": [
+      {
+        "field": "market_cap",
+        "op": "gte",
+        "value_json": "1000000000"
+      }
+    ]
+  },
+  "data_requirements": [
+    {
+      "dataset_id": "ohlcv_daily_fixture",
+      "asset_class": "us_equity",
+      "frequency": "1D",
+      "calendar": "XNYS",
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume"
+      ],
+      "timezone": "America/New_York",
+      "corporate_action_policy": "adjusted",
+      "survivorship_policy": "historical_membership"
+    }
+  ],
+  "split_policy": {
+    "method": "walk_forward",
+    "train_start": "2020-01-01",
+    "train_end": "2022-12-31",
+    "validation_start": "2023-01-01",
+    "validation_end": "2023-12-31",
+    "test_start": "2024-01-01",
+    "test_end": "2024-12-31",
+    "fold_count": 4,
+    "min_effective_folds": 3
+  },
+  "benchmark_policy": {
+    "primary": "SPY",
+    "comparators": [
+      "RSP"
+    ],
+    "source": "fixture",
+    "pit_membership_required": true,
+    "rebalance_frequency": "daily"
+  },
+  "cost_model": {
+    "commission_bps": 1.0,
+    "slippage_bps": 5.0,
+    "spread_bps": 2.0,
+    "tax_bps": 0.0,
+    "min_fee": 0.0,
+    "borrow_fee_bps": null,
+    "stress_bps": [
+      0,
+      5,
+      10,
+      25,
+      50,
+      100
+    ]
+  },
+  "execution_assumptions": {
+    "signal_time_field": "signal_time",
+    "decision_delay": "1D",
+    "order_type": "market_on_open",
+    "fill_price": "next_open",
+    "allow_partial_fill": true,
+    "liquidity_cap_adv_pct": 0.05
+  },
+  "evaluation_plan": {
+    "metrics": [
+      "ic",
+      "rank_ic",
+      "turnover",
+      "net_return"
+    ],
+    "oos_required": true,
+    "ic_horizons": [
+      1,
+      5,
+      20
+    ],
+    "regime_label_artifact_ref": "artifact://fixture/regimes",
+    "min_walk_forward_folds": 3,
+    "neutralization": "industry_size",
+    "random_control_required": true,
+    "regime_tests_required": true,
+    "crowding_tests_required": true
+  },
+  "created_at": "2026-01-01T00:00:00Z",
+  "registered_at": "2026-01-01T00:01:00Z",
+  "created_by": "schema_migration_fixture",
+  "metadata": {
+    "purpose": "schema migration fixture"
+  }
+}

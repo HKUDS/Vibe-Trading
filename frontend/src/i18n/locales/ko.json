@@ -124,7 +124,8 @@
       "docWebResearch": "문서 & 웹 리서치",
       "tradeJournal": "매매 일지",
       "tradingConnectors": "트레이딩 커넥터",
-      "shadowAccount": "섀도우 계좌"
+      "shadowAccount": "섀도우 계좌",
+      "valueInvesting": "가치투자"
     },
     "examples": {
       "crossMarketPortfolio": "A주 포트폴리오 최적화",
@@ -137,6 +138,18 @@
       "multiFactorAlphaDesc": "300개 종목에 대한 IC 가중 팩터 합성",
       "optionsGreeks": "옵션 Greeks 분석",
       "optionsGreeksDesc": "Black-Scholes 가격 모델, Delta/Gamma/Theta/Vega 분석",
+      "valueCommittee": "가치투자 위원회",
+      "valueCommitteeDesc": "Buffett / Munger / Duan Yongping / Li Lu 네 관점으로 한 종목 토론",
+      "valueCommitteePrompt": "run_swarm으로 value_investing_committee 프리셋을 사용해 Tencent (00700.HK)를 분석하세요: Buffett은 moat와 가격, Munger는 역발상, Duan Yongping은 사업과 경영진, Li Lu는 10년 확실성을 평가하고 의장이 합의점과 모순을 종합하세요",
+      "bottleneckHunter": "공급망 병목 헌터",
+      "bottleneckHunterDesc": "슈퍼 트렌드의 Layer 2/3 병목에서 숨은 승자를 찾기",
+      "bottleneckHunterPrompt": "bottleneck-hunter 스킬을 사용해 AI 인프라(광통신 / 레이저 / InP 기판)의 Layer 2/3 공급망 병목 기회를 찾고, 각 병목을 점수화한 뒤 밸류에이션 게이트를 통과하는 후보 기업을 나열하세요",
+      "thesisTracker": "투자 테제 트래커",
+      "thesisTrackerDesc": "보유 종목에 대해 5문장 테제 + 레드라인 + 밸류에이션 앵커 작성",
+      "thesisTrackerPrompt": "thesis-tracker 스킬로 Kweichow Moutai (600519.SH)의 투자 테제를 작성하세요: 5문장 핵심 테제, 반증 가능한 가정, 레드라인, 밸류에이션 앵커를 financial_rigor로 검증하세요",
+      "valuationCheck": "정밀 밸류에이션 검산",
+      "valuationCheckDesc": "정확한 십진 연산으로 PE / PB / ROE / 시가총액 검증 (부동소수점 오차 없음)",
+      "valuationCheckPrompt": "financial_rigor 도구로 Kweichow Moutai의 밸류에이션을 검증하세요: 가격 1500, EPS 68.6, 주당순자산 180으로 PE, PB, ROE를 정확히 계산하고, 3년 3개 시나리오(성장률 12%/8%/0%, PE 22/18/14)도 계산하세요",
       "investmentCommittee": "투자 위원회 리뷰",
       "investmentCommitteeDesc": "멀티 에이전트 토론: 롱 vs 숏, 리스크 리뷰, PM 결정",
       "quantStrategyDesk": "퀀트 전략 데스크",

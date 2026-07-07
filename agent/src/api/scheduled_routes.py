@@ -65,8 +65,10 @@ async def _dispatch_scheduled_research_job(job) -> None:
         raise RuntimeError("Session runtime not enabled")
     # Pass a copy so the session runtime's internal config writes (e.g.
     # include_shell_tools) do not mutate the persisted scheduled-run config.
+    job_config = dict(job.config)
+    job_config["governance_surface"] = "scheduler"
     session = svc.create_session(
-        title=f"scheduled-research:{job.id}", config=dict(job.config)
+        title=f"scheduled-research:{job.id}", config=job_config
     )
     logger.info(
         "dispatching scheduled research job %s via session %s",

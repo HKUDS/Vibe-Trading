@@ -338,9 +338,9 @@ def get_historical_bars(
     api = _login(cfg)
 
     clean = symbol.strip().upper()
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    end = datetime.now()
+    end = datetime.now(timezone.utc)
     if period in ("1m", "5m", "15m", "30m"):
         start = end - timedelta(days=5)
     else:

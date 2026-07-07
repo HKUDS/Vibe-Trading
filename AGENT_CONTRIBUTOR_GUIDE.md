@@ -21,6 +21,28 @@ Do not copy local `.env` files, token caches, broker exports, run artifacts,
 private notebooks, generated reports, or local agent memory into this repository
 unless they are explicitly sanitized fixtures.
 
+## IRR-AGL Contributor Boundaries
+
+IRR-AGL work must be additive and reviewable:
+
+- Prefer wrappers, adapters, audit extensions, and read-only surfaces.
+- Do not rewrite `AgentLoop`, `ToolRegistry`, loader registry, backtest engines,
+  MCP schemas, or live-safety gates for governance integration.
+- Preserve `BaseTool.execute(**kwargs) -> str`,
+  `ToolRegistry.execute(name, params) -> str`, and
+  `DataLoaderProtocol.fetch(codes, start_date, end_date, interval="1D", fields=None)`.
+- Keep `VIBE_TRADING_RELIABILITY_MODE=off` and
+  `VIBE_TRADING_GOVERNANCE_MODE=off` backward compatible.
+- New schemas need `schema_version`; new JSON hashes must be canonical.
+- Structured `warnings` and `hard_failures` should use stable codes, not only
+  free text.
+- Artifacts, traces, cards, and logs must pass secret redaction.
+- `R4_TRADE_WRITE` and `R5_SHELL` deny decisions must shadow-deny outside
+  `off`; do not let observe/warn execute high-risk denied tools.
+- Governance cannot approve live mandates and cannot replace
+  `LiveOrderGuardTool`.
+- DSR/PBO are experimental metrics only, not production pass gates.
+
 ## Safe Local Checks
 
 These commands are normally safe for local validation:

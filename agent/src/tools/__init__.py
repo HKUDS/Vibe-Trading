@@ -305,7 +305,17 @@ def build_swarm_registry(
         include_shell_tools=include_shell_tools,
         _mcp_server_tool_name_segments=swarm_local_server_names,
     )
-    return _filter_registry(full, tool_names, include_shell_tools=include_shell_tools)
+    filtered = _filter_registry(full, tool_names, include_shell_tools=include_shell_tools)
+    from src.governance.config import get_governance_mode
+    from src.governance.decisions import RuntimeContext
+    from src.governance.manifest import ToolSurface
+    from src.governance.runtime import govern_registry
+
+    return govern_registry(
+        filtered,
+        surface=ToolSurface.SWARM,
+        context=RuntimeContext(surface=ToolSurface.SWARM, mode=get_governance_mode()),
+    )
 
 
 def _prune_agent_config_for_swarm_tools(

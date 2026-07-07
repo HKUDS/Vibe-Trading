@@ -365,9 +365,9 @@ def get_historical_bars(
     sec_id = str(security_id or symbol).strip()
     segment = exchange_segment.strip().upper()
 
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    to_date = datetime.now()
+    to_date = datetime.now(timezone.utc)
     # Intraday: max 5 days back; daily: use limit
     if period in ("1m", "5m", "15m", "30m"):
         from_date = to_date - timedelta(days=5)

@@ -1,0 +1,84 @@
+{
+  "audit_id": "audit_schema_fixture_v1",
+  "schema_version": "1.0.0",
+  "dataset_contract": {
+    "dataset_id": "ohlcv_daily_fixture",
+    "asset_class": "us_equity",
+    "frequency": "1D",
+    "calendar": "XNYS",
+    "fields": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume"
+    ],
+    "timezone": "America/New_York",
+    "corporate_action_policy": "adjusted",
+    "survivorship_policy": "historical_membership"
+  },
+  "access_contract": {
+    "source": "local:fixture",
+    "selected_source": "local:fixture",
+    "request_params_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "fallback_chain": [
+      "local:fixture"
+    ],
+    "cache_key": "fixture:ohlcv:AAPL,MSFT:2020-2024",
+    "fetched_at": "2026-01-01T00:00:00Z",
+    "source_timestamp": "2025-01-02T00:00:00Z",
+    "explicit_local": true,
+    "source_priority_rank": 1,
+    "fallback_chain_id": "fixture-local-only",
+    "circuit_breaker_state": "CLOSED",
+    "loader_latency_ms": 1.2
+  },
+  "row_count": 10000,
+  "symbol_count": 2,
+  "field_coverage": {
+    "open": 1.0,
+    "high": 1.0,
+    "low": 1.0,
+    "close": 1.0,
+    "volume": 1.0
+  },
+  "content_sample_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+  "per_symbol_hashes": {
+    "AAPL": "3333333333333333333333333333333333333333333333333333333333333333",
+    "MSFT": "4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "pit_violations": [],
+  "quality_warnings": [
+    {
+      "code": "DATA_VALIDATOR_SAMPLED",
+      "severity": "info",
+      "message": "large DataFrame sampled for audit validation",
+      "metadata": {
+        "sampled_rows": 10000
+      }
+    }
+  ],
+  "market_rule_warnings": [],
+  "source_circuit_states": {
+    "local:fixture": "CLOSED"
+  },
+  "circuit_breaker_events": [
+    {
+      "source": "local:fixture",
+      "state": "CLOSED",
+      "consecutive_failures": 0,
+      "opened_at": null,
+      "last_error_class": null,
+      "next_probe_after": null
+    }
+  ],
+  "all_sources_open": false,
+  "artifact_refs": [
+    {
+      "artifact_id": "art_data_audit_fixture_v1",
+      "artifact_type": "data_audit",
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "uri": "artifact://fixture/data_audit_v1"
+    }
+  ]
+}

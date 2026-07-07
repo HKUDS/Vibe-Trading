@@ -38,6 +38,9 @@ jobs:
       - name: Check locale JSON
         run: python -m json.tool wiki/locales/en.json >/dev/null
 
+      - name: Check social card metadata
+        run: python wiki/scripts/check_social_cards.py
+
       - name: Check static site files
         run: |
           test -f wiki/index.html
@@ -49,6 +52,7 @@ jobs:
           test -f wiki/_redirects
           test -f wiki/_headers
           test -f wiki/assets/icon.png
+          test -f wiki/assets/alpha-library-og.png
           blocked="localhost\\|nano"
           blocked="${blocked}bot"
           ! grep -R "$blocked" wiki --exclude=README.md

@@ -129,7 +129,8 @@
       "docWebResearch": "Document & Web Research",
       "tradeJournal": "Trade Journal",
       "tradingConnectors": "Trading Connectors",
-      "shadowAccount": "Shadow Account"
+      "shadowAccount": "Shadow Account",
+      "valueInvesting": "Value Investing"
     },
     "examples": {
       "crossMarketPortfolio": "A-Share Portfolio Optimization",
@@ -147,6 +148,18 @@
       "optionsGreeks": "Options Greeks Analysis",
       "optionsGreeksDesc": "Black-Scholes pricing with Delta/Gamma/Theta/Vega",
       "optionsGreeksPrompt": "Calculate option Greeks using Black-Scholes: spot=100, strike=105, risk-free rate=3%, vol=25%, expiry=90 days, analyze Delta/Gamma/Theta/Vega",
+      "valueCommittee": "Value Investing Committee",
+      "valueCommitteeDesc": "Buffett / Munger / Duan Yongping / Li Lu — four-master debate on one stock",
+      "valueCommitteePrompt": "Use run_swarm with the value_investing_committee preset to analyze Tencent (00700.HK): Buffett on moat & price, Munger on inversion, Duan Yongping on business & management, Li Lu on 10-year certainty, then the chair synthesizes consensus and contradictions",
+      "bottleneckHunter": "Supply-Chain Bottleneck Hunter",
+      "bottleneckHunterDesc": "Find hidden Layer 2/3 choke-point winners in a super-trend",
+      "bottleneckHunterPrompt": "Use the bottleneck-hunter skill to find Layer 2/3 supply-chain bottleneck opportunities in AI infrastructure (optics / lasers / InP substrates), score each choke point and list candidate companies that pass the valuation gate",
+      "thesisTracker": "Investment Thesis Tracker",
+      "thesisTrackerDesc": "Write a 5-sentence thesis + red lines + valuation anchors for a holding",
+      "thesisTrackerPrompt": "Use the thesis-tracker skill to build an investment thesis for Kweichow Moutai (600519.SH): 5-sentence core thesis, falsifiable assumptions, red lines, and valuation anchors, verified with financial_rigor",
+      "valuationCheck": "Exact Valuation Check",
+      "valuationCheckDesc": "Verify PE / PB / ROE / market cap with exact decimal arithmetic (no float drift)",
+      "valuationCheckPrompt": "Use the financial_rigor tool to verify Kweichow Moutai's valuation: price 1500, EPS 68.6, book value per share 180 — compute PE, PB, ROE exactly, then a three-scenario valuation (growth 12%/8%/0%, PE 22/18/14, 3 years)",
       "investmentCommittee": "Investment Committee Review",
       "investmentCommitteeDesc": "Multi-agent debate: long vs short, risk review, PM decision",
       "investmentCommitteePrompt": "[Swarm Team Mode] Use the investment_committee preset to evaluate whether to go long or short on 600519.SH given current market conditions",

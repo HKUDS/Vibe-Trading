@@ -371,6 +371,158 @@ def _get_loader(source: str):
         raise
 
 
+def _maybe_audited_loader(
+    loader,
+    *,
+    config: dict,
+    requested_source: str,
+    selected_source: str,
+    codes: List[str],
+    interval: str,
+    fallback_chain: List[str] | None = None,
+):
+    """Wrap a backtest data loader with observe-mode audit metadata."""
+    try:
+        from src.reliability.config import reliability_enabled
+    except Exception:
+        return loader
+
+    if not reliability_enabled():
+        return loader
+
+    try:
+        from src.reliability.data.contracts import DataSetContract
+        from src.reliability.data.loader_wrapper import AuditedDataLoader
+        from src.reliability.data.source_manifest import SourceManifest
+    except Exception:
+        logger.exception("failed to initialize data audit wrapper; using raw loader")
+        return loader
+
+    selected = str(getattr(loader, "name", selected_source))
+    chain = _audit_fallback_chain(requested_source, codes, fallback_chain)
+    asset_class = _audit_asset_class(codes)
+    manifest = SourceManifest(
+        requested_source=requested_source,
+        selected_source=selected,
+        fallback_chain=chain,
+        attempted_sources=[selected],
+        runtime_source=selected,
+        cache_hit=False,
+    )
+    return AuditedDataLoader(
+        loader,
+        source=requested_source,
+        selected_source=selected,
+        source_manifest=manifest,
+        dataset_contract=DataSetContract(
+            dataset_id=f"{selected}:ohlcv:{interval}",
+            asset_class=asset_class,
+            frequency=interval,
+            calendar=str(config.get("calendar") or selected),
+            fields=["open", "high", "low", "close", "volume"],
+            timezone=_audit_timezone(asset_class),
+            corporate_action_policy=config.get("corporate_action_policy"),
+            survivorship_policy=config.get("survivorship_policy"),
+        ),
+        dataset_kind="ohlcv",
+        as_of=_audit_datetime(config.get("as_of")),
+        available_at=_audit_datetime(config.get("available_at")),
+        market_rule_config=_audit_market_rule_config(config, asset_class),
+    )
+
+
+def _attach_loader_audit_to_config(config: dict, loader) -> None:
+    """Attach an audited loader's report refs to config for run-card rendering."""
+    report = getattr(loader, "last_audit_report", None)
+    if report is None:
+        return
+
+    audit_ids = config.setdefault("_data_audit_ids", [])
+    if report.audit_id not in audit_ids:
+        audit_ids.append(report.audit_id)
+
+    refs = config.setdefault("_irr_artifact_refs", [])
+    existing_ids = {
+        ref.get("artifact_id")
+        for ref in refs
+        if isinstance(ref, dict)
+    }
+    for ref in report.artifact_refs:
+        payload = ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+        if payload.get("artifact_id") not in existing_ids:
+            refs.append(payload)
+            existing_ids.add(payload.get("artifact_id"))
+
+
+def _audit_fallback_chain(
+    source: str,
+    codes: List[str],
+    fallback_chain: List[str] | None = None,
+) -> List[str]:
+    if _audit_explicit_local(source, codes):
+        return ["local"]
+    if fallback_chain:
+        return list(fallback_chain)
+    if codes:
+        market = _detect_market(codes[0])
+        chain = list(FALLBACK_CHAINS.get(market, []))
+        if source in chain:
+            return chain[chain.index(source):]
+    return [source]
+
+
+def _audit_explicit_local(source: str, codes: List[str]) -> bool:
+    normalized = str(source).strip().lower()
+    return normalized in {"local", "local:"} or any(str(code).lower().startswith("local:") for code in codes)
+
+
+def _audit_asset_class(codes: List[str]) -> str:
+    markets = {_detect_market(code) for code in codes} if codes else set()
+    if "a_share" in markets:
+        return "ashare"
+    if "us_equity" in markets:
+        return "us_equity"
+    if "hk_equity" in markets:
+        return "hk_equity"
+    if "crypto" in markets:
+        return "crypto"
+    if "futures" in markets:
+        return "futures"
+    return "other"
+
+
+def _audit_timezone(asset_class: str) -> str:
+    if asset_class == "ashare":
+        return "Asia/Shanghai"
+    if asset_class == "hk_equity":
+        return "Asia/Hong_Kong"
+    return "UTC"
+
+
+def _audit_market_rule_config(config: dict, asset_class: str) -> dict:
+    audit_config = dict(config)
+    audit_config["asset_class"] = asset_class
+    if asset_class == "ashare":
+        audit_config.setdefault("ashare_t1", True)
+        audit_config.setdefault("ashare_limit_up_down", True)
+        audit_config.setdefault("ashare_lot_size", True)
+    return audit_config
+
+
+def _audit_datetime(value: Any):
+    if value in (None, ""):
+        return None
+    try:
+        timestamp = pd.Timestamp(value)
+    except Exception:
+        return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize("UTC")
+    else:
+        timestamp = timestamp.tz_convert("UTC")
+    return timestamp.to_pydatetime()
+
+
 def _normalize_codes(codes: List[str], source: str) -> List[str]:
     """Normalize symbol strings for a source.
 
@@ -468,6 +620,14 @@ def main(run_dir: Path) -> None:
         config["codes"] = codes
         LoaderCls = _get_loader(source)
         loader = LoaderCls()
+        loader = _maybe_audited_loader(
+            loader,
+            config=config,
+            requested_source=source,
+            selected_source=source,
+            codes=codes,
+            interval=interval,
+        )
         data_map = loader.fetch(
             codes,
             config.get("start_date", ""),
@@ -475,6 +635,7 @@ def main(run_dir: Path) -> None:
             fields=config.get("extra_fields") or None,
             interval=interval,
         )
+        _attach_loader_audit_to_config(config, loader)
         if data_map and len(data_map) < len(codes):
             missing = set(codes) - set(data_map.keys())
             logger.warning(
@@ -482,7 +643,7 @@ def main(run_dir: Path) -> None:
                 source, len(data_map), len(codes), missing,
             )
         # Runtime fallback: try next sources in chain when primary returns empty
-        if not data_map and codes:
+        if not data_map and codes and not _audit_explicit_local(source, codes):
             market = _detect_market(codes[0])
             for fb_name in FALLBACK_CHAINS.get(market, []):
                 if fb_name == source or fb_name not in LOADER_REGISTRY:
@@ -491,10 +652,20 @@ def main(run_dir: Path) -> None:
                 if not fb_loader.is_available():
                     continue
                 fb_codes = _normalize_codes(codes, fb_name)
+                fb_loader = _maybe_audited_loader(
+                    fb_loader,
+                    config=config,
+                    requested_source=source,
+                    selected_source=fb_name,
+                    codes=fb_codes,
+                    interval=interval,
+                    fallback_chain=_audit_fallback_chain(source, codes),
+                )
                 data_map = fb_loader.fetch(
                     fb_codes, config.get("start_date", ""),
                     config.get("end_date", ""), interval=interval,
                 )
+                _attach_loader_audit_to_config(config, fb_loader)
                 if data_map:
                     logger.info("Runtime fallback: %s -> %s", source, fb_name)
                     source = fb_name
@@ -644,7 +815,17 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
         src_name = getattr(loader, "name", "unknown")
         normalized_codes = _normalize_codes(market_codes, src_name)
         fields = config.get("extra_fields") if src_name == "tushare" else None
+        loader = _maybe_audited_loader(
+            loader,
+            config=config,
+            requested_source="auto",
+            selected_source=src_name,
+            codes=normalized_codes,
+            interval=interval,
+            fallback_chain=list(FALLBACK_CHAINS.get(market, [src_name])),
+        )
         result = loader.fetch(normalized_codes, start_date, end_date, fields=fields, interval=interval)
+        _attach_loader_audit_to_config(config, loader)
 
         # Runtime fallback: try remaining sources when primary returns empty
         if not result:
@@ -655,7 +836,17 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
                 if not fb_loader.is_available():
                     continue
                 fb_codes = _normalize_codes(market_codes, fb_name)
+                fb_loader = _maybe_audited_loader(
+                    fb_loader,
+                    config=config,
+                    requested_source="auto",
+                    selected_source=fb_name,
+                    codes=fb_codes,
+                    interval=interval,
+                    fallback_chain=list(FALLBACK_CHAINS.get(market, [fb_name])),
+                )
                 result = fb_loader.fetch(fb_codes, start_date, end_date, interval=interval)
+                _attach_loader_audit_to_config(config, fb_loader)
                 if result:
                     logger.info("Runtime fallback: %s -> %s for %s", src_name, fb_name, market)
                     break

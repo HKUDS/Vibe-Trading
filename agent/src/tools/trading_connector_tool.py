@@ -342,14 +342,19 @@ class TradingPlaceOrderTool(BaseTool):
 
     def execute(self, **kwargs: Any) -> str:
         """Place an order via the connector profile."""
+        # LLMs frequently populate BOTH sizing fields, leaving the unused one at
+        # 0; a zero size is never valid, so treat it as absent to preserve the
+        # "exactly one of quantity/notional" contract.
+        quantity = _num_or_none(kwargs.get("quantity")) or None
+        notional = _num_or_none(kwargs.get("notional")) or None
         try:
             return _json_result(
                 place_order(
                     str(kwargs["symbol"]),
                     _connection(kwargs.get("connection")),
                     side=str(kwargs.get("side") or ""),
-                    quantity=_num_or_none(kwargs.get("quantity")),
-                    notional=_num_or_none(kwargs.get("notional")),
+                    quantity=quantity,
+                    notional=notional,
                     order_type=str(kwargs.get("order_type") or "market"),
                     limit_price=_num_or_none(kwargs.get("limit_price")),
                     time_in_force=str(kwargs.get("time_in_force") or "day"),

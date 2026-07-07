@@ -124,7 +124,8 @@
       "docWebResearch": "文档与网络研究",
       "tradeJournal": "交易日志",
       "tradingConnectors": "交易连接器",
-      "shadowAccount": "影子账户"
+      "shadowAccount": "影子账户",
+      "valueInvesting": "价值投资"
     },
     "examples": {
       "crossMarketPortfolio": "A股组合优化",
@@ -137,6 +138,18 @@
       "multiFactorAlphaDesc": "对 300 只股票进行 IC 加权因子合成",
       "optionsGreeks": "期权希腊字母分析",
       "optionsGreeksDesc": "Black-Scholes 定价，Delta/Gamma/Theta/Vega 分析",
+      "valueCommittee": "四大师价值委员会",
+      "valueCommitteeDesc": "巴菲特/芒格/段永平/李录 四视角辩论一只股票",
+      "valueCommitteePrompt": "用 run_swarm 执行 value_investing_committee,分析腾讯(00700.HK):巴菲特看护城河和价格、芒格做逆向、段永平看生意和人、李录看十年确定性,主席综合共识和矛盾",
+      "bottleneckHunter": "供应链瓶颈猎手",
+      "bottleneckHunterDesc": "在超级趋势里找 Layer 2/3 咽喉环节的隐藏赢家",
+      "bottleneckHunterPrompt": "用 bottleneck-hunter 技能找 AI 基础设施的 Layer 2/3 供应链瓶颈机会(光模块/激光器/InP 衬底),给瓶颈评级和过估值门的候选公司",
+      "thesisTracker": "投资论文追踪",
+      "thesisTrackerDesc": "为持仓写 5 句话论文 + 红线 + 估值锚点",
+      "thesisTrackerPrompt": "用 thesis-tracker 技能给贵州茅台(600519.SH)建立投资论文:5 句话核心论文、可验证假设、红线清单、估值锚点,用 financial_rigor 验算",
+      "valuationCheck": "精确估值验算",
+      "valuationCheckDesc": "用精确十进制验算 PE/PB/ROE/市值(无浮点误差)",
+      "valuationCheckPrompt": "用 financial_rigor 工具验算贵州茅台估值:股价 1500、EPS 68.6、每股净资产 180,精确算 PE/PB/ROE,再做三情景估值(增速 12%/8%/0%,PE 22/18/14,3 年)",
       "investmentCommittee": "投资委员会评审",
       "investmentCommitteeDesc": "多智能体辩论：多头 vs 空头，风险审查，投资经理决策",
       "quantStrategyDesk": "量化策略工作台",

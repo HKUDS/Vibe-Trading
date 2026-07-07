@@ -50,14 +50,16 @@
 
 ## 📰 News
 
+- **2026-07-07** ✅ **贡献者 PR 批次 + IRR-AGL stack 落地**：合入了排队中的贡献者工作：IM channel timeout 配置（[#413](https://github.com/HKUDS/Vibe-Trading/pull/413)，感谢 @SyntaxSawdust）、Alpha Library 社交预览图与入门教程（[#396](https://github.com/HKUDS/Vibe-Trading/pull/396)、[#393](https://github.com/HKUDS/Vibe-Trading/pull/393)，感谢 @kadaliao）、value-investing skills / tools / committee presets（[#407](https://github.com/HKUDS/Vibe-Trading/pull/407)，感谢 @sambazhu）、`trading_place_order` 的零值 order sizing 字段处理（[#417](https://github.com/HKUDS/Vibe-Trading/pull/417)，感谢 @irfanallana-oss）、session/API 路径的 timezone-aware UTC timestamp（[#397](https://github.com/HKUDS/Vibe-Trading/pull/397)，感谢 @mustafakamal88），以及 IRR-AGL reliability/governance stack：readiness docs、schema fixtures、regression coverage、research cards、scorecards 与 agent evals（[#405](https://github.com/HKUDS/Vibe-Trading/pull/405)、[#416](https://github.com/HKUDS/Vibe-Trading/pull/416)，覆盖并取代 [#409](https://github.com/HKUDS/Vibe-Trading/pull/409)-[#415](https://github.com/HKUDS/Vibe-Trading/pull/415)，感谢 @Elfsa-Miranda）。
+
 - **2026-07-06** 🧭 **Preflight 加固、API route 拆分、中国搜索 fallback 与 artifact trace**：provider preflight 现在不再跟随 redirect（[#404](https://github.com/HKUDS/Vibe-Trading/pull/404)，关闭 [#402](https://github.com/HKUDS/Vibe-Trading/issues/402)，感谢 @SyntaxSawdust）；剩余 API routes 迁入更聚焦的模块（[#387](https://github.com/HKUDS/Vibe-Trading/pull/387)，覆盖并取代 [#383](https://github.com/HKUDS/Vibe-Trading/pull/383)-[#386](https://github.com/HKUDS/Vibe-Trading/pull/386)，感谢 @shadowinlife）；中国网络搜索 fallback 接入阿里云 IQS（[#408](https://github.com/HKUDS/Vibe-Trading/pull/408)，感谢 @sambazhu）；artifact trace 也补上 metadata refs（[#406](https://github.com/HKUDS/Vibe-Trading/pull/406)，感谢 @Elfsa-Miranda）。维护者补改提交加入 no-network fallback tests 并清理 EOF whitespace（[fbac74f](https://github.com/HKUDS/Vibe-Trading/commit/fbac74f77bfed58dd7fc23d0f001c29190b4b2b6)）；main CI 已转绿（[run 28780619018](https://github.com/HKUDS/Vibe-Trading/actions/runs/28780619018)）。
 
 - **2026-07-05** ✅ **贡献者 PR 队列收口 + Windows baseline 转绿**：今天选定的 4 个 non-draft PR 已合入。A 股 mootdx 批量拉取不再用 bare `except` 吞掉 `KeyboardInterrupt` / `SystemExit`，长任务可以被正常 `Ctrl+C` 中断（[#399](https://github.com/HKUDS/Vibe-Trading/pull/399)，关闭 [#398](https://github.com/HKUDS/Vibe-Trading/issues/398)，感谢 @shadowinlife）。Settings route 拆分与依赖安全下限也已按原贡献者 PR 合入并保留 credit（[#382](https://github.com/HKUDS/Vibe-Trading/pull/382)、[#390](https://github.com/HKUDS/Vibe-Trading/pull/390)，感谢 @shadowinlife 和 @aeonframework）。Windows baseline 兼容性现在隔离 loader cache、让 OAuth cache 权限断言按平台处理、Windows 上跳过一个 fork-only mock test，并让 MCP loopback fixtures 绕过代理（[#401](https://github.com/HKUDS/Vibe-Trading/pull/401)，感谢 @Elfsa-Miranda）。验证：`4701 passed, 47 skipped`。
 
-- **2026-07-04** 🧩 **API 路由继续拆分、中文入门教程与依赖安全线**：IM channel 与 Settings routes 已从 `api_server.py` 迁入 `src/api/channels_routes.py` / `src/api/settings_routes.py`，延续 [#331](https://github.com/HKUDS/Vibe-Trading/issues/331) 的窄切片模块化路径（来自 [#379](https://github.com/HKUDS/Vibe-Trading/pull/379)、[#382](https://github.com/HKUDS/Vibe-Trading/pull/382)，感谢 @shadowinlife）。Wiki 新增面向非金融读者的中文入门教程（[#393](https://github.com/HKUDS/Vibe-Trading/pull/393)，感谢 @kadaliao）；Pillow / LangChain / LangGraph 依赖下限也更新到可安装的安全轨道（[#390](https://github.com/HKUDS/Vibe-Trading/pull/390)，感谢 @aeonframework）。
-
 <details>
 <summary>更早的更新</summary>
+
+- **2026-07-04** 🧩 **API 路由继续拆分、中文入门教程与依赖安全线**：IM channel 与 Settings routes 已从 `api_server.py` 迁入 `src/api/channels_routes.py` / `src/api/settings_routes.py`，延续 [#331](https://github.com/HKUDS/Vibe-Trading/issues/331) 的窄切片模块化路径（来自 [#379](https://github.com/HKUDS/Vibe-Trading/pull/379)、[#382](https://github.com/HKUDS/Vibe-Trading/pull/382)，感谢 @shadowinlife）。Wiki 新增面向非金融读者的中文入门教程（[#393](https://github.com/HKUDS/Vibe-Trading/pull/393)，感谢 @kadaliao）；Pillow / LangChain / LangGraph 依赖下限也更新到可安装的安全轨道（[#390](https://github.com/HKUDS/Vibe-Trading/pull/390)，感谢 @aeonframework）。
 
 - **2026-07-03** 🛡️ **Robinhood MCP 刷新 + API 模块化 + SSRF 防护**：Robinhood Agentic Trading 现在在通用读取、live runner、默认只读 seed 和 mandate-gate 测试中统一使用当前 MCP 工具名；交互式启动也会按 provider loader 的同一顺序识别 `.env`：`~/.vibe-trading/.env` → `agent/.env` → `$CWD/.env`（[#391](https://github.com/HKUDS/Vibe-Trading/pull/391)，关闭 [#381](https://github.com/HKUDS/Vibe-Trading/issues/381) 和 [#380](https://github.com/HKUDS/Vibe-Trading/issues/380)）。System routes（`/health`、`/correlation`、`/system/shutdown`、`/skills`、`/api`）作为下一段 API 模块化窄切片迁入 `src/api/system_routes.py`（[#378](https://github.com/HKUDS/Vibe-Trading/pull/378)，感谢 @shadowinlife）。通道媒体 SSRF 防护现在会在 fetch 前拒绝 CGNAT/mesh/non-global 目标和 QQ media redirect-to-internal（[#389](https://github.com/HKUDS/Vibe-Trading/pull/389)，感谢 @hobostay）。
 
@@ -205,6 +207,8 @@
 ## 💡 What Is Vibe-Trading?
 
 Vibe-Trading 是一个开源研究工作台，用于把金融问题转化为可运行的分析。它将自然语言提示连接到市场数据加载器、策略生成、回测引擎、报告、导出和持久研究记忆。
+
+IRR-AGL 可靠性层以可选、附加的方式提供 governance、PIT audit、quant scorecard、Research Card、schema migration 和 threat model 文档，不改变 quickstart 或旧 run artifacts。参见 [`docs/reliability-governance-rfc.md`](docs/reliability-governance-rfc.md)、[`docs/migration-guide.md`](docs/migration-guide.md) 和 [`docs/threat-model.md`](docs/threat-model.md)。
 
 它面向研究、模拟和回测——并且在你选择时，可通过你自己授权的券商（如 Robinhood Agentic Trading）进行自主交易。它不托管任何资金，绝不超出你设定的限额交易，且你可随时一键停止。
 

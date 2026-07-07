@@ -1,13 +1,17 @@
-"""Research Card v1.2.1 contract model."""
+"""Schema-versioned Research Card delivery model."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from src.reliability.quant.scorecard import BacktestReliabilityScorecard
 from src.reliability.quant.scorecard_explainer import ConclusionLevel, TriggeredRule
+from src.reliability.redaction import redact_secrets
 
+
+RESEARCH_CARD_SCHEMA_VERSION = "1.0.0"
 SCHEMA_VERSION = "1.2.1"
 
 
@@ -26,18 +30,68 @@ class EvidenceClosureSummary(BaseModel):
     hard_failure_inconsistencies: list[str] = Field(default_factory=list)
 
 
+class StructuredWarning(BaseModel):
+    """Stable warning code rendered in Research Cards and panels."""
+
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    code: str
+    severity: Literal["info", "warning", "hard_failure"] = "warning"
+    message: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _redact(cls, value: Any) -> Any:
+        return redact_secrets(value)
+
+
+class StructuredFailure(BaseModel):
+    """Stable hard-failure code rendered in Research Cards and panels."""
+
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    code: str
+    severity: Literal["hard_failure"] = "hard_failure"
+    message: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _redact(cls, value: Any) -> Any:
+        return redact_secrets(value)
+
+
 class ResearchCard(BaseModel):
-    """Tolerant Research Card model with Phase 6 evidence contract fields."""
+    """Machine-readable, auditable research delivery card."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(allow_inf_nan=False, arbitrary_types_allowed=False, extra="allow")
 
-    schema_version: str = SCHEMA_VERSION
+    card_id: str = ""
+    schema_version: str = RESEARCH_CARD_SCHEMA_VERSION
     run_id: str | None = None
     generated_at: str | None = None
-    conclusion_level: ConclusionLevel | None = None
-    hard_failures: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
+    title: str = ""
+    protocol_ref: str | None = None
+    hypothesis: str | None = None
+    universe: dict[str, Any] = Field(default_factory=dict)
+    data_sources: list[dict[str, Any]] = Field(default_factory=list)
+    data_audit_refs: list[str] = Field(default_factory=list)
+    policy_decision_refs: list[str] = Field(default_factory=list)
     policy_decision_ids: list[str] = Field(default_factory=list)
+    tool_trace_refs: list[str] = Field(default_factory=list)
+    backtest_refs: list[str] = Field(default_factory=list)
+    alpha_bench_refs: list[str] = Field(default_factory=list)
+    scorecard: BacktestReliabilityScorecard | None = None
+    key_metrics: dict[str, Any] = Field(default_factory=dict)
+    benchmark: dict[str, Any] = Field(default_factory=dict)
+    cost_model: dict[str, Any] = Field(default_factory=dict)
+    execution_assumptions: dict[str, Any] = Field(default_factory=dict)
+    oos_results: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[StructuredWarning | str] = Field(default_factory=list)
+    hard_failures: list[StructuredFailure | str] = Field(default_factory=list)
+    reproducibility: dict[str, Any] = Field(default_factory=dict)
+    conclusion_level: ConclusionLevel = "exploratory"
     evidence_closure_summary: EvidenceClosureSummary | None = None
     claim_set_ref: str | None = None
     methodology_fact_ref: str | None = None
@@ -45,15 +99,41 @@ class ResearchCard(BaseModel):
     triggered_rules: list[TriggeredRule] = Field(default_factory=list)
     claim_ids: list[str] = Field(default_factory=list)
 
-    @field_validator("hard_failures", "warnings", "policy_decision_ids", "claim_ids", mode="before")
+    @model_validator(mode="before")
+    @classmethod
+    def _redact_untrusted_content(cls, value: Any) -> Any:
+        redacted = redact_secrets(value)
+        if isinstance(redacted, dict):
+            data = dict(redacted)
+            if not data.get("card_id"):
+                data["card_id"] = str(data.get("run_id") or "research_card")
+            if not data.get("title"):
+                data["title"] = str(data.get("run_id") or "Research Card")
+            return data
+        return redacted
+
+    @field_validator(
+        "data_audit_refs",
+        "policy_decision_refs",
+        "policy_decision_ids",
+        "tool_trace_refs",
+        "backtest_refs",
+        "alpha_bench_refs",
+        "warnings",
+        "hard_failures",
+        "triggered_rules",
+        "claim_ids",
+        mode="before",
+    )
     @classmethod
     def _list_fields_tolerate_missing(cls, value: object) -> object:
         return [] if value is None else value
 
-    @field_validator("triggered_rules", mode="before")
-    @classmethod
-    def _triggered_rules_tolerate_missing(cls, value: object) -> object:
-        return [] if value is None else value
+    @model_validator(mode="after")
+    def _hard_failures_force_not_reliable(self) -> "ResearchCard":
+        if self.hard_failures:
+            self.conclusion_level = "not_reliable"
+        return self
 
 
 def evidence_closure_summary_from_report(report: Any) -> EvidenceClosureSummary:

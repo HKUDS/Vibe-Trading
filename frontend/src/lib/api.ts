@@ -444,6 +444,7 @@ export interface RunData {
   metrics?: BacktestMetrics;
   artifacts?: ArtifactInfo[];
   run_card?: RunCard;
+  research_card?: ResearchCard;
   validation?: ValidationData;
 
   chart_symbols?: string[];
@@ -485,6 +486,54 @@ export interface RunCardArtifact {
   sha256: string;
 }
 
+export interface StructuredResearchIssue {
+  code: string;
+  severity?: string;
+  message?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ResearchCard {
+  card_id: string;
+  schema_version?: string;
+  title?: string;
+  hypothesis?: string | null;
+  universe?: Record<string, unknown>;
+  data_sources?: Array<Record<string, unknown>>;
+  data_audit_refs?: string[];
+  policy_decision_refs?: string[];
+  policy_decisions?: Array<Record<string, unknown>>;
+  tool_trace_refs?: string[];
+  backtest_refs?: string[];
+  alpha_bench_refs?: string[];
+  scorecard?: Record<string, unknown> | null;
+  key_metrics?: Record<string, unknown>;
+  benchmark?: Record<string, unknown>;
+  cost_model?: Record<string, unknown>;
+  execution_assumptions?: Record<string, unknown>;
+  oos_results?: Record<string, unknown>;
+  warnings?: StructuredResearchIssue[];
+  hard_failures?: StructuredResearchIssue[];
+  reproducibility?: Record<string, unknown>;
+  conclusion_level?: string;
+}
+
+export interface PolicyDecisionRecord {
+  decision_id?: string | null;
+  tool_name?: string | null;
+  action?: string | null;
+  rule_id?: string | null;
+  status?: string | null;
+  mode?: string | null;
+  surface?: string | null;
+  risk_level?: string | null;
+  reason_codes?: string[];
+  evidence_refs?: string[];
+  trace_event_id?: string | null;
+  ledger_event_hash?: string | null;
+  [key: string]: unknown;
+}
+
 export interface BacktestMetrics {
   final_value: number;
   total_return: number;
@@ -519,25 +568,13 @@ export interface EvidenceClosureReport extends EvidenceClosureSummary {
   checked_at?: string;
 }
 
-export interface PolicyDecisionSummary {
-  decision_id: string | null;
-  tool_name: string | null;
-  action: string | null;
-  status: string | null;
-  mode: string | null;
-  surface: string | null;
-  risk_level: string | null;
-  reason_codes: string[];
-  evidence_refs: string[];
-  trace_event_id?: string | null;
-  ledger_event_hash?: string | null;
-}
+export type PolicyDecisionSummary = PolicyDecisionRecord;
 
 export interface PolicyDecisionsResponse {
   schema_version: string;
-  run_id: string;
-  decision_ids: string[];
-  decisions: PolicyDecisionSummary[];
+  run_id?: string;
+  decision_ids?: string[];
+  decisions: PolicyDecisionRecord[];
 }
 
 export interface ResearchClaim {

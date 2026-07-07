@@ -1155,7 +1155,8 @@ def _execute_key_gated(name: str, params: dict[str, Any]) -> str:
     tool_cls = _key_gated_tool_classes().get(name)
     if tool_cls is None:
         return registry.execute(name, params)
-    return tool_cls().execute(**params)
+    registry.register(tool_cls())
+    return registry.execute(name, params)
 
 
 @mcp.tool

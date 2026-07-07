@@ -190,6 +190,7 @@ pythonpath = ["agent"]
 markers = [
     "unit: Unit tests (fast, no network)",
     "integration: Integration tests (may need network)",
+    "performance: Performance regression tests",
 ]
 
 [tool.ruff]

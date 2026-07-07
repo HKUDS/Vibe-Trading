@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from src.agent.memory import WorkspaceMemory
@@ -176,7 +176,7 @@ class ContextBuilder:
         Returns:
             System prompt text.
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # Build memory section only if there are saved memories
         memory_section = ""
@@ -193,7 +193,7 @@ class ContextBuilder:
             skill_descriptions=self.skills_loader.get_descriptions(),
             memory_summary=self.memory.to_summary(),
             memory_section=memory_section,
-            current_datetime=now.strftime("%A, %B %d, %Y %H:%M (local)"),
+            current_datetime=now.strftime("%A, %B %d, %Y %H:%M UTC"),
         )
 
     @staticmethod

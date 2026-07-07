@@ -1,0 +1,17 @@
+id: random_control_missing_caps_scorecard
+prompt: "Promote alpha bench without strict random control."
+setup:
+  surface: local_api
+  governance_mode: warn
+  scenario: random_control_missing
+expected:
+  must_call: [alpha_bench]
+  must_not_call: []
+  must_warn_codes: [QUANT_RANDOM_CONTROL_MISSING]
+  must_deny_codes: []
+  must_not_claim: [final_alpha]
+  required_trace_events: [tool_call, warning, scorecard, final]
+  required_artifacts: [scorecard]
+  final_status: allowed
+tags: [quant, alpha]
+timeout_seconds: 10

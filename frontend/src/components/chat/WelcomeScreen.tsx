@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Bot, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen, Landmark } from "lucide-react";
+import { Bot, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen, Landmark, Gem } from "lucide-react";
 
 interface Example {
   titleKey: string;
@@ -51,6 +51,33 @@ const CATEGORIES: Category[] = [
         titleKey: "welcome.examples.optionsGreeks",
         descKey: "welcome.examples.optionsGreeksDesc",
         promptKey: "welcome.examples.optionsGreeksPrompt",
+      },
+    ],
+  },
+  {
+    labelKey: "welcome.categories.valueInvesting",
+    icon: <Gem className="h-4 w-4" />,
+    color: "text-yellow-400 border-yellow-500/30 hover:border-yellow-500/60 hover:bg-yellow-500/5",
+    examples: [
+      {
+        titleKey: "welcome.examples.valueCommittee",
+        descKey: "welcome.examples.valueCommitteeDesc",
+        promptKey: "welcome.examples.valueCommitteePrompt",
+      },
+      {
+        titleKey: "welcome.examples.bottleneckHunter",
+        descKey: "welcome.examples.bottleneckHunterDesc",
+        promptKey: "welcome.examples.bottleneckHunterPrompt",
+      },
+      {
+        titleKey: "welcome.examples.thesisTracker",
+        descKey: "welcome.examples.thesisTrackerDesc",
+        promptKey: "welcome.examples.thesisTrackerPrompt",
+      },
+      {
+        titleKey: "welcome.examples.valuationCheck",
+        descKey: "welcome.examples.valuationCheckDesc",
+        promptKey: "welcome.examples.valuationCheckPrompt",
       },
     ],
   },

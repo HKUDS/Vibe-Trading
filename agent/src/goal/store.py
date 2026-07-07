@@ -10,7 +10,7 @@ import threading
 import uuid
 from contextlib import contextmanager
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from functools import wraps
 from pathlib import Path
@@ -51,7 +51,7 @@ _COMPLETION_RESULTS = {
 
 
 def _now_iso() -> str:
-    return datetime.now().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _id(prefix: str) -> str:

@@ -1,0 +1,17 @@
+id: local_source_fallback_denied
+prompt: "Use local data, but silently fall back to network if missing."
+setup:
+  surface: local_api
+  governance_mode: enforce
+  scenario: local_fallback
+expected:
+  must_call: [get_market_data]
+  must_not_call: []
+  must_warn_codes: []
+  must_deny_codes: [P50]
+  must_not_claim: [pit_safe]
+  required_trace_events: [tool_call, policy_decision, policy_denied, final]
+  required_artifacts: []
+  final_status: denied
+tags: [policy, data]
+timeout_seconds: 10

@@ -50,14 +50,18 @@
 
 ## 📰 News
 
+- **2026-07-07** ✅ **Contributor PR batch + IRR-AGL stack landing**: merged the queued contributor work for IM channel timeout configuration ([#413](https://github.com/HKUDS/Vibe-Trading/pull/413), thanks @SyntaxSawdust), Alpha Library social previews and the beginner tutorial ([#396](https://github.com/HKUDS/Vibe-Trading/pull/396), [#393](https://github.com/HKUDS/Vibe-Trading/pull/393), thanks @kadaliao), value-investing skills / tools / committee presets ([#407](https://github.com/HKUDS/Vibe-Trading/pull/407), thanks @sambazhu), zero-sized order-field handling in `trading_place_order` ([#417](https://github.com/HKUDS/Vibe-Trading/pull/417), thanks @irfanallana-oss), timezone-aware UTC timestamps across session/API paths ([#397](https://github.com/HKUDS/Vibe-Trading/pull/397), thanks @mustafakamal88), and the IRR-AGL reliability/governance stack with readiness docs, schema fixtures, regression coverage, research cards, scorecards, and agent evals ([#405](https://github.com/HKUDS/Vibe-Trading/pull/405), [#416](https://github.com/HKUDS/Vibe-Trading/pull/416), superseding [#409](https://github.com/HKUDS/Vibe-Trading/pull/409)-[#415](https://github.com/HKUDS/Vibe-Trading/pull/415), thanks @Elfsa-Miranda).
+
 - **2026-07-06** 🧭 **Preflight hardening, API slices, CN search fallback, and artifact traces**: provider preflight no longer follows redirects ([#404](https://github.com/HKUDS/Vibe-Trading/pull/404), closes [#402](https://github.com/HKUDS/Vibe-Trading/issues/402), thanks @SyntaxSawdust), the remaining API routes moved into focused modules ([#387](https://github.com/HKUDS/Vibe-Trading/pull/387), superseding [#383](https://github.com/HKUDS/Vibe-Trading/pull/383)-[#386](https://github.com/HKUDS/Vibe-Trading/pull/386), thanks @shadowinlife), CN web-search fallbacks now include Alibaba Cloud IQS ([#408](https://github.com/HKUDS/Vibe-Trading/pull/408), thanks @sambazhu), and artifact traces gained metadata refs ([#406](https://github.com/HKUDS/Vibe-Trading/pull/406), thanks @Elfsa-Miranda). Maintainer cleanup added no-network fallback tests and EOF whitespace cleanup ([fbac74f](https://github.com/HKUDS/Vibe-Trading/commit/fbac74f77bfed58dd7fc23d0f001c29190b4b2b6)); main CI is green ([run 28780619018](https://github.com/HKUDS/Vibe-Trading/actions/runs/28780619018)).
 
 - **2026-07-05** ✅ **Contributor PR queue closed + Windows baseline green**: merged the four non-draft PRs selected for today's maintainer pass. A-share mootdx batch pulls now let `KeyboardInterrupt` / `SystemExit` propagate instead of being swallowed by a bare `except` ([#399](https://github.com/HKUDS/Vibe-Trading/pull/399), closes [#398](https://github.com/HKUDS/Vibe-Trading/issues/398), thanks @shadowinlife). The Settings route slice and patched dependency floors are now merged under their original contributor PRs ([#382](https://github.com/HKUDS/Vibe-Trading/pull/382), [#390](https://github.com/HKUDS/Vibe-Trading/pull/390), thanks @shadowinlife and @aeonframework). Windows baseline compatibility now isolates loader caches, makes OAuth cache assertions platform-aware, skips one fork-only mock test on Windows, and bypasses proxies for MCP loopback fixtures ([#401](https://github.com/HKUDS/Vibe-Trading/pull/401), thanks @Elfsa-Miranda). Validation: `4701 passed, 47 skipped`.
 
-- **2026-07-04** 🧩 **API route slices, tutorial docs, and dependency floors**: IM channel and Settings routes moved out of `api_server.py` into `src/api/channels_routes.py` and `src/api/settings_routes.py`, continuing the narrow [#331](https://github.com/HKUDS/Vibe-Trading/issues/331) modularization path from contributor work ([#379](https://github.com/HKUDS/Vibe-Trading/pull/379), [#382](https://github.com/HKUDS/Vibe-Trading/pull/382), thanks @shadowinlife). The wiki gained a Chinese beginner tutorial for non-finance readers ([#393](https://github.com/HKUDS/Vibe-Trading/pull/393), thanks @kadaliao), and dependency floors now keep Pillow / LangChain / LangGraph on the installable patched track ([#390](https://github.com/HKUDS/Vibe-Trading/pull/390), thanks @aeonframework).
-
 <details>
 <summary>Earlier news</summary>
+
+- **2026-07-04** 🧩 **API route slices, tutorial docs, and dependency floors**: IM channel and Settings routes moved out of `api_server.py` into `src/api/channels_routes.py` and `src/api/settings_routes.py`, continuing the narrow [#331](https://github.com/HKUDS/Vibe-Trading/issues/331) modularization path from contributor work ([#379](https://github.com/HKUDS/Vibe-Trading/pull/379), [#382](https://github.com/HKUDS/Vibe-Trading/pull/382), thanks @shadowinlife). The wiki gained a Chinese beginner tutorial for non-finance readers ([#393](https://github.com/HKUDS/Vibe-Trading/pull/393), thanks @kadaliao), and dependency floors now keep Pillow / LangChain / LangGraph on the installable patched track ([#390](https://github.com/HKUDS/Vibe-Trading/pull/390), thanks @aeonframework).
+
+- **2026-07-04** 🧹 **UTC timestamp cleanup for session and API paths**: tightened the #395 timestamp fix so session, goal, channel, and API timestamps now emit timezone-aware UTC values in explicit ISO form.
 
 - **2026-07-03** 🛡️ **Robinhood MCP refresh + API modularization + SSRF guard**: Robinhood Agentic Trading now uses the current MCP tool names across generic reads, live-runner plumbing, default read-only seeds, and mandate-gate tests, while interactive startup honors the same `.env` search order as the provider loader (`~/.vibe-trading/.env` → `agent/.env` → `$CWD/.env`) ([#391](https://github.com/HKUDS/Vibe-Trading/pull/391), closes [#381](https://github.com/HKUDS/Vibe-Trading/issues/381) and [#380](https://github.com/HKUDS/Vibe-Trading/issues/380)). System routes (`/health`, `/correlation`, `/system/shutdown`, `/skills`, `/api`) moved into `src/api/system_routes.py` as the next narrow API modularization slice ([#378](https://github.com/HKUDS/Vibe-Trading/pull/378), thanks @shadowinlife). Channel media SSRF defenses now reject CGNAT/mesh/non-global targets and QQ media redirects-to-internal before fetching ([#389](https://github.com/HKUDS/Vibe-Trading/pull/389), thanks @hobostay).
 
@@ -205,6 +209,8 @@
 ## 💡 What Is Vibe-Trading?
 
 Vibe-Trading is an open-source research workspace for turning finance questions into runnable analysis. It connects natural-language prompts to market-data loaders, strategy generation, backtest engines, reports, exports, and persistent research memory.
+
+The IRR-AGL reliability layer adds optional governance, PIT audit, quant scorecard, Research Card, schema migration, and threat-model documentation without changing the quickstart or legacy run artifacts. See [`docs/reliability-governance-rfc.md`](docs/reliability-governance-rfc.md), [`docs/migration-guide.md`](docs/migration-guide.md), and [`docs/threat-model.md`](docs/threat-model.md).
 
 It is designed for research, simulation, and backtesting — and, when you choose, autonomous trading through a broker you authorize yourself (e.g. Robinhood Agentic Trading). It holds no funds and never trades outside the limits you set, and you can halt it instantly.
 
@@ -682,6 +688,21 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 <summary><b>IM channels</b></summary>
 
 IM channel adapters connect outside chat apps to the same session runtime used by the Web UI and CLI. Configure enabled adapters under `channels` in `~/.vibe-trading/agent.json`; SDK-backed adapters are optional extras, and missing SDKs report recovery hints instead of crashing the runtime.
+
+For long-running channel tasks, tune the central assistant-reply wait budget with `replyTimeoutS` (seconds, default `600`):
+
+```json
+{
+  "channels": {
+    "replyTimeoutS": 1800,
+    "feishu": {
+      "enabled": true
+    }
+  }
+}
+```
+
+This controls how long the shared channel runtime waits for the agent session to produce an assistant message; adapter HTTP/socket timeouts remain adapter-specific.
 
 ```bash
 vibe-trading channels status --local   # inspect config and missing SDK hints without API
