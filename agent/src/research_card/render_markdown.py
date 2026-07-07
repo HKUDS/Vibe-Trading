@@ -80,6 +80,8 @@ def _render_legacy_markdown(card: ResearchCard) -> str:
         lines.extend(["", "## Hard Failures", ""])
         for failure in card.hard_failures:
             lines.append(f"- {_display_failure(failure)}")
+    if str(card.schema_version).startswith("1.2"):
+        lines.extend(_render_evidence_closure(card))
     return "\n".join(lines) + "\n"
 
 

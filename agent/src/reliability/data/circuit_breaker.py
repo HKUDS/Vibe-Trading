@@ -64,7 +64,11 @@ class CircuitBreakerStore:
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(self.path), timeout=30.0, isolation_level=None, check_same_thread=False)
-        conn.execute("PRAGMA busy_timeout=30000")
+        try:
+            conn.execute("PRAGMA busy_timeout=30000")
+        except BaseException:
+            conn.close()
+            raise
         return conn
 
     @staticmethod

@@ -74,14 +74,20 @@ def register_channels_routes(
             "ensure api_server is imported before calling this function"
         )
 
-    if require_auth is None:
-        require_auth = host.require_auth
+    route_host = host
 
-    # Late-access closure for monkeypatch compatibility
+    if require_auth is None:
+        require_auth = route_host.require_auth
+
     def _get_channel_runtime():
-        """Late-access _get_channel_runtime for test monkeypatch compat."""
-        h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
-        return h._get_channel_runtime()
+        """Access the runtime on the module that registered these routes."""
+        return route_host._get_channel_runtime()
+
+    async def _start_bound_channel_runtime():
+        """Start the runtime on the module that registered these routes."""
+        runtime = route_host._get_channel_runtime()
+        await runtime.start(start_manager=True)
+        return runtime
 
     # --- Routes ---
 
@@ -94,7 +100,7 @@ def register_channels_routes(
     @app.post("/channels/start", dependencies=[Depends(require_auth)])
     async def channels_start():
         """Start configured IM channel adapters."""
-        runtime = await _start_channel_runtime()
+        runtime = await _start_bound_channel_runtime()
         return {"status": "started", **runtime.status()}
 
     @app.post("/channels/stop", dependencies=[Depends(require_auth)])

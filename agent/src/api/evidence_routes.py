@@ -12,6 +12,7 @@ from src.governance.evidence_outbox import EvidenceOutbox
 from src.reliability.artifacts.graph import ArtifactGraph
 from src.reliability.artifacts.store import ArtifactStore
 from src.reliability.artifacts.verifier import EvidenceVerifier
+from src.reliability.redaction import redact_secrets
 
 
 def register_evidence_routes(
@@ -68,6 +69,13 @@ def register_evidence_routes(
         artifact_store = artifact_store_factory()
         index = index_store_factory().get(run_id)
         records = artifact_store.list_records(run_id=run_id, artifact_type="policy_decision")
+        if _should_return_legacy_policy_decisions(index=index, records=records):
+            legacy_decisions: list[dict[str, Any]] = []
+            for record in records:
+                payload = artifact_store.read_json(record.artifact_id) or {}
+                legacy_decisions.append(redact_secrets(payload))
+            return {"schema_version": "1.0.0", "decisions": legacy_decisions}
+
         decisions: list[dict[str, Any]] = []
         decision_ids: list[str] = list(index.policy_decision_ids) if index is not None else []
         for record in records:
@@ -127,6 +135,11 @@ def register_evidence_routes(
             "artifact_ref": record.artifact_id if record is not None else None,
             "methodology_facts": _redact_secret_values(payload) if isinstance(payload, dict) else None,
         }
+
+
+def _should_return_legacy_policy_decisions(*, index: Any, records: list[Any]) -> bool:
+    """Preserve the pre-v1.2.1 policy-decision API for v1.0 artifacts."""
+    return bool(records) and index is None and all(record.schema_version == "1.0.0" for record in records)
 
 
 def _policy_decision_snapshot(payload: dict[str, Any], *, artifact_id: str) -> dict[str, Any]:
