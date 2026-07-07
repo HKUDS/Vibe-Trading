@@ -211,7 +211,7 @@ def wrap_live_broker_tools(
         if tool_class is ToolClass.READ:
             tool.is_readonly = True
             result.append(tool)
-        elif halted:
+        elif tool_class in {ToolClass.WRITE, ToolClass.UNKNOWN} and halted:
             # WRITE/UNKNOWN + halt tripped -> do not even hand it to the model.
             logger.warning(
                 "live kill switch tripped for broker '%s' — omitting order tool '%s' from the registry",

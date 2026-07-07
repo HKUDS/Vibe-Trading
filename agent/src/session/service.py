@@ -89,6 +89,7 @@ class SessionService:
         role: str = "user",
         *,
         include_shell_tools: bool = False,
+        governance_surface: str = "remote_api",
     ) -> Dict[str, Any]:
         """Send a message to a session and trigger execution.
 
@@ -97,6 +98,7 @@ class SessionService:
             content: Message content.
             role: Message role.
             include_shell_tools: Whether this attempt may use shell tools.
+            governance_surface: Surface label passed into GovernedToolRegistry.
 
         Returns:
             Dictionary containing message_id and attempt_id.
@@ -121,7 +123,14 @@ class SessionService:
         self.store.update_session(session)
         self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
 
-        asyncio.create_task(self._run_attempt(session, attempt, include_shell_tools=include_shell_tools))
+        asyncio.create_task(
+            self._run_attempt(
+                session,
+                attempt,
+                include_shell_tools=include_shell_tools,
+                governance_surface=governance_surface,
+            )
+        )
         return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
 
     def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
@@ -143,7 +152,14 @@ class SessionService:
         loop.cancel()
         return True
 
-    async def _run_attempt(self, session: Session, attempt: Attempt, *, include_shell_tools: bool = False) -> None:
+    async def _run_attempt(
+        self,
+        session: Session,
+        attempt: Attempt,
+        *,
+        include_shell_tools: bool = False,
+        governance_surface: str = "remote_api",
+    ) -> None:
         """Execute an Attempt in the background."""
         attempt.mark_running()
         self.store.update_attempt(attempt)
@@ -156,6 +172,7 @@ class SessionService:
                 messages=messages,
                 include_shell_tools=include_shell_tools,
                 session_config=dict(session.config),
+                governance_surface=governance_surface,
             )
             if result.get("status") == "success":
                 attempt.mark_completed(summary=result.get("content", ""))
@@ -198,6 +215,7 @@ class SessionService:
         *,
         include_shell_tools: bool = False,
         session_config: Optional[Dict[str, Any]] = None,
+        governance_surface: str = "remote_api",
     ) -> Dict[str, Any]:
         """Execute an attempt with the V5 AgentLoop.
 
@@ -209,6 +227,7 @@ class SessionService:
                 definitions under the ``mcpServers`` key are merged on top of
                 the user config file via ``load_runtime_agent_config`` so each
                 session can extend or override the global MCP server list.
+            governance_surface: Surface label passed into GovernedToolRegistry.
 
         Returns:
             Result dictionary containing status, run_dir, run_id, metrics, and related fields.
@@ -216,6 +235,7 @@ class SessionService:
         from src.tools import build_registry
         from src.providers.chat import ChatLLM
         from src.agent.loop import AgentLoop
+        from src.governance.route_coverage import build_governed_tool_registry
         from src.memory.persistent import PersistentMemory
         from src.config.loader import load_runtime_agent_config, sanitize_session_overrides
 
@@ -248,6 +268,12 @@ class SessionService:
                 event_callback=event_callback,
                 warn_callback=_mcp_collision_warn,
             ),
+        )
+        registry = build_governed_tool_registry(
+            registry,
+            surface=governance_surface,
+            session_id=session_id,
+            run_id=attempt_id,
         )
 
         agent = AgentLoop(

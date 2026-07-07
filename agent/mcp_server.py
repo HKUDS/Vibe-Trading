@@ -76,11 +76,31 @@ _skills_loader = None
 _registry = None
 _goal_store = None
 _include_shell_tools = True
+_mcp_surface = "mcp_stdio"
 
 
 def _env_shell_tools_enabled() -> bool:
     """Return whether shell tools were explicitly enabled for network MCP."""
     return os.getenv("VIBE_TRADING_ENABLE_SHELL_TOOLS", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _surface_for_transport(transport: str) -> str:
+    """Map MCP transport names to governance surface names."""
+    normalized = transport.strip().lower().replace("-", "_")
+    if normalized == "sse":
+        return "mcp_sse"
+    if normalized in {"http", "streamable_http", "mcp_http"}:
+        return "mcp_http"
+    return "mcp_stdio"
+
+
+def _build_registry_for_transport(transport: str, *, inner: Any | None = None):
+    """Build a governed registry for an MCP transport without opening a server."""
+    from src.governance.route_coverage import build_governed_tool_registry
+    from src.tools import build_registry
+
+    raw_registry = inner if inner is not None else build_registry(include_shell_tools=_include_shell_tools)
+    return build_governed_tool_registry(raw_registry, surface=_surface_for_transport(transport))
 
 
 def _get_skills_loader():
@@ -95,9 +115,7 @@ def _get_skills_loader():
 def _get_registry():
     global _registry
     if _registry is None:
-        from src.tools import build_registry
-
-        _registry = build_registry(include_shell_tools=_include_shell_tools)
+        _registry = _build_registry_for_transport(_mcp_surface)
     return _registry
 
 
@@ -1889,13 +1907,14 @@ def scan_shadow_signals(
 
 def main():
     """Entry point for `vibe-trading-mcp` CLI command."""
-    global _include_shell_tools, _registry
+    global _include_shell_tools, _registry, _mcp_surface
     import argparse
 
     parser = argparse.ArgumentParser(description="Vibe-Trading MCP Server")
     parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio", help="MCP transport (default: stdio)")
     parser.add_argument("--port", type=int, default=8900, help="SSE port (only used with --transport sse)")
     args = parser.parse_args()
+    _mcp_surface = _surface_for_transport(args.transport)
     _include_shell_tools = True if args.transport == "stdio" else _env_shell_tools_enabled()
     _registry = None
     _get_registry()  # pre-warm: avoids deadlock when first tools/call lazy-inits inside FastMCP worker thread

@@ -31,6 +31,7 @@ from src.swarm.models import (
     SwarmTask,
     WorkerResult,
 )
+from src.governance.route_coverage import build_governed_tool_registry
 from src.tools import build_swarm_registry
 from src.tools.mcp import MCPRemoteTool
 from src.tools.redaction import is_sensitive_arg, redact_payload
@@ -338,13 +339,19 @@ def run_worker(
     timeout = agent_spec.timeout_seconds or _DEFAULT_TIMEOUT_SECONDS
 
     _emit(event_callback, "worker_started", agent_id, task_id)
+    swarm_run_id = run_dir.name if run_dir.name else None
 
     # 1. Build per-worker tool registry — local pool plus any operator-
     #    surfaced MCP tools, projected onto the agent's whitelist.
-    registry = build_swarm_registry(
-        agent_spec.tools,
-        agent_config=agent_config,
-        include_shell_tools=include_shell_tools,
+    registry = build_governed_tool_registry(
+        build_swarm_registry(
+            agent_spec.tools,
+            agent_config=agent_config,
+            include_shell_tools=include_shell_tools,
+        ),
+        surface="swarm",
+        session_id=task_id,
+        run_id=swarm_run_id,
     )
 
     # 2. Create LLM

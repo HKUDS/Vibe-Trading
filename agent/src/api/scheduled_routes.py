@@ -73,7 +73,11 @@ async def _dispatch_scheduled_research_job(job) -> None:
         job.id,
         session.session_id,
     )
-    await svc.send_message(session.session_id, job.prompt)
+    await svc.send_message(
+        session.session_id,
+        job.prompt,
+        governance_surface="scheduler",
+    )
 
 
 def _get_scheduled_research_executor():
