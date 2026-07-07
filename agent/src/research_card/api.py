@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -19,6 +20,7 @@ from src.tools import build_registry
 
 RESEARCH_API_SCHEMA_VERSION = "1.0.0"
 AuthDep = Callable[..., Awaitable[Any] | Any]
+logger = logging.getLogger(__name__)
 
 
 def register_research_card_routes(app: FastAPI, require_auth: AuthDep | None = None) -> None:
@@ -156,7 +158,11 @@ def _read_payload(record: dict[str, Any]) -> Any:
     try:
         path.relative_to(root)
     except ValueError as exc:
-        raise HTTPException(status_code=500, detail="artifact path escapes artifact root") from exc
+        logger.warning(
+            "artifact path escapes artifact root; artifact_id=%s",
+            record.get("artifact_id", "<unknown>"),
+        )
+        raise HTTPException(status_code=404, detail="artifact payload missing") from exc
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -112,6 +114,46 @@ def test_research_artifact_and_protocol_read_endpoints(tmp_path: Path, monkeypat
     assert artifact_response.json()["artifact"]["artifact_id"] == record.artifact_id
     assert protocol_response.status_code == 200
     assert protocol_response.json()["protocol_id"] == "proto_api"
+
+
+def test_research_artifact_path_traversal_returns_404_without_leaking_path(
+    tmp_path: Path,
+    monkeypatch,
+    caplog,
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    store = ArtifactStore(root=tmp_path / "artifacts")
+    record = store.write_json(
+        {"token": "sk-test-secret-abcdefghijklmnopqrstuvwxyz"},
+        artifact_type="research_protocol",
+        generated_by="test",
+        metadata={"protocol_id": "escaped"},
+        schema_version="1.0.0",
+    )
+    assert record is not None
+    escaped = tmp_path / "outside-secret" / "secret-token.json"
+    escaped.parent.mkdir(parents=True)
+    escaped.write_text('{"token":"sk-escaped-secret-abcdefghijklmnopqrstuvwxyz"}', encoding="utf-8")
+    with sqlite3.connect(str(store.index_path)) as conn:
+        conn.execute(
+            "UPDATE artifacts SET path = ? WHERE artifact_id = ?",
+            (str(escaped), record.artifact_id),
+        )
+        conn.commit()
+
+    with caplog.at_level(logging.WARNING):
+        response = client.get(f"/research/artifacts/{record.artifact_id}")
+
+    body = response.text
+    assert response.status_code == 404
+    assert str(escaped) not in body
+    assert "secret-token" not in body
+    assert "sk-escaped-secret" not in body
+    messages = [item.getMessage() for item in caplog.records]
+    assert any("artifact path escapes artifact root" in message for message in messages)
+    assert any(record.artifact_id in message for message in messages)
+    assert all(str(escaped) not in message for message in messages)
+    assert all("secret-token" not in message for message in messages)
 
 
 def test_tool_manifest_api_is_read_only(tmp_path: Path, monkeypatch) -> None:

@@ -21,6 +21,7 @@ event through the EXISTING session EventBus, so the frontend's already-wired
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys as _sys
 import time
@@ -29,6 +30,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +177,26 @@ class LiveRunnerUnavailable(RuntimeError):
 # ============================================================================
 # Host resolution — shared deps and monkeypatched symbols
 # ============================================================================
+
+
+class _LiveConnectorWriteTool(BaseTool):
+    """Private pseudo-tool that sends one governed live connector write."""
+
+    description = "Governed live connector write"
+    parameters = {"type": "object", "properties": {}, "additionalProperties": True}
+    repeatable = False
+    is_readonly = False
+    live_classification = "WRITE"
+
+    def __init__(self, *, name: str, adapter: Any, remote_tool: str) -> None:
+        self.name = name
+        self._adapter = adapter
+        self._remote_tool = remote_tool
+
+    def execute(self, **kwargs: Any) -> str:
+        result = self._adapter.call_tool(self._remote_tool, dict(kwargs))
+        payload = result if isinstance(result, dict) else {"result": result}
+        return json.dumps(payload, ensure_ascii=False, default=str)
 
 
 def _host() -> Any:
@@ -352,6 +375,83 @@ def _runner_liveness_state(broker: str) -> RunnerLivenessState:
     return RunnerLivenessState(broker=broker, alive=alive, last_tick=tick, last_tick_age_seconds=age)
 
 
+def _call_live_write_tool_governed(
+    *,
+    broker: str,
+    adapter: Any,
+    remote_tool: str,
+    params: Dict[str, Any],
+    operation: str,
+    state_provider: Any | None = None,
+    decision_recorder: Any | None = None,
+    budget_manager: Any | None = None,
+) -> Dict[str, Any]:
+    """Call a live connector write through the standard governance runtime."""
+    from src.agent.tools import ToolRegistry
+    from src.governance.config import get_governance_mode
+    from src.governance.decisions import RuntimeContext
+    from src.governance.discovery import ManifestCache
+    from src.governance.manifest import RiskLevel, ToolManifest, ToolSurface
+    from src.governance.runtime import GovernedToolRegistry, NullGovernanceStateProvider
+    from src.governance.trace_adapter import DecisionRecorder
+
+    tool_name = _live_write_tool_name(broker, operation)
+    tool = _LiveConnectorWriteTool(name=tool_name, adapter=adapter, remote_tool=remote_tool)
+    registry = ToolRegistry()
+    registry.register(tool)
+    manifest = ToolManifest(
+        name=tool_name,
+        surface=ToolSurface.LIVE_CONNECTOR,
+        readonly=False,
+        repeatable=False,
+        risk_level=RiskLevel.R4_TRADE_WRITE,
+        requires_auth=True,
+        requires_consent=True,
+        allowed_modes=["live"],
+        secret_access="broker",
+        timeout_seconds=30,
+        side_effects=["live_trade_write"],
+        live_classification="WRITE",
+    )
+    h = _host()
+    if state_provider is None:
+        factory = getattr(h, "_live_governance_state_provider_factory", None) if h is not None else None
+        if callable(factory):
+            state_provider = factory(broker=broker, operation=operation, params=dict(params))
+    if state_provider is None:
+        state_provider = NullGovernanceStateProvider()
+    if decision_recorder is None and h is not None:
+        decision_recorder = getattr(h, "_live_decision_recorder", None)
+    if decision_recorder is None:
+        decision_recorder = DecisionRecorder()
+    if budget_manager is None and h is not None:
+        budget_manager = getattr(h, "_live_budget_manager", None)
+
+    governed = GovernedToolRegistry(
+        registry,
+        manifest_cache=ManifestCache({tool_name: manifest}, surface=ToolSurface.LIVE_CONNECTOR),
+        context=RuntimeContext(surface=ToolSurface.LIVE_CONNECTOR, mode=get_governance_mode()),
+        decision_recorder=decision_recorder,
+        state_provider=state_provider,
+        budget_manager=budget_manager,
+    )
+    raw_result = governed.execute(tool_name, dict(params))
+    try:
+        decoded = json.loads(raw_result)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return {"status": "ok", "result": raw_result}
+    return decoded if isinstance(decoded, dict) else {"status": "ok", "result": decoded}
+
+
+def _live_write_tool_name(broker: str, operation: str) -> str:
+    return f"live_connector_{_tool_segment(broker)}_{_tool_segment(operation)}"
+
+
+def _tool_segment(value: str) -> str:
+    cleaned = [char.lower() if char.isalnum() else "_" for char in str(value or "unknown")]
+    return "".join(cleaned).strip("_") or "unknown"
+
+
 def _build_live_runner(broker: str) -> Any:
     """Construct a fully-wired ``LiveRunner`` for a broker (SPEC §7.5 R-INT).
 
@@ -400,8 +500,20 @@ def _build_live_runner(broker: str) -> Any:
 
     def _submit(order: Dict[str, Any]) -> Dict[str, Any]:
         if order.get("action") == "cancel":
-            return adapter.call_tool(cancel_order_tool, order)
-        return adapter.call_tool(submit_order_tool, order)
+            return _call_live_write_tool_governed(
+                broker=broker,
+                adapter=adapter,
+                remote_tool=cancel_order_tool,
+                params=order,
+                operation="cancel_order",
+            )
+        return _call_live_write_tool_governed(
+            broker=broker,
+            adapter=adapter,
+            remote_tool=submit_order_tool,
+            params=order,
+            operation="submit_order",
+        )
 
     svc = h._get_session_service()
     session = svc.create_session(title=f"live-runner:{broker}")

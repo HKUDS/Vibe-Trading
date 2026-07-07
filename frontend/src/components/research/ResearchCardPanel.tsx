@@ -4,6 +4,7 @@ import type { QuantScorecardSummary } from "./QuantScorecardPanel";
 import type { DataSourceSummary } from "./DataProvenancePanel";
 import type { PolicyDecisionSummary } from "./PolicyDecisionsPanel";
 import type { StructuredIssue } from "./PITWarningsPanel";
+import { redactDisplayText, redactDisplayValue } from "./redaction";
 
 export interface ResearchCardSummary {
   card_id: string;
@@ -44,8 +45,10 @@ export function ResearchCardPanel({ card }: { card?: ResearchCardSummary | null 
     <section className="rounded-md border bg-card p-4">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <FileCheck2 className="h-4 w-4 text-muted-foreground" />
-        <h2 className="text-sm font-medium">{card.title || "Research Card"}</h2>
-        <span className="rounded-md bg-muted px-2 py-1 font-mono text-xs">{card.conclusion_level || "exploratory"}</span>
+        <h2 className="text-sm font-medium">{redactDisplayText(card.title || "Research Card")}</h2>
+        <span className="rounded-md bg-muted px-2 py-1 font-mono text-xs">
+          {redactDisplayText(card.conclusion_level || "exploratory")}
+        </span>
         <button
           onClick={() => downloadMarkdown(card)}
           className="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs hover:bg-muted"
@@ -55,7 +58,7 @@ export function ResearchCardPanel({ card }: { card?: ResearchCardSummary | null 
           Export Markdown
         </button>
       </div>
-      {card.hypothesis && <p className="mb-3 text-sm text-muted-foreground">{card.hypothesis}</p>}
+      {card.hypothesis && <p className="mb-3 text-sm text-muted-foreground">{redactDisplayText(card.hypothesis)}</p>}
       <div className="grid gap-2 sm:grid-cols-3">
         <ResearchStat label="Warnings" value={String(warnings.length)} />
         <ResearchStat label="Hard Failures" value={String(hardFailures.length)} tone={hardFailures.length ? "danger" : "normal"} />
@@ -73,8 +76,8 @@ export function ResearchCardPanel({ card }: { card?: ResearchCardSummary | null 
         <div className="mt-3 space-y-2">
           {hardFailures.map((failure) => (
             <div key={failure.code} className="rounded-md border border-red-500/25 bg-red-500/5 p-2 text-sm">
-              <div className="font-mono text-xs font-medium text-danger">{failure.code}</div>
-              {failure.message && <div className="mt-1 text-xs text-muted-foreground">{failure.message}</div>}
+              <div className="font-mono text-xs font-medium text-danger">{redactDisplayText(failure.code)}</div>
+              {failure.message && <div className="mt-1 text-xs text-muted-foreground">{redactDisplayText(failure.message)}</div>}
             </div>
           ))}
         </div>
@@ -94,7 +97,7 @@ function EvidenceBlock({ title, data }: { title: string; data?: Record<string, u
         <div className="space-y-1">
           {entries.slice(0, 4).map(([key, value]) => (
             <div key={key} className="truncate font-mono text-xs">
-              {key}: {formatEvidenceValue(value)}
+              {redactDisplayText(key)}: {formatEvidenceValue(value)}
             </div>
           ))}
         </div>
@@ -128,7 +131,7 @@ function formatEvidenceValue(value: unknown): string {
     return Number.isFinite(value) ? String(value) : "unknown";
   }
   if (typeof value === "string") {
-    return value || "Not recorded";
+    return value ? redactDisplayText(value) : "Not recorded";
   }
   if (typeof value === "boolean") {
     return value ? "true" : "false";
@@ -137,18 +140,18 @@ function formatEvidenceValue(value: unknown): string {
     return value.map(formatEvidenceValue).join(", ");
   }
   if (value && typeof value === "object") {
-    return JSON.stringify(value);
+    return JSON.stringify(redactDisplayValue(value));
   }
   return "Not recorded";
 }
 
 function downloadMarkdown(card: ResearchCardSummary) {
   const lines = [
-    `# Research Card: ${card.title || card.card_id}`,
+    `# Research Card: ${redactDisplayText(card.title || card.card_id)}`,
     "",
-    `- Card ID: \`${card.card_id}\``,
-    `- Schema Version: \`${card.schema_version || "unknown"}\``,
-    `- Conclusion: \`${card.conclusion_level || "exploratory"}\``,
+    `- Card ID: \`${redactDisplayText(card.card_id)}\``,
+    `- Schema Version: \`${redactDisplayText(card.schema_version || "unknown")}\``,
+    `- Conclusion: \`${redactDisplayText(card.conclusion_level || "exploratory")}\``,
     "",
     "## Evidence",
     `- Benchmark: ${formatBenchmark(card.benchmark)}`,
@@ -157,10 +160,10 @@ function downloadMarkdown(card: ResearchCardSummary) {
     ...formatEvidenceLines("OOS", card.oos_results),
     "",
     "## Warnings",
-    ...((card.warnings || []).map((warning) => `- \`${warning.code}\`: ${warning.message || ""}`)),
+    ...((card.warnings || []).map((warning) => `- \`${redactDisplayText(warning.code)}\`: ${warning.message ? redactDisplayText(warning.message) : ""}`)),
     "",
     "## Hard Failures",
-    ...((card.hard_failures || []).map((failure) => `- \`${failure.code}\`: ${failure.message || ""}`)),
+    ...((card.hard_failures || []).map((failure) => `- \`${redactDisplayText(failure.code)}\`: ${failure.message ? redactDisplayText(failure.message) : ""}`)),
     "",
   ];
   const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
@@ -177,5 +180,5 @@ function formatEvidenceLines(title: string, data?: Record<string, unknown>): str
   if (entries.length === 0) {
     return [`- ${title}: Not recorded`];
   }
-  return entries.map(([key, value]) => `- ${title} ${key}: ${formatEvidenceValue(value)}`);
+  return entries.map(([key, value]) => `- ${title} ${redactDisplayText(key)}: ${formatEvidenceValue(value)}`);
 }

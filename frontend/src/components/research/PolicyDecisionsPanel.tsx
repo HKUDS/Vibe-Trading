@@ -1,5 +1,7 @@
 import { ShieldCheck } from "lucide-react";
 
+import { redactDisplayText } from "./redaction";
+
 export interface PolicyDecisionSummary {
   decision_id?: string;
   tool_name?: string;
@@ -27,8 +29,8 @@ export function PolicyDecisionsPanel({ decisions = [] }: { decisions?: PolicyDec
         <div className="space-y-1">
           {decisions.map((decision, index) => (
             <div key={decision.decision_id || index} className="flex items-center justify-between gap-3 rounded-md bg-muted/30 px-2 py-1.5 text-xs">
-              <span className="truncate font-mono">{decision.tool_name || "unknown_tool"}</span>
-              <span className="font-mono text-muted-foreground">{decision.rule_id || "no_rule"}</span>
+              <span className="truncate font-mono">{redactDisplayText(decision.tool_name || "unknown_tool")}</span>
+              <span className="font-mono text-muted-foreground">{redactDisplayText(decision.rule_id || "no_rule")}</span>
             </div>
           ))}
         </div>

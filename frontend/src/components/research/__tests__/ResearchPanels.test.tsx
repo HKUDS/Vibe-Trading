@@ -118,4 +118,52 @@ describe("research reliability panels", () => {
     expect(screen.getByText("local_cache")).toBeInTheDocument();
     expect(screen.getByText("local_cache -> vendor")).toBeInTheDocument();
   });
+
+  it("redacts secret-like values before rendering research card evidence", () => {
+    render(
+      <ResearchCardPanel
+        card={{
+          card_id: "card_secret",
+          schema_version: "1.0.0",
+          title: "Secret Fixture",
+          hypothesis: "Authorization: Bearer fixture-token",
+          conclusion_level: "exploratory",
+          cost_model: { api_key: "sk-test-123456", commission_bps: 2 },
+          hard_failures: [{ code: "SECRET_FIXTURE", severity: "hard_failure", message: "AWS_SECRET_ACCESS_KEY=fixture" }],
+          warnings: [],
+        }}
+      />,
+    );
+
+    expect(screen.queryByText(/fixture-token/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sk-test-123456/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/AWS_SECRET_ACCESS_KEY=fixture/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText("[REDACTED]").length).toBeGreaterThan(0);
+  });
+
+  it("redacts secret-like values in policy, PIT, scorecard, and data provenance panels", () => {
+    render(
+      <>
+        <PolicyDecisionsPanel decisions={[{ decision_id: "pd_1", tool_name: "Authorization: Bearer fixture-token", action: "deny", rule_id: "AWS_SECRET_ACCESS_KEY=fixture" }]} />
+        <PITWarningsPanel warnings={[{ code: "DATA_AVAILABLE_AT_MISSING", severity: "warning", message: "Authorization: Bearer fixture-token" }]} />
+        <QuantScorecardPanel scorecard={{ conclusion_cap: "AWS_SECRET_ACCESS_KEY=fixture", score_breakdown: { "Authorization: Bearer fixture-token": 1 } }} />
+        <DataProvenancePanel dataSources={[{ source: "AWS_SECRET_ACCESS_KEY=fixture", selected_source: "local_cache", fallback_chain: ["Authorization: Bearer fixture-token"] }]} />
+      </>,
+    );
+
+    expect(screen.queryByText(/fixture-token/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/AWS_SECRET_ACCESS_KEY=fixture/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText("[REDACTED]").length).toBeGreaterThan(0);
+  });
+
+  it("renders malicious HTML fixtures as text instead of executable markup", () => {
+    render(
+      <PITWarningsPanel
+        warnings={[{ code: "DATA_AVAILABLE_AT_MISSING", severity: "warning", message: "<script>window.__pwned = true</script>" }]}
+      />,
+    );
+
+    expect(screen.getByText("<script>window.__pwned = true</script>")).toBeInTheDocument();
+    expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+  });
 });

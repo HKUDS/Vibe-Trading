@@ -25,7 +25,15 @@ _SECRET_KEY_FRAGMENTS = (
 )
 
 _BEARER_RE = re.compile(r"^\s*bearer\s+[A-Za-z0-9._~+/=-]{16,}\s*$", re.IGNORECASE)
-_KEY_PREFIX_RE = re.compile(r"^\s*(sk|rk|pk|ghp|gho|ghu|github_pat)-[A-Za-z0-9_\-]{20,}\s*$", re.IGNORECASE)
+_INLINE_BEARER_RE = re.compile(
+    r"\bauthorization\s*:\s*bearer\s+[^\s,;]+|\bbearer\s+[A-Za-z0-9._~+/=-]{8,}",
+    re.IGNORECASE,
+)
+_ENV_ASSIGNMENT_SECRET_RE = re.compile(
+    r"\b[A-Z0-9_]*(?:SECRET|TOKEN|API_KEY|ACCESS_KEY|PRIVATE_KEY)[A-Z0-9_]*\s*=\s*[^\s,;]+",
+    re.IGNORECASE,
+)
+_KEY_PREFIX_RE = re.compile(r"^\s*(sk|rk|pk|ghp|gho|ghu|github_pat)-[A-Za-z0-9_\-]{8,}\s*$", re.IGNORECASE)
 _LONG_RANDOM_RE = re.compile(r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)[A-Za-z0-9_\-+/=]{40,}$")
 
 
@@ -55,4 +63,10 @@ def _key_is_secret_like(key: str) -> bool:
 
 
 def _value_is_secret_like(value: str) -> bool:
-    return bool(_BEARER_RE.match(value) or _KEY_PREFIX_RE.match(value) or _LONG_RANDOM_RE.match(value))
+    return bool(
+        _BEARER_RE.match(value)
+        or _INLINE_BEARER_RE.search(value)
+        or _ENV_ASSIGNMENT_SECRET_RE.search(value)
+        or _KEY_PREFIX_RE.match(value)
+        or _LONG_RANDOM_RE.match(value)
+    )

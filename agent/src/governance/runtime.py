@@ -143,7 +143,43 @@ class GovernedToolRegistry:
                 raise PolicyDenied(decision, shadow=True)
             return self._inner.execute(name, execution_params)
 
-        effective_context = self._build_effective_context()
+        try:
+            effective_context = self._build_effective_context()
+        except Exception as exc:  # noqa: BLE001 - provider failures fail closed before execution
+            audit = build_param_audit(execution_params)
+            action = "deny" if _must_deny_on_policy_exception(manifest, self.context.surface) else "warn"
+            decision = PolicyDecision(
+                tool_name=name,
+                action=action,
+                mode=self.context.mode,
+                reasons=[f"Authoritative governance state provider failed fail-safe: {exc.__class__.__name__}"],
+                rule_id="state_provider_failed",
+                params_hash=audit.params_hash,
+                params_preview=audit.preview,
+            )
+            try:
+                self.decision_recorder.record(decision, manifest=manifest)
+            except Exception as record_exc:  # noqa: BLE001 - audit failure must not open high-risk paths
+                if _must_fail_closed_on_recording_exception(manifest, self.context):
+                    denied = PolicyDecision(
+                        tool_name=name,
+                        action="deny",
+                        mode=self.context.mode,
+                        reasons=[f"Policy decision recording failed fail-safe: {record_exc.__class__.__name__}"],
+                        rule_id="trace_record_failed",
+                        params_hash=audit.params_hash,
+                        params_preview=audit.preview,
+                    )
+                    raise PolicyDenied(denied, shadow=manifest.risk_level in HIGH_RISK_DENY) from record_exc
+                raise
+            if decision.action == "deny":
+                self.decision_recorder.record_denied(
+                    decision,
+                    trace_status="skipped" if manifest.risk_level in HIGH_RISK_DENY else "denied",
+                    shadow=manifest.risk_level in HIGH_RISK_DENY,
+                )
+                raise PolicyDenied(decision, shadow=manifest.risk_level in HIGH_RISK_DENY) from exc
+            effective_context = self.context
         policy_params = _copy_params(execution_params)
         try:
             decision = self.policy.evaluate(name=name, params=policy_params, manifest=manifest, context=effective_context)

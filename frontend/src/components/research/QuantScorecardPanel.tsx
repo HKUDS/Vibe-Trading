@@ -1,6 +1,7 @@
 import { BarChart3 } from "lucide-react";
 
 import type { StructuredIssue } from "./PITWarningsPanel";
+import { redactDisplayText } from "./redaction";
 
 export interface QuantScorecardSummary {
   scorecard_id?: string;
@@ -27,13 +28,13 @@ export function QuantScorecardPanel({ scorecard }: { scorecard?: QuantScorecardS
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <ScoreStat label="Score" value={formatScore(scorecard.score)} />
-            <ScoreStat label="Conclusion Cap" value={scorecard.conclusion_cap || "unknown"} />
+            <ScoreStat label="Conclusion Cap" value={redactDisplayText(scorecard.conclusion_cap || "unknown")} />
           </div>
           {breakdown.length > 0 && (
             <div className="space-y-1">
               {breakdown.map(([key, value]) => (
                 <div key={key} className="grid grid-cols-[minmax(0,1fr)_4rem] items-center gap-3 text-xs">
-                  <span className="font-mono">{key}</span>
+                  <span className="font-mono">{redactDisplayText(key)}</span>
                   <span className="text-right tabular-nums text-muted-foreground">{formatScore(value)}</span>
                 </div>
               ))}

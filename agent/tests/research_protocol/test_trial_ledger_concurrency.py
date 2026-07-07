@@ -4,6 +4,7 @@ import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -76,3 +77,89 @@ def test_sqlite_locked_retries(tmp_path: Path) -> None:
 
     assert event.sequence_number == 1
     assert ledger.verify().valid is True
+
+
+def test_trial_ledger_append_closes_success_connection(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "ledger.sqlite"
+    ledger = TrialLedger(path)
+
+    class _Cursor:
+        def fetchone(self) -> None:
+            return None
+
+    class _SuccessConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.committed = False
+            self.rolled_back = False
+
+        def execute(self, _sql: str, _params: Any = None) -> _Cursor:
+            return _Cursor()
+
+        def commit(self) -> None:
+            self.committed = True
+
+        def rollback(self) -> None:
+            self.rolled_back = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    conn = _SuccessConnection()
+    monkeypatch.setattr(ledger, "_connect", lambda timeout=30.0: conn)
+
+    event = ledger.append(
+        protocol_hash=GOLDEN_PROTOCOL_HASH,
+        event_type=TrialEventType.TRIAL_STARTED,
+        payload={"trial_id": "success-close"},
+    )
+
+    assert event.sequence_number == 1
+    assert conn.committed is True
+    assert conn.rolled_back is False
+    assert conn.closed is True
+
+
+def test_trial_ledger_append_closes_each_locked_retry_on_terminal_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    path = tmp_path / "ledger.sqlite"
+    ledger = TrialLedger(path, write_retry_count=3, write_retry_delay_ms=0)
+
+    class _LockedConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.rolled_back = False
+
+        def execute(self, _sql: str, _params: Any = None) -> None:
+            raise sqlite3.OperationalError("database is locked")
+
+        def rollback(self) -> None:
+            self.rolled_back = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    conns: list[_LockedConnection] = []
+
+    def connect(*, timeout: float = 30.0) -> _LockedConnection:
+        del timeout
+        conn = _LockedConnection()
+        conns.append(conn)
+        return conn
+
+    monkeypatch.setattr(ledger, "_connect", connect)
+    monkeypatch.setattr("src.research_protocol.ledger.time.sleep", lambda _delay: None)
+    monkeypatch.setattr("src.research_protocol.ledger.random.uniform", lambda _low, _high: 0.0)
+
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        ledger.append(
+            protocol_hash=GOLDEN_PROTOCOL_HASH,
+            event_type=TrialEventType.TRIAL_STARTED,
+            payload={"trial_id": "terminal-locked"},
+        )
+
+    assert len(conns) == 3
+    assert all(conn.rolled_back for conn in conns)
+    assert all(conn.closed for conn in conns)

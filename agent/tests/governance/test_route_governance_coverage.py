@@ -5,6 +5,8 @@ import inspect
 import types
 from unittest.mock import patch
 
+import pytest
+
 from src.agent.tools import ToolRegistry
 from src.governance.manifest import ToolSurface
 from src.governance.runtime import GovernedToolRegistry
@@ -28,7 +30,18 @@ def test_swarm_worker_factory_returns_governed_registry() -> None:
     assert registry.context.surface == ToolSurface.SWARM
 
 
-def test_mcp_server_tool_execution_registry_is_governed() -> None:
+@pytest.mark.parametrize(
+    ("surface_name", "expected_surface"),
+    [
+        ("mcp_stdio", ToolSurface.MCP_STDIO),
+        ("mcp_sse", ToolSurface.MCP_SSE),
+        ("mcp_http", ToolSurface.MCP_HTTP),
+    ],
+)
+def test_mcp_server_tool_execution_registry_variants_are_governed(
+    surface_name: str,
+    expected_surface: ToolSurface,
+) -> None:
     mcp_server = importlib.import_module("mcp_server")
     raw = ToolRegistry()
 
@@ -38,7 +51,7 @@ def test_mcp_server_tool_execution_registry_is_governed() -> None:
     try:
         mcp_server._registry = None
         mcp_server._include_shell_tools = False
-        mcp_server._governance_surface = "mcp_sse"
+        mcp_server._governance_surface = surface_name
         with patch("src.tools.build_registry", return_value=raw):
             registry = mcp_server._get_registry()
     finally:
@@ -47,7 +60,7 @@ def test_mcp_server_tool_execution_registry_is_governed() -> None:
         mcp_server._governance_surface = old_surface
 
     assert isinstance(registry, GovernedToolRegistry)
-    assert registry.context.surface == ToolSurface.MCP_SSE
+    assert registry.context.surface == expected_surface
 
 
 def test_session_service_agent_route_wraps_registry_after_build() -> None:

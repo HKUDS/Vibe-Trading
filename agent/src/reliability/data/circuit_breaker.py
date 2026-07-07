@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -65,11 +67,48 @@ class CircuitBreaker:
 
     def record_failure(self, source: str, error: BaseException) -> None:
         """Record a source failure and open if threshold is reached."""
-        snapshot = self.snapshot(source)
-        failures = snapshot.consecutive_failures + 1
-        state = "OPEN" if failures >= self.failure_threshold else snapshot.state
-        opened_at = time.time() if state == "OPEN" else (snapshot.opened_at.timestamp() if snapshot.opened_at else None)
-        self._upsert_state(source, state, failures, type(error).__name__, opened_at)
+        with self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    """
+                    SELECT state, consecutive_failures, opened_at, last_error_class
+                    FROM circuit_state
+                    WHERE source = ?
+                    """,
+                    (source,),
+                ).fetchone()
+                if row is None:
+                    previous_state = "CLOSED"
+                    failures = 1
+                    previous_opened_at = None
+                else:
+                    previous_state = str(row[0])
+                    failures = int(row[1]) + 1
+                    previous_opened_at = row[2]
+
+                state = previous_state
+                opened_at = previous_opened_at
+                if failures >= self.failure_threshold:
+                    state = "OPEN"
+                    opened_at = (
+                        float(previous_opened_at)
+                        if previous_state == "OPEN" and previous_opened_at is not None
+                        else time.time()
+                    )
+
+                self._write_state(
+                    conn,
+                    source,
+                    state,
+                    failures,
+                    type(error).__name__,
+                    opened_at,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
 
     def snapshot(self, source: str) -> CircuitBreakerSnapshot:
         """Return a source state snapshot."""
@@ -114,11 +153,16 @@ class CircuitBreaker:
                 )
                 """
             )
+            conn.commit()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(str(self.path), timeout=30.0)
-        conn.execute("PRAGMA busy_timeout=30000")
-        return conn
+        try:
+            conn.execute("PRAGMA busy_timeout=30000")
+            yield conn
+        finally:
+            conn.close()
 
     def _upsert_state(
         self,
@@ -129,18 +173,34 @@ class CircuitBreaker:
         opened_at: float | None,
     ) -> None:
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO circuit_state (source, state, consecutive_failures, opened_at, last_error_class)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(source) DO UPDATE SET
-                    state = excluded.state,
-                    consecutive_failures = excluded.consecutive_failures,
-                    opened_at = excluded.opened_at,
-                    last_error_class = excluded.last_error_class
-                """,
-                (source, state, failures, opened_at, error_class),
-            )
+            try:
+                self._write_state(conn, source, state, failures, error_class, opened_at)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+    @staticmethod
+    def _write_state(
+        conn: sqlite3.Connection,
+        source: str,
+        state: str,
+        failures: int,
+        error_class: str | None,
+        opened_at: float | None,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO circuit_state (source, state, consecutive_failures, opened_at, last_error_class)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(source) DO UPDATE SET
+                state = excluded.state,
+                consecutive_failures = excluded.consecutive_failures,
+                opened_at = excluded.opened_at,
+                last_error_class = excluded.last_error_class
+            """,
+            (source, state, failures, opened_at, error_class),
+        )
 
 
 def _from_epoch(value: float | None) -> datetime | None:

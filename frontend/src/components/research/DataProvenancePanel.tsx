@@ -1,5 +1,7 @@
 import { Database } from "lucide-react";
 
+import { redactDisplayText } from "./redaction";
+
 export interface DataSourceSummary {
   audit_id?: string;
   source?: string;
@@ -32,10 +34,10 @@ export function DataProvenancePanel({ dataSources = [] }: { dataSources?: DataSo
             <tbody>
               {dataSources.map((source, index) => (
                 <tr key={source.audit_id || index} className="border-b last:border-0">
-                  <td className="py-2 pr-4 font-mono text-xs">{source.source || "unknown"}</td>
-                  <td className="py-2 pr-4 font-mono text-xs">{source.selected_source || "unknown"}</td>
+                  <td className="py-2 pr-4 font-mono text-xs">{redactDisplayText(source.source || "unknown")}</td>
+                  <td className="py-2 pr-4 font-mono text-xs">{redactDisplayText(source.selected_source || "unknown")}</td>
                   <td className="py-2 pr-4 text-xs text-muted-foreground">
-                    {(source.fallback_chain || []).join(" -> ") || "None recorded"}
+                    {(source.fallback_chain || []).map(redactDisplayText).join(" -> ") || "None recorded"}
                   </td>
                   <td className="py-2 text-right tabular-nums">{source.row_count ?? "-"}</td>
                 </tr>

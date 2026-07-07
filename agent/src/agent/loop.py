@@ -447,7 +447,7 @@ def _policy_denied_payload(result: str) -> dict[str, Any] | None:
     """Return a parsed policy-denied payload if a tool result carries one."""
     try:
         data = json.loads(result)
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError, ValueError):
         return None
     if isinstance(data, dict) and data.get("error_code") == "policy_denied":
         return data

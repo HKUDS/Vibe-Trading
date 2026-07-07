@@ -1,5 +1,7 @@
 import { AlertTriangle } from "lucide-react";
 
+import { redactDisplayText } from "./redaction";
+
 export interface StructuredIssue {
   code: string;
   severity?: string;
@@ -29,8 +31,8 @@ export function PITWarningsPanel({
         <ul className="space-y-2 text-sm">
           {items.map((item) => (
             <li key={`${item.severity || "warning"}-${item.code}`} className="rounded-md border border-amber-500/25 bg-amber-500/5 p-2">
-              <div className="font-mono text-xs font-medium">{item.code}</div>
-              {item.message && <div className="mt-1 text-xs text-muted-foreground">{item.message}</div>}
+              <div className="font-mono text-xs font-medium">{redactDisplayText(item.code)}</div>
+              {item.message && <div className="mt-1 text-xs text-muted-foreground">{redactDisplayText(item.message)}</div>}
             </li>
           ))}
         </ul>
