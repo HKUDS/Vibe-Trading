@@ -1,0 +1,62 @@
+schema_version: "1.2.1"
+policy_rule_version: "builtin-v1.2.1"
+rules:
+  - rule_id: pit_violation_hard_fail
+    predicate_name: pit_violation_hard_fail
+    action: hard_fail
+    reason_code: PIT_VIOLATION
+    explanation_template: "Point-in-time safety failed: {fact}."
+  - rule_id: tradable_claim_without_cost_model
+    predicate_name: tradable_claim_without_cost_model
+    action: hard_fail
+    reason_code: TRADABLE_WITHOUT_COST_MODEL
+    explanation_template: "{claim_count} tradable claim(s) require a cost model; {fact}."
+  - rule_id: alpha_claim_without_benchmark
+    predicate_name: alpha_claim_without_benchmark
+    action: hard_fail
+    reason_code: ALPHA_WITHOUT_BENCHMARK
+    explanation_template: "{claim_count} alpha claim(s) require a benchmark; {fact}."
+  - rule_id: generalization_claim_without_oos
+    predicate_name: generalization_claim_without_oos
+    action: cap_conclusion
+    conclusion_cap: research_candidate
+    reason_code: GENERALIZATION_WITHOUT_OOS
+    explanation_template: "{claim_count} generalization claim(s) require OOS evidence; {fact}."
+  - rule_id: paper_gate_without_all_requirements
+    predicate_name: paper_gate_without_all_requirements
+    action: hard_fail
+    reason_code: PAPER_GATE_INCOMPLETE
+    explanation_template: "Paper-trade candidate gate is incomplete: {missing}."
+  - rule_id: best_trial_without_trial_count
+    predicate_name: best_trial_without_trial_count
+    action: hard_fail
+    reason_code: BEST_TRIAL_WITHOUT_TRIAL_COUNT
+    explanation_template: "Strong result claim lacks trial disclosure: {fact}."
+  - rule_id: policy_deny_ignored
+    predicate_name: policy_deny_ignored
+    action: hard_fail
+    reason_code: POLICY_DENY_IGNORED
+    explanation_template: "Policy deny IDs are not represented in scorecard refs: {policy_deny_ids}."
+  - rule_id: scorecard_override_attempt
+    predicate_name: scorecard_override_attempt
+    action: hard_fail
+    reason_code: SCORECARD_OVERRIDE_ATTEMPT
+    explanation_template: "External text attempted to override scorecard conclusion for {run_id}."
+  - rule_id: ashare_market_rules_incomplete
+    predicate_name: ashare_market_rules_incomplete
+    action: cap_conclusion
+    conclusion_cap: research_candidate
+    reason_code: ASHARE_MARKET_RULES_INCOMPLETE
+    explanation_template: "{market} tradable claim lacks market rule coverage."
+  - rule_id: high_crowding_without_stress_test
+    predicate_name: high_crowding_without_stress_test
+    action: cap_conclusion
+    conclusion_cap: research_candidate
+    reason_code: HIGH_CROWDING_WITHOUT_STRESS_TEST
+    explanation_template: "High crowding score {crowding} lacks stress testing."
+  - rule_id: negative_regime_ic_no_activation
+    predicate_name: negative_regime_ic_no_activation
+    action: cap_conclusion
+    conclusion_cap: research_candidate
+    reason_code: NEGATIVE_REGIME_IC_NO_ACTIVATION
+    explanation_template: "Frequent-regime IC {frequent_regime_ic} lacks conditional activation."
