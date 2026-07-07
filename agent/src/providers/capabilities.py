@@ -110,6 +110,8 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
     "ollama": ProviderCapabilities("ollama", None, "OLLAMA_BASE_URL"),
     "openai-codex": _OPENAI_CODEX_CAPABILITIES,
     "openai_codex": _OPENAI_CODEX_CAPABILITIES,
+    "opencode-zen": ProviderCapabilities("opencode-zen", "OPENAI_API_KEY", "OPENAI_BASE_URL"),
+    "opencode-go": ProviderCapabilities("opencode-go", "OPENAI_API_KEY", "OPENAI_BASE_URL"),
 }
 
 
