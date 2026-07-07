@@ -1,7 +1,7 @@
 ---
 name: vibe-trading
 version: 0.1.11
-description: Professional finance research toolkit — backtesting (8 engines + benchmark comparison panel), factor analysis, Alpha Zoo (461 pre-built alphas across qlib158/alpha101/gtja191/academic/fundamental), options pricing, 87 finance skills, 30 multi-agent swarm teams, Trade Journal analyzer, and Shadow Account (extract → backtest → render) across 21 market-data sources (tushare, yfinance, okx, akshare, baostock, tencent, mootdx, ccxt, futu, local, eastmoney, sina, stooq, yahoo, india_broker, qveris, longbridge, plus optional-key finnhub/alphavantage/tiingo/fmp).
+description: Professional finance research toolkit — backtesting (8 engines + benchmark comparison panel), factor analysis, Alpha Zoo (461 pre-built alphas across qlib158/alpha101/gtja191/academic/fundamental), options pricing, 88 finance skills, 30 multi-agent swarm teams, Trade Journal analyzer, and Shadow Account (extract → backtest → render) across 21 market-data sources (tushare, yfinance, okx, akshare, baostock, tencent, mootdx, ccxt, futu, local, eastmoney, sina, stooq, yahoo, fxmacrodata, india_broker, qveris, longbridge, plus optional-key finnhub/alphavantage/tiingo/fmp).
 dependencies:
   python: ">=3.11"
   pip:
@@ -9,6 +9,9 @@ dependencies:
 env:
   - name: TUSHARE_TOKEN
     description: "Tushare API token for China A-share data (optional — HK/US/crypto work without any key)"
+    required: false
+  - name: FXMD_API_KEY
+    description: "FXMacroData API key for optional official-source FX, macro, release-calendar, COT, commodities, rates, curves, and central-bank news data"
     required: false
   - name: OPENAI_API_KEY
     description: "OpenAI-compatible API key — only needed for run_swarm (multi-agent teams). All other tools work without it."
@@ -23,7 +26,7 @@ mcp:
 
 # Vibe-Trading
 
-Professional finance research toolkit with AI-powered backtesting (8 engines), multi-agent teams, 87 specialized skills, the **Alpha Zoo** (461 pre-built quantitative alphas across qlib158 / alpha101 / gtja191 / academic / fundamental with one-line CLI benchmarking), and the Shadow Account loop — extract your implicit trading rules from a journal, backtest them across A股/港股/美股/crypto, then see where they would have served you better.
+Professional finance research toolkit with AI-powered backtesting (8 engines), multi-agent teams, 88 specialized skills, the **Alpha Zoo** (461 pre-built quantitative alphas across qlib158 / alpha101 / gtja191 / academic / fundamental with one-line CLI benchmarking), and the Shadow Account loop — extract your implicit trading rules from a journal, backtest them across A股/港股/美股/crypto, then see where they would have served you better.
 
 ## Setup
 
@@ -53,12 +56,13 @@ Add to your agent's MCP config:
 
 ### API Key Requirements
 
-Core research MCP tools work with zero API keys for HK/US/crypto. After `pip install`, backtesting, market data, factor analysis, options pricing, chart patterns, web search, document reading, trade journal analysis, shadow-account extraction/backtest/report, the Alpha Zoo (461 pre-built alphas), and all 87 skills are ready to use. IBKR tools require a local TWS / IB Gateway session; `run_swarm` requires an LLM key.
+Core research MCP tools work with zero API keys for HK/US/crypto. After `pip install`, backtesting, market data, factor analysis, options pricing, chart patterns, web search, document reading, trade journal analysis, shadow-account extraction/backtest/report, the Alpha Zoo (461 pre-built alphas), and all 88 skills are ready to use. IBKR tools require a local TWS / IB Gateway session; `run_swarm` requires an LLM key.
 
 | Feature | Key needed | When |
 |---------|-----------|------|
 | HK/US equities & crypto | None | Always free (yfinance / stooq / yahoo + OKX) |
 | China A-share data | None | Free via akshare / baostock / tencent / sina / eastmoney / mootdx fallback (`TUSHARE_TOKEN` optional for premium quality) |
+| FXMacroData official FX/macro data | `FXMD_API_KEY` for protected data | Optional-key official-source FX spot, macro indicators, release calendar, COT, commodities, rates, curves, sessions, risk sentiment, and central-bank news |
 | Premium US fundamentals/quotes | `FINNHUB_API_KEY` / `ALPHAVANTAGE_API_KEY` / `TIINGO_API_KEY` / `FMP_API_KEY` | Only for optional-key providers (graceful fallback to free sources) |
 | Multi-agent swarm (`run_swarm`) | `OPENAI_API_KEY` + `LANGCHAIN_MODEL_NAME` | Swarm spawns internal LLM workers |
 
@@ -80,6 +84,7 @@ Create and run quantitative strategies across 8 engines (ChinaA, GlobalEquity, I
 - **Cryptocurrency** via OKX or CCXT/100+ exchanges (free, no API key)
 - **China A-shares** via AKShare / baostock / tencent / sina / eastmoney / mootdx (free, no API key) — `TUSHARE_TOKEN` optional for premium quality
 - **Futures, forex, macro** via AKShare (free, no API key)
+- **Optional official-source FX and macro** via FXMacroData (`FXMD_API_KEY` for protected data; examples: `EUR/USD`, `EURUSD.FX`, `fxmd:indicator:USD:inflation`)
 - **HK & A-share equities** via Futu (broker login required, optional)
 - **Local CSV/parquet bars** via the `local` loader (offline, no network)
 - **Premium cross-market data** via QVeris (optional API key)
@@ -116,7 +121,7 @@ One-line cross-sectional IC / IR / alive-reversed-dead categorisation across fiv
 
 Each alpha ships with `__alpha_meta__` (formula LaTeX + theme + universe + warmup + columns required), guarded by an AST purity gate + 300-row lookahead sentinel test. Use the `vibe-trading alpha {list,show,bench,compare,export-manifest}` CLI, the `/alpha/*` REST routes (browser at `/alpha-zoo`), or compose multi-factor signals via `ZooSignalEngine.from_zoo(...)`.
 
-### Finance Skills (87)
+### Finance Skills (88)
 Comprehensive knowledge base covering:
 - Technical analysis (candlestick, Elliott wave, Ichimoku, SMC, harmonic, chanlun)
 - Quantitative methods (factor research, ML strategy, pair trading, multi-factor)
@@ -129,11 +134,11 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (54)
+## Available MCP Tools (65)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
-| `list_skills` | List all 87 finance skills | None |
+| `list_skills` | List all 88 finance skills | None |
 | `load_skill` | Load full skill documentation | None |
 | `start_research_goal` | Create an auditable research goal | None |
 | `get_research_goal` | Read the current research goal | None |
@@ -161,6 +166,17 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `screen_market` | Market screener with fundamental/technical filters | None* |
 | `search_symbol` | Symbol / ticker search across markets | None |
 | `get_macro_series` | FRED macroeconomic series | FRED_API_KEY |
+| `get_fxmacrodata_catalogue` | FXMacroData macro indicator catalogue and coverage | FXMD_API_KEY for protected data |
+| `get_fxmacrodata_indicator` | FXMacroData official-source macro indicator series | FXMD_API_KEY for protected data |
+| `get_fxmacrodata_release_calendar` | FXMacroData economic release-calendar rows | FXMD_API_KEY for protected data |
+| `get_fxmacrodata_predictions` | FXMacroData forecasts, nowcasts, surveys, and consensus rows | FXMD_API_KEY for protected data |
+| `get_fxmacrodata_cot` | FXMacroData CFTC COT positioning | FXMD_API_KEY for protected data |
+| `get_fxmacrodata_commodities` | FXMacroData commodity latest values and history | FXMD_API_KEY for protected data |
+| `get_fxmacrodata_rate_differentials` | FXMacroData FX pair rate and forward-rate differentials | FXMD_API_KEY for protected data |
+| `get_fxmacrodata_curves` | FXMacroData curves, curve proxies, and forward curves | FXMD_API_KEY for protected data |
+| `get_fxmacrodata_news` | FXMacroData central-bank news and press releases | FXMD_API_KEY for protected data |
+| `get_fxmacrodata_market_sessions` | FXMacroData FX market-session state | FXMD_API_KEY for protected data |
+| `get_fxmacrodata_risk_sentiment` | FXMacroData risk-on / risk-off readings | FXMD_API_KEY for protected data |
 | `iwencai_search` | A-share natural-language research search | IWENCAI_KEY |
 | `web_search` | Search the web via DuckDuckGo | None |
 | `read_url` | Fetch web page as Markdown | None |
@@ -196,7 +212,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 pip install vibe-trading-ai
 ```
 
-That's it — no API keys needed for HK/US/crypto markets. Start using `backtest`, `get_market_data`, `analyze_options`, `analyze_trade_journal`, `extract_shadow_strategy`, `web_search`, the **Alpha Zoo** (`vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025`), and all 87 skills immediately.
+That's it — no API keys needed for HK/US/crypto markets. Start using `backtest`, `get_market_data`, `analyze_options`, `analyze_trade_journal`, `extract_shadow_strategy`, `web_search`, the **Alpha Zoo** (`vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025`), and all 88 skills immediately.
 
 ## Loading Tools from External MCP Servers
 

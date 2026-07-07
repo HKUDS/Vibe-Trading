@@ -50,7 +50,7 @@ def test_swarm_registry_can_expose_local_get_market_data_tool():
 
 def test_every_market_data_worker_has_get_market_data_tool():
     """Workers with OHLCV-capable skills must expose the loader-backed tool (#198)."""
-    market_data_skills = {"tushare", "yfinance", "okx-market"}
+    market_data_skills = {"tushare", "yfinance", "okx-market", "fxmacrodata"}
     missing = []
     for summary in list_presets():
         preset = load_preset(summary["name"])

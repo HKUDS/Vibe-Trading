@@ -40,13 +40,24 @@ INIT_TIMEOUT = 30.0
 # safe lower bound that still flags the deadlock quickly.
 CALL_TIMEOUT = 15.0
 
-# Tools we rely on as a baseline. The repo currently ships 35 tools; we
-# assert ``>= 30`` so unrelated tool additions / removals don't break the
+# Tools we rely on as a baseline. The repo currently ships 65 tools; we
+# assert ``>= 60`` so unrelated tool additions / removals don't break the
 # test, but a regression that drops half the catalogue still fires.
-EXPECTED_MIN_TOOL_COUNT = 30
+EXPECTED_MIN_TOOL_COUNT = 60
 REQUIRED_TOOL_NAMES = {
     "analyze_options",
     "get_market_data",
+    "get_fxmacrodata_catalogue",
+    "get_fxmacrodata_indicator",
+    "get_fxmacrodata_release_calendar",
+    "get_fxmacrodata_predictions",
+    "get_fxmacrodata_cot",
+    "get_fxmacrodata_commodities",
+    "get_fxmacrodata_rate_differentials",
+    "get_fxmacrodata_curves",
+    "get_fxmacrodata_news",
+    "get_fxmacrodata_market_sessions",
+    "get_fxmacrodata_risk_sentiment",
     "list_skills",
     "start_research_goal",
     "get_research_goal",

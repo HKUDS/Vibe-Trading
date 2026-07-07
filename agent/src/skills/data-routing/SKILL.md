@@ -37,6 +37,7 @@ per-source skill.
 | alphavantage | US equities | Yes (`ALPHAVANTAGE_API_KEY`) | Unrestricted | data-routing |
 | tiingo | US equities | Yes (`TIINGO_API_KEY`) | Unrestricted | data-routing |
 | fmp | US equities | Yes (`FMP_API_KEY`) | Unrestricted | data-routing |
+| fxmacrodata | FX spot, macro indicators, commodities, COT, rates, curves | Yes (`FXMD_API_KEY` for protected data) | Unrestricted | fxmacrodata |
 | qveris | Global multi-asset (paid, credits) | Yes (`QVERIS_API_KEY` / Settings) | QVeris API | qveris <!-- QVERIS-INTEGRATION --> |
 
 ## Capability → Tool Routing
@@ -64,6 +65,17 @@ is required only where listed (no key listed = free / no auth).
 | Market screen | `screen_market` | A-share | — |
 | Symbol search | `search_symbol` | A-share, US | — |
 | Macro / FRED series | `get_macro_series` | Macro (US/global) | `FRED_API_KEY` |
+| FXMacroData catalogue | `get_fxmacrodata_catalogue` | Official-source macro coverage metadata | `FXMD_API_KEY` for protected data |
+| FXMacroData macro indicator | `get_fxmacrodata_indicator` | Official-source macro series | `FXMD_API_KEY` for protected data |
+| FXMacroData release calendar | `get_fxmacrodata_release_calendar` | Economic announcements | `FXMD_API_KEY` for protected data |
+| FXMacroData predictions | `get_fxmacrodata_predictions` | Forecasts, nowcasts, consensus | `FXMD_API_KEY` for protected data |
+| FXMacroData COT | `get_fxmacrodata_cot` | CFTC positioning | `FXMD_API_KEY` for protected data |
+| FXMacroData commodities | `get_fxmacrodata_commodities` | Commodities | `FXMD_API_KEY` for protected data |
+| FXMacroData rates | `get_fxmacrodata_rate_differentials` | FX pair rate / forward differentials | `FXMD_API_KEY` for protected data |
+| FXMacroData curves | `get_fxmacrodata_curves` | Yield / forward curve datasets | `FXMD_API_KEY` for protected data |
+| FXMacroData central-bank news | `get_fxmacrodata_news` | Central-bank news / press releases | `FXMD_API_KEY` for protected data |
+| FX market sessions | `get_fxmacrodata_market_sessions` | Global FX trading sessions | `FXMD_API_KEY` for protected data |
+| Risk sentiment | `get_fxmacrodata_risk_sentiment` | Risk-on / risk-off series | `FXMD_API_KEY` for protected data |
 | iWenCai NL search (问财) | `iwencai_search` | A-share | `VIBE_TRADING_IWENCAI_KEY` |
 
 Notes:
@@ -97,7 +109,9 @@ same-market sources automatically. Only set a concrete source when the user asks
   sina / eastmoney (throttled) > yfinance.
 - **HK stocks**: tencent > eastmoney / yahoo > yfinance.
 - **Crypto**: okx (single exchange) > ccxt (multi-exchange).
-- **Futures / macro / forex**: tushare > akshare.
+- **Futures / fund**: tushare > akshare > local.
+- **Macro**: akshare > tushare > local > fxmacrodata (`FXMD_API_KEY` for protected data).
+- **Forex**: akshare > yfinance > local > fxmacrodata (`FXMD_API_KEY` for protected data).
 
 ## Symbol Format Reference
 
@@ -109,6 +123,8 @@ same-market sources automatically. Only set a concrete source when the user asks
 | Crypto | `SYMBOL-USDT` | BTC-USDT, ETH-USDT |
 | Futures | `XXNNNN.EXCHANGE` | CU2406.SHFE |
 | Forex | `XXX/YYY` | USD/CNY, EUR/USD |
+| FXMacroData macro | `fxmd:indicator:CCC:indicator_slug` | fxmd:indicator:USD:inflation, fxmd:indicator:EUR:policy_rate |
+| FXMacroData commodities / COT / risk | `fxmd:commodity:slug`, `fxmd:cot:CCC`, `fxmd:risk_sentiment` | fxmd:commodity:gold, fxmd:cot:JPY, fxmd:risk_sentiment |
 
 ## Ban-Risk & Fallback Notes
 
@@ -120,8 +136,10 @@ same-market sources automatically. Only set a concrete source when the user asks
 - **Sina / Yahoo also throttle by IP** — same per-host wrapper, same fallback rule.
 - **Key-gated sources need their env key** (`FINNHUB_API_KEY`,
   `ALPHAVANTAGE_API_KEY`, `TIINGO_API_KEY`, `FMP_API_KEY`, `FRED_API_KEY`,
-  `VIBE_TRADING_IWENCAI_KEY`, `TUSHARE_TOKEN`). If the key is absent the tool/loader
+  `FXMD_API_KEY`, `VIBE_TRADING_IWENCAI_KEY`, `TUSHARE_TOKEN`). If the key is absent the tool/loader
   is unavailable — route to a free same-market source instead of erroring out.
+- **FXMacroData coverage is API-defined.** Use `get_fxmacrodata_catalogue`
+  before assuming a currency / indicator / dataset is supported.
 - A single failing symbol or transient HTTP error is reported inside the envelope;
   it never aborts the surrounding batch.
 

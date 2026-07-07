@@ -26,6 +26,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
                 "MAX_RETRIES=3",
                 "LANGCHAIN_REASONING_EFFORT=max",
                 "TUSHARE_TOKEN=your-tushare-token",
+                "FXMD_API_KEY=your-fxmacrodata-api-key",
             ]
         )
         + "\n",
@@ -221,6 +222,8 @@ def test_get_data_source_settings_treats_placeholder_as_unconfigured(
     body = response.json()
     assert body["tushare_token_configured"] is False
     assert body["tushare_token_hint"] is None
+    assert body["fxmacrodata_api_key_configured"] is False
+    assert body["fxmacrodata_api_key_hint"] is None
     assert body["baostock_supported"] is False
     assert body["baostock_installed"] is False
     assert not Path(body["env_path"]).is_absolute()
@@ -237,6 +240,7 @@ def test_settings_response_never_exposes_configured_secret_hints(
                 "LANGCHAIN_PROVIDER=openrouter",
                 "OPENROUTER_API_KEY=or-secret-private-value",
                 "TUSHARE_TOKEN=ts-secret-private-token",
+                "FXMD_API_KEY=fxmd-secret-private-key",
             ]
         )
         + "\n",
@@ -254,10 +258,14 @@ def test_settings_response_never_exposes_configured_secret_hints(
     assert llm_body["api_key_hint"] is None
     assert data_body["tushare_token_configured"] is True
     assert data_body["tushare_token_hint"] is None
+    assert data_body["fxmacrodata_api_key_configured"] is True
+    assert data_body["fxmacrodata_api_key_hint"] is None
     assert "or-secret-private-value" not in llm_response.text
     assert "or-s...alue" not in llm_response.text
     assert "ts-secret-private-token" not in data_response.text
     assert "ts-s...oken" not in data_response.text
+    assert "fxmd-secret-private-key" not in data_response.text
+    assert "fxm...key" not in data_response.text
 
 
 def test_settings_reads_reject_remote_dev_mode_clients(
@@ -271,6 +279,7 @@ def test_settings_reads_reject_remote_dev_mode_clients(
                 "LANGCHAIN_PROVIDER=openrouter",
                 "OPENROUTER_API_KEY=or-secret-value",
                 "TUSHARE_TOKEN=ts-secret-token",
+                "FXMD_API_KEY=fxmd-secret-key",
             ]
         )
         + "\n",
@@ -289,6 +298,7 @@ def test_settings_reads_reject_remote_dev_mode_clients(
     assert data_source_response.status_code == 403
     assert "or-s...alue" not in llm_response.text
     assert "ts-s...oken" not in data_source_response.text
+    assert "fxm...key" not in data_source_response.text
 
 
 def test_settings_reads_allow_loopback_without_bearer_even_when_api_auth_key_configured(
@@ -331,18 +341,26 @@ def test_update_data_source_settings_persists_tushare_token(
 ) -> None:
     response = client.put(
         "/settings/data-sources",
-        json={"tushare_token": "ts-secret-token"},
+        json={
+            "tushare_token": "ts-secret-token",
+            "fxmacrodata_api_key": "fxmd-secret-key",
+        },
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["tushare_token_configured"] is True
     assert body["tushare_token_hint"] is None
+    assert body["fxmacrodata_api_key_configured"] is True
+    assert body["fxmacrodata_api_key_hint"] is None
     assert "ts-secret-token" not in response.text
     assert "ts-s...oken" not in response.text
+    assert "fxmd-secret-key" not in response.text
+    assert "fxm...key" not in response.text
 
     env_text = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "TUSHARE_TOKEN=ts-secret-token" in env_text
+    assert "FXMD_API_KEY=fxmd-secret-key" in env_text
 
 
 def test_settings_writes_reject_remote_dev_mode_clients(

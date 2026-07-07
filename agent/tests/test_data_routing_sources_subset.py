@@ -73,7 +73,7 @@ def test_skill_sources_are_subset_of_valid_sources() -> None:
 
 
 def test_new_sources_are_documented() -> None:
-    """The eight newly registered sources must each appear in the Source Overview."""
+    """Newly registered sources must each appear in the Source Overview."""
     named = _source_names_in_skill()
     new_sources = {
         "eastmoney",
@@ -84,6 +84,7 @@ def test_new_sources_are_documented() -> None:
         "alphavantage",
         "tiingo",
         "fmp",
+        "fxmacrodata",
     }
     missing = new_sources - named
     assert not missing, f"data-routing SKILL.md missing new source rows: {sorted(missing)}"

@@ -21,8 +21,10 @@ from src.config import (
     sanitize_session_overrides,
 )
 from src.config.schema import (
+    FXMACRODATA_MCP_SERVER_SEED,
     ROBINHOOD_AGENT_CONFIG_PATH,
     ROBINHOOD_MCP_SERVER_SEED,
+    format_fxmacrodata_mcp_server_seed_json,
     format_robinhood_mcp_server_seed_json,
 )
 
@@ -58,6 +60,10 @@ def _fake_mcp_factory(tool_names: tuple[str, ...]):
 
 def _robinhood_seed_config() -> dict[str, object]:
     return json.loads(format_robinhood_mcp_server_seed_json())
+
+
+def _fxmacrodata_seed_config() -> dict[str, object]:
+    return json.loads(format_fxmacrodata_mcp_server_seed_json())
 
 
 def test_load_agent_config_returns_defaults_when_file_missing(tmp_path: Path) -> None:
@@ -372,6 +378,32 @@ def test_robinhood_safe_seed_loads_and_discovers_enabled_tools_without_warnings(
     with caplog.at_level(logging.WARNING, logger="src.tools.mcp"):
         tools = mcp.build_mcp_tool_wrappers(
             "robinhood",
+            server,
+            client_factory=_fake_mcp_factory(seed_tools),
+        )
+
+    assert [tool._spec.remote_name for tool in tools] == list(seed_tools)
+    assert "produced 0 enabled tools" not in caplog.text
+
+
+def test_fxmacrodata_seed_loads_and_discovers_enabled_tools_without_secrets(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mcp = pytest.importorskip("src.tools.mcp")
+    seed = _fxmacrodata_seed_config()
+    config = AgentConfig.model_validate(seed)
+    server = config.mcp_servers["fxmacrodata"]
+    seed_tools = tuple(FXMACRODATA_MCP_SERVER_SEED["enabled_tools"])
+
+    assert server.url == "https://fxmacrodata.com/mcp"
+    assert server.headers == {}
+    assert "api_key" not in server.url.lower()
+    assert "FXMD_API_KEY" not in json.dumps(seed)
+    assert "*" not in server.enabled_tools
+
+    with caplog.at_level(logging.WARNING, logger="src.tools.mcp"):
+        tools = mcp.build_mcp_tool_wrappers(
+            "fxmacrodata",
             server,
             client_factory=_fake_mcp_factory(seed_tools),
         )

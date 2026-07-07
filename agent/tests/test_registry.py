@@ -171,13 +171,13 @@ class TestFallbackChains:
         """'baostock' must remain a reachable A-share fallback."""
         assert "baostock" in FALLBACK_CHAINS["a_share"]
 
-    def test_unchanged_chains_preserved(self) -> None:
-        """crypto/futures/fund/macro/forex chains must be left untouched."""
+    def test_macro_forex_key_gated_sources_trail_free_sources(self) -> None:
+        """Macro and forex chains keep key-gated REST sources at the tail."""
         assert FALLBACK_CHAINS["crypto"] == ["okx", "ccxt", "yfinance", "local"]
         assert FALLBACK_CHAINS["futures"] == ["tushare", "akshare", "local"]
         assert FALLBACK_CHAINS["fund"] == ["tushare", "akshare", "local"]
-        assert FALLBACK_CHAINS["macro"] == ["akshare", "tushare", "local"]
-        assert FALLBACK_CHAINS["forex"] == ["akshare", "yfinance", "local"]
+        assert FALLBACK_CHAINS["macro"] == ["akshare", "tushare", "local", "fxmacrodata"]
+        assert FALLBACK_CHAINS["forex"] == ["akshare", "yfinance", "local", "fxmacrodata"]
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +191,7 @@ class TestValidSources:
         new_sources = {
             "eastmoney", "sina", "stooq", "yahoo",
             "finnhub", "alphavantage", "tiingo", "fmp",
+            "fxmacrodata",
         }
         assert new_sources <= VALID_SOURCES
 

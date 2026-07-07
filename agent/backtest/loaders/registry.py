@@ -50,6 +50,7 @@ VALID_SOURCES: set[str] = {
     "fmp",
     "qveris",  # QVERIS-INTEGRATION
     "india_broker",
+    "fxmacrodata",
     "longbridge",
     "local",
     "auto",
@@ -97,6 +98,7 @@ def _ensure_registered() -> None:
         "backtest.loaders.fmp_loader",
         "backtest.loaders.qveris_loader",  # QVERIS-INTEGRATION
         "backtest.loaders.india_broker_loader",
+        "backtest.loaders.fxmacrodata_loader",
         "backtest.loaders.longbridge",
         "backtest.loaders.local_loader",
     ]
@@ -135,8 +137,8 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
     "crypto":    ["okx", "ccxt", "yfinance", "local"],
     "futures":   ["tushare", "akshare", "local"],
     "fund":      ["tushare", "akshare", "local"],
-    "macro":     ["akshare", "tushare", "local"],
-    "forex":     ["akshare", "yfinance", "local"],
+    "macro":     ["akshare", "tushare", "local", "fxmacrodata"],
+    "forex":     ["akshare", "yfinance", "local", "fxmacrodata"],
 }
 
 

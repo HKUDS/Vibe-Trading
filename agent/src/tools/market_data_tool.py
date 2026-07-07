@@ -53,13 +53,16 @@ class MarketDataTool(BaseTool):
                     "alphavantage",
                     "tiingo",
                     "fmp",
+                    "fxmacrodata",
                 ],
                 "description": (
                     "Data source. 'auto' detects from symbol format with fallback. "
                     "Free, no key: yfinance/yahoo (US/HK equities), okx/ccxt "
                     "(crypto), baostock/tencent/eastmoney/sina/akshare/mootdx "
                     "(China A-shares), stooq (global EOD). Key-gated REST: tushare "
-                    "(China A-shares), finnhub/alphavantage/tiingo/fmp (US/global)."
+                    "(China A-shares), finnhub/alphavantage/tiingo/fmp (US/global), "
+                    "fxmacrodata (official-source FX, macro, commodities, COT, "
+                    "rate differentials via FXMD_API_KEY)."
                 ),
                 "default": "auto",
             },

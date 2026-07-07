@@ -6,13 +6,14 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 54 tools: skills, research goals, backtest/factor/options/pattern
+Surfaces 65 tools: skills, research goals, backtest/factor/options/pattern
 analysis, market data, fundamentals & capital-flow & news & discovery
 (get_fund_flow / get_dragon_tiger / get_northbound_flow / get_margin_trading /
 get_block_trades / get_shareholder_count / get_lockup_expiry / get_sector_info /
 get_research_reports / get_stock_news / get_sec_filings /
 get_financial_statements / get_options_chain / get_stock_profile /
-screen_market / search_symbol / get_macro_series / iwencai_search), read-only
+screen_market / search_symbol / get_macro_series / iwencai_search /
+get_fxmacrodata_*), read-only
 trading-connector reads, swarm orchestration, trade-journal and shadow-account
 analysis. Every exposed tool is read-only or research-only; no order-placing or
 order-cancelling tool is ever surfaced via MCP.
@@ -447,6 +448,7 @@ def backtest(run_dir: str) -> str:
     - "tushare": China A-shares (requires TUSHARE_TOKEN env var)
     - "akshare": A-shares, US, HK, futures, forex (free, no API key)
     - "ccxt": crypto from 100+ exchanges (free, no API key)
+    - "fxmacrodata": official-source FX and macro series (requires FXMD_API_KEY for protected data)
     - "auto": auto-detect based on symbol format (with fallback)
 
     Returns metrics (Sharpe, return, drawdown, etc.) and artifact paths.
@@ -1061,13 +1063,14 @@ def get_market_data(
     - "tencent": China A-shares via Tencent Finance API (e.g. 000001.SZ, 601595.SH)
     - "akshare": A-shares, US, HK, futures, forex (free, e.g. 000001.SZ, AAPL.US)
     - "ccxt": crypto from 100+ exchanges (free, e.g. BTC/USDT)
+    - "fxmacrodata": official-source FX and macro series (e.g. EUR/USD, EURUSD.FX, fxmd:indicator:USD:inflation)
     - "auto": auto-detect based on symbol format (with fallback)
 
     Args:
-        codes: List of symbols (e.g. ["AAPL.US", "BTC-USDT", "000001.SZ"]).
+        codes: List of symbols (e.g. ["AAPL.US", "BTC-USDT", "000001.SZ", "EUR/USD"]).
         start_date: Start date (YYYY-MM-DD).
         end_date: End date (YYYY-MM-DD).
-        source: Data source ("auto", "yfinance", "okx", "tushare", "baostock", "tencent", "akshare", "ccxt").
+        source: Data source ("auto", "yfinance", "okx", "tushare", "baostock", "tencent", "akshare", "ccxt", "fxmacrodata").
         interval: Bar size (1m/5m/15m/30m/1H/4H/1D, default "1D").
         max_rows: Per-symbol row cap (default 250) so the response stays
             within the MCP token budget. A symbol exceeding it returns an
@@ -1487,6 +1490,300 @@ def get_macro_series(
     if end_date:
         params["end_date"] = end_date
     return _execute_key_gated("get_macro_series", params)
+
+
+@mcp.tool
+def get_fxmacrodata_catalogue(currency: str, include_coverage: bool = True) -> str:
+    """Fetch FXMacroData macro indicator catalogue and coverage for a currency.
+
+    Args:
+        currency: Three-letter currency code.
+        include_coverage: Include per-indicator coverage metadata.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "get_fxmacrodata_catalogue",
+        {"currency": currency, "include_coverage": include_coverage},
+    )
+
+
+@mcp.tool
+def get_fxmacrodata_indicator(
+    currency: str,
+    indicator: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 20,
+    seasonality: str | None = None,
+    frequency: str | None = None,
+    revisions: str | None = None,
+    basis: str | None = None,
+) -> str:
+    """Fetch one FXMacroData official-source macro indicator series.
+
+    Args:
+        currency: Three-letter currency code.
+        indicator: Indicator slug returned by the FXMacroData catalogue.
+        start_date: Optional inclusive YYYY-MM-DD lower bound.
+        end_date: Optional inclusive YYYY-MM-DD upper bound.
+        limit: Maximum rows to return.
+        seasonality: Optional seasonal adjustment filter.
+        frequency: Optional frequency / transform filter.
+        revisions: Optional revision mode.
+        basis: Optional real/nominal basis where supported.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "get_fxmacrodata_indicator",
+        {
+            "currency": currency,
+            "indicator": indicator,
+            "start_date": start_date,
+            "end_date": end_date,
+            "limit": limit,
+            "seasonality": seasonality,
+            "frequency": frequency,
+            "revisions": revisions,
+            "basis": basis,
+        },
+    )
+
+
+@mcp.tool
+def get_fxmacrodata_release_calendar(
+    currency: str,
+    indicator: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    timezone: str | None = None,
+) -> str:
+    """Fetch FXMacroData economic release-calendar rows.
+
+    Args:
+        currency: Three-letter currency code.
+        indicator: Optional indicator slug.
+        start_date: Optional inclusive YYYY-MM-DD lower bound.
+        end_date: Optional inclusive YYYY-MM-DD upper bound.
+        timezone: Optional display timezone.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "get_fxmacrodata_release_calendar",
+        {
+            "currency": currency,
+            "indicator": indicator,
+            "start_date": start_date,
+            "end_date": end_date,
+            "timezone": timezone,
+        },
+    )
+
+
+@mcp.tool
+def get_fxmacrodata_predictions(
+    currency: str,
+    indicator: str | None = None,
+    prediction_type: str | None = None,
+    prediction_source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 20,
+) -> str:
+    """Fetch FXMacroData forecast, nowcast, survey, or consensus rows.
+
+    Args:
+        currency: Three-letter currency code.
+        indicator: Optional indicator slug.
+        prediction_type: Optional prediction type.
+        prediction_source: Optional source id.
+        start_date: Optional inclusive YYYY-MM-DD lower bound.
+        end_date: Optional inclusive YYYY-MM-DD upper bound.
+        limit: Maximum rows to return.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "get_fxmacrodata_predictions",
+        {
+            "currency": currency,
+            "indicator": indicator,
+            "prediction_type": prediction_type,
+            "prediction_source": prediction_source,
+            "start_date": start_date,
+            "end_date": end_date,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool
+def get_fxmacrodata_cot(
+    currency: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 20,
+) -> str:
+    """Fetch FXMacroData CFTC COT positioning rows.
+
+    Args:
+        currency: Three-letter currency code or XAU.
+        start_date: Optional inclusive YYYY-MM-DD lower bound.
+        end_date: Optional inclusive YYYY-MM-DD upper bound.
+        limit: Maximum rows to return.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "get_fxmacrodata_cot",
+        {"currency": currency, "start_date": start_date, "end_date": end_date, "limit": limit},
+    )
+
+
+@mcp.tool
+def get_fxmacrodata_commodities(
+    indicator: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 20,
+) -> str:
+    """Fetch FXMacroData latest commodity values or one commodity history.
+
+    Args:
+        indicator: Optional commodity slug; omit for latest values.
+        start_date: Optional inclusive YYYY-MM-DD lower bound.
+        end_date: Optional inclusive YYYY-MM-DD upper bound.
+        limit: Maximum rows to return.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "get_fxmacrodata_commodities",
+        {"indicator": indicator, "start_date": start_date, "end_date": end_date, "limit": limit},
+    )
+
+
+@mcp.tool
+def get_fxmacrodata_rate_differentials(
+    base: str,
+    quote: str,
+    forward: bool = False,
+    measure: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 20,
+) -> str:
+    """Fetch FXMacroData pair rate or forward-rate differentials.
+
+    Args:
+        base: Base currency.
+        quote: Quote currency.
+        forward: Fetch forward-rate differentials instead of spot-rate differentials.
+        measure: Optional rate measure for spot differentials.
+        start_date: Optional inclusive YYYY-MM-DD lower bound.
+        end_date: Optional inclusive YYYY-MM-DD upper bound.
+        limit: Maximum rows to return.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "get_fxmacrodata_rate_differentials",
+        {
+            "base": base,
+            "quote": quote,
+            "forward": forward,
+            "measure": measure,
+            "start_date": start_date,
+            "end_date": end_date,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool
+def get_fxmacrodata_curves(
+    currency: str,
+    kind: str = "curves",
+    curve_family: str | None = None,
+    metric: str | None = None,
+    method: str | None = None,
+    date: str | None = None,
+) -> str:
+    """Fetch FXMacroData curves, curve proxies, or forward curves.
+
+    Args:
+        currency: Three-letter currency code.
+        kind: One of curves, curve_proxies, or forward_curves.
+        curve_family: Optional curve family.
+        metric: Optional curve metric.
+        method: Optional forward-curve method.
+        date: Optional YYYY-MM-DD date.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "get_fxmacrodata_curves",
+        {
+            "currency": currency,
+            "kind": kind,
+            "curve_family": curve_family,
+            "metric": metric,
+            "method": method,
+            "date": date,
+        },
+    )
+
+
+@mcp.tool
+def get_fxmacrodata_news(
+    currency: str,
+    press_releases_only: bool = False,
+    limit: int = 20,
+    offset: int = 0,
+) -> str:
+    """Fetch FXMacroData central-bank news or press releases.
+
+    Args:
+        currency: Three-letter currency code.
+        press_releases_only: Use the press-releases endpoint instead of news.
+        limit: Maximum rows to return.
+        offset: Pagination offset.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "get_fxmacrodata_news",
+        {
+            "currency": currency,
+            "press_releases_only": press_releases_only,
+            "limit": limit,
+            "offset": offset,
+        },
+    )
+
+
+@mcp.tool
+def get_fxmacrodata_market_sessions(at: str | None = None) -> str:
+    """Fetch FXMacroData FX market-session state.
+
+    Args:
+        at: Optional ISO timestamp; omit for current session state.
+    """
+    registry = _get_registry()
+    return registry.execute("get_fxmacrodata_market_sessions", {"at": at})
+
+
+@mcp.tool
+def get_fxmacrodata_risk_sentiment(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 20,
+) -> str:
+    """Fetch FXMacroData risk-on / risk-off indicator rows.
+
+    Args:
+        start_date: Optional inclusive YYYY-MM-DD lower bound.
+        end_date: Optional inclusive YYYY-MM-DD upper bound.
+        limit: Maximum rows to return.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "get_fxmacrodata_risk_sentiment",
+        {"start_date": start_date, "end_date": end_date, "limit": limit},
+    )
 
 
 @mcp.tool

@@ -160,6 +160,15 @@ class DataConfig(_EnvBase):
     alphavantage_api_key: str = Field(alias="ALPHAVANTAGE_API_KEY", default="")
     tiingo_api_key: str = Field(alias="TIINGO_API_KEY", default="")
     fmp_api_key: str = Field(alias="FMP_API_KEY", default="")
+    fxmd_api_key: str = Field(alias="FXMD_API_KEY", default="")
+    fxmacrodata_api_base_url: str = Field(
+        alias="FXMACRODATA_API_BASE_URL",
+        default="https://api.fxmacrodata.com/api/v1",
+    )
+    vibe_trading_fxmacrodata_min_interval: float = Field(
+        alias="VIBE_TRADING_FXMACRODATA_MIN_INTERVAL",
+        default=0.2,
+    )
     fred_api_key: str = Field(alias="FRED_API_KEY", default="")
     vibe_trading_iwencai_key: str = Field(alias="VIBE_TRADING_IWENCAI_KEY", default="")
     vibe_trading_sec_ua: str = Field(alias="VIBE_TRADING_SEC_UA", default="")

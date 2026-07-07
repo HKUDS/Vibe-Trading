@@ -44,6 +44,10 @@ from src.market_data import (
         ("M&M.NS", "yahoo"),  # ampersand in ticker
         ("BAJAJ-AUTO.NS", "yahoo"),  # hyphen in ticker
         ("500325.BO", "yahoo"),  # India BSE (numeric scrip code)
+        ("EUR/USD", "fxmacrodata"),
+        ("fx:EUR/USD", "fxmacrodata"),
+        ("EURUSD.FX", "fxmacrodata"),
+        ("fxmd:commodity:gold", "fxmacrodata"),
         ("BTC-USDT", "okx"),
         ("ETH/USDT", "ccxt"),
         ("local:my_file", "local"),

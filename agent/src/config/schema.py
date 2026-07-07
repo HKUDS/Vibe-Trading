@@ -236,6 +236,34 @@ IBKR_MCP_SERVER_SEED: dict[str, object] = {
     "enabled_tools": ["*"],
 }
 
+# Canonical seed for FXMacroData's remote MCP server. FXMacroData is read-only
+# market/macro data, not a live broker channel. The URL intentionally contains
+# no API key; users who need protected datasets should add auth in their
+# private ``~/.vibe-trading/agent.json`` rather than committing credentials.
+FXMACRODATA_MCP_SERVER_SEED: dict[str, object] = {
+    "type": "streamableHttp",
+    "url": "https://fxmacrodata.com/mcp",
+    "enabled_tools": [
+        "data_catalogue",
+        "indicator_query",
+        "release_calendar",
+        "event_predictions",
+        "forex",
+        "market_sessions",
+        "risk_sentiment",
+        "cot_data",
+        "commodities",
+        "macro_news",
+        "official_dataset_family",
+        "macro_briefing_task",
+        "indicator_intel_task",
+        "pair_intel_task",
+        "fx_trade_setup_task",
+        "fx_backtest_task",
+        "macro_research_pack_task",
+    ],
+}
+
 
 def _to_camel(name: str) -> str:
     """Convert snake_case names to camelCase aliases.
@@ -276,9 +304,23 @@ def robinhood_mcp_server_seed_config() -> dict[str, object]:
     }
 
 
+def fxmacrodata_mcp_server_seed_config() -> dict[str, object]:
+    """Return the copy-pasteable FXMacroData ``mcpServers`` config seed."""
+    return {
+        "mcpServers": {
+            "fxmacrodata": _to_wire_config_value(FXMACRODATA_MCP_SERVER_SEED),
+        }
+    }
+
+
 def format_robinhood_mcp_server_seed_json() -> str:
     """Format the canonical Robinhood read-only ``mcpServers`` seed as JSON."""
     return json.dumps(robinhood_mcp_server_seed_config(), indent=2)
+
+
+def format_fxmacrodata_mcp_server_seed_json() -> str:
+    """Format the canonical FXMacroData ``mcpServers`` seed as JSON."""
+    return json.dumps(fxmacrodata_mcp_server_seed_config(), indent=2)
 
 
 def format_robinhood_mcp_config_guidance(*, reason: str = "missing") -> str:

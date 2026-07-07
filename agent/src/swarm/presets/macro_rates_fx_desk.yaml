@@ -46,8 +46,8 @@ agents:
       - EM assets: US rate direction drives EM capital flows
 
       Use load_skill for macro analysis and global macro frameworks.
-    tools: [bash, read_file, write_file, load_skill, read_url]
-    skills: [macro-analysis, global-macro, credit-analysis]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, get_fxmacrodata_indicator, get_fxmacrodata_release_calendar, get_fxmacrodata_rate_differentials, get_fxmacrodata_curves, get_fxmacrodata_news, read_url]
+    skills: [macro-analysis, global-macro, credit-analysis, fxmacrodata]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1
@@ -91,8 +91,8 @@ agents:
       - EM FX risk assessment: which EM currencies are vulnerable to USD strength?
 
       Use load_skill for global macro and commodity analysis (commodity currencies).
-    tools: [bash, read_file, write_file, load_skill, get_market_data, read_url]
-    skills: [global-macro, macro-analysis, yfinance]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, get_fxmacrodata_catalogue, get_fxmacrodata_cot, get_fxmacrodata_rate_differentials, get_fxmacrodata_market_sessions, get_fxmacrodata_risk_sentiment, read_url]
+    skills: [global-macro, macro-analysis, yfinance, fxmacrodata]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1
@@ -130,8 +130,8 @@ agents:
       - Stagflation risk: favor gold, defensive equities; avoid cyclicals and bonds
 
       Use load_skill for commodity analysis frameworks.
-    tools: [bash, read_file, write_file, load_skill, read_url]
-    skills: [commodity-analysis, global-macro, seasonal]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, get_fxmacrodata_indicator, get_fxmacrodata_release_calendar, get_fxmacrodata_commodities, get_fxmacrodata_risk_sentiment, read_url]
+    skills: [commodity-analysis, global-macro, seasonal, fxmacrodata]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1
@@ -182,8 +182,8 @@ agents:
       - Next scheduled review date / trigger for rebalancing
 
       Use load_skill for asset allocation and risk management frameworks.
-    tools: [bash, read_file, write_file, load_skill, backtest]
-    skills: [asset-allocation, risk-analysis, hedging-strategy, strategy-generate]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, get_fxmacrodata_rate_differentials, get_fxmacrodata_risk_sentiment, backtest]
+    skills: [asset-allocation, risk-analysis, hedging-strategy, strategy-generate, fxmacrodata]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1

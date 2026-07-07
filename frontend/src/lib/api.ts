@@ -298,6 +298,8 @@ export interface UpdateLLMSettingsRequest {
 export interface DataSourceSettings {
   tushare_token_configured: boolean;
   tushare_token_hint?: string | null;
+  fxmacrodata_api_key_configured: boolean;
+  fxmacrodata_api_key_hint?: string | null;
   baostock_supported: boolean;
   baostock_installed: boolean;
   baostock_message: string;
@@ -307,6 +309,8 @@ export interface DataSourceSettings {
 export interface UpdateDataSourceSettingsRequest {
   tushare_token?: string;
   clear_tushare_token?: boolean;
+  fxmacrodata_api_key?: string;
+  clear_fxmacrodata_api_key?: boolean;
 }
 
 export interface ChannelAdapterStatus {

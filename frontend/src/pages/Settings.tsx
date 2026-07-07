@@ -45,6 +45,8 @@ export function Settings() {
   const [clearApiKey, setClearApiKey] = useState(false);
   const [tushareToken, setTushareToken] = useState("");
   const [clearTushareToken, setClearTushareToken] = useState(false);
+  const [fxmacrodataApiKey, setFxmacrodataApiKey] = useState("");
+  const [clearFxmacrodataApiKey, setClearFxmacrodataApiKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dataSaving, setDataSaving] = useState(false);
@@ -193,10 +195,14 @@ export function Settings() {
       const updated = await api.updateDataSourceSettings({
         tushare_token: tushareToken.trim() || undefined,
         clear_tushare_token: clearTushareToken,
+        fxmacrodata_api_key: fxmacrodataApiKey.trim() || undefined,
+        clear_fxmacrodata_api_key: clearFxmacrodataApiKey,
       });
       setDataSettings(updated);
       setTushareToken("");
       setClearTushareToken(false);
+      setFxmacrodataApiKey("");
+      setClearFxmacrodataApiKey(false);
       toast.success("Data source settings saved");
     } catch (error) {
       toast.error(`Failed to save data source settings: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -276,6 +282,9 @@ export function Settings() {
   const tushareStatus = dataSettings.tushare_token_configured
     ? "Configured"
     : "Leave blank to keep the current token";
+  const fxmacrodataStatus = dataSettings.fxmacrodata_api_key_configured
+    ? "Configured"
+    : "Leave blank to keep the current key";
   const channelRows = channelStatus
     ? Object.entries(channelStatus.channels ?? {}).sort(([a], [b]) => a.localeCompare(b))
     : [];
@@ -620,6 +629,37 @@ export function Settings() {
                     className="h-3.5 w-3.5 accent-primary"
                   />
                   {"Clear saved Tushare token"}
+                </label>
+              </div>
+            </label>
+
+            <label className="grid gap-2">
+              <span className={labelClass}>{"FXMacroData API key"}</span>
+              <div className="relative">
+                <KeyRound className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="password"
+                  value={fxmacrodataApiKey}
+                  onChange={(event) => setFxmacrodataApiKey(event.target.value)}
+                  className={`${fieldClass} pl-9`}
+                  placeholder={fxmacrodataStatus}
+                  autoComplete="current-password"
+                  disabled={clearFxmacrodataApiKey}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className={hintClass}>{"Used for FXMacroData official-source FX, macro, release calendar, COT, commodities, rates, curves, and central-bank news."}</span>
+                <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={clearFxmacrodataApiKey}
+                    onChange={(event) => {
+                      setClearFxmacrodataApiKey(event.target.checked);
+                      if (event.target.checked) setFxmacrodataApiKey("");
+                    }}
+                    className="h-3.5 w-3.5 accent-primary"
+                  />
+                  {"Clear saved FXMacroData key"}
                 </label>
               </div>
             </label>

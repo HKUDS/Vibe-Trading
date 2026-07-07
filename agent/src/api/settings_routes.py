@@ -78,6 +78,8 @@ class DataSourceSettingsResponse(BaseModel):
 
     tushare_token_configured: bool
     tushare_token_hint: Optional[str] = None
+    fxmacrodata_api_key_configured: bool
+    fxmacrodata_api_key_hint: Optional[str] = None
     baostock_supported: bool
     baostock_installed: bool
     baostock_message: str
@@ -89,6 +91,8 @@ class UpdateDataSourceSettingsRequest(BaseModel):
 
     tushare_token: Optional[str] = None
     clear_tushare_token: bool = False
+    fxmacrodata_api_key: Optional[str] = None
+    clear_fxmacrodata_api_key: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +125,7 @@ LLM_PROVIDER_BY_NAME = {provider.name: provider for provider in LLM_PROVIDERS}
 LLM_REASONING_EFFORTS = {"", "low", "medium", "high", "max"}
 LLM_API_KEY_PLACEHOLDERS = {"", "sk-or-v1-your-key-here", "sk-xxx", "xxx", "gsk_xxx"}
 TUSHARE_TOKEN_PLACEHOLDERS = {"", "your-tushare-token"}
+FXMACRODATA_API_KEY_PLACEHOLDERS = {"", "xxx", "your-fxmacrodata-api-key", "your_fxmd_api_key"}
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +233,11 @@ def _build_data_source_settings_response(
     env_values = values if values is not None else _read_settings_env_values()
     token = env_values.get("TUSHARE_TOKEN", "")
     token_configured = host._is_configured_secret(token, TUSHARE_TOKEN_PLACEHOLDERS)
+    fxmacrodata_api_key = env_values.get("FXMD_API_KEY", "")
+    fxmacrodata_configured = host._is_configured_secret(
+        fxmacrodata_api_key,
+        FXMACRODATA_API_KEY_PLACEHOLDERS,
+    )
     # Late-access baostock helpers for monkeypatch compat.
     baostock_sup = getattr(host, "_baostock_supported", _baostock_supported)
     baostock_ins = getattr(host, "_baostock_installed", _baostock_installed)
@@ -242,6 +252,8 @@ def _build_data_source_settings_response(
     return DataSourceSettingsResponse(
         tushare_token_configured=token_configured,
         tushare_token_hint=None,
+        fxmacrodata_api_key_configured=fxmacrodata_configured,
+        fxmacrodata_api_key_hint=None,
         baostock_supported=supported,
         baostock_installed=installed,
         baostock_message=baostock_message,
@@ -455,6 +467,13 @@ def register_settings_routes(
         elif "TUSHARE_TOKEN" in current_values:
             updates["TUSHARE_TOKEN"] = current_values["TUSHARE_TOKEN"]
 
+        if payload.clear_fxmacrodata_api_key:
+            updates["FXMD_API_KEY"] = ""
+        elif payload.fxmacrodata_api_key is not None and payload.fxmacrodata_api_key.strip():
+            updates["FXMD_API_KEY"] = payload.fxmacrodata_api_key.strip()
+        elif "FXMD_API_KEY" in current_values:
+            updates["FXMD_API_KEY"] = current_values["FXMD_API_KEY"]
+
         if updates:
             saved_values = _persist_settings_updates(updates)
             token = updates.get("TUSHARE_TOKEN", "").strip()
@@ -462,6 +481,14 @@ def register_settings_routes(
                 os.environ["TUSHARE_TOKEN"] = token
             else:
                 os.environ.pop("TUSHARE_TOKEN", None)
+            fxmacrodata_api_key = updates.get("FXMD_API_KEY", "").strip()
+            if host_ref._is_configured_secret(
+                fxmacrodata_api_key,
+                FXMACRODATA_API_KEY_PLACEHOLDERS,
+            ):
+                os.environ["FXMD_API_KEY"] = fxmacrodata_api_key
+            else:
+                os.environ.pop("FXMD_API_KEY", None)
             reset_env_config()
 
         return _build_data_source_settings_response(
