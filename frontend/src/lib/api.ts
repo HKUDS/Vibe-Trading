@@ -93,6 +93,14 @@ export const api = {
     return request<RunData>(`/runs/${id}${qs ? `?${qs}` : ""}`);
   },
   getRunCode: (id: string) => request<Record<string, string>>(`/runs/${id}/code`),
+  getEvidenceClosure: (id: string) => request<EvidenceClosureReport>(`/research/evidence/${encodeURIComponent(id)}/verify`),
+  getPolicyDecisions: (id: string) => {
+    const q = new URLSearchParams({ run_id: id });
+    return request<PolicyDecisionsResponse>(`/governance/policy-decisions?${q.toString()}`);
+  },
+  getResearchClaims: (id: string) => request<ResearchClaimsResponse>(`/research/claims/${encodeURIComponent(id)}`),
+  getMethodologyFacts: (id: string) =>
+    request<MethodologyFactsResponse>(`/research/methodology-facts/${encodeURIComponent(id)}`),
   getRunPine: (id: string) => request<PineScriptResult>(`/runs/${id}/pine`),
   listSessions: () => request<SessionItem[]>("/sessions"),
   createSession: (title?: string) => request<SessionItem>("/sessions", { method: "POST", body: JSON.stringify({ title: title || "" }) }),
@@ -451,6 +459,16 @@ export interface RunCard {
   schema_version?: string;
   generated_at?: string;
   run_dir?: string;
+  run_id?: string;
+  conclusion_level?: string;
+  evidence_closure_summary?: EvidenceClosureSummary | null;
+  policy_decision_ids?: string[];
+  claim_set_ref?: string | null;
+  methodology_fact_ref?: string | null;
+  scorecard_ref?: string | null;
+  claim_ids?: string[];
+  hard_failures?: string[];
+  triggered_rules?: TriggeredRule[];
   backtest?: Record<string, unknown>;
   reproducibility?: Record<string, unknown>;
   data_sources?: string[];
@@ -476,6 +494,114 @@ export interface BacktestMetrics {
   win_rate: number;
   trade_count: number;
   [key: string]: number;
+}
+
+export interface EvidenceClosureSummary {
+  schema_version?: string;
+  passed: boolean;
+  degraded?: boolean;
+  verified_from?: string[];
+  missing_refs?: string[];
+  dangling_refs?: string[];
+  inconsistent_ids?: string[];
+  outbox_pending?: string[];
+  degraded_reasons?: string[];
+  hard_failure_inconsistencies?: string[];
+}
+
+export interface EvidenceClosureReport extends EvidenceClosureSummary {
+  run_id: string;
+  partial_decisions?: string[];
+  secret_leak_warnings?: string[];
+  lineage_errors?: string[];
+  claim_gate_inconsistencies?: string[];
+  required_refs_present?: Record<string, boolean>;
+  checked_at?: string;
+}
+
+export interface PolicyDecisionSummary {
+  decision_id: string | null;
+  tool_name: string | null;
+  action: string | null;
+  status: string | null;
+  mode: string | null;
+  surface: string | null;
+  risk_level: string | null;
+  reason_codes: string[];
+  evidence_refs: string[];
+  trace_event_id?: string | null;
+  ledger_event_hash?: string | null;
+}
+
+export interface PolicyDecisionsResponse {
+  schema_version: string;
+  run_id: string;
+  decision_ids: string[];
+  decisions: PolicyDecisionSummary[];
+}
+
+export interface ResearchClaim {
+  schema_version?: string;
+  claim_id: string;
+  claim_type: string;
+  claim_text: string;
+  source?: string;
+  source_ref?: string | null;
+  confidence?: number | null;
+  requires_gate?: boolean;
+  evidence_refs?: string[];
+  created_at?: string;
+}
+
+export interface ClaimSet {
+  schema_version?: string;
+  claim_set_id: string;
+  run_id: string;
+  claims: ResearchClaim[];
+  extractor_version?: string;
+  generated_by?: string;
+  artifact_ref?: string | null;
+}
+
+export interface ResearchClaimsResponse {
+  schema_version: string;
+  run_id: string;
+  artifact_ref?: string | null;
+  claim_ids: string[];
+  claim_set?: ClaimSet | null;
+}
+
+export interface MethodologyFactSet {
+  schema_version?: string;
+  run_id: string;
+  protocol_hash?: string | null;
+  has_registered_protocol?: boolean;
+  trial_count?: number | null;
+  has_data_audit?: boolean;
+  pit_safe?: boolean | null;
+  has_cost_model?: boolean;
+  has_benchmark?: boolean;
+  has_oos?: boolean;
+  has_policy_denies?: boolean;
+  policy_deny_ids?: string[];
+  [key: string]: unknown;
+}
+
+export interface MethodologyFactsResponse {
+  schema_version: string;
+  run_id: string;
+  artifact_ref?: string | null;
+  methodology_facts?: MethodologyFactSet | null;
+}
+
+export interface TriggeredRule {
+  schema_version?: string;
+  rule_id: string;
+  reason_code: string;
+  action: string;
+  explanation: string;
+  evidence_refs: string[];
+  conclusion_cap?: string | null;
 }
 
 

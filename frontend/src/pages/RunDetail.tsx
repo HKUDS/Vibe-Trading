@@ -18,12 +18,24 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { api, type BacktestMetrics, type RunCard, type RunData } from "@/lib/api";
+import {
+  api,
+  type BacktestMetrics,
+  type EvidenceClosureSummary,
+  type PolicyDecisionsResponse,
+  type ResearchClaimsResponse,
+  type RunCard,
+  type RunData,
+} from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import { CandlestickChart } from "@/components/charts/CandlestickChart";
 import { EquityChart } from "@/components/charts/EquityChart";
 import { MetricsCard } from "@/components/chat/MetricsCard";
+import { ClaimAuditPanel } from "@/components/research/ClaimAuditPanel";
+import { EvidenceClosurePanel } from "@/components/research/EvidenceClosurePanel";
+import { PolicyDecisionsPanel } from "@/components/research/PolicyDecisionsPanel";
+import { QuantScorecardPanel } from "@/components/research/QuantScorecardPanel";
 import { ValidationPanel } from "@/components/charts/ValidationPanel";
 import { Skeleton, SkeletonMetrics, SkeletonChart } from "@/components/common/Skeleton";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
@@ -104,6 +116,9 @@ export function RunDetail() {
   const [chartLoadingSymbols, setChartLoadingSymbols] = useState<Record<string, boolean>>({});
   const [bulkChartLoading, setBulkChartLoading] = useState(false);
   const [bulkChartProgress, setBulkChartProgress] = useState<ChartLoadProgress>({ done: 0, total: 0 });
+  const [evidenceSummary, setEvidenceSummary] = useState<EvidenceClosureSummary | null>(null);
+  const [policyDecisions, setPolicyDecisions] = useState<PolicyDecisionsResponse | null>(null);
+  const [claimsResponse, setClaimsResponse] = useState<ResearchClaimsResponse | null>(null);
   const chartCacheRef = useRef<ChartCache>({});
   const cancelBulkChartLoadRef = useRef(false);
 
@@ -137,6 +152,29 @@ export function RunDetail() {
       }
     }).finally(() => setLoading(false));
   }, [runId]);
+
+  useEffect(() => {
+    if (!runId || !hasRunCard) {
+      setEvidenceSummary(null);
+      setPolicyDecisions(null);
+      setClaimsResponse(null);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([
+      api.getEvidenceClosure(runId).catch(() => null),
+      api.getPolicyDecisions(runId).catch(() => null),
+      api.getResearchClaims(runId).catch(() => null),
+    ]).then(([evidence, decisions, claims]) => {
+      if (cancelled) return;
+      setEvidenceSummary(evidence);
+      setPolicyDecisions(decisions);
+      setClaimsResponse(claims);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, hasRunCard]);
 
   if (loading) {
     return (
@@ -319,7 +357,14 @@ export function RunDetail() {
           )}
           {tab === "trades" && <TradesTab run={run} />}
           {tab === "validation" && run.validation && <ValidationPanel data={run.validation} />}
-          {tab === "runCard" && run.run_card && <RunCardTab card={run.run_card} />}
+          {tab === "runCard" && run.run_card && (
+            <RunCardTab
+              card={run.run_card}
+              evidenceSummary={evidenceSummary}
+              policyDecisions={policyDecisions}
+              claimsResponse={claimsResponse}
+            />
+          )}
           {tab === "code" && <CodeTab code={code} />}
         </ErrorBoundary>
       </div>
@@ -327,13 +372,26 @@ export function RunDetail() {
   );
 }
 
-function RunCardTab({ card }: { card: RunCard }) {
+function RunCardTab({
+  card,
+  evidenceSummary,
+  policyDecisions,
+  claimsResponse,
+}: {
+  card: RunCard;
+  evidenceSummary?: EvidenceClosureSummary | null;
+  policyDecisions?: PolicyDecisionsResponse | null;
+  claimsResponse?: ResearchClaimsResponse | null;
+}) {
   const backtest = card.backtest || {};
   const reproducibility = card.reproducibility || {};
   const metrics = card.metrics || {};
   const artifacts = card.artifacts || [];
   const warnings = card.warnings || [];
   const dataSources = card.data_sources || [];
+  const cardEvidenceSummary = evidenceSummary || card.evidence_closure_summary || null;
+  const policyDecisionIds = card.policy_decision_ids || [];
+  const claimIds = card.claim_ids || [];
 
   return (
     <div className="p-4 space-y-4">
@@ -355,6 +413,13 @@ function RunCardTab({ card }: { card: RunCard }) {
           </ul>
         </section>
       )}
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <EvidenceClosurePanel summary={cardEvidenceSummary} />
+        <PolicyDecisionsPanel policyDecisions={policyDecisions} decisionIds={policyDecisionIds} />
+        <ClaimAuditPanel claimsResponse={claimsResponse} claimIds={claimIds} />
+        <QuantScorecardPanel card={card} />
+      </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <RunCardPanel title={i18n.t("runDetail.backtestSummary")} icon={Database}>

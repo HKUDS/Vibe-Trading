@@ -39,4 +39,32 @@ describe("api request helper", () => {
       message: expect.stringContaining("Expected JSON from /channels/status, got text/html"),
     } satisfies Partial<ApiError>);
   });
+
+  it("fetches Phase 6 evidence contract endpoints with GET", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { api } = await loadApiModule();
+
+    await api.getPolicyDecisions("run phase 6");
+    await api.getResearchClaims("run phase 6");
+    await api.getMethodologyFacts("run phase 6");
+
+    const calls = fetchMock.mock.calls.map(([url, init]) => ({
+      url,
+      method: (init as RequestInit | undefined)?.method,
+    }));
+    expect(calls).toEqual([
+      { url: "/governance/policy-decisions?run_id=run+phase+6", method: undefined },
+      { url: "/research/claims/run%20phase%206", method: undefined },
+      { url: "/research/methodology-facts/run%20phase%206", method: undefined },
+    ]);
+  });
 });

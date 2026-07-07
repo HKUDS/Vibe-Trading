@@ -85,11 +85,17 @@ class EvidenceVerifier:
             secret_leak_warnings.extend(_secret_paths(payload, root=f"artifact:{record.artifact_id}"))
             if record.artifact_type == "policy_decision":
                 _merge_artifact_into_index(index, record.artifact_id, payload)
+            elif record.artifact_type == "claim_set":
+                _append_unique(index.claim_set_artifact_refs, record.artifact_id)
+            elif record.artifact_type == "methodology_facts":
+                _append_unique(index.methodology_fact_artifact_refs, record.artifact_id)
             elif record.artifact_type == "scorecard":
                 verified_from = _add_source(verified_from, "scorecard")
+                _append_unique(index.scorecard_artifact_refs, record.artifact_id)
                 scorecard_hard_failures = _string_list(payload.get("hard_failures"))
             elif record.artifact_type == "research_card":
                 verified_from = _add_source(verified_from, "card")
+                _append_unique(index.research_card_artifact_refs, record.artifact_id)
                 card_hard_failures = _string_list(payload.get("hard_failures"))
 
         trace_decision_ids: set[str] = set()
