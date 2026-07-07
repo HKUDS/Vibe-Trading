@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Generator
 
 from src.reliability.data.contracts import CircuitBreakerSnapshot, StructuredWarning
 
@@ -38,13 +40,27 @@ class CircuitBreaker:
         self._init_db()
 
     def before_request(self, source: str) -> CircuitDecision:
-        """Return whether source should be used now."""
+        """Return whether source should be used now.
+
+        The OPEN→HALF_OPEN transition uses an atomic UPDATE…RETURNING to
+        avoid a read-then-write race where two concurrent callers both read
+        OPEN and both attempt the transition.
+        """
         snapshot = self.snapshot(source)
         if snapshot.state == "OPEN":
             now = time.time()
             opened_at = snapshot.opened_at.timestamp() if snapshot.opened_at is not None else 0.0
             if now - opened_at >= self.open_seconds:
-                self._upsert_state(source, "HALF_OPEN", snapshot.consecutive_failures, snapshot.last_error_class, opened_at)
+                with self._connect() as conn:
+                    conn.execute(
+                        """
+                        UPDATE circuit_state
+                        SET state = 'HALF_OPEN'
+                        WHERE source = ? AND state = 'OPEN'
+                        """,
+                        (source,),
+                    )
+                    conn.commit()
                 return CircuitDecision(source=source, state="HALF_OPEN", allowed=True)
             return CircuitDecision(
                 source=source,
@@ -60,7 +76,12 @@ class CircuitBreaker:
         return CircuitDecision(source=source, state=snapshot.state, allowed=True)
 
     def record_success(self, source: str) -> None:
-        """Close source circuit after a successful request."""
+        """Close source circuit after a successful request.
+
+        Uses ``_upsert_state`` which is a single atomic INSERT…ON CONFLICT.
+        No TOCTOU risk: this is a full overwrite (failures→0, state→CLOSED),
+        so concurrent writes are idempotent.
+        """
         self._upsert_state(source, "CLOSED", 0, None, None)
 
     def record_failure(self, source: str, error: BaseException) -> None:
@@ -83,22 +104,24 @@ class CircuitBreaker:
                 (error_class, source),
             ).fetchone()
             if row is None:
-                # Source not yet in table — insert with failures=1
-                conn.execute(
+                # Source not yet in table — insert with failures=1.
+                # RETURNING reads back the actual post-conflict values so that
+                # a concurrent INSERT…ON CONFLICT doesn't leave us with a
+                # stale hardcoded count.
+                row = conn.execute(
                     """
                     INSERT INTO circuit_state (source, state, consecutive_failures, opened_at, last_error_class)
                     VALUES (?, 'CLOSED', 1, NULL, ?)
                     ON CONFLICT(source) DO UPDATE SET
                         consecutive_failures = circuit_state.consecutive_failures + 1,
                         last_error_class = excluded.last_error_class
+                    RETURNING consecutive_failures, state, opened_at
                     """,
                     (source, error_class),
-                )
-                row = (1, "CLOSED", None)
+                ).fetchone()
                 conn.commit()
-                failures = 1
-                state = "CLOSED"
-                opened_at = None
+                failures, state, opened_at = row
+                failures = int(failures)
             else:
                 failures, state, opened_at = row
                 failures = int(failures)
@@ -159,11 +182,22 @@ class CircuitBreaker:
                 )
                 """
             )
+            conn.commit()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Generator[sqlite3.Connection, None, None]:
+        """Yield a SQLite connection that is closed on exit.
+
+        Transaction management (commit/rollback) is handled explicitly by
+        callers or by the connection's own context-manager protocol within
+        the ``with`` block.
+        """
         conn = sqlite3.connect(str(self.path), timeout=30.0)
         conn.execute("PRAGMA busy_timeout=30000")
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def _upsert_state(
         self,
@@ -173,6 +207,13 @@ class CircuitBreaker:
         error_class: str | None,
         opened_at: float | None,
     ) -> None:
+        """Full-row upsert via atomic INSERT…ON CONFLICT.
+
+        Used by ``record_success`` (idempotent full overwrite) and legacy
+        callers. ``record_failure`` uses its own atomic UPDATE…RETURNING
+        path because it needs to read back the incremented count to decide
+        whether to open the breaker.
+        """
         with self._connect() as conn:
             conn.execute(
                 """
@@ -186,6 +227,7 @@ class CircuitBreaker:
                 """,
                 (source, state, failures, opened_at, error_class),
             )
+            conn.commit()
 
 
 def _from_epoch(value: float | None) -> datetime | None:

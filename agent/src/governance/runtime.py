@@ -24,7 +24,7 @@ class GovernedToolRegistry:
     The inner registry is stored as ``self._inner`` (private). Attribute access
     for methods not explicitly overridden (e.g. ``has_tool``, ``tool_names``)
     is delegated via ``__getattr__``. Direct access to ``self._inner`` from
-    outside the class is intentional prevented by the underscore convention.
+    outside the class is intentionally prevented by the underscore convention.
 
     Use ``execute(name, params)`` for all tool invocations — it routes through
     the PolicyEngine. The ``get(name)`` method returns the raw tool object for
