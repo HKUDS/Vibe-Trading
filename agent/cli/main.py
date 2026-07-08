@@ -457,7 +457,9 @@ def _maybe_resume_last_session(console: Any) -> Optional[Dict[str, Any]]:
 
     Returns:
         A dict ``{"session_id": str, "history": list[dict], "title": str}``
-        when the user opts to resume, otherwise ``None`` (new session).
+        when the user opts to resume, ``{"pending_input": str}`` when the
+        user typed a first chat turn into the prompt, otherwise ``None`` (new
+        session).
     """
     try:
         store = _session_store()
@@ -474,11 +476,14 @@ def _maybe_resume_last_session(console: Any) -> Optional[Dict[str, Any]]:
         f"[dim]Resume last session ({title})? (r)esume / (n)ew (default: new)[/dim]"
     )
     try:
-        choice = input("> ").strip().lower()
+        raw_choice = input("> ").strip()
     except (EOFError, KeyboardInterrupt):
         return None
-    if choice not in {"r", "resume", "y", "yes"}:
+    choice = raw_choice.lower()
+    if choice in {"", "n", "new", "no"}:
         return None
+    if choice not in {"r", "resume", "y", "yes"}:
+        return {"pending_input": raw_choice}
 
     return {
         "session_id": last.session_id,
@@ -1095,6 +1100,7 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
     # the prompt appear only after the user presses Enter.
 
     ctx = InteractiveContext(max_iter=max_iter)
+    pending_input: Optional[str] = None
 
     if resume_session_id:
         # Resume a specific session by ID (``vibe-trading resume <session-id>``).
@@ -1116,11 +1122,14 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
         # Offer to resume the most recent session. Audit item 8.
         resume = _maybe_resume_last_session(console)
         if resume is not None:
-            ctx.session_id = resume["session_id"]
-            ctx.history = list(resume["history"])
-            console.print(
-                f"[dim]Resumed session: {resume['title']} ({len(ctx.history)} prior turns)[/dim]"
-            )
+            if "pending_input" in resume:
+                pending_input = str(resume["pending_input"])
+            else:
+                ctx.session_id = resume["session_id"]
+                ctx.history = list(resume["history"])
+                console.print(
+                    f"[dim]Resumed session: {resume['title']} ({len(ctx.history)} prior turns)[/dim]"
+                )
 
     # Build the prompt session once so history + completer persist.
     try:
@@ -1139,27 +1148,31 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
     session = make_session()
 
     while True:
-        _print_recap_if_needed(console, ctx)
-        try:
-            user_input = get_user_input(session=session)
-        except KeyboardInterrupt:
-            # Should not reach here — the keybinding raises EOFError instead.
-            continue
-        except EOFError:
-            # Two interpretations: Ctrl+D (always exit), or Ctrl+C on an
-            # empty line (show hint, exit on second press).
-            #
-            # ``ctrl_c_within_window`` reads a press-time decision cached
-            # by the keybinding: True iff the gap between the *previous*
-            # Ctrl+C press and *this* one is < 2 s. First press → False
-            # (no prior press) → we print the hint and continue. Second
-            # press inside the window → True → we break.
-            if ctrl_c_within_window(session, window_sec=2.0):
-                break
-            console.print(
-                "[dim]Press Ctrl+C again within 2s, Ctrl+D, or type /quit to exit[/dim]"
-            )
-            continue
+        if pending_input is not None:
+            user_input = pending_input
+            pending_input = None
+        else:
+            _print_recap_if_needed(console, ctx)
+            try:
+                user_input = get_user_input(session=session)
+            except KeyboardInterrupt:
+                # Should not reach here — the keybinding raises EOFError instead.
+                continue
+            except EOFError:
+                # Two interpretations: Ctrl+D (always exit), or Ctrl+C on an
+                # empty line (show hint, exit on second press).
+                #
+                # ``ctrl_c_within_window`` reads a press-time decision cached
+                # by the keybinding: True iff the gap between the *previous*
+                # Ctrl+C press and *this* one is < 2 s. First press → False
+                # (no prior press) → we print the hint and continue. Second
+                # press inside the window → True → we break.
+                if ctrl_c_within_window(session, window_sec=2.0):
+                    break
+                console.print(
+                    "[dim]Press Ctrl+C again within 2s, Ctrl+D, or type /quit to exit[/dim]"
+                )
+                continue
 
         text = user_input.strip()
         if not text:
