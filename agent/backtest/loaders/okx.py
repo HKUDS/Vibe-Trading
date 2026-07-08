@@ -52,8 +52,9 @@ class DataLoader:
         codes: List[str],
         start_date: str,
         end_date: str,
-        fields: Optional[List[str]] = None,
+        *,
         interval: str = "1D",
+        fields: Optional[List[str]] = None,
     ) -> Dict[str, pd.DataFrame]:
         """Fetch crypto OHLCV via OKX public API.
 
