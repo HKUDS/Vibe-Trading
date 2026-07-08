@@ -18,7 +18,7 @@ from src.providers.openai_codex import (
 )
 
 
-DEFAULT_CODEX_MODEL = "openai-codex/gpt-5.3-codex"
+DEFAULT_CODEX_MODEL = "openai-codex/gpt-5.4"
 
 
 def test_provider_default_model_matches_live_codex_account_path() -> None:
@@ -68,8 +68,8 @@ def test_codex_body_strips_provider_prefix_and_converts_tools() -> None:
         stream=True,
     )
 
-    assert _strip_model_prefix(DEFAULT_CODEX_MODEL) == "gpt-5.3-codex"
-    assert body["model"] == "gpt-5.3-codex"
+    assert _strip_model_prefix(DEFAULT_CODEX_MODEL) == "gpt-5.4"
+    assert body["model"] == "gpt-5.4"
     assert body["instructions"] == "You are careful."
     assert body["tools"][0]["name"] == "bash"
     assert body["input"][0]["content"][0]["text"] == "Say hi."

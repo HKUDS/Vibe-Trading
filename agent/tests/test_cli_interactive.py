@@ -212,7 +212,7 @@ class TestMainRouting:
         cwd_env = tmp_path / "cwd" / ".env"
         project_env.parent.mkdir(parents=True)
         project_env.write_text(
-            "LANGCHAIN_MODEL_NAME=openai-codex/gpt-5.3-codex\n",
+            "LANGCHAIN_MODEL_NAME=openai-codex/gpt-5.4\n",
             encoding="utf-8",
         )
 
@@ -222,7 +222,7 @@ class TestMainRouting:
         monkeypatch.setattr(cli_main, "_PROJECT_ENV_PATH", project_env, raising=False)
         monkeypatch.setattr(cli_main, "_CWD_ENV_PATH", cwd_env, raising=False)
 
-        assert cli_main._probe_model_name() == "openai-codex/gpt-5.3-codex"
+        assert cli_main._probe_model_name() == "openai-codex/gpt-5.4"
 
 
 # ---------------------------------------------------------------------------
