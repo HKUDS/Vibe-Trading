@@ -101,6 +101,15 @@
     "api_key_required": true
   },
   {
+    "name": "kimi-coding",
+    "label": "Kimi for Coding (subscription plan)",
+    "api_key_env": "KIMI_CODING_API_KEY",
+    "base_url_env": "KIMI_CODING_BASE_URL",
+    "default_model": "kimi-for-coding",
+    "default_base_url": "https://api.kimi.com/coding/v1",
+    "api_key_required": true
+  },
+  {
     "name": "minimax",
     "label": "MiniMax",
     "api_key_env": "MINIMAX_API_KEY",

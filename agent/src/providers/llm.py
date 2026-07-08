@@ -615,9 +615,10 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
     # default 0.0 is used to avoid an API validation error.
     if provider == "minimax" and temperature <= 0.0:
         temperature = 0.01
-    # Moonshot kimi-k2.x reasoning models reject any temperature other than 1
+    # Kimi reasoning models (kimi-k2.x open platform, kimi-for-coding plan)
+    # reject any temperature other than 1
     # ("invalid temperature: only 1 is allowed for this model").
-    if caps.name == "moonshot" and name.lower().startswith("kimi-k2") and temperature != 1.0:
+    if caps.name in {"moonshot", "kimi-coding"} and name.lower().startswith(("kimi-k2", "kimi-for-coding")) and temperature != 1.0:
         logger.info("Forcing temperature=1.0 for %s (provider requirement)", name)
         temperature = 1.0
     # Optional reasoning activation for relays requiring opt-in (e.g. OpenRouter).
@@ -634,7 +635,7 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
     }
     if caps.default_headers:
         headers = dict(caps.default_headers)
-        if caps.name == "moonshot":
+        if caps.name in {"moonshot", "kimi-coding"}:
             custom_ua = os.getenv("MOONSHOT_USER_AGENT", "").strip()
             if custom_ua:
                 headers["User-Agent"] = custom_ua

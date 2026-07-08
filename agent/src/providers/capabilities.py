@@ -70,6 +70,20 @@ _MOONSHOT_CAPABILITIES = ProviderCapabilities(
     default_headers={"User-Agent": _KIMI_USER_AGENT},
 )
 
+# Kimi for Coding subscription plan (kimi.com/code/docs). Same wire behaviour as
+# the Moonshot open platform, but a different endpoint (api.kimi.com/coding/v1),
+# a stable `kimi-for-coding` model id, and its own key namespace so both surfaces
+# can be configured side by side.
+_KIMI_CODING_CAPABILITIES = ProviderCapabilities(
+    "kimi-coding",
+    "KIMI_CODING_API_KEY",
+    "KIMI_CODING_BASE_URL",
+    capture_reasoning=True,
+    send_reasoning_content=True,
+    normalize_assistant_content=True,
+    default_headers={"User-Agent": _KIMI_USER_AGENT},
+)
+
 _ZHIPU_CAPABILITIES = ProviderCapabilities("zhipu", "ZHIPU_API_KEY", "ZHIPU_BASE_URL")
 
 _OPENAI_CODEX_CAPABILITIES = ProviderCapabilities("openai-codex", None, "OPENAI_CODEX_BASE_URL")
@@ -104,6 +118,7 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
     "glm": _ZHIPU_CAPABILITIES,
     "moonshot": _MOONSHOT_CAPABILITIES,
     "kimi": _MOONSHOT_CAPABILITIES,
+    "kimi-coding": _KIMI_CODING_CAPABILITIES,
     "minimax": ProviderCapabilities("minimax", "MINIMAX_API_KEY", "MINIMAX_BASE_URL"),
     "mimo": ProviderCapabilities("mimo", "MIMO_API_KEY", "MIMO_BASE_URL"),
     "zai": ProviderCapabilities("zai", "ZAI_API_KEY", "ZAI_BASE_URL"),
