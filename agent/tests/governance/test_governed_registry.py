@@ -63,6 +63,22 @@ def _cache(risk: RiskLevel, *, surface: ToolSurface = ToolSurface.CLI) -> Manife
     return ManifestCache({"counting": manifest}, surface=surface)
 
 
+def test_tools_property_passthrough_preserves_legacy_surface() -> None:
+    """AgentContext renders the system prompt via ``registry._tools`` (len +
+    .values()); the governance wrapper must preserve that private-map surface
+    by delegating to the inner ToolRegistry."""
+    inner, tool = _registry()
+    governed = GovernedToolRegistry(
+        inner,
+        manifest_cache=_cache(RiskLevel.R0_READ),
+        context=RuntimeContext(surface=ToolSurface.CLI, mode="off"),
+    )
+
+    assert governed._tools is inner._tools
+    assert len(governed._tools) == 1
+    assert list(governed._tools.values()) == [tool]
+
+
 def test_r4_deny_shadow_denies_in_observe() -> None:
     inner, tool = _registry()
     governed = GovernedToolRegistry(

@@ -38,6 +38,13 @@ class GovernedToolRegistry:
     def tool_names(self) -> list[str]:
         return list(getattr(self.inner, "tool_names", []))
 
+    @property
+    def _tools(self) -> Any:
+        """Preserve the wrapped registry's private tool map for legacy read
+        access (e.g. AgentContext iterates ``registry._tools`` when rendering the
+        system prompt). Read-only passthrough to the inner ToolRegistry."""
+        return getattr(self.inner, "_tools", {})
+
     def get(self, name: str) -> Any:
         return self.inner.get(name)
 
