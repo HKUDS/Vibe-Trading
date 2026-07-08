@@ -1,0 +1,83 @@
+[
+  {
+    "surface": "api",
+    "actor": "authenticated_reader",
+    "entrypoint": "/api/alpha-genesis/reports/{id}",
+    "object": "alpha_genesis_report",
+    "action": "read",
+    "allowed_side_effects": ["read_local_artifact"],
+    "forbidden_side_effects": ["live_order_write", "broker_permission_change", "kill_switch_change", "trial_ledger_mutation"]
+  },
+  {
+    "surface": "cli",
+    "actor": "local_operator",
+    "entrypoint": "python -m cli.alpha_genesis",
+    "object": "alpha_genesis_report",
+    "action": "read_render",
+    "allowed_side_effects": ["read_local_artifact"],
+    "forbidden_side_effects": ["live_order_write", "broker_permission_change", "kill_switch_change", "trial_ledger_mutation"]
+  },
+  {
+    "surface": "frontend",
+    "actor": "browser_user",
+    "entrypoint": "alphaGenesisSecurity helpers",
+    "object": "rendered_report_payload",
+    "action": "sanitize_display_export",
+    "allowed_side_effects": [],
+    "forbidden_side_effects": ["live_order_write", "broker_permission_change", "kill_switch_change", "trial_ledger_mutation"]
+  },
+  {
+    "surface": "llm_caller",
+    "actor": "model_output",
+    "entrypoint": "AlphaQualityDecisionContext.caller_claimed_decision",
+    "object": "quality_decision",
+    "action": "attempted_override",
+    "allowed_side_effects": [],
+    "forbidden_side_effects": ["live_order_write", "broker_permission_change", "kill_switch_change", "decision_raise", "scorecard_override"]
+  },
+  {
+    "surface": "mcp",
+    "actor": "external_tool_client",
+    "entrypoint": "not_registered_for_alpha_genesis_writes",
+    "object": "research_artifact",
+    "action": "none",
+    "allowed_side_effects": [],
+    "forbidden_side_effects": ["live_order_write", "broker_permission_change", "kill_switch_change", "artifact_mutation"]
+  },
+  {
+    "surface": "scheduler",
+    "actor": "background_job",
+    "entrypoint": "not_registered_for_alpha_genesis_jobs",
+    "object": "foundry_search",
+    "action": "none",
+    "allowed_side_effects": [],
+    "forbidden_side_effects": ["live_order_write", "broker_permission_change", "kill_switch_change", "long_running_mining_trigger"]
+  },
+  {
+    "surface": "websocket",
+    "actor": "browser_session",
+    "entrypoint": "image data-url envelope",
+    "object": "uploaded_media",
+    "action": "validate_media_type",
+    "allowed_side_effects": [],
+    "forbidden_side_effects": ["live_order_write", "broker_permission_change", "kill_switch_change", "svg_script_render"]
+  },
+  {
+    "surface": "upload",
+    "actor": "authenticated_user",
+    "entrypoint": "POST /upload",
+    "object": "file_upload",
+    "action": "store_safe_file",
+    "allowed_side_effects": [],
+    "forbidden_side_effects": ["live_order_write", "broker_permission_change", "kill_switch_change", "svg_script_render"]
+  },
+  {
+    "surface": "artifact_cache",
+    "actor": "browser_or_proxy_cache",
+    "entrypoint": "alpha-genesis API response",
+    "object": "report_scorecard_decision",
+    "action": "cache_decision",
+    "allowed_side_effects": [],
+    "forbidden_side_effects": ["live_order_write", "broker_permission_change", "kill_switch_change", "sensitive_report_cache"]
+  }
+]

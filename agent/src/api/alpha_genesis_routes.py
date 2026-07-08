@@ -8,7 +8,9 @@ import re
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
+
+from src.research_ledger.hash_utils import json_safe, redact_secrets
 
 
 AuthDep = Callable[..., Awaitable[Any] | Any]
@@ -41,9 +43,18 @@ def _load_json_artifact(name: str, suffix: str) -> dict[str, Any]:
     if not path.exists():
         raise HTTPException(status_code=404, detail="alpha genesis artifact not found")
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=500, detail="alpha genesis artifact is invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=500, detail="alpha genesis artifact must be a JSON object")
+    return redact_secrets(json_safe(payload))
+
+
+def _set_read_only_headers(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["X-Content-Type-Options"] = "nosniff"
 
 
 def register_alpha_genesis_routes(
@@ -61,13 +72,16 @@ def register_alpha_genesis_routes(
         require_auth = host.require_auth
 
     @app.get("/api/alpha-genesis/reports/{report_id}", dependencies=[Depends(require_auth)])
-    async def get_alpha_genesis_report(report_id: str) -> dict[str, Any]:
+    async def get_alpha_genesis_report(report_id: str, response: Response) -> dict[str, Any]:
+        _set_read_only_headers(response)
         return _load_json_artifact(report_id, ".json")
 
     @app.get("/api/alpha-genesis/scorecards/{candidate_id}", dependencies=[Depends(require_auth)])
-    async def get_alpha_genesis_scorecard(candidate_id: str) -> dict[str, Any]:
+    async def get_alpha_genesis_scorecard(candidate_id: str, response: Response) -> dict[str, Any]:
+        _set_read_only_headers(response)
         return _load_json_artifact(candidate_id, ".scorecard.json")
 
     @app.get("/api/alpha-genesis/quality-decisions/{candidate_id}", dependencies=[Depends(require_auth)])
-    async def get_alpha_genesis_quality_decision(candidate_id: str) -> dict[str, Any]:
+    async def get_alpha_genesis_quality_decision(candidate_id: str, response: Response) -> dict[str, Any]:
+        _set_read_only_headers(response)
         return _load_json_artifact(candidate_id, ".decision.json")

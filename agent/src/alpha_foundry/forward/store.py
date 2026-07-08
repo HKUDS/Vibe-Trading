@@ -75,6 +75,18 @@ class ForwardObservationStore:
                     records.append(observation)
         return records
 
+    def verify_hash_chain(self, *, plan_id: str | None = None) -> bool:
+        previous_by_plan: dict[str, str | None] = {}
+        for observation in self.list(plan_id=plan_id):
+            previous = previous_by_plan.get(observation.plan_id)
+            if observation.previous_observation_hash != previous:
+                return False
+            expected = observation.with_hash(observation.previous_observation_hash)
+            if expected.observation_hash != observation.observation_hash:
+                return False
+            previous_by_plan[observation.plan_id] = observation.observation_hash
+        return True
+
     def update(self, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
         raise ForwardStoreMutationError("forward observation store is append-only")
 

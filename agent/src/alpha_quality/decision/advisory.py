@@ -24,8 +24,11 @@ def check_turnover(
 
 
 def check_exposure(scorecard: AlphaQualityScorecard) -> set[AdvisoryCode]:
-    if "EXPOSURE_CONCENTRATION" in scorecard.warnings:
-        return {AdvisoryCode.EXPOSURE_CONCENTRATION}
+    if (
+        "EXPOSURE_CONCENTRATION" in scorecard.warnings
+        or "UNEXPLAINED_EXPOSURE" in scorecard.warnings
+    ):
+        return {AdvisoryCode.UNEXPLAINED_EXPOSURE}
     return set()
 
 
@@ -55,5 +58,5 @@ def check_deflated_sharpe_proxy(
     if observed_ir is None:
         return set()
     if trial_count >= 50 and observed_ir < 0.25:
-        return {AdvisoryCode.LOW_DSR_PROXY}
+        return {AdvisoryCode.LOW_DEFLATED_SHARPE}
     return set()

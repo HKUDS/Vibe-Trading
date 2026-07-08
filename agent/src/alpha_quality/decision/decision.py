@@ -22,6 +22,7 @@ DECISION_RANK = {
     QualityDecision.RESEARCH_ONLY: 1,
     QualityDecision.CANDIDATE_ZOO: 2,
     QualityDecision.PAPER_CANDIDATE: 3,
+    QualityDecision.FORWARD_TRACK: 4,
 }
 
 
@@ -34,6 +35,8 @@ def decide_quality(
         return QualityDecision.REJECT
     if hard_failures & RESEARCH_ONLY_CAPS:
         return QualityDecision.RESEARCH_ONLY
+    if total_quality_score >= 0.90:
+        return QualityDecision.FORWARD_TRACK
     if total_quality_score >= 0.75:
         return QualityDecision.PAPER_CANDIDATE
     if total_quality_score >= 0.50:
