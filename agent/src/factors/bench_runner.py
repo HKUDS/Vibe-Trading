@@ -348,3 +348,102 @@ def run_bench(
         }
     )
     return entry
+
+
+def _default_scorecard_split_config(index: Any) -> Any:
+    """Build a deterministic 60/20/20 split for additive scorecard calls."""
+    from src.alpha_quality.model import SplitConfig
+
+    dates = list(index)
+    if not dates:
+        raise ValueError("cannot build split config from an empty index")
+    n = len(dates)
+    train_end = max(0, int(n * 0.6) - 1)
+    valid_end = max(train_end, int(n * 0.8) - 1)
+    test_start = min(valid_end + 1, n - 1)
+    return SplitConfig(
+        train=(str(dates[0]), str(dates[train_end])),
+        valid=(str(dates[min(train_end + 1, n - 1)]), str(dates[valid_end])),
+        test=(str(dates[test_start]), str(dates[-1])),
+    )
+
+
+def run_bench_with_scorecard(
+    zoo: str,
+    universe: str,
+    period: str,
+    top: int = 20,
+    on_progress: ProgressCb | None = None,
+    registry: Registry | None = None,
+    only: Iterable[str] | None = None,
+    *,
+    split_config: Any | None = None,
+    horizons: Iterable[int] = (1, 5, 10, 20),
+    scope: str = "discovery",
+    data_snapshot_ref: str | None = None,
+    trial_ledger_ref: str | None = None,
+) -> dict[str, Any]:
+    """Additive AGS scorecard entrypoint; preserves ``run_bench`` behavior."""
+    base = run_bench(
+        zoo=zoo,
+        universe=universe,
+        period=period,
+        top=top,
+        on_progress=on_progress,
+        registry=registry,
+        only=only,
+    )
+    if base.get("status") != "ok":
+        return base
+
+    from src.alpha_quality.model import FactorOutputFrame
+    from src.alpha_quality.scorecard import compute_scorecard
+
+    reg = registry if registry is not None else get_default_registry()
+    panel = _load_universe_panel(universe, period)
+    close = panel.get("close")
+    if close is None:
+        enriched = dict(base)
+        enriched["scorecards"] = []
+        enriched["scorecard_errors"] = [{"error": "panel missing close"}]
+        return enriched
+
+    actual_split_config = split_config or _default_scorecard_split_config(close.index)
+    scorecards: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+
+    for row in base.get("rows", []):
+        alpha_id = row.get("id")
+        if not alpha_id:
+            continue
+        try:
+            factor = reg.compute(alpha_id, panel)
+            valid = factor.notna()
+            factor_output = FactorOutputFrame(
+                factor_id=str(alpha_id),
+                formula=str(row.get("formula_latex", "")),
+                factor=factor,
+                valid_mask=valid,
+                tradable_mask=valid.copy(),
+                universe_mask=valid.copy(),
+                metadata={"bench_row": row},
+                factor_definition_hash=f"legacy:{alpha_id}",
+            )
+            scorecard = compute_scorecard(
+                factor_output,
+                panel,
+                actual_split_config,
+                horizons=horizons,
+                scope=scope,  # type: ignore[arg-type]
+                data_snapshot_ref=data_snapshot_ref,
+                trial_ledger_ref=trial_ledger_ref,
+            )
+            scorecards.append(scorecard.to_dict())
+        except Exception as exc:  # noqa: BLE001
+            errors.append({"factor_id": str(alpha_id), "error": str(exc)})
+
+    enriched = dict(base)
+    enriched["scorecards"] = scorecards
+    if errors:
+        enriched["scorecard_errors"] = errors
+    return enriched
