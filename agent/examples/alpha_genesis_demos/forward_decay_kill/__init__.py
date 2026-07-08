@@ -1,0 +1,1 @@
+"""Forward decay kill demo."""

@@ -1,0 +1,1 @@
+{"decision":"reject","demo":"high_turnover_cost_trap","hard_failures":["COST_EXCEEDS_ALPHA"],"trial_count":8,"warnings":["HIGH_TURNOVER"]}
