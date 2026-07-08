@@ -269,6 +269,10 @@ from src.api.live_routes import (  # noqa: F401, E402
 from src.api.alpha_routes import register_alpha_routes  # noqa: E402
 register_alpha_routes(app)
 
+# --- Alpha Genesis Reports (read-only) ---
+from src.api.alpha_genesis_routes import register_alpha_genesis_routes  # noqa: E402
+register_alpha_genesis_routes(app)
+
 
 # ============================================================================
 # Scheduled Research Routes - defined in src/api/scheduled_routes.py
