@@ -12,6 +12,7 @@ from cli.onboard import PROVIDERS as ONBOARD_PROVIDERS
 EXPECTED_PROVIDER_DEFAULTS = {
     "openrouter": "deepseek/deepseek-v4-pro",
     "openai": "gpt-5.5",
+    "openai-codex": "openai-codex/gpt-5.4",
     "deepseek": "deepseek-v4-pro",
     "gemini": "gemini-3.5-flash",
     "groq": "meta-llama/llama-4-maverick-17b-128e-instruct",
@@ -47,6 +48,15 @@ def test_interactive_onboard_openai_defaults_to_available_model() -> None:
     assert provider.default_model != "gpt-5.5-instant"
 
 
+def test_interactive_onboard_codex_defaults_to_supported_model() -> None:
+    provider = next(provider for provider in ONBOARD_PROVIDERS if provider.key == "openai-codex")
+
+    assert provider.default_model == "openai-codex/gpt-5.4"
+    assert provider.key_env is None
+    assert provider.base_env == "OPENAI_CODEX_BASE_URL"
+    assert provider.suggested_models[0] == "openai-codex/gpt-5.4"
+
+
 def test_legacy_cli_provider_choices_match_registry_defaults() -> None:
     legacy_defaults = {
         str(item["provider"]): item["model"]
@@ -65,4 +75,5 @@ def test_interactive_onboard_suggests_current_primary_models() -> None:
 
     assert onboard_defaults["openrouter"] == "deepseek/deepseek-v4-pro"
     assert onboard_defaults["openai"] == "gpt-5.5"
+    assert onboard_defaults["openai-codex"] == "openai-codex/gpt-5.4"
     assert onboard_defaults["deepseek"] == "deepseek-v4-pro"

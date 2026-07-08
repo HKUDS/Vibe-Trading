@@ -101,3 +101,26 @@ class TestCliInit:
         assert "LANGCHAIN_MODEL_NAME=qwen2.5:32b" in content
         assert "OPENAI_API_KEY=" not in content
         assert "OPENROUTER_API_KEY=" not in content
+
+    def test_cmd_init_openai_codex_uses_supported_default_and_oauth(self, tmp_path: Path) -> None:
+        env_path = tmp_path / ".env"
+
+        with patch.object(cli, "_INIT_ENV_PATH", env_path), \
+             patch.object(cli.IntPrompt, "ask", return_value=13), \
+             patch.object(
+                 cli.Prompt,
+                 "ask",
+                 side_effect=[
+                     "https://chatgpt.com/backend-api/codex/responses",
+                     "openai-codex/gpt-5.4",
+                     "",
+                 ],
+             ):
+            result = cli.cmd_init()
+
+        assert result == 0
+        content = env_path.read_text(encoding="utf-8")
+        assert "LANGCHAIN_PROVIDER=openai-codex" in content
+        assert "OPENAI_CODEX_BASE_URL=https://chatgpt.com/backend-api/codex/responses" in content
+        assert "LANGCHAIN_MODEL_NAME=openai-codex/gpt-5.4" in content
+        assert "OPENAI_API_KEY=" not in content
