@@ -1,0 +1,1 @@
+"""Survivorship-bias trap demo."""
