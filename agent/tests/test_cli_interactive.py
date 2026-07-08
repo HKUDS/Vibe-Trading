@@ -224,6 +224,34 @@ class TestMainRouting:
 
         assert cli_main._probe_model_name() == "openai-codex/gpt-5.3-codex"
 
+    def test_resume_prompt_treats_plain_text_as_first_turn(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Typing a chat message at the resume prompt must not discard it."""
+        cli_main = importlib.import_module("cli.main")
+        session = SimpleNamespace(session_id="sess_1", title="hello")
+        store = SimpleNamespace(list_sessions=lambda limit=1: [session])
+
+        monkeypatch.setattr(cli_main, "_session_store", lambda: store)
+        monkeypatch.setattr("builtins.input", lambda _prompt: "hello")
+
+        result = cli_main._maybe_resume_last_session(cli_main.get_console())
+
+        assert result == {"pending_input": "hello"}
+
+    @pytest.mark.parametrize("answer", ["", "n", "new", "no"])
+    def test_resume_prompt_explicit_new_answers_start_new_session(
+        self, monkeypatch: pytest.MonkeyPatch, answer: str
+    ) -> None:
+        cli_main = importlib.import_module("cli.main")
+        session = SimpleNamespace(session_id="sess_1", title="hello")
+        store = SimpleNamespace(list_sessions=lambda limit=1: [session])
+
+        monkeypatch.setattr(cli_main, "_session_store", lambda: store)
+        monkeypatch.setattr("builtins.input", lambda _prompt: answer)
+
+        assert cli_main._maybe_resume_last_session(cli_main.get_console()) is None
+
 
 # ---------------------------------------------------------------------------
 # Main-level dispatch smoke
