@@ -42,7 +42,7 @@ adj_factor | float | Y | 复权因子
 
 **接口使用**
 
-```pyhton
+```python
 
 pro = ts.pro_api()
 
