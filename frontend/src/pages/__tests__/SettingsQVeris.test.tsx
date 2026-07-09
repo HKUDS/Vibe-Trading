@@ -224,10 +224,10 @@ describe("Settings QVeris card", () => {
     expect(screen.getByRole("button", { name: "Save QVeris settings" })).toBeInTheDocument();
     unmount();
 
-    await i18n.changeLanguage("zh-CN");
+    await i18n.changeLanguage("zh-TW");
     mockQVerisFetch(undefined, qverisStatus({ recent: [] }));
     render(<QVerisSettings />);
-    expect(await screen.findByText("QVeris 工具市场")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "保存 QVeris 设置" })).toBeInTheDocument();
+    expect(await screen.findByText("QVeris 工具市場")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "儲存 QVeris 設定" })).toBeInTheDocument();
   });
 });

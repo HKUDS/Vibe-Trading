@@ -2,7 +2,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 import en from "./locales/en.json";
-import zhCN from "./locales/zh-CN.json";
+import zhTW from "./locales/zh-TW.json";
 import ja from "./locales/ja.json";
 import ko from "./locales/ko.json";
 import ar from "./locales/ar.json";
@@ -12,7 +12,7 @@ import ar from "./locales/ar.json";
 // layout (sidebar on the right, etc.) when needed.
 export const SUPPORTED_LANGUAGES = [
   { code: "en", label: "English", dir: "ltr" as const },
-  { code: "zh-CN", label: "中文", dir: "ltr" as const },
+  { code: "zh-TW", label: "中文（繁體）", dir: "ltr" as const },
   { code: "ja", label: "日本語", dir: "ltr" as const },
   { code: "ko", label: "한국어", dir: "ltr" as const },
   { code: "ar", label: "العربية", dir: "rtl" as const },
@@ -43,7 +43,7 @@ i18n
   .init({
     resources: {
       en: { translation: en },
-      "zh-CN": { translation: zhCN },
+      "zh-TW": { translation: zhTW },
       ja: { translation: ja },
       ko: { translation: ko },
       ar: { translation: ar },
@@ -55,8 +55,8 @@ i18n
     fallbackLng: "en",
     supportedLngs: SUPPORTED_LANGUAGES.map((l) => l.code),
     // NOTE: Intentionally NOT using nonExplicitSupportedLngs — it strips
-    // region codes from compound language keys like "zh-CN" which causes
-    // isSupportedCode to reject them ("zh-CN" → "zh", not in supportedLngs).
+    // region codes from compound language keys like "zh-TW" which causes
+    // isSupportedCode to reject them ("zh-TW" → "zh", not in supportedLngs).
     interpolation: { escapeValue: false },
     detection: {
       // In browsers the navigator.language gives the user's browser locale,

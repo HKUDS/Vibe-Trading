@@ -1,5 +1,5 @@
 import en from "../locales/en.json";
-import zhCN from "../locales/zh-CN.json";
+import zhTW from "../locales/zh-TW.json";
 import ja from "../locales/ja.json";
 import ko from "../locales/ko.json";
 import ar from "../locales/ar.json";
@@ -42,7 +42,7 @@ function hasPath(obj: Record<string, unknown>, path: string): boolean {
 const enKeys = collectKeys(en as unknown as Record<string, unknown>);
 
 const locales: Record<string, Record<string, unknown>> = {
-  "zh-CN": zhCN as unknown as Record<string, unknown>,
+  "zh-TW": zhTW as unknown as Record<string, unknown>,
   ja: ja as unknown as Record<string, unknown>,
   ko: ko as unknown as Record<string, unknown>,
   ar: ar as unknown as Record<string, unknown>,
@@ -121,7 +121,7 @@ describe("i18n utilities", () => {
 
   it("isRtl returns false for LTR languages", () => {
     expect(isRtl("en")).toBe(false);
-    expect(isRtl("zh-CN")).toBe(false);
+    expect(isRtl("zh-TW")).toBe(false);
     expect(isRtl("ja")).toBe(false);
     expect(isRtl("ko")).toBe(false);
   });
@@ -138,14 +138,14 @@ describe("i18n utilities", () => {
 
   it("SUPPORTED_LANGUAGES contains all 5 registered locales", () => {
     const codes = SUPPORTED_LANGUAGES.map((l) => l.code);
-    expect(codes).toEqual(["en", "zh-CN", "ja", "ko", "ar"]);
+    expect(codes).toEqual(["en", "zh-TW", "ja", "ko", "ar"]);
   });
 
-  it("accepts zh-CN as an explicit supported language", async () => {
-    await i18n.changeLanguage("zh-CN");
+  it("accepts zh-TW as an explicit supported language", async () => {
+    await i18n.changeLanguage("zh-TW");
 
-    expect(i18n.language).toBe("zh-CN");
-    expect(i18n.languages).toContain("zh-CN");
+    expect(i18n.language).toBe("zh-TW");
+    expect(i18n.languages).toContain("zh-TW");
 
     await i18n.changeLanguage("en");
   });
