@@ -84,7 +84,7 @@ Changed-file classification from the evidence baseline `git diff --name-only mai
 After adding this report file, the current branch diff is:
 
 ```text
-195 files changed, 9710 insertions(+), 1 deletion(-)
+195 files changed, 9718 insertions(+), 1 deletion(-)
 ```
 
 Current post-report classification: 57 core production/application files, 42 demo/example files, 68 test files/fixtures, 25 docs, 3 tooling/script files, and 0 generated artifacts.
