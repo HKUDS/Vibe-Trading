@@ -13,6 +13,7 @@ build in CI) cannot satisfy or break them.
 
 from __future__ import annotations
 
+import types
 from unittest import mock
 
 import pytest
@@ -109,3 +110,32 @@ def test_non_loopback_with_key_does_not_warn(
 
     out = capsys.readouterr().out
     assert _BIND_WARN not in out
+
+
+@pytest.mark.unit
+def test_root_route_probe_tolerates_pathless_routes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """serve_main must not crash when app.routes holds a path-less entry.
+
+    Newer FastAPI records ``app.include_router(...)`` as an ``_IncludedRouter``
+    marker in ``app.routes`` that has no ``path`` attribute (unlike the flattened
+    ``APIRoute`` objects older versions produced). The frontend-mount probe scans
+    every route, so it must read ``path`` defensively or the server aborts at
+    startup with ``AttributeError: '_IncludedRouter' object has no attribute
+    'path'`` (issue #450).
+
+    The path-less route is placed before a real ``/`` route so the probe is
+    forced to inspect it; the ``/`` route then short-circuits the check, so the
+    static-file mount is skipped and the test stays independent of whether a
+    frontend build exists.
+    """
+    pathless_route = types.SimpleNamespace(name="included-router")
+    assert not hasattr(pathless_route, "path")
+    root_route = types.SimpleNamespace(name="root", path="/")
+    monkeypatch.setattr(
+        api_server.app.router, "routes", [pathless_route, root_route]
+    )
+    monkeypatch.setattr(api_server.Path, "exists", lambda self: True, raising=False)
+
+    assert _run_serve([]) == "127.0.0.1"
