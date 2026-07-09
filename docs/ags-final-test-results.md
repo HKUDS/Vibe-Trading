@@ -33,13 +33,25 @@ Generated for the AGS v3.1 current-main-safe security and acceptance pass.
 
 ## Security Tool Availability
 
-- `bandit`: unavailable in this environment.
-- `semgrep`: unavailable in this environment.
-- `gitleaks`: unavailable in this environment.
-- `trufflehog`: unavailable in this environment.
-- `pip-audit`: unavailable in this environment.
-- `pyright`: unavailable in this environment.
-- `mypy`: available and run on touched AGS/security modules.
+- `semgrep`: installed and run through `scripts/ags_p0_acceptance.ps1`; custom AGS bypass rules and registry `p/python`/`p/secrets` reported 0 findings.
+- `bandit`: installed and run on AGS Python paths plus `agent/cli/alpha_genesis.py`; no issues identified.
+- `pip-audit`: installed and run; no known vulnerabilities found.
+- `safety`: installed and run in non-interactive check mode; 267 packages scanned, 0 vulnerabilities.
+- `cyclonedx-py`: installed and run; SBOM generated under `.tmp/ags-sbom.cdx.json`.
+- `gitleaks`: downloaded to `.tmp/tools/gitleaks/gitleaks.exe` and run on production AGS code/API/CLI paths; 0 leaks.
+- `trufflehog`: downloaded to `.tmp/tools/trufflehog/trufflehog.exe` and run on production AGS code/API/CLI paths; 0 verified/unknown secrets.
+- `mypy`: installed and run in strict mode on AGS packages and `agent/cli/alpha_genesis.py`; 51 source files, no issues.
+- `pyright`: installed and run on AGS packages and `agent/cli/alpha_genesis.py`; 0 errors, 0 warnings.
+- `mutmut`: installed, but native Windows execution is unsupported by the tool. Mutation testing must run under WSL/Linux if a mutation-score gate is required.
+
+## Pasted-Text-4 Extreme Acceptance Run
+
+- Command: `powershell -ExecutionPolicy Bypass -File scripts\ags_p0_acceptance.ps1`
+- Result: passed.
+- Included gates: whitespace diff check, compileall, focused pasted-text-4 pytest matrix, mypy strict, pyright, custom Semgrep rules, Semgrep registry rules, Bandit, pip-audit, Safety, CycloneDX SBOM generation, gitleaks, and trufflehog.
+- Focused pytest result inside the script: 53 passed, 1 Starlette/httpx deprecation warning.
+- Static/type result: mypy success on 51 source files; pyright 0 errors.
+- Secret/dependency result: Semgrep 0 findings, Bandit passed, pip-audit 0 known vulnerabilities, Safety 0 vulnerabilities, gitleaks 0 leaks, trufflehog 0 verified/unknown secrets.
 
 ## Bug Fixes From Verification
 

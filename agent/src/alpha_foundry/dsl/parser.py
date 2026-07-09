@@ -10,10 +10,13 @@ class FormulaParser:
         if len(text) > MAX_FORMULA_CHARS:
             raise ValueError("formula exceeds maximum length")
         parser = _Parser(text)
-        node = parser.parse_expr()
+        parsed = parser.parse_expr()
         parser.skip_ws()
         if parser.pos != len(parser.text):
             raise ValueError("unsupported formula syntax")
+        if not isinstance(parsed, ASTNode):
+            raise ValueError("unsupported formula syntax")
+        node = parsed
         if node.op == "field":
             raise ValueError("unsupported formula syntax")
         return node

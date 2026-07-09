@@ -165,7 +165,7 @@ def _fixture_panel() -> dict[str, pd.DataFrame]:
     base = pd.DataFrame(
         [[100.0 + day + symbol for symbol in range(len(symbols))] for day in range(len(dates))],
         index=dates,
-        columns=symbols,
+        columns=pd.Index(symbols),
     )
     return {
         "close": base,

@@ -1,0 +1,38 @@
+rules:
+  - id: ags.builtins-getattr-dynamic-exec
+    languages: [python]
+    severity: ERROR
+    message: "AGS code must not dynamically resolve builtins execution functions."
+    patterns:
+      - pattern-either:
+          - pattern: getattr(builtins, $NAME)(...)
+          - pattern: getattr(__builtins__, $NAME)(...)
+          - pattern: getattr($BUILTINS, $NAME)(...)
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: ^(".*(ev|ex|compile|import).*"|'.*(ev|ex|compile|import).*'|.*\+.*)$
+
+  - id: ags.builtins-dict-exec
+    languages: [python]
+    severity: ERROR
+    message: "AGS code must not call execution functions via builtins.__dict__."
+    pattern-either:
+      - pattern: builtins.__dict__[$KEY](...)
+      - pattern: __builtins__.__dict__[$KEY](...)
+      - pattern: __builtins__[$KEY](...)
+
+  - id: ags.dynamic-import-in-lambda-or-type
+    languages: [python]
+    severity: ERROR
+    message: "AGS code must not hide __import__ in dynamic class or lambda payloads."
+    pattern-either:
+      - pattern: |
+          lambda: __import__(...)
+      - pattern: |
+          lambda $ARG: __import__(...)
+      - patterns:
+          - pattern: |
+              type($NAME, $BASES, $DICT)
+          - metavariable-regex:
+              metavariable: $DICT
+              regex: __import__

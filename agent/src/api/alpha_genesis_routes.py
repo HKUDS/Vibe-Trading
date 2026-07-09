@@ -32,7 +32,7 @@ def _validate_identifier(value: str, kind: str) -> None:
         raise HTTPException(status_code=400, detail=f"invalid {kind}")
 
 
-def _load_json_artifact(name: str, suffix: str) -> dict[str, Any]:
+def _load_json_artifact(name: str, suffix: str, *, expected_schema: str) -> dict[str, Any]:
     _validate_identifier(name, "artifact id")
     path = (_report_root() / f"{name}{suffix}").resolve()
     root = _report_root().resolve()
@@ -48,6 +48,8 @@ def _load_json_artifact(name: str, suffix: str) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail="alpha genesis artifact is invalid JSON") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=500, detail="alpha genesis artifact must be a JSON object")
+    if payload.get("schema_version") != expected_schema:
+        raise HTTPException(status_code=404, detail="alpha genesis artifact not found")
     return redact_secrets(json_safe(payload))
 
 
@@ -74,14 +76,26 @@ def register_alpha_genesis_routes(
     @app.get("/api/alpha-genesis/reports/{report_id}", dependencies=[Depends(require_auth)])
     async def get_alpha_genesis_report(report_id: str, response: Response) -> dict[str, Any]:
         _set_read_only_headers(response)
-        return _load_json_artifact(report_id, ".json")
+        return _load_json_artifact(
+            report_id,
+            ".json",
+            expected_schema="alpha_genesis_report.v1",
+        )
 
     @app.get("/api/alpha-genesis/scorecards/{candidate_id}", dependencies=[Depends(require_auth)])
     async def get_alpha_genesis_scorecard(candidate_id: str, response: Response) -> dict[str, Any]:
         _set_read_only_headers(response)
-        return _load_json_artifact(candidate_id, ".scorecard.json")
+        return _load_json_artifact(
+            candidate_id,
+            ".scorecard.json",
+            expected_schema="alpha_quality_scorecard.v1",
+        )
 
     @app.get("/api/alpha-genesis/quality-decisions/{candidate_id}", dependencies=[Depends(require_auth)])
     async def get_alpha_genesis_quality_decision(candidate_id: str, response: Response) -> dict[str, Any]:
         _set_read_only_headers(response)
-        return _load_json_artifact(candidate_id, ".decision.json")
+        return _load_json_artifact(
+            candidate_id,
+            ".decision.json",
+            expected_schema="alpha_quality_decision.v1",
+        )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import pandas as pd
 
@@ -39,7 +39,7 @@ class DataSnapshotManifest:
     redacted_source_config: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
-        return json_safe(asdict(self))
+        return cast(dict[str, Any], json_safe(asdict(self)))
 
     def finalize_hash(self) -> "DataSnapshotManifest":
         digest = canonical_json_hash(

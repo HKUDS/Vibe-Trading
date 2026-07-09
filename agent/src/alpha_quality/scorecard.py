@@ -112,7 +112,10 @@ def compute_scorecard(
 
     coverage_series = coverage_by_date(combined_mask)
     coverage = CoverageMetrics(
-        by_date={str(k.date() if hasattr(k, "date") else k): float(v) for k, v in coverage_series.items()},
+        by_date={
+            (k.date().isoformat() if isinstance(k, pd.Timestamp) else str(k)): float(v)
+            for k, v in coverage_series.items()
+        },
         mean_coverage=float(coverage_series.mean()) if not coverage_series.empty else None,
     )
 

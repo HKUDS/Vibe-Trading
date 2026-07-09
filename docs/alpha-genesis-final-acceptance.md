@@ -15,6 +15,20 @@
 
 ## Tests Run
 
+- `powershell -ExecutionPolicy Bypass -File scripts\ags_p0_acceptance.ps1` -> passed.
+  - `git diff --check` passed with Windows line-ending normalization warnings only.
+  - `compileall` passed for AGS modules and CLI.
+  - Focused pasted-text-4 matrix -> 53 passed, 1 Starlette/httpx deprecation warning.
+  - `mypy --strict --ignore-missing-imports` on AGS packages and `agent/cli/alpha_genesis.py` -> success, 51 source files.
+  - `pyright` on AGS packages and `agent/cli/alpha_genesis.py` -> 0 errors, 0 warnings.
+  - Custom AGS Semgrep bypass rules -> 50 files, 3 rules, 0 findings.
+  - Semgrep registry `p/python` and `p/secrets` -> 187 rules, 82 files, 0 findings; two unrelated legacy CLI taint rules timed out with no findings.
+  - Bandit AGS recursive scan -> passed.
+  - `pip-audit` -> no known vulnerabilities found.
+  - Safety 3.8.1 environment scan -> 267 packages, 0 vulnerabilities.
+  - CycloneDX SBOM generation -> passed.
+  - gitleaks 8.30.1 production AGS secret scan -> 0 leaks.
+  - trufflehog 3.95.8 production AGS secret scan -> 0 verified/unknown secrets.
 - `pytest agent/tests/alpha_genesis_demos -q` -> 7 passed.
 - `pytest agent/tests/alpha_foundry/reports agent/tests/security/test_alpha_genesis_redaction.py agent/tests/contracts/test_alpha_genesis_openapi_snapshot.py -q` -> 4 passed.
 - `pytest agent/tests/alpha_foundry/forward -q` -> 9 passed.

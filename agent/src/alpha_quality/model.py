@@ -4,7 +4,7 @@ import json
 import math
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 import pandas as pd
@@ -24,7 +24,7 @@ ScorecardScope = Literal["discovery", "final_quality_decision"]
 
 
 def _safe_json_value(value: Any) -> Any:
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         return _safe_json_value(asdict(value))
     if isinstance(value, dict):
         return {str(k): _safe_json_value(v) for k, v in value.items()}
@@ -133,7 +133,7 @@ class AlphaQualityScorecard:
     hard_failures: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return _safe_json_value(asdict(self))
+        return cast(dict[str, Any], _safe_json_value(asdict(self)))
 
     def to_json(self) -> str:
         return json.dumps(

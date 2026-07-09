@@ -4,6 +4,7 @@ import dataclasses
 import hashlib
 import json
 import math
+import re
 from datetime import date, datetime, timezone
 from typing import Any, Iterable
 
@@ -23,6 +24,20 @@ _SENSITIVE_KEY_PARTS = (
     "secret",
     "token",
 )
+_PATH_KEY_PARTS = (
+    "cache_dir",
+    "directory",
+    "filepath",
+    "folder",
+    "path",
+    "root",
+)
+_SECRET_VALUE_RE = re.compile(
+    r"(?i)\b(authorization|bearer|api[_-]?key|secret|token|password)\b\s*[:=]\s*\S+"
+)
+_OPENAI_STYLE_SECRET_RE = re.compile(r"\bsk-[A-Za-z0-9][A-Za-z0-9._-]{5,}\b")
+_WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)[^\r\n]+")
+_POSIX_ABSOLUTE_PATH_RE = re.compile(r"^/(?:home|mnt|opt|private|root|tmp|Users|var|workspace)(?:/|$)")
 
 
 def utc_now_iso() -> str:
@@ -30,7 +45,7 @@ def utc_now_iso() -> str:
 
 
 def json_safe(value: Any) -> Any:
-    if dataclasses.is_dataclass(value):
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return json_safe(dataclasses.asdict(value))
     if isinstance(value, dict):
         return {str(k): json_safe(v) for k, v in value.items()}
@@ -69,14 +84,45 @@ def is_sensitive_key(key: str) -> bool:
     return any(part in lowered for part in _SENSITIVE_KEY_PARTS)
 
 
+def _is_path_key(key: str) -> bool:
+    lowered = key.lower().replace("-", "_")
+    return any(part in lowered for part in _PATH_KEY_PARTS)
+
+
+def _is_secret_like_value(value: str) -> bool:
+    return bool(_SECRET_VALUE_RE.search(value) or _OPENAI_STYLE_SECRET_RE.search(value))
+
+
+def _is_absolute_local_path(value: str, *, key: str | None = None) -> bool:
+    if "://" in value:
+        return False
+    if _WINDOWS_ABSOLUTE_PATH_RE.match(value):
+        return True
+    return bool(key and _is_path_key(key) and _POSIX_ABSOLUTE_PATH_RE.match(value))
+
+
+def _redact_string(value: str, *, key: str | None = None) -> str:
+    if _is_secret_like_value(value) or _is_absolute_local_path(value, key=key):
+        return _REDACTED
+    return value
+
+
 def redact_secrets(value: Any) -> Any:
     if isinstance(value, dict):
-        return {
-            str(k): _REDACTED if is_sensitive_key(str(k)) else redact_secrets(v)
-            for k, v in value.items()
-        }
+        redacted: dict[str, Any] = {}
+        for k, v in value.items():
+            key = str(k)
+            if is_sensitive_key(key):
+                redacted[key] = _REDACTED
+            elif isinstance(v, str):
+                redacted[key] = _redact_string(v, key=key)
+            else:
+                redacted[key] = redact_secrets(v)
+        return redacted
     if isinstance(value, list):
         return [redact_secrets(v) for v in value]
     if isinstance(value, tuple):
         return [redact_secrets(v) for v in value]
+    if isinstance(value, str):
+        return _redact_string(value)
     return json_safe(value)

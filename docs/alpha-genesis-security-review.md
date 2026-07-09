@@ -27,7 +27,14 @@
 
 ## Static And Dependency Scans
 
-- Semgrep 1.168.0: AGS paths scanned with `p/python` and `p/secrets`; 51 tracked files scanned, 187 rules run, 0 findings.
-- Bandit 1.9.4: AGS Python paths scanned at medium/high severity; no issues identified.
-- pip-audit 2.10.1: sanitized requirements file scanned; no known vulnerabilities found.
-- `pip check`: no broken requirements after installing the tools.
+- Custom Semgrep AGS bypass rules: detects builtins `getattr`, `builtins.__dict__`, and lambda/type `__import__` hiding patterns; 50 files scanned, 3 rules run, 0 findings.
+- Semgrep 1.168.0 registry scan with `p/python` and `p/secrets`: 82 files scanned, 187 rules run, 0 findings. Semgrep reported two timeout warnings in unrelated legacy CLI taint rules, with no findings.
+- Bandit 1.9.4: AGS Python paths and `agent/cli/alpha_genesis.py` scanned; no issues identified.
+- mypy 2.2.0 strict: AGS packages and `agent/cli/alpha_genesis.py`, 51 source files, no issues.
+- pyright 1.1.411: AGS packages and `agent/cli/alpha_genesis.py`, 0 errors, 0 warnings.
+- pip-audit 2.10.1: active environment scanned; no known vulnerabilities found.
+- Safety 3.8.1: active environment scanned, 267 packages, 0 vulnerabilities.
+- CycloneDX 7.3.0: environment SBOM generated successfully under `.tmp/ags-sbom.cdx.json`.
+- gitleaks 8.30.1: production AGS code/API/CLI paths scanned, 0 leaks.
+- trufflehog 3.95.8: production AGS code/API/CLI paths scanned, 0 verified/unknown secrets.
+- `pip check`: no broken requirements after installing and reconciling the security/type tools.

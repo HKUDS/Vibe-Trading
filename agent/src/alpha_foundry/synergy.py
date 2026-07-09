@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pandas as pd
 
 
@@ -7,8 +9,11 @@ def compute_marginal_portfolio_value(
     candidate_return: pd.Series,
     pool_returns: pd.DataFrame,
 ) -> dict[str, float]:
+    candidate_column = "__candidate__"
+    while candidate_column in pool_returns.columns:
+        candidate_column = f"_{candidate_column}"
     aligned = pd.concat(
-        [pool_returns, candidate_return.rename("__candidate__")],
+        [pool_returns, candidate_return.rename(candidate_column)],
         axis=1,
         join="inner",
     ).dropna()
@@ -23,10 +28,10 @@ def compute_marginal_portfolio_value(
             "correlation_to_pool": 0.0,
         }
 
-    pool = aligned.drop(columns=["__candidate__"])
-    candidate = aligned["__candidate__"]
-    before = pool.mean(axis=1) if not pool.empty else pd.Series(0.0, index=aligned.index)
-    after = aligned.mean(axis=1)
+    pool = aligned.drop(columns=[candidate_column])
+    candidate = cast(pd.Series, aligned[candidate_column])
+    before = cast(pd.Series, pool.mean(axis=1)) if not pool.empty else pd.Series(0.0, index=aligned.index)
+    after = cast(pd.Series, aligned.mean(axis=1))
 
     before_ir = information_ratio(before)
     after_ir = information_ratio(after)
@@ -81,9 +86,10 @@ def _max_positive_corr(candidate: pd.Series, pool: pd.DataFrame) -> float:
     if pool.empty:
         return 0.0
     corrs = [
-        float(candidate.corr(pool[column]))
-        for column in pool.columns
-        if pd.notna(candidate.corr(pool[column]))
+        float(corr)
+        for _, series in pool.items()
+        for corr in [candidate.corr(series)]
+        if pd.notna(corr)
     ]
     if not corrs:
         return 0.0

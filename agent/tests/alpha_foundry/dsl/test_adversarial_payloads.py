@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import importlib
+import logging
 import os
 import subprocess
 
@@ -89,3 +90,32 @@ def test_formula_length_limit_rejects_before_ast_construction() -> None:
 
     with pytest.raises(ValueError, match="formula exceeds maximum length"):
         FormulaParser().parse(formula)
+
+
+@pytest.mark.parametrize(
+    "formula",
+    [
+        "rank(close_next_day)",
+        "rank(t_plus_1_return)",
+        "rank(fwd_ret)",
+        "rank(close_lead_1)",
+    ],
+)
+def test_dsl_rejects_future_alias_fields_as_lookahead(formula: str) -> None:
+    with pytest.raises(FormulaValidationError) as excinfo:
+        evaluate_formula(formula, _panel())
+
+    assert "LOOKAHEAD_DETECTED" in excinfo.value.errors
+
+
+def test_formula_validation_failure_emits_structured_security_log(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.WARNING)
+
+    with pytest.raises(FormulaValidationError):
+        evaluate_formula("rank(future_return)", _panel())
+
+    assert any(
+        getattr(record, "event_type", None) == "AGS_SECURITY_EVENT"
+        and getattr(record, "code", None) == "FORMULA_VALIDATION_FAILED"
+        for record in caplog.records
+    )

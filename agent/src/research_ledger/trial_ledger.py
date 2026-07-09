@@ -5,7 +5,7 @@ import sqlite3
 import time
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from src.research_ledger.hash_utils import (
     canonical_json_hash,
@@ -58,7 +58,7 @@ class TrialLedgerEntry:
     parameter_variant: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return json_safe(asdict(self))
+        return cast(dict[str, Any], json_safe(asdict(self)))
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "TrialLedgerEntry":
@@ -162,13 +162,6 @@ class TrialLedger:
                 time.sleep(0.02 * (attempt + 1))
             except sqlite3.IntegrityError as exc:
                 raise TrialLedgerAppendError(str(exc)) from exc
-            except Exception:
-                try:
-                    with self._connect() as conn:
-                        conn.execute("ROLLBACK")
-                except Exception:
-                    pass
-                raise
         raise TrialLedgerAppendError(f"append failed after retries: {last_error}")
 
     def _tail_hash(self, conn: sqlite3.Connection) -> str | None:

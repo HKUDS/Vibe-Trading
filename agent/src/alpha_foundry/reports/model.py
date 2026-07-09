@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from src.research_ledger.hash_utils import json_safe, redact_secrets, utc_now_iso
 
@@ -38,7 +38,7 @@ class AlphaGenesisReport:
     schema_version: str = "alpha_genesis_report.v1"
 
     def to_dict(self) -> dict[str, Any]:
-        return redact_secrets(json_safe(asdict(self)))
+        return cast(dict[str, Any], redact_secrets(json_safe(asdict(self))))
 
     def to_json(self) -> str:
         return json.dumps(

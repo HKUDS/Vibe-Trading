@@ -61,7 +61,7 @@ def validate_expression(node: ASTNode) -> ValidationResult:
         if op not in ALLOWED_OPERATORS:
             errors.append("OPERATOR_NOT_ALLOWED")
     for field in node.fields():
-        if field.startswith("future_"):
+        if _is_lookahead_field(field):
             errors.append("LOOKAHEAD_DETECTED")
         if field not in ALLOWED_FIELDS:
             errors.append("FIELD_NOT_ALLOWED")
@@ -80,3 +80,17 @@ def _check_delay_lags(node: ASTNode, errors: list[str]) -> None:
     for arg in node.args:
         if isinstance(arg, ASTNode):
             _check_delay_lags(arg, errors)
+
+
+def _is_lookahead_field(field: str) -> bool:
+    lowered = field.lower()
+    return (
+        lowered.startswith("future_")
+        or lowered.startswith("next_")
+        or "_next" in lowered
+        or lowered.endswith("_next")
+        or lowered.startswith("fwd_")
+        or lowered.endswith("_fwd")
+        or "t_plus" in lowered
+        or "lead" in lowered
+    )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isnan
+from typing import cast
 
 import pandas as pd
 
@@ -73,8 +74,8 @@ def _average_rank_corr(
     dates = left.index.intersection(right.index)
     corrs: list[float] = []
     for date in dates:
-        lrow = left.loc[date]
-        rrow = right.loc[date]
+        lrow = cast(pd.Series, left.loc[date])
+        rrow = cast(pd.Series, right.loc[date])
         symbols = lrow.index.intersection(rrow.index)
         if len(symbols) < min_cross_section:
             continue
@@ -84,9 +85,9 @@ def _average_rank_corr(
         ).dropna()
         if len(paired) < min_cross_section:
             continue
-        corr = paired["left"].rank(method="average").corr(
-            paired["right"].rank(method="average")
-        )
+        left_rank = cast(pd.Series, paired["left"].rank(method="average"))
+        right_rank = cast(pd.Series, paired["right"].rank(method="average"))
+        corr = left_rank.corr(right_rank)
         if pd.notna(corr):
             corrs.append(float(corr))
     if not corrs:

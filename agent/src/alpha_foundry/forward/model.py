@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime
 from math import ceil
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from src.research_ledger.hash_utils import canonical_json_hash, json_safe
 
@@ -88,7 +88,7 @@ class ForwardTrackingPlan:
         return replace(self, status="paper_tracking")
 
     def to_dict(self) -> dict[str, Any]:
-        return json_safe(asdict(self))
+        return cast(dict[str, Any], json_safe(asdict(self)))
 
 
 @dataclass(frozen=True)
@@ -120,7 +120,7 @@ class ForwardObservation:
         return replace(prepared, observation_hash=digest)
 
     def to_dict(self) -> dict[str, Any]:
-        return json_safe(asdict(self))
+        return cast(dict[str, Any], json_safe(asdict(self)))
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "ForwardObservation":

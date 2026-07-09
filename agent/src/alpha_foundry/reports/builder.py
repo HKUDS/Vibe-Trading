@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
-from typing import Any
+from typing import Any, cast
 
 from src.alpha_foundry.reports.model import AlphaGenesisReport
 from src.alpha_quality.decision.model import AlphaQualityDecision
@@ -118,10 +118,10 @@ def _tradability_metrics(scorecard: AlphaQualityScorecard | None) -> dict[str, A
 
 
 def _json_model(value: Any) -> dict[str, Any]:
-    if is_dataclass(value):
-        return json_safe(asdict(value))
+    if is_dataclass(value) and not isinstance(value, type):
+        return cast(dict[str, Any], json_safe(asdict(value)))
     if isinstance(value, dict):
-        return json_safe(value)
+        return cast(dict[str, Any], json_safe(value))
     return {"value": json_safe(value)}
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from typing import cast
 
 import pandas as pd
 
@@ -56,4 +57,5 @@ def build_ashare_tradability_mask(
 def coverage_by_date(mask: pd.DataFrame) -> pd.Series:
     if mask.empty:
         return pd.Series(dtype=float)
-    return mask.astype(bool).mean(axis=1).astype(float)
+    coverage = cast(pd.Series, mask.astype(bool).mean(axis=1))
+    return coverage.astype(float)

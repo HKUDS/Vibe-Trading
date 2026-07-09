@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import pandas as pd
 
@@ -45,8 +47,9 @@ def residualize_candidate_by_date(
 def _solve_linear(design: np.ndarray, target: np.ndarray, *, ridge: float) -> np.ndarray:
     if ridge <= 0:
         beta, *_ = np.linalg.lstsq(design, target, rcond=None)
-        return beta
+        return cast(np.ndarray, beta)
 
     penalty = np.eye(design.shape[1]) * ridge
     penalty[0, 0] = 0.0
-    return np.linalg.solve(design.T @ design + penalty, design.T @ target)
+    solution = np.linalg.solve(design.T @ design + penalty, design.T @ target)
+    return cast(np.ndarray, solution)

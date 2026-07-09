@@ -36,6 +36,8 @@ def compute_ic_series_safe(
             continue
         f = factor.loc[dt, valid].rank(method="average")
         r = forward_return.loc[dt, valid].rank(method="average")
+        if f.nunique(dropna=True) <= 1 or r.nunique(dropna=True) <= 1:
+            continue
         corr = f.corr(r, method="pearson")
         if pd.notna(corr) and math.isfinite(float(corr)):
             values.append(float(corr))
