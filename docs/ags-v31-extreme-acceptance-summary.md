@@ -62,13 +62,13 @@ origin   https://github.com/Elfsa-Miranda/Vibe-Trading.git (fetch/push)
 upstream https://github.com/HKUDS/Vibe-Trading.git (fetch/push)
 ```
 
-Diffstat against `main`:
+Evidence baseline diffstat against `main`, captured before this report file was added:
 
 ```text
 194 files changed, 9140 insertions(+), 1 deletion(-)
 ```
 
-Changed-file classification from `git diff --name-only main...HEAD`:
+Changed-file classification from the evidence baseline `git diff --name-only main...HEAD`:
 
 | Class | Count | Notes |
 | --- | ---: | --- |
@@ -80,6 +80,14 @@ Changed-file classification from `git diff --name-only main...HEAD`:
 | Docs | 24 | Acceptance, security, limitations, rollback, performance, runbook, evidence docs. |
 | Tooling/scripts | 3 | `pyproject.toml`, `scripts/ags_p0_acceptance.ps1`, `security/semgrep/ags-python-injection.yml`. |
 | Generated artifacts in diff | 0 | `.tmp`, caches, venvs, scan reports, and generated SBOM are not in the branch diff. |
+
+After adding this report file, the current branch diff is:
+
+```text
+195 files changed, 9710 insertions(+), 1 deletion(-)
+```
+
+Current post-report classification: 57 core production/application files, 42 demo/example files, 68 test files/fixtures, 25 docs, 3 tooling/script files, and 0 generated artifacts.
 
 Latest commit `cc0d498` contains 37 files and is the focused extreme acceptance gate commit. It adds `agent/src/alpha_foundry/artifacts.py`, the P0 acceptance script, custom Semgrep rules, security/property/golden/performance/architecture tests, and hardening edits in DSL, API, ledger, redaction, scorecard, novelty/synergy, and docs.
 
@@ -514,11 +522,11 @@ Next recommended step after PR creation: let CI run on Linux, add a mutation-tes
 
 ```text
 report path: docs/ags-v31-extreme-acceptance-summary.md
-total changed files against main: 194
+total changed files against main: 195 post-report (194 evidence baseline + this report)
 core production/application files changed: 57
 demo/example files changed: 42
 test files/fixtures changed: 68 (63 backend + 5 frontend)
-docs changed: 24
+docs changed: 25 post-report
 tools/scripts changed: 3
 generated artifacts committed: 0
 
