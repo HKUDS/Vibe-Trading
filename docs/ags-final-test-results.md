@@ -44,6 +44,8 @@ Generated for the AGS v3.1 current-main-safe security and acceptance pass.
 - `pyright`: installed and run on AGS packages and `agent/cli/alpha_genesis.py`; 0 errors, 0 warnings.
 - `mutmut`: installed, but native Windows execution is unsupported by the tool. Mutation testing must run under WSL/Linux if a mutation-score gate is required.
 
+Dependency packaging note: pytest/Hypothesis remain in the lightweight dev/test extras. Semgrep, Bandit, pip-audit, Safety, CycloneDX, mypy, and pyright are reproducible through the optional `security` extra for local audit runs. gitleaks/trufflehog are external optional binaries, and `mutmut` is not a Windows/local required gate.
+
 ## Pasted-Text-4 Extreme Acceptance Run
 
 - Command: `powershell -ExecutionPolicy Bypass -File scripts\ags_p0_acceptance.ps1`

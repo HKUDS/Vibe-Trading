@@ -2,6 +2,11 @@ param(
     [switch]$SkipRegistrySemgrep
 )
 
+# Optional local/security acceptance gate.
+# Reproducible Python tooling can be installed with:
+#   python -m pip install -e ".[security]"
+# gitleaks/trufflehog remain optional external binaries under .tmp\tools.
+
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $RepoRoot

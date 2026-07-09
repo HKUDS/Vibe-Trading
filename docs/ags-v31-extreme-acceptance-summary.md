@@ -17,7 +17,7 @@ The risks addressed are primarily research-system integrity risks: path traversa
 
 Current readiness: the branch is pushed to `origin/codex/ags-v31-main` at the evidence baseline commit and is ready to open as a PR from the pushed branch. A real GitHub PR was not created locally because `gh` and GitHub tokens were unavailable in this environment; only the compare link is available.
 
-Remaining limits: verification is local Windows based; WSL is unavailable; `mutmut` is installed but cannot run on native Windows; no local Linux CI run was verified; synthetic fixtures do not prove real market alpha; security scans reduce risk but cannot prove absence of vulnerabilities; the real API server was not launched for an end-to-end network integration run.
+Remaining limits: verification is local Windows based; WSL is unavailable; `mutmut` was not run because native Windows is unsupported; no local Linux CI run was verified; synthetic fixtures do not prove real market alpha; security scans reduce risk but cannot prove absence of vulnerabilities; the real API server was not launched for an end-to-end network integration run.
 
 ## B. Commit and Remote State
 
@@ -217,7 +217,7 @@ Additional tests added or expanded include alpha-quality decision hard-fail/advi
 
 ## E. Tooling and Acceptance Script
 
-`scripts/ags_p0_acceptance.ps1` is the one-command local Windows acceptance gate for this hardening pass. It sets local Semgrep config/cache under `.tmp`, disables Semgrep metrics, requires installed Python security/type tools in `.venv`, and runs deterministic checks over AGS code.
+`scripts/ags_p0_acceptance.ps1` is the optional one-command local Windows security acceptance gate for this hardening pass. It sets local Semgrep config/cache under `.tmp`, disables Semgrep metrics, expects the optional Python security/type tools to be installed in `.venv`, and runs deterministic checks over AGS code. The intended reproducible install is `python -m pip install -e ".[security]"`; this keeps the default development extra lightweight while preserving the stronger local audit path.
 
 Blocking checks in the script:
 
@@ -249,21 +249,14 @@ Conditional/advisory external checks:
 - `trufflehog` runs if `.tmp/tools/trufflehog/trufflehog.exe` exists; otherwise the script warns and skips it.
 - WSL/mutation testing is documented outside the script as a limitation; native Windows cannot run `mutmut`.
 
-Tooling added through `pyproject.toml` dev extra:
+Tooling dependency posture in `pyproject.toml`:
 
-- `hypothesis>=6.0`
-- `bandit>=1.9.0`
-- `click~=8.1.8`
-- `cyclonedx-bom>=7.0`
-- `mypy>=2.0`
-- `mutmut>=3.0`
-- `pip-audit>=2.10`
-- `pyright>=1.1`
-- `safety>=3.8`
-- `semgrep>=1.168`
-- `typer==0.16.1`
+- `dev` and `test` extras stay lightweight: `pytest`, `pytest-cov`, `pytest-socket`, and `hypothesis`.
+- `security` extra carries optional local audit tools: `bandit`, `click~=8.1.8`, `cyclonedx-bom`, `mypy`, `pip-audit`, `pyright`, `safety`, `semgrep`, and `typer==0.16.1`.
+- `mutmut` is not part of the default dev/test/security gate in this branch. Run it separately under WSL/Linux if maintainers want a mutation score gate.
+- `gitleaks` and `trufflehog` remain external optional binaries under `.tmp/tools`, not Python package dependencies.
 
-`click~=8.1.8` and `typer==0.16.1` were pinned because the installed security tooling stack had CLI dependency pressure; pinning keeps the local acceptance script reproducible. This does add maintainer burden because the dev extra becomes heavier. If maintainers prefer a lighter default dev install, the security tools can be moved into a dedicated `security` extra or `requirements-security.txt` without weakening the code changes.
+`click~=8.1.8` and `typer==0.16.1` are pinned only in the optional `security` extra because the installed security tooling stack had CLI dependency pressure. This avoids forcing every default development install to carry the full security scanner stack while preserving reproducible local audit commands.
 
 ## F. Actual Verification Results
 
@@ -390,7 +383,7 @@ The following should be included in the branch/PR:
 - Custom Semgrep rules in `security/semgrep/ags-python-injection.yml`.
 - `scripts/ags_p0_acceptance.ps1` as the one-command local acceptance gate.
 - Documentation updates explaining acceptance, security review, limitations, rollback, performance, and evidence.
-- `pyproject.toml` dev/test dependency additions because reviewers need the same tools to reproduce the gates. If maintainers prefer a lighter default dev extra, split these into a security extra or `requirements-security.txt`.
+- `pyproject.toml` test dependency additions and the optional `security` extra, because reviewers need a reproducible way to run local audit gates without making default dev installs heavy.
 
 The following should remain excluded:
 
@@ -497,7 +490,7 @@ Revert this branch or revert the focused AGS commits. The implementation is conc
 - DSL parser/validator boundaries and operator execution paths.
 - API schema binding and GET-only contract.
 - Ledger append/hash-chain semantics.
-- Whether security tooling should remain in `dev` extra or move into a dedicated security extra.
+- Whether the optional `security` extra is the right place for the heavier local audit tools.
 
 Signed-off-by: <name> <email>
 ```
@@ -514,9 +507,9 @@ This can be one PR if reviewers are prepared to review the AGS v3.1 package as a
 
 The tests are part of the deliverable and should be committed. In particular, security acceptance gates, property tests, golden master fixtures, architecture invariants, adversarial API/secret/path tests, and performance budgets are the regression guardrail for this work.
 
-Reviewers should focus on the artifact path helper, shared redaction rules, DSL evaluator boundary, API schema binding, ledger append/hash-chain design, statistical edge-case handling, and whether the dev extra should be split to reduce default maintainer burden.
+Reviewers should focus on the artifact path helper, shared redaction rules, DSL evaluator boundary, API schema binding, ledger append/hash-chain design, statistical edge-case handling, and whether the optional `security` extra is the right maintainer-friendly packaging for the heavier audit tools.
 
-Next recommended step after PR creation: let CI run on Linux, add a mutation-testing job or WSL/Linux `mutmut` run if maintainers want mutation score evidence, and decide whether to move heavyweight security tools into a dedicated optional security dependency group.
+Next recommended step after PR creation: let CI run on Linux, add a separate WSL/Linux `mutmut` run if maintainers want mutation score evidence, and decide whether any of the optional `security` tools should move to CI-only configuration instead of Python extras.
 
 ## Concise Terminal Summary
 

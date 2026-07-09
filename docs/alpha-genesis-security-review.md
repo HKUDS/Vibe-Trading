@@ -38,3 +38,10 @@
 - gitleaks 8.30.1: production AGS code/API/CLI paths scanned, 0 leaks.
 - trufflehog 3.95.8: production AGS code/API/CLI paths scanned, 0 verified/unknown secrets.
 - `pip check`: no broken requirements after installing and reconciling the security/type tools.
+
+## Tool Packaging
+
+- Security regression tests, property tests, golden fixtures, and custom Semgrep rules are committed as long-term reviewer/CI evidence.
+- Heavy Python audit tools are isolated to the optional `security` extra rather than the default `dev` extra.
+- `gitleaks` and `trufflehog` remain optional external binaries for local/CI secret scans.
+- `mutmut` is not a native-Windows gate and should be run separately under WSL/Linux if mutation testing is required.

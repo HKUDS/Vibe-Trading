@@ -183,11 +183,18 @@ dev = [
     "pytest-cov>=4.0",
     "pytest-socket>=0.7.0",
     "hypothesis>=6.0",
+]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-socket>=0.7.0",
+    "hypothesis>=6.0",
+]
+security = [
     "bandit>=1.9.0",
     "click~=8.1.8",
     "cyclonedx-bom>=7.0",
     "mypy>=2.0",
-    "mutmut>=3.0",
     "pip-audit>=2.10",
     "pyright>=1.1",
     "safety>=3.8",

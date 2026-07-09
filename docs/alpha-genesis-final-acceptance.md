@@ -40,6 +40,14 @@
 - `python -m pip check` -> no broken requirements found after installing security tools.
 - Post-install targeted regression -> 41 passed, 1 warning.
 
+## Tooling Dependency Posture
+
+- The security tests and golden/property fixtures are part of the PR deliverable and should remain committed.
+- Default `dev`/`test` extras stay lightweight with pytest and Hypothesis.
+- Heavier Python audit tools are isolated behind the optional `security` extra for local/security acceptance runs.
+- `gitleaks` and `trufflehog` remain optional external binaries, not Python dependencies.
+- `mutmut` is not a Windows/local gate; run it separately from WSL/Linux if mutation score evidence is required.
+
 ## Evidence Artifacts
 
 - Demo package: `agent/examples/alpha_genesis_demos/`
