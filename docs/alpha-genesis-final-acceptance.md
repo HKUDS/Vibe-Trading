@@ -20,6 +20,11 @@
 - `pytest agent/tests/alpha_foundry/forward -q` -> 9 passed.
 - `pytest agent/tests/alpha_quality -q` -> 29 passed.
 - `pytest agent/tests/factors/test_alpha_purity.py agent/tests/factors/test_lookahead.py -q` -> 915 passed, 5 skipped, 12 warnings.
+- `semgrep scan --config p/python --config p/secrets ...AGS paths...` -> 51 tracked files scanned, 187 rules run, 0 findings.
+- `python -m bandit -r ...AGS paths... -ll` -> no issues identified.
+- `python -m pip_audit -r .tmp/requirements-audit.txt` -> no known vulnerabilities found.
+- `python -m pip check` -> no broken requirements found after installing security tools.
+- Post-install targeted regression -> 41 passed, 1 warning.
 
 ## Evidence Artifacts
 
@@ -43,4 +48,7 @@ research pipeline with deterministic scorecards, trial history, bounded formula
 generation, novelty/synergy checks, adversarial quality decisions, frozen
 forward tracking, redacted reports, and flagship demos.
 
-Remote PR publication is deferred to the repository owner.
+Publication is handled by the current AGS branch push and PR/compare link.
+
+See also `docs/final-acceptance.md` for the latest P0/P1/P2 acceptance matrix
+and tool-installation notes.

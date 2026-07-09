@@ -24,3 +24,10 @@
 - Forward observations are append-only and hash-chained.
 - Quality decisions are derived from scorecard/context hard failures, not caller claims.
 - Hard failures and warnings use exact stable codes.
+
+## Static And Dependency Scans
+
+- Semgrep 1.168.0: AGS paths scanned with `p/python` and `p/secrets`; 51 tracked files scanned, 187 rules run, 0 findings.
+- Bandit 1.9.4: AGS Python paths scanned at medium/high severity; no issues identified.
+- pip-audit 2.10.1: sanitized requirements file scanned; no known vulnerabilities found.
+- `pip check`: no broken requirements after installing the tools.
