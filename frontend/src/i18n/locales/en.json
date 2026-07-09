@@ -367,6 +367,10 @@
     "cancelGoal": "Cancel goal",
     "describeGoal": "Describe the research goal to attach to this session",
     "placeholder": "e.g. Create a dual MA crossover strategy for 000001.SZ, backtest 2024",
+    "send": "Send message",
+    "messageInputLabel": "Message to the agent",
+    "inputHint": "Enter to send · Shift+Enter for a new line",
+    "editGoalObjectiveLabel": "Edit research goal objective",
     "exportChat": "Export chat",
     "stopGeneration": "Stop generation",
     "runSwarmTeam": "Run swarm team",
@@ -465,6 +469,7 @@
     "compareCol": "Compare",
     "delta": "Delta",
     "selectTwoRuns": "Select two runs to compare their metrics.",
+    "loadError": "Failed to load run data. Please try again.",
     "totalReturn": "Total Return",
     "annualizedReturn": "Annualized Return",
     "sharpeRatio": "Sharpe Ratio",
@@ -719,7 +724,11 @@
     "leverageValue": "{{value}}× leverage",
     "tradesPerDay": "{{count}} trades/day",
     "adjustTitle": "Adjust this mandate",
-    "adjustPlaceholder": "e.g. keep this but raise the daily cap to 10"
+    "adjustPlaceholder": "e.g. keep this but raise the daily cap to 10",
+    "adjustInputLabel": "Adjustment request",
+    "confirmTitle": "Confirm mandate commit",
+    "confirmDescription": "This grants the agent trading authorization under the limits shown below and takes effect immediately.",
+    "confirmButton": "Confirm & commit"
   },
   "messageBubble": {
     "copied": "Copied",
@@ -751,7 +760,16 @@
     "featureStreaming": "Real-time Streaming",
     "featureStreamingDesc": "Watch the agent think, call tools, and iterate",
     "featureReplay": "Strategy Replay",
-    "featureReplayDesc": "Trade journal analyzer + Shadow Account — extract your rules, backtest them, attribute PnL delta"
+    "featureReplayDesc": "Trade journal analyzer + Shadow Account — extract your rules, backtest them, attribute PnL delta",
+    "howItWorksTitle": "How it works",
+    "step1Title": "1. Describe your strategy",
+    "step1Desc": "Tell the agent what you want to test, in plain language — no code required.",
+    "step2Title": "2. Watch it research and backtest",
+    "step2Desc": "The agent plans, pulls market data, and runs the backtest live, so you can follow every step.",
+    "step3Title": "3. Review the results",
+    "step3Desc": "See performance metrics, the equity curve, and exportable Pine Script for the strategy.",
+    "step4Title": "4. Go live when you're ready",
+    "step4Desc": "Optionally approve a trading mandate with explicit limits — nothing trades without your confirmation."
   },
   "errorBoundary": {
     "somethingWrong": "Something went wrong"

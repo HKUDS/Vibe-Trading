@@ -362,6 +362,10 @@
     "cancelGoal": "取消目标",
     "describeGoal": "描述要附加到此会话的研究目标",
     "placeholder": "例如：为 000001.SZ 创建双均线交叉策略，回测 2024 年",
+    "send": "发送",
+    "messageInputLabel": "发送给智能体的消息",
+    "inputHint": "Enter 送出 · Shift+Enter 换行",
+    "editGoalObjectiveLabel": "编辑研究目标内容",
     "exportChat": "导出对话",
     "stopGeneration": "停止生成",
     "runSwarmTeam": "运行群体团队",
@@ -460,6 +464,7 @@
     "compareCol": "对比",
     "delta": "差值",
     "selectTwoRuns": "选择两次运行以对比其指标。",
+    "loadError": "加载运行数据失败，请重试。",
     "totalReturn": "总收益率",
     "annualizedReturn": "年化收益率",
     "sharpeRatio": "夏普比率",
@@ -714,7 +719,11 @@
     "leverageValue": "{{value}}× 杠杆",
     "tradesPerDay": "{{count}} 笔/天",
     "adjustTitle": "调整此 mandate",
-    "adjustPlaceholder": "例如：保持不变但将每日上限提高到 10"
+    "adjustPlaceholder": "例如：保持不变但将每日上限提高到 10",
+    "adjustInputLabel": "调整请求内容",
+    "confirmTitle": "确认提交 mandate",
+    "confirmDescription": "提交后将立即依据下方额度授权智能体进行真实交易。",
+    "confirmButton": "确认并提交"
   },
   "messageBubble": {
     "copied": "已复制",
@@ -746,7 +755,16 @@
     "featureStreaming": "实时流式输出",
     "featureStreamingDesc": "观看智能体思考、调用工具和迭代的全过程",
     "featureReplay": "策略回放",
-    "featureReplayDesc": "交易日志分析器 + 影子账户 —— 提取你的规则、回测验证、归因盈亏差异"
+    "featureReplayDesc": "交易日志分析器 + 影子账户 —— 提取你的规则、回测验证、归因盈亏差异",
+    "howItWorksTitle": "怎么使用",
+    "step1Title": "1. 描述你的策略",
+    "step1Desc": "用自然语言告诉智能体你想测试什么，不需要写代码。",
+    "step2Title": "2. 观看研究与回测过程",
+    "step2Desc": "智能体会规划、抓取市场数据并即时执行回测，每一步都能看到。",
+    "step3Title": "3. 查看结果",
+    "step3Desc": "查看绩效指标、净值曲线，以及可导出的 Pine Script 策略代码。",
+    "step4Title": "4. 准备好了再上线",
+    "step4Desc": "可选择授权明确额度的交易 mandate——未经你确认不会下任何真实订单。"
   },
   "errorBoundary": {
     "somethingWrong": "出了点问题"

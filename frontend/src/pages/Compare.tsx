@@ -1,5 +1,6 @@
 import i18n from '@/i18n';
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { GitCompare, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api, type RunListItem, type RunData, type EquityPoint } from "@/lib/api";
@@ -213,7 +214,9 @@ export function Compare() {
       setRuns(Array.isArray(items) ? items : []);
       if (items.length >= 2) { setLeftId(items[1].run_id); setRightId(items[0].run_id); }
       else if (items.length === 1) { setLeftId(items[0].run_id); }
-    }).catch(() => {});
+    }).catch((error) => {
+      toast.error(error instanceof Error ? error.message : i18n.t("compare.loadError"));
+    });
   }, []);
 
   useEffect(() => {
@@ -222,7 +225,11 @@ export function Compare() {
       api.getRun(leftId).then((d: RunData) => {
         setLeftData(d.metrics || null);
         setLeftCurve(d.equity_curve || []);
-      }).catch(() => { setLeftData(null); setLeftCurve([]); })
+      }).catch((error) => {
+        setLeftData(null);
+        setLeftCurve([]);
+        toast.error(error instanceof Error ? error.message : i18n.t("compare.loadError"));
+      })
         .finally(() => setLeftLoading(false));
     } else {
       setLeftData(null);
@@ -236,7 +243,11 @@ export function Compare() {
       api.getRun(rightId).then((d: RunData) => {
         setRightData(d.metrics || null);
         setRightCurve(d.equity_curve || []);
-      }).catch(() => { setRightData(null); setRightCurve([]); })
+      }).catch((error) => {
+        setRightData(null);
+        setRightCurve([]);
+        toast.error(error instanceof Error ? error.message : i18n.t("compare.loadError"));
+      })
         .finally(() => setRightLoading(false));
     } else {
       setRightData(null);

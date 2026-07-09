@@ -362,6 +362,10 @@
     "cancelGoal": "目標をキャンセル",
     "describeGoal": "このセッションに添付するリサーチ目標を記述してください",
     "placeholder": "例: 000001.SZ のデュアル MA クロスオーバー戦略を作成し、2024 年をバックテストする",
+    "send": "送信",
+    "messageInputLabel": "エージェントへのメッセージ",
+    "inputHint": "Enter で送信 · Shift+Enter で改行",
+    "editGoalObjectiveLabel": "リサーチ目標を編集",
     "exportChat": "チャットをエクスポート",
     "stopGeneration": "生成を停止",
     "runSwarmTeam": "Swarm チームを実行",
@@ -460,6 +464,7 @@
     "compareCol": "比較対象",
     "delta": "差分",
     "selectTwoRuns": "比較する 2 つの実行を選択してください。",
+    "loadError": "実行データの読み込みに失敗しました。もう一度お試しください。",
     "totalReturn": "トータルリターン",
     "annualizedReturn": "年率リターン",
     "sharpeRatio": "Sharpe レシオ",
@@ -714,7 +719,11 @@
     "leverageValue": "{{value}}× レバレッジ",
     "tradesPerDay": "{{count}} トレード/日",
     "adjustTitle": "このマンデートを調整",
-    "adjustPlaceholder": "例: そのままにして日次上限を 10 に引き上げる"
+    "adjustPlaceholder": "例: そのままにして日次上限を 10 に引き上げる",
+    "adjustInputLabel": "調整リクエスト内容",
+    "confirmTitle": "マンデートのコミットを確認",
+    "confirmDescription": "コミットすると、以下の上限でエージェントに取引権限が即座に付与されます。",
+    "confirmButton": "確認してコミット"
   },
   "messageBubble": {
     "copied": "コピーしました",
@@ -746,7 +755,16 @@
     "featureStreaming": "リアルタイムストリーミング",
     "featureStreamingDesc": "エージェントの思考、ツール呼び出し、反復を観察",
     "featureReplay": "戦略リプレイ",
-    "featureReplayDesc": "トレードジャーナル分析 + シャドウアカウント — ルールを抽出しバックテスト、損益差分を要因分解"
+    "featureReplayDesc": "トレードジャーナル分析 + シャドウアカウント — ルールを抽出しバックテスト、損益差分を要因分解",
+    "howItWorksTitle": "使い方",
+    "step1Title": "1. 戦略を記述する",
+    "step1Desc": "コード不要。自然言語でテストしたい内容をエージェントに伝えるだけ。",
+    "step2Title": "2. リサーチとバックテストを見守る",
+    "step2Desc": "エージェントが計画を立て、市場データを取得し、バックテストをリアルタイムで実行します。",
+    "step3Title": "3. 結果を確認する",
+    "step3Desc": "パフォーマンス指標、エクイティカーブ、エクスポート可能な Pine Script を確認できます。",
+    "step4Title": "4. 準備ができたら本番へ",
+    "step4Desc": "上限を明示したトレーディングマンデートを任意で承認 — 確認なしに注文が入ることはありません。"
   },
   "errorBoundary": {
     "somethingWrong": "問題が発生しました"

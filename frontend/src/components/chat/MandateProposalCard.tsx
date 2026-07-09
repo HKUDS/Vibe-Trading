@@ -4,6 +4,7 @@ import { ShieldCheck, ShieldAlert, Wallet, OctagonX, SlidersHorizontal, Check, X
 import { toast } from "sonner";
 import { api, type MandateProfile, type MandateProposal } from "@/lib/api";
 import { AgentAvatar } from "./AgentAvatar";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 
 interface Props {
   proposal: MandateProposal;
@@ -130,6 +131,7 @@ function ProfileTile({
             type="text"
             value={adjustText}
             autoFocus
+            aria-label={i18n.t("mandate.adjustInputLabel")}
             onChange={(e) => setAdjustText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -149,7 +151,7 @@ function ProfileTile({
               className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               <X className="h-3 w-3" />
-              Cancel
+              {i18n.t("mandate.cancel")}
             </button>
             <button
               type="button"
@@ -158,7 +160,7 @@ function ProfileTile({
               className="inline-flex items-center gap-1 rounded-lg bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground transition-opacity disabled:opacity-40"
             >
               <Check className="h-3 w-3" />
-              Send adjustment
+              {i18n.t("mandate.sendAdjustment")}
             </button>
           </div>
         </div>
@@ -170,7 +172,7 @@ function ProfileTile({
           className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-          {busy ? "Committing…" : `Commit “${profile.label}”`}
+          {busy ? i18n.t("mandate.committing") : i18n.t("mandate.commit", { label: profile.label })}
         </button>
       )}
     </div>
@@ -188,13 +190,14 @@ function ProfileTile({
 export const MandateProposalCard = memo(function MandateProposalCard({ proposal, committed, onAdjust }: Props) {
   const [busyOrdinal, setBusyOrdinal] = useState<number | null>(null);
   const [adjustingOrdinal, setAdjustingOrdinal] = useState<number | null>(null);
+  const [pendingOrdinal, setPendingOrdinal] = useState<number | null>(null);
 
   const handleCommit = useCallback(
     async (ordinal: number) => {
       if (busyOrdinal != null) return;
       const broker = proposal.account?.broker?.trim().toLowerCase();
       if (!broker) {
-        toast.error("Cannot commit mandate: connector broker is missing. Ask the agent to regenerate the proposal.");
+        toast.error(i18n.t("mandate.noBroker"));
         return;
       }
       setBusyOrdinal(ordinal);
@@ -211,11 +214,13 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
         // SSE event arrives; no optimistic state-write here.
       } catch (error) {
         setBusyOrdinal(null);
-        toast.error(error instanceof Error ? error.message : "Failed to commit mandate.");
+        toast.error(error instanceof Error ? error.message : i18n.t("mandate.failedToCommit"));
       }
     },
     [busyOrdinal, proposal.account?.broker, proposal.proposal_id, proposal.session_id],
   );
+
+  const pendingProfile = proposal.profiles.find((p) => p.ordinal === pendingOrdinal) ?? null;
 
   // Collapsed state: a compact active-mandate badge (same visual family as the goal badge).
   if (committed) {
@@ -283,7 +288,7 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
               busy={busyOrdinal === profile.ordinal}
               disabled={busyOrdinal != null}
               adjusting={adjustingOrdinal === profile.ordinal}
-              onCommit={() => handleCommit(profile.ordinal)}
+              onCommit={() => setPendingOrdinal(profile.ordinal)}
               onAdjustToggle={() =>
                 setAdjustingOrdinal((cur) => (cur === profile.ordinal ? null : profile.ordinal))
               }
@@ -311,6 +316,44 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingOrdinal != null}
+        title={i18n.t("mandate.confirmTitle")}
+        description={i18n.t("mandate.confirmDescription")}
+        confirmLabel={i18n.t("mandate.confirmButton")}
+        cancelLabel={i18n.t("mandate.cancel")}
+        tone="destructive"
+        onCancel={() => setPendingOrdinal(null)}
+        onConfirm={() => {
+          const ordinal = pendingOrdinal;
+          setPendingOrdinal(null);
+          if (ordinal != null) handleCommit(ordinal);
+        }}
+      >
+        {pendingProfile && (
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-lg border bg-muted/20 p-2.5 text-[11px]">
+            <div className="col-span-2">
+              <dt className="text-muted-foreground">{i18n.t("mandate.universe")}</dt>
+              <dd className="font-medium text-foreground">{formatUniverse(pendingProfile.universe)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">{i18n.t("mandate.maxOrder")}</dt>
+              <dd className="font-mono font-medium text-foreground">{formatUsd(pendingProfile.max_order_usd)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">{i18n.t("mandate.dailyCap")}</dt>
+              <dd className="font-mono font-medium text-foreground">
+                {i18n.t("mandate.tradesPerDay", { count: pendingProfile.daily_trade_cap })}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">{i18n.t("mandate.leverage")}</dt>
+              <dd className="font-medium text-foreground">{formatLeverage(pendingProfile.leverage)}</dd>
+            </div>
+          </dl>
+        )}
+      </ConfirmDialog>
     </div>
   );
 });

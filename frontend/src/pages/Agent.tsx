@@ -1343,6 +1343,7 @@ export function Agent() {
                         value={goalEditValue}
                         onChange={(event) => setGoalEditValue(event.target.value)}
                         rows={3}
+                        aria-label={t("agent.editGoalObjectiveLabel")}
                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-primary/30"
                       />
                       <div className="flex justify-end gap-2">
@@ -1493,9 +1494,12 @@ export function Agent() {
             </div>
           )}
           {/* Persistent kill switch — distinct from the per-turn Stop button
-              above; disables all live order activity (SPEC Consent §4). */}
+              above; disables all live order activity (SPEC Consent §4).
+              Given a top border + extra top padding so this safety-critical
+              control visually separates from the lighter decorative chips
+              (swarm/goal/attachment) stacked above it. */}
           {liveActive && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 border-t border-border/60 pt-2">
               {liveIsHalted ? (
                 <span className="inline-flex items-center gap-1.5 rounded-lg bg-destructive/10 px-2.5 py-1 text-xs font-medium text-destructive">
                   <OctagonX className="h-3 w-3" />
@@ -1634,6 +1638,7 @@ export function Agent() {
                   ? t("agent.describeGoal")
                   : t("agent.placeholder")
               }
+              aria-label={t("agent.messageInputLabel")}
               className="flex-1 px-4 py-2.5 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 transition-shadow resize-none max-h-32 overflow-y-auto"
               disabled={status === "streaming"}
             />
@@ -1661,11 +1666,14 @@ export function Agent() {
                 type="submit"
                 disabled={goalComposerActive ? !input.trim() : (!input.trim() && !attachment)}
                 className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
+                title={t("agent.send")}
+                aria-label={t("agent.send")}
               >
                 <Send className="h-4 w-4" />
               </button>
             )}
           </div>
+          <p className="px-1 text-[11px] text-muted-foreground">{t("agent.inputHint")}</p>
         </div>
       </form>
     </div>

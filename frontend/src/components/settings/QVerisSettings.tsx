@@ -170,7 +170,6 @@ export function QVerisSettings() {
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : t("qveris.testFailed");
       setError(message);
-      toast.error(t("qveris.testFailed"));
     } finally {
       setSaving(false);
     }
