@@ -291,6 +291,7 @@ class NapcatChannel(BaseChannel):
                 "nickname": nickname,
                 "reply_to": reply_to_id,
             },
+            is_dm=message_type == "private",
         )
 
     @staticmethod
