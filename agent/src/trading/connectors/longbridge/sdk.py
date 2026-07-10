@@ -18,6 +18,7 @@ environment.
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import ModuleType
@@ -637,6 +638,15 @@ def _first(obj: Any, names: tuple[str, ...], default: Any = None) -> Any:
     return default
 
 
+def _float_or_none(value: Any) -> float | None:
+    """Convert a Longbridge SDK numeric value (Decimal/int) to float for JSON serialization."""
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
+
+
 def _iter_positions(response: Any) -> list[Any]:
     """Flatten ``stock_positions`` channels into a flat position list."""
     channels = _obj_get(response, "channels")
@@ -654,19 +664,19 @@ def _top_of_book(depth: Any) -> tuple[Any, Any]:
         return None, None
     asks = _as_iter(_obj_get(depth, "asks") or _obj_get(depth, "ask"))
     bids = _as_iter(_obj_get(depth, "bids") or _obj_get(depth, "bid"))
-    bid = _first(bids[0], ("price",)) if bids else None
-    ask = _first(asks[0], ("price",)) if asks else None
+    bid = _float_or_none(_first(bids[0], ("price",))) if bids else None
+    ask = _float_or_none(_first(asks[0], ("price",))) if asks else None
     return bid, ask
 
 
 def _balance_to_dict(item: Any) -> dict[str, Any]:
     return {
         "currency": _first(item, ("currency",)),
-        "total_cash": _first(item, ("total_cash",)),
-        "net_assets": _first(item, ("net_assets",)),
-        "buy_power": _first(item, ("buy_power",)),
-        "init_margin": _first(item, ("init_margin",)),
-        "maintenance_margin": _first(item, ("maintenance_margin",)),
+        "total_cash": _float_or_none(_first(item, ("total_cash",))),
+        "net_assets": _float_or_none(_first(item, ("net_assets",))),
+        "buy_power": _float_or_none(_first(item, ("buy_power",))),
+        "init_margin": _float_or_none(_first(item, ("init_margin",))),
+        "maintenance_margin": _float_or_none(_first(item, ("maintenance_margin",))),
     }
 
 
@@ -674,9 +684,9 @@ def _position_to_dict(item: Any) -> dict[str, Any]:
     return {
         "symbol": _first(item, ("symbol",)),
         "symbol_name": _first(item, ("symbol_name",)),
-        "quantity": _first(item, ("quantity",)),
-        "available_quantity": _first(item, ("available_quantity",)),
-        "cost_price": _first(item, ("cost_price",)),
+        "quantity": _float_or_none(_first(item, ("quantity",))),
+        "available_quantity": _float_or_none(_first(item, ("available_quantity",))),
+        "cost_price": _float_or_none(_first(item, ("cost_price",))),
         "currency": _first(item, ("currency",)),
         "market": str(_first(item, ("market",), "")),
     }
@@ -689,10 +699,10 @@ def _order_to_dict(item: Any) -> dict[str, Any]:
         "stock_name": _first(item, ("stock_name",)),
         "side": str(_first(item, ("side",), "")),
         "order_type": str(_first(item, ("order_type",), "")),
-        "quantity": _first(item, ("quantity",)),
-        "executed_quantity": _first(item, ("executed_quantity",)),
-        "price": _first(item, ("price",)),
-        "executed_price": _first(item, ("executed_price",)),
+        "quantity": _float_or_none(_first(item, ("quantity",))),
+        "executed_quantity": _float_or_none(_first(item, ("executed_quantity",))),
+        "price": _float_or_none(_first(item, ("price",))),
+        "executed_price": _float_or_none(_first(item, ("executed_price",))),
         "status": str(_first(item, ("status",), "")),
         "currency": _first(item, ("currency",)),
         "submitted_at": str(_first(item, ("submitted_at",), "")),
@@ -704,8 +714,8 @@ def _execution_to_dict(item: Any) -> dict[str, Any]:
         "order_id": _first(item, ("order_id",)),
         "trade_id": _first(item, ("trade_id",)),
         "symbol": _first(item, ("symbol",)),
-        "quantity": _first(item, ("quantity",)),
-        "price": _first(item, ("price",)),
+        "quantity": _float_or_none(_first(item, ("quantity",))),
+        "price": _float_or_none(_first(item, ("price",))),
         "trade_done_at": str(_first(item, ("trade_done_at",), "")),
     }
 
@@ -713,13 +723,13 @@ def _execution_to_dict(item: Any) -> dict[str, Any]:
 def _quote_to_dict(item: Any) -> dict[str, Any]:
     return {
         "symbol": _first(item, ("symbol",)),
-        "last": _first(item, ("last_done",)),
-        "open": _first(item, ("open",)),
-        "high": _first(item, ("high",)),
-        "low": _first(item, ("low",)),
-        "prev_close": _first(item, ("prev_close",)),
-        "volume": _first(item, ("volume",)),
-        "turnover": _first(item, ("turnover",)),
+        "last": _float_or_none(_first(item, ("last_done",))),
+        "open": _float_or_none(_first(item, ("open",))),
+        "high": _float_or_none(_first(item, ("high",))),
+        "low": _float_or_none(_first(item, ("low",))),
+        "prev_close": _float_or_none(_first(item, ("prev_close",))),
+        "volume": _float_or_none(_first(item, ("volume",))),
+        "turnover": _float_or_none(_first(item, ("turnover",))),
         "time": str(_first(item, ("timestamp",), "")),
     }
 
@@ -727,12 +737,12 @@ def _quote_to_dict(item: Any) -> dict[str, Any]:
 def _bar_to_dict(item: Any) -> dict[str, Any]:
     return {
         "time": str(_first(item, ("timestamp",), "")),
-        "open": _first(item, ("open",)),
-        "high": _first(item, ("high",)),
-        "low": _first(item, ("low",)),
-        "close": _first(item, ("close",)),
-        "volume": _first(item, ("volume",)),
-        "turnover": _first(item, ("turnover",)),
+        "open": _float_or_none(_first(item, ("open",))),
+        "high": _float_or_none(_first(item, ("high",))),
+        "low": _float_or_none(_first(item, ("low",))),
+        "close": _float_or_none(_first(item, ("close",))),
+        "volume": _float_or_none(_first(item, ("volume",))),
+        "turnover": _float_or_none(_first(item, ("turnover",))),
     }
 
 
