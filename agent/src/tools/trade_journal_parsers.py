@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+import re
 import pandas as pd
 
 FormatName = str  # "tonghuashun" | "eastmoney" | "futu" | "generic" | "unknown"
@@ -57,11 +58,39 @@ class TradeRecord:
 
 # ---------------- File loading ----------------
 
+def _load_markdown_table(path: Path) -> pd.DataFrame:
+    """Load a markdown pipe-table into a DataFrame.
+
+    Parses GFM pipe-tables: header row + separator row + data rows.
+    Each row must start/end with '|'. The separator row is discarded.
+    """
+    text = path.read_text(encoding="utf-8")
+    rows: list[list[str]] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        # Skip separator rows (only contain |, -, :)
+        if re.match(r"^\|[\s\-:|]+\|\s*$", stripped):
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        rows.append(cells)
+    if len(rows) < 2:
+        raise ValueError("Markdown table has no header + data rows")
+    header = rows[0]
+    data = rows[1:]
+    # Pad short rows with empty strings
+    for r in data:
+        while len(r) < len(header):
+            r.append("")
+    return pd.DataFrame(data, columns=header, dtype=str)
+
+
 def load_dataframe(path: str | Path) -> pd.DataFrame:
-    """Load a CSV/Excel file into a DataFrame with encoding fallback.
+    """Load a CSV/Excel/Markdown file into a DataFrame with encoding fallback.
 
     Args:
-        path: Path to the file (.csv/.xlsx/.xls).
+        path: Path to the file (.csv/.xlsx/.xls/.md).
 
     Returns:
         Parsed DataFrame with raw column names (no normalization).
@@ -77,6 +106,8 @@ def load_dataframe(path: str | Path) -> pd.DataFrame:
     ext = p.suffix.lower()
     if ext in {".xlsx", ".xls"}:
         return pd.read_excel(p, dtype=str)
+    if ext == ".md":
+        return _load_markdown_table(p)
     if ext != ".csv":
         raise ValueError(f"Unsupported extension: {ext}")
 
@@ -109,6 +140,10 @@ def detect_format(df: pd.DataFrame) -> FormatName:
         return "eastmoney"
     if {"Date", "Symbol", "Side"}.issubset(cols) or {"Date", "Symbol", "Direction"}.issubset(cols):
         return "futu"
+
+    # Longbridge export: Order ID + Symbol + Side + Status columns
+    if {"Order ID", "Symbol", "Side", "Status"}.issubset(cols):
+        return "longbridge"
 
     # Generic: any subset containing time/symbol/side hints
     lowered = {c.lower() for c in cols}
@@ -323,10 +358,59 @@ def _infer_market_from_symbol(symbol: str) -> str:
     return "other"
 
 
+def _longbridge_market(symbol: str) -> str:
+    """Infer market from Longbridge symbol suffix."""
+    s = symbol.upper()
+    if s.endswith(".HK"):
+        return "hk"
+    if s.endswith(".US"):
+        return "us"
+    if s.endswith(".SH") or s.endswith(".SZ") or s.endswith(".BJ"):
+        return "china_a"
+    return "other"
+
+
+def parse_longbridge(df: pd.DataFrame) -> list[TradeRecord]:
+    """Parse Longbridge (LongPort OpenAPI) order exports.
+
+    Expected columns: Order ID, Symbol, Side, Order Type, Status, Quantity,
+        Price, Executed Quantity, Executed Price, Created At.
+
+    Only "Filled" orders are parsed; Canceled/Rejected/Expired are skipped
+    (they have no executed price and would pollute PnL calculations).
+    """
+    records: list[TradeRecord] = []
+    for _, row in df.iterrows():
+        status = str(row.get("Status", "")).strip().lower()
+        if status != "filled":
+            continue
+        symbol = str(row.get("Symbol", "")).strip().upper()
+        qty = _to_float(row.get("Executed Quantity")) or _to_float(row.get("Quantity"))
+        price = _to_float(row.get("Executed Price")) or _to_float(row.get("Price"))
+        amount = qty * price
+        dt = str(row.get("Created At", "")).strip()
+        # Convert ISO8601 "2026-07-09T18:07:09Z" → "2026-07-09 18:07:09"
+        if "T" in dt:
+            dt = dt.replace("T", " ").rstrip("Z")
+        records.append(TradeRecord(
+            datetime=dt,
+            symbol=symbol,
+            name=str(row.get("Order ID", "")).strip(),
+            side=_normalize_side(row.get("Side")),
+            quantity=qty,
+            price=price,
+            amount=amount,
+            fee=0.0,
+            market=_longbridge_market(symbol),
+        ))
+    return records
+
+
 _PARSERS = {
     "tonghuashun": parse_tonghuashun,
     "eastmoney": parse_eastmoney,
     "futu": parse_futu,
+    "longbridge": parse_longbridge,
     "generic": parse_generic,
 }
 
