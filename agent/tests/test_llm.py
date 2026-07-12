@@ -177,6 +177,17 @@ class TestSyncProviderEnv:
         })
         assert result["OPENAI_API_KEY"] == "sk-shared"
 
+    def test_provider_base_url_replaces_stale_openai_url(self) -> None:
+        result = self._run_sync({
+            "LANGCHAIN_PROVIDER": "openrouter",
+            "OPENROUTER_API_KEY": "openrouter-key",
+            "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
+            "OPENAI_BASE_URL": "https://stale-provider.example/v1",
+        })
+
+        assert result["OPENAI_API_BASE"] == "https://openrouter.ai/api/v1"
+        assert result["OPENAI_BASE_URL"] == "https://openrouter.ai/api/v1"
+
     def test_minimax_provider(self) -> None:
         result = self._run_sync({
             "LANGCHAIN_PROVIDER": "minimax",
