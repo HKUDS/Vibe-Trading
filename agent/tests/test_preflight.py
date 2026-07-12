@@ -75,6 +75,40 @@ def test_llm_preflight_probe_reports_request_errors(monkeypatch) -> None:
     assert "Timeout: timed out" in result.message
 
 
+def test_llm_preflight_refreshes_config_after_loading_dotenv(monkeypatch) -> None:
+    """Preflight must not reuse a config snapshot created before dotenv loading."""
+    import src.providers.llm as llm
+    from src.config.accessor import get_env_config
+
+    for name in ("LANGCHAIN_PROVIDER", "LANGCHAIN_MODEL_NAME", "OPENAI_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+    get_env_config()
+
+    def load_dotenv() -> None:
+        monkeypatch.setenv("LANGCHAIN_PROVIDER", "openai")
+        monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "gpt-test")
+        monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
+
+    monkeypatch.setattr(llm, "_ensure_dotenv", load_dotenv)
+    monkeypatch.setattr(llm, "_sync_provider_env", lambda: None)
+    monkeypatch.setattr(
+        llm,
+        "provider_diagnostics",
+        lambda: {
+            "base_url": "https://example.test/v1",
+            "timeout_seconds": 120,
+            "max_retries": 2,
+            "proxy": {},
+        },
+    )
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: requests.Response())
+
+    result = preflight._check_llm_provider()
+
+    assert result.name == "LLM (openai)"
+    assert result.status == "ready"
+
+
 def test_akshare_check_uses_spec_without_import(monkeypatch) -> None:
     """AKShare's package import is heavy; preflight should only check discovery."""
     monkeypatch.delitem(sys.modules, "akshare", raising=False)
