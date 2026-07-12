@@ -90,3 +90,10 @@ AGENTS.md
 # Alpha Zoo wiki artifacts (generated, not source)
 wiki/alpha-library/manifest.json
 wiki/alpha-library/content/
+
+# ── Fork-local (Alexanderr003 isolated research instance) ───────────────
+# Upstream ignores Claude scaffolding; this fork tracks it deliberately.
+# Do NOT send these files upstream (see MEMORY.md invariant I-V6).
+!.claude/skills/
+!.claude/skills/**
+!CLAUDE.md
