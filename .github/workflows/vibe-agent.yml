@@ -14,7 +14,7 @@ on:
       model:
         description: "Groq model name"
         required: false
-        default: "meta-llama/llama-4-maverick-17b-128e-instruct"
+        default: "llama-3.3-70b-versatile"
       max_iter:
         description: "Max agent iterations"
         required: false
@@ -64,7 +64,7 @@ jobs:
         # agent/.env or ~/.vibe-trading/.env on the runner).
         env:
           LANGCHAIN_PROVIDER: groq
-          LANGCHAIN_MODEL_NAME: ${{ inputs.model || 'meta-llama/llama-4-maverick-17b-128e-instruct' }}
+          LANGCHAIN_MODEL_NAME: ${{ inputs.model || 'llama-3.3-70b-versatile' }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_BASE_URL: https://api.groq.com/openai/v1
           PROMPT: ${{ inputs.prompt || 'Say READY and stop.' }}
