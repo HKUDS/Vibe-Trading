@@ -326,3 +326,24 @@ def test_ytd_and_full_year_frames_are_excluded_and_q4_is_synthesized(
     # NOT values inflated by the 30.0 YTD frame or the 100.0 full-year frame.
     assert series.loc[pd.Timestamp("2024-02-01")] == 100.0
     assert series.loc[pd.Timestamp("2024-02-02")] == 100.0
+
+
+def test_resolve_ciks_falls_back_to_bare_ticker_for_us_suffix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Project-style ``AAPL.US`` codes resolve via the bare SEC ticker."""
+    table = {"AAPL": "0000320193", "BRK-B": "0001067983"}
+
+    monkeypatch.setattr(
+        fundamentals_loader.sec_edgar_client, "cik_for", lambda t: table.get(t)
+    )
+
+    resolved = fundamentals_loader._resolve_ciks(
+        ["AAPL.US", "BRK-B.US", "AAPL", "NOPE.US"]
+    )
+    assert resolved == {
+        "AAPL.US": "0000320193",
+        "BRK-B.US": "0001067983",
+        "AAPL": "0000320193",
+        "NOPE.US": None,
+    }

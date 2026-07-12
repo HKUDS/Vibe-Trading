@@ -387,6 +387,10 @@ def _resolve_ciks(symbols: list[str]) -> dict[str, str | None]:
     missing: list[str] = []
     for symbol in symbols:
         cik = sec_edgar_client.cik_for(symbol)
+        if cik is None and symbol.upper().endswith(".US"):
+            # Project-style US equity codes carry a ".US" suffix; the SEC
+            # ticker table is keyed by the bare ticker (e.g. "AAPL", "BRK-B").
+            cik = sec_edgar_client.cik_for(symbol[: -len(".US")])
         ciks[symbol] = cik
         if cik is None:
             missing.append(symbol)
