@@ -1,0 +1,89 @@
+# VIBE LAB — run the Vibe-Trading LLM agent on a GitHub runner (open egress).
+# The agent thinks with the owner's Groq key (free tier), stored ONLY as the
+# repo secret GROQ_API_KEY (never in the repo, never in chat — invariant I-V8).
+# Skips cleanly while the secret is unset. The paths-filtered push trigger
+# registers the workflow; real runs go through workflow_dispatch.
+name: VIBE LAB agent run
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Research prompt for the agent"
+        required: true
+      model:
+        description: "Groq model name"
+        required: false
+        default: "meta-llama/llama-4-maverick-17b-128e-instruct"
+      max_iter:
+        description: "Max agent iterations"
+        required: false
+        default: "15"
+  push:
+    branches: [claude/vibe-trading-setup-w0m9fg]
+    paths:
+      - ".github/workflows/vibe-agent.yml"
+
+concurrency:
+  group: vibe-agent
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Gate on GROQ_API_KEY
+        id: gate
+        run: |
+          if [ -z "${{ secrets.GROQ_API_KEY }}" ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GROQ_API_KEY secret not set — skipping agent run."
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.gate.outputs.ok == 'true'
+
+      - uses: actions/setup-python@v6
+        if: steps.gate.outputs.ok == 'true'
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        if: steps.gate.outputs.ok == 'true'
+        run: pip install -e ".[dev]"
+
+      - name: Write agent/.env from secrets
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          umask 077
+          {
+            echo "LANGCHAIN_PROVIDER=groq"
+            echo "LANGCHAIN_MODEL_NAME=${{ inputs.model || 'meta-llama/llama-4-maverick-17b-128e-instruct' }}"
+            echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}"
+            echo "GROQ_BASE_URL=https://api.groq.com/openai/v1"
+          } > agent/.env
+
+      - name: Run agent
+        if: steps.gate.outputs.ok == 'true'
+        env:
+          PROMPT: ${{ inputs.prompt || 'Say READY and stop.' }}
+          MAX_ITER: ${{ inputs.max_iter || '15' }}
+        run: |
+          set -o pipefail
+          vibe-trading run -p "$PROMPT" --max-iter "$MAX_ITER" --no-rich 2>&1 | tee agent_stdout.txt
+
+      - name: Upload run artifacts
+        if: always() && steps.gate.outputs.ok == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-run
+          path: |
+            agent_stdout.txt
+            agent/runs/
+            ~/.vibe-trading/reports/
+          if-no-files-found: warn
+          retention-days: 30
