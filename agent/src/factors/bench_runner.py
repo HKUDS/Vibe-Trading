@@ -30,9 +30,15 @@ from src.factors.registry import (
     SkipAlpha,
     get_default_registry,
 )
-from src.tools.alpha_bench_tool import _compute_forward_returns, _load_universe_panel
+from src.tools.alpha_bench_tool import (
+    _compute_forward_returns,
+    _load_universe_panel,
+    _parse_period,
+)
 
 logger = logging.getLogger(__name__)
+
+_FUND_PREFIX = "fund:"
 
 
 ProgressCb = Callable[[int, int, str], None]
@@ -47,6 +53,62 @@ def _init_bench_worker(panel: dict[str, Any], return_df: Any) -> None:
     global _WORKER_PANEL, _WORKER_RETURN_DF
     _WORKER_PANEL = panel
     _WORKER_RETURN_DF = return_df
+
+
+def _fund_columns_for(reg: Registry, alpha_ids: list[str]) -> list[str]:
+    """Collect the ``fund:*`` panel columns required by the selected alphas.
+
+    Args:
+        reg: Registry holding the alphas.
+        alpha_ids: Alphas selected for this bench.
+
+    Returns:
+        Stable, de-duplicated ``fund:*`` column names (empty when the zoo has
+        no fundamental alphas — the common case, which keeps the bench path
+        free of any fundamentals fetch).
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for aid in alpha_ids:
+        try:
+            meta = reg.get(aid).meta or {}
+        except Exception:  # noqa: BLE001 — a broken alpha will surface as a skip later
+            continue
+        for column in meta.get("columns_required", []) or []:
+            if isinstance(column, str) and column.startswith(_FUND_PREFIX) and column not in seen:
+                seen.add(column)
+                out.append(column)
+    return out
+
+
+def _inject_fund_panels(panel: dict[str, Any], fund_columns: list[str], period: str) -> None:
+    """Add ``fund:*`` frames (PIT SEC fundamentals) aligned to the price panel.
+
+    Bench-path counterpart of ``backtest.runner._inject_fundamental_panel``.
+    On failure the columns simply stay absent, so the affected alphas skip
+    with a visible reason instead of benching an all-NaN factor.
+
+    Args:
+        panel: Universe price panel (mutated in place).
+        fund_columns: ``fund:*`` columns requested by the zoo's alphas.
+        period: Bench period spec (``YYYY-YYYY`` or ``YYYY-MM-DD/YYYY-MM-DD``).
+    """
+    close = panel.get("close")
+    if close is None or getattr(close, "empty", True):
+        return
+    from backtest.loaders.fundamentals_loader import load_fundamental_panel
+
+    start, end = _parse_period(period)
+    fields = list(dict.fromkeys(c[len(_FUND_PREFIX):] for c in fund_columns))
+    loaded = load_fundamental_panel(
+        symbols=list(close.columns),
+        fields=fields,
+        start=start,
+        end=end,
+        index=close.index,
+    )
+    for field, frame in loaded.items():
+        panel[_FUND_PREFIX + field] = frame.reindex(index=close.index, columns=close.columns)
 
 
 def _compute_single_alpha(args: Any) -> dict[str, Any]:
@@ -192,6 +254,15 @@ def run_bench(
         entry["error"] = f"universe load failed: {exc}"
         entry["wall_seconds"] = round(time.monotonic() - start, 2)
         return entry
+
+    fund_columns = _fund_columns_for(reg, alpha_ids)
+    if fund_columns:
+        try:
+            _inject_fund_panels(panel, fund_columns, period)
+        except Exception as exc:  # noqa: BLE001 — bench degrades to per-alpha skips
+            logger.warning(
+                "fundamental panel injection failed (%s); fund:* alphas will be skipped", exc
+            )
 
     try:
         return_df = _compute_forward_returns(panel)
