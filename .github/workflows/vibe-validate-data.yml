@@ -1,0 +1,25 @@
+# VIBE LAB — probe free data sources from a GitHub runner (open egress).
+# The session sandbox gets 403s on market-data hosts (MEMORY.md I-V5); this
+# workflow answers "which feeds actually work" from neutral infrastructure.
+# Manual trigger only; informational (fails only if ZERO sources respond).
+name: VIBE LAB validate data sources
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install probe deps (minimal, not the whole project)
+        run: pip install -q yfinance ccxt requests
+
+      - name: Probe data sources
+        run: python scripts/probe_data_sources.py

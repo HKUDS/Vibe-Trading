@@ -1,5 +1,16 @@
 # handoff.md — VIBE LAB (Vibe-Trading fork aislado)
-**Última actualización:** 2026-07-12 | **Upstream:** HKUDS/Vibe-Trading v0.1.11 (sync @ 5f88f39) | **Rama de trabajo:** `claude/vibe-trading-setup-w0m9fg`
+**Última actualización:** 2026-07-12 (2ª pasada — puesta en marcha) | **Upstream:** HKUDS/Vibe-Trading v0.1.11 (sync @ 5f88f39) | **Rama de trabajo:** `claude/vibe-trading-setup-w0m9fg`
+
+> **Cierre 2026-07-12b (puesta en marcha — automatización de deploy):** Construido el camino completo
+> para la VM aislada SIN poder crearla desde aquí (eso es del owner): `vibe-deploy.yml` (workflow SSH:
+> escribe `agent/.env` desde Secrets → `docker compose up -d --build` → health-check; skip limpio sin
+> secrets; ABORTA si el host es el box de OLIMPO), `vibe-validate-data.yml` + `scripts/probe_data_sources.py`
+> (sonda de feeds desde el runner, reutilizable en la VM), `scripts/vm_bootstrap.sh` (prep one-shot de la VM,
+> con guard anti-OLIMPO). `DEPLOY_ISOLATED.md` reescrito con Camino A automatizado (los 5 min del owner:
+> crear VM CX22 Ubuntu 24.04 → bootstrap one-liner → 4 secrets → disparar workflow). Nueva invariante I-V8
+> (ops vía Actions, secretos solo en GitHub Secrets). **BLOQUEADO EN:** owner crea la VM + añade secrets
+> (`VIBE_SSH_HOST/VIBE_SSH_USER/VIBE_SSH_KEY/OPENROUTER_API_KEY`); después cualquier sesión dispara
+> "VIBE LAB deploy" y verifica `/health`. Estado del probe de datos del runner: ver sección Estado.
 
 ## 🚀 CÓMO ARRANCAR LA PRÓXIMA SESIÓN (LEER PRIMERO)
 
@@ -49,13 +60,14 @@ Destino de ejecución futuro: VM Hetzner NUEVA y dedicada (runbook: `DEPLOY_ISOL
 
 ## PRÓXIMA SESIÓN (primeras 3 cosas)
 
-1. **Decidir con Xander:** ¿provisionamos la VM Hetzner aislada ya (él crea la VM, seguimos
-   `DEPLOY_ISOLATED.md` juntos) o seguimos en sandbox con research sin datos vivos?
-2. Si hay VM: ejecutar el runbook completo + checklist de aislamiento (sección 6) + configurar
-   key OpenRouter propia en `agent/.env` + primer `vibe-trading run` de prueba.
+1. **¿Hizo Xander sus 5 minutos?** (VM creada + bootstrap + 4 secrets — Camino A de
+   `DEPLOY_ISOLATED.md`). Si sí: disparar workflow "VIBE LAB deploy" (rama de trabajo), leer logs
+   vía MCP de GitHub, verificar `/health` y pasar el checklist de aislamiento (sección 6 del runbook).
+2. Si aún no hay VM: research puede empezar YA en el runner (patrón I-V8/I24) — `vibe-validate-data`
+   dice qué feeds funcionan; se puede montar un workflow de `alpha bench` en runner si hace falta.
 3. Primer ciclo de research del lab: elegir 1 hipótesis (p. ej. un alpha del Zoo sobre BTC-USDT o
-   sp500), correr `alpha bench`/backtest con walk-forward, y redactar la primera spec re-validable
-   en OLIMPO (I-V3).
+   sp500), correr `alpha bench`/backtest con walk-forward (en VM o runner), y redactar la primera
+   spec re-validable en OLIMPO (I-V3).
 
 ## Riesgos / deuda conocida
 

@@ -1,0 +1,89 @@
+# VIBE LAB — deploy the isolated research VM over SSH (mirror of OLIMPO's
+# push-to-deploy pattern; the session sandbox has no SSH egress, runners do).
+#
+# Requires repo secrets (Settings → Secrets and variables → Actions):
+#   VIBE_SSH_HOST        VM IP (NEVER OLIMPO's box — enforced below)
+#   VIBE_SSH_USER        deploy user (defaults to 'vibe' if unset)
+#   VIBE_SSH_KEY         private key for that user
+#   OPENROUTER_API_KEY   LLM key created for THIS project
+# Without VIBE_SSH_HOST/VIBE_SSH_KEY the job skips gracefully (VM not
+# provisioned yet) so pushes to the working branch stay green.
+name: VIBE LAB deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "LLM model (openrouter naming)"
+        required: false
+        default: "deepseek/deepseek-v4-pro"
+  push:
+    branches: [claude/vibe-trading-setup-w0m9fg]
+
+concurrency:
+  group: vibe-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BRANCH: claude/vibe-trading-setup-w0m9fg
+    steps:
+      - name: Gate on secrets + isolation invariant I-V1
+        id: gate
+        run: |
+          if [ -z "${{ secrets.VIBE_SSH_HOST }}" ] || [ -z "${{ secrets.VIBE_SSH_KEY }}" ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::VIBE_SSH_HOST/VIBE_SSH_KEY not set — VM not provisioned yet; skipping deploy."
+            exit 0
+          fi
+          if [ "${{ secrets.VIBE_SSH_HOST }}" = "167.233.46.18" ]; then
+            echo "::error::VIBE_SSH_HOST is OLIMPO's box — forbidden by isolation invariant I-V1."
+            exit 1
+          fi
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up SSH
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.VIBE_SSH_KEY }}" > ~/.ssh/vibe_key
+          chmod 600 ~/.ssh/vibe_key
+          {
+            echo "Host vibe-vm"
+            echo "  HostName ${{ secrets.VIBE_SSH_HOST }}"
+            echo "  User ${{ secrets.VIBE_SSH_USER || 'vibe' }}"
+            echo "  IdentityFile ~/.ssh/vibe_key"
+            echo "  StrictHostKeyChecking accept-new"
+          } > ~/.ssh/config
+
+      - name: Write agent/.env on the VM (from secrets, never committed)
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          MODEL="${{ inputs.model || 'deepseek/deepseek-v4-pro' }}"
+          {
+            echo "LANGCHAIN_PROVIDER=openrouter"
+            echo "LANGCHAIN_MODEL_NAME=${MODEL}"
+            echo "OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}"
+            echo "OPENROUTER_BASE_URL=https://openrouter.ai/api/v1"
+          } | ssh vibe-vm 'umask 077 && mkdir -p ~/Vibe-Trading/agent && cat > ~/Vibe-Trading/agent/.env'
+
+      - name: Deploy (git pull + docker compose + health check)
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          ssh vibe-vm "BRANCH='$BRANCH' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd ~/Vibe-Trading
+          git fetch origin "$BRANCH"
+          git checkout -B "$BRANCH" "origin/$BRANCH"
+          docker compose up -d --build
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8899/health && exit 0
+            sleep 5
+          done
+          echo "health check failed after 150s"
+          docker compose logs --tail 50 vibe-trading
+          exit 1
+          REMOTE
