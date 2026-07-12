@@ -56,24 +56,17 @@ jobs:
         if: steps.gate.outputs.ok == 'true'
         run: pip install -e ".[dev]"
 
-      - name: Write ~/.vibe-trading/.env from secrets
-        if: steps.gate.outputs.ok == 'true'
-        # First candidate in the loader's search order and an absolute $HOME
-        # path, so it resolves regardless of the working directory (agent/.env
-        # was not picked up on the runner).
-        run: |
-          umask 077
-          mkdir -p "$HOME/.vibe-trading"
-          {
-            echo "LANGCHAIN_PROVIDER=groq"
-            echo "LANGCHAIN_MODEL_NAME=${{ inputs.model || 'meta-llama/llama-4-maverick-17b-128e-instruct' }}"
-            echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}"
-            echo "GROQ_BASE_URL=https://api.groq.com/openai/v1"
-          } > "$HOME/.vibe-trading/.env"
-
       - name: Run agent
         if: steps.gate.outputs.ok == 'true'
+        # Pass LLM config through the process environment, not a .env file:
+        # EnvConfig reads os.environ directly, so this is independent of the
+        # loader's dotenv search-path resolution (which did not pick up either
+        # agent/.env or ~/.vibe-trading/.env on the runner).
         env:
+          LANGCHAIN_PROVIDER: groq
+          LANGCHAIN_MODEL_NAME: ${{ inputs.model || 'meta-llama/llama-4-maverick-17b-128e-instruct' }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_BASE_URL: https://api.groq.com/openai/v1
           PROMPT: ${{ inputs.prompt || 'Say READY and stop.' }}
           MAX_ITER: ${{ inputs.max_iter || '15' }}
         run: |
