@@ -77,17 +77,37 @@ stdout en `alpha-bench-results` (run 29205155515, retención 30 días).
 fetch universo → IC bench → informe → artifact. Reproducible con
 `workflow_dispatch` de "VIBE LAB research bench" (inputs: zoo/universe/period/top).
 
+## CICLO 2 DE RESEARCH — RESULTADO (2026-07-12, runs 29206057062 + 29206467304)
+
+**Bench fundamental (PIT SEC) × sp500 × 2020-2025.** Para poder correrlo hubo que arreglar DOS
+bugs reales de la plataforma (ambos upstream-able, con tests offline):
+1. `run_bench` no inyectaba columnas `fund:*` en el panel (solo el backtest runner lo hacía) →
+   los 4 factores fundamentales se skipeaban siempre. Fix: `_inject_fund_panels` en
+   `bench_runner.py` (commit 2072be9).
+2. `_resolve_ciks` pasaba símbolos estilo proyecto (`AAPL.US`) a `cik_for`, que espera ticker
+   pelado → CIK=None para TODO el sp500 (visto en vivo, run 29206057062: 0 tested/4 skipped).
+   Fix: fallback quitando el sufijo `.US` (commit c7f11f6). **Este bug estaba latente también en
+   el camino del backtest de la plataforma para equity global.**
+
+**Resultado (run 29206467304, 4 tested / 0 skipped, n≈1507 días):** los 4 "dead" a horizonte
+DIARIO — fund_roe IC 0.0052/IR 0.050, gross_profitability 0.0035/0.032, earnings_yield
+0.0035/0.027, asset_growth −0.0018/−0.035. **Matiz metodológico (no cerrar la modalidad):** el
+bench solo mide IC contra el retorno de 1 día vista; quality/value operan a meses — medir un
+factor quarterly contra el retorno de mañana es un mismatch de horizonte. Veredicto honesto:
+"sin edge a rebalanceo diario", NO "fundamentales muertos". Cobertura: misses puntuales de
+conceptos XBRL (XOM shares/assets/equity, YUM/ZTS gross_profit) — gaps de alias normales.
+
 ## PRÓXIMA SESIÓN (primeras 3 cosas)
 
 1. **VM Hetzner: APLAZADA por decisión del owner (2026-07-12: "montaremos vm luego").** Cuando toque:
    Camino A de `DEPLOY_ISOLATED.md` (VM + bootstrap + 4 secrets) y disparar "VIBE LAB deploy".
-2. **Ciclo 2 — elegir modalidad con más probabilidad de edge** (evitar más fórmulas de precio en
-   universos concurridos, lección ciclo 1 + R7 OLIMPO): (a) factores fundamentales PIT-safe
-   (`fund:*`, zoo fundamentals — modalidad distinta), (b) qlib158/gtja191 en sp500 solo como
-   control negativo barato, (c) basket cripto multi-símbolo vía OKX (requiere ampliar
-   `_load_btc_panel` a N pares — cambio pequeño, upstream-able), (d) horizontes semanales
-   (menos coste de turnover que el diario).
+2. **Ciclo 3 (recomendado): IC multi-horizonte en el bench** — añadir horizonte de forward return
+   configurable (1d/5d/21d/63d) a `_compute_forward_returns` y re-medir el zoo fundamental a
+   21d/63d, que es donde esa clase de factores puede vivir. Cambio pequeño y también upstream-able.
+   Alternativas: basket cripto multi-símbolo vía OKX; qlib158 como control negativo.
 3. Los survivors (si los hay) pasan a walk-forward y de ahí a spec re-validable en OLIMPO (I-V3).
+   Considerar también ofrecer upstream los 2 fixes de este ciclo (PR limpio desde una rama aparte
+   basada en main, sin scaffolding — I-V6).
 
 ## Riesgos / deuda conocida
 
