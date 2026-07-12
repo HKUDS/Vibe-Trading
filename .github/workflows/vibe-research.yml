@@ -1,0 +1,71 @@
+# VIBE LAB — run an Alpha Zoo bench on a GitHub runner (open egress).
+# First research loop of the lab: rank a zoo's alphas by IC/IR on a real
+# universe, publish the table + HTML report as artifacts. Results are a
+# SCREEN (hypothesis ranking), not validated edge — walk-forward comes after.
+# The push trigger (paths-filtered to this file) registers the workflow and
+# runs the default bench once; afterwards use workflow_dispatch with inputs.
+name: VIBE LAB research bench
+
+on:
+  workflow_dispatch:
+    inputs:
+      zoo:
+        description: "Alpha zoo id (alpha101, gtja191, qlib158, academic)"
+        required: false
+        default: "alpha101"
+      universe:
+        description: "Universe (sp500 | csi300 | btc-usdt)"
+        required: false
+        default: "sp500"
+      period:
+        description: "Period (YYYY-YYYY or YYYY-MM-DD/YYYY-MM-DD)"
+        required: false
+        default: "2022-2025"
+      top:
+        description: "Top-N alphas to keep"
+        required: false
+        default: "20"
+  push:
+    branches: [claude/vibe-trading-setup-w0m9fg]
+    paths:
+      - ".github/workflows/vibe-research.yml"
+
+concurrency:
+  group: vibe-research
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project (editable, same as upstream CI)
+        run: pip install -e ".[dev]"
+
+      - name: Run alpha bench
+        run: |
+          set -o pipefail
+          vibe-trading alpha bench \
+            --zoo "${{ inputs.zoo || 'alpha101' }}" \
+            --universe "${{ inputs.universe || 'sp500' }}" \
+            --period "${{ inputs.period || '2022-2025' }}" \
+            --top "${{ inputs.top || '20' }}" \
+            --yes 2>&1 | tee bench_stdout.txt
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpha-bench-results
+          path: |
+            bench_stdout.txt
+            ~/.vibe-trading/reports/alpha_bench_*.html
+          if-no-files-found: warn
+          retention-days: 30

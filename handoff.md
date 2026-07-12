@@ -63,14 +63,14 @@ Destino de ejecución futuro: VM Hetzner NUEVA y dedicada (runbook: `DEPLOY_ISOL
 
 ## PRÓXIMA SESIÓN (primeras 3 cosas)
 
-1. **¿Hizo Xander sus 5 minutos?** (VM creada + bootstrap + 4 secrets — Camino A de
-   `DEPLOY_ISOLATED.md`). Si sí: disparar workflow "VIBE LAB deploy" (rama de trabajo), leer logs
-   vía MCP de GitHub, verificar `/health` y pasar el checklist de aislamiento (sección 6 del runbook).
-2. Si aún no hay VM: research puede empezar YA en el runner (patrón I-V8/I24) — `vibe-validate-data`
-   dice qué feeds funcionan; se puede montar un workflow de `alpha bench` en runner si hace falta.
-3. Primer ciclo de research del lab: elegir 1 hipótesis (p. ej. un alpha del Zoo sobre BTC-USDT o
-   sp500), correr `alpha bench`/backtest con walk-forward (en VM o runner), y redactar la primera
-   spec re-validable en OLIMPO (I-V3).
+1. **VM Hetzner: APLAZADA por decisión del owner (2026-07-12: "montaremos vm luego").** Cuando toque:
+   Camino A de `DEPLOY_ISOLATED.md` (VM + bootstrap + 4 secrets) y disparar "VIBE LAB deploy".
+2. Revisar el resultado del **ciclo 1 de research** (workflow `vibe-research.yml`: bench alpha101 ×
+   sp500 × 2022-2025, informe HTML + tabla en artifact `alpha-bench-results`). Si el bench quedó bien:
+   elegir los top candidatos por IR y pasarlos a walk-forward (siguiente ciclo).
+3. Redactar la primera spec re-validable en OLIMPO (I-V3) con los survivors del punto 2. Notas
+   honestas: sp500 usa constituyentes ACTUALES (survivorship bias, el propio tool lo avisa en meta) —
+   los IC están inflados al alza; sirve como SCREEN, no como validación.
 
 ## Riesgos / deuda conocida
 
