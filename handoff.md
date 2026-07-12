@@ -10,7 +10,10 @@
 > crear VM CX22 Ubuntu 24.04 → bootstrap one-liner → 4 secrets → disparar workflow). Nueva invariante I-V8
 > (ops vía Actions, secretos solo en GitHub Secrets). **BLOQUEADO EN:** owner crea la VM + añade secrets
 > (`VIBE_SSH_HOST/VIBE_SSH_USER/VIBE_SSH_KEY/OPENROUTER_API_KEY`); después cualquier sesión dispara
-> "VIBE LAB deploy" y verifica `/health`. Estado del probe de datos del runner: ver sección Estado.
+> "VIBE LAB deploy" y verifica `/health`. **VERIFICADO EN VIVO:** Actions del fork habilitadas;
+> deploy run#1 (push) = success con skip limpio sin secrets; probe run#1 = success **4/6 fuentes
+> desde el runner** (yfinance BTC/AAPL OK, kraken OK, okx OK; binance 451 geo-US, stooq 404 —
+> ver trampa en MEMORY.md). El research con datos reales YA es posible vía runner sin esperar la VM.
 
 ## 🚀 CÓMO ARRANCAR LA PRÓXIMA SESIÓN (LEER PRIMERO)
 

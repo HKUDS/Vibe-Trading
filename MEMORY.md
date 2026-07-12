@@ -38,6 +38,11 @@
 
 ## 🪤 TRAMPAS CONOCIDAS
 
+- **Runners de GitHub = IPs de EE. UU. → Binance responde 451** (Unavailable For Legal Reasons).
+  Probe 2026-07-12 desde runner: yfinance OK, ccxt kraken OK, ccxt okx OK, binance 451, stooq 404.
+  Para universos que exijan Binance, usar la VM Hetzner (EU) u OKX/Kraken como fuente. No diagnosticar
+  el 451 como bug del loader.
+
 - **`alpha bench` / `data` necesitan red** → en el sandbox fallarán con 403 aunque el código esté bien
   (I-V5). Verificar primero DÓNDE corres antes de diagnosticar un "bug" de red.
 - **El paquete PyPI se llama `vibe-trading-ai`** pero los comandos son `vibe-trading` y
