@@ -1088,7 +1088,11 @@ real key server-side, then forwards upstream.
    holding your Alpaca key pair as fields `key_id` and `secret_key`, assigned to
    your agent, with allowed hosts `paper-api.alpaca.markets` (or the live host
    `api.alpaca.markets`) **and** `data.alpaca.markets` (the market-data host used
-   by quote/bars).
+   by quote/bars). Use **separate TAP credentials for paper and live** (e.g.
+   `alpaca-paper` / `alpaca-live`, selected via `TAP_ALPACA_CREDENTIAL`), each
+   with `allowed_hosts` pinned to its own API host — TAP then structurally
+   refuses to send the paper key to the live host and vice versa, keeping the
+   paper/live separation crisp end to end.
 2. Add to `agent/.env`:
 
 | Variable | Required | Description |
@@ -1101,6 +1105,14 @@ real key server-side, then forwards upstream.
 When a write is placed, approve or deny it in your TAP channel (Telegram /
 dashboard). An approved order/cancel is forwarded to Alpaca; a denied or
 timed-out one returns an error and is **never sent**.
+
+> **Known limitation — approval race.** If the human approves right at the
+> `TAP_APPROVAL_TIMEOUT` boundary, TAP may forward the order while the poll has
+> already given up: the gate then reports an error even though the order reached
+> the broker, and the `max_trades_per_day` counter under-counts by one. The
+> deterministic `client_order_id` keeps a retry from double-placing that order;
+> if you rely on a tight trades-per-day cap, check open orders after a TAP
+> timeout error before retrying.
 
 **Scope:** covers Alpaca **order placement, cancel, and all five reads** — the
 full connector egress, so the process holds no key on any path. HMAC-signed

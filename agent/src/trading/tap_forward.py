@@ -70,7 +70,9 @@ def _load_env_into_environ() -> None:
                 name = name.strip()
                 if name.startswith("TAP_"):
                     os.environ.setdefault(name, value.strip().strip('"').strip("'"))
-        except OSError:
+        except (OSError, UnicodeDecodeError):
+            # An unreadable or non-UTF-8 .env must not take down every
+            # read/order call — skip it, exactly like a missing file.
             continue
 
 
@@ -153,7 +155,9 @@ def forward(
     poll = parsed.get("poll_url") if isinstance(parsed, dict) else None
     if isinstance(txn, str) and txn:
         poll_url = f"{base}/agent/approvals/{txn}"
-    elif isinstance(poll, str) and poll.startswith("/"):
+    elif isinstance(poll, str) and poll.startswith("/") and not poll.startswith("//"):
+        # A single leading "/" only: "//host/path" is protocol-relative and
+        # would resolve to the attacker's host under URL joining.
         poll_url = f"{base}{poll}"
     else:
         return _result(False, decision="pending", status=code, body=parsed,
@@ -173,6 +177,10 @@ def forward(
                            body=inner.get("body"), error=None if ok else "upstream error")
         if state in ("denied", "timed_out", "error"):
             return _result(False, decision=state, body=pr, error=_err(pr) or state)
+    # Known race: an approval landing right at this deadline may have been
+    # forwarded upstream even though we report an error here (so any caller-side
+    # counter, e.g. max_trades_per_day, can under-count by one). Callers dedup
+    # retries via a deterministic client_order_id; see README "TAP Mode".
     return _result(False, decision="timeout",
                    error=f"no approval decision within {int(timeout)}s")
 

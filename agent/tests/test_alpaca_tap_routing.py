@@ -358,3 +358,94 @@ def test_denied_cancel_is_blocked(monkeypatch) -> None:
     assert result["status"] == "error"
     assert result["tap_decision"] == "denied"
     assert result.get("cancelled") is not True
+
+
+# --------------------------------------------------------------------------- #
+# Red line: the live mandate gate strictly precedes TAP. TAP is transport under
+# `connector.place_order`; a mandate DENY must block the order with
+# `tap_forward.forward` never called, and an ALLOW must route it through TAP.
+# These run the REAL alpaca connector module through the REAL gate.
+# --------------------------------------------------------------------------- #
+
+from src.live import sdk_order_gate as gate  # noqa: E402
+from tests.test_sdk_order_gate import _intent, _mandate, _patch_gate  # noqa: E402
+
+
+def test_live_mandate_deny_blocks_before_any_tap_call(monkeypatch) -> None:
+    calls: list = []
+    monkeypatch.setattr(al.tap_forward, "tap_enabled", lambda: True)
+    monkeypatch.setattr(al.tap_forward, "forward",
+                        lambda *a, **k: calls.append(a) or {"ok": False})
+    _patch_gate(monkeypatch, mandate=None)  # no valid mandate on file → DENY
+
+    out = gate.execute_live_order(
+        broker="alpaca",
+        connector_module=al,
+        config=al.AlpacaConfig(profile="live"),
+        intent=_intent(notional=500.0),
+        place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0,
+                      "order_type": "market"},
+    )
+
+    assert out["status"] == "blocked" and out["decision"] == "deny"
+    assert calls == []  # nothing — not even a read — reached TAP
+
+
+def test_live_mandate_halt_blocks_before_any_tap_call(monkeypatch) -> None:
+    calls: list = []
+    monkeypatch.setattr(al.tap_forward, "tap_enabled", lambda: True)
+    monkeypatch.setattr(al.tap_forward, "forward",
+                        lambda *a, **k: calls.append(a) or {"ok": False})
+    _patch_gate(monkeypatch, mandate=_mandate(), halted=True)  # kill switch tripped
+
+    out = gate.execute_live_order(
+        broker="alpaca",
+        connector_module=al,
+        config=al.AlpacaConfig(profile="live"),
+        intent=_intent(notional=500.0),
+        place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0,
+                      "order_type": "market"},
+    )
+
+    assert out["status"] == "blocked"
+    assert calls == []
+
+
+def test_live_mandate_allow_routes_order_through_tap(monkeypatch) -> None:
+    order_posts: list[str] = []
+
+    def fake_forward(target, method, body, cred_headers, **_):
+        if method == "GET" and target.endswith("/v2/positions"):
+            return _ok(json.dumps([]))
+        if method == "GET" and target.endswith("/v2/account"):
+            return _ok(json.dumps({
+                "account_number": "LA123", "status": "ACTIVE", "currency": "USD",
+                "cash": "100000", "equity": "100000", "buying_power": "200000",
+                "portfolio_value": "100000", "pattern_day_trader": False,
+                "trading_blocked": False,
+            }))
+        assert method == "POST" and target.endswith("/v2/orders")
+        order_posts.append(target)
+        return {"ok": True, "decision": "forwarded", "status": 200,
+                "body": json.dumps({"id": "ord-live-1", "status": "accepted"}),
+                "error": None}
+
+    monkeypatch.setattr(al.tap_forward, "tap_enabled", lambda: True)
+    monkeypatch.setattr(al.tap_forward, "forward", fake_forward)
+    _patch_gate(monkeypatch, mandate=_mandate())  # in-bounds → ALLOW
+
+    out = gate.execute_live_order(
+        broker="alpaca",
+        connector_module=al,
+        config=al.AlpacaConfig(profile="live"),
+        intent=_intent(notional=500.0),
+        place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0,
+                      "order_type": "market"},
+    )
+
+    # Same gate, same ordering — the ALLOW went out through TAP, to the live host.
+    assert out["status"] == "ok"
+    assert out["via"] == "tap"
+    assert out["order_id"] == "ord-live-1"
+    assert "live_action" in out  # the gate audited the allowed order
+    assert order_posts == ["https://api.alpaca.markets/v2/orders"]
