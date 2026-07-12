@@ -1,11 +1,18 @@
 # VIBE LAB — probe free data sources from a GitHub runner (open egress).
 # The session sandbox gets 403s on market-data hosts (MEMORY.md I-V5); this
 # workflow answers "which feeds actually work" from neutral infrastructure.
-# Manual trigger only; informational (fails only if ZERO sources respond).
+# Informational (fails only if ZERO sources respond). The push trigger (paths-
+# filtered) exists because dispatch-only workflows outside the default branch
+# are not indexed by GitHub — first push registers it AND runs the probe.
 name: VIBE LAB validate data sources
 
 on:
   workflow_dispatch:
+  push:
+    branches: [claude/vibe-trading-setup-w0m9fg]
+    paths:
+      - "scripts/probe_data_sources.py"
+      - ".github/workflows/vibe-validate-data.yml"
 
 jobs:
   probe:
