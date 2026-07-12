@@ -61,16 +61,33 @@ Destino de ejecución futuro: VM Hetzner NUEVA y dedicada (runbook: `DEPLOY_ISOL
 - `.gitignore` — excepciones fork-local al final (trackear `.claude/skills/**` y `CLAUDE.md`).
 - Código del agente/plataforma: **CERO cambios** (solo andamiaje).
 
+## CICLO 1 DE RESEARCH — RESULTADO (2026-07-12, run 29205155515)
+
+**Bench alpha101 × sp500 × 2022-2025 (diario, IC cross-sectional):** 82 alphas testeadas, 19
+skipped, 7:13 min de loop (panel de ~500 tickers vía yfinance en ~3 min). **VEREDICTO HONESTO:
+ningún candidato avanza.** El mejor por IR es `alpha101_032` (momentum: IC 0.020, IR 0.166,
+hit 57.4%, n=768) y TODO el top-20 queda clasificado **"dead"** por el propio clasificador de la
+plataforma — y eso CON survivorship bias inflando al alza (constituyentes actuales de Wikipedia).
+Lectura: las fórmulas precio/volumen públicas (Kakushadze 101) están minadas en large-caps US
+2022-2025 — **coincide con la conclusión R7 de OLIMPO** (GTJA-191 también murió allí; el edge
+ortogonal está en datos non-price / modalidades menos concurridas). Artefacto: informe HTML +
+stdout en `alpha-bench-results` (run 29205155515, retención 30 días).
+
+**Valor real del ciclo 1:** el LOOP funciona de punta a punta en runner (~8.5 min y gratis):
+fetch universo → IC bench → informe → artifact. Reproducible con
+`workflow_dispatch` de "VIBE LAB research bench" (inputs: zoo/universe/period/top).
+
 ## PRÓXIMA SESIÓN (primeras 3 cosas)
 
 1. **VM Hetzner: APLAZADA por decisión del owner (2026-07-12: "montaremos vm luego").** Cuando toque:
    Camino A de `DEPLOY_ISOLATED.md` (VM + bootstrap + 4 secrets) y disparar "VIBE LAB deploy".
-2. Revisar el resultado del **ciclo 1 de research** (workflow `vibe-research.yml`: bench alpha101 ×
-   sp500 × 2022-2025, informe HTML + tabla en artifact `alpha-bench-results`). Si el bench quedó bien:
-   elegir los top candidatos por IR y pasarlos a walk-forward (siguiente ciclo).
-3. Redactar la primera spec re-validable en OLIMPO (I-V3) con los survivors del punto 2. Notas
-   honestas: sp500 usa constituyentes ACTUALES (survivorship bias, el propio tool lo avisa en meta) —
-   los IC están inflados al alza; sirve como SCREEN, no como validación.
+2. **Ciclo 2 — elegir modalidad con más probabilidad de edge** (evitar más fórmulas de precio en
+   universos concurridos, lección ciclo 1 + R7 OLIMPO): (a) factores fundamentales PIT-safe
+   (`fund:*`, zoo fundamentals — modalidad distinta), (b) qlib158/gtja191 en sp500 solo como
+   control negativo barato, (c) basket cripto multi-símbolo vía OKX (requiere ampliar
+   `_load_btc_panel` a N pares — cambio pequeño, upstream-able), (d) horizontes semanales
+   (menos coste de turnover que el diario).
+3. Los survivors (si los hay) pasan a walk-forward y de ahí a spec re-validable en OLIMPO (I-V3).
 
 ## Riesgos / deuda conocida
 
