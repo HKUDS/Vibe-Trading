@@ -52,14 +52,16 @@
 
 > ⚠️ **تحذير أمني:** حساب X باسم `VibeTrading_HKU`، ومشروع Virtuals رقم `101845`، وعقد التوكن `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` كلّها غير رسمية ولا تتبع Vibe-Trading. لم نُطلق أو نؤيد مطلقًا أي توكن أو عملة ميم. لا تشترِ هذا التوكن، ولا تربط محفظتك، ولا توقّع أي شيء. [التفاصيل](SECURITY.md#official-channels--impersonation).
 
+- **2026-07-13** 🔒 **تحصين أمني: إغلاق جميع نتائج التدقيق الخارجي العشرة + دفعة مساهمين**: تمّت معالجة جميع النتائج العشر من التدقيق الأمني الخارجي بتاريخ 2026-07-10 (issue [#476](https://github.com/HKUDS/Vibe-Trading/issues/476)، نقاش [#468](https://github.com/HKUDS/Vibe-Trading/discussions/468)) على `main` — إعادة بناء Docker متعددة المراحل بصور أساسية مثبّتة عبر digest، وصندوق رملي للباكتيست مُحصّن بـ AST يمنع الشبكة/subprocess/eval/os.environ/فتح الملفات غير الآمن (حتى داخل أجسام الدوال المتداخلة)، وتذاكر مصادقة SSE قصيرة العمر وأحادية الاستخدام، وتحصين Compose (نظام ملفات جذري للقراءة فقط، إسقاط الصلاحيات، حدود الموارد)، ومصادقة + تحديد معدّل على `/correlation`، ورؤوس أمان، واعتماديات مثبّتة بالتجزئة، وغيرها. كما دُمج: **وضع TAP** الاختياري لعزل مفتاح Alpaca ([#377](https://github.com/HKUDS/Vibe-Trading/pull/377)، شكراً @0xZKnw)، وإظهار معدل دوران المحفظة المُحقَّق ضمن مقاييس الباكتيست ([#478](https://github.com/HKUDS/Vibe-Trading/pull/478)، شكراً @Robin1987China)، وعامل أكاديمي **Frazzini-Pedersen للمراهنة ضد بيتا** (Alpha Zoo → 461، [#480](https://github.com/HKUDS/Vibe-Trading/pull/480)، شكراً @YogeshModi24)، وإصلاح تحيّز الاستشراف المسبق عبر جميع محسّنات المحفظة الخمسة ([#487](https://github.com/HKUDS/Vibe-Trading/pull/487)، شكراً @YZY0108)، وإصلاحان لإعدادات preflight/provider ([#479](https://github.com/HKUDS/Vibe-Trading/pull/479)/[#484](https://github.com/HKUDS/Vibe-Trading/pull/484)، يغلقان [#477](https://github.com/HKUDS/Vibe-Trading/issues/477)/[#482](https://github.com/HKUDS/Vibe-Trading/issues/482)، شكراً @ananaymital/@Bortlesboat).
+
 - **2026-07-12** 🧪 **مدير تطوير الاستراتيجيات + دفعة إصلاحات المساهمين**: مهارة `strategy-dev-manager` الجديدة (رقم 87) تحوّل الأوراق الأكاديمية وتقارير الوسطاء إلى عوامل/استراتيجيات مسجلة مع مخزن artifacts دائم ومراقبة تلقائية لاضمحلال IC/Sharpe — تقود أدوات `sdm_register` / `sdm_status` / `sdm_decay_scan` دورة الحياة active → monitoring → decayed → disabled فوق `~/.vibe-trading/` ([#457](https://github.com/HKUDS/Vibe-Trading/pull/457)، يغلق [#455](https://github.com/HKUDS/Vibe-Trading/issues/455)، شكراً @shadowinlife). كما دُمج: يقبل تبويب Correlation رموزاً مجردة (`AAPL,SPY`) ويمشي سلسلة loader fallback كاملة ([#472](https://github.com/HKUDS/Vibe-Trading/pull/472)، يغلق [#471](https://github.com/HKUDS/Vibe-Trading/issues/471)، شكراً @yxhuang)، ويحترم `local` loader الفاصل الزمني المطلوب عبر إعادة تجميع OHLCV ([#467](https://github.com/HKUDS/Vibe-Trading/pull/467)، شكراً @Shizoqua)، ووصل تاريخ عقود Binance USD-M الدائمة مع توجيه صريح `BTC-USDT-PERP` وفصل سعر التنفيذ عن سعر العلامة كأول شريحة من [#462](https://github.com/HKUDS/Vibe-Trading/issues/462) ([#470](https://github.com/HKUDS/Vibe-Trading/pull/470)، شكراً @honginp)، وتعمل استيرادات FastMCP transport عبر كلا تخطيطي الوحدات ([#469](https://github.com/HKUDS/Vibe-Trading/pull/469)، شكراً @roberttidball)، وأصبح Requesty متاحاً كمزوّد بوابة LLM متوافقة مع OpenAI ([#474](https://github.com/HKUDS/Vibe-Trading/pull/474)، شكراً @Thibaultjaigu).
 
 - **2026-07-11** 🚀 **صدر الإصدار v0.1.11** (`pip install -U vibe-trading-ai`): يجمع ثلاثة أسابيع من العمل منذ 0.1.10 — اختبار رجعي من الدرجة الأولى للأسهم الهندية (NSE/BSE)، وطبقة العوامل الأساسية الآمنة زمنياً (PIT-safe) (Alpha Zoo → 460)، وبيئة تشغيل قنوات IM بـ16 محوّلاً، والأبحاث المجدولة من طرف إلى طرف، وبيانات QVeris المدفوعة الاختيارية، ودفعة مساهمي اليوم: محسّن يراعي الدوران ([#466](https://github.com/HKUDS/Vibe-Trading/pull/466)، شكراً @Robin1987China)، وأداة رؤية `analyze_image` + إقران NapCat DM + إصلاح قراءة وسائط IM ([#464](https://github.com/HKUDS/Vibe-Trading/pull/464)/[#463](https://github.com/HKUDS/Vibe-Trading/pull/463)/[#465](https://github.com/HKUDS/Vibe-Trading/issues/465)، شكراً @fei-moss)، وتسلسل Longbridge Decimal ([#459](https://github.com/HKUDS/Vibe-Trading/pull/459)، شكراً @fanfpy)، وحُرّاس عدّ المانيفست المحزوم ([#461](https://github.com/HKUDS/Vibe-Trading/pull/461)، شكراً @asahikiko). التفاصيل الكاملة: [CHANGELOG](CHANGELOG.md) · [ملاحظات الإصدار](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.11).
 
-- **2026-07-10** 🇮🇳 **دعم الأسهم الهندية (NSE/BSE) + مركزية متغيرات البيئة**: محرك مخصص `IndiaEquityEngine` — تسوية T+1، ونطاقات حدود السعر، وحزمة تكاليف STT/الدمغة/البورصة/SEBI/GST قابلة للتهيئة — مع توجيه رموز `.NS`/`.BO`، وجسر بيانات Shoonya/Dhan للقراءة فقط (اختياري)، وانضمام 255 عاملاً من alpha101/qlib158 إلى الكون الجديد `equity_in` ([#305](https://github.com/HKUDS/Vibe-Trading/pull/305)، شكرًا @muku314115). تتدفق متغيرات البيئة الآن عبر مخطط Pydantic واحد `EnvConfig` مع بوابة CI تعتمد على AST لمنع انتشار `os.getenv` مستقبلاً ([#440](https://github.com/HKUDS/Vibe-Trading/pull/440)، يغلق [#438](https://github.com/HKUDS/Vibe-Trading/issues/438)، شكرًا @shadowinlife). أيضًا: مربع تأكيد ثانٍ قبل اعتماد تفويض تداول حقيقي مع توحيد رسائل الأخطاء ([#453](https://github.com/HKUDS/Vibe-Trading/pull/453)، شكرًا @wison1717-maker)، واختبارات مسارات scheduled-research ([#452](https://github.com/HKUDS/Vibe-Trading/pull/452)، شكرًا @Robin1987China)، ولم تعد نماذج GLM التفكيرية تفقد تدفق الاستدلال على مزود zhipu ([#458](https://github.com/HKUDS/Vibe-Trading/issues/458)).
-
 <details>
 <summary>أخبار سابقة</summary>
+
+- **2026-07-10** 🇮🇳 **دعم الأسهم الهندية (NSE/BSE) + مركزية متغيرات البيئة**: محرك مخصص `IndiaEquityEngine` — تسوية T+1، ونطاقات حدود السعر، وحزمة تكاليف STT/الدمغة/البورصة/SEBI/GST قابلة للتهيئة — مع توجيه رموز `.NS`/`.BO`، وجسر بيانات Shoonya/Dhan للقراءة فقط (اختياري)، وانضمام 255 عاملاً من alpha101/qlib158 إلى الكون الجديد `equity_in` ([#305](https://github.com/HKUDS/Vibe-Trading/pull/305)، شكرًا @muku314115). تتدفق متغيرات البيئة الآن عبر مخطط Pydantic واحد `EnvConfig` مع بوابة CI تعتمد على AST لمنع انتشار `os.getenv` مستقبلاً ([#440](https://github.com/HKUDS/Vibe-Trading/pull/440)، يغلق [#438](https://github.com/HKUDS/Vibe-Trading/issues/438)، شكرًا @shadowinlife). أيضًا: مربع تأكيد ثانٍ قبل اعتماد تفويض تداول حقيقي مع توحيد رسائل الأخطاء ([#453](https://github.com/HKUDS/Vibe-Trading/pull/453)، شكرًا @wison1717-maker)، واختبارات مسارات scheduled-research ([#452](https://github.com/HKUDS/Vibe-Trading/pull/452)، شكرًا @Robin1987China)، ولم تعد نماذج GLM التفكيرية تفقد تدفق الاستدلال على مزود zhipu ([#458](https://github.com/HKUDS/Vibe-Trading/issues/458)).
 
 - **2026-07-09** 🧯 **إزالة عائق بدء Docker + دفعة مساهمين لـ provider/CLI**: لم يعد بدء Docker/server ينهار عندما يمرّ FastAPI route iteration على عنصر included-router-like لا يملك `path` ([#450](https://github.com/HKUDS/Vibe-Trading/issues/450)، شكراً @Penn-Live). كما دُمجت دفعة quick-win من إصلاحات المساهمين: توحّدت تواقيع `fetch()` في loaders الخاصة بـ OKX / Tushare / yfinance مع البروتوكول ([#437](https://github.com/HKUDS/Vibe-Trading/pull/437)، شكراً @shadowinlife)، ويحفظ CLI resume prompt أول رسالة يكتبها المستخدم ([#448](https://github.com/HKUDS/Vibe-Trading/pull/448)، يغلق [#447](https://github.com/HKUDS/Vibe-Trading/issues/447)، شكراً @morluto)، وتحوّل default في Codex OAuth إلى `openai-codex/gpt-5.4` ([#446](https://github.com/HKUDS/Vibe-Trading/pull/446)، شكراً @morluto)، وأصبح Kimi for Coding مزوداً مستقلاً ([#435](https://github.com/HKUDS/Vibe-Trading/pull/435)، شكراً @yxhuang)، ووُصلت opencode provider mappings ([#444](https://github.com/HKUDS/Vibe-Trading/pull/444)، شكراً @imsankz)، كما صُححت code fences في مراجع Tushare من `pyhton` إلى `python` ([#449](https://github.com/HKUDS/Vibe-Trading/pull/449)، شكراً @flash1234pku). شمل التحقق focused server/CLI/provider/loader tests وDocker build و`/health` smoke.
 
@@ -238,7 +240,7 @@ Vibe-Trading مساحة عمل بحثية مفتوحة المصدر تحول ا�
 | **تشغيل فرق محللين** | مراجعات بحث متعددة الوكلاء لتدفقات الاستثمار والكم والكريبتو والماكرو والمخاطر. |
 | **وصل الأبحاث بقنوات IM** | إدارة بيئة جلسة واحدة عبر WebSocket وTelegram وSlack وDiscord وMatrix وWhatsApp وSignal وQQ/NapCat وWeChat/WeCom وFeishu/Lark وDingTalk وTeams وemail وMochat من CLI وREST وWeb UI. |
 | **إنتاج مخرجات قابلة للاستخدام** | تقارير، وTradingView Pine Script، وTDX، وMetaTrader 5، وأدوات MCP، وجلسات بحث لاحقة. |
-| **bench ألفا zoo جاهزة** | تشغيل IC + IR + تصنيف alive/reversed/dead عبر 460 ألفا (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental) بسطر أوامر واحد على universe الخاص بك. |
+| **bench ألفا zoo جاهزة** | تشغيل IC + IR + تصنيف alive/reversed/dead عبر 461 ألفا (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental) بسطر أوامر واحد على universe الخاص بك. |
 
 ---
 
@@ -432,9 +434,9 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>460 ألفا كمّي جاهز عبر 5 families</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>461 ألفا كمّي جاهز عبر 5 families</sub></summary>
 
-- 🧬 460 ألفا cross-sectional، مع منع lookahead على طبقة العوامل (operators)
+- 🧬 461 ألفا cross-sectional، مع منع lookahead على طبقة العوامل (operators)
 - 📈 IC + IR + تصنيف alive/reversed/dead بأمر CLI واحد
 - 🔬 بوابة نقاء AST + اختبار حماية lookahead بـ 300 صف + قاطع شبكة عبر `pytest-socket`
 - 📦 إسناد Apache-2 لـ Qlib؛ ملف `LICENSE.md` لكل zoo يصرّح بأن الصيغ محتوى رياضي
@@ -445,7 +447,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 | **qlib158** | 154 | Microsoft Qlib `Alpha158` (Apache-2.0، مثبّت على commit) | Apache-2.0 |
 | **alpha101** | 101 | Kakushadze (2015)، "101 Formulaic Alphas"، arXiv:1601.00991 | الصيغ محتوى رياضي |
 | **gtja191** | 191 | Guotai Junan (2014)، "191 Short-period Trading Alpha Factors" | الصيغ محتوى رياضي |
-| **academic** | 10 | Fama-French 5 + Carhart momentum (proxy قائم على الأسعار) + Jegadeesh reversal + George-Hwang 52-week-high + Amihud illiquidity + Harvey-Siddique skew | أدبيات أكاديمية عامة |
+| **academic** | 11 | Fama-French 5 + Carhart momentum (proxy قائم على الأسعار) + Jegadeesh reversal + George-Hwang 52-week-high + Amihud illiquidity + Harvey-Siddique skew + Frazzini-Pedersen betting-against-beta | أدبيات أكاديمية عامة |
 | **fundamental** | 4 | بيانات SEC company facts آمنة PIT — earnings yield وROE وgross profitability وasset growth (مثبّتة على filed-date) | بيانات مالية عامة |
 
 شغّل `vibe-trading alpha list` للتصفح، و`vibe-trading alpha show <id>` للحصول على الصيغ + المصدر، و`vibe-trading alpha bench --zoo X --universe Y --period Z` لتقييم zoo كاملة.
@@ -638,7 +640,7 @@ Vibe-Trading وكيل كثيف الأدوات؛ المهارات والاختب�
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # استعرض 460 ألفا جاهز؛ متاح show / bench / compare / export-manifest
+vibe-trading alpha list    # استعرض 461 ألفا جاهز؛ متاح show / bench / compare / export-manifest
 vibe-trading channels status --local  # فحص إعدادات قنوات IM وتلميحات التثبيت
 ```
 
@@ -1020,7 +1022,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo web search
 │   │   │   └── ...                 #   bash, file I/O, factor analysis, options, alpha browser + bench, etc.
 │   │   │
-│   │   ├── factors/                # Alpha Zoo — 460 ألفا عبر 5 families
+│   │   ├── factors/                # Alpha Zoo — 461 ألفا عبر 5 families
 │   │   │   ├── base.py             #   19 عاملاً (rank/scale/ts_*/delta/decay_linear/safe_div/vwap)
 │   │   │   ├── registry.py         #   تحميل بيانات وصفية AST فقط + حساب كسول + بوابات سلامة
 │   │   │   ├── bench_runner.py     #   IC + تصنيف alive/reversed/dead
@@ -1103,7 +1105,7 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 | **Data Bridge** | أحضر بياناتك: موصلات CSV/Parquet/SQL محلية مع schema mapping | المُحمِّل المحلي شُحن |
 | **Options Lab** | سطح تقلب، ولوحة Greeks، ومستكشف payoff/scenario | مخطط |
 | **Portfolio Studio** | أشعة مخاطر، وقيود، ومحسن يراعي الدوران، وملاحظات إعادة توازن | محسن يراعي الدوران **تم الإطلاق 0.1.11**؛ الباقي مخطط |
-| **Alpha Zoo** | 460 ألفا كمّي جاهز (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental)، سطر أوامر واحد للـ bench، تكامل agent، وواجهة Web | **تم الإطلاق 0.1.8**، موسّع حتى 0.1.11 |
+| **Alpha Zoo** | 461 ألفا كمّي جاهز (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental)، سطر أوامر واحد للـ bench، تكامل agent، وواجهة Web | **تم الإطلاق 0.1.8**، موسّع حتى 0.1.11 |
 | **Research Delivery** | موجزات مجدولة وجلسات بحث حي عبر Slack / Telegram / قنوات IM شبيهة بالبريد | المُجدوِل + IM Runtime شُحنا |
 | **Community** | مهارات وإعدادات مسبقة وبطاقات استراتيجية قابلة للمشاركة | قيد الاستكشاف |
 

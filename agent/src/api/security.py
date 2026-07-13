@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import hmac
 import ipaddress
+import logging
+import re
+import secrets
+import threading
+import time
 import urllib.parse
 from pathlib import Path
 from typing import List, Optional
@@ -117,6 +122,139 @@ async def _reject_untrusted_loopback_host(request: Request, call_next):
             content={"detail": "Untrusted local API host"},
         )
     return await call_next(request)
+
+
+# ============================================================================
+# Security-headers middleware
+# ============================================================================
+
+# Deny powerful browser features the app never uses.
+_PERMISSIONS_POLICY = (
+    "geolocation=(), camera=(), microphone=(), payment=(), usb=(), "
+    "magnetometer=(), gyroscope=(), accelerometer=()"
+)
+
+# Report-Only first: a later switch to enforcing mode can be validated against
+# real traffic without risking a broken app. Scoped to what the built SPA needs:
+# same-origin scripts/styles/fonts/img plus same-origin fetch & EventSource.
+# Inline styles are allowed because ECharts and React ``style={}`` props set
+# them; fonts are self-hosted (@fontsource) so no external font host is listed.
+_CSP_REPORT_ONLY = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "font-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+
+async def _apply_security_headers(request: Request, call_next):
+    """Attach baseline security response headers to every response.
+
+    HSTS is deliberately NOT set here: the app is commonly deployed behind a
+    TLS-terminating reverse proxy and cannot guarantee it is always served over
+    HTTPS. Set ``Strict-Transport-Security`` at the proxy/ingress layer that
+    terminates TLS instead.
+    """
+    response = await call_next(request)
+    headers = response.headers
+    headers.setdefault("Content-Security-Policy-Report-Only", _CSP_REPORT_ONLY)
+    headers.setdefault("X-Content-Type-Options", "nosniff")
+    headers.setdefault("X-Frame-Options", "DENY")
+    headers.setdefault("Permissions-Policy", _PERMISSIONS_POLICY)
+    headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return response
+
+
+# ============================================================================
+# Access-log secret redaction
+# ============================================================================
+
+# Redact the VALUES of sensitive query params (keeping the name) from access
+# logs. Uvicorn's default access logger writes the full request line including
+# the query string, so without this an ``api_key=`` / ``ticket=`` value would
+# land in logs verbatim.
+_QUERY_SECRET_RE = re.compile(r"((?:api_key|ticket)=)[^&\s\"']+", re.IGNORECASE)
+
+
+def _redact_query_secrets(text: str) -> str:
+    """Replace ``api_key=``/``ticket=`` values with a fixed placeholder."""
+    return _QUERY_SECRET_RE.sub(r"\1***REDACTED***", text)
+
+
+class _AccessLogRedactionFilter(logging.Filter):
+    """Strip secret query-param values from log records before they are emitted."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _redact_query_secrets(a) if isinstance(a, str) else a
+                for a in record.args
+            )
+        if isinstance(record.msg, str):
+            record.msg = _redact_query_secrets(record.msg)
+        return True
+
+
+def install_access_log_redaction_filter() -> None:
+    """Attach the redaction filter to Uvicorn's access/error loggers.
+
+    Idempotent: skips a logger that already carries the filter so repeated
+    server starts in one process don't stack duplicate filters.
+    """
+    for name in ("uvicorn.access", "uvicorn.error", "uvicorn"):
+        target = logging.getLogger(name)
+        if any(isinstance(f, _AccessLogRedactionFilter) for f in target.filters):
+            continue
+        target.addFilter(_AccessLogRedactionFilter())
+
+
+# ============================================================================
+# SSE tickets (short-lived, single-use browser EventSource credentials)
+# ============================================================================
+
+# EventSource cannot send an Authorization header, so a browser exchanges the
+# header-authenticated API key for a one-shot ticket via POST /auth/sse-ticket
+# and passes it as ?ticket=. This keeps the long-lived key out of URLs and logs.
+_SSE_TICKET_TTL_SECONDS = 60.0
+_sse_tickets: dict[str, float] = {}  # ticket -> monotonic expiry timestamp
+_sse_tickets_lock = threading.Lock()
+
+
+def _sweep_expired_sse_tickets_locked(now: float) -> None:
+    """Drop expired tickets. Caller must hold ``_sse_tickets_lock``."""
+    expired = [t for t, exp in _sse_tickets.items() if exp <= now]
+    for t in expired:
+        _sse_tickets.pop(t, None)
+
+
+def _mint_sse_ticket() -> str:
+    """Mint a single-use, ~60s ticket for one browser EventSource connection."""
+    ticket = secrets.token_urlsafe(32)
+    now = time.monotonic()
+    with _sse_tickets_lock:
+        _sweep_expired_sse_tickets_locked(now)
+        _sse_tickets[ticket] = now + _SSE_TICKET_TTL_SECONDS
+    return ticket
+
+
+def _consume_sse_ticket(ticket: str) -> bool:
+    """Validate and invalidate a ticket; True iff it was valid and unexpired.
+
+    Single-use: the ticket is removed on the first lookup whether or not it had
+    expired, so a captured ticket can never be replayed.
+    """
+    if not ticket:
+        return False
+    now = time.monotonic()
+    with _sse_tickets_lock:
+        _sweep_expired_sse_tickets_locked(now)
+        expiry = _sse_tickets.pop(ticket, None)
+    return expiry is not None and expiry > now
 
 
 # ============================================================================
@@ -330,11 +468,39 @@ async def require_auth(
 
 async def require_event_stream_auth(
     request: Request,
-    api_key: Optional[str] = Query(None),
+    ticket: Optional[str] = Query(None),
     cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
 ) -> None:
-    """Validate auth for browser EventSource streams."""
-    _validate_api_auth(request=request, cred=cred, query_api_key=api_key, allow_query=True)
+    """Validate auth for browser EventSource streams.
+
+    EventSource cannot send an ``Authorization`` header, so a browser first
+    mints a short-lived, single-use ticket via ``POST /auth/sse-ticket`` (which
+    is itself header-authenticated) and passes it as ``?ticket=``. Non-browser
+    callers keep using the bearer header unchanged. The long-lived API key is
+    never accepted in the query string — that would leak it into browser
+    history, proxy/access logs, and Referer headers.
+    """
+    if request.method.upper() not in _SAFE_BROWSER_METHODS:
+        _reject_cross_site_browser_request(request)
+
+    if _is_local_client(request):
+        return
+
+    api_key = _configured_api_key()
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API_AUTH_KEY is required for non-local API access",
+        )
+
+    token = cred.credentials if (cred and cred.credentials) else ""
+    if token and hmac.compare_digest(token, api_key):
+        return
+
+    if ticket and _consume_sse_ticket(ticket):
+        return
+
+    raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 async def require_local_or_auth(

@@ -26,10 +26,40 @@ services:
       - vibe-home:/home/vibe/.vibe-trading
       - vibe-swarm-runs:/app/agent/.swarm/runs
       - vibe-uploads:/app/agent/uploads
+      # Persist Web-UI-driven agent/.env edits (_write_env_values in
+      # src/api/helpers.py writes to /app/agent/.env) across container recreation.
+      # env_file above still seeds the initial boot env from the same file.
+      - ./agent/.env:/app/agent/.env
+    # --- Runtime hardening (VT-007) ---
+    cap_drop:
+      - ALL
+    # SETUID/SETGID are kept on purpose: runner.py drops privilege to the
+    # unprivileged vibe-sandbox user for LLM-generated-code subprocesses, which
+    # needs setuid/setgid. They are granted from container start (not gained via
+    # escalation), so no-new-privileges below does not neutralize them.
+    cap_add:
+      - SETUID
+      - SETGID
+    security_opt:
+      - "no-new-privileges:true"
+    read_only: true
+    # Writable scratch on the read-only rootfs. Named volumes above already
+    # cover agent/runs, agent/sessions, agent/uploads, agent/.swarm/runs and
+    # /home/vibe/.vibe-trading; these tmpfs mounts cover /tmp and the cache dirs
+    # matplotlib/fontconfig write to during PDF rendering.
+    tmpfs:
+      - /tmp
+      - /home/vibe/.cache
+      - /home/vibe/.config
+    # Bound a single runaway backtest. Generous self-hosted defaults; override
+    # in a compose override file for constrained hosts.
+    mem_limit: 4g
+    cpus: 2
+    pids_limit: 512
     restart: unless-stopped
 
   frontend:
-    image: node:20
+    image: node:20@sha256:8f693eaa7e0a8e71560c9a82b55fd54c2ae920a2ba5d2cde28bac7d1c01c9ba5  # node:20 digest resolved 2026-07-13
     working_dir: /app
     ports:
       - "127.0.0.1:5899:5899"

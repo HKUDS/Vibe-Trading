@@ -1,0 +1,44 @@
+version: 2
+updates:
+  # Root Python project (pyproject.toml).
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 4
+    groups:
+      # Minor/patch bumps are low-risk and reviewed as a single batch; majors
+      # are excluded so they still arrive individually and get real scrutiny
+      # (a batched PR mixing 10 patch bumps with 1 breaking major is worse
+      # than either alone — you can't reject just the major).
+      pip-minor-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
+    ignore:
+      # pandas 3.x has real breaking changes (Copy-on-Write always-on, removed
+      # deprecated APIs) we haven't vetted; the <3.0.0 ceiling is deliberate,
+      # not an oversight. Revisit as a dedicated migration, not a dep bump.
+      - dependency-name: "pandas"
+        update-types: ["version-update:semver-major"]
+
+  # Frontend npm dependencies.
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 4
+    groups:
+      npm-minor-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
+
+  # GitHub Actions workflow pins.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 4
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]

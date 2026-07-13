@@ -6,6 +6,25 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Security hardening**: all 10 findings from the 2026-07-10 external audit
+  closed (#476, tracking discussion #468) — Docker multi-stage rebuild with
+  digest-pinned base images, AST-hardened backtest sandbox (blocks
+  network/subprocess/eval/os.environ/unsafe-open reachable from generated
+  code, including inside nested function bodies), short-lived single-use SSE
+  auth tickets replacing a long-lived key in the URL/logs, hardened Compose
+  (`read_only`, dropped capabilities, `no-new-privileges`, resource limits),
+  auth + rate limiting on `/correlation`, security headers (CSP
+  Report-Only, `X-Content-Type-Options`, `Permissions-Policy`), `/live` +
+  `/ready` health split, hash-locked dependencies wired into the Docker
+  build, GitHub Actions pinned by commit SHA, and an HMAC-authenticated
+  factor cache.
+- Opt-in **TAP mode** for Alpaca (#377, thanks @0xZKnw) — routes all broker
+  egress through a self-hosted TAP proxy so the agent process never holds
+  the raw API key, with writes blocking on human approval.
+- Realized portfolio turnover (`avg_turnover` / `total_turnover`) surfaced
+  in backtest metrics for every optimizer (#478, thanks @Robin1987China).
+- **Frazzini-Pedersen betting-against-beta** academic factor (#480, thanks
+  @YogeshModi24) — Alpha Zoo: 460 → **461**.
 - **Strategy Development Manager** skill (#457, thanks @shadowinlife, closes
   #455) — `sdm_register` / `sdm_status` / `sdm_decay_scan` turn academic
   papers and broker research into registered factors/strategies with a
@@ -31,6 +50,14 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - FastMCP transport imports work across both module layouts (#469, thanks
   @roberttidball).
+- Portfolio optimizers no longer include the decision bar's close-to-close
+  return in weights executed at that bar's open (#487, thanks @YZY0108).
+- Preflight (`vibe-trading run`) no longer resolves provider/model against a
+  stale `EnvConfig` snapshot cached before dotenv loads (#479, thanks
+  @ananaymital, closes #477).
+- Switching providers no longer leaves a stale `OPENAI_BASE_URL` from a
+  previous configuration silently overriding the newly-resolved endpoint
+  (#484, thanks @Bortlesboat, closes #482).
 
 ## [0.1.11] — 2026-07-11
 

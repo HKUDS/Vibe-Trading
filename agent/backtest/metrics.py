@@ -148,12 +148,38 @@ def by_exit_reason_stats(trades: List[TradeRecord]) -> Dict[str, Dict[str, Any]]
     return result
 
 
+def calc_turnover_series(positions: pd.DataFrame) -> pd.Series:
+    """Per-bar realized portfolio turnover from a position-weight frame.
+
+    Turnover for a bar is ``0.5 * sum_i |w_{t,i} - w_{t-1,i}|``, so a full
+    rotation from one asset to another counts as 1.0 (matching the
+    ``turnover_aware`` optimizer's convention). The first bar's turnover is
+    ``0.5 * sum_i |w_{0,i}|``, treating the initial allocation as entry from
+    cash. Turnover is measured on the executed (post-normalization) frame the
+    engine holds, which may differ slightly from an optimizer's own internal
+    pre-normalization figure.
+
+    Args:
+        positions: Position-weight matrix (index=timestamp, columns=codes).
+
+    Returns:
+        Per-bar turnover series indexed like ``positions``; empty when the
+        input is empty.
+    """
+    if positions is None or positions.empty:
+        return pd.Series(dtype=float)
+    filled = positions.fillna(0.0)
+    prev = filled.shift(1).fillna(0.0)
+    return 0.5 * (filled - prev).abs().sum(axis=1)
+
+
 def calc_metrics(
     equity_curve: pd.Series,
     trades: List[TradeRecord],
     initial_cash: float,
     bars_per_year: Optional[int] = 252,
     bench_ret: Optional[pd.Series] = None,
+    positions: Optional[pd.DataFrame] = None,
 ) -> Dict[str, Any]:
     """Full set of performance metrics.
 
@@ -164,6 +190,8 @@ def calc_metrics(
         bars_per_year: Bars per year for annualisation. None = auto-detect
             from equity curve dates (calendar-day method, for cross-market).
         bench_ret: Benchmark per-bar return series (optional).
+        positions: Executed position-weight frame (optional). When provided,
+            realized turnover metrics are added; absent/empty yields zeros.
 
     Returns:
         Metrics dictionary (compatible with daily_portfolio format).
@@ -203,6 +231,11 @@ def calc_metrics(
 
     trade_stats = win_rate_and_stats(trades)
 
+    # Realized portfolio turnover from the executed position frame
+    turnover_series = calc_turnover_series(positions) if positions is not None else pd.Series(dtype=float)
+    avg_turnover = float(turnover_series.mean()) if len(turnover_series) > 0 else 0.0
+    total_turnover = float(turnover_series.sum()) if len(turnover_series) > 0 else 0.0
+
     # Benchmark comparison
     bench_return = 0.0
     excess = 0.0
@@ -231,6 +264,8 @@ def calc_metrics(
         "benchmark_return": round(bench_return, 6),
         "excess_return": round(excess, 6),
         "information_ratio": round(ir, 4),
+        "avg_turnover": round(avg_turnover, 6),
+        "total_turnover": round(total_turnover, 6),
     }
 
 
@@ -243,4 +278,5 @@ def _empty_metrics(initial_cash: float) -> Dict[str, Any]:
         "win_rate": 0, "profit_loss_ratio": 0, "profit_factor": 0,
         "max_consecutive_loss": 0, "avg_holding_days": 0, "trade_count": 0,
         "benchmark_return": 0, "excess_return": 0, "information_ratio": 0,
+        "avg_turnover": 0.0, "total_turnover": 0.0,
     }

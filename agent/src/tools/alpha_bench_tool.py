@@ -14,22 +14,26 @@ Output contract — JSON envelope:
      "top": [{"id": ..., "ic_mean": ..., "ir": ..., ...}, ...]}
 
 Cache integrity note: the universe panel cache lives in ``~/.vibe-trading/cache/``
-as pickle blobs. Each pickle is paired with a ``<name>.sha256`` sidecar; on
-load we recompute the digest and refuse the cache on mismatch. This guards
-against accidental corruption (truncated writes, partial syncs) — it is NOT a
-defence against an attacker with local write access (they can rewrite both
-files). Cache files are user-local; if shared across machines they can be
-tampered with and the sha256 sidecar is only an integrity check, not authenticity.
+as pickle blobs. Each pickle is paired with a ``<name>.sha256`` sidecar holding a
+**keyed HMAC-SHA256 tag** (not a bare digest) computed over the blob. On load we
+recompute the tag with the same key and refuse the cache on mismatch before the
+``pickle.loads`` call. The key is ``API_AUTH_KEY`` when configured, else a
+machine-local random 32-byte secret persisted at ``cache/.hmac_key`` (mode 0600).
+Because the tag is keyed, a local attacker who rewrites the pickle cannot forge a
+matching sidecar without the secret — so this is an authenticity guard against
+local-write RCE via ``pickle.loads``, not merely a corruption check.
 """
 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import html
 import json
 import logging
 import os
 import re
+import secrets
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -152,8 +156,55 @@ def _sha256_path(cache_path: Path) -> Path:
     return cache_path.with_suffix(cache_path.suffix + ".sha256")
 
 
+def _cache_hmac_key(cache_dir: Path) -> bytes:
+    """Return the secret backing the cache sidecar HMAC.
+
+    Priority: ``API_AUTH_KEY`` (UTF-8) when configured, else a persisted
+    machine-local 32-byte random key. The fallback is required because an empty
+    HMAC key would let any local attacker forge a matching sidecar for a
+    malicious pickle — defeating the whole point of the tag.
+    """
+    configured = get_env_config().api.api_auth_key.strip()
+    if configured:
+        return configured.encode("utf-8")
+
+    key_path = cache_dir / ".hmac_key"
+    try:
+        return bytes.fromhex(key_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        pass
+
+    key = secrets.token_bytes(32)
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        # O_EXCL + mode 0600 from creation: a concurrent writer can't race us
+        # into a world-readable key, and we never widen perms after the fact.
+        fd = os.open(str(key_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, key.hex().encode("utf-8"))
+        finally:
+            os.close(fd)
+    except FileExistsError:
+        try:
+            return bytes.fromhex(key_path.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            return key
+    except OSError as exc:
+        logger.warning("hmac key persist failed (%s); using ephemeral key", exc)
+    return key
+
+
+def _cache_mac(key: bytes, blob: bytes) -> str:
+    """Keyed HMAC-SHA256 authentication tag (hex) for a cache blob."""
+    return hmac.new(key, blob, hashlib.sha256).hexdigest()
+
+
 def _read_pickle_cache(cache_path: Path) -> dict[str, pd.DataFrame] | None:
-    """Load a pickle cache, validating its sha256 sidecar. None on any failure."""
+    """Load a pickle cache, authenticating its keyed HMAC sidecar. None on failure.
+
+    The HMAC is verified before ``pickle.loads`` so a locally-tampered blob whose
+    sidecar was forged without the secret is rejected, never deserialized.
+    """
     import pickle
 
     sidecar = _sha256_path(cache_path)
@@ -174,7 +225,7 @@ def _read_pickle_cache(cache_path: Path) -> dict[str, pd.DataFrame] | None:
     except OSError as exc:
         logger.warning("cache sidecar read failed (%s); refetching", exc)
         return None
-    actual = hashlib.sha256(blob).hexdigest()
+    actual = _cache_mac(_cache_hmac_key(cache_path.parent), blob)
     if not _hashes_equal(expected, actual):
         logger.warning(
             "cache integrity mismatch for %s (expected %s..., got %s...); refetching",
@@ -183,7 +234,7 @@ def _read_pickle_cache(cache_path: Path) -> dict[str, pd.DataFrame] | None:
         return None
 
     try:
-        cached = pickle.loads(blob)  # noqa: S301 — local cache, integrity-checked above
+        cached = pickle.loads(blob)  # noqa: S301 — local cache, HMAC-authenticated above
     except Exception as exc:  # noqa: BLE001 — degrade to fresh fetch
         logger.warning("cache unpickle failed (%s); refetching", exc)
         return None
@@ -196,7 +247,7 @@ def _read_pickle_cache(cache_path: Path) -> dict[str, pd.DataFrame] | None:
 def _write_pickle_cache(
     cache_dir: Path, cache_path: Path, panel: dict[str, Any]
 ) -> None:
-    """Pickle ``panel`` + write its sha256 sidecar. Failures are non-fatal."""
+    """Pickle ``panel`` + write its keyed HMAC sidecar. Failures are non-fatal."""
     import pickle
 
     try:
@@ -204,16 +255,14 @@ def _write_pickle_cache(
         blob = pickle.dumps(panel, protocol=pickle.HIGHEST_PROTOCOL)
         cache_path.write_bytes(blob)
         _sha256_path(cache_path).write_text(
-            hashlib.sha256(blob).hexdigest(), encoding="utf-8"
+            _cache_mac(_cache_hmac_key(cache_dir), blob), encoding="utf-8"
         )
     except Exception as exc:  # noqa: BLE001 — cache miss is non-fatal
         logger.warning("cache write failed: %s", exc)
 
 
 def _hashes_equal(a: str, b: str) -> bool:
-    """Constant-time comparison of two hex digests."""
-    import hmac
-
+    """Constant-time comparison of two hex authentication tags."""
     return hmac.compare_digest(a.strip().lower(), b.strip().lower())
 
 

@@ -265,3 +265,52 @@ def test_settings_writes_reject_remote_dev_mode_clients(
 
     assert response.status_code == 403
     assert not env_path.exists()
+
+
+def test_update_settings_writes_env_file_with_0600_mode(
+    client: TestClient, tmp_path: Path,
+) -> None:
+    """A Web-UI settings write must leave agent/.env owner-read/write only."""
+    response = client.put(
+        "/settings/data-sources",
+        json={"tushare_token": "ts-secret-token"},
+    )
+
+    assert response.status_code == 200
+    mode = (tmp_path / ".env").stat().st_mode & 0o777
+    assert mode == 0o600
+
+
+def test_atomic_write_secret_is_crash_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A crash during the replace must not corrupt or truncate the secret file,
+    nor leave a stray temp file holding the secret behind."""
+    from src.api import helpers
+
+    target = tmp_path / ".env"
+    target.write_text("OLD=1\n", encoding="utf-8")
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise OSError("simulated crash before commit")
+
+    monkeypatch.setattr(helpers.os, "replace", _boom)
+
+    with pytest.raises(OSError):
+        helpers._atomic_write_secret(target, "NEW=2\n")
+
+    # Original content is intact — the swap never happened.
+    assert target.read_text(encoding="utf-8") == "OLD=1\n"
+    # No half-written temp secret left in the directory.
+    assert list(tmp_path.glob(".env.*")) == []
+
+
+def test_atomic_write_secret_creates_0600_file(tmp_path: Path) -> None:
+    """Fresh secret files are created owner-only via the atomic path."""
+    from src.api import helpers
+
+    target = tmp_path / ".env"
+    helpers._atomic_write_secret(target, "KEY=value\n")
+
+    assert target.read_text(encoding="utf-8") == "KEY=value\n"
+    assert (target.stat().st_mode & 0o777) == 0o600

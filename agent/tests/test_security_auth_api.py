@@ -351,14 +351,30 @@ def test_configured_api_key_required_for_session_event_stream(
     assert response.status_code == 401
 
 
-def test_session_event_stream_accepts_query_token_for_browser_eventsource(
+def test_session_event_stream_rejects_long_lived_api_key_query(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """VT-003: the long-lived key is no longer accepted in the SSE query string."""
     monkeypatch.setenv("API_AUTH_KEY", "secret")
     monkeypatch.setattr(api_server, "_API_KEY", "secret")
 
     response = _remote_client().get("/sessions/missing/events?api_key=secret")
 
+    assert response.status_code == 401
+
+
+def test_session_event_stream_accepts_single_use_ticket_for_browser_eventsource(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """VT-003: a header-minted single-use ticket authenticates the EventSource."""
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+
+    ticket = api_server._mint_sse_ticket()
+    response = _remote_client().get(f"/sessions/missing/events?ticket={ticket}")
+
+    # Auth passed (the 404/501 comes from the missing session / disabled runtime,
+    # not from the auth layer).
     assert response.status_code in {404, 501}
 
 

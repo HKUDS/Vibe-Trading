@@ -16,7 +16,7 @@ class BaseOptimizer(ABC):
 
     Subclasses implement ``_calc_weights``; the base handles:
     - active asset selection
-    - rolling window slicing and sanity checks
+    - causal rolling window slicing and sanity checks
     - covariance matrix + NaN checks
     - applying weights while preserving signal sign
 
@@ -42,7 +42,9 @@ class BaseOptimizer(ABC):
         """Apply optimizer to position weights.
 
         Args:
-            ret: Return matrix (dates x codes).
+            ret: Return matrix (dates x codes). For a decision at ``dt``,
+                only rows strictly earlier than ``dt`` are visible to the
+                optimizer because execution occurs at the decision bar's open.
             pos: Raw signal positions.
             dates: Date index aligned with ``pos``.
 
@@ -59,7 +61,12 @@ class BaseOptimizer(ABC):
             if not active or i < self.lookback:
                 continue
 
-            window = ret.loc[:dt, active].tail(self.lookback)
+            # Signals are executed at the decision bar's open.  ``ret[dt]``
+            # is a close-to-close return that is not observable until that
+            # bar closes, so including it here would leak future information
+            # into the weights applied at the open.
+            history = ret.loc[ret.index < dt, active]
+            window = history.tail(self.lookback)
             if len(window) < max(self.lookback // 2, 5):
                 continue
 

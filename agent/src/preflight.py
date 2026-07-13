@@ -15,7 +15,7 @@ from typing import List, Optional
 from rich.console import Console
 from rich.table import Table
 
-from src.config.accessor import get_env_config
+from src.config.accessor import get_env_config, reset_env_config
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,10 @@ def _check_llm_provider() -> CheckResult:
     from src.config.accessor import reset_env_config
 
     _ensure_dotenv()
+    # The EnvConfig singleton may have been cached before _ensure_dotenv()
+    # loaded the .env file (e.g. by theme.py's import-time _is_dark_terminal
+    # call). Reset it so get_env_config() rebuilds from the now-populated
+    # os.environ.
     reset_env_config()
     _cfg = get_env_config()
     provider = _cfg.llm.langchain_provider.strip()

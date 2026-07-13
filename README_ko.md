@@ -52,14 +52,16 @@
 
 > ⚠️ **보안 경고:** X 계정 `VibeTrading_HKU`, Virtuals 프로젝트 `101845`, 토큰 컨트랙트 `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4`는 모두 Vibe-Trading 공식과 무관합니다. Vibe-Trading은 어떠한 토큰이나 밈코인도 발행하거나 공식적으로 지지한 적이 없습니다. 해당 토큰을 구매하거나 지갑을 연결하거나 어떠한 서명도 하지 마세요. [자세히 보기](SECURITY.md#official-channels--impersonation).
 
+- **2026-07-13** 🔒 **보안 강화: 외부 감사 10건 전부 종료 + contributor batch**: 2026-07-10 외부 보안 감사(issue [#476](https://github.com/HKUDS/Vibe-Trading/issues/476), discussion [#468](https://github.com/HKUDS/Vibe-Trading/discussions/468))의 10건 발견 사항이 모두 `main`에서 해결되었습니다 — digest로 고정된 베이스 이미지의 Docker 멀티스테이지 재구성, 네트워크/서브프로세스/eval/os.environ/안전하지 않은 open을 (중첩된 함수 본문 내부까지) 차단하는 AST 강화 백테스트 샌드박스, 단명·1회용 SSE 인증 티켓, 강화된 Compose(read-only rootfs, capabilities 제거, 리소스 제한), `/correlation` 인증 + 레이트 리밋, 보안 헤더, 해시 고정 의존성 등. 함께 병합: Alpaca 키 격리를 위한 옵트인 **TAP 모드**([#377](https://github.com/HKUDS/Vibe-Trading/pull/377), @0xZKnw 감사합니다), 백테스트 지표에 실현 포트폴리오 회전율 반영([#478](https://github.com/HKUDS/Vibe-Trading/pull/478), @Robin1987China 감사합니다), **Frazzini-Pedersen 저베타 프리미엄** 학술 팩터(Alpha Zoo → 461, [#480](https://github.com/HKUDS/Vibe-Trading/pull/480), @YogeshModi24 감사합니다), 5개 포트폴리오 최적화기 전체의 선행 편향 수정([#487](https://github.com/HKUDS/Vibe-Trading/pull/487), @YZY0108 감사합니다), 그리고 preflight/provider 설정 수정 2건([#479](https://github.com/HKUDS/Vibe-Trading/pull/479)/[#484](https://github.com/HKUDS/Vibe-Trading/pull/484), [#477](https://github.com/HKUDS/Vibe-Trading/issues/477)/[#482](https://github.com/HKUDS/Vibe-Trading/issues/482) 종료, @ananaymital/@Bortlesboat 감사합니다).
+
 - **2026-07-12** 🧪 **Strategy Development Manager + contributor fix batch**: 새 `strategy-dev-manager` skill(87번째)은 학술 논문과 브로커 리서치를 등록된 팩터/전략으로 변환하며, 영속 artifact store와 자동 IC/Sharpe decay 모니터링을 제공합니다 — `sdm_register` / `sdm_status` / `sdm_decay_scan`이 `~/.vibe-trading/` 위에서 active → monitoring → decayed → disabled 라이프사이클을 구동합니다([#457](https://github.com/HKUDS/Vibe-Trading/pull/457), [#455](https://github.com/HKUDS/Vibe-Trading/issues/455) 닫힘, @shadowinlife 님 감사합니다). 함께 병합: Correlation 탭이 bare ticker(`AAPL,SPY`)를 받아 loader fallback chain을 끝까지 순회하고([#472](https://github.com/HKUDS/Vibe-Trading/pull/472), [#471](https://github.com/HKUDS/Vibe-Trading/issues/471) 닫힘, @yxhuang 님 감사합니다), `local` loader가 OHLCV 리샘플링으로 요청 interval을 준수하며([#467](https://github.com/HKUDS/Vibe-Trading/pull/467), @Shizoqua 님 감사합니다), Binance USD-M 무기한 히스토리가 명시적 `BTC-USDT-PERP` 라우팅 + 체결/마크 가격 분리와 함께 [#462](https://github.com/HKUDS/Vibe-Trading/issues/462)의 첫 슬라이스로 들어왔고([#470](https://github.com/HKUDS/Vibe-Trading/pull/470), @honginp 님 감사합니다), FastMCP transport imports가 두 모듈 레이아웃 모두에서 동작합니다([#469](https://github.com/HKUDS/Vibe-Trading/pull/469), @roberttidball 님 감사합니다), Requesty가 OpenAI 호환 LLM 게이트웨이 provider로 추가되었습니다([#474](https://github.com/HKUDS/Vibe-Trading/pull/474), @Thibaultjaigu 님 감사합니다).
 
 - **2026-07-11** 🚀 **v0.1.11 릴리스**(`pip install -U vibe-trading-ai`): 0.1.10 이후 3주간의 업데이트를 모았습니다 — first-class 인도 주식(NSE/BSE) 백테스팅, PIT-safe 펀더멘털 팩터 레이어(Alpha Zoo → 460), 16개 어댑터 IM 채널 런타임, 엔드투엔드 예약 리서치, 선택형 QVeris 프리미엄 데이터, 그리고 오늘의 contributor batch: turnover-aware optimizer([#466](https://github.com/HKUDS/Vibe-Trading/pull/466), @Robin1987China 감사합니다), `analyze_image` 비전 도구 + NapCat DM pairing + IM-media 읽기 수정([#464](https://github.com/HKUDS/Vibe-Trading/pull/464)/[#463](https://github.com/HKUDS/Vibe-Trading/pull/463)/[#465](https://github.com/HKUDS/Vibe-Trading/issues/465), @fei-moss 감사합니다), Longbridge Decimal 직렬화([#459](https://github.com/HKUDS/Vibe-Trading/pull/459), @fanfpy 감사합니다), packaged-manifest count guards([#461](https://github.com/HKUDS/Vibe-Trading/pull/461), @asahikiko 감사합니다). 자세한 내용: [CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.11).
 
-- **2026-07-10** 🇮🇳 **인도 주식(NSE/BSE) 지원 + 환경 변수 중앙화**: 전용 `IndiaEquityEngine` 추가 — T+1 결제, 가격제한 밴드, config 기반 STT/인지세/거래소/SEBI/GST 비용 스택 — `.NS`/`.BO` 심볼 라우팅과 읽기 전용 Shoonya/Dhan 데이터 브리지(옵트인)를 갖추고, alpha101/qlib158의 255개 팩터가 새 `equity_in` 유니버스에 편입([#305](https://github.com/HKUDS/Vibe-Trading/pull/305), @muku314115 감사합니다). 환경 변수는 단일 Pydantic `EnvConfig` 스키마로 통합되고 AST 기반 CI 게이트가 향후 `os.getenv` 난립을 방지합니다([#440](https://github.com/HKUDS/Vibe-Trading/pull/440), [#438](https://github.com/HKUDS/Vibe-Trading/issues/438) 종료, @shadowinlife 감사합니다). 또한: 실거래 mandate 커밋 전 확인 다이얼로그와 통일된 오류 토스트([#453](https://github.com/HKUDS/Vibe-Trading/pull/453), @wison1717-maker 감사합니다), scheduled-research 라우트 테스트([#452](https://github.com/HKUDS/Vibe-Trading/pull/452), @Robin1987China 감사합니다), zhipu 프로바이더에서 GLM 추론 모델의 reasoning 스트림이 유실되던 문제 수정([#458](https://github.com/HKUDS/Vibe-Trading/issues/458)).
-
 <details>
 <summary>이전 뉴스</summary>
+
+- **2026-07-10** 🇮🇳 **인도 주식(NSE/BSE) 지원 + 환경 변수 중앙화**: 전용 `IndiaEquityEngine` 추가 — T+1 결제, 가격제한 밴드, config 기반 STT/인지세/거래소/SEBI/GST 비용 스택 — `.NS`/`.BO` 심볼 라우팅과 읽기 전용 Shoonya/Dhan 데이터 브리지(옵트인)를 갖추고, alpha101/qlib158의 255개 팩터가 새 `equity_in` 유니버스에 편입([#305](https://github.com/HKUDS/Vibe-Trading/pull/305), @muku314115 감사합니다). 환경 변수는 단일 Pydantic `EnvConfig` 스키마로 통합되고 AST 기반 CI 게이트가 향후 `os.getenv` 난립을 방지합니다([#440](https://github.com/HKUDS/Vibe-Trading/pull/440), [#438](https://github.com/HKUDS/Vibe-Trading/issues/438) 종료, @shadowinlife 감사합니다). 또한: 실거래 mandate 커밋 전 확인 다이얼로그와 통일된 오류 토스트([#453](https://github.com/HKUDS/Vibe-Trading/pull/453), @wison1717-maker 감사합니다), scheduled-research 라우트 테스트([#452](https://github.com/HKUDS/Vibe-Trading/pull/452), @Robin1987China 감사합니다), zhipu 프로바이더에서 GLM 추론 모델의 reasoning 스트림이 유실되던 문제 수정([#458](https://github.com/HKUDS/Vibe-Trading/issues/458)).
 
 - **2026-07-09** 🧯 **Docker 시작 차단 해소 + provider/CLI contributor batch**: FastAPI route 순회 중 `path`가 없는 included-router-like 항목을 만나도 Docker/server startup이 더 이상 crash하지 않습니다([#450](https://github.com/HKUDS/Vibe-Trading/issues/450), @Penn-Live 님 감사합니다). 대기 중이던 quick-win contributor fixes도 함께 반영했습니다: OKX / Tushare / yfinance loader `fetch()` signature가 protocol과 맞춰졌고([#437](https://github.com/HKUDS/Vibe-Trading/pull/437), @shadowinlife 님 감사합니다), CLI resume prompt는 첫 사용자 메시지를 보존합니다([#448](https://github.com/HKUDS/Vibe-Trading/pull/448), [#447](https://github.com/HKUDS/Vibe-Trading/issues/447) 닫힘, @morluto 님 감사합니다). Codex OAuth default는 `openai-codex/gpt-5.4`로 업데이트됐고([#446](https://github.com/HKUDS/Vibe-Trading/pull/446), @morluto 님 감사합니다), Kimi for Coding은 별도 provider로 사용할 수 있으며([#435](https://github.com/HKUDS/Vibe-Trading/pull/435), @yxhuang 님 감사합니다), opencode provider mappings도 연결됐습니다([#444](https://github.com/HKUDS/Vibe-Trading/pull/444), @imsankz 님 감사합니다). Tushare reference code fence도 `pyhton`에서 `python`으로 고쳤습니다([#449](https://github.com/HKUDS/Vibe-Trading/pull/449), @flash1234pku 님 감사합니다). 검증에는 focused server/CLI/provider/loader tests, Docker build, `/health` smoke가 포함됩니다.
 
@@ -238,7 +240,7 @@ Vibe-Trading은 금융 질문을 실행 가능한 분석으로 바꾸는 오픈�
 | **애널리스트 팀 실행하기** | 투자, 퀀트, 크립토, 매크로, 리스크 워크플로를 위한 멀티 에이전트 리서치 리뷰. |
 | **리서치를 IM 채널에 연결하기** | WebSocket, Telegram, Slack, Discord, Matrix, WhatsApp, Signal, QQ/NapCat, WeChat/WeCom, Feishu/Lark, DingTalk, Teams, email, Mochat에서 같은 session runtime을 CLI, REST, Web UI로 관리. |
 | **사용 가능한 artifacts 만들기** | 리포트, TradingView Pine Script, TDX, MetaTrader 5, MCP tools, 이후 리서치 세션. |
-| **사전 빌드된 alpha zoo 벤치** | 460개의 alpha 인자(Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental)에 대해 한 줄 CLI로 IC + IR + alive/reversed/dead 분류 수행 |
+| **사전 빌드된 alpha zoo 벤치** | 461개의 alpha 인자(Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental)에 대해 한 줄 CLI로 IC + IR + alive/reversed/dead 분류 수행 |
 
 ---
 
@@ -432,9 +434,9 @@ clone에서 실행하세요(`pip install -e .`).
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>5개 패밀리에 걸친 460개 사전 빌드된 quant alpha</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>5개 패밀리에 걸친 461개 사전 빌드된 quant alpha</sub></summary>
 
-- 🧬 operator 계층에서 lookahead가 금지된 460개 cross-sectional alpha
+- 🧬 operator 계층에서 lookahead가 금지된 461개 cross-sectional alpha
 - 📈 한 줄 CLI로 IC + IR + alive/reversed/dead 분류 수행
 - 🔬 AST 순수성 게이트 + 300-row lookahead sentinel 테스트 + `pytest-socket` 네트워크 kill-switch
 - 📦 Qlib에 대한 Apache-2 출처 표기, zoo별 `LICENSE.md`에서 수식을 수학적 콘텐츠로 명시
@@ -445,7 +447,7 @@ clone에서 실행하세요(`pip install -e .`).
 | **qlib158** | 154 | Microsoft Qlib `Alpha158` (Apache-2.0, 커밋 고정) | Apache-2.0 |
 | **alpha101** | 101 | Kakushadze (2015), "101 Formulaic Alphas", arXiv:1601.00991 | 수식은 수학적 콘텐츠 |
 | **gtja191** | 191 | 국태군안 (2014), "191 Short-period Trading Alpha Factors" | 수식은 수학적 콘텐츠 |
-| **academic** | 10 | Fama-French 5 + Carhart 모멘텀 (가격 기반 proxy) + Jegadeesh reversal + George-Hwang 52-week-high + Amihud illiquidity + Harvey-Siddique skew | 공개 학술 문헌 |
+| **academic** | 11 | Fama-French 5 + Carhart 모멘텀 (가격 기반 proxy) + Jegadeesh reversal + George-Hwang 52-week-high + Amihud illiquidity + Harvey-Siddique skew + Frazzini-Pedersen betting-against-beta | 공개 학술 문헌 |
 | **fundamental** | 4 | PIT-safe SEC company facts — earnings yield, ROE, gross profitability, asset growth (filed-date 기준) | 공개 재무 데이터 |
 
 `vibe-trading alpha list`로 카탈로그를 탐색하고, `vibe-trading alpha show <id>`로 수식과 소스 코드를 확인하며, `vibe-trading alpha bench --zoo X --universe Y --period Z`로 zoo 전체를 점수화하세요.
@@ -638,7 +640,7 @@ Vibe-Trading은 tool-heavy agent입니다. skills, backtests, memory, swarms가 
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # 사전 빌드된 460개 alpha 탐색; show / bench / compare / export-manifest 서브커맨드 사용 가능
+vibe-trading alpha list    # 사전 빌드된 461개 alpha 탐색; show / bench / compare / export-manifest 서브커맨드 사용 가능
 vibe-trading channels status --local  # IM 채널 설정과 설치 힌트 확인
 ```
 
@@ -1020,7 +1022,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo web search
 │   │   │   └── ...                 #   bash, file I/O, factor analysis, options, alpha browser + bench, etc.
 │   │   │
-│   │   ├── factors/                # Alpha Zoo — 5개 패밀리에 걸친 460개 alpha
+│   │   ├── factors/                # Alpha Zoo — 5개 패밀리에 걸친 461개 alpha
 │   │   │   ├── base.py             #   19개 operator (rank/scale/ts_*/delta/decay_linear/safe_div/vwap)
 │   │   │   ├── registry.py         #   AST-only 메타데이터 로딩 + lazy compute + sanity gate
 │   │   │   ├── bench_runner.py     #   IC + alive/reversed/dead 분류
@@ -1103,7 +1105,7 @@ Vibe-Trading은 **[HKUDS](https://github.com/HKUDS)** agent ecosystem의 일부�
 | **Data Bridge** | Bring-your-own data: local CSV/Parquet/SQL connectors with schema mapping | 로컬 로더 출시 |
 | **Options Lab** | Vol surface, Greeks dashboard, payoff/scenario explorer | Planned |
 | **Portfolio Studio** | Risk x-ray, constraints, turnover-aware optimizer, rebalance notes | Turnover-aware optimizer **0.1.11 출시 완료**; 나머지 Planned |
-| **Alpha Zoo** | 5개 패밀리에 걸친 460개의 사전 빌드된 alpha 인자(Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental), 한 줄 CLI 벤치, agent 통합, Web UI | **0.1.8 출시 완료**, 0.1.11까지 확장 |
+| **Alpha Zoo** | 5개 패밀리에 걸친 461개의 사전 빌드된 alpha 인자(Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental), 한 줄 CLI 벤치, agent 통합, Web UI | **0.1.8 출시 완료**, 0.1.11까지 확장 |
 | **Research Delivery** | Slack / Telegram / email-style IM channels를 통한 예약 brief와 live research sessions | 스케줄러 + IM Runtime 출시 |
 | **Community** | 공유 가능한 skills, presets, strategy cards | Exploring |
 

@@ -310,3 +310,49 @@ describe("useSSE — Last-Event-ID resume", () => {
     expect(newUrl).toContain("Last-Event-ID=resume-42");
   });
 });
+
+describe("useSSE — SSE ticket auth (VT-003)", () => {
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it("stays synchronous and mints no ticket in dev mode (no stored key)", () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { result } = renderHook(() => useSSE());
+    act(() => result.current.connect("http://test/events", {}));
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(MockEventSource.instances).toHaveLength(1);
+    expect(MockEventSource.latest.url).toBe("http://test/events");
+  });
+
+  it("mints a single-use ticket and opens the stream with ?ticket= when a key is stored", async () => {
+    localStorage.setItem("vibe_trading_api_auth_key", "remote-key");
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ticket: "SSE-TICKET" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { result } = renderHook(() => useSSE());
+    await act(async () => {
+      result.current.connect("http://test/events", {});
+      // Flush the ticket-fetch promise chain before the EventSource is opened.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/auth/sse-ticket",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(MockEventSource.instances).toHaveLength(1);
+    expect(MockEventSource.latest.url).toContain("ticket=SSE-TICKET");
+    // The long-lived key must never appear in the stream URL.
+    expect(MockEventSource.latest.url).not.toContain("remote-key");
+  });
+});

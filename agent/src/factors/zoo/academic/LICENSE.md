@@ -23,6 +23,10 @@ here.
   — Q-factor model (referenced for completeness; not implemented
   separately because the investment and profitability legs overlap
   with RMW / CMA in our OHLCV-only setting).
+- Frazzini, A., & Pedersen, L. H. (2014). "Betting against beta."
+  *Journal of Financial Economics*, 111(1), 1-25. — BAB (low-beta
+  premium; leverage-constrained investors bid up high-beta assets,
+  depressing their risk-adjusted return relative to low-beta assets).
 
 ## Disclosure: these are price-based proxies, not the original factors
 
@@ -44,6 +48,9 @@ volume-derived proxy:
   sort in the original).
 - Carhart UMD: 12-month minus 1-month return (matches the original
   construction; cross-sectional z-score added for ranking).
+- BAB: rolling 252-day Cov(stock, equal-weighted market)/Var(market),
+  cross-sectional z-scored negative (vs. value-weighted market + separate
+  1y-vol/5y-correlation windows + explicit leverage in the original).
 
 Each module's `notes` field repeats this disclosure inline. Users
 backtesting these factors as research-grade replacements for the

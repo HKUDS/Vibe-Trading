@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Dict
 
@@ -64,11 +66,55 @@ async def _spa_html_deep_link_fallback(request: Request, call_next):
 # ============================================================================
 
 
+def _atomic_write_secret(path: Path, content: str) -> None:
+    """Write *content* to *path* atomically with 0600 permissions.
+
+    The file holds provider API keys, so a crash mid-write must never leave a
+    half-written or world-readable secret. The primary path writes to a sibling
+    temp file (created 0600 by ``mkstemp``) and ``os.replace``s it onto the
+    target — an atomic swap on the same filesystem.
+
+    Fallback: when the parent directory is read-only (the ``.env`` is
+    bind-mounted into a container whose rootfs is ``read_only: true``, so no
+    sibling temp file can be created) the swap is impossible. There we write in
+    place, still enforcing 0600; atomicity is sacrificed for that one edge but
+    the secret still persists and stays owner-only.
+    """
+    data = content.encode("utf-8")
+    try:
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".env.", suffix=".tmp")
+    except OSError:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, data)
+        finally:
+            os.close(fd)
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+        return
+    try:
+        os.write(fd, data)
+        os.fchmod(fd, 0o600)
+    finally:
+        os.close(fd)
+    try:
+        os.replace(tmp, path)
+    except BaseException:
+        # Never leave a stray temp file holding the secret behind.
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def _ensure_agent_env_file() -> Path:
     """Ensure the project-local agent/.env exists."""
     env_path = _host_attr("ENV_PATH", ENV_PATH)
     if not env_path.exists():
-        env_path.write_text("# Created by Vibe-Trading Web UI settings.\n", encoding="utf-8")
+        _atomic_write_secret(env_path, "# Created by Vibe-Trading Web UI settings.\n")
     return env_path
 
 
@@ -143,7 +189,7 @@ def _write_env_values(path: Path, updates: Dict[str, str]) -> None:
         lines.append("# Updated from Web UI")
         for key in missing:
             lines.append(f"{key}={_format_env_value(updates[key])}")
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _atomic_write_secret(path, "\n".join(lines) + "\n")
 
 
 def _is_configured_secret(value: str, placeholders: set[str]) -> bool:

@@ -242,6 +242,180 @@ def _validate_class_body(node: ast.ClassDef) -> None:
         )
 
 
+# --- Runtime-reachable operation scrubber (VT-001 defense-in-depth) ---
+#
+# The structural checks above only reject *import-time* execution. The real
+# exposure is that once ``SignalEngine`` is instantiated and ``.generate()`` is
+# called, arbitrary code inside its method bodies runs with no runtime sandbox.
+# This scrubber walks the code that actually executes during a backtest — every
+# ``SignalEngine`` method plus any module-level helper transitively called from
+# one — and rejects network / process-spawn / dynamic-exec / filesystem-write
+# operations there.
+#
+# It is deliberately scoped to *reachable* code, not the whole file: the bundled
+# skill examples (agent/src/skills/*/example_signal_engine.py) legitimately carry
+# ``import requests`` + ``requests.get`` inside standalone ``_fetch_okx`` helpers
+# and ``if __name__ == "__main__"`` demo blocks that the runner never executes
+# (it does ``import module; SignalEngine().generate(data_map)``). Blocking those
+# imports file-wide would reject strategies generated from ~12 shipped skills, so
+# we block the dangerous *use* along the executed path instead of a harmless
+# unused top-level import. Transitive reach via ``getattr``/indirection is a
+# documented residual — see the VT-001 note; this is not a kernel-level guarantee.
+_FORBIDDEN_IMPORT_MODULES = frozenset(
+    {
+        "socket",
+        "socketserver",
+        "subprocess",
+        "urllib",
+        "urllib2",
+        "urllib3",
+        "http",
+        "requests",
+        "httpx",
+        "aiohttp",
+        "ftplib",
+        "smtplib",
+        "telnetlib",
+        "multiprocessing",
+        "ctypes",
+    }
+)
+# ``os`` itself is allowed (os.path etc.), but these attributes shell out, spawn,
+# or read the process environment — none has a place in a signal engine.
+_FORBIDDEN_OS_ATTRS = frozenset(
+    {
+        "system",
+        "popen",
+        "popen2",
+        "popen3",
+        "popen4",
+        "fork",
+        "forkpty",
+        "putenv",
+        "unsetenv",
+        "getenv",
+        "environ",
+        "environb",
+        "startfile",
+    }
+)
+_FORBIDDEN_BUILTINS = frozenset(
+    {"eval", "exec", "compile", "__import__", "globals", "locals", "vars", "breakpoint"}
+)
+_OPEN_WRITE_MODE_CHARS = frozenset("wax+")
+_SCRUB_MSG = "is not allowed inside generated strategy code"
+
+
+def _is_forbidden_os_attr(attr: str) -> bool:
+    """Return whether ``os.<attr>`` shells out, spawns, execs, or reads env."""
+    return attr in _FORBIDDEN_OS_ATTRS or attr.startswith(("spawn", "exec"))
+
+
+def _attribute_root_name(node: ast.Attribute) -> str | None:
+    """Return the leftmost ``Name`` id of an attribute chain (``a.b.c`` -> ``a``)."""
+    current: ast.AST = node
+    while isinstance(current, ast.Attribute):
+        current = current.value
+    return current.id if isinstance(current, ast.Name) else None
+
+
+def _reject_forbidden_open(node: ast.Call) -> None:
+    """Reject ``open()`` used to write files or read a non-relative-literal path."""
+    func = node.func
+    is_builtin_open = isinstance(func, ast.Name) and func.id == "open"
+    is_io_os_open = (
+        isinstance(func, ast.Attribute)
+        and func.attr == "open"
+        and isinstance(func.value, ast.Name)
+        and func.value.id in {"io", "os"}
+    )
+    if not (is_builtin_open or is_io_os_open):
+        return
+
+    mode_node: ast.AST | None = node.args[1] if len(node.args) >= 2 else None
+    for kw in node.keywords:
+        if kw.arg == "mode":
+            mode_node = kw.value
+    if mode_node is not None:
+        if not (isinstance(mode_node, ast.Constant) and isinstance(mode_node.value, str)):
+            raise ValueError(f"open() with a non-literal mode {_SCRUB_MSG}")
+        if any(ch in _OPEN_WRITE_MODE_CHARS for ch in mode_node.value):
+            raise ValueError(f"Writing files via open(mode={mode_node.value!r}) {_SCRUB_MSG}")
+
+    path_node = node.args[0] if node.args else None
+    if not (isinstance(path_node, ast.Constant) and isinstance(path_node.value, str)):
+        raise ValueError(f"open() with a non-literal path {_SCRUB_MSG}")
+    path = path_node.value
+    if path.startswith(("/", "~", "\\")) or ".." in path or (len(path) > 1 and path[1] == ":"):
+        raise ValueError(f"open() with a non-relative path {path!r} {_SCRUB_MSG}")
+
+
+def _reject_forbidden_node(node: ast.AST) -> None:
+    """Raise ``ValueError`` if a single AST node performs a forbidden operation."""
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            if alias.name.split(".")[0] in _FORBIDDEN_IMPORT_MODULES:
+                raise ValueError(f"Import of {alias.name!r} {_SCRUB_MSG}")
+    elif isinstance(node, ast.ImportFrom):
+        root = (node.module or "").split(".")[0]
+        if root in _FORBIDDEN_IMPORT_MODULES:
+            raise ValueError(f"Import from {node.module!r} {_SCRUB_MSG}")
+        if root == "os":
+            for alias in node.names:
+                if _is_forbidden_os_attr(alias.name):
+                    raise ValueError(f"Import of os.{alias.name} {_SCRUB_MSG}")
+    elif isinstance(node, ast.Attribute):
+        root = _attribute_root_name(node)
+        if root in _FORBIDDEN_IMPORT_MODULES:
+            raise ValueError(f"Use of {root}.{node.attr} {_SCRUB_MSG}")
+        if root == "os" and _is_forbidden_os_attr(node.attr):
+            raise ValueError(f"Use of os.{node.attr} {_SCRUB_MSG}")
+    elif isinstance(node, ast.Name):
+        if node.id in _FORBIDDEN_BUILTINS:
+            raise ValueError(f"Use of {node.id!r} {_SCRUB_MSG}")
+    elif isinstance(node, ast.Call):
+        _reject_forbidden_open(node)
+
+
+def _scan_runtime_reachable(tree: ast.Module) -> None:
+    """Reject forbidden ops in ``SignalEngine`` methods + their transitive callees.
+
+    Entry points are every method defined directly on the ``SignalEngine`` class.
+    From there, any bare-name call that resolves to a module-level function is
+    followed and scanned too, so a payload hidden in a helper that ``generate()``
+    calls is still caught. Module-level functions never reached from a
+    ``SignalEngine`` method (standalone data-fetch helpers, ``__main__`` demos)
+    are intentionally left unscanned.
+    """
+    engine_cls = next(
+        (n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "SignalEngine"),
+        None,
+    )
+    if engine_cls is None:
+        return
+
+    module_funcs = {
+        n.name: n
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    worklist: list[ast.AST] = [
+        m for m in engine_cls.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    visited: set[int] = set()
+    while worklist:
+        fn = worklist.pop()
+        if id(fn) in visited:
+            continue
+        visited.add(id(fn))
+        for node in ast.walk(fn):
+            _reject_forbidden_node(node)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                target = module_funcs.get(node.func.id)
+                if target is not None:
+                    worklist.append(target)
+
+
 def _validate_signal_engine_source(file_path: Path) -> None:
     """Reject import-time executable statements before loading signal_engine.py."""
     try:
@@ -270,6 +444,10 @@ def _validate_signal_engine_source(file_path: Path) -> None:
         raise ValueError(
             f"Executable top-level statement {type(node).__name__} is not allowed"
         )
+
+    # Deep pass: the structural loop above only guards import-time execution;
+    # this walks the code that runs on SignalEngine().generate() (VT-001).
+    _scan_runtime_reachable(tree)
 
 
 def _validate_signal_engine_class(engine_cls) -> None:

@@ -1,4 +1,4 @@
-import { authHeaders, withAuthQuery } from "@/lib/apiAuth";
+import { authHeaders, withAuthTicket } from "@/lib/apiAuth";
 
 const BASE = "";
 
@@ -122,8 +122,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  // Returns the bare stream URL (no auth in the query string). The SSE ticket
+  // is minted per connect/reconnect inside useSSE (tickets are single-use, so
+  // baking one into a cached URL would break reconnection).
   sseUrl: (sid: string, options?: { replay?: "active" }) => {
-    let url = withAuthQuery(`${BASE}/sessions/${sid}/events`);
+    let url = `${BASE}/sessions/${sid}/events`;
     if (options?.replay) url = appendQueryParam(url, "replay", options.replay);
     return url;
   },
@@ -137,7 +140,7 @@ export const api = {
     }),
   listSwarmRuns: () => request<SwarmRunSummary[]>("/swarm/runs"),
   getSwarmRun: (id: string) => request<Record<string, unknown>>(`/swarm/runs/${id}`),
-  swarmSseUrl: (id: string) => withAuthQuery(`${BASE}/swarm/runs/${id}/events`),
+  swarmSseUrl: (id: string) => withAuthTicket(`${BASE}/swarm/runs/${id}/events`),
   cancelSwarmRun: (id: string) =>
     request<{ status: string }>(`/swarm/runs/${id}/cancel`, { method: "POST" }),
   retrySwarmRun: (id: string) =>
@@ -181,14 +184,14 @@ export const api = {
       body: JSON.stringify(body),
     }),
   alphaBenchStreamUrl: (jobId: string) =>
-    withAuthQuery(`${BASE}/alpha/bench/${encodeURIComponent(jobId)}/stream`),
+    withAuthTicket(`${BASE}/alpha/bench/${encodeURIComponent(jobId)}/stream`),
   createAlphaCompare: (body: AlphaCompareRequest) =>
     request<{ status: string; job_id: string }>("/alpha/compare", {
       method: "POST",
       body: JSON.stringify(body),
     }),
   alphaCompareStreamUrl: (jobId: string) =>
-    withAuthQuery(`${BASE}/alpha/compare/${encodeURIComponent(jobId)}/stream`),
+    withAuthTicket(`${BASE}/alpha/compare/${encodeURIComponent(jobId)}/stream`),
 
   // Connector runtime channel — privileged surface actions (NOT agent tools).
   // commit is the ONLY action that writes a mandate; halt trips the kill switch.
