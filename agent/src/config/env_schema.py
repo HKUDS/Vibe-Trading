@@ -170,6 +170,9 @@ class DataConfig(_EnvBase):
     qveris_base_url: str = Field(alias="QVERIS_BASE_URL", default="")
     rsshub_base_url: str = Field(alias="RSSHUB_BASE_URL", default="")
     dashscope_api_key: str = Field(alias="DASHSCOPE_API_KEY", default="")
+    longbridge_app_key: str = Field(alias="LONGBRIDGE_APP_KEY", default="")
+    longbridge_app_secret: str = Field(alias="LONGBRIDGE_APP_SECRET", default="")
+    longbridge_access_token: str = Field(alias="LONGBRIDGE_ACCESS_TOKEN", default="")
 
 
 # ---------------------------------------------------------------------------
