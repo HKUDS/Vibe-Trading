@@ -19,7 +19,7 @@
     "highlight.js": "^11.11.1",
     "i18next": "^26.3.1",
     "i18next-browser-languagedetector": "^8.2.1",
-    "lucide-react": "^0.460.0",
+    "lucide-react": "^1.24.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-i18next": "^17.0.8",
