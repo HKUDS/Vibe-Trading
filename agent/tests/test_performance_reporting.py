@@ -188,19 +188,41 @@ class TestCostReconciliation:
         result = build_cost_reconciliation([trade], fills, 8.0, 1_000.0).iloc[0]
         assert result["reconciliation_status"] == "reconciled"
         assert result["difference"] == pytest.approx(0.0)
+        assert result["commission_difference"] == pytest.approx(0.0)
+        assert result["slippage_difference"] == pytest.approx(0.0)
+        assert result["expected_ending_equity"] == pytest.approx(1_008.0)
 
     def test_difference_within_tolerance(self) -> None:
         trade = _trade("A", 10.0, 1.0, 1.0, 8.0)
+        fills = [_fill(pd.Timestamp("2025-01-02"), "A", 1.0, 1.0)]
         result = build_cost_reconciliation(
-            [trade], [], 8.000001, 1_000_000.0
+            [trade], fills, 8.00000001, 1_000_000.0
         ).iloc[0]
         assert result["reconciliation_status"] == "difference_within_tolerance"
 
     def test_meaningful_difference_is_unreconciled(self) -> None:
         trade = _trade("A", 10.0, 1.0, 1.0, 8.0)
-        result = build_cost_reconciliation([trade], [], 20.0, 1_000.0).iloc[0]
+        fills = [_fill(pd.Timestamp("2025-01-02"), "A", 1.0, 1.0)]
+        result = build_cost_reconciliation(
+            [trade], fills, 20.0, 1_000.0
+        ).iloc[0]
         assert result["reconciliation_status"] == "unreconciled"
         assert "funding" in result["difference_explanation"]
+
+    def test_fill_trade_cost_mismatch_is_unreconciled(self) -> None:
+        trade = _trade("A", 10.0, 1.0, 1.0, 8.0)
+        fills = [_fill(pd.Timestamp("2025-01-02"), "A", 2.0, 3.0)]
+        result = build_cost_reconciliation(
+            [trade], fills, 8.0, 1_000.0
+        ).iloc[0]
+
+        assert result["reconciliation_status"] == "unreconciled"
+        assert result["commission_difference"] == pytest.approx(1.0)
+        assert result["slippage_difference"] == pytest.approx(2.0)
+
+    def test_flat_zero_trade_run_is_not_applicable(self) -> None:
+        result = build_cost_reconciliation([], [], 0.0, 1_000.0).iloc[0]
+        assert result["reconciliation_status"] == "not_applicable"
 
 
 class TestConcentration:

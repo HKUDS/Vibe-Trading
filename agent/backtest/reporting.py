@@ -33,7 +33,11 @@ ATTRIBUTION_COLUMNS = [
 RECONCILIATION_COLUMNS = [
     "gross_completed_trade_pnl", "execution_price_pnl", "total_commission",
     "total_slippage_cost", "completed_trade_net_pnl",
-    "equity_derived_net_profit", "difference", "tolerance",
+    "trade_total_commission", "fill_total_commission", "commission_difference",
+    "trade_total_slippage_cost", "fill_total_slippage_cost", "slippage_difference",
+    "realized_gross_pnl", "unrealized_gross_pnl", "expected_ending_equity",
+    "final_capital", "open_position_count", "equity_derived_net_profit",
+    "difference", "final_capital_difference", "tolerance",
     "reconciliation_status", "difference_explanation",
 ]
 CONCENTRATION_COLUMNS = [
@@ -222,8 +226,11 @@ def build_cost_reconciliation(
     fills: List[FillRecord],
     equity_derived_net_profit: float,
     starting_capital: float,
+    final_capital: Optional[float] = None,
+    final_unrealized_pnl: float = 0.0,
+    open_position_count: int = 0,
 ) -> pd.DataFrame:
-    """Compare completed-trade accounting with equity-derived net profit."""
+    """Reconcile fills, completed trades, and canonical terminal equity."""
     gross_trade_pnl = sum(_finite(
         trade.gross_pnl if trade.gross_pnl is not None else trade.pnl + trade.slippage_cost
     ) for trade in trades)
@@ -233,17 +240,47 @@ def build_cost_reconciliation(
         else (trade.gross_pnl if trade.gross_pnl is not None else trade.pnl + trade.slippage_cost)
         - trade.commission - trade.slippage_cost
     ) for trade in trades)
-    total_commission = sum(_finite(fill.commission) for fill in fills)
-    total_slippage = sum(_finite(fill.slippage_cost) for fill in fills)
+    trade_commission = sum(_finite(trade.commission) for trade in trades)
+    trade_slippage = sum(_finite(trade.slippage_cost) for trade in trades)
+    fill_commission = sum(_finite(fill.commission) for fill in fills)
+    fill_slippage = sum(_finite(fill.slippage_cost) for fill in fills)
     equity_profit = _finite(equity_derived_net_profit)
     difference = equity_profit - completed_net
-    tolerance = max(1e-8, 1e-8 * max(abs(starting_capital), abs(equity_profit), abs(completed_net), 1.0))
+    unrealized = _finite(final_unrealized_pnl)
+    actual_ending_equity = _finite(starting_capital) + equity_profit
+    expected_ending_equity = _finite(starting_capital) + completed_net + unrealized
+    terminal_capital = (
+        actual_ending_equity if final_capital is None else _finite(final_capital)
+    )
+    commission_difference = fill_commission - trade_commission
+    slippage_difference = fill_slippage - trade_slippage
+    final_capital_difference = terminal_capital - actual_ending_equity
+    scale = max(
+        abs(starting_capital), abs(actual_ending_equity), abs(completed_net),
+        abs(fill_commission), abs(fill_slippage), 1.0,
+    )
+    exact_tolerance = max(1e-12, np.finfo(float).eps * 10.0 * scale)
+    tolerance = max(1e-10, np.finfo(float).eps * 100.0 * scale)
+    differences = [
+        difference,
+        commission_difference,
+        slippage_difference,
+        final_capital_difference,
+        unrealized,
+    ]
 
-    if not trades:
+    if (
+        not trades and not fills and abs(equity_profit) <= tolerance
+        and int(open_position_count) == 0
+    ):
         status = "not_applicable"
-    elif difference == 0.0:
+    elif int(open_position_count) == 0 and all(
+        abs(value) <= exact_tolerance for value in differences
+    ):
         status = "reconciled"
-    elif abs(difference) <= tolerance:
+    elif int(open_position_count) == 0 and all(
+        abs(value) <= tolerance for value in differences
+    ):
         status = "difference_within_tolerance"
     else:
         status = "unreconciled"
@@ -255,11 +292,23 @@ def build_cost_reconciliation(
     row = {
         "gross_completed_trade_pnl": gross_trade_pnl,
         "execution_price_pnl": execution_pnl,
-        "total_commission": total_commission,
-        "total_slippage_cost": total_slippage,
+        "total_commission": fill_commission,
+        "total_slippage_cost": fill_slippage,
         "completed_trade_net_pnl": completed_net,
+        "trade_total_commission": trade_commission,
+        "fill_total_commission": fill_commission,
+        "commission_difference": commission_difference,
+        "trade_total_slippage_cost": trade_slippage,
+        "fill_total_slippage_cost": fill_slippage,
+        "slippage_difference": slippage_difference,
+        "realized_gross_pnl": gross_trade_pnl,
+        "unrealized_gross_pnl": unrealized,
+        "expected_ending_equity": expected_ending_equity,
+        "final_capital": terminal_capital,
+        "open_position_count": int(open_position_count),
         "equity_derived_net_profit": equity_profit,
         "difference": difference,
+        "final_capital_difference": final_capital_difference,
         "tolerance": tolerance,
         "reconciliation_status": status,
         "difference_explanation": explanation,
@@ -492,6 +541,9 @@ def build_reporting_outputs(
     scalar_metrics: Dict[str, Any],
     starting_capital: float,
     bars_per_year: Optional[int],
+    final_capital: Optional[float] = None,
+    final_unrealized_pnl: float = 0.0,
+    open_position_count: int = 0,
 ) -> Dict[str, Any]:
     """Build all machine-readable and human-readable reporting outputs."""
     equity = (
@@ -513,7 +565,13 @@ def build_reporting_outputs(
     enriched_metrics.update(concentration_scalars)
     ending = _finite(equity.iloc[-1], starting_capital) if not equity.empty else starting_capital
     reconciliation = build_cost_reconciliation(
-        trades, fills, ending - starting_capital, starting_capital
+        trades,
+        fills,
+        ending - starting_capital,
+        starting_capital,
+        final_capital=final_capital,
+        final_unrealized_pnl=final_unrealized_pnl,
+        open_position_count=open_position_count,
     )
     summary = build_performance_summary(
         daily_accounting, trades, enriched_metrics, starting_capital,

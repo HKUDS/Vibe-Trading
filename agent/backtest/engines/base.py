@@ -614,18 +614,37 @@ class BaseEngine(ABC):
         if len(dates) > 0:
             last_ts = dates[-1]
             for c in list(self.positions.keys()):
-                price = self._safe_price(close_df, last_ts, c, self.positions[c].entry_price)
+                decision_price = self._safe_price(
+                    close_df,
+                    last_ts,
+                    c,
+                    self.positions[c].entry_price,
+                )
+                fill_price = self.apply_slippage(
+                    decision_price,
+                    -self.positions[c].direction,
+                )
                 self._close_position(
                     c,
-                    price,
+                    fill_price,
                     last_ts,
                     "end_of_backtest",
-                    exit_decision_price=price,
+                    exit_decision_price=decision_price,
                 )
-            # Forced closes execute on the final timestamp after the legacy
-            # equity snapshot. Replace only the execution-weight snapshot so
-            # the fill ledger and turnover reflect the actual flat portfolio;
-            # existing equity/capital semantics remain unchanged.
+
+            # The backtest has a canonical flat terminal state. Forced exits
+            # happen after the ordinary final-bar mark, so replace that mark
+            # with post-liquidation cash equity. Metrics, validation, daily
+            # accounting, and artifacts are all built from these snapshots.
+            if self.equity_snapshots:
+                self.equity_snapshots[-1] = EquitySnapshot(
+                    timestamp=last_ts,
+                    capital=self.capital,
+                    unrealized=0.0,
+                    equity=self.capital,
+                    positions=0,
+                )
+
             if self.executed_position_weights:
                 self._record_executed_position_weights(
                     last_ts,
@@ -1077,6 +1096,12 @@ class BaseEngine(ABC):
             scalar_metrics=metrics,
             starting_capital=self.initial_capital,
             bars_per_year=bars_per_year,
+            final_capital=self.capital,
+            final_unrealized_pnl=(
+                self.equity_snapshots[-1].unrealized
+                if self.equity_snapshots else 0.0
+            ),
+            open_position_count=len(self.positions),
         )
         metrics.update(reporting_outputs["concentration_metrics"])
         write_reporting_outputs(out, reporting_outputs)

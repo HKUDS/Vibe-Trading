@@ -74,4 +74,10 @@ class CryptoEngine(BaseEngine):
             if pos is not None:
                 mark_price = float(bar.get("close", pos.entry_price))
                 liq_price = self.apply_slippage(mark_price, -pos.direction)
-                self._close_position(symbol, liq_price, timestamp, "liquidation")
+                self._close_position(
+                    symbol,
+                    liq_price,
+                    timestamp,
+                    "liquidation",
+                    exit_decision_price=mark_price,
+                )

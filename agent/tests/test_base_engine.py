@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -49,6 +50,73 @@ def _simple_data_and_signals():
     signal_map = {"A": sig_a, "B": sig_b}
 
     return data_map, signal_map, dates
+
+
+class StaticLoader:
+    """Minimal loader used by terminal-accounting integration tests."""
+
+    def __init__(self, data_map: dict[str, pd.DataFrame]):
+        self.data_map = data_map
+        self.name = "test"
+
+    def fetch(self, *args, **kwargs):
+        return {symbol: frame.copy() for symbol, frame in self.data_map.items()}
+
+
+class ConstantSignalEngine:
+    def __init__(self, direction: int):
+        self.direction = direction
+
+    def generate(self, data_map):
+        return {
+            symbol: pd.Series(float(self.direction), index=frame.index)
+            for symbol, frame in data_map.items()
+        }
+
+
+def _terminal_backtest_data() -> dict[str, pd.DataFrame]:
+    dates = pd.bdate_range("2025-01-01", periods=3)
+    return {
+        "X": pd.DataFrame(
+            {
+                "open": [10.0, 11.0, 12.0],
+                "high": [10.25, 11.25, 12.25],
+                "low": [9.75, 10.75, 11.75],
+                "close": [10.0, 11.0, 12.0],
+                "volume": [1_000.0, 1_000.0, 1_000.0],
+            },
+            index=dates,
+        )
+    }
+
+
+def _run_terminal_backtest(
+    tmp_path: Path,
+    direction: int,
+    *,
+    validation: bool = False,
+) -> tuple[DummyEngine, dict, Path]:
+    data_map = _terminal_backtest_data()
+    dates = data_map["X"].index
+    run_dir = tmp_path / ("long" if direction == 1 else "short")
+    config = {
+        "codes": ["X"],
+        "start_date": str(dates[0].date()),
+        "end_date": str(dates[-1].date()),
+        "source": "test",
+        "initial_cash": 1_000.0,
+    }
+    if validation:
+        config["validation"] = True
+
+    engine = DummyEngine(config)
+    metrics = engine.run_backtest(
+        config,
+        StaticLoader(data_map),
+        ConstantSignalEngine(direction),
+        run_dir,
+    )
+    return engine, metrics, run_dir
 
 
 class TestAlign:
@@ -444,6 +512,225 @@ class TestExecutedPositionAccounting:
         expected_gross_equity = 1_000.0 * (1.0 + accounting.iloc[0]["gross_return"])
         expected_gross_equity *= 1.0 + row["gross_return"]
         assert row["gross_equity"] == pytest.approx(expected_gross_equity)
+
+
+class TestTerminalLiquidationAccounting:
+    @pytest.mark.parametrize("direction", [1, -1], ids=["long", "short"])
+    def test_forced_close_produces_one_canonical_flat_terminal_state(
+        self,
+        tmp_path: Path,
+        direction: int,
+    ) -> None:
+        engine, metrics, run_dir = _run_terminal_backtest(tmp_path, direction)
+        artifacts = run_dir / "artifacts"
+
+        assert not engine.positions
+        assert len(engine.trades) == 1
+        assert len(engine.fills) == 2
+        trade = engine.trades[0]
+        entry_fill, exit_fill = engine.fills
+        terminal = engine.equity_snapshots[-1]
+
+        assert trade.exit_reason == "end_of_backtest"
+        assert entry_fill.event_type == "entry"
+        assert exit_fill.event_type == "exit"
+        assert entry_fill.commission > 0.0
+        assert exit_fill.commission > 0.0
+        assert entry_fill.slippage_cost > 0.0
+        assert exit_fill.slippage_cost > 0.0
+        assert trade.commission == pytest.approx(
+            entry_fill.commission + exit_fill.commission
+        )
+        assert trade.slippage_cost == pytest.approx(
+            entry_fill.slippage_cost + exit_fill.slippage_cost
+        )
+        assert trade.net_pnl == pytest.approx(
+            trade.gross_pnl - trade.commission - trade.slippage_cost
+        )
+
+        assert terminal.positions == 0
+        assert terminal.unrealized == pytest.approx(0.0)
+        assert terminal.capital == pytest.approx(engine.capital)
+        assert terminal.equity == pytest.approx(engine.capital)
+        assert engine.capital == pytest.approx(
+            engine.initial_capital + trade.net_pnl
+        )
+        assert metrics["final_value"] == pytest.approx(engine.capital)
+
+        equity = pd.read_csv(artifacts / "equity.csv")
+        accounting = pd.read_csv(artifacts / "daily_accounting.csv")
+        positions = pd.read_csv(artifacts / "executed_positions.csv")
+        fills = pd.read_csv(artifacts / "fills.csv")
+        reconciliation = pd.read_csv(
+            artifacts / "cost_reconciliation.csv"
+        ).iloc[0]
+        summary = json.loads(
+            (artifacts / "performance_summary.json").read_text(encoding="utf-8")
+        )
+
+        assert equity.iloc[-1]["equity"] == pytest.approx(engine.capital)
+        assert accounting.iloc[-1]["equity"] == pytest.approx(engine.capital)
+        assert summary["ending_capital"] == pytest.approx(engine.capital)
+        assert positions.iloc[-1]["X"] == pytest.approx(0.0)
+        assert reconciliation["reconciliation_status"] == "reconciled"
+        assert reconciliation["difference"] == pytest.approx(0.0, abs=1e-12)
+        assert reconciliation["commission_difference"] == pytest.approx(
+            0.0, abs=1e-12
+        )
+        assert reconciliation["slippage_difference"] == pytest.approx(
+            0.0, abs=1e-12
+        )
+        assert reconciliation["final_capital_difference"] == pytest.approx(
+            0.0, abs=1e-12
+        )
+
+        fill_commission = fills["commission"].sum()
+        fill_slippage = fills["slippage_cost"].sum()
+        assert accounting["daily_commission"].sum() == pytest.approx(
+            fill_commission
+        )
+        assert accounting["daily_slippage_cost"].sum() == pytest.approx(
+            fill_slippage
+        )
+        compounded_equity = engine.initial_capital * (
+            1.0 + accounting["net_return"]
+        ).prod()
+        assert compounded_equity == pytest.approx(engine.capital)
+
+    def test_validation_receives_the_same_post_liquidation_equity_series(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import backtest.validation as validation_module
+
+        captured: dict[str, pd.Series] = {}
+
+        def capture_validation(
+            config,
+            equity_series,
+            trades,
+            initial_capital,
+            bars_per_year,
+        ):
+            captured["equity"] = equity_series.copy()
+            return {"captured_final_equity": float(equity_series.iloc[-1])}
+
+        monkeypatch.setattr(
+            validation_module,
+            "run_validation",
+            capture_validation,
+        )
+
+        engine, metrics, run_dir = _run_terminal_backtest(
+            tmp_path,
+            1,
+            validation=True,
+        )
+        artifact_equity = pd.read_csv(
+            run_dir / "artifacts" / "equity.csv",
+            index_col="timestamp",
+            parse_dates=True,
+        )["equity"]
+
+        pd.testing.assert_series_equal(
+            captured["equity"],
+            artifact_equity,
+            check_names=False,
+            check_freq=False,
+        )
+        assert captured["equity"].iloc[-1] == pytest.approx(engine.capital)
+        assert metrics["final_value"] == pytest.approx(engine.capital)
+        assert metrics["validation"]["captured_final_equity"] == pytest.approx(
+            engine.capital
+        )
+
+    def test_multiple_final_bar_exits_reconcile_as_one_terminal_portfolio(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        data_map = _terminal_backtest_data()
+        dates = data_map["X"].index
+        data_map["Y"] = pd.DataFrame(
+            {
+                "open": [20.0, 21.0, 22.0],
+                "high": [20.25, 21.25, 22.25],
+                "low": [19.75, 20.75, 21.75],
+                "close": [20.0, 21.0, 22.0],
+                "volume": [2_000.0, 2_000.0, 2_000.0],
+            },
+            index=dates,
+        )
+        config = {
+            "codes": ["X", "Y"],
+            "start_date": str(dates[0].date()),
+            "end_date": str(dates[-1].date()),
+            "source": "test",
+            "initial_cash": 1_000.0,
+        }
+        engine = DummyEngine(config)
+        run_dir = tmp_path / "multiple"
+        metrics = engine.run_backtest(
+            config,
+            StaticLoader(data_map),
+            ConstantSignalEngine(1),
+            run_dir,
+        )
+
+        assert not engine.positions
+        assert len(engine.trades) == 2
+        assert len(engine.fills) == 4
+        assert all(
+            trade.exit_reason == "end_of_backtest" for trade in engine.trades
+        )
+        assert engine.equity_snapshots[-1].positions == 0
+        assert engine.equity_snapshots[-1].unrealized == pytest.approx(0.0)
+        assert metrics["final_value"] == pytest.approx(engine.capital)
+        assert engine.capital == pytest.approx(
+            engine.initial_capital
+            + sum(trade.net_pnl for trade in engine.trades)
+        )
+
+        artifacts = run_dir / "artifacts"
+        positions = pd.read_csv(artifacts / "executed_positions.csv")
+        reconciliation = pd.read_csv(
+            artifacts / "cost_reconciliation.csv"
+        ).iloc[0]
+        assert positions.iloc[-1][["X", "Y"]].abs().sum() == pytest.approx(0.0)
+        assert reconciliation["reconciliation_status"] == "reconciled"
+
+    def test_no_trade_run_remains_flat_and_not_applicable(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        data_map = _terminal_backtest_data()
+        dates = data_map["X"].index
+        config = {
+            "codes": ["X"],
+            "start_date": str(dates[0].date()),
+            "end_date": str(dates[-1].date()),
+            "source": "test",
+            "initial_cash": 1_000.0,
+        }
+        engine = DummyEngine(config)
+        run_dir = tmp_path / "no_trade"
+        metrics = engine.run_backtest(
+            config,
+            StaticLoader(data_map),
+            ConstantSignalEngine(0),
+            run_dir,
+        )
+
+        assert not engine.positions
+        assert not engine.trades
+        assert not engine.fills
+        assert engine.equity_snapshots[-1].positions == 0
+        assert engine.equity_snapshots[-1].unrealized == pytest.approx(0.0)
+        assert metrics["final_value"] == pytest.approx(1_000.0)
+        reconciliation = pd.read_csv(
+            run_dir / "artifacts" / "cost_reconciliation.csv"
+        ).iloc[0]
+        assert reconciliation["reconciliation_status"] == "not_applicable"
 
 
 class TestArtifacts:

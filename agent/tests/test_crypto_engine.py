@@ -269,7 +269,17 @@ class TestLiquidation:
         engine.on_bar("BTC-USDT", bar, ts)
         assert "BTC-USDT" not in engine.positions
         assert len(engine.trades) == 1
-        assert engine.trades[0].exit_reason == "liquidation"
+        assert len(engine.fills) == 1
+        trade = engine.trades[0]
+        fill = engine.fills[0]
+        assert trade.exit_reason == "liquidation"
+        assert trade.exit_decision_price == pytest.approx(54000.0)
+        assert trade.slippage_cost > 0.0
+        assert fill.slippage_cost > 0.0
+        assert trade.slippage_cost == pytest.approx(fill.slippage_cost)
+        assert trade.net_pnl == pytest.approx(
+            trade.gross_pnl - trade.commission - trade.slippage_cost
+        )
 
     def test_no_liquidation_when_profitable(self) -> None:
         engine = _make_engine(leverage=10.0)
