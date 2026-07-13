@@ -198,7 +198,7 @@ def _tap_cred_headers() -> dict[str, str]:
     backs both the order write and every read; the name is overridable via
     ``TAP_ALPACA_CREDENTIAL``.
     """
-    credential = os.environ.get(TAP_ALPACA_CREDENTIAL_ENV, DEFAULT_TAP_ALPACA_CREDENTIAL)
+    credential = os.environ.get(TAP_ALPACA_CREDENTIAL_ENV, DEFAULT_TAP_ALPACA_CREDENTIAL)  # noqa: env-gate — mirrors tap_forward.py, bootstrap-order independent
     return {
         "APCA-API-KEY-ID": f"<CREDENTIAL:{credential}.key_id>",
         "APCA-API-SECRET-KEY": f"<CREDENTIAL:{credential}.secret_key>",

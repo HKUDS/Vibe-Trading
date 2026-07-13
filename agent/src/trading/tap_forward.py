@@ -84,12 +84,15 @@ def _resolve_config() -> tuple[str, str]:
     the project ``.env`` is loaded once. The agent key is a secret — read here,
     never logged.
     """
-    base = os.environ.get("TAP_PROXY_URL")
-    key = os.environ.get("TAP_AGENT_KEY")
+    # Deliberately independent of EnvConfig: this module must keep working
+    # when invoked outside the app's normal startup/config bootstrap (see
+    # module docstring + _load_env_into_environ above).
+    base = os.environ.get("TAP_PROXY_URL")  # noqa: env-gate — bootstrap-order independent, see docstring
+    key = os.environ.get("TAP_AGENT_KEY")  # noqa: env-gate — bootstrap-order independent, see docstring
     if not (base and key):
         _load_env_into_environ()
-        base = os.environ.get("TAP_PROXY_URL")
-        key = os.environ.get("TAP_AGENT_KEY")
+        base = os.environ.get("TAP_PROXY_URL")  # noqa: env-gate — bootstrap-order independent, see docstring
+        key = os.environ.get("TAP_AGENT_KEY")  # noqa: env-gate — bootstrap-order independent, see docstring
     return (base or "").rstrip("/"), (key or "")
 
 
@@ -214,7 +217,7 @@ def _result(ok: bool, *, decision: str | None = None, status: int | None = None,
 
 
 def _env_timeout() -> float:
-    raw = os.environ.get("TAP_APPROVAL_TIMEOUT", "")
+    raw = os.environ.get("TAP_APPROVAL_TIMEOUT", "")  # noqa: env-gate — bootstrap-order independent, see module docstring
     try:
         return float(raw) if raw else float(_DEFAULT_APPROVAL_TIMEOUT)
     except ValueError:
