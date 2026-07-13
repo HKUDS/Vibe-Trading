@@ -9,8 +9,6 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
-import pytest
-
 from src.tools import northbound_tool as nb
 
 
@@ -92,11 +90,36 @@ class TestSuccessEnvelope:
 
 class TestErrorEnvelope:
     def test_http_failure_returns_error_envelope(self):
-        with patch.object(nb, "get_json", side_effect=RuntimeError("HTTP 429")):
+        with patch.object(nb, "get_json", side_effect=RuntimeError("HTTP 429")), patch.object(
+            nb.tushare_fallbacks,
+            "fetch_northbound_flow",
+            side_effect=RuntimeError("no fallback"),
+        ):
             text = nb.NorthboundFlowTool().execute(lookback_days=5)
         payload = json.loads(text)
         assert payload["ok"] is False
         assert "429" in payload["error"]
+
+    def test_http_failure_uses_tushare_fallback_when_available(self):
+        fallback = {
+            "unit": "10k CNY",
+            "lookback_days": 5,
+            "realtime": {"total": 100.0},
+            "history": [{"trade_date": "2024-01-03", "total": 100.0}],
+        }
+        with patch.object(nb, "get_json", side_effect=RuntimeError("HTTP 429")), patch.object(
+            nb.tushare_fallbacks,
+            "fetch_northbound_flow",
+            return_value=fallback,
+        ) as fallback_fetch:
+            text = nb.NorthboundFlowTool().execute(lookback_days=5)
+
+        fallback_fetch.assert_called_once_with(lookback_days=5)
+        payload = json.loads(text)
+        assert payload["ok"] is True
+        assert payload["source"] == "tushare"
+        assert payload["data"]["history"][0]["trade_date"] == "2024-01-03"
+        assert "used tushare fallback" in payload["warnings"][0]
 
     def test_missing_data_block_yields_empty_history_and_null_realtime(self):
         with patch.object(nb, "get_json", return_value={"data": None}):

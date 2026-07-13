@@ -103,6 +103,9 @@ class TestErrors:
         tool = MarginTradingTool()
         with patch.object(
             eastmoney_client, "get_json", side_effect=RuntimeError("eastmoney boom")
+        ), patch(
+            "src.tools.margin_trading_tool.tushare_fallbacks.fetch_margin_trading",
+            side_effect=RuntimeError("no fallback"),
         ):
             out = tool.execute(code="600519.SH", days=5)
 
@@ -110,10 +113,35 @@ class TestErrors:
         assert payload["ok"] is False
         assert "eastmoney boom" in payload["error"]
 
+    def test_provider_failure_uses_tushare_fallback_when_available(self) -> None:
+        fallback = {
+            "code": "600519",
+            "ts_code": "600519.SH",
+            "rows": [{"trade_date": "2024-01-03", "financing_balance": 1.0}],
+        }
+        tool = MarginTradingTool()
+        with patch.object(
+            eastmoney_client, "get_json", side_effect=RuntimeError("eastmoney boom")
+        ), patch(
+            "src.tools.margin_trading_tool.tushare_fallbacks.fetch_margin_trading",
+            return_value=fallback,
+        ) as fallback_fetch:
+            out = tool.execute(code="600519.SH", days=5)
+
+        fallback_fetch.assert_called_once_with("600519", days=5)
+        payload = json.loads(out)
+        assert payload["ok"] is True
+        assert payload["source"] == "tushare"
+        assert payload["data"]["ts_code"] == "600519.SH"
+        assert "used tushare fallback" in payload["warnings"][0]
+
     def test_empty_data_becomes_error_envelope(self) -> None:
         tool = MarginTradingTool()
         with patch.object(
             eastmoney_client, "get_json", return_value={"result": {"data": []}}
+        ), patch(
+            "src.tools.margin_trading_tool.tushare_fallbacks.fetch_margin_trading",
+            side_effect=RuntimeError("no fallback"),
         ):
             out = tool.execute(code="600519.SH")
 

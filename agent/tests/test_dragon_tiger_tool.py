@@ -146,8 +146,34 @@ class TestExecuteError:
             eastmoney_client,
             "throttled_get_json",
             side_effect=RuntimeError("eastmoney banned"),
+        ), patch(
+            "src.tools.dragon_tiger_tool.tushare_fallbacks.fetch_dragon_tiger",
+            side_effect=RuntimeError("no fallback"),
         ):
             out = json.loads(tool.execute(date="2024-01-02"))
 
         assert out["ok"] is False
         assert "eastmoney banned" in out["error"]
+
+    def test_http_failure_uses_tushare_fallback_when_available(self) -> None:
+        fallback = {
+            "date": "2024-01-02",
+            "count": 1,
+            "appearances": [{"code": "600519", "net_buy": 1.0}],
+        }
+        tool = DragonTigerTool()
+        with patch.object(
+            eastmoney_client,
+            "throttled_get_json",
+            side_effect=RuntimeError("eastmoney banned"),
+        ), patch(
+            "src.tools.dragon_tiger_tool.tushare_fallbacks.fetch_dragon_tiger",
+            return_value=fallback,
+        ) as fallback_fetch:
+            out = json.loads(tool.execute(date="2024-01-02", code="600519.SH"))
+
+        fallback_fetch.assert_called_once_with("2024-01-02", "600519")
+        assert out["ok"] is True
+        assert out["source"] == "tushare"
+        assert out["data"]["appearances"][0]["code"] == "600519"
+        assert "used tushare fallback" in out["warnings"][0]

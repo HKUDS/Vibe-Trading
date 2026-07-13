@@ -20,6 +20,7 @@ from typing import Any
 
 from backtest.loaders.eastmoney_client import get_json
 from src.agent.tools import BaseTool
+from src.tools import tushare_fallbacks
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +231,31 @@ class NorthboundFlowTool(BaseTool):
             )
         except Exception as exc:  # noqa: BLE001 - surface as error envelope
             logger.warning("northbound flow fetch failed: %s", exc)
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+            try:
+                fallback_data = tushare_fallbacks.fetch_northbound_flow(
+                    lookback_days=lookback_days
+                )
+            except Exception as fallback_exc:  # noqa: BLE001 - return both provider failures
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": f"{exc}; tushare fallback failed: {fallback_exc}",
+                    },
+                    ensure_ascii=False,
+                )
+            return json.dumps(
+                {
+                    "ok": True,
+                    "market": "China A",
+                    "source": "tushare",
+                    "warnings": [
+                        "eastmoney failed "
+                        f"({exc}); used tushare fallback with latest daily data"
+                    ],
+                    "data": fallback_data,
+                },
+                ensure_ascii=False,
+            )
 
         realtime = _parse_realtime(realtime_payload)
         history = _parse_history(history_payload, lookback_days)

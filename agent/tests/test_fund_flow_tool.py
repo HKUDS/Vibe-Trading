@@ -103,12 +103,39 @@ class TestPerSymbolIsolation:
             "src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"
         ), patch(
             "src.tools.fund_flow_tool.get_json", side_effect=RuntimeError("HTTP 429")
+        ), patch(
+            "src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow",
+            side_effect=RuntimeError("no fallback"),
         ):
             text = FundFlowTool().execute(codes=["600519.SH"])
 
         payload = json.loads(text)
         assert payload["ok"] is True
         assert "429" in payload["data"]["600519.SH"]["error"]
+
+    def test_http_failure_uses_tushare_fallback_when_available(self):
+        fallback = {
+            "symbol": "600519.SH",
+            "ts_code": "600519.SH",
+            "source": "tushare",
+            "rows": [{"timestamp": "2024-01-03", "main": 100.0}],
+        }
+        with patch(
+            "src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"
+        ), patch(
+            "src.tools.fund_flow_tool.get_json", side_effect=RuntimeError("HTTP 429")
+        ), patch(
+            "src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow",
+            return_value=fallback,
+        ) as fallback_fetch:
+            text = FundFlowTool().execute(codes=["600519.SH"], period="daily", days=5)
+
+        fallback_fetch.assert_called_once_with("600519.SH", days=5)
+        payload = json.loads(text)
+        result = payload["data"]["600519.SH"]
+        assert result["source"] == "tushare"
+        assert result["rows"][0]["timestamp"] == "2024-01-03"
+        assert "used tushare fallback" in result["warning"]
 
     def test_malformed_row_skipped(self):
         bad = {"data": {"klines": ["garbage", "2024-01-03,-50.0,20.0,-5.0,-30.0,-20.0"]}}
