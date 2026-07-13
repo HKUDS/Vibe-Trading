@@ -142,3 +142,25 @@ def test_tool_wrappers_use_env_isolated_storage(storage_path: Path) -> None:
     assert found["hypotheses"][0]["hypothesis_id"] == hypothesis_id
 
     assert storage_path.exists()
+
+
+def test_update_hypothesis_tool_ignores_unknown_fields(storage_path: Path) -> None:
+    created = json.loads(
+        CreateHypothesisTool().execute(
+            title="Unknown field regression",
+            thesis="Unexpected tool arguments must not reach the registry.",
+        )
+    )
+    hypothesis_id = created["hypothesis"]["hypothesis_id"]
+
+    updated = json.loads(
+        UpdateHypothesisTool().execute(
+            hypothesis_id=hypothesis_id,
+            status="testing",
+            run_dir="runs/should-be-ignored",
+        )
+    )
+
+    assert updated["status"] == "ok"
+    assert updated["hypothesis"]["status"] == "testing"
+    assert "run_dir" not in updated["hypothesis"]
