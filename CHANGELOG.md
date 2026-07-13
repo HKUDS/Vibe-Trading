@@ -31,6 +31,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - FastMCP transport imports work across both module layouts (#469, thanks
   @roberttidball).
+- Portfolio optimizers no longer include the decision bar's close-to-close
+  return in weights executed at that bar's open.
 
 ## [0.1.11] — 2026-07-11
 

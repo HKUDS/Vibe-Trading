@@ -501,7 +501,7 @@ def _sync_provider_env() -> None:
         os.environ["OPENAI_API_KEY"] = api_key
     if base_url:
         os.environ["OPENAI_API_BASE"] = base_url
-        os.environ.setdefault("OPENAI_BASE_URL", base_url)
+        os.environ["OPENAI_BASE_URL"] = base_url
 
 
 def provider_diagnostics() -> dict[str, Any]:

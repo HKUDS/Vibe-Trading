@@ -6,6 +6,12 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    ignore:
+      # pandas 3.x has real breaking changes (Copy-on-Write always-on, removed
+      # deprecated APIs) we haven't vetted; the <3.0.0 ceiling is deliberate,
+      # not an oversight. Revisit as a dedicated migration, not a dep bump.
+      - dependency-name: "pandas"
+        update-types: ["version-update:semver-major"]
 
   # Frontend npm dependencies.
   - package-ecosystem: "npm"
