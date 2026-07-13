@@ -32,8 +32,10 @@ class CheckResult:
 def _check_llm_provider() -> CheckResult:
     """Verify LLM provider connectivity."""
     from src.providers.llm import _ensure_dotenv, _sync_provider_env, provider_diagnostics
+    from src.config.accessor import reset_env_config
 
     _ensure_dotenv()
+    reset_env_config()
     _cfg = get_env_config()
     provider = _cfg.llm.langchain_provider.strip()
     model = _cfg.llm.langchain_model_name.strip()
