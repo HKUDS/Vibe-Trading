@@ -36,8 +36,28 @@ class WriteFileTool(BaseTool):
         Returns:
             JSON string with bytes_written or an error.
         """
-        file_path = kwargs["path"]
-        content = kwargs["content"]
+        # DeepSeek-v4-pro (and some other models) sometimes emit write_file
+        # with the path under an aliased key, or omit it entirely. Accept the
+        # common aliases and return a correctable error instead of raising a
+        # hard KeyError the model can't recover from.
+        file_path = (
+            kwargs.get("path")
+            or kwargs.get("file_path")
+            or kwargs.get("filepath")
+            or kwargs.get("filename")
+            or kwargs.get("file")
+        )
+        if not file_path:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": "missing required argument 'path' (string): the file path relative to run_dir",
+                },
+                ensure_ascii=False,
+            )
+        content = kwargs.get("content")
+        if content is None:
+            content = kwargs.get("text", kwargs.get("data", ""))
         run_dir = kwargs.get("run_dir")
 
         try:
