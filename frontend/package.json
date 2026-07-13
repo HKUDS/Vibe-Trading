@@ -24,7 +24,7 @@
     "react-dom": "^19.0.0",
     "react-i18next": "^17.0.8",
     "react-markdown": "^9.0.0",
-    "react-router-dom": "^7.15.0",
+    "react-router-dom": "^7.18.1",
     "rehype-highlight": "^7.0.0",
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
