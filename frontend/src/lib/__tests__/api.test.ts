@@ -39,4 +39,32 @@ describe("api request helper", () => {
       message: expect.stringContaining("Expected JSON from /channels/status, got text/html"),
     } satisfies Partial<ApiError>);
   });
+
+  it("sends the stored API key when fetching a correlation matrix", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn(() => "remote-test-key"),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ labels: ["A", "B"], matrix: [[1, 0], [0, 1]] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { api } = await loadApiModule();
+
+    await expect(api.getCorrelation("A,B", 90, "pearson")).resolves.toEqual({
+      labels: ["A", "B"],
+      matrix: [[1, 0], [0, 1]],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/correlation?codes=A%2CB&days=90&method=pearson",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer remote-test-key" }),
+      }),
+    );
+  });
 });

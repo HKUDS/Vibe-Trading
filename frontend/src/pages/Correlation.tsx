@@ -2,6 +2,7 @@ import i18n from '@/i18n';
 import { useState } from "react";
 import { BarChart3 } from "lucide-react";
 import { CorrelationMatrix } from "@/components/charts/CorrelationMatrix";
+import { api } from "@/lib/api";
 
 const WINDOWS = [30, 60, 90, 180, 365] as const;
 
@@ -19,9 +20,7 @@ export function Correlation() {
     setError(null);
     setLoading(true);
     try {
-      const result = await request<{ labels: string[]; matrix: number[][] }>(
-        `/correlation?codes=${encodeURIComponent(codes)}&days=${days}&method=${method}`
-      );
+      const result = await api.getCorrelation(codes, days, method);
       setLabels(result.labels);
       setMatrix(result.matrix);
     } catch (e) {
@@ -115,23 +114,4 @@ export function Correlation() {
       {labels.length > 0 && <CorrelationMatrix labels={labels} matrix={matrix} height={520} />}
     </div>
   );
-}
-
-// Minimal request helper (avoids importing the full api client which may have path issues)
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const BASE = "";
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    ...options,
-  });
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try {
-      const body = await res.json();
-      detail = body.detail || body.message || detail;
-    } catch { /* ignore */ }
-    throw new Error(detail);
-  }
-  const text = await res.text();
-  return text ? JSON.parse(text) : ({} as T);
 }

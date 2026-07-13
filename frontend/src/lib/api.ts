@@ -19,6 +19,11 @@ export function isAuthRequiredError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
 
+export interface CorrelationResponse {
+  labels: string[];
+  matrix: number[][];
+}
+
 async function errorFromResponse(res: Response): Promise<ApiError> {
   let detail = `HTTP ${res.status}`;
   try {
@@ -84,6 +89,10 @@ function appendQueryParam(url: string, key: string, value: string): string {
 
 export const api = {
   uploadFile,
+  getCorrelation: (codes: string, days: number, method: "pearson" | "spearman") =>
+    request<CorrelationResponse>(
+      `/correlation?codes=${encodeURIComponent(codes)}&days=${encodeURIComponent(String(days))}&method=${encodeURIComponent(method)}`,
+    ),
   listRuns: (limit?: number) => request<RunListItem[]>(`/runs${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`),
   getRun: (id: string, params: RunDetailParams = {}) => {
     const q = new URLSearchParams();
