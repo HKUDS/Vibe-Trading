@@ -12,6 +12,11 @@ paper and live environments (LongPort exposes no API field for it). The loaded
 Access Token implicitly selects the environment. For backtest purposes the
 historical bars are identical regardless of source account.
 
+The LongPort ``history_candlesticks_by_date`` endpoint caps responses at
+~1000 bars per call. Date ranges longer than ~4 years of daily bars are
+automatically split into sequential 180-day windows so full history is
+retrieved without silent truncation.
+
 This module is for backtest data only; live trading uses the separate
 ``src.trading.connectors.longbridge.sdk`` module.
 """
@@ -20,7 +25,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 import pandas as pd
 
@@ -49,10 +54,11 @@ _INTERVAL_MAP: dict[str, str] = {
     "30m": "Min_30",
 }
 
-_SYMBOL_FORCE_US_SUFFIX = frozenset({
-    # Common US tickers that arrive without an exchange suffix.
-    # The resolver below appends ".US" only when no "." is present.
-})
+# LongPort returns at most ~1000 bars per call. For wide ranges we split into
+# sequential windows of this many days to avoid silent truncation.
+_MAX_WINDOW_DAYS = 180
+# Cap on the number of windows so a pathological request can't loop forever.
+_MAX_WINDOWS = 20
 
 
 class LongbridgeDependencyError(RuntimeError):
@@ -78,7 +84,7 @@ def _require_longbridge():
 def _to_longport_symbol(code: str) -> str:
     """Convert a project symbol to LongPort format.
 
-    LongPort accepts both ``AAPL`` and ``AAPL.US``; ``700.HK`` stays as-is.
+    LongPort accepts ``AAPL.US``, ``700.HK``, ``000001.SZ``, ``600519.SH``.
     Bare codes without a ``.`` suffix get ``.US`` appended so the resolver
     treats them as US equities (loader ``markets`` is us_equity + hk_equity;
     ambiguous codes lean US).
@@ -89,6 +95,7 @@ def _to_longport_symbol(code: str) -> str:
         700.HK    -> 700.HK
         0700.HK   -> 0700.HK
         000001.SZ -> 000001.SZ
+        600519.SH -> 600519.SH
     """
     upper = code.strip().upper()
     if "." in upper:
@@ -96,7 +103,7 @@ def _to_longport_symbol(code: str) -> str:
     return f"{upper}.US"
 
 
-def _to_longport_period(interval: str) -> object:
+def _to_longport_period(interval: str):
     """Map a project interval string to a LongPort ``Period`` enum value.
 
     Lazy-imports the SDK so this module can be imported without it installed.
@@ -106,6 +113,22 @@ def _to_longport_period(interval: str) -> object:
     period_cls = getattr(openapi, "Period")
     attr = _INTERVAL_MAP.get(interval.strip(), "Day")
     return getattr(period_cls, attr, getattr(period_cls, "Day"))
+
+
+def _date_windows(start: dt.date, end: dt.date) -> list[tuple[dt.date, dt.date]]:
+    """Split a wide date range into sequential windows to respect the
+    LongPort ~1000-bar per-call cap.
+
+    Each window spans at most ``_MAX_WINDOW_DAYS`` days. Windows are capped
+    at ``_MAX_WINDOWS`` so a pathological request cannot loop forever.
+    """
+    windows: list[tuple[dt.date, dt.date]] = []
+    cursor = start
+    while cursor <= end and len(windows) < _MAX_WINDOWS:
+        window_end = min(cursor + dt.timedelta(days=_MAX_WINDOW_DAYS - 1), end)
+        windows.append((cursor, window_end))
+        cursor = window_end + dt.timedelta(days=1)
+    return windows
 
 
 def _normalize_frame(bars: list[Any]) -> pd.DataFrame:
@@ -130,13 +153,18 @@ def _normalize_frame(bars: list[Any]) -> pd.DataFrame:
             "low": float(getattr(bar, "low", 0) or 0),
             "close": float(getattr(bar, "close", 0) or 0),
             "volume": float(getattr(bar, "volume", 0) or 0),
-            "trade_date": pd.to_datetime(ts) if ts else pd.NaT,
+            "trade_date": pd.to_datetime(ts) if ts is not None else pd.NaT,
         })
 
     result = pd.DataFrame(rows)
     result.index = result["trade_date"]
     result.index.name = "trade_date"
     result = result[_OHLCV_COLUMNS].copy()
+
+    # Standardise to timezone-naive (LongPort returns UTC timestamps).
+    if isinstance(result.index, pd.DatetimeIndex) and result.index.tz is not None:
+        result.index = result.index.tz_localize(None)
+
     result = result.dropna(subset=["open", "high", "low", "close"])
     result["volume"] = result["volume"].fillna(0.0)
     return result.sort_index()
@@ -165,8 +193,8 @@ class LongbridgeLoader:
     def is_available(self) -> bool:
         """Return True if the LongPort SDK is installed and credentials exist.
 
-        Performs a lightweight quote probe (``AAPL.US``) to validate the
-        credentials and connectivity.
+        Performs a lightweight probe (``candlesticks`` for ``AAPL.US``) to
+        validate the credentials and connectivity.
         """
         if not (self._app_key and self._app_secret and self._access_token):
             return False
@@ -176,12 +204,10 @@ class LongbridgeLoader:
                 self._app_key, self._app_secret, self._access_token,
             )
             ctx = openapi.QuoteContext(cfg)
-            try:
-                # Lightweight probe — validates token + connectivity.
-                quotes = ctx.quote(["AAPL.US"])
-                return bool(quotes)
-            finally:
-                ctx.close()
+            # Lightweight probe — validates token + connectivity.
+            # AAPL.US is the most universally available LongPort symbol.
+            bars = ctx.candlesticks("AAPL.US", openapi.Period.Day, 1, openapi.AdjustType.NoAdjust)
+            return bars is not None
         except Exception:
             return False
 
@@ -193,11 +219,12 @@ class LongbridgeLoader:
         *,
         interval: str = "1D",
         fields: Optional[List[str]] = None,
-    ) -> Dict[str, pd.DataFrame]:
+    ) -> dict[str, pd.DataFrame]:
         """Fetch OHLCV history from LongPort OpenAPI.
 
         Args:
-            codes: Project symbols such as ``AAPL``, ``AAPL.US``, or ``700.HK``.
+            codes: Project symbols such as ``AAPL``, ``AAPL.US``, ``700.HK``,
+                ``000001.SZ`` or ``600519.SH``.
             start_date: Start date in ``YYYY-MM-DD`` format.
             end_date: End date in ``YYYY-MM-DD`` format.
             interval: Backtest interval — ``1D``, ``1W``, ``1M``, ``1H``.
@@ -215,7 +242,7 @@ class LongbridgeLoader:
             return {}
         validate_date_range(start_date, end_date)
 
-        results: Dict[str, pd.DataFrame] = {}
+        results: dict[str, pd.DataFrame] = {}
 
         # Serve cached symbols first; only open an SDK connection when at
         # least one symbol is uncached, so a fully-cached request needs no
@@ -251,31 +278,48 @@ class LongbridgeLoader:
                 f"Cannot initialise LongPort SDK config: {exc}"
             ) from exc
 
+        period = _to_longport_period(interval)
+        adjust_type = getattr(openapi, "AdjustType").NoAdjust
         try:
-            period = _to_longport_period(interval)
-            adjust_type = getattr(openapi, "AdjustType").NoAdjust
             start = dt.date.fromisoformat(start_date)
             end = dt.date.fromisoformat(end_date)
         except Exception as exc:
             raise NoAvailableSourceError(
-                f"Invalid date or interval parameters: {exc}"
+                f"Invalid date range [{start_date}, {end_date}]: {exc}"
             ) from exc
+
+        windows = _date_windows(start, end)
 
         try:
             for code in pending:
                 lp_symbol = _to_longport_symbol(code)
-                try:
-                    bars = ctx.history_candlesticks_by_date(
-                        lp_symbol, period, adjust_type,
-                        start=start, end=end,
-                    )
-                except Exception as exc:
+                all_bars: list[Any] = []
+                for w_start, w_end in windows:
+                    try:
+                        bars = ctx.history_candlesticks_by_date(
+                            lp_symbol, period, adjust_type,
+                            start=w_start, end=w_end,
+                        )
+                        if isinstance(bars, (list, tuple)):
+                            all_bars.extend(bars)
+                        elif bars is not None:
+                            all_bars.append(bars)
+                    except Exception as exc:
+                        logger.warning(
+                            "LongPort history_candlesticks_by_date failed for %s "
+                            "%s..%s: %s",
+                            lp_symbol, w_start, w_end, exc,
+                        )
+                        continue
+
+                if not all_bars:
                     logger.warning(
-                        "LongPort history_candlesticks_by_date failed for %s: %s",
-                        lp_symbol, exc,
+                        "LongPort returned no data for %s in [%s, %s]",
+                        lp_symbol, start_date, end_date,
                     )
                     continue
-                normalized = _normalize_frame(bars if isinstance(bars, (list, tuple)) else [bars])
+
+                normalized = _normalize_frame(all_bars)
                 loader_cache_put(
                     source=self.name,
                     symbol=code,
@@ -287,6 +331,8 @@ class LongbridgeLoader:
                 )
                 results[code] = normalized
         finally:
-            ctx.close()
+            # LongPort QuoteContext has no explicit close(); the SDK manages
+            # its own connection pool. No cleanup needed.
+            pass
 
         return results
