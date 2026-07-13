@@ -1,22 +1,40 @@
-"""Read-only ICICI Direct Breeze connector.
+"""ICICI Direct Breeze connector with local paper trading.
 
 Credentials are retrieved from Windows Credential Manager through ``keyring``
 using service ``VibeTrading-ICICI`` and keys:
 ``api_key``, ``api_secret``, and ``api_session``.
 
-No order-placement or cancellation functions are exposed in this module.
+Safety boundary
+---------------
+* ``live-readonly`` exposes reads only.
+* ``paper`` uses live Breeze quotations, but orders and cancellations are
+  simulated in a local JSON ledger.
+* This module never calls Breeze ``place_order``, ``modify_order``,
+  ``cancel_order``, or any other broker-write method.
 """
 
 from __future__ import annotations
 
+import json
+import math
+import threading
+import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import ModuleType
 from typing import Any, Mapping
 
+from src.config.paths import get_runtime_root
+
 KEYRING_SERVICE = "VibeTrading-ICICI"
-PROFILE_ENVIRONMENTS = {"live-readonly": "live"}
-PAPER_GUARD = "read_only_live_breeze"
+PROFILE_ENVIRONMENTS = {
+    "paper": "paper",
+    "live-readonly": "live",
+}
+PAPER_GUARD = "simulated_locally"
+PAPER_LEDGER_FILENAME = "icici_breeze_paper.json"
+_LEDGER_LOCK = threading.RLock()
 
 
 class ICICIBreezeDependencyError(RuntimeError):
@@ -39,6 +57,7 @@ class ICICIBreezeConfig:
     keyring_service: str = KEYRING_SERVICE
     timeout: float = 30.0
     readonly: bool = True
+    paper_starting_cash: float = 100000.0
 
     @classmethod
     def from_mapping(
@@ -50,7 +69,14 @@ class ICICIBreezeConfig:
         ).strip().lower()
         if profile not in PROFILE_ENVIRONMENTS:
             raise ICICIBreezeConfigError(
-                "profile must be 'live-readonly'"
+                "profile must be 'paper' or 'live-readonly'"
+            )
+        starting_cash = float(
+            payload.get("paper_starting_cash") or 100000.0
+        )
+        if not math.isfinite(starting_cash) or starting_cash <= 0:
+            raise ICICIBreezeConfigError(
+                "paper_starting_cash must be positive"
             )
         return cls(
             profile=profile,
@@ -58,12 +84,17 @@ class ICICIBreezeConfig:
                 payload.get("keyring_service") or KEYRING_SERVICE
             ).strip(),
             timeout=float(payload.get("timeout") or 30.0),
-            readonly=True,
+            readonly=profile != "paper",
+            paper_starting_cash=starting_cash,
         )
 
     @property
     def environment(self) -> str:
         return PROFILE_ENVIRONMENTS[self.profile]
+
+    @property
+    def is_paper(self) -> bool:
+        return self.environment == "paper"
 
 
 def build_config(
@@ -75,10 +106,12 @@ def build_config(
     payload: dict[str, Any] = {}
     payload.update(dict(profile_config or {}))
     for key, value in dict(overrides or {}).items():
-        if key in {"profile", "keyring_service", "timeout"} and value not in (
-            None,
-            "",
-        ):
+        if key in {
+            "profile",
+            "keyring_service",
+            "timeout",
+            "paper_starting_cash",
+        } and value not in (None, ""):
             payload[key] = value
     return ICICIBreezeConfig.from_mapping(payload)
 
@@ -86,7 +119,7 @@ def build_config(
 def check_status(
     config: ICICIBreezeConfig | None = None,
 ) -> dict[str, Any]:
-    """Check credentials and Breeze account access without trading."""
+    """Check credentials and Breeze connectivity without trading."""
 
     cfg = config or ICICIBreezeConfig()
     report: dict[str, Any] = {
@@ -100,8 +133,8 @@ def check_status(
             "package": "keyring",
             "installed": _keyring_available(),
         },
-        "paper_guard": PAPER_GUARD,
-        "readonly": True,
+        "paper_guard": PAPER_GUARD if cfg.is_paper else "read_only",
+        "readonly": cfg.readonly,
     }
 
     if not report["sdk"]["installed"]:
@@ -130,6 +163,8 @@ def check_status(
         return report
 
     try:
+        # Creating a session is a read-only connectivity/authentication probe.
+        _client(cfg)
         snapshot = get_account_snapshot(cfg)
     except Exception as exc:
         report["status"] = "error"
@@ -138,18 +173,58 @@ def check_status(
 
     report["account"] = {
         "profile": cfg.profile,
+        "is_paper": cfg.is_paper,
         "currency": "INR",
-        "demat_holdings": snapshot.get("demat_holdings_count", 0),
     }
+    if cfg.is_paper:
+        account = snapshot.get("account") or {}
+        report["account"].update(
+            {
+                "cash": account.get("cash"),
+                "equity": account.get("equity"),
+                "positions": account.get("positions_count"),
+            }
+        )
+    else:
+        report["account"]["demat_holdings"] = snapshot.get(
+            "demat_holdings_count", 0
+        )
     return report
 
 
 def get_account_snapshot(
     config: ICICIBreezeConfig | None = None,
 ) -> dict[str, Any]:
-    """Read funds and a count of Demat holdings."""
+    """Read a paper account or live ICICI funds summary."""
 
     cfg = config or ICICIBreezeConfig()
+    if cfg.is_paper:
+        _process_open_paper_orders(cfg)
+        ledger = _load_ledger(cfg)
+        marked = _mark_paper_positions(cfg, ledger)
+        account = {
+            "account": "ICICI Paper",
+            "currency": "INR",
+            "starting_cash": ledger["starting_cash"],
+            "cash": ledger["cash"],
+            "market_value": marked["market_value"],
+            "unrealized_pnl": marked["unrealized_pnl"],
+            "realized_pnl": ledger.get("realized_pnl", 0.0),
+            "equity": ledger["cash"] + marked["market_value"],
+            "positions_count": len(marked["positions"]),
+            "orders_count": len(ledger["orders"]),
+            "charges_model": "not_included_v1",
+        }
+        return {
+            "status": "ok",
+            "profile": cfg.profile,
+            "is_paper": True,
+            "paper_guard": PAPER_GUARD,
+            "readonly": False,
+            "account": account,
+            "accounts": ["ICICI Paper"],
+        }
+
     client = _client(cfg)
     funds = _success(client.get_funds(), "get_funds", default={})
     holdings = _success(
@@ -163,6 +238,7 @@ def get_account_snapshot(
     holding_rows = _as_list(holdings)
 
     account = {
+        "account": "ICICI Direct",
         "currency": "INR",
         "total_bank_balance": funds.get("total_bank_balance"),
         "allocated_equity": funds.get("allocated_equity"),
@@ -177,9 +253,10 @@ def get_account_snapshot(
     return {
         "status": "ok",
         "profile": cfg.profile,
-        "paper_guard": PAPER_GUARD,
+        "paper_guard": "read_only",
         "readonly": True,
         "account": account,
+        "accounts": ["ICICI Direct"],
         "demat_holdings_count": len(holding_rows),
     }
 
@@ -187,11 +264,23 @@ def get_account_snapshot(
 def get_positions(
     config: ICICIBreezeConfig | None = None,
 ) -> dict[str, Any]:
-    """Read Demat holdings and current trading positions."""
+    """Read paper positions or live Demat holdings/open positions."""
 
     cfg = config or ICICIBreezeConfig()
-    client = _client(cfg)
+    if cfg.is_paper:
+        _process_open_paper_orders(cfg)
+        ledger = _load_ledger(cfg)
+        marked = _mark_paper_positions(cfg, ledger)
+        return {
+            "status": "ok",
+            "profile": cfg.profile,
+            "is_paper": True,
+            "paper_guard": PAPER_GUARD,
+            "readonly": False,
+            "positions": marked["positions"],
+        }
 
+    client = _client(cfg)
     holdings = _success(
         client.get_demat_holdings(),
         "get_demat_holdings",
@@ -214,15 +303,31 @@ def get_positions(
                 "account": "ICICI Demat",
                 "symbol": item.get("stock_code"),
                 "type": "demat_holding",
-                "quantity": _number(item.get("quantity")),
-                "available_quantity": _number(
-                    item.get("demat_avail_quantity")
+                "quantity": _first_number(
+                    item,
+                    "quantity",
+                    "demat_total_quantity",
+                    "demat_avail_quantity",
+                    "total_quantity",
                 ),
-                "blocked_quantity": _number(
-                    item.get("blocked_quantity")
+                "average_cost": _first_number(
+                    item,
+                    "average_price",
+                    "average_cost",
+                    "buy_price",
                 ),
-                "allocated_quantity": _number(
-                    item.get("demat_allocated_quantity")
+                "available_quantity": _first_number(
+                    item,
+                    "demat_avail_quantity",
+                    "available_quantity",
+                ),
+                "blocked_quantity": _first_number(
+                    item,
+                    "blocked_quantity",
+                ),
+                "allocated_quantity": _first_number(
+                    item,
+                    "demat_allocated_quantity",
                 ),
                 "isin": item.get("stock_ISIN"),
                 "currency": "INR",
@@ -232,7 +337,7 @@ def get_positions(
     for item in _as_list(open_positions):
         if not isinstance(item, Mapping):
             continue
-        quantity = _number(item.get("quantity"))
+        quantity = _first_number(item, "quantity", "net_quantity")
         if not quantity:
             continue
         rows.append(
@@ -241,15 +346,24 @@ def get_positions(
                 "symbol": item.get("stock_code"),
                 "type": item.get("product_type") or "open_position",
                 "quantity": quantity,
-                "average_cost": _number(item.get("average_price")),
-                "current_price": _number(
-                    item.get("ltp") or item.get("price")
+                "average_cost": _first_number(
+                    item,
+                    "average_price",
+                    "average_cost",
                 ),
-                "pnl": _number(item.get("pnl")),
+                "current_price": _first_number(
+                    item,
+                    "ltp",
+                    "price",
+                ),
+                "pnl": _first_number(item, "pnl"),
                 "exchange": item.get("exchange_code"),
                 "expiry_date": item.get("expiry_date"),
                 "right": item.get("right"),
-                "strike_price": _number(item.get("strike_price")),
+                "strike_price": _first_number(
+                    item,
+                    "strike_price",
+                ),
                 "currency": "INR",
             }
         )
@@ -257,7 +371,7 @@ def get_positions(
     return {
         "status": "ok",
         "profile": cfg.profile,
-        "paper_guard": PAPER_GUARD,
+        "paper_guard": "read_only",
         "readonly": True,
         "positions": rows,
     }
@@ -268,11 +382,35 @@ def get_open_orders(
     *,
     include_executions: bool = False,
 ) -> dict[str, Any]:
-    """Read today's NSE and NFO orders."""
+    """Read paper orders or today's live NSE/NFO orders."""
 
     cfg = config or ICICIBreezeConfig()
-    client = _client(cfg)
+    if cfg.is_paper:
+        _process_open_paper_orders(cfg)
+        ledger = _load_ledger(cfg)
+        open_orders = [
+            _paper_order_public(order)
+            for order in ledger["orders"]
+            if order.get("status") == "open"
+        ]
+        executions = [
+            _paper_order_public(order)
+            for order in ledger["orders"]
+            if order.get("status") == "filled"
+        ]
+        result: dict[str, Any] = {
+            "status": "ok",
+            "profile": cfg.profile,
+            "is_paper": True,
+            "paper_guard": PAPER_GUARD,
+            "readonly": False,
+            "open_orders": open_orders,
+        }
+        if include_executions:
+            result["executions"] = executions
+        return result
 
+    client = _client(cfg)
     now = datetime.now(timezone.utc)
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     from_date = _iso_z(start)
@@ -322,10 +460,10 @@ def get_open_orders(
             }:
                 executions.append(row)
 
-    result: dict[str, Any] = {
+    result = {
         "status": "ok",
         "profile": cfg.profile,
-        "paper_guard": PAPER_GUARD,
+        "paper_guard": "read_only",
         "readonly": True,
         "open_orders": open_orders,
     }
@@ -350,40 +488,14 @@ def get_quote(
     stock_code = _resolve_stock_code(
         client, symbol, exchange_code=exchange_code
     )
-
-    payload = client.get_quotes(
+    return _quote_with_client(
+        client,
+        symbol=symbol,
         stock_code=stock_code,
         exchange_code=exchange_code,
-        expiry_date="",
-        product_type="cash",
-        right="",
-        strike_price="",
+        profile=cfg.profile,
+        is_paper=cfg.is_paper,
     )
-    items = _success(payload, "get_quotes", default=[])
-    first = _as_list(items)
-    quote = first[0] if first else {}
-    if not isinstance(quote, Mapping):
-        quote = {}
-
-    return {
-        "status": "ok",
-        "profile": cfg.profile,
-        "paper_guard": PAPER_GUARD,
-        "readonly": True,
-        "symbol": str(symbol or "").strip().upper(),
-        "stock_code": stock_code,
-        "quote": {
-            "bid": _number(quote.get("best_bid_price")),
-            "ask": _number(quote.get("best_offer_price")),
-            "last": _number(quote.get("ltp")),
-            "open": _number(quote.get("open")),
-            "high": _number(quote.get("high")),
-            "low": _number(quote.get("low")),
-            "close": _number(quote.get("previous_close")),
-            "volume": _number(quote.get("total_quantity_traded")),
-            "time": quote.get("ltt"),
-        },
-    }
 
 
 def get_historical_bars(
@@ -414,8 +526,8 @@ def get_historical_bars(
         return {
             "status": "error",
             "profile": cfg.profile,
-            "paper_guard": PAPER_GUARD,
-            "readonly": True,
+            "paper_guard": PAPER_GUARD if cfg.is_paper else "read_only",
+            "readonly": cfg.readonly,
             "symbol": str(symbol or "").strip().upper(),
             "error": (
                 "ICICI Breeze history currently supports periods "
@@ -449,12 +561,531 @@ def get_historical_bars(
     return {
         "status": "ok",
         "profile": cfg.profile,
-        "paper_guard": PAPER_GUARD,
-        "readonly": True,
+        "paper_guard": PAPER_GUARD if cfg.is_paper else "read_only",
+        "readonly": cfg.readonly,
         "symbol": str(symbol or "").strip().upper(),
         "stock_code": stock_code,
         "period": token,
         "bars": bars,
+    }
+
+
+def place_order(
+    config: ICICIBreezeConfig | None = None,
+    *,
+    symbol: str,
+    side: str,
+    quantity: float | None = None,
+    notional: float | None = None,
+    order_type: str = "limit",
+    limit_price: float | None = None,
+    time_in_force: str = "day",
+    exchange_code: str = "NSE",
+    **_: Any,
+) -> dict[str, Any]:
+    """Place a PAPER-ONLY NSE cash order in the local ledger.
+
+    The hard paper guard runs before any order logic. This function never
+    invokes a Breeze broker-write API.
+    """
+
+    cfg = config or ICICIBreezeConfig()
+
+    # HARD GUARD: live-readonly can never reach a paper or broker write path.
+    if not cfg.is_paper:
+        return {
+            "status": "error",
+            "error": (
+                "ICICI Breeze order placement is available only in the "
+                "local paper profile. Live broker writes are not installed."
+            ),
+        }
+
+    clean_symbol = str(symbol or "").strip().upper()
+    if not clean_symbol:
+        return {"status": "error", "error": "symbol is required"}
+
+    side_token = str(side or "").strip().lower()
+    if side_token not in {"buy", "sell"}:
+        return {
+            "status": "error",
+            "error": "side must be 'buy' or 'sell'",
+        }
+
+    order_token = str(order_type or "limit").strip().lower()
+    if order_token not in {"market", "limit"}:
+        return {
+            "status": "error",
+            "error": "order_type must be 'market' or 'limit'",
+        }
+
+    tif = str(time_in_force or "day").strip().lower()
+    if tif not in {"day", "gtc"}:
+        return {
+            "status": "error",
+            "error": "time_in_force must be 'day' or 'gtc'",
+        }
+
+    if order_token == "limit":
+        if limit_price is None:
+            return {
+                "status": "error",
+                "error": "limit order requires limit_price",
+            }
+        limit_value = _positive_number(limit_price, "limit_price")
+    else:
+        limit_value = None
+
+    quote_result = get_quote(
+        clean_symbol,
+        config=cfg,
+        exchange_code=exchange_code,
+    )
+    if quote_result.get("status") != "ok":
+        return quote_result
+
+    quote = quote_result.get("quote") or {}
+    market_price = _execution_reference(quote, side_token)
+    if market_price <= 0:
+        return {
+            "status": "error",
+            "error": "a positive live quote is required for paper execution",
+            "symbol": clean_symbol,
+        }
+
+    if quantity is None:
+        if notional is None:
+            return {
+                "status": "error",
+                "error": "quantity or notional is required",
+            }
+        budget = _positive_number(notional, "notional")
+        qty = int(math.floor(budget / market_price))
+        if qty < 1:
+            return {
+                "status": "error",
+                "error": (
+                    "notional is below the price of one whole NSE share"
+                ),
+                "symbol": clean_symbol,
+                "reference_price": market_price,
+            }
+    else:
+        quantity_value = _positive_number(quantity, "quantity")
+        if not quantity_value.is_integer():
+            return {
+                "status": "error",
+                "error": "NSE cash paper quantity must be a whole share",
+            }
+        qty = int(quantity_value)
+
+    now = _now_iso()
+    order_id = f"ICICI-PAPER-{uuid.uuid4().hex[:12].upper()}"
+    marketable = (
+        order_token == "market"
+        or (
+            side_token == "buy"
+            and market_price <= float(limit_value)
+        )
+        or (
+            side_token == "sell"
+            and market_price >= float(limit_value)
+        )
+    )
+
+    fill_price = (
+        market_price
+        if order_token == "market"
+        else (
+            min(market_price, float(limit_value))
+            if side_token == "buy"
+            else max(market_price, float(limit_value))
+        )
+    )
+
+    order = {
+        "order_id": order_id,
+        "symbol": clean_symbol,
+        "stock_code": quote_result.get("stock_code"),
+        "exchange": exchange_code,
+        "product_type": "cash",
+        "side": side_token,
+        "order_type": order_token,
+        "quantity": qty,
+        "limit_price": limit_value,
+        "time_in_force": tif,
+        "status": "open",
+        "filled_quantity": 0,
+        "average_price": 0.0,
+        "created_at": now,
+        "updated_at": now,
+        "paper": True,
+        "charges": 0.0,
+        "charges_model": "not_included_v1",
+    }
+
+    with _LEDGER_LOCK:
+        ledger = _load_ledger(cfg)
+        if marketable:
+            error = _apply_paper_fill(
+                ledger,
+                order,
+                fill_price=fill_price,
+            )
+            if error:
+                return {
+                    "status": "error",
+                    "error": error,
+                    "symbol": clean_symbol,
+                    "side": side_token,
+                    "quantity": qty,
+                    "reference_price": market_price,
+                }
+        ledger["orders"].append(order)
+        _save_ledger(ledger)
+
+    public_order = _paper_order_public(order)
+    return {
+        **public_order,
+        "status": "ok",
+        "profile": cfg.profile,
+        "is_paper": True,
+        "paper_guard": PAPER_GUARD,
+        "broker_write_called": False,
+    }
+
+
+def cancel_order(
+    config: ICICIBreezeConfig | None = None,
+    order_id: str = "",
+    *,
+    symbol: str | None = None,
+) -> dict[str, Any]:
+    """Cancel an open PAPER order in the local ledger only."""
+
+    cfg = config or ICICIBreezeConfig()
+
+    # HARD GUARD: no live cancellation method exists.
+    if not cfg.is_paper:
+        return {
+            "status": "error",
+            "error": (
+                "ICICI Breeze cancellation is available only in the "
+                "local paper profile. Live broker writes are not installed."
+            ),
+        }
+
+    clean_id = str(order_id or "").strip()
+    if not clean_id:
+        return {"status": "error", "error": "order_id is required"}
+
+    with _LEDGER_LOCK:
+        ledger = _load_ledger(cfg)
+        for order in ledger["orders"]:
+            if order.get("order_id") != clean_id:
+                continue
+            if order.get("status") != "open":
+                return {
+                    "status": "error",
+                    "error": (
+                        f"paper order is already {order.get('status')}"
+                    ),
+                    "order_id": clean_id,
+                }
+            order["status"] = "cancelled"
+            order["updated_at"] = _now_iso()
+            _save_ledger(ledger)
+            return {
+                "status": "ok",
+                "profile": cfg.profile,
+                "is_paper": True,
+                "paper_guard": PAPER_GUARD,
+                "broker_write_called": False,
+                "order_id": clean_id,
+                "symbol": order.get("symbol") or symbol,
+                "cancelled": True,
+            }
+
+    return {
+        "status": "error",
+        "error": "paper order was not found",
+        "order_id": clean_id,
+    }
+
+
+def reset_paper_account(
+    config: ICICIBreezeConfig | None = None,
+) -> dict[str, Any]:
+    """Reset only the local paper ledger to its configured starting cash."""
+
+    cfg = config or ICICIBreezeConfig.from_mapping({"profile": "paper"})
+    if not cfg.is_paper:
+        return {"status": "error", "error": "paper profile required"}
+    with _LEDGER_LOCK:
+        ledger = _new_ledger(cfg)
+        _save_ledger(ledger)
+    return {
+        "status": "ok",
+        "profile": cfg.profile,
+        "is_paper": True,
+        "cash": ledger["cash"],
+        "paper_guard": PAPER_GUARD,
+    }
+
+
+def _process_open_paper_orders(config: ICICIBreezeConfig) -> None:
+    if not config.is_paper:
+        return
+
+    with _LEDGER_LOCK:
+        ledger = _load_ledger(config)
+        open_orders = [
+            order
+            for order in ledger["orders"]
+            if order.get("status") == "open"
+        ]
+        if not open_orders:
+            return
+
+        changed = False
+        for order in open_orders:
+            try:
+                quote_result = get_quote(
+                    str(order.get("symbol") or ""),
+                    config=config,
+                    exchange_code=str(
+                        order.get("exchange") or "NSE"
+                    ),
+                )
+                quote = quote_result.get("quote") or {}
+                market_price = _execution_reference(
+                    quote,
+                    str(order.get("side") or ""),
+                )
+                limit_price = float(order.get("limit_price") or 0.0)
+                should_fill = (
+                    order.get("order_type") == "market"
+                    or (
+                        order.get("side") == "buy"
+                        and market_price > 0
+                        and market_price <= limit_price
+                    )
+                    or (
+                        order.get("side") == "sell"
+                        and market_price > 0
+                        and market_price >= limit_price
+                    )
+                )
+                if not should_fill:
+                    continue
+
+                fill_price = (
+                    min(market_price, limit_price)
+                    if order.get("side") == "buy"
+                    else max(market_price, limit_price)
+                )
+                error = _apply_paper_fill(
+                    ledger,
+                    order,
+                    fill_price=fill_price,
+                )
+                if error:
+                    order["status"] = "rejected"
+                    order["reject_reason"] = error
+                    order["updated_at"] = _now_iso()
+                changed = True
+            except Exception as exc:
+                order["last_refresh_error"] = str(exc)
+                order["updated_at"] = _now_iso()
+                changed = True
+
+        if changed:
+            _save_ledger(ledger)
+
+
+def _apply_paper_fill(
+    ledger: dict[str, Any],
+    order: dict[str, Any],
+    *,
+    fill_price: float,
+) -> str | None:
+    qty = int(order["quantity"])
+    symbol = str(order["symbol"])
+    side = str(order["side"])
+    value = round(qty * float(fill_price), 8)
+    positions = ledger.setdefault("positions", {})
+    position = dict(
+        positions.get(symbol)
+        or {
+            "quantity": 0,
+            "average_cost": 0.0,
+            "realized_pnl": 0.0,
+        }
+    )
+    current_qty = int(position.get("quantity") or 0)
+    current_avg = float(position.get("average_cost") or 0.0)
+
+    if side == "buy":
+        if float(ledger["cash"]) + 1e-9 < value:
+            return (
+                f"insufficient paper cash: need INR {value:.2f}, "
+                f"available INR {float(ledger['cash']):.2f}"
+            )
+        new_qty = current_qty + qty
+        new_avg = (
+            ((current_qty * current_avg) + value) / new_qty
+            if new_qty
+            else 0.0
+        )
+        ledger["cash"] = round(float(ledger["cash"]) - value, 8)
+        position["quantity"] = new_qty
+        position["average_cost"] = round(new_avg, 8)
+        positions[symbol] = position
+    else:
+        if current_qty < qty:
+            return (
+                f"insufficient paper holdings: have {current_qty}, "
+                f"attempted to sell {qty}"
+            )
+        realized = (float(fill_price) - current_avg) * qty
+        remaining = current_qty - qty
+        ledger["cash"] = round(float(ledger["cash"]) + value, 8)
+        ledger["realized_pnl"] = round(
+            float(ledger.get("realized_pnl") or 0.0) + realized,
+            8,
+        )
+        if remaining:
+            position["quantity"] = remaining
+            position["realized_pnl"] = round(
+                float(position.get("realized_pnl") or 0.0) + realized,
+                8,
+            )
+            positions[symbol] = position
+        else:
+            positions.pop(symbol, None)
+
+    order["status"] = "filled"
+    order["filled_quantity"] = qty
+    order["average_price"] = round(float(fill_price), 8)
+    order["filled_at"] = _now_iso()
+    order["updated_at"] = order["filled_at"]
+    return None
+
+
+def _mark_paper_positions(
+    config: ICICIBreezeConfig,
+    ledger: Mapping[str, Any],
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    market_value = 0.0
+    unrealized_pnl = 0.0
+
+    for symbol, raw in dict(ledger.get("positions") or {}).items():
+        item = dict(raw or {})
+        qty = int(item.get("quantity") or 0)
+        if qty <= 0:
+            continue
+        avg = float(item.get("average_cost") or 0.0)
+        current = avg
+        quote_error = None
+        try:
+            quote_result = get_quote(symbol, config=config)
+            quote = quote_result.get("quote") or {}
+            current = _first_positive(
+                quote.get("last"),
+                quote.get("close"),
+                avg,
+            )
+        except Exception as exc:
+            quote_error = str(exc)
+
+        value = qty * current
+        pnl = qty * (current - avg)
+        market_value += value
+        unrealized_pnl += pnl
+
+        row = {
+            "account": "ICICI Paper",
+            "symbol": symbol,
+            "type": "paper_cash_equity",
+            "quantity": qty,
+            "average_cost": round(avg, 8),
+            "current_price": round(current, 8),
+            "market_value": round(value, 8),
+            "unrealized_pnl": round(pnl, 8),
+            "currency": "INR",
+        }
+        if quote_error:
+            row["quote_error"] = quote_error
+        rows.append(row)
+
+    return {
+        "positions": rows,
+        "market_value": round(market_value, 8),
+        "unrealized_pnl": round(unrealized_pnl, 8),
+    }
+
+
+def _quote_with_client(
+    client: Any,
+    *,
+    symbol: str,
+    stock_code: str,
+    exchange_code: str,
+    profile: str,
+    is_paper: bool,
+) -> dict[str, Any]:
+    payload = client.get_quotes(
+        stock_code=stock_code,
+        exchange_code=exchange_code,
+        expiry_date="",
+        product_type="cash",
+        right="",
+        strike_price="",
+    )
+    items = _success(payload, "get_quotes", default=[])
+    first = _as_list(items)
+    quote = first[0] if first else {}
+    if not isinstance(quote, Mapping):
+        quote = {}
+
+    return {
+        "status": "ok",
+        "profile": profile,
+        "is_paper": is_paper,
+        "paper_guard": PAPER_GUARD if is_paper else "read_only",
+        "readonly": not is_paper,
+        "symbol": str(symbol or "").strip().upper(),
+        "stock_code": stock_code,
+        "quote": {
+            "bid": _first_number(
+                quote,
+                "best_bid_price",
+                "best_bid",
+                "bid",
+            ),
+            "ask": _first_number(
+                quote,
+                "best_offer_price",
+                "best_ask_price",
+                "ask",
+            ),
+            "last": _first_number(quote, "ltp", "last"),
+            "open": _first_number(quote, "open"),
+            "high": _first_number(quote, "high"),
+            "low": _first_number(quote, "low"),
+            "close": _first_number(
+                quote,
+                "previous_close",
+                "close",
+            ),
+            "volume": _first_number(
+                quote,
+                "total_quantity_traded",
+                "volume",
+            ),
+            "time": quote.get("ltt"),
+        },
     }
 
 
@@ -596,8 +1227,8 @@ def _resolve_stock_code(
 
 
 def _order_to_dict(item: Mapping[str, Any]) -> dict[str, Any]:
-    quantity = _number(item.get("quantity"))
-    pending = _number(item.get("pending_quantity"))
+    quantity = _first_number(item, "quantity")
+    pending = _first_number(item, "pending_quantity")
     return {
         "order_id": str(item.get("order_id") or ""),
         "symbol": item.get("stock_code"),
@@ -607,25 +1238,121 @@ def _order_to_dict(item: Mapping[str, Any]) -> dict[str, Any]:
         "quantity": quantity,
         "filled_quantity": max(0.0, quantity - pending),
         "pending_quantity": pending,
-        "price": _number(item.get("price")),
-        "average_price": _number(item.get("average_price")),
+        "price": _first_number(item, "price"),
+        "average_price": _first_number(item, "average_price"),
         "exchange": item.get("exchange_code"),
         "product_type": item.get("product_type"),
         "time": item.get("order_datetime"),
     }
 
 
+def _paper_order_public(item: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "order_id": str(item.get("order_id") or ""),
+        "symbol": item.get("symbol"),
+        "side": item.get("side"),
+        "order_type": item.get("order_type"),
+        "status": item.get("status"),
+        "order_status": item.get("status"),
+        "quantity": item.get("quantity"),
+        "filled_quantity": item.get("filled_quantity"),
+        "pending_quantity": (
+            int(item.get("quantity") or 0)
+            - int(item.get("filled_quantity") or 0)
+        ),
+        "limit_price": item.get("limit_price"),
+        "price": item.get("limit_price"),
+        "average_price": item.get("average_price"),
+        "exchange": item.get("exchange"),
+        "product_type": item.get("product_type"),
+        "time": item.get("created_at"),
+        "created_at": item.get("created_at"),
+        "updated_at": item.get("updated_at"),
+        "paper": True,
+        "broker_write_called": False,
+        "charges": item.get("charges", 0.0),
+        "charges_model": item.get(
+            "charges_model",
+            "not_included_v1",
+        ),
+    }
+
+
 def _bar_to_dict(item: Any) -> dict[str, Any]:
     if not isinstance(item, Mapping):
         return {}
+    timestamp = str(item.get("datetime") or "")
     return {
-        "time": str(item.get("datetime") or ""),
-        "open": _number(item.get("open")),
-        "high": _number(item.get("high")),
-        "low": _number(item.get("low")),
-        "close": _number(item.get("close")),
-        "volume": _number(item.get("volume")),
+        "date": timestamp,
+        "time": timestamp,
+        "open": _first_number(item, "open"),
+        "high": _first_number(item, "high"),
+        "low": _first_number(item, "low"),
+        "close": _first_number(item, "close"),
+        "volume": _first_number(item, "volume"),
     }
+
+
+def _ledger_path() -> Path:
+    return get_runtime_root() / PAPER_LEDGER_FILENAME
+
+
+def _new_ledger(config: ICICIBreezeConfig) -> dict[str, Any]:
+    now = _now_iso()
+    return {
+        "version": 1,
+        "broker": "icici_breeze",
+        "environment": "paper",
+        "starting_cash": round(config.paper_starting_cash, 8),
+        "cash": round(config.paper_starting_cash, 8),
+        "realized_pnl": 0.0,
+        "positions": {},
+        "orders": [],
+        "created_at": now,
+        "updated_at": now,
+        "charges_model": "not_included_v1",
+    }
+
+
+def _load_ledger(config: ICICIBreezeConfig) -> dict[str, Any]:
+    path = _ledger_path()
+    if not path.exists():
+        ledger = _new_ledger(config)
+        _save_ledger(ledger)
+        return ledger
+    try:
+        ledger = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise ICICIBreezeConfigError(
+            f"invalid ICICI paper ledger at {path}: {exc}"
+        ) from exc
+    if not isinstance(ledger, dict):
+        raise ICICIBreezeConfigError(
+            f"invalid ICICI paper ledger at {path}: root must be an object"
+        )
+    ledger.setdefault("positions", {})
+    ledger.setdefault("orders", [])
+    ledger.setdefault("realized_pnl", 0.0)
+    ledger.setdefault("starting_cash", config.paper_starting_cash)
+    ledger.setdefault("cash", config.paper_starting_cash)
+    return ledger
+
+
+def _save_ledger(ledger: Mapping[str, Any]) -> None:
+    path = _ledger_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = dict(ledger)
+    payload["updated_at"] = _now_iso()
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    temp.replace(path)
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def _public_config(config: ICICIBreezeConfig) -> dict[str, Any]:
@@ -642,6 +1369,27 @@ def _as_list(value: Any) -> list[Any]:
     return [value]
 
 
+def _first_number(
+    mapping: Mapping[str, Any],
+    *keys: str,
+) -> float:
+    for key in keys:
+        value = mapping.get(key)
+        if value not in (None, ""):
+            number = _number(value)
+            if number or str(value).strip() in {"0", "0.0"}:
+                return number
+    return 0.0
+
+
+def _first_positive(*values: Any) -> float:
+    for value in values:
+        number = _number(value)
+        if number > 0:
+            return number
+    return 0.0
+
+
 def _number(value: Any) -> float:
     try:
         return float(value or 0)
@@ -649,8 +1397,45 @@ def _number(value: Any) -> float:
         return 0.0
 
 
+def _positive_number(value: Any, name: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ICICIBreezeConfigError(
+            f"{name} must be a number"
+        ) from exc
+    if not math.isfinite(number) or number <= 0:
+        raise ICICIBreezeConfigError(
+            f"{name} must be positive"
+        )
+    return number
+
+
+def _execution_reference(
+    quote: Mapping[str, Any],
+    side: str,
+) -> float:
+    if side == "buy":
+        return _first_positive(
+            quote.get("ask"),
+            quote.get("last"),
+            quote.get("close"),
+        )
+    return _first_positive(
+        quote.get("bid"),
+        quote.get("last"),
+        quote.get("close"),
+    )
+
+
 def _iso_z(value: datetime) -> str:
     """Format a Breeze timestamp as YYYY-MM-DDTHH:MM:SS.000Z."""
     return value.astimezone(timezone.utc).strftime(
         "%Y-%m-%dT%H:%M:%S.000Z"
     )
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
