@@ -2415,9 +2415,9 @@ pathable==0.6.0 \
     --hash=sha256:6404b8b82aef5ff0fd478934137128b99b12212ba35afdde5525ca4f8388ea58 \
     --hash=sha256:82c4ca6c98c502ad12e0d4e9779b6210afee93c38990988c8c5d1b49bdcdf566
     # via jsonschema-path
-peewee==4.1.2 \
-    --hash=sha256:484abd54316c58e5fcdc83bcab638db906f22bfdf44a33e01acd487938011c79 \
-    --hash=sha256:eee0fe2fbaa49b36d758c2baeeafd9fd586171ed1256ec91c804f7c1b846af4f
+peewee==4.2.1 \
+    --hash=sha256:43cac221a1005ccf543f084c48b792e71b3dcc0075a95182ddc35227e18b2676 \
+    --hash=sha256:839ea4900754f1e74061e5945cee348eaf71483b9d94aeb06616078d303d00ed
     # via yfinance
 pillow==12.3.0 \
     --hash=sha256:00808c5e14ef63ac5161091d242999076604ff74b883423a11e5d7bbb38bf756 \
