@@ -289,6 +289,28 @@ class TestCalcMetrics:
         if m["annual_return"] > 0:
             assert m["calmar"] > 0
 
+    def test_zero_final_equity(self) -> None:
+        """A full wipeout (equity reaches 0) annualises to -100%, not a crash."""
+        dates = pd.bdate_range("2025-01-01", periods=252)
+        eq = pd.Series(np.linspace(1_000_000, 0.0, 252), index=dates)
+        m = calc_metrics(eq, [], 1_000_000, 252)
+        assert m["total_return"] == pytest.approx(-1.0)
+        assert m["annual_return"] == pytest.approx(-1.0)
+
+    def test_negative_final_equity_does_not_crash(self) -> None:
+        """A leveraged/short book can end below zero equity (total_return < -1).
+
+        ``(1 + total_return) ** fractional`` would raise a negative base to a
+        fractional power (a ``complex``) and crash ``float(...)``; the metric
+        must instead report a -100% annualised return.
+        """
+        dates = pd.bdate_range("2025-01-01", periods=252)
+        eq = pd.Series(np.linspace(1_000_000, -500_000, 252), index=dates)
+        m = calc_metrics(eq, [], 1_000_000, 252)
+        assert m["total_return"] == pytest.approx(-1.5)
+        assert m["annual_return"] == pytest.approx(-1.0)
+        assert m["final_value"] == pytest.approx(-500_000)
+
 
 # ---------------------------------------------------------------------------
 # turnover

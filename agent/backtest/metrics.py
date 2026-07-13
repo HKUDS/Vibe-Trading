@@ -213,7 +213,15 @@ def calc_metrics(
     port_ret = equity_curve.pct_change().fillna(0.0)
 
     total_ret = float(equity_curve.iloc[-1] / initial_cash - 1)
-    ann_ret = float((1 + total_ret) ** (bpy / max(n, 1)) - 1)
+    # A leveraged/short book can end at or below zero equity (``total_ret <= -1``).
+    # ``(1 + total_ret) ** fractional`` would then raise a negative base to a
+    # fractional power, which Python evaluates to a ``complex`` and crashes the
+    # subsequent ``float(...)``. A total wipeout annualises to -100%.
+    growth = 1 + total_ret
+    if growth <= 0:
+        ann_ret = -1.0
+    else:
+        ann_ret = float(growth ** (bpy / max(n, 1)) - 1)
     vol = float(port_ret.std())
     sharpe = float(port_ret.mean() / (vol + 1e-10) * np.sqrt(bpy))
 
