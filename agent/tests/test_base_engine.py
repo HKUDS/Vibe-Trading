@@ -485,6 +485,7 @@ class TestArtifacts:
             holding_days=2,
         ))
 
+        artifact_metrics = {"sharpe": 1.0}
         engine._write_artifacts(
             run_dir,
             data_map,
@@ -493,9 +494,11 @@ class TestArtifacts:
             bench_equity,
             bench_ret,
             target_pos,
-            {"sharpe": 1.0},
+            artifact_metrics,
             ["X"],
         )
+        assert "mean_hhi" in artifact_metrics
+        assert "maximum_largest_absolute_weight" in artifact_metrics
 
         trades_df = pd.read_csv(run_dir / "artifacts" / "trades.csv")
         expected_columns = {
@@ -522,6 +525,13 @@ class TestArtifacts:
             assert (artifacts / legacy_name).is_file()
         for new_name in ("fills.csv", "executed_positions.csv", "daily_accounting.csv"):
             assert (artifacts / new_name).is_file()
+        for report_name in (
+            "performance_summary.json", "performance_summary.csv",
+            "monthly_returns.csv", "drawdown_periods.csv",
+            "asset_attribution.csv", "cost_reconciliation.csv",
+            "concentration.csv", "performance_report.md",
+        ):
+            assert (artifacts / report_name).is_file()
 
         fills_df = pd.read_csv(artifacts / "fills.csv")
         assert fills_df.empty

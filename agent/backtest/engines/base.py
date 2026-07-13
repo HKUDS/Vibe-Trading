@@ -39,6 +39,7 @@ from backtest.metrics import (
     calc_turnover_series,
 )
 from backtest.models import EquitySnapshot, FillRecord, Position, TradeRecord
+from backtest.reporting import build_reporting_outputs, write_reporting_outputs
 
 logger = logging.getLogger(__name__)
 
@@ -533,6 +534,7 @@ class BaseEngine(ABC):
         self._write_artifacts(
             run_dir, data_map, dates, equity_series, bench_equity, bench_ret,
             target_pos, m, valid_codes, executed_positions, daily_accounting,
+            bars_per_year=bars_per_year,
         )
 
         # 9. Trust Layer run card
@@ -992,6 +994,7 @@ class BaseEngine(ABC):
         codes: List[str],
         executed_positions: Optional[pd.DataFrame] = None,
         daily_accounting: Optional[pd.DataFrame] = None,
+        bars_per_year: Optional[int] = 252,
     ) -> None:
         """Write CSV artifacts compatible with daily_portfolio format."""
         out = run_dir / "artifacts"
@@ -1065,6 +1068,18 @@ class BaseEngine(ABC):
             )
         daily_accounting.index.name = "timestamp"
         daily_accounting.to_csv(out / "daily_accounting.csv")
+
+        reporting_outputs = build_reporting_outputs(
+            daily_accounting=daily_accounting,
+            executed_positions=executed_positions,
+            trades=self.trades,
+            fills=self.fills,
+            scalar_metrics=metrics,
+            starting_capital=self.initial_capital,
+            bars_per_year=bars_per_year,
+        )
+        metrics.update(reporting_outputs["concentration_metrics"])
+        write_reporting_outputs(out, reporting_outputs)
 
         # Trades (compatible format)
         trade_rows = []
