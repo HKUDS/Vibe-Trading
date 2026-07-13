@@ -1,4 +1,4 @@
-# Core LLM & Orchestration
+﻿# Core LLM & Orchestration
 rich>=13.0.0
 prompt_toolkit>=3.0.0
 pyyaml>=6.0.0
@@ -41,6 +41,7 @@ defusedxml>=0.7.1
 yfinance>=0.2.30
 akshare>=1.12.0
 ccxt>=4.0.0
+longbridge>=0.2.5  # LongPort/Longbridge OpenAPI SDK for US/HK equity data and trading
 
 # REST API & SSE
 fastapi>=0.104.0
