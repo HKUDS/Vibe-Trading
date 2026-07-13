@@ -22,7 +22,7 @@
     "lucide-react": "^0.460.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-i18next": "^17.0.8",
+    "react-i18next": "^17.0.9",
     "react-markdown": "^9.0.0",
     "react-router-dom": "^7.15.0",
     "rehype-highlight": "^7.0.0",
