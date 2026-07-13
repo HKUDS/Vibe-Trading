@@ -934,8 +934,9 @@ skills:
 <summary><b>Cursor / Windsurf / عملاء MCP آخرون</b></summary>
 
 ```bash
-vibe-trading-mcp                  # stdio (default)
-vibe-trading-mcp --transport sse  # SSE for web clients
+vibe-trading-mcp                   # stdio (default)
+vibe-trading-mcp --transport http  # Streamable HTTP (spec default) at /mcp
+vibe-trading-mcp --transport sse   # legacy SSE (deprecated)
 ```
 
 </details>

@@ -19,7 +19,14 @@ order-cancelling tool is ever surfaced via MCP.
 
 Usage:
     python mcp_server.py                    # stdio transport (default)
-    python mcp_server.py --transport sse    # SSE transport for web clients
+    python mcp_server.py --transport sse    # legacy SSE transport (GET /sse + POST /messages/)
+    python mcp_server.py --transport http   # Streamable HTTP transport (single POST/GET /mcp endpoint)
+
+The ``http`` (Streamable HTTP) transport is the current MCP spec default
+(2025-03-26+). Modern clients (e.g. QwenPaw, and clients that negotiate by
+POSTing an InitializeRequest) require it; the legacy ``sse`` transport is
+deprecated. The single endpoint is served at ``/mcp``, so point HTTP clients
+at ``http://<host>:<port>/mcp`` (NOT ``/sse``, which is a legacy-SSE artifact).
 
 OpenClaw config (~/.openclaw/config.yaml):
     skills:
@@ -1895,8 +1902,21 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Vibe-Trading MCP Server")
-    parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio", help="MCP transport (default: stdio)")
-    parser.add_argument("--port", type=int, default=8900, help="SSE port (only used with --transport sse)")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "http"],
+        default="stdio",
+        help="MCP transport (default: stdio). 'http' = Streamable HTTP (current spec default), "
+        "served at POST/GET /mcp. 'sse' = legacy deprecated SSE (GET /sse + POST /messages/).",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Streamable HTTP bind host, --transport http only (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port", type=int, default=8900, help="SSE/HTTP port (default: 8900)"
+    )
     args = parser.parse_args()
     _include_shell_tools = True if args.transport == "stdio" else _env_shell_tools_enabled()
     _registry = None
@@ -1904,6 +1924,11 @@ def main():
 
     if args.transport == "sse":
         mcp.run(transport="sse", port=args.port)
+    elif args.transport == "http":
+        # Streamable HTTP (MCP spec 2025-03-26+): single endpoint at /mcp that
+        # accepts POST (requests) and GET (notification stream). Replaces the
+        # deprecated two-endpoint SSE transport for modern clients.
+        mcp.run(transport="streamable-http", host=args.host, port=args.port)
     else:
         mcp.run()
 

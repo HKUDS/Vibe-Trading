@@ -967,9 +967,17 @@ profile. `run_swarm` requires an LLM key.
 <summary><b>Cursor / Windsurf / other MCP clients</b></summary>
 
 ```bash
-vibe-trading-mcp                  # stdio (default)
-vibe-trading-mcp --transport sse  # SSE for web clients
+vibe-trading-mcp                   # stdio (default)
+vibe-trading-mcp --transport http  # Streamable HTTP (current MCP spec default) at http://127.0.0.1:8900/mcp
+vibe-trading-mcp --transport sse   # legacy SSE (deprecated) for older clients
 ```
+
+For HTTP clients (QwenPaw, and any client that negotiates by POSTing an
+`InitializeRequest`), use `--transport http` and point the client at the single
+`/mcp` endpoint — e.g. `http://127.0.0.1:8900/mcp`. Do **not** point an HTTP
+client at `/sse`; that path belongs to the deprecated two-endpoint SSE transport
+and will return `405 Method Not Allowed` on `POST`. Override the bind address
+with `--host` / `--port`.
 
 </details>
 
