@@ -33,6 +33,9 @@ class Position:
     leverage: float = 1.0
     entry_bar_idx: int = 0
     entry_commission: float = 0.0
+    entry_decision_price: float | None = None
+    entry_slippage_cost: float = 0.0
+    signal_time: pd.Timestamp | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,13 @@ class TradeRecord:
     exit_reason: str
     holding_bars: int
     commission: float
+    signal_time: pd.Timestamp | None = None
+    entry_decision_price: float | None = None
+    exit_decision_price: float | None = None
+    gross_pnl: float | None = None
+    slippage_cost: float = 0.0
+    net_pnl: float | None = None
+    holding_days: int | None = None
 
 
 @dataclass(frozen=True)

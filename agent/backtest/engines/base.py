@@ -41,6 +41,38 @@ from backtest.models import EquitySnapshot, Position, TradeRecord
 logger = logging.getLogger(__name__)
 
 
+def _safe_signal_time(df: pd.DataFrame, ts: pd.Timestamp) -> pd.Timestamp | None:
+    """Return the prior symbol-local timestamp for a next-bar execution signal."""
+    try:
+        loc = df.index.get_loc(ts)
+    except Exception:
+        return None
+
+    if isinstance(loc, slice):
+        loc = loc.start
+    elif isinstance(loc, np.ndarray):
+        if len(loc) == 0:
+            return None
+        loc = int(loc[0])
+
+    if not isinstance(loc, (int, np.integer)) or int(loc) <= 0:
+        return None
+    try:
+        return pd.Timestamp(df.index[int(loc) - 1])
+    except Exception:
+        return None
+
+
+def _safe_holding_days(entry_time: Any, exit_time: Any, fallback: int) -> int:
+    """Compute holding days safely with a legacy-friendly fallback."""
+    try:
+        entry_ts = pd.Timestamp(entry_time)
+        exit_ts = pd.Timestamp(exit_time)
+        return max(int((exit_ts - entry_ts).days), 0)
+    except Exception:
+        return max(int(fallback), 0)
+
+
 def _run_card_data_sources(config: Dict[str, Any], loader: Any) -> List[str]:
     """Return source names for run-card evidence."""
     configured = config.get("_run_card_effective_sources")
@@ -624,7 +656,13 @@ class BaseEngine(ABC):
                 if self.can_execute(symbol, 0, bar):
                     open_price = float(bar.get("open", bar.get("close", 0)))
                     price = self.apply_slippage(open_price, -current_pos.direction)
-                    self._close_position(symbol, price, ts, "signal")
+                    self._close_position(
+                        symbol,
+                        price,
+                        ts,
+                        "signal",
+                        exit_decision_price=open_price,
+                    )
                 else:
                     return  # blocked (e.g. limit-down can't sell)
 
@@ -638,6 +676,7 @@ class BaseEngine(ABC):
                 return
 
             slipped = self.apply_slippage(open_price, target_dir)
+            signal_time = _safe_signal_time(df, ts)
             leverage = self.default_leverage
             target_notional = abs(target_weight) * equity * leverage
             raw_size = self._calc_raw_size(symbol, target_notional, slipped)
@@ -661,6 +700,7 @@ class BaseEngine(ABC):
                 margin = self._calc_margin(symbol, size, slipped, leverage)
                 comm = self.calc_commission(size, slipped, target_dir, is_open=True)
 
+            entry_slippage_cost = target_dir * size * (slipped - open_price)
             self.capital -= (margin + comm)
             self.positions[symbol] = Position(
                 symbol=symbol,
@@ -671,6 +711,9 @@ class BaseEngine(ABC):
                 leverage=leverage,
                 entry_bar_idx=self._bar_idx,
                 entry_commission=comm,
+                entry_decision_price=open_price,
+                entry_slippage_cost=entry_slippage_cost,
+                signal_time=signal_time,
             )
 
     def _close_position(
@@ -679,6 +722,7 @@ class BaseEngine(ABC):
         exit_price: float,
         exit_time: pd.Timestamp,
         reason: str,
+        exit_decision_price: float | None = None,
     ) -> None:
         """Close position, record trade, return capital."""
         self._active_symbol = symbol
@@ -686,14 +730,31 @@ class BaseEngine(ABC):
         if pos is None:
             return
 
+        entry_decision_price = (
+            pos.entry_decision_price if pos.entry_decision_price is not None else pos.entry_price
+        )
+        effective_exit_decision_price = (
+            exit_decision_price if exit_decision_price is not None else exit_price
+        )
         pnl = self._calc_pnl(symbol, pos.direction, pos.size, pos.entry_price, exit_price)
+        gross_pnl = self._calc_pnl(
+            symbol,
+            pos.direction,
+            pos.size,
+            entry_decision_price,
+            effective_exit_decision_price,
+        )
+        slippage_cost = gross_pnl - pnl
         margin = self._calc_margin(symbol, pos.size, pos.entry_price, pos.leverage)
         pnl_pct = pnl / margin * 100 if margin > 1e-9 else 0.0
         exit_comm = self.calc_commission(pos.size, exit_price, pos.direction, is_open=False)
+        total_commission = pos.entry_commission + exit_comm
+        net_pnl = gross_pnl - total_commission - slippage_cost
 
         self.capital += margin + pnl - exit_comm
 
         holding_bars = max(self._bar_idx - pos.entry_bar_idx, 0)
+        holding_days = _safe_holding_days(pos.entry_time, exit_time, holding_bars)
 
         self.trades.append(TradeRecord(
             symbol=symbol,
@@ -708,7 +769,14 @@ class BaseEngine(ABC):
             pnl_pct=pnl_pct,
             exit_reason=reason,
             holding_bars=holding_bars,
-            commission=pos.entry_commission + exit_comm,
+            commission=total_commission,
+            signal_time=pos.signal_time,
+            entry_decision_price=entry_decision_price,
+            exit_decision_price=effective_exit_decision_price,
+            gross_pnl=gross_pnl,
+            slippage_cost=slippage_cost,
+            net_pnl=net_pnl,
+            holding_days=holding_days,
         ))
 
     # ── Artifacts ──
@@ -760,30 +828,63 @@ class BaseEngine(ABC):
                 "code": t.symbol,
                 "side": "buy" if t.direction == 1 else "sell",
                 "price": round(t.entry_price, 4),
+                "signal_time": str(t.signal_time) if t.signal_time is not None else "",
+                "decision_price": (
+                    round(t.entry_decision_price, 4)
+                    if t.entry_decision_price is not None else ""
+                ),
+                "fill_price": round(t.entry_price, 4),
                 "qty": round(t.size, 6),
                 "reason": "signal",
                 "pnl": 0.0,
+                "gross_pnl": 0.0,
+                "commission": 0.0,
+                "slippage_cost": 0.0,
+                "net_pnl": 0.0,
                 "holding_days": 0,
                 "return_pct": 0.0,
             })
             # Exit event
-            try:
-                hold_days = (t.exit_time - t.entry_time).days
-            except Exception:
-                hold_days = 0
             trade_rows.append({
                 "timestamp": str(t.exit_time.date()) if hasattr(t.exit_time, "date") else str(t.exit_time),
                 "code": t.symbol,
                 "side": "sell" if t.direction == 1 else "buy",
                 "price": round(t.exit_price, 4),
+                "signal_time": str(t.signal_time) if t.signal_time is not None else "",
+                "decision_price": (
+                    round(t.exit_decision_price, 4)
+                    if t.exit_decision_price is not None else ""
+                ),
+                "fill_price": round(t.exit_price, 4),
                 "qty": round(t.size, 6),
                 "reason": t.exit_reason,
                 "pnl": round(t.pnl, 4),
-                "holding_days": hold_days,
+                "gross_pnl": round(t.gross_pnl, 4) if t.gross_pnl is not None else "",
+                "commission": round(t.commission, 4),
+                "slippage_cost": round(t.slippage_cost, 4),
+                "net_pnl": round(t.net_pnl, 4) if t.net_pnl is not None else "",
+                "holding_days": t.holding_days if t.holding_days is not None else 0,
                 "return_pct": round(t.pnl_pct, 2),
             })
 
-        trade_cols = ["timestamp", "code", "side", "price", "qty", "reason", "pnl", "holding_days", "return_pct"]
+        trade_cols = [
+            "timestamp",
+            "code",
+            "side",
+            "price",
+            "signal_time",
+            "decision_price",
+            "fill_price",
+            "qty",
+            "reason",
+            "pnl",
+            "gross_pnl",
+            "commission",
+            "slippage_cost",
+            "net_pnl",
+            "holding_days",
+            "return_pct",
+        ]
         pd.DataFrame(trade_rows or [], columns=trade_cols).to_csv(out / "trades.csv", index=False)
 
         # Metrics
