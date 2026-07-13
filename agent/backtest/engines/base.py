@@ -34,9 +34,11 @@ from backtest.loaders.tushare_fundamentals import (
 from backtest.metrics import (
     by_exit_reason_stats,
     by_symbol_stats,
+    calc_execution_metrics,
     calc_metrics,
+    calc_turnover_series,
 )
-from backtest.models import EquitySnapshot, Position, TradeRecord
+from backtest.models import EquitySnapshot, FillRecord, Position, TradeRecord
 
 logger = logging.getLogger(__name__)
 
@@ -303,7 +305,9 @@ class BaseEngine(ABC):
         self.capital: float = self.initial_capital
         self.positions: Dict[str, Position] = {}
         self.trades: List[TradeRecord] = []
+        self.fills: List[FillRecord] = []
         self.equity_snapshots: List[EquitySnapshot] = []
+        self.executed_position_weights: List[Dict[str, Any]] = []
         self._bar_idx: int = 0
         self._active_symbol: str = ""  # set by _rebalance/_close_position for subclass use
 
@@ -468,6 +472,12 @@ class BaseEngine(ABC):
             [s.equity for s in self.equity_snapshots],
             index=[s.timestamp for s in self.equity_snapshots],
         )
+        executed_positions = self._executed_positions_frame(dates, valid_codes)
+        daily_accounting = self._build_daily_accounting(
+            equity_series,
+            executed_positions,
+            dates,
+        )
         bench_ret = ret_df.mean(axis=1) if ret_df.shape[1] > 0 else pd.Series(0.0, index=dates)
         benchmark_metadata = {}
 
@@ -495,6 +505,12 @@ class BaseEngine(ABC):
 
         # 6. Metrics
         m = calc_metrics(equity_series, self.trades, self.initial_capital, bars_per_year, bench_ret, target_pos)
+        m.update(calc_execution_metrics(
+            executed_positions,
+            self.fills,
+            observation_count=len(equity_series),
+            bars_per_year=bars_per_year,
+        ))
         m.update(benchmark_metadata)
         m["by_symbol"] = by_symbol_stats(self.trades)
         m["by_exit_reason"] = by_exit_reason_stats(self.trades)
@@ -516,7 +532,7 @@ class BaseEngine(ABC):
         # 8. Artifacts
         self._write_artifacts(
             run_dir, data_map, dates, equity_series, bench_equity, bench_ret,
-            target_pos, m, valid_codes,
+            target_pos, m, valid_codes, executed_positions, daily_accounting,
         )
 
         # 9. Trust Layer run card
@@ -585,13 +601,37 @@ class BaseEngine(ABC):
                 equity=snap_equity,
                 positions=len(self.positions),
             ))
+            self._record_executed_position_weights(
+                ts,
+                close_df,
+                snap_equity,
+                codes,
+            )
 
         # d. Force close all remaining positions
         if len(dates) > 0:
             last_ts = dates[-1]
             for c in list(self.positions.keys()):
                 price = self._safe_price(close_df, last_ts, c, self.positions[c].entry_price)
-                self._close_position(c, price, last_ts, "end_of_backtest")
+                self._close_position(
+                    c,
+                    price,
+                    last_ts,
+                    "end_of_backtest",
+                    exit_decision_price=price,
+                )
+            # Forced closes execute on the final timestamp after the legacy
+            # equity snapshot. Replace only the execution-weight snapshot so
+            # the fill ledger and turnover reflect the actual flat portfolio;
+            # existing equity/capital semantics remain unchanged.
+            if self.executed_position_weights:
+                self._record_executed_position_weights(
+                    last_ts,
+                    close_df,
+                    self._calc_equity(close_df, last_ts),
+                    codes,
+                    replace_last=True,
+                )
 
     def _calc_equity(self, close_df: pd.DataFrame, ts: pd.Timestamp) -> float:
         """Total equity = free cash + sum(margin + unrealised) per position.
@@ -627,6 +667,120 @@ class BaseEngine(ABC):
             unrealized = self._calc_pnl(sym, pos.direction, pos.size, pos.entry_price, cp)
             equity += margin + unrealized
         return equity
+
+    def _record_executed_position_weights(
+        self,
+        ts: pd.Timestamp,
+        close_df: pd.DataFrame,
+        equity: float,
+        codes: List[str],
+        *,
+        replace_last: bool = False,
+    ) -> None:
+        """Record signed post-execution weights using current marked prices."""
+        row: Dict[str, Any] = {"timestamp": pd.Timestamp(ts)}
+        row.update({code: 0.0 for code in codes})
+
+        if np.isfinite(equity) and abs(equity) > 1e-12:
+            for symbol, pos in self.positions.items():
+                current_price = self._safe_price(close_df, ts, symbol, pos.entry_price)
+                # Margin * leverage recovers current notional and respects
+                # futures contract multipliers through the shared margin hook.
+                notional = self._calc_margin(
+                    symbol,
+                    pos.size,
+                    current_price,
+                    pos.leverage,
+                ) * pos.leverage
+                row[symbol] = pos.direction * notional / equity
+
+        if (
+            replace_last
+            and self.executed_position_weights
+            and self.executed_position_weights[-1].get("timestamp") == pd.Timestamp(ts)
+        ):
+            self.executed_position_weights[-1] = row
+        else:
+            self.executed_position_weights.append(row)
+
+    def _executed_positions_frame(
+        self,
+        dates: pd.DatetimeIndex,
+        codes: List[str],
+    ) -> pd.DataFrame:
+        """Return execution-weight snapshots aligned to every backtest bar."""
+        if not self.executed_position_weights:
+            frame = pd.DataFrame(0.0, index=dates, columns=codes)
+        else:
+            frame = pd.DataFrame(self.executed_position_weights)
+            frame["timestamp"] = pd.to_datetime(frame["timestamp"])
+            frame = frame.drop_duplicates("timestamp", keep="last").set_index("timestamp")
+            frame = frame.reindex(index=dates, columns=codes).fillna(0.0)
+        frame.index.name = "timestamp"
+        return frame.astype(float)
+
+    def _build_daily_accounting(
+        self,
+        equity_series: pd.Series,
+        executed_positions: pd.DataFrame,
+        dates: pd.DatetimeIndex,
+    ) -> pd.DataFrame:
+        """Build reconciled daily net/gross accounting from actual fills.
+
+        ``gross_return`` is a cost-added reconciliation series:
+        ``net_return + cost_rate``. It is not a separately simulated no-cost
+        execution run. The first row uses initial capital as previous equity;
+        later rows use the prior observed equity. A zero denominator produces
+        a deterministic zero return/cost rate.
+        """
+        index = pd.DatetimeIndex(dates)
+        equity = equity_series.reindex(index).astype(float)
+        previous_equity = equity.shift(1)
+        if len(previous_equity) > 0:
+            previous_equity.iloc[0] = self.initial_capital
+        safe_previous = previous_equity.where(previous_equity.abs() > 1e-12)
+        net_return = ((equity - previous_equity) / safe_previous).fillna(0.0)
+
+        daily_commission = pd.Series(0.0, index=index)
+        daily_slippage = pd.Series(0.0, index=index)
+        if self.fills:
+            fill_costs = pd.DataFrame({
+                "timestamp": [pd.Timestamp(fill.timestamp) for fill in self.fills],
+                "commission": [float(fill.commission) for fill in self.fills],
+                "slippage_cost": [float(fill.slippage_cost) for fill in self.fills],
+            }).groupby("timestamp")[["commission", "slippage_cost"]].sum()
+            daily_commission = fill_costs["commission"].reindex(index).fillna(0.0)
+            daily_slippage = fill_costs["slippage_cost"].reindex(index).fillna(0.0)
+
+        daily_total_cost = daily_commission + daily_slippage
+        cost_rate = (daily_total_cost / safe_previous).fillna(0.0)
+        gross_return = net_return + cost_rate
+        gross_equity = self.initial_capital * (1.0 + gross_return).cumprod()
+
+        positions = executed_positions.reindex(index=index).fillna(0.0)
+        one_way_turnover = calc_turnover_series(positions).reindex(index).fillna(0.0)
+        gross_exposure = positions.abs().sum(axis=1)
+        net_exposure = positions.sum(axis=1)
+        long_exposure = positions.clip(lower=0.0).sum(axis=1)
+        short_exposure = -positions.clip(upper=0.0).sum(axis=1)
+
+        accounting = pd.DataFrame({
+            "net_return": net_return,
+            "gross_return": gross_return,
+            "daily_commission": daily_commission,
+            "daily_slippage_cost": daily_slippage,
+            "daily_total_cost": daily_total_cost,
+            "cost_rate": cost_rate,
+            "one_way_turnover": one_way_turnover,
+            "gross_exposure": gross_exposure,
+            "net_exposure": net_exposure,
+            "long_exposure": long_exposure,
+            "short_exposure": short_exposure,
+            "equity": equity,
+            "gross_equity": gross_equity,
+        }, index=index)
+        accounting.index.name = "timestamp"
+        return accounting
 
     def _rebalance(
         self,
@@ -701,6 +855,13 @@ class BaseEngine(ABC):
                 comm = self.calc_commission(size, slipped, target_dir, is_open=True)
 
             entry_slippage_cost = target_dir * size * (slipped - open_price)
+            fill_entry_slippage_cost = self._calc_pnl(
+                symbol,
+                target_dir,
+                size,
+                open_price,
+                slipped,
+            )
             self.capital -= (margin + comm)
             self.positions[symbol] = Position(
                 symbol=symbol,
@@ -715,6 +876,20 @@ class BaseEngine(ABC):
                 entry_slippage_cost=entry_slippage_cost,
                 signal_time=signal_time,
             )
+            self.fills.append(FillRecord(
+                timestamp=pd.Timestamp(ts),
+                symbol=symbol,
+                side="buy" if target_dir == 1 else "sell",
+                event_type="entry",
+                direction=target_dir,
+                quantity=abs(float(size)),
+                decision_price=float(open_price),
+                fill_price=float(slipped),
+                notional=abs(float(size)) * float(slipped),
+                commission=float(comm),
+                slippage_cost=float(fill_entry_slippage_cost),
+                reason="signal",
+            ))
 
     def _close_position(
         self,
@@ -750,11 +925,34 @@ class BaseEngine(ABC):
         exit_comm = self.calc_commission(pos.size, exit_price, pos.direction, is_open=False)
         total_commission = pos.entry_commission + exit_comm
         net_pnl = gross_pnl - total_commission - slippage_cost
+        exit_order_direction = -pos.direction
+        exit_slippage_cost = self._calc_pnl(
+            symbol,
+            exit_order_direction,
+            pos.size,
+            effective_exit_decision_price,
+            exit_price,
+        )
 
         self.capital += margin + pnl - exit_comm
 
         holding_bars = max(self._bar_idx - pos.entry_bar_idx, 0)
         holding_days = _safe_holding_days(pos.entry_time, exit_time, holding_bars)
+
+        self.fills.append(FillRecord(
+            timestamp=pd.Timestamp(exit_time),
+            symbol=symbol,
+            side="sell" if pos.direction == 1 else "buy",
+            event_type="exit",
+            direction=pos.direction,
+            quantity=abs(float(pos.size)),
+            decision_price=float(effective_exit_decision_price),
+            fill_price=float(exit_price),
+            notional=abs(float(pos.size)) * float(exit_price),
+            commission=float(exit_comm),
+            slippage_cost=float(exit_slippage_cost),
+            reason=reason,
+        ))
 
         self.trades.append(TradeRecord(
             symbol=symbol,
@@ -792,6 +990,8 @@ class BaseEngine(ABC):
         target_pos: pd.DataFrame,
         metrics: dict,
         codes: List[str],
+        executed_positions: Optional[pd.DataFrame] = None,
+        daily_accounting: Optional[pd.DataFrame] = None,
     ) -> None:
         """Write CSV artifacts compatible with daily_portfolio format."""
         out = run_dir / "artifacts"
@@ -818,6 +1018,53 @@ class BaseEngine(ABC):
         # Position weights (target, for compatibility)
         target_pos.index.name = "timestamp"
         target_pos.to_csv(out / "positions.csv")
+
+        # Actual post-execution weights are separate from target weights.
+        if executed_positions is None:
+            executed_positions = self._executed_positions_frame(dates, codes)
+        executed_positions = executed_positions.reindex(index=dates, columns=codes).fillna(0.0)
+        executed_positions.index.name = "timestamp"
+        executed_positions.to_csv(out / "executed_positions.csv")
+
+        # Fill ledger is emitted even for a zero-fill backtest.
+        fill_cols = [
+            "timestamp",
+            "symbol",
+            "side",
+            "event_type",
+            "direction",
+            "quantity",
+            "decision_price",
+            "fill_price",
+            "notional",
+            "commission",
+            "slippage_cost",
+            "reason",
+        ]
+        fill_rows = [{
+            "timestamp": fill.timestamp,
+            "symbol": fill.symbol,
+            "side": fill.side,
+            "event_type": fill.event_type,
+            "direction": fill.direction,
+            "quantity": fill.quantity,
+            "decision_price": fill.decision_price,
+            "fill_price": fill.fill_price,
+            "notional": fill.notional,
+            "commission": fill.commission,
+            "slippage_cost": fill.slippage_cost,
+            "reason": fill.reason,
+        } for fill in self.fills]
+        pd.DataFrame(fill_rows, columns=fill_cols).to_csv(out / "fills.csv", index=False)
+
+        if daily_accounting is None:
+            daily_accounting = self._build_daily_accounting(
+                equity_series,
+                executed_positions,
+                dates,
+            )
+        daily_accounting.index.name = "timestamp"
+        daily_accounting.to_csv(out / "daily_accounting.csv")
 
         # Trades (compatible format)
         trade_rows = []

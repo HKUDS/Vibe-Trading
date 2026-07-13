@@ -17,11 +17,12 @@ from backtest.metrics import (
     by_exit_reason_stats,
     by_symbol_stats,
     calc_bars_per_year,
+    calc_execution_metrics,
     calc_metrics,
     calc_turnover_series,
     win_rate_and_stats,
 )
-from backtest.models import TradeRecord
+from backtest.models import FillRecord, TradeRecord
 
 
 # ---------------------------------------------------------------------------
@@ -391,3 +392,46 @@ class TestTurnoverMetrics:
         m = calc_metrics(pd.Series(dtype=float), [], 1_000_000, 252)
         assert m["avg_turnover"] == 0.0
         assert m["total_turnover"] == 0.0
+
+
+class TestExecutionMetrics:
+    def test_cost_turnover_and_exposure_metrics(self) -> None:
+        dates = pd.bdate_range("2025-01-01", periods=2)
+        positions = pd.DataFrame(
+            {"LONG": [0.5, 0.25], "SHORT": [-0.25, 0.0]},
+            index=dates,
+        )
+        fills = [
+            FillRecord(
+                dates[0], "LONG", "buy", "entry", 1, 1.0,
+                10.0, 10.5, 10.5, 1.0, 0.5, "signal",
+            ),
+            FillRecord(
+                dates[1], "LONG", "sell", "exit", 1, 1.0,
+                11.0, 10.5, 10.5, 2.0, 0.5, "signal",
+            ),
+        ]
+
+        metrics = calc_execution_metrics(
+            positions,
+            fills,
+            observation_count=2,
+            bars_per_year=252,
+        )
+
+        # Turnover: 0.5*(0.5+0.25) + 0.5*(0.25+0.25) = 0.625.
+        assert metrics["total_one_way_turnover"] == pytest.approx(0.625)
+        assert metrics["annualized_one_way_turnover"] == pytest.approx(78.75)
+        assert metrics["total_commission"] == pytest.approx(3.0)
+        assert metrics["total_slippage_cost"] == pytest.approx(1.0)
+        assert metrics["total_trading_cost"] == pytest.approx(4.0)
+        assert metrics["mean_gross_exposure"] == pytest.approx(0.5)
+        assert metrics["maximum_gross_exposure"] == pytest.approx(0.75)
+        assert metrics["mean_net_exposure"] == pytest.approx(0.25)
+        assert metrics["mean_active_positions"] == pytest.approx(1.5)
+
+    def test_empty_execution_inputs_are_zero_safe(self) -> None:
+        metrics = calc_execution_metrics(
+            pd.DataFrame(), [], observation_count=0, bars_per_year=None
+        )
+        assert all(value == pytest.approx(0.0) for value in metrics.values())

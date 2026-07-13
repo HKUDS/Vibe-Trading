@@ -81,6 +81,30 @@ class TradeRecord:
 
 
 @dataclass(frozen=True)
+class FillRecord:
+    """A single executed entry or exit fill captured at execution time.
+
+    ``direction`` is the position direction (``1`` long, ``-1`` short), while
+    ``side`` describes the actual order side (``buy`` or ``sell``).  Notional
+    intentionally follows the shared ledger convention of absolute quantity
+    times fill price.
+    """
+
+    timestamp: pd.Timestamp
+    symbol: str
+    side: str
+    event_type: str
+    direction: int
+    quantity: float
+    decision_price: float
+    fill_price: float
+    notional: float
+    commission: float
+    slippage_cost: float
+    reason: str
+
+
+@dataclass(frozen=True)
 class EquitySnapshot:
     """Portfolio state at a single point in time.
 

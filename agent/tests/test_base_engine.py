@@ -10,7 +10,7 @@ import pytest
 
 from backtest.engines.base import BaseEngine, _align, _load_optimizer
 from backtest.engines.china_a import ChinaAEngine
-from backtest.models import Position, TradeRecord
+from backtest.models import FillRecord, Position, TradeRecord
 
 
 class DummyEngine(BaseEngine):
@@ -323,6 +323,129 @@ class TestCalcEquity:
         assert eq == pytest.approx(1_001_000.0)
 
 
+class TestFillLedger:
+    def test_entry_and_exit_create_separate_fills(self) -> None:
+        engine = DummyEngine({"initial_cash": 1_000})
+        dates = pd.DatetimeIndex([pd.Timestamp("2025-01-02"), pd.Timestamp("2025-01-03")])
+        df = pd.DataFrame(
+            {"open": [10.0, 12.0], "close": [10.0, 12.0]},
+            index=dates,
+        )
+
+        engine._rebalance("X", 0.5, df, dates[0], 1_000.0)
+        assert len(engine.fills) == 1
+        entry = engine.fills[0]
+        assert entry.event_type == "entry"
+        assert entry.side == "buy"
+        assert entry.reason == "signal"
+        assert entry.decision_price == pytest.approx(10.0)
+        assert entry.fill_price == pytest.approx(10.5)
+        assert entry.notional == pytest.approx(abs(entry.quantity) * entry.fill_price)
+        assert entry.commission == pytest.approx(entry.quantity * 0.01)
+
+        engine._bar_idx = 1
+        engine._rebalance("X", 0.0, df, dates[1], engine._calc_equity(
+            pd.DataFrame({"X": [10.0, 12.0]}, index=dates), dates[1]
+        ))
+        assert len(engine.fills) == 2
+        exit_fill = engine.fills[1]
+        assert exit_fill.event_type == "exit"
+        assert exit_fill.side == "sell"
+        assert exit_fill.reason == "signal"
+        assert exit_fill.decision_price == pytest.approx(12.0)
+        assert exit_fill.fill_price == pytest.approx(11.5)
+        assert exit_fill.commission == pytest.approx(exit_fill.quantity * 0.02)
+        assert entry.commission != exit_fill.commission
+
+    @pytest.mark.parametrize("target_weight", [0.5, -0.5])
+    def test_adverse_entry_slippage_is_positive(self, target_weight: float) -> None:
+        engine = DummyEngine({"initial_cash": 1_000})
+        ts = pd.Timestamp("2025-01-02")
+        df = pd.DataFrame({"open": [10.0], "close": [10.0]}, index=[ts])
+
+        engine._rebalance("X", target_weight, df, ts, 1_000.0)
+
+        assert len(engine.fills) == 1
+        assert engine.fills[0].slippage_cost > 0.0
+
+    def test_fill_record_is_frozen(self) -> None:
+        fill = FillRecord(
+            pd.Timestamp("2025-01-02"), "X", "buy", "entry", 1,
+            2.0, 10.0, 10.5, 21.0, 0.02, 1.0, "signal",
+        )
+        with pytest.raises(Exception):
+            fill.quantity = 3.0  # type: ignore[misc]
+
+
+class TestExecutedPositionAccounting:
+    def test_weights_and_exposures_use_current_prices_and_equity(self) -> None:
+        engine = DummyEngine({"initial_cash": 1_000})
+        ts = pd.Timestamp("2025-01-02")
+        close_df = pd.DataFrame({"LONG": [20.0], "SHORT": [50.0]}, index=[ts])
+        engine.positions = {
+            "LONG": Position("LONG", 1, 18.0, ts, 5.0),
+            "SHORT": Position("SHORT", -1, 52.0, ts, 2.0),
+        }
+
+        engine._record_executed_position_weights(
+            ts, close_df, 1_000.0, ["LONG", "SHORT"]
+        )
+        weights = engine._executed_positions_frame(
+            pd.DatetimeIndex([ts]), ["LONG", "SHORT"]
+        )
+        assert weights.at[ts, "LONG"] == pytest.approx(0.1)
+        assert weights.at[ts, "SHORT"] == pytest.approx(-0.1)
+
+        accounting = engine._build_daily_accounting(
+            pd.Series([1_000.0], index=[ts]), weights, pd.DatetimeIndex([ts])
+        )
+        row = accounting.loc[ts]
+        assert row["gross_exposure"] == pytest.approx(0.2)
+        assert row["net_exposure"] == pytest.approx(0.0)
+        assert row["long_exposure"] == pytest.approx(0.1)
+        assert row["short_exposure"] == pytest.approx(0.1)
+
+    def test_turnover_first_row_and_weight_changes_are_deterministic(self) -> None:
+        engine = DummyEngine({"initial_cash": 1_000})
+        dates = pd.DatetimeIndex([pd.Timestamp("2025-01-02"), pd.Timestamp("2025-01-03")])
+        weights = pd.DataFrame(
+            {"A": [0.6, 0.2], "B": [-0.2, 0.0]},
+            index=dates,
+        )
+        accounting = engine._build_daily_accounting(
+            pd.Series([1_000.0, 1_000.0], index=dates), weights, dates
+        )
+
+        assert accounting.iloc[0]["one_way_turnover"] == pytest.approx(0.4)
+        assert accounting.iloc[1]["one_way_turnover"] == pytest.approx(0.3)
+
+    def test_daily_cost_and_return_reconciliation(self) -> None:
+        engine = DummyEngine({"initial_cash": 1_000})
+        dates = pd.DatetimeIndex([pd.Timestamp("2025-01-02"), pd.Timestamp("2025-01-03")])
+        engine.fills.extend([
+            FillRecord(dates[1], "A", "buy", "entry", 1, 1.0, 10.0, 10.5,
+                       10.5, 2.0, 1.0, "signal"),
+            FillRecord(dates[1], "B", "sell", "entry", -1, 1.0, 20.0, 19.5,
+                       19.5, 1.0, 0.5, "signal"),
+        ])
+        equity = pd.Series([1_000.0, 1_010.0], index=dates)
+        weights = pd.DataFrame({"A": [0.0, 0.1], "B": [0.0, -0.1]}, index=dates)
+
+        accounting = engine._build_daily_accounting(equity, weights, dates)
+        row = accounting.iloc[1]
+        assert row["daily_commission"] == pytest.approx(3.0)
+        assert row["daily_slippage_cost"] == pytest.approx(1.5)
+        assert row["daily_total_cost"] == pytest.approx(4.5)
+        assert row["cost_rate"] == pytest.approx(0.0045)
+        assert row["net_return"] == pytest.approx(0.01)
+        assert row["gross_return"] == pytest.approx(
+            row["net_return"] + row["cost_rate"]
+        )
+        expected_gross_equity = 1_000.0 * (1.0 + accounting.iloc[0]["gross_return"])
+        expected_gross_equity *= 1.0 + row["gross_return"]
+        assert row["gross_equity"] == pytest.approx(expected_gross_equity)
+
+
 class TestArtifacts:
     def test_trades_csv_contains_old_and_new_columns(self, tmp_path: Path) -> None:
         engine = DummyEngine({"initial_cash": 1_000})
@@ -393,6 +516,60 @@ class TestArtifacts:
         assert exit_row["commission"] == pytest.approx(0.06)
         assert exit_row["slippage_cost"] == pytest.approx(2.0)
         assert exit_row["net_pnl"] == pytest.approx(1.94)
+
+        artifacts = run_dir / "artifacts"
+        for legacy_name in ("equity.csv", "positions.csv", "trades.csv", "metrics.csv"):
+            assert (artifacts / legacy_name).is_file()
+        for new_name in ("fills.csv", "executed_positions.csv", "daily_accounting.csv"):
+            assert (artifacts / new_name).is_file()
+
+        fills_df = pd.read_csv(artifacts / "fills.csv")
+        assert fills_df.empty
+        assert list(fills_df.columns) == [
+            "timestamp", "symbol", "side", "event_type", "direction",
+            "quantity", "decision_price", "fill_price", "notional",
+            "commission", "slippage_cost", "reason",
+        ]
+
+        accounting_df = pd.read_csv(artifacts / "daily_accounting.csv")
+        assert set(accounting_df.columns) == {
+            "timestamp", "net_return", "gross_return", "daily_commission",
+            "daily_slippage_cost", "daily_total_cost", "cost_rate",
+            "one_way_turnover", "gross_exposure", "net_exposure",
+            "long_exposure", "short_exposure", "equity", "gross_equity",
+        }
+
+    def test_fills_csv_serializes_execution_ledger(self, tmp_path: Path) -> None:
+        engine = DummyEngine({"initial_cash": 1_000})
+        ts = pd.Timestamp("2025-01-02")
+        engine.fills.append(FillRecord(
+            ts, "X", "buy", "entry", 1, 2.0, 10.0, 10.5,
+            21.0, 0.02, 1.0, "signal",
+        ))
+        dates = pd.DatetimeIndex([ts])
+        data_map = {
+            "X": pd.DataFrame({"open": [10.0], "close": [10.5]}, index=dates)
+        }
+        target_pos = pd.DataFrame({"X": [0.0]}, index=dates)
+        equity = pd.Series([1_000.0], index=dates)
+
+        engine._write_artifacts(
+            tmp_path,
+            data_map,
+            dates,
+            equity,
+            equity,
+            pd.Series([0.0], index=dates),
+            target_pos,
+            {},
+            ["X"],
+        )
+
+        fills_df = pd.read_csv(tmp_path / "artifacts" / "fills.csv")
+        assert len(fills_df) == 1
+        assert fills_df.iloc[0]["event_type"] == "entry"
+        assert fills_df.iloc[0]["commission"] == pytest.approx(0.02)
+        assert fills_df.iloc[0]["slippage_cost"] == pytest.approx(1.0)
 
 
 class TestSafePrice:

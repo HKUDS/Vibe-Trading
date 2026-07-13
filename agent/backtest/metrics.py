@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from backtest.models import TradeRecord
+from backtest.models import FillRecord, TradeRecord
 
 # ─── Annualisation factor mapping ───
 
@@ -171,6 +171,73 @@ def calc_turnover_series(positions: pd.DataFrame) -> pd.Series:
     filled = positions.fillna(0.0)
     prev = filled.shift(1).fillna(0.0)
     return 0.5 * (filled - prev).abs().sum(axis=1)
+
+
+def calc_execution_metrics(
+    executed_positions: pd.DataFrame,
+    fills: List[FillRecord],
+    observation_count: int,
+    bars_per_year: Optional[int] = 252,
+) -> Dict[str, float]:
+    """Calculate scalar cost, turnover, and exposure metrics from executions.
+
+    Turnover and exposure are based on actual executed weights, not target
+    weights. Annualized turnover scales the observed one-way turnover by the
+    number of observations and the effective bars-per-year value.
+    """
+    positions = (
+        executed_positions.fillna(0.0)
+        if executed_positions is not None
+        else pd.DataFrame()
+    )
+    turnover = calc_turnover_series(positions)
+    total_turnover = float(turnover.sum()) if not turnover.empty else 0.0
+
+    n_obs = max(int(observation_count), 0)
+    if bars_per_year is None:
+        if n_obs > 1 and isinstance(positions.index, pd.DatetimeIndex):
+            elapsed_days = max((positions.index[-1] - positions.index[0]).days, 0)
+            years = elapsed_days / 365.25 if elapsed_days > 0 else 0.0
+            effective_bpy = n_obs / years if years > 0 else float(n_obs)
+        else:
+            effective_bpy = float(n_obs)
+    else:
+        effective_bpy = max(float(bars_per_year), 0.0)
+    annualized_turnover = (
+        total_turnover * effective_bpy / n_obs if n_obs > 0 else 0.0
+    )
+
+    total_commission = float(sum(fill.commission for fill in fills))
+    total_slippage = float(sum(fill.slippage_cost for fill in fills))
+
+    if positions.empty:
+        gross_exposure = pd.Series(dtype=float)
+        net_exposure = pd.Series(dtype=float)
+        active_positions = pd.Series(dtype=float)
+    else:
+        gross_exposure = positions.abs().sum(axis=1)
+        net_exposure = positions.sum(axis=1)
+        active_positions = positions.ne(0.0).sum(axis=1)
+
+    return {
+        "total_commission": total_commission,
+        "total_slippage_cost": total_slippage,
+        "total_trading_cost": total_commission + total_slippage,
+        "total_one_way_turnover": total_turnover,
+        "annualized_one_way_turnover": float(annualized_turnover),
+        "mean_gross_exposure": (
+            float(gross_exposure.mean()) if not gross_exposure.empty else 0.0
+        ),
+        "maximum_gross_exposure": (
+            float(gross_exposure.max()) if not gross_exposure.empty else 0.0
+        ),
+        "mean_net_exposure": (
+            float(net_exposure.mean()) if not net_exposure.empty else 0.0
+        ),
+        "mean_active_positions": (
+            float(active_positions.mean()) if not active_positions.empty else 0.0
+        ),
+    }
 
 
 def calc_metrics(
