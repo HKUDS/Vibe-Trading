@@ -249,6 +249,7 @@ def place_order(
     order_type: str = "market",
     limit_price: float | None = None,
     time_in_force: str = "day",
+    confirmed: bool = False,
     session_id: str = "",
     **overrides: Any,
 ) -> dict[str, Any]:
@@ -276,6 +277,7 @@ def place_order(
         "order_type": order_type,
         "limit_price": limit_price,
         "time_in_force": time_in_force,
+        "confirmed": confirmed,
     }
 
     if profile.environment == "paper":
