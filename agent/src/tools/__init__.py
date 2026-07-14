@@ -27,7 +27,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _SUBCLASSES_CACHE: list[type[BaseTool]] | None = None
-_SHELL_TOOL_NAMES = {"bash", "background_run"}
+# Tools that execute shell commands. Local CLI/stdin entry points can opt in
+# via ``include_shell_tools=True``; networked server entry points must keep it
+# disabled. The set covers the full read+write pair: ``bash`` and
+# ``background_run`` create/execute shell processes, ``check_background`` reads
+# back their output (still a shell surface — secrets dumped to stdout must not
+# be exposed through an agent that opted out of shell access).
+_SHELL_TOOL_NAMES = {"bash", "background_run", "check_background"}
 
 
 def _discover_subclasses() -> list[type[BaseTool]]:
@@ -180,7 +186,6 @@ def build_registry(
                 from src.live.registry import (
                     is_live_broker,
                     should_register_live_channel,
-                    wrap_live_broker_tools,
                 )
 
                 server_url = server_config.url
@@ -225,11 +230,28 @@ def build_registry(
                     server_config,
                     local_server_name=local_server_names[server_name],
                 )
-                if live:
-                    wrappers = wrap_live_broker_tools(
-                        server_name, wrappers, url=server_url
-                    )
                 for tool in wrappers:
+                    # Gate MCP-wrapped shell tools (e.g. a third-party MCP
+                    # server advertising ``bash`` / ``run_command``) by the same
+                    # include_shell_tools policy as local tools. The remote
+                    # name lives on ``tool._spec``; ``tool.name`` is the
+                    # ``mcp_<server>_<tool>`` local name and would never match
+                    # the bare shell names.
+                    remote_name = getattr(getattr(tool, "_spec", None), "remote_name", None)
+                    if (
+                        not include_shell_tools
+                        and isinstance(remote_name, str)
+                        and remote_name in _SHELL_TOOL_NAMES
+                    ):
+                        warn_msg = (
+                            f"MCP server '{server_name}' exposes shell tool "
+                            f"'{remote_name}' but include_shell_tools=False — "
+                            "skipping to enforce shell policy"
+                        )
+                        logger.warning(warn_msg)
+                        if warn_callback is not None:
+                            warn_callback(warn_msg)
+                        continue
                     registry.register(tool)
                 logger.info(
                     "Registered %d MCP tool(s) from server '%s'",

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +32,7 @@ from src.swarm.models import (
     SwarmTask,
     WorkerResult,
 )
+from src.swarm.store import _replace_with_retry
 from src.tools import build_swarm_registry
 from src.tools.mcp import MCPRemoteTool
 from src.tools.redaction import is_sensitive_arg, redact_payload
@@ -72,9 +74,38 @@ def _stream_retry_delay_s() -> float:
     return get_env_config().swarm.swarm_stream_retry_delay_s
 
 
+def _stream_max_retries() -> int:
+    """Resolve the number of stream retries. Mirrors ``src.agent.loop``."""
+    from src.agent.loop import _stream_max_retries as _loop_max
+
+    return _loop_max()
+
+
 _HEARTBEAT_INTERVAL_S = _heartbeat_interval_s()
 _STREAM_RETRY_DELAY_S = _stream_retry_delay_s()
+_STREAM_MAX_RETRIES = _stream_max_retries()
 _MAX_TOKEN_ESTIMATE = 60_000
+
+# Serializes artifact writes across the parallel workers sharing this module.
+_ARTIFACT_WRITE_LOCK = threading.Lock()
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    """Atomically write a file: write to ``.tmp`` then rename.
+
+    Mirrors :meth:`SwarmStore._atomic_write` (store.py) so a crash mid-write
+    leaves the target either untouched or fully replaced — never a truncated
+    file the stale-run reaper can't detect. Reuses store's
+    :func:`_replace_with_retry` for the Windows concurrent-access race.
+
+    Args:
+        path: Target file path.
+        content: File content.
+    """
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with _ARTIFACT_WRITE_LOCK:
+        tmp_path.write_text(content, encoding="utf-8")
+        _replace_with_retry(tmp_path, path)
 
 
 def _emit(
@@ -169,6 +200,14 @@ def _estimate_tokens(
     try:
         input_tokens = len(json.dumps(messages, ensure_ascii=False)) // 4
     except Exception:
+        # Serialization failure means we can't estimate at all — fall back to
+        # zero rather than crashing the worker. Log so a regression is visible.
+        logger.warning(
+            "Failed to estimate input tokens from messages (len=%d); "
+            "falling back to 0.",
+            len(messages) if hasattr(messages, "__len__") else -1,
+            exc_info=True,
+        )
         input_tokens = 0
 
     if isinstance(response, LLMResponse):
@@ -304,6 +343,7 @@ def run_worker(
     include_shell_tools: bool = False,
     grounding_block: str = "",
     agent_config: AgentConfig | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> WorkerResult:
     """Execute a single worker task using a lightweight ReAct loop.
 
@@ -332,6 +372,12 @@ def run_worker(
             consumed by :func:`build_swarm_registry` to merge remote MCP
             tools with the local-tool pool before applying the agent's
             whitelist. ``None`` preserves the prior local-only behavior.
+        cancel_event: Optional cancellation signal owned by
+            :class:`SwarmRuntime`. When set, the worker bails out
+            cooperatively — at the top of the next iteration and mid-stream
+            via ``should_cancel`` — returning ``status="cancelled"`` instead
+            of running the LLM for tens of seconds after a cancel. ``None``
+            disables cancellation (standalone / test callers).
 
     Returns:
         WorkerResult with status, summary, artifacts, and iteration count.
@@ -386,8 +432,15 @@ def run_worker(
     ]
 
     # 6. ReAct loop
-    artifact_dir = run_dir / "artifacts" / agent_id
+    # Key the artifact dir by task, not just agent_id: two parallel tasks
+    # sharing an agent_id would otherwise race on summary.md / messages.json
+    # and _collect_artifacts would return whichever files happened to exist.
+    artifact_dir = run_dir / "artifacts" / f"{agent_id}__{task_id}"
     artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    # Cooperative cancellation predicate threaded into stream_chat (mirrors
+    # agent/loop.py). ``None`` when no cancel_event was supplied.
+    should_cancel = cancel_event.is_set if cancel_event is not None else None
 
     t0 = time.monotonic()
     iteration = 0
@@ -405,6 +458,24 @@ def run_worker(
     consecutive_content_filter_count = 0
 
     for iteration in range(max_iterations):
+        # Early-out: run was cancelled between iterations. Bail before the
+        # next (expensive) LLM call so cancel is honored within one loop tick
+        # instead of tens of seconds.
+        if cancel_event is not None and cancel_event.is_set():
+            _emit(event_callback, "worker_cancelled", agent_id, task_id,
+                  {"iterations": iteration})
+            return WorkerResult(
+                status="cancelled",
+                summary=_resolve_summary(artifact_dir, last_assistant_content or ""),
+                artifact_paths=_collect_artifacts(artifact_dir),
+                iterations=iteration,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+                content_filter_warnings=compute_content_filter_warnings(
+                    content_filter_count, iteration + 1,
+                ),
+            )
+
         # Microcompact: clear old tool results to prevent token bloat
         tool_msgs = [m for m in messages if m.get("role") == "tool"]
         if len(tool_msgs) > _KEEP_RECENT_TOOLS:
@@ -516,30 +587,37 @@ def run_worker(
                         tools=tool_defs,
                         timeout=remaining_timeout,
                         on_text_chunk=_on_text_chunk,
+                        should_cancel=should_cancel,
                     )
 
-            # A transient mid-stream hiccup (connection reset) used to be
-            # absorbed by ChatLLM's silent non-streaming fallback; it now
-            # surfaces as ProviderStreamError, so retry the stream exactly
-            # once before taking the existing failure path. Deterministic
-            # 4xx errors skip the retry and fail immediately.
-            try:
-                response = _stream_once()
-            except ProviderStreamError as stream_exc:
-                if not stream_exc.retryable:
-                    raise
-                logger.warning(
-                    "Provider stream failed for agent=%s task=%s iteration=%d "
-                    "(provider=%s model=%s); retrying once: %s",
-                    agent_id,
-                    task_id,
-                    iteration,
-                    stream_exc.provider,
-                    stream_exc.model,
-                    stream_exc,
-                )
-                time.sleep(_STREAM_RETRY_DELAY_S)
-                response = _stream_once()
+            # A transient mid-stream hiccup (connection reset, relay
+            # RemoteProtocolError incomplete-chunked-read) is retried up to
+            # ``stream_max_retries`` times to absorb flaky OpenAI-compat
+            # relays. Deterministic 4xx errors skip the retry and fail
+            # immediately.
+            response = None
+            for stream_attempt in range(_STREAM_MAX_RETRIES + 1):
+                try:
+                    response = _stream_once()
+                    break
+                except ProviderStreamError as stream_exc:
+                    if not stream_exc.retryable or stream_attempt >= _STREAM_MAX_RETRIES:
+                        raise
+                    logger.warning(
+                        "Provider stream failed for agent=%s task=%s iteration=%d "
+                        "(provider=%s model=%s; attempt %s/%s); retrying: %s",
+                        agent_id,
+                        task_id,
+                        iteration,
+                        stream_exc.provider,
+                        stream_exc.model,
+                        stream_attempt + 1,
+                        _STREAM_MAX_RETRIES + 1,
+                        stream_exc,
+                    )
+                    time.sleep(_STREAM_RETRY_DELAY_S)
+            if response is None:  # pragma: no cover — defensive
+                raise RuntimeError("stream chat exited without a response")
         except Exception as exc:
             error_msg = f"LLM call failed at iteration {iteration}: {exc}"
             logger.warning(error_msg)
@@ -550,6 +628,24 @@ def run_worker(
                 artifact_paths=_collect_artifacts(artifact_dir),
                 iterations=iteration,
                 error=error_msg,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+                content_filter_warnings=compute_content_filter_warnings(
+                    content_filter_count, iteration + 1,
+                ),
+            )
+
+        # Cancelled mid-stream: stream_chat returned a partial response when
+        # should_cancel fired. Discard it and return without executing any of
+        # this turn's tool calls (mirrors agent/loop.py).
+        if cancel_event is not None and cancel_event.is_set():
+            _emit(event_callback, "worker_cancelled", agent_id, task_id,
+                  {"iterations": iteration})
+            return WorkerResult(
+                status="cancelled",
+                summary=_resolve_summary(artifact_dir, last_assistant_content or ""),
+                artifact_paths=_collect_artifacts(artifact_dir),
+                iterations=iteration,
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
                 content_filter_warnings=compute_content_filter_warnings(
@@ -841,6 +937,14 @@ def _report_written(artifact_dir: Path) -> bool:
         p = artifact_dir / "report.md"
         return p.is_file() and bool(p.read_text(encoding="utf-8").strip())
     except Exception:
+        # Treat any IO / decode error as "not written" so the deliverable
+        # classifier doesn't false-positive, but log so the failure is
+        # visible in production rather than silently swallowed.
+        logger.warning(
+            "Failed to probe report.md in %s; treating as not written.",
+            artifact_dir,
+            exc_info=True,
+        )
         return False
 
 
@@ -927,9 +1031,9 @@ def _persist_messages(artifact_dir: Path, messages: list[dict]) -> None:
     """Persist messages to disk for post-mortem analysis."""
     try:
         path = artifact_dir / "messages.json"
-        path.write_text(
+        _atomic_write(
+            path,
             json.dumps(messages, ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
         )
     except Exception:
         logger.warning("Failed to persist messages to %s", artifact_dir, exc_info=True)
@@ -939,12 +1043,12 @@ def _write_summary(artifact_dir: Path, summary: str) -> None:
     """Write worker summary to artifacts directory.
 
     Args:
-        artifact_dir: Path to artifacts/{agent_id}/ directory.
+        artifact_dir: Path to artifacts/{agent_id}__{task_id}/ directory.
         summary: Summary text to write.
     """
     try:
         summary_path = artifact_dir / "summary.md"
-        summary_path.write_text(summary, encoding="utf-8")
+        _atomic_write(summary_path, summary)
     except Exception:
         logger.warning("Failed to write summary to %s", artifact_dir, exc_info=True)
 

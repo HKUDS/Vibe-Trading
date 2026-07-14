@@ -579,7 +579,7 @@ def _normalize_codes(codes: List[str], source: str) -> List[str]:
     Returns:
         Normalized codes.
     """
-    if source in ("okx", "ccxt"):
+    if source in ("okx", "binance", "ccxt"):
         return [c.replace("/", "-").upper() for c in codes]
     return codes
 

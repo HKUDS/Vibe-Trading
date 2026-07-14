@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import logging
+import os
 import re
 import secrets
 import threading
@@ -28,10 +29,14 @@ from src.config.accessor import get_env_config
 _DEFAULT_CORS_ORIGINS: tuple[str, ...] = (
     "http://localhost:3000",
     "http://localhost:5173",
+    "http://localhost:5899",
     "http://localhost:8000",
+    "http://localhost:8899",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
+    "http://127.0.0.1:5899",
     "http://127.0.0.1:8000",
+    "http://127.0.0.1:8899",
 )
 
 _DEFAULT_LOOPBACK_HOSTS = frozenset({
@@ -353,19 +358,53 @@ def _require_shutdown_authorization(
     request: Request,
     cred: Optional[HTTPAuthorizationCredentials],
 ) -> None:
-    """Authorize the local shutdown control-plane action."""
+    """Authorize the local shutdown control-plane action.
+
+    Hardening (audit 2026-07): accidental or CSRF-style loopback shutdowns were
+    possible with a bare POST. Require all of:
+    1. Same-site / non-cross-site browser guard
+    2. Explicit ``confirm=true`` query (or header ``X-Confirm-Shutdown: true``)
+    3. Either a valid ``API_AUTH_KEY``, or opt-in
+       ``VIBE_TRADING_ALLOW_LOCAL_SHUTDOWN=1`` for loopback-only labs
+    """
     _reject_cross_site_browser_request(request)
+
+    confirm_q = (request.query_params.get("confirm") or "").strip().lower()
+    confirm_h = (request.headers.get("x-confirm-shutdown") or "").strip().lower()
+    if confirm_q not in {"1", "true", "yes"} and confirm_h not in {"1", "true", "yes"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Shutdown requires confirm=true (query) or X-Confirm-Shutdown: true",
+        )
+
     api_key = _configured_api_key()
     if api_key:
         token = _auth_credential_from_header_or_query(cred, None, allow_query=False)
         if not token or not hmac.compare_digest(token, api_key):
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
         return
-    if not _is_local_client(request):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="API_AUTH_KEY is required for non-local API access",
-        )
+
+    from src.config.accessor import get_env_config
+
+    allow_local = False
+    try:
+        # Prefer env flag; tolerate missing field on older schemas.
+        raw = os.environ.get("VIBE_TRADING_ALLOW_LOCAL_SHUTDOWN", "").strip().lower()
+        allow_local = raw in {"1", "true", "yes", "on"}
+    except Exception:
+        allow_local = False
+
+    if allow_local and _is_local_client(request):
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=(
+            "Shutdown disabled without API_AUTH_KEY. "
+            "Set API_AUTH_KEY and send Authorization, or set "
+            "VIBE_TRADING_ALLOW_LOCAL_SHUTDOWN=1 for lab use only."
+        ),
+    )
 
 
 def _validate_api_auth(

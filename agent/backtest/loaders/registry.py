@@ -33,6 +33,7 @@ _registered = False
 VALID_SOURCES: set[str] = {
     "tushare",
     "okx",
+    "binance",
     "yfinance",
     "akshare",
     "baostock",
@@ -80,6 +81,7 @@ def _ensure_registered() -> None:
     _loader_modules = [
         "backtest.loaders.tushare",
         "backtest.loaders.okx",
+        "backtest.loaders.binance_loader",
         "backtest.loaders.yfinance_loader",
         "backtest.loaders.akshare_loader",
         "backtest.loaders.baostock_loader",
@@ -132,7 +134,8 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
     "us_equity": ["yahoo", "stooq", "sina", "eastmoney", "yfinance", "tiingo", "fmp", "finnhub", "alphavantage", "longbridge", "akshare", "local"],
     "hk_equity": ["eastmoney", "yahoo", "futu", "yfinance", "akshare", "longbridge", "local"],
     "india_equity": ["yahoo", "yfinance", "india_broker", "local"],
-    "crypto":    ["okx", "ccxt", "yfinance", "local"],
+    # OKX first (native), then dedicated Binance, then generic CCXT / Yahoo.
+    "crypto":    ["okx", "binance", "ccxt", "yfinance", "local"],
     "futures":   ["tushare", "akshare", "local"],
     "fund":      ["tushare", "akshare", "local"],
     "macro":     ["akshare", "tushare", "local"],

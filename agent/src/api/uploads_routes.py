@@ -39,6 +39,21 @@ _BLOCKED_UPLOAD_NAMES = {
 
 _SHADOW_ID_RE = re.compile(r"^shadow_[0-9a-f]{8}$")
 
+# Control characters (incl. null bytes) that must never be reflected back to
+# the client — they enable header/log injection and terminal escape attacks.
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _sanitize_filename(filename: str) -> str:
+    """Strip null bytes and control characters from a client-supplied filename.
+
+    ``Path(...).name`` drops directory separators but leaves null bytes and
+    other control characters intact. We echo the filename back in the JSON
+    response, so scrub it before reflection.
+    """
+    return _CONTROL_CHARS_RE.sub("", filename)
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
@@ -131,6 +146,8 @@ def register_uploads_routes(
                 status_code=400,
                 detail="This file type is not allowed for upload.",
             )
+        # Scrub null bytes / control chars before we ever echo the name back.
+        display_name = _sanitize_filename(filename)
 
         uploads_dir = _host_uploads_dir()
         max_size = _host_max_upload_size()
@@ -172,5 +189,5 @@ def register_uploads_routes(
         return {
             "status": "ok",
             "file_path": f"uploads/{safe_name}",
-            "filename": filename,
+            "filename": display_name,
         }

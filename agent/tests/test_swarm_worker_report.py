@@ -55,7 +55,10 @@ def test_resolve_summary_handles_read_error(tmp_path: Path) -> None:
 
 
 def test_preview_tool_arguments_redacts_sensitive_values() -> None:
-    """Event previews should not leak file bodies or credentials."""
+    """Event previews must NOT leak credentials / PII. Generic ``content`` is
+    a benign field name (file body / message text) and is intentionally NOT
+    redacted by name — the secrets inside it are still caught by the
+    ``*token*`` / ``authorization`` marker-substring path."""
     preview = _preview_tool_arguments({
         "path": "report.md",
         "content": "# very long confidential report",
@@ -64,12 +67,14 @@ def test_preview_tool_arguments_redacts_sensitive_values() -> None:
         "run_dir": "/tmp/hidden",
     })
 
-    assert preview == {
-        "path": "report.md",
-        "content": "[redacted]",
-        "headers": "[redacted]",
-        "api_token": "[redacted]",
-    }
+    # Credentials and PII are scrubbed. Generic file body / message text
+    # (``content``) is preserved — see ``test_redaction_shared.py`` for the
+    # rationale and the audit-fidelity tradeoff.
+    assert preview["headers"] == "[redacted]"
+    assert preview["api_token"] == "[redacted]"
+    # ``content`` survives — over-redacting it would break report previews,
+    # chat history, and any tool whose payload uses ``content`` for the body.
+    assert "very long confidential report" in preview["content"]
 
 
 def test_preview_tool_arguments_truncates_non_sensitive_values() -> None:

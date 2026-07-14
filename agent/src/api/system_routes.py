@@ -96,9 +96,35 @@ class _SlidingWindowRateLimiter:
 _correlation_rate_limiter = _SlidingWindowRateLimiter(max_requests=30, window_seconds=60.0)
 
 
+def _trust_proxy_headers() -> bool:
+    """Whether to always honor ``X-Forwarded-For`` for client identification.
+
+    Off by default. Enable with ``TRUST_PROXY_HEADERS=1`` when the API sits
+    behind a trusted reverse proxy reachable over a non-loopback address.
+    """
+    return os.getenv("TRUST_PROXY_HEADERS", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
+
 def _client_key(request: Request) -> str:
-    """Return a stable per-client bucket key (client IP, or a fixed fallback)."""
-    return request.client.host if request.client else "unknown"
+    """Return a stable per-client bucket key.
+
+    Behind a reverse proxy every request arrives from the proxy's IP, so all
+    clients would otherwise share one rate-limit bucket. We key on the left-most
+    ``X-Forwarded-For`` hop (the original client) when the header can be trusted
+    — either ``TRUST_PROXY_HEADERS`` is set, or the direct peer is loopback
+    (a co-located proxy a remote attacker cannot impersonate). Otherwise we use
+    the direct peer address and ignore the spoofable header.
+    """
+    peer = request.client.host if request.client else "unknown"
+    if _trust_proxy_headers() or peer in _LOOPBACK_HOSTS:
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        first = forwarded.split(",")[0].strip()
+        if first:
+            return first
+    return peer
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +319,7 @@ def register_system_routes(
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-    @app.get("/skills")
+    @app.get("/skills", dependencies=[Depends(require_auth)])
     async def list_skills():
         """List registered skills (name and description)."""
         from src.agent.skills import SkillsLoader

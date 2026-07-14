@@ -6,17 +6,51 @@ Mounted by ``agent/api_server.py`` via ``register_swarm_routes(app, ...)``.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # Module-level state
 # ---------------------------------------------------------------------------
 
 _swarm_runtime = None
+
+# SSE heartbeat cadence — a comment frame every ~15s keeps idle proxies
+# (nginx/cloudflare) from dropping a long-lived swarm event stream.
+_SSE_HEARTBEAT_SECONDS = 15.0
+
+# user_vars keys feed prompt templates; constrain to shell-style env names so a
+# caller cannot smuggle a control key like ``system_prompt_override``.
+_USER_VAR_KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+
+
+class CreateSwarmRunRequest(BaseModel):
+    """Validated body for ``POST /swarm/runs``.
+
+    Guards the prompt-template boundary: ``preset_name``/``preset`` are limited
+    to filesystem-safe characters and ``user_vars`` keys must look like env
+    names, so a caller cannot inject a control key such as
+    ``system_prompt_override`` into the template context.
+    """
+
+    preset_name: str = Field(..., min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
+    user_vars: dict[str, str] = Field(default_factory=dict)
+    preset: str | None = Field(default=None, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
+
+    @field_validator("user_vars")
+    @classmethod
+    def _validate_user_var_keys(cls, value: dict[str, str]) -> dict[str, str]:
+        for key in value:
+            if not _USER_VAR_KEY_RE.fullmatch(key):
+                raise ValueError(
+                    f"invalid user_var key {key!r}: keys must match [A-Z_][A-Z0-9_]*"
+                )
+        return value
 
 
 def _get_swarm_runtime():
@@ -79,7 +113,7 @@ def register_swarm_routes(
 
     # --- Routes ---
 
-    @app.get("/swarm/presets")
+    @app.get("/swarm/presets", dependencies=[Depends(require_auth)])
     async def list_swarm_presets():
         """List Swarm YAML presets."""
         from src.swarm.presets import list_presets
@@ -87,15 +121,13 @@ def register_swarm_routes(
         return list_presets()
 
     @app.post("/swarm/runs", dependencies=[Depends(require_auth)])
-    async def create_swarm_run(payload: dict, http_request: Request):
+    async def create_swarm_run(payload: CreateSwarmRunRequest, http_request: Request):
         """Start a swarm run: body must include preset_name and user_vars."""
         runtime = _get_swarm_runtime()
-        preset_name = payload.get("preset_name", "")
-        user_vars = payload.get("user_vars", {})
         try:
             run = runtime.start_run(
-                preset_name,
-                user_vars,
+                payload.preset_name,
+                payload.user_vars,
                 include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
             )
             return {"id": run.id, "status": run.status.value, "preset_name": run.preset_name}
@@ -106,14 +138,18 @@ def register_swarm_routes(
 
     @app.get("/swarm/runs", dependencies=[Depends(require_auth)])
     async def list_swarm_runs(limit: int = Query(20, ge=1, le=100)):
-        """List swarm runs (newest first), reconciled."""
+        """List swarm runs (newest first).
+
+        Read-only: reconciliation is computed in-memory (``write=False``) so a
+        single GET never triggers up to N disk writes. Stale "running" rows are
+        still demoted for display; the durable finalize happens on the next
+        detail/SSE read that legitimately writes.
+        """
         runtime = _get_swarm_runtime()
         runs = runtime._store.list_runs(limit=limit)
         items = []
         for r in runs:
-            # Reconcile each row: a zombie running run will be auto-finalized so
-            # the dashboard never shows a "running" stuck row.
-            reconciled = runtime._store.reconcile_run(r, write=True)
+            reconciled = runtime._store.reconcile_run(r, write=False)
             items.append(
                 {
                     "id": reconciled.id,
@@ -163,28 +199,40 @@ def register_swarm_routes(
     ):
         """SSE stream for a swarm run."""
         import asyncio
+        import time
 
         _host_validate_path_param(run_id, "run_id")
         runtime = _get_swarm_runtime()
 
         async def event_stream():
             idx = last_index
+            last_emit = time.monotonic()
             while True:
                 if await request.is_disconnected():
                     break
-                events = runtime._store.read_events(run_id, after_index=idx)
+                # Store IO is synchronous; run it off the event loop so a slow
+                # disk read cannot stall every other request on this worker.
+                events = await asyncio.to_thread(
+                    runtime._store.read_events, run_id, after_index=idx
+                )
                 for evt in events:
                     idx += 1
                     yield f"id: {idx}\nevent: {evt.type}\ndata: {json.dumps(evt.model_dump(), ensure_ascii=False)}\n\n"
-                run = runtime._store.load_run(run_id)
+                    last_emit = time.monotonic()
+                run = await asyncio.to_thread(runtime._store.load_run, run_id)
                 if run:
                     # Reconcile so a zombie running run can still close this SSE
                     # stream cleanly — without it, a dead host would keep the
                     # stream open forever and block the dashboard's "done" state.
-                    reconciled = runtime._store.reconcile_run(run, write=True)
+                    reconciled = await asyncio.to_thread(
+                        runtime._store.reconcile_run, run, write=True
+                    )
                     if reconciled.status.value in ("completed", "failed", "cancelled"):
                         yield f"event: done\ndata: {{\"status\": \"{reconciled.status.value}\"}}\n\n"
                         break
+                if time.monotonic() - last_emit >= _SSE_HEARTBEAT_SECONDS:
+                    yield ": ping\n\n"
+                    last_emit = time.monotonic()
                 await asyncio.sleep(2)
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")

@@ -582,6 +582,7 @@ class SwarmRuntime:
                     run_id=run.id,
                     include_shell_tools=include_shell_tools,
                     grounding_block=grounding_block,
+                    cancel_event=cancel_event,
                 )
                 futures[future] = tid
                 per_task_budget = agent_spec.timeout_seconds * (agent_spec.max_retries + 1)
@@ -640,12 +641,17 @@ class SwarmRuntime:
         run_id: str,
         include_shell_tools: bool = False,
         grounding_block: str = "",
+        cancel_event: threading.Event | None = None,
     ) -> WorkerResult:
         """Run a worker with automatic retry on failure.
 
-        Retries up to agent_spec.max_retries times. Emits a "task_retry" event
-        before each retry attempt. Token counts are accumulated across all
-        attempts.
+        Retries up to agent_spec.max_retries times when the worker returns a
+        non-terminal-success status (``failed``, ``timeout``, ``token_limit``,
+        ``incomplete``). ``cancelled`` and ``completed`` are never retried.
+        The layer-deadline math in :meth:`_execute_layer` assumes retries are
+        applied to these statuses, so they must stay in sync. Emits a
+        "task_retry" event before each retry attempt. Token counts are
+        accumulated across all attempts.
 
         Args:
             agent_spec: Agent role specification.
@@ -659,6 +665,9 @@ class SwarmRuntime:
             grounding_block: Pre-rendered "Ground Truth" markdown spliced
                 into the worker's system prompt. Empty string when no
                 symbols were extracted from user_vars.
+            cancel_event: Cancellation signal forwarded to ``run_worker`` so
+                a cancel promptly aborts the live LLM stream. Also short-
+                circuits the retry loop.
 
         Returns:
             WorkerResult from the last attempt.
@@ -667,6 +676,10 @@ class SwarmRuntime:
         cumulative_input_tokens = 0
         cumulative_output_tokens = 0
         result: WorkerResult | None = None
+
+        # Statuses that warrant a retry. ``cancelled`` (cooperative abort) and
+        # ``completed`` (success) are intentionally excluded.
+        _RETRYABLE = {"failed", "timeout", "token_limit", "incomplete"}
 
         for attempt in range(max_retries + 1):
             if attempt > 0:
@@ -700,13 +713,18 @@ class SwarmRuntime:
                 include_shell_tools=include_shell_tools,
                 grounding_block=grounding_block,
                 agent_config=self._agent_config,
+                cancel_event=cancel_event,
             )
 
             cumulative_input_tokens += result.input_tokens
             cumulative_output_tokens += result.output_tokens
 
-            if result.status != "failed":
-                # Success (or timeout/token_limit/completed) — no more retries
+            # Don't retry a cooperative cancel — the run is being torn down.
+            if cancel_event is not None and cancel_event.is_set():
+                break
+
+            if result.status not in _RETRYABLE:
+                # Terminal success (completed) or cancelled — no more retries.
                 result = result.model_copy(
                     update={
                         "input_tokens": cumulative_input_tokens,

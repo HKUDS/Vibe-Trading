@@ -134,7 +134,7 @@ class _StubChatLLM:
     def __call__(self, *args, **kwargs):  # pragma: no cover — supports ChatLLM(model_name=...)
         return self
 
-    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None):
+    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, should_cancel=None):
         self.tool_defs_seen.append(tools)
         if not self._responses:
             return LLMResponse(content="(stub exhausted)", finish_reason="stop")
@@ -293,7 +293,7 @@ def test_run_worker_uses_remote_mcp_tool_and_report_cites_canned_data(
         )
 
     assert result.status == "completed"
-    report_path = tmp_path / "artifacts" / "kb_analyst" / "report.md"
+    report_path = tmp_path / "artifacts" / "kb_analyst__t1" / "report.md"
     assert report_path.is_file()
     contents = report_path.read_text(encoding="utf-8")
     assert canned_payload["answer"] in contents

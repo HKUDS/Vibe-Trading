@@ -288,7 +288,7 @@ class _StubChatLLM:
     def __call__(self, *args, **kwargs):  # ChatLLM(model_name=...) constructor shim
         return self
 
-    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None):
+    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, should_cancel=None):
         self.tool_defs_seen.append(tools)
         if not self._responses:
             return LLMResponse(content="(stub exhausted)", finish_reason="stop")

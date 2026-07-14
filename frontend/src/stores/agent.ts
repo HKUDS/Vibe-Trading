@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { AgentMessage, SwarmRunStatus, ToolCallEntry } from "@/types/agent";
 
-const SESSION_CACHE_MAX = 5;
+const SESSION_CACHE_MAX = 20;
 const _sessionCache = new Map<string, AgentMessage[]>();
 
 interface AgentState {

@@ -78,6 +78,7 @@ class TestEnvConfigDefaults:
         assert c.llm.vibe_trading_deepseek_adapter == "auto"
         assert c.llm.moonshot_user_agent == ""
         assert c.llm.openai_codex_base_url == "https://chatgpt.com/backend-api/codex/responses"
+        assert c.llm.vibe_trading_dotenv_override is True
 
     def test_data_defaults(self) -> None:
         c = EnvConfig()

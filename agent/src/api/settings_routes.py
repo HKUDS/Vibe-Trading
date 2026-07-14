@@ -122,6 +122,27 @@ LLM_REASONING_EFFORTS = {"", "low", "medium", "high", "max"}
 LLM_API_KEY_PLACEHOLDERS = {"", "sk-or-v1-your-key-here", "sk-xxx", "xxx", "gsk_xxx"}
 TUSHARE_TOKEN_PLACEHOLDERS = {"", "your-tushare-token"}
 
+# Every provider-specific credential/base-url env key across all providers.
+# Used to purge the previous provider's keys when the user switches providers.
+_ALL_PROVIDER_ENV_KEYS = {
+    key
+    for provider in LLM_PROVIDERS
+    for key in (provider.api_key_env, provider.base_url_env)
+    if key
+}
+
+
+def _foreign_provider_keys(selected: "LLMProviderOption") -> set[str]:
+    """Return provider env keys that do NOT belong to ``selected``.
+
+    Switching providers must delete the old provider's credential lines,
+    otherwise a revoked key (e.g. ``OPENAI_API_KEY=sk-old``) survives in
+    ``~/.vibe-trading/.env`` and a restart silently resurrects it. Keys shared
+    with the selected provider (e.g. Qwen/DashScope) are preserved.
+    """
+    keep = {k for k in (selected.api_key_env, selected.base_url_env) if k}
+    return _ALL_PROVIDER_ENV_KEYS - keep
+
 
 # ---------------------------------------------------------------------------
 # Host access helpers (late-binding for test monkeypatch compat)
@@ -280,11 +301,18 @@ def _sync_runtime_env(provider: LLMProviderOption, updates: Dict[str, str]) -> N
     reset_env_config()
 
 
-def _persist_settings_updates(updates: Dict[str, str]) -> Dict[str, str]:
+def _persist_settings_updates(
+    updates: Dict[str, str],
+    *,
+    remove_keys: Optional[set[str]] = None,
+) -> Dict[str, str]:
     """Persist settings to the canonical user config with legacy migration.
 
     Args:
         updates: Environment keys to upsert.
+        remove_keys: Environment keys to delete outright (e.g. the previous
+            provider's credentials) so a switch cannot leave a revoked key
+            behind for restart to resurrect.
 
     Returns:
         Effective values read back from the canonical dotenv.
@@ -298,8 +326,12 @@ def _persist_settings_updates(updates: Dict[str, str]) -> Dict[str, str]:
     merged = dict(updates)
     if not target.exists() and legacy != target and legacy.exists():
         merged = {**host._read_env_values(legacy), **updates}
+    if remove_keys:
+        for key in remove_keys:
+            if key not in updates:
+                merged.pop(key, None)
     try:
-        host._write_env_values(target, merged)
+        host._write_env_values(target, merged, remove_keys=remove_keys)
     except OSError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -424,7 +456,7 @@ def register_settings_routes(
         elif payload.clear_api_key:
             os.environ.pop("OPENAI_API_KEY", None)
 
-        saved_values = _persist_settings_updates(updates)
+        saved_values = _persist_settings_updates(updates, remove_keys=_foreign_provider_keys(provider))
         _sync_runtime_env(provider, updates)
         return _build_llm_settings_response(saved_values)
 

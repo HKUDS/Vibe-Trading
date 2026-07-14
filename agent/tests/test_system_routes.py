@@ -204,3 +204,67 @@ def test_correlation_rate_limiter_is_per_client(monkeypatch: pytest.MonkeyPatch)
     assert limiter.allow("1.1.1.1") is True
     assert limiter.allow("1.1.1.1") is False
     assert limiter.allow("2.2.2.2") is True
+
+
+# ---------------------------------------------------------------------------
+# Rate-limit client key: X-Forwarded-For handling behind a proxy
+# ---------------------------------------------------------------------------
+
+
+class _FakeClient:
+    def __init__(self, host: str) -> None:
+        self.host = host
+
+
+class _FakeRequest:
+    def __init__(self, host: str, headers: dict | None = None) -> None:
+        self.client = _FakeClient(host)
+        self.headers = headers or {}
+
+
+def test_client_key_uses_forwarded_for_from_loopback_proxy():
+    """A loopback (co-located proxy) peer's X-Forwarded-For picks the real client,
+    so two forwarded clients land in different buckets than a direct localhost hit."""
+    forwarded = system_routes._client_key(
+        _FakeRequest("127.0.0.1", {"X-Forwarded-For": "1.2.3.4"})
+    )
+    direct = system_routes._client_key(_FakeRequest("127.0.0.1"))
+    assert forwarded == "1.2.3.4"
+    assert direct == "127.0.0.1"
+    assert forwarded != direct
+
+
+def test_client_key_ignores_forwarded_for_from_untrusted_peer(monkeypatch: pytest.MonkeyPatch):
+    """A remote (non-loopback) peer cannot spoof its bucket via X-Forwarded-For
+    unless TRUST_PROXY_HEADERS is explicitly enabled."""
+    monkeypatch.delenv("TRUST_PROXY_HEADERS", raising=False)
+    key = system_routes._client_key(
+        _FakeRequest("203.0.113.9", {"X-Forwarded-For": "1.2.3.4"})
+    )
+    assert key == "203.0.113.9"
+
+    monkeypatch.setenv("TRUST_PROXY_HEADERS", "1")
+    trusted = system_routes._client_key(
+        _FakeRequest("203.0.113.9", {"X-Forwarded-For": "1.2.3.4"})
+    )
+    assert trusted == "1.2.3.4"
+
+
+# ---------------------------------------------------------------------------
+# /skills auth gate
+# ---------------------------------------------------------------------------
+
+
+def test_skills_requires_auth_for_remote_client(monkeypatch: pytest.MonkeyPatch):
+    """GET /skills lists the full tool catalog and must be behind auth."""
+    monkeypatch.setattr(api_server, "_API_KEY", "server-secret")
+    remote = TestClient(api_server.app, client=("203.0.113.9", 51000))
+    resp = remote.get("/skills")
+    assert resp.status_code == 401
+
+
+def test_skills_allows_loopback(local_client: TestClient):
+    """Loopback dev caller still reaches /skills (auth passes in dev mode)."""
+    resp = local_client.get("/skills")
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)

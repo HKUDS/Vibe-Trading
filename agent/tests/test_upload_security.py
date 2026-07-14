@@ -41,3 +41,29 @@ def test_upload_blocks_executable_adjacent_files(
 
     assert response.status_code == 400
     assert list(tmp_path.iterdir()) == []
+
+
+def test_upload_sanitizes_null_byte_in_reflected_filename(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    """Null bytes / control chars must be stripped before the filename is echoed.
+
+    httpx URL-encodes a raw ``\\x00`` in the multipart Content-Disposition, so we
+    unit-test the sanitizer directly (that's what guards the reflection) and also
+    assert the endpoint response never carries a raw control byte.
+    """
+    from src.api.uploads_routes import _sanitize_filename
+
+    assert _sanitize_filename("evil\x00name.txt") == "evilname.txt"
+    assert _sanitize_filename("a\x1fb\x7fc.txt") == "abc.txt"
+    assert "\x00" not in _sanitize_filename("\x00\x00.txt")
+
+    response = client.post(
+        "/upload",
+        files={"file": ("safe-name.txt", b"content", "text/plain")},
+    )
+    assert response.status_code == 200
+    assert response.json()["filename"] == "safe-name.txt"
+    assert "\x00" not in response.text
+

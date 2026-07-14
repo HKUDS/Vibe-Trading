@@ -265,9 +265,21 @@ if ChatOpenAI is not None:
             payload = super()._get_request_payload(input_, stop=stop, **kwargs)
             messages = super()._convert_input(input_).to_messages()
             caps = self._capabilities()
+            # Length-guard: ``payload["messages"]`` (built by the upstream
+            # serializer) and ``messages`` (built by ``_convert_input``) walk
+            # the conversation differently when ``input_`` is not a plain
+            # list (e.g. a PromptValue or string). Without this guard,
+            # ``messages[i]`` raised IndexError and silently cross-polluted
+            # thought signatures across turns. Mirrors the
+            # ``len(messages) == len(input)`` check in ``_convert_input``.
             for i, m in enumerate(payload["messages"]):
                 if m.get("role") != "assistant":
                     continue
+                if i >= len(messages):
+                    # Defensive: payload and converted lists diverged in
+                    # length — bail out rather than index past the end and
+                    # bleed the prior source_message into this turn.
+                    break
                 source_message = messages[i]
                 if caps.normalize_assistant_content and m.get("content") is None:
                     m["content"] = ""
@@ -415,10 +427,36 @@ def _build_native_deepseek(
     )
 
 
+def _reset_dotenv_cache_for_test() -> None:
+    """Reset the module-level dotenv cache so tests can re-trigger load behavior.
+
+    Test-only hook. Production code must keep using ``_ensure_dotenv()``.
+    """
+    global _dotenv_loaded
+    _dotenv_loaded = False
+
+
 def _load_env_file(path: Path) -> None:
-    """Load a single .env file into os.environ (setdefault, no override)."""
+    """Load a single .env file into os.environ.
+
+    Rationale: Vibe-Trading's project-local .env is the canonical source for
+    provider keys and base URLs. Shell-level exports from interactive zsh
+    sessions (e.g. ``export MINIMAX_API_KEY=...``) silently shadow the real
+    keys in .env when ``load_dotenv(override=False)`` is used, because dotenv
+    refuses to overwrite an already-set variable. That led to 401 invalid api
+    key errors against stale shell exports (see session 86171649b571,
+    2026-07-14).
+
+    We therefore force ``override=True`` so project config beats shell env by
+    default. The behavior can be disabled via the ``VIBE_TRADING_DOTENV_OVERRIDE``
+    config flag (``EnvConfig.llm.vibe_trading_dotenv_override``) — useful in
+    tests that ``monkeypatch.setenv`` and want their patched value to win over
+    the project's on-disk ``.env``. To permanently override a .env value in
+    production, edit the file.
+    """
+    override = bool(get_env_config().llm.vibe_trading_dotenv_override)
     if load_dotenv is not None:
-        load_dotenv(dotenv_path=path, override=False)
+        load_dotenv(dotenv_path=path, override=override)
     else:
         for raw in path.read_text(encoding="utf-8").splitlines():
             line = raw.strip()
@@ -426,8 +464,12 @@ def _load_env_file(path: Path) -> None:
                 continue
             key, value = line.split("=", 1)
             key = key.strip()
-            if key:
-                os.environ.setdefault(key, value.strip().strip('"').strip("'"))
+            if not key:
+                continue
+            # Mirror python-dotenv semantics: override controls whether the
+            # pre-existing os.environ value is replaced.
+            if override or key not in os.environ:
+                os.environ[key] = value.strip().strip('"').strip("'")
 
 
 def _ensure_dotenv() -> None:

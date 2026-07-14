@@ -164,6 +164,12 @@ export function RunDetail() {
   );
 
   const ok = run.status === "success";
+  const hasMetrics = !!run.metrics && Object.keys(run.metrics).length > 0;
+  const hasEquity = Array.isArray(run.equity_curve) && run.equity_curve.length > 0;
+  const hasTrades = Array.isArray(run.trade_log) && run.trade_log.length > 0;
+  const hasCharts = Array.isArray(run.chart_symbols) && run.chart_symbols.length > 0;
+  const hasArtifacts = Array.isArray(run.artifacts) && run.artifacts.length > 0;
+  const isContentEmpty = !hasMetrics && !hasEquity && !hasTrades && !hasCharts && !hasArtifacts && !run.run_card;
 
   async function loadChartSymbol(symbol: string) {
     if (!runId || !symbol) return;
@@ -259,6 +265,30 @@ export function RunDetail() {
           {run.elapsed_seconds && <span className="text-xs text-muted-foreground">{run.elapsed_seconds.toFixed(1)}s</span>}
         </div>
         {run.prompt && <p className="text-sm text-muted-foreground">{run.prompt}</p>}
+        {!ok && run.reason && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <span className="font-medium">{i18n.t("runDetail.failedReason", { defaultValue: "失败原因" })}：</span>
+            {run.reason}
+          </div>
+        )}
+        {isContentEmpty && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-sm text-amber-900 dark:text-amber-100 space-y-1.5">
+            <p className="font-medium flex items-center gap-1.5">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              {i18n.t("runDetail.emptyReportTitle", { defaultValue: "此运行没有完整回测报告内容" })}
+            </p>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              {i18n.t("runDetail.emptyReportBody", {
+                defaultValue:
+                  "「完整报告」只展示回测产物（收益曲线、成交、指标、run_card）。若这是普通问答/行情分析，结果在聊天消息里，不会生成报告文件。若你期望回测，请明确说「回测」并指定标的、区间与策略；成功后这里才会有图表与指标。",
+              })}
+            </p>
+            <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5">
+              <li>{i18n.t("runDetail.emptyTipChat", { defaultValue: "看分析文字 → 回到 Agent 聊天记录" })}</li>
+              <li>{i18n.t("runDetail.emptyTipBacktest", { defaultValue: "要完整报告 → 例如：「回测 BTC-USDT 2024 年 20/50 均线，输出收益和回撤」" })}</li>
+            </ul>
+          </div>
+        )}
         {run.metrics && <MetricsCard metrics={run.metrics as Record<string, number>} />}
 
         <div className="flex items-center gap-1">
@@ -300,27 +330,42 @@ export function RunDetail() {
 
       <div className="flex-1 overflow-auto">
         <ErrorBoundary>
-          {tab === "chart" && (
-            <ChartTab
-              run={run}
-              chartPickerSymbol={chartPickerSymbol}
-              selectedSymbols={selectedSymbols}
-              chartCache={chartCache}
-              loadingSymbols={chartLoadingSymbols}
-              bulkLoading={bulkChartLoading}
-              bulkProgress={bulkChartProgress}
-              onPickSymbol={setChartPickerSymbol}
-              onAddSymbol={handleAddChartSymbol}
-              onCurrentOnly={handleCurrentChartOnly}
-              onRemoveSymbol={handleRemoveChartSymbol}
-              onLoadAll={handleLoadAllChartSymbols}
-              onCancelLoadAll={handleCancelLoadAllCharts}
-            />
+          {isContentEmpty ? (
+            <div className="p-8 text-sm text-muted-foreground space-y-2">
+              <p>{i18n.t("runDetail.emptyTabsHint", { defaultValue: "当前没有可展示的图表 / 成交 / 代码产物。" })}</p>
+              {run.prompt && (
+                <p>
+                  <span className="font-medium text-foreground">{i18n.t("runDetail.originalPrompt", { defaultValue: "原始提问" })}：</span>
+                  {run.prompt}
+                </p>
+              )}
+              <p className="font-mono text-xs break-all opacity-70">{run.run_directory || run.run_id}</p>
+            </div>
+          ) : (
+            <>
+              {tab === "chart" && (
+                <ChartTab
+                  run={run}
+                  chartPickerSymbol={chartPickerSymbol}
+                  selectedSymbols={selectedSymbols}
+                  chartCache={chartCache}
+                  loadingSymbols={chartLoadingSymbols}
+                  bulkLoading={bulkChartLoading}
+                  bulkProgress={bulkChartProgress}
+                  onPickSymbol={setChartPickerSymbol}
+                  onAddSymbol={handleAddChartSymbol}
+                  onCurrentOnly={handleCurrentChartOnly}
+                  onRemoveSymbol={handleRemoveChartSymbol}
+                  onLoadAll={handleLoadAllChartSymbols}
+                  onCancelLoadAll={handleCancelLoadAllCharts}
+                />
+              )}
+              {tab === "trades" && <TradesTab run={run} />}
+              {tab === "validation" && run.validation && <ValidationPanel data={run.validation} />}
+              {tab === "runCard" && run.run_card && <RunCardTab card={run.run_card} />}
+              {tab === "code" && <CodeTab code={code} />}
+            </>
           )}
-          {tab === "trades" && <TradesTab run={run} />}
-          {tab === "validation" && run.validation && <ValidationPanel data={run.validation} />}
-          {tab === "runCard" && run.run_card && <RunCardTab card={run.run_card} />}
-          {tab === "code" && <CodeTab code={code} />}
         </ErrorBoundary>
       </div>
     </div>

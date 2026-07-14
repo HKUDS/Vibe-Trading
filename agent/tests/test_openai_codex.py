@@ -8,8 +8,10 @@ from pathlib import Path
 import pytest
 
 from src.providers import llm as llm_mod
+from src.providers.chat import ProviderStreamError
 from src.providers.openai_codex import (
     DEFAULT_CODEX_URL,
+    CodexStreamError,
     OpenAICodexLLM,
     _events_from_lines,
     _message_chunks_from_events,
@@ -147,3 +149,83 @@ def test_stream_non_200_response_raises_http_error(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(RuntimeError, match="OpenAI Codex HTTP 401"):
         list(adapter.stream([{"role": "user", "content": "hello"}]))
+
+
+def test_stream_non_200_response_raises_typed_codex_stream_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #7: a Codex 4xx raises ``CodexStreamError`` with ``status_code`` set.
+
+    Regression: a plain ``RuntimeError`` carried no ``status_code`` attribute,
+    so ``ProviderStreamError.status_code`` was ``None`` (retryable=True) for
+    every codex error — including deterministic 400/401/403. The fix is a
+    ``CodexStreamError(RuntimeError)`` subclass that exposes the upstream
+    status so retry classification works correctly.
+    """
+    class _FakeResponse:
+        status_code = 401
+
+        def __enter__(self) -> "_FakeResponse":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b"unauthorized"
+
+    class _FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> "_FakeClient":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def stream(self, *args: object, **kwargs: object) -> _FakeResponse:
+            return _FakeResponse()
+
+    import src.providers.openai_codex as codex_mod
+
+    monkeypatch.setattr(codex_mod.httpx, "Client", _FakeClient)
+    adapter = OpenAICodexLLM(model=DEFAULT_CODEX_MODEL)
+    adapter._headers = lambda: {}
+
+    with pytest.raises(CodexStreamError) as excinfo:
+        list(adapter.stream([{"role": "user", "content": "hello"}]))
+
+    # CodexStreamError carries the status_code so ProviderStreamError
+    # classifies 401 as non-retryable downstream.
+    assert excinfo.value.status_code == 401
+
+    err = ProviderStreamError(
+        provider="openai-codex",
+        model=DEFAULT_CODEX_MODEL,
+        original=excinfo.value,
+    )
+    assert err.status_code == 401
+    assert err.retryable is False
+
+
+def test_codex_400_is_non_retryable_via_codex_stream_error() -> None:
+    """Deterministic codex 400 is non-retryable through CodexStreamError."""
+    err = ProviderStreamError(
+        provider="openai-codex",
+        model=DEFAULT_CODEX_MODEL,
+        original=CodexStreamError(400, "bad request body"),
+    )
+    assert err.status_code == 400
+    assert err.retryable is False
+
+
+def test_codex_500_is_retryable_via_codex_stream_error() -> None:
+    """Transient codex 500 stays retryable."""
+    err = ProviderStreamError(
+        provider="openai-codex",
+        model=DEFAULT_CODEX_MODEL,
+        original=CodexStreamError(500, "boom"),
+    )
+    assert err.status_code == 500
+    assert err.retryable is True

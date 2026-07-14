@@ -485,7 +485,12 @@ def register_live_routes(
 
         from src.live.mandate.commit import CommitError, commit_mandate
 
-        broker_ceilings = _host()._fetch_broker_ceilings(payload.broker)
+        # Broker ceiling fetch is a blocking adapter call; run it on a worker
+        # thread so the request handler does not stall the event loop while
+        # the broker SDK resolves.
+        broker_ceilings = await asyncio.to_thread(
+            _host()._fetch_broker_ceilings, payload.broker
+        )
 
         try:
             result = commit_mandate(
@@ -683,6 +688,18 @@ def register_live_routes(
             return {"broker": broker, "stopped": False, "was_running": False}
 
         task.cancel()
+        # Await the cancellation so the runner has actually unwound before we
+        # report "stopped" — otherwise a runner mid-flight could still submit an
+        # order after the kill switch returned. Bounded so a wedged task can't
+        # hang the request.
+        try:
+            await asyncio.wait_for(task, timeout=10.0)
+        except asyncio.CancelledError:
+            pass
+        except asyncio.TimeoutError:
+            logger.warning("live runner %s did not stop within timeout after cancel", broker)
+        except Exception:
+            logger.exception("live runner %s raised during cancellation", broker)
         h._emit_live_event(
             payload.session_id,
             "live.action",

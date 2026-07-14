@@ -60,6 +60,7 @@ class RunResponse(BaseModel):
     run_id: str = Field(..., description="Run identifier")
     elapsed_seconds: float = Field(..., description="Execution time in seconds")
     reason: Optional[str] = Field(None, description="Failure reason when available")
+    prompt: Optional[str] = Field(None, description="Original user prompt from req.json")
 
     planner_output: Optional[Dict[str, Any]] = Field(None, description="Planner output")
     strategy_spec: Optional[Dict[str, Any]] = Field(None, description="Strategy specification")

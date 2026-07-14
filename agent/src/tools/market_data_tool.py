@@ -40,6 +40,7 @@ class MarketDataTool(BaseTool):
                     "yfinance",
                     "yahoo",
                     "okx",
+                    "binance",
                     "ccxt",
                     "tushare",
                     "baostock",
@@ -56,10 +57,11 @@ class MarketDataTool(BaseTool):
                 ],
                 "description": (
                     "Data source. 'auto' detects from symbol format with fallback. "
-                    "Free, no key: yfinance/yahoo (US/HK equities), okx/ccxt "
-                    "(crypto), baostock/tencent/eastmoney/sina/akshare/mootdx "
-                    "(China A-shares), stooq (global EOD). Key-gated REST: tushare "
-                    "(China A-shares), finnhub/alphavantage/tiingo/fmp (US/global)."
+                    "Free, no key: yfinance/yahoo (US/HK equities), okx/binance/ccxt "
+                    "(crypto; auto tries OKX then Binance), baostock/tencent/eastmoney/"
+                    "sina/akshare/mootdx (China A-shares), stooq (global EOD). "
+                    "Key-gated REST: tushare (China A-shares), finnhub/alphavantage/"
+                    "tiingo/fmp (US/global)."
                 ),
                 "default": "auto",
             },

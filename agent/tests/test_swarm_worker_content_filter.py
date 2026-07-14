@@ -48,7 +48,8 @@ class _ScriptedChatLLM:
         return self
 
     def stream_chat(
-        self, messages, tools=None, on_text_chunk=None, timeout=None
+        self, messages, tools=None, on_text_chunk=None, timeout=None,
+        should_cancel=None,
     ) -> LLMResponse:
         self.calls += 1
         self.received_messages.append(list(messages))

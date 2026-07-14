@@ -54,10 +54,14 @@ from src.config.accessor import get_env_config, reset_env_config
 
 console = get_console()
 AGENT_DIR = Path(__file__).resolve().parents[1]
-RUNS_DIR = AGENT_DIR / "runs"
-SWARM_DIR = AGENT_DIR / ".swarm" / "runs"
-SESSIONS_DIR = AGENT_DIR / "sessions"
-UPLOADS_DIR = AGENT_DIR / "uploads"
+# Align CLI artifacts with API/Web: ~/.vibe-trading (not package-local agent/)
+_USER_DATA = Path.home() / ".vibe-trading"
+RUNS_DIR = _USER_DATA / "runs"
+SWARM_DIR = _USER_DATA / "swarm" / "runs"
+SESSIONS_DIR = _USER_DATA / "sessions"
+UPLOADS_DIR = _USER_DATA / "uploads"
+for _d in (RUNS_DIR, SWARM_DIR, SESSIONS_DIR, UPLOADS_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
 
 EXIT_SUCCESS = 0
 EXIT_RUN_FAILED = 1

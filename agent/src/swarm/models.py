@@ -48,6 +48,10 @@ class WorkerStatus(str, Enum):
     fabricated/mock numbers, unparsed tool markup, or a data agent that
     made no tool call and wrote no report). It must never be folded into
     ``completed`` (see P01/P03).
+
+    ``cancelled`` means the run's cancel_event was set: the worker bailed
+    out cooperatively (top-of-iteration or mid-stream) without an error.
+    It must never be retried.
     """
 
     completed = "completed"
@@ -55,6 +59,7 @@ class WorkerStatus(str, Enum):
     timeout = "timeout"
     token_limit = "token_limit"
     incomplete = "incomplete"
+    cancelled = "cancelled"
 
 
 class SwarmAgentSpec(BaseModel):

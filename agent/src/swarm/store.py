@@ -258,6 +258,10 @@ class SwarmStore:
         with self._write_lock:
             with events_file.open("a", encoding="utf-8") as f:
                 f.write(event.model_dump_json() + "\n")
+                # fsync so a crash mid-write can't leave a truncated line that
+                # would break _last_event_timestamp on the next read.
+                f.flush()
+                os.fsync(f.fileno())
 
     def read_events(self, run_id: str, after_index: int = 0) -> list[SwarmEvent]:
         """Read the event log with optional offset for SSE incremental streaming.

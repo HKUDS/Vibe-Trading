@@ -156,6 +156,21 @@ from src.api.scheduled_routes import (  # noqa: E402
 @app.on_event("startup")
 async def _run_startup_preflight() -> None:
     """Run preflight checks on server startup."""
+    # Load ~/.vibe-trading/.env before any EnvConfig singleton is built, then
+    # reset so Settings API and agent share the same provider/model view.
+    try:
+        from src.providers.llm import _ensure_dotenv
+        from src.config.accessor import reset_env_config
+
+        # Force reload even if another import already marked dotenv loaded.
+        import src.providers.llm as _llm_mod
+
+        _llm_mod._dotenv_loaded = False
+        _ensure_dotenv()
+        reset_env_config()
+    except Exception:
+        logger.exception("Failed to load shared ~/.vibe-trading/.env on startup")
+
     from src.preflight import run_preflight
 
     run_preflight(console)
@@ -313,13 +328,43 @@ def serve_main(argv: list[str] | None = None) -> int:
     from starlette.exceptions import HTTPException as StarletteHTTPException
 
     class SPAStaticFiles(StaticFiles):
-        """Serve index.html for browser refreshes on client-side routes."""
+        """Serve index.html for browser refreshes on client-side routes.
+
+        Never fall back to index.html for fingerprinted static assets
+        (e.g. /assets/Settings-*.js). Doing so returns HTML with HTTP 200,
+        so browsers report ``Failed to fetch dynamically imported module``
+        after a rebuild instead of a clean 404 + hard-refresh recovery.
+        """
+
+        _ASSET_SUFFIXES = (
+            ".js",
+            ".css",
+            ".map",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".eot",
+            ".svg",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".webp",
+            ".ico",
+            ".json",
+        )
 
         async def get_response(self, path: str, scope: Dict[str, Any]):
             try:
                 return await super().get_response(path, scope)
             except StarletteHTTPException as exc:
                 if exc.status_code != status.HTTP_404_NOT_FOUND:
+                    raise
+                normalized = (path or "").lstrip("/").lower()
+                # Missing hashed chunks / media must 404, not SPA-shell.
+                if normalized.startswith("assets/") or normalized.endswith(
+                    self._ASSET_SUFFIXES
+                ):
                     raise
                 return await super().get_response("index.html", scope)
 

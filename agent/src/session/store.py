@@ -165,8 +165,13 @@ class SessionStore:
         path = self._messages_file(session_id)
         if not path.exists():
             return []
+        # Concurrent writer + reader: the last line may be in flight and look
+        # truncated. Detect by absence of trailing newline, sleep briefly, and
+        # retry once before falling back to "skip + warn" so a half-written
+        # entry is not silently dropped during a hot session.
+        text = self._read_messages_text_with_partial_retry(path)
         messages: List[Message] = []
-        for line in path.read_text(encoding="utf-8").strip().splitlines():
+        for line in text.strip().splitlines():
             if line.strip():
                 try:
                     messages.append(Message.from_dict(json.loads(line)))
@@ -177,6 +182,31 @@ class SessionStore:
                         line[:200],
                     )
         return messages[-limit:]
+
+    @staticmethod
+    def _read_messages_text_with_partial_retry(path: Path) -> str:
+        """Read the messages JSONL, retrying once on a partial trailing line.
+
+        Concurrent ``append_message`` + ``get_messages`` can surface an
+        in-flight last line that has not yet been flushed with its terminating
+        newline. A truncated line causes :class:`json.JSONDecodeError` further
+        down the pipeline and is silently skipped. To avoid that, detect a
+        partial tail (no trailing ``\n``) and retry once after a short sleep so
+        the writer can finish flushing before the reader parses the file.
+        """
+        import time as _time
+
+        text = path.read_text(encoding="utf-8")
+        if not text or text.endswith("\n"):
+            return text
+        logger.warning(
+            "messages.jsonl for %s had no trailing newline; retrying once "
+            "to give the writer a chance to finish flushing.",
+            path,
+        )
+        _time.sleep(0.01)
+        text2 = path.read_text(encoding="utf-8")
+        return text2 if text2.endswith("\n") else text
 
     # ---- Attempt CRUD ----
 

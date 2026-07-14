@@ -131,3 +131,26 @@ def test_posix_oserror_is_not_treated_transient():
     assert _is_transient_windows_error(OSError("posix")) is False
     assert _is_transient_windows_error(_winerr(13)) is False
     assert _is_transient_windows_error(_winerr(5)) is True
+
+
+def test_append_event_fsyncs_events_jsonl(tmp_path, monkeypatch):
+    """A crash mid-write can leave a truncated line that breaks
+    _last_event_timestamp; append_event must fsync so the line is durable."""
+    from src.swarm.models import SwarmEvent
+
+    store = SwarmStore(base_dir=tmp_path)
+    store.create_run(_run("evt"))
+
+    fsynced: list[int] = []
+    real_fsync = store_mod.os.fsync
+    monkeypatch.setattr(
+        store_mod.os, "fsync", lambda fd: (fsynced.append(fd), real_fsync(fd))[1]
+    )
+
+    store.append_event(
+        "evt", SwarmEvent(type="run_started", timestamp="2026-01-01T00:00:00Z")
+    )
+
+    assert fsynced, "append_event did not fsync events.jsonl"
+    events = store.read_events("evt")
+    assert len(events) == 1 and events[0].type == "run_started"

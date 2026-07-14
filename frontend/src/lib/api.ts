@@ -440,6 +440,7 @@ export interface RunData {
   status: string;
   run_id: string;
   prompt?: string;
+  reason?: string;
   elapsed_seconds?: number;
   run_directory?: string;
   run_stage?: string;

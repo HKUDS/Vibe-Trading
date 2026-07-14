@@ -18,6 +18,7 @@ import copy
 import json
 import logging
 import queue
+import re
 import sys
 import threading
 import time as _time
@@ -47,8 +48,21 @@ from src.config.accessor import get_env_config
 from src.tools.background_tools import get_background_manager
 from src.tools.redaction import redact_payload
 
-RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
-SESSIONS_DIR = Path(__file__).resolve().parents[2] / "sessions"
+# Must match API listing path (src.api.helpers): ~/.vibe-trading/{runs,sessions}
+# Previously used package-relative agent/runs, which made /runs/{id} return 404
+# after the UI/API started reading from the user data directory.
+try:
+    from src.api.helpers import RUNS_DIR as _HELPERS_RUNS_DIR
+    from src.api.helpers import SESSIONS_DIR as _HELPERS_SESSIONS_DIR
+
+    RUNS_DIR = _HELPERS_RUNS_DIR
+    SESSIONS_DIR = _HELPERS_SESSIONS_DIR
+except Exception:  # noqa: BLE001 — CLI/import-order fallback
+    _USER_DATA = Path.home() / ".vibe-trading"
+    RUNS_DIR = _USER_DATA / "runs"
+    SESSIONS_DIR = _USER_DATA / "sessions"
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 KEEP_RECENT = 3
 TOOL_RESULT_LIMIT = 10_000
 LLM_USAGE_ARTIFACT = "llm_usage.json"
@@ -59,6 +73,34 @@ COLLAPSE_HEAD = 900
 COLLAPSE_TAIL = 500
 
 TAIL_TOKEN_BUDGET = 20_000
+
+# Heuristic detection: some OpenAI-compatible relays surface upstream errors
+# (tool_use/tool_result mismatches, 4xx/5xx wrapping) as a normal completion
+# string instead of a streaming exception. Without this guard, the loop marks
+# the run as "success" and the bogus text gets shown as the final answer.
+# See session 86171649b571 (2026-07-14) for the original failure mode.
+_PROVIDER_ERROR_PATTERNS: tuple[str, ...] = (
+    r"^\s*Execution failed\s*:",
+    r"\btool result missing\b",
+    r"\bdue to internal error\b",
+    r"^\s*Internal\s+error\b",
+    r"^\s*Provider\s+error\b",
+    r"^\s*API\s+error\b",
+    r"^\s*Upstream\s+error\b",
+    r"^\s*BadRequestError\b",
+)
+_PROVIDER_ERROR_RE = re.compile("|".join(_PROVIDER_ERROR_PATTERNS), re.IGNORECASE)
+
+
+def _looks_like_provider_error(text: str) -> bool:
+    """Return True if ``text`` looks like an LLM-provider error string.
+
+    Only the first 500 characters are scanned so a legitimate answer that
+    happens to mention an error further down does not trip the guard.
+    """
+    if not text:
+        return False
+    return bool(_PROVIDER_ERROR_RE.search(text.strip()[:500]))
 
 
 def _override(name: str):
@@ -101,6 +143,25 @@ def _stream_retry_delay_s() -> float:
     return get_env_config().agent_tuning.vt_stream_retry_delay_s
 
 
+def _stream_max_retries() -> int:
+    """How many transient stream failures to retry per attempt.
+
+    Default 3 (was historically 1) to absorb OpenAI-compat relays that
+    occasionally return HTTP 200 + a partial chunked body. httpx reports
+    those as ``RemoteProtocolError: incomplete chunked read`` mid-stream.
+    Observed with the minimax relay in session 86171649b571 (2026-07-14).
+
+    Three retries with the configured 1s delay keep total added latency
+    bounded at ~3s while raising success probability for flaky relays.
+    Set to 0 to restore the legacy single-attempt behaviour.
+    """
+    ov = _override("STREAM_MAX_RETRIES")
+    if ov is not None:
+        return max(0, int(ov))
+    from src.config.accessor import get_env_config
+    return max(0, get_env_config().agent_tuning.vt_stream_max_retries)
+
+
 def _tool_timeout_seconds() -> float:
     ov = _override("TOOL_TIMEOUT_SECONDS")
     if ov is not None:
@@ -117,6 +178,25 @@ def _goal_max_continuations() -> int:
     return get_env_config().agent_tuning.vibe_trading_goal_max_continuations
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_queue_put(
+    q: "queue.Queue[tuple[str | None, BaseException | None]]",
+    item: tuple[str | None, BaseException | None],
+) -> None:
+    """Non-blocking ``Queue.put`` that drops stale items instead of wedging.
+
+    Used by the readonly-tool timeout worker: after the main thread has
+    drained a timeout-path result, the worker may still complete later and
+    attempt to publish a result. Without this guard ``Queue.put`` would block
+    indefinitely (the daemon thread has nowhere else to put it), pinning the
+    result in memory and starving concurrent writers across invocations.
+    """
+    try:
+        q.put(item, block=False)
+    except queue.Full:
+        # Caller already gave up; drop this late arrival rather than wedge.
+        return
 
 
 def _coerce_usage_int(value: Any) -> int:
@@ -605,8 +685,23 @@ class AgentLoop:
         trace = TraceWriter(trace_dir)
         if self._run_iteration == 0 and trace.path.exists():
             existing = TraceWriter.read(trace_dir)
+            # Defensive: a hand-edited or future-version trace entry may have
+            # ``iter`` as a non-integer (e.g. the literal string "three").
+            # ``int()`` raises ValueError on bad input; without this guard the
+            # exception would propagate out of ``run()`` and surface to the
+            # API caller instead of degrading gracefully to a fresh iter=0.
+            def _safe_iter(entry: Dict[str, Any]) -> int:
+                raw = entry.get("iter", 0)
+                try:
+                    return int(raw)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "trace resume: skipping non-integer iter value %r", raw
+                    )
+                    return 0
+
             self._run_iteration = max(
-                (int(e.get("iter", 0)) for e in existing if "iter" in e),
+                (_safe_iter(e) for e in existing if "iter" in e),
                 default=0,
             )
         trace.write_text_entry(
@@ -728,47 +823,93 @@ class AgentLoop:
                 if is_last_iteration:
                     trace.write({"type": "forced_text_only", "iter": current_iter})
 
-                try:
-                    response = self.llm.stream_chat(
-                        messages,
-                        tools=tool_defs,
-                        on_text_chunk=_on_text_chunk,
-                        on_reasoning_chunk=_on_reasoning_chunk,
-                        should_cancel=self._cancel_event.is_set,
-                    )
-                except ProviderStreamError as exc:
-                    # One retry for transient mid-stream failures (connection
-                    # reset, relay hiccup) — mirrors the swarm worker policy.
-                    # Deterministic 4xx errors fail immediately. Deltas from
-                    # the failed attempt are dropped so the trace does not
-                    # contain duplicated thinking text.
-                    if not exc.retryable:
-                        raise
-                    logger.warning(
-                        "Provider stream failed (iter %s), retrying once: %s",
-                        current_iter,
-                        exc,
-                    )
-                    self._emit(
-                        "stream_reset",
-                        {
-                            "iter": current_iter,
-                            "reason": "provider_stream_retry",
-                            "provider": exc.provider,
-                            "model": exc.model,
-                        },
-                    )
-                    thinking_chunks.clear()
-                    reasoning_chars = 0
-                    last_reasoning_emit = None
-                    _time.sleep(_stream_retry_delay_s())
-                    response = self.llm.stream_chat(
-                        messages,
-                        tools=tool_defs,
-                        on_text_chunk=_on_text_chunk,
-                        on_reasoning_chunk=_on_reasoning_chunk,
-                        should_cancel=self._cancel_event.is_set,
-                    )
+                stream_max_retries = _stream_max_retries()
+                response = None
+                for stream_attempt in range(stream_max_retries + 1):
+                    # Early cancel check before opening a new stream so a user
+                    # cancel between retries does not waste the next attempt.
+                    if self._cancel_event.is_set():
+                        break
+                    try:
+                        response = self.llm.stream_chat(
+                            messages,
+                            tools=tool_defs,
+                            on_text_chunk=_on_text_chunk,
+                            on_reasoning_chunk=_on_reasoning_chunk,
+                            should_cancel=self._cancel_event.is_set,
+                        )
+                        break
+                    except ProviderStreamError as exc:
+                        # Transient mid-stream failures (connection reset,
+                        # RemoteProtocolError incomplete chunked read, relay
+                        # hiccup) — retry up to ``stream_max_retries`` times.
+                        # Deterministic 4xx errors fail immediately.
+                        #
+                        # Only the on-disk trace deltas are dropped between
+                        # attempts. SSE ``text_delta`` events already fired
+                        # for the failed attempt cannot be un-emitted — the
+                        # stream_reset event below signals the UI to reset
+                        # any accumulated partial text from the prior try.
+                        # If the user cancelled while we were mid-stream, the
+                        # cancel takes precedence over the retry decision so
+                        # we surface a clean 'cancelled' terminal status.
+                        if self._cancel_event.is_set():
+                            final_reason = "cancelled by user"
+                            final_status = "cancelled"
+                            state_store.mark_failure(run_dir, final_reason)
+                            trace.write({
+                                "type": "end",
+                                "iter": current_iter,
+                                "status": "cancelled",
+                                "reason": final_reason,
+                                "iterations": iteration,
+                            })
+                            trace.close()
+                            return {
+                                "status": "cancelled",
+                                "reason": final_reason,
+                                "run_dir": str(run_dir),
+                                "run_id": run_dir.name,
+                                "content": "",
+                                "react_trace": react_trace,
+                                "iterations": iteration,
+                                "max_iterations": self.max_iterations,
+                            }
+                        if not exc.retryable or stream_attempt >= stream_max_retries:
+                            raise
+                        logger.warning(
+                            "Provider stream failed (iter %s, attempt %s/%s), retrying: %s",
+                            current_iter,
+                            stream_attempt + 1,
+                            stream_max_retries + 1,
+                            exc,
+                        )
+                        self._emit(
+                            "stream_reset",
+                            {
+                                "iter": current_iter,
+                                "reason": "provider_stream_retry",
+                                "provider": exc.provider,
+                                "model": exc.model,
+                                "attempt": stream_attempt + 1,
+                                "max_attempts": stream_max_retries + 1,
+                                "text_delta_reset": True,
+                            },
+                        )
+                        self._emit(
+                            "text_delta_reset",
+                            {
+                                "iter": current_iter,
+                                "attempt": stream_attempt + 1,
+                                "reason": "provider_stream_retry",
+                            },
+                        )
+                        thinking_chunks.clear()
+                        reasoning_chars = 0
+                        last_reasoning_emit = None
+                        _time.sleep(_stream_retry_delay_s())
+                if response is None:  # pragma: no cover — defensive
+                    raise RuntimeError("stream chat exited without a response")
 
                 # Cancelled mid-stream: discard this turn's partial response and
                 # end the run now, without executing any of its tool calls.
@@ -970,6 +1111,31 @@ class AgentLoop:
 
         except Exception as exc:
             logger.exception(f"AgentLoop error: {exc}")
+            # If the user cancelled while we were mid-stream, the cancel
+            # signal takes precedence over the provider error: surface a
+            # clean 'cancelled' terminal status instead of 'failed' so the
+            # UI does not misreport a cooperative cancel as an outage.
+            if self._cancel_event.is_set():
+                final_reason = "cancelled by user"
+                trace.write({
+                    "type": "end",
+                    "iter": self._run_iteration,
+                    "status": "cancelled",
+                    "reason": final_reason,
+                    "iterations": iteration,
+                })
+                trace.close()
+                state_store.mark_failure(run_dir, final_reason)
+                return {
+                    "status": "cancelled",
+                    "reason": final_reason,
+                    "run_dir": str(run_dir),
+                    "run_id": run_dir.name,
+                    "content": "",
+                    "react_trace": react_trace,
+                    "iterations": iteration,
+                    "max_iterations": self.max_iterations,
+                }
             error_code = (
                 "provider_stream_error"
                 if isinstance(exc, ProviderStreamError)
@@ -1007,8 +1173,20 @@ class AgentLoop:
             state_store.mark_failure(run_dir, final_reason)
             final_status = "failed"
         elif (run_dir / "artifacts" / "metrics.csv").exists() or final_content:
-            state_store.mark_success(run_dir)
-            final_status = "success"
+            if final_content and _looks_like_provider_error(final_content):
+                # Some OpenAI-compatible relays (observed: minimax) surface
+                # upstream tool_use/tool_result mismatches as a completion
+                # string. Treat as failure so the bogus text does not get
+                # persisted as a successful final answer.
+                final_status = "failed"
+                final_reason = (
+                    "provider_returned_error_text: "
+                    f"{final_content[:200]!r}"
+                )
+                state_store.mark_failure(run_dir, final_reason)
+            else:
+                state_store.mark_success(run_dir)
+                final_status = "success"
         elif empty_model_response_iter is not None:
             _cfg = get_env_config()
             provider = _cfg.llm.langchain_provider.strip().lower() or "openai"
@@ -1086,8 +1264,40 @@ class AgentLoop:
         focus_topic = ""
         to_execute = []
 
-        # Cancelled before this turn's tools ran — skip execution entirely.
+        # Cancelled before this turn's tools ran — synthesize tool results for
+        # every tool_call that the assistant message already declared, then
+        # skip execution entirely. Without the synthetic results the OpenAI
+        # wire-protocol is invalid: every ``tool_calls[i]`` must be paired
+        # with a ``role=tool`` message carrying ``tool_call_id``, otherwise
+        # the next provider request returns 400 "messages[N].tool_calls[i]
+        # must be followed by a tool message" and the conversation cannot
+        # resume even after the cancel clears.
         if self._cancel_event.is_set():
+            for tc in tool_calls:
+                if tc.name == "compact":
+                    # Compact is already handled below; this branch only
+                    # fires when the cancel arrives during the assistant
+                    # message processing loop above, so we still need to
+                    # decide whether to record the compact request. Keep
+                    # behavior consistent: defer execution, mark it.
+                    compact_requested = True
+                    focus_topic = (tc.arguments or {}).get("focus_topic", "")
+                cancelled_result = json.dumps({"status": "cancelled"})
+                messages.append(
+                    context.format_tool_result(
+                        tc.id, tc.name or "tool", cancelled_result
+                    )
+                )
+                self._emit(
+                    "tool_result",
+                    {
+                        "tool": tc.name,
+                        "call_id": tc.id,
+                        "status": "cancelled",
+                        "result": cancelled_result,
+                        "iter": iteration,
+                    },
+                )
             return compact_requested, focus_topic
 
         for tc in tool_calls:
@@ -1095,7 +1305,38 @@ class AgentLoop:
             if tc.name == "compact":
                 compact_requested = True
                 focus_topic = tc.arguments.get("focus_topic", "")
-                messages.append(context.format_tool_result(tc.id, "compact", '{"status":"ok","message":"Compressing..."}'))
+                # Emit the same tool_call / tool_result SSE pair as the
+                # normal-execution path below, otherwise the UI's tool panel
+                # sees LLM stream the compact call but never receives a
+                # matching tool_result. Without this pair the panel's
+                # pending-counter increments and never decrements, leaving
+                # the entry stuck on screen for the rest of the run.
+                compact_args = {
+                    str(k): str(v)[:200]
+                    for k, v in (tc.arguments or {}).items()
+                }
+                self._emit(
+                    "tool_call",
+                    {
+                        "tool": tc.name,
+                        "call_id": tc.id,
+                        "arguments": compact_args,
+                        "iter": iteration,
+                    },
+                )
+                compact_result = '{"status":"ok","message":"Compressing..."}'
+                messages.append(
+                    context.format_tool_result(tc.id, "compact", compact_result)
+                )
+                self._emit(
+                    "tool_result",
+                    {
+                        "tool": tc.name,
+                        "call_id": tc.id,
+                        "result": compact_result,
+                        "iter": iteration,
+                    },
+                )
                 trace.write({"type": "compact_requested", "iter": iteration})
                 continue
 
@@ -1196,14 +1437,22 @@ class AgentLoop:
             args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
             redacted_args = redact_payload(args)
             event_args = {k: str(v)[:200] for k, v in redacted_args.items()}
-            self._emit("tool_call", {"tool": tc.name, "arguments": event_args, "iter": iteration})
+            self._emit(
+                "tool_call",
+                {
+                    "tool": tc.name,
+                    "call_id": tc.id,
+                    "arguments": event_args,
+                    "iter": iteration,
+                },
+            )
             trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": redacted_args})
             runnable.append((tc, args))
 
         # Execute in parallel — each worker gets its own heartbeat + progress emitter.
         def _run(tc_args: tuple) -> tuple:
             tc, args = tc_args
-            result, elapsed_ms = self._invoke_tool(tc.name, args)
+            result, elapsed_ms = self._invoke_tool(tc.name, args, call_id=tc.id)
             return tc, result, elapsed_ms
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(runnable), 8)) as pool:
@@ -1243,15 +1492,29 @@ class AgentLoop:
 
         redacted_args = redact_payload(args)
         event_args = {k: str(v)[:200] for k, v in redacted_args.items()}
-        self._emit("tool_call", {"tool": tc.name, "arguments": event_args, "iter": iteration})
+        self._emit(
+            "tool_call",
+            {
+                "tool": tc.name,
+                "call_id": tc.id,
+                "arguments": event_args,
+                "iter": iteration,
+            },
+        )
         trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": redacted_args})
         logger.info(f"Tool call: {tc.name}({list(args.keys())})")
 
-        result, elapsed_ms = self._invoke_tool(tc.name, args)
+        result, elapsed_ms = self._invoke_tool(tc.name, args, call_id=tc.id)
 
         self._finalize_tool_result(tc, result, elapsed_ms, context, messages, trace, react_trace, iteration)
 
-    def _invoke_tool(self, tool_name: str, args: Dict[str, Any]) -> tuple[str, int]:
+    def _invoke_tool(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        *,
+        call_id: str | None = None,
+    ) -> tuple[str, int]:
         """Execute a tool with heartbeat + structured progress emission.
 
         Installs a thread-local progress emitter so the tool may call
@@ -1264,6 +1527,7 @@ class AgentLoop:
         Args:
             tool_name: Tool name to execute.
             args: Tool arguments dict.
+            call_id: Stable tool-call id for concurrent same-name tools.
 
         Returns:
             Tuple of (result_str, elapsed_ms).
@@ -1276,11 +1540,15 @@ class AgentLoop:
                 return
             payload = event.to_dict()
             payload["tool"] = tool_name
+            if call_id:
+                payload["call_id"] = call_id
             self._emit("tool_progress", payload)
 
         def _on_heartbeat(payload: Dict[str, Any]) -> None:
             if timed_out.is_set():
                 return
+            if call_id:
+                payload = {**payload, "call_id": call_id}
             self._emit("tool_heartbeat", payload)
 
         t0 = _time.perf_counter()
@@ -1365,14 +1633,39 @@ class AgentLoop:
         # Readonly tools run in a worker thread so a hung tool becomes a
         # bounded error: late results are discarded and the emitters are
         # suppressed via the timed_out event.
+        #
+        # The queue has ``maxsize=1`` so a queued result cannot pile up across
+        # invocations. Two safeguards prevent an unreachable item leak on
+        # timeout:
+        #
+        # 1. ``_drain_queue`` is called before the timeout-return path so the
+        #    caller never leaves a successful result sitting on the queue when
+        #    it has already decided to return an error.
+        # 2. ``_worker`` uses a non-blocking ``put`` so if the main thread has
+        #    already drained, a slow tool's eventual completion cannot wedge
+        #    the daemon thread forever waiting for room.
         result_queue: queue.Queue[tuple[str | None, BaseException | None]] = queue.Queue(maxsize=1)
+
+        def _drain_queue() -> None:
+            """Pop any pending result without blocking.
+
+            Used after a timeout so a late-arriving success from the worker
+            cannot stay on the queue, becoming unreachable after the function
+            returns the timeout error.
+            """
+            try:
+                result_queue.get_nowait()
+            except queue.Empty:
+                return
 
         def _worker() -> None:
             _set_emitter(_on_progress)
             try:
-                result_queue.put((self.registry.execute(tool_name, args), None))
+                result = self.registry.execute(tool_name, args)
             except BaseException as exc:  # noqa: BLE001 - propagate through caller thread
-                result_queue.put((None, exc))
+                _safe_queue_put(result_queue, (None, exc))
+            else:
+                _safe_queue_put(result_queue, (result, None))
             finally:
                 _set_emitter(None)
 
@@ -1387,6 +1680,10 @@ class AgentLoop:
                 result, exc = result_queue.get(timeout=timeout)
             except queue.Empty:
                 timed_out.set()
+                # Drain any item that arrived between the get() returning
+                # Empty and our timeout-path read; otherwise the worker's
+                # eventual non-blocking put will leave an unreachable result.
+                _drain_queue()
                 elapsed_ms = _emit_timeout_progress(
                     "timeout", f"Tool exceeded {timeout_label} timeout"
                 )
@@ -1462,7 +1759,16 @@ class AgentLoop:
         )
         preview = trace_result[:200]
         react_trace.append({"type": "tool_call", "tool": tc.name, "result_preview": preview})
-        self._emit("tool_result", {"tool": tc.name, "status": status, "elapsed_ms": elapsed_ms, "preview": preview})
+        self._emit(
+            "tool_result",
+            {
+                "tool": tc.name,
+                "call_id": tc.id,
+                "status": status,
+                "elapsed_ms": elapsed_ms,
+                "preview": preview,
+            },
+        )
 
     # -- Context compression ---------------------------------------------------
 
@@ -1596,6 +1902,7 @@ _LEGACY_LAZY = {
     "HEARTBEAT_INTERVAL_S": _heartbeat_interval_s,
     "REASONING_DELTA_MIN_INTERVAL_S": _reasoning_delta_min_interval_s,
     "STREAM_RETRY_DELAY_S": _stream_retry_delay_s,
+    "STREAM_MAX_RETRIES": _stream_max_retries,
     "TOOL_TIMEOUT_SECONDS": _tool_timeout_seconds,
     "GOAL_MAX_CONTINUATIONS": _goal_max_continuations,
 }

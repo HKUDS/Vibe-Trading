@@ -352,3 +352,84 @@ def test_force_text_only_on_last_iteration(tmp_path: Path) -> None:
     assert result["status"] == "success"
     assert "Final answer" in result["content"]
     assert result["iterations"] == 5
+
+
+class _StubLLMProviderError:
+    """LLM stub that returns a provider-style error string as final_content.
+
+    Mirrors the regression observed in session 86171649b571 (2026-07-14):
+    minimax relay surfaced a tool_use/tool_result mismatch as a normal
+    completion. Without the guard, AgentLoop marked the run as success and
+    the bogus text became the user's "answer".
+    """
+
+    def __init__(self, error_text: str) -> None:
+        self._error_text = error_text
+
+    def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[Any] | None = None,
+        on_text_chunk: Callable[[str], None] | None = None,
+        on_reasoning_chunk: Callable[[str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> _StubLLMResponse:
+        resp = _StubLLMResponse()
+        resp.content = self._error_text
+        return resp
+
+    def chat(self, messages: list[dict[str, Any]], **_: Any) -> _StubLLMResponse:
+        resp = _StubLLMResponse()
+        resp.content = self._error_text
+        return resp
+
+
+def test_provider_error_string_marked_as_failed(tmp_path: Path) -> None:
+    """Regression: provider error strings must NOT become 'success' answers.
+
+    The exact text seen in 86171649b571's attempt a17cd61f393c.
+    """
+    agent = _build_agent(
+        _StubLLMProviderError(
+            "Execution failed: tool result missing due to internal error"
+        ),
+        max_iter=2,
+        tmp_run_dir=tmp_path / "run",
+    )
+
+    result = agent.run(user_message="anything")
+
+    assert result["status"] == "failed"
+    assert "provider_returned_error_text" in result["reason"]
+    assert "tool result missing" in result["reason"]
+
+
+def test_provider_error_helper_detects_known_patterns() -> None:
+    """Direct unit coverage for _looks_like_provider_error()."""
+    from src.agent.loop import _looks_like_provider_error
+
+    # Matches
+    assert _looks_like_provider_error("Execution failed: tool result missing due to internal error")
+    assert _looks_like_provider_error("  Execution failed: something")
+    assert _looks_like_provider_error("BadRequestError: ...")
+    assert _looks_like_provider_error("Internal error: upstream 502")
+    assert _looks_like_provider_error("API error: rate limit")
+    assert _looks_like_provider_error("Upstream error: tool_use_id mismatch")
+
+    # Does NOT match — legitimate answers
+    assert not _looks_like_provider_error("")
+    assert not _looks_like_provider_error("BTC is currently trading at $62,500.")
+    assert not _looks_like_provider_error("The strategy executed successfully; PnL is +12%.")
+    # Error keyword buried deep inside a real answer — must not trip
+    assert not _looks_like_provider_error(
+        "Here is the analysis: " + ("padding " * 200) + "no errors here."
+    )
+
+
+def test_provider_error_does_not_trigger_on_substring_far_into_text() -> None:
+    """The helper only scans the first 500 chars — a real answer that
+    mentions an error later must not be flagged."""
+    from src.agent.loop import _looks_like_provider_error
+
+    benign = "Final answer: " + ("filler " * 100) + "Note: 'Execution failed:' was in the previous turn."
+    assert not _looks_like_provider_error(benign)

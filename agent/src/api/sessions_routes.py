@@ -5,13 +5,14 @@ Mounted by ``agent/api_server.py`` via ``register_sessions_routes(app)``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -177,6 +178,16 @@ def _get_goal_store():
 
         _goal_store = GoalStore()
     return _goal_store
+
+
+def _session_etag(session: Any) -> str:
+    """Opaque optimistic-concurrency token for a session.
+
+    Derived from the last-write timestamp so any mutation changes it. Clients
+    obtain it from the ``updated_at`` field returned by GET and echo it back via
+    ``If-Match`` on PATCH.
+    """
+    return session.updated_at
 
 # ============================================================================
 # SSE frame helpers for session events (module-level for re-export)
@@ -599,8 +610,19 @@ def register_sessions_routes(app: FastAPI) -> None:
         return {"status": "deleted", "session_id": session_id}
 
     @app.patch("/sessions/{session_id}", dependencies=[Depends(require_auth)])
-    async def update_session(session_id: str, req: UpdateSessionRequest):
-        """Update session fields (e.g. title)."""
+    async def update_session(
+        session_id: str,
+        req: UpdateSessionRequest,
+        request: Request,
+        response: Response,
+    ):
+        """Update session fields (e.g. title).
+
+        Supports optimistic concurrency via the HTTP-standard ``If-Match``
+        header: pass the ETag from a prior read (the session's ``updated_at``)
+        and the write is rejected with 412 if another writer touched the
+        session in between, preventing silent last-write-wins data loss.
+        """
         _host_validate_path_param(session_id, "session_id")
         svc = _host_get_session_service()
         if not svc:
@@ -608,10 +630,25 @@ def register_sessions_routes(app: FastAPI) -> None:
         session = svc.store.get_session(session_id)
         if not session:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+        if_match = request.headers.get("If-Match")
+        if if_match is not None and if_match.strip() != "*":
+            current = _session_etag(session)
+            supplied = {
+                tag.strip().removeprefix("W/").strip().strip('"')
+                for tag in if_match.split(",")
+            }
+            if current not in supplied:
+                raise HTTPException(
+                    status_code=status.HTTP_412_PRECONDITION_FAILED,
+                    detail="Session was modified by another writer; reload and retry",
+                )
+
         if req.title is not None:
             session.title = req.title
         session.updated_at = datetime.now(timezone.utc).isoformat()
         svc.store.update_session(session)
+        response.headers["ETag"] = f'"{_session_etag(session)}"'
         return {"status": "updated", "session_id": session_id}
 
     @app.post("/sessions/{session_id}/messages", dependencies=[Depends(require_auth)])
@@ -676,7 +713,7 @@ def register_sessions_routes(app: FastAPI) -> None:
         svc = _host_get_session_service()
         if not svc:
             raise HTTPException(status_code=501, detail="Session runtime not enabled")
-        session = svc.get_session(session_id)
+        session = await asyncio.to_thread(svc.get_session, session_id)
         if not session:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
@@ -685,7 +722,9 @@ def register_sessions_routes(app: FastAPI) -> None:
         replay_active = (replay or "").lower() == "active"
         replay_all = False
         if replay_active and not event_id and session.last_attempt_id:
-            attempt = svc.store.get_attempt(session_id, session.last_attempt_id)
+            attempt = await asyncio.to_thread(
+                svc.store.get_attempt, session_id, session.last_attempt_id
+            )
             attempt_status = getattr(attempt.status, "value", attempt.status) if attempt else None
             replay_all = attempt_status == "running"
 
@@ -697,6 +736,11 @@ def register_sessions_routes(app: FastAPI) -> None:
             ):
                 if await request.is_disconnected():
                     break
+                # Emit an SSE comment heartbeat so idle-connection proxies
+                # (nginx/cloudflare) don't drop the stream, matching the
+                # keep-alive alpha_routes uses.
+                if event.event_type == "heartbeat":
+                    yield ": ping\n\n"
                 yield event.to_sse()
                 relayed = _mandate_proposal_frame_from_tool_result(event)
                 if relayed is not None:

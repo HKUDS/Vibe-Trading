@@ -86,8 +86,20 @@ def fetch_market_data(
     interval: str = "1D",
     max_rows: int = DEFAULT_MAX_ROWS,
     loader_resolver: Callable[[str], type] = get_loader,
+    fallback_chain_provider: Callable[[str], list[str]] | None = None,
+    max_fallback_attempts: int = 3,
 ) -> dict[str, Any]:
-    """Fetch normalized OHLCV data through the repository loader layer."""
+    """Fetch normalized OHLCV data through the repository loader layer.
+
+    When ``source="auto"`` (or any resolved source), if the chosen loader
+    raises during :meth:`fetch` the call falls through to the next source in
+    the market's :data:`backtest.loaders.registry.FALLBACK_CHAINS` (e.g. crypto
+    OKX → Binance → CCXT → Yahoo). At most ``max_fallback_attempts`` retries
+    are attempted before the symbol is recorded as ``_unresolved``.
+    """
+    from backtest.loaders.base import NoAvailableSourceError
+    from backtest.loaders.registry import FALLBACK_CHAINS
+
     results: dict[str, Any] = {}
 
     if source == "auto":
@@ -98,18 +110,63 @@ def fetch_market_data(
     else:
         groups = {source: list(codes)}
 
+    def _chain_for(src: str) -> list[str]:
+        """Return the ordered fallback chain for the market containing ``src``.
+
+        Falls back to ``[src]`` so an explicit source outside any chain still
+        gets at least one attempt.
+        """
+        if fallback_chain_provider is not None:
+            return fallback_chain_provider(src)
+        for market, chain in FALLBACK_CHAINS.items():
+            if src in chain:
+                return chain
+        return [src]
+
     for src, src_codes in groups.items():
-        loader_cls = loader_resolver(src)
-        loader = loader_cls()
-        try:
-            data_map = loader.fetch(src_codes, start_date, end_date, interval=interval)
-        except Exception:
-            logger.exception(
-                "market-data loader %r failed for %s; codes fall through to _unresolved",
-                src,
-                src_codes,
+        chain = _chain_for(src)
+        # Start the attempt list with the requested source, then the rest of
+        # the chain (preserving order, no duplicates).
+        attempts: list[str] = []
+        for candidate in [src, *chain]:
+            if candidate not in attempts:
+                attempts.append(candidate)
+        attempts = attempts[: max(1, max_fallback_attempts)]
+
+        data_map: dict[str, Any] = {}
+        used_source: str | None = None
+        last_exc: Exception | None = None
+        for attempt_src in attempts:
+            try:
+                loader_cls = loader_resolver(attempt_src)
+            except NoAvailableSourceError as exc:
+                last_exc = exc
+                logger.debug("loader %r unavailable: %s", attempt_src, exc)
+                continue
+            except Exception as exc:  # noqa: BLE001 — resolver may raise for non-network reasons
+                last_exc = exc
+                logger.debug("loader %r resolver failed: %s", attempt_src, exc)
+                continue
+            try:
+                loader = loader_cls()
+                data_map = loader.fetch(src_codes, start_date, end_date, interval=interval)
+                used_source = attempt_src
+                if data_map:
+                    break
+            except Exception as exc:  # noqa: BLE001 — contained per-symbol fallback
+                last_exc = exc
+                logger.error(
+                    "market-data loader %r failed for %s; trying next source in chain: %s",
+                    attempt_src, src_codes, exc,
+                )
+                continue
+
+        if used_source and used_source != src:
+            logger.info(
+                "market-data source %r unavailable for %s; fell back to %r",
+                src, src_codes, used_source,
             )
-            data_map = {}
+
         for symbol, df in data_map.items():
             records = df.reset_index().to_dict(orient="records")
             for row in records:

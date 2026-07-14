@@ -139,6 +139,81 @@ def test_update_deepseek_settings_uses_exact_reported_payload(
     assert "DEEPSEEK_BASE_URL=https://api.deepseek.com/v1" in env_text
 
 
+def test_switching_provider_purges_previous_provider_credentials(
+    client: TestClient, tmp_path: Path,
+) -> None:
+    """Switching providers must delete the old provider's keys so a revoked
+    credential cannot survive in the env file and be resurrected on restart."""
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "LANGCHAIN_PROVIDER=openai",
+                "LANGCHAIN_MODEL_NAME=gpt-5.5",
+                "OPENAI_API_KEY=sk-old",
+                "OPENAI_BASE_URL=https://api.openai.com/v1",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    response = client.put(
+        "/settings/llm",
+        json={
+            "provider": "deepseek",
+            "model_name": "deepseek-v4-pro",
+            "base_url": "https://api.deepseek.com/v1",
+            "api_key": "sk-deepseek-new",
+            "temperature": 0.0,
+            "timeout_seconds": 120,
+            "max_retries": 2,
+            "reasoning_effort": "",
+        },
+    )
+
+    assert response.status_code == 200
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "OPENAI_API_KEY" not in env_text
+    assert "sk-old" not in env_text
+    assert "DEEPSEEK_API_KEY=sk-deepseek-new" in env_text
+
+
+def test_switching_between_shared_key_providers_preserves_key(
+    client: TestClient, tmp_path: Path,
+) -> None:
+    """Qwen and DashScope share DASHSCOPE_API_KEY; switching between them must
+    NOT delete the shared credential."""
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "LANGCHAIN_PROVIDER=dashscope",
+                "LANGCHAIN_MODEL_NAME=qwen-plus-latest",
+                "DASHSCOPE_API_KEY=sk-shared",
+                "DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    response = client.put(
+        "/settings/llm",
+        json={
+            "provider": "qwen",
+            "model_name": "qwen-plus-latest",
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "temperature": 0.0,
+            "timeout_seconds": 120,
+            "max_retries": 2,
+            "reasoning_effort": "",
+        },
+    )
+
+    assert response.status_code == 200
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "DASHSCOPE_API_KEY=sk-shared" in env_text
+
+
 def test_settings_write_migrates_legacy_env_to_canonical_path(
     client: TestClient, tmp_path: Path,
 ) -> None:
@@ -412,3 +487,41 @@ def test_atomic_write_secret_creates_0600_file(tmp_path: Path) -> None:
 
     assert target.read_text(encoding="utf-8") == "KEY=value\n"
     assert (target.stat().st_mode & 0o777) == 0o600
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "   ",
+        "your-key-here",
+        "<your-api-key>",
+        "sk-or-v1-your-key-here",
+        "change-me",
+        "changeme",
+        "xxxxx",
+        "sk-xxx",
+        "placeholder",
+    ],
+)
+def test_is_configured_secret_rejects_placeholders(value: str) -> None:
+    """Common placeholder shapes must not be reported as configured."""
+    from src.api.helpers import _is_configured_secret
+
+    assert _is_configured_secret(value, {"", "sk-or-v1-your-key-here"}) is False
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "sk-or-v1-1a2b3c4d5e6f",
+        "or-secret-private-value",
+        "ts-secret-private-token",
+        "gsk_realtokenvalue123",
+    ],
+)
+def test_is_configured_secret_accepts_real_keys(value: str) -> None:
+    """A genuine key must be reported as configured."""
+    from src.api.helpers import _is_configured_secret
+
+    assert _is_configured_secret(value, {""}) is True

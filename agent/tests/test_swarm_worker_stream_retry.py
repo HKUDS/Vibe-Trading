@@ -63,7 +63,10 @@ class _FlakyChatLLM:
         """
         return self
 
-    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None) -> LLMResponse:
+    def stream_chat(
+        self, messages, tools=None, on_text_chunk=None, timeout=None,
+        should_cancel=None,
+    ) -> LLMResponse:
         """Raise the next queued error or return the final response.
 
         Args:
@@ -71,6 +74,7 @@ class _FlakyChatLLM:
             tools: Tool definitions (ignored).
             on_text_chunk: Streaming callback (ignored).
             timeout: Per-call timeout (ignored).
+            should_cancel: Cancellation predicate (ignored).
 
         Returns:
             The scripted final ``LLMResponse``.
@@ -144,16 +148,19 @@ def test_single_stream_failure_is_retried_and_worker_succeeds(monkeypatch, tmp_p
 
 
 def test_double_stream_failure_fails_worker(monkeypatch, tmp_path):
-    """Two consecutive ProviderStreamErrors → existing failure path (no 3rd try)."""
-    llm = _FlakyChatLLM(
-        [_stream_error(), _stream_error()], LLMResponse(content=FINAL_TEXT)
-    )
+    """STREAM_MAX_RETRIES+1 consecutive ProviderStreamErrors → worker fails.
+
+    Default STREAM_MAX_RETRIES=3, so 3+1=4 attempts (=4 errors) must fail.
+    """
+    _max = worker_mod._STREAM_MAX_RETRIES
+    errors = [_stream_error()] * (_max + 1)
+    llm = _FlakyChatLLM(errors, LLMResponse(content=FINAL_TEXT))
 
     result = _run(monkeypatch, tmp_path, llm)
 
     assert result.status == "failed"
     assert "LLM call failed at iteration 0" in (result.error or "")
-    assert llm.calls == 2
+    assert llm.calls == _max + 1
 
 
 def test_non_stream_error_is_not_retried(monkeypatch, tmp_path):

@@ -505,12 +505,11 @@ def register_alpha_routes(
 
         # Concurrency cap. We peek at the semaphore counter rather than
         # ``acquire(block=False)`` so the actual acquire happens inside the
-        # worker (after the 202 is returned). _value is a CPython
-        # implementation detail but it's been stable since 3.0 and asyncio's
-        # own ``locked()`` uses it.
+        # worker (after the 202 is returned). ``locked()`` is the public
+        # asyncio API — it returns True iff the counter is 0 — so we don't
+        # rely on the CPython ``_value`` implementation detail.
         sem = _get_bench_semaphore()
-        # ``locked()`` returns True iff the counter is 0; defensive check.
-        if sem.locked() or getattr(sem, "_value", MAX_CONCURRENT_BENCHES) <= 0:
+        if sem.locked():
             raise HTTPException(
                 status_code=429,
                 detail="too many running benches; wait for one to finish",
@@ -594,7 +593,7 @@ def register_alpha_routes(
             raise HTTPException(status_code=400, detail=f"invalid period: {exc}")
 
         sem = _get_compare_semaphore()
-        if sem.locked() or getattr(sem, "_value", MAX_CONCURRENT_COMPARES) <= 0:
+        if sem.locked():
             raise HTTPException(
                 status_code=429,
                 detail="too many running comparisons; wait for one to finish",

@@ -193,3 +193,15 @@ def test_stream_unknown_job_is_404() -> None:
 def test_stream_invalid_job_id_is_400() -> None:
     r = _client().get("/alpha/compare/bad@id/stream")
     assert r.status_code == 400
+
+
+def test_semaphore_checks_use_public_locked_api() -> None:
+    """Both bench and compare concurrency guards must use sem.locked(),
+    not the CPython-private ``sem._value`` implementation detail."""
+    import inspect
+
+    import src.api.alpha_routes as alpha_routes
+
+    source = inspect.getsource(alpha_routes)
+    assert 'getattr(sem, "_value"' not in source, "must not read sem._value"
+    assert source.count("sem.locked()") >= 2

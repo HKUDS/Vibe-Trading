@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from backtest.loaders.registry import VALID_SOURCES
@@ -55,12 +56,22 @@ def run_backtest(run_dir: str) -> str:
         message=f"running backtest engine (source={source})",
     )
     runner = Runner(timeout=300)
-    result = runner.execute(
-        entry_script,
-        run_path,
-        cwd=agent_root,
-        cli_args=[str(run_path)],
-    )
+    try:
+        result = runner.execute(
+            entry_script,
+            run_path,
+            cwd=agent_root,
+            cli_args=[str(run_path)],
+        )
+    except subprocess.SubprocessError as exc:
+        # TimeoutExpired (parent class) and CalledProcessError both surface here.
+        # Return a structured error envelope so the agent loop can record the
+        # failure instead of bubbling the exception out to the tool dispatcher
+        # (which would treat it as an unexpected crash).
+        return json.dumps(
+            {"status": "error", "error": f"backtest subprocess failed: {exc}"},
+            ensure_ascii=False,
+        )
 
     emit_progress("finalize", message="collecting artifacts")
     artifacts_found = {name: str(path) for name, path in result.artifacts.items()}

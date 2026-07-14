@@ -1,7 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { Activity, BarChart3, Bot, Check, ChevronDown, FileText, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { Activity, BarChart3, Bot, Check, ChevronDown, FileText, GitCompare, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
@@ -22,13 +23,15 @@ export function Layout() {
     { to: "/reports", icon: FileText, label: t('layout.reports') },
     { to: "/alpha-zoo", icon: Layers, label: t('layout.alphaZoo') },
     { to: "/settings", icon: Settings, label: t('layout.settings') },
-    { to: "/correlation", icon: BarChart3, label: t('layout.correlation') },
+    { to: "/correlation", icon: GitCompare, label: t('layout.correlation') },
   ];
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const { dark, toggle } = useDarkMode();
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [modelLabel, setModelLabel] = useState<string | null>(null);
   const sseStatus = useAgentStore(s => s.sseStatus);
   const sseRetryAttempt = useAgentStore(s => s.sseRetryAttempt);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("qa-sidebar") === "collapsed");
@@ -41,9 +44,14 @@ export function Layout() {
   }, [collapsed]);
 
   const loadSessions = () => {
+    setSessionsError(null);
     api.listSessions()
       .then((list) => setSessions(Array.isArray(list) ? list : []))
-      .catch(() => {})
+      .catch((error) => {
+        const msg = error instanceof Error ? error.message : t("layout.sessionsLoadFailed", { defaultValue: "Failed to load sessions" });
+        setSessionsError(msg);
+        toast.error(msg);
+      })
       .finally(() => setSessionsLoading(false));
   };
 
@@ -51,6 +59,33 @@ export function Layout() {
   // the active session changes (covers new session creation from Agent).
   const isAgentPage = pathname.startsWith("/agent");
   useEffect(() => { loadSessions(); }, [isAgentPage, activeSessionId]);
+
+  // Live model badge — same source as Settings API (now ~/.vibe-trading/.env)
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      api.getLLMSettings()
+        .then((s) => {
+          if (cancelled) return;
+          const provider = (s.provider || "").trim();
+          const model = (s.model_name || "").trim();
+          if (provider || model) {
+            setModelLabel(model ? `${provider}/${model}` : provider);
+          } else {
+            setModelLabel(null);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setModelLabel(null);
+        });
+    };
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [pathname]);
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
@@ -60,7 +95,9 @@ export function Layout() {
     try {
       await api.deleteSession(sid);
       setSessions((prev) => prev.filter((s) => s.session_id !== sid));
-    } catch { /* ignore */ }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("layout.deleteFailed", { defaultValue: "Failed to delete session" }));
+    }
     setDeleteTarget(null);
   };
 
@@ -69,7 +106,9 @@ export function Layout() {
     try {
       await api.renameSession(sid, renameValue.trim());
       setSessions((prev) => prev.map((s) => s.session_id === sid ? { ...s, title: renameValue.trim() } : s));
-    } catch { /* ignore */ }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("layout.renameFailed", { defaultValue: "Failed to rename session" }));
+    }
     setRenameTarget(null);
   };
 
@@ -80,12 +119,21 @@ export function Layout() {
         "border-e bg-card flex flex-col shrink-0 transition-all duration-200 overflow-visible",
         collapsed ? "w-12" : "w-64"
       )}>
-        {/* Brand */}
-        <div className={cn("border-b", collapsed ? "p-2 flex justify-center" : "p-4")}>
+        {/* Brand + live model badge */}
+        <div className={cn("border-b", collapsed ? "p-2 flex justify-center" : "p-4 space-y-1.5")}>
           <Link to="/" className={cn("flex items-center font-bold text-base tracking-tight", collapsed ? "justify-center" : "gap-2")}>
             <BarChart3 className="h-5 w-5 text-primary shrink-0" />
             {!collapsed && "Vibe-Trading"}
           </Link>
+          {!collapsed && modelLabel && (
+            <Link
+              to="/settings"
+              title={modelLabel}
+              className="block truncate rounded-md bg-muted/60 px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              {modelLabel}
+            </Link>
+          )}
         </div>
 
         {/* Nav */}
@@ -136,6 +184,14 @@ export function Layout() {
                     <div key={i} className="h-7 rounded-md bg-muted/50 animate-pulse" />
                   ))}
                 </div>
+              ) : sessionsError ? (
+                <button
+                  type="button"
+                  onClick={() => { setSessionsLoading(true); loadSessions(); }}
+                  className="mx-2 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-2 text-start text-xs text-destructive hover:bg-destructive/10"
+                >
+                  {sessionsError}
+                </button>
               ) : sessions.length === 0 ? (
                 <p className="px-3 py-2 text-xs text-muted-foreground/60">{t('layout.noSessions')}</p>
               ) : null}

@@ -76,6 +76,20 @@ def _build_response_from_run_dir(
         run_directory=str(run_dir),
     )
 
+    # Surface original prompt so the UI can explain empty non-backtest runs.
+    req_data = _load_json_file(run_dir / "req.json")
+    if req_data:
+        prompt = req_data.get("prompt") or req_data.get("user_goal") or req_data.get("goal")
+        if isinstance(prompt, str) and prompt.strip():
+            response.prompt = prompt.strip()
+    if not response.prompt:
+        prompt_file = run_dir / "user_prompt.txt"
+        if prompt_file.exists():
+            try:
+                response.prompt = prompt_file.read_text(encoding="utf-8").strip() or None
+            except OSError:
+                pass
+
     state_data = _load_json_file(run_dir / "state.json")
     if state_data:
         state_status = str(state_data.get("status") or "").lower()

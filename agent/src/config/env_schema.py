@@ -136,6 +136,12 @@ class LLMConfig(_EnvBase):
         default="https://chatgpt.com/backend-api/codex/responses",
     )
     openai_model: str = Field(alias="OPENAI_MODEL", default="")
+    # Project .env overrides shell exports. Set False to honor pre-existing
+    # ``os.environ`` values (useful in tests). See src.providers.llm._load_env_file.
+    vibe_trading_dotenv_override: EnvBool = Field(
+        alias="VIBE_TRADING_DOTENV_OVERRIDE",
+        default=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +275,7 @@ class AgentTuningConfig(_EnvBase):
         alias="VT_REASONING_DELTA_MIN_INTERVAL_S", default=1.0,
     )
     vt_stream_retry_delay_s: float = Field(alias="VT_STREAM_RETRY_DELAY_S", default=1.0)
+    vt_stream_max_retries: int = Field(alias="VT_STREAM_MAX_RETRIES", default=3)
     vibe_trading_tool_timeout_seconds: float = Field(
         alias="VIBE_TRADING_TOOL_TIMEOUT_SECONDS", default=1800.0,
     )

@@ -134,31 +134,137 @@ def _check_llm_provider() -> CheckResult:
         )
 
 
+def _proxy_url_from_env() -> str:
+    """Return the first configured HTTP(S) proxy URL, or empty string."""
+    import os
+
+    for key in (
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ):
+        value = (os.environ.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _check_proxy() -> CheckResult:
+    """Check whether the configured local proxy (if any) is reachable.
+
+    Crypto venues (OKX / Binance) on this host often require the system proxy.
+    A dead proxy is the #1 reason market loaders time out.
+    """
+    import socket
+    from urllib.parse import urlparse
+
+    proxy = _proxy_url_from_env()
+    if not proxy:
+        return CheckResult(
+            name="HTTP Proxy",
+            status="not_configured",
+            message="no HTTP(S)_PROXY set (OKX/Binance may time out on some networks)",
+            impact="set HTTP_PROXY=http://127.0.0.1:10808 in ~/.vibe-trading/.env if needed",
+            critical=False,
+        )
+
+    try:
+        parsed = urlparse(proxy if "://" in proxy else f"http://{proxy}")
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 10808
+        with socket.create_connection((host, port), timeout=2.0):
+            pass
+        return CheckResult(
+            name="HTTP Proxy",
+            status="ready",
+            message=f"reachable {host}:{port}",
+            impact="",
+        )
+    except OSError as exc:
+        return CheckResult(
+            name="HTTP Proxy",
+            status="error",
+            message=f"cannot connect to {proxy}: {exc}",
+            impact="start xray/proxy or fix HTTP_PROXY — crypto APIs may fail",
+            critical=False,
+        )
+
+
+def _check_data_cache() -> CheckResult:
+    """Report whether loader OHLCV disk cache is enabled."""
+    from src.config.accessor import get_env_config
+
+    cfg = get_env_config()
+    enabled = bool(getattr(cfg.data, "vibe_trading_data_cache", False))
+    if enabled:
+        root = (getattr(cfg.data, "vibe_trading_data_cache_root", "") or "").strip()
+        where = root or "~/.vibe-trading/cache (default)"
+        return CheckResult(
+            name="Data Cache",
+            status="ready",
+            message=f"enabled → {where}",
+            impact="",
+        )
+    return CheckResult(
+        name="Data Cache",
+        status="not_configured",
+        message="VIBE_TRADING_DATA_CACHE off (repeat backtests re-download bars)",
+        impact="set VIBE_TRADING_DATA_CACHE=1 for faster re-runs",
+        critical=False,
+    )
+
+
 def _check_okx() -> CheckResult:
-    """Check OKX public API reachability."""
+    """Check OKX public API reachability (honours proxy; tries history endpoint)."""
     try:
         import requests
 
+        proxies: dict[str, str] = {}
+        http_p = _proxy_url_from_env()
+        if http_p:
+            proxies = {"http": http_p, "https": http_p}
+
+        # history-candles is required for multi-year crypto backtests; probe it.
         resp = requests.get(
-            "https://www.okx.com/api/v5/market/candles",
+            "https://www.okx.com/api/v5/market/history-candles",
             params={"instId": "BTC-USDT", "bar": "1D", "limit": "1"},
-            timeout=10,
+            timeout=12,
+            proxies=proxies or None,
         )
+        if resp.status_code in {429, 500, 502, 503, 504}:
+            return CheckResult(
+                name="OKX API",
+                status="error",
+                message=f"HTTP {resp.status_code} (transient; will retry at fetch / fall back to binance)",
+                impact="crypto may use binance fallback",
+                critical=False,
+            )
         data = resp.json()
-        if data.get("code") == "0":
-            return CheckResult(name="OKX API", status="ready", message="reachable", impact="")
+        if data.get("code") == "0" and data.get("data"):
+            via = "proxy" if proxies else "direct"
+            return CheckResult(
+                name="OKX API",
+                status="ready",
+                message=f"reachable ({via}, history-candles)",
+                impact="",
+            )
         return CheckResult(
             name="OKX API",
             status="error",
             message=f"API returned code={data.get('code')}: {data.get('msg', '')}",
-            impact="crypto backtest unavailable",
+            impact="crypto may use binance fallback",
+            critical=False,
         )
     except Exception as exc:
         return CheckResult(
             name="OKX API",
             status="error",
             message=f"{type(exc).__name__}: {exc}",
-            impact="crypto backtest unavailable",
+            impact="crypto may use binance fallback",
+            critical=False,
         )
 
 
@@ -276,6 +382,8 @@ def run_preflight(console: Optional[Console] = None) -> List[CheckResult]:
 
     checks = [
         _check_llm_provider,
+        _check_proxy,
+        _check_data_cache,
         _check_okx,
         _check_yfinance,
         _check_tushare,

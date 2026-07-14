@@ -1,11 +1,28 @@
 """OKX spot candle loader (crypto).
 
 Uses OKX V5 public REST API (no auth).
-Supports 1m/5m/15m/30m/1H/4H/1D.
-Up to 300 bars per request; paginates with ``after`` for longer history.
+
+Endpoints
+---------
+- ``/market/candles`` — recent bars only (limited depth; not enough for multi-year
+  backtests).
+- ``/market/history-candles`` — multi-year history; used whenever the requested
+  range is older than a few months or recent endpoint returns empty.
+
+Hardening (2026-07 local audit)
+--------------------------------
+- Explicit proxy support (same env vars as CCXT loader); required on networks
+  that time out direct HTTPS to www.okx.com.
+- Raise / retry on HTTP 429/5xx and OKX business ``code != "0"``.
+- Prefer ``history-candles`` for deep ranges so 2020-era backtests no longer
+  return empty frames.
+- ``is_available()`` does a short probe instead of always returning True.
 """
 
+from __future__ import annotations
+
 import logging
+import os
 import time
 from typing import Dict, List, Optional
 
@@ -25,13 +42,45 @@ from backtest.loaders.base import (
 from backtest.loaders.registry import register
 
 BASE_URL = "https://www.okx.com/api/v5"
+CANDLES_PATH = f"{BASE_URL}/market/candles"
+HISTORY_CANDLES_PATH = f"{BASE_URL}/market/history-candles"
 _MAX_PER_PAGE = 300
-# P12-b parity: OKX already sets a per-request timeout but had no retry
-# budget, so a transient blip dropped the whole symbol and a slow tier
-# could stall ~max_pages*timeout. Bound it like the ccxt loader; retry
-# scheduling is delegated to :mod:`backtest.loaders.base`.
-_OKX_TIMEOUT = positive_env_int("OKX_TIMEOUT_S", 15)
-_OKX_FETCH_BUDGET_S = positive_env_float("OKX_FETCH_BUDGET_S", 60.0)
+# Recent endpoint typically only covers ~months of 1D bars; beyond this age
+# always hit history-candles first.
+_RECENT_ONLY_DAYS = 400
+
+_OKX_TIMEOUT = positive_env_int("OKX_TIMEOUT_S", 20)
+_OKX_FETCH_BUDGET_S = positive_env_float("OKX_FETCH_BUDGET_S", 90.0)
+_OKX_PROBE_TIMEOUT = positive_env_int("OKX_PROBE_TIMEOUT_S", 8)
+
+
+def _first_proxy_env(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name, "").strip()  # noqa: env-gate — system proxy vars
+        if value:
+            return value
+    return ""
+
+
+def _okx_proxy_config() -> dict[str, str]:
+    """Build requests proxies from conventional env vars (parity with CCXT)."""
+    all_proxy = _first_proxy_env("ALL_PROXY", "all_proxy")
+    http_proxy = _first_proxy_env("HTTP_PROXY", "http_proxy") or all_proxy
+    https_proxy = _first_proxy_env("HTTPS_PROXY", "https_proxy") or all_proxy or http_proxy
+    proxies: dict[str, str] = {}
+    if http_proxy:
+        proxies["http"] = http_proxy
+    if https_proxy:
+        proxies["https"] = https_proxy
+    return proxies
+
+
+def _okx_session() -> requests.Session:
+    session = requests.Session()
+    proxies = _okx_proxy_config()
+    if proxies:
+        session.proxies.update(proxies)
+    return session
 
 
 @register
@@ -43,8 +92,22 @@ class DataLoader:
     requires_auth = False
 
     def is_available(self) -> bool:
-        """Always available (public API, no auth)."""
-        return True
+        """Probe public candles with a short timeout (honours proxy env)."""
+        try:
+            session = _okx_session()
+            resp = session.get(
+                CANDLES_PATH,
+                params={"instId": "BTC-USDT", "bar": "1D", "limit": "1"},
+                timeout=_OKX_PROBE_TIMEOUT,
+            )
+            if resp.status_code != 200:
+                logger.warning("OKX probe HTTP %s", resp.status_code)
+                return False
+            data = resp.json()
+            return data.get("code") == "0" and bool(data.get("data"))
+        except Exception as exc:  # noqa: BLE001 — availability probe
+            logger.warning("OKX probe failed: %s", exc)
+            return False
 
     def __init__(self) -> None:
         """No credentials required for public candles."""
@@ -86,7 +149,16 @@ class DataLoader:
         start_ts = int(pd.Timestamp(start_date).timestamp() * 1000)
         end_ts = int((pd.Timestamp(end_date) + pd.Timedelta(days=1)).timestamp() * 1000)
 
-        max_pages = 200 if interval in ("1m", "5m") else 50 if interval in ("15m", "30m") else 20
+        # More pages for minute bars; history endpoint still needs walk-back.
+        if interval in ("1m", "5m"):
+            max_pages = 200
+        elif interval in ("15m", "30m"):
+            max_pages = 80
+        else:
+            max_pages = 40
+
+        use_history = self._should_use_history(start_date)
+        session = _okx_session()
 
         result: Dict[str, pd.DataFrame] = {}
         for symbol in codes:
@@ -98,8 +170,14 @@ class DataLoader:
                     start_date=start_date,
                     end_date=end_date,
                     fields=None,
-                    fetch=lambda symbol=symbol: self._fetch_candles(
-                        symbol, start_ts, end_ts, interval, max_pages
+                    fetch=lambda symbol=symbol, use_history=use_history: self._fetch_candles(
+                        session,
+                        symbol,
+                        start_ts,
+                        end_ts,
+                        interval,
+                        max_pages,
+                        prefer_history=use_history,
                     ),
                 )
                 if df is not None and not df.empty:
@@ -108,26 +186,77 @@ class DataLoader:
                 logger.warning("failed to fetch %s: %s", symbol, exc)
         return result
 
+    @staticmethod
+    def _should_use_history(start_date: str) -> bool:
+        """True when the range starts older than recent-only window."""
+        try:
+            start = pd.Timestamp(start_date)
+            age_days = (pd.Timestamp.utcnow().tz_localize(None) - start).days
+            return age_days > _RECENT_ONLY_DAYS
+        except Exception:
+            return True
+
     def _fetch_candles(
-        self, inst_id: str, start_ts: int, end_ts: int,
-        bar: str = "1D", max_pages: int = 20,
+        self,
+        session: requests.Session,
+        inst_id: str,
+        start_ts: int,
+        end_ts: int,
+        bar: str = "1D",
+        max_pages: int = 20,
+        *,
+        prefer_history: bool = True,
     ) -> Optional[pd.DataFrame]:
-        """Paginated candle download.
+        """Paginated candle download (history endpoint for deep ranges)."""
+        endpoints: list[str] = []
+        if prefer_history:
+            endpoints = [HISTORY_CANDLES_PATH, CANDLES_PATH]
+        else:
+            endpoints = [CANDLES_PATH, HISTORY_CANDLES_PATH]
 
-        Args:
-            inst_id: OKX instrument id.
-            start_ts: Start time (ms).
-            end_ts: End time (ms).
-            bar: Bar size.
-            max_pages: Max pagination rounds.
+        last_error: Exception | None = None
+        for endpoint in endpoints:
+            try:
+                df = self._paginate(
+                    session,
+                    endpoint,
+                    inst_id,
+                    start_ts,
+                    end_ts,
+                    bar,
+                    max_pages,
+                )
+                if df is not None and not df.empty:
+                    return df
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "OKX %s failed for %s: %s — trying next endpoint",
+                    endpoint.rsplit("/", 1)[-1],
+                    inst_id,
+                    exc,
+                )
 
-        Returns:
-            OHLCV DataFrame or None.
-        """
+        if last_error is not None:
+            logger.warning("OKX empty/failed for %s: %s", inst_id, last_error)
+        else:
+            logger.warning("OKX empty response: %s", inst_id)
+        return None
+
+    def _paginate(
+        self,
+        session: requests.Session,
+        endpoint: str,
+        inst_id: str,
+        start_ts: int,
+        end_ts: int,
+        bar: str,
+        max_pages: int,
+    ) -> Optional[pd.DataFrame]:
         all_rows: list = []
         after = str(end_ts)
         deadline = time.monotonic() + _OKX_FETCH_BUDGET_S
-        label = f"OKX fetch for {inst_id}"
+        label = f"OKX fetch for {inst_id} via {endpoint.rsplit('/', 1)[-1]}"
 
         for _ in range(max_pages):
             check_budget(deadline, label, budget_s=_OKX_FETCH_BUDGET_S)
@@ -138,47 +267,85 @@ class DataLoader:
                 "after": after,
             }
 
-            def _do_request() -> dict:
-                resp = requests.get(
-                    f"{BASE_URL}/market/candles",
+            def _do_request(params=params) -> dict:
+                resp = session.get(
+                    endpoint,
                     params=params,
                     timeout=_OKX_TIMEOUT,
                 )
-                return resp.json()
+                # Transient gateway / rate-limit → raise for retry_with_budget
+                if resp.status_code in {429, 500, 502, 503, 504}:
+                    raise requests.HTTPError(
+                        f"OKX HTTP {resp.status_code}",
+                        response=resp,
+                    )
+                resp.raise_for_status()
+                try:
+                    data = resp.json()
+                except ValueError as exc:
+                    raise requests.RequestException(
+                        f"OKX non-JSON response HTTP {resp.status_code}"
+                    ) from exc
+                code = str(data.get("code", ""))
+                if code != "0":
+                    # Business errors are not always transient; still surface.
+                    msg = data.get("msg") or data.get("error_message") or code
+                    raise requests.RequestException(f"OKX API code={code} msg={msg}")
+                return data
 
             data = retry_with_budget(
                 _do_request,
-                transient=requests.RequestException,
+                transient=(requests.RequestException, TimeoutError),
                 deadline=deadline,
                 label=label,
             )
-            if data.get("code") != "0" or not data.get("data"):
+            raw_rows = data.get("data") or []
+            if not raw_rows:
                 break
 
-            rows = data["data"]
-            rows = [r for r in rows if r[8] == "1"]
+            # Keep confirmed bars (confirm=="1"); also keep unconfirmed when
+            # it is the only data returned so live partial days are not empty.
+            confirmed = [r for r in raw_rows if len(r) > 8 and str(r[8]) == "1"]
+            rows = confirmed if confirmed else list(raw_rows)
             all_rows.extend(rows)
 
-            oldest_ts = int(rows[-1][0]) if rows else start_ts
-            if oldest_ts <= start_ts or len(data["data"]) < _MAX_PER_PAGE:
+            oldest_ts = int(raw_rows[-1][0])
+            if oldest_ts <= start_ts or len(raw_rows) < _MAX_PER_PAGE:
                 break
             after = str(oldest_ts)
 
         if not all_rows:
-            logger.warning("OKX empty response: %s", inst_id)
             return None
 
-        columns = ["ts", "open", "high", "low", "close", "vol", "volCcy", "volCcyQuote", "confirm"]
-        df = pd.DataFrame(all_rows, columns=columns)
-        df["trade_date"] = pd.to_datetime(df["ts"].astype("int64"), unit="ms")
+        columns = [
+            "ts", "open", "high", "low", "close",
+            "vol", "volCcy", "volCcyQuote", "confirm",
+        ]
+        # Rows may be shorter if API schema changes — pad safely
+        normalized = []
+        for r in all_rows:
+            row = list(r) + [""] * (len(columns) - len(r))
+            normalized.append(row[: len(columns)])
+
+        df = pd.DataFrame(normalized, columns=columns)
+        # OKX daily open is UTC+8 midnight (= 16:00 UTC). Keep absolute UTC
+        # timestamps so multi-source merges stay consistent; floor to second.
+        df["trade_date"] = pd.to_datetime(
+            pd.to_numeric(df["ts"], errors="coerce"),
+            unit="ms",
+            utc=True,
+        ).dt.tz_convert(None)
         for col in ["open", "high", "low", "close"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
         df["volume"] = pd.to_numeric(df["vol"], errors="coerce").fillna(0)
-        df = df.set_index("trade_date").sort_index()
+        df = df.dropna(subset=["trade_date"]).set_index("trade_date").sort_index()
+        df = df[~df.index.duplicated(keep="last")]
 
         start_dt = pd.Timestamp(start_ts, unit="ms")
         end_dt = pd.Timestamp(end_ts, unit="ms")
         df = df[(df.index >= start_dt) & (df.index < end_dt)]
 
-        df = df[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
+        df = df[["open", "high", "low", "close", "volume"]].dropna(
+            subset=["open", "high", "low", "close"]
+        )
         return df if not df.empty else None
