@@ -439,8 +439,80 @@ def build_performance_summary(
         "cancelled_order_count": int(_finite(
             scalar_metrics.get("cancelled_order_count", 0.0)
         )),
+        "expired_order_count": int(_finite(
+            scalar_metrics.get("expired_order_count", 0.0)
+        )),
+        "rejected_order_count": int(_finite(
+            scalar_metrics.get("rejected_order_count", 0.0)
+        )),
+        "market_order_count": int(_finite(
+            scalar_metrics.get("market_order_count", 0.0)
+        )),
+        "limit_order_count": int(_finite(
+            scalar_metrics.get("limit_order_count", 0.0)
+        )),
+        "ioc_order_count": int(_finite(
+            scalar_metrics.get("ioc_order_count", 0.0)
+        )),
+        "fok_order_count": int(_finite(
+            scalar_metrics.get("fok_order_count", 0.0)
+        )),
+        "deferred_order_count": int(_finite(
+            scalar_metrics.get("deferred_order_count", 0.0)
+        )),
+        "total_deferred_bars": int(_finite(
+            scalar_metrics.get("total_deferred_bars", 0.0)
+        )),
+        "total_execution_attempts": int(_finite(
+            scalar_metrics.get("total_execution_attempts", 0.0)
+        )),
+        "total_unfilled_eligible_bars": int(_finite(
+            scalar_metrics.get("total_unfilled_eligible_bars", 0.0)
+        )),
+        "limit_fill_count": int(_finite(
+            scalar_metrics.get("limit_fill_count", 0.0)
+        )),
+        "limit_price_violation_count": int(_finite(
+            scalar_metrics.get("limit_price_violation_count", 0.0)
+        )),
+        "execution_before_eligibility_count": int(_finite(
+            scalar_metrics.get("execution_before_eligibility_count", 0.0)
+        )),
+        "unlinked_fill_count": int(_finite(
+            scalar_metrics.get("unlinked_fill_count", 0.0)
+        )),
+        "orphan_fill_count": int(_finite(
+            scalar_metrics.get("orphan_fill_count", 0.0)
+        )),
+        "fill_quantity_mismatch_count": int(_finite(
+            scalar_metrics.get("fill_quantity_mismatch_count", 0.0)
+        )),
+        "order_lifecycle_violation_count": int(_finite(
+            scalar_metrics.get("order_lifecycle_violation_count", 0.0)
+        )),
         "partial_fill_order_count": int(_finite(
             scalar_metrics.get("partial_fill_order_count", 0.0)
+        )),
+        "volume_constrained_order_count": int(_finite(
+            scalar_metrics.get("volume_constrained_order_count", 0.0)
+        )),
+        "volume_constraint_event_count": int(_finite(
+            scalar_metrics.get("volume_constraint_event_count", 0.0)
+        )),
+        "volume_limit_exempt_fill_count": int(_finite(
+            scalar_metrics.get("volume_limit_exempt_fill_count", 0.0)
+        )),
+        "volume_participation_fill_quantity": _finite(
+            scalar_metrics.get("volume_participation_fill_quantity", 0.0)
+        ),
+        "max_observed_volume_participation": _finite(
+            scalar_metrics.get("max_observed_volume_participation", 0.0)
+        ),
+        "mean_observed_volume_participation": _finite(
+            scalar_metrics.get("mean_observed_volume_participation", 0.0)
+        ),
+        "volume_limit_violation_count": int(_finite(
+            scalar_metrics.get("volume_limit_violation_count", 0.0)
         )),
         "total_requested_quantity": _finite(
             scalar_metrics.get("total_requested_quantity", 0.0)
@@ -506,8 +578,34 @@ def render_performance_report(
         f"- Slippage cost: {_finite(summary.get('total_slippage_cost')):,.2f}",
         f"- Total trading costs: {_finite(summary.get('total_trading_cost')):,.2f}",
         f"- Order fill ratio: {_finite(summary.get('fill_ratio')):.2%}",
+        (
+            f"- Market / limit orders: {int(summary.get('market_order_count', 0))} / "
+            f"{int(summary.get('limit_order_count', 0))}"
+        ),
+        f"- IOC / FOK orders: {int(summary.get('ioc_order_count', 0))} / {int(summary.get('fok_order_count', 0))}",
         f"- Partially filled orders: {int(summary.get('partial_fill_order_count', 0))}",
+        (
+            f"- Deferred orders / bars: {int(summary.get('deferred_order_count', 0))} / "
+            f"{int(summary.get('total_deferred_bars', 0))}"
+        ),
+        f"- Eligible execution attempts: {int(summary.get('total_execution_attempts', 0))}",
+        f"- Unfilled eligible bars: {int(summary.get('total_unfilled_eligible_bars', 0))}",
+        f"- Volume-constrained orders: {int(summary.get('volume_constrained_order_count', 0))}",
+        f"- Volume-constraint events: {int(summary.get('volume_constraint_event_count', 0))}",
+        f"- Maximum observed bar participation: {_finite(summary.get('max_observed_volume_participation')):.2%}",
+        f"- Volume-limit violations: {int(summary.get('volume_limit_violation_count', 0))}",
+        f"- Capacity-exempt forced fills: {int(summary.get('volume_limit_exempt_fill_count', 0))}",
         f"- Cancelled orders: {int(summary.get('cancelled_order_count', 0))}",
+        f"- Expired orders: {int(summary.get('expired_order_count', 0))}",
+        f"- Rejected orders: {int(summary.get('rejected_order_count', 0))}",
+        f"- Limit-price violations: {int(summary.get('limit_price_violation_count', 0))}",
+        f"- Pre-eligibility fills: {int(summary.get('execution_before_eligibility_count', 0))}",
+        (
+            f"- Unlinked / orphan fills: {int(summary.get('unlinked_fill_count', 0))} / "
+            f"{int(summary.get('orphan_fill_count', 0))}"
+        ),
+        f"- Fill-quantity mismatches: {int(summary.get('fill_quantity_mismatch_count', 0))}",
+        f"- Order-lifecycle violations: {int(summary.get('order_lifecycle_violation_count', 0))}",
         f"- Unfilled quantity: {_finite(summary.get('total_unfilled_quantity')):,.6f}",
         f"- Maximum drawdown: {_finite(summary.get('maximum_drawdown')):.2%}",
         f"- Maximum drawdown duration: {int(summary.get('maximum_drawdown_duration_days', 0))} days",

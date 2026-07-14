@@ -319,6 +319,44 @@ class BaseEngine(ABC):
         self.executed_position_weights: List[Dict[str, Any]] = []
         self._exit_accumulators: Dict[str, Dict[str, Any]] = {}
         self._order_sequence: int = 0
+        self._volume_participation = self._normalize_volume_participation(
+            config.get("volume_participation_rate")
+        )
+        self.volume_field: str = str(config.get("volume_field", "volume"))
+        self._bar_volume_consumed: Dict[tuple[str, pd.Timestamp], float] = {}
+        self.default_order_type = str(
+            config.get("order_type", "market")
+        ).lower()
+        if self.default_order_type not in {"market", "limit"}:
+            raise ValueError("order_type must be 'market' or 'limit'")
+        self.default_time_in_force = str(
+            config.get("time_in_force", "GTC")
+        ).upper()
+        if self.default_time_in_force not in {"GTC", "IOC", "FOK"}:
+            raise ValueError("time_in_force must be GTC, IOC, or FOK")
+        self._execution_latency_bars = self._normalize_bar_setting(
+            config.get("execution_latency_bars", 0),
+            "execution_latency_bars",
+            allow_none=False,
+        )
+        self._order_expiry_bars = self._normalize_bar_setting(
+            config.get("order_expiry_bars"),
+            "order_expiry_bars",
+            allow_none=True,
+        )
+        self._max_unfilled_bars = self._normalize_bar_setting(
+            config.get("max_unfilled_bars"),
+            "max_unfilled_bars",
+            allow_none=True,
+        )
+        self._limit_price_offset_bps = self._normalize_nonnegative_setting(
+            config.get("limit_price_offset_bps", 0.0),
+            "limit_price_offset_bps",
+        )
+        self._venue_rejections = self._normalize_venue_rejections(
+            config.get("venue_reject_symbols")
+        )
+        self._execution_dates = pd.DatetimeIndex([])
         self._bar_idx: int = 0
         self._active_symbol: str = ""  # set by _rebalance/_close_position for subclass use
 
@@ -394,6 +432,225 @@ class BaseEngine(ABC):
         to produce partial or zero fills across successive bars.
         """
         return float(order.remaining_quantity or 0.0)
+
+    @staticmethod
+    def _normalize_volume_participation(
+        raw: Any,
+    ) -> float | Dict[str, float] | None:
+        """Validate an optional global or per-symbol participation setting."""
+        if raw is None:
+            return None
+
+        def validate(value: Any, label: str) -> float:
+            if isinstance(value, bool):
+                raise ValueError(f"{label} must be a number between 0 and 1")
+            try:
+                rate = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{label} must be a number between 0 and 1"
+                ) from exc
+            if not np.isfinite(rate) or rate < 0.0 or rate > 1.0:
+                raise ValueError(f"{label} must be between 0 and 1 inclusive")
+            return rate
+
+        if isinstance(raw, dict):
+            return {
+                str(symbol): validate(value, f"volume_participation_rate[{symbol!r}]")
+                for symbol, value in raw.items()
+            }
+        return validate(raw, "volume_participation_rate")
+
+    def _participation_rate_for(self, symbol: str) -> float | None:
+        """Resolve a symbol-specific rate, falling back to ``default``."""
+        setting = self._volume_participation
+        if setting is None:
+            return None
+        if isinstance(setting, dict):
+            if symbol in setting:
+                return setting[symbol]
+            return setting.get("default")
+        return setting
+
+    def _volume_context(
+        self,
+        symbol: str,
+        bar: pd.Series,
+        timestamp: pd.Timestamp,
+    ) -> Dict[str, Any]:
+        """Return cumulative per-symbol capacity available on this bar."""
+        rate = self._participation_rate_for(symbol)
+        if rate is None:
+            return {
+                "enabled": False,
+                "bar_volume": None,
+                "participation_rate": None,
+                "bar_volume_capacity": None,
+                "available_quantity": None,
+                "volume_limit_exempt": False,
+            }
+        raw_volume = bar.get(self.volume_field, 0.0)
+        try:
+            bar_volume = float(raw_volume)
+        except (TypeError, ValueError):
+            bar_volume = 0.0
+        if not np.isfinite(bar_volume) or bar_volume <= 0.0:
+            bar_volume = 0.0
+        capacity = max(bar_volume * rate, 0.0)
+        key = (symbol, pd.Timestamp(timestamp))
+        consumed = max(float(self._bar_volume_consumed.get(key, 0.0)), 0.0)
+        return {
+            "enabled": True,
+            "bar_volume": bar_volume,
+            "participation_rate": rate,
+            "bar_volume_capacity": capacity,
+            "available_quantity": max(capacity - consumed, 0.0),
+            "volume_limit_exempt": False,
+        }
+
+    def _consume_bar_volume(
+        self,
+        symbol: str,
+        timestamp: pd.Timestamp,
+        quantity: float,
+    ) -> None:
+        """Record executed quantity against one symbol/bar capacity budget."""
+        key = (symbol, pd.Timestamp(timestamp))
+        self._bar_volume_consumed[key] = (
+            float(self._bar_volume_consumed.get(key, 0.0)) + abs(float(quantity))
+        )
+
+    @staticmethod
+    def _normalize_bar_setting(
+        raw: Any,
+        label: str,
+        *,
+        allow_none: bool,
+    ) -> int | Dict[str, int | None] | None:
+        """Validate a non-negative integer scalar or per-symbol mapping."""
+        if raw is None:
+            return None if allow_none else 0
+
+        def validate(value: Any, value_label: str) -> int | None:
+            if value is None and allow_none:
+                return None
+            if isinstance(value, bool):
+                raise ValueError(f"{value_label} must be a non-negative integer")
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{value_label} must be a non-negative integer"
+                ) from exc
+            if (
+                not np.isfinite(numeric)
+                or numeric < 0.0
+                or not numeric.is_integer()
+            ):
+                raise ValueError(
+                    f"{value_label} must be a non-negative integer"
+                )
+            return int(numeric)
+
+        if isinstance(raw, dict):
+            return {
+                str(symbol): validate(value, f"{label}[{symbol!r}]")
+                for symbol, value in raw.items()
+            }
+        return validate(raw, label)
+
+    @staticmethod
+    def _normalize_nonnegative_setting(
+        raw: Any,
+        label: str,
+    ) -> float | Dict[str, float]:
+        """Validate a finite non-negative scalar or per-symbol mapping."""
+        def validate(value: Any, value_label: str) -> float:
+            if isinstance(value, bool):
+                raise ValueError(f"{value_label} must be a non-negative number")
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{value_label} must be a non-negative number"
+                ) from exc
+            if not np.isfinite(numeric) or numeric < 0.0:
+                raise ValueError(f"{value_label} must be a non-negative number")
+            return numeric
+
+        if isinstance(raw, dict):
+            return {
+                str(symbol): validate(value, f"{label}[{symbol!r}]")
+                for symbol, value in raw.items()
+            }
+        return validate(raw, label)
+
+    @staticmethod
+    def _normalize_venue_rejections(raw: Any) -> Dict[str, str]:
+        """Normalize deterministic per-symbol venue rejection reasons."""
+        if raw in (None, [], {}):
+            return {}
+        if isinstance(raw, dict):
+            return {
+                str(symbol): str(reason or "venue_rejected")
+                for symbol, reason in raw.items()
+            }
+        if isinstance(raw, (list, tuple, set)):
+            return {str(symbol): "venue_rejected" for symbol in raw}
+        raise ValueError("venue_reject_symbols must be a list or mapping")
+
+    @staticmethod
+    def _symbol_setting(
+        setting: Any,
+        symbol: str,
+        default: Any,
+    ) -> Any:
+        """Resolve an exact symbol or ``default`` entry from a setting."""
+        if isinstance(setting, dict):
+            if symbol in setting:
+                return setting[symbol]
+            return setting.get("default", default)
+        return setting if setting is not None else default
+
+    def _bar_time(self, bar_index: int | None) -> pd.Timestamp | None:
+        """Resolve a configured execution bar index to its actual timestamp."""
+        if bar_index is None or len(self._execution_dates) == 0:
+            return None
+        if 0 <= int(bar_index) < len(self._execution_dates):
+            return pd.Timestamp(self._execution_dates[int(bar_index)])
+        return None
+
+    def order_rejection_reason(
+        self,
+        order: OrderRecord,
+        bar: pd.Series,
+        timestamp: pd.Timestamp,
+    ) -> str | None:
+        """Return a deterministic venue rejection reason, if any.
+
+        Market engines may override this hook for venue-specific validation.
+        Temporary market restrictions belong in :meth:`can_execute` and do
+        not reject an otherwise valid persistent order.
+        """
+        return self._venue_rejections.get(order.symbol) or self._venue_rejections.get(
+            "default"
+        )
+
+    def _limit_offset_for(self, symbol: str) -> float:
+        return float(self._symbol_setting(
+            self._limit_price_offset_bps, symbol, 0.0,
+        ))
+
+    def _configured_limit_price(
+        self,
+        symbol: str,
+        side: str,
+        decision_price: float,
+    ) -> float:
+        """Return a passive limit derived from the order decision price."""
+        offset = self._limit_offset_for(symbol) / 10_000.0
+        multiplier = 1.0 - offset if side == "buy" else 1.0 + offset
+        return float(decision_price) * multiplier
 
     # ── PnL / margin calculation hooks ──
     # Override in FuturesBaseEngine to inject contract multiplier.
@@ -588,6 +845,7 @@ class BaseEngine(ABC):
         codes: List[str],
     ) -> None:
         """Bar-by-bar execution with market rule enforcement."""
+        self._execution_dates = pd.DatetimeIndex(dates)
         for i, ts in enumerate(dates):
             self._bar_idx = i
 
@@ -642,7 +900,7 @@ class BaseEngine(ABC):
             # order. Any quantity already filled remains in the position and
             # is liquidated exactly once below.
             for order in list(self.pending_orders.values()):
-                order.cancel(last_ts)
+                order.cancel(last_ts, "end_of_backtest")
             self.pending_orders.clear()
 
             for c in list(self.positions.keys()):
@@ -860,7 +1118,7 @@ class BaseEngine(ABC):
                 and (current is None or target_dir == current.direction)
             )
             if incompatible:
-                pending.cancel(ts)
+                pending.cancel(ts, "signal_changed")
                 self.pending_orders.pop(symbol, None)
             else:
                 pending_event = pending.event_type
@@ -869,6 +1127,11 @@ class BaseEngine(ABC):
                     return
                 self.pending_orders.pop(symbol, None)
                 if pending_event == "entry":
+                    return
+                # A filled exit may open the opposite target below. Any other
+                # terminal outcome must wait until the next bar instead of
+                # immediately resubmitting a rejected/expired/cancelled exit.
+                if pending.status != "filled":
                     return
 
         current_pos = self.positions.get(symbol)
@@ -942,6 +1205,11 @@ class BaseEngine(ABC):
         decision_price: float,
         reason: str,
         signal_time: pd.Timestamp | None = None,
+        order_type: str | None = None,
+        limit_price: float | None = None,
+        time_in_force: str | None = None,
+        latency_bars: int | None = None,
+        expiry_bars: int | None = None,
     ) -> OrderRecord:
         """Create and register a persistent entry or exit order."""
         if event_type not in {"entry", "exit"}:
@@ -952,20 +1220,110 @@ class BaseEngine(ABC):
             or (event_type == "exit" and direction == -1)
             else "sell"
         )
+        resolved_type = str(order_type or self.default_order_type).lower()
+        if resolved_type not in {"market", "limit"}:
+            raise ValueError(f"unsupported order type: {resolved_type!r}")
+        resolved_tif = str(
+            time_in_force or self.default_time_in_force
+        ).upper()
+        if resolved_tif not in {"GTC", "IOC", "FOK"}:
+            raise ValueError(f"unsupported time in force: {resolved_tif!r}")
+
+        configured_latency = self._symbol_setting(
+            self._execution_latency_bars, symbol, 0,
+        )
+        latency_value = configured_latency if latency_bars is None else latency_bars
+        resolved_latency = self._normalize_bar_setting(
+            latency_value,
+            "latency_bars",
+            allow_none=False,
+        )
+        if isinstance(resolved_latency, dict) or resolved_latency is None:
+            raise ValueError("latency_bars must resolve to a non-negative integer")
+        configured_expiry = self._symbol_setting(
+            self._order_expiry_bars, symbol, None,
+        )
+        expiry_value = configured_expiry if expiry_bars is None else expiry_bars
+        resolved_expiry = self._normalize_bar_setting(
+            expiry_value,
+            "expiry_bars",
+            allow_none=True,
+        )
+        if isinstance(resolved_expiry, dict):
+            raise ValueError("expiry_bars must resolve to a non-negative integer")
+
+        try:
+            raw_quantity = float(quantity)
+        except (TypeError, ValueError):
+            raw_quantity = float("nan")
+        try:
+            raw_decision_price = float(decision_price)
+        except (TypeError, ValueError):
+            raw_decision_price = float("nan")
+        safe_quantity = abs(raw_quantity) if np.isfinite(raw_quantity) else 0.0
+        safe_decision_price = (
+            raw_decision_price if np.isfinite(raw_decision_price) else 0.0
+        )
+        resolved_limit = limit_price
+        if resolved_type == "limit" and resolved_limit is None:
+            resolved_limit = self._configured_limit_price(
+                symbol, side, safe_decision_price,
+            )
+        if resolved_limit is not None:
+            try:
+                resolved_limit = float(resolved_limit)
+            except (TypeError, ValueError):
+                resolved_limit = float("nan")
+
+        rejection_reason = ""
+        if direction not in {-1, 1}:
+            rejection_reason = "invalid_direction"
+        elif not np.isfinite(raw_quantity) or safe_quantity <= 0.0:
+            rejection_reason = "invalid_quantity"
+        elif not np.isfinite(raw_decision_price) or safe_decision_price <= 0.0:
+            rejection_reason = "invalid_decision_price"
+        elif resolved_type == "limit" and (
+            resolved_limit is None
+            or not np.isfinite(resolved_limit)
+            or resolved_limit <= 0.0
+        ):
+            rejection_reason = "invalid_limit_price"
+
+        created_bar_index = max(int(self._bar_idx), 0)
+        eligible_bar_index = created_bar_index + resolved_latency
+        expires_bar_index = (
+            created_bar_index + resolved_expiry
+            if resolved_expiry is not None else None
+        )
+        terminal = bool(rejection_reason)
         order = OrderRecord(
             order_id=self._next_order_id(),
             symbol=symbol,
             side=side,
             event_type=event_type,
             direction=direction,
-            requested_quantity=abs(float(quantity)),
+            requested_quantity=safe_quantity,
             created_time=pd.Timestamp(timestamp),
-            decision_price=float(decision_price),
+            decision_price=safe_decision_price,
             reason=reason,
+            remaining_quantity=0.0 if terminal else None,
+            cancelled_quantity=safe_quantity if terminal else 0.0,
+            status="rejected" if terminal else "open",
+            updated_time=pd.Timestamp(timestamp) if terminal else None,
             signal_time=signal_time,
+            order_type=resolved_type,
+            limit_price=resolved_limit,
+            time_in_force=resolved_tif,
+            created_bar_index=created_bar_index,
+            eligible_bar_index=eligible_bar_index,
+            eligible_time=self._bar_time(eligible_bar_index),
+            expires_bar_index=expires_bar_index,
+            expires_time=self._bar_time(expires_bar_index),
+            status_reason=rejection_reason,
         )
         self.orders.append(order)
-        self.pending_orders[symbol] = order
+        if not terminal:
+            self.pending_orders[symbol] = order
         return order
 
     def _affordable_entry_quantity(
@@ -1009,6 +1367,83 @@ class BaseEngine(ABC):
             quantity = reduced
         return 0.0
 
+    @staticmethod
+    def _finite_price(value: Any) -> float | None:
+        """Return a positive finite price or ``None``."""
+        try:
+            price = float(value)
+        except (TypeError, ValueError):
+            return None
+        return price if np.isfinite(price) and price > 0.0 else None
+
+    def _execution_prices(
+        self,
+        order: OrderRecord,
+        bar: pd.Series,
+        execution_direction: int,
+    ) -> tuple[float, float] | None:
+        """Resolve an eligible decision/fill price for market or limit orders."""
+        open_price = self._finite_price(bar.get("open", bar.get("close", 0.0)))
+        if open_price is None:
+            return None
+        if order.order_type == "market":
+            fill_price = self._finite_price(
+                self.apply_slippage(open_price, execution_direction)
+            )
+            return (
+                (open_price, fill_price) if fill_price is not None else None
+            )
+
+        limit_price = self._finite_price(order.limit_price)
+        low_price = self._finite_price(bar.get("low"))
+        high_price = self._finite_price(bar.get("high"))
+        if limit_price is None or low_price is None or high_price is None:
+            return None
+
+        if order.side == "buy":
+            if low_price > limit_price + 1e-12:
+                return None
+            decision_price = min(open_price, limit_price)
+            slipped = self._finite_price(
+                self.apply_slippage(decision_price, 1)
+            )
+            if slipped is None:
+                return None
+            fill_price = min(slipped, limit_price)
+        else:
+            if high_price < limit_price - 1e-12:
+                return None
+            decision_price = max(open_price, limit_price)
+            slipped = self._finite_price(
+                self.apply_slippage(decision_price, -1)
+            )
+            if slipped is None:
+                return None
+            fill_price = max(slipped, limit_price)
+        return decision_price, fill_price
+
+    def _record_unfilled_attempt(
+        self,
+        order: OrderRecord,
+        timestamp: pd.Timestamp,
+        reason: str,
+    ) -> None:
+        """Record a zero-fill attempt and apply deterministic cancellation."""
+        order.record_unfilled(timestamp)
+        if order.time_in_force in {"IOC", "FOK"}:
+            order.cancel(timestamp, f"{order.time_in_force.lower()}_{reason}")
+        else:
+            max_unfilled = self._symbol_setting(
+                self._max_unfilled_bars, order.symbol, None,
+            )
+            if (
+                max_unfilled is not None
+                and order.unfilled_eligible_bars >= int(max_unfilled)
+            ):
+                order.cancel(timestamp, f"max_unfilled_bars:{reason}")
+        if order.status not in {"open", "partially_filled"}:
+            self.pending_orders.pop(order.symbol, None)
+
     def _process_order(
         self,
         order: OrderRecord,
@@ -1018,6 +1453,25 @@ class BaseEngine(ABC):
         """Execute at most one fill for an order on the current bar."""
         if order.status not in {"open", "partially_filled"}:
             return 0.0
+        timestamp = pd.Timestamp(timestamp)
+        if (
+            order.expires_bar_index is not None
+            and self._bar_idx > order.expires_bar_index
+        ):
+            order.expire(timestamp, "order_expiry_bars")
+            self.pending_orders.pop(order.symbol, None)
+            return 0.0
+        if self._bar_idx < order.eligible_bar_index:
+            order.record_deferred(timestamp)
+            return 0.0
+        order.set_eligible_time(timestamp)
+        order.record_attempt(timestamp)
+
+        rejection_reason = self.order_rejection_reason(order, bar, timestamp)
+        if rejection_reason:
+            order.reject(timestamp, rejection_reason)
+            self.pending_orders.pop(order.symbol, None)
+            return 0.0
         execution_direction = (
             order.direction if order.event_type == "entry" else -order.direction
         )
@@ -1025,47 +1479,124 @@ class BaseEngine(ABC):
             order.direction if order.event_type == "entry" else 0
         )
         if not self.can_execute(order.symbol, market_rule_direction, bar):
+            self._record_unfilled_attempt(
+                order, timestamp, "market_rule_blocked",
+            )
             return 0.0
-        decision_price = float(bar.get("open", bar.get("close", 0)))
-        if decision_price <= 0:
+        prices = self._execution_prices(order, bar, execution_direction)
+        if prices is None:
+            self._record_unfilled_attempt(
+                order,
+                timestamp,
+                "limit_not_touched" if order.order_type == "limit"
+                else "invalid_market_price",
+            )
             return 0.0
-        fill_price = self.apply_slippage(decision_price, execution_direction)
-        quantity = self.determine_fill_quantity(order, bar, pd.Timestamp(timestamp))
-        quantity = min(
-            max(float(quantity), 0.0),
-            float(order.remaining_quantity or 0.0),
-        )
-        quantity = self.round_size(quantity, fill_price)
+        decision_price, fill_price = prices
         remaining_before_fill = float(order.remaining_quantity or 0.0)
-        full_liquidity = quantity + 1e-9 >= remaining_before_fill
+        try:
+            requested_on_bar = float(self.determine_fill_quantity(
+                order, bar, pd.Timestamp(timestamp)
+            ))
+        except (TypeError, ValueError):
+            requested_on_bar = 0.0
+        if not np.isfinite(requested_on_bar):
+            requested_on_bar = 0.0
+        requested_on_bar = min(
+            max(requested_on_bar, 0.0),
+            remaining_before_fill,
+        )
+        volume_context = self._volume_context(order.symbol, bar, timestamp)
+        available_quantity = volume_context["available_quantity"]
+        volume_constrained = (
+            volume_context["enabled"]
+            and requested_on_bar > float(available_quantity) + 1e-9
+        )
+        if volume_constrained:
+            order.record_volume_constraint()
+        quantity = (
+            min(requested_on_bar, float(available_quantity))
+            if volume_context["enabled"] else requested_on_bar
+        )
+        try:
+            quantity = float(self.round_size(quantity, fill_price))
+        except (TypeError, ValueError):
+            quantity = 0.0
+        if not np.isfinite(quantity) or quantity < 0.0:
+            quantity = 0.0
+        if volume_context["enabled"]:
+            # A venue rounder may round to the nearest lot and therefore move
+            # above the cap. Reject that sub-lot execution rather than emit an
+            # impossible fill or manufacture an invalid fractional lot.
+            if quantity > float(available_quantity) + 1e-9:
+                quantity = 0.0
+        full_liquidity = (
+            not volume_constrained
+            and requested_on_bar + 1e-9 >= remaining_before_fill
+        )
         if order.event_type == "entry":
             quantity = self._affordable_entry_quantity(order, quantity, fill_price)
             # Preserve the legacy full-fill behavior when the only reduction
             # is the capital constraint. Liquidity-driven reductions remain
             # genuine partial fills and keep their original requested size.
-            if full_liquidity and 0 < quantity < remaining_before_fill:
+            if (
+                order.time_in_force == "GTC"
+                and full_liquidity
+                and 0 < quantity < remaining_before_fill
+            ):
                 order.requested_quantity = order.filled_quantity + quantity
                 order.remaining_quantity = quantity
         else:
             position = self.positions.get(order.symbol)
             if position is None:
-                order.cancel(timestamp)
+                order.cancel(timestamp, "position_missing")
                 return 0.0
             quantity = min(quantity, abs(float(position.size)))
-            quantity = self.round_size(quantity, fill_price)
+            try:
+                quantity = float(self.round_size(quantity, fill_price))
+            except (TypeError, ValueError):
+                quantity = 0.0
+            if not np.isfinite(quantity) or quantity < 0.0:
+                quantity = 0.0
+        if (
+            volume_context["enabled"]
+            and quantity > float(available_quantity) + 1e-9
+        ):
+            quantity = 0.0
+        if (
+            order.time_in_force == "FOK"
+            and quantity + 1e-9 < remaining_before_fill
+        ):
+            self._record_unfilled_attempt(order, timestamp, "not_fully_fillable")
+            return 0.0
         if quantity <= 0:
+            self._record_unfilled_attempt(order, timestamp, "zero_fill_quantity")
             return 0.0
 
         order.record_fill(quantity, timestamp)
+        if volume_context["enabled"]:
+            self._consume_bar_volume(order.symbol, timestamp, quantity)
         if order.event_type == "entry":
             self._execute_entry_fill(
-                order, quantity, decision_price, fill_price, pd.Timestamp(timestamp),
+                order,
+                quantity,
+                decision_price,
+                fill_price,
+                pd.Timestamp(timestamp),
+                volume_context=volume_context,
             )
         else:
             self._execute_exit_fill(
-                order, quantity, decision_price, fill_price, pd.Timestamp(timestamp),
+                order,
+                quantity,
+                decision_price,
+                fill_price,
+                pd.Timestamp(timestamp),
+                volume_context=volume_context,
             )
-        if order.status == "filled":
+        if order.time_in_force == "IOC" and order.status == "partially_filled":
+            order.cancel(timestamp, "ioc_residual")
+        if order.status not in {"open", "partially_filled"}:
             self.pending_orders.pop(order.symbol, None)
         return quantity
 
@@ -1076,6 +1607,7 @@ class BaseEngine(ABC):
         decision_price: float,
         fill_price: float,
         timestamp: pd.Timestamp,
+        volume_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Apply one entry fill and aggregate it into the position basis."""
         leverage = self.default_leverage
@@ -1130,6 +1662,7 @@ class BaseEngine(ABC):
                 signal_time=current.signal_time,
             )
         self.positions[order.symbol] = position
+        volume_context = volume_context or {}
         self.fills.append(FillRecord(
             timestamp=timestamp,
             symbol=order.symbol,
@@ -1147,6 +1680,18 @@ class BaseEngine(ABC):
             requested_quantity=order.requested_quantity,
             remaining_quantity=order.remaining_quantity,
             fill_status=order.status,
+            bar_volume=volume_context.get("bar_volume"),
+            participation_rate=volume_context.get("participation_rate"),
+            bar_volume_capacity=volume_context.get("bar_volume_capacity"),
+            volume_limit_exempt=bool(
+                volume_context.get("volume_limit_exempt", False)
+            ),
+            order_type=order.order_type,
+            limit_price=order.limit_price,
+            eligible_time=order.eligible_time,
+            eligible_bar_index=order.eligible_bar_index,
+            execution_bar_index=self._bar_idx,
+            time_in_force=order.time_in_force,
         ))
 
     def _start_exit_accumulator(self, position: Position) -> Dict[str, Any]:
@@ -1185,6 +1730,7 @@ class BaseEngine(ABC):
         decision_price: float,
         fill_price: float,
         timestamp: pd.Timestamp,
+        volume_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Apply one exit fill and finalize one trade when flat."""
         position = self.positions.get(order.symbol)
@@ -1228,6 +1774,7 @@ class BaseEngine(ABC):
         accumulator["last_exit_time"] = timestamp
         accumulator["last_reason"] = order.reason
 
+        volume_context = volume_context or {}
         self.fills.append(FillRecord(
             timestamp=timestamp,
             symbol=order.symbol,
@@ -1245,6 +1792,18 @@ class BaseEngine(ABC):
             requested_quantity=order.requested_quantity,
             remaining_quantity=order.remaining_quantity,
             fill_status=order.status,
+            bar_volume=volume_context.get("bar_volume"),
+            participation_rate=volume_context.get("participation_rate"),
+            bar_volume_capacity=volume_context.get("bar_volume_capacity"),
+            volume_limit_exempt=bool(
+                volume_context.get("volume_limit_exempt", False)
+            ),
+            order_type=order.order_type,
+            limit_price=order.limit_price,
+            eligible_time=order.eligible_time,
+            eligible_bar_index=order.eligible_bar_index,
+            execution_bar_index=self._bar_idx,
+            time_in_force=order.time_in_force,
         ))
 
         remaining = max(position.size - quantity, 0.0)
@@ -1334,7 +1893,7 @@ class BaseEngine(ABC):
             return
         pending = self.pending_orders.pop(symbol, None)
         if pending is not None:
-            pending.cancel(exit_time)
+            pending.cancel(exit_time, f"forced_close:{reason}")
         decision_price = (
             float(exit_decision_price)
             if exit_decision_price is not None
@@ -1349,15 +1908,28 @@ class BaseEngine(ABC):
             decision_price=decision_price,
             reason=reason,
             signal_time=position.signal_time,
+            order_type="market",
+            time_in_force="GTC",
+            latency_bars=0,
+            expiry_bars=None,
         )
+        order.expires_bar_index = None
+        order.expires_time = None
+        order.set_eligible_time(exit_time)
+        order.record_attempt(exit_time)
         order.record_fill(position.size, exit_time)
         self.pending_orders.pop(symbol, None)
+        participation_rate = self._participation_rate_for(symbol)
         self._execute_exit_fill(
             order,
             position.size,
             decision_price,
             float(exit_price),
             pd.Timestamp(exit_time),
+            volume_context={
+                "participation_rate": participation_rate,
+                "volume_limit_exempt": participation_rate is not None,
+            },
         )
 
     # ── Artifacts ──
@@ -1428,6 +2000,16 @@ class BaseEngine(ABC):
             "requested_quantity",
             "remaining_quantity",
             "fill_status",
+            "bar_volume",
+            "participation_rate",
+            "bar_volume_capacity",
+            "volume_limit_exempt",
+            "order_type",
+            "limit_price",
+            "eligible_time",
+            "eligible_bar_index",
+            "execution_bar_index",
+            "time_in_force",
         ]
         fill_rows = [{
             "timestamp": fill.timestamp,
@@ -1446,6 +2028,16 @@ class BaseEngine(ABC):
             "requested_quantity": fill.requested_quantity,
             "remaining_quantity": fill.remaining_quantity,
             "fill_status": fill.fill_status,
+            "bar_volume": fill.bar_volume,
+            "participation_rate": fill.participation_rate,
+            "bar_volume_capacity": fill.bar_volume_capacity,
+            "volume_limit_exempt": fill.volume_limit_exempt,
+            "order_type": fill.order_type,
+            "limit_price": fill.limit_price,
+            "eligible_time": fill.eligible_time,
+            "eligible_bar_index": fill.eligible_bar_index,
+            "execution_bar_index": fill.execution_bar_index,
+            "time_in_force": fill.time_in_force,
         } for fill in self.fills]
         pd.DataFrame(fill_rows, columns=fill_cols).to_csv(out / "fills.csv", index=False)
 
@@ -1465,6 +2057,22 @@ class BaseEngine(ABC):
             "signal_time",
             "decision_price",
             "reason",
+            "volume_constrained",
+            "volume_constrained_bars",
+            "order_type",
+            "limit_price",
+            "time_in_force",
+            "created_bar_index",
+            "eligible_bar_index",
+            "eligible_time",
+            "expires_bar_index",
+            "expires_time",
+            "attempt_count",
+            "deferred_bars",
+            "unfilled_eligible_bars",
+            "first_fill_time",
+            "last_fill_time",
+            "status_reason",
         ]
         order_rows = [{
             "order_id": order.order_id,
@@ -1482,6 +2090,22 @@ class BaseEngine(ABC):
             "signal_time": order.signal_time,
             "decision_price": order.decision_price,
             "reason": order.reason,
+            "volume_constrained": order.volume_constrained,
+            "volume_constrained_bars": order.volume_constrained_bars,
+            "order_type": order.order_type,
+            "limit_price": order.limit_price,
+            "time_in_force": order.time_in_force,
+            "created_bar_index": order.created_bar_index,
+            "eligible_bar_index": order.eligible_bar_index,
+            "eligible_time": order.eligible_time,
+            "expires_bar_index": order.expires_bar_index,
+            "expires_time": order.expires_time,
+            "attempt_count": order.attempt_count,
+            "deferred_bars": order.deferred_bars,
+            "unfilled_eligible_bars": order.unfilled_eligible_bars,
+            "first_fill_time": order.first_fill_time,
+            "last_fill_time": order.last_fill_time,
+            "status_reason": order.status_reason,
         } for order in self.orders]
         pd.DataFrame(order_rows, columns=order_cols).to_csv(
             out / "orders.csv", index=False,

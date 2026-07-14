@@ -862,12 +862,22 @@ class TestArtifacts:
             "quantity", "decision_price", "fill_price", "notional",
             "commission", "slippage_cost", "reason", "requested_quantity",
             "remaining_quantity", "fill_status",
+            "bar_volume", "participation_rate", "bar_volume_capacity",
+            "volume_limit_exempt",
+            "order_type", "limit_price", "eligible_time",
+            "eligible_bar_index", "execution_bar_index", "time_in_force",
         ]
         orders_df = pd.read_csv(artifacts / "orders.csv")
         assert orders_df.empty
         assert {
             "order_id", "requested_quantity", "filled_quantity",
             "remaining_quantity", "cancelled_quantity", "status",
+            "volume_constrained", "volume_constrained_bars",
+            "order_type", "limit_price", "time_in_force",
+            "created_bar_index", "eligible_bar_index", "eligible_time",
+            "expires_bar_index", "expires_time", "attempt_count",
+            "deferred_bars", "unfilled_eligible_bars", "first_fill_time",
+            "last_fill_time", "status_reason",
         }.issubset(orders_df.columns)
 
         accounting_df = pd.read_csv(artifacts / "daily_accounting.csv")
@@ -881,9 +891,42 @@ class TestArtifacts:
     def test_fills_csv_serializes_execution_ledger(self, tmp_path: Path) -> None:
         engine = DummyEngine({"initial_cash": 1_000})
         ts = pd.Timestamp("2025-01-02")
+        engine.orders.append(OrderRecord(
+            order_id="order_limit_1",
+            symbol="X",
+            side="buy",
+            event_type="entry",
+            direction=1,
+            requested_quantity=2.0,
+            created_time=ts - pd.Timedelta(days=1),
+            decision_price=10.0,
+            reason="signal",
+            filled_quantity=2.0,
+            remaining_quantity=0.0,
+            status="filled",
+            updated_time=ts,
+            order_type="limit",
+            limit_price=10.5,
+            time_in_force="IOC",
+            created_bar_index=1,
+            eligible_bar_index=2,
+            eligible_time=ts,
+            attempt_count=1,
+            first_fill_time=ts,
+            last_fill_time=ts,
+        ))
         engine.fills.append(FillRecord(
             ts, "X", "buy", "entry", 1, 2.0, 10.0, 10.5,
             21.0, 0.02, 1.0, "signal",
+            order_id="order_limit_1",
+            requested_quantity=2.0,
+            remaining_quantity=0.0,
+            order_type="limit",
+            limit_price=10.5,
+            eligible_time=ts,
+            eligible_bar_index=2,
+            execution_bar_index=2,
+            time_in_force="IOC",
         ))
         dates = pd.DatetimeIndex([ts])
         data_map = {
@@ -909,6 +952,18 @@ class TestArtifacts:
         assert fills_df.iloc[0]["event_type"] == "entry"
         assert fills_df.iloc[0]["commission"] == pytest.approx(0.02)
         assert fills_df.iloc[0]["slippage_cost"] == pytest.approx(1.0)
+        assert fills_df.iloc[0]["order_type"] == "limit"
+        assert fills_df.iloc[0]["limit_price"] == pytest.approx(10.5)
+        assert fills_df.iloc[0]["eligible_bar_index"] == 2
+        assert fills_df.iloc[0]["execution_bar_index"] == 2
+        assert fills_df.iloc[0]["time_in_force"] == "IOC"
+
+        orders_df = pd.read_csv(tmp_path / "artifacts" / "orders.csv")
+        assert orders_df.iloc[0]["order_type"] == "limit"
+        assert orders_df.iloc[0]["limit_price"] == pytest.approx(10.5)
+        assert orders_df.iloc[0]["eligible_bar_index"] == 2
+        assert orders_df.iloc[0]["attempt_count"] == 1
+        assert orders_df.iloc[0]["time_in_force"] == "IOC"
 
 
 class TestSafePrice:
