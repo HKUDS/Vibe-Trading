@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from backtest.models import FillRecord, TradeRecord
+from backtest.models import FillRecord, OrderRecord, TradeRecord
 from backtest.metrics import calc_execution_metrics
 
 
@@ -432,6 +432,29 @@ def build_performance_summary(
         "total_commission": _finite(scalar_metrics.get("total_commission", 0.0)),
         "total_slippage_cost": _finite(scalar_metrics.get("total_slippage_cost", 0.0)),
         "total_trading_cost": total_cost,
+        "order_count": int(_finite(scalar_metrics.get("order_count", 0.0))),
+        "filled_order_count": int(_finite(
+            scalar_metrics.get("filled_order_count", 0.0)
+        )),
+        "cancelled_order_count": int(_finite(
+            scalar_metrics.get("cancelled_order_count", 0.0)
+        )),
+        "partial_fill_order_count": int(_finite(
+            scalar_metrics.get("partial_fill_order_count", 0.0)
+        )),
+        "total_requested_quantity": _finite(
+            scalar_metrics.get("total_requested_quantity", 0.0)
+        ),
+        "total_filled_quantity": _finite(
+            scalar_metrics.get("total_filled_quantity", 0.0)
+        ),
+        "total_cancelled_quantity": _finite(
+            scalar_metrics.get("total_cancelled_quantity", 0.0)
+        ),
+        "total_unfilled_quantity": _finite(
+            scalar_metrics.get("total_unfilled_quantity", 0.0)
+        ),
+        "fill_ratio": _finite(scalar_metrics.get("fill_ratio", 0.0)),
         "trading_cost_as_pct_starting_capital": (
             total_cost / starting if abs(starting) > 1e-12 else 0.0
         ),
@@ -482,6 +505,10 @@ def render_performance_report(
         f"- Commission: {_finite(summary.get('total_commission')):,.2f}",
         f"- Slippage cost: {_finite(summary.get('total_slippage_cost')):,.2f}",
         f"- Total trading costs: {_finite(summary.get('total_trading_cost')):,.2f}",
+        f"- Order fill ratio: {_finite(summary.get('fill_ratio')):.2%}",
+        f"- Partially filled orders: {int(summary.get('partial_fill_order_count', 0))}",
+        f"- Cancelled orders: {int(summary.get('cancelled_order_count', 0))}",
+        f"- Unfilled quantity: {_finite(summary.get('total_unfilled_quantity')):,.6f}",
         f"- Maximum drawdown: {_finite(summary.get('maximum_drawdown')):.2%}",
         f"- Maximum drawdown duration: {int(summary.get('maximum_drawdown_duration_days', 0))} days",
         f"- Total one-way turnover: {_finite(summary.get('total_one_way_turnover')):.4f}",
@@ -541,6 +568,7 @@ def build_reporting_outputs(
     scalar_metrics: Dict[str, Any],
     starting_capital: float,
     bars_per_year: Optional[int],
+    orders: Optional[List[OrderRecord]] = None,
     final_capital: Optional[float] = None,
     final_unrealized_pnl: float = 0.0,
     open_position_count: int = 0,
@@ -561,6 +589,7 @@ def build_reporting_outputs(
         fills,
         observation_count=len(daily_accounting) if daily_accounting is not None else 0,
         bars_per_year=bars_per_year,
+        orders=orders,
     ))
     enriched_metrics.update(concentration_scalars)
     ending = _finite(equity.iloc[-1], starting_capital) if not equity.empty else starting_capital

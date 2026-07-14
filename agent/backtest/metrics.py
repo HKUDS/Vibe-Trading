@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from backtest.models import FillRecord, TradeRecord
+from backtest.models import FillRecord, OrderRecord, TradeRecord
 
 # ─── Annualisation factor mapping ───
 
@@ -178,6 +178,7 @@ def calc_execution_metrics(
     fills: List[FillRecord],
     observation_count: int,
     bars_per_year: Optional[int] = 252,
+    orders: Optional[List[OrderRecord]] = None,
 ) -> Dict[str, float]:
     """Calculate scalar cost, turnover, and exposure metrics from executions.
 
@@ -209,6 +210,26 @@ def calc_execution_metrics(
 
     total_commission = float(sum(fill.commission for fill in fills))
     total_slippage = float(sum(fill.slippage_cost for fill in fills))
+    order_records = orders or []
+    total_requested = float(sum(order.requested_quantity for order in order_records))
+    total_filled = float(sum(order.filled_quantity for order in order_records))
+    total_cancelled = float(sum(order.cancelled_quantity for order in order_records))
+    total_unfilled = float(sum(
+        max(order.requested_quantity - order.filled_quantity, 0.0)
+        for order in order_records
+    ))
+    fills_by_order: Dict[str, int] = {}
+    for fill in fills:
+        if fill.order_id:
+            fills_by_order[fill.order_id] = fills_by_order.get(fill.order_id, 0) + 1
+    partial_fill_orders = sum(
+        order.filled_quantity > 0
+        and (
+            fills_by_order.get(order.order_id, 0) > 1
+            or order.filled_quantity + 1e-9 < order.requested_quantity
+        )
+        for order in order_records
+    )
 
     if positions.empty:
         gross_exposure = pd.Series(dtype=float)
@@ -223,6 +244,19 @@ def calc_execution_metrics(
         "total_commission": total_commission,
         "total_slippage_cost": total_slippage,
         "total_trading_cost": total_commission + total_slippage,
+        "order_count": float(len(order_records)),
+        "filled_order_count": float(sum(
+            order.status == "filled" for order in order_records
+        )),
+        "cancelled_order_count": float(sum(
+            order.status == "cancelled" for order in order_records
+        )),
+        "partial_fill_order_count": float(partial_fill_orders),
+        "total_requested_quantity": total_requested,
+        "total_filled_quantity": total_filled,
+        "total_cancelled_quantity": total_cancelled,
+        "total_unfilled_quantity": total_unfilled,
+        "fill_ratio": total_filled / total_requested if total_requested > 0 else 0.0,
         "total_one_way_turnover": total_turnover,
         "annualized_one_way_turnover": float(annualized_turnover),
         "mean_gross_exposure": (

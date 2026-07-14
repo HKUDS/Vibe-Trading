@@ -10,6 +10,72 @@ from dataclasses import dataclass
 import pandas as pd
 
 
+ORDER_STATUSES = {"open", "partially_filled", "filled", "cancelled"}
+
+
+@dataclass
+class OrderRecord:
+    """Mutable order lifecycle supporting one or more execution fills."""
+
+    order_id: str
+    symbol: str
+    side: str
+    event_type: str
+    direction: int
+    requested_quantity: float
+    created_time: pd.Timestamp
+    decision_price: float
+    reason: str
+    filled_quantity: float = 0.0
+    remaining_quantity: float | None = None
+    cancelled_quantity: float = 0.0
+    status: str = "open"
+    updated_time: pd.Timestamp | None = None
+    signal_time: pd.Timestamp | None = None
+
+    def __post_init__(self) -> None:
+        self.requested_quantity = max(float(self.requested_quantity), 0.0)
+        self.filled_quantity = max(float(self.filled_quantity), 0.0)
+        if self.remaining_quantity is None:
+            self.remaining_quantity = max(
+                self.requested_quantity - self.filled_quantity,
+                0.0,
+            )
+        else:
+            self.remaining_quantity = max(float(self.remaining_quantity), 0.0)
+        self.cancelled_quantity = max(float(self.cancelled_quantity), 0.0)
+        if self.status not in ORDER_STATUSES:
+            raise ValueError(f"unsupported order status: {self.status!r}")
+        if self.filled_quantity - self.requested_quantity > 1e-9:
+            raise ValueError("filled quantity cannot exceed requested quantity")
+
+    def record_fill(self, quantity: float, timestamp: pd.Timestamp) -> None:
+        """Apply an executed quantity and advance the order status."""
+        if self.status not in {"open", "partially_filled"}:
+            raise ValueError(f"cannot fill order in status {self.status!r}")
+        executed = float(quantity)
+        if executed <= 0.0:
+            raise ValueError("fill quantity must be positive")
+        remaining = float(self.remaining_quantity or 0.0)
+        if executed - remaining > 1e-9:
+            raise ValueError("fill quantity exceeds remaining quantity")
+        self.filled_quantity += executed
+        self.remaining_quantity = max(remaining - executed, 0.0)
+        self.updated_time = pd.Timestamp(timestamp)
+        self.status = (
+            "filled" if self.remaining_quantity <= 1e-9 else "partially_filled"
+        )
+
+    def cancel(self, timestamp: pd.Timestamp) -> None:
+        """Cancel only the unfilled residual quantity."""
+        if self.status in {"filled", "cancelled"}:
+            return
+        self.cancelled_quantity += float(self.remaining_quantity or 0.0)
+        self.remaining_quantity = 0.0
+        self.updated_time = pd.Timestamp(timestamp)
+        self.status = "cancelled"
+
+
 @dataclass(frozen=True)
 class Position:
     """An open position in a single instrument.
@@ -102,6 +168,10 @@ class FillRecord:
     commission: float
     slippage_cost: float
     reason: str
+    order_id: str = ""
+    requested_quantity: float | None = None
+    remaining_quantity: float | None = None
+    fill_status: str = "filled"
 
 
 @dataclass(frozen=True)

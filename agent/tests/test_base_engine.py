@@ -11,7 +11,7 @@ import pytest
 
 from backtest.engines.base import BaseEngine, _align, _load_optimizer
 from backtest.engines.china_a import ChinaAEngine
-from backtest.models import FillRecord, Position, TradeRecord
+from backtest.models import FillRecord, OrderRecord, Position, TradeRecord
 
 
 class DummyEngine(BaseEngine):
@@ -190,6 +190,38 @@ class TestLoadOptimizer:
 
 
 class TestModelsCompatibility:
+    def test_order_lifecycle_supports_partial_fill_then_cancel(self) -> None:
+        order = OrderRecord(
+            order_id="order_1",
+            symbol="X",
+            side="buy",
+            event_type="entry",
+            direction=1,
+            requested_quantity=5.0,
+            created_time=pd.Timestamp("2025-01-02"),
+            decision_price=10.0,
+            reason="signal",
+        )
+        order.record_fill(2.0, pd.Timestamp("2025-01-02"))
+        assert order.status == "partially_filled"
+        assert order.filled_quantity == pytest.approx(2.0)
+        assert order.remaining_quantity == pytest.approx(3.0)
+
+        order.cancel(pd.Timestamp("2025-01-03"))
+        assert order.status == "cancelled"
+        assert order.cancelled_quantity == pytest.approx(3.0)
+        assert order.remaining_quantity == pytest.approx(0.0)
+
+    def test_legacy_fill_record_construction_still_works(self) -> None:
+        fill = FillRecord(
+            pd.Timestamp("2025-01-02"), "X", "buy", "entry", 1,
+            2.0, 10.0, 10.5, 21.0, 0.02, 1.0, "signal",
+        )
+        assert fill.order_id == ""
+        assert fill.requested_quantity is None
+        assert fill.remaining_quantity is None
+        assert fill.fill_status == "filled"
+
     def test_legacy_position_construction_still_works(self) -> None:
         pos = Position("X", 1, 10.0, pd.Timestamp("2025-01-02"), 5.0)
         assert pos.entry_decision_price is None
@@ -810,7 +842,10 @@ class TestArtifacts:
         artifacts = run_dir / "artifacts"
         for legacy_name in ("equity.csv", "positions.csv", "trades.csv", "metrics.csv"):
             assert (artifacts / legacy_name).is_file()
-        for new_name in ("fills.csv", "executed_positions.csv", "daily_accounting.csv"):
+        for new_name in (
+            "fills.csv", "orders.csv", "executed_positions.csv",
+            "daily_accounting.csv",
+        ):
             assert (artifacts / new_name).is_file()
         for report_name in (
             "performance_summary.json", "performance_summary.csv",
@@ -823,10 +858,17 @@ class TestArtifacts:
         fills_df = pd.read_csv(artifacts / "fills.csv")
         assert fills_df.empty
         assert list(fills_df.columns) == [
-            "timestamp", "symbol", "side", "event_type", "direction",
+            "timestamp", "order_id", "symbol", "side", "event_type", "direction",
             "quantity", "decision_price", "fill_price", "notional",
-            "commission", "slippage_cost", "reason",
+            "commission", "slippage_cost", "reason", "requested_quantity",
+            "remaining_quantity", "fill_status",
         ]
+        orders_df = pd.read_csv(artifacts / "orders.csv")
+        assert orders_df.empty
+        assert {
+            "order_id", "requested_quantity", "filled_quantity",
+            "remaining_quantity", "cancelled_quantity", "status",
+        }.issubset(orders_df.columns)
 
         accounting_df = pd.read_csv(artifacts / "daily_accounting.csv")
         assert set(accounting_df.columns) == {

@@ -38,7 +38,13 @@ from backtest.metrics import (
     calc_metrics,
     calc_turnover_series,
 )
-from backtest.models import EquitySnapshot, FillRecord, Position, TradeRecord
+from backtest.models import (
+    EquitySnapshot,
+    FillRecord,
+    OrderRecord,
+    Position,
+    TradeRecord,
+)
 from backtest.reporting import build_reporting_outputs, write_reporting_outputs
 
 logger = logging.getLogger(__name__)
@@ -307,8 +313,12 @@ class BaseEngine(ABC):
         self.positions: Dict[str, Position] = {}
         self.trades: List[TradeRecord] = []
         self.fills: List[FillRecord] = []
+        self.orders: List[OrderRecord] = []
+        self.pending_orders: Dict[str, OrderRecord] = {}
         self.equity_snapshots: List[EquitySnapshot] = []
         self.executed_position_weights: List[Dict[str, Any]] = []
+        self._exit_accumulators: Dict[str, Dict[str, Any]] = {}
+        self._order_sequence: int = 0
         self._bar_idx: int = 0
         self._active_symbol: str = ""  # set by _rebalance/_close_position for subclass use
 
@@ -370,6 +380,20 @@ class BaseEngine(ABC):
 
         Default: no-op. Override in subclass as needed.
         """
+
+    def determine_fill_quantity(
+        self,
+        order: OrderRecord,
+        bar: pd.Series,
+        timestamp: pd.Timestamp,
+    ) -> float:
+        """Return the quantity executable for ``order`` on this bar.
+
+        The default preserves the legacy all-or-nothing behavior. Engines or
+        tests can override this hook with venue liquidity/participation rules
+        to produce partial or zero fills across successive bars.
+        """
+        return float(order.remaining_quantity or 0.0)
 
     # ── PnL / margin calculation hooks ──
     # Override in FuturesBaseEngine to inject contract multiplier.
@@ -511,6 +535,7 @@ class BaseEngine(ABC):
             self.fills,
             observation_count=len(equity_series),
             bars_per_year=bars_per_year,
+            orders=self.orders,
         ))
         m.update(benchmark_metadata)
         m["by_symbol"] = by_symbol_stats(self.trades)
@@ -613,6 +638,13 @@ class BaseEngine(ABC):
         # d. Force close all remaining positions
         if len(dates) > 0:
             last_ts = dates[-1]
+            # Pending residuals are cancelled before the terminal flattening
+            # order. Any quantity already filled remains in the position and
+            # is liquidated exactly once below.
+            for order in list(self.pending_orders.values()):
+                order.cancel(last_ts)
+            self.pending_orders.clear()
+
             for c in list(self.positions.keys()):
                 decision_price = self._safe_price(
                     close_df,
@@ -811,106 +843,481 @@ class BaseEngine(ABC):
         ts: pd.Timestamp,
         equity: float,
     ) -> None:
-        """Adjust position for *symbol* toward *target_weight*."""
+        """Adjust a symbol toward its target using persistent order state."""
         self._active_symbol = symbol
         target_dir = 1 if target_weight > 1e-9 else (-1 if target_weight < -1e-9 else 0)
-        current_pos = self.positions.get(symbol)
-
-        # Nothing to do
-        if current_pos is None and target_dir == 0:
-            return
         if df is None or ts not in df.index:
             return
-
         bar = df.loc[ts]
 
-        # Close if target is flat or direction changed
+        pending = self.pending_orders.get(symbol)
+        if pending is not None:
+            current = self.positions.get(symbol)
+            incompatible = (
+                pending.event_type == "entry" and target_dir != pending.direction
+            ) or (
+                pending.event_type == "exit"
+                and (current is None or target_dir == current.direction)
+            )
+            if incompatible:
+                pending.cancel(ts)
+                self.pending_orders.pop(symbol, None)
+            else:
+                pending_event = pending.event_type
+                self._process_order(pending, bar, ts)
+                if pending.status in {"open", "partially_filled"}:
+                    return
+                self.pending_orders.pop(symbol, None)
+                if pending_event == "entry":
+                    return
+
+        current_pos = self.positions.get(symbol)
+        if current_pos is None and target_dir == 0:
+            return
+
+        # Close if target is flat or direction changed. A partial exit remains
+        # pending and continues on later bars.
         if current_pos is not None:
             need_close = target_dir == 0 or target_dir != current_pos.direction
             if need_close:
-                if self.can_execute(symbol, 0, bar):
-                    open_price = float(bar.get("open", bar.get("close", 0)))
-                    price = self.apply_slippage(open_price, -current_pos.direction)
-                    self._close_position(
-                        symbol,
-                        price,
-                        ts,
-                        "signal",
-                        exit_decision_price=open_price,
-                    )
-                else:
-                    return  # blocked (e.g. limit-down can't sell)
+                decision_price = float(bar.get("open", bar.get("close", 0)))
+                if decision_price <= 0:
+                    return
+                order = self._create_order(
+                    symbol=symbol,
+                    event_type="exit",
+                    direction=current_pos.direction,
+                    quantity=current_pos.size,
+                    timestamp=ts,
+                    decision_price=decision_price,
+                    reason="signal",
+                    signal_time=current_pos.signal_time,
+                )
+                self._process_order(order, bar, ts)
+                if order.status in {"open", "partially_filled"}:
+                    return
+                self.pending_orders.pop(symbol, None)
 
         # Open new if target non-zero and no remaining position
         if target_dir != 0 and symbol not in self.positions:
-            if not self.can_execute(symbol, target_dir, bar):
-                return  # blocked (e.g. A-share no-short)
-
-            open_price = float(bar.get("open", bar.get("close", 0)))
-            if open_price <= 0:
+            decision_price = float(bar.get("open", bar.get("close", 0)))
+            if decision_price <= 0:
                 return
-
-            slipped = self.apply_slippage(open_price, target_dir)
+            fill_price = self.apply_slippage(decision_price, target_dir)
             signal_time = _safe_signal_time(df, ts)
             leverage = self.default_leverage
             target_notional = abs(target_weight) * equity * leverage
-            raw_size = self._calc_raw_size(symbol, target_notional, slipped)
-            size = self.round_size(raw_size, slipped)
+            raw_size = self._calc_raw_size(symbol, target_notional, fill_price)
+            size = self.round_size(raw_size, fill_price)
             if size <= 0:
                 return
-
-            margin = self._calc_margin(symbol, size, slipped, leverage)
-            comm = self.calc_commission(size, slipped, target_dir, is_open=True)
-
-            # Capital check — reduce if insufficient
-            if margin + comm > self.capital:
-                available = self.capital - comm
-                if available <= 0:
-                    return
-                size = self.round_size(
-                    self._calc_raw_size(symbol, available * leverage, slipped), slipped,
-                )
-                if size <= 0:
-                    return
-                margin = self._calc_margin(symbol, size, slipped, leverage)
-                comm = self.calc_commission(size, slipped, target_dir, is_open=True)
-
-            entry_slippage_cost = target_dir * size * (slipped - open_price)
-            fill_entry_slippage_cost = self._calc_pnl(
-                symbol,
-                target_dir,
-                size,
-                open_price,
-                slipped,
-            )
-            self.capital -= (margin + comm)
-            self.positions[symbol] = Position(
+            order = self._create_order(
                 symbol=symbol,
-                direction=target_dir,
-                entry_price=slipped,
-                entry_time=ts,
-                size=size,
-                leverage=leverage,
-                entry_bar_idx=self._bar_idx,
-                entry_commission=comm,
-                entry_decision_price=open_price,
-                entry_slippage_cost=entry_slippage_cost,
-                signal_time=signal_time,
-            )
-            self.fills.append(FillRecord(
-                timestamp=pd.Timestamp(ts),
-                symbol=symbol,
-                side="buy" if target_dir == 1 else "sell",
                 event_type="entry",
                 direction=target_dir,
-                quantity=abs(float(size)),
-                decision_price=float(open_price),
-                fill_price=float(slipped),
-                notional=abs(float(size)) * float(slipped),
-                commission=float(comm),
-                slippage_cost=float(fill_entry_slippage_cost),
+                quantity=size,
+                timestamp=ts,
+                decision_price=decision_price,
                 reason="signal",
-            ))
+                signal_time=signal_time,
+            )
+            self._process_order(order, bar, ts)
+            if order.status == "filled":
+                self.pending_orders.pop(symbol, None)
+            return
+
+    def _next_order_id(self) -> str:
+        """Return a deterministic identifier local to this engine run."""
+        self._order_sequence += 1
+        return f"order_{self._order_sequence:08d}"
+
+    def _create_order(
+        self,
+        *,
+        symbol: str,
+        event_type: str,
+        direction: int,
+        quantity: float,
+        timestamp: pd.Timestamp,
+        decision_price: float,
+        reason: str,
+        signal_time: pd.Timestamp | None = None,
+    ) -> OrderRecord:
+        """Create and register a persistent entry or exit order."""
+        if event_type not in {"entry", "exit"}:
+            raise ValueError(f"unsupported order event type: {event_type!r}")
+        side = (
+            "buy"
+            if (event_type == "entry" and direction == 1)
+            or (event_type == "exit" and direction == -1)
+            else "sell"
+        )
+        order = OrderRecord(
+            order_id=self._next_order_id(),
+            symbol=symbol,
+            side=side,
+            event_type=event_type,
+            direction=direction,
+            requested_quantity=abs(float(quantity)),
+            created_time=pd.Timestamp(timestamp),
+            decision_price=float(decision_price),
+            reason=reason,
+            signal_time=signal_time,
+        )
+        self.orders.append(order)
+        self.pending_orders[symbol] = order
+        return order
+
+    def _affordable_entry_quantity(
+        self,
+        order: OrderRecord,
+        requested: float,
+        fill_price: float,
+    ) -> float:
+        """Clamp an entry fill to capital available at execution time."""
+        quantity = min(abs(float(requested)), float(order.remaining_quantity or 0.0))
+        quantity = self.round_size(quantity, fill_price)
+        if quantity <= 0:
+            return 0.0
+        leverage = self.default_leverage
+        margin = self._calc_margin(order.symbol, quantity, fill_price, leverage)
+        commission = self.calc_commission(
+            quantity, fill_price, order.direction, is_open=True,
+        )
+        if margin + commission <= self.capital + 1e-9:
+            return quantity
+
+        available = max(self.capital, 0.0)
+        raw = self._calc_raw_size(
+            order.symbol, available * leverage, fill_price,
+        )
+        quantity = min(quantity, self.round_size(raw, fill_price))
+        for _ in range(12):
+            if quantity <= 0:
+                return 0.0
+            margin = self._calc_margin(order.symbol, quantity, fill_price, leverage)
+            commission = self.calc_commission(
+                quantity, fill_price, order.direction, is_open=True,
+            )
+            required = margin + commission
+            if required <= self.capital + 1e-9:
+                return quantity
+            scale = max(self.capital / required, 0.0) if required > 0 else 0.0
+            reduced = self.round_size(quantity * scale * (1.0 - 1e-9), fill_price)
+            if reduced >= quantity:
+                return 0.0
+            quantity = reduced
+        return 0.0
+
+    def _process_order(
+        self,
+        order: OrderRecord,
+        bar: pd.Series,
+        timestamp: pd.Timestamp,
+    ) -> float:
+        """Execute at most one fill for an order on the current bar."""
+        if order.status not in {"open", "partially_filled"}:
+            return 0.0
+        execution_direction = (
+            order.direction if order.event_type == "entry" else -order.direction
+        )
+        market_rule_direction = (
+            order.direction if order.event_type == "entry" else 0
+        )
+        if not self.can_execute(order.symbol, market_rule_direction, bar):
+            return 0.0
+        decision_price = float(bar.get("open", bar.get("close", 0)))
+        if decision_price <= 0:
+            return 0.0
+        fill_price = self.apply_slippage(decision_price, execution_direction)
+        quantity = self.determine_fill_quantity(order, bar, pd.Timestamp(timestamp))
+        quantity = min(
+            max(float(quantity), 0.0),
+            float(order.remaining_quantity or 0.0),
+        )
+        quantity = self.round_size(quantity, fill_price)
+        remaining_before_fill = float(order.remaining_quantity or 0.0)
+        full_liquidity = quantity + 1e-9 >= remaining_before_fill
+        if order.event_type == "entry":
+            quantity = self._affordable_entry_quantity(order, quantity, fill_price)
+            # Preserve the legacy full-fill behavior when the only reduction
+            # is the capital constraint. Liquidity-driven reductions remain
+            # genuine partial fills and keep their original requested size.
+            if full_liquidity and 0 < quantity < remaining_before_fill:
+                order.requested_quantity = order.filled_quantity + quantity
+                order.remaining_quantity = quantity
+        else:
+            position = self.positions.get(order.symbol)
+            if position is None:
+                order.cancel(timestamp)
+                return 0.0
+            quantity = min(quantity, abs(float(position.size)))
+            quantity = self.round_size(quantity, fill_price)
+        if quantity <= 0:
+            return 0.0
+
+        order.record_fill(quantity, timestamp)
+        if order.event_type == "entry":
+            self._execute_entry_fill(
+                order, quantity, decision_price, fill_price, pd.Timestamp(timestamp),
+            )
+        else:
+            self._execute_exit_fill(
+                order, quantity, decision_price, fill_price, pd.Timestamp(timestamp),
+            )
+        if order.status == "filled":
+            self.pending_orders.pop(order.symbol, None)
+        return quantity
+
+    def _execute_entry_fill(
+        self,
+        order: OrderRecord,
+        quantity: float,
+        decision_price: float,
+        fill_price: float,
+        timestamp: pd.Timestamp,
+    ) -> None:
+        """Apply one entry fill and aggregate it into the position basis."""
+        leverage = self.default_leverage
+        commission = self.calc_commission(
+            quantity, fill_price, order.direction, is_open=True,
+        )
+        margin = self._calc_margin(order.symbol, quantity, fill_price, leverage)
+        slippage_cost = self._calc_pnl(
+            order.symbol,
+            order.direction,
+            quantity,
+            decision_price,
+            fill_price,
+        )
+        self.capital -= margin + commission
+
+        current = self.positions.get(order.symbol)
+        if current is None:
+            position = Position(
+                symbol=order.symbol,
+                direction=order.direction,
+                entry_price=fill_price,
+                entry_time=timestamp,
+                size=quantity,
+                leverage=leverage,
+                entry_bar_idx=self._bar_idx,
+                entry_commission=commission,
+                entry_decision_price=decision_price,
+                entry_slippage_cost=slippage_cost,
+                signal_time=order.signal_time,
+            )
+        else:
+            total_size = current.size + quantity
+            current_decision = float(
+                current.entry_decision_price
+                if current.entry_decision_price is not None
+                else current.entry_price
+            )
+            position = Position(
+                symbol=current.symbol,
+                direction=current.direction,
+                entry_price=(current.entry_price * current.size + fill_price * quantity) / total_size,
+                entry_time=current.entry_time,
+                size=total_size,
+                leverage=current.leverage,
+                entry_bar_idx=current.entry_bar_idx,
+                entry_commission=current.entry_commission + commission,
+                entry_decision_price=(
+                    current_decision * current.size + decision_price * quantity
+                ) / total_size,
+                entry_slippage_cost=current.entry_slippage_cost + slippage_cost,
+                signal_time=current.signal_time,
+            )
+        self.positions[order.symbol] = position
+        self.fills.append(FillRecord(
+            timestamp=timestamp,
+            symbol=order.symbol,
+            side=order.side,
+            event_type="entry",
+            direction=order.direction,
+            quantity=quantity,
+            decision_price=decision_price,
+            fill_price=fill_price,
+            notional=quantity * fill_price,
+            commission=commission,
+            slippage_cost=slippage_cost,
+            reason=order.reason,
+            order_id=order.order_id,
+            requested_quantity=order.requested_quantity,
+            remaining_quantity=order.remaining_quantity,
+            fill_status=order.status,
+        ))
+
+    def _start_exit_accumulator(self, position: Position) -> Dict[str, Any]:
+        """Capture entry state for a sequence of partial exits."""
+        accumulator = {
+            "symbol": position.symbol,
+            "direction": position.direction,
+            "entry_price": position.entry_price,
+            "entry_decision_price": float(
+                position.entry_decision_price
+                if position.entry_decision_price is not None
+                else position.entry_price
+            ),
+            "entry_time": position.entry_time,
+            "entry_bar_idx": position.entry_bar_idx,
+            "entry_size": position.size,
+            "leverage": position.leverage,
+            "entry_commission": position.entry_commission,
+            "signal_time": position.signal_time,
+            "exit_quantity": 0.0,
+            "exit_fill_notional": 0.0,
+            "exit_decision_notional": 0.0,
+            "execution_pnl": 0.0,
+            "gross_pnl": 0.0,
+            "exit_commission": 0.0,
+            "last_exit_time": None,
+            "last_reason": "signal",
+        }
+        self._exit_accumulators[position.symbol] = accumulator
+        return accumulator
+
+    def _execute_exit_fill(
+        self,
+        order: OrderRecord,
+        quantity: float,
+        decision_price: float,
+        fill_price: float,
+        timestamp: pd.Timestamp,
+    ) -> None:
+        """Apply one exit fill and finalize one trade when flat."""
+        position = self.positions.get(order.symbol)
+        if position is None:
+            return
+        accumulator = self._exit_accumulators.get(order.symbol)
+        if accumulator is None:
+            accumulator = self._start_exit_accumulator(position)
+
+        execution_pnl = self._calc_pnl(
+            order.symbol, position.direction, quantity, position.entry_price, fill_price,
+        )
+        gross_pnl = self._calc_pnl(
+            order.symbol,
+            position.direction,
+            quantity,
+            accumulator["entry_decision_price"],
+            decision_price,
+        )
+        exit_slippage_cost = self._calc_pnl(
+            order.symbol,
+            -position.direction,
+            quantity,
+            decision_price,
+            fill_price,
+        )
+        exit_commission = self.calc_commission(
+            quantity, fill_price, position.direction, is_open=False,
+        )
+        margin = self._calc_margin(
+            order.symbol, quantity, position.entry_price, position.leverage,
+        )
+        self.capital += margin + execution_pnl - exit_commission
+
+        accumulator["exit_quantity"] += quantity
+        accumulator["exit_fill_notional"] += quantity * fill_price
+        accumulator["exit_decision_notional"] += quantity * decision_price
+        accumulator["execution_pnl"] += execution_pnl
+        accumulator["gross_pnl"] += gross_pnl
+        accumulator["exit_commission"] += exit_commission
+        accumulator["last_exit_time"] = timestamp
+        accumulator["last_reason"] = order.reason
+
+        self.fills.append(FillRecord(
+            timestamp=timestamp,
+            symbol=order.symbol,
+            side=order.side,
+            event_type="exit",
+            direction=position.direction,
+            quantity=quantity,
+            decision_price=decision_price,
+            fill_price=fill_price,
+            notional=quantity * fill_price,
+            commission=exit_commission,
+            slippage_cost=exit_slippage_cost,
+            reason=order.reason,
+            order_id=order.order_id,
+            requested_quantity=order.requested_quantity,
+            remaining_quantity=order.remaining_quantity,
+            fill_status=order.status,
+        ))
+
+        remaining = max(position.size - quantity, 0.0)
+        if remaining > 1e-9:
+            fraction = remaining / position.size
+            self.positions[order.symbol] = Position(
+                symbol=position.symbol,
+                direction=position.direction,
+                entry_price=position.entry_price,
+                entry_time=position.entry_time,
+                size=remaining,
+                leverage=position.leverage,
+                entry_bar_idx=position.entry_bar_idx,
+                entry_commission=position.entry_commission * fraction,
+                entry_decision_price=position.entry_decision_price,
+                entry_slippage_cost=position.entry_slippage_cost * fraction,
+                signal_time=position.signal_time,
+            )
+            return
+
+        self.positions.pop(order.symbol, None)
+        self._finalize_trade(order.symbol)
+
+    def _finalize_trade(self, symbol: str) -> None:
+        """Build one completed trade from all fills in an exit sequence."""
+        accumulator = self._exit_accumulators.pop(symbol, None)
+        if accumulator is None or accumulator["exit_quantity"] <= 0:
+            return
+        quantity = float(accumulator["exit_quantity"])
+        exit_price = accumulator["exit_fill_notional"] / quantity
+        exit_decision_price = accumulator["exit_decision_notional"] / quantity
+        execution_pnl = float(accumulator["execution_pnl"])
+        gross_pnl = float(accumulator["gross_pnl"])
+        slippage_cost = gross_pnl - execution_pnl
+        total_commission = (
+            float(accumulator["entry_commission"])
+            + float(accumulator["exit_commission"])
+        )
+        net_pnl = gross_pnl - total_commission - slippage_cost
+        margin = self._calc_margin(
+            symbol,
+            quantity,
+            accumulator["entry_price"],
+            accumulator["leverage"],
+        )
+        holding_bars = max(self._bar_idx - accumulator["entry_bar_idx"], 0)
+        holding_days = _safe_holding_days(
+            accumulator["entry_time"],
+            accumulator["last_exit_time"],
+            holding_bars,
+        )
+        self.trades.append(TradeRecord(
+            symbol=symbol,
+            direction=accumulator["direction"],
+            entry_price=accumulator["entry_price"],
+            exit_price=exit_price,
+            entry_time=accumulator["entry_time"],
+            exit_time=accumulator["last_exit_time"],
+            size=quantity,
+            leverage=accumulator["leverage"],
+            pnl=execution_pnl,
+            pnl_pct=execution_pnl / margin * 100 if margin > 1e-9 else 0.0,
+            exit_reason=accumulator["last_reason"],
+            holding_bars=holding_bars,
+            commission=total_commission,
+            signal_time=accumulator["signal_time"],
+            entry_decision_price=accumulator["entry_decision_price"],
+            exit_decision_price=exit_decision_price,
+            gross_pnl=gross_pnl,
+            slippage_cost=slippage_cost,
+            net_pnl=net_pnl,
+            holding_days=holding_days,
+        ))
 
     def _close_position(
         self,
@@ -920,83 +1327,38 @@ class BaseEngine(ABC):
         reason: str,
         exit_decision_price: float | None = None,
     ) -> None:
-        """Close position, record trade, return capital."""
+        """Immediately flatten the residual position through an auditable order."""
         self._active_symbol = symbol
-        pos = self.positions.pop(symbol, None)
-        if pos is None:
+        position = self.positions.get(symbol)
+        if position is None:
             return
-
-        entry_decision_price = (
-            pos.entry_decision_price if pos.entry_decision_price is not None else pos.entry_price
+        pending = self.pending_orders.pop(symbol, None)
+        if pending is not None:
+            pending.cancel(exit_time)
+        decision_price = (
+            float(exit_decision_price)
+            if exit_decision_price is not None
+            else float(exit_price)
         )
-        effective_exit_decision_price = (
-            exit_decision_price if exit_decision_price is not None else exit_price
-        )
-        pnl = self._calc_pnl(symbol, pos.direction, pos.size, pos.entry_price, exit_price)
-        gross_pnl = self._calc_pnl(
-            symbol,
-            pos.direction,
-            pos.size,
-            entry_decision_price,
-            effective_exit_decision_price,
-        )
-        slippage_cost = gross_pnl - pnl
-        margin = self._calc_margin(symbol, pos.size, pos.entry_price, pos.leverage)
-        pnl_pct = pnl / margin * 100 if margin > 1e-9 else 0.0
-        exit_comm = self.calc_commission(pos.size, exit_price, pos.direction, is_open=False)
-        total_commission = pos.entry_commission + exit_comm
-        net_pnl = gross_pnl - total_commission - slippage_cost
-        exit_order_direction = -pos.direction
-        exit_slippage_cost = self._calc_pnl(
-            symbol,
-            exit_order_direction,
-            pos.size,
-            effective_exit_decision_price,
-            exit_price,
-        )
-
-        self.capital += margin + pnl - exit_comm
-
-        holding_bars = max(self._bar_idx - pos.entry_bar_idx, 0)
-        holding_days = _safe_holding_days(pos.entry_time, exit_time, holding_bars)
-
-        self.fills.append(FillRecord(
-            timestamp=pd.Timestamp(exit_time),
+        order = self._create_order(
             symbol=symbol,
-            side="sell" if pos.direction == 1 else "buy",
             event_type="exit",
-            direction=pos.direction,
-            quantity=abs(float(pos.size)),
-            decision_price=float(effective_exit_decision_price),
-            fill_price=float(exit_price),
-            notional=abs(float(pos.size)) * float(exit_price),
-            commission=float(exit_comm),
-            slippage_cost=float(exit_slippage_cost),
+            direction=position.direction,
+            quantity=position.size,
+            timestamp=exit_time,
+            decision_price=decision_price,
             reason=reason,
-        ))
-
-        self.trades.append(TradeRecord(
-            symbol=symbol,
-            direction=pos.direction,
-            entry_price=pos.entry_price,
-            exit_price=exit_price,
-            entry_time=pos.entry_time,
-            exit_time=exit_time,
-            size=pos.size,
-            leverage=pos.leverage,
-            pnl=pnl,
-            pnl_pct=pnl_pct,
-            exit_reason=reason,
-            holding_bars=holding_bars,
-            commission=total_commission,
-            signal_time=pos.signal_time,
-            entry_decision_price=entry_decision_price,
-            exit_decision_price=effective_exit_decision_price,
-            gross_pnl=gross_pnl,
-            slippage_cost=slippage_cost,
-            net_pnl=net_pnl,
-            holding_days=holding_days,
-        ))
+            signal_time=position.signal_time,
+        )
+        order.record_fill(position.size, exit_time)
+        self.pending_orders.pop(symbol, None)
+        self._execute_exit_fill(
+            order,
+            position.size,
+            decision_price,
+            float(exit_price),
+            pd.Timestamp(exit_time),
+        )
 
     # ── Artifacts ──
 
@@ -1051,6 +1413,7 @@ class BaseEngine(ABC):
         # Fill ledger is emitted even for a zero-fill backtest.
         fill_cols = [
             "timestamp",
+            "order_id",
             "symbol",
             "side",
             "event_type",
@@ -1062,9 +1425,13 @@ class BaseEngine(ABC):
             "commission",
             "slippage_cost",
             "reason",
+            "requested_quantity",
+            "remaining_quantity",
+            "fill_status",
         ]
         fill_rows = [{
             "timestamp": fill.timestamp,
+            "order_id": fill.order_id,
             "symbol": fill.symbol,
             "side": fill.side,
             "event_type": fill.event_type,
@@ -1076,8 +1443,49 @@ class BaseEngine(ABC):
             "commission": fill.commission,
             "slippage_cost": fill.slippage_cost,
             "reason": fill.reason,
+            "requested_quantity": fill.requested_quantity,
+            "remaining_quantity": fill.remaining_quantity,
+            "fill_status": fill.fill_status,
         } for fill in self.fills]
         pd.DataFrame(fill_rows, columns=fill_cols).to_csv(out / "fills.csv", index=False)
+
+        order_cols = [
+            "order_id",
+            "symbol",
+            "side",
+            "event_type",
+            "direction",
+            "requested_quantity",
+            "filled_quantity",
+            "remaining_quantity",
+            "cancelled_quantity",
+            "status",
+            "created_time",
+            "updated_time",
+            "signal_time",
+            "decision_price",
+            "reason",
+        ]
+        order_rows = [{
+            "order_id": order.order_id,
+            "symbol": order.symbol,
+            "side": order.side,
+            "event_type": order.event_type,
+            "direction": order.direction,
+            "requested_quantity": order.requested_quantity,
+            "filled_quantity": order.filled_quantity,
+            "remaining_quantity": order.remaining_quantity,
+            "cancelled_quantity": order.cancelled_quantity,
+            "status": order.status,
+            "created_time": order.created_time,
+            "updated_time": order.updated_time,
+            "signal_time": order.signal_time,
+            "decision_price": order.decision_price,
+            "reason": order.reason,
+        } for order in self.orders]
+        pd.DataFrame(order_rows, columns=order_cols).to_csv(
+            out / "orders.csv", index=False,
+        )
 
         if daily_accounting is None:
             daily_accounting = self._build_daily_accounting(
@@ -1093,6 +1501,7 @@ class BaseEngine(ABC):
             executed_positions=executed_positions,
             trades=self.trades,
             fills=self.fills,
+            orders=self.orders,
             scalar_metrics=metrics,
             starting_capital=self.initial_capital,
             bars_per_year=bars_per_year,
