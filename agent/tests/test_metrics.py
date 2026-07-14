@@ -229,6 +229,15 @@ class TestCalcMetrics:
         m = calc_metrics(eq, [], 1_000_000, 252)
         assert m["total_return"] < 0
 
+    def test_negative_final_equity_caps_annual_return(self) -> None:
+        dates = pd.bdate_range("2025-01-01", periods=100)
+        eq = pd.Series(np.linspace(1_000_000, -500_000, 100), index=dates)
+
+        m = calc_metrics(eq, [], 1_000_000, 252)
+
+        assert m["total_return"] == pytest.approx(-1.5)
+        assert m["annual_return"] == pytest.approx(-1.0)
+
     def test_max_drawdown_negative(self) -> None:
         eq = self._declining_equity()
         m = calc_metrics(eq, [], 1_000_000, 252)
