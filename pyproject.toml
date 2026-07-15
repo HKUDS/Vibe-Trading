@@ -146,7 +146,7 @@ qq = [
 ]
 slack = [
     "slack-sdk>=3.33.0",
-    "slackify-markdown>=4.4.0",
+    "slackify-markdown>=0.2.4",
 ]
 telegram = [
     "python-telegram-bot>=21.0",
@@ -177,7 +177,7 @@ channels = [
     "qrcode>=7.4.2",
     "qq-botpy>=1.2.0",
     "slack-sdk>=3.33.0",
-    "slackify-markdown>=4.4.0",
+    "slackify-markdown>=0.2.4",
     "websockets>=12.0",
     "wecom-aibot-sdk>=1.0.0",
 ]

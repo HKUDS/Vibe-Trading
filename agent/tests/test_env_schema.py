@@ -129,6 +129,7 @@ class TestEnvConfigDefaults:
         assert c.agent_tuning.token_threshold == 40000
         assert c.agent_tuning.vt_heartbeat_interval_s == 3.0
         assert c.agent_tuning.vt_reasoning_delta_min_interval_s == 1.0
+        assert c.agent_tuning.vt_stream_max_retries == 2
         assert c.agent_tuning.vt_stream_retry_delay_s == 1.0
         assert c.agent_tuning.vibe_trading_tool_timeout_seconds == 1800.0
         assert c.agent_tuning.vibe_trading_goal_max_continuations == 3

@@ -1,14 +1,14 @@
-"""AgentLoop single stream retry on ProviderStreamError.
+"""AgentLoop bounded stream retries on ProviderStreamError.
 
-Mirrors the swarm worker policy: a transient mid-stream failure (connection
-reset, relay hiccup, 5xx) is retried exactly once; a deterministic 4xx fails
-the run immediately with error_code=provider_stream_error and no wasted
-request. Deltas from the failed attempt are dropped so the trace does not
-contain duplicated thinking text.
+Transient mid-stream failures (TLS EOF, connection reset, relay hiccup, 5xx)
+use a bounded retry budget; a deterministic 4xx fails immediately with
+error_code=provider_stream_error and no wasted request. Deltas from failed
+attempts are dropped so the trace does not contain duplicated thinking text.
 """
 
 from __future__ import annotations
 
+import ssl
 from pathlib import Path
 from typing import Any, Callable
 
@@ -104,6 +104,18 @@ def _bad_request_error() -> ProviderStreamError:
     )
 
 
+def _ssl_eof_error() -> ProviderStreamError:
+    """Build the TLS EOF error observed through the Codex OAuth stream."""
+    return ProviderStreamError(
+        provider="openai-codex",
+        model="openai-codex/gpt-5.4",
+        original=ssl.SSLEOFError(
+            8,
+            "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol",
+        ),
+    )
+
+
 def _run(
     monkeypatch,
     tmp_path: Path,
@@ -126,6 +138,7 @@ def _run(
     from src.tools import build_registry
 
     monkeypatch.setattr(loop_mod, "STREAM_RETRY_DELAY_S", 0.0)
+    monkeypatch.setattr(loop_mod, "STREAM_MAX_RETRIES", 2)
     pm = PersistentMemory()
     agent = AgentLoop(
         registry=build_registry(persistent_memory=pm, include_shell_tools=False),
@@ -169,17 +182,37 @@ def test_transient_stream_failure_is_retried_and_run_succeeds(
     assert reset["iter"] == 1
     assert reset["provider"] == "deepseek"
     assert reset["model"] == "deepseek-v4-pro"
+    assert reset["retry_attempt"] == 1
+    assert reset["max_retries"] == 2
+    assert reset["retry_delay_s"] == 0.0
 
 
-def test_double_stream_failure_fails_run(monkeypatch, tmp_path: Path) -> None:
-    """Two consecutive transient failures → failed run, no third attempt."""
-    llm = _FlakyLoopLLM([_transient_error(), _transient_error()], "Final answer.")
+def test_ssl_eof_recovers_within_retry_budget(monkeypatch, tmp_path: Path) -> None:
+    """Two consecutive TLS EOF failures recover on the third call."""
+    llm = _FlakyLoopLLM([_ssl_eof_error(), _ssl_eof_error()], "Final answer.")
+    events: list[tuple[str, dict[str, Any]]] = []
+
+    result = _run(monkeypatch, tmp_path, llm, events)
+
+    assert result["status"] == "success"
+    assert result["content"] == "Final answer."
+    assert llm.calls == 3
+    resets = [data for event_type, data in events if event_type == "stream_reset"]
+    assert [reset["retry_attempt"] for reset in resets] == [1, 2]
+
+
+def test_transient_stream_failures_are_bounded_by_config(monkeypatch, tmp_path: Path) -> None:
+    """Persistent transient failures stop after the configured retry budget."""
+    llm = _FlakyLoopLLM(
+        [_transient_error(), _transient_error(), _transient_error()],
+        "Final answer.",
+    )
 
     result = _run(monkeypatch, tmp_path, llm)
 
     assert result["status"] == "failed"
     assert result["error_code"] == "provider_stream_error"
-    assert llm.calls == 2
+    assert llm.calls == 3
 
 
 def test_non_retryable_4xx_fails_without_retry(monkeypatch, tmp_path: Path) -> None:

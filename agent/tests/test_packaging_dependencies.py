@@ -136,3 +136,13 @@ def test_channel_optional_extras_cover_all_sdk_backed_adapters() -> None:
         "wecom-aibot-sdk",
     }
     assert expected_packages.issubset(channel_extra)
+
+
+def test_slack_markdown_dependency_uses_published_version_floor() -> None:
+    """Prevent an unavailable package version from breaking uv resolution."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    extras = pyproject["project"]["optional-dependencies"]
+    expected_requirement = "slackify-markdown>=0.2.4"
+
+    assert expected_requirement in extras["slack"]
+    assert expected_requirement in extras["channels"]

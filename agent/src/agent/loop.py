@@ -101,6 +101,14 @@ def _stream_retry_delay_s() -> float:
     return get_env_config().agent_tuning.vt_stream_retry_delay_s
 
 
+def _stream_max_retries() -> int:
+    ov = _override("STREAM_MAX_RETRIES")
+    if ov is not None:
+        return max(0, int(ov))
+    from src.config.accessor import get_env_config
+    return get_env_config().agent_tuning.vt_stream_max_retries
+
+
 def _tool_timeout_seconds() -> float:
     ov = _override("TOOL_TIMEOUT_SECONDS")
     if ov is not None:
@@ -728,52 +736,56 @@ class AgentLoop:
                 if is_last_iteration:
                     trace.write({"type": "forced_text_only", "iter": current_iter})
 
-                try:
-                    response = self.llm.stream_chat(
-                        messages,
-                        tools=tool_defs,
-                        on_text_chunk=_on_text_chunk,
-                        on_reasoning_chunk=_on_reasoning_chunk,
-                        should_cancel=self._cancel_event.is_set,
-                    )
-                except ProviderStreamError as exc:
-                    # One retry for transient mid-stream failures (connection
-                    # reset, relay hiccup) — mirrors the swarm worker policy.
-                    # Deterministic 4xx errors fail immediately. Deltas from
-                    # the failed attempt are dropped so the trace does not
-                    # contain duplicated thinking text.
-                    if not exc.retryable:
-                        raise
-                    logger.warning(
-                        "Provider stream failed (iter %s), retrying once: %s",
-                        current_iter,
-                        exc,
-                    )
-                    self._emit(
-                        "stream_reset",
-                        {
-                            "iter": current_iter,
-                            "reason": "provider_stream_retry",
-                            "provider": exc.provider,
-                            "model": exc.model,
-                        },
-                    )
-                    thinking_chunks.clear()
-                    reasoning_chars = 0
-                    last_reasoning_emit = None
-                    _time.sleep(_stream_retry_delay_s())
-                    response = self.llm.stream_chat(
-                        messages,
-                        tools=tool_defs,
-                        on_text_chunk=_on_text_chunk,
-                        on_reasoning_chunk=_on_reasoning_chunk,
-                        should_cancel=self._cancel_event.is_set,
-                    )
+                max_stream_retries = _stream_max_retries()
+                retry_attempt = 0
+                response = None
+                while True:
+                    try:
+                        response = self.llm.stream_chat(
+                            messages,
+                            tools=tool_defs,
+                            on_text_chunk=_on_text_chunk,
+                            on_reasoning_chunk=_on_reasoning_chunk,
+                            should_cancel=self._cancel_event.is_set,
+                        )
+                        break
+                    except ProviderStreamError as exc:
+                        if not exc.retryable or retry_attempt >= max_stream_retries:
+                            raise
+                        retry_attempt += 1
+                        retry_delay_s = max(0.0, _stream_retry_delay_s()) * (2 ** (retry_attempt - 1))
+                        logger.warning(
+                            "Provider stream failed (iter %s), retrying %s/%s in %.1fs: %s",
+                            current_iter,
+                            retry_attempt,
+                            max_stream_retries,
+                            retry_delay_s,
+                            exc,
+                        )
+                        self._emit(
+                            "stream_reset",
+                            {
+                                "iter": current_iter,
+                                "reason": "provider_stream_retry",
+                                "provider": exc.provider,
+                                "model": exc.model,
+                                "retry_attempt": retry_attempt,
+                                "max_retries": max_stream_retries,
+                                "retry_delay_s": retry_delay_s,
+                            },
+                        )
+                        thinking_chunks.clear()
+                        reasoning_chars = 0
+                        last_reasoning_emit = None
+                        if self._cancel_event.wait(retry_delay_s):
+                            break
 
                 # Cancelled mid-stream: discard this turn's partial response and
                 # end the run now, without executing any of its tool calls.
                 if self._cancel_event.is_set():
                     break
+                if response is None:
+                    raise RuntimeError("Provider stream retry exited without a response")
 
                 usage = getattr(response, "usage_metadata", None)
                 usage_delta = _record_llm_usage(
@@ -1595,6 +1607,7 @@ _LEGACY_LAZY = {
     "COLLAPSE_THRESHOLD": lambda: int(_token_threshold() * 0.7),
     "HEARTBEAT_INTERVAL_S": _heartbeat_interval_s,
     "REASONING_DELTA_MIN_INTERVAL_S": _reasoning_delta_min_interval_s,
+    "STREAM_MAX_RETRIES": _stream_max_retries,
     "STREAM_RETRY_DELAY_S": _stream_retry_delay_s,
     "TOOL_TIMEOUT_SECONDS": _tool_timeout_seconds,
     "GOAL_MAX_CONTINUATIONS": _goal_max_continuations,
