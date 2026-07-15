@@ -27,7 +27,9 @@
     "groupSystem": "SYSTEM",
     "applicationNavigation": "Application navigation",
     "openNavigation": "Open application navigation",
-    "closeNavigation": "Close application navigation"
+    "closeNavigation": "Close application navigation",
+    "riskManager": "Risk Manager",
+    "groupRiskCapital": "RISK & CAPITAL"
   },
   "runtime": {
     "monitorBadge": "运行时监控",

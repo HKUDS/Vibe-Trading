@@ -32,11 +32,13 @@
     "groupSystem": "SYSTEM",
     "applicationNavigation": "Application navigation",
     "openNavigation": "Open application navigation",
-    "closeNavigation": "Close application navigation"
+    "closeNavigation": "Close application navigation",
+    "riskManager": "Risk Manager",
+    "groupRiskCapital": "RISK & CAPITAL"
   },
   "runtime": {
     "monitorBadge": "Runtime Monitor",
-    "title": "Live / Paper Runtime Status",
+    "title": "Intelligence Runtime Status",
     "subtitlePre": "Read-only status from",
     "subtitlePost": ". This page does not authorize connectors, start runners, stop runners, submit orders, cancel orders, or change mandates.",
     "refresh": "Refresh",
@@ -93,7 +95,7 @@
   },
   "reports": {
     "badge": "Reports",
-    "title": "Backtest Report Library",
+    "title": "Opportunity Report Library",
     "subtitle": "Browse historical backtest reports, metrics, and run details from one place.",
     "refresh": "Refresh",
     "searchPlaceholder": "Search run id, prompt, symbol, status...",
@@ -222,7 +224,7 @@
     }
   },
   "settings": {
-    "title": "Settings",
+    "title": "Intelligence Settings",
     "authRequired": "Authentication Required",
     "authDesc": "Enter the API auth key to unlock settings.",
     "dataSources": "Data Sources",
@@ -493,7 +495,7 @@
     "avgHoldingPeriod": "Avg Holding Period"
   },
   "correlation": {
-    "title": "Correlation Matrix",
+    "title": "Market Correlation",
     "assetCodes": "Asset codes",
     "assetCodesHint": "Comma-separated ticker symbols, e.g. 000001.SZ,600519.SH,000858.SZ",
     "windowDays": "Window (days)",

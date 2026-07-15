@@ -46,7 +46,7 @@ describe("Reports page", () => {
 
     render(<Reports />, { wrapper: MemoryRouter });
 
-    expect(await screen.findByText("Backtest Report Library")).toBeInTheDocument();
+    expect(await screen.findByText("Opportunity Report Library")).toBeInTheDocument();
     expect(apiMock.listRuns).toHaveBeenCalledWith(100);
     expect(screen.queryByText("chat-only")).not.toBeInTheDocument();
     const reportRunLinks = screen.getAllByRole("link", { name: /-report$/ });

@@ -20,6 +20,9 @@ const Runtime = lazy(() =>
 const Reports = lazy(() =>
   import("@/pages/Reports").then((m) => ({ default: m.Reports })),
 );
+const RiskManager = lazy(() =>
+  import("@/pages/RiskManager").then((m) => ({ default: m.RiskManager })),
+);
 const Correlation = lazy(() =>
   import("@/pages/Correlation").then((m) => ({ default: m.Correlation })),
 );
@@ -54,6 +57,7 @@ export const router = createBrowserRouter([
       { path: "/agent", element: wrap(Agent) },
       { path: "/runtime", element: wrap(Runtime) },
       { path: "/reports", element: wrap(Reports) },
+      { path: "/risk-manager", element: wrap(RiskManager) },
       { path: "/settings", element: wrap(Settings) },
       { path: "/runs/:runId", element: wrap(RunDetail) },
       { path: "/compare", element: wrap(Compare) },

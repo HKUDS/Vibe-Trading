@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDrawdown, calculatePositionSize, calculateProfitProjection, calculateRiskAmount, classifyRiskHealth } from "../calculators";
+import { calculateBreakEvenWinRate, calculateCompoundedProjection, calculateDrawdown, calculatePositionSize, calculateProfitProjection, calculateRecoveryTarget, calculateRiskAmount, classifyRiskHealth, compareRiskScenarios } from "../calculators";
 
 describe("calculators", () => {
   it("handles standard valid profit projection inputs", () => {
@@ -59,5 +59,51 @@ describe("calculators", () => {
   it("rejects NaN and Infinity", () => {
     expect(() => calculateRiskAmount(Number.NaN, 1)).toThrow();
     expect(() => calculateRiskAmount(10000, Number.POSITIVE_INFINITY)).toThrow();
+  });
+});
+
+
+describe("phase 4 risk calculator extensions", () => {
+  it("calculates break-even win rates", () => {
+    expect(calculateBreakEvenWinRate(1)).toBeCloseTo(0.5);
+    expect(calculateBreakEvenWinRate(2)).toBeCloseTo(1 / 3);
+    expect(calculateBreakEvenWinRate(3)).toBeCloseTo(0.25);
+  });
+
+  it("handles compounding with zero trades and zero risk", () => {
+    expect(calculateCompoundedProjection({ accountBalance: 1000, riskPercentage: 1, rewardRatio: 2, winRate: 50, numberOfTrades: 0 }).endingBalance).toBe(1000);
+    expect(calculateCompoundedProjection({ accountBalance: 1000, riskPercentage: 0, rewardRatio: 2, winRate: 50, numberOfTrades: 10 }).netOutcome).toBe(0);
+  });
+
+  it("handles compounding with 0% and 100% win rate", () => {
+    expect(calculateCompoundedProjection({ accountBalance: 1000, riskPercentage: 1, rewardRatio: 2, winRate: 0, numberOfTrades: 2 }).endingBalance).toBeCloseTo(980.1);
+    expect(calculateCompoundedProjection({ accountBalance: 1000, riskPercentage: 1, rewardRatio: 2, winRate: 100, numberOfTrades: 2 }).endingBalance).toBeCloseTo(1040.4);
+  });
+
+  it("handles monthly contributions and rejects invalid negative contributions", () => {
+    expect(calculateCompoundedProjection({ accountBalance: 1000, riskPercentage: 0, rewardRatio: 2, winRate: 50, numberOfTrades: 0, monthlyContribution: 100 }).endingBalance).toBe(1100);
+    expect(() => calculateCompoundedProjection({ accountBalance: 1000, riskPercentage: 1, rewardRatio: 2, winRate: 50, numberOfTrades: 1, monthlyContribution: -1 })).toThrow();
+  });
+
+  it("guards extreme risk and invalid values", () => {
+    expect(classifyRiskHealth(25)).toBe("Critical Exposure");
+    expect(() => calculateBreakEvenWinRate(0)).toThrow();
+    expect(() => calculateCompoundedProjection({ accountBalance: 1000, riskPercentage: Number.POSITIVE_INFINITY, rewardRatio: 2, winRate: 50, numberOfTrades: 1 })).toThrow();
+  });
+
+  it("compares scenarios and preserves ordering", () => {
+    const result = compareRiskScenarios([
+      { name: "Conservative", accountBalance: 1000, riskPercentage: 0.5, rewardRatio: 1.5, winRate: 55, numberOfTrades: 20 },
+      { name: "Balanced", accountBalance: 1000, riskPercentage: 1, rewardRatio: 2, winRate: 50, numberOfTrades: 20 },
+      { name: "Aggressive", accountBalance: 1000, riskPercentage: 3, rewardRatio: 2.5, winRate: 45, numberOfTrades: 20 },
+    ]);
+    expect(result.map((item) => item.name)).toEqual(["Conservative", "Balanced", "Aggressive"]);
+    expect(result[2].riskClassification).toBe("Elevated");
+  });
+
+  it("handles recovery target infinity and decimal rounding stability", () => {
+    expect(calculateRecoveryTarget(1000, 0)).toBe(Infinity);
+    expect(calculateRecoveryTarget(1000, 500)).toBeCloseTo(100);
+    expect(calculateCompoundedProjection({ accountBalance: 1234.56, riskPercentage: 1.25, rewardRatio: 1.75, winRate: 52.5, numberOfTrades: 7 }).endingBalance).toBeCloseTo(1283.3007, 3);
   });
 });
