@@ -21,7 +21,15 @@
     "dark": "暗色",
     "language": "语言",
     "collapse": "收起",
-    "expand": "展开"
+    "expand": "展开",
+    "groupOverview": "OVERVIEW",
+    "groupResearch": "RESEARCH",
+    "groupSystem": "SYSTEM",
+    "applicationNavigation": "Application navigation",
+    "openNavigation": "Open application navigation",
+    "closeNavigation": "Close application navigation",
+    "riskManager": "Risk Manager",
+    "groupRiskCapital": "RISK & CAPITAL"
   },
   "runtime": {
     "monitorBadge": "运行时监控",
@@ -687,7 +695,8 @@
     "never": "从未",
     "unknown": "未知",
     "justNow": "刚刚",
-    "loadingInstructions": "正在加载连接器授权说明..."
+    "loadingInstructions": "正在加载连接器授权说明...",
+    "agent": "Market Intelligence"
   },
   "swarmStatus": {
     "agents": "{{done}}/{{total}} 个智能体",
@@ -744,7 +753,8 @@
   "runComplete": {
     "fullReport": "完整报告 →",
     "pineScript": "Pine Script",
-    "shadowReport": "影子报告"
+    "shadowReport": "影子报告",
+    "analysisComplete": "Analysis Complete"
   },
   "home": {
     "title": "AI 驱动的量化策略研究",

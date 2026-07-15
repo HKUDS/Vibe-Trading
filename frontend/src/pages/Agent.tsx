@@ -241,6 +241,12 @@ export function Agent() {
   const [goalSnapshot, setGoalSnapshot] = useState<GoalSnapshot | null>(null);
   const [goalEditActive, setGoalEditActive] = useState(false);
   const [goalEditValue, setGoalEditValue] = useState("");
+  const [instrument, setInstrument] = useState("EUR/USD");
+  const [timeframe, setTimeframe] = useState("H4");
+  const [analysisType, setAnalysisType] = useState("Opportunity Validation");
+  const [riskProfile, setRiskProfile] = useState("Controlled");
+  const [marketSession, setMarketSession] = useState("Auto Detect");
+  const [detailLevel, setDetailLevel] = useState("Structured");
 
   /* Connector runtime channel state (SPEC Consent §1/§4/§5) */
   const [liveItems, setLiveItems] = useState<LiveItem[]>([]);
@@ -266,6 +272,7 @@ export function Agent() {
   const sessionId = useAgentStore(s => s.sessionId);
   const toolCalls = useAgentStore(s => s.toolCalls);
   const sessionLoading = useAgentStore(s => s.sessionLoading);
+  const sseStatus = useAgentStore(s => s.sseStatus);
 
   const { connect, disconnect, onStatusChange } = useSSE();
 
@@ -1158,11 +1165,61 @@ export function Agent() {
   /* The global kill switch reflects only a global halt from either an in-session SSE
    * event or the polled status; broker-scoped halts stay on their broker row. */
   const liveIsHalted = isGlobalLiveHalt(liveHalted) || (liveStatus?.global_halted ?? false);
+  const currentStatus = status === "streaming" ? "Analysis in progress" : status === "error" ? "Needs attention" : "Ready for analysis";
+  const promptTemplates = [
+    "Evaluate EUR/USD on H4 using trend, market structure, momentum, volatility and risk conditions. Explain supporting and conflicting evidence. Do not provide guaranteed outcomes.",
+    "Review GBP/JPY for elevated volatility and identify conditions that would invalidate a continuation setup.",
+    "Backtest a simple moving-average crossover strategy using historical data and report drawdown, win rate and possible overfitting risks.",
+    "Compare EUR/USD and GBP/USD historical correlation and explain the risk of taking similar exposure.",
+  ];
 
   return (
-    <div className="flex flex-col flex-1 min-w-0 overflow-hidden h-full">
-      <div ref={listRef} className="flex-1 overflow-auto p-6 scroll-smooth relative">
-        <div className="max-w-3xl mx-auto space-y-4">
+    <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-muted/15">
+      <div ref={listRef} className="flex-1 overflow-auto p-3 scroll-smooth relative sm:p-5 lg:p-6">
+        <div className="mx-auto max-w-6xl space-y-4">
+          <section className="grid gap-3 rounded-2xl border bg-card p-4 shadow-sm lg:grid-cols-[1.2fr_0.8fr]" aria-labelledby="analysis-brief-title">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Analysis Brief</p>
+              <h1 id="analysis-brief-title" className="mt-2 text-xl font-semibold tracking-tight">Market Intelligence Workspace</h1>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">Use available market data, strategy tools and explainable analysis steps. Data mode is historical / available data unless a backend response verifies otherwise.</p>
+            </div>
+            <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+              {[["Instrument", instrument], ["Timeframe", timeframe], ["Analysis Mode", analysisType], ["Market Session", marketSession], ["Data Mode", "Historical / Available Data"], ["Provider / Model", "Ollama · qwen2.5:1.5b"]].map(([label, value]) => (
+                <div key={label} className="rounded-xl border bg-background/70 p-2.5">
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd className="mt-1 font-medium text-foreground">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs leading-5 text-muted-foreground lg:col-span-2">Risk disclosure: TradeCoreFX provides analytical and educational tools. Outputs can be incomplete or incorrect, especially with small local models. Independently verify market information before making financial decisions.</p>
+          </section>
+
+          <section className="grid gap-3 rounded-2xl border bg-card p-4 shadow-sm lg:grid-cols-4" aria-label="Market context">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Market Context</p>
+              <p className="mt-2 text-sm text-muted-foreground">Known local configuration and connection state only.</p>
+            </div>
+            {[["Intelligence Model", "Local Model · qwen2.5:1.5b", "Development Testing"], ["Market Data", "Historical / Available Data", "Not verified live"], ["Streaming Connection", sseStatus, currentStatus]].map(([label, value, note]) => (
+              <div key={label} className="rounded-xl border bg-background/70 p-3 text-sm">
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <p className="mt-1 font-semibold">{value}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{note}</p>
+              </div>
+            ))}
+          </section>
+
+          <section className="rounded-2xl border bg-card p-4 shadow-sm" aria-live="polite" aria-label="Intelligence progress and opportunity report">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Intelligence Progress</p>
+                <h2 className="text-base font-semibold">Opportunity Report</h2>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span className="rounded-full border px-2 py-1">Status: {currentStatus}</span>
+                <span className="rounded-full border px-2 py-1">Connection: {sseStatus}</span>
+                <span className="rounded-full border px-2 py-1" title="This small open-source model is configured for interface, workflow and integration testing. Production use will require stronger model evaluation and validation.">Local Development Model</span>
+              </div>
+            </div>
           {sessionLoading && (
             <div className="space-y-4 py-4">
               {[1, 2, 3].map(i => (
@@ -1263,6 +1320,7 @@ export function Agent() {
             </div>
           )}
 
+          </section>
         </div>
 
         {/* Scroll to bottom button */}
@@ -1277,8 +1335,30 @@ export function Agent() {
         <ConversationTimeline messages={messages} containerRef={listRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="border-t p-4 bg-background/80 backdrop-blur-sm">
-        <div className="max-w-3xl mx-auto space-y-2">
+      <form onSubmit={handleSubmit} className="border-t bg-background/90 p-3 backdrop-blur-sm sm:p-4">
+        <div className="mx-auto max-w-6xl space-y-3">
+          <div className="grid gap-3 rounded-2xl border bg-card p-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Analysis Composer</p>
+              <h2 className="mt-1 text-base font-semibold">Describe the Opportunity You Want to Evaluate</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Ask TradeCoreFX to examine a currency pair, market condition, strategy rule or historical setup using available market data and explainable analysis steps.</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+              <Select label="Instrument" value={instrument} onChange={setInstrument} options={["EUR/USD", "GBP/JPY", "XAU/USD", "GBP/USD"]} />
+              <Select label="Timeframe" value={timeframe} onChange={setTimeframe} options={["M15", "H1", "H4", "D1"]} />
+              <Select label="Analysis type" value={analysisType} onChange={setAnalysisType} options={["Opportunity Validation", "Market Structure Review", "Trend and Momentum Review", "Risk Assessment", "Strategy Backtest", "Historical Scenario Review", "Correlation Analysis"]} />
+              <Select label="Risk profile" value={riskProfile} onChange={setRiskProfile} options={["Conservative", "Controlled", "Elevated"]} />
+              <Select label="Market session" value={marketSession} onChange={setMarketSession} options={["Auto Detect", "London", "New York", "Asia"]} />
+              <Select label="Output detail" value={detailLevel} onChange={setDetailLevel} options={["Concise", "Structured", "Detailed"]} />
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Analysis request templates">
+              {promptTemplates.map((template, index) => (
+                <button key={template} type="button" onClick={() => setInput(template)} className="shrink-0 rounded-lg border bg-background px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                  Template {index + 1}
+                </button>
+              ))}
+            </div>
+          </div>
           {/* Swarm preset badge */}
           {swarmPreset && (
             <div className="flex items-center gap-1">
@@ -1639,7 +1719,7 @@ export function Agent() {
                   : t("agent.placeholder")
               }
               aria-label={t("agent.messageInputLabel")}
-              className="flex-1 px-4 py-2.5 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 transition-shadow resize-none max-h-32 overflow-y-auto"
+              className="flex-1 px-4 py-2.5 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 transition-shadow resize-none max-h-32 min-w-0 overflow-y-auto"
               disabled={status === "streaming"}
             />
             {messages.length > 0 && (
@@ -1677,5 +1757,23 @@ export function Agent() {
         </div>
       </form>
     </div>
+  );
+}
+
+
+function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
+  const id = `analysis-${label.toLowerCase().replace(/\W+/g, "-")}`;
+  return (
+    <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+      {label}
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full rounded-lg border bg-background px-2 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+      >
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
   );
 }

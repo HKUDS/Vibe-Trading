@@ -1,6 +1,7 @@
 import { Suspense, lazy, type ComponentType } from "react";
 import { createBrowserRouter } from "react-router-dom";
-import { Layout } from "@/components/layout/Layout";
+import { AppLayout } from "@/components/layout/Layout";
+import { MarketingLayout } from "@/components/layout/MarketingLayout";
 
 const Home = lazy(() => import("@/pages/Home").then((m) => ({ default: m.Home })));
 const Agent = lazy(() => import("@/pages/Agent").then((m) => ({ default: m.Agent })));
@@ -18,6 +19,9 @@ const Runtime = lazy(() =>
 );
 const Reports = lazy(() =>
   import("@/pages/Reports").then((m) => ({ default: m.Reports })),
+);
+const RiskManager = lazy(() =>
+  import("@/pages/RiskManager").then((m) => ({ default: m.RiskManager })),
 );
 const Correlation = lazy(() =>
   import("@/pages/Correlation").then((m) => ({ default: m.Correlation })),
@@ -44,12 +48,16 @@ function wrap(Component: ComponentType) {
 
 export const router = createBrowserRouter([
   {
-    element: <Layout />,
+    element: <MarketingLayout />,
+    children: [{ path: "/", element: wrap(Home) }],
+  },
+  {
+    element: <AppLayout />,
     children: [
-      { path: "/", element: wrap(Home) },
       { path: "/agent", element: wrap(Agent) },
       { path: "/runtime", element: wrap(Runtime) },
       { path: "/reports", element: wrap(Reports) },
+      { path: "/risk-manager", element: wrap(RiskManager) },
       { path: "/settings", element: wrap(Settings) },
       { path: "/runs/:runId", element: wrap(RunDetail) },
       { path: "/compare", element: wrap(Compare) },

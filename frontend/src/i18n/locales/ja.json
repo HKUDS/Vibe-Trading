@@ -21,7 +21,15 @@
     "dark": "ダーク",
     "language": "言語",
     "collapse": "折りたたむ",
-    "expand": "展開"
+    "expand": "展開",
+    "groupOverview": "OVERVIEW",
+    "groupResearch": "RESEARCH",
+    "groupSystem": "SYSTEM",
+    "applicationNavigation": "Application navigation",
+    "openNavigation": "Open application navigation",
+    "closeNavigation": "Close application navigation",
+    "riskManager": "Risk Manager",
+    "groupRiskCapital": "RISK & CAPITAL"
   },
   "runtime": {
     "monitorBadge": "ランタイムモニター",
@@ -687,7 +695,8 @@
     "never": "なし",
     "unknown": "不明",
     "justNow": "たった今",
-    "loadingInstructions": "コネクタ認可手順を読み込み中..."
+    "loadingInstructions": "コネクタ認可手順を読み込み中...",
+    "agent": "Market Intelligence"
   },
   "swarmStatus": {
     "agents": "{{done}}/{{total}} エージェント",
@@ -744,7 +753,8 @@
   "runComplete": {
     "fullReport": "完全なレポート →",
     "pineScript": "Pine Script",
-    "shadowReport": "シャドウレポート"
+    "shadowReport": "シャドウレポート",
+    "analysisComplete": "Analysis Complete"
   },
   "home": {
     "title": "AI 駆動のクォント戦略リサーチ",
