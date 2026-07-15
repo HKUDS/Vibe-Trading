@@ -173,6 +173,53 @@ def calc_turnover_series(positions: pd.DataFrame) -> pd.Series:
     return 0.5 * (filled - prev).abs().sum(axis=1)
 
 
+def calc_trade_turnover_series(
+    trades: List[TradeRecord],
+    equity_curve: pd.Series,
+) -> pd.Series:
+    """Per-bar turnover from actual entry and exit allocations.
+
+    Each filled leg contributes its margin-equivalent traded value. Dividing
+    gross traded value by twice the portfolio equity preserves the existing
+    convention: entering a 100% allocation counts as 0.5 and rotating a 100%
+    allocation between two assets counts as 1.0.
+
+    Args:
+        trades: Completed trades carrying actual entry/exit margin values.
+        equity_curve: Portfolio equity used to normalize traded values.
+
+    Returns:
+        Per-bar realized turnover aligned to ``equity_curve``. Bars without
+        fills are zero and remain part of the average-turnover denominator.
+    """
+    if equity_curve is None or equity_curve.empty:
+        return pd.Series(dtype=float)
+
+    traded_margin = pd.Series(0.0, index=equity_curve.index, dtype=float)
+    for trade in trades:
+        for timestamp, margin in (
+            (trade.entry_time, trade.entry_margin),
+            (trade.exit_time, trade.exit_margin),
+        ):
+            try:
+                margin_value = float(margin)
+            except (TypeError, ValueError):
+                continue
+            if (
+                timestamp in traded_margin.index
+                and np.isfinite(margin_value)
+                and margin_value > 0
+            ):
+                traded_margin.loc[timestamp] += margin_value
+
+    denominator = 2.0 * equity_curve.abs().replace(0.0, np.nan)
+    return (
+        (traded_margin / denominator)
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+    )
+
+
 def calc_execution_metrics(
     executed_positions: pd.DataFrame,
     fills: List[FillRecord],

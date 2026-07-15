@@ -253,6 +253,8 @@ class TradeRecord:
     exit_reason: str
     holding_bars: int
     commission: float
+    entry_margin: float = 0.0
+    exit_margin: float = 0.0
     signal_time: pd.Timestamp | None = None
     entry_decision_price: float | None = None
     exit_decision_price: float | None = None

@@ -37,6 +37,7 @@ from backtest.metrics import (
     by_symbol_stats,
     calc_execution_metrics,
     calc_metrics,
+    calc_turnover_series,
     calc_trade_turnover_series,
 )
 from backtest.models import (
@@ -49,6 +50,26 @@ from backtest.models import (
 from backtest.reporting import build_reporting_outputs, write_reporting_outputs
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _OpenOrder:
+    """A priced opening order awaiting lifecycle-aware submission."""
+
+    symbol: str
+    direction: int
+    decision_price: float
+    price: float
+    size: float
+    leverage: float
+    margin: float
+    commission: float
+    signal_time: pd.Timestamp | None = None
+
+    @property
+    def cost(self) -> float:
+        """Maximum immediate cash consumed by the planned fill."""
+        return self.margin + self.commission
 
 
 def _safe_signal_time(df: pd.DataFrame, ts: pd.Timestamp) -> pd.Timestamp | None:
@@ -787,7 +808,16 @@ class BaseEngine(ABC):
         bench_equity = self.initial_capital * (1 + bench_ret).cumprod()
 
         # 6. Metrics
-        m = calc_metrics(equity_series, self.trades, self.initial_capital, bars_per_year, bench_ret, target_pos)
+        realized_turnover = calc_trade_turnover_series(self.trades, equity_series)
+        m = calc_metrics(
+            equity_series,
+            self.trades,
+            self.initial_capital,
+            bars_per_year,
+            bench_ret,
+            target_pos,
+            turnover_series=realized_turnover,
+        )
         m.update(calc_execution_metrics(
             executed_positions,
             self.fills,
@@ -931,7 +961,10 @@ class BaseEngine(ABC):
                         high = mid
 
             for order in planned:
-                self._execute_open_order(order, ts)
+                frame = data_map.get(order.symbol)
+                if frame is None or ts not in frame.index:
+                    continue
+                self._execute_open_order(order, frame.loc[ts], ts)
 
             # d. Apply close/within-bar hooks after open execution.  Hooks use
             # the current bar's close for funding, swaps, and liquidation, so
@@ -982,6 +1015,7 @@ class BaseEngine(ABC):
             self.pending_orders.clear()
 
             for c in list(self.positions.keys()):
+                self._active_symbol = c
                 decision_price = self._safe_price(
                     close_df,
                     last_ts,
@@ -1021,6 +1055,44 @@ class BaseEngine(ABC):
                     codes,
                     replace_last=True,
                 )
+
+    def _calc_open_equity(
+        self,
+        data_map: Dict[str, pd.DataFrame],
+        close_df: pd.DataFrame,
+        ts: pd.Timestamp,
+    ) -> float:
+        """Value current positions at the execution bar's observable open.
+
+        For a symbol that has a bar at ``ts``, its open is the mark available
+        when next-bar-open orders execute. Symbols without a bar on the
+        unified calendar retain the aligned close fallback, which is the most
+        recent price carried by ``_align``.
+        """
+        if not self.positions:
+            return self.capital
+
+        equity = self.capital
+        for sym, pos in self.positions.items():
+            current_price = self._safe_price(close_df, ts, sym, pos.entry_price)
+            frame = data_map.get(sym)
+            if frame is not None and ts in frame.index:
+                open_price = frame.loc[ts].get("open")
+                if (
+                    open_price is not None
+                    and pd.notna(open_price)
+                    and float(open_price) > 0
+                ):
+                    current_price = float(open_price)
+
+            margin = self._calc_margin(
+                sym, pos.size, pos.entry_price, pos.leverage
+            )
+            unrealized = self._calc_pnl(
+                sym, pos.direction, pos.size, pos.entry_price, current_price
+            )
+            equity += margin + unrealized
+        return equity
 
     def _calc_equity(self, close_df: pd.DataFrame, ts: pd.Timestamp) -> float:
         """Total equity = free cash + sum(margin + unrealised) per position.
@@ -1170,6 +1242,76 @@ class BaseEngine(ABC):
         }, index=index)
         accounting.index.name = "timestamp"
         return accounting
+
+    def _plan_open_order(
+        self,
+        symbol: str,
+        target_weight: float,
+        df: Optional[pd.DataFrame],
+        ts: pd.Timestamp,
+        equity: float,
+    ) -> Optional[_OpenOrder]:
+        """Price an opening order without mutating portfolio state."""
+        self._active_symbol = symbol
+        direction = (
+            1 if target_weight > 1e-9 else -1 if target_weight < -1e-9 else 0
+        )
+        if (
+            direction == 0
+            or symbol in self.positions
+            or df is None
+            or ts not in df.index
+        ):
+            return None
+        bar = df.loc[ts]
+        decision_price = float(bar.get("open", bar.get("close", 0)))
+        if decision_price <= 0:
+            return None
+        price = self.apply_slippage(decision_price, direction)
+        leverage = self.default_leverage
+        target_notional = abs(target_weight) * equity * leverage
+        size = self.round_size(
+            self._calc_raw_size(symbol, target_notional, price), price
+        )
+        if size <= 0:
+            return None
+        margin = self._calc_margin(symbol, size, price, leverage)
+        commission = self.calc_commission(
+            size, price, direction, is_open=True
+        )
+        return _OpenOrder(
+            symbol=symbol,
+            direction=direction,
+            decision_price=decision_price,
+            price=price,
+            size=size,
+            leverage=leverage,
+            margin=margin,
+            commission=commission,
+            signal_time=_safe_signal_time(df, ts),
+        )
+
+    def _execute_open_order(
+        self,
+        plan: _OpenOrder,
+        bar: pd.Series,
+        ts: pd.Timestamp,
+    ) -> None:
+        """Submit a priced opening plan through the persistent order ledger."""
+        self._active_symbol = plan.symbol
+        order = self._create_order(
+            symbol=plan.symbol,
+            event_type="entry",
+            direction=plan.direction,
+            quantity=plan.size,
+            timestamp=ts,
+            decision_price=plan.decision_price,
+            reason="signal",
+            signal_time=plan.signal_time,
+        )
+        self._process_order(order, bar, ts)
+        if order.status == "filled":
+            self.pending_orders.pop(plan.symbol, None)
 
     def _rebalance(
         self,
@@ -1926,6 +2068,12 @@ class BaseEngine(ABC):
             accumulator["entry_price"],
             accumulator["leverage"],
         )
+        exit_margin = self._calc_margin(
+            symbol,
+            quantity,
+            exit_price,
+            accumulator["leverage"],
+        )
         holding_bars = max(self._bar_idx - accumulator["entry_bar_idx"], 0)
         holding_days = _safe_holding_days(
             accumulator["entry_time"],
@@ -1946,6 +2094,8 @@ class BaseEngine(ABC):
             exit_reason=accumulator["last_reason"],
             holding_bars=holding_bars,
             commission=total_commission,
+            entry_margin=margin,
+            exit_margin=exit_margin,
             signal_time=accumulator["signal_time"],
             entry_decision_price=accumulator["entry_decision_price"],
             exit_decision_price=exit_decision_price,
