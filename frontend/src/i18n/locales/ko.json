@@ -29,7 +29,9 @@
     "openNavigation": "Open application navigation",
     "closeNavigation": "Close application navigation",
     "riskManager": "Risk Manager",
-    "groupRiskCapital": "RISK & CAPITAL"
+    "groupRiskCapital": "RISK & CAPITAL",
+    "performanceLab": "Performance Lab",
+    "groupPerformance": "PERFORMANCE"
   },
   "runtime": {
     "monitorBadge": "런타임 모니터",
@@ -785,5 +787,12 @@
     "noPriceData": "가격 데이터 없음",
     "noCorrelationData": "상관 데이터 없음",
     "noEquityData": "자산 데이터 없음"
+  },
+  "performanceLab": {
+    "title": "Performance Lab",
+    "emptyVerified": "No verified performance data yet.",
+    "emptyPopulate": "Run a market analysis or historical validation to populate this section.",
+    "journalEmpty": "No journal entries in this browser session.",
+    "journalEmptyBody": "Add a manual entry to begin reviewing execution discipline."
   }
 }

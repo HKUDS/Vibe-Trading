@@ -15,7 +15,7 @@ describe("Reports page", () => {
     apiMock.listRuns.mockReset();
   });
 
-  it("lists backtest reports newest first with Full Report links and skips non-report runs", async () => {
+  it("lists backtest reports newest first with Analysis Report links and skips non-report runs", async () => {
     apiMock.listRuns.mockResolvedValue([
       {
         run_id: "old-report",
@@ -52,7 +52,7 @@ describe("Reports page", () => {
     const reportRunLinks = screen.getAllByRole("link", { name: /-report$/ });
     expect(reportRunLinks[0]).toHaveAttribute("href", "/runs/new-report");
     expect(reportRunLinks[1]).toHaveAttribute("href", "/runs/old-report");
-    const fullReportLinks = screen.getAllByRole("link", { name: "Full Report" });
+    const fullReportLinks = screen.getAllByRole("link", { name: "Analysis Report" });
     expect(fullReportLinks[0]).toHaveAttribute("href", "/runs/new-report");
     expect(fullReportLinks[1]).toHaveAttribute("href", "/runs/old-report");
   });

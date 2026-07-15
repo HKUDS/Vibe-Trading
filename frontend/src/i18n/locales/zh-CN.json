@@ -29,7 +29,9 @@
     "openNavigation": "Open application navigation",
     "closeNavigation": "Close application navigation",
     "riskManager": "Risk Manager",
-    "groupRiskCapital": "RISK & CAPITAL"
+    "groupRiskCapital": "RISK & CAPITAL",
+    "performanceLab": "Performance Lab",
+    "groupPerformance": "PERFORMANCE"
   },
   "runtime": {
     "monitorBadge": "运行时监控",
@@ -785,5 +787,12 @@
     "noPriceData": "暂无价格数据",
     "noCorrelationData": "暂无相关性数据",
     "noEquityData": "暂无收益曲线数据"
+  },
+  "performanceLab": {
+    "title": "Performance Lab",
+    "emptyVerified": "No verified performance data yet.",
+    "emptyPopulate": "Run a market analysis or historical validation to populate this section.",
+    "journalEmpty": "No journal entries in this browser session.",
+    "journalEmptyBody": "Add a manual entry to begin reviewing execution discipline."
   }
 }

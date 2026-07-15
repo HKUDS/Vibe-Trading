@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { Activity, BarChart3, Bot, Check, ChevronDown, Cpu, Database, FileText, Languages, Menu, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2, X, ShieldCheck } from "lucide-react";
+import { Activity, BarChart3, Bot, Check, ChevronDown, Cpu, Database, FileText, Languages, Menu, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2, X, ShieldCheck, LineChart } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
@@ -20,6 +20,12 @@ export function AppLayout() {
       heading: t('layout.groupOverview'),
       items: [
         { to: "/agent", icon: Bot, label: t('layout.agent') },
+      ],
+    },
+    {
+      heading: t('layout.groupPerformance'),
+      items: [
+        { to: "/performance-lab", icon: LineChart, label: t('layout.performanceLab') },
         { to: "/reports", icon: FileText, label: t('layout.reports') },
       ],
     },
@@ -72,6 +78,7 @@ export function AppLayout() {
 
   const sectionTitle = (() => {
     if (pathname.startsWith("/agent")) return t('layout.agent');
+    if (pathname.startsWith("/performance-lab")) return t('layout.performanceLab');
     if (pathname.startsWith("/reports")) return t('layout.reports');
     if (pathname.startsWith("/risk-manager")) return t('layout.riskManager');
     if (pathname.startsWith("/alpha-zoo")) return t('layout.alphaZoo');

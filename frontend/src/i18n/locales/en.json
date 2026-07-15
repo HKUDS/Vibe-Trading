@@ -34,7 +34,9 @@
     "openNavigation": "Open application navigation",
     "closeNavigation": "Close application navigation",
     "riskManager": "Risk Manager",
-    "groupRiskCapital": "RISK & CAPITAL"
+    "groupRiskCapital": "RISK & CAPITAL",
+    "performanceLab": "Performance Lab",
+    "groupPerformance": "PERFORMANCE"
   },
   "runtime": {
     "monitorBadge": "Runtime Monitor",
@@ -94,7 +96,7 @@
     "ago": "ago"
   },
   "reports": {
-    "badge": "Reports",
+    "badge": "Opportunity Reports",
     "title": "Opportunity Report Library",
     "subtitle": "Browse historical backtest reports, metrics, and run details from one place.",
     "refresh": "Refresh",
@@ -111,14 +113,14 @@
     "unavailable": "Report library unavailable",
     "loadError": "Unable to load reports.",
     "emptyTitle": "No reports yet",
-    "emptyBody": "Create a backtest from Market Intelligence, then return here to review it.",
+    "emptyBody": "Create a historical validation from Market Intelligence, then return here to review it.",
     "noMatchesTitle": "No matching reports",
     "noMatchesBody": "Adjust your search query, status filter, or date range.",
     "noPrompt": "No prompt recorded.",
     "to": "to",
     "return": "Return",
     "sharpe": "Sharpe",
-    "fullReport": "Full Report",
+    "fullReport": "Analysis Report",
     "compare": "Compare"
   },
   "connection": {
@@ -417,7 +419,7 @@
     "agentSwarm": "Research Team"
   },
   "runDetail": {
-    "title": "Run Detail",
+    "title": "Analysis Report",
     "runNotFound": "Run not found",
     "runNotFoundDesc": "The run directory may have been removed, or your browser may not have API access configured. Check that the API authentication key is set in Settings if accessing remotely.",
     "goBack": "Go back",
@@ -785,5 +787,12 @@
   },
   "errorBoundary": {
     "somethingWrong": "Something went wrong"
+  },
+  "performanceLab": {
+    "title": "Performance Lab",
+    "emptyVerified": "No verified performance data yet.",
+    "emptyPopulate": "Run a market analysis or historical validation to populate this section.",
+    "journalEmpty": "No journal entries in this browser session.",
+    "journalEmptyBody": "Add a manual entry to begin reviewing execution discipline."
   }
 }
