@@ -50,13 +50,13 @@ describe("MessageBubble", () => {
   describe("error messages", () => {
     it("renders error content with danger styling", () => {
       render(<MessageBubble msg={makeMsg({ type: "error", content: "Execution failed" })} />);
-      expect(screen.getByText("Execution failed")).toBeInTheDocument();
+      expect(screen.getByText("TradeCoreFX could not complete this analysis request.")).toBeInTheDocument();
     });
 
     it("shows retry button when onRetry is provided", () => {
       const onRetry = vi.fn();
       render(<MessageBubble msg={makeMsg({ type: "error", content: "Something broke" })} onRetry={onRetry} />);
-      expect(screen.getByRole("button")).toBeInTheDocument();
+      expect(screen.getByTitle("Execution failed. Click to retry.")).toBeInTheDocument();
     });
 
     it("calls onRetry when retry button is clicked", async () => {
@@ -65,7 +65,7 @@ describe("MessageBubble", () => {
       render(<MessageBubble msg={msg} onRetry={onRetry} />);
 
       const user = userEvent.setup();
-      await user.click(screen.getByRole("button"));
+      await user.click(screen.getByTitle("Execution failed. Click to retry."));
       expect(onRetry).toHaveBeenCalledWith(msg);
     });
 

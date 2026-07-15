@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { Activity, BarChart3, Bot, Check, ChevronDown, FileText, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2 } from "lucide-react";
+import { Activity, BarChart3, Bot, Check, ChevronDown, Cpu, Database, FileText, Languages, Menu, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
@@ -15,14 +15,28 @@ import { SUPPORTED_LANGUAGES } from "@/i18n";
 export function AppLayout() {
   const { t } = useTranslation();
 
-  const NAV = [
-    { to: "/", icon: BarChart3, label: t('layout.home') },
-    { to: "/agent", icon: Bot, label: t('layout.agent') },
-    { to: "/runtime", icon: Activity, label: t('layout.runtime') },
-    { to: "/reports", icon: FileText, label: t('layout.reports') },
-    { to: "/alpha-zoo", icon: Layers, label: t('layout.alphaZoo') },
-    { to: "/settings", icon: Settings, label: t('layout.settings') },
-    { to: "/correlation", icon: BarChart3, label: t('layout.correlation') },
+  const NAV_GROUPS = [
+    {
+      heading: t('layout.groupOverview'),
+      items: [
+        { to: "/agent", icon: Bot, label: t('layout.agent') },
+        { to: "/reports", icon: FileText, label: t('layout.reports') },
+      ],
+    },
+    {
+      heading: t('layout.groupResearch'),
+      items: [
+        { to: "/alpha-zoo", icon: Layers, label: t('layout.alphaZoo') },
+        { to: "/correlation", icon: BarChart3, label: t('layout.correlation') },
+        { to: "/runtime", icon: Activity, label: t('layout.runtime') },
+      ],
+    },
+    {
+      heading: t('layout.groupSystem'),
+      items: [
+        { to: "/settings", icon: Settings, label: t('layout.settings') },
+      ],
+    },
   ];
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
@@ -32,6 +46,7 @@ export function AppLayout() {
   const sseStatus = useAgentStore(s => s.sseStatus);
   const sseRetryAttempt = useAgentStore(s => s.sseRetryAttempt);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("qa-sidebar") === "collapsed");
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const activeSessionId = searchParams.get("session");
   const streamingSessionId = useAgentStore(s => s.streamingSessionId);
@@ -39,6 +54,25 @@ export function AppLayout() {
   useEffect(() => {
     localStorage.setItem("qa-sidebar", collapsed ? "collapsed" : "expanded");
   }, [collapsed]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mobileOpen]);
+
+  const sectionTitle = (() => {
+    if (pathname.startsWith("/agent")) return t('layout.agent');
+    if (pathname.startsWith("/reports")) return t('layout.reports');
+    if (pathname.startsWith("/alpha-zoo")) return t('layout.alphaZoo');
+    if (pathname.startsWith("/correlation")) return t('layout.correlation');
+    if (pathname.startsWith("/runtime")) return t('layout.runtime');
+    if (pathname.startsWith("/settings")) return t('layout.settings');
+    return "TradeCoreFX";
+  })();
 
   const loadSessions = () => {
     api.listSessions()
@@ -74,42 +108,64 @@ export function AppLayout() {
   };
 
   return (
-    <div className="flex h-screen bg-background rtl:flex-row-reverse">
+    <div className="flex h-screen overflow-hidden bg-background rtl:flex-row-reverse">
+      {mobileOpen && (
+        <button
+          type="button"
+          aria-label={t('layout.closeNavigation')}
+          className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
       {/* Sidebar */}
-      <aside className={cn(
-        "border-e bg-card flex flex-col shrink-0 transition-all duration-200 overflow-visible",
-        collapsed ? "w-12" : "w-64"
+      <aside id="app-sidebar" className={cn(
+        "fixed inset-y-0 left-0 z-50 border-e bg-card flex flex-col shrink-0 transition-all duration-200 overflow-visible md:relative md:translate-x-0 rtl:left-auto rtl:right-0",
+        collapsed ? "w-12" : "w-72 md:w-64",
+        mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}>
         {/* Brand */}
         <div className={cn("border-b", collapsed ? "p-2 flex justify-center" : "p-4")}>
+          <button type="button" onClick={() => setMobileOpen(false)} className="absolute right-2 top-2 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground md:hidden" aria-label={t('layout.closeNavigation')}>
+            <X className="h-4 w-4" />
+          </button>
           <Link to="/" className={cn("flex items-center font-bold text-base tracking-tight", collapsed ? "justify-center" : "gap-2")}>
             <BarChart3 className="h-5 w-5 text-primary shrink-0" />
-            {!collapsed && "TradeCoreFX"}
+            {!collapsed && <span><span className="block">TradeCoreFX</span><span className="block text-[10px] font-medium text-muted-foreground">Market Intelligence</span></span>}
           </Link>
         </div>
 
         {/* Nav */}
-        <nav className={cn("space-y-0.5", collapsed ? "p-1" : "p-2")}>
-          {NAV.map(({ to, icon: Icon, label }) => {
-            const text = label;
-            return (
-              <Link
-                key={to}
-                to={to}
-                className={cn(
-                  "flex items-center rounded-md text-sm transition-colors",
-                  collapsed ? "justify-center p-2" : "gap-3 px-3 py-2",
-                  (to === "/" ? pathname === "/" : pathname.startsWith(to))
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-                title={collapsed ? text : undefined}
-              >
-                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                {!collapsed && text}
-              </Link>
-            );
-          })}
+        <nav className={cn("space-y-4", collapsed ? "p-1" : "p-2")} aria-label={t('layout.applicationNavigation')}>
+          {NAV_GROUPS.map((group) => (
+            <div key={group.heading}>
+              {!collapsed && (
+                <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70">{group.heading}</p>
+              )}
+              <div className="space-y-0.5">
+                {group.items.map(({ to, icon: Icon, label }) => {
+                  const text = label;
+                  return (
+                    <Link
+                      key={to}
+                      to={to}
+                      onClick={() => setMobileOpen(false)}
+                      className={cn(
+                        "flex items-center rounded-md text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+                        collapsed ? "justify-center p-2" : "gap-3 px-3 py-2",
+                        pathname.startsWith(to)
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                      title={collapsed ? text : undefined}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      {!collapsed && text}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* Sessions — hidden when collapsed */}
@@ -254,6 +310,34 @@ export function AppLayout() {
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <ConnectionBanner status={sseStatus} retryAttempt={sseRetryAttempt} />
+        <header className="flex min-h-14 items-center justify-between gap-3 border-b bg-background/95 px-3 py-2 backdrop-blur sm:px-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
+              aria-label={t('layout.openNavigation')}
+              aria-controls="app-sidebar"
+              aria-expanded={mobileOpen}
+              onClick={() => setMobileOpen(true)}
+            >
+              <Menu className="h-4 w-4" />
+            </button>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{sectionTitle}</p>
+              <p className="hidden text-xs text-muted-foreground sm:block">TradeCoreFX Market Intelligence Workspace</p>
+            </div>
+          </div>
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto text-xs">
+            <StatusPill icon={Cpu} label="Local Model" value="qwen2.5:1.5b" detail="Development Testing" title="Small local models are suitable for workflow and integration testing but may not provide production-grade market reasoning." />
+            <StatusPill icon={Database} label="Market Data" value="Available data" detail="Not live" />
+            <StatusPill icon={Activity} label="Connection" value={sseStatus} detail={sseRetryAttempt > 0 ? `retry ${sseRetryAttempt}` : "SSE"} />
+            {pathname.startsWith("/agent") && (
+              <Link to="/agent" className="hidden rounded-lg bg-primary px-3 py-2 font-semibold text-primary-foreground hover:opacity-90 sm:inline-flex">
+                {t('layout.newChat')}
+              </Link>
+            )}
+          </div>
+        </header>
         <main className="flex-1 overflow-auto">
           <Outlet />
         </main>
@@ -401,6 +485,17 @@ function LanguageSwitcher() {
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+function StatusPill({ icon: Icon, label, value, detail, title }: { icon: typeof Activity; label: string; value: string; detail: string; title?: string }) {
+  return (
+    <div title={title} className="flex shrink-0 items-center gap-2 rounded-lg border bg-card px-2.5 py-1.5 text-muted-foreground">
+      <Icon className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+      <span className="hidden font-medium text-foreground lg:inline">{label}</span>
+      <span className="font-mono text-[11px] tabular-nums">{value}</span>
+      <span className="hidden rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide sm:inline">{detail}</span>
     </div>
   );
 }
