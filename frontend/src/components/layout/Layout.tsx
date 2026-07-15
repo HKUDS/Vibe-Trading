@@ -12,7 +12,7 @@ import { SUPPORTED_LANGUAGES } from "@/i18n";
 // APP_VERSION is sourced from i18n locale files (app.version key) to keep a
 // single source of truth across the footer and every localised README.
 
-export function Layout() {
+export function AppLayout() {
   const { t } = useTranslation();
 
   const NAV = [
@@ -84,7 +84,7 @@ export function Layout() {
         <div className={cn("border-b", collapsed ? "p-2 flex justify-center" : "p-4")}>
           <Link to="/" className={cn("flex items-center font-bold text-base tracking-tight", collapsed ? "justify-center" : "gap-2")}>
             <BarChart3 className="h-5 w-5 text-primary shrink-0" />
-            {!collapsed && "Vibe-Trading"}
+            {!collapsed && "TradeCoreFX"}
           </Link>
         </div>
 
