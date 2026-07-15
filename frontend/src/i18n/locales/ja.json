@@ -21,7 +21,17 @@
     "dark": "ダーク",
     "language": "言語",
     "collapse": "折りたたむ",
-    "expand": "展開"
+    "expand": "展開",
+    "groupOverview": "OVERVIEW",
+    "groupResearch": "RESEARCH",
+    "groupSystem": "SYSTEM",
+    "applicationNavigation": "Application navigation",
+    "openNavigation": "Open application navigation",
+    "closeNavigation": "Close application navigation",
+    "riskManager": "Risk Manager",
+    "groupRiskCapital": "RISK & CAPITAL",
+    "performanceLab": "Performance Lab",
+    "groupPerformance": "PERFORMANCE"
   },
   "runtime": {
     "monitorBadge": "ランタイムモニター",
@@ -687,7 +697,8 @@
     "never": "なし",
     "unknown": "不明",
     "justNow": "たった今",
-    "loadingInstructions": "コネクタ認可手順を読み込み中..."
+    "loadingInstructions": "コネクタ認可手順を読み込み中...",
+    "agent": "Market Intelligence"
   },
   "swarmStatus": {
     "agents": "{{done}}/{{total}} エージェント",
@@ -744,7 +755,8 @@
   "runComplete": {
     "fullReport": "完全なレポート →",
     "pineScript": "Pine Script",
-    "shadowReport": "シャドウレポート"
+    "shadowReport": "シャドウレポート",
+    "analysisComplete": "Analysis Complete"
   },
   "home": {
     "title": "AI 駆動のクォント戦略リサーチ",
@@ -775,5 +787,12 @@
     "noPriceData": "価格データがありません",
     "noCorrelationData": "相関データがありません",
     "noEquityData": "エクイティデータがありません"
+  },
+  "performanceLab": {
+    "title": "Performance Lab",
+    "emptyVerified": "No verified performance data yet.",
+    "emptyPopulate": "Run a market analysis or historical validation to populate this section.",
+    "journalEmpty": "No journal entries in this browser session.",
+    "journalEmptyBody": "Add a manual entry to begin reviewing execution discipline."
   }
 }

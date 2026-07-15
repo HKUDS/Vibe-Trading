@@ -9,13 +9,13 @@ describe("WelcomeScreen", () => {
 
   it("renders the title", () => {
     render(<WelcomeScreen onExample={onExample} />);
-    expect(screen.getByText("Vibe-Trading")).toBeInTheDocument();
+    expect(screen.getByText("Start a New Market Analysis")).toBeInTheDocument();
   });
 
   it("renders capability chips", () => {
     render(<WelcomeScreen onExample={onExample} />);
     expect(screen.getByText("Finance Skills Library")).toBeInTheDocument();
-    expect(screen.getByText("Swarm Agent Teams")).toBeInTheDocument();
+    expect(screen.getByText("Research Teams")).toBeInTheDocument();
     expect(screen.getByText("Shadow Account Backtest")).toBeInTheDocument();
   });
 
@@ -29,16 +29,16 @@ describe("WelcomeScreen", () => {
   it("calls onExample with prompt when an example button is clicked", async () => {
     render(<WelcomeScreen onExample={onExample} />);
     const user = userEvent.setup();
-    await user.click(screen.getByText("A-Share Portfolio Optimization"));
+    await user.click(screen.getByText("Validate an Opportunity"));
     expect(onExample).toHaveBeenCalledTimes(1);
     expect(onExample).toHaveBeenCalledWith(
-      expect.stringContaining("risk-parity portfolio"),
+      expect.stringContaining("Evaluate EUR/USD"),
     );
   });
 
   it("renders the helper text", () => {
     render(<WelcomeScreen onExample={onExample} />);
-    expect(screen.getByText("Describe a trading strategy to get started.")).toBeInTheDocument();
-    expect(screen.getByText("Try an example:")).toBeInTheDocument();
+    expect(screen.getByText("Describe the opportunity you want to evaluate.")).toBeInTheDocument();
+    expect(screen.getByText("Start with a structured analysis template:")).toBeInTheDocument();
   });
 });

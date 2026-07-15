@@ -21,7 +21,17 @@
     "dark": "다크",
     "language": "언어",
     "collapse": "접기",
-    "expand": "펼치기"
+    "expand": "펼치기",
+    "groupOverview": "OVERVIEW",
+    "groupResearch": "RESEARCH",
+    "groupSystem": "SYSTEM",
+    "applicationNavigation": "Application navigation",
+    "openNavigation": "Open application navigation",
+    "closeNavigation": "Close application navigation",
+    "riskManager": "Risk Manager",
+    "groupRiskCapital": "RISK & CAPITAL",
+    "performanceLab": "Performance Lab",
+    "groupPerformance": "PERFORMANCE"
   },
   "runtime": {
     "monitorBadge": "런타임 모니터",
@@ -687,7 +697,8 @@
     "never": "없음",
     "unknown": "알 수 없음",
     "justNow": "방금 전",
-    "loadingInstructions": "커넥터 인증 안내를 불러오는 중..."
+    "loadingInstructions": "커넥터 인증 안내를 불러오는 중...",
+    "agent": "Market Intelligence"
   },
   "swarmStatus": {
     "agents": "{{done}}/{{total}} 에이전트",
@@ -744,7 +755,8 @@
   "runComplete": {
     "fullReport": "전체 리포트 →",
     "pineScript": "Pine Script",
-    "shadowReport": "섀도우 리포트"
+    "shadowReport": "섀도우 리포트",
+    "analysisComplete": "Analysis Complete"
   },
   "home": {
     "title": "AI 기반 퀀트 전략 리서치",
@@ -775,5 +787,12 @@
     "noPriceData": "가격 데이터 없음",
     "noCorrelationData": "상관 데이터 없음",
     "noEquityData": "자산 데이터 없음"
+  },
+  "performanceLab": {
+    "title": "Performance Lab",
+    "emptyVerified": "No verified performance data yet.",
+    "emptyPopulate": "Run a market analysis or historical validation to populate this section.",
+    "journalEmpty": "No journal entries in this browser session.",
+    "journalEmptyBody": "Add a manual entry to begin reviewing execution discipline."
   }
 }

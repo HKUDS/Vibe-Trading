@@ -21,7 +21,17 @@
     "dark": "داكن",
     "language": "اللغة",
     "collapse": "طي",
-    "expand": "توسيع"
+    "expand": "توسيع",
+    "groupOverview": "OVERVIEW",
+    "groupResearch": "RESEARCH",
+    "groupSystem": "SYSTEM",
+    "applicationNavigation": "Application navigation",
+    "openNavigation": "Open application navigation",
+    "closeNavigation": "Close application navigation",
+    "riskManager": "Risk Manager",
+    "groupRiskCapital": "RISK & CAPITAL",
+    "performanceLab": "Performance Lab",
+    "groupPerformance": "PERFORMANCE"
   },
   "runtime": {
     "monitorBadge": "مراقب وقت التشغيل",
@@ -687,7 +697,8 @@
     "never": "أبدًا",
     "unknown": "غير معروف",
     "justNow": "الآن",
-    "loadingInstructions": "جارٍ تحميل تعليمات تفويض الموصل..."
+    "loadingInstructions": "جارٍ تحميل تعليمات تفويض الموصل...",
+    "agent": "Market Intelligence"
   },
   "swarmStatus": {
     "agents": "{{done}}/{{total}} وكيل",
@@ -744,7 +755,8 @@
   "runComplete": {
     "fullReport": "التقرير الكامل →",
     "pineScript": "Pine Script",
-    "shadowReport": "تقرير الظلّ"
+    "shadowReport": "تقرير الظلّ",
+    "analysisComplete": "Analysis Complete"
   },
   "home": {
     "title": "بحث استراتيجيات الكمّ مدعوم بالذكاء الاصطناعي",
@@ -775,5 +787,12 @@
     "noPriceData": "لا توجد بيانات أسعار",
     "noCorrelationData": "لا توجد بيانات ارتباط",
     "noEquityData": "لا توجد بيانات أصول"
+  },
+  "performanceLab": {
+    "title": "Performance Lab",
+    "emptyVerified": "No verified performance data yet.",
+    "emptyPopulate": "Run a market analysis or historical validation to populate this section.",
+    "journalEmpty": "No journal entries in this browser session.",
+    "journalEmptyBody": "Add a manual entry to begin reviewing execution discipline."
   }
 }

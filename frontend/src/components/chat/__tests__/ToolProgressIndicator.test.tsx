@@ -39,7 +39,7 @@ describe("ToolProgressIndicator", () => {
       makeTc({ id: "tc-2", tool: "write_file" }),
     ];
     render(<ToolProgressIndicator toolCalls={tcs} />);
-    expect(screen.getByText("2 tools running")).toBeInTheDocument();
+    expect(screen.getByText("2 analysis steps running")).toBeInTheDocument();
     expect(screen.getByText(/Run command/)).toBeInTheDocument();
     expect(screen.getByText(/Generate code/)).toBeInTheDocument();
   });
