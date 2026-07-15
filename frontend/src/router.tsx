@@ -1,6 +1,7 @@
 import { Suspense, lazy, type ComponentType } from "react";
 import { createBrowserRouter } from "react-router-dom";
-import { Layout } from "@/components/layout/Layout";
+import { AppLayout } from "@/components/layout/Layout";
+import { MarketingLayout } from "@/components/layout/MarketingLayout";
 
 const Home = lazy(() => import("@/pages/Home").then((m) => ({ default: m.Home })));
 const Agent = lazy(() => import("@/pages/Agent").then((m) => ({ default: m.Agent })));
@@ -44,9 +45,12 @@ function wrap(Component: ComponentType) {
 
 export const router = createBrowserRouter([
   {
-    element: <Layout />,
+    element: <MarketingLayout />,
+    children: [{ path: "/", element: wrap(Home) }],
+  },
+  {
+    element: <AppLayout />,
     children: [
-      { path: "/", element: wrap(Home) },
       { path: "/agent", element: wrap(Agent) },
       { path: "/runtime", element: wrap(Runtime) },
       { path: "/reports", element: wrap(Reports) },
