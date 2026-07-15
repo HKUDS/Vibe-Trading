@@ -76,6 +76,7 @@ class MarketDataTool(BaseTool):
         },
         "required": ["codes", "start_date", "end_date"],
     }
+    repeatable = True
 
     def execute(self, **kwargs: Any) -> str:
         return fetch_market_data_json(

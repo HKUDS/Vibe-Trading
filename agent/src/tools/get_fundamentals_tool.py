@@ -114,6 +114,7 @@ class GetFundamentalsTool(BaseTool):
         },
         "required": ["symbols", "fields", "start", "end"],
     }
+    repeatable = True
 
     def execute(self, **kwargs: Any) -> str:
         """Validate inputs, call the loader, and return a JSON envelope.

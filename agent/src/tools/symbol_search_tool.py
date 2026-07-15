@@ -101,6 +101,7 @@ class SymbolSearchTool(BaseTool):
         },
         "required": ["query"],
     }
+    repeatable = True
 
     def execute(self, **kwargs: Any) -> str:
         """Fan out across providers and return a merged candidate envelope.

@@ -8,16 +8,18 @@ Usage: ``python -m backtest.runner <run_dir>``
 """
 
 import ast
+import copy
 import importlib.util
 import inspect
 import json
 import logging
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 import pandas as pd
-from pydantic import BaseModel, ConfigDict, model_validator, field_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
 
 try:
     from dotenv import load_dotenv
@@ -52,6 +54,17 @@ _PRICE_PANEL_COLUMNS = ("open", "high", "low", "close", "volume", "vwap", "amoun
 _FUND_PREFIX = "fund:"
 
 
+@dataclass(frozen=True)
+class DataFetchResult:
+    """Market data plus the routing metadata selected by the central registry."""
+
+    data_map: Dict[str, pd.DataFrame]
+    codes: List[str]
+    source: str
+    loader: Any
+    effective_sources: List[str]
+
+
 class BacktestConfigSchema(BaseModel):
     """Validates backtest config.json before execution."""
 
@@ -63,6 +76,10 @@ class BacktestConfigSchema(BaseModel):
     source: str = "tushare"
     interval: str = "1D"
     engine: str = "daily"
+    # Returns divide by initial_cash, so a non-positive value yields inf/NaN
+    # metrics (total_return, annual_return, ...). Reject it at the config
+    # boundary instead of letting the run produce non-finite results.
+    initial_cash: float = Field(default=1_000_000, gt=0, allow_inf_nan=False)
     fundamental_fields: Optional[Dict[str, List[str]]] = None
     event_feeds: Optional[List[Dict[str, Any]]] = None
 
@@ -875,61 +892,18 @@ def main(run_dir: Path) -> None:
         print(json.dumps({"error": f"SignalEngine interface error: {exc}"}))
         sys.exit(1)
 
-    # Data: auto split vs single loader
+    fetch_result = fetch_data_map(config)
+    data_map = fetch_result.data_map
+    codes = fetch_result.codes
+    source = fetch_result.source
+    loader = fetch_result.loader
+    config["codes"] = codes
+    config["_run_card_effective_sources"] = fetch_result.effective_sources
     interval = config.get("interval", "1D")
-
-    if source == "auto":
-        data_map = _fetch_auto(codes, config, interval)
-    else:
-        codes = _normalize_codes(codes, source)
-        config["codes"] = codes
-        LoaderCls = _get_loader(source)
-        loader = LoaderCls()
-        data_map = loader.fetch(
-            codes,
-            config.get("start_date", ""),
-            config.get("end_date", ""),
-            fields=config.get("extra_fields") or None,
-            interval=interval,
-        )
-        if data_map and len(data_map) < len(codes):
-            missing = set(codes) - set(data_map.keys())
-            logger.warning(
-                "source=%s returned data for %d/%d symbols; missing: %s",
-                source, len(data_map), len(codes), missing,
-            )
-        # Runtime fallback: try next sources in chain when primary returns empty
-        if not data_map and codes:
-            market = _detect_market(codes[0])
-            for fb_name in FALLBACK_CHAINS.get(market, []):
-                if fb_name == source or fb_name not in LOADER_REGISTRY:
-                    continue
-                fb_loader = LOADER_REGISTRY[fb_name]()
-                if not fb_loader.is_available():
-                    continue
-                fb_codes = _normalize_codes(codes, fb_name)
-                data_map = fb_loader.fetch(
-                    fb_codes, config.get("start_date", ""),
-                    config.get("end_date", ""), interval=interval,
-                )
-                if data_map:
-                    logger.info("Runtime fallback: %s -> %s", source, fb_name)
-                    source = fb_name
-                    loader = fb_loader
-                    break
-
-    # Loader-boundary OHLC sanity for every source, centralized at the one
-    # point all fetch paths converge (auto / single / runtime fallback).
-    data_map = _sanitize_data_map(data_map)
     if not data_map:
         print(json.dumps({"error": "No data fetched"}))
         sys.exit(1)
     data_map = _maybe_inject_fundamentals_for_factor_panel(data_map, config)
-
-    if source == "auto":
-        config["_run_card_effective_sources"] = sorted(_group_codes_by_source(codes))
-    else:
-        config["_run_card_effective_sources"] = [source]
 
     # Engine
     engine_type = config.get("engine", "daily")
@@ -1088,6 +1062,80 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
         merged.update(result)
 
     return merged
+
+
+def fetch_data_map(config: dict) -> DataFetchResult:
+    """Fetch and sanitize bars through the canonical loader registry.
+
+    This is the shared entry point for backtest execution and reconstruction
+    consumers. It preserves auto routing and the runtime fallback chain.
+
+    Args:
+        config: Backtest configuration containing codes, dates, source, and interval.
+
+    Returns:
+        Data and effective routing metadata. The input config is not mutated.
+    """
+    config = copy.deepcopy(config)
+    source = str(config.get("source") or "tushare")
+    codes = list(config.get("codes") or [])
+    interval = str(config.get("interval") or "1D")
+
+    if source == "auto":
+        data_map = _fetch_auto(codes, config, interval)
+        loader: Any = _AutoLoader(data_map)
+    else:
+        codes = _normalize_codes(codes, source)
+        loader = _get_loader(source)()
+        data_map = loader.fetch(
+            codes,
+            config.get("start_date", ""),
+            config.get("end_date", ""),
+            fields=config.get("extra_fields") or None,
+            interval=interval,
+        )
+        if data_map and len(data_map) < len(codes):
+            missing = set(codes) - set(data_map)
+            logger.warning(
+                "source=%s returned data for %d/%d symbols; missing: %s",
+                source,
+                len(data_map),
+                len(codes),
+                missing,
+            )
+        if not data_map and codes:
+            market = _detect_market(codes[0])
+            for fallback_source in FALLBACK_CHAINS.get(market, []):
+                if fallback_source == source or fallback_source not in LOADER_REGISTRY:
+                    continue
+                fallback_loader = LOADER_REGISTRY[fallback_source]()
+                if not fallback_loader.is_available():
+                    continue
+                fallback_codes = _normalize_codes(codes, fallback_source)
+                data_map = fallback_loader.fetch(
+                    fallback_codes,
+                    config.get("start_date", ""),
+                    config.get("end_date", ""),
+                    interval=interval,
+                )
+                if data_map:
+                    logger.info("Runtime fallback: %s -> %s", source, fallback_source)
+                    source = fallback_source
+                    codes = fallback_codes
+                    loader = fallback_loader
+                    break
+
+    data_map = _sanitize_data_map(data_map)
+    effective_sources = (
+        sorted(_group_codes_by_source(codes)) if source == "auto" else [source]
+    )
+    return DataFetchResult(
+        data_map=data_map,
+        codes=codes,
+        source=source,
+        loader=loader,
+        effective_sources=effective_sources,
+    )
 
 
 def _sanitize_data_map(data_map: dict) -> dict:

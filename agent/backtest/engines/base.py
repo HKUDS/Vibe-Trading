@@ -15,6 +15,7 @@ import re as _re
 import sys
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -36,7 +37,7 @@ from backtest.metrics import (
     by_symbol_stats,
     calc_execution_metrics,
     calc_metrics,
-    calc_turnover_series,
+    calc_trade_turnover_series,
 )
 from backtest.models import (
     EquitySnapshot,
@@ -800,17 +801,17 @@ class BaseEngine(ABC):
 
         # 7. Validation (optional — triggered by config["validation"])
         if config.get("validation"):
-            from backtest.validation import run_validation
+            from backtest.validation import run_validation, write_validation_json
             v_results = run_validation(
                 config, equity_series, self.trades, self.initial_capital, bars_per_year,
             )
             m["validation"] = v_results
-            # Write validation.json artifact. The artifacts dir is normally
-            # created by _write_artifacts() below (step 8), so ensure it exists
-            # here to avoid a FileNotFoundError when run_dir/artifacts is absent.
-            v_path = run_dir / "artifacts" / "validation.json"
-            v_path.parent.mkdir(parents=True, exist_ok=True)
-            v_path.write_text(json.dumps(v_results, indent=2, ensure_ascii=False), encoding="utf-8")
+            # Write validation.json through the shared strict writer so a
+            # non-finite validation metric is serialized as null rather than an
+            # invalid bare NaN/Infinity token (matching the standalone
+            # `python -m backtest.validation` path and run_card). The writer
+            # also creates the artifacts dir, which step 8 otherwise creates.
+            write_validation_json(run_dir / "artifacts" / "validation.json", v_results)
 
         # 8. Artifacts
         self._write_artifacts(
@@ -849,21 +850,98 @@ class BaseEngine(ABC):
         for i, ts in enumerate(dates):
             self._bar_idx = i
 
-            # a. Per-bar hooks (funding fees, liquidation checks)
+            # a. Value the book at prices observable when orders execute.
+            # Rebalances happen at the bar open, so using close_df[ts] here
+            # would let the yet-unknown decision-bar close affect order size.
+            equity = self._calc_open_equity(data_map, close_df, ts)
+            target_weights: Dict[str, Optional[float]] = {}
+            for c in codes:
+                try:
+                    target_weights[c] = (
+                        float(target_pos.at[ts, c]) if ts in target_pos.index else 0.0
+                    )
+                except Exception as exc:
+                    target_weights[c] = None
+                    logger.warning("Target weight failed for %s at %s: %s", c, ts, exc)
+
+            # b. Release capital before opening replacement positions.  A
+            # single mixed close/open pass makes rotations depend on symbol
+            # iteration order when the new name is visited before the old one.
+            for c in codes:
+                target_w = target_weights[c]
+                current_pos = self.positions.get(c)
+                if target_w is None or current_pos is None:
+                    continue
+                target_dir = 1 if target_w > 1e-9 else (-1 if target_w < -1e-9 else 0)
+                if target_dir == 0 or target_dir != current_pos.direction:
+                    try:
+                        self._rebalance(c, 0.0, data_map.get(c), ts, equity)
+                    except Exception as exc:
+                        logger.warning(
+                            "Rebalance close failed for %s at %s: %s", c, ts, exc
+                        )
+
+            # c. Price every opening order before committing any of them.  If
+            # the requested basket does not fit after fees/lot rounding, apply
+            # one common scale factor to all target weights.  This preserves
+            # portfolio proportions and makes fills independent of input code
+            # order; sequential cash clipping would privilege the first name.
+            open_targets: list[tuple[str, float, Optional[pd.DataFrame]]] = []
+            for c in sorted(codes):
+                target_w = target_weights[c]
+                if target_w is None:
+                    continue
+                target_dir = 1 if target_w > 1e-9 else (-1 if target_w < -1e-9 else 0)
+                current_pos = self.positions.get(c)
+                if current_pos is not None and (
+                    target_dir == 0 or target_dir != current_pos.direction
+                ):
+                    continue
+                if current_pos is None and target_dir != 0:
+                    open_targets.append((c, target_w, data_map.get(c)))
+
+            def _plans(scale: float) -> list[_OpenOrder]:
+                result: list[_OpenOrder] = []
+                for c, target_w, frame in open_targets:
+                    try:
+                        order = self._plan_open_order(
+                            c, target_w * scale, frame, ts, equity
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Rebalance open plan failed for %s at %s: %s",
+                            c,
+                            ts,
+                            exc,
+                        )
+                        continue
+                    if order is not None:
+                        result.append(order)
+                return result
+
+            planned = _plans(1.0)
+            if sum(order.cost for order in planned) > self.capital + 1e-9:
+                low, high = 0.0, 1.0
+                for _ in range(50):
+                    mid = (low + high) / 2.0
+                    candidate = _plans(mid)
+                    if sum(order.cost for order in candidate) <= self.capital + 1e-9:
+                        low, planned = mid, candidate
+                    else:
+                        high = mid
+
+            for order in planned:
+                self._execute_open_order(order, ts)
+
+            # d. Apply close/within-bar hooks after open execution.  Hooks use
+            # the current bar's close for funding, swaps, and liquidation, so
+            # running them first could liquidate a position that was scheduled
+            # to exit at the open (or charge a position before it was opened).
             for c in codes:
                 if ts in data_map[c].index:
                     self.on_bar(c, data_map[c].loc[ts], ts)
 
-            # b. Rebalance each symbol to target weight
-            equity = self._calc_equity(close_df, ts)
-            for c in codes:
-                try:
-                    target_w = float(target_pos.at[ts, c]) if ts in target_pos.index else 0.0
-                    self._rebalance(c, target_w, data_map.get(c), ts, equity)
-                except Exception as exc:
-                    logger.warning("Rebalance failed for %s at %s: %s", c, ts, exc)
-
-            # c. Record equity snapshot
+            # e. Record equity snapshot
             snap_equity = self._calc_equity(close_df, ts)
             if self.positions and type(self)._calc_pnl is BaseEngine._calc_pnl:
                 _syms = list(self.positions.keys())
@@ -893,7 +971,7 @@ class BaseEngine(ABC):
                 codes,
             )
 
-        # d. Force close all remaining positions
+        # f. Force close all remaining positions
         if len(dates) > 0:
             last_ts = dates[-1]
             # Pending residuals are cancelled before the terminal flattening
@@ -1161,7 +1239,6 @@ class BaseEngine(ABC):
                     return
                 self.pending_orders.pop(symbol, None)
 
-        # Open new if target non-zero and no remaining position
         if target_dir != 0 and symbol not in self.positions:
             decision_price = float(bar.get("open", bar.get("close", 0)))
             if decision_price <= 0:

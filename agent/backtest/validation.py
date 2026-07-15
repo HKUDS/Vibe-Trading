@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+from numbers import Integral, Real
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -46,6 +47,13 @@ def monte_carlo_test(
         Dict with actual_sharpe, p_value_sharpe, actual_max_dd,
         p_value_max_dd, simulated_sharpes (percentiles).
     """
+    if isinstance(n_simulations, bool) or not isinstance(n_simulations, Integral) or n_simulations < 1:
+        return {
+            "error": f"n_simulations must be >= 1, got {n_simulations}",
+            "p_value_sharpe": 1.0,
+        }
+    if isinstance(seed, bool) or not isinstance(seed, Integral) or seed < 0:
+        return {"error": f"seed must be >= 0, got {seed}", "p_value_sharpe": 1.0}
     if len(trades) < 3:
         return {"error": "need at least 3 trades", "p_value_sharpe": 1.0}
 
@@ -116,6 +124,18 @@ def bootstrap_sharpe_ci(
         Dict with observed_sharpe, ci_lower, ci_upper, median_sharpe,
         prob_positive (fraction of samples with Sharpe > 0).
     """
+    if isinstance(n_bootstrap, bool) or not isinstance(n_bootstrap, Integral) or n_bootstrap < 1:
+        return {"error": f"n_bootstrap must be >= 1, got {n_bootstrap}"}
+    if (
+        isinstance(confidence, bool)
+        or not isinstance(confidence, Real)
+        or not math.isfinite(float(confidence))
+        or not 0.0 < confidence < 1.0
+    ):
+        return {"error": f"confidence must be in (0, 1), got {confidence}"}
+    if isinstance(seed, bool) or not isinstance(seed, Integral) or seed < 0:
+        return {"error": f"seed must be >= 0, got {seed}"}
+
     returns = equity_curve.pct_change().dropna().values
     if len(returns) < 5:
         return {"error": "need at least 5 return observations"}
@@ -172,6 +192,8 @@ def walk_forward_analysis(
     Returns:
         Dict with per_window stats, consistency metrics.
     """
+    if isinstance(n_windows, bool) or not isinstance(n_windows, Integral) or n_windows < 1:
+        return {"error": f"n_windows must be >= 1, got {n_windows}"}
     if len(equity_curve) < n_windows * 2:
         return {"error": f"need at least {n_windows * 2} bars for {n_windows} windows"}
 
@@ -360,16 +382,37 @@ def _parse_run_dir(argv: List[str]) -> Path:
 
 def _json_safe(value: Any) -> Any:
     """Return a JSON-strict copy of validation results."""
+    if isinstance(value, np.ndarray):
+        return [_json_safe(item) for item in value.tolist()]
+    if isinstance(value, np.generic):
+        return _json_safe(value.item())
     if isinstance(value, float):
         return value if math.isfinite(value) else None
-    if isinstance(value, np.floating):
-        as_float = float(value)
-        return as_float if math.isfinite(as_float) else None
     if isinstance(value, dict):
         return {str(key): _json_safe(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
     return value
+
+
+def write_validation_json(path: Path, results: Dict[str, Any]) -> Dict[str, Any]:
+    """Write validation results to ``path`` as strict, RFC-8259 JSON.
+
+    A validation metric can be non-finite (e.g. a Sharpe computed from a path
+    whose equity touches zero), and ``json.dumps`` emits bare ``NaN`` /
+    ``Infinity`` tokens for those by default (``allow_nan=True``) — tokens that
+    strict parsers reject. Sanitize with :func:`_json_safe` (non-finite → null)
+    and serialize with ``allow_nan=False`` so every writer of
+    ``artifacts/validation.json`` produces the same valid JSON. Returns the
+    sanitized payload that was written.
+    """
+    safe_results = _json_safe(results)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(safe_results, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    return safe_results
 
 
 def main(run_dir: Path) -> Dict[str, Any]:
@@ -399,14 +442,9 @@ def main(run_dir: Path) -> Dict[str, Any]:
         "bootstrap": bootstrap_sharpe_ci(equity),
         "walk_forward": walk_forward_analysis(equity, trades),
     }
-    safe_results = _json_safe(results)
 
-    # Write results
     out = run_dir / "artifacts" / "validation.json"
-    out.write_text(
-        json.dumps(safe_results, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
-        encoding="utf-8",
-    )
+    safe_results = write_validation_json(out, results)
 
     print(json.dumps(safe_results, indent=2, allow_nan=False))
     return safe_results
