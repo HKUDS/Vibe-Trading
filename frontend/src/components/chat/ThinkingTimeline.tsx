@@ -15,7 +15,7 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
   const [expanded, setExpanded] = useState(isLatest);
 
   const toolLabel = (tool?: string): string => {
-    if (!tool) return t('thinking.processing');
+    if (!tool) return "Analysis Progress";
     return localizeToolName(tool);
   };
 

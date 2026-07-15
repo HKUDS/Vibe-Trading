@@ -99,3 +99,32 @@
 
 /* RTL: mirror directional icons (chevrons, arrows) automatically */
 [dir="rtl"] .rtl\:flip-x { transform: scaleX(-1); }
+
+@layer utilities {
+  .tradecorefx-scan {
+    background: linear-gradient(180deg, transparent 0%, hsl(var(--primary) / 0.10) 48%, transparent 100%);
+    animation: tradecorefx-scan 4.8s ease-in-out infinite;
+  }
+
+  .tradecorefx-candle {
+    animation: tradecorefx-candle 2.8s ease-in-out infinite;
+    transform-origin: center bottom;
+  }
+}
+
+@keyframes tradecorefx-scan {
+  0%, 100% { transform: translateY(-100%); }
+  50% { transform: translateY(100%); }
+}
+
+@keyframes tradecorefx-candle {
+  0%, 100% { opacity: 0.72; transform: scaleY(0.96); }
+  50% { opacity: 1; transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tradecorefx-scan,
+  .tradecorefx-candle {
+    animation: none !important;
+  }
+}

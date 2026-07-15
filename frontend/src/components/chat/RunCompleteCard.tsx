@@ -68,7 +68,8 @@ export const RunCompleteCard = memo(function RunCompleteCard({ msg }: Props) {
   return (
     <div className="flex gap-3">
       <AgentAvatar />
-      <div className="flex-1 min-w-0 space-y-2">
+      <div className="flex-1 min-w-0 space-y-2 rounded-2xl border bg-card p-4">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">{t("runComplete.analysisComplete")}</div>
         {msg.metrics && Object.keys(msg.metrics).length > 0 && (
           <MetricsCard metrics={msg.metrics} compact />
         )}
