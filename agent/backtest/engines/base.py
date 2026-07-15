@@ -894,10 +894,33 @@ class BaseEngine(ABC):
                     target_weights[c] = None
                     logger.warning("Target weight failed for %s at %s: %s", c, ts, exc)
 
+            # Advance pending exits on every bar so a renewed same-direction
+            # signal can cancel an outstanding exit and expiry/latency state
+            # continues to progress even when no fresh close is requested.
+            processed_pending_exits: set[str] = set()
+            for c in sorted(codes):
+                pending = self.pending_orders.get(c)
+                target_w = target_weights[c]
+                if (
+                    pending is None
+                    or pending.event_type != "exit"
+                    or target_w is None
+                ):
+                    continue
+                processed_pending_exits.add(c)
+                try:
+                    self._rebalance(c, target_w, data_map.get(c), ts, equity)
+                except Exception as exc:
+                    logger.warning(
+                        "Pending exit failed for %s at %s: %s", c, ts, exc
+                    )
+
             # b. Release capital before opening replacement positions.  A
             # single mixed close/open pass makes rotations depend on symbol
             # iteration order when the new name is visited before the old one.
             for c in codes:
+                if c in processed_pending_exits:
+                    continue
                 target_w = target_weights[c]
                 current_pos = self.positions.get(c)
                 if target_w is None or current_pos is None:
@@ -911,6 +934,29 @@ class BaseEngine(ABC):
                             "Rebalance close failed for %s at %s: %s", c, ts, exc
                         )
 
+            # Advance pending entry orders before considering fresh opens.
+            # Without this pass, a latency-delayed order would be replaced by
+            # a newly planned order on every bar and could never become
+            # eligible to fill. A terminal pending order waits until the next
+            # bar before the signal may submit a replacement.
+            processed_pending_entries: set[str] = set()
+            for c in sorted(codes):
+                pending = self.pending_orders.get(c)
+                target_w = target_weights[c]
+                if (
+                    pending is None
+                    or pending.event_type != "entry"
+                    or target_w is None
+                ):
+                    continue
+                processed_pending_entries.add(c)
+                try:
+                    self._rebalance(c, target_w, data_map.get(c), ts, equity)
+                except Exception as exc:
+                    logger.warning(
+                        "Pending entry failed for %s at %s: %s", c, ts, exc
+                    )
+
             # c. Price every opening order before committing any of them.  If
             # the requested basket does not fit after fees/lot rounding, apply
             # one common scale factor to all target weights.  This preserves
@@ -918,6 +964,8 @@ class BaseEngine(ABC):
             # order; sequential cash clipping would privilege the first name.
             open_targets: list[tuple[str, float, Optional[pd.DataFrame]]] = []
             for c in sorted(codes):
+                if c in processed_pending_exits or c in processed_pending_entries:
+                    continue
                 target_w = target_weights[c]
                 if target_w is None:
                     continue
@@ -1275,9 +1323,15 @@ class BaseEngine(ABC):
         )
         if size <= 0:
             return None
-        margin = self._calc_margin(symbol, size, price, leverage)
+        cost_price = price
+        if self.default_order_type == "limit":
+            side = "buy" if direction == 1 else "sell"
+            cost_price = self._configured_limit_price(
+                symbol, side, decision_price
+            )
+        margin = self._calc_margin(symbol, size, cost_price, leverage)
         commission = self.calc_commission(
-            size, price, direction, is_open=True
+            size, cost_price, direction, is_open=True
         )
         return _OpenOrder(
             symbol=symbol,
