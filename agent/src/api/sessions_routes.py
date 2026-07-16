@@ -282,6 +282,100 @@ def _live_action_frame_from_tool_result(event: Any) -> Optional[str]:
 # Registration
 # ============================================================================
 
+# >>> ICICI PAPER ORDER APPROVAL MODULE >>>
+from datetime import datetime as _paper_dt, timedelta as _paper_td, timezone as _paper_tz
+from threading import Lock as _PaperLock
+from typing import Any as _PaperAny
+from uuid import uuid4 as _paper_uuid4
+
+from fastapi import HTTPException as _PaperHTTPException
+from pydantic import BaseModel as _PaperBaseModel, Field as _PaperField
+
+from src.trading.service import place_order as _paper_place_order
+
+
+_PAPER_PROFILE_ID = "icici-breeze-paper-trade"
+_PAPER_PROPOSAL_TTL_SECONDS = 300
+_PAPER_TERMINAL_RETENTION_SECONDS = 3600
+_paper_proposals: dict[str, dict[str, _PaperAny]] = {}
+_paper_proposals_lock = _PaperLock()
+
+
+class PaperOrderProposalRequest(_PaperBaseModel):
+    profile_id: str = _PAPER_PROFILE_ID
+    symbol: str = _PaperField(min_length=1, max_length=64)
+    side: str
+    quantity: float = _PaperField(gt=0)
+    order_type: str = "limit"
+    limit_price: float = _PaperField(gt=0)
+    time_in_force: str = "day"
+    reference_price: float | None = _PaperField(default=None, gt=0)
+
+
+def _paper_now() -> _paper_dt:
+    return _paper_dt.now(_paper_tz.utc)
+
+
+def _paper_iso(value: _paper_dt | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _paper_public(record: dict[str, _PaperAny]) -> dict[str, _PaperAny]:
+    return {
+        "proposal_id": record["proposal_id"],
+        "session_id": record["session_id"],
+        "profile_id": record["profile_id"],
+        "environment": "paper",
+        "symbol": record["symbol"],
+        "side": record["side"],
+        "quantity": record["quantity"],
+        "order_type": record["order_type"],
+        "limit_price": record["limit_price"],
+        "time_in_force": record["time_in_force"],
+        "reference_price": record.get("reference_price"),
+        "state": record["state"],
+        "created_at": _paper_iso(record["created_at"]),
+        "expires_at": _paper_iso(record["expires_at"]),
+        "used_at": _paper_iso(record.get("used_at")),
+        "result": record.get("result"),
+        "error": record.get("error"),
+    }
+
+
+def _paper_cleanup_locked(now: _paper_dt) -> None:
+    remove_ids: list[str] = []
+
+    for proposal_id, record in _paper_proposals.items():
+        if record["state"] == "pending" and now >= record["expires_at"]:
+            record["state"] = "expired"
+            record["used_at"] = now
+            record["error"] = "proposal expired before approval"
+
+        terminal_at = record.get("used_at")
+        if terminal_at and (
+            now - terminal_at
+        ).total_seconds() > _PAPER_TERMINAL_RETENTION_SECONDS:
+            remove_ids.append(proposal_id)
+
+    for proposal_id in remove_ids:
+        _paper_proposals.pop(proposal_id, None)
+
+def _paper_get_record_locked(
+    session_id: str,
+    proposal_id: str,
+) -> dict[str, _PaperAny]:
+    _paper_cleanup_locked(_paper_now())
+    record = _paper_proposals.get(proposal_id)
+
+    if not record or record["session_id"] != session_id:
+        raise _PaperHTTPException(
+            status_code=404,
+            detail="Paper-order proposal not found",
+        )
+
+    return record
+# <<< ICICI PAPER ORDER APPROVAL MODULE <<<
+
 def register_sessions_routes(app: FastAPI) -> None:
     """Mount the session/goal routes onto ``app``.
 
@@ -714,3 +808,241 @@ def register_sessions_routes(app: FastAPI) -> None:
                 "X-Accel-Buffering": "no",
             },
         )
+
+    def _paper_require_session(session_id: str) -> None:
+        _host_validate_path_param(session_id, "session_id")
+        svc = _host_get_session_service()
+
+        if not svc:
+            raise _PaperHTTPException(
+                status_code=501,
+                detail="Session runtime not enabled",
+            )
+
+        if not svc.store.get_session(session_id):
+            raise _PaperHTTPException(
+                status_code=404,
+                detail=f"Session {session_id} not found",
+            )
+
+    # >>> ICICI PAPER ORDER APPROVAL ROUTES >>>
+    @app.post(
+        "/sessions/{session_id}/paper-orders/proposals",
+        dependencies=[Depends(require_auth)],
+    )
+    def create_paper_order_proposal(
+        session_id: str,
+        req: PaperOrderProposalRequest,
+    ):
+        """Create an immutable, expiring paper-order proposal. No order is placed."""
+        _paper_require_session(session_id)
+
+        profile_id = req.profile_id.strip()
+        symbol = req.symbol.strip().upper()
+        side = req.side.strip().lower()
+        order_type = req.order_type.strip().lower()
+        time_in_force = req.time_in_force.strip().lower()
+
+        if profile_id != _PAPER_PROFILE_ID:
+            raise _PaperHTTPException(
+                status_code=400,
+                detail=(
+                    "Only the locked ICICI paper profile "
+                    f"{_PAPER_PROFILE_ID!r} is allowed"
+                ),
+            )
+
+        if side not in {"buy", "sell"}:
+            raise _PaperHTTPException(
+                status_code=400,
+                detail="side must be buy or sell",
+            )
+
+        if order_type != "limit":
+            raise _PaperHTTPException(
+                status_code=400,
+                detail="Only limit paper orders are supported",
+            )
+
+        if time_in_force != "day":
+            raise _PaperHTTPException(
+                status_code=400,
+                detail="Only day time-in-force is supported",
+            )
+
+        now = _paper_now()
+        proposal_id = "PAPER-PROP-" + _paper_uuid4().hex[:16].upper()
+
+        record = {
+            "proposal_id": proposal_id,
+            "session_id": session_id,
+            "profile_id": profile_id,
+            "symbol": symbol,
+            "side": side,
+            "quantity": float(req.quantity),
+            "order_type": order_type,
+            "limit_price": float(req.limit_price),
+            "time_in_force": time_in_force,
+            "reference_price": (
+                float(req.reference_price)
+                if req.reference_price is not None
+                else None
+            ),
+            "state": "pending",
+            "created_at": now,
+            "expires_at": now + _paper_td(
+                seconds=_PAPER_PROPOSAL_TTL_SECONDS
+            ),
+            "used_at": None,
+            "result": None,
+            "error": None,
+        }
+
+        with _paper_proposals_lock:
+            _paper_cleanup_locked(now)
+            _paper_proposals[proposal_id] = record
+
+        return _paper_public(record)
+
+
+    @app.get(
+        "/sessions/{session_id}/paper-orders/proposals/{proposal_id}",
+        dependencies=[Depends(require_auth)],
+    )
+    def get_paper_order_proposal(
+        session_id: str,
+        proposal_id: str,
+    ):
+        """Return the current state of one proposal."""
+        _paper_require_session(session_id)
+        _host_validate_path_param(proposal_id, "proposal_id")
+
+        with _paper_proposals_lock:
+            record = _paper_get_record_locked(session_id, proposal_id)
+            return _paper_public(record)
+
+
+    @app.post(
+        "/sessions/{session_id}/paper-orders/proposals/{proposal_id}/reject",
+        dependencies=[Depends(require_auth)],
+    )
+    def reject_paper_order_proposal(
+        session_id: str,
+        proposal_id: str,
+    ):
+        """Reject a pending proposal without placing an order."""
+        _paper_require_session(session_id)
+        _host_validate_path_param(proposal_id, "proposal_id")
+        now = _paper_now()
+
+        with _paper_proposals_lock:
+            record = _paper_get_record_locked(session_id, proposal_id)
+
+            if record["state"] != "pending":
+                raise _PaperHTTPException(
+                    status_code=409,
+                    detail=f"Proposal is already {record['state']}",
+                )
+
+            record["state"] = "rejected"
+            record["used_at"] = now
+            record["error"] = "rejected by user"
+            return _paper_public(record)
+
+
+    @app.post(
+        "/sessions/{session_id}/paper-orders/proposals/{proposal_id}/approve",
+        dependencies=[Depends(require_auth)],
+    )
+    def approve_paper_order_proposal(
+        session_id: str,
+        proposal_id: str,
+    ):
+        """
+        Execute the immutable stored proposal once.
+
+        The ICICI connector's paper risk controls run again through place_order
+        with confirmed=True. The profile is hard-locked to paper trading.
+        """
+        _paper_require_session(session_id)
+        _host_validate_path_param(proposal_id, "proposal_id")
+        now = _paper_now()
+
+        with _paper_proposals_lock:
+            record = _paper_get_record_locked(session_id, proposal_id)
+
+            if record["state"] != "pending":
+                raise _PaperHTTPException(
+                    status_code=409,
+                    detail=f"Proposal is already {record['state']}",
+                )
+
+            if now >= record["expires_at"]:
+                record["state"] = "expired"
+                record["used_at"] = now
+                record["error"] = "proposal expired before approval"
+
+                raise _PaperHTTPException(
+                    status_code=410,
+                    detail="Paper-order proposal has expired",
+                )
+
+            record["state"] = "processing"
+            record["used_at"] = now
+            snapshot = dict(record)
+
+        try:
+            result = _paper_place_order(
+                snapshot["symbol"],
+                profile_id=_PAPER_PROFILE_ID,
+                side=snapshot["side"],
+                quantity=snapshot["quantity"],
+                order_type=snapshot["order_type"],
+                limit_price=snapshot["limit_price"],
+                time_in_force=snapshot["time_in_force"],
+                confirmed=True,
+                session_id=session_id,
+            )
+
+            if not isinstance(result, dict):
+                raise RuntimeError(
+                    "Paper connector returned a non-dictionary result"
+                )
+
+            if result.get("paper") is not True:
+                raise RuntimeError(
+                    "Paper connector did not confirm paper mode"
+                )
+
+            if result.get("broker_write_called") is not False:
+                raise RuntimeError(
+                    "Safety invariant failed: broker_write_called was not false"
+                )
+
+            with _paper_proposals_lock:
+                current = _paper_proposals[proposal_id]
+                current["state"] = (
+                    "approved"
+                    if result.get("status") == "ok"
+                    else "rejected_by_risk"
+                )
+                current["result"] = result
+                current["error"] = result.get("error")
+                return _paper_public(current)
+
+        except _PaperHTTPException:
+            raise
+
+        except Exception as exc:
+            with _paper_proposals_lock:
+                current = _paper_proposals.get(proposal_id)
+
+                if current:
+                    current["state"] = "failed"
+                    current["error"] = str(exc)
+
+            raise _PaperHTTPException(
+                status_code=500,
+                detail=f"Paper-order approval failed: {exc}",
+            ) from exc
+    # <<< ICICI PAPER ORDER APPROVAL ROUTES <<<
