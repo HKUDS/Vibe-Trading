@@ -901,8 +901,15 @@ def register_sessions_routes(app: FastAPI) -> None:
         with _paper_proposals_lock:
             _paper_cleanup_locked(now)
             _paper_proposals[proposal_id] = record
+            public = _paper_public(record)
 
-        return _paper_public(record)
+        # >>> ICICI PAPER ORDER TIMELINE INTEGRATION >>>
+        # Proposal creation is read-only. The SSE event only displays the immutable
+        # approval card; no order is placed and no broker-write function is called.
+        svc = _host_get_session_service()
+        svc.event_bus.emit(session_id, "paper.order.proposal", public)
+        # <<< ICICI PAPER ORDER TIMELINE INTEGRATION <<<
+        return public
 
 
     @app.get(

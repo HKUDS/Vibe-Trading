@@ -5,7 +5,7 @@ import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, 
 import { toast } from "sonner";
 import { useAgentStore } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
-import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LiveStatus } from "@/lib/api";
+import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LiveStatus, type PaperOrderProposal } from "@/lib/api";
 import { isReportWorthyRun } from "@/lib/runReports";
 import type { AgentMessage, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
@@ -15,6 +15,7 @@ import { ThinkingTimeline } from "@/components/chat/ThinkingTimeline";
 import { ConversationTimeline } from "@/components/chat/ConversationTimeline";
 import { ToolProgressIndicator } from "@/components/chat/ToolProgressIndicator";
 import { MandateProposalCard } from "@/components/chat/MandateProposalCard";
+import { PaperOrderProposalCard } from "@/components/chat/PaperOrderProposalCard";
 import { RunnerStatus } from "@/components/chat/RunnerStatus";
 import { SwarmStatusCard } from "@/components/chat/SwarmStatusCard";
 import {
@@ -72,7 +73,12 @@ interface LiveActionItem {
   timestamp: number;
   action: LiveAction;
 }
-type LiveItem = ProposalItem | LiveActionItem;
+interface PaperOrderProposalItem {
+  kind: "paper_order_proposal";
+  timestamp: number;
+  proposal: PaperOrderProposal;
+}
+type LiveItem = ProposalItem | LiveActionItem | PaperOrderProposalItem;
 
 function normalizeBrokerScope(broker: string | null | undefined): string | null {
   const normalized = broker?.trim().toLowerCase();
@@ -244,6 +250,14 @@ export function Agent() {
 
   /* Connector runtime channel state (SPEC Consent §1/§4/§5) */
   const [liveItems, setLiveItems] = useState<LiveItem[]>([]);
+  const handlePaperOrderProposalChange = useCallback((proposal: PaperOrderProposal) => {
+    setLiveItems((items) => items.map((item) => (
+      item.kind === "paper_order_proposal"
+        && item.proposal.proposal_id === proposal.proposal_id
+        ? { ...item, proposal }
+        : item
+    )));
+  }, []);
   const [committedMandates, setCommittedMandates] = useState<Record<string, MandateCommitted>>({});
   const [liveHalted, setLiveHalted] = useState<LiveHalted | null>(null);
   const [halting, setHalting] = useState(false);
@@ -673,6 +687,34 @@ export function Agent() {
           return;
         }
         loadGoalSnapshot(sid);
+      },
+
+      "paper.order.proposal": (d) => {
+        touch();
+        const proposal = d as unknown as PaperOrderProposal;
+        if (
+          !proposal.proposal_id
+          || proposal.profile_id !== "icici-breeze-paper-trade"
+          || proposal.environment !== "paper"
+        ) return;
+        setLiveItems((items) => {
+          const index = items.findIndex((item) => (
+            item.kind === "paper_order_proposal"
+            && item.proposal.proposal_id === proposal.proposal_id
+          ));
+          if (index < 0) {
+            return [
+              ...items,
+              { kind: "paper_order_proposal", timestamp: Date.now(), proposal },
+            ];
+          }
+          const current = items[index];
+          if (current.kind !== "paper_order_proposal") return items;
+          const next = [...items];
+          next[index] = { ...current, proposal };
+          return next;
+        });
+        scrollToBottom();
       },
 
       "mandate.proposal": (d) => {
@@ -1135,7 +1177,11 @@ export function Agent() {
       return { sort: ts, render: "group", group: g, key };
     });
     for (const item of liveItems) {
-      const key = item.kind === "proposal" ? `lp_${item.proposal.proposal_id}` : `la_${item.action.audit_id || item.timestamp}`;
+      const key = item.kind === "proposal"
+        ? `lp_${item.proposal.proposal_id}`
+        : item.kind === "paper_order_proposal"
+          ? `pp_${item.proposal.proposal_id}`
+          : `la_${item.action.audit_id || item.timestamp}`;
       rows.push({ sort: item.timestamp, render: "live", item, key });
     }
     return rows.sort((a, b) => a.sort - b.sort);
@@ -1187,6 +1233,15 @@ export function Agent() {
                     proposal={row.item.proposal}
                     committed={committedMandates[row.item.proposal.proposal_id] ?? null}
                     onAdjust={runPrompt}
+                  />
+                );
+              }
+              if (row.item.kind === "paper_order_proposal") {
+                return (
+                  <PaperOrderProposalCard
+                    key={row.key}
+                    proposal={row.item.proposal}
+                    onChange={handlePaperOrderProposalChange}
                   />
                 );
               }
