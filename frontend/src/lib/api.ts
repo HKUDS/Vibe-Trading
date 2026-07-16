@@ -190,6 +190,31 @@ export const api = {
   alphaCompareStreamUrl: (jobId: string) =>
     withAuthQuery(`${BASE}/alpha/compare/${encodeURIComponent(jobId)}/stream`),
 
+
+  // >>> ICICI PAPER ORDER APPROVAL API >>>
+  // These are privileged browser-surface actions. The browser approves only an
+  // immutable proposal ID; it never sends confirmed=True to a connector directly.
+  createPaperOrderProposal: (sid: string, body: PaperOrderProposalRequest) =>
+    request<PaperOrderProposal>(`/sessions/${encodeURIComponent(sid)}/paper-orders/proposals`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getPaperOrderProposal: (sid: string, proposalId: string) =>
+    request<PaperOrderProposal>(
+      `/sessions/${encodeURIComponent(sid)}/paper-orders/proposals/${encodeURIComponent(proposalId)}`,
+    ),
+  rejectPaperOrderProposal: (sid: string, proposalId: string) =>
+    request<PaperOrderProposal>(
+      `/sessions/${encodeURIComponent(sid)}/paper-orders/proposals/${encodeURIComponent(proposalId)}/reject`,
+      { method: "POST" },
+    ),
+  approvePaperOrderProposal: (sid: string, proposalId: string) =>
+    request<PaperOrderProposal>(
+      `/sessions/${encodeURIComponent(sid)}/paper-orders/proposals/${encodeURIComponent(proposalId)}/approve`,
+      { method: "POST" },
+    ),
+  // <<< ICICI PAPER ORDER APPROVAL API >>>
+
   // Connector runtime channel — privileged surface actions (NOT agent tools).
   // commit is the ONLY action that writes a mandate; halt trips the kill switch.
   commitMandate: (body: CommitMandateRequest) =>
@@ -962,6 +987,49 @@ export interface LiveRunnerResponse {
   stopped?: boolean;
   was_running?: boolean;
 }
+
+
+// >>> ICICI PAPER ORDER APPROVAL TYPES >>>
+export type PaperOrderProposalState =
+  | "pending"
+  | "processing"
+  | "approved"
+  | "rejected"
+  | "rejected_by_risk"
+  | "expired"
+  | "failed";
+
+export interface PaperOrderProposalRequest {
+  profile_id?: "icici-breeze-paper-trade";
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  order_type?: "limit";
+  limit_price: number;
+  time_in_force?: "day";
+  reference_price?: number | null;
+}
+
+export interface PaperOrderProposal {
+  proposal_id: string;
+  session_id: string;
+  profile_id: "icici-breeze-paper-trade";
+  environment: "paper";
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  order_type: "limit";
+  limit_price: number;
+  time_in_force: "day";
+  reference_price?: number | null;
+  state: PaperOrderProposalState;
+  created_at: string;
+  expires_at: string;
+  used_at?: string | null;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+}
+// <<< ICICI PAPER ORDER APPROVAL TYPES >>>
 
 export interface MessageItem {
   message_id: string;

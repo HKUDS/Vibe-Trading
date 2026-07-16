@@ -48,7 +48,10 @@ describe("formatMetricVal", () => {
   // Special keys
   it("formats final_value with locale grouping", () => {
     const result = formatMetricVal("final_value", 1234567);
-    expect(result).toMatch(/1.*234.*567|1,234,567/);
+    // Keep this test locale-agnostic: en-US may render 1,234,567,
+    // while en-IN may render 12,34,567.
+    expect(result.replace(/\D/g, "")).toBe("1234567");
+    expect(result).not.toBe("1234567");
   });
 
   it("formats avg_holding_days with one decimal", () => {
