@@ -2947,31 +2947,35 @@ def cmd_channels_status(*, json_mode: bool = False, local: bool = False) -> int:
 def cmd_channels_start(*, json_mode: bool = False) -> int:
     """Start configured IM channels through the API runtime."""
     payload = _channels_api_call("POST", "/channels/start")
+    failed = payload.get("status") == "error"
     if json_mode:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
-    elif payload.get("status") == "error":
+    elif failed:
         console.print(f"[red]Failed to start IM channels:[/red] {payload.get('error')}")
-        console.print("[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]")
-        return EXIT_RUN_FAILED
+        console.print(
+            "[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]"
+        )
     else:
         console.print("[green]IM channels started.[/green]")
         _print_channels_status(payload)
-    return EXIT_SUCCESS
+    return EXIT_RUN_FAILED if failed else EXIT_SUCCESS
 
 
 def cmd_channels_stop(*, json_mode: bool = False) -> int:
     """Stop configured IM channels through the API runtime."""
     payload = _channels_api_call("POST", "/channels/stop")
+    failed = payload.get("status") == "error"
     if json_mode:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
-    elif payload.get("status") == "error":
+    elif failed:
         console.print(f"[red]Failed to stop IM channels:[/red] {payload.get('error')}")
-        console.print("[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]")
-        return EXIT_RUN_FAILED
+        console.print(
+            "[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]"
+        )
     else:
         console.print("[green]IM channels stopped.[/green]")
         _print_channels_status(payload)
-    return EXIT_SUCCESS
+    return EXIT_RUN_FAILED if failed else EXIT_SUCCESS
 
 
 def cmd_channels_pairing(channel: str, command: str) -> int:

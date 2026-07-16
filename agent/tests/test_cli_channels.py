@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from cli import _legacy
 
 
@@ -77,3 +79,36 @@ def test_channels_api_call_sends_configured_bearer_token(monkeypatch) -> None:
 
     assert _legacy._channels_api_call("GET", "/channels/status") == {"status": "ok"}
     assert captured["headers"] == {"Authorization": "Bearer secret-token"}
+
+
+@pytest.mark.parametrize(
+    "command", [_legacy.cmd_channels_start, _legacy.cmd_channels_stop]
+)
+@pytest.mark.parametrize("json_mode", [False, True])
+def test_channels_start_stop_return_failure_in_every_output_mode(
+    command, json_mode, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        _legacy,
+        "_channels_api_call",
+        lambda *args, **kwargs: {"status": "error", "error": "offline"},
+    )
+
+    assert command(json_mode=json_mode) == _legacy.EXIT_RUN_FAILED
+
+
+@pytest.mark.parametrize(
+    "command", [_legacy.cmd_channels_start, _legacy.cmd_channels_stop]
+)
+@pytest.mark.parametrize("json_mode", [False, True])
+def test_channels_start_stop_return_success_in_every_output_mode(
+    command, json_mode, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        _legacy,
+        "_channels_api_call",
+        lambda *args, **kwargs: {"status": "ok", "channels": {}},
+    )
+    monkeypatch.setattr(_legacy, "_print_channels_status", lambda payload: None)
+
+    assert command(json_mode=json_mode) == _legacy.EXIT_SUCCESS
