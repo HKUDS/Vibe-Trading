@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import pytest
 
 import api_server
@@ -241,8 +242,9 @@ def test_write_env_values_creates_private_parent_directory(tmp_path) -> None:
     helpers._write_env_values(target, {"KEY": "value"})
 
     assert helpers._read_env_values(target) == {"KEY": "value"}
-    assert (target.parent.stat().st_mode & 0o777) == 0o700
-    assert (target.stat().st_mode & 0o777) == 0o600
+    if os.name != "nt":
+        assert (target.parent.stat().st_mode & 0o777) == 0o700
+        assert (target.stat().st_mode & 0o777) == 0o600
 
 
 def test_strip_env_value_quotes():
