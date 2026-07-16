@@ -94,6 +94,26 @@ def test_cron_job_next_due_and_not_before_due_time(tmp_path: Path) -> None:
     assert saved.next_run_at == following_due
 
 
+def test_cron_uses_standard_or_semantics_for_restricted_day_fields() -> None:
+    thursday = _ms(2026, 6, 11, 0, 1)
+
+    # The 12th is a Friday, so it matches day-of-week even though it is not
+    # the 13th day of the month.
+    assert next_due("0 0 13 * 5", thursday) == _ms(2026, 6, 12, 0, 0)
+
+    friday = _ms(2026, 6, 12, 0, 1)
+    # The 13th is a Saturday, so the following run matches day-of-month even
+    # though it is not Friday.
+    assert next_due("0 0 13 * 5", friday) == _ms(2026, 6, 13, 0, 0)
+
+
+def test_cron_wildcard_day_field_leaves_other_day_field_authoritative() -> None:
+    thursday = _ms(2026, 6, 11, 0, 1)
+
+    assert next_due("0 0 13 * *", thursday) == _ms(2026, 6, 13, 0, 0)
+    assert next_due("0 0 * * 5", thursday) == _ms(2026, 6, 12, 0, 0)
+
+
 def test_dispatch_failure_marks_failed_and_tick_continues(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.upsert(_job("bad", next_run_at=10))

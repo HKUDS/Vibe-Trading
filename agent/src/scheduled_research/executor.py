@@ -111,12 +111,19 @@ def _parse_cron_field(part: str, low: int, high: int) -> set[int] | None:
 
 
 def _day_matches(dt: datetime, doms: set[int] | None, months: set[int] | None, dows: set[int] | None) -> bool:
+    if months is not None and dt.month not in months:
+        return False
+
     cron_day_of_week = (dt.weekday() + 1) % 7  # cron convention: Sunday == 0
-    return (
-        (doms is None or dt.day in doms)
-        and (months is None or dt.month in months)
-        and (dows is None or cron_day_of_week in dows)
-    )
+    day_of_month_matches = doms is None or dt.day in doms
+    day_of_week_matches = dows is None or cron_day_of_week in dows
+
+    # Standard five-field cron treats day-of-month and day-of-week as an OR
+    # when both fields are restricted. A wildcard in either field keeps the
+    # other field authoritative.
+    if doms is not None and dows is not None:
+        return day_of_month_matches or day_of_week_matches
+    return day_of_month_matches and day_of_week_matches
 
 
 class ScheduledResearchExecutor:
