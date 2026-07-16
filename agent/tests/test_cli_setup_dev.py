@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import cli
+import pytest
 
 
 class TestIsWindows:
@@ -193,6 +194,77 @@ class TestCmdDev:
         frontend_cmd = frontend_call.args[0]
         port_idx = frontend_cmd.index("--port") + 1
         assert frontend_cmd[port_idx] == "6000"
+
+    @pytest.mark.parametrize(
+        ("backend_code", "frontend_code", "expected"),
+        [(7, None, 7), (None, 9, 9)],
+    )
+    def test_returns_first_child_failure_and_stops_sibling(
+        self,
+        tmp_path: Path,
+        backend_code: int | None,
+        frontend_code: int | None,
+        expected: int,
+    ) -> None:
+        frontend_dir = _make_frontend_with_vite(tmp_path)
+        backend = MagicMock()
+        backend.poll.return_value = backend_code
+        frontend = MagicMock()
+        frontend.poll.return_value = frontend_code
+
+        with patch(
+            "cli._legacy._resolve_node_and_npm",
+            return_value=("/usr/bin/node", "/usr/bin/npm"),
+        ):
+            with patch("cli._legacy.subprocess.Popen", side_effect=[backend, frontend]):
+                with patch.object(cli._legacy.time, "sleep", return_value=None):
+                    rc = cli._legacy.cmd_dev(frontend_dir=frontend_dir)
+
+        assert rc == expected
+        running_sibling = frontend if backend_code is not None else backend
+        running_sibling.terminate.assert_called_once()
+
+    def test_second_spawn_failure_cleans_up_backend(self, tmp_path: Path) -> None:
+        frontend_dir = _make_frontend_with_vite(tmp_path)
+        backend = MagicMock()
+        backend.poll.return_value = None
+
+        with patch(
+            "cli._legacy._resolve_node_and_npm",
+            return_value=("/usr/bin/node", "/usr/bin/npm"),
+        ):
+            with patch(
+                "cli._legacy.subprocess.Popen",
+                side_effect=[backend, OSError("frontend failed to start")],
+            ):
+                rc = cli._legacy.cmd_dev(frontend_dir=frontend_dir)
+
+        assert rc == cli._legacy.EXIT_RUN_FAILED
+        backend.terminate.assert_called_once()
+        backend.wait.assert_called_once()
+
+    def test_interrupt_cleans_up_both_children(self, tmp_path: Path) -> None:
+        frontend_dir = _make_frontend_with_vite(tmp_path)
+        backend = MagicMock()
+        backend.poll.return_value = None
+        frontend = MagicMock()
+        frontend.poll.return_value = None
+
+        with patch(
+            "cli._legacy._resolve_node_and_npm",
+            return_value=("/usr/bin/node", "/usr/bin/npm"),
+        ):
+            with patch("cli._legacy.subprocess.Popen", side_effect=[backend, frontend]):
+                with patch.object(
+                    cli._legacy.time, "sleep", side_effect=KeyboardInterrupt
+                ):
+                    rc = cli._legacy.cmd_dev(frontend_dir=frontend_dir)
+
+        assert rc == cli._legacy.EXIT_SUCCESS
+        backend.terminate.assert_called_once()
+        frontend.terminate.assert_called_once()
+        backend.wait.assert_called_once()
+        frontend.wait.assert_called_once()
 
 
 def _make_frontend_with_vite(tmp_path: Path) -> Path:

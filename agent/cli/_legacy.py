@@ -5316,9 +5316,8 @@ def cmd_dev(
     )
     console.print("[dim]Press Ctrl+C to stop both servers.[/dim]\n")
 
-    backend = subprocess.Popen(backend_cmd, cwd=str(AGENT_DIR))
-    frontend = subprocess.Popen(frontend_cmd, cwd=str(frontend_dir))
-    children = [backend, frontend]
+    children: List[subprocess.Popen] = []
+    exit_code = EXIT_SUCCESS
 
     def _terminate_all() -> None:
         for child in children:
@@ -5328,28 +5327,41 @@ def cmd_dev(
                 except OSError:
                     pass
 
-    # Wire signal handlers. On Windows, SIGTERM does not exist and signal
-    # handlers must be installed from the main thread; KeyboardInterrupt is
-    # the cross-platform path for Ctrl+C.
-    if threading.current_thread() is threading.main_thread():
-        try:
-            signal.signal(signal.SIGINT, lambda *_: _terminate_all())
-        except (ValueError, OSError):
-            pass
-        try:
-            signal.signal(signal.SIGTERM, lambda *_: _terminate_all())
-        except (AttributeError, ValueError, OSError):
-            pass
-
     try:
+        backend = subprocess.Popen(backend_cmd, cwd=str(AGENT_DIR))
+        children.append(backend)
+        frontend = subprocess.Popen(frontend_cmd, cwd=str(frontend_dir))
+        children.append(frontend)
+
+        # Wire signal handlers only after both children are tracked. On
+        # Windows, SIGTERM may not exist and handlers must be installed from
+        # the main thread; KeyboardInterrupt remains the portable Ctrl+C path.
+        if threading.current_thread() is threading.main_thread():
+            try:
+                signal.signal(signal.SIGINT, lambda *_: _terminate_all())
+            except (ValueError, OSError):
+                pass
+            try:
+                signal.signal(signal.SIGTERM, lambda *_: _terminate_all())
+            except (AttributeError, ValueError, OSError):
+                pass
+
         # Wait for whichever process exits first; if it's the backend we
         # bring the frontend down too, and vice versa.
         while True:
             time.sleep(0.5)
-            if backend.poll() is not None or frontend.poll() is not None:
+            return_codes = [backend.poll(), frontend.poll()]
+            if any(code is not None for code in return_codes):
+                exit_code = next(
+                    (code for code in return_codes if code not in (None, EXIT_SUCCESS)),
+                    EXIT_SUCCESS,
+                )
                 break
     except KeyboardInterrupt:
         pass
+    except OSError as exc:
+        console.print(f"[red]Failed to start development server:[/red] {exc}")
+        exit_code = EXIT_RUN_FAILED
     finally:
         _terminate_all()
         # Give the children a brief grace period, then force-kill.
@@ -5363,8 +5375,12 @@ def cmd_dev(
                     child.kill()
                 except OSError:
                     pass
+                try:
+                    child.wait(timeout=1.0)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
 
-    return EXIT_SUCCESS
+    return exit_code
 
 
 def main(argv: list[str] | None = None) -> int:
