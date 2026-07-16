@@ -106,6 +106,7 @@ export function RunDetail() {
   const [bulkChartProgress, setBulkChartProgress] = useState<ChartLoadProgress>({ done: 0, total: 0 });
   const chartCacheRef = useRef<ChartCache>({});
   const cancelBulkChartLoadRef = useRef(false);
+  const runGenerationRef = useRef(0);
 
   const hasValidation = !!run?.validation;
   const hasRunCard = !!run?.run_card;
@@ -118,11 +119,32 @@ export function RunDetail() {
   ];
 
   useEffect(() => {
-    if (!runId) return;
+    const generation = ++runGenerationRef.current;
+    cancelBulkChartLoadRef.current = true;
+    setRun(null);
+    setCode({});
+    setTab("chart");
+    setLoading(true);
+    setSelectedSymbol("");
+    setChartPickerSymbol("");
+    setSelectedSymbols([]);
+    chartCacheRef.current = {};
+    setChartCache({});
+    setChartLoadingSymbols({});
+    setBulkChartLoading(false);
+    setBulkChartProgress({ done: 0, total: 0 });
+
+    if (!runId) {
+      setLoading(false);
+      return;
+    }
+
+    const requestedRunId = runId;
     Promise.all([
-      api.getRun(runId, { chart_payload: "summary" }).catch(() => null),
-      api.getRunCode(runId).catch(() => ({})),
+      api.getRun(requestedRunId, { chart_payload: "summary" }).catch(() => null),
+      api.getRunCode(requestedRunId).catch(() => ({})),
     ]).then(([r, c]) => {
+      if (runGenerationRef.current !== generation) return;
       setRun(r);
       setCode(c || {});
       const firstSymbol = r?.chart_symbols?.[0] || Object.keys(r?.price_series || {})[0] || "";
@@ -133,9 +155,16 @@ export function RunDetail() {
       chartCacheRef.current = initialCache;
       setChartCache(initialCache);
       if (firstSymbol && !initialCache[firstSymbol]?.price_series?.[firstSymbol]?.length) {
-        void loadChartSymbol(firstSymbol);
+        void loadChartSymbol(firstSymbol, requestedRunId, generation);
       }
-    }).finally(() => setLoading(false));
+    }).finally(() => {
+      if (runGenerationRef.current === generation) setLoading(false);
+    });
+
+    return () => {
+      cancelBulkChartLoadRef.current = true;
+      if (runGenerationRef.current === generation) runGenerationRef.current += 1;
+    };
   }, [runId]);
 
   if (loading) {
@@ -165,12 +194,17 @@ export function RunDetail() {
 
   const ok = run.status === "success";
 
-  async function loadChartSymbol(symbol: string) {
-    if (!runId || !symbol) return;
+  async function loadChartSymbol(
+    symbol: string,
+    requestedRunId = runId,
+    generation = runGenerationRef.current,
+  ) {
+    if (!requestedRunId || !symbol || runGenerationRef.current !== generation) return;
     if (chartCacheRef.current[symbol]?.price_series?.[symbol]?.length) return;
     setChartLoadingSymbols((prev) => ({ ...prev, [symbol]: true }));
     try {
-      const nextRun = await api.getRun(runId, { chart_symbol: symbol });
+      const nextRun = await api.getRun(requestedRunId, { chart_symbol: symbol });
+      if (runGenerationRef.current !== generation) return;
       const nextCache = cacheFromRun(nextRun, symbol);
       const mergedCache = { ...chartCacheRef.current, ...nextCache };
       chartCacheRef.current = mergedCache;
@@ -182,11 +216,13 @@ export function RunDetail() {
         trade_log: nextRun.trade_log?.length ? nextRun.trade_log : prev.trade_log,
       } : nextRun);
     } finally {
-      setChartLoadingSymbols((prev) => {
-        const next = { ...prev };
-        delete next[symbol];
-        return next;
-      });
+      if (runGenerationRef.current === generation) {
+        setChartLoadingSymbols((prev) => {
+          const next = { ...prev };
+          delete next[symbol];
+          return next;
+        });
+      }
     }
   }
 
@@ -219,22 +255,25 @@ export function RunDetail() {
   async function handleLoadAllChartSymbols() {
     const symbols = run?.chart_symbols || [];
     if (symbols.length === 0 || bulkChartLoading) return;
+    const generation = runGenerationRef.current;
+    const requestedRunId = runId;
     cancelBulkChartLoadRef.current = false;
     setBulkChartLoading(true);
     setBulkChartProgress({ done: 0, total: symbols.length });
     try {
       for (let index = 0; index < symbols.length; index += 1) {
-        if (cancelBulkChartLoadRef.current) break;
+        if (cancelBulkChartLoadRef.current || runGenerationRef.current !== generation) break;
         const symbol = symbols[index];
         setSelectedSymbol(symbol);
         setChartPickerSymbol(symbol);
         setSelectedSymbols((prev) => prev.includes(symbol) ? prev : [...prev, symbol]);
-        await loadChartSymbol(symbol);
+        await loadChartSymbol(symbol, requestedRunId, generation);
+        if (runGenerationRef.current !== generation) break;
         setBulkChartProgress({ done: index + 1, total: symbols.length });
         await yieldToBrowser();
       }
     } finally {
-      setBulkChartLoading(false);
+      if (runGenerationRef.current === generation) setBulkChartLoading(false);
     }
   }
 
