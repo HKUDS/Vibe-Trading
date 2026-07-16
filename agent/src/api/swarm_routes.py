@@ -141,6 +141,8 @@ def register_swarm_routes(
 
         run = runtime._store.reconcile_run(loaded, write=True)
 
+        from src.swarm.serialization import serialize_task
+
         return {
             "id": run.id,
             "preset_name": run.preset_name,
@@ -148,7 +150,15 @@ def register_swarm_routes(
             "is_stale": runtime._store.is_run_stale(run),
             "user_vars": run.user_vars,
             "agents": [a.model_dump() for a in run.agents],
-            "tasks": [t.model_dump() for t in run.tasks],
+            "tasks": [
+                {
+                    **serialize_task(t),
+                    # Keep the existing REST field while sharing the public
+                    # serializer used by the other swarm read paths.
+                    "worker_iterations": getattr(t, "worker_iterations", 0),
+                }
+                for t in run.tasks
+            ],
             "created_at": run.created_at,
             "completed_at": run.completed_at,
             "final_report": run.final_report,
