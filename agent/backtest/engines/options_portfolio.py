@@ -17,7 +17,7 @@ Artifacts: equity.csv, metrics.csv, trades.csv, greeks.csv.
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
@@ -432,32 +432,20 @@ def run_options_backtest(
                     })
 
                 elif action == "close":
-                    # Close: find matching position
-                    matched = _find_matching_position(
-                        positions, underlying, leg_type, strike, expiry)
-                    if matched:
-                        pnl = (opt_price - matched.entry_price) * matched.qty * contract_multiplier
-                        abs_close = opt_price * abs(matched.qty) * contract_multiplier
-                        if matched.qty > 0:
-                            # Long close: sell to recover
-                            cash += abs_close * (1 - commission)
-                        else:
-                            # Short close: buy back
-                            cash -= abs_close * (1 + commission)
-
-                        trade_records.append({
-                            "timestamp": date_str,
-                            "code": underlying,
-                            "option_type": leg_type,
-                            "strike": strike,
-                            "expiry": expiry,
-                            "side": "close",
-                            "price": round(opt_price, 4),
-                            "qty": matched.qty,
-                            "pnl": round(pnl, 4),
-                            "entry_date": matched.entry_date,
-                        })
-                        positions.remove(matched)
+                    cash_delta, close_records = _close_positions_fifo(
+                        positions,
+                        underlying=underlying,
+                        option_type=leg_type,
+                        strike=strike,
+                        expiry=expiry,
+                        requested_qty=qty,
+                        exit_price=opt_price,
+                        contract_multiplier=contract_multiplier,
+                        commission=commission,
+                        timestamp=date_str,
+                    )
+                    cash += cash_delta
+                    trade_records.extend(close_records)
 
         # 4. Compute portfolio mark-to-market value and Greeks
         portfolio_value = cash
@@ -539,14 +527,20 @@ def run_options_backtest(
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 
-def _find_matching_position(
+def _close_positions_fifo(
     positions: List[OptionPosition],
+    *,
     underlying: str,
     option_type: str,
     strike: float,
     expiry: str,
-) -> Optional[OptionPosition]:
-    """Find a matching open position.
+    requested_qty: Any,
+    exit_price: float,
+    contract_multiplier: float,
+    commission: float,
+    timestamp: str,
+) -> tuple[float, List[Dict[str, Any]]]:
+    """Close an absolute quantity from matching positions in FIFO order.
 
     Args:
         positions: Current open positions.
@@ -554,18 +548,81 @@ def _find_matching_position(
         option_type: Option type.
         strike: Strike price.
         expiry: Expiry date string.
+        requested_qty: Absolute number of contracts to close. A negative input
+            is accepted for compatibility and interpreted by magnitude.
+        exit_price: Option price at close.
+        contract_multiplier: Cash multiplier per option contract.
+        commission: Proportional close commission.
+        timestamp: Close date written to trade records.
 
     Returns:
-        Matching position, or None if not found.
+        Cash change and one close record per consumed FIFO lot.
+
+    Raises:
+        ValueError: If quantity is zero/non-finite or exceeds matching lots.
     """
+    try:
+        close_qty = abs(float(requested_qty))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid option close quantity: {requested_qty!r}") from exc
+    if not np.isfinite(close_qty) or close_qty <= 0:
+        raise ValueError("option close quantity must be a positive finite number")
+
     expiry_ts = pd.Timestamp(expiry)
-    for pos in positions:
-        if (pos.underlying_code == underlying
-                and pos.option_type == option_type
-                and abs(pos.strike - strike) < 1e-6
-                and pos.expiry == expiry_ts):
-            return pos
-    return None
+    matches = [
+        pos
+        for pos in positions
+        if (
+            pos.underlying_code == underlying
+            and pos.option_type == option_type
+            and abs(pos.strike - strike) < 1e-6
+            and pos.expiry == expiry_ts
+        )
+    ]
+    available = sum(abs(float(pos.qty)) for pos in matches)
+    if close_qty > available + 1e-12:
+        raise ValueError(
+            f"cannot close {close_qty:g} option contract(s); only {available:g} available"
+        )
+
+    remaining = close_qty
+    cash_delta = 0.0
+    records: List[Dict[str, Any]] = []
+    for pos in matches:
+        if remaining <= 1e-12:
+            break
+        lot_qty = min(remaining, abs(float(pos.qty)))
+        signed_qty = lot_qty if pos.qty > 0 else -lot_qty
+        close_notional = exit_price * lot_qty * contract_multiplier
+        pnl = (exit_price - pos.entry_price) * signed_qty * contract_multiplier
+        if pos.qty > 0:
+            cash_delta += close_notional * (1 - commission)
+        else:
+            cash_delta -= close_notional * (1 + commission)
+
+        records.append(
+            {
+                "timestamp": timestamp,
+                "code": underlying,
+                "option_type": option_type,
+                "strike": strike,
+                "expiry": expiry,
+                "side": "close",
+                "price": round(exit_price, 4),
+                "qty": lot_qty,
+                "pnl": round(pnl, 4),
+                "entry_date": pos.entry_date,
+            }
+        )
+
+        residual = float(pos.qty) - signed_qty
+        if abs(residual) <= 1e-12:
+            positions.remove(pos)
+        else:
+            pos.qty = residual
+        remaining -= lot_qty
+
+    return cash_delta, records
 
 
 def _calc_options_metrics(
