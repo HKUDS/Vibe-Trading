@@ -7,6 +7,7 @@ Validates:
   - 1-share lots
   - India delivery cost stack (STT bilateral, stamp duty buy-only, GST, DP)
   - Engine routing (runner single-market + composite cross-market)
+  - _calc_pct_change handles both Tushare (percentage points) and Yahoo (decimal) formats
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import datetime as dt
 import pandas as pd
 import pytest
 
-from backtest.engines.india_equity import IndiaEquityEngine
+from backtest.engines.india_equity import IndiaEquityEngine, _calc_pct_change
 from backtest.models import Position
 
 
@@ -175,3 +176,105 @@ class TestRouting:
             {"initial_cash": 100_000}, ["RELIANCE.NS", "AAPL.US"]
         )
         assert isinstance(engines["india_equity"], IndiaEquityEngine)
+
+
+# ---------------------------------------------------------------------------
+# _calc_pct_change: close/pre_close priority + pct_chg heuristic
+# ---------------------------------------------------------------------------
+
+
+class TestCalcPctChange:
+    def test_close_pre_close_priority(self) -> None:
+        """close/pre_close takes priority over pct_chg when both are present."""
+        bar = pd.Series({"close": 110.0, "pre_close": 100.0, "pct_chg": 5.0})
+        result = _calc_pct_change(bar)
+        assert result is not None
+        assert result == pytest.approx(0.10, abs=1e-6)  # (110-100)/100 = 0.10
+
+    def test_tushare_pct_chg_format(self) -> None:
+        """Tushare pct_chg in percentage points (e.g. 5.0 = 5%)."""
+        bar = pd.Series({"pct_chg": 5.0})
+        result = _calc_pct_change(bar)
+        assert result is not None
+        assert result == pytest.approx(0.05, abs=1e-6)  # 5.0 / 100 = 0.05
+
+    def test_yahoo_pct_chg_decimal_format(self) -> None:
+        """Yahoo/yfinance pct_chg in decimal fraction (e.g. 0.05 = 5%)."""
+        bar = pd.Series({"pct_chg": 0.05})
+        result = _calc_pct_change(bar)
+        assert result is not None
+        assert result == pytest.approx(0.05, abs=1e-6)  # Already decimal, keep as-is
+
+    def test_large_pct_chg_assumed_percentage_points(self) -> None:
+        """Values > 1.0 are treated as percentage points."""
+        bar = pd.Series({"pct_chg": 10.0})  # 10% move
+        result = _calc_pct_change(bar)
+        assert result is not None
+        assert result == pytest.approx(0.10, abs=1e-6)  # 10.0 / 100 = 0.10
+
+    def test_small_pct_chg_assumed_decimal(self) -> None:
+        """Values <= 1.0 are treated as decimal fractions."""
+        bar = pd.Series({"pct_chg": 0.5})  # 50% move
+        result = _calc_pct_change(bar)
+        assert result is not None
+        assert result == pytest.approx(0.5, abs=1e-6)  # Already decimal
+
+    def test_negative_pct_chg_tushare(self) -> None:
+        """Negative Tushare pct_chg in percentage points."""
+        bar = pd.Series({"pct_chg": -5.0})  # -5% move
+        result = _calc_pct_change(bar)
+        assert result is not None
+        assert result == pytest.approx(-0.05, abs=1e-6)  # -5.0 / 100 = -0.05
+
+    def test_negative_pct_chg_yahoo(self) -> None:
+        """Negative Yahoo pct_chg in decimal fraction."""
+        bar = pd.Series({"pct_chg": -0.05})  # -5% move
+        result = _calc_pct_change(bar)
+        assert result is not None
+        assert result == pytest.approx(-0.05, abs=1e-6)  # Already decimal
+
+    def test_no_pct_data_returns_none(self) -> None:
+        """Returns None when no price or pct_chg data is available."""
+        bar = pd.Series({"volume": 1000})
+        result = _calc_pct_change(bar)
+        assert result is None
+
+    def test_nan_pct_chg_returns_none(self) -> None:
+        """Returns None when pct_chg is NaN."""
+        bar = pd.Series({"pct_chg": float("nan")})
+        result = _calc_pct_change(bar)
+        assert result is None
+
+    def test_pre_close_zero_returns_none(self) -> None:
+        """Returns None when pre_close is zero (avoids division by zero)."""
+        bar = pd.Series({"close": 100.0, "pre_close": 0.0})
+        result = _calc_pct_change(bar)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Circuit band with different pct_chg formats
+# ---------------------------------------------------------------------------
+
+
+class TestCircuitBandPctFormats:
+    def test_circuit_band_with_tushare_pct_chg(self) -> None:
+        """Circuit band works correctly with Tushare percentage point format."""
+        engine = _engine(price_limit=0.20)
+        # Tushare format: 20.0 = 20%
+        bar = pd.Series({"close": 120.0, "pre_close": 100.0, "pct_chg": 20.0})
+        assert engine.can_execute("RELIANCE.NS", 1, bar) is False  # Upper circuit
+
+    def test_circuit_band_with_yahoo_pct_chg(self) -> None:
+        """Circuit band works correctly with Yahoo decimal format."""
+        engine = _engine(price_limit=0.20)
+        # Yahoo format: 0.20 = 20%
+        bar = pd.Series({"close": 120.0, "pre_close": 100.0, "pct_chg": 0.20})
+        assert engine.can_execute("RELIANCE.NS", 1, bar) is False  # Upper circuit
+
+    def test_circuit_band_with_close_pre_close(self) -> None:
+        """Circuit band uses close/pre_close when available (most accurate)."""
+        engine = _engine(price_limit=0.20)
+        # close/pre_close = 120/100 = 20%
+        bar = pd.Series({"close": 120.0, "pre_close": 100.0, "pct_chg": 5.0})  # pct_chg is wrong
+        assert engine.can_execute("RELIANCE.NS", 1, bar) is False  # Uses close/pre_close

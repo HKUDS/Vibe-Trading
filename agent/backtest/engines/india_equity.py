@@ -32,7 +32,31 @@ from __future__ import annotations
 import pandas as pd
 
 from backtest.engines.base import BaseEngine
-from backtest.engines.china_a import _calc_pct_change
+
+
+def _calc_pct_change(bar: pd.Series):
+    """Calculate price change percentage from bar data.
+
+    Priority: close/pre_close > pct_chg (with heuristic).
+    Uses close/pre_close when available (most accurate). Falls back to pct_chg
+    only when price fields are absent. The heuristic treats absolute values > 1
+    as percentage points (Tushare convention) and divides by 100; values <= 1
+    are assumed to already be decimal fractions (Yahoo/yfinance convention).
+    """
+    close = bar.get("close")
+    pre_close = bar.get("pre_close")
+    if close is not None and pre_close is not None and pre_close > 0:
+        return (float(close) - float(pre_close)) / float(pre_close)
+
+    if "pct_chg" in bar.index:
+        val = bar["pct_chg"]
+        if pd.notna(val):
+            raw = float(val)
+            # Heuristic: values > 1 are likely percentage points (Tushare),
+            # values <= 1 are likely decimal fractions (Yahoo/yfinance).
+            return raw / 100.0 if abs(raw) > 1.0 else raw
+
+    return None
 
 
 class IndiaEquityEngine(BaseEngine):
