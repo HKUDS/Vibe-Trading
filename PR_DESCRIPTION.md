@@ -72,7 +72,7 @@ def _calc_pct_change(bar: pd.Series):
 
 Added 13 new tests in 2 test classes:
 
-**`TestCalcPctChange`** (10 tests):
+**`TestCalcPctChange`** (12 tests):
 - `test_close_pre_close_priority` - close/pre_close takes priority over pct_chg
 - `test_tushare_pct_chg_format` - Tushare percentage points (5.0 = 5%)
 - `test_yahoo_pct_chg_decimal_format` - Yahoo decimal (0.05 = 5%)
@@ -83,6 +83,8 @@ Added 13 new tests in 2 test classes:
 - `test_no_pct_data_returns_none` - no data returns None
 - `test_nan_pct_chg_returns_none` - NaN returns None
 - `test_pre_close_zero_returns_none` - division by zero protection
+- `test_extreme_move_heuristic_boundary` - 150% move treated as 1.5pp (fail-safe)
+- `test_extreme_move_with_close_pre_close` - extreme moves handled correctly with price data
 
 **`TestCircuitBandPctFormats`** (3 tests):
 - `test_circuit_band_with_tushare_pct_chg` - circuit works with Tushare format
@@ -91,7 +93,7 @@ Added 13 new tests in 2 test classes:
 
 ## Test Results
 
-All 30 tests pass (17 existing + 13 new):
+All 32 tests pass (17 existing + 15 new):
 
 ```
 tests/test_india_equity_engine.py::TestCanExecute::test_long_allowed PASSED
@@ -99,9 +101,11 @@ tests/test_india_equity_engine.py::TestCanExecute::test_short_blocked_by_default
 ... (15 more existing tests) ...
 tests/test_india_equity_engine.py::TestCalcPctChange::test_close_pre_close_priority PASSED
 tests/test_india_equity_engine.py::TestCalcPctChange::test_tushare_pct_chg_format PASSED
-... (11 more new tests) ...
+tests/test_india_equity_engine.py::TestCalcPctChange::test_extreme_move_heuristic_boundary PASSED
+tests/test_india_equity_engine.py::TestCalcPctChange::test_extreme_move_with_close_pre_close PASSED
+... (10 more new tests) ...
 
-============================= 30 passed in 2.25s ==============================
+============================= 32 passed in 2.50s ==============================
 ```
 
 Related engine tests also pass:
