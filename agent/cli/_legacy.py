@@ -1444,12 +1444,11 @@ def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: boo
     return _result_exit_code(result)
 
 
-def _build_history_from_trace(run_dir: Path) -> List[Dict[str, str]]:
+def _build_history_from_trace(trace_dir: Path) -> List[Dict[str, str]]:
     """Build conversation history from trace.jsonl."""
     from src.agent.trace import TraceWriter
 
-    trace_dir = TraceWriter.find_trace_dir(run_dir.name, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR)
-    if trace_dir is None:
+    if not (trace_dir / "trace.jsonl").exists():
         return []
     entries = TraceWriter.read(
         trace_dir,
@@ -1474,6 +1473,8 @@ def cmd_continue(
     no_rich: bool = False,
 ) -> int:
     """Continue an existing run."""
+    from src.agent.trace import TraceWriter
+
     run_dir = RUNS_DIR / run_id
     session_trace_dir = SESSIONS_DIR / run_id
     if not run_dir.exists() and not session_trace_dir.exists():
@@ -1482,10 +1483,17 @@ def cmd_continue(
             return EXIT_USAGE_ERROR
         console.print(f"[red]Run {run_id} not found[/red]")
         return EXIT_USAGE_ERROR
-    if not run_dir.exists():
-        run_dir.mkdir(parents=True, exist_ok=True)
+    trace_dir = TraceWriter.find_trace_dir(
+        run_id, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR
+    )
+    if trace_dir is None:
+        # Preserve support for an existing, empty run/session directory. Once a
+        # trace exists, ``find_trace_dir`` is authoritative so every later
+        # continuation reads and appends to the same conversation.
+        trace_dir = session_trace_dir if session_trace_dir.exists() else run_dir
+    trace_dir.mkdir(parents=True, exist_ok=True)
 
-    history = _build_history_from_trace(run_dir)
+    history = _build_history_from_trace(trace_dir)
     if not json_mode and no_rich:
         print(f"Continue {run_id}: {prompt[:120]}\n")
     if json_mode or no_rich:
@@ -1494,7 +1502,7 @@ def cmd_continue(
             result = _run_agent(
                 prompt,
                 history=history,
-                run_dir_override=str(run_dir),
+                run_dir_override=str(trace_dir),
                 max_iter=max_iter,
                 no_rich=no_rich,
                 stream_output=not json_mode,
@@ -1502,7 +1510,12 @@ def cmd_continue(
         except KeyboardInterrupt:
             if json_mode:
                 _print_json_result(
-                    {"status": "cancelled", "run_id": run_id, "run_dir": str(run_dir), "reason": "Interrupted"}
+                    {
+                        "status": "cancelled",
+                        "run_id": run_id,
+                        "run_dir": str(trace_dir),
+                        "reason": "Interrupted",
+                    }
                 )
             else:
                 print("\nInterrupted")
@@ -1522,7 +1535,7 @@ def cmd_continue(
             result = _run_agent(
                 prompt,
                 history=history,
-                run_dir_override=str(run_dir),
+                run_dir_override=str(trace_dir),
                 max_iter=max_iter,
                 dashboard=dashboard,
             )
