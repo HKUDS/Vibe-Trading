@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -950,14 +949,34 @@ def _write_summary(artifact_dir: Path, summary: str) -> None:
 
 
 def _collect_artifacts(artifact_dir: Path) -> list[str]:
-    """Collect all artifact file paths from agent's artifact directory.
+    """Collect regular artifacts as deterministic run-relative paths.
 
     Args:
         artifact_dir: Path to artifacts/{agent_id}/ directory.
 
     Returns:
-        List of artifact file path strings.
+        Sorted POSIX-style paths relative to the swarm run directory. Symlinks
+        and files that resolve outside the agent artifact directory are omitted.
     """
     if not artifact_dir.exists():
         return []
-    return [str(p) for p in artifact_dir.iterdir() if p.is_file()]
+
+    run_dir = artifact_dir.parent.parent.resolve()
+    artifact_root = artifact_dir.resolve()
+    if not artifact_root.is_relative_to(run_dir):
+        return []
+
+    artifacts: list[str] = []
+    for path in artifact_dir.rglob("*"):
+        try:
+            if path.is_symlink():
+                continue
+            resolved = path.resolve(strict=True)
+            if not resolved.is_relative_to(artifact_root) or not resolved.is_file():
+                continue
+            artifacts.append(resolved.relative_to(run_dir).as_posix())
+        except (OSError, RuntimeError, ValueError):
+            # A concurrently removed file, symlink loop, or containment
+            # failure is not a durable artifact and must not escape the run.
+            continue
+    return sorted(artifacts)
