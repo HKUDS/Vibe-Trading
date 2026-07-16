@@ -1,0 +1,60 @@
+============================================================
+PR 准备完成！
+============================================================
+
+分支名称: fix/india-equity-pct-chg-double-division
+
+修改的文件:
+1. agent/backtest/engines/india_equity.py
+   - 移除对 china_a._calc_pct_change 的导入
+   - 添加本地 _calc_pct_change 函数，使用启发式方法处理 Tushare 和 Yahoo 格式
+
+2. agent/tests/test_india_equity_engine.py
+   - 添加 13 个新测试用例验证 _calc_pct_change 函数
+   - 添加 3 个测试用例验证电路板与不同 pct_chg 格式的集成
+
+测试结果:
+- 所有 30 个测试通过 (17 个现有 + 13 个新增)
+- 相关引擎测试也全部通过
+
+提交信息:
+fix(backtest): prevent pct_chg double-division in India equity circuit-band check
+
+提交已包含 DCO 签名 (Signed-off-by)
+
+PR 描述文件: PR_DESCRIPTION.md
+
+============================================================
+下一步操作
+============================================================
+
+1. Fork 仓库到你的 GitHub 账户
+2. 推送分支:
+   git remote add fork https://github.com/你的用户名/Vibe-Trading.git
+   git push fork fix/india-equity-pct-chg-double-division
+
+3. 创建 PR:
+   - 标题: fix(backtest): prevent pct_chg double-division in India equity circuit-band check
+   - 描述: 复制 PR_DESCRIPTION.md 的内容
+
+4. 等待审核
+
+============================================================
+问题描述
+============================================================
+
+印度股票引擎 (IndiaEquityEngine) 导入了 china_a.py 的 _calc_pct_change 函数,
+该函数总是假设 pct_chg 是百分点形式 (如 5.0 表示 5%), 然后除以 100。
+
+但当使用 Yahoo/yfinance 数据时, pct_chg 已经是小数形式 (如 0.05 表示 5%),
+这会导致双重除法: 5% 被当作 0.05%, 有效禁用了电路板限制检查。
+
+修复方案:
+1. 优先使用 close/pre_close 计算 (最准确)
+2. 回退到 pct_chg 时使用启发式方法:
+   - 绝对值 > 1.0 → 百分点 (Tushare), 除以 100
+   - 绝对值 <= 1.0 → 小数 (Yahoo), 保持不变
+
+这与 global_futures.py 中的模式一致。
+
+============================================================

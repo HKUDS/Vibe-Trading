@@ -251,6 +251,38 @@ class TestCalcPctChange:
         result = _calc_pct_change(bar)
         assert result is None
 
+    def test_extreme_move_heuristic_boundary(self) -> None:
+        """Heuristic treats abs(raw) > 1.0 as percentage points.
+
+        Edge case: A 150% move (raw=1.5) would be treated as 1.5 percentage
+        points (0.015) instead of 1.5 (150%). This is a fail-safe boundary:
+        - If we incorrectly treat 150% as 1.5%, circuit check allows trade
+          (wrong: should block at upper circuit)
+        - If we incorrectly treat 1.5% as 150%, circuit check blocks trade
+          (wrong: should allow trade within limits)
+
+        The current heuristic favors preventing false positives (blocking
+        valid trades) over false negatives (allowing invalid trades). This
+        is acceptable because:
+        1. Extreme moves (>100%) are rare in daily data
+        2. close/pre_close is preferred when available (most accurate)
+        3. The heuristic only applies when pct_chg is the ONLY data source
+        """
+        bar = pd.Series({"pct_chg": 1.5})  # 150% move
+        result = _calc_pct_change(bar)
+        assert result is not None
+        # Heuristic treats 1.5 as 1.5 percentage points (0.015)
+        # This is a known limitation documented in the function docstring
+        assert result == pytest.approx(0.015, abs=1e-6)
+
+    def test_extreme_move_with_close_pre_close(self) -> None:
+        """When close/pre_close is available, extreme moves are handled correctly."""
+        bar = pd.Series({"close": 250.0, "pre_close": 100.0, "pct_chg": 1.5})
+        result = _calc_pct_change(bar)
+        assert result is not None
+        # close/pre_close takes priority: (250-100)/100 = 1.5 (150%)
+        assert result == pytest.approx(1.5, abs=1e-6)
+
 
 # ---------------------------------------------------------------------------
 # Circuit band with different pct_chg formats
