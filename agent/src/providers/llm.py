@@ -268,6 +268,8 @@ if ChatOpenAI is not None:
             for i, m in enumerate(payload["messages"]):
                 if m.get("role") != "assistant":
                     continue
+                if i >= len(messages):
+                    break
                 source_message = messages[i]
                 if caps.normalize_assistant_content and m.get("content") is None:
                     m["content"] = ""

@@ -741,3 +741,54 @@ class TestChatOpenAIWithReasoningOutboundPayload:
 
         assistant_msg = next(m for m in payload["messages"] if m["role"] == "assistant")
         assert "extra_content" not in assistant_msg["tool_calls"][0]
+
+
+class TestGetRequestPayloadLengthGuard:
+    """Issue #6: ``_get_request_payload`` must not IndexError on length divergence.
+
+    Regression coverage for ``ChatOpenAIWithReasoning._get_request_payload``:
+    when ``super()._convert_input(input_).to_messages()`` produces a
+    different-length list from ``payload["messages"]`` (built by the upstream
+    serializer), ``messages[i]`` would IndexError and silently bleed a prior
+    turn's ``source_message`` into the new turn. The fix breaks out of the
+    loop when ``i >= len(messages)``.
+    """
+
+    def _instance(self, model: str = "kimi-k2-0905-preview"):
+        if ChatOpenAIWithReasoning is None:
+            pytest.skip("langchain-openai is not installed")
+        os.environ.setdefault("OPENAI_API_KEY", "sk-test")
+        return ChatOpenAIWithReasoning(model=model, api_key="sk-test")
+
+    def test_get_request_payload_handles_short_messages_list(self) -> None:
+        """``_convert_input`` returning fewer messages must not IndexError."""
+        from langchain_core.messages import AIMessage, HumanMessage
+        from langchain_core.prompt_values import ChatPromptValue
+
+        instance = self._instance()
+        history = [
+            HumanMessage(content="hi"),
+            AIMessage(
+                content="",
+                additional_kwargs={"reasoning_content": "thinking..."},
+            ),
+        ]
+
+        # Force a divergent ``_convert_input`` so ``payload["messages"]``
+        # walks the conversation with a different length than the converted
+        # message list we look up in.
+        def _stub_convert(_input):
+            return ChatPromptValue(messages=[HumanMessage(content="synthetic")])
+
+        instance._convert_input = _stub_convert
+
+        # The guard prevents IndexError here:
+        payload = instance._get_request_payload(history)
+        assert "messages" in payload
+
+        # Sanity: an un-stubbed call still preserves reasoning_content.
+        payload = self._instance()._get_request_payload(history)
+        assistant_msg = next(
+            m for m in payload["messages"] if m["role"] == "assistant"
+        )
+        assert assistant_msg["reasoning_content"] == "thinking..."
