@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import logging
+import os
 import re
 import secrets
 import threading
@@ -353,19 +354,40 @@ def _require_shutdown_authorization(
     request: Request,
     cred: Optional[HTTPAuthorizationCredentials],
 ) -> None:
-    """Authorize the local shutdown control-plane action."""
+    """Authorize the local shutdown control-plane action.
+
+    Require an explicit confirmation and either a valid API key or a local-only
+    lab opt-in, so a bare loopback POST cannot stop the process.
+    """
     _reject_cross_site_browser_request(request)
+
+    confirm_q = (request.query_params.get("confirm") or "").strip().lower()
+    confirm_h = (request.headers.get("x-confirm-shutdown") or "").strip().lower()
+    if confirm_q not in {"1", "true", "yes"} and confirm_h not in {"1", "true", "yes"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Shutdown requires confirm=true (query) or X-Confirm-Shutdown: true",
+        )
+
     api_key = _configured_api_key()
     if api_key:
         token = _auth_credential_from_header_or_query(cred, None, allow_query=False)
         if not token or not hmac.compare_digest(token, api_key):
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
         return
-    if not _is_local_client(request):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="API_AUTH_KEY is required for non-local API access",
-        )
+
+    allow_local = os.environ.get("VIBE_TRADING_ALLOW_LOCAL_SHUTDOWN", "").strip().lower()
+    if allow_local in {"1", "true", "yes", "on"} and _is_local_client(request):
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=(
+            "Shutdown disabled without API_AUTH_KEY. "
+            "Set API_AUTH_KEY and send Authorization, or set "
+            "VIBE_TRADING_ALLOW_LOCAL_SHUTDOWN=1 for lab use only."
+        ),
+    )
 
 
 def _validate_api_auth(

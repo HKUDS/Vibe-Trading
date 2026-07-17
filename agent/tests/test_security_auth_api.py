@@ -501,7 +501,7 @@ def test_loopback_shutdown_requires_bearer_when_api_key_configured(
     monkeypatch.setattr(api_server, "_API_KEY", "secret")
     monkeypatch.setattr(api_server, "_terminate_current_process", lambda: called.append(True))
 
-    response = _local_client().post("/system/shutdown")
+    response = _local_client().post("/system/shutdown?confirm=true")
 
     assert response.status_code == 401
     assert called == []
@@ -517,7 +517,7 @@ def test_loopback_shutdown_rejects_cross_site_browser_request(
     monkeypatch.setattr(api_server, "_terminate_current_process", lambda: called.append(True))
 
     response = _local_client().post(
-        "/system/shutdown",
+        "/system/shutdown?confirm=true",
         headers={"Origin": "https://attacker.example"},
     )
 
@@ -534,7 +534,7 @@ def test_loopback_shutdown_accepts_valid_bearer(
     monkeypatch.setattr(api_server, "_terminate_current_process", lambda: called.append(True))
 
     response = _local_client().post(
-        "/system/shutdown",
+        "/system/shutdown?confirm=true",
         headers={"Authorization": "Bearer secret", "Origin": "http://127.0.0.1:8899"},
     )
 
