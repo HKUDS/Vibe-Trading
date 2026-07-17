@@ -135,22 +135,22 @@ describe("session cache", () => {
     expect(useAgentStore.getState().getCachedSession("unknown")).toBeUndefined();
   });
 
-  it("evicts oldest when cache exceeds SESSION_CACHE_MAX (5)", () => {
-    for (let i = 1; i <= 6; i++) {
+  it("evicts oldest when cache exceeds SESSION_CACHE_MAX (20)", () => {
+    for (let i = 1; i <= 21; i++) {
       useAgentStore.getState().cacheSession(`sess-${i}`, [makeMessage()]);
     }
     expect(useAgentStore.getState().getCachedSession("sess-1")).toBeUndefined();
-    expect(useAgentStore.getState().getCachedSession("sess-6")).toBeDefined();
+    expect(useAgentStore.getState().getCachedSession("sess-21")).toBeDefined();
   });
 
   it("re-caching same key moves it to newest", () => {
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 20; i++) {
       useAgentStore.getState().cacheSession(`sess-${i}`, [makeMessage()]);
     }
     // Re-cache sess-1 → now it's the newest
     useAgentStore.getState().cacheSession("sess-1", [makeMessage({ content: "refreshed" })]);
     // Add one more → sess-2 should be evicted (oldest)
-    useAgentStore.getState().cacheSession("sess-6", [makeMessage()]);
+    useAgentStore.getState().cacheSession("sess-21", [makeMessage()]);
     expect(useAgentStore.getState().getCachedSession("sess-2")).toBeUndefined();
     expect(useAgentStore.getState().getCachedSession("sess-1")).toBeDefined();
   });

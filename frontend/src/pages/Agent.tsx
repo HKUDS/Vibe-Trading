@@ -373,14 +373,14 @@ export function Agent() {
             try {
               const runData = await api.getRun(runId);
               if (isReportWorthyRun(runData)) {
-                fetchedMetrics = runData.metrics;
+                fetchedMetrics = runData.metrics as Record<string, number> | undefined;
                 fetchedCurve = runData.equity_curve?.map((e) => ({ time: e.time, equity: Number(e.equity) }));
                 showCard = true;
               }
-              // succeeded but not report-worthy (plain chat turn) → skip card
+              // plain chat / analysis turns have no metrics → no "完整报告" card
             } catch {
-              // fetch failed (auth/404/network) → can't tell, show link as fallback
-              showCard = true;
+              // Don't show an empty Full Report link when the run is missing or not a backtest
+              showCard = false;
             }
             if (showCard) {
               agentMsgs.push({
@@ -403,10 +403,11 @@ export function Agent() {
       act().setSessionLoading(false);
       act().cacheSession(sid, agentMsgs);
       setTimeout(() => forceScrollToBottom(), 50);
-    } catch {
+    } catch (error) {
       act().setSessionLoading(false);
+      toast.error(error instanceof Error ? error.message : t("agent.failedToLoadHistory", { defaultValue: "Failed to load chat history" }));
     }
-  }, [forceScrollToBottom]);
+  }, [forceScrollToBottom, t]);
 
   const refreshSessionMessages = useCallback(async (sid: string) => {
     const gen = genRef.current + 1;
@@ -472,9 +473,13 @@ export function Agent() {
         touch();
         setReasoningActive(false);
         const toolName = String(d.tool || "");
+        // Prefer backend call_id so concurrent same-name tools do not collide.
+        const callId = String(d.call_id || d.id || "");
+        const id = callId || `${toolName}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         // Only update toolCalls tracker (no message creation during streaming)
         act().addToolCall({
-          id: toolName, tool: toolName,
+          id,
+          tool: toolName,
           arguments: (d.arguments as Record<string, string>) ?? {},
           status: "running", timestamp: Date.now(),
         });
@@ -484,10 +489,18 @@ export function Agent() {
       tool_result: (d) => {
         touch();
         const toolName = String(d.tool || "");
-        // Drop any in-flight coalesced progress for this tool.
+        const callId = String(d.call_id || d.id || "");
+        const tools = act().toolCalls;
+        const targetId =
+          (callId && tools.some((t) => t.id === callId) ? callId : "") ||
+          [...tools].reverse().find((t) => t.tool === toolName && t.status === "running")?.id ||
+          callId ||
+          toolName;
+        // Drop any in-flight coalesced progress for this tool call.
+        pendingProgressRef.current.delete(targetId);
         pendingProgressRef.current.delete(toolName);
         // Only update tracker (no message creation during streaming)
-        act().updateToolCall(toolName, {
+        act().updateToolCall(targetId, {
           status: d.status === "ok" ? "ok" : "error",
           preview: String(d.preview || ""),
           elapsed_ms: Number(d.elapsed_ms || 0),
@@ -507,8 +520,16 @@ export function Agent() {
         // Keep streaming state alive during long-running tools (swarm, backtest)
         if (act().status !== "streaming") act().setStatus("streaming");
         const toolName = String(d.tool || "");
-        if (!toolName) return;
-        act().updateToolCall(toolName, {
+        if (!toolName && !d.call_id) return;
+        const callId = String(d.call_id || d.id || "");
+        const tools = act().toolCalls;
+        const targetId =
+          (callId && tools.some((t) => t.id === callId) ? callId : "") ||
+          [...tools].reverse().find((t) => t.tool === toolName && t.status === "running")?.id ||
+          callId ||
+          toolName;
+        if (!targetId) return;
+        act().updateToolCall(targetId, {
           elapsed_s: Number(d.elapsed_s || 0),
         });
       },
@@ -516,22 +537,30 @@ export function Agent() {
       tool_progress: (d) => {
         touch();
         const toolName = String(d.tool || "");
-        if (!toolName) return;
+        if (!toolName && !d.call_id) return;
+        const callId = String(d.call_id || d.id || "");
+        const tools = act().toolCalls;
+        const targetId =
+          (callId && tools.some((t) => t.id === callId) ? callId : "") ||
+          [...tools].reverse().find((t) => t.tool === toolName && t.status === "running")?.id ||
+          callId ||
+          toolName;
+        if (!targetId) return;
         const payload: NonNullable<ToolCallEntry["progress"]> = {};
         if (typeof d.stage === "string" && d.stage) payload.stage = d.stage;
         if (typeof d.message === "string" && d.message) payload.message = d.message;
         if (typeof d.current === "number") payload.current = d.current;
         if (typeof d.total === "number") payload.total = d.total;
-        // Coalesce: keep latest payload per tool, flush once per animation frame.
-        pendingProgressRef.current.set(toolName, payload);
+        // Coalesce: keep latest payload per tool call id, flush once per frame.
+        pendingProgressRef.current.set(targetId, payload);
         if (progressRafRef.current) return;
         progressRafRef.current = requestAnimationFrame(() => {
           progressRafRef.current = 0;
           const pending = pendingProgressRef.current;
           if (pending.size === 0) return;
           const store = act();
-          for (const [tool, progress] of pending) {
-            store.updateToolCall(tool, { progress });
+          for (const [id, progress] of pending) {
+            store.updateToolCall(id, { progress });
           }
           pending.clear();
         });
@@ -592,12 +621,13 @@ export function Agent() {
           try {
             const runData = await api.getRun(runId);
             if (isReportWorthyRun(runData)) {
-              runMetrics = runData.metrics;
+              runMetrics = runData.metrics as Record<string, number> | undefined;
               runCurve = runData.equity_curve?.map(e => ({ time: e.time, equity: Number(e.equity) }));
               showCard = true;
             }
           } catch {
-            showCard = true; // fetch failed → show link as fallback
+            // No empty Full Report card for non-backtest / missing runs
+            showCard = false;
           }
           if (showCard || shadowId) {
             s.addMessage({
@@ -832,9 +862,11 @@ export function Agent() {
 
   useEffect(() => {
     api.getLLMSettings().then((s) => {
-      sseTimeoutMsRef.current = s.sse_timeout_seconds * 1000;
-    }).catch(() => {});
-  }, []);
+      sseTimeoutMsRef.current = (s.sse_timeout_seconds || 90) * 1000;
+    }).catch((error) => {
+      toast.error(error instanceof Error ? error.message : t("agent.failedToLoadSettings", { defaultValue: "Failed to load LLM settings" }));
+    });
+  }, [t]);
 
   /* Safety timeout: if streaming but no SSE event for sseTimeoutMsRef.current ms, reset to idle */
   useEffect(() => {
