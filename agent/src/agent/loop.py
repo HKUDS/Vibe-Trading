@@ -101,6 +101,15 @@ def _stream_retry_delay_s() -> float:
     return get_env_config().agent_tuning.vt_stream_retry_delay_s
 
 
+def _stream_max_retries() -> int:
+    """Return the configured retry count for transient stream failures."""
+    ov = _override("STREAM_MAX_RETRIES")
+    if ov is not None:
+        return max(0, int(ov))
+    from src.config.accessor import get_env_config
+    return max(0, get_env_config().agent_tuning.vt_stream_max_retries)
+
+
 def _tool_timeout_seconds() -> float:
     ov = _override("TOOL_TIMEOUT_SECONDS")
     if ov is not None:
@@ -1596,6 +1605,7 @@ _LEGACY_LAZY = {
     "HEARTBEAT_INTERVAL_S": _heartbeat_interval_s,
     "REASONING_DELTA_MIN_INTERVAL_S": _reasoning_delta_min_interval_s,
     "STREAM_RETRY_DELAY_S": _stream_retry_delay_s,
+    "STREAM_MAX_RETRIES": _stream_max_retries,
     "TOOL_TIMEOUT_SECONDS": _tool_timeout_seconds,
     "GOAL_MAX_CONTINUATIONS": _goal_max_continuations,
 }
