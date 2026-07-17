@@ -22,8 +22,6 @@ from src.tools.redaction import is_sensitive_arg, redact_payload
         "passphrase",
         "secret",
         "headers",
-        "content",
-        "env",
         "api_token",  # marker substring
         "access_token",  # marker substring
         "x-authorization",  # marker substring
@@ -32,6 +30,28 @@ from src.tools.redaction import is_sensitive_arg, redact_payload
 )
 def test_is_sensitive_arg_matches(key: str) -> None:
     assert is_sensitive_arg(key) is True
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        # Common non-sensitive payload field names — must NOT redact. Generic
+        # ``content`` covers file/markdown/document bodies, chat messages, and
+        # tool responses. Generic ``env`` is everywhere in env-var dumps and
+        # config schemas. Scoping sensitive variants precisely (e.g.
+        # ``http_content``, ``env_dump``) keeps legitimate fields readable.
+        "content",
+        "env",
+        "Content",
+        "ENV",
+    ],
+)
+def test_is_sensitive_arg_keeps_benign_content_and_env(key: str) -> None:
+    """Reverting the historical over-redaction of generic ``content`` /
+    ``env`` keys: they appear in too many benign payloads to scrub by name
+    alone, and the credentials inside them are caught by the *token* /
+    *api_key* marker substring path."""
+    assert is_sensitive_arg(key) is False
 
 
 @pytest.mark.parametrize(

@@ -21,9 +21,10 @@ Two independent concerns live here:
 
 from __future__ import annotations
 
+import os
+import re
 import sys
 import sysconfig
-from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -64,8 +65,6 @@ _PII_EXACT_KEYS = {
 _SENSITIVE_ARG_KEYS = {
     "api_key",
     "authorization",
-    "content",
-    "env",
     "headers",
     "passphrase",
     "password",
@@ -100,7 +99,11 @@ _SENSITIVE_ARG_KEYS_FOLDED = frozenset(_fold_key(k) for k in _SENSITIVE_ARG_KEYS
 _SENSITIVE_ARG_MARKERS_FOLDED = tuple(_fold_key(m) for m in _SENSITIVE_ARG_MARKERS)
 
 
-@cache
+# NOTE: deliberately NOT @cache-decorated. ``Path.cwd()`` is captured at
+# import time by a cached version, and a later ``os.chdir`` would silently
+# invalidate the cached root set. The list is small (<10 paths) and this
+# runs on tool-result hot paths, so the recomputation cost is negligible
+# compared to the up-to-date redaction guarantee.
 def _internal_roots() -> list[str]:
     # AGENT_DIR derived like agent/src/providers/llm.py:90
     # (Path(__file__).resolve().parents[2]); redaction.py is agent/src/tools/
@@ -134,8 +137,21 @@ def redact_internal_paths(text: object) -> str:
     if not s:
         return s
     for root in _internal_roots():
-        if root in s:
-            s = s.replace(root, _SENTINEL)
+        # Path-aware boundary check: ``"/Users/alice"`` is a prefix of
+        # ``"/Users/alice/foo"`` but NOT of ``"/Users/alicetest/bar"``. A
+        # naive ``root in s`` substring match over-redacts the unrelated
+        # second path; match ``root`` followed by a path separator (or the
+        # root appearing as the entire string) anywhere in the input.
+        for sep in (os.sep, "\\"):
+            boundary = root + sep
+            idx = 0
+            while True:
+                pos = s.find(boundary, idx)
+                if pos < 0:
+                    break
+                s = s[:pos] + _SENTINEL + s[pos + len(root):]
+                # Advance past the sentinel so we don't re-match inside it.
+                idx = pos + len(_SENTINEL)
     return s
 
 
@@ -207,3 +223,55 @@ def redact_payload(obj: Any) -> Any:
     if isinstance(obj, list):
         return [redact_payload(item) for item in obj]
     return obj
+
+
+#: Pattern-based redactor for free-form text surfaces (shell command output,
+#: error messages, log lines) that :func:`redact_payload` cannot scrub because
+#: it only walks structured keys. Each entry is ``(regex, label)``; the regex
+#: matches ``key=value``, ``key: value``, or bare token-shaped values, and the
+#: match is replaced with ``"<label>=<redacted>"``. The patterns are scoped to
+#: known credential / PII field names so a benign number like a price or
+#: timestamp in shell output is never mangled.
+#
+#: Ordering matters: ``bearer`` runs first so the ``authorization:`` /
+#: ``token=`` key=value pattern downstream does not consume the literal
+#: ``Bearer`` keyword as part of the value (which would leave the JWT body
+#: visible).
+_TEXT_REDACT_PATTERNS: tuple[tuple[str, str], ...] = (
+    # Bearer / OAuth header values (run first; see note above).
+    (r"(?i)\bbearer\s+([A-Za-z0-9._\-]+)",
+     "Bearer [REDACTED]"),
+    # Common credential key=value / key:value pairs. Negative lookahead skips
+    # ``Bearer`` so it falls through to the bearer regex above.
+    (r"(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret"
+     r"|passphrase|password|secret|token|authorization)\b\s*[:=]\s*"
+     r"(?!Bearer\b)([^\s,;\"']+)",
+     r"\1=[REDACTED]"),
+)
+
+
+def redact_text(text: object) -> str:
+    """Scrub credential-shaped values from a free-form string.
+
+    Used for shell command output, error messages, and log lines where
+    :func:`redact_payload` is a no-op (it only walks structured keys). Each
+    :data:`_TEXT_REDACT_PATTERNS` entry replaces the matched secret value with
+    ``[REDACTED]`` while leaving the surrounding text — labels, paths, error
+    context — readable.
+
+    Args:
+        text: Free-form string (or any object coerced via :func:`str`).
+            ``None`` becomes the empty string to match
+            :func:`redact_internal_paths`.
+
+    Returns:
+        The redacted string. Never raises on non-string input.
+    """
+    if text is None:
+        return ""
+    s = text if isinstance(text, str) else str(text)
+    if not s:
+        return s
+    for pattern, replacement in _TEXT_REDACT_PATTERNS:
+        s = re.sub(pattern, replacement, s)
+    return s
