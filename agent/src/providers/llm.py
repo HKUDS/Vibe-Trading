@@ -416,9 +416,14 @@ def _build_native_deepseek(
 
 
 def _load_env_file(path: Path) -> None:
-    """Load a single .env file into os.environ (setdefault, no override)."""
+    """Load a single .env file into os.environ.
+
+    The project .env is canonical by default; set
+    ``VIBE_TRADING_DOTENV_OVERRIDE=0`` to preserve existing shell values.
+    """
+    override = bool(get_env_config().llm.vibe_trading_dotenv_override)
     if load_dotenv is not None:
-        load_dotenv(dotenv_path=path, override=False)
+        load_dotenv(dotenv_path=path, override=override)
     else:
         for raw in path.read_text(encoding="utf-8").splitlines():
             line = raw.strip()
@@ -426,8 +431,10 @@ def _load_env_file(path: Path) -> None:
                 continue
             key, value = line.split("=", 1)
             key = key.strip()
-            if key:
-                os.environ.setdefault(key, value.strip().strip('"').strip("'"))
+            if not key:
+                continue
+            if override or key not in os.environ:
+                os.environ[key] = value.strip().strip('"').strip("'")
 
 
 def _ensure_dotenv() -> None:

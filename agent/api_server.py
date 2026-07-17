@@ -156,6 +156,18 @@ from src.api.scheduled_routes import (  # noqa: E402
 @app.on_event("startup")
 async def _run_startup_preflight() -> None:
     """Run preflight checks on server startup."""
+    # Load shared configuration before any cached EnvConfig is consumed.
+    try:
+        from src.config.accessor import reset_env_config
+        from src.providers.llm import _ensure_dotenv
+        import src.providers.llm as _llm_mod
+
+        _llm_mod._dotenv_loaded = False
+        _ensure_dotenv()
+        reset_env_config()
+    except Exception:
+        logger.exception("Failed to load shared ~/.vibe-trading/.env on startup")
+
     from src.preflight import run_preflight
 
     run_preflight(console)

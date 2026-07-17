@@ -136,6 +136,10 @@ class LLMConfig(_EnvBase):
         default="https://chatgpt.com/backend-api/codex/responses",
     )
     openai_model: str = Field(alias="OPENAI_MODEL", default="")
+    vibe_trading_dotenv_override: EnvBool = Field(
+        alias="VIBE_TRADING_DOTENV_OVERRIDE",
+        default=True,
+    )
 
 
 # ---------------------------------------------------------------------------
