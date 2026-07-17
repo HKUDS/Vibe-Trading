@@ -4039,7 +4039,7 @@ def cmd_connector_orders(
             str(order.get("order_type") or ""),
             str(order.get("total_quantity") or ""),
             str(order.get("limit_price") or ""),
-            str(order_status.get("status") or ""),
+            str(order_status.get("status") or "") if isinstance(order_status, dict) else str(order_status or ""),
         )
     console.print(table)
     return EXIT_SUCCESS
