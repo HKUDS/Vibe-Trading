@@ -355,4 +355,43 @@ describe("useSSE — SSE ticket auth (VT-003)", () => {
     // The long-lived key must never appear in the stream URL.
     expect(MockEventSource.latest.url).not.toContain("remote-key");
   });
+
+  it("ignores a ticket that resolves after a newer connection", async () => {
+    localStorage.setItem("vibe_trading_api_auth_key", "remote-key");
+    const ticketResolvers: Array<(response: Response) => void> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            ticketResolvers.push(resolve);
+          }),
+      ),
+    );
+
+    const { result } = renderHook(() => useSSE());
+    act(() => {
+      result.current.connect("http://test/session-a/events", {});
+      result.current.connect("http://test/session-b/events", {});
+    });
+
+    await act(async () => {
+      ticketResolvers[1](
+        new Response(JSON.stringify({ ticket: "TICKET-B" }), { status: 200 }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      ticketResolvers[0](
+        new Response(JSON.stringify({ ticket: "TICKET-A" }), { status: 200 }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(MockEventSource.instances).toHaveLength(1);
+    expect(MockEventSource.latest.url).toContain("session-b/events");
+    expect(MockEventSource.latest.url).toContain("ticket=TICKET-B");
+  });
 });
