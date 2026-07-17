@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from backtest.loaders.registry import VALID_SOURCES
 from src.agent.tools import BaseTool
 from src.market_data import DEFAULT_MAX_ROWS, fetch_market_data_json
+
+
+_MARKET_DATA_SOURCES = ["auto", *sorted(VALID_SOURCES - {"auto"})]
 
 
 class MarketDataTool(BaseTool):
@@ -35,31 +39,12 @@ class MarketDataTool(BaseTool):
             },
             "source": {
                 "type": "string",
-                "enum": [
-                    "auto",
-                    "yfinance",
-                    "yahoo",
-                    "okx",
-                    "ccxt",
-                    "tushare",
-                    "baostock",
-                    "tencent",
-                    "akshare",
-                    "mootdx",
-                    "eastmoney",
-                    "sina",
-                    "stooq",
-                    "finnhub",
-                    "alphavantage",
-                    "tiingo",
-                    "fmp",
-                ],
+                "enum": _MARKET_DATA_SOURCES,
                 "description": (
                     "Data source. 'auto' detects from symbol format with fallback. "
-                    "Free, no key: yfinance/yahoo (US/HK equities), okx/ccxt "
-                    "(crypto), baostock/tencent/eastmoney/sina/akshare/mootdx "
-                    "(China A-shares), stooq (global EOD). Key-gated REST: tushare "
-                    "(China A-shares), finnhub/alphavantage/tiingo/fmp (US/global)."
+                    "Explicit sources may require credentials, a local service, "
+                    "or paid quota. Being listed does not mean a source is "
+                    "configured in the current environment."
                 ),
                 "default": "auto",
             },

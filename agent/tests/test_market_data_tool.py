@@ -1,14 +1,39 @@
 from __future__ import annotations
 
+import importlib
 import json
 
 import pandas as pd
+import pytest
 
+from backtest.loaders.registry import VALID_SOURCES
 from src.market_data import fetch_market_data_json
 from src.swarm.models import SwarmAgentSpec
 from src.swarm.presets import list_presets, load_preset
 from src.swarm.worker import build_worker_prompt
 from src.tools import build_swarm_registry
+from src.tools.market_data_tool import MarketDataTool
+
+
+def test_market_data_source_schema_matches_loader_registry():
+    source_enum = MarketDataTool.parameters["properties"]["source"]["enum"]
+
+    assert source_enum[0] == "auto"
+    assert set(source_enum) == VALID_SOURCES
+    assert source_enum[1:] == sorted(VALID_SOURCES - {"auto"})
+
+
+def test_market_data_source_schema_does_not_resolve_loaders(monkeypatch):
+    from backtest.loaders import registry as loader_registry
+    from src.tools import market_data_tool
+
+    def fail_if_called():
+        pytest.fail("schema construction must not resolve or instantiate loaders")
+
+    monkeypatch.setattr(loader_registry, "_ensure_registered", fail_if_called)
+    reloaded = importlib.reload(market_data_tool)
+
+    assert reloaded.MarketDataTool.parameters["properties"]["source"]["enum"]
 
 
 def test_market_data_json_is_strict_when_loader_returns_nan():
