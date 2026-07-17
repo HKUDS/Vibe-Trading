@@ -7,12 +7,26 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
 _AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
+
+logger = logging.getLogger(__name__)
+
+
+class SessionBusyError(RuntimeError):
+    """Raised when a session already has an in-flight run.
+
+    The session service rejects concurrent sends to keep one AgentLoop per
+    session — see :meth:`SessionService.send_message`. Callers should treat
+    this as 409 Conflict and surface a "session busy" notice so the user can
+    cancel the previous run or wait for it to complete.
+    """
+
 
 from src.session.events import EventBus
 from src.session.models import (
@@ -50,6 +64,10 @@ class SessionService:
         self.store = store
         self.event_bus = event_bus
         self.runs_dir = runs_dir
+        # Single concurrency guard: a session can only run one AgentLoop at a
+        # time. Storing the AgentLoop (instead of the asyncio.Task) lets
+        # cancel_current() flip the cancel flag while the task itself remains
+        # running and is responsible for tearing down the entry.
         self._active_loops: Dict[str, "AgentLoop"] = {}
         self._search_index = get_shared_index()
 
@@ -100,6 +118,14 @@ class SessionService:
 
         Returns:
             Dictionary containing message_id and attempt_id.
+
+        Raises:
+            ValueError: If the session does not exist.
+            SessionBusyError: If the session already has an in-flight run.
+                Concurrent sends are rejected so two AgentLoops never run
+                against the same session at once; the UI should display this
+                as "session busy" and either wait for the running attempt to
+                finish or call cancel_current() first.
         """
         session = self.store.get_session(session_id)
         if not session:
@@ -112,6 +138,16 @@ class SessionService:
 
         if role != "user":
             return {"message_id": message.message_id}
+
+        # Concurrency guard: a second user message while a run is in flight
+        # would spawn a parallel AgentLoop against the same session,
+        # double-spending tokens and racing on attempt.metadata. Reject with
+        # a typed error so the API layer can return 409 Conflict.
+        if session_id in self._active_loops:
+            raise SessionBusyError(
+                f"Session {session_id} already has an in-flight run; "
+                "cancel it or wait for completion before sending another message."
+            )
 
         attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
         self.store.create_attempt(attempt)
@@ -157,11 +193,30 @@ class SessionService:
                 include_shell_tools=include_shell_tools,
                 session_config=dict(session.config),
             )
-            if result.get("status") == "success":
-                attempt.mark_completed(summary=result.get("content", ""))
+            status = result.get("status")
+            if status == "success":
+                content = result.get("content", "")
+                if not content:
+                    # Empty LLM completion is technically a success transport
+                    # but it leaves the user with no actionable output. Log a
+                    # warning and attach a diagnostic placeholder so the UI
+                    # surfaces the anomaly instead of returning a misleading
+                    # "Strategy execution completed." later.
+                    logger.warning(
+                        "AgentLoop reported success with empty content for "
+                        "attempt %s (session %s)",
+                        attempt.attempt_id,
+                        session.session_id,
+                    )
+                    content = "(LLM returned empty completion)"
+                attempt.mark_completed(summary=content)
+            elif status == "cancelled":
+                # Distinct from FAILED: a cooperative cancel is not an outage.
+                attempt.mark_cancelled(reason=result.get("reason", "cancelled by user"))
             else:
                 attempt.mark_failed(error=result.get("reason", "unknown"))
             attempt.run_dir = result.get("run_dir")
+            attempt.metrics = result.get("metrics")
 
             self.store.update_attempt(attempt)
             reply_metadata = {}
@@ -179,9 +234,15 @@ class SessionService:
             )
             self.store.append_message(reply)
             self._search_index.index_message(session.session_id, "assistant", reply.content)
+            if attempt.status == AttemptStatus.COMPLETED:
+                terminal_event = "attempt.completed"
+            elif attempt.status == AttemptStatus.CANCELLED:
+                terminal_event = "attempt.cancelled"
+            else:
+                terminal_event = "attempt.failed"
             self.event_bus.emit(
                 session.session_id,
-                "attempt.completed" if attempt.status == AttemptStatus.COMPLETED else "attempt.failed",
+                terminal_event,
                 {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
                  "summary": attempt.summary, "error": attempt.error, "run_dir": attempt.run_dir},
             )
@@ -257,6 +318,21 @@ class SessionService:
             max_iterations=50,
             persistent_memory=pm,
         )
+        # Single concurrency guard: refuse to overwrite an active loop.
+        # send_message() is the primary gate today, but this belt-and-braces
+        # assignment prevents a future caller from silently bumping the
+        # tracked agent, which would leave cancel_current() cancelling the
+        # wrong loop. The stale entry is logged so a regression is visible
+        # in production logs.
+        if session_id in self._active_loops:
+            logger.warning(
+                "Refusing to overwrite active AgentLoop for session %s; "
+                "the existing run owns the cancel handle.",
+                session_id,
+            )
+            raise SessionBusyError(
+                f"Session {session_id} already has an in-flight AgentLoop."
+            )
         self._active_loops[session_id] = agent
 
         # Build the message history context.
@@ -317,15 +393,41 @@ class SessionService:
 
         # Trim from the newest messages within a character budget of roughly 3000 tokens.
         MAX_HISTORY_CHARS = 12000
+        # Each oversized message is hard-capped at half the budget so a single
+        # runaway user/assistant blob cannot push the whole prior context out
+        # of the window and leave the LLM with no history to reason over.
+        PER_MESSAGE_CAP = MAX_HISTORY_CHARS // 2
         total_chars = 0
         trimmed: list = []
         for msg in reversed(history):
+            raw_content = msg.get("content", "")
+            if len(raw_content) > PER_MESSAGE_CAP:
+                # Keep the tail (most recent framing) and drop the head with a
+                # marker so the LLM still knows the message was truncated.
+                kept = (
+                    f"…[truncated {len(raw_content) - PER_MESSAGE_CAP} chars]…"
+                    + raw_content[-PER_MESSAGE_CAP:]
+                )
+                msg = {**msg, "content": kept}
             msg_len = len(msg.get("content", ""))
             if total_chars + msg_len > MAX_HISTORY_CHARS:
                 break
             trimmed.append(msg)
             total_chars += msg_len
-        return list(reversed(trimmed))
+        trimmed = list(reversed(trimmed))
+        # Defensive fallback: if every prior message was dropped (e.g. a single
+        # 15KB user message arrived just before this turn), keep at least the
+        # most recent prior user message truncated to PER_MESSAGE_CAP so the
+        # LLM still has *some* grounding instead of an empty history array.
+        if not trimmed and history:
+            last = history[-1]
+            raw_content = last.get("content", "")
+            kept = (
+                f"…[truncated {len(raw_content) - PER_MESSAGE_CAP} chars]…"
+                + raw_content[-PER_MESSAGE_CAP:]
+            ) if len(raw_content) > PER_MESSAGE_CAP else raw_content
+            trimmed = [{**last, "content": kept}]
+        return trimmed
 
     @staticmethod
     def _load_metrics(run_dir: Path) -> Optional[Dict[str, Any]]:
@@ -348,4 +450,6 @@ class SessionService:
         """Format the final execution result message."""
         if attempt.status == AttemptStatus.COMPLETED:
             return attempt.summary or "Strategy execution completed."
+        if attempt.status == AttemptStatus.CANCELLED:
+            return attempt.error or "Run cancelled."
         return f"Execution failed: {attempt.error or 'unknown error'}"
