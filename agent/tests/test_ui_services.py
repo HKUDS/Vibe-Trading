@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 import backtest.runner as runner
+from backtest.loaders.base import NoAvailableSourceError
 from src.ui_services import reconstruct_price_series
 
 
@@ -174,3 +175,125 @@ def test_fetch_data_map_delegates_auto_routing(
     assert calls == [(["AAPL.US"], config, "1D")]
     assert result.source == "auto"
     assert result.effective_sources == ["yfinance"]
+
+
+def test_fetch_auto_falls_back_only_for_missing_symbols(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = pd.DataFrame(
+        {"open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0]},
+        index=pd.DatetimeIndex([pd.Timestamp("2026-01-01")]),
+    )
+    calls: list[tuple[str, list[str]]] = []
+
+    class PrimaryLoader:
+        name = "primary"
+
+        def fetch(self, codes, start_date, end_date, **kwargs):
+            del start_date, end_date, kwargs
+            calls.append((self.name, list(codes)))
+            return {"AAPL.US": frame}
+
+    class BackupLoader:
+        name = "backup"
+
+        def is_available(self):
+            return True
+
+        def fetch(self, codes, start_date, end_date, **kwargs):
+            del start_date, end_date, kwargs
+            calls.append((self.name, list(codes)))
+            return {code: frame for code in codes}
+
+    monkeypatch.setattr(runner, "resolve_loader", lambda market: PrimaryLoader())
+    monkeypatch.setitem(runner.FALLBACK_CHAINS, "us_equity", ["primary", "backup"])
+    monkeypatch.setitem(runner.LOADER_REGISTRY, "backup", BackupLoader)
+
+    result = runner._fetch_auto(
+        ["AAPL.US", "MSFT.US"],
+        {"start_date": "2026-01-01", "end_date": "2026-01-02"},
+    )
+
+    assert list(result) == ["AAPL.US", "MSFT.US"]
+    assert calls == [
+        ("primary", ["AAPL.US", "MSFT.US"]),
+        ("backup", ["MSFT.US"]),
+    ]
+
+
+def test_explicit_fetch_falls_back_only_for_missing_symbols(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = pd.DataFrame(
+        {"open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0]},
+        index=pd.DatetimeIndex([pd.Timestamp("2026-01-01")]),
+    )
+    calls: list[tuple[str, list[str]]] = []
+
+    class PrimaryLoader:
+        def fetch(self, codes, start_date, end_date, **kwargs):
+            del start_date, end_date, kwargs
+            calls.append(("primary", list(codes)))
+            return {"AAPL.US": frame}
+
+    class BackupLoader:
+        def is_available(self):
+            return True
+
+        def fetch(self, codes, start_date, end_date, **kwargs):
+            del start_date, end_date, kwargs
+            calls.append(("backup", list(codes)))
+            return {code: frame for code in codes}
+
+    monkeypatch.setattr(runner, "_get_loader", lambda source: PrimaryLoader)
+    monkeypatch.setitem(runner.FALLBACK_CHAINS, "us_equity", ["backup"])
+    monkeypatch.setitem(runner.LOADER_REGISTRY, "backup", BackupLoader)
+
+    result = runner.fetch_data_map(
+        {
+            "codes": ["AAPL.US", "MSFT.US"],
+            "start_date": "2026-01-01",
+            "end_date": "2026-01-02",
+            "source": "primary",
+        }
+    )
+
+    assert list(result.data_map) == ["AAPL.US", "MSFT.US"]
+    assert result.effective_sources == ["primary", "backup"]
+    assert calls == [
+        ("primary", ["AAPL.US", "MSFT.US"]),
+        ("backup", ["MSFT.US"]),
+    ]
+
+
+def test_fetch_stops_when_fallbacks_leave_symbols_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = pd.DataFrame(
+        {"open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0]},
+        index=pd.DatetimeIndex([pd.Timestamp("2026-01-01")]),
+    )
+
+    class PartialLoader:
+        name = "primary"
+
+        def fetch(self, codes, start_date, end_date, **kwargs):
+            del codes, start_date, end_date, kwargs
+            return {"AAPL.US": frame}
+
+    config = {"start_date": "2026-01-01", "end_date": "2026-01-02"}
+    monkeypatch.setattr(runner, "resolve_loader", lambda market: PartialLoader())
+    monkeypatch.setitem(runner.FALLBACK_CHAINS, "us_equity", [])
+
+    with pytest.raises(NoAvailableSourceError, match="MSFT.US"):
+        runner._fetch_auto(["AAPL.US", "MSFT.US"], config)
+
+    monkeypatch.setattr(runner, "_get_loader", lambda source: PartialLoader)
+    with pytest.raises(NoAvailableSourceError, match="MSFT.US"):
+        runner.fetch_data_map(
+            {
+                **config,
+                "codes": ["AAPL.US", "MSFT.US"],
+                "source": "primary",
+            }
+        )

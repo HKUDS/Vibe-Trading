@@ -584,6 +584,16 @@ def _normalize_codes(codes: List[str], source: str) -> List[str]:
     return codes
 
 
+def _map_result_to_requested(
+    result: dict,
+    requested_codes: List[str],
+    provider_codes: List[str],
+) -> dict:
+    """Restore provider-normalized result keys to this fetch's request keys."""
+    aliases = dict(zip(provider_codes, requested_codes))
+    return {aliases.get(code, code): frame for code, frame in result.items()}
+
+
 def _columns_required_from_factor_spec(spec: Any) -> list[str]:
     """Extract ``columns_required`` from supported factor spec shapes.
 
@@ -1043,23 +1053,45 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
         src_name = getattr(loader, "name", "unknown")
         normalized_codes = _normalize_codes(market_codes, src_name)
         fields = config.get("extra_fields") if src_name == "tushare" else None
-        result = loader.fetch(normalized_codes, start_date, end_date, fields=fields, interval=interval)
+        result = loader.fetch(
+            normalized_codes,
+            start_date,
+            end_date,
+            fields=fields,
+            interval=interval,
+        )
+        market_result = _map_result_to_requested(
+            result, market_codes, normalized_codes
+        )
+        missing = [code for code in market_codes if code not in market_result]
 
-        # Runtime fallback: try remaining sources when primary returns empty
-        if not result:
-            for fb_name in FALLBACK_CHAINS.get(market, []):
-                if fb_name == src_name or fb_name not in LOADER_REGISTRY:
-                    continue
-                fb_loader = LOADER_REGISTRY[fb_name]()
-                if not fb_loader.is_available():
-                    continue
-                fb_codes = _normalize_codes(market_codes, fb_name)
-                result = fb_loader.fetch(fb_codes, start_date, end_date, interval=interval)
-                if result:
-                    logger.info("Runtime fallback: %s -> %s for %s", src_name, fb_name, market)
-                    break
+        # Retry only missing symbols so a partial primary response does not
+        # silently shrink the requested universe or refetch successful data.
+        for fb_name in FALLBACK_CHAINS.get(market, []):
+            if not missing:
+                break
+            if fb_name == src_name or fb_name not in LOADER_REGISTRY:
+                continue
+            fb_loader = LOADER_REGISTRY[fb_name]()
+            if not fb_loader.is_available():
+                continue
+            fb_codes = _normalize_codes(missing, fb_name)
+            fallback_result = fb_loader.fetch(
+                fb_codes, start_date, end_date, interval=interval
+            )
+            mapped = _map_result_to_requested(fallback_result, missing, fb_codes)
+            if mapped:
+                market_result.update(mapped)
+                missing = [code for code in missing if code not in mapped]
+                logger.info(
+                    "Runtime fallback: %s -> %s for %s", src_name, fb_name, market
+                )
 
-        merged.update(result)
+        if missing:
+            raise NoAvailableSourceError(
+                f"incomplete data for {market}; missing symbols: {missing}"
+            )
+        merged.update(market_result)
 
     return merged
 
@@ -1084,8 +1116,10 @@ def fetch_data_map(config: dict) -> DataFetchResult:
     if source == "auto":
         data_map = _fetch_auto(codes, config, interval)
         loader: Any = _AutoLoader(data_map)
+        used_sources: list[str] = []
     else:
         codes = _normalize_codes(codes, source)
+        primary_source = source
         loader = _get_loader(source)()
         data_map = loader.fetch(
             codes,
@@ -1094,8 +1128,9 @@ def fetch_data_map(config: dict) -> DataFetchResult:
             fields=config.get("extra_fields") or None,
             interval=interval,
         )
-        if data_map and len(data_map) < len(codes):
-            missing = set(codes) - set(data_map)
+        used_sources = [source] if data_map else []
+        missing = [code for code in codes if code not in data_map]
+        if missing:
             logger.warning(
                 "source=%s returned data for %d/%d symbols; missing: %s",
                 source,
@@ -1103,31 +1138,48 @@ def fetch_data_map(config: dict) -> DataFetchResult:
                 len(codes),
                 missing,
             )
-        if not data_map and codes:
+        if missing:
             market = _detect_market(codes[0])
             for fallback_source in FALLBACK_CHAINS.get(market, []):
-                if fallback_source == source or fallback_source not in LOADER_REGISTRY:
+                if not missing:
+                    break
+                if (
+                    fallback_source == primary_source
+                    or fallback_source not in LOADER_REGISTRY
+                ):
                     continue
                 fallback_loader = LOADER_REGISTRY[fallback_source]()
                 if not fallback_loader.is_available():
                     continue
-                fallback_codes = _normalize_codes(codes, fallback_source)
-                data_map = fallback_loader.fetch(
+                fallback_codes = _normalize_codes(missing, fallback_source)
+                fallback_result = fallback_loader.fetch(
                     fallback_codes,
                     config.get("start_date", ""),
                     config.get("end_date", ""),
                     interval=interval,
                 )
-                if data_map:
-                    logger.info("Runtime fallback: %s -> %s", source, fallback_source)
-                    source = fallback_source
-                    codes = fallback_codes
-                    loader = fallback_loader
-                    break
+                mapped = _map_result_to_requested(
+                    fallback_result, missing, fallback_codes
+                )
+                if mapped:
+                    data_map.update(mapped)
+                    missing = [code for code in missing if code not in mapped]
+                    if not used_sources:
+                        source = fallback_source
+                        loader = fallback_loader
+                    used_sources.append(fallback_source)
+                    logger.info(
+                        "Runtime fallback: %s -> %s", primary_source, fallback_source
+                    )
+
+        if missing:
+            raise NoAvailableSourceError(
+                f"incomplete data for source={primary_source}; missing symbols: {missing}"
+            )
 
     data_map = _sanitize_data_map(data_map)
     effective_sources = (
-        sorted(_group_codes_by_source(codes)) if source == "auto" else [source]
+        sorted(_group_codes_by_source(codes)) if source == "auto" else used_sources
     )
     return DataFetchResult(
         data_map=data_map,
