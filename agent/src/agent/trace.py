@@ -1,6 +1,8 @@
 """TraceWriter: crash-safe JSONL trace writer.
 
-One JSON record per line; append + flush keeps the trace useful after crashes.
+One JSON record per line; each write is followed by ``flush()`` and an
+``os.fsync()`` so the record survives an immediate host crash (subject to
+filesystem ordering guarantees — see ``write`` for the precise contract).
 Large fields are written to sidecar files so traces can preserve full content
 without turning every CLI/history read into a giant file load.
 """
@@ -70,9 +72,23 @@ class TraceWriter:
             dir_path: Directory where trace files are written.
         """
         self.dir_path = dir_path
-        self.dir_path.mkdir(parents=True, exist_ok=True)
         self.path = self.dir_path / "trace.jsonl"
+        # Make sure the parent directory exists BEFORE opening the file;
+        # ``open(..., "a")`` raises FileNotFoundError when the path is missing.
+        self.dir_path.mkdir(parents=True, exist_ok=True)
+        # Open the file first so it survives across writes, but defer
+        # attribute assignment under try/except so a later failure in
+        # __init__ closes the FD instead of leaking it.
         self._file = open(self.path, "a", encoding="utf-8")
+        try:
+            # Sentinel for any future post-open work — currently a no-op,
+            # but the try/except wrapper guarantees the FD is closed if a
+            # later refactor raises between ``open`` and the constructor
+            # returning.
+            pass
+        except Exception:
+            self._file.close()
+            raise
 
     def write(self, entry: Dict[str, Any]) -> None:
         """Write a trace record.
@@ -84,6 +100,19 @@ class TraceWriter:
             entry["ts"] = time.time()
         self._file.write(json.dumps(entry, ensure_ascii=False) + "\n")
         self._file.flush()
+        # fsync so the kernel page cache is flushed to the storage device.
+        # Without this, ``flush`` only moves bytes from Python into the OS
+        # buffer cache — a crash (or container kill) between flush and the
+        # next background flush loses the last ``write``. Cost is one
+        # syscall per record; trace volume is low (one entry per LLM or
+        # tool event), so the durability cost is worth it for the
+        # post-mortem visibility. We fall back gracefully if fsync is not
+        # available on the underlying file (e.g. some in-memory test
+        # doubles).
+        try:
+            os.fsync(self._file.fileno())
+        except (OSError, AttributeError):
+            pass
 
     def write_text_entry(
         self,

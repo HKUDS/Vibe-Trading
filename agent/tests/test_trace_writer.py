@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -127,3 +129,32 @@ def test_find_trace_dir_prefers_sessions_then_runs(tmp_path: Path) -> None:
 
     assert TraceWriter.find_trace_dir("abc", runs_dir=runs, sessions_dir=sessions) == session_dir
     assert TraceWriter.find_trace_dir("missing", runs_dir=runs, sessions_dir=sessions) is None
+
+
+def test_write_calls_fsync_for_crash_safety(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Issue #5: ``write`` flushes AND fsyncs so the trace survives a hard crash.
+
+    Regression for the historical "crash-safe" docstring claim that only
+    flushed. Without ``os.fsync`` the kernel page cache can lose the last
+    record on a host kill / power event.
+    """
+    import os as _os
+
+    fsync_calls: list[tuple[str, int]] = []
+
+    real_fsync = _os.fsync
+
+    def _tracking_fsync(fd: int, *args: Any, **kwargs: Any) -> Any:
+        fsync_calls.append((_os.path.realpath(f"/dev/fd/{fd}"), fd))
+        return real_fsync(fd)
+
+    monkeypatch.setattr(trace_mod.os, "fsync", _tracking_fsync)
+    trace = TraceWriter(tmp_path)
+    try:
+        trace.write({"type": "answer", "iter": 1, "content": "ok"})
+        assert len(fsync_calls) == 1
+    finally:
+        trace.close()
