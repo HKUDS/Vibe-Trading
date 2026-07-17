@@ -115,6 +115,11 @@ anthropic = [
     # when absent, so the base install stays lean for users who don't use it.
     "langchain-anthropic>=1.3.0,<2",
 ]
+krx = [
+    # Free, no-auth Korea (KRX: KOSPI/KOSDAQ) EOD OHLCV. Without this extra
+    # the kr_equity chain falls back to yahoo/yfinance (.KS/.KQ suffixes).
+    "pykrx>=1.0.45",
+]
 ashare = [
     # Free, no-auth A-share source over BaoStock's TCP protocol; bypasses the
     # HTTP CDN IP blocks that affect eastmoney-backed sources. The Tencent

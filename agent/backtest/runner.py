@@ -532,6 +532,7 @@ _MARKET_TO_SOURCE = {
     "us_equity": "yfinance",
     "hk_equity": "yfinance",
     "india_equity": "yahoo",
+    "kr_equity": "pykrx",
     "crypto": "okx",
     "futures": "tushare",
     "fund": "tushare",
@@ -1019,6 +1020,12 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
     if "india_equity" in markets:
         from backtest.engines.india_equity import IndiaEquityEngine
         return IndiaEquityEngine(config)
+
+    # Korea equity routing — same reason as India: its effective source
+    # (``pykrx``) has no Wave-1 branch and would fall through to the default.
+    if "kr_equity" in markets:
+        from backtest.engines.korea_equity import KoreaEquityEngine
+        return KoreaEquityEngine(config)
 
     # Original routing (Wave 1)
     if source in ("okx", "ccxt"):

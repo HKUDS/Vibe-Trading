@@ -32,6 +32,9 @@ _SOURCE_PATTERNS = [
     # China-market loaders that cannot resolve them.
     (re.compile(r"^[A-Z0-9]+=F$", re.I), "yahoo"),
     (re.compile(r"^[A-Z]+=X$", re.I), "yahoo"),
+    # Korea: KOSPI (005930.KS) / KOSDAQ (247540.KQ), 6-digit codes. Served by
+    # pykrx (KRX public data, no auth); registry falls back to Yahoo/yfinance.
+    (re.compile(r"^\d{6}\.(KS|KQ)$", re.I), "pykrx"),
     (re.compile(r"^[A-Z]+-USDT$", re.I), "okx"),
     (re.compile(r"^[A-Z]+/USDT$", re.I), "ccxt"),
     # Forex pairs and metals (EUR/USD, XAU/USD, EURUSD.FX). mt5 is the head of

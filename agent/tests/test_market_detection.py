@@ -56,6 +56,9 @@ class TestDetectMarket:
             ("M&M.NS", "india_equity"),  # ampersand
             ("BAJAJ-AUTO.NS", "india_equity"),  # hyphen
             ("500325.BO", "india_equity"),  # numeric BSE scrip code
+            # Korea equity (KRX)
+            ("005930.KS", "kr_equity"),  # KOSPI
+            ("247540.KQ", "kr_equity"),  # KOSDAQ
             # Crypto
             ("BTC-USDT", "crypto"),
             ("ETH-USDT", "crypto"),
@@ -101,6 +104,8 @@ class TestDetectSource:
             ("0700.HK", "yfinance"),
             ("RELIANCE.NS", "yahoo"),
             ("500325.BO", "yahoo"),
+            ("005930.KS", "pykrx"),
+            ("247540.KQ", "pykrx"),
             ("BTC-USDT", "okx"),
             ("IF2406.CFFEX", "tushare"),
             ("EUR/USD", "akshare"),
