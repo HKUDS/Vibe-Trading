@@ -190,8 +190,9 @@ def _fetch_price_history(
             normalization in v1).
         market: Journal market label (e.g. ``"china_a"``).
         start: Inclusive fetch start (already buffered for indicator warmup).
-        end: Inclusive fetch end — never later than the roundtrip's buy_dt, so
-            look-ahead is structurally impossible.
+        end: Inclusive fetch end. Entry features still exclude the buy date
+            because this loader returns completed daily bars, not intraday
+            availability timestamps.
 
     Returns:
         A ``trade_date``-indexed OHLCV frame, or ``None`` when unavailable.
@@ -224,17 +225,18 @@ def _fetch_price_history(
 
 
 def _as_of_index(frame: pd.DataFrame, buy_dt: pd.Timestamp) -> pd.DataFrame:
-    """Slice a price frame to bars dated on or before *buy_dt*.
+    """Slice a daily price frame to bars completed before *buy_dt*.
 
     The loader frame is indexed by a tz-naive ``DatetimeIndex`` at day
     granularity; ``buy_dt`` carries a time-of-day and may be tz-aware. Normalize
-    to a tz-naive date before slicing, otherwise the ``.loc`` comparison raises.
+    to a tz-naive date before filtering. A bar labelled with the buy date is
+    excluded because its daily close was not available at an intraday entry.
     """
     as_of = pd.Timestamp(buy_dt)
     if as_of.tzinfo is not None:
         as_of = as_of.tz_localize(None)
     as_of = as_of.normalize()
-    return frame.loc[:as_of]
+    return frame.loc[frame.index < as_of]
 
 
 def _price_features_as_of(
@@ -243,9 +245,9 @@ def _price_features_as_of(
 ) -> dict[str, float]:
     """Compute price-context features as-of *buy_dt* from a price frame.
 
-    Every value is read from bars dated ``<= buy_dt`` only; bars in the
-    ``(buy_dt, sell_dt]`` exit window are never consulted. Insufficient history
-    leaves the affected feature as ``NaN``.
+    Every value is read from completed daily bars strictly before the buy date;
+    buy-day and later bars are never consulted. Insufficient history leaves the
+    affected feature as ``NaN``.
     """
     out: dict[str, float] = {name: float("nan") for name in _PRICE_FEATURES}
     if frame is None:

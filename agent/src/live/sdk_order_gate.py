@@ -28,7 +28,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.live.audit import LiveActionEvent, write_live_action
-from src.live.daily_count import increment_daily_count, read_daily_count
+from src.live.daily_count import (
+    DailyOrderLockUnavailable,
+    daily_order_lock,
+    increment_daily_count,
+    read_daily_count,
+)
 from src.live.enforcement import (
     BREACH_KIND_INSTRUMENT,
     BREACH_KIND_UNIVERSE,
@@ -100,15 +105,29 @@ def execute_live_order(
 
     positions = _safe_read(connector_module, "get_positions", config)
     balance = _safe_read(connector_module, "get_account_snapshot", config)
-    daily_count = read_daily_count(broker)
 
-    breach = check_mandate(
-        mandate, intent, positions, balance,
-        broker=broker, remote_tool=_REMOTE_TOOL, daily_count=daily_count,
-    )
+    try:
+        with daily_order_lock(broker):
+            daily_count = read_daily_count(broker)
+            breach = check_mandate(
+                mandate, intent, positions, balance,
+                broker=broker, remote_tool=_REMOTE_TOOL, daily_count=daily_count,
+            )
 
-    if breach is None:
-        return _allow(broker, session_id, connector_module, config, intent, place_kwargs, mandate)
+            if breach is None:
+                return _allow(
+                    broker, session_id, connector_module, config,
+                    intent, place_kwargs, mandate,
+                )
+    except DailyOrderLockUnavailable as exc:
+        return _deny(
+            broker,
+            session_id,
+            str(exc),
+            ["mandate", "expiry", "halt_flag", "daily_order_lock"],
+            mandate,
+            intent=intent,
+        )
 
     reauth = breach.kind not in (BREACH_KIND_UNIVERSE, BREACH_KIND_INSTRUMENT)
     return _deny_breach(broker, session_id, breach, mandate, intent, reauth)

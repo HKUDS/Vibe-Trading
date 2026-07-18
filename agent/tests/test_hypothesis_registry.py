@@ -72,6 +72,43 @@ def test_reject_invalid_status(storage_path: Path) -> None:
         registry.update(hyp.hypothesis_id, status="live_trading")
 
 
+@pytest.mark.parametrize(
+    ("updates", "error"),
+    [
+        ({"title": "   "}, "title is required"),
+        ({"title": "Changed title", "thesis": "\t\n"}, "thesis is required"),
+    ],
+)
+def test_update_rejects_blank_required_fields_before_mutation(
+    storage_path: Path,
+    updates: dict[str, str],
+    error: str,
+) -> None:
+    registry = HypothesisRegistry()
+    hyp = registry.create(title="Original title", thesis="Original thesis")
+    before = storage_path.read_text(encoding="utf-8")
+
+    with pytest.raises(ValueError, match=error):
+        registry.update(hyp.hypothesis_id, **updates)
+
+    assert storage_path.read_text(encoding="utf-8") == before
+    persisted = HypothesisRegistry().list()[0]
+    assert persisted.title == "Original title"
+    assert persisted.thesis == "Original thesis"
+
+
+def test_update_tool_reports_blank_required_field_without_persisting_it(storage_path: Path) -> None:
+    registry = HypothesisRegistry()
+    hyp = registry.create(title="Tool title", thesis="Tool thesis")
+
+    result = json.loads(UpdateHypothesisTool().execute(hypothesis_id=hyp.hypothesis_id, title="  "))
+
+    assert result == {"status": "error", "error": "title is required"}
+    persisted = HypothesisRegistry().list()[0]
+    assert persisted.title == "Tool title"
+    assert persisted.thesis == "Tool thesis"
+
+
 def test_link_backtest_run_card(storage_path: Path) -> None:
     registry = HypothesisRegistry()
     hyp = registry.create(title="ETF momentum", thesis="ETF momentum persists monthly.")

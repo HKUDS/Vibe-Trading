@@ -32,6 +32,16 @@ _INTERVAL_MAP = {
     "1H": "1h", "4H": "4h", "1D": "1d",
 }
 
+_TIMEFRAME_DELTA = {
+    "1m": pd.Timedelta(minutes=1),
+    "5m": pd.Timedelta(minutes=5),
+    "15m": pd.Timedelta(minutes=15),
+    "30m": pd.Timedelta(minutes=30),
+    "1h": pd.Timedelta(hours=1),
+    "4h": pd.Timedelta(hours=4),
+    "1d": pd.Timedelta(days=1),
+}
+
 # P12-b: ccxt had no request timeout and an unbounded paginated fetch with
 # no retry budget, so a transient disconnect hung get_market_data for 10+
 # minutes. Cap each HTTP call, bound transient retries, and enforce a hard
@@ -228,6 +238,7 @@ class DataLoader:
         limit = 1000
         deadline = time.monotonic() + _CCXT_FETCH_BUDGET_S
         label = f"ccxt fetch for {symbol}"
+        hit_page_cap = True
 
         for _ in range(200):
             check_budget(deadline, label, budget_s=_CCXT_FETCH_BUDGET_S)
@@ -247,10 +258,12 @@ class DataLoader:
                 label=label,
             )
             if not ohlcv:
+                hit_page_cap = False
                 break
             all_rows.extend(ohlcv)
             last_ts = ohlcv[-1][0]
             if last_ts >= end_ms or len(ohlcv) < limit:
+                hit_page_cap = False
                 break
             cursor = last_ts + 1
 
@@ -271,4 +284,15 @@ class DataLoader:
         df = df[["open", "high", "low", "close", "volume"]].dropna(
             subset=["open", "high", "low", "close"]
         )
-        return df if not df.empty else None
+        if df.empty:
+            return None
+
+        tolerance = _TIMEFRAME_DELTA.get(timeframe)
+        if tolerance is None:
+            raise ValueError(f"unsupported CCXT timeframe: {timeframe}")
+        if hit_page_cap and df.index[-1] < end_dt - tolerance:
+            raise ValueError(
+                f"incomplete CCXT history for {symbol}: requested "
+                f"[{start_dt}, {end_dt}), received [{df.index[0]}, {df.index[-1]}]"
+            )
+        return df

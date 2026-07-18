@@ -2839,7 +2839,9 @@ def _api_auth_headers() -> Dict[str, str]:
     return {"Authorization": f"Bearer {key}"} if key else {}
 
 
-def _live_api_call(method: str, path: str, *, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _live_api_call(
+    method: str, path: str, *, body: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """Call an R6 live-runner endpoint and decode the JSON response.
 
     Args:
@@ -2856,11 +2858,12 @@ def _live_api_call(method: str, path: str, *, body: Optional[Dict[str, Any]] = N
     import httpx
 
     url = f"{_live_api_base()}{path}"
+    headers = _api_auth_headers()
     try:
         if method.upper() == "GET":
-            response = httpx.get(url, timeout=30.0)
+            response = httpx.get(url, headers=headers, timeout=30.0)
         else:
-            response = httpx.post(url, json=body or {}, timeout=30.0)
+            response = httpx.post(url, json=body or {}, headers=headers, timeout=30.0)
         response.raise_for_status()
         return response.json()
     except Exception as exc:  # noqa: BLE001 — surface a clean error to the user

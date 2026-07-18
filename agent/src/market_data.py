@@ -93,6 +93,12 @@ def fetch_market_data(
 ) -> dict[str, Any]:
     """Fetch normalized OHLCV data through the repository loader layer."""
     results: dict[str, Any] = {}
+    result_aliases = {
+        code: code.split(":", 1)[1]
+        if code.lower().startswith("local:")
+        else code
+        for code in codes
+    }
 
     if source == "auto":
         groups: dict[str, list[str]] = {}
@@ -121,7 +127,11 @@ def fetch_market_data(
                     row[key] = _json_safe(value)
             results[symbol] = cap_rows(records, max_rows)
 
-    unresolved = [code for code in codes if code not in results]
+    unresolved = [
+        code
+        for code in codes
+        if code not in results and result_aliases[code] not in results
+    ]
     if unresolved:
         results["_unresolved"] = unresolved
 

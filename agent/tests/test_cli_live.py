@@ -472,7 +472,7 @@ def _proposal() -> Dict[str, Any]:
         "proposal_id": "mp_" + "3" * 32,
         "session_id": "sess_1",
         "intent_normalized": "aggressive tech, ~$5000",
-        "account": {"broker": "robinhood", "type": "cash"},
+        "account": {"broker": "robinhood", "account_ref": "acct-demo", "type": "cash"},
         "profiles": [
             {"ordinal": 1, "label": "稳健", "max_order_usd": 250, "daily_trade_cap": 2},
             {"ordinal": 2, "label": "均衡", "max_order_usd": 750, "daily_trade_cap": 5},
@@ -531,7 +531,9 @@ class TestProposalPickIntercept:
         assert handled is True
         assert ctx.pending_proposal is not None
 
-    def test_commit_posts_to_endpoint_with_consent_ack(self) -> None:
+    def test_commit_posts_to_endpoint_with_consent_ack(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """_commit_mandate POSTs to /mandate/commit — the surface, not the model."""
         captured: Dict[str, Any] = {}
 
@@ -542,11 +544,18 @@ class TestProposalPickIntercept:
             def json(self) -> Dict[str, Any]:
                 return {"status": "ok", "mandate_id": "m1"}
 
-        def _fake_post(url: str, json: Dict[str, Any], timeout: float) -> _Resp:  # noqa: A002
+        def _fake_post(
+            url: str,
+            json: Dict[str, Any],  # noqa: A002
+            headers: Dict[str, str],
+            timeout: float,
+        ) -> _Resp:
             captured["url"] = url
             captured["body"] = json
+            captured["headers"] = headers
             return _Resp()
 
+        monkeypatch.setenv("API_AUTH_KEY", "cli-secret")
         with patch("httpx.post", _fake_post):
             result = _commit_mandate(_proposal(), 2)
 
@@ -554,7 +563,22 @@ class TestProposalPickIntercept:
         assert captured["url"].endswith("/mandate/commit")
         assert captured["body"]["selected_ordinal"] == 2
         assert captured["body"]["proposal_id"] == "mp_" + "3" * 32
+        assert captured["body"]["broker"] == "robinhood"
+        assert captured["body"]["account_ref"] == "acct-demo"
         assert captured["body"]["consent_ack"] is True
+        assert captured["headers"] == {"Authorization": "Bearer cli-secret"}
+
+    def test_commit_rejects_missing_broker_before_network_call(self) -> None:
+        """The CLI validates the exact API request model before sending."""
+        proposal = _proposal()
+        proposal["account"] = {"type": "cash"}
+
+        with patch("httpx.post") as post:
+            result = _commit_mandate(proposal, 1)
+
+        assert result["status"] == "error"
+        assert "broker" in result["error"]
+        post.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

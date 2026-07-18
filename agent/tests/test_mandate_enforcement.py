@@ -9,6 +9,7 @@ floors are exercised by monkeypatching the loader-backed helpers (no network).
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -282,6 +283,51 @@ def test_guard_forwards_in_mandate_order(live_runtime: Path) -> None:
     assert counter["count"] == 1
 
 
+def test_mcp_guard_serializes_the_daily_cap_with_submission(live_runtime: Path) -> None:
+    """MCP placements share the same one-permit transaction as SDK orders."""
+    _write_mandate(live_runtime, _mandate(max_trades_per_day=1))
+    entered = threading.Event()
+    release = threading.Event()
+
+    class _BlockingAdapter(_MockAdapter):
+        def call_tool(self, remote_name, arguments, *, local_name=None):
+            if remote_name in {"get_equity_positions", "get_portfolio"}:
+                return super().call_tool(remote_name, arguments, local_name=local_name)
+            self.order_calls.append({"remote": remote_name, "arguments": arguments})
+            entered.set()
+            assert release.wait(timeout=5)
+            return {"status": "ok", "order_id": "rh_test_1", "state": "accepted"}
+
+    adapter = _BlockingAdapter(positions=[], balance=5000.0)
+    guard = _guard(adapter)
+    outputs: list[dict[str, Any]] = []
+
+    def place() -> None:
+        outputs.append(
+            json.loads(
+                guard.execute(
+                    symbol="AAPL",
+                    side="buy",
+                    instrument_type="equity",
+                    notional_usd=100.0,
+                )
+            )
+        )
+
+    first = threading.Thread(target=place)
+    second = threading.Thread(target=place)
+    first.start()
+    assert entered.wait(timeout=2)
+    second.start()
+    second.join(timeout=1)
+    release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert len(adapter.order_calls) == 1
+    assert sorted(output["status"] for output in outputs) == ["blocked", "ok"]
+
+
 def test_guard_blocks_over_notional_with_breach(live_runtime: Path) -> None:
     _write_mandate(live_runtime, _mandate())
     adapter = _MockAdapter(positions=[], balance=5000.0)
@@ -292,6 +338,77 @@ def test_guard_blocks_over_notional_with_breach(live_runtime: Path) -> None:
     assert out["requires_reauthorization"] is True
     assert out["breach"]["limit"] == "max_order_notional_usd"
     assert adapter.order_calls == []  # never forwarded
+
+
+def test_guard_blocks_opening_short_above_gross_exposure_cap(live_runtime: Path) -> None:
+    """A sell from zero opens short exposure; it does not reduce risk."""
+    _write_mandate(
+        live_runtime,
+        _mandate(
+            account_funding_usd=1000.0,
+            max_order_notional_usd=1000.0,
+            max_total_exposure_usd=500.0,
+            max_leverage=10.0,
+        ),
+    )
+    adapter = _MockAdapter(positions=[], balance=1000.0)
+    guard = _guard(adapter)
+
+    out = json.loads(
+        guard.execute(
+            symbol="AAPL",
+            side="sell",
+            instrument_type="equity",
+            notional_usd=600.0,
+        )
+    )
+
+    assert out["status"] == "blocked"
+    assert out["breach"]["limit"] == "max_total_exposure_usd"
+    assert out["breach"]["attempted_value"] == 600.0
+    assert adapter.order_calls == []
+
+
+def test_mixed_book_uses_gross_not_net_exposure() -> None:
+    mandate = _mandate(
+        account_funding_usd=1000.0,
+        max_order_notional_usd=1000.0,
+        max_total_exposure_usd=1000.0,
+        max_leverage=10.0,
+    )
+    positions = [
+        {"symbol": "MSFT", "quantity": 10.0, "price": 60.0},
+        {"symbol": "TSLA", "quantity": -10.0, "price": 50.0},
+    ]
+
+    breach = _check(
+        _intent(symbol="AAPL", side="buy", notional_usd=100.0),
+        mandate,
+        positions=positions,
+    )
+
+    assert breach is not None
+    assert breach.limit == "max_total_exposure_usd"
+    assert breach.attempted_value == 1200.0
+
+
+def test_sell_that_only_reduces_long_exposure_stays_allowed() -> None:
+    mandate = _mandate(
+        account_funding_usd=1000.0,
+        max_order_notional_usd=1000.0,
+        max_total_exposure_usd=500.0,
+        max_leverage=10.0,
+    )
+    positions = [{"symbol": "AAPL", "quantity": 10.0, "price": 60.0}]
+
+    assert (
+        _check(
+            _intent(symbol="AAPL", side="sell", notional_usd=200.0),
+            mandate,
+            positions=positions,
+        )
+        is None
+    )
 
 
 def test_guard_structural_breach_denies_no_reauth(live_runtime: Path) -> None:

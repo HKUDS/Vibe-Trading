@@ -11,7 +11,48 @@ from src.swarm.worker import build_worker_prompt
 from src.tools import build_swarm_registry
 
 
+def test_market_data_tool_exposes_longbridge_source():
+    from src.tools.market_data_tool import MarketDataTool
+
+    source_schema = MarketDataTool.parameters["properties"]["source"]
+    assert "longbridge" in source_schema["enum"]
+
+
+def test_market_data_json_accepts_explicit_longbridge_source():
+    idx = pd.date_range("2026-01-01", periods=1, freq="D")
+    idx.name = "trade_date"
+    df = pd.DataFrame(
+        {
+            "open": [1.0],
+            "high": [2.0],
+            "low": [0.5],
+            "close": [1.5],
+            "volume": [100],
+        },
+        index=idx,
+    )
+    seen = []
+
+    class _LongbridgeLoader:
+        def fetch(self, codes, start, end, interval="1D"):
+            seen.append((codes, start, end, interval))
+            return {codes[0]: df}
+
+    text = fetch_market_data_json(
+        codes=["AAPL.US"],
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        source="longbridge",
+        loader_resolver=lambda source: _LongbridgeLoader,
+    )
+
+    payload = json.loads(text)
+    assert "AAPL.US" in payload
+    assert seen == [(["AAPL.US"], "2026-01-01", "2026-01-02", "1D")]
+
+
 def test_market_data_json_is_strict_when_loader_returns_nan():
+
     idx = pd.date_range("2026-01-01", periods=1, freq="D")
     df = pd.DataFrame(
         {

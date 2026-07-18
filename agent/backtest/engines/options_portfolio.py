@@ -532,7 +532,7 @@ def run_options_backtest(
         warnings=config.get("content_filter_warnings") or None,
     )
 
-    print(json.dumps(metrics, indent=2))
+    print(json.dumps(metrics, indent=2, allow_nan=False))
     return metrics
 
 
@@ -585,34 +585,126 @@ def _calc_options_metrics(
     Returns:
         Metrics dictionary.
     """
+    warnings: List[str] = []
     n = len(equity)
+    equity_vals = pd.to_numeric(equity, errors="coerce").astype(float)
+    path_is_finite = bool(n and np.isfinite(equity_vals.to_numpy()).all())
+
+    final_raw: float | None = None
+    final_value: float | None = None
+    if n:
+        terminal = float(equity_vals.iloc[-1])
+        if np.isfinite(terminal):
+            final_raw = terminal
+            final_value = round(terminal, 2)
+        else:
+            warnings.append(
+                "Final equity is non-finite; final and return metrics are undefined."
+            )
+    else:
+        warnings.append(
+            "No equity observations were produced; equity metrics are undefined."
+        )
+
+    valid_initial_cash = np.isfinite(initial_cash) and initial_cash > 0
+    total_ret: float | None = None
+    if final_raw is not None and valid_initial_cash:
+        total_ret = final_raw / float(initial_cash) - 1
+    elif final_raw is not None:
+        warnings.append(
+            "Total return is undefined because initial cash is not positive and finite."
+        )
+
+    ann_ret: float | None = None
     if n < 2:
-        return {
-            "final_value": initial_cash, "total_return": 0, "annual_return": 0,
-            "max_drawdown": 0, "sharpe": 0, "calmar": 0, "sortino": 0,
-            "trade_count": len(trades), "win_rate": 0, "profit_loss_ratio": 0,
-        }
+        warnings.append("Annual return requires at least two equity observations.")
+    elif total_ret is None:
+        warnings.append(
+            "Annual return is undefined because total return is unavailable."
+        )
+    elif final_raw is not None and final_raw < 0:
+        warnings.append("Annual return is undefined when final equity is negative.")
+    elif bars_per_year <= 0:
+        warnings.append(
+            "Annual return is undefined because bars_per_year is not positive."
+        )
+    else:
+        growth = final_raw / float(initial_cash)
+        candidate = float(growth ** (bars_per_year / (n - 1)) - 1)
+        if np.isfinite(candidate):
+            ann_ret = candidate
+        else:
+            warnings.append("Annual return is non-finite for this equity path.")
 
-    equity_vals = equity.astype(float)
-    returns = equity_vals.pct_change().fillna(0.0)
+    returns: pd.Series | None = None
+    if n >= 2 and path_is_finite:
+        candidate_returns = equity_vals.pct_change(fill_method=None).iloc[1:]
+        if np.isfinite(candidate_returns.to_numpy()).all():
+            returns = candidate_returns
+        else:
+            warnings.append(
+                "Risk ratios are undefined because equity returns are non-finite."
+            )
+    elif n >= 2:
+        warnings.append(
+            "Path-dependent metrics are undefined because equity contains non-finite values."
+        )
 
-    total_ret = float(equity_vals.iloc[-1] / initial_cash - 1)
-    ann_ret = float((1 + total_ret) ** (bars_per_year / max(n, 1)) - 1)
+    max_dd: float | None = None
+    if path_is_finite:
+        peak = equity_vals.cummax()
+        if bool((peak > 0).all()):
+            dd = (equity_vals - peak) / peak
+            max_dd = float(dd.min())
+        else:
+            warnings.append(
+                "Maximum drawdown is undefined because peak equity is not positive."
+            )
 
-    vol = float(returns.std())
-    sharpe = float(returns.mean() / (vol + 1e-10) * np.sqrt(bars_per_year))
+    sharpe: float | None = None
+    if returns is not None and len(returns) > 1 and bars_per_year > 0:
+        vol = float(returns.std())
+        if np.isfinite(vol) and vol > 1e-12:
+            sharpe = float(returns.mean() / vol * np.sqrt(bars_per_year))
+        else:
+            warnings.append(
+                "Sharpe ratio is undefined because return volatility is zero."
+            )
+    elif bars_per_year <= 0:
+        warnings.append("Sharpe ratio requires a positive bars_per_year value.")
+    else:
+        warnings.append("Sharpe ratio requires at least two finite returns.")
 
-    peak = equity_vals.cummax()
-    dd = (equity_vals - peak) / peak.replace(0, 1)
-    max_dd = float(dd.min())
-    calmar = ann_ret / abs(max_dd) if abs(max_dd) > 1e-10 else 0.0
+    calmar: float | None = None
+    if ann_ret is not None and max_dd is not None and abs(max_dd) > 1e-12:
+        calmar = ann_ret / abs(max_dd)
+    else:
+        warnings.append(
+            "Calmar ratio requires a defined annual return and a nonzero drawdown."
+        )
 
-    downside = returns[returns < 0]
-    downside_std = float(downside.std()) if len(downside) > 1 else 1e-10
-    sortino = float(returns.mean() / (downside_std + 1e-10) * np.sqrt(bars_per_year))
+    sortino: float | None = None
+    if returns is not None and bars_per_year > 0:
+        downside = returns[returns < 0]
+        if len(downside) > 1:
+            downside_std = float(downside.std())
+            if np.isfinite(downside_std) and downside_std > 1e-12:
+                sortino = float(returns.mean() / downside_std * np.sqrt(bars_per_year))
+        if sortino is None:
+            warnings.append(
+                "Sortino ratio requires at least two varying downside returns."
+            )
+    elif bars_per_year <= 0:
+        warnings.append("Sortino ratio requires a positive bars_per_year value.")
+    else:
+        warnings.append("Sortino ratio requires finite returns.")
 
     # Trade statistics
-    closed_pnl = [t["pnl"] for t in trades if t.get("pnl", 0) != 0]
+    closed_pnl = [
+        float(t["pnl"])
+        for t in trades
+        if t.get("pnl", 0) != 0 and np.isfinite(float(t["pnl"]))
+    ]
     wins = [p for p in closed_pnl if p > 0]
     losses = [p for p in closed_pnl if p < 0]
     win_rate = len(wins) / len(closed_pnl) if closed_pnl else 0.0
@@ -621,14 +713,15 @@ def _calc_options_metrics(
     pl_ratio = avg_win / avg_loss if avg_loss > 1e-10 else 0.0
 
     return {
-        "final_value": round(float(equity_vals.iloc[-1]), 2),
-        "total_return": round(total_ret, 6),
-        "annual_return": round(ann_ret, 6),
-        "max_drawdown": round(max_dd, 6),
-        "sharpe": round(sharpe, 4),
-        "calmar": round(calmar, 4),
-        "sortino": round(sortino, 4),
+        "final_value": final_value,
+        "total_return": round(total_ret, 6) if total_ret is not None else None,
+        "annual_return": round(ann_ret, 6) if ann_ret is not None else None,
+        "max_drawdown": round(max_dd, 6) if max_dd is not None else None,
+        "sharpe": round(sharpe, 4) if sharpe is not None else None,
+        "calmar": round(calmar, 4) if calmar is not None else None,
+        "sortino": round(sortino, 4) if sortino is not None else None,
         "trade_count": len(trades),
         "win_rate": round(win_rate, 4),
         "profit_loss_ratio": round(pl_ratio, 4),
+        "warnings": warnings,
     }

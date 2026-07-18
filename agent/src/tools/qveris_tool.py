@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import tempfile
+import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -28,6 +30,8 @@ _LEGACY_MODE_MAP = {
 }
 
 _SESSION_SPEND: dict[str, float] = {}
+_SESSION_RESERVED: dict[str, float] = {}
+_SESSION_BUDGET_LOCK = threading.Lock()
 
 
 @dataclass
@@ -407,7 +411,7 @@ class QVerisExecuteTool(_QVerisBaseTool):
         "Execute a QVeris tool when paid QVeris routing is enabled. Enforces "
         "the per-session credit budget before sending a billable request."
     )
-    is_readonly = True
+    is_readonly = False
     parameters = {
         "type": "object",
         "properties": {
@@ -452,31 +456,65 @@ class QVerisExecuteTool(_QVerisBaseTool):
         tool_id = str(kwargs["tool_id"])
         quote = self._quote(client, tool_id, kwargs)
         session_id = str(kwargs.get("session_id") or "default")
-        spent = _SESSION_SPEND.get(session_id, 0.0)
         budget = max(float(cfg.budget_credits_per_session), 0.0)
         expected = _parse_expected_cost(quote.get("expected_cost"))
-        if spent >= budget or (expected is not None and spent + expected > budget):
-            return _json_response(
-                {
-                    "ok": False,
-                    "status": "budget_exceeded",
-                    "spent_credits": spent,
-                    "budget_credits_per_session": budget,
-                    "quote": quote,
-                }
+        with _SESSION_BUDGET_LOCK:
+            spent = _SESSION_SPEND.get(session_id, 0.0)
+            reserved = _SESSION_RESERVED.get(session_id, 0.0)
+            valid_quote = (
+                expected is not None and math.isfinite(expected) and expected >= 0.0
             )
+            if (
+                not valid_quote
+                or spent >= budget
+                or spent + reserved + expected > budget
+            ):
+                return _json_response(
+                    {
+                        "ok": False,
+                        "status": "budget_exceeded",
+                        "spent_credits": spent,
+                        "budget_credits_per_session": budget,
+                        "quote": quote,
+                    }
+                )
+            _SESSION_RESERVED[session_id] = reserved + expected
 
-        payload = client.execute(
-            tool_id,
-            parameters=dict(kwargs["parameters"]),
-            search_id=kwargs.get("search_id"),
-            session_id=kwargs.get("session_id"),
-            model=kwargs.get("model"),
-            max_response_size=int(kwargs.get("max_response_size", 20480)),
-        )
-        cost = float(payload.get("cost") or 0.0)
-        _SESSION_SPEND[session_id] = spent + max(cost, 0.0)
+        try:
+            payload = client.execute(
+                tool_id,
+                parameters=dict(kwargs["parameters"]),
+                search_id=kwargs.get("search_id"),
+                session_id=kwargs.get("session_id"),
+                model=kwargs.get("model"),
+                max_response_size=int(kwargs.get("max_response_size", 20480)),
+            )
+        except Exception:
+            with _SESSION_BUDGET_LOCK:
+                remaining = _SESSION_RESERVED.get(session_id, 0.0) - expected
+                if remaining > 1e-12:
+                    _SESSION_RESERVED[session_id] = remaining
+                else:
+                    _SESSION_RESERVED.pop(session_id, None)
+            raise
+
+        try:
+            cost = float(payload.get("cost"))
+        except (TypeError, ValueError):
+            cost = expected
+        if not math.isfinite(cost) or cost < 0.0:
+            cost = expected
+
+        with _SESSION_BUDGET_LOCK:
+            remaining = _SESSION_RESERVED.get(session_id, 0.0) - expected
+            if remaining > 1e-12:
+                _SESSION_RESERVED[session_id] = remaining
+            else:
+                _SESSION_RESERVED.pop(session_id, None)
+            _SESSION_SPEND[session_id] = _SESSION_SPEND.get(session_id, 0.0) + cost
+            session_spent = _SESSION_SPEND[session_id]
+
         payload["cost"] = cost
         payload["remaining_credits"] = payload.get("remaining_credits")
-        payload["session_spent_credits"] = _SESSION_SPEND[session_id]
+        payload["session_spent_credits"] = session_spent
         return _json_response({"ok": True, **payload})

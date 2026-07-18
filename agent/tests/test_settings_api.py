@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -394,7 +395,8 @@ def test_update_settings_writes_env_file_with_0600_mode(
 
     assert response.status_code == 200
     mode = (tmp_path / ".env").stat().st_mode & 0o777
-    assert mode == 0o600
+    if os.name != "nt":
+        assert mode == 0o600
 
 
 def test_atomic_write_secret_is_crash_safe(
@@ -429,4 +431,19 @@ def test_atomic_write_secret_creates_0600_file(tmp_path: Path) -> None:
     helpers._atomic_write_secret(target, "KEY=value\n")
 
     assert target.read_text(encoding="utf-8") == "KEY=value\n"
-    assert (target.stat().st_mode & 0o777) == 0o600
+    if os.name != "nt":
+        assert (target.stat().st_mode & 0o777) == 0o600
+
+
+def test_atomic_write_secret_supports_platforms_without_fchmod(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows must be able to persist Web UI settings without ``os.fchmod``."""
+    from src.api import helpers
+
+    monkeypatch.delattr(helpers.os, "fchmod", raising=False)
+    target = tmp_path / ".env"
+
+    helpers._atomic_write_secret(target, "KEY=value\n")
+
+    assert target.read_text(encoding="utf-8") == "KEY=value\n"

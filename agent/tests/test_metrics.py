@@ -9,6 +9,8 @@ Validates:
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -264,6 +266,20 @@ class TestCalcMetrics:
         m = calc_metrics(pd.Series(dtype=float), [], 1_000_000, 252)
         assert m["final_value"] == 1_000_000
         assert m["total_return"] == 0
+
+    def test_single_bar_equity_metrics_finite(self) -> None:
+        # A one-bar backtest yields a single-observation return series.
+        # ``Series.std()`` (ddof=1) is NaN for a single element, which used
+        # to poison Sharpe and the information ratio (Sortino was already
+        # guarded). Every risk metric must stay finite.
+        eq = pd.Series([1_000_000.0], index=pd.bdate_range("2025-01-01", periods=1))
+        bench_ret = pd.Series([0.0], index=eq.index)
+        m = calc_metrics(eq, [], 1_000_000, 252, bench_ret=bench_ret)
+        for key in ("sharpe", "sortino", "information_ratio",
+                    "annual_return", "max_drawdown", "calmar"):
+            assert math.isfinite(m[key]), f"{key} is not finite: {m[key]!r}"
+        assert m["sharpe"] == 0.0
+        assert m["information_ratio"] == 0.0
 
     def test_final_value(self) -> None:
         eq = self._growing_equity()

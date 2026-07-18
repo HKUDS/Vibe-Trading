@@ -162,7 +162,14 @@ export function Runtime() {
             ) : (
               <section className="grid gap-4">
                 {status.brokers.map((broker) => (
-                  <BrokerRuntimeCard key={broker.auth.broker} broker={broker} globalHalted={status.global_halted} t={t} nowMs={nowMs} />
+                  <BrokerRuntimeCard
+                    key={broker.auth.profile_id || broker.auth.broker}
+                    broker={broker}
+                    globalHalted={status.global_halted}
+                    t={t}
+                    nowMs={nowMs}
+                    onRefresh={() => loadStatus("refresh")}
+                  />
                 ))}
               </section>
             )}
@@ -220,11 +227,13 @@ function BrokerRuntimeCard({
   globalHalted,
   t,
   nowMs,
+  onRefresh,
 }: {
   broker: LiveBrokerStatus;
   globalHalted: boolean;
   t: TFunction;
   nowMs: number;
+  onRefresh: () => Promise<void>;
 }) {
   const brokerKey = broker.auth.broker;
   const runnerAlive = broker.runner?.alive ?? false;
@@ -232,6 +241,10 @@ function BrokerRuntimeCard({
   const mandate = broker.mandate ?? null;
   const risk = deriveRiskState(broker, globalHalted, t);
   const mandateCountdown = formatCountdown(mandate?.expires_at, t, nowMs);
+
+  if (broker.auth.transport === "broker_sdk") {
+    return <SdkBrokerRuntimeCard broker={broker} t={t} onRefresh={onRefresh} />;
+  }
 
   return (
     <article className="rounded-md border p-4">
@@ -283,6 +296,157 @@ function BrokerRuntimeCard({
   );
 }
 
+function SdkBrokerRuntimeCard({ broker, t, onRefresh }: { broker: LiveBrokerStatus; t: TFunction; onRefresh: () => Promise<void> }) {
+  const auth = broker.auth;
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const profileId = auth.profile_id || `${auth.broker}-live-sdk-readonly`;
+  const state = connectorState(auth, t);
+
+  const verify = useCallback(async () => {
+    if (verifying) return;
+    setVerifying(true);
+    setVerifyError(null);
+    try {
+      await api.verifyConnector(profileId);
+      await onRefresh();
+    } catch {
+      setVerifyError(t("runtime.connectorVerifyFailed"));
+    } finally {
+      setVerifying(false);
+    }
+  }, [onRefresh, profileId, t, verifying]);
+
+  return (
+    <article className="rounded-md border p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="font-semibold capitalize">{auth.broker}</h2>
+            <StatusPill label={state.label} tone={state.tone} />
+          </div>
+          {isReadOnlyCompatible(auth) ? (
+            <p className="mt-2 text-sm text-muted-foreground">{t("runtime.sdkConnectorProfile")}</p>
+          ) : null}
+        </div>
+        {state.action ? (
+          <button
+            type="button"
+            onClick={verify}
+            disabled={verifying}
+            className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition hover:bg-muted disabled:opacity-50"
+          >
+            {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {t(state.action)}
+          </button>
+        ) : null}
+      </div>
+
+      {state.kind === "not_configured" ? (
+        <section className="mt-4 rounded-md border border-dashed p-3">
+          <p className="text-sm text-muted-foreground">{t("runtime.missingLongbridgeVariables")}</p>
+          <ul className="mt-2 grid gap-1 font-mono text-sm">
+            <li>LONGBRIDGE_APP_KEY</li>
+            <li>LONGBRIDGE_APP_SECRET</li>
+            <li>LONGBRIDGE_ACCESS_TOKEN</li>
+          </ul>
+        </section>
+      ) : (
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <RuntimePanel title={t("runtime.connectionDetails")} icon={state.kind === "connected" ? Wifi : WifiOff}>
+            <KeyValue label={t("runtime.credentialSource")} value={auth.credential_source || t("runtime.unknown")} />
+            <KeyValue label={t("runtime.sdk")} value={formatSdkState(auth.sdk_installed, t)} />
+          </RuntimePanel>
+          <RuntimePanel title={t("runtime.environment")} icon={ShieldCheck}>
+            <KeyValue label={t("runtime.environmentIdentity")} value={formatEnvironmentIdentity(auth.environment_identity, t)} />
+            <KeyValue label={t("runtime.capabilities")} value={formatCapabilities(auth, t)} />
+          </RuntimePanel>
+          <RuntimePanel title={t("runtime.diagnostics")} icon={state.kind === "error" ? AlertTriangle : CheckCircle2}>
+            <KeyValue label={t("runtime.lastChecked")} value={auth.last_checked_at || t("runtime.never")} />
+            {auth.error_code ? <KeyValue label={t("runtime.errorCode")} value={auth.error_code} /> : null}
+            {state.kind === "error" ? <p className="text-sm text-muted-foreground">{connectorDiagnostic(auth.error_code, t)}</p> : null}
+          </RuntimePanel>
+        </div>
+      )}
+      {verifyError ? <p role="alert" className="mt-3 text-sm text-danger">{verifyError}</p> : null}
+    </article>
+  );
+}
+
+function connectorState(auth: LiveBrokerStatus["auth"], t: TFunction): {
+  kind: "not_configured" | "ready" | "connected" | "error" | "unknown";
+  label: string;
+  tone: "success" | "danger" | "warning" | "neutral";
+  action?: "runtime.verifyConnection" | "runtime.retry";
+} {
+  if (auth.connection_state === "connected") {
+    if (isReadOnlyCompatible(auth)) {
+      return { kind: "connected", label: t("runtime.connectedReadOnly"), tone: "success" };
+    }
+    return { kind: "connected", label: t("runtime.connectedAccessUnknown"), tone: "neutral" };
+  }
+  if (auth.connection_state === "not_configured" || auth.configured === false) {
+    return { kind: "not_configured", label: t("runtime.notConfigured"), tone: "neutral" };
+  }
+  if (auth.connection_state === "error") {
+    return { kind: "error", label: t("runtime.connectionFailed"), tone: "danger", action: "runtime.retry" };
+  }
+  if (auth.connection_state === "ready") {
+    return { kind: "ready", label: t("runtime.readyToVerify"), tone: "warning", action: "runtime.verifyConnection" };
+  }
+  return { kind: "unknown", label: t("runtime.connectorStatusUnavailable"), tone: "neutral" };
+}
+
+function connectorDiagnostic(errorCode: string | null | undefined, t: TFunction): string {
+  switch (errorCode) {
+    case "credentials_partial": return t("runtime.diagnosticCredentialsPartial");
+    case "credentials_conflict": return t("runtime.diagnosticCredentialsConflict");
+    case "sdk_missing": return t("runtime.diagnosticSdkMissing");
+    case "authentication_failed": return t("runtime.diagnosticAuthenticationFailed");
+    case "network_unreachable": return t("runtime.diagnosticNetworkUnreachable");
+    default: return t("runtime.diagnosticBrokerError");
+  }
+}
+
+function formatSdkState(installed: boolean | null | undefined, t: TFunction): string {
+  if (installed === true) return t("runtime.installed");
+  if (installed === false) return t("runtime.notInstalled");
+  return t("runtime.unknown");
+}
+
+function formatEnvironmentIdentity(identity: string | null | undefined, t: TFunction): string {
+  if (identity === "config_declared" || identity === "config-declared") return t("runtime.configDeclared");
+  return identity || t("runtime.unknown");
+}
+
+function isReadCapability(capability: string): boolean {
+  return capability.endsWith(".read");
+}
+
+function isReadOnlyCompatible(auth: LiveBrokerStatus["auth"]): boolean {
+  if (auth.connection_state !== "connected") return false;
+  if (auth.readonly !== true) return false;
+  if (!auth.profile_id?.endsWith("-readonly")) return false;
+  if (!auth.capabilities?.length) return false;
+  return auth.capabilities.every(isReadCapability);
+}
+
+function formatCapabilities(auth: LiveBrokerStatus["auth"], t: TFunction): string {
+  const labels: Record<string, string> = {
+    "account.read": t("runtime.capabilityAccount"),
+    "positions.read": t("runtime.capabilityPositions"),
+    "orders.read": t("runtime.capabilityOpenOrders"),
+    "quotes.read": t("runtime.capabilityQuotes"),
+    "history.read": t("runtime.capabilityHistory"),
+  };
+  const readCapabilities = auth.capabilities?.filter(isReadCapability) ?? [];
+  const rendered = readCapabilities.map((capability) => labels[capability] || capability).join(", ");
+  if (!isReadOnlyCompatible(auth)) {
+    return rendered ? `${rendered} · ${t("runtime.accessUnknown")}` : t("runtime.accessUnknown");
+  }
+  return `${rendered} · ${t("runtime.readOnly")}`;
+}
+
 function RuntimePanel({ title, icon: Icon, children }: { title: string; icon: typeof Activity; children: ReactNode }) {
   return (
     <section className="rounded-md border bg-muted/20 p-3">
@@ -324,7 +488,9 @@ function summarizeRuntime(status: LiveStatus | null) {
   const brokers = status?.brokers || [];
   return {
     brokerCount: brokers.length,
-    authorizedCount: brokers.filter((broker) => broker.auth.oauth_token_present).length,
+    authorizedCount: brokers.filter(
+      (broker) => broker.auth.oauth_token_present || broker.auth.connection_state === "connected",
+    ).length,
     runningCount: brokers.filter((broker) => broker.runner?.alive).length,
   };
 }

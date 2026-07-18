@@ -75,7 +75,7 @@ class SignalEngine:
         for rule in RULES:
             if rule["market"] == market or rule["market"] == "other":
                 return rule
-        return RULES[0] if RULES else None
+        return None
 
     @staticmethod
     def _conditional_entry(

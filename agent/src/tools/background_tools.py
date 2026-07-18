@@ -32,27 +32,36 @@ class BackgroundManager:
             JSON string containing status and task_id.
         """
         task_id = uuid.uuid4().hex[:8]
-        self.tasks[task_id] = {"status": "running", "result": None, "command": command}
+        self.tasks[task_id] = {
+            "status": "running",
+            "result": None,
+            "command": command,
+            "exit_code": None,
+        }
         threading.Thread(target=self._execute, args=(task_id, command), daemon=True).start()
         return json.dumps({"status": "ok", "task_id": task_id, "message": f"Started: {command[:80]}"})
 
     def _execute(self, task_id: str, command: str) -> None:
+        exit_code: int | None = None
         try:
             r = subprocess.run(command, shell=True, cwd=WORKDIR,
                                capture_output=True, text=True, timeout=300,
                                encoding="utf-8", errors="replace")
             output = (r.stdout + r.stderr).strip()[:50000]
-            status = "completed"
+            exit_code = r.returncode
+            status = "completed" if exit_code == 0 else "error"
         except subprocess.TimeoutExpired:
             output, status = "Timeout (300s)", "timeout"
         except Exception as e:
             output, status = str(e), "error"
         self.tasks[task_id]["status"] = status
         self.tasks[task_id]["result"] = output or "(no output)"
+        self.tasks[task_id]["exit_code"] = exit_code
         with self._lock:
             self._notifications.append({
                 "task_id": task_id, "status": status,
                 "command": command[:80], "result": (output or "")[:500],
+                "exit_code": exit_code,
             })
 
     def check(self, task_id: Optional[str] = None) -> str:
@@ -61,7 +70,8 @@ class BackgroundManager:
             if not t:
                 return json.dumps({"status": "error", "error": f"Unknown task {task_id}"})
             return json.dumps({"status": t["status"], "command": t["command"][:60],
-                                "result": t.get("result") or "(running)"}, ensure_ascii=False)
+                                "result": t.get("result") or "(running)",
+                                "exit_code": t.get("exit_code")}, ensure_ascii=False)
         lines = [f"{tid}: [{t['status']}] {t['command'][:60]}" for tid, t in self.tasks.items()]
         return "\n".join(lines) if lines else "No background tasks."
 

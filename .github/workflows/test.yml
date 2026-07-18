@@ -22,8 +22,11 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
-      - name: CI env var gate
-        run: python tools/ci_env_var_gate.py
+      - name: Repository safety gates
+        run: bash tools/ci_grep_gates.sh
+
+      - name: Test environment variable gate
+        run: pytest tools/test_ci_env_var_gate.py -q
 
       - name: Syntax check
         run: |

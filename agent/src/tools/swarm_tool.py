@@ -434,9 +434,25 @@ _CONTINUATION_PATTERNS = (
 
 
 def _normalize_preset_name(value: str) -> str | None:
-    """Normalize an explicit preset name and validate it against bundled presets."""
+    """Normalize an explicit preset name and validate it resolves to a preset.
+
+    Names in the static routing table are accepted as before. Names outside it
+    are accepted only when they resolve to an actual preset file — which lets
+    explicitly named user presets (``~/.vibe-trading/swarm/presets/``) run
+    through this tool. Keyword ROUTING stays limited to the curated table: a
+    user preset is reachable only by naming it, never by keyword match.
+    """
     normalized = re.sub(r"[\s-]+", "_", value.strip().lower())
-    return normalized if normalized in _PRESET_NAMES else None
+    if normalized in _PRESET_NAMES:
+        return normalized
+    from src.swarm.presets import resolve_preset_path
+
+    try:
+        if resolve_preset_path(normalized) is not None:
+            return normalized
+    except ValueError:
+        return None
+    return None
 
 
 def _has_preset_signal(prompt: str) -> bool:
@@ -463,7 +479,10 @@ def _resolve_preset(prompt: str, explicit_preset: str | None = None) -> tuple[st
         preset = _normalize_preset_name(explicit_preset)
         if preset is None:
             available = ", ".join(sorted(_PRESET_NAMES))
-            return None, f"Unknown preset_name '{explicit_preset}'. Available presets: {available}"
+            return None, (
+                f"Unknown preset_name '{explicit_preset}'. Available presets: {available}. "
+                "User presets in ~/.vibe-trading/swarm/presets/ are also accepted by name."
+            )
         return preset, None
 
     if _looks_like_continuation_prompt(prompt) and not _has_preset_signal(prompt):

@@ -7,9 +7,15 @@ connector module + a stubbed mandate/halt so they need no broker SDK.
 
 from __future__ import annotations
 
+import threading
+from contextlib import nullcontext
+
 import pytest
 
+import src.live.paths as live_paths
+from src.config.accessor import reset_env_config
 from src.live import sdk_order_gate as gate
+from src.live.daily_count import read_daily_count
 from src.live.enforcement import OrderIntent
 from src.live.mandate.model import (
     AssetClass,
@@ -20,8 +26,22 @@ from src.live.mandate.model import (
     UniverseConstraint,
 )
 from src.trading import service
+from src.trading.connectors.longbridge import credentials as lb_credentials
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _isolate_longbridge_credentials(monkeypatch, tmp_path):
+    """Never let Longbridge cases consume workstation env/file credentials."""
+    for env_name in (
+        "LONGBRIDGE_APP_KEY",
+        "LONGBRIDGE_APP_SECRET",
+        "LONGBRIDGE_ACCESS_TOKEN",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+    reset_env_config()
+    monkeypatch.setattr(lb_credentials, "get_runtime_root", lambda: tmp_path)
 
 
 class _FakeConnector:
@@ -47,7 +67,13 @@ class _FakeConnector:
         return {"status": "ok", "symbol": symbol, "quote": {"last": self._quote_last}}
 
 
-def _mandate(*, max_order=1_000_000.0, assets=(AssetClass.US_EQUITY,), instruments=(InstrumentType.EQUITY,)):
+def _mandate(
+    *,
+    max_order=1_000_000.0,
+    max_trades=100,
+    assets=(AssetClass.US_EQUITY,),
+    instruments=(InstrumentType.EQUITY,),
+):
     return Mandate(
         schema_version=1,
         hard_caps=HardCaps(
@@ -56,7 +82,7 @@ def _mandate(*, max_order=1_000_000.0, assets=(AssetClass.US_EQUITY,), instrumen
             max_total_exposure_usd=1_000_000.0,
             max_leverage=2.0,
             allowed_instruments=tuple(instruments),
-            max_trades_per_day=100,
+            max_trades_per_day=max_trades,
         ),
         universe=UniverseConstraint(
             asset_classes=tuple(assets),
@@ -80,6 +106,7 @@ def _patch_gate(monkeypatch, *, mandate, halted=False):
     monkeypatch.setattr(gate, "write_live_action", lambda *a, **k: {"audited": True})
     monkeypatch.setattr(gate, "read_daily_count", lambda broker: 0)
     monkeypatch.setattr(gate, "increment_daily_count", lambda broker: 1)
+    monkeypatch.setattr(gate, "daily_order_lock", lambda broker: nullcontext())
 
 
 def _intent(notional=500.0, qty=None, asset=AssetClass.US_EQUITY):
@@ -251,6 +278,7 @@ def test_gate_count_consumed_only_on_success(monkeypatch) -> None:
     monkeypatch.setattr(gate, "write_live_action", lambda *a, **k: {"audited": True})
     monkeypatch.setattr(gate, "read_daily_count", lambda b: 0)
     monkeypatch.setattr(gate, "increment_daily_count", lambda b: increments.append(b))
+    monkeypatch.setattr(gate, "daily_order_lock", lambda broker: nullcontext())
 
     # Connector returns an error envelope → no count consumed.
     class _ErrConn(_FakeConnector):
@@ -263,6 +291,61 @@ def test_gate_count_consumed_only_on_success(monkeypatch) -> None:
     )
     assert out["status"] == "error"
     assert increments == []  # failed placement must not consume a daily count
+
+
+def test_concurrent_orders_share_one_daily_cap_permit(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Two callers racing a cap of one must make only one broker call."""
+    runtime_root = tmp_path / ".vibe-trading"
+    monkeypatch.setattr(live_paths, "get_runtime_root", lambda: runtime_root)
+    monkeypatch.setattr(gate, "load_mandate", lambda broker: _mandate(max_trades=1))
+    monkeypatch.setattr(gate, "halt_flag_set", lambda broker: False)
+    monkeypatch.setattr(gate, "write_live_action", lambda *a, **k: {"audited": True})
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    class _BlockingConnector(_FakeConnector):
+        def place_order(self, config, **kwargs):
+            self.placed.append(kwargs)
+            entered.set()
+            assert release.wait(timeout=5)
+            return {"status": "ok", "order_id": f"OID-{len(self.placed)}", **kwargs}
+
+    connector = _BlockingConnector()
+    outputs: list[dict] = []
+    errors: list[BaseException] = []
+
+    def place() -> None:
+        try:
+            outputs.append(
+                gate.execute_live_order(
+                    broker="alpaca",
+                    connector_module=connector,
+                    config=object(),
+                    intent=_intent(),
+                    place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
+                )
+            )
+        except BaseException as exc:  # test captures thread failures explicitly
+            errors.append(exc)
+
+    first = threading.Thread(target=place)
+    second = threading.Thread(target=place)
+    first.start()
+    assert entered.wait(timeout=2)
+    second.start()
+    second.join(timeout=1)
+    release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert errors == []
+    assert len(connector.placed) == 1
+    assert read_daily_count("alpaca") == 1
+    assert sorted(output["status"] for output in outputs) == ["blocked", "ok"]
 
 
 def test_gate_connector_raise_is_caught(monkeypatch) -> None:

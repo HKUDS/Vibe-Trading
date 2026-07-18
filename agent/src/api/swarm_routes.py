@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 # ---------------------------------------------------------------------------
@@ -159,16 +159,23 @@ def register_swarm_routes(
         dependencies=[Depends(require_event_stream_auth)],
     )
     async def swarm_run_events(
-        run_id: str, request: Request, last_index: int = Query(0, ge=0)
+        run_id: str,
+        request: Request,
+        last_index: int = Query(0, ge=0),
+        last_event_id: int | None = Header(None, alias="Last-Event-ID", ge=0),
     ):
         """SSE stream for a swarm run."""
         import asyncio
 
         _host_validate_path_param(run_id, "run_id")
         runtime = _get_swarm_runtime()
+        if not runtime._store.load_run(run_id):
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
         async def event_stream():
-            idx = last_index
+            # Browser EventSource reconnects with Last-Event-ID. Keep the
+            # existing query parameter for non-browser and older clients.
+            idx = last_event_id if last_event_id is not None else last_index
             while True:
                 if await request.is_disconnected():
                     break
@@ -177,14 +184,16 @@ def register_swarm_routes(
                     idx += 1
                     yield f"id: {idx}\nevent: {evt.type}\ndata: {json.dumps(evt.model_dump(), ensure_ascii=False)}\n\n"
                 run = runtime._store.load_run(run_id)
-                if run:
-                    # Reconcile so a zombie running run can still close this SSE
-                    # stream cleanly — without it, a dead host would keep the
-                    # stream open forever and block the dashboard's "done" state.
-                    reconciled = runtime._store.reconcile_run(run, write=True)
-                    if reconciled.status.value in ("completed", "failed", "cancelled"):
-                        yield f"event: done\ndata: {{\"status\": \"{reconciled.status.value}\"}}\n\n"
-                        break
+                if not run:
+                    yield 'event: done\ndata: {"status": "missing"}\n\n'
+                    break
+                # Reconcile so a zombie running run can still close this SSE
+                # stream cleanly — without it, a dead host would keep the
+                # stream open forever and block the dashboard's "done" state.
+                reconciled = runtime._store.reconcile_run(run, write=True)
+                if reconciled.status.value in ("completed", "failed", "cancelled"):
+                    yield f'event: done\ndata: {{"status": "{reconciled.status.value}"}}\n\n'
+                    break
                 await asyncio.sleep(2)
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")

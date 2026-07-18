@@ -24,7 +24,7 @@ import asyncio
 import logging
 import sys as _sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -98,6 +98,17 @@ class BrokerAuthState(BaseModel):
     broker: str
     oauth_token_present: bool = Field(..., description="Whether an OAuth token cache exists")
     is_live_broker: bool = Field(..., description="Whether this key is a recognized live broker")
+    transport: Optional[str] = Field(None, description="Transport type (broker_sdk, remote_mcp, local_tws)")
+    connection_state: Optional[str] = Field(None, description="Broker_sdk connection state (connected, not_configured, error)")
+    profile_id: Optional[str] = Field(None, description="Verified broker_sdk profile id")
+    configured: Optional[bool] = Field(None, description="Whether the selected SDK profile is configured")
+    credential_source: Optional[str] = Field(None, description="Credential source label; never credential material")
+    sdk_installed: Optional[bool] = Field(None, description="Whether the connector SDK is installed")
+    environment_identity: Optional[str] = Field(None, description="How the account environment was identified")
+    capabilities: Optional[List[str]] = Field(None, description="Capabilities declared by the verified profile")
+    readonly: Optional[bool] = Field(None, description="Whether the verified profile is structurally read-only")
+    last_checked_at: Optional[str] = Field(None, description="Timestamp of the latest connector verification")
+    error_code: Optional[str] = Field(None, description="Stable redaction-safe connector error code")
 
 
 class MandateLimits(BaseModel):
@@ -156,6 +167,145 @@ class LiveStatusResponse(BaseModel):
 
 _runner_tasks: Dict[str, "asyncio.Task[Any]"] = {}
 _runner_factory: Optional[Any] = None
+
+
+# ============================================================================
+# Connector verify cache (bounded 15s, credential-free, fake-clock testable)
+# ============================================================================
+
+_CACHE_TTL_SECONDS = 15.0
+
+
+class _ConnectorVerifyCache:
+    """A bounded, credential-free cache for connector verify results.
+
+    Each entry stores only the status-level envelope returned by
+    ``service.check_connection`` — stripped of any ``config`` sub-dict that
+    might contain secret material.  The cache is keyed by profile id and
+    expires after ``_CACHE_TTL_SECONDS``.  An explicit ``force=True`` bypass
+    always hits the service.
+
+    The ``_clock`` attribute is a callable returning ``time.time()`` and is
+    monkeypatchable by tests for deterministic TTL assertions.
+    """
+
+    def __init__(self, ttl: float = _CACHE_TTL_SECONDS) -> None:
+        self._ttl = ttl
+        self._store: Dict[str, Dict[str, Any]] = {}
+        self._clock = time.time
+
+    def get(self, profile_id: str) -> Optional[Dict[str, Any]]:
+        """Return a cached entry if fresh, else ``None``."""
+        entry = self._store.get(profile_id)
+        if entry is None:
+            return None
+        age = self._clock() - entry["_cached_at"]
+        if age >= self._ttl:
+            self._store.pop(profile_id, None)
+            return None
+        return dict(entry)
+
+    def put(self, profile_id: str, payload: Dict[str, Any]) -> None:
+        """Store a sanitized copy (no ``config`` key, no secrets)."""
+        sanitized = {k: v for k, v in payload.items() if k != "config"}
+        sanitized["_cached_at"] = self._clock()
+        self._store[profile_id] = sanitized
+
+    def clear(self) -> None:
+        """Drop all entries (used in test setup)."""
+        self._store.clear()
+
+
+_connector_verify_cache = _ConnectorVerifyCache()
+
+
+_CREDENTIAL_SOURCES = frozenset({"environment", "runtime_file"})
+_ENVIRONMENT_IDENTITIES = frozenset(
+    {
+        "config_declared",
+        "config_declared_live",
+        "config-declared",
+        "header_flag+uid_pin",
+        "host_separated",
+        "read_only_no_runtime_discriminator",
+        "simulated_locally",
+        "trd_env_acc_list",
+    }
+)
+_CONNECTION_STATES = frozenset({"connected", "error", "not_configured", "ready"})
+_ERROR_CODES = frozenset(
+    {
+        "authentication_failed",
+        "broker_error",
+        "credentials_conflict",
+        "credentials_missing",
+        "credentials_partial",
+        "network_unreachable",
+        "sdk_missing",
+    }
+)
+
+
+def _closed_vocabulary(value: Any, allowed: frozenset[str]) -> Optional[str]:
+    """Return a known diagnostic label, never arbitrary report-controlled text."""
+    return value if type(value) is str and value in allowed else None
+
+
+def _canonical_utc_timestamp(value: Any) -> Optional[str]:
+    """Validate an ISO-8601 timestamp and emit one canonical UTC representation."""
+    if type(value) is not str:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    except (OverflowError, ValueError):
+        return None
+
+
+def _check_connector_status(profile_id: str, force: bool = False) -> Dict[str, Any]:
+    """Resolve a connector profile and return its verify envelope.
+
+    Uses the bounded cache when ``force`` is ``False`` and the entry is fresh.
+    Known broker/SDK exceptions are normalised into a stable envelope; raw
+    exception objects and credential-bearing strings never escape.
+    """
+    if not force:
+        cached = _connector_verify_cache.get(profile_id)
+        if cached is not None:
+            return cached
+
+    from src.trading.service import check_connection
+
+    try:
+        report = check_connection(profile_id)
+    except ValueError:
+        report = {
+            "status": "error",
+            "configured": False,
+            "connection_state": "error",
+            "error": f"unknown connector profile: {profile_id}",
+            "connector": None,
+            "transport": None,
+            "profile_id": profile_id,
+        }
+    except Exception as exc:  # noqa: BLE001 - verify must never raise
+        report = {
+            "status": "error",
+            "configured": False,
+            "connection_state": "error",
+            "error": f"unexpected error: {type(exc).__name__}",
+            "connector": None,
+            "transport": None,
+            "profile_id": profile_id,
+        }
+
+    # Sanitize: strip any ``config`` sub-dict that may hold secrets
+    sanitized = {k: v for k, v in report.items() if k != "config"}
+
+    _connector_verify_cache.put(profile_id, sanitized)
+    return sanitized
 
 
 # ============================================================================
@@ -272,10 +422,29 @@ def _fetch_broker_ceilings(broker: str) -> Optional[Dict[str, Any]]:
 
 
 def _known_live_brokers() -> List[str]:
-    """Return the recognized live-broker keys (SPEC §7.2)."""
+    """Return the recognized live-broker keys (SPEC §7.2) — OAuth/mandate path only."""
     from src.config.schema import LIVE_BROKER_SERVER_KEYS
 
     return sorted(LIVE_BROKER_SERVER_KEYS)
+
+
+def _live_broker_sdk_connectors() -> List[str]:
+    """Return the recognized broker_sdk connector keys from the profile registry.
+
+    These are direct-SDK connectors (e.g. Longbridge) that appear in
+    ``/live/status`` but are NOT OAuth/mandate live brokers.  They are
+    discovered from the profile registry rather than a hard-coded list.
+    """
+    from src.trading.profiles import list_profiles
+
+    seen: set[str] = set()
+    result: list[str] = []
+    for profile in list_profiles():
+        if profile.environment == "live" and profile.transport == "broker_sdk":
+            if profile.connector not in seen:
+                seen.add(profile.connector)
+                result.append(profile.connector)
+    return sorted(result)
 
 
 def _oauth_token_present(broker: str) -> bool:
@@ -552,27 +721,166 @@ def register_live_routes(
 
     @app.get("/live/status", response_model=LiveStatusResponse, dependencies=[Depends(require_auth)])
     async def live_status_endpoint(broker: Optional[str] = Query(None, max_length=64)):
-        """Return live-channel status: auth, active mandate, runner liveness, halt (C2)."""
+        """Return live-channel status: auth, active mandate, runner liveness, halt (C2).
+
+        Includes both OAuth/mandate live brokers (robinhood, ibkr) and
+        broker_sdk connectors (longbridge, etc.) discovered from the profile
+        registry.
+        """
         from src.live.halt import halt_flag_set
+
+        all_brokers = sorted(set(_known_live_brokers()) | set(_live_broker_sdk_connectors()))
 
         if broker is not None:
             target = broker.strip().lower()
             if not target:
                 raise HTTPException(status_code=400, detail="broker must not be blank")
+            if target not in all_brokers:
+                raise HTTPException(status_code=404, detail=f"unknown broker: {target}")
             brokers = [target]
         else:
-            brokers = _known_live_brokers()
+            brokers = all_brokers
 
         known = set(_known_live_brokers())
         h = _host()
         statuses: List[LiveBrokerStatus] = []
         for key in brokers:
+            # Determine transport type and select the live broker_sdk profile from
+            # the registry.  Do not derive a profile id from the connector name.
+            transport: Optional[str] = None
+            selected_profile = None
+            try:
+                from src.trading.profiles import list_profiles
+
+                live_profiles = [
+                    profile
+                    for profile in list_profiles()
+                    if profile.connector == key and profile.environment == "live"
+                ]
+                if live_profiles:
+                    transport = live_profiles[0].transport
+                declared_readonly_sdk_profiles = [
+                    profile
+                    for profile in live_profiles
+                    if profile.transport == "broker_sdk"
+                    and type(profile.id) is str
+                    and type(profile.readonly) is bool
+                    and profile.readonly is True
+                ]
+                suffixed_readonly_profiles = [
+                    profile
+                    for profile in declared_readonly_sdk_profiles
+                    if profile.id.endswith("-readonly")
+                ]
+                # Registry readonly=True is mandatory even when an id ends in
+                # ``-readonly``. Prefer one canonical suffixed profile; if none
+                # exists, accept one unique declared-readonly profile. Any
+                # ambiguity fails closed without making a connector request.
+                if len(suffixed_readonly_profiles) == 1:
+                    selected_profile = suffixed_readonly_profiles[0]
+                elif not suffixed_readonly_profiles and len(declared_readonly_sdk_profiles) == 1:
+                    selected_profile = declared_readonly_sdk_profiles[0]
+            except Exception:  # noqa: BLE001 - status must never raise
+                pass
+
+            # Explicit response allowlist.  Unknown or mismatched verify reports
+            # remain fail-closed and cannot supply permission metadata.
+            sdk_metadata: Dict[str, Any] = {}
+            if selected_profile is not None:
+                try:
+                    verify_report = h._check_connector_status(selected_profile.id)
+                    if verify_report.get("profile_id") == selected_profile.id:
+                        def _normalize_capabilities(value: Any) -> Optional[tuple[str, ...]]:
+                            if not isinstance(value, (list, tuple)) or not value:
+                                return None
+                            if not all(
+                                type(item) is str and bool(item.strip()) for item in value
+                            ):
+                                return None
+                            return tuple(value)
+
+                        # Permissions are trusted registry declarations, never
+                        # reflected from a connector report. The exact profile-id
+                        # match above binds the report to this registry profile.
+                        registry_capabilities = _normalize_capabilities(
+                            selected_profile.capabilities
+                        )
+                        registry_readonly = (
+                            selected_profile.readonly
+                            if type(selected_profile.readonly) is bool
+                            else None
+                        )
+                        if registry_readonly is True and (
+                            registry_capabilities is None
+                            or any(
+                                not (
+                                    capability.endswith(".read")
+                                    or ".read." in capability
+                                )
+                                for capability in registry_capabilities
+                            )
+                        ):
+                            registry_readonly = None
+
+                        sdk_report = verify_report.get("sdk")
+                        sdk_installed = verify_report.get("sdk_installed")
+                        if not isinstance(sdk_installed, bool) and isinstance(sdk_report, dict):
+                            sdk_installed = sdk_report.get("installed")
+
+                        sdk_metadata = {
+                            "profile_id": selected_profile.id,
+                            "configured": verify_report.get("configured")
+                            if isinstance(verify_report.get("configured"), bool)
+                            else None,
+                            "credential_source": _closed_vocabulary(
+                                verify_report.get("credential_source"),
+                                _CREDENTIAL_SOURCES,
+                            ),
+                            "sdk_installed": sdk_installed
+                            if isinstance(sdk_installed, bool)
+                            else None,
+                            "environment_identity": next(
+                                (
+                                    normalized
+                                    for value in (
+                                        verify_report.get("environment_identity"),
+                                        verify_report.get("paper_guard"),
+                                    )
+                                    if (
+                                        normalized := _closed_vocabulary(
+                                            value, _ENVIRONMENT_IDENTITIES
+                                        )
+                                    )
+                                    is not None
+                                ),
+                                None,
+                            ),
+                            "capabilities": list(registry_capabilities)
+                            if registry_capabilities is not None
+                            else None,
+                            "readonly": registry_readonly,
+                            "last_checked_at": _canonical_utc_timestamp(
+                                verify_report.get("last_checked_at")
+                            ),
+                            "error_code": _closed_vocabulary(
+                                verify_report.get("error_code"), _ERROR_CODES
+                            ),
+                            "connection_state": _closed_vocabulary(
+                                verify_report.get("connection_state"),
+                                _CONNECTION_STATES,
+                            ),
+                        }
+                except Exception:  # noqa: BLE001 - status must never raise
+                    sdk_metadata = {}
+
             statuses.append(
                 LiveBrokerStatus(
                     auth=BrokerAuthState(
                         broker=key,
                         oauth_token_present=_oauth_token_present(key),
                         is_live_broker=key in known,
+                        transport=transport,
+                        **sdk_metadata,
                     ),
                     mandate=h._active_mandate_state(key),
                     runner=_runner_liveness_state(key),
@@ -609,6 +917,46 @@ def register_live_routes(
                 "mandate is committed AND order tools are explicitly enabled."
             ),
         }
+
+    @app.post("/live/connectors/{profile_id}/verify", dependencies=[Depends(require_auth)])
+    async def verify_connector_endpoint(
+        profile_id: str,
+        force: bool = Query(False, description="Bypass the bounded status cache"),
+    ):
+        """Read-only idempotent verify for a connector profile (transport-neutral).
+
+        Never requires a mandate.  Never writes or mutates broker state.
+        Longbridge and other broker_sdk profiles use this endpoint for a
+        credential-free connectivity check.  The result is cached for at most
+        15 seconds to avoid hammering the SDK; ``force=true`` bypasses the cache.
+        """
+        h = _host()
+
+        # Validate the profile exists and is a live broker_sdk connector
+        try:
+            from src.trading.profiles import profile_by_id
+            profile = profile_by_id(profile_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail=f"unknown connector profile: {profile_id}")
+
+        if profile.environment != "live":
+            raise HTTPException(
+                status_code=400,
+                detail=f"connector profile '{profile_id}' is not a live profile",
+            )
+
+        if profile.transport != "broker_sdk":
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"connector profile '{profile_id}' uses transport "
+                    f"'{profile.transport}', not broker_sdk; verify is only "
+                    "supported for direct-SDK profiles"
+                ),
+            )
+
+        report = h._check_connector_status(profile_id, force=force)
+        return report
 
     @app.post("/live/runner/start", dependencies=[Depends(require_auth)])
     async def start_runner_endpoint(payload: LiveRunnerControlRequest):

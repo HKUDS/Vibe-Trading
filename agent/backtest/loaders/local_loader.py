@@ -152,14 +152,14 @@ def _normalize_columns(
         return None
 
     if date_fmt:
-        df["trade_date"] = pd.to_datetime(df[date_col], format=date_fmt, errors="coerce")
+        parsed_dates = pd.to_datetime(
+            df[date_col], format=date_fmt, errors="coerce", utc=True
+        )
     else:
-        df["trade_date"] = pd.to_datetime(df[date_col], errors="coerce")
-    # Drop any timezone so the tz-naive date-range filter in ``_fetch_one`` never
-    # raises "Invalid comparison between tz-aware and tz-naive" (which was caught
-    # and swallowed into a silently empty result for tz-aware parquet/CSV inputs).
-    if getattr(df["trade_date"].dt, "tz", None) is not None:
-        df["trade_date"] = df["trade_date"].dt.tz_localize(None)
+        parsed_dates = pd.to_datetime(df[date_col], errors="coerce", utc=True)
+    # Normalize every input to the loader's UTC-naive index contract. Parsing
+    # as UTC first also handles files that span daylight-saving offset changes.
+    df["trade_date"] = parsed_dates.dt.tz_convert(None)
     df = df.dropna(subset=["trade_date"])
     df = df.set_index("trade_date").sort_index()
 

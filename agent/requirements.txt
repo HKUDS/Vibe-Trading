@@ -41,7 +41,6 @@ defusedxml>=0.7.1
 yfinance>=0.2.30
 akshare>=1.12.0
 ccxt>=4.0.0
-# optional: pip install "vibe-trading-ai[longbridge]" for Longbridge data/trading
 
 # REST API & SSE
 fastapi>=0.104.0

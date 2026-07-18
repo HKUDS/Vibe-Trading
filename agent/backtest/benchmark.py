@@ -7,7 +7,7 @@ data given a set of strategy codes and a data source.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -42,6 +42,7 @@ def resolve_benchmark(
     end_date:     str,
     interval:     str = "1D",
     explicit:     Optional[str] = None,
+    loader:       Optional[Any] = None,
 ) -> Optional[BenchmarkResult]:
     """Resolve the appropriate benchmark ticker and fetch its return series.
 
@@ -52,6 +53,10 @@ def resolve_benchmark(
         end_date:       Backtest end date.
         interval:       Bar interval (1m / 5m / 15m / 30m / 1H / 4H / 1D).
         explicit:       Override ticker (e.g. "SPY" passed via config).
+        loader:         Loader of the configured data source. When given, the
+                        benchmark is fetched through it first, falling back to
+                        yfinance if it yields no data — except ``local``,
+                        which fails closed to keep offline runs offline.
 
     Returns:
         BenchmarkResult with return series and total return, or None if no
@@ -61,8 +66,19 @@ def resolve_benchmark(
     if ticker is None:
         return None
 
+    offline = source == "local"
+    if offline and getattr(loader, "name", None) != source:
+        # The runtime fallback chain in fetch_data_map() may have swapped in a
+        # network loader while config["source"] still says local — never fetch
+        # the benchmark through it. Fail closed instead.
+        loader = None
+
     try:
-        bench_df = _fetch_benchmark(ticker, start_date, end_date, interval)
+        bench_df = _fetch_benchmark(
+            ticker, start_date, end_date, interval,
+            loader=loader,
+            allow_fallback=not offline,
+        )
     except Exception:
         return None
 
@@ -134,11 +150,36 @@ def _fetch_benchmark(
     start_date: str,
     end_date:   str,
     interval:   str,
+    loader:    Optional[Any] = None,
+    allow_fallback: bool = True,
 ) -> pd.DataFrame:
-    """Fetch benchmark OHLCV data via yfinance (single symbol, no auth)."""
-    loader = YfinanceLoader()
-    result = loader.fetch([ticker], start_date, end_date, interval=interval)
+    """Fetch benchmark OHLCV data.
 
+    Tries the configured source's loader first (when given). Falls back to
+    yfinance (single symbol, no auth) when no loader is given or it yields
+    no data — unless ``allow_fallback`` is False (offline sources fail
+    closed instead of making a network request).
+    """
+    if loader is not None:
+        try:
+            df = _extract_frame(
+                loader.fetch([ticker], start_date, end_date, interval=interval),
+                ticker,
+            )
+        except Exception:
+            df = pd.DataFrame()
+        if not df.empty:
+            return df
+
+    if not allow_fallback:
+        return pd.DataFrame()
+
+    result = YfinanceLoader().fetch([ticker], start_date, end_date, interval=interval)
+    return _extract_frame(result, ticker)
+
+
+def _extract_frame(result: Any, ticker: str) -> pd.DataFrame:
+    """Normalise a loader fetch result to a single DataFrame."""
     if isinstance(result, dict):
         df = result.get(ticker)
     elif isinstance(result, pd.DataFrame):

@@ -275,15 +275,24 @@ function BrokerRow({
  * runtime execution. Runner start/stop are privileged surface fetches (`api.startLiveRunner` /
  * `api.stopLiveRunner`), never chat messages. Collapses to a compact toggle.
  */
+export function isVisibleRuntimeConnector(broker: LiveBrokerStatus): boolean {
+  const auth = broker.auth;
+  if (auth.oauth_token_present || auth.configured === true) return true;
+  return auth.connection_state === "connected" || auth.connection_state === "ready";
+}
+
 export const RunnerStatus = memo(function RunnerStatus({ status, unavailable, halted, onRefresh }: Props) {
   const [open, setOpen] = useState(false);
+  const visibleBrokers = status?.brokers.filter(isVisibleRuntimeConnector) ?? [];
 
   if (unavailable) return null;
-  if (!status || status.brokers.length === 0) return null;
+  if (!status || visibleBrokers.length === 0) return null;
 
   const isHalted = halted ?? status.global_halted;
-  const anyRunning = status.brokers.some((b) => b.runner?.alive);
-  const authorizedCount = status.brokers.filter((b) => b.auth.oauth_token_present).length;
+  const anyRunning = visibleBrokers.some((b) => b.runner?.alive);
+  const authorizedCount = visibleBrokers.filter(
+    (b) => b.auth.oauth_token_present || b.auth.connection_state === "connected"
+  ).length;
 
   return (
     <div className="grid gap-2">
@@ -315,8 +324,12 @@ export const RunnerStatus = memo(function RunnerStatus({ status, unavailable, ha
       </button>
 
       {open && (
-        <div className="grid gap-2 rounded-xl border border-primary/20 bg-background/95 p-3 shadow-sm">
-          {status.brokers.map((broker) => (
+        <div
+          role="region"
+          aria-label={i18n.t("runnerStatus.configuredProfiles")}
+          className="grid max-h-[min(70vh,36rem)] gap-2 overflow-y-auto rounded-xl border border-primary/20 bg-background/95 p-3 shadow-sm"
+        >
+          {visibleBrokers.map((broker) => (
             <BrokerRow key={broker.auth.broker} broker={broker} halted={isHalted || broker.halted} onRefresh={onRefresh} />
           ))}
         </div>

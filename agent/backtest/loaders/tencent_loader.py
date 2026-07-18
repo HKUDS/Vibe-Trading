@@ -52,6 +52,14 @@ class DataLoader:
         fields: Optional[List[str]] = None,
     ) -> Dict[str, pd.DataFrame]:
         validate_date_range(start_date, end_date)
+        del fields
+
+        if interval.strip().lower() not in {"1d", "d", "day", "daily"}:
+            logger.warning(
+                "tencent supports daily bars only; rejecting interval=%s",
+                interval,
+            )
+            return {}
 
         result: Dict[str, pd.DataFrame] = {}
         for code in codes:

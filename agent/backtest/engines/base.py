@@ -15,6 +15,7 @@ import re as _re
 import sys
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -35,10 +36,29 @@ from backtest.metrics import (
     by_exit_reason_stats,
     by_symbol_stats,
     calc_metrics,
+    calc_trade_turnover_series,
 )
 from backtest.models import EquitySnapshot, Position, TradeRecord
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _OpenOrder:
+    """A fully priced opening order that can be committed atomically."""
+
+    symbol: str
+    direction: int
+    price: float
+    size: float
+    leverage: float
+    margin: float
+    commission: float
+
+    @property
+    def cost(self) -> float:
+        """Cash consumed by the fill."""
+        return self.margin + self.commission
 
 
 def _run_card_data_sources(config: Dict[str, Any], loader: Any) -> List[str]:
@@ -356,6 +376,11 @@ class BaseEngine(ABC):
         """Convert target notional exposure to number of units/contracts."""
         return target_notional / price
 
+    def _leverage_for_symbol(self, symbol: str) -> float:
+        """Return leverage used to size and margin one symbol."""
+        del symbol
+        return self.default_leverage
+
     # ── Main entry ──
 
     def run_backtest(
@@ -443,13 +468,18 @@ class BaseEngine(ABC):
         bench_ticker = config.get("benchmark")
         if bench_ticker and bench_ticker != "auto":
             from backtest.benchmark import resolve_benchmark
+            bench_source = config.get("source", "yfinance")
             bench_result = resolve_benchmark(
                 strategy_codes=codes,
-                source=config.get("source", "yfinance"),
+                source=bench_source,
                 start_date=config.get("start_date", ""),
                 end_date=config.get("end_date", ""),
                 interval=interval,
                 explicit=bench_ticker,
+                # Explicit source: fetch the benchmark through its own loader
+                # (keeps e.g. source=local offline). Auto keeps the yfinance
+                # default — its loader only wraps the preloaded strategy data.
+                loader=loader if bench_source != "auto" else None,
             )
             if bench_result is not None:
                 bench_ret = bench_result.ret_series.reindex(dates).fillna(0.0)
@@ -462,24 +492,33 @@ class BaseEngine(ABC):
         bench_equity = self.initial_capital * (1 + bench_ret).cumprod()
 
         # 6. Metrics
-        m = calc_metrics(equity_series, self.trades, self.initial_capital, bars_per_year, bench_ret, target_pos)
+        realized_turnover = calc_trade_turnover_series(self.trades, equity_series)
+        m = calc_metrics(
+            equity_series,
+            self.trades,
+            self.initial_capital,
+            bars_per_year,
+            bench_ret,
+            target_pos,
+            turnover_series=realized_turnover,
+        )
         m.update(benchmark_metadata)
         m["by_symbol"] = by_symbol_stats(self.trades)
         m["by_exit_reason"] = by_exit_reason_stats(self.trades)
 
         # 7. Validation (optional — triggered by config["validation"])
         if config.get("validation"):
-            from backtest.validation import run_validation
+            from backtest.validation import run_validation, write_validation_json
             v_results = run_validation(
                 config, equity_series, self.trades, self.initial_capital, bars_per_year,
             )
             m["validation"] = v_results
-            # Write validation.json artifact. The artifacts dir is normally
-            # created by _write_artifacts() below (step 8), so ensure it exists
-            # here to avoid a FileNotFoundError when run_dir/artifacts is absent.
-            v_path = run_dir / "artifacts" / "validation.json"
-            v_path.parent.mkdir(parents=True, exist_ok=True)
-            v_path.write_text(json.dumps(v_results, indent=2, ensure_ascii=False), encoding="utf-8")
+            # Write validation.json through the shared strict writer so a
+            # non-finite validation metric is serialized as null rather than an
+            # invalid bare NaN/Infinity token (matching the standalone
+            # `python -m backtest.validation` path and run_card). The writer
+            # also creates the artifacts dir, which step 8 otherwise creates.
+            write_validation_json(run_dir / "artifacts" / "validation.json", v_results)
 
         # 8. Artifacts
         self._write_artifacts(
@@ -516,21 +555,98 @@ class BaseEngine(ABC):
         for i, ts in enumerate(dates):
             self._bar_idx = i
 
-            # a. Per-bar hooks (funding fees, liquidation checks)
+            # a. Value the book at prices observable when orders execute.
+            # Rebalances happen at the bar open, so using close_df[ts] here
+            # would let the yet-unknown decision-bar close affect order size.
+            equity = self._calc_open_equity(data_map, close_df, ts)
+            target_weights: Dict[str, Optional[float]] = {}
+            for c in codes:
+                try:
+                    target_weights[c] = (
+                        float(target_pos.at[ts, c]) if ts in target_pos.index else 0.0
+                    )
+                except Exception as exc:
+                    target_weights[c] = None
+                    logger.warning("Target weight failed for %s at %s: %s", c, ts, exc)
+
+            # b. Release capital before opening replacement positions.  A
+            # single mixed close/open pass makes rotations depend on symbol
+            # iteration order when the new name is visited before the old one.
+            for c in codes:
+                target_w = target_weights[c]
+                current_pos = self.positions.get(c)
+                if target_w is None or current_pos is None:
+                    continue
+                target_dir = 1 if target_w > 1e-9 else (-1 if target_w < -1e-9 else 0)
+                if target_dir == 0 or target_dir != current_pos.direction:
+                    try:
+                        self._rebalance(c, 0.0, data_map.get(c), ts, equity)
+                    except Exception as exc:
+                        logger.warning(
+                            "Rebalance close failed for %s at %s: %s", c, ts, exc
+                        )
+
+            # c. Price every opening order before committing any of them.  If
+            # the requested basket does not fit after fees/lot rounding, apply
+            # one common scale factor to all target weights.  This preserves
+            # portfolio proportions and makes fills independent of input code
+            # order; sequential cash clipping would privilege the first name.
+            open_targets: list[tuple[str, float, Optional[pd.DataFrame]]] = []
+            for c in sorted(codes):
+                target_w = target_weights[c]
+                if target_w is None:
+                    continue
+                target_dir = 1 if target_w > 1e-9 else (-1 if target_w < -1e-9 else 0)
+                current_pos = self.positions.get(c)
+                if current_pos is not None and (
+                    target_dir == 0 or target_dir != current_pos.direction
+                ):
+                    continue
+                if current_pos is None and target_dir != 0:
+                    open_targets.append((c, target_w, data_map.get(c)))
+
+            def _plans(scale: float) -> list[_OpenOrder]:
+                result: list[_OpenOrder] = []
+                for c, target_w, frame in open_targets:
+                    try:
+                        order = self._plan_open_order(
+                            c, target_w * scale, frame, ts, equity
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Rebalance open plan failed for %s at %s: %s",
+                            c,
+                            ts,
+                            exc,
+                        )
+                        continue
+                    if order is not None:
+                        result.append(order)
+                return result
+
+            planned = _plans(1.0)
+            if sum(order.cost for order in planned) > self.capital + 1e-9:
+                low, high = 0.0, 1.0
+                for _ in range(50):
+                    mid = (low + high) / 2.0
+                    candidate = _plans(mid)
+                    if sum(order.cost for order in candidate) <= self.capital + 1e-9:
+                        low, planned = mid, candidate
+                    else:
+                        high = mid
+
+            for order in planned:
+                self._execute_open_order(order, ts)
+
+            # d. Apply close/within-bar hooks after open execution.  Hooks use
+            # the current bar's close for funding, swaps, and liquidation, so
+            # running them first could liquidate a position that was scheduled
+            # to exit at the open (or charge a position before it was opened).
             for c in codes:
                 if ts in data_map[c].index:
                     self.on_bar(c, data_map[c].loc[ts], ts)
 
-            # b. Rebalance each symbol to target weight
-            equity = self._calc_equity(close_df, ts)
-            for c in codes:
-                try:
-                    target_w = float(target_pos.at[ts, c]) if ts in target_pos.index else 0.0
-                    self._rebalance(c, target_w, data_map.get(c), ts, equity)
-                except Exception as exc:
-                    logger.warning("Rebalance failed for %s at %s: %s", c, ts, exc)
-
-            # c. Record equity snapshot
+            # e. Record equity snapshot
             snap_equity = self._calc_equity(close_df, ts)
             if self.positions and type(self)._calc_pnl is BaseEngine._calc_pnl:
                 _syms = list(self.positions.keys())
@@ -554,12 +670,63 @@ class BaseEngine(ABC):
                 positions=len(self.positions),
             ))
 
-        # d. Force close all remaining positions
+        # f. Force close all remaining positions
         if len(dates) > 0:
             last_ts = dates[-1]
             for c in list(self.positions.keys()):
-                price = self._safe_price(close_df, last_ts, c, self.positions[c].entry_price)
-                self._close_position(c, price, last_ts, "end_of_backtest")
+                pos = self.positions[c]
+                mark_price = self._safe_price(close_df, last_ts, c, pos.entry_price)
+                self._active_symbol = c
+                exit_price = self.apply_slippage(mark_price, -pos.direction)
+                self._close_position(c, exit_price, last_ts, "end_of_backtest")
+
+            # The final snapshot feeds metrics and artifacts.  Replace its
+            # pre-liquidation mark with post-liquidation cash so terminal
+            # slippage and exit commission are reflected in reported equity.
+            if self.equity_snapshots:
+                self.equity_snapshots[-1] = EquitySnapshot(
+                    timestamp=last_ts,
+                    capital=self.capital,
+                    unrealized=0.0,
+                    equity=self.capital,
+                    positions=0,
+                )
+
+    def _calc_open_equity(
+        self,
+        data_map: Dict[str, pd.DataFrame],
+        close_df: pd.DataFrame,
+        ts: pd.Timestamp,
+    ) -> float:
+        """Value current positions at the execution bar's observable open.
+
+        For a symbol that has a bar at ``ts``, its open is the mark available
+        when next-bar-open orders execute.  Symbols without a bar on the
+        unified calendar retain the aligned close fallback, which is the most
+        recent price carried by ``_align``.
+        """
+        if not self.positions:
+            return self.capital
+
+        equity = self.capital
+        for sym, pos in self.positions.items():
+            current_price = self._safe_price(close_df, ts, sym, pos.entry_price)
+            frame = data_map.get(sym)
+            if frame is not None and ts in frame.index:
+                open_price = frame.loc[ts].get("open")
+                if (
+                    open_price is not None
+                    and pd.notna(open_price)
+                    and float(open_price) > 0
+                ):
+                    current_price = float(open_price)
+
+            margin = self._calc_margin(sym, pos.size, pos.entry_price, pos.leverage)
+            unrealized = self._calc_pnl(
+                sym, pos.direction, pos.size, pos.entry_price, current_price
+            )
+            equity += margin + unrealized
+        return equity
 
     def _calc_equity(self, close_df: pd.DataFrame, ts: pd.Timestamp) -> float:
         """Total equity = free cash + sum(margin + unrealised) per position.
@@ -628,50 +795,69 @@ class BaseEngine(ABC):
                 else:
                     return  # blocked (e.g. limit-down can't sell)
 
-        # Open new if target non-zero and no remaining position
         if target_dir != 0 and symbol not in self.positions:
-            if not self.can_execute(symbol, target_dir, bar):
-                return  # blocked (e.g. A-share no-short)
+            order = self._plan_open_order(symbol, target_weight, df, ts, equity)
+            if order is not None and order.cost <= self.capital + 1e-9:
+                self._execute_open_order(order, ts)
 
-            open_price = float(bar.get("open", bar.get("close", 0)))
-            if open_price <= 0:
-                return
+    def _plan_open_order(
+        self,
+        symbol: str,
+        target_weight: float,
+        df: Optional[pd.DataFrame],
+        ts: pd.Timestamp,
+        equity: float,
+    ) -> Optional[_OpenOrder]:
+        """Price an opening order without mutating portfolio state."""
+        self._active_symbol = symbol
+        direction = 1 if target_weight > 1e-9 else (-1 if target_weight < -1e-9 else 0)
+        if direction == 0 or symbol in self.positions or df is None or ts not in df.index:
+            return None
+        bar = df.loc[ts]
+        if not self.can_execute(symbol, direction, bar):
+            return None
+        open_price = float(bar.get("open", bar.get("close", 0)))
+        if open_price <= 0:
+            return None
+        price = self.apply_slippage(open_price, direction)
+        leverage = self._leverage_for_symbol(symbol)
+        target_notional = abs(target_weight) * equity * leverage
+        size = self.round_size(
+            self._calc_raw_size(symbol, target_notional, price), price
+        )
+        if size <= 0:
+            return None
+        margin = self._calc_margin(symbol, size, price, leverage)
+        commission = self.calc_commission(
+            size, price, direction, is_open=True
+        )
+        return _OpenOrder(
+            symbol=symbol,
+            direction=direction,
+            price=price,
+            size=size,
+            leverage=leverage,
+            margin=margin,
+            commission=commission,
+        )
 
-            slipped = self.apply_slippage(open_price, target_dir)
-            leverage = self.default_leverage
-            target_notional = abs(target_weight) * equity * leverage
-            raw_size = self._calc_raw_size(symbol, target_notional, slipped)
-            size = self.round_size(raw_size, slipped)
-            if size <= 0:
-                return
-
-            margin = self._calc_margin(symbol, size, slipped, leverage)
-            comm = self.calc_commission(size, slipped, target_dir, is_open=True)
-
-            # Capital check — reduce if insufficient
-            if margin + comm > self.capital:
-                available = self.capital - comm
-                if available <= 0:
-                    return
-                size = self.round_size(
-                    self._calc_raw_size(symbol, available * leverage, slipped), slipped,
-                )
-                if size <= 0:
-                    return
-                margin = self._calc_margin(symbol, size, slipped, leverage)
-                comm = self.calc_commission(size, slipped, target_dir, is_open=True)
-
-            self.capital -= (margin + comm)
-            self.positions[symbol] = Position(
-                symbol=symbol,
-                direction=target_dir,
-                entry_price=slipped,
-                entry_time=ts,
-                size=size,
-                leverage=leverage,
-                entry_bar_idx=self._bar_idx,
-                entry_commission=comm,
+    def _execute_open_order(self, order: _OpenOrder, ts: pd.Timestamp) -> None:
+        """Commit a previously priced opening order."""
+        if order.cost > self.capital + 1e-7:
+            raise RuntimeError(
+                f"planned order for {order.symbol} exceeds available capital"
             )
+        self.capital -= order.cost
+        self.positions[order.symbol] = Position(
+            symbol=order.symbol,
+            direction=order.direction,
+            entry_price=order.price,
+            entry_time=ts,
+            size=order.size,
+            leverage=order.leverage,
+            entry_bar_idx=self._bar_idx,
+            entry_commission=order.commission,
+        )
 
     def _close_position(
         self,
@@ -688,6 +874,7 @@ class BaseEngine(ABC):
 
         pnl = self._calc_pnl(symbol, pos.direction, pos.size, pos.entry_price, exit_price)
         margin = self._calc_margin(symbol, pos.size, pos.entry_price, pos.leverage)
+        exit_margin = self._calc_margin(symbol, pos.size, exit_price, pos.leverage)
         pnl_pct = pnl / margin * 100 if margin > 1e-9 else 0.0
         exit_comm = self.calc_commission(pos.size, exit_price, pos.direction, is_open=False)
 
@@ -709,6 +896,8 @@ class BaseEngine(ABC):
             exit_reason=reason,
             holding_bars=holding_bars,
             commission=pos.entry_commission + exit_comm,
+            entry_margin=margin,
+            exit_margin=exit_margin,
         ))
 
     # ── Artifacts ──

@@ -37,6 +37,7 @@ class MarketDataTool(BaseTool):
                 "type": "string",
                 "enum": [
                     "auto",
+                    "longbridge",
                     "yfinance",
                     "yahoo",
                     "okx",
@@ -57,6 +58,8 @@ class MarketDataTool(BaseTool):
                 ],
                 "description": (
                     "Data source. 'auto' detects from symbol format with fallback. "
+                    "Use 'longbridge' explicitly for US/HK OHLCV through the "
+                    "Longbridge OpenAPI (requires Longbridge credentials). "
                     "Free, no key: yfinance/yahoo (US/HK equities), okx/ccxt "
                     "(crypto), baostock/tencent/eastmoney/sina/akshare/mootdx "
                     "(China A-shares), stooq (global EOD). Key-gated REST: tushare "
@@ -79,6 +82,7 @@ class MarketDataTool(BaseTool):
         },
         "required": ["codes", "start_date", "end_date"],
     }
+    repeatable = True
 
     def execute(self, **kwargs: Any) -> str:
         return fetch_market_data_json(

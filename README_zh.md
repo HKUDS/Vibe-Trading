@@ -52,14 +52,20 @@
 
 > ⚠️ **安全警告：** X 账号 `VibeTrading_HKU`、Virtuals 项目 `101845` 及代币合约 `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` 均非 Vibe-Trading 官方。我们从未发行或背书任何代币或 meme 币。请勿购买、连接钱包或签名。[详细说明](SECURITY.md#official-channels--impersonation)。
 
+- **2026-07-17** 🧩 **correlation-regime skill + 覆盖回测 / 数据 / 实盘安全的正确性批次**：新增 **correlation-regime** 检测 skill（内置 skills → 88，[#557](https://github.com/HKUDS/Vibe-Trading/pull/557)，感谢 @ebujinovch）、Longbridge 运行时连接卡片（[#569](https://github.com/HKUDS/Vibe-Trading/pull/569)，感谢 @fanfpy），以及从 `~/.vibe-trading` 加载的用户自定义 swarm presets（[#570](https://github.com/HKUDS/Vibe-Trading/pull/570)，感谢 @darkknight4563）。此外还有贯穿整个技术栈的加固：修复 Futu / Tencent / CCXT / mootdx loader 的静默数据损坏，在 factor bench 和 Shadow Account 中加入前视偏差与 strict-OOS 守卫，实盘交易安全（带符号的敞口上限、原子化的每日下单限制、以同意为先的 mandate 提交、fail-closed 的实盘状态），以及交易日志 / QVeris 预算 / swarm / CI 门禁的改进（[#552](https://github.com/HKUDS/Vibe-Trading/pull/552)，感谢 @xor-xe；大部分正确性工作由 @xkam7ar 完成）。
+
+- **2026-07-16** 🔧 **依赖锁修复 + Windows 设置保存修复**：重新生成带哈希校验的运行时依赖锁，Docker 的 `pip install --require-hashes` 恢复正常解析，修复 `caio`/`pydantic-core`/`websockets` 的不兼容 pin（[#564](https://github.com/HKUDS/Vibe-Trading/pull/564)，关闭 [#558](https://github.com/HKUDS/Vibe-Trading/issues/558)，感谢 @tianrking）。Web UI 保存 Agent LLM 设置在 Windows 上不再返回 HTTP 500——仅限 POSIX 的 `os.fchmod` 权限加固现按平台守卫，并为没有 `fchmod` 的平台补充回归测试（[#561](https://github.com/HKUDS/Vibe-Trading/pull/561)，感谢 @CRui5in）。
+
+- **2026-07-15** 🧮 **回测正确性 + Portfolio Studio 核心闭环**：10 个 PR 的收口批次让调仓遵守因果且不受代码顺序影响，计入终局平仓成本，以真实成交计算换手率，加入敞口上限，并确保验证输出严格且有限（[#530](https://github.com/HKUDS/Vibe-Trading/pull/530)/[#531](https://github.com/HKUDS/Vibe-Trading/pull/531)/[#532](https://github.com/HKUDS/Vibe-Trading/pull/532)/[#540](https://github.com/HKUDS/Vibe-Trading/pull/540)）。历史图表复用实际数据源，重复行情查询不再被静默丢弃，`.env` 加载后会刷新缓存配置（[#535](https://github.com/HKUDS/Vibe-Trading/pull/535)/[#544](https://github.com/HKUDS/Vibe-Trading/pull/544)/[#554](https://github.com/HKUDS/Vibe-Trading/pull/554)）。Portfolio Studio [#456](https://github.com/HKUDS/Vibe-Trading/issues/456) 与配置问题 [#541](https://github.com/HKUDS/Vibe-Trading/issues/541) 已关闭，provider 修复 [#528](https://github.com/HKUDS/Vibe-Trading/issues/528)/[#529](https://github.com/HKUDS/Vibe-Trading/issues/529) 也完成收口；感谢 @YZY0108、@santhreal、@Robin1987China、@xkam7ar、@Marnie0415 和 @marichu99。
+
+<details>
+<summary>更早的更新</summary>
+
 - **2026-07-14** 🌉 **长桥行情数据 + 现代 MCP 传输 + Provider 可靠性**：Longbridge 接入历史行情 fallback 层，采用密钥门控、日期窗口分段、严格完整性检查和可选 SDK 依赖；四个中国市场资金流工具新增经过验证的 Tushare fallback，负最终净值也不再导致回测指标崩溃。MCP server 新增 Streamable HTTP，`write_file` 可安全恢复别名或缺失的路径参数，hypothesis 更新会拒绝不支持的字段，Correlation 请求也已接入认证。NVIDIA NIM 现已成为 Web Settings 和两套 CLI onboarding 的一等 provider，并通过带版本号的兼容 User-Agent 处理报告中的 403；Web Settings 统一写入 `~/.vibe-trading/.env`、迁移 legacy 配置并清晰报告权限错误，修复 DeepSeek 保存阶段的 500（[#534](https://github.com/HKUDS/Vibe-Trading/pull/534)，关闭 [#516](https://github.com/HKUDS/Vibe-Trading/issues/516)/[#524](https://github.com/HKUDS/Vibe-Trading/issues/524)；[#528](https://github.com/HKUDS/Vibe-Trading/issues/528)/[#529](https://github.com/HKUDS/Vibe-Trading/issues/529)）。感谢 @fanfpy、@asahikiko、@santhreal、@sTunnaSu、@abhishekjaisinghani、@huangcheng、@ShiroKSH、@Meru143、@DIEGOD79 和 @not-knope 提供代码、报告与诊断。
 
 - **2026-07-13** 🔒 **安全加固：外部审计 10 项发现全部关闭 + 贡献者批次**：2026-07-10 外部安全审计（issue [#476](https://github.com/HKUDS/Vibe-Trading/issues/476)，讨论区 [#468](https://github.com/HKUDS/Vibe-Trading/discussions/468)）的全部 10 条发现现已在 `main` 上修复——Docker 多阶段重构 + 摘要锁定基础镜像、AST 硬化的回测沙箱（拦截网络/子进程/eval/os.environ/不安全 open，含嵌套函数体内部）、短生命周期一次性 SSE 认证票据、加固的 Compose（只读根文件系统、丢弃 capabilities、资源限制）、`/correlation` 加认证与限流、安全响应头、哈希锁定依赖等。同时合入：Alpaca 密钥隔离的可选 **TAP 模式**（[#377](https://github.com/HKUDS/Vibe-Trading/pull/377)，感谢 @0xZKnw）、回测指标里的已实现组合换手率（[#478](https://github.com/HKUDS/Vibe-Trading/pull/478)，感谢 @Robin1987China）、**Frazzini-Pedersen 低贝塔溢价**学术因子（Alpha Zoo → 461，[#480](https://github.com/HKUDS/Vibe-Trading/pull/480)，感谢 @YogeshModi24）、全部 5 个组合优化器的前视偏差修复（[#487](https://github.com/HKUDS/Vibe-Trading/pull/487)，感谢 @YZY0108），以及两个 preflight/provider 配置修复（[#479](https://github.com/HKUDS/Vibe-Trading/pull/479)/[#484](https://github.com/HKUDS/Vibe-Trading/pull/484)，关闭 [#477](https://github.com/HKUDS/Vibe-Trading/issues/477)/[#482](https://github.com/HKUDS/Vibe-Trading/issues/482)，感谢 @ananaymital/@Bortlesboat)。
 
 - **2026-07-12** 🧪 **Strategy Development Manager + 贡献者修复批次**：新的 `strategy-dev-manager` skill（第 87 个）把学术论文和券商研报转化为已注册的因子/策略，带持久化 artifact store 和自动化 IC/Sharpe 衰减监控 —— `sdm_register` / `sdm_status` / `sdm_decay_scan` 驱动 active → monitoring → decayed → disabled 生命周期，数据存于 `~/.vibe-trading/`（[#457](https://github.com/HKUDS/Vibe-Trading/pull/457)，关闭 [#455](https://github.com/HKUDS/Vibe-Trading/issues/455)，感谢 @shadowinlife）。同时合入：Correlation 页支持裸 ticker（`AAPL,SPY`）并走完整 loader fallback 链（[#472](https://github.com/HKUDS/Vibe-Trading/pull/472)，关闭 [#471](https://github.com/HKUDS/Vibe-Trading/issues/471)，感谢 @yxhuang），`local` loader 通过 OHLCV 重采样真正支持请求的 interval（[#467](https://github.com/HKUDS/Vibe-Trading/pull/467)，感谢 @Shizoqua），Binance USD-M 永续历史数据落地 —— 显式 `BTC-USDT-PERP` 路由 + 成交价/标记价分离，作为 [#462](https://github.com/HKUDS/Vibe-Trading/issues/462) 的第一片（[#470](https://github.com/HKUDS/Vibe-Trading/pull/470)，感谢 @honginp），FastMCP transport import 兼容两种模块布局（[#469](https://github.com/HKUDS/Vibe-Trading/pull/469)，感谢 @roberttidball），Requesty 作为 OpenAI 兼容 LLM 网关 provider 上线（[#474](https://github.com/HKUDS/Vibe-Trading/pull/474)，感谢 @Thibaultjaigu）。
-
-<details>
-<summary>更早的更新</summary>
 
 - **2026-07-11** 🚀 **v0.1.11 发布**（`pip install -U vibe-trading-ai`）：汇总 0.1.10 以来三周的全部更新——一等公民级印度股票（NSE/BSE）回测、PIT-safe 基本面因子层（Alpha Zoo → 460）、16 个适配器的 IM 通道运行时、端到端定时研究、可选 QVeris 付费数据，以及今天的贡献者批次：turnover-aware 组合优化器（[#466](https://github.com/HKUDS/Vibe-Trading/pull/466)，感谢 @Robin1987China）、`analyze_image` 视觉工具 + NapCat DM pairing + IM 媒体读取修复（[#464](https://github.com/HKUDS/Vibe-Trading/pull/464)/[#463](https://github.com/HKUDS/Vibe-Trading/pull/463)/[#465](https://github.com/HKUDS/Vibe-Trading/issues/465)，感谢 @fei-moss）、长桥 Decimal 序列化（[#459](https://github.com/HKUDS/Vibe-Trading/pull/459)，感谢 @fanfpy），以及打包 manifest 数量守卫（[#461](https://github.com/HKUDS/Vibe-Trading/pull/461)，感谢 @asahikiko）。完整细节：[CHANGELOG](CHANGELOG.md) · [release notes](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.11)。
 
@@ -311,6 +317,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 | `tushare` | A / futures / fund / macro | token | richest A-share |
 | `yahoo` · `sina` · `stooq` | US (/HK) | none | direct chart/quotes/options · K-line to 1984 · EOD CSV |
 | `yfinance` | US / HK | none | wrapper |
+| `longbridge` | 美股 / 港股 | App Key + App Secret + Access Token | 可选历史 OHLCV 数据源；需安装可选 SDK |
 | `finnhub` · `alphavantage` · `tiingo` · `fmp` | US | key | optional providers |
 | `qveris` | 全球多资产 | key · credits | **付费市场** — 一把 key 通 63+ 家（仅显式选用，绝不进 auto 链） |
 | `okx` · `ccxt` | crypto | none | OKX + 100+ exchanges |
@@ -321,10 +328,40 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 **Fallback 链（按被封 IP 风险排序）：**
 
 - **A股** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `local`
-- **美股** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `akshare` · `local`
-- **港股** → `eastmoney` · `yahoo` · `futu` · `yfinance` · `akshare` · `local`
+- **美股** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
+- **港股** → `eastmoney` · `yahoo` · `futu` · `yfinance` · `akshare` · `longbridge` · `local`
 - **印度（NSE/BSE）** → `yahoo` · `yfinance` · `india_broker` · `local`
 - **加密** → `okx` · `ccxt` · `yfinance` · `local` &nbsp;·&nbsp; *(期货 / 基金 / 宏观 / 外汇 → `tushare`/`akshare` → `local`)*
+
+### 显式使用长桥
+
+Longbridge 是可选的美股/港股历史 OHLCV 数据源。安装 SDK：
+
+```bash
+pip install "vibe-trading-ai[longbridge]"
+```
+
+在 `.env` 配置三个凭证：
+
+```dotenv
+LONGBRIDGE_APP_KEY=...
+LONGBRIDGE_APP_SECRET=...
+LONGBRIDGE_ACCESS_TOKEN=...
+```
+
+回测时在 `config.json` 指定：
+
+```json
+{
+  "codes": ["QQQ.US"],
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-10",
+  "interval": "1D",
+  "source": "longbridge"
+}
+```
+
+与 Agent 对话时可以直接说：**“用长桥获取 QQQ.US 的历史行情。”** 显式指定数据源与 `source: "auto"` 不同；`auto` 仍按正常的同市场 fallback 链选择数据源。
 
 除 OHLCV 外，**18 个只读数据工具**深入基本面与资金面——资金流、龙虎榜、北向、两融、大宗交易、股东户数、解禁、板块、研报、新闻、SEC 文件、财务报表、期权链、机构持仓、全市场筛选、代码搜索、宏观——全部经 MCP 暴露。显式 `local:` 源永不静默 fallback 到网络源。
 

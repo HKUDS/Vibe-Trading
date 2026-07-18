@@ -250,10 +250,12 @@ def categorise_strict(
         - ``alpha_t_train`` (Optional[float])  — None when no OOS split was run
         - ``alpha_t_test`` (Optional[float])   — None when no OOS split was run
         - ``ic_count`` (int)
+        - ``ic_count_train`` / ``ic_count_test`` (Optional[int]) — split
+          sample counts when OOS was run
 
     Rules:
         - ``alpha_t_full <= -thr``                          → ``reversed_strict``
-        - ``alpha_t_full >=  thr`` and (no OOS or ``alpha_t_test >= thr``)
+        - ``alpha_t_full >=  thr`` and (no OOS or both split t-stats pass)
                                                             → ``confirmed_alive``
         - ``alpha_t_full >=  thr`` and ``alpha_t_test <= -thr`` (OOS sign-flip)
                                                             → ``reversed_strict``
@@ -271,22 +273,38 @@ def categorise_strict(
         return "noise"
 
     t_full = row["alpha_t_full"]
+    t_train = row.get("alpha_t_train")
     t_test = row.get("alpha_t_test")
     thr = thresholds.alpha_t_threshold
+
+    if t_test is not None:
+        train_count = row.get("ic_count_train")
+        test_count = row.get("ic_count_test")
+        if (
+            train_count is None
+            or test_count is None
+            or train_count < thresholds.min_ic_count
+            or test_count < thresholds.min_ic_count
+        ):
+            return "noise"
 
     # Strict reversed: full sample alpha is significantly negative.
     if t_full <= -thr:
         return "reversed_strict"
 
     # Confirmed alive requires full-sample alpha_t > thr AND, when OOS was
-    # run, the test-period alpha must also clear thr (same sign as train).
+    # run, both train and test periods must independently clear the threshold.
     if t_full >= thr:
-        if t_test is None or t_test >= thr:
+        if t_test is None:
             return "confirmed_alive"
         # OOS sign-flip is the most diagnostic failure — treat as
         # reversed_strict, not train_only.
         if t_test <= -thr:
             return "reversed_strict"
+        if t_train is None or t_train < thr:
+            return "noise"
+        if t_test >= thr:
+            return "confirmed_alive"
         # Full sample passes but OOS sits in the noise band → train-only.
         return "train_only"
 

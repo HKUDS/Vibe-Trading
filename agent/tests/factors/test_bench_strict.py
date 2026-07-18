@@ -126,6 +126,8 @@ def _row(**overrides: Any) -> dict[str, Any]:
         "alpha_t_train": None,
         "alpha_t_test": None,
         "ic_count": 60,
+        "ic_count_train": 60,
+        "ic_count_test": 60,
     }
     base.update(overrides)
     return base
@@ -154,6 +156,22 @@ def test_categorise_train_only_when_oos_fails() -> None:
 def test_categorise_confirmed_alive_when_oos_also_passes() -> None:
     row = _row(alpha_t_full=2.5, alpha_t_train=3.0, alpha_t_test=2.4)
     assert categorise_strict(row) == "confirmed_alive"
+
+
+def test_categorise_rejects_oos_confirmation_when_training_fails() -> None:
+    row = _row(alpha_t_full=2.5, alpha_t_train=-1.0, alpha_t_test=4.0)
+    assert categorise_strict(row) == "noise"
+
+
+def test_categorise_rejects_underpowered_oos_split() -> None:
+    row = _row(
+        alpha_t_full=3.0,
+        alpha_t_train=3.0,
+        alpha_t_test=3.0,
+        ic_count_train=58,
+        ic_count_test=2,
+    )
+    assert categorise_strict(row) == "noise"
 
 
 def test_categorise_short_ic_count_is_noise() -> None:

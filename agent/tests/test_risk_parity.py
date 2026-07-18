@@ -39,6 +39,27 @@ class TestRiskParityCalcWeights:
         w = opt._calc_weights({"cov": cov})
         assert np.all(w >= -1e-12)
 
+    def test_adverse_correlations_stay_on_long_only_simplex(self) -> None:
+        cov = np.array(
+            [
+                [0.0010518800707314143, -0.0008119306399469742, 0.0023898297080854735],
+                [-0.0008119306399469742, 0.0023829313617781014, -0.003778154624351108],
+                [0.002389829708085474, -0.003778154624351108, 0.00782499043215542],
+            ]
+        )
+
+        weights = RiskParityOptimizer()._calc_weights({"cov": cov})
+
+        assert np.isfinite(weights).all()
+        assert (weights >= 0.0).all()
+        assert weights.sum() == pytest.approx(1.0)
+        contributions = weights * (cov @ weights)
+        np.testing.assert_allclose(
+            contributions,
+            np.full(3, contributions.mean()),
+            rtol=1e-5,
+        )
+
     def test_higher_vol_gets_lower_weight(self) -> None:
         """Asset with higher volatility should get lower weight."""
         cov = np.diag([0.01, 0.04])  # vol = 0.1 vs 0.2

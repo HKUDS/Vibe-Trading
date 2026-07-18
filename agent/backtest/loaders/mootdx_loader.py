@@ -191,9 +191,10 @@ class DataLoader:
             if first_dt <= start_ts:
                 break
         else:
-            logger.warning(
-                "mootdx: %s %s pagination hit cap (%d pages) without reaching %s",
-                symbol, freq, _MAX_PAGES, start_date,
+            raise ValueError(
+                "incomplete mootdx history: "
+                f"{symbol} frequency={freq} hit {_MAX_PAGES} pages "
+                f"without reaching {start_date}"
             )
         if not chunks:
             return None

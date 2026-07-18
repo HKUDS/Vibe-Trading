@@ -74,6 +74,7 @@ def _write_config(
     enabled: bool = True,
     api_key: str = "sk_test",
     mode: str = "paid",
+    budget: float = 50.0,
 ) -> None:
     path.write_text(
         json.dumps(
@@ -82,7 +83,7 @@ def _write_config(
                 "base_url": "https://qveris.test/api/v1",
                 "api_key": api_key,
                 "mode": mode,
-                "budget_credits_per_session": 50.0,
+                "budget_credits_per_session": budget,
             }
         ),
         encoding="utf-8",
@@ -156,6 +157,52 @@ class TestFetch:
 
         assert qv.DataLoader().fetch(["AAPL.US"], "2024-01-01", "2024-01-31") == {}
         assert session.calls == []
+
+    def test_zero_budget_allows_search_but_blocks_paid_execute(self, monkeypatch):
+        _write_config(qv._CONFIG_PATH, budget=0.0)
+        session = _install_session(
+            monkeypatch,
+            [_FakeResponse({"search_id": "s_1", "results": [_capability()]})],
+        )
+
+        result = qv.DataLoader().fetch(
+            ["AAPL.US"], "2024-01-01", "2024-01-31"
+        )
+
+        assert result == {}
+        assert len(session.calls) == 1
+        assert session.calls[0]["url"].endswith("/search")
+
+    def test_budget_is_shared_across_symbols_in_one_fetch(self, monkeypatch):
+        _write_config(qv._CONFIG_PATH, budget=1.0)
+        rows = {
+            "data": [
+                {
+                    "date": "2024-01-02",
+                    "open": 100,
+                    "high": 101,
+                    "low": 99,
+                    "close": 100,
+                    "volume": 10,
+                }
+            ]
+        }
+        session = _install_session(
+            monkeypatch,
+            [
+                _FakeResponse({"search_id": "s_1", "results": [_capability()]}),
+                _FakeResponse({"success": True, "cost": 1.0, "result": rows}),
+                _FakeResponse({"search_id": "s_2", "results": [_capability()]}),
+            ],
+        )
+
+        result = qv.DataLoader().fetch(
+            ["AAPL.US", "MSFT.US"], "2024-01-01", "2024-01-31"
+        )
+
+        assert list(result) == ["AAPL.US"]
+        execute_calls = [call for call in session.calls if "/tools/execute" in call["url"]]
+        assert len(execute_calls) == 1
 
     def test_search_execute_happy_path_selects_best_capability(self, monkeypatch):
         _write_config(qv._CONFIG_PATH)

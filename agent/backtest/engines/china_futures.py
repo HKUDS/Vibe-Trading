@@ -152,6 +152,7 @@ class ChinaFuturesEngine(FuturesBaseEngine):
         config = {**config, "leverage": leverage}
         super().__init__(config)
         self.slippage_rate: float = config.get("slippage", 0.0005)
+        self._margin_rate_override = margin_override if margin_override else None
         self._commission_override = config.get("commission_override")
 
     def can_execute(self, symbol: str, direction: int, bar: pd.Series) -> bool:
@@ -242,6 +243,12 @@ class ChinaFuturesEngine(FuturesBaseEngine):
         """
         product = _extract_product(symbol)
         return _MARGIN_RATE.get(product, 0.10)
+
+    def _leverage_for_symbol(self, symbol: str) -> float:
+        """Derive leverage from this contract's own margin requirement."""
+        if self._margin_rate_override is not None:
+            return 1.0 / float(self._margin_rate_override)
+        return 1.0 / self.get_margin_rate(symbol)
 
 
 # ── Helpers ──

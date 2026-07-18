@@ -450,7 +450,6 @@ def reconstruct_price_series(run_dir: Path) -> List[Dict[str, Any]]:
     if not signal_path.exists():
         return []
 
-    agent_root = Path(__file__).resolve().parents[1]
     try:
         from src.providers.llm import _ensure_dotenv
 
@@ -460,21 +459,22 @@ def reconstruct_price_series(run_dir: Path) -> List[Dict[str, Any]]:
     fetch_start_date = _compute_fetch_start_date(run_dir, start_date)
 
     try:
-        source = context.get("source", "tushare")
-        if source == "okx":
-            from backtest.loaders.okx import DataLoader
-        elif source == "yfinance":
-            from backtest.loaders.yfinance_loader import DataLoader
-        else:
-            from backtest.loaders.tushare import DataLoader
-        loader = DataLoader()
-        data_map = loader.fetch(codes, fetch_start_date, end_date)
+        config_data = load_json_file(run_dir / "config.json") or {}
+        from backtest.runner import fetch_data_map
+
+        fetch_config = dict(config_data)
+        fetch_config.update(
+            codes=codes,
+            start_date=fetch_start_date,
+            end_date=end_date,
+        )
+        data_map = fetch_data_map(fetch_config).data_map
     except Exception as exc:
         print(f"[WARN] reconstruct_price_series: DataLoader failed ({exc})")
         return []
 
     if not data_map:
-        print(f"[WARN] reconstruct_price_series: DataLoader returned empty")
+        print("[WARN] reconstruct_price_series: DataLoader returned empty")
         return []
 
     return _flatten_data_map(data_map, start_date=start_date)

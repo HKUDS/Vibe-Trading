@@ -159,6 +159,16 @@ class _PartialLoader:
         return {codes[0]: pd.DataFrame({"close": [1.0]}, index=idx)}
 
 
+class _LocalAliasLoader:
+    """Mirrors the local loader, which returns keys without ``local:``."""
+
+    def fetch(self, codes, start_date, end_date, interval="1D"):
+        idx = pd.to_datetime(["2026-01-01"])
+        idx.name = "trade_date"
+        clean = codes[0].split(":", 1)[-1]
+        return {clean: pd.DataFrame({"close": [1.0]}, index=idx)}
+
+
 def test_fetch_explicit_source_normalizes_rows() -> None:
     out = fetch_market_data(
         codes=["AAPL.US"],
@@ -213,6 +223,19 @@ def test_fetch_missing_symbol_listed_as_unresolved() -> None:
     )
     assert "A.US" in out
     assert out["_unresolved"] == ["B.US"]
+
+
+def test_fetch_local_result_alias_is_not_unresolved() -> None:
+    out = fetch_market_data(
+        codes=["local:AAPL.US"],
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        source="auto",
+        loader_resolver=lambda src: _LocalAliasLoader,
+    )
+
+    assert "AAPL.US" in out
+    assert "_unresolved" not in out
 
 
 # --------------------------------------------------------------------------

@@ -208,6 +208,7 @@ class MarketScreenerTool(BaseTool):
         },
         "required": ["market"],
     }
+    repeatable = True
 
     def execute(self, **kwargs: Any) -> str:
         """Validate inputs, screen the market, and return a JSON envelope.

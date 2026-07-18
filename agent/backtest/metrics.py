@@ -149,15 +149,15 @@ def by_exit_reason_stats(trades: List[TradeRecord]) -> Dict[str, Dict[str, Any]]
 
 
 def calc_turnover_series(positions: pd.DataFrame) -> pd.Series:
-    """Per-bar realized portfolio turnover from a position-weight frame.
+    """Per-bar weight-implied portfolio turnover from a position frame.
 
     Turnover for a bar is ``0.5 * sum_i |w_{t,i} - w_{t-1,i}|``, so a full
     rotation from one asset to another counts as 1.0 (matching the
     ``turnover_aware`` optimizer's convention). The first bar's turnover is
     ``0.5 * sum_i |w_{0,i}|``, treating the initial allocation as entry from
-    cash. Turnover is measured on the executed (post-normalization) frame the
-    engine holds, which may differ slightly from an optimizer's own internal
-    pre-normalization figure.
+    cash. Turnover is measured on the weight frame the caller supplies. It
+    does not know whether the execution engine filled, rounded, or rejected
+    those target positions.
 
     Args:
         positions: Position-weight matrix (index=timestamp, columns=codes).
@@ -173,6 +173,49 @@ def calc_turnover_series(positions: pd.DataFrame) -> pd.Series:
     return 0.5 * (filled - prev).abs().sum(axis=1)
 
 
+def calc_trade_turnover_series(
+    trades: List[TradeRecord],
+    equity_curve: pd.Series,
+) -> pd.Series:
+    """Per-bar turnover from actual entry and exit allocations.
+
+    Each filled leg contributes its margin-equivalent traded value. Dividing
+    gross traded value by twice the portfolio equity preserves the existing
+    convention: entering a 100% allocation counts as 0.5 and rotating a 100%
+    allocation between two assets counts as 1.0.
+
+    Args:
+        trades: Completed trades carrying actual entry/exit margin values.
+        equity_curve: Portfolio equity used to normalize traded values.
+
+    Returns:
+        Per-bar realized turnover aligned to ``equity_curve``. Bars without
+        fills are zero and remain part of the average-turnover denominator.
+    """
+    if equity_curve is None or equity_curve.empty:
+        return pd.Series(dtype=float)
+
+    traded_margin = pd.Series(0.0, index=equity_curve.index, dtype=float)
+    for trade in trades:
+        for timestamp, margin in (
+            (trade.entry_time, trade.entry_margin),
+            (trade.exit_time, trade.exit_margin),
+        ):
+            try:
+                margin_value = float(margin)
+            except (TypeError, ValueError):
+                continue
+            if (
+                timestamp in traded_margin.index
+                and np.isfinite(margin_value)
+                and margin_value > 0
+            ):
+                traded_margin.loc[timestamp] += margin_value
+
+    denominator = 2.0 * equity_curve.abs().replace(0.0, np.nan)
+    return (traded_margin / denominator).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+
 def calc_metrics(
     equity_curve: pd.Series,
     trades: List[TradeRecord],
@@ -180,6 +223,7 @@ def calc_metrics(
     bars_per_year: Optional[int] = 252,
     bench_ret: Optional[pd.Series] = None,
     positions: Optional[pd.DataFrame] = None,
+    turnover_series: Optional[pd.Series] = None,
 ) -> Dict[str, Any]:
     """Full set of performance metrics.
 
@@ -190,8 +234,10 @@ def calc_metrics(
         bars_per_year: Bars per year for annualisation. None = auto-detect
             from equity curve dates (calendar-day method, for cross-market).
         bench_ret: Benchmark per-bar return series (optional).
-        positions: Executed position-weight frame (optional). When provided,
-            realized turnover metrics are added; absent/empty yields zeros.
+        positions: Position-weight frame used as a backward-compatible
+            turnover fallback when ``turnover_series`` is not supplied.
+        turnover_series: Actual per-bar execution turnover (optional). When
+            supplied, it takes precedence over position-implied turnover.
 
     Returns:
         Metrics dictionary (compatible with daily_portfolio format).
@@ -222,7 +268,10 @@ def calc_metrics(
         ann_ret = -1.0
     else:
         ann_ret = float(growth ** (bpy / max(n, 1)) - 1)
-    vol = float(port_ret.std())
+    # ``Series.std()`` uses ddof=1, so a single-observation return series
+    # (e.g. a one-bar backtest) yields NaN and poisons the Sharpe ratio.
+    # Guard the small sample the same way ``downside_std`` is guarded below.
+    vol = float(port_ret.std()) if len(port_ret) > 1 else 0.0
     sharpe = float(port_ret.mean() / (vol + 1e-10) * np.sqrt(bpy))
 
     # Drawdown
@@ -239,10 +288,17 @@ def calc_metrics(
 
     trade_stats = win_rate_and_stats(trades)
 
-    # Realized portfolio turnover from the executed position frame
-    turnover_series = calc_turnover_series(positions) if positions is not None else pd.Series(dtype=float)
-    avg_turnover = float(turnover_series.mean()) if len(turnover_series) > 0 else 0.0
-    total_turnover = float(turnover_series.sum()) if len(turnover_series) > 0 else 0.0
+    # Prefer execution-derived turnover; retain the position-frame fallback
+    # for external callers of calc_metrics that do not have fill records.
+    turnover_values = (
+        turnover_series.reindex(equity_curve.index).fillna(0.0).clip(lower=0.0)
+        if turnover_series is not None
+        else calc_turnover_series(positions)
+        if positions is not None
+        else pd.Series(dtype=float)
+    )
+    avg_turnover = float(turnover_values.mean()) if len(turnover_values) > 0 else 0.0
+    total_turnover = float(turnover_values.sum()) if len(turnover_values) > 0 else 0.0
 
     # Benchmark comparison
     bench_return = 0.0
@@ -252,7 +308,9 @@ def calc_metrics(
         bench_return = float((1 + bench_ret).prod() - 1)
         excess = total_ret - bench_return
         active_ret = port_ret - bench_ret.reindex(port_ret.index).fillna(0.0)
-        active_std = float(active_ret.std())
+        # Same ddof=1 small-sample guard as ``vol`` / ``downside_std`` so the
+        # information ratio stays finite for a single-observation series.
+        active_std = float(active_ret.std()) if len(active_ret) > 1 else 0.0
         ir = float(active_ret.mean() / (active_std + 1e-10) * np.sqrt(bpy))
 
     return {

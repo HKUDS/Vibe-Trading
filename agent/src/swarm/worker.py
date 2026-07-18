@@ -691,15 +691,23 @@ def run_worker(
                 emit=_on_heartbeat,
             ):
                 result = registry.execute(tc.name, args)
-            if tc.name != "load_skill" and not _is_error_result(result):
+            result_is_error = _is_error_result(result)
+            if tc.name != "load_skill" and not result_is_error:
                 data_tool_calls += 1
             tc_elapsed = time.monotonic() - tc_start
             _emit(
-                event_callback, "tool_result", agent_id, task_id,
-                {"tool": tc.name, "elapsed_ms": int(tc_elapsed * 1000),
-                 "status": "ok", "iteration": iteration,
-                  "result_preview": _preview_tool_result(result),
-                 **mcp_meta},
+                event_callback,
+                "tool_result",
+                agent_id,
+                task_id,
+                {
+                    "tool": tc.name,
+                    "elapsed_ms": int(tc_elapsed * 1000),
+                    "status": "error" if result_is_error else "ok",
+                    "iteration": iteration,
+                    "result_preview": _preview_tool_result(result),
+                    **mcp_meta,
+                },
             )
             messages.append(
                 ContextBuilder.format_tool_result(tc.id, tc.name, result[:10_000])

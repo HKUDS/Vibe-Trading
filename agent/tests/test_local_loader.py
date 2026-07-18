@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import pandas as pd
 import pytest
 import yaml
 
@@ -249,3 +250,48 @@ def test_local_loader_handles_timezone_aware_timestamps(
 
     assert set(frames) == {"AAPL.US"}
     assert list(frames["AAPL.US"]["close"]) == [10.5, 12.5]
+
+
+def test_local_loader_normalizes_dst_offsets_to_naive_utc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    csv_path = tmp_path / "dst.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "Date,Open,High,Low,Close,Volume",
+                "2026-01-15T09:30:00-05:00,10,11,9,10.5,1000",
+                "2026-07-15T09:30:00-04:00,12,13,11,12.5,1500",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    _configure(
+        monkeypatch,
+        tmp_path,
+        [
+            {
+                "symbol": "DST.US",
+                "type": "csv",
+                "path": str(csv_path),
+                "columns": {
+                    "date": "Date",
+                    "open": "Open",
+                    "high": "High",
+                    "low": "Low",
+                    "close": "Close",
+                    "volume": "Volume",
+                },
+            }
+        ],
+    )
+
+    frame = local_loader.DataLoader().fetch(
+        ["local:DST.US"], "2026-01-01", "2026-07-31"
+    )["DST.US"]
+
+    assert frame.index.tz is None
+    assert list(frame.index) == [
+        pd.Timestamp("2026-01-15 14:30:00"),
+        pd.Timestamp("2026-07-15 13:30:00"),
+    ]

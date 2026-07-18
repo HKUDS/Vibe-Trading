@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 import src.providers.llm as llm
+from src.config.accessor import get_env_config, reset_env_config
 
 LOGGER = "src.providers.llm"
 
@@ -69,6 +70,31 @@ def test_logs_none_when_no_env_found(tmp_path, fresh, monkeypatch, caplog):
         llm._ensure_dotenv()
     msg = "\n".join(r.getMessage() for r in caplog.records)
     assert "none (no .env file found)" in msg
+
+
+def test_loaded_dotenv_refreshes_cached_env_config(tmp_path, fresh, monkeypatch):
+    """A config cached before dotenv loading must be refreshed afterwards."""
+    env = tmp_path / ".env"
+    env.write_text(
+        "LANGCHAIN_PROVIDER=deepseek\n"
+        "LANGCHAIN_MODEL_NAME=deepseek-chat\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(llm, "_ENV_CANDIDATES", [env])
+    monkeypatch.setattr(llm, "_ENV_LABELS", ("<TEST_SLOT>",))
+    monkeypatch.delenv("LANGCHAIN_PROVIDER", raising=False)
+    monkeypatch.delenv("LANGCHAIN_MODEL_NAME", raising=False)
+
+    reset_env_config()
+    cached_before_load = get_env_config()
+    assert cached_before_load.llm.langchain_provider == "openai"
+
+    llm._ensure_dotenv()
+
+    refreshed = get_env_config()
+    assert refreshed is not cached_before_load
+    assert refreshed.llm.langchain_provider == "deepseek"
+    assert refreshed.llm.langchain_model_name == "deepseek-chat"
 
 
 def test_logs_redacted_base_url_without_credentials(tmp_path, fresh, monkeypatch, caplog):

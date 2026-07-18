@@ -18,13 +18,18 @@ environment.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from decimal import Decimal
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Mapping
 
 from src.config.paths import get_runtime_root
+from src.trading.connectors.longbridge.credentials import (
+    LongbridgeCredentialError,
+    resolve_longbridge_credentials,
+)
 
 CONFIG_FILENAME = "longbridge.json"
 
@@ -64,13 +69,17 @@ class LongbridgeConfig:
         readonly: Always true for this layer; order methods are not exposed.
     """
 
-    app_key: str = ""
-    app_secret: str = ""
-    access_token: str = ""
+    app_key: str = field(default="", repr=False)
+    app_secret: str = field(default="", repr=False)
+    access_token: str = field(default="", repr=False)
     profile: str = "paper"
     region: str = "global"
     timeout: float = 15.0
     readonly: bool = True
+    _credential_source: str | None = field(default=None, repr=False, compare=False)
+    _credential_error: LongbridgeCredentialError | None = field(
+        default=None, repr=False, compare=False
+    )
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any] | None = None) -> "LongbridgeConfig":
@@ -90,6 +99,8 @@ class LongbridgeConfig:
             region=region,
             timeout=float(payload.get("timeout") or 15.0),
             readonly=bool(payload.get("readonly", True)),
+            _credential_source=payload.get("_credential_source"),
+            _credential_error=payload.get("_credential_error"),
         )
 
     def with_overrides(
@@ -101,18 +112,23 @@ class LongbridgeConfig:
         profile: str | None = None,
         region: str | None = None,
     ) -> "LongbridgeConfig":
-        """Return a copy with CLI/tool overrides applied."""
-        payload = asdict(self)
-        if app_key is not None:
-            payload["app_key"] = app_key
-        if app_secret is not None:
-            payload["app_secret"] = app_secret
-        if access_token is not None:
-            payload["access_token"] = access_token
-        if profile is not None:
-            payload["profile"] = profile
-        if region is not None:
-            payload["region"] = region
+        """Return a copy with safe profile/region overlays applied.
+
+        Credential arguments remain in the public signature for compatibility,
+        but are ignored so callers cannot bypass atomic source resolution.
+        """
+        del app_key, app_secret, access_token
+        payload = {
+            "app_key": self.app_key,
+            "app_secret": self.app_secret,
+            "access_token": self.access_token,
+            "profile": profile if profile is not None else self.profile,
+            "region": region if region is not None else self.region,
+            "timeout": self.timeout,
+            "readonly": self.readonly,
+            "_credential_source": self._credential_source,
+            "_credential_error": self._credential_error,
+        }
         return LongbridgeConfig.from_mapping(payload)
 
     @property
@@ -121,30 +137,38 @@ class LongbridgeConfig:
         return PROFILE_ENVIRONMENTS.get(self.profile, "paper")
 
 
-_OVERRIDE_KEYS = ("app_key", "app_secret", "access_token", "profile", "region")
+_OVERLAY_KEYS = ("profile", "region")
 
 
 def build_config(profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None) -> "LongbridgeConfig":
-    """Resolve the effective config: saved file ← profile defaults ← CLI overrides.
+    """Resolve credentials atomically, then apply profile and region overlays.
 
-    Credentials (``app_key`` / ``app_secret`` / ``access_token``) come from the
-    saved ``~/.vibe-trading/longbridge.json``; the selected connector profile
-    supplies the ``profile`` / ``region`` intent; CLI/tool overrides win last.
-
-    Args:
-        profile_config: The connector profile's ``config`` dict.
-        overrides: Per-call overrides (only known config keys are applied).
-
-    Returns:
-        A normalized :class:`LongbridgeConfig`.
+    The public return type and call signature are unchanged. Credential source
+    and field-only resolution errors are tracked internally for ``check_status``.
+    Credential-like profile/override values are ignored so callers cannot mix
+    or bypass the shared resolver. Safety-critical profile identity comes only
+    from the selected built-in profile/per-call overlay, never a credential file.
     """
-    base = asdict(load_config())
-    for key, value in dict(profile_config or {}).items():
-        if value is not None:
-            base[key] = value
-    cfg = LongbridgeConfig.from_mapping(base)
-    clean = {k: v for k, v in dict(overrides or {}).items() if k in _OVERRIDE_KEYS and v not in (None, "")}
-    return cfg.with_overrides(**clean) if clean else cfg
+    resolution_error: LongbridgeCredentialError | None = None
+    try:
+        resolution = resolve_longbridge_credentials()
+    except LongbridgeCredentialError as exc:
+        resolution = None
+        resolution_error = exc
+
+    base: dict[str, Any] = {}
+    if resolution is not None and resolution.credentials is not None:
+        base.update(asdict(resolution.credentials))
+    for payload in (profile_config, overrides):
+        for key, value in dict(payload or {}).items():
+            if key in _OVERLAY_KEYS and value not in (None, ""):
+                base[key] = value
+
+    base["_credential_source"] = resolution.source if resolution is not None else None
+    base["_credential_error"] = (
+        _credential_error(resolution) if resolution is not None else resolution_error
+    )
+    return LongbridgeConfig.from_mapping(base)
 
 
 def config_path() -> Path:
@@ -153,21 +177,30 @@ def config_path() -> Path:
 
 
 def load_config() -> LongbridgeConfig:
-    """Load Longbridge settings from ``~/.vibe-trading/longbridge.json``."""
+    """Load the legacy runtime-file settings without exposing parse details."""
     path = config_path()
     if not path.exists():
         return LongbridgeConfig()
     try:
         return LongbridgeConfig.from_mapping(json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        raise LongbridgeConfigError(f"invalid Longbridge config at {path}: {exc}") from exc
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        raise LongbridgeConfigError("invalid Longbridge runtime config") from exc
 
 
 def save_config(config: LongbridgeConfig) -> Path:
-    """Persist Longbridge settings with owner-only permissions."""
+    """Persist public Longbridge settings with owner-only permissions."""
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(asdict(config), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    payload = {
+        "app_key": config.app_key,
+        "app_secret": config.app_secret,
+        "access_token": config.access_token,
+        "profile": config.profile,
+        "region": config.region,
+        "timeout": config.timeout,
+        "readonly": config.readonly,
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     try:
         path.chmod(0o600)
     except OSError:
@@ -185,44 +218,109 @@ def longbridge_available() -> bool:
 
 
 def check_status(config: LongbridgeConfig | None = None) -> dict[str, Any]:
-    """Check SDK readiness and config completeness without mutating broker state."""
-    cfg = config or load_config()
+    """Check read-only readiness with stable, redaction-safe diagnostics."""
+    cfg = config or build_config()
+    credential_error = cfg._credential_error
+    credential_source = cfg._credential_source
+    configured = credential_error is None and not _missing_fields(cfg)
+    installed = longbridge_available()
     report: dict[str, Any] = {
         "status": "ok",
+        "configured": configured,
+        "credential_source": credential_source,
+        "connection_state": "connected",
+        "error_code": None,
+        "error": None,
         "config": _public_config(cfg),
-        "sdk": {"package": "longbridge", "installed": longbridge_available()},
+        "sdk": {"package": "longbridge", "installed": installed},
         "paper_guard": "config_declared",
     }
 
-    missing = _missing_fields(cfg)
-    if missing:
-        report["status"] = "error"
-        report["error"] = f"Longbridge connector not configured: missing {', '.join(missing)}."
-        return report
+    if credential_error is None and not configured:
+        credential_error = LongbridgeCredentialError(
+            "credentials_missing", tuple(_missing_fields(cfg))
+        )
+    if credential_error is not None:
+        return _status_error(
+            report,
+            credential_error.code,
+            _credential_error_message(credential_error),
+        )
 
-    if not report["sdk"]["installed"]:
-        report["status"] = "error"
-        report["error"] = "Optional dependency missing: install with `pip install longbridge`."
-        return report
+    if not installed:
+        return _status_error(
+            report,
+            "sdk_missing",
+            "Optional dependency missing: install with `pip install longbridge`.",
+        )
 
     try:
         snapshot = get_account_snapshot(cfg)
-    except Exception as exc:  # noqa: BLE001 - health endpoint reports cleanly
-        report["status"] = "error"
-        report["error"] = str(exc)
-        return report
+    except Exception as exc:  # noqa: BLE001 - health endpoint reports safe codes
+        code = _connection_error_code(exc)
+        return _status_error(report, code, _connection_error_message(code))
 
     report["account"] = {
         "profile": cfg.profile,
         "region": cfg.region,
         "balances_currency": [row.get("currency") for row in snapshot.get("balances", [])],
     }
+    report["last_checked_at"] = datetime.now(timezone.utc).isoformat()
     return report
+
+
+def _credential_error(resolution: Any) -> LongbridgeCredentialError | None:
+    if resolution.credentials is not None:
+        return None
+    if resolution.conflict_fields:
+        return LongbridgeCredentialError(
+            "credentials_conflict", resolution.conflict_fields
+        )
+    code = "credentials_missing" if resolution.source is None else "credentials_partial"
+    return LongbridgeCredentialError(code, resolution.missing_fields)
+
+
+def _credential_error_message(error: LongbridgeCredentialError) -> str:
+    fields = ", ".join(error.fields)
+    if error.code == "credentials_conflict":
+        return f"Longbridge credential sources conflict for fields: {fields}."
+    if error.code == "credentials_partial":
+        return f"Longbridge credentials are partial; missing fields: {fields}."
+    return f"Longbridge connector not configured: missing {fields}."
+
+
+def _status_error(report: dict[str, Any], code: str, message: str) -> dict[str, Any]:
+    report.update(
+        status="error",
+        connection_state=(
+            "not_configured" if code == "credentials_missing" else "error"
+        ),
+        error_code=code,
+        error=message,
+    )
+    return report
+
+
+def _connection_error_code(exc: Exception) -> str:
+    if isinstance(exc, (ConnectionError, TimeoutError, OSError)):
+        return "network_unreachable"
+    text = type(exc).__name__.lower() + " " + str(exc).lower()
+    if any(token in text for token in ("auth", "token", "permission", "unauthorized")):
+        return "authentication_failed"
+    return "broker_error"
+
+
+def _connection_error_message(code: str) -> str:
+    return {
+        "authentication_failed": "Longbridge authentication failed.",
+        "network_unreachable": "Longbridge network is unreachable.",
+        "broker_error": "Longbridge broker request failed.",
+    }[code]
 
 
 def get_account_snapshot(config: LongbridgeConfig | None = None) -> dict[str, Any]:
     """Fetch account balances for the configured account."""
-    cfg = config or load_config()
+    cfg = config or build_config()
     trade = _trade_context(cfg)
     balances = _call(trade, "account_balance")
     rows = [_balance_to_dict(item) for item in _as_iter(balances)]
@@ -236,7 +334,7 @@ def get_account_snapshot(config: LongbridgeConfig | None = None) -> dict[str, An
 
 def get_positions(config: LongbridgeConfig | None = None) -> dict[str, Any]:
     """Fetch current stock positions for the configured account."""
-    cfg = config or load_config()
+    cfg = config or build_config()
     trade = _trade_context(cfg)
     response = _call(trade, "stock_positions")
     rows = [_position_to_dict(item) for item in _iter_positions(response)]
@@ -275,7 +373,7 @@ def get_open_orders(config: LongbridgeConfig | None = None, *, include_execution
     filled/cancelled). We filter to non-terminal statuses so ``open_orders``
     means the same thing here as in the other connectors.
     """
-    cfg = config or load_config()
+    cfg = config or build_config()
     trade = _trade_context(cfg)
     orders = _call(trade, "today_orders")
     mapped = [_order_to_dict(item) for item in _as_iter(orders)]
@@ -293,7 +391,7 @@ def get_open_orders(config: LongbridgeConfig | None = None, *, include_execution
 
 def get_quote(symbol: str, *, config: LongbridgeConfig | None = None, **_: Any) -> dict[str, Any]:
     """Fetch a quote snapshot for ``symbol`` (top-of-book bid/ask via depth)."""
-    cfg = config or load_config()
+    cfg = config or build_config()
     quote_ctx = _quote_context(cfg)
     clean = symbol.strip().upper()
     quotes = _call(quote_ctx, "quote", [clean])
@@ -317,7 +415,7 @@ def get_historical_bars(
     **_: Any,
 ) -> dict[str, Any]:
     """Fetch historical OHLCV candlesticks for ``symbol`` (``period`` canonical)."""
-    cfg = config or load_config()
+    cfg = config or build_config()
     quote_ctx = _quote_context(cfg)
     clean = symbol.strip().upper()
     period_enum, adjust_enum = _candlestick_enums(period)
@@ -554,12 +652,27 @@ def _build_config(cfg: LongbridgeConfig):
         return config_cls.from_apikey(cfg.app_key, cfg.app_secret, cfg.access_token)
 
 
+def _require_resolved_config(cfg: LongbridgeConfig) -> None:
+    error = cfg._credential_error
+    if error is not None:
+        raise LongbridgeConfigError(_credential_error_message(error)) from error
+    missing = _missing_fields(cfg)
+    if missing:
+        raise LongbridgeConfigError(
+            _credential_error_message(
+                LongbridgeCredentialError("credentials_missing", tuple(missing))
+            )
+        )
+
+
 def _trade_context(cfg: LongbridgeConfig):
+    _require_resolved_config(cfg)
     openapi = _require_openapi()
     return getattr(openapi, "TradeContext")(_build_config(cfg))
 
 
 def _quote_context(cfg: LongbridgeConfig):
+    _require_resolved_config(cfg)
     openapi = _require_openapi()
     return getattr(openapi, "QuoteContext")(_build_config(cfg))
 
@@ -599,7 +712,15 @@ def _missing_fields(cfg: LongbridgeConfig) -> list[str]:
 
 def _public_config(cfg: LongbridgeConfig) -> dict[str, Any]:
     """Config snapshot with secrets redacted."""
-    data = asdict(cfg)
+    data = {
+        "app_key": cfg.app_key,
+        "app_secret": cfg.app_secret,
+        "access_token": cfg.access_token,
+        "profile": cfg.profile,
+        "region": cfg.region,
+        "timeout": cfg.timeout,
+        "readonly": cfg.readonly,
+    }
     for secret in ("app_secret", "access_token"):
         if data.get(secret):
             data[secret] = "***redacted***"

@@ -25,7 +25,7 @@ SINCE = int(pd.Timestamp("2026-05-01").timestamp() * 1000)
 END = int((pd.Timestamp("2026-05-05") + pd.Timedelta(days=1)).timestamp() * 1000)
 
 
-def _bars(n: int = 4) -> list:
+def _bars(n: int = 5) -> list:
     base = int(pd.Timestamp("2026-05-01").timestamp() * 1000)
     day = 86_400_000
     return [[base + i * day, 100 + i, 101 + i, 99 + i, 100 + i, 10 + i] for i in range(n)]
@@ -87,6 +87,25 @@ def test_wallclock_budget_enforced(monkeypatch):
     ex = _FakeEx([ccxt.NetworkError("slow")])
     with pytest.raises(TimeoutError):
         DataLoader._fetch_one(ex, "BTC/USDT", "1d", SINCE, END)
+
+
+def test_page_cap_rejects_incomplete_requested_history():
+    minute_ms = 60_000
+
+    class FullPageExchange:
+        def fetch_ohlcv(self, symbol, timeframe, since=None, limit=None):
+            del symbol, timeframe
+            assert since is not None
+            assert limit == 1000
+            return [
+                [since + i * minute_ms, 100.0, 101.0, 99.0, 100.0, 10.0]
+                for i in range(limit)
+            ]
+
+    end = int((pd.Timestamp("2027-05-01") + pd.Timedelta(days=1)).timestamp() * 1000)
+
+    with pytest.raises(ValueError, match="incomplete"):
+        DataLoader._fetch_one(FullPageExchange(), "BTC/USDT", "1m", SINCE, end)
 
 
 def test_get_exchange_sets_explicit_timeout():

@@ -283,3 +283,35 @@ class TestLeverageFromMargin:
     def test_override_margin_rate(self) -> None:
         engine = _make_engine(margin_rate_override=0.20)
         assert engine.default_leverage == pytest.approx(5.0)
+
+    def test_order_sizing_does_not_depend_on_symbol_order(self) -> None:
+        timestamp = pd.Timestamp("2026-01-05")
+        frame = pd.DataFrame(
+            {"open": [5_000.0], "close": [5_000.0]},
+            index=pd.DatetimeIndex([timestamp]),
+        )
+        first = _make_engine(codes=["IF2406.CFFEX", "T2406.CFFEX"])
+        second = _make_engine(codes=["T2406.CFFEX", "IF2406.CFFEX"])
+
+        first_order = first._plan_open_order(
+            "IF2406.CFFEX", 0.5, frame, timestamp, 1_000_000.0
+        )
+        second_order = second._plan_open_order(
+            "IF2406.CFFEX", 0.5, frame, timestamp, 1_000_000.0
+        )
+
+        assert first_order is not None
+        assert second_order is not None
+        assert first_order.size == second_order.size
+        assert first_order.leverage == pytest.approx(1 / 0.12)
+        assert second_order.leverage == pytest.approx(1 / 0.12)
+
+    def test_composite_delegates_symbol_leverage(self) -> None:
+        from backtest.engines.composite import CompositeEngine
+
+        engine = CompositeEngine(
+            {"initial_cash": 1_000_000, "codes": ["AAPL.US", "IF2406.CFFEX"]},
+            ["AAPL.US", "IF2406.CFFEX"],
+        )
+
+        assert engine._leverage_for_symbol("IF2406.CFFEX") == pytest.approx(1 / 0.12)

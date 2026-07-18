@@ -87,16 +87,24 @@ def test_qualify_a_share(code: str, expected: str) -> None:
         ("证券买入", "buy"),
         ("B", "buy"),
         ("long", "buy"),
+        (" Purchase ", "buy"),
+        ("buy-to-cover", "buy"),
         ("卖出", "sell"),
         ("证券卖出", "sell"),
         ("融券卖出", "sell"),
         ("S", "sell"),
         ("short", "sell"),
-        ("hold", "buy"),  # no buy/sell token substring -> documented fallback
+        (" SELL-SHORT ", "sell"),
     ],
 )
 def test_normalize_side(raw: str, expected: str) -> None:
     assert _normalize_side(raw) == expected
+
+
+@pytest.mark.parametrize("raw", [None, "", "hold", "strong buy"])
+def test_normalize_side_rejects_missing_or_unknown(raw: object) -> None:
+    with pytest.raises(ValueError, match="side"):
+        _normalize_side(raw)
 
 
 @pytest.mark.parametrize(
@@ -192,6 +200,23 @@ def test_parse_file_unknown_raises(tmp_path: Path) -> None:
         parse_file(csv)
 
 
+@pytest.mark.parametrize(
+    "header,value,error",
+    [
+        ("datetime,symbol,quantity,price", "2026-01-02,AAPL,10,180", "requires a side"),
+        ("datetime,symbol,side,quantity,price", "2026-01-02,AAPL,hold,10,180", "Unsupported trade side"),
+    ],
+)
+def test_parse_file_rejects_missing_or_unknown_side(
+    tmp_path: Path, header: str, value: str, error: str
+) -> None:
+    csv = tmp_path / "invalid_side.csv"
+    csv.write_text(f"{header}\n{value}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=error):
+        parse_file(csv)
+
+
 # --------------------------------------------------------------------------
 # FIFO pairing
 # --------------------------------------------------------------------------
@@ -243,6 +268,38 @@ def test_fifo_partial_fill_splits_into_two_roundtrips() -> None:
     assert rts[0]["pnl"] == 2000.0  # (30-10)*100
     assert rts[1]["qty"] == 50
     assert rts[1]["pnl"] == 500.0  # (30-20)*50
+
+
+@pytest.mark.parametrize("exit_quantities", [[5, 5], [4, 4, 4]])
+def test_fifo_partial_exits_conserve_entry_fee(exit_quantities: list[int]) -> None:
+    entry_qty = sum(exit_quantities)
+    records = [
+        _rec(
+            "2026-01-01 10:00:00",
+            "X.SH",
+            "buy",
+            entry_qty,
+            10,
+            fee=entry_qty,
+        )
+    ]
+    records.extend(
+        _rec(
+            f"2026-01-0{day} 10:00:00",
+            "X.SH",
+            "sell",
+            qty,
+            11,
+        )
+        for day, qty in enumerate(exit_quantities, start=2)
+    )
+
+    rts = pair_trades_fifo(_df(records))
+    gross_pnl = sum((trip["sell_price"] - trip["buy_price"]) * trip["qty"] for trip in rts)
+    allocated_entry_fee = gross_pnl - sum(trip["pnl"] for trip in rts)
+
+    assert allocated_entry_fee == pytest.approx(entry_qty)
+    assert sum(trip["pnl"] for trip in rts) == pytest.approx(0.0)
 
 
 def test_fifo_unmatched_sell_ignored() -> None:
@@ -330,6 +387,39 @@ def test_apply_filter_date_range() -> None:
     out = _apply_filter(_filter_df(), "2026-02-01 to 2026-02-28")
     assert len(out) == 1
     assert out.iloc[0]["symbol"] == "AAPL"
+
+
+def test_apply_filter_month_range_includes_entire_leap_month() -> None:
+    df = _df(
+        [
+            _rec("2024-01-31 10:00:00", "JAN", "buy", 1, 10),
+            _rec("2024-02-01 10:00:00", "FEB1", "buy", 1, 10),
+            _rec("2024-02-29 10:00:00", "FEB29", "buy", 1, 10),
+            _rec("2024-03-01 10:00:00", "MAR", "buy", 1, 10),
+        ]
+    )
+
+    out = _apply_filter(df, "2024-01 to 2024-02")
+
+    assert list(out["symbol"]) == ["JAN", "FEB1", "FEB29"]
+
+
+def test_apply_filter_preserves_full_date_and_mixed_precision() -> None:
+    df = _df(
+        [
+            _rec("2024-02-01 10:00:00", "START", "buy", 1, 10),
+            _rec("2024-02-15 10:00:00", "MIDDLE", "buy", 1, 10),
+            _rec("2024-02-29 10:00:00", "END", "buy", 1, 10),
+        ]
+    )
+
+    dates = _apply_filter(df, "2024-02-01 to 2024-02-15")
+    mixed = _apply_filter(df, "2024-02-15 to 2024-02")
+    reversed_range = _apply_filter(df, "2024-03 to 2024-02")
+
+    assert list(dates["symbol"]) == ["START", "MIDDLE"]
+    assert list(mixed["symbol"]) == ["MIDDLE", "END"]
+    assert reversed_range.empty
 
 
 def test_apply_filter_symbol_equals() -> None:

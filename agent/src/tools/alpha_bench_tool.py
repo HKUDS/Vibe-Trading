@@ -529,7 +529,7 @@ def _compute_forward_returns(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     if close is None:
         raise ValueError("panel missing 'close' — cannot derive forward returns")
     # Next-period return aligned to current row (use t+1 close, shift back).
-    fwd = close.pct_change().shift(-1)
+    fwd = close.pct_change(fill_method=None).shift(-1)
     return fwd
 
 

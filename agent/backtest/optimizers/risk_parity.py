@@ -1,7 +1,4 @@
-"""Risk parity: equalize marginal risk contributions.
-
-Iterative refinement so w_i * MRC_i is approximately equal across assets.
-"""
+"""Long-only risk parity: equalize marginal risk contributions."""
 
 from typing import Any, Dict
 
@@ -12,33 +9,44 @@ from backtest.optimizers.base import BaseOptimizer
 
 
 class RiskParityOptimizer(BaseOptimizer):
-    """Spinu (2013)-style inverse-vol seed + Newton-style refinement."""
+    """Equal-risk-contribution weights on the long-only simplex."""
 
     def _calc_weights(self, ctx: Dict[str, Any]) -> np.ndarray:
         """Equal risk contribution weights."""
+        from scipy.optimize import minimize
+
         cov = ctx["cov"]
         n = cov.shape[0]
         if n == 0:
             return self._equal_weight(0)
 
         vols = np.sqrt(np.diag(cov))
-        if np.any(vols < 1e-12):
+        if not np.isfinite(cov).all() or np.any(vols < 1e-12):
             return self._equal_weight(n)
 
         inv_vol = 1.0 / vols
-        w = inv_vol / inv_vol.sum()
+        seed = inv_vol / inv_vol.sum()
 
-        for _ in range(5):
-            port_vol = np.sqrt(w @ cov @ w)
-            if port_vol < 1e-12:
-                break
-            mrc = (cov @ w) / port_vol
-            rc = w * mrc
-            target = port_vol / n
-            w = w * (target / (rc + 1e-12))
-            w = w / w.sum()
+        def contribution_error(w: np.ndarray) -> float:
+            variance = float(w @ cov @ w)
+            if not np.isfinite(variance) or variance <= 1e-18:
+                return 1e12
+            contributions = w * (cov @ w)
+            target = variance / n
+            return float(np.sum((contributions - target) ** 2) / variance**2)
 
-        return w
+        result = minimize(
+            contribution_error,
+            seed,
+            method="SLSQP",
+            bounds=[(0.0, 1.0)] * n,
+            constraints={"type": "eq", "fun": lambda w: w.sum() - 1.0},
+            options={"maxiter": 200, "ftol": 1e-12},
+        )
+
+        if result.success and np.isfinite(result.x).all():
+            return self._normalize(result.x)
+        return self._normalize(seed)
 
 
 def optimize(

@@ -4,6 +4,14 @@ Reads YAML preset files from the bundled ``presets/`` directory next to this
 module and parses them into SwarmRun / SwarmAgentSpec / SwarmTask data models.
 Keeping the YAMLs inside the ``src.swarm`` package guarantees identical
 behavior under editable installs and built wheels.
+
+User-supplied presets are also discovered from ``~/.vibe-trading/swarm/
+presets/`` — the same pattern as user skills (``src/agent/skills.py``):
+the user directory is searched first, so a user preset can both add to and
+override the bundled roster by name, and nothing needs to be copied into
+site-packages (where it would be wiped by the next ``pip install -U``).
+Preset names are validated to a single path segment before any filesystem
+lookup, so a name can never escape either presets directory.
 """
 
 from __future__ import annotations
@@ -20,11 +28,58 @@ from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, Tas
 from src.swarm.task_store import topological_layers, validate_dag
 
 PRESETS_DIR = Path(__file__).resolve().parent / "presets"
+#: User-created presets; searched before the bundled directory so user files
+#: can add to and override the roster by name (mirrors USER_SKILLS_DIR in
+#: ``src/agent/skills.py``). Survives package upgrades.
+USER_PRESETS_DIR = Path.home() / ".vibe-trading" / "swarm" / "presets"
 _INTERNAL_TEMPLATE_VARS = {"upstream_context"}
 
 
+def _redact_home(path: Path) -> str:
+    """Render ``path`` with the home prefix collapsed to ``~`` so user-facing
+    errors never leak the absolute home directory (CWE-209)."""
+    try:
+        return "~/" + str(path.relative_to(Path.home()))
+    except ValueError:
+        return str(path)
+
+
+def _validate_preset_name(name: str) -> str:
+    """Reject names that are empty or could escape a presets directory.
+
+    Preset names map directly to ``<dir>/<name>.yaml``; a name carrying a
+    path separator or ``..`` would resolve outside the directory. The bundled
+    path had the same latent exposure — validating here covers both.
+
+    Returns:
+        The stripped name.
+
+    Raises:
+        ValueError: Empty name, path separators, or parent references.
+    """
+    cleaned = (name or "").strip()
+    if not cleaned or cleaned in {".", ".."} or "/" in cleaned or "\\" in cleaned:
+        raise ValueError(f"invalid preset name: {name!r}")
+    return cleaned
+
+
+def _preset_search_dirs() -> tuple[Path, ...]:
+    """Directories searched for presets, highest priority first."""
+    return (USER_PRESETS_DIR, PRESETS_DIR)
+
+
+def resolve_preset_path(name: str) -> Path | None:
+    """Return the YAML path for *name* (user dir first), or ``None``."""
+    cleaned = _validate_preset_name(name)
+    for directory in _preset_search_dirs():
+        path = directory / f"{cleaned}.yaml"
+        if path.is_file():
+            return path
+    return None
+
+
 def load_preset(name: str) -> dict:
-    """Load a YAML preset by name.
+    """Load a YAML preset by name (user directory first, then bundled).
 
     Args:
         name: Preset name (without .yaml extension).
@@ -33,42 +88,59 @@ def load_preset(name: str) -> dict:
         Parsed YAML dict.
 
     Raises:
-        FileNotFoundError: If the preset file does not exist.
+        ValueError: If the name is empty or contains path separators.
+        FileNotFoundError: If the preset file does not exist in either the
+            user directory (``~/.vibe-trading/swarm/presets/``) or the
+            bundled package directory.
     """
-    path = PRESETS_DIR / f"{name}.yaml"
-    if not path.exists():
-        available = [p.stem for p in PRESETS_DIR.glob("*.yaml")] if PRESETS_DIR.exists() else []
+    path = resolve_preset_path(name)
+    if path is None:
+        available = sorted({
+            p.stem
+            for directory in _preset_search_dirs()
+            if directory.exists()
+            for p in directory.glob("*.yaml")
+        })
         raise FileNotFoundError(
-            f"Preset {name!r} not found. Available: {available}"
+            f"Preset {name!r} not found in {_redact_home(USER_PRESETS_DIR)} or "
+            f"the bundled presets. Available: {available}"
         )
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
 def list_presets() -> list[dict]:
-    """Return summary info for all available presets.
+    """Return summary info for all available presets, sorted by name.
+
+    User presets (``~/.vibe-trading/swarm/presets/``) are listed alongside the
+    bundled roster; when both directories carry the same file stem, the user
+    preset wins — the same override rule as user skills.
 
     Returns:
-        List of dicts with keys: name, title, description, agent_count, variables.
+        List of dicts with keys: name, title, description, agent_count,
+        variables, source (``"user"`` or ``"bundled"``).
     """
-    if not PRESETS_DIR.exists():
-        return []
-
-    results: list[dict] = []
-    for path in sorted(PRESETS_DIR.glob("*.yaml")):
-        try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except Exception:
+    by_stem: dict[str, dict] = {}
+    for directory, source in ((PRESETS_DIR, "bundled"), (USER_PRESETS_DIR, "user")):
+        if not directory.exists():
             continue
+        for path in sorted(directory.glob("*.yaml")):
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            # Later iteration (user) intentionally replaces bundled stems.
+            by_stem[path.stem] = {
+                "name": data.get("name", path.stem),
+                "title": data.get("title", ""),
+                "description": data.get("description", ""),
+                "agent_count": len(data.get("agents", [])),
+                "variables": data.get("variables", []),
+                "source": source,
+            }
 
-        results.append({
-            "name": data.get("name", path.stem),
-            "title": data.get("title", ""),
-            "description": data.get("description", ""),
-            "agent_count": len(data.get("agents", [])),
-            "variables": data.get("variables", []),
-        })
-
-    return results
+    return sorted(by_stem.values(), key=lambda entry: entry["name"])
 
 
 def _declared_variable_names(raw_variables: list) -> set[str]:

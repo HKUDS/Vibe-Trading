@@ -40,6 +40,32 @@ describe("api request helper", () => {
     } satisfies Partial<ApiError>);
   });
 
+  it("posts an authenticated connector verification request with an encoded profile id", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn(() => "remote-test-key"),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: "ok", connection_state: "connected" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { api } = await loadApiModule();
+
+    await expect(api.verifyConnector("longbridge/live sdk")).resolves.toMatchObject({ status: "ok" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/live/connectors/longbridge%2Flive%20sdk/verify?force=true",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer remote-test-key" }),
+      }),
+    );
+  });
+
   it("sends the stored API key when fetching a correlation matrix", async () => {
     vi.stubGlobal("localStorage", {
       getItem: vi.fn(() => "remote-test-key"),

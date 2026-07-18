@@ -63,7 +63,12 @@ from src.live.extractors import get_extractor
 from src.live.halt import halt_flag_set
 from src.live.mandate.model import MANDATE_SCHEMA_VERSION, Mandate
 from src.live.mandate.store import load_mandate
-from src.live.daily_count import increment_daily_count, read_daily_count
+from src.live.daily_count import (
+    DailyOrderLockUnavailable,
+    daily_order_lock,
+    increment_daily_count,
+    read_daily_count,
+)
 from src.tools.mcp import MCPRemoteTool, MCPRemoteToolSpec, MCPServerAdapter
 
 logger = logging.getLogger(__name__)
@@ -178,22 +183,30 @@ class LiveOrderGuardTool(MCPRemoteTool):
 
         positions = self._read_first(self._read_tools("positions", _POSITIONS_TOOLS))
         balance = self._read_first(self._read_tools("account", _BALANCE_TOOLS))
-        daily_count = self._read_daily_count()
 
-        breach = check_mandate(
-            mandate,
-            intent,
-            positions,
-            balance,
-            broker=self.broker,
-            remote_tool=self.remote_name,
-            daily_count=daily_count,
-        )
+        try:
+            with daily_order_lock(self.broker):
+                daily_count = self._read_daily_count()
+                breach = check_mandate(
+                    mandate,
+                    intent,
+                    positions,
+                    balance,
+                    broker=self.broker,
+                    remote_tool=self.remote_name,
+                    daily_count=daily_count,
+                )
 
-        if breach is None:
-            return self._allow(
-                mandate=mandate, intent=intent, kwargs=kwargs,
-                positions=positions, balance=balance,
+                if breach is None:
+                    return self._allow(
+                        mandate=mandate, intent=intent, kwargs=kwargs,
+                        positions=positions, balance=balance,
+                    )
+        except DailyOrderLockUnavailable as exc:
+            return self._deny(
+                reason=str(exc),
+                checked=["mandate", "expiry", "halt_flag", "daily_order_lock"],
+                mandate=mandate,
             )
 
         if breach.kind in (BREACH_KIND_UNIVERSE, BREACH_KIND_INSTRUMENT):

@@ -242,26 +242,39 @@ class HypothesisRegistry:
 
         Raises:
             KeyError: If the hypothesis does not exist.
-            ValueError: If status is unknown.
+            ValueError: If a required field is blank or status is unknown.
         """
+        normalized_title = title.strip() if title is not None else None
+        if title is not None and not normalized_title:
+            raise ValueError("title is required")
+        normalized_thesis = thesis.strip() if thesis is not None else None
+        if thesis is not None and not normalized_thesis:
+            raise ValueError("thesis is required")
+        normalized_status = _validate_status(status) if status is not None else None
+        normalized_universe = universe.strip() if universe is not None else None
+        normalized_signal_definition = signal_definition.strip() if signal_definition is not None else None
+        normalized_data_sources = _coerce_str_list(data_sources) if data_sources is not None else None
+        normalized_skills = _coerce_str_list(skills) if skills is not None else None
+        normalized_invalidation_notes = invalidation_notes.strip() if invalidation_notes is not None else None
+
         records = self.list()
         hyp = self._find_required(records, hypothesis_id)
-        if title is not None:
-            hyp.title = title.strip()
-        if thesis is not None:
-            hyp.thesis = thesis.strip()
-        if status is not None:
-            hyp.status = _validate_status(status)
-        if universe is not None:
-            hyp.universe = universe.strip()
-        if signal_definition is not None:
-            hyp.signal_definition = signal_definition.strip()
-        if data_sources is not None:
-            hyp.data_sources = _coerce_str_list(data_sources)
-        if skills is not None:
-            hyp.skills = _coerce_str_list(skills)
-        if invalidation_notes is not None:
-            hyp.invalidation_notes = invalidation_notes.strip()
+        if normalized_title is not None:
+            hyp.title = normalized_title
+        if normalized_thesis is not None:
+            hyp.thesis = normalized_thesis
+        if normalized_status is not None:
+            hyp.status = normalized_status
+        if normalized_universe is not None:
+            hyp.universe = normalized_universe
+        if normalized_signal_definition is not None:
+            hyp.signal_definition = normalized_signal_definition
+        if normalized_data_sources is not None:
+            hyp.data_sources = normalized_data_sources
+        if normalized_skills is not None:
+            hyp.skills = normalized_skills
+        if normalized_invalidation_notes is not None:
+            hyp.invalidation_notes = normalized_invalidation_notes
         hyp.updated_at = _utc_now()
         self._save(records)
         return hyp

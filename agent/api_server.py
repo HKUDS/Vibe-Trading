@@ -268,6 +268,8 @@ from src.api.live_routes import (  # noqa: F401, E402
     _live_broker_adapter,
     _build_live_runner,
     _drive_runner,
+    _connector_verify_cache,
+    _check_connector_status,
 )
 
 # --- Alpha Zoo ---

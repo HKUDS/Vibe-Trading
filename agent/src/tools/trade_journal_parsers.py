@@ -24,8 +24,31 @@ _A_SHARE_EXCHANGE_MAP = {
     ("4", "8"): ".BJ",
 }
 
-_BUY_TOKENS = {"buy", "b", "买入", "证券买入", "融资买入", "做多", "long"}
-_SELL_TOKENS = {"sell", "s", "卖出", "证券卖出", "融券卖出", "做空", "short"}
+_BUY_TOKENS = {
+    "buy",
+    "b",
+    "purchase",
+    "buy to cover",
+    "buy-to-cover",
+    "buy_to_cover",
+    "买入",
+    "证券买入",
+    "融资买入",
+    "做多",
+    "long",
+}
+_SELL_TOKENS = {
+    "sell",
+    "s",
+    "sell short",
+    "sell-short",
+    "sell_short",
+    "卖出",
+    "证券卖出",
+    "融券卖出",
+    "做空",
+    "short",
+}
 
 
 @dataclass(frozen=True)
@@ -122,11 +145,21 @@ def detect_format(df: pd.DataFrame) -> FormatName:
 # ---------------- Parsers ----------------
 
 def _normalize_side(raw: Any) -> str:
-    """Return 'buy'/'sell', falling back to 'buy'."""
+    """Return ``buy`` or ``sell`` for an exact supported direction alias.
+
+    Raises:
+        ValueError: Direction is missing or unsupported.
+    """
+    if raw is None or pd.isna(raw):
+        raise ValueError("Trade side is required")
     s = str(raw).strip().lower()
-    if s in _SELL_TOKENS or any(tok in s for tok in _SELL_TOKENS):
+    if not s:
+        raise ValueError("Trade side is required")
+    if s in _BUY_TOKENS:
+        return "buy"
+    if s in _SELL_TOKENS:
         return "sell"
-    return "buy"
+    raise ValueError(f"Unsupported trade side: {raw!r}")
 
 
 def _qualify_a_share(code: str) -> str:
@@ -281,6 +314,11 @@ def parse_generic(df: pd.DataFrame) -> list[TradeRecord]:
     amount_col = pick("amount", "value", "notional")
     fee_col = pick("fee", "commission", "fees")
 
+    if side_col is None:
+        raise ValueError(
+            "Generic trade journal requires a side, direction, or action column"
+        )
+
     records: list[TradeRecord] = []
     for _, row in df.iterrows():
         if dt_col:
@@ -299,7 +337,7 @@ def parse_generic(df: pd.DataFrame) -> list[TradeRecord]:
             datetime=dt,
             symbol=symbol.upper(),
             name=str(row.get(name_col, "")).strip() if name_col else "",
-            side=_normalize_side(row.get(side_col) if side_col else "buy"),
+            side=_normalize_side(row.get(side_col)),
             quantity=qty,
             price=price,
             amount=amount or qty * price,

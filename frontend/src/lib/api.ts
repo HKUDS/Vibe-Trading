@@ -217,6 +217,10 @@ export const api = {
   // Read the persistent runtime status across all authorized brokers (SPEC §7.5).
   // Polled by the RunnerStatus panel; a plain authenticated GET, never a chat message.
   getLiveStatus: (signal?: AbortSignal) => request<LiveStatus>("/live/status", { signal }),
+  verifyConnector: (profileId: string) =>
+    request<ConnectorVerifyResponse>(`/live/connectors/${encodeURIComponent(profileId)}/verify?force=true`, {
+      method: "POST",
+    }),
   authorizeLive: (broker: string) =>
     request<LiveAuthorizeResponse>("/live/authorize", {
       method: "POST",
@@ -954,6 +958,36 @@ export interface LiveBrokerAuthStatus {
   broker: string;
   oauth_token_present: boolean;
   is_live_broker: boolean;
+  /** Optional during rolling upgrades from OAuth-only runtime responses. */
+  profile_id?: string | null;
+  transport?: string | null;
+  connection_state?: string | null;
+  configured?: boolean | null;
+  credential_source?: string | null;
+  sdk_installed?: boolean | null;
+  last_checked_at?: string | null;
+  environment_identity?: string | null;
+  readonly?: boolean | null;
+  capabilities?: string[] | null;
+  error_code?: string | null;
+  error?: string | null;
+}
+
+export interface ConnectorVerifyResponse {
+  status?: string;
+  profile_id?: string | null;
+  transport?: string | null;
+  connection_state?: string | null;
+  configured?: boolean | null;
+  credential_source?: string | null;
+  sdk_installed?: boolean | null;
+  last_checked_at?: string | null;
+  environment_identity?: string | null;
+  readonly?: boolean | null;
+  capabilities?: string[] | null;
+  error_code?: string | null;
+  error?: string | null;
+  [key: string]: unknown;
 }
 
 /** One broker entry in the `GET /live/status` response. */

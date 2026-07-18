@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 import src.live.paths as paths
+import src.live.mandate.commit as mandate_commit
 from src.live.mandate.commit import (
     CommitError,
     DEFAULT_MANDATE_LIFETIME_DAYS,
@@ -156,6 +157,62 @@ def test_commit_consumes_proposal_no_replay(live_runtime: Path) -> None:
             consent_ack=True,
             broker="robinhood",
         )
+
+
+def test_failed_consent_write_does_not_publish_mandate(
+    live_runtime: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed approval record must not leave usable live authority."""
+    proposal = _propose()
+    real_write = mandate_commit._atomic_write_json
+
+    def fail_consent(path: Path, payload: dict) -> None:
+        if path.parent.name == "consent":
+            raise OSError("synthetic consent write failure")
+        real_write(path, payload)
+
+    monkeypatch.setattr(mandate_commit, "_atomic_write_json", fail_consent)
+
+    with pytest.raises(OSError, match="synthetic consent write failure"):
+        commit_mandate(
+            proposal_id=proposal["proposal_id"],
+            ordinal=1,
+            adjustments=None,
+            consent_ack=True,
+            broker="robinhood",
+        )
+
+    assert load_mandate("robinhood") is None
+    assert not (paths.broker_dir("robinhood") / "mandate.json").exists()
+
+
+def test_failed_mandate_write_leaves_only_harmless_consent(
+    live_runtime: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Publishing authority last makes its failure fail closed."""
+    proposal = _propose()
+    real_write = mandate_commit._atomic_write_json
+
+    def fail_mandate(path: Path, payload: dict) -> None:
+        if path.name == "mandate.json":
+            raise OSError("synthetic mandate write failure")
+        real_write(path, payload)
+
+    monkeypatch.setattr(mandate_commit, "_atomic_write_json", fail_mandate)
+
+    with pytest.raises(OSError, match="synthetic mandate write failure"):
+        commit_mandate(
+            proposal_id=proposal["proposal_id"],
+            ordinal=1,
+            adjustments=None,
+            consent_ack=True,
+            broker="robinhood",
+        )
+
+    assert load_mandate("robinhood") is None
+    assert len(list((paths.broker_dir("robinhood") / "consent").glob("*.json"))) == 1
 
 
 # ---------------------------------------------------------------------------

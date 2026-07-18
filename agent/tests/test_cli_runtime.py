@@ -146,12 +146,36 @@ class TestRunnerDispatch:
 
 
 class TestRunnerControlEndpoints:
+    def test_live_status_request_sends_configured_bearer_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cli._legacy import _live_api_call
+
+        captured: Dict[str, Any] = {}
+
+        def _get(url: str, headers: Dict[str, str], timeout: float) -> _FakeResp:
+            captured["url"] = url
+            captured["headers"] = headers
+            return _FakeResp({"status": "ok"})
+
+        monkeypatch.setenv("API_AUTH_KEY", "live-secret")
+        with patch("httpx.get", _get):
+            assert _live_api_call("GET", "/live/status") == {"status": "ok"}
+
+        assert captured["url"].endswith("/live/status")
+        assert captured["headers"] == {"Authorization": "Bearer live-secret"}
+
     def test_start_posts_to_runner_start(self) -> None:
         from cli._legacy import EXIT_SUCCESS, cmd_live_start
 
         captured: Dict[str, Any] = {}
 
-        def _post(url: str, json: Dict[str, Any], timeout: float) -> _FakeResp:  # noqa: A002
+        def _post(
+            url: str,
+            json: Dict[str, Any],  # noqa: A002
+            headers: Dict[str, str],
+            timeout: float,
+        ) -> _FakeResp:
             captured["url"] = url
             captured["body"] = json
             return _FakeResp({"runner_id": "live-robinhood", "status": "started"})
@@ -167,7 +191,12 @@ class TestRunnerControlEndpoints:
     ) -> None:
         from cli._legacy import EXIT_SUCCESS, cmd_connector_start
 
-        def _post(url: str, json: Dict[str, Any], timeout: float) -> _FakeResp:  # noqa: A002
+        def _post(
+            url: str,
+            json: Dict[str, Any],  # noqa: A002
+            headers: Dict[str, str],
+            timeout: float,
+        ) -> _FakeResp:
             return _FakeResp({"runner_id": "live-robinhood", "status": "started"})
 
         with patch("httpx.post", _post):
@@ -192,7 +221,12 @@ class TestRunnerControlEndpoints:
 
         captured: Dict[str, Any] = {}
 
-        def _post(url: str, json: Dict[str, Any], timeout: float) -> _FakeResp:  # noqa: A002
+        def _post(
+            url: str,
+            json: Dict[str, Any],  # noqa: A002
+            headers: Dict[str, str],
+            timeout: float,
+        ) -> _FakeResp:
             captured["url"] = url
             captured["body"] = json
             return _FakeResp({"status": "stopped"})
@@ -205,7 +239,12 @@ class TestRunnerControlEndpoints:
     def test_start_server_unreachable_is_run_failed(self) -> None:
         from cli._legacy import EXIT_RUN_FAILED, cmd_live_start
 
-        def _boom(url: str, json: Dict[str, Any], timeout: float) -> _FakeResp:  # noqa: A002
+        def _boom(
+            url: str,
+            json: Dict[str, Any],  # noqa: A002
+            headers: Dict[str, str],
+            timeout: float,
+        ) -> _FakeResp:
             raise OSError("connection refused")
 
         with patch("httpx.post", _boom):
@@ -217,7 +256,12 @@ class TestRunnerControlEndpoints:
 
         calls: List[str] = []
 
-        def _post(url: str, json: Dict[str, Any], timeout: float) -> _FakeResp:  # noqa: A002
+        def _post(
+            url: str,
+            json: Dict[str, Any],  # noqa: A002
+            headers: Dict[str, str],
+            timeout: float,
+        ) -> _FakeResp:
             calls.append(url)
             if url.endswith("/live/runner/start"):
                 assert json["foreground"] is True

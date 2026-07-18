@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+import backtest.loaders.mootdx_loader as ml
 from backtest.loaders.mootdx_loader import DataLoader, _is_a_share, _is_bj
 
 
@@ -135,6 +136,36 @@ def test_fetch_intraday_empty_window_returns_no_entry(
     loader = DataLoader()
     out = loader.fetch(["600519"], "2030-01-01", "2030-01-02", interval="5m")
     assert out == {}
+
+
+def test_intraday_page_cap_rejects_incomplete_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NeverReachesStart:
+        def bars(self, symbol, frequency, start=0, offset=800):
+            del symbol, frequency, start, offset
+            timestamp = pd.Timestamp("2025-01-02 09:30")
+            return pd.DataFrame(
+                {
+                    "open": [10.0],
+                    "close": [10.0],
+                    "high": [10.0],
+                    "low": [10.0],
+                    "datetime": [timestamp],
+                    "volume": [100.0],
+                }
+            )
+
+    monkeypatch.setattr(ml, "_MAX_PAGES", 3)
+
+    with pytest.raises(ValueError, match="incomplete"):
+        DataLoader._fetch_bars_paginated(
+            NeverReachesStart(),
+            "600519",
+            8,
+            "2020-01-01",
+            "2025-01-03",
+        )
 
 
 def test_fetch_skips_non_a_share_symbols(fake_client: _FakeStdQuotes) -> None:

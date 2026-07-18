@@ -97,9 +97,19 @@ def _atomic_write_secret(path: Path, content: str) -> None:
         return
     try:
         os.write(fd, data)
-        os.fchmod(fd, 0o600)
+        # ``os.fchmod`` is unavailable on Windows.  Keep descriptor-level
+        # permission hardening on platforms that support it, then use the
+        # portable path-based best effort after the descriptor is closed.
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
     finally:
         os.close(fd)
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        # Windows ACLs govern effective access and chmod may be unsupported
+        # or map only to the read-only flag.
+        pass
     try:
         os.replace(tmp, path)
     except BaseException:

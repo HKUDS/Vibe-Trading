@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import time
 from dataclasses import dataclass
@@ -67,6 +68,7 @@ class QVerisConfig:
     base_url: str
     api_key: str
     mode: str
+    budget_credits_per_session: float
 
 
 def _load_config() -> QVerisConfig:
@@ -82,6 +84,7 @@ def _load_config() -> QVerisConfig:
         "base_url": _DEFAULT_BASE_URL,
         "api_key": "",
         "mode": "free",
+        "budget_credits_per_session": 50.0,
     }
     try:
         if _CONFIG_PATH.is_file():
@@ -95,11 +98,18 @@ def _load_config() -> QVerisConfig:
 
     api_key = (get_env_config().data.qveris_api_key or str(raw.get("api_key") or "")).strip()
     base_url = (get_env_config().data.qveris_base_url or str(raw.get("base_url") or _DEFAULT_BASE_URL)).strip()
+    try:
+        budget = float(raw.get("budget_credits_per_session", 50.0))
+    except (TypeError, ValueError):
+        budget = 50.0
+    if not math.isfinite(budget):
+        budget = 50.0
     return QVerisConfig(
         enabled=bool(raw.get("enabled")),
         base_url=(base_url or _DEFAULT_BASE_URL).rstrip("/"),
         api_key=api_key,
         mode=_normalize_mode(str(raw.get("mode") or "free")),
+        budget_credits_per_session=max(budget, 0.0),
     )
 
 
@@ -296,6 +306,7 @@ class DataLoader:
             return {}
 
         client = QVerisClient(self._config)
+        budget_state = {"spent": 0.0}
         result: Dict[str, pd.DataFrame] = {}
         for code in codes:
             try:
@@ -307,7 +318,12 @@ class DataLoader:
                     end_date=end_date,
                     fields=None,
                     fetch=lambda code=code: self._fetch_one(
-                        client, code, start_date, end_date, interval
+                        client,
+                        code,
+                        start_date,
+                        end_date,
+                        interval,
+                        budget_state,
                     ),
                 )
                 if df is not None and not df.empty:
@@ -323,6 +339,7 @@ class DataLoader:
         start_date: str,
         end_date: str,
         interval: str,
+        budget_state: dict[str, float],
     ) -> Optional[pd.DataFrame]:
         search_payload = client.search(_search_query(code, interval))
         candidates = _select_capabilities(search_payload.get("results"), interval)
@@ -331,8 +348,29 @@ class DataLoader:
             tool_id = str(capability.get("tool_id") or "").strip()
             if not tool_id:
                 continue
+            quoted_cost = _expected_cost(capability.get("expected_cost"))
+            if (
+                not math.isfinite(quoted_cost)
+                or quoted_cost < 0.0
+                or budget_state["spent"] + quoted_cost
+                > self._config.budget_credits_per_session
+            ):
+                logger.warning(
+                    "QVeris paid capability skipped for %s: credit budget exceeded",
+                    code,
+                )
+                continue
             parameters = _build_parameters(capability, code, start_date, end_date, interval)
+            # Reserve the quoted cost before the request. If transport fails
+            # after the provider accepted it, later symbols still fail closed.
+            budget_state["spent"] += quoted_cost
             execute_payload = client.execute(tool_id, parameters, search_id=search_id)
+            try:
+                actual_cost = float(execute_payload.get("cost"))
+            except (TypeError, ValueError):
+                actual_cost = quoted_cost
+            if math.isfinite(actual_cost) and actual_cost > quoted_cost:
+                budget_state["spent"] += actual_cost - quoted_cost
             if execute_payload.get("success") is False:
                 logger.warning("QVeris execute failed for %s via %s", code, tool_id)
                 continue

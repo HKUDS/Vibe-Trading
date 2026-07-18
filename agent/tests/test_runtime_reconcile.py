@@ -20,6 +20,7 @@ import pytest
 
 import src.live.paths as paths
 from src.live.runtime.reconcile import (
+    CorruptRuntimeState,
     DeltaKind,
     ReconcileReport,
     reconcile,
@@ -143,6 +144,27 @@ def test_unknown_fill_on_quantity_drift(live_runtime: Path) -> None:
 
     assert DeltaKind.UNKNOWN_FILL in _kinds(report)
     assert report.requires_halt is True
+
+
+@pytest.mark.parametrize("quantity", [3, -3])
+def test_recorded_position_missing_at_broker_forces_halt(
+    live_runtime: Path,
+    quantity: int,
+) -> None:
+    """A recorded long or short cannot disappear without a halting delta."""
+    state_path = _seed_state(
+        "robinhood",
+        positions=[{"symbol": "NVDA", "qty": quantity}],
+    )
+    before = state_path.read_text(encoding="utf-8")
+    rp, rb, ro = _readers(positions=[])
+
+    report = reconcile("robinhood", rp, rb, ro)
+
+    assert DeltaKind.UNKNOWN_FILL in _kinds(report)
+    assert report.requires_halt is True
+    assert report.state_persisted is False
+    assert state_path.read_text(encoding="utf-8") == before
 
 
 # ---------------------------------------------------------------------------
@@ -293,21 +315,37 @@ def test_unsafe_reconcile_does_not_advance_state(live_runtime: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# corrupt state is renamed aside, treated as cold start
+# corrupt state blocks until an operator repairs it
 # ---------------------------------------------------------------------------
 
 
-def test_corrupt_state_renamed_and_cold_starts(live_runtime: Path) -> None:
-    """A truncated/corrupt state file is renamed .corrupt-* and treated as cold."""
+@pytest.mark.parametrize("contents", ["{not json", "[]"])
+def test_corrupt_state_fails_closed_and_preserves_evidence(
+    live_runtime: Path,
+    contents: str,
+) -> None:
+    """Malformed safety state blocks every reconcile and remains untouched."""
     path = paths.broker_dir("robinhood") / "runtime_state.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{not json", encoding="utf-8")
+    path.write_text(contents, encoding="utf-8")
+    read_calls: list[str] = []
 
-    rp, rb, ro = _readers(positions=[{"symbol": "NVDA", "qty": 1}])
-    report = reconcile("robinhood", rp, rb, ro)
+    def read_positions() -> list[dict[str, Any]]:
+        read_calls.append("positions")
+        return [{"symbol": "NVDA", "qty": 1}]
 
-    assert report.had_prior_state is False  # corrupt -> cold start
-    assert report.is_safe is True
-    corrupt = list(path.parent.glob("runtime_state.json.corrupt-*"))
-    assert corrupt, "corrupt state file should be renamed aside"
-    assert path.is_file()  # a fresh clean state was written
+    def read_balance() -> dict[str, Any]:
+        read_calls.append("balance")
+        return {"cash_usd": 10_000.0}
+
+    def read_orders() -> list[dict[str, Any]]:
+        read_calls.append("orders")
+        return []
+
+    for _ in range(2):
+        with pytest.raises(CorruptRuntimeState, match="runtime_state.json"):
+            reconcile("robinhood", read_positions, read_balance, read_orders)
+
+    assert read_calls == []
+    assert path.read_text(encoding="utf-8") == contents
+    assert list(path.parent.glob("runtime_state.json.corrupt-*")) == []

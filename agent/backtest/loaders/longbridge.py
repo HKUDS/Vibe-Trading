@@ -36,6 +36,10 @@ from backtest.loaders.base import (
     validate_date_range,
 )
 from backtest.loaders.registry import register
+from src.trading.connectors.longbridge.credentials import (
+    LongbridgeCredentialError,
+    resolve_longbridge_credentials,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -194,8 +198,8 @@ def _normalize_frame(bars: list[Any]) -> pd.DataFrame:
 class LongbridgeLoader:
     """Fetch US and HK equity bars from LongPort OpenAPI.
 
-    Requires the environment variables ``LONGBRIDGE_APP_KEY``,
-    ``LONGBRIDGE_APP_SECRET`` and ``LONGBRIDGE_ACCESS_TOKEN``.
+    Resolves one atomic credential set from the ``LONGBRIDGE_*`` environment
+    variables or the backward-compatible runtime file.
     """
 
     name = "longbridge"
@@ -203,12 +207,34 @@ class LongbridgeLoader:
     requires_auth = True
 
     def __init__(self) -> None:
-        from src.config.accessor import get_env_config
+        try:
+            resolution = resolve_longbridge_credentials()
+        except LongbridgeCredentialError as exc:
+            self._credential_source = None
+            self._credential_error = exc
+            self._app_key = self._app_secret = self._access_token = ""
+            return
+        self._credential_source = resolution.source
+        self._credential_error: LongbridgeCredentialError | None = None
+        if resolution.credentials is None:
+            if resolution.conflict_fields:
+                code = "credentials_conflict"
+                fields = resolution.conflict_fields
+            else:
+                code = (
+                    "credentials_missing"
+                    if resolution.source is None
+                    else "credentials_partial"
+                )
+                fields = resolution.missing_fields
+            self._credential_error = LongbridgeCredentialError(code, fields)
+            self._app_key = self._app_secret = self._access_token = ""
+            return
 
-        cfg = get_env_config().data
-        self._app_key = cfg.longbridge_app_key
-        self._app_secret = cfg.longbridge_app_secret
-        self._access_token = cfg.longbridge_access_token
+        credentials = resolution.credentials
+        self._app_key = credentials.app_key
+        self._app_secret = credentials.app_secret
+        self._access_token = credentials.access_token
 
     def is_available(self) -> bool:
         """Return True if the LongPort SDK is installed and credentials exist.
@@ -278,6 +304,24 @@ class LongbridgeLoader:
         if not pending:
             return results
 
+        credential_error = getattr(self, "_credential_error", None)
+        if credential_error is not None:
+            if credential_error.code == "credentials_missing":
+                message = (
+                    "Longbridge credentials are not configured; missing fields: "
+                    + ", ".join(credential_error.fields)
+                )
+            elif credential_error.code == "credentials_partial":
+                message = (
+                    "Longbridge credentials_partial; missing fields: "
+                    + ", ".join(credential_error.fields)
+                )
+            else:
+                message = (
+                    "Longbridge credentials_conflict; differing fields: "
+                    + ", ".join(credential_error.fields)
+                )
+            raise NoAvailableSourceError(message) from None
         if not (self._app_key and self._app_secret and self._access_token):
             raise NoAvailableSourceError(
                 "Longbridge credentials are not configured; set "
@@ -286,6 +330,7 @@ class LongbridgeLoader:
             )
 
         openapi = _require_longbridge()
+        _init_error: str | None = None
         try:
             cfg = openapi.Config(
                 self._app_key, self._app_secret, self._access_token,
@@ -293,20 +338,24 @@ class LongbridgeLoader:
             ctx = openapi.QuoteContext(cfg)
         except LongbridgeDependencyError:
             raise
-        except Exception as exc:
-            raise NoAvailableSourceError(
-                f"Cannot initialise LongPort SDK config: {exc}"
-            ) from exc
+        except Exception:
+            # Capture only stable text; do NOT raise inside the handler so
+            # the original exception (which may contain secrets) cannot
+            # leak into __context__.
+            _init_error = "Longbridge SDK initialization failed."
+
+        if _init_error is not None:
+            raise NoAvailableSourceError(_init_error)
 
         period = _to_longport_period(interval)
         adjust_type = getattr(openapi, "AdjustType").NoAdjust
         try:
             start = dt.date.fromisoformat(start_date)
             end = dt.date.fromisoformat(end_date)
-        except Exception as exc:
+        except (TypeError, ValueError):
             raise NoAvailableSourceError(
-                f"Invalid date range [{start_date}, {end_date}]: {exc}"
-            ) from exc
+                "Invalid Longbridge date range."
+            ) from None
 
         windows = _date_windows(start, end)
 
@@ -314,6 +363,7 @@ class LongbridgeLoader:
             for code in pending:
                 lp_symbol = _to_longport_symbol(code)
                 all_bars: list[Any] = []
+                _window_error: str | None = None
                 for w_start, w_end in windows:
                     try:
                         bars = ctx.history_candlesticks_by_date(
@@ -324,11 +374,14 @@ class LongbridgeLoader:
                             all_bars.extend(bars)
                         elif bars is not None:
                             all_bars.append(bars)
-                    except Exception as exc:
-                        raise NoAvailableSourceError(
-                            "incomplete Longbridge history for "
-                            f"{lp_symbol}: window {w_start}..{w_end} failed: {exc}"
-                        ) from exc
+                    except Exception:
+                        _window_error = "Longbridge history request failed."
+                        break
+                else:
+                    _window_error = None
+
+                if _window_error is not None:
+                    raise NoAvailableSourceError(_window_error)
 
                 if not all_bars:
                     logger.warning(

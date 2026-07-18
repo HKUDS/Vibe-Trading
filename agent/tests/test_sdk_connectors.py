@@ -8,9 +8,14 @@ and the service dispatch degrading cleanly when nothing is configured.
 
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+
 import pytest
 
+from backtest.loaders import longbridge as longbridge_loader
 from src.live.classification import ToolClass
+from src.trading.connectors.longbridge import credentials as lb_credentials
 from src.trading import profiles, service
 from src.trading.connectors.alpaca import sdk as al
 from src.trading.connectors.alpaca.classification import ALPACA_TOOL_CLASS
@@ -154,7 +159,14 @@ def test_tiger_invalid_profile_rejected() -> None:
 
 
 def test_longbridge_build_config_and_region(monkeypatch, tmp_path) -> None:
+    for env_name in (
+        "LONGBRIDGE_APP_KEY",
+        "LONGBRIDGE_APP_SECRET",
+        "LONGBRIDGE_ACCESS_TOKEN",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
     monkeypatch.setattr(lb, "get_runtime_root", lambda: tmp_path)
+    monkeypatch.setattr(lb_credentials, "get_runtime_root", lambda: tmp_path)
     cfg = lb.build_config({"profile": "live-readonly", "region": "cn"}, None)
     assert cfg.profile == "live-readonly"
     assert cfg.region == "cn"
@@ -165,15 +177,190 @@ def test_longbridge_invalid_region_rejected() -> None:
         lb.LongbridgeConfig.from_mapping({"region": "moon"})
 
 
+def test_longbridge_with_overrides_preserves_atomic_credentials() -> None:
+    cfg = lb.LongbridgeConfig(
+        app_key="atomic-key",
+        app_secret="atomic-secret",
+        access_token="atomic-token",
+        _credential_source="environment",
+    )
+
+    updated = cfg.with_overrides(
+        app_key="ignored-key", profile="live-readonly", region="cn"
+    )
+
+    assert (updated.app_key, updated.app_secret, updated.access_token) == (
+        "atomic-key",
+        "atomic-secret",
+        "atomic-token",
+    )
+    assert updated._credential_source == "environment"
+    assert updated.profile == "live-readonly"
+    assert updated.region == "cn"
+
+
 def test_longbridge_public_config_redacts_secrets() -> None:
-    """Secret material must never appear in a status payload."""
-    cfg = lb.LongbridgeConfig(app_key="abcd1234", app_secret="supersecret", access_token="tok-123")
+    """Secret material must never appear in status payloads or config reprs."""
+    values = {
+        "app_key": "repr-distinctive-app-key-7f31",
+        "app_secret": "repr-distinctive-app-secret-8a42",
+        "access_token": "repr-distinctive-access-token-9b53",
+    }
+    cfg = lb.LongbridgeConfig(**values)
     pub = lb._public_config(cfg)
     assert pub["app_secret"] == "***redacted***"
     assert pub["access_token"] == "***redacted***"
-    assert "supersecret" not in str(pub)
-    assert "tok-123" not in str(pub)
     assert pub["app_key"].endswith("***")
+    assert all(value not in repr(cfg) for value in values.values())
+    assert all(value not in repr(pub) for value in values.values())
+
+
+def _set_longbridge_environment(monkeypatch, values) -> None:
+    for field, env_name in {
+        "app_key": "LONGBRIDGE_APP_KEY",
+        "app_secret": "LONGBRIDGE_APP_SECRET",
+        "access_token": "LONGBRIDGE_ACCESS_TOKEN",
+    }.items():
+        monkeypatch.setenv(env_name, values[field])
+
+
+def test_connector_uses_environment_credentials(monkeypatch, tmp_path) -> None:
+    values = {
+        "app_key": "connector-environment-key",
+        "app_secret": "connector-environment-secret",
+        "access_token": "connector-environment-token",
+    }
+    _set_longbridge_environment(monkeypatch, values)
+    monkeypatch.setattr(lb, "get_runtime_root", lambda: tmp_path)
+    monkeypatch.setattr(lb_credentials, "get_runtime_root", lambda: tmp_path)
+
+    cfg = lb.build_config({"profile": "live-readonly", "region": "cn"}, None)
+
+    assert (cfg.app_key, cfg.app_secret, cfg.access_token) == tuple(values.values())
+    assert cfg.profile == "live-readonly"
+    assert cfg.region == "cn"
+    monkeypatch.setattr(lb, "longbridge_available", lambda: False)
+    assert lb.check_status(cfg)["credential_source"] == "environment"
+
+
+def test_loader_and_connector_resolve_same_source(monkeypatch, tmp_path) -> None:
+    values = {
+        "app_key": "shared-file-key",
+        "app_secret": "shared-file-secret",
+        "access_token": "shared-file-token",
+    }
+    for env_name in (
+        "LONGBRIDGE_APP_KEY",
+        "LONGBRIDGE_APP_SECRET",
+        "LONGBRIDGE_ACCESS_TOKEN",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+    (tmp_path / "longbridge.json").write_text(json.dumps(values), encoding="utf-8")
+    monkeypatch.setattr(lb, "get_runtime_root", lambda: tmp_path)
+    monkeypatch.setattr(lb_credentials, "get_runtime_root", lambda: tmp_path)
+
+    connector = lb.build_config()
+    loader = longbridge_loader.LongbridgeLoader()
+
+    assert (connector.app_key, connector.app_secret, connector.access_token) == (
+        loader._app_key,
+        loader._app_secret,
+        loader._access_token,
+    )
+    monkeypatch.setattr(lb, "longbridge_available", lambda: False)
+    assert lb.check_status(connector)["credential_source"] == "runtime_file"
+    assert loader._credential_source == "runtime_file"
+
+
+def test_connector_reports_conflict_without_sdk_call(monkeypatch, tmp_path) -> None:
+    environment = {
+        "app_key": "conflict-environment-key",
+        "app_secret": "conflict-environment-secret",
+        "access_token": "conflict-environment-token",
+    }
+    runtime_file = {
+        "app_key": "conflict-file-key",
+        "app_secret": "conflict-file-secret",
+        "access_token": "conflict-file-token",
+    }
+    _set_longbridge_environment(monkeypatch, environment)
+    (tmp_path / "longbridge.json").write_text(json.dumps(runtime_file), encoding="utf-8")
+    monkeypatch.setattr(lb, "get_runtime_root", lambda: tmp_path)
+    monkeypatch.setattr(lb_credentials, "get_runtime_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        lb,
+        "_trade_context",
+        lambda cfg: (_ for _ in ()).throw(AssertionError("SDK must not initialize")),
+    )
+
+    report = lb.check_status(lb.build_config())
+
+    assert report["configured"] is False
+    assert report["connection_state"] == "error"
+    assert report["credential_source"] is None
+    assert report["error_code"] == "credentials_conflict"
+    assert all(
+        field in report["error"]
+        for field in ("app_key", "app_secret", "access_token")
+    )
+    with pytest.raises(lb.LongbridgeConfigError, match="sources conflict"):
+        lb._require_resolved_config(lb.build_config())
+
+
+def test_connector_status_redacts_credentials(monkeypatch, tmp_path) -> None:
+    values = {
+        "app_key": "status-sensitive-key",
+        "app_secret": "status-sensitive-secret",
+        "access_token": "status-sensitive-token",
+    }
+    secret_exception = RuntimeError(
+        "authentication failed for " + "/".join(values.values())
+    )
+    _set_longbridge_environment(monkeypatch, values)
+    monkeypatch.setattr(lb, "get_runtime_root", lambda: tmp_path)
+    monkeypatch.setattr(lb_credentials, "get_runtime_root", lambda: tmp_path)
+    monkeypatch.setattr(lb, "longbridge_available", lambda: True)
+    monkeypatch.setattr(
+        lb,
+        "_trade_context",
+        lambda cfg: SimpleNamespace(
+            account_balance=lambda: (_ for _ in ()).throw(secret_exception)
+        ),
+    )
+
+    report = lb.check_status(lb.build_config())
+    serialized = str(report)
+
+    assert report["configured"] is True
+    assert report["connection_state"] == "error"
+    assert report["error_code"] == "authentication_failed"
+    assert report["error"] == "Longbridge authentication failed."
+    assert all(value not in serialized for value in values.values())
+    assert report["error"].__class__ is str
+    assert secret_exception not in _exception_chain_from_payload(report)
+
+
+def _exception_chain_from_payload(payload) -> tuple[BaseException, ...]:
+    """Return exceptions publicly reachable from a returned payload."""
+    seen: set[int] = set()
+    found: list[BaseException] = []
+    pending = list(payload.values()) if isinstance(payload, dict) else [payload]
+    while pending:
+        value = pending.pop()
+        if id(value) in seen:
+            continue
+        seen.add(id(value))
+        if isinstance(value, BaseException):
+            found.append(value)
+            if value.__cause__ is not None:
+                pending.append(value.__cause__)
+            if value.__context__ is not None:
+                pending.append(value.__context__)
+        elif isinstance(value, dict):
+            pending.extend(value.values())
+        elif isinstance(value, (list, tuple, set)):
+            pending.extend(value)
+    return tuple(found)
 
 
 # --------------------------------------------------------------------------- #
@@ -210,7 +397,14 @@ def test_service_check_connection_unconfigured_tiger(monkeypatch, tmp_path) -> N
 
 
 def test_service_check_connection_unconfigured_longbridge(monkeypatch, tmp_path) -> None:
+    for env_name in (
+        "LONGBRIDGE_APP_KEY",
+        "LONGBRIDGE_APP_SECRET",
+        "LONGBRIDGE_ACCESS_TOKEN",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
     monkeypatch.setattr(lb, "get_runtime_root", lambda: tmp_path)
+    monkeypatch.setattr(lb_credentials, "get_runtime_root", lambda: tmp_path)
     result = service.check_connection("longbridge-paper-sdk")
     assert result["status"] == "error"
     assert "not configured" in result["error"]

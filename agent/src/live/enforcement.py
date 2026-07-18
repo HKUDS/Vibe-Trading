@@ -306,6 +306,34 @@ def _positions_market_value(positions: object) -> float | None:
     return total
 
 
+def _post_trade_gross_exposure(
+    positions: object,
+    *,
+    symbol: str,
+    signed_order_notional: float,
+) -> float | None:
+    """Return gross exposure after applying one signed order to its symbol.
+
+    Gross exposure is computed from signed, symbol-level positions. This lets a
+    sell reduce an existing long only until it reaches zero; any excess becomes
+    short exposure instead of subtracting from the whole portfolio.
+    """
+    rows = _coerce_position_rows(positions)
+    if rows is None:
+        return None
+
+    by_symbol: dict[str, float] = {}
+    for row in rows:
+        row_symbol = _position_symbol(row)
+        signed_value = _position_signed_market_value(row)
+        if row_symbol is None or signed_value is None:
+            return None
+        by_symbol[row_symbol] = by_symbol.get(row_symbol, 0.0) + signed_value
+
+    by_symbol[symbol] = by_symbol.get(symbol, 0.0) + signed_order_notional
+    return sum(abs(value) for value in by_symbol.values())
+
+
 def _coerce_position_rows(positions: object) -> list[dict] | None:
     """Normalize a positions payload to a list of position dicts."""
     if isinstance(positions, list):
@@ -353,6 +381,43 @@ def _position_market_value(row: dict) -> float | None:
     if qty is None or price is None:
         return None
     return abs(qty) * price
+
+
+def _position_symbol(row: dict) -> str | None:
+    """Extract one normalized position symbol, or ``None`` if unavailable."""
+    for key in ("symbol", "ticker", "code", "instrument"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().upper()
+    return None
+
+
+def _position_signed_market_value(row: dict) -> float | None:
+    """Extract signed USD value, using quantity or explicit side for direction."""
+    value = _position_market_value(row)
+    if value is None:
+        return None
+
+    quantity = None
+    for key in ("quantity", "qty", "shares"):
+        if key in row:
+            quantity = _as_float(row[key])
+            if quantity is None:
+                return None
+            break
+    if quantity is not None:
+        if quantity == 0:
+            return 0.0 if value == 0 else None
+        return abs(value) if quantity > 0 else -abs(value)
+
+    side = str(row.get("side", "")).strip().lower()
+    if side in {"long", "buy"}:
+        return abs(value)
+    if side in {"short", "sell"}:
+        return -abs(value)
+    if value < 0:
+        return value
+    return value
 
 
 def _account_balance_market_value(balance: object) -> float | None:
@@ -474,18 +539,21 @@ def check_mandate(
             limit_value=caps.max_order_notional_usd, attempted_value=notional,
         )
 
-    # 5–6. Exposure + leverage need observable positions; fail-closed on any
-    #      unparseable position. A sell reduces gross exposure (signed by side).
-    current_exposure = _positions_market_value(positions)
-    if current_exposure is None:
+    # 5–6. Exposure + leverage need symbol-level signed positions so a sell
+    #      reduces only an existing long; fail-closed on ambiguous rows.
+    signed_order = notional if intent.side == "buy" else -notional
+    post_exposure = _post_trade_gross_exposure(
+        positions,
+        symbol=symbol,
+        signed_order_notional=signed_order,
+    )
+    if post_exposure is None:
         return _breach(
             broker=broker, remote_tool=remote_tool, intent=intent,
             kind=BREACH_KIND_QUANTITATIVE, limit="max_total_exposure_usd",
             limit_value=caps.max_total_exposure_usd, attempted_value=0.0,
             detail="current positions could not be read (fail-closed)",
         )
-    signed = notional if intent.side == "buy" else -notional
-    post_exposure = current_exposure + signed
     if post_exposure > caps.max_total_exposure_usd:
         return _breach(
             broker=broker, remote_tool=remote_tool, intent=intent,
