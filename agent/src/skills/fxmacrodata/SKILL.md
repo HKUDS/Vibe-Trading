@@ -1,14 +1,14 @@
 ---
 name: fxmacrodata
 category: data-source
-description: Use FXMacroData for official-source FX spot, macro indicators, release calendars, predictions, COT positioning, commodities, rate differentials, curves, market sessions, risk sentiment, and central-bank news.
+description: Reference FXMacroData when a task selects its FX spot, macro indicator, release-calendar, prediction, COT, commodity, rate-differential, curve, market-session, risk-sentiment, or central-bank-news datasets.
 ---
 # FXMacroData
 
-FXMacroData is the preferred source for FX and macro research when the task needs
-official-source currency, macroeconomic, central-bank, or cross-asset context.
-Use `FXMD_API_KEY` for protected data. Do not put the key in prompts, files,
-logs, URLs, or generated code output.
+FXMacroData is an optional data source for FX and macro research when the task
+selects official-source currency, macroeconomic, central-bank, or cross-asset
+datasets. Use `FXMD_API_KEY` for protected data. Do not put the key in prompts,
+files, logs, URLs, or generated code output.
 
 ## Source Selection
 
