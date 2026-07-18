@@ -52,7 +52,7 @@
 
 > ⚠️ **Security warning:** The X account `VibeTrading_HKU`, Virtuals project `101845`, and token contract `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` are not official Vibe-Trading assets. We have never launched or endorsed any token or memecoin. Do not buy, connect a wallet, or sign anything. [Details](SECURITY.md#official-channels--impersonation).
 
-- **2026-07-17** 🧩 **Correlation-regime skill + a broad backtest / data / live-safety correctness pass**: a new **correlation-regime** detection skill (bundled skills → 88, [#557](https://github.com/HKUDS/Vibe-Trading/pull/557), thanks @ebujinovch), a Longbridge runtime connection card ([#569](https://github.com/HKUDS/Vibe-Trading/pull/569), thanks @fanfpy), and user-defined swarm presets loaded from `~/.vibe-trading` ([#570](https://github.com/HKUDS/Vibe-Trading/pull/570), thanks @darkknight4563). Plus hardening across the stack: silent-data-corruption fixes in the Futu / Tencent / CCXT / mootdx loaders, look-ahead-bias and strict-OOS guards in the factor bench and Shadow Account, live-trading safety (signed exposure caps, atomic daily order limits, consent-first mandate commits, fail-closed live state), and journal / QVeris-budget / swarm / CI-gate improvements ([#552](https://github.com/HKUDS/Vibe-Trading/pull/552), thanks @xor-xe; much of the correctness work by @xkam7ar).
+- **2026-07-17** 🧩 **Correlation-regime skill + a broad backtest / data / live-safety correctness pass**: a new **correlation-regime** detection skill (bundled skills → 89, [#557](https://github.com/HKUDS/Vibe-Trading/pull/557), thanks @ebujinovch), a Longbridge runtime connection card ([#569](https://github.com/HKUDS/Vibe-Trading/pull/569), thanks @fanfpy), and user-defined swarm presets loaded from `~/.vibe-trading` ([#570](https://github.com/HKUDS/Vibe-Trading/pull/570), thanks @darkknight4563). Plus hardening across the stack: silent-data-corruption fixes in the Futu / Tencent / CCXT / mootdx loaders, look-ahead-bias and strict-OOS guards in the factor bench and Shadow Account, live-trading safety (signed exposure caps, atomic daily order limits, consent-first mandate commits, fail-closed live state), and journal / QVeris-budget / swarm / CI-gate improvements ([#552](https://github.com/HKUDS/Vibe-Trading/pull/552), thanks @xor-xe; much of the correctness work by @xkam7ar).
 
 - **2026-07-16** 🔧 **Dependency lock repaired + Windows settings save fix**: the hash-verified runtime lock is regenerated so Docker's `pip install --require-hashes` resolves cleanly again, fixing the incompatible `caio`/`pydantic-core`/`websockets` pins ([#564](https://github.com/HKUDS/Vibe-Trading/pull/564), closes [#558](https://github.com/HKUDS/Vibe-Trading/issues/558), thanks @tianrking). Saving Agent LLM settings from the Web UI no longer returns HTTP 500 on Windows — the POSIX-only `os.fchmod` hardening is now platform-guarded, with a regression test for platforms without `fchmod` ([#561](https://github.com/HKUDS/Vibe-Trading/pull/561), thanks @CRui5in).
 
@@ -388,9 +388,9 @@ Beyond OHLCV, **29 read-only data tools** reach into fundamentals, flow, and mac
 Detailed inventories are folded below to keep the main README scannable. Open them when you want to inspect the available building blocks.
 
 <details>
-<summary><b>Finance Skill Library</b> <sub>88 skills across 9 categories</sub></summary>
+<summary><b>Finance Skill Library</b> <sub>89 skills across 9 categories</sub></summary>
 
-- 📊 88 specialized finance skills organized into 9 categories
+- 📊 89 specialized finance skills organized into 9 categories
 - 🌐 Complete coverage from traditional markets to crypto & DeFi
 - 🔬 Comprehensive capabilities spanning data sourcing to quantitative research
 
@@ -709,7 +709,7 @@ vibe-trading provider doctor  # print redacted provider/proxy/package diagnostic
 | Command | Description |
 |---------|-------------|
 | `/help` | Show all commands |
-| `/skills` | List all 88 finance skills |
+| `/skills` | List all 89 finance skills |
 | `/swarm` | List 30 swarm team presets |
 | `/swarm run <preset> [vars_json]` | Run a swarm team with live streaming |
 | `/swarm list` | Swarm run history |
@@ -1054,7 +1054,7 @@ Browse on ClawHub: [clawhub.ai/skills/vibe-trading](https://clawhub.ai/skills/vi
 <details>
 <summary><b>OpenSpace — self-evolving skills</b></summary>
 
-All 88 finance skills are published on [open-space.cloud](https://open-space.cloud) and evolve autonomously through OpenSpace's self-evolution engine.
+All 89 finance skills are published on [open-space.cloud](https://open-space.cloud) and evolve autonomously through OpenSpace's self-evolution engine.
 
 To use with OpenSpace, add both MCP servers to your agent config:
 
@@ -1076,7 +1076,7 @@ To use with OpenSpace, add both MCP servers to your agent config:
 }
 ```
 
-OpenSpace will auto-discover all 88 skills, enabling auto-fix, auto-improve, and community sharing. Search for Vibe-Trading skills via `search_skills("finance backtest")` in any OpenSpace-connected agent.
+OpenSpace will auto-discover all 89 skills, enabling auto-fix, auto-improve, and community sharing. Search for Vibe-Trading skills via `search_skills("finance backtest")` in any OpenSpace-connected agent.
 
 </details>
 
@@ -1327,7 +1327,7 @@ Vibe-Trading/
 │   │   ├── agent/                  # ReAct agent core
 │   │   │   ├── loop.py             #   5-layer compression + read/write tool batching
 │   │   │   ├── context.py          #   system prompt + auto-recall from persistent memory
-│   │   │   ├── skills.py           #   skill loader (88 bundled + user-created via CRUD)
+│   │   │   ├── skills.py           #   skill loader (89 bundled + user-created via CRUD)
 │   │   │   ├── tools.py            #   tool base class + registry
 │   │   │   ├── memory.py           #   lightweight workspace state per run
 │   │   │   ├── frontmatter.py      #   shared YAML frontmatter parser
@@ -1354,7 +1354,7 @@ Vibe-Trading/
 │   │   ├── api/                    # FastAPI route modules
 │   │   │   └── alpha_routes.py     #   /alpha/list, /alpha/{id}, /alpha/bench, SSE stream
 │   │   │
-│   │   ├── skills/                 # 88 finance skills in 9 categories (SKILL.md each)
+│   │   ├── skills/                 # 89 finance skills in 9 categories (SKILL.md each)
 │   │   ├── swarm/                  # Swarm DAG execution engine
 │   │   │   └── presets/            #   30 swarm preset YAML definitions
 │   │   ├── session/                # Multi-turn chat + FTS5 session search
