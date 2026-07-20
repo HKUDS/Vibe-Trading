@@ -103,6 +103,9 @@ longbridge = [
 deepseek = [
     "langchain-deepseek>=1.0.0,<2",
 ]
+anthropic = [
+    "langchain-anthropic>=1.0.0,<2",
+]
 ashare = [
     # Free, no-auth A-share source over BaoStock's TCP protocol; bypasses the
     # HTTP CDN IP blocks that affect eastmoney-backed sources. The Tencent

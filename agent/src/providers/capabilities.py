@@ -150,6 +150,12 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
     "mimo": ProviderCapabilities("mimo", "MIMO_API_KEY", "MIMO_BASE_URL"),
     "zai": ProviderCapabilities("zai", "ZAI_API_KEY", "ZAI_BASE_URL"),
     "ollama": ProviderCapabilities("ollama", None, "OLLAMA_BASE_URL"),
+    "anthropic": ProviderCapabilities(
+        "anthropic",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        native_adapter_package="langchain-anthropic",
+    ),
     "openai-codex": _OPENAI_CODEX_CAPABILITIES,
     "openai_codex": _OPENAI_CODEX_CAPABILITIES,
     "opencode-zen": ProviderCapabilities("opencode-zen", "OPENAI_API_KEY", "OPENAI_BASE_URL"),
@@ -163,6 +169,8 @@ def _infer_from_model(model: str) -> str | None:
         return None
     if lowered.startswith("gemini"):
         return "gemini"
+    if lowered.startswith("claude"):
+        return "anthropic"
     if lowered.startswith("deepseek"):
         return "deepseek"
     if lowered.startswith("nvidia/"):

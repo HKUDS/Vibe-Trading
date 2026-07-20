@@ -491,6 +491,11 @@ def _sync_provider_env() -> None:
         os.environ.pop("OPENAI_API_KEY", None)
         return
 
+    if provider == "anthropic":
+        # ChatAnthropic reads ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL directly.
+        # Do not pollute OPENAI_* env vars for a non-OpenAI provider.
+        return
+
     key_env, base_env = provider_env_names(provider, get_env_config().llm.langchain_model_name)
 
     # Resolve API key: provider-specific env → OPENAI_API_KEY fallback
@@ -620,6 +625,30 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
                 raise RuntimeError(
                     "VIBE_TRADING_DEEPSEEK_ADAPTER=native requires langchain-deepseek"
                 )
+
+    if provider == "anthropic":
+        try:
+            from langchain_anthropic import ChatAnthropic
+        except ImportError as exc:
+            raise RuntimeError(
+                "langchain-anthropic is not installed. "
+                "Install with: pip install 'vibe-trading-ai[anthropic]'"
+            ) from exc
+        api_key = os.getenv("ANTHROPIC_AUTH_TOKEN", "") or os.getenv("ANTHROPIC_API_KEY", "")  # noqa: env-gate — anthropic key resolution
+        base_url = os.getenv("ANTHROPIC_BASE_URL", "").strip()  # noqa: env-gate — anthropic base URL
+        anthropic_kwargs: dict[str, Any] = {
+            "model": name,
+            "temperature": temperature,
+            "timeout": get_env_config().llm.timeout_seconds,
+            "max_retries": get_env_config().llm.max_retries,
+            "callbacks": callbacks,
+            "max_tokens": 8192,
+        }
+        if api_key:
+            anthropic_kwargs["api_key"] = api_key
+        if base_url:
+            anthropic_kwargs["base_url"] = base_url
+        return ChatAnthropic(**anthropic_kwargs)
 
     if ChatOpenAI is None:
         raise RuntimeError("langchain-openai is not installed")
