@@ -283,9 +283,17 @@ class ChatLLM:
             for chunk in llm.stream(messages, config=config):
                 if should_cancel and should_cancel():
                     break
-                if chunk.content and on_text_chunk:
+                # Anthropic streams content as list-of-blocks; OpenAI-family
+                # streams it as str. Normalise via .text so downstream
+                # concatenation and DSML sniffing always sees plain text.
+                chunk_text = chunk.text if hasattr(chunk, "text") else chunk.content
+                if isinstance(chunk_text, list):
+                    chunk_text = "".join(
+                        b.get("text", "") for b in chunk_text if isinstance(b, dict)
+                    )
+                if chunk_text and on_text_chunk:
                     if possible_dsml_text:
-                        pending_text += chunk.content
+                        pending_text += chunk_text
                         if _is_possible_dsml_tool_call_prefix(pending_text):
                             pass
                         else:
@@ -293,9 +301,9 @@ class ChatLLM:
                             on_text_chunk(pending_text)
                             pending_text = ""
                     else:
-                        on_text_chunk(chunk.content)
+                        on_text_chunk(chunk_text)
                 reasoning = getattr(chunk, "additional_kwargs", {}).get("reasoning_content")
-                if reasoning and not chunk.content and on_reasoning_chunk:
+                if reasoning and not chunk_text and on_reasoning_chunk:
                     on_reasoning_chunk(reasoning)
                 accumulated = chunk if accumulated is None else accumulated + chunk
             if accumulated is None:
@@ -405,8 +413,22 @@ class ChatLLM:
             ai_message.response_metadata.get("finish_reason")
         )
 
+        # Anthropic returns content as a list of blocks; OpenAI-family as str.
+        # Normalise to str so downstream consumers (session logs, tool dispatcher)
+        # don't crash on ``"..." + list`` concatenations.
+        raw_content = ai_message.content
+        if isinstance(raw_content, list):
+            text_attr = getattr(ai_message, "text", None)
+            text_content = text_attr() if callable(text_attr) else text_attr
+            if not isinstance(text_content, str):
+                text_content = "".join(
+                    b.get("text", "") for b in raw_content if isinstance(b, dict)
+                )
+        else:
+            text_content = raw_content
+
         return LLMResponse(
-            content="" if dsml_tool_calls else ai_message.content,
+            content="" if dsml_tool_calls else text_content,
             tool_calls=tool_calls,
             reasoning_content=additional_kwargs.get("reasoning_content"),
             finish_reason=finish_reason,
