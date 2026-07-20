@@ -228,6 +228,24 @@ def test_read_write_env_values_roundtrip(tmp_path):
     assert updated["BAZ"] == "qux"
 
 
+def test_write_env_values_skips_commented_keys(tmp_path):
+    """A commented `# KEY=` must not steal an upsert from a later active KEY."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "# LANGCHAIN_PROVIDER=openrouter\nLANGCHAIN_PROVIDER=deepseek\nOTHER=1\n",
+        encoding="utf-8",
+    )
+
+    helpers._write_env_values(env_file, {"LANGCHAIN_PROVIDER": "ollama"})
+
+    text = env_file.read_text(encoding="utf-8")
+    assert "# LANGCHAIN_PROVIDER=openrouter\n" in text
+    assert "LANGCHAIN_PROVIDER=ollama\n" in text
+    assert text.count("LANGCHAIN_PROVIDER=") == 2  # one comment + one active
+    assert helpers._read_env_values(env_file)["LANGCHAIN_PROVIDER"] == "ollama"
+    assert helpers._read_env_values(env_file)["OTHER"] == "1"
+
+
 def test_settings_default_to_user_writable_config_path() -> None:
     """Web settings must not target the installed package directory."""
     from pathlib import Path

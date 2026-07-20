@@ -188,11 +188,12 @@ def _write_env_values(path: Path, updates: Dict[str, str]) -> None:
     seen: set[str] = set()
     for index, raw in enumerate(lines):
         stripped = raw.lstrip()
-        is_comment = stripped.startswith("#")
-        candidate = stripped[1:].lstrip() if is_comment else stripped
-        if "=" not in candidate:
+        # Active keys only; a leading `# KEY=` must not steal the upsert.
+        if stripped.startswith("#"):
             continue
-        key = candidate.split("=", 1)[0].strip()
+        if "=" not in stripped:
+            continue
+        key = stripped.split("=", 1)[0].strip()
         if key in updates and key not in seen:
             lines[index] = f"{key}={_format_env_value(updates[key])}"
             seen.add(key)
