@@ -3912,22 +3912,42 @@ def _print_connector_account(result: dict[str, Any]) -> int:
     accounts = ", ".join(result.get("accounts", [])) or "(none)"
     console.print(f"Accounts: [cyan]{rich_escape(accounts)}[/cyan]")
     rows = result.get("summary", [])
-    if not rows:
-        console.print("[dim]No account summary returned.[/dim]")
+    if rows:
+        table = Table(title=f"Account Summary · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
+        table.add_column("Account")
+        table.add_column("Tag")
+        table.add_column("Value", justify="right")
+        table.add_column("Currency")
+        for row in rows:
+            table.add_row(
+                str(row.get("account") or ""),
+                str(row.get("tag") or ""),
+                str(row.get("value") or ""),
+                str(row.get("currency") or ""),
+            )
+        console.print(table)
         return EXIT_SUCCESS
-    table = Table(title=f"Account Summary · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
-    table.add_column("Account")
-    table.add_column("Tag")
-    table.add_column("Value", justify="right")
-    table.add_column("Currency")
-    for row in rows:
-        table.add_row(
-            str(row.get("account") or ""),
-            str(row.get("tag") or ""),
-            str(row.get("value") or ""),
-            str(row.get("currency") or ""),
-        )
-    console.print(table)
+    balances = result.get("balances", [])
+    if balances:
+        table = Table(title=f"Balances · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
+        table.add_column("Currency")
+        table.add_column("Total Cash", justify="right")
+        table.add_column("Net Assets", justify="right")
+        table.add_column("Buy Power", justify="right")
+        table.add_column("Init Margin", justify="right")
+        table.add_column("Maint Margin", justify="right")
+        for row in balances:
+            table.add_row(
+                str(row.get("currency") or ""),
+                str(row.get("total_cash") or ""),
+                str(row.get("net_assets") or ""),
+                str(row.get("buy_power") or ""),
+                str(row.get("init_margin") or ""),
+                str(row.get("maintenance_margin") or ""),
+            )
+        console.print(table)
+        return EXIT_SUCCESS
+    console.print("[dim]No account summary returned.[/dim]")
     return EXIT_SUCCESS
 
 
@@ -3987,9 +4007,9 @@ def cmd_connector_positions(
         table.add_row(
             str(row.get("account") or ""),
             str(row.get("local_symbol") or row.get("symbol") or ""),
-            str(row.get("sec_type") or ""),
-            str(row.get("position") or ""),
-            str(row.get("avg_cost") or ""),
+            str(row.get("sec_type") or row.get("market") or ""),
+            str(row.get("position") or row.get("quantity") or ""),
+            str(row.get("avg_cost") or row.get("cost_price") or ""),
             str(row.get("currency") or ""),
         )
     console.print(table)
