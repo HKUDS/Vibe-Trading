@@ -6,6 +6,17 @@ from unittest.mock import patch
 import cli
 
 
+def _provider_choice_number(provider: str) -> int:
+    """Resolve a CLI menu choice by provider identity, not list position."""
+    matches = [
+        index
+        for index, option in enumerate(cli._PROVIDER_CHOICES, start=1)
+        if option["provider"] == provider
+    ]
+    assert len(matches) == 1, f"expected one CLI choice for {provider!r}, got {len(matches)}"
+    return matches[0]
+
+
 class TestCliInit:
     def test_render_env_content_openrouter(self) -> None:
         content = cli._render_env_content(
@@ -56,7 +67,11 @@ class TestCliInit:
         env_path = tmp_path / ".env"
 
         with patch.object(cli, "_INIT_ENV_PATH", env_path), \
-             patch.object(cli.IntPrompt, "ask", return_value=1), \
+             patch.object(
+                 cli.IntPrompt,
+                 "ask",
+                 return_value=_provider_choice_number("openrouter"),
+             ), \
              patch.object(
                  cli.Prompt,
                  "ask",
@@ -81,7 +96,11 @@ class TestCliInit:
         env_path = tmp_path / ".env"
 
         with patch.object(cli, "_INIT_ENV_PATH", env_path), \
-             patch.object(cli.IntPrompt, "ask", return_value=17), \
+             patch.object(
+                 cli.IntPrompt,
+                 "ask",
+                 return_value=_provider_choice_number("ollama"),
+             ), \
              patch.object(
                  cli.Prompt,
                  "ask",
@@ -106,7 +125,11 @@ class TestCliInit:
         env_path = tmp_path / ".env"
 
         with patch.object(cli, "_INIT_ENV_PATH", env_path), \
-             patch.object(cli.IntPrompt, "ask", return_value=18), \
+             patch.object(
+                 cli.IntPrompt,
+                 "ask",
+                 return_value=_provider_choice_number("openai-codex"),
+             ), \
              patch.object(
                  cli.Prompt,
                  "ask",
@@ -129,7 +152,11 @@ class TestCliInit:
         env_path = tmp_path / ".env"
 
         with patch.object(cli, "_INIT_ENV_PATH", env_path), \
-             patch.object(cli.IntPrompt, "ask", return_value=3), \
+             patch.object(
+                 cli.IntPrompt,
+                 "ask",
+                 return_value=_provider_choice_number("anyrouter"),
+             ), \
              patch.object(
                  cli.Prompt,
                  "ask",
