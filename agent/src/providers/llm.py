@@ -646,6 +646,10 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         "max_retries": get_env_config().llm.max_retries,
         "callbacks": callbacks,
         "extra_body": {"reasoning": {"effort": effort}} if effort and caps.openrouter_reasoning_body else None,
+        # Non-relay providers (e.g. OpenAI gpt-5.6-*) require an explicit
+        # reasoning_effort — including the literal 'none' — for function
+        # tools over /v1/chat/completions.
+        "reasoning_effort": (effort or None) if not caps.openrouter_reasoning_body else None,
         "vibe_provider": provider,
     }
     if caps.default_headers:

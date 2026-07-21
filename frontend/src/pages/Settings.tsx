@@ -557,6 +557,7 @@ export function Settings() {
                 className={fieldClass}
               >
                 <option value="">{"Off"}</option>
+                <option value="none">none (explicit)</option>
                 <option value="low">low</option>
                 <option value="medium">medium</option>
                 <option value="high">high</option>
