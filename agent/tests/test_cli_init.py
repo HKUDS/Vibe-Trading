@@ -124,3 +124,27 @@ class TestCliInit:
         assert "OPENAI_CODEX_BASE_URL=https://chatgpt.com/backend-api/codex/responses" in content
         assert "LANGCHAIN_MODEL_NAME=openai-codex/gpt-5.4" in content
         assert "OPENAI_API_KEY=" not in content
+
+    def test_cmd_init_anyrouter_uses_responses_provider(self, tmp_path: Path) -> None:
+        env_path = tmp_path / ".env"
+
+        with patch.object(cli, "_INIT_ENV_PATH", env_path), \
+             patch.object(cli.IntPrompt, "ask", return_value=3), \
+             patch.object(
+                 cli.Prompt,
+                 "ask",
+                 side_effect=[
+                     "sk-ar-test-key",
+                     "https://anyrouter.dev/api/v1",
+                     "openai/gpt-5.6-sol",
+                     "",
+                 ],
+             ):
+            result = cli.cmd_init()
+
+        assert result == 0
+        content = env_path.read_text(encoding="utf-8")
+        assert "LANGCHAIN_PROVIDER=anyrouter" in content
+        assert "ANYROUTER_API_KEY=sk-ar-test-key" in content
+        assert "ANYROUTER_BASE_URL=https://anyrouter.dev/api/v1" in content
+        assert "LANGCHAIN_MODEL_NAME=openai/gpt-5.6-sol" in content

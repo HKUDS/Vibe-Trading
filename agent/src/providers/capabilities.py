@@ -113,6 +113,12 @@ _SPARK_CAPABILITIES = ProviderCapabilities(
 _OPENAI_CODEX_CAPABILITIES = ProviderCapabilities(
     "openai-codex", None, "OPENAI_CODEX_BASE_URL"
 )
+_ANYROUTER_CAPABILITIES = ProviderCapabilities(
+    "anyrouter",
+    "ANYROUTER_API_KEY",
+    "ANYROUTER_BASE_URL",
+    capture_reasoning=True,
+)
 
 
 _PROVIDERS: dict[str, ProviderCapabilities] = {
@@ -123,6 +129,8 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
         "ANTHROPIC_BASE_URL",
         native_adapter_package="langchain-anthropic",
     ),
+    "anyrouter": _ANYROUTER_CAPABILITIES,
+    "anyrouter-responses": _ANYROUTER_CAPABILITIES,
     "openrouter": ProviderCapabilities(
         "openrouter",
         "OPENROUTER_API_KEY",

@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Optional
 from urllib.parse import urlparse
@@ -65,6 +64,7 @@ class CodexAIMessage:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     additional_kwargs: dict[str, Any] = field(default_factory=dict)
     response_metadata: dict[str, Any] = field(default_factory=lambda: {"finish_reason": "stop"})
+    usage_metadata: dict[str, int] | None = None
 
     def __add__(self, other: "CodexAIMessage") -> "CodexAIMessage":
         finish_reason = other.response_metadata.get(
@@ -80,6 +80,7 @@ class CodexAIMessage:
             tool_calls=[*self.tool_calls, *other.tool_calls],
             additional_kwargs={"reasoning_content": reasoning} if reasoning else {},
             response_metadata={"finish_reason": finish_reason},
+            usage_metadata=other.usage_metadata or self.usage_metadata,
         )
 
 
@@ -327,6 +328,13 @@ def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[Co
             delta = event.get("delta") or ""
             if delta:
                 yield CodexAIMessage(content=delta)
+        elif event_type in {
+            "response.reasoning_summary_text.delta",
+            "response.reasoning_text.delta",
+        }:
+            delta = event.get("delta") or ""
+            if delta:
+                yield CodexAIMessage(additional_kwargs={"reasoning_content": delta})
         elif event_type == "response.function_call_arguments.delta":
             call_id = event.get("call_id")
             if call_id in tool_buffers:
@@ -348,51 +356,67 @@ def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[Co
                 )
                 yield CodexAIMessage(tool_calls=[tool.as_langchain_tool_call()])
         elif event_type == "response.completed":
-            status = (event.get("response") or {}).get("status")
-            yield CodexAIMessage(response_metadata={"finish_reason": _map_finish_reason(status)})
+            response = event.get("response") or {}
+            status = response.get("status")
+            usage = response.get("usage")
+            usage_metadata = None
+            if isinstance(usage, dict):
+                usage_metadata = {
+                    "input_tokens": int(usage.get("input_tokens") or 0),
+                    "output_tokens": int(usage.get("output_tokens") or 0),
+                    "total_tokens": int(usage.get("total_tokens") or 0),
+                }
+            yield CodexAIMessage(
+                response_metadata={"finish_reason": _map_finish_reason(status)},
+                usage_metadata=usage_metadata,
+            )
         elif event_type in {"error", "response.failed"}:
             detail = event.get("error") or event.get("message") or event
-            raise RuntimeError(f"OpenAI Codex response failed: {str(detail)[:500]}")
+            raise RuntimeError(f"Responses API request failed: {str(detail)[:500]}")
 
 
-class OpenAICodexLLM:
-    """Minimal LangChain-compatible adapter for Vibe-Trading's ChatLLM."""
+class ResponsesLLM:
+    """Shared LangChain-like adapter for Responses API transports.
+
+    Authentication deliberately remains in subclasses.  The ChatGPT OAuth
+    subclass must never be allowed to send its token to a caller-configured
+    gateway URL.
+    """
 
     def __init__(
         self,
         *,
         model: str,
+        responses_url: str,
+        provider_label: str,
         temperature: float = 0.0,
         timeout: int = 120,
         tools: list[dict[str, Any]] | None = None,
         reasoning_effort: str | None = None,
-        codex_url: str | None = None,
     ) -> None:
         if httpx is None:
-            raise RuntimeError("OpenAI Codex OAuth requires httpx. Install dependencies first.")
+            raise RuntimeError(f"{provider_label} requires httpx. Install dependencies first.")
         self.model = model
         self.temperature = temperature
         self.timeout = timeout
         self.tools = tools or []
         self.reasoning_effort = reasoning_effort
-        self.codex_url = validate_codex_base_url(
-            codex_url or get_env_config().llm.openai_codex_base_url
-        )
+        self.responses_url = responses_url
+        self.provider_label = provider_label
 
-    def bind_tools(self, tools: list[dict[str, Any]]) -> "OpenAICodexLLM":
-        return OpenAICodexLLM(
-            model=self.model,
-            temperature=self.temperature,
-            timeout=self.timeout,
-            tools=tools,
-            reasoning_effort=self.reasoning_effort,
-            codex_url=self.codex_url,
-        )
+    def _copy_with_tools(self, tools: list[dict[str, Any]]) -> "ResponsesLLM":
+        raise NotImplementedError
+
+    def bind_tools(self, tools: list[dict[str, Any]]) -> "ResponsesLLM":
+        return self._copy_with_tools(tools)
+
+    def _request_model(self) -> str:
+        return self.model
 
     def _body(self, messages: list[dict[str, Any]], *, stream: bool) -> dict[str, Any]:
         system_prompt, input_items = _convert_messages(messages)
         body: dict[str, Any] = {
-            "model": _strip_model_prefix(self.model),
+            "model": self._request_model(),
             "store": False,
             "stream": stream,
             "instructions": system_prompt,
@@ -411,19 +435,23 @@ class OpenAICodexLLM:
         return body
 
     def _headers(self) -> dict[str, str]:
-        token = _get_codex_token()
-        return _build_headers(str(token.account_id), str(token.access))
+        raise NotImplementedError
+
+    def _http_error(self, status_code: int, detail: str) -> RuntimeError:
+        return RuntimeError(f"{self.provider_label} HTTP {status_code}: {detail[:500]}")
 
     def stream(self, messages: list[dict[str, Any]], config: Optional[dict[str, Any]] = None) -> Iterable[CodexAIMessage]:
         timeout = (config or {}).get("timeout") or self.timeout
         with httpx.Client(timeout=timeout, follow_redirects=True, trust_env=True) as client:
-            with client.stream("POST", self.codex_url, headers=self._headers(), json=self._body(messages, stream=True)) as response:
+            with client.stream(
+                "POST",
+                self.responses_url,
+                headers=self._headers(),
+                json=self._body(messages, stream=True),
+            ) as response:
                 if response.status_code != 200:
                     raw = response.read().decode("utf-8", "ignore")
-                    # Raise the typed CodexStreamError (carries ``status_code``)
-                    # so ``ProviderStreamError.retryable`` can correctly classify
-                    # deterministic 4xx as non-retryable.
-                    raise CodexStreamError(response.status_code, raw)
+                    raise self._http_error(response.status_code, raw)
                 yield from _message_chunks_from_events(_events_from_lines(response.iter_lines()))
 
     def invoke(self, messages: list[dict[str, Any]], config: Optional[dict[str, Any]] = None) -> CodexAIMessage:
@@ -434,3 +462,53 @@ class OpenAICodexLLM:
 
     async def ainvoke(self, messages: list[dict[str, Any]], config: Optional[dict[str, Any]] = None) -> CodexAIMessage:
         return await asyncio.to_thread(self.invoke, messages, config)
+
+
+class OpenAICodexLLM(ResponsesLLM):
+    """ChatGPT OAuth adapter for the fixed Codex Responses endpoint."""
+
+    def _http_error(self, status_code: int, detail: str) -> RuntimeError:
+        # Preserve typed Codex errors so deterministic 4xx responses are not retried.
+        return CodexStreamError(status_code, detail)
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        temperature: float = 0.0,
+        timeout: int = 120,
+        tools: list[dict[str, Any]] | None = None,
+        reasoning_effort: str | None = None,
+        codex_url: str | None = None,
+    ) -> None:
+        validated_url = validate_codex_base_url(
+            codex_url or get_env_config().llm.openai_codex_base_url
+        )
+        super().__init__(
+            model=model,
+            responses_url=validated_url,
+            provider_label="OpenAI Codex",
+            temperature=temperature,
+            timeout=timeout,
+            tools=tools,
+            reasoning_effort=reasoning_effort,
+        )
+        # Compatibility for callers/tests that inspect the historic attribute.
+        self.codex_url = validated_url
+
+    def _copy_with_tools(self, tools: list[dict[str, Any]]) -> "OpenAICodexLLM":
+        return OpenAICodexLLM(
+            model=self.model,
+            temperature=self.temperature,
+            timeout=self.timeout,
+            tools=tools,
+            reasoning_effort=self.reasoning_effort,
+            codex_url=self.responses_url,
+        )
+
+    def _request_model(self) -> str:
+        return _strip_model_prefix(self.model)
+
+    def _headers(self) -> dict[str, str]:
+        token = _get_codex_token()
+        return _build_headers(str(token.account_id), str(token.access))

@@ -44,6 +44,29 @@ def test_provider_diagnostics_redacts_secrets_and_proxy_values() -> None:
     assert "token=secret" not in encoded
 
 
+def test_anyrouter_diagnostics_reports_responses_adapter_without_secret() -> None:
+    """AnyRouter should be recognizable in doctor output without exposing its key."""
+    import src.providers.llm as llm_mod
+
+    llm_mod._dotenv_loaded = True
+    env = {
+        "LANGCHAIN_PROVIDER": "anyrouter",
+        "LANGCHAIN_MODEL_NAME": "openai/gpt-5.6-sol",
+        "ANYROUTER_API_KEY": "sk-ar-super-secret",
+        "ANYROUTER_BASE_URL": "https://anyrouter.dev/api/v1",
+    }
+
+    with patch.dict(os.environ, env, clear=True):
+        diagnostics = provider_diagnostics()
+
+    encoded = json.dumps(diagnostics, sort_keys=True)
+    assert diagnostics["provider"] == "anyrouter"
+    assert diagnostics["adapter"]["type"] == "responses-api"
+    assert diagnostics["adapter"]["mode"] == "api-key"
+    assert diagnostics["api_key"]["ANYROUTER_API_KEY"] == "set"
+    assert "sk-ar-super-secret" not in encoded
+
+
 def test_provider_capabilities_are_provider_specific() -> None:
     """DeepSeek, Kimi, Gemini, and OpenRouter should not share one mutation bag."""
     deepseek = get_provider_capabilities("deepseek", "deepseek-v4-pro")

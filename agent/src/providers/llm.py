@@ -623,6 +623,9 @@ def provider_diagnostics() -> dict[str, Any]:
         )
         else "openai-compatible"
     )
+    if caps.name == "anyrouter":
+        adapter_type = "responses-api"
+        adapter_mode = "api-key"
     return {
         "provider": caps.name if provider in {"kimi", "openai_codex"} else provider,
         "model": model,
@@ -692,6 +695,17 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
 
         effort = get_env_config().llm.langchain_reasoning_effort.strip().lower()
         return OpenAICodexLLM(
+            model=name,
+            temperature=temperature,
+            timeout=get_env_config().llm.timeout_seconds,
+            reasoning_effort=effort or None,
+        )
+
+    if provider in {"anyrouter", "anyrouter-responses", "anyrouter_responses"}:
+        from src.providers.anyrouter_responses import AnyRouterResponsesLLM
+
+        effort = get_env_config().llm.langchain_reasoning_effort.strip().lower()
+        return AnyRouterResponsesLLM(
             model=name,
             temperature=temperature,
             timeout=get_env_config().llm.timeout_seconds,

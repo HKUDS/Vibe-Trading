@@ -12,6 +12,7 @@ from cli.onboard import PROVIDERS as ONBOARD_PROVIDERS
 EXPECTED_PROVIDER_DEFAULTS = {
     "openrouter": "deepseek/deepseek-v4-pro",
     "requesty": "openai/gpt-4o-mini",
+    "anyrouter": "openai/gpt-5.6-sol",
     "openai": "gpt-5.5",
     "anthropic": "claude-sonnet-4-6",
     "openai-codex": "openai-codex/gpt-5.4",
@@ -119,3 +120,13 @@ def test_siliconflow_is_available_in_both_cli_onboarding_surfaces() -> None:
         assert onboard.key_env == legacy["key_env"] == key_env
         assert onboard.base_env == legacy["base_env"] == base_env
         assert onboard.base_url == legacy["base_url"] == base_url
+
+
+def test_anyrouter_is_available_in_both_cli_onboarding_surfaces() -> None:
+    onboard = next(provider for provider in ONBOARD_PROVIDERS if provider.key == "anyrouter")
+    legacy = next(item for item in cli._PROVIDER_CHOICES if item["provider"] == "anyrouter")
+
+    assert onboard.default_model == legacy["model"] == "openai/gpt-5.6-sol"
+    assert onboard.key_env == legacy["key_env"] == "ANYROUTER_API_KEY"
+    assert onboard.base_env == legacy["base_env"] == "ANYROUTER_BASE_URL"
+    assert onboard.base_url == legacy["base_url"] == "https://anyrouter.dev/api/v1"

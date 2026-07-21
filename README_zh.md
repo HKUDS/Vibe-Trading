@@ -570,7 +570,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 - 路径 A 需要 **Docker**
 - OpenAI Codex 也可通过 ChatGPT OAuth 使用：设置 `LANGCHAIN_PROVIDER=openai-codex`，然后运行 `vibe-trading provider login openai-codex`。它不使用 `OPENAI_API_KEY`。
 
-> **支持的 LLM providers：** OpenRouter、Requesty、OpenAI、DeepSeek、Gemini、Groq、DashScope/Qwen、Zhipu、Moonshot/Kimi、MiniMax、Xiaomi MIMO、Z.ai、Ollama（本地）。配置见 `.env.example`。
+> **支持的 LLM providers：** OpenRouter、Requesty、AnyRouter（Responses API）、OpenAI、DeepSeek、Gemini、Groq、DashScope/Qwen、Zhipu、Moonshot/Kimi、MiniMax、Xiaomi MIMO、Z.ai、Ollama（本地）。配置见 `.env.example`。
 
 > **提示：** 由于自动 fallback，所有市场都可以在没有任何 API key 的情况下工作。yfinance（港/美股）、OKX（加密）、mootdx（A 股，TCP 直连不封 IP）和 AKShare（A 股、美股、港股、期货、外汇）都是免费的。Tushare token 是可选项 —— mootdx 是首选的免 token A 股 fallback，AKShare 作为覆盖更广的兜底。
 
@@ -661,6 +661,20 @@ skill + MCP config 会下载到你的智能体 skills 目录。详情见 [ClawHu
 | `VIBE_TRADING_ALLOWED_RUN_ROOTS` | No | 生成代码 run directories 额外允许的逗号分隔 roots |
 
 <sub>* Ollama 不需要 API key。OpenAI Codex 使用 ChatGPT OAuth，并通过 `oauth-cli-kit` 存储 token，不写入 `agent/.env`。</sub>
+
+对于必须走 Responses API 的 AnyRouter 模型，请使用专用 provider，而不是
+OpenAI-compatible Chat Completions 适配器：
+
+```dotenv
+LANGCHAIN_PROVIDER=anyrouter
+LANGCHAIN_MODEL_NAME=openai/gpt-5.6-sol
+ANYROUTER_API_KEY=your-api-key
+ANYROUTER_BASE_URL=https://anyrouter.dev/api/v1
+```
+
+区域 AnyRouter 网关可以覆盖 `ANYROUTER_BASE_URL`；模型名称应与该网关 `/models`
+接口返回的 ID 完全一致。凭据只会作为 Bearer API key 发送，并与 `openai-codex`
+使用的 ChatGPT OAuth 流程保持隔离。
 
 **免费数据（无需 key）：** A 股通过 AKShare，港/美股通过 yfinance，加密通过 OKX，100+ 加密交易所通过 CCXT。系统会为每个市场自动选择最佳可用数据源。
 
