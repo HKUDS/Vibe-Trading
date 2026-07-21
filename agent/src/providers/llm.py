@@ -709,6 +709,7 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
             model=name,
             temperature=temperature,
             timeout=get_env_config().llm.timeout_seconds,
+            max_retries=get_env_config().llm.max_retries,
             reasoning_effort=effort or None,
         )
 

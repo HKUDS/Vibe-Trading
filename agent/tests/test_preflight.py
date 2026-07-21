@@ -31,6 +31,28 @@ def _configure_llm_preflight(monkeypatch) -> None:
     )
 
 
+def _configure_anyrouter_preflight(monkeypatch, *, base_url: str) -> None:
+    """Install an AnyRouter.top environment without loading a real dotenv file."""
+    import src.providers.llm as llm
+
+    monkeypatch.setenv("LANGCHAIN_PROVIDER", "anyrouter")
+    monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "gpt-5.6-sol")
+    monkeypatch.setenv("ANYROUTER_API_KEY", "sk-test")
+    monkeypatch.setenv("ANYROUTER_BASE_URL", base_url)
+    monkeypatch.setattr(llm, "_ensure_dotenv", lambda: None)
+    monkeypatch.setattr(llm, "_sync_provider_env", lambda: None)
+    monkeypatch.setattr(
+        llm,
+        "provider_diagnostics",
+        lambda: {
+            "base_url": base_url,
+            "timeout_seconds": 120,
+            "max_retries": 2,
+            "proxy": {},
+        },
+    )
+
+
 def test_llm_preflight_probe_does_not_follow_redirects(monkeypatch) -> None:
     """A redirect response still proves the HTTPS provider base is reachable."""
     _configure_llm_preflight(monkeypatch)
@@ -73,6 +95,61 @@ def test_llm_preflight_probe_reports_request_errors(monkeypatch) -> None:
     assert result.status == "error"
     assert result.critical is True
     assert "Timeout: timed out" in result.message
+
+
+def test_anyrouter_preflight_normalizes_base_and_verifies_model(monkeypatch) -> None:
+    """AnyRouter readiness must cover the authenticated /v1/models route."""
+    _configure_anyrouter_preflight(monkeypatch, base_url="https://region.example")
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class _Response:
+        status_code = 200
+
+        @staticmethod
+        def json() -> dict[str, object]:
+            return {"data": [{"id": "gpt-5.6-sol"}]}
+
+    def fake_get(url: str, **kwargs: object) -> _Response:
+        calls.append((url, kwargs))
+        return _Response()
+
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    result = preflight._check_llm_provider()
+
+    assert result.status == "ready"
+    assert calls == [
+        (
+            "https://region.example/v1/models",
+            {
+                "headers": {"Authorization": "Bearer sk-test"},
+                "timeout": 10,
+                "allow_redirects": False,
+            },
+        )
+    ]
+    assert "sk-test" not in result.message
+
+
+def test_anyrouter_preflight_rejects_unlisted_model(monkeypatch) -> None:
+    """A reachable gateway is not ready when the configured model is absent."""
+    _configure_anyrouter_preflight(monkeypatch, base_url="https://region.example/v1")
+
+    class _Response:
+        status_code = 200
+
+        @staticmethod
+        def json() -> dict[str, object]:
+            return {"data": [{"id": "another-model"}]}
+
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: _Response())
+
+    result = preflight._check_llm_provider()
+
+    assert result.status == "error"
+    assert result.critical is True
+    assert "gpt-5.6-sol" in result.message
+    assert "not listed" in result.message
 
 
 def test_akshare_check_uses_spec_without_import(monkeypatch) -> None:

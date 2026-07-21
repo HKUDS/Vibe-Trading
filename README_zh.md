@@ -674,7 +674,7 @@ ANYROUTER_BASE_URL=https://your-regional-gateway.example/v1
 
 请从 [AnyRouter.top](https://docs.anyrouter.top/) 账户复制区域 base URL，并使用该网关
 `/models` 接口返回的准确模型 ID。由于区域入口不同，`ANYROUTER_BASE_URL` 必须显式
-设置。AnyRouter.top 与 anyrouter.dev 是不同服务，二者的 key、endpoint 和文档不可
+设置；仅填写网关主机时会自动补全 `/v1`。AnyRouter.top 与 anyrouter.dev 是不同服务，二者的 key、endpoint 和文档不可
 混用。凭据只会作为 Bearer API key 发送，并与 `openai-codex` 使用的 ChatGPT OAuth
 流程保持隔离。
 

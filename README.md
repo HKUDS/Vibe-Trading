@@ -684,7 +684,8 @@ ANYROUTER_BASE_URL=https://your-regional-gateway.example/v1
 
 Copy the regional base URL from your [AnyRouter.top](https://docs.anyrouter.top/) account
 and use the exact model ID listed by that gateway's `/models` endpoint. The base URL is
-required because regional endpoints vary. AnyRouter.top is distinct from anyrouter.dev;
+required because regional endpoints vary; a host-only gateway URL is normalized to `/v1`.
+AnyRouter.top is distinct from anyrouter.dev;
 keys, endpoints, and documentation for the latter are not interchangeable. Credentials
 are sent only as a Bearer API key and remain separate from the `openai-codex` ChatGPT
 OAuth flow.

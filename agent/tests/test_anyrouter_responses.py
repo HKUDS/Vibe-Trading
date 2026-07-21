@@ -9,7 +9,9 @@ import pytest
 from src.config.accessor import reset_env_config
 from src.providers import llm as llm_mod
 from src.providers.anyrouter_responses import (
+    AnyRouterStreamError,
     AnyRouterResponsesLLM,
+    anyrouter_models_url,
     anyrouter_responses_url,
     validate_anyrouter_base_url,
 )
@@ -17,9 +19,13 @@ from src.providers.openai_codex import _events_from_lines, _message_chunks_from_
 
 
 def test_anyrouter_base_url_validation_and_response_path() -> None:
+    assert validate_anyrouter_base_url("https://region.example") == "https://region.example/v1"
     assert validate_anyrouter_base_url("https://region.example/v1/") == "https://region.example/v1"
+    assert anyrouter_responses_url("https://relay.example") == "https://relay.example/v1/responses"
     assert anyrouter_responses_url("https://relay.example/v1") == "https://relay.example/v1/responses"
     assert anyrouter_responses_url("https://relay.example/v1/responses") == "https://relay.example/v1/responses"
+    assert anyrouter_models_url("https://relay.example") == "https://relay.example/v1/models"
+    assert anyrouter_models_url("https://relay.example/v1/responses") == "https://relay.example/v1/models"
 
     with pytest.raises(ValueError, match="requires ANYROUTER_BASE_URL"):
         validate_anyrouter_base_url("")
@@ -38,7 +44,7 @@ def test_build_llm_returns_anyrouter_responses_adapter(monkeypatch: pytest.Monke
     monkeypatch.setenv("LANGCHAIN_PROVIDER", "anyrouter")
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "gpt-5.6-sol")
     monkeypatch.setenv("ANYROUTER_API_KEY", "sk-test")
-    monkeypatch.setenv("ANYROUTER_BASE_URL", "https://region.example/v1")
+    monkeypatch.setenv("ANYROUTER_BASE_URL", "https://region.example")
     reset_env_config()
 
     adapter = llm_mod.build_llm()
@@ -196,3 +202,113 @@ def test_anyrouter_stream_uses_api_key_without_chatgpt_oauth(monkeypatch: pytest
     assert headers["Authorization"] == "Bearer sk-test"
     assert "chatgpt-account-id" not in headers
     assert json.dumps(captured).count("sk-test") == 1
+
+
+def test_anyrouter_retries_transient_error_before_streaming(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    responses = [500, 429, 200]
+    sleeps: list[int] = []
+
+    class _FakeResponse:
+        def __init__(self, status_code: int) -> None:
+            self.status_code = status_code
+
+        def __enter__(self) -> "_FakeResponse":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b"temporarily unavailable"
+
+        def iter_lines(self):
+            return iter([
+                'data: {"type":"response.output_text.delta","delta":"ok"}',
+                "",
+                'data: {"type":"response.completed","response":{"status":"completed"}}',
+                "",
+            ])
+
+    class _FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> "_FakeClient":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def stream(self, *args: object, **kwargs: object) -> _FakeResponse:
+            return _FakeResponse(responses.pop(0))
+
+    import src.providers.anyrouter_responses as anyrouter_mod
+    import src.providers.openai_codex as responses_mod
+
+    monkeypatch.setattr(responses_mod.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(anyrouter_mod.time, "sleep", sleeps.append)
+    adapter = AnyRouterResponsesLLM(
+        model="gpt-5.6-sol",
+        api_key="sk-test",
+        base_url="https://relay.example",
+        max_retries=2,
+    )
+
+    chunks = list(adapter.stream([{"role": "user", "content": "hello"}]))
+
+    assert chunks[0].content == "ok"
+    assert sleeps == [1, 2]
+    assert responses == []
+
+
+def test_anyrouter_does_not_retry_non_transient_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeResponse:
+        status_code = 400
+
+        def __enter__(self) -> "_FakeResponse":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        @staticmethod
+        def read() -> bytes:
+            return b"bad request"
+
+    class _FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> "_FakeClient":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def stream(self, *args: object, **kwargs: object) -> _FakeResponse:
+            return _FakeResponse()
+
+    import src.providers.anyrouter_responses as anyrouter_mod
+    import src.providers.openai_codex as responses_mod
+
+    monkeypatch.setattr(responses_mod.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(
+        anyrouter_mod.time,
+        "sleep",
+        lambda seconds: pytest.fail(f"unexpected sleep: {seconds}"),
+    )
+    adapter = AnyRouterResponsesLLM(
+        model="gpt-5.6-sol",
+        api_key="sk-test",
+        base_url="https://relay.example/v1",
+        max_retries=2,
+    )
+
+    with pytest.raises(AnyRouterStreamError) as exc_info:
+        list(adapter.stream([{"role": "user", "content": "hello"}]))
+
+    assert exc_info.value.status_code == 400

@@ -100,6 +100,48 @@ def _check_llm_provider() -> CheckResult:
             impact="",
         )
 
+    if provider.lower() in {"anyrouter", "anyrouter-responses", "anyrouter_responses"}:
+        try:
+            import requests
+
+            from src.providers.anyrouter_responses import anyrouter_models_url
+
+            api_key = _cfg.llm.anyrouter_api_key.strip()
+            if not api_key:
+                raise RuntimeError("ANYROUTER_API_KEY is not set")
+            models_url = anyrouter_models_url(_cfg.llm.anyrouter_base_url)
+            response = requests.get(
+                models_url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10,
+                allow_redirects=False,
+            )
+            if response.status_code != 200:
+                raise requests.HTTPError(f"HTTP {response.status_code} from model discovery")
+            payload = response.json()
+            model_ids = {
+                str(item.get("id"))
+                for item in payload.get("data", [])
+                if isinstance(item, dict) and item.get("id")
+            }
+            if model not in model_ids:
+                raise RuntimeError(f"model {model!r} is not listed by {models_url}")
+            normalized_base = models_url.removesuffix("/models")
+            return CheckResult(
+                name=f"LLM ({provider})",
+                status="ready",
+                message=f"{model} via {normalized_base} | {diag_hint}",
+                impact="",
+            )
+        except Exception as exc:
+            return CheckResult(
+                name=f"LLM ({provider})",
+                status="error",
+                message=f"{type(exc).__name__}: {exc} | {diag_hint}",
+                impact="agent cannot function",
+                critical=True,
+            )
+
     if not base_url:
         return CheckResult(
             name=f"LLM ({provider})",
