@@ -161,9 +161,9 @@ class TestCliInit:
                  cli.Prompt,
                  "ask",
                  side_effect=[
-                     "sk-ar-test-key",
-                     "https://anyrouter.dev/api/v1",
-                     "openai/gpt-5.6-sol",
+                     "sk-test-key",
+                     "https://region.example/v1",
+                     "gpt-5.6-sol",
                      "",
                  ],
              ):
@@ -172,6 +172,6 @@ class TestCliInit:
         assert result == 0
         content = env_path.read_text(encoding="utf-8")
         assert "LANGCHAIN_PROVIDER=anyrouter" in content
-        assert "ANYROUTER_API_KEY=sk-ar-test-key" in content
-        assert "ANYROUTER_BASE_URL=https://anyrouter.dev/api/v1" in content
-        assert "LANGCHAIN_MODEL_NAME=openai/gpt-5.6-sol" in content
+        assert "ANYROUTER_API_KEY=sk-test-key" in content
+        assert "ANYROUTER_BASE_URL=https://region.example/v1" in content
+        assert "LANGCHAIN_MODEL_NAME=gpt-5.6-sol" in content

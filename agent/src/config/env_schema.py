@@ -140,7 +140,7 @@ class LLMConfig(_EnvBase):
     anyrouter_api_key: str = Field(alias="ANYROUTER_API_KEY", default="")
     anyrouter_base_url: str = Field(
         alias="ANYROUTER_BASE_URL",
-        default="https://anyrouter.dev/api/v1",
+        default="",
     )
     openai_model: str = Field(alias="OPENAI_MODEL", default="")
 

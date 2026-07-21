@@ -79,7 +79,7 @@ class TestEnvConfigDefaults:
         assert c.llm.moonshot_user_agent == ""
         assert c.llm.openai_codex_base_url == "https://chatgpt.com/backend-api/codex/responses"
         assert c.llm.anyrouter_api_key == ""
-        assert c.llm.anyrouter_base_url == "https://anyrouter.dev/api/v1"
+        assert c.llm.anyrouter_base_url == ""
 
     def test_data_defaults(self) -> None:
         c = EnvConfig()

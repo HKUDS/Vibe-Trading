@@ -63,11 +63,11 @@ PROVIDERS: Final[tuple[Provider, ...]] = (
              "https://router.requesty.ai/v1", None,
              ("openai/gpt-4o-mini", "openai/gpt-4o",
               "anthropic/claude-sonnet-4-5", "deepseek/deepseek-chat")),
-    Provider("anyrouter", "AnyRouter", "Responses API gateway for Responses-native models",
-             "openai/gpt-5.6-sol",
+    Provider("anyrouter", "AnyRouter.top", "regional Responses API gateway",
+             "gpt-5.6-sol",
              "ANYROUTER_API_KEY", "ANYROUTER_BASE_URL",
-             "https://anyrouter.dev/api/v1", "sk-ar-",
-             ("openai/gpt-5.6-sol",)),
+             "", None,
+             ("gpt-5.6-sol",)),
     Provider("openai", "OpenAI", "GPT-5.5 direct",
              "gpt-5.5", "OPENAI_API_KEY", "OPENAI_BASE_URL",
              "https://api.openai.com/v1", "sk-",
@@ -470,6 +470,26 @@ def run_onboarding(*, console: Console | None = None) -> Path | None:
             if err is None:
                 state["key"] = key
                 values[provider.key_env] = str(key)
+                if provider.key == "anyrouter":
+                    while True:
+                        base_url = _prompt_text(
+                            "Paste the regional Responses base URL from your AnyRouter.top dashboard "
+                            "(include /v1 when shown)",
+                            console=cons,
+                        )
+                        if base_url is BACK or base_url is CANCEL:
+                            return base_url
+                        try:
+                            from src.providers.anyrouter_responses import (
+                                validate_anyrouter_base_url,
+                            )
+
+                            values[provider.base_env] = validate_anyrouter_base_url(
+                                str(base_url)
+                            )
+                            break
+                        except ValueError as exc:
+                            cons.print(Text(f"  {exc}  Try again.", style=Theme.danger))
                 _save_partial(values)
                 return "ok"
             cons.print(Text(f"  {err}  Try again, or press Esc to go back.",

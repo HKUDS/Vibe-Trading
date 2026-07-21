@@ -1,8 +1,9 @@
-"""AnyRouter API-key adapter for Responses-native models.
+"""AnyRouter.top regional API-key adapter for Responses-native models.
 
 This transport is separate from :mod:`src.providers.openai_codex`: AnyRouter
-uses a normal inference API key and a configurable HTTPS gateway, while the
-Codex OAuth adapter is intentionally pinned to ChatGPT's own endpoint.
+regional gateways use a normal inference API key and a dashboard-provided HTTPS
+base URL, while the Codex OAuth adapter is intentionally pinned to ChatGPT's
+own endpoint.
 """
 
 from __future__ import annotations
@@ -14,12 +15,13 @@ from src.config.accessor import get_env_config
 from src.providers.openai_codex import ResponsesLLM
 
 
-DEFAULT_ANYROUTER_BASE_URL = "https://anyrouter.dev/api/v1"
-
-
 def validate_anyrouter_base_url(url: str) -> str:
-    """Validate and normalize an AnyRouter-compatible HTTPS base URL."""
-    value = (url or DEFAULT_ANYROUTER_BASE_URL).strip().rstrip("/")
+    """Validate and normalize an explicit AnyRouter regional HTTPS base URL."""
+    value = (url or "").strip().rstrip("/")
+    if not value:
+        raise ValueError(
+            "AnyRouter Responses requires ANYROUTER_BASE_URL from the AnyRouter.top dashboard"
+        )
     parsed = urlparse(value)
     if (
         parsed.scheme != "https"
@@ -42,7 +44,7 @@ def anyrouter_responses_url(base_url: str) -> str:
 
 
 class AnyRouterResponsesLLM(ResponsesLLM):
-    """LangChain-like Responses adapter authenticated with an AnyRouter key."""
+    """Responses adapter authenticated for an AnyRouter.top regional gateway."""
 
     def __init__(
         self,

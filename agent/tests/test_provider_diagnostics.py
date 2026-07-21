@@ -51,9 +51,9 @@ def test_anyrouter_diagnostics_reports_responses_adapter_without_secret() -> Non
     llm_mod._dotenv_loaded = True
     env = {
         "LANGCHAIN_PROVIDER": "anyrouter",
-        "LANGCHAIN_MODEL_NAME": "openai/gpt-5.6-sol",
-        "ANYROUTER_API_KEY": "sk-ar-super-secret",
-        "ANYROUTER_BASE_URL": "https://anyrouter.dev/api/v1",
+        "LANGCHAIN_MODEL_NAME": "gpt-5.6-sol",
+        "ANYROUTER_API_KEY": "sk-super-secret",
+        "ANYROUTER_BASE_URL": "https://region.example/v1",
     }
 
     with patch.dict(os.environ, env, clear=True):
@@ -64,7 +64,7 @@ def test_anyrouter_diagnostics_reports_responses_adapter_without_secret() -> Non
     assert diagnostics["adapter"]["type"] == "responses-api"
     assert diagnostics["adapter"]["mode"] == "api-key"
     assert diagnostics["api_key"]["ANYROUTER_API_KEY"] == "set"
-    assert "sk-ar-super-secret" not in encoded
+    assert "sk-super-secret" not in encoded
 
 
 def test_provider_capabilities_are_provider_specific() -> None:
