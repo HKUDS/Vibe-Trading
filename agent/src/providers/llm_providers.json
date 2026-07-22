@@ -18,6 +18,15 @@
     "api_key_required": true
   },
   {
+    "name": "edenai",
+    "label": "Eden AI",
+    "api_key_env": "EDENAI_API_KEY",
+    "base_url_env": "EDENAI_BASE_URL",
+    "default_model": "openai/gpt-4o-mini",
+    "default_base_url": "https://api.edenai.run/v3",
+    "api_key_required": true
+  },
+  {
     "name": "openai",
     "label": "OpenAI",
     "api_key_env": "OPENAI_API_KEY",

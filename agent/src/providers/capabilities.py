@@ -140,6 +140,15 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
         capture_reasoning=True,
         openrouter_reasoning_body=True,
     ),
+    # Eden AI is an EU-based, GDPR-compliant OpenAI-compatible gateway using the
+    # same provider/model naming as OpenRouter.
+    "edenai": ProviderCapabilities(
+        "edenai",
+        "EDENAI_API_KEY",
+        "EDENAI_BASE_URL",
+        capture_reasoning=True,
+        openrouter_reasoning_body=True,
+    ),
     "deepseek": ProviderCapabilities(
         "deepseek",
         "DEEPSEEK_API_KEY",

@@ -6,6 +6,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Eden AI provider**: Eden AI is available as an EU-based, GDPR-compliant
+  OpenAI-compatible LLM gateway provider (700+ models across vendors, one key),
+  using the same `provider/model` naming as OpenRouter.
 - **User swarm-presets directory**: preset YAMLs dropped into
   `~/.vibe-trading/swarm/presets/` are discovered alongside the bundled
   roster (same-name files override it — the same rule as user skills) and

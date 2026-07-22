@@ -401,6 +401,7 @@ def _provider_key_env(provider: str | None) -> str | None:
     return {
         "openrouter": "OPENROUTER_API_KEY",
         "requesty": "REQUESTY_API_KEY",
+        "edenai": "EDENAI_API_KEY",
         "openai": "OPENAI_API_KEY",
         "deepseek": "DEEPSEEK_API_KEY",
         "nvidia": "NVIDIA_API_KEY",
@@ -424,6 +425,7 @@ def _provider_base_env(provider: str | None) -> str | None:
     return {
         "openrouter": "OPENROUTER_BASE_URL",
         "requesty": "REQUESTY_BASE_URL",
+        "edenai": "EDENAI_BASE_URL",
         "openai": "OPENAI_BASE_URL",
         "openai-codex": "OPENAI_CODEX_BASE_URL",
         "deepseek": "DEEPSEEK_BASE_URL",
@@ -4832,6 +4834,16 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_placeholder": "api-key...",
     },
     {
+        "label": "Eden AI (EU, OpenAI-compatible gateway - 700+ models)",
+        "provider": "edenai",
+        "key_env": "EDENAI_API_KEY",
+        "base_env": "EDENAI_BASE_URL",
+        "base_url": "https://api.edenai.run/v3",
+        "model": "openai/gpt-4o-mini",
+        "key_prefix": None,
+        "key_placeholder": "api-key...",
+    },
+    {
         "label": "DeepSeek",
         "provider": "deepseek",
         "key_env": "DEEPSEEK_API_KEY",
@@ -5010,6 +5022,8 @@ def _render_env_content(config: dict[str, str]) -> str:
         "OPENROUTER_BASE_URL",
         "REQUESTY_API_KEY",
         "REQUESTY_BASE_URL",
+        "EDENAI_API_KEY",
+        "EDENAI_BASE_URL",
         "DEEPSEEK_API_KEY",
         "DEEPSEEK_BASE_URL",
         "NVIDIA_API_KEY",
