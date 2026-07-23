@@ -33,6 +33,8 @@ _OHLCV_COLUMNS = ("open", "high", "low", "close", "volume")
 _INTERVAL_MAP = {
     "1D": "1d",
     "1H": "1h",
+    # Yahoo chart has no 4h bar; match yfinance's 4H → 1h approximation.
+    "4H": "1h",
     "1W": "1wk",
     "1M": "1mo",
 }

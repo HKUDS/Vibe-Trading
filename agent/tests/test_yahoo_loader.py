@@ -84,6 +84,10 @@ class TestIntervalMap:
     def test_hourly(self):
         assert _to_yahoo_interval("1H") == "1h"
 
+    def test_four_hour_maps_like_yfinance(self):
+        # Yahoo has no 4h interval; project 4H must not pass through as "4h".
+        assert _to_yahoo_interval("4H") == "1h"
+
     def test_unknown_lowercased(self):
         assert _to_yahoo_interval("5m") == "5m"
 
