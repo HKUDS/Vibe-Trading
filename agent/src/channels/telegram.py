@@ -179,6 +179,20 @@ def _strip_md_block(text: str) -> str:
     return text
 
 
+def _split_md_row(line: str) -> list[str]:
+    """Split a markdown table row, keeping empty leading/trailing cells.
+
+    ``str.strip('|')`` would also drop empty edge cells (``||Name|`` → ``Name``,
+    ``|a|b||`` → ``a|b``), so only peel the row's bounding pipes.
+    """
+    parts = line.strip().split("|")
+    if parts and parts[0] == "":
+        parts = parts[1:]
+    if parts and parts[-1] == "":
+        parts = parts[:-1]
+    return [_strip_md(c) for c in parts]
+
+
 def _render_table_box(table_lines: list[str]) -> str:
     """Convert markdown pipe-table to compact aligned text for <pre> display."""
 
@@ -188,7 +202,7 @@ def _render_table_box(table_lines: list[str]) -> str:
     rows: list[list[str]] = []
     has_sep = False
     for line in table_lines:
-        cells = [_strip_md(c) for c in line.strip().strip('|').split('|')]
+        cells = _split_md_row(line)
         if all(re.match(r'^:?-+:?$', c) for c in cells if c):
             has_sep = True
             continue
