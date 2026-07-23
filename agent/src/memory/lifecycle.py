@@ -230,6 +230,35 @@ class MemoryLifecycle:
                     self._execute_gc_action(entry, effective)
 
         self._append_gc_log(actions, dry_run)
+
+        # Tier 2: Trigger compression for aged entries
+        from src.config.accessor import get_env_config
+        if get_env_config().memory.compression_enabled:
+            try:
+                from src.memory.compression import CompressionPipeline
+                pipeline = CompressionPipeline(self._memory._dir)
+                now_ts = time.time()
+                for entry in entries:
+                    target = pipeline.should_compress(
+                        compression_level=entry.compression_level,
+                        last_accessed=entry.last_accessed,
+                        now=now_ts,
+                    )
+                    if not target:
+                        continue
+                    compressed = pipeline.apply_compression(
+                        entry_path=entry.path,
+                        content=entry.body,
+                        keywords=entry.keywords,
+                        target_level=target,
+                    )
+                    if compressed is None:
+                        continue
+                    # Write back: update frontmatter compression_level + replace body
+                    self._write_compressed(entry, compressed, target)
+            except Exception:
+                logger.debug("compression cycle failed", exc_info=True)
+
         return actions
 
     def _execute_gc_action(self, entry: MemoryEntry, action: str) -> None:
@@ -279,6 +308,63 @@ class MemoryLifecycle:
     # ------------------------------------------------------------------
     # Frontmatter manipulation
     # ------------------------------------------------------------------
+
+    def _write_compressed(
+        self, entry: MemoryEntry, compressed_body: str, target_level: str
+    ) -> None:
+        """Write compressed content back to the memory file atomically.
+
+        Updates frontmatter compression_level and updated_at, replaces body.
+        """
+        with memory_lock(self.memory_dir) as acquired:
+            if not acquired:
+                logger.warning(
+                    "_write_compressed(%s): lock timeout", entry.title
+                )
+                return
+            try:
+                text = entry.path.read_text(encoding="utf-8")
+                lines = text.split("\n")
+                if not lines or lines[0].strip() != "---":
+                    return
+                end_idx = None
+                for i in range(1, len(lines)):
+                    if lines[i].strip() == "---":
+                        end_idx = i
+                        break
+                if end_idx is None:
+                    return
+
+                # Update compression_level in frontmatter
+                level_found = False
+                updated_found = False
+                now_iso = _now_iso()
+                for i in range(1, end_idx):
+                    if lines[i].startswith("compression_level:"):
+                        lines[i] = f"compression_level: {target_level}"
+                        level_found = True
+                    elif lines[i].startswith("updated_at:"):
+                        lines[i] = f"updated_at: {now_iso}"
+                        updated_found = True
+                if not level_found:
+                    lines.insert(end_idx, f"compression_level: {target_level}")
+                    end_idx += 1
+                if not updated_found:
+                    lines.insert(end_idx, f"updated_at: {now_iso}")
+                    end_idx += 1
+
+                # Replace body (everything after closing ---)
+                new_lines = lines[: end_idx + 1]
+                new_lines.append("")
+                new_lines.append(compressed_body)
+
+                tmp_path = entry.path.with_suffix(entry.path.suffix + ".tmp")
+                tmp_path.write_text("\n".join(new_lines), encoding="utf-8")
+                os.replace(tmp_path, entry.path)
+            except (FileNotFoundError, IOError) as exc:
+                logger.warning(
+                    "_write_compressed(%s) failed: %s", entry.title, exc
+                )
 
     def _update_frontmatter_field(self, path: Path, field: str, value: str) -> None:
         """Update a single frontmatter field in a memory file.

@@ -131,6 +131,21 @@ class RememberTool(BaseTool):
             {"title": e.title, "type": e.memory_type, "content": e.body[:2000]}
             for e in entries
         ]
+
+        from src.config.accessor import get_env_config
+        if get_env_config().memory.links_enabled:
+            try:
+                from src.memory.semantic_links import SemanticLinker
+                linker = SemanticLinker(self._memory._dir)
+                for i, e in enumerate(entries):
+                    relations = linker.load_relations(e.path)
+                    if relations:
+                        results[i]["related"] = [
+                            {"target": t, "score": round(s, 2)} for t, s in relations[:3]
+                        ]
+            except Exception:
+                pass
+
         return json.dumps(
             {"status": "ok", "count": len(results), "memories": results},
             ensure_ascii=False,

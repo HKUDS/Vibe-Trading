@@ -440,3 +440,39 @@ class TestAddSanitizesAndTruncates:
         body_on_disk = path.read_text(encoding="utf-8").split("---\n\n", 1)[1]
         assert len(body_on_disk) <= MAX_ENTRY_CHARS + len("\n\n[truncated at  chars]\n") + 20
         assert "[truncated at" in body_on_disk
+
+
+# ---------------------------------------------------------------------------
+# MemoryEntry new field defaults (Tier 2)
+# ---------------------------------------------------------------------------
+
+
+class TestMemoryEntryNewFields:
+    """Verify Tier 2 MemoryEntry fields have safe defaults."""
+
+    def test_memory_entry_new_fields_defaults(self) -> None:
+        """category='' and compression_level='raw' by default."""
+        entry = MemoryEntry(
+            path=Path("/tmp/test.md"),
+            title="test",
+            description="desc",
+            memory_type="project",
+            body="body content",
+            modified_at=1000.0,
+        )
+        assert entry.category == ""
+        assert entry.compression_level == "raw"
+
+    def test_scan_entries_reads_category_from_frontmatter(self, tmp_path: Path) -> None:
+        """Write .md with category in frontmatter, verify it's parsed."""
+        entry_path = tmp_path / "user_cattest.md"
+        entry_path.write_text(
+            "---\nname: cattest\ndescription: test category\n"
+            "type: user\ncategory: user\ncompression_level: daily\n---\n\nbody\n",
+            encoding="utf-8",
+        )
+        pm = PersistentMemory(memory_dir=tmp_path)
+        entries = pm.list_entries()
+        assert len(entries) == 1
+        assert entries[0].category == "user"
+        assert entries[0].compression_level == "daily"

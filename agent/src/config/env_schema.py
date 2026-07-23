@@ -384,6 +384,24 @@ class MemoryConfig(_EnvBase):
         description="Enable importance decay computation",
     )
 
+    # Tier 2 feature flags
+    hierarchy_enabled: EnvBool = Field(
+        default=False, alias="VT_MEMORY_HIERARCHY",
+        description="Enable hierarchical directory routing",
+    )
+    links_enabled: EnvBool = Field(
+        default=False, alias="VT_MEMORY_LINKS",
+        description="Enable BM25 semantic linking",
+    )
+    compression_enabled: EnvBool = Field(
+        default=False, alias="VT_MEMORY_COMPRESSION",
+        description="Enable auto-compression pipeline",
+    )
+    fts_index_enabled: EnvBool = Field(
+        default=False, alias="VT_MEMORY_FTS_INDEX",
+        description="Enable SQLite FTS5 search index",
+    )
+
 
 # ---------------------------------------------------------------------------
 # Top-level composition
