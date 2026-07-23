@@ -54,6 +54,7 @@ class WeixinChannel(BaseChannel):
         self._account_tasks: dict[str, asyncio.Task[None]] = {}
         self._account_errors: dict[str, str] = {}
         self._login_required: set[str] = set()
+        self._lifecycle_lock = asyncio.Lock()
 
     def _runtime_config_for_auxiliary(
         self,
@@ -115,7 +116,7 @@ class WeixinChannel(BaseChannel):
     async def _run_account(self, alias: str) -> None:
         runtime = self._accounts[alias]
         try:
-            await runtime.start()
+            await runtime.start(allow_qr_login=False)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -124,30 +125,59 @@ class WeixinChannel(BaseChannel):
 
     async def start(self) -> None:
         self._sync_flags()
-        self._login_required.clear()
-        self._account_tasks = {
-            alias: asyncio.create_task(self._run_account(alias))
-            for alias, runtime in self._accounts.items()
-            if runtime.config.enabled and runtime.has_saved_credentials
-        }
-        self._login_required.update(
-            alias
-            for alias, runtime in self._accounts.items()
-            if runtime.config.enabled and not runtime.has_saved_credentials
-        )
-        if not self._account_tasks:
+        async with self._lifecycle_lock:
+            account_tasks = tuple(self._account_tasks.values())
+            if not any(not task.done() for task in account_tasks):
+                self._account_errors.clear()
+                enabled_accounts = {
+                    alias: runtime
+                    for alias, runtime in self._accounts.items()
+                    if runtime.config.enabled
+                }
+                credentials = {
+                    alias: runtime.has_saved_credentials
+                    for alias, runtime in enabled_accounts.items()
+                }
+                self._login_required = {
+                    alias
+                    for alias, has_credentials in credentials.items()
+                    if not has_credentials
+                }
+                self._account_tasks = {
+                    alias: asyncio.create_task(self._run_account(alias))
+                    for alias, has_credentials in credentials.items()
+                    if has_credentials
+                }
+                account_tasks = tuple(self._account_tasks.values())
+        if not account_tasks:
             return
-        await asyncio.gather(*self._account_tasks.values(), return_exceptions=True)
+        await asyncio.gather(*account_tasks, return_exceptions=True)
 
     async def stop(self) -> None:
-        started_aliases = tuple(self._account_tasks)
-        for alias in started_aliases:
-            await self._accounts[alias].stop()
-        for task in self._account_tasks.values():
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(*self._account_tasks.values(), return_exceptions=True)
-        self._account_tasks.clear()
+        async with self._lifecycle_lock:
+            account_tasks = self._account_tasks
+            cancelled_error: asyncio.CancelledError | None = None
+            try:
+                for alias in tuple(account_tasks):
+                    try:
+                        await self._accounts[alias].stop()
+                    except asyncio.CancelledError as exc:
+                        cancelled_error = exc
+                    except Exception as exc:
+                        self._account_errors[alias] = type(exc).__name__
+            finally:
+                for task in account_tasks.values():
+                    if not task.done():
+                        task.cancel()
+                try:
+                    await asyncio.gather(
+                        *account_tasks.values(),
+                        return_exceptions=True,
+                    )
+                finally:
+                    self._account_tasks.clear()
+            if cancelled_error is not None:
+                raise cancelled_error
 
     async def send(self, msg: OutboundMessage) -> None:
         self._sync_flags()

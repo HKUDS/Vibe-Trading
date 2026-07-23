@@ -492,7 +492,7 @@ class WeixinAccountRuntime(BaseChannel):
                 await self._client.aclose()
                 self._client = None
 
-    async def start(self) -> None:
+    async def start(self, *, allow_qr_login: bool = True) -> None:
         self._running = True
         self._next_poll_timeout_s = self.config.poll_timeout
         self._client = httpx.AsyncClient(
@@ -503,6 +503,13 @@ class WeixinAccountRuntime(BaseChannel):
         if self.config.token:
             self._token = self.config.token
         elif not self._load_state():
+            if not allow_qr_login:
+                self._running = False
+                client = self._client
+                self._client = None
+                if client:
+                    await client.aclose()
+                return
             if not await self._qr_login():
                 self.logger.error("login failed. Run 'vibe-trading channels login weixin' to authenticate.")
                 self._running = False

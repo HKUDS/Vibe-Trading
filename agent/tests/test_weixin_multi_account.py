@@ -59,8 +59,8 @@ class RecordingWeixinRuntime:
         self._record("login", force)
         return True
 
-    async def start(self) -> None:
-        self._record("start")
+    async def start(self, *, allow_qr_login: bool = True) -> None:
+        self._record("start", allow_qr_login)
 
     async def stop(self) -> None:
         self._record("stop")
@@ -146,11 +146,11 @@ def test_one_account_failure_does_not_cancel_siblings(monkeypatch) -> None:
         primary_started = asyncio.Event()
         auxiliary_failed = asyncio.Event()
 
-        async def primary_start() -> None:
+        async def primary_start(*, allow_qr_login: bool = True) -> None:
             primary_started.set()
             await asyncio.Event().wait()
 
-        async def auxiliary_start() -> None:
+        async def auxiliary_start(*, allow_qr_login: bool = True) -> None:
             auxiliary_failed.set()
             raise RuntimeError("isolated failure")
 
@@ -176,13 +176,209 @@ def test_enabled_account_without_credentials_never_starts_qr_login(monkeypatch) 
     )
     starts: list[str] = []
 
-    async def record_start() -> None:
+    async def record_start(*, allow_qr_login: bool = True) -> None:
         starts.append("started")
 
     monkeypatch.setattr(channel.account("account2"), "start", record_start)
     asyncio.run(channel.start())
     assert starts == []
     assert "account2" in channel.login_required_accounts
+
+
+def test_concurrent_starts_reuse_active_account_tasks(monkeypatch) -> None:
+    channel = WeixinChannel(
+        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        MessageBus(),
+    )
+
+    async def exercise() -> None:
+        release = asyncio.Event()
+        primary_started = asyncio.Event()
+        auxiliary_started = asyncio.Event()
+        second_start_entered = asyncio.Event()
+        starts: list[tuple[str, bool]] = []
+        sync_calls = 0
+
+        original_sync_flags = channel._sync_flags
+
+        def sync_flags() -> None:
+            nonlocal sync_calls
+            sync_calls += 1
+            original_sync_flags()
+            if sync_calls == 2:
+                second_start_entered.set()
+
+        async def primary_start(*, allow_qr_login: bool = True) -> None:
+            starts.append(("primary", allow_qr_login))
+            primary_started.set()
+            await release.wait()
+
+        async def auxiliary_start(*, allow_qr_login: bool = True) -> None:
+            starts.append(("account2", allow_qr_login))
+            auxiliary_started.set()
+            await release.wait()
+
+        monkeypatch.setattr(channel.account("primary"), "start", primary_start)
+        monkeypatch.setattr(channel.account("account2"), "start", auxiliary_start)
+        monkeypatch.setattr(channel, "_sync_flags", sync_flags)
+        channel.account("primary")._token = "primary-test-token"
+        channel.account("account2")._token = "auxiliary-test-token"
+
+        first = asyncio.create_task(channel.start())
+        await asyncio.wait_for(primary_started.wait(), 1)
+        await asyncio.wait_for(auxiliary_started.wait(), 1)
+        original_tasks = dict(channel._account_tasks)
+        second = asyncio.create_task(channel.start())
+        try:
+            await asyncio.wait_for(second_start_entered.wait(), 1)
+            assert channel._account_tasks == original_tasks
+            assert sorted(starts) == [
+                ("account2", False),
+                ("primary", False),
+            ]
+        finally:
+            release.set()
+            await asyncio.gather(first, second, return_exceptions=True)
+        assert len(starts) == 2
+
+    asyncio.run(exercise())
+
+
+def test_stop_failure_does_not_skip_siblings_or_task_cleanup(monkeypatch) -> None:
+    channel = WeixinChannel(
+        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        MessageBus(),
+    )
+
+    async def exercise() -> None:
+        primary_started = asyncio.Event()
+        auxiliary_started = asyncio.Event()
+        auxiliary_stopped = asyncio.Event()
+
+        async def primary_start(*, allow_qr_login: bool = True) -> None:
+            primary_started.set()
+            await asyncio.Event().wait()
+
+        async def auxiliary_start(*, allow_qr_login: bool = True) -> None:
+            auxiliary_started.set()
+            await asyncio.Event().wait()
+
+        async def primary_stop() -> None:
+            raise RuntimeError("primary stop failed")
+
+        async def auxiliary_stop() -> None:
+            auxiliary_stopped.set()
+
+        monkeypatch.setattr(channel.account("primary"), "start", primary_start)
+        monkeypatch.setattr(channel.account("account2"), "start", auxiliary_start)
+        monkeypatch.setattr(channel.account("primary"), "stop", primary_stop)
+        monkeypatch.setattr(channel.account("account2"), "stop", auxiliary_stop)
+        channel.account("primary")._token = "primary-test-token"
+        channel.account("account2")._token = "auxiliary-test-token"
+
+        start_task = asyncio.create_task(channel.start())
+        await asyncio.wait_for(primary_started.wait(), 1)
+        await asyncio.wait_for(auxiliary_started.wait(), 1)
+        try:
+            await channel.stop()
+            assert auxiliary_stopped.is_set()
+            assert channel._account_errors["primary"] == "RuntimeError"
+            assert channel._account_tasks == {}
+            await asyncio.wait_for(start_task, 1)
+        finally:
+            if not start_task.done():
+                start_task.cancel()
+            await asyncio.gather(start_task, return_exceptions=True)
+            for task in channel._account_tasks.values():
+                task.cancel()
+            await asyncio.gather(
+                *channel._account_tasks.values(),
+                return_exceptions=True,
+            )
+
+    asyncio.run(exercise())
+
+
+def test_credentials_are_probed_once_per_enabled_account_per_cycle(monkeypatch) -> None:
+    channel = WeixinChannel(
+        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        MessageBus(),
+    )
+    probes = {"primary": 0, "account2": 0}
+    starts: list[tuple[str, bool]] = []
+
+    def has_saved_credentials(runtime: WeixinAccountRuntime) -> bool:
+        probes[runtime.account_id] += 1
+        return runtime.account_id == "primary"
+
+    async def primary_start(*, allow_qr_login: bool = True) -> None:
+        starts.append(("primary", allow_qr_login))
+
+    async def auxiliary_start(*, allow_qr_login: bool = True) -> None:
+        starts.append(("account2", allow_qr_login))
+
+    monkeypatch.setattr(
+        WeixinAccountRuntime,
+        "has_saved_credentials",
+        property(has_saved_credentials),
+    )
+    monkeypatch.setattr(channel.account("primary"), "start", primary_start)
+    monkeypatch.setattr(channel.account("account2"), "start", auxiliary_start)
+
+    asyncio.run(channel.start())
+
+    assert probes == {"primary": 1, "account2": 1}
+    assert starts == [("primary", False)]
+    assert channel.login_required_accounts == frozenset({"account2"})
+    assert {alias for alias, _ in starts}.isdisjoint(channel.login_required_accounts)
+
+
+def test_account_runtime_noninteractive_start_skips_qr_and_closes_client(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    class FakeAsyncClient:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    client = FakeAsyncClient()
+    qr_calls: list[str] = []
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(enabled=True, state_dir=str(tmp_path)),
+        MessageBus(),
+    )
+
+    async def qr_login() -> bool:
+        qr_calls.append("called")
+        return True
+
+    monkeypatch.setattr(account_impl.httpx, "AsyncClient", lambda **kwargs: client)
+    monkeypatch.setattr(runtime, "_qr_login", qr_login)
+
+    asyncio.run(runtime.start(allow_qr_login=False))
+
+    assert qr_calls == []
+    assert client.closed is True
+    assert runtime._client is None
+    assert runtime._running is False
+
+
+def test_new_start_cycle_clears_stale_account_errors(recording_runtime) -> None:
+    channel = WeixinChannel(WeixinConfig(enabled=True), MessageBus())
+    runtime = channel.account("primary")
+
+    async def exercise() -> None:
+        runtime.fail_on.add("start")
+        await channel.start()
+        assert channel._account_errors == {"primary": "RuntimeError"}
+
+        runtime.fail_on.clear()
+        await channel.start()
+        assert channel._account_errors == {}
+
+    asyncio.run(exercise())
 
 
 def test_primary_wrapper_preserves_raw_route() -> None:
@@ -302,7 +498,7 @@ def test_wrapper_delegates_primary_lifecycle_and_sends(recording_runtime) -> Non
     assert channel.is_running is runtime.running_result
     assert runtime.calls == [
         ("login", True),
-        ("start",),
+        ("start", False),
         ("stop",),
         ("send", message),
         ("send_delta", "chat", "delta", metadata),
