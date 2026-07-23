@@ -129,9 +129,26 @@ class WeixinChannel(BaseChannel):
             runtime.send_tool_hints = self.send_tool_hints
             runtime.show_reasoning = self.show_reasoning
 
-    async def login(self, force: bool = False) -> bool:
+    async def login_account(
+        self,
+        account_id: str = "primary",
+        *,
+        force: bool = False,
+    ) -> bool:
         self._sync_flags()
-        return await self._accounts["primary"].login(force=force)
+        try:
+            runtime = self._accounts[account_id]
+        except KeyError as exc:
+            raise KeyError(
+                f"Unknown configured Weixin account: {account_id}"
+            ) from exc
+        ok = await runtime.login(force=force)
+        if ok:
+            self._login_required.discard(account_id)
+        return ok
+
+    async def login(self, force: bool = False) -> bool:
+        return await self.login_account("primary", force=force)
 
     async def _run_account(self, alias: str) -> None:
         runtime = self._accounts[alias]

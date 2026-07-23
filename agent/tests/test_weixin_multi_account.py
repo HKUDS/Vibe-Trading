@@ -41,6 +41,7 @@ class RecordingWeixinRuntime:
         self.send_tool_hints = False
         self.show_reasoning = False
         self.saved_credentials = True
+        self.login_result = True
 
     def _record(self, method: str, *args: Any) -> tuple[Any, ...]:
         call = (method, *args)
@@ -60,7 +61,7 @@ class RecordingWeixinRuntime:
 
     async def login(self, force: bool = False) -> bool:
         self._record("login", force)
-        return True
+        return self.login_result
 
     async def start(self, *, allow_qr_login: bool = True) -> None:
         self._record("start", allow_qr_login)
@@ -1182,6 +1183,87 @@ def test_wrapper_delegates_primary_lifecycle_and_sends(recording_runtime) -> Non
         ("send", False, True, False),
         ("send_delta", False, True, False),
     ]
+
+
+def test_login_account_selects_only_requested_runtime_and_forwards_force(
+    recording_runtime,
+) -> None:
+    channel = WeixinChannel(
+        WeixinConfig(
+            enabled=True,
+            accounts={"account2": {"enabled": True}},
+        ),
+        MessageBus(),
+    )
+    channel.send_progress = False
+    channel.send_tool_hints = True
+    channel.show_reasoning = False
+    channel._login_required = {"primary", "account2"}
+
+    assert asyncio.run(channel.login_account("account2", force=True)) is True
+
+    assert channel.account("primary").calls == []
+    auxiliary = channel.account("account2")
+    assert auxiliary.calls == [("login", True)]
+    assert auxiliary.flag_snapshots == [("login", False, True, False)]
+    assert channel.login_required_accounts == frozenset({"primary"})
+
+
+def test_legacy_login_selects_primary_when_auxiliary_is_configured(
+    recording_runtime,
+) -> None:
+    channel = WeixinChannel(
+        WeixinConfig(
+            enabled=True,
+            accounts={"account2": {"enabled": True}},
+        ),
+        MessageBus(),
+    )
+
+    assert asyncio.run(channel.login(force=True)) is True
+
+    assert channel.account("primary").calls == [("login", True)]
+    assert channel.account("account2").calls == []
+
+
+def test_failed_login_keeps_account_marked_as_login_required(
+    recording_runtime,
+) -> None:
+    channel = WeixinChannel(
+        WeixinConfig(
+            enabled=True,
+            accounts={"account2": {"enabled": True}},
+        ),
+        MessageBus(),
+    )
+    channel._login_required = {"account2"}
+    channel.account("account2").login_result = False
+
+    assert asyncio.run(channel.login_account("account2")) is False
+    assert channel.login_required_accounts == frozenset({"account2"})
+
+
+def test_login_account_rejects_unknown_alias_without_leaking_configuration(
+    recording_runtime,
+) -> None:
+    sensitive_values = ["private-peer-value", "https://private.invalid"]
+    channel = WeixinChannel(
+        WeixinConfig(
+            enabled=True,
+            allow_from=[sensitive_values[0]],
+            base_url=sensitive_values[1],
+            accounts={"account2": {"enabled": True}},
+        ),
+        MessageBus(),
+    )
+
+    with pytest.raises(KeyError) as exc_info:
+        asyncio.run(channel.login_account("missing"))
+
+    message = str(exc_info.value)
+    assert message == "'Unknown configured Weixin account: missing'"
+    for value in sensitive_values:
+        assert value not in message
 
 
 @pytest.mark.parametrize(
