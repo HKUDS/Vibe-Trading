@@ -197,6 +197,14 @@ class DataLoader:
         del fields
         validate_date_range(start_date, end_date)
 
+        # Daily-only candle resolution; do not silently return day bars for ``1H``.
+        if str(interval).strip().lower() not in {"1d", "d", "day", "daily"}:
+            logger.warning(
+                "finnhub supports daily bars only; rejecting interval=%r",
+                interval,
+            )
+            return {}
+
         from src.config.accessor import get_env_config
 
         api_key = get_env_config().data.finnhub_api_key
