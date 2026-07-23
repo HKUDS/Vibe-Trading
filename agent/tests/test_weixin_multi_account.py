@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import logging
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -9,11 +10,13 @@ from pydantic import ValidationError
 
 import src.channels.weixin as wrapper_impl
 import src.channels.weixin_account as account_impl
+import src.channels.manager as manager_impl
 import src.channels.pairing.store as pairing_store
 import src.channels.utils as channel_utils
 from src.channels.base import BaseChannel
 from src.channels.bus.events import InboundMessage, OutboundMessage
 from src.channels.bus.queue import MessageBus
+from src.channels.manager import ChannelManager
 from src.channels.pairing.store import approve_code, list_pending
 from src.channels.registry import discover_channel_names
 from src.channels.weixin import WeixinChannel, WeixinConfig
@@ -1316,7 +1319,7 @@ def test_wrapper_running_aggregates_all_accounts(
 
 @pytest.mark.parametrize(
     "method",
-    ["login", "send", "send_delta", "is_running"],
+    ["login", "is_running"],
 )
 def test_wrapper_propagates_primary_delegate_exceptions(
     recording_runtime, method: str,
@@ -1347,6 +1350,88 @@ def test_wrapper_propagates_primary_delegate_exceptions(
             _ = channel.is_running
         else:
             asyncio.run(invoke())
+
+
+@pytest.mark.parametrize("delivery_kind", ["send", "send_delta"])
+def test_weixin_delivery_boundary_hides_runtime_exception_from_manager_logs(
+    delivery_kind: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_peer = "FAKE-BOUNDARY-RAW-PEER-SENTINEL"
+    route = encode_aux_route("account2", raw_peer)
+    sentinels = {
+        raw_peer,
+        route,
+        "FAKE-BOUNDARY-CONTEXT-TOKEN-SENTINEL",
+        "https://cdn.invalid/FAKE-BOUNDARY-CDN-SENTINEL",
+        "/FAKE-BOUNDARY-PRIVATE-PATH-SENTINEL/media.txt",
+        "FAKE-BOUNDARY-RUNTIME-ERROR-SENTINEL",
+    }
+    runtime_error = RuntimeError(" ".join(sorted(sentinels)))
+    channel = WeixinChannel(
+        {
+            "enabled": True,
+            "accounts": {"account2": {"enabled": True}},
+        },
+        MessageBus(),
+    )
+    runtime = channel.account("account2")
+    message = OutboundMessage(
+        channel="weixin",
+        chat_id=route,
+        content="delta" if delivery_kind == "send_delta" else "message",
+        media=["/FAKE-BOUNDARY-PRIVATE-PATH-SENTINEL/media.txt"],
+        metadata={"_stream_delta": True} if delivery_kind == "send_delta" else {},
+    )
+
+    async def fail_send(msg: OutboundMessage) -> None:
+        del msg
+        raise runtime_error
+
+    async def fail_send_delta(
+        chat_id: str,
+        delta: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        del chat_id, delta, metadata
+        raise runtime_error
+
+    monkeypatch.setattr(runtime, "send", fail_send)
+    monkeypatch.setattr(runtime, "send_delta", fail_send_delta)
+
+    async def invoke_wrapper() -> None:
+        if delivery_kind == "send_delta":
+            await channel.send_delta(route, "delta", message.metadata)
+        else:
+            await channel.send(message)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        asyncio.run(invoke_wrapper())
+
+    assert type(exc_info.value).__name__ == "WeixinDeliveryError"
+    assert str(exc_info.value) == "Weixin delivery failed"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+    direct_traceback = "".join(
+        traceback.format_exception(
+            type(exc_info.value),
+            exc_info.value,
+            exc_info.value.__traceback__,
+        )
+    )
+    for sentinel in sentinels:
+        assert sentinel not in direct_traceback
+
+    manager = ChannelManager.__new__(ChannelManager)
+    manager.config = {"send_max_retries": 1}
+    caplog.clear()
+    with caplog.at_level(logging.ERROR, logger=manager_impl.__name__):
+        asyncio.run(manager._send_with_retry(channel, message))
+
+    assert "Weixin delivery failed" in caplog.text
+    for sentinel in sentinels:
+        assert sentinel not in caplog.text
 
 
 def test_wrapper_records_primary_start_exception_class(recording_runtime) -> None:

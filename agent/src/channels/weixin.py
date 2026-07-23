@@ -20,6 +20,10 @@ from src.channels.weixin_routing import (
 )
 
 
+class WeixinDeliveryError(RuntimeError):
+    """Sanitized outbound failure safe to expose to shared retry logging."""
+
+
 class AuxiliaryWeixinAccountConfig(BaseModel):
     enabled: bool = False
     allow_from: list[str] = Field(default_factory=list)
@@ -237,14 +241,30 @@ class WeixinChannel(BaseChannel):
     async def send(self, msg: OutboundMessage) -> None:
         self._sync_flags()
         runtime = self.account_for_route(msg.chat_id)
-        await runtime.send(msg)
+        try:
+            await runtime.send(msg)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+        else:
+            return
+        raise WeixinDeliveryError("Weixin delivery failed") from None
 
     async def send_delta(
         self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None,
     ) -> None:
         self._sync_flags()
         runtime = self.account_for_route(chat_id)
-        await runtime.send_delta(chat_id, delta, metadata)
+        try:
+            await runtime.send_delta(chat_id, delta, metadata)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+        else:
+            return
+        raise WeixinDeliveryError("Weixin delivery failed") from None
 
     def status_details(self) -> dict[str, Any]:
         accounts: dict[str, dict[str, Any]] = {}
