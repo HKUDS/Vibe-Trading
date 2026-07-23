@@ -1,12 +1,34 @@
+from pathlib import Path
+
 import pytest
 
+from src.channels.bus.queue import MessageBus
 from src.channels.registry import discover_channel_names
+from src.channels.weixin import WeixinChannel, WeixinConfig
 from src.channels.weixin_routing import (
     PRIMARY_ACCOUNT_ID,
     decode_aux_route,
     encode_aux_route,
     validate_account_alias,
 )
+
+
+def test_no_accounts_builds_only_legacy_primary(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        "src.channels.weixin_account.get_runtime_subdir",
+        lambda name: tmp_path / name,
+    )
+    channel = WeixinChannel(
+        WeixinConfig(enabled=True, allow_from=[]),
+        MessageBus(),
+    )
+    assert list(channel.account_ids) == ["primary"]
+    assert channel.account("primary").state_file == tmp_path / "weixin" / "account.json"
+
+
+def test_primary_wrapper_preserves_raw_route() -> None:
+    channel = WeixinChannel(WeixinConfig(enabled=True), MessageBus())
+    assert channel.route_for("primary", "peer-1") == "peer-1"
 
 
 def test_account_alias_validation() -> None:
