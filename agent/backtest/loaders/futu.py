@@ -25,9 +25,13 @@ _INTERVAL_MAP: dict[str, str] = {
     "15m": "K_15M",
     "30m": "K_30M",
     "1D": "K_DAY",
+    "1d": "K_DAY",
     "1H": "K_60M",
+    "1h": "K_60M",
     "4H": "K_240M",
+    "4h": "K_240M",
     "1W": "K_WEEK",
+    "1w": "K_WEEK",
     "1M": "K_MON",
 }
 
