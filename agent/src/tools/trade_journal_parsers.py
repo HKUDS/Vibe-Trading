@@ -328,7 +328,41 @@ def _futu_datetime(date_val: Any, time_val: Any) -> str:
                     return ts.strftime("%Y-%m-%d %H:%M:%S")
                 # Numeric Excel date + string/clock Time column.
                 return f"{ts.strftime('%Y-%m-%d')} {str(time_val).strip()}".strip()
-    date = "" if date_val is None or (isinstance(date_val, float) and pd.isna(date_val)) else str(date_val).strip()
+    # load_dataframe uses dtype=str; Excel serial dates arrive as "45321" / "45321.0".
+    date_text = (
+        ""
+        if date_val is None or (isinstance(date_val, float) and pd.isna(date_val))
+        else str(date_val).strip()
+    )
+    if date_text and not any(ch in date_text for ch in "/-:"):
+        try:
+            serial = float(date_text)
+        except ValueError:
+            serial = None
+        else:
+            if 1.0 <= serial < 100_000.0:
+                frac = 0.0
+                time_is_frac = False
+                time_text = (
+                    ""
+                    if time_val is None or (isinstance(time_val, float) and pd.isna(time_val))
+                    else str(time_val).strip()
+                )
+                if time_text and not any(ch in time_text for ch in "/-:"):
+                    try:
+                        candidate = float(time_text)
+                    except ValueError:
+                        candidate = None
+                    else:
+                        if 0.0 <= candidate < 1.0:
+                            frac = candidate
+                            time_is_frac = True
+                ts = pd.to_datetime(serial + frac, unit="D", origin="1899-12-30", errors="coerce")
+                if pd.notna(ts):
+                    if time_is_frac or not time_text:
+                        return ts.strftime("%Y-%m-%d %H:%M:%S")
+                    return f"{ts.strftime('%Y-%m-%d')} {time_text}".strip()
+    date = date_text
     time = "" if time_val is None or (isinstance(time_val, float) and pd.isna(time_val)) else str(time_val).strip()
     return f"{date} {time}".strip()
 
