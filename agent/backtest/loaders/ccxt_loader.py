@@ -408,9 +408,12 @@ class DataLoader:
             )
 
         frame = pd.DataFrame({
+            # Binance settlement timestamps carry millisecond jitter
+            # (e.g. 08:00:00.011); round to the second so they align with
+            # bar timestamps instead of failing the missing-settlement check.
             "trade_date": pd.to_datetime(
                 [row["timestamp"] for row in rows], unit="ms"
-            ),
+            ).round("s"),
             "funding_rate": pd.to_numeric(
                 [row["fundingRate"] for row in rows], errors="raise"
             ),

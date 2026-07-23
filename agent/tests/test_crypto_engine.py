@@ -327,3 +327,44 @@ class TestMaintenanceRate:
 
     def test_maximum_tier(self) -> None:
         assert _maintenance_rate(100_000_000) == 0.10
+
+
+class TestHistoricalFundingRate:
+    def test_bar_funding_rate_overrides_fixed_rate(self) -> None:
+        """A bar carrying a historical ``funding_rate`` column (USD-M perp
+        data) must be charged at that rate, not the fixed config rate."""
+        engine = _make_engine(funding_rate=0.0001)
+        engine.positions["BTC-USDT-PERP"] = Position(
+            "BTC-USDT-PERP", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+        )
+        initial_capital = engine.capital
+        bar = pd.Series({"close": 60000.0, "open": 60000.0, "funding_rate": 0.0005})
+        ts = pd.Timestamp("2025-01-01 08:00:00")
+        engine.on_bar("BTC-USDT-PERP", bar, ts)
+        # Historical rate: 1.0 × 60000 × 0.0005 = $30 (not $6 from the fixed rate)
+        assert engine.capital == pytest.approx(initial_capital - 30.0)
+
+    def test_negative_historical_funding_pays_longs(self) -> None:
+        engine = _make_engine(funding_rate=0.0001)
+        engine.positions["BTC-USDT-PERP"] = Position(
+            "BTC-USDT-PERP", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+        )
+        initial_capital = engine.capital
+        bar = pd.Series({"close": 60000.0, "open": 60000.0, "funding_rate": -0.0002})
+        ts = pd.Timestamp("2025-01-01 08:00:00")
+        engine.on_bar("BTC-USDT-PERP", bar, ts)
+        # Negative funding: longs receive
+        assert engine.capital == pytest.approx(initial_capital + 12.0)
+
+    def test_nan_funding_rate_falls_back_to_fixed(self) -> None:
+        """Non-settlement bars carry NaN funding_rate — must fall back to
+        the fixed config rate (daily-fallback path), not charge NaN."""
+        engine = _make_engine(funding_rate=0.0001)
+        engine.positions["BTC-USDT-PERP"] = Position(
+            "BTC-USDT-PERP", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+        )
+        initial_capital = engine.capital
+        bar = pd.Series({"close": 60000.0, "open": 60000.0, "funding_rate": float("nan")})
+        ts = pd.Timestamp("2025-01-01 08:00:00")
+        engine.on_bar("BTC-USDT-PERP", bar, ts)
+        assert engine.capital == pytest.approx(initial_capital - 6.0)

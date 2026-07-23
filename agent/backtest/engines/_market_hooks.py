@@ -164,7 +164,8 @@ def calc_crypto_funding_fee(
         bar: Current bar data.
         timestamp: Bar timestamp.
         positions: Shared positions dict.
-        funding_rate: Fixed rate per settlement.
+        funding_rate: Fallback fixed rate per settlement, used when the bar
+            carries no historical ``funding_rate`` column.
         applied_set: (symbol, date, hour) dedup set — mutated.
         daily_done_set: (symbol, date) dedup set — mutated.
 
@@ -194,6 +195,12 @@ def calc_crypto_funding_fee(
 
     mark_price = float(bar.get("close", pos.entry_price))
     notional = pos.size * mark_price
+    # Prefer the bar's historical funding rate when the loader supplied one
+    # (USD-M perpetual data via BASE-USDT-PERP); fall back to the fixed
+    # config rate otherwise so spot-proxy runs keep their behaviour.
+    hist = bar.get("funding_rate")
+    if hist is not None and pd.notna(hist):
+        funding_rate = float(hist)
     return notional * funding_rate * pos.direction
 
 

@@ -353,3 +353,27 @@ def test_bracket_artifact_rejects_non_monotonic_brackets() -> None:
     ])
     with pytest.raises(ValueError, match="not strictly increasing"):
         _validate_bracket_artifact(artifact, expected_symbol="BTC/USDT:USDT")
+
+
+def test_perpetual_fetch_rounds_funding_settlement_jitter(monkeypatch) -> None:
+    """Binance returns settlement timestamps with millisecond jitter
+    (e.g. ``08:00:00.011``); the loader must round them to the second so
+    they align with bar timestamps instead of raising the
+    missing-settlement error."""
+    start = int(pd.Timestamp("2024-01-01 00:00:00").timestamp() * 1000)
+    exchange = _PerpetualExchange(
+        funding_rows=[{"timestamp": start + 11, "fundingRate": 0.0003}]
+    )
+    monkeypatch.setattr(
+        "backtest.loaders.ccxt_loader.DataLoader._get_exchange",
+        lambda _self, instrument_type="spot": exchange,
+    )
+
+    from backtest.loaders.ccxt_loader import DataLoader
+
+    frame = DataLoader().fetch(
+        ["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H"
+    )["BTC-USDT-PERP"]
+
+    assert frame["funding_rate"].tolist() == [0.0003, 0.0]
+    assert frame["funding_settlement_time"].iloc[0] == pd.Timestamp("2024-01-01")
