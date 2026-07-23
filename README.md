@@ -294,7 +294,7 @@ Upload a broker export, let the agent summarize your behavior, then compare the 
 | **2. Profile your behavior** | Holding days, win rate, PnL ratio, drawdown, disposition effect, overtrading, momentum chasing, and anchoring checks. |
 | **3. Extract your rules** | Turns recurring entries/exits into an explicit strategy profile instead of a hand-wavy summary. |
 | **4. Run the shadow** | Backtests the extracted rules and highlights rule breaks, early exits, missed signals, and alternative trade paths. |
-| **5. Deliver the report** | Produces an HTML/PDF report that can be inspected, archived, or refined in a later session. |
+| **5. Deliver the report** | Produces an HTML/PDF report that can be inspected, archived, or refined in a later session.|
 
 ```bash
 vibe-trading --upload trades_export.csv
