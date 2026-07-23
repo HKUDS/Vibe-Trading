@@ -578,6 +578,22 @@ class BaseEngine(ABC):
         m["by_symbol"] = by_symbol_stats(self.trades)
         m["by_exit_reason"] = by_exit_reason_stats(self.trades)
 
+        # Portfolio Studio: per-rebalance weight-drift notes from the target
+        # positions. Optimizer-agnostic, so they land for the baseline too.
+        from backtest.rebalance_notes import (
+            compute_rebalance_notes,
+            render_rebalance_notes_markdown,
+            write_rebalance_notes,
+        )
+        rebalance_notes = compute_rebalance_notes(target_pos)
+        write_rebalance_notes(run_dir / "artifacts" / "rebalance_notes.json", rebalance_notes)
+        (run_dir / "artifacts" / "rebalance_notes.md").write_text(
+            render_rebalance_notes_markdown(rebalance_notes), encoding="utf-8"
+        )
+        m["rebalance_count"] = rebalance_notes["summary"]["rebalance_count"]
+        m["rebalance_turnover_mean"] = rebalance_notes["summary"]["turnover_mean"]
+        m["rebalance_turnover_max"] = rebalance_notes["summary"]["turnover_max"]
+
         # 7. Validation (optional — triggered by config["validation"])
         if config.get("validation"):
             from backtest.validation import run_validation, write_validation_json

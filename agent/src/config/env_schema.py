@@ -34,6 +34,7 @@ __all__ = [
     "AgentTuningConfig",
     "PathConfig",
     "OcrConfig",
+    "MemoryConfig",
 ]
 
 
@@ -360,6 +361,31 @@ class PathConfig(_EnvBase):
 
 
 # ---------------------------------------------------------------------------
+# Memory
+# ---------------------------------------------------------------------------
+
+
+class MemoryConfig(_EnvBase):
+    """Memory lifecycle feature flags."""
+
+    quality_enabled: EnvBool = Field(
+        default=False,
+        alias="VT_MEMORY_QUALITY",
+        description="Enable quality scoring and reinforcement",
+    )
+    gc_enabled: EnvBool = Field(
+        default=False,
+        alias="VT_MEMORY_GC",
+        description="Enable garbage collection cycle",
+    )
+    decay_enabled: EnvBool = Field(
+        default=False,
+        alias="VT_MEMORY_DECAY",
+        description="Enable importance decay computation",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Top-level composition
 # ---------------------------------------------------------------------------
 
@@ -382,6 +408,7 @@ class EnvConfig(_EnvBase):
     agent_tuning: AgentTuningConfig = Field(default_factory=AgentTuningConfig)
     paths: PathConfig = Field(default_factory=PathConfig)
     ocr: OcrConfig = Field(default_factory=OcrConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
 
     @model_validator(mode="after")
     def _resolve_api_key_alias(self) -> "EnvConfig":

@@ -287,9 +287,11 @@ def get_quote(symbol: str, *, config: TigerConfig | None = None, **_: Any) -> di
 
 
 #: Canonical period token → Tiger ``get_bars`` period string.
+# ``1H``/``1D``/``1W`` alias the lowercase tokens; ``1m`` vs ``1M`` stays case-sensitive.
 _PERIOD_MAP = {
     "1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min",
-    "1h": "60min", "4h": "60min", "1d": "day", "1w": "week", "1M": "month",
+    "1h": "60min", "1H": "60min", "4h": "60min", "4H": "60min",
+    "1d": "day", "1D": "day", "1w": "week", "1W": "week", "1M": "month",
 }
 
 

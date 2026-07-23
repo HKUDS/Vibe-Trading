@@ -144,7 +144,12 @@ class DataLoader:
     ) -> Optional[pd.DataFrame]:
         """Fetch A-share via stock_zh_a_hist."""
         symbol = code.split(".")[0]
-        period = _INTERVAL_MAP_DAILY.get(interval, "daily")
+        period = _INTERVAL_MAP_DAILY.get(interval)
+        if period is None:
+            raise ValueError(
+                f"Unsupported interval {interval!r}; akshare a-share supports "
+                f"{sorted(_INTERVAL_MAP_DAILY)}"
+            )
         sd = start_date.replace("-", "")
         ed = end_date.replace("-", "")
         df = ak.stock_zh_a_hist(

@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 _INTERVAL_MAP = {
     "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",
-    "1H": "1h", "4H": "4h", "1D": "1d",
+    "1H": "1h", "4H": "4h", "1D": "1d", "1W": "1w", "1M": "1M",
 }
 
 _TIMEFRAME_DELTA = {
@@ -42,6 +42,8 @@ _TIMEFRAME_DELTA = {
     "1h": pd.Timedelta(hours=1),
     "4h": pd.Timedelta(hours=4),
     "1d": pd.Timedelta(days=1),
+    "1w": pd.Timedelta(weeks=1),
+    "1M": pd.Timedelta(days=31),
 }
 
 # P12-b: ccxt had no request timeout and an unbounded paginated fetch with

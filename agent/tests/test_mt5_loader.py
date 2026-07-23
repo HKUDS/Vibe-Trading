@@ -157,6 +157,11 @@ class TestIntervalsAndFrames:
         loader.fetch(["EUR/USD"], "2026-06-01", "2026-06-10", interval="1H")
         assert fake_mod.rates_calls[-1][1] == _FakeMT5Module.TIMEFRAME_H1
 
+    def test_lowercase_1h_maps_to_h1_not_daily(self, fake_mod: _FakeMT5Module) -> None:
+        loader = DataLoader()
+        loader.fetch(["EUR/USD"], "2026-06-01", "2026-06-10", interval="1h")
+        assert fake_mod.rates_calls[-1][1] == _FakeMT5Module.TIMEFRAME_H1
+
     def test_unknown_interval_defaults_to_daily(self, fake_mod: _FakeMT5Module) -> None:
         loader = DataLoader()
         loader.fetch(["EUR/USD"], "2026-06-01", "2026-06-10", interval="7z")

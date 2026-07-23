@@ -211,6 +211,23 @@ def test_execute_verdict_fail() -> None:
     assert env["verdict"] == "FAIL"
 
 
+def test_execute_verdict_zero_reported_emits_strict_json() -> None:
+    """reported=0 vs nonzero fetched must not emit bare Infinity tokens."""
+    raw = ReportAuditTool().execute(
+        command="verdict",
+        results=[{
+            "id": 1, "label": "zero", "reported_value": 0,
+            "fetched_value": 5, "fetched_source": "m",
+        }],
+    )
+    assert "Infinity" not in raw
+    env = json.loads(raw)
+    assert env["status"] == "ok"
+    assert env["verdict"] == "FAIL"
+    assert env["fail_items"][0]["diff1_pct"] is None
+    json.dumps(env, allow_nan=False)
+
+
 def test_execute_missing_report_text_is_error() -> None:
     assert _run(command="extract")["status"] == "error"
 

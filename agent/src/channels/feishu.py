@@ -1067,7 +1067,14 @@ class FeishuChannel(BaseChannel):
             return None
 
         def split(_line: str) -> list[str]:
-            return [c.strip() for c in _line.strip("|").split("|")]
+            # Peel only the row's bounding pipes; str.strip("|") would also
+            # drop empty leading/trailing cells (||Name| → Name).
+            parts = _line.strip().split("|")
+            if parts and parts[0] == "":
+                parts = parts[1:]
+            if parts and parts[-1] == "":
+                parts = parts[:-1]
+            return [c.strip() for c in parts]
 
         headers = [cls._strip_md_formatting(h) for h in split(lines[0])]
         rows = [[cls._strip_md_formatting(c) for c in split(_line)] for _line in lines[2:]]

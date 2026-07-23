@@ -140,7 +140,16 @@ class DataLoader:
         if sdk is None:
             return {}
 
-        period = _PERIOD_MAP.get(str(interval).strip(), "1d")
+        period = _PERIOD_MAP.get(str(interval).strip())
+        if period is None:
+            # Do not silently substitute daily bars for an unsupported interval
+            # (e.g. runner ``4H`` used to fall through to ``1d``).
+            logger.warning(
+                "india broker only supports %s; rejecting interval=%r",
+                sorted(_PERIOD_MAP),
+                interval,
+            )
+            return {}
         # Request enough bars to cover the window (business days + headroom).
         span_days = max((pd.Timestamp(end_date) - pd.Timestamp(start_date)).days, 1)
         limit = min(max(span_days, 30), 2000)

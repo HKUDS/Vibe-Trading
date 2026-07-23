@@ -116,6 +116,21 @@ class ShoonyaConfig:
 
 _OVERRIDE_KEYS = ("user_id", "password", "vendor_code", "api_secret", "totp_secret", "profile")
 
+#: Canonical period token → Noren interval (minutes as str, or ``D`` for daily).
+#: ``1H``/``4H``/``1D`` alias the lowercase forms; ``1w``/``1M`` are unsupported.
+_INTERVAL_MAP = {
+    "1m": "1",
+    "5m": "5",
+    "15m": "15",
+    "30m": "30",
+    "1h": "60",
+    "1H": "60",
+    "4h": "240",
+    "4H": "240",
+    "1d": "D",
+    "1D": "D",
+}
+
 
 def build_config(
     profile_config: Mapping[str, Any] | None = None,
@@ -346,8 +361,18 @@ def get_historical_bars(
     else:
         start = end - timedelta(days=min(limit * 2, 365))
 
-    interval_map = {"1m": "1", "5m": "5", "15m": "15", "30m": "30", "1h": "60", "1d": "D"}
-    interval = interval_map.get(period, "D")
+    # Noren TP series minutes: 1/3/5/10/15/30/60/120/240; daily via get_daily_price_series.
+    # Reject unknown (incl. 1w/1M) instead of silently substituting daily bars.
+    interval = _INTERVAL_MAP.get(period.strip())
+    if interval is None:
+        return {
+            "status": "error",
+            "error": (
+                f"unsupported period: {period!r}; "
+                f"supported: {sorted(_INTERVAL_MAP)}"
+            ),
+            "symbol": clean,
+        }
 
     try:
         if interval == "D":

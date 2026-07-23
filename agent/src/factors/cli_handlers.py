@@ -16,6 +16,7 @@ Security gates:
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import sys
 import time
@@ -510,8 +511,21 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
     from ``src.tools.alpha_bench_tool`` (we do NOT modify that module).
     """
     try:
+        if (getattr(args, "oos_split", None) or getattr(args, "random_seeds", 5) != 5) and not getattr(args, "strict", False):
+            _err("alpha bench: --oos-split/--random-seeds only take effect with --strict.")
+            return 1
         try:
-            from src.factors.bench_runner import run_bench
+            if getattr(args, "strict", False):
+                from src.factors.bench_runner_strict import run_bench_strict
+
+                run_bench = functools.partial(
+                    run_bench_strict,
+                    random_control=True,
+                    n_random_seeds=max(1, int(getattr(args, "random_seeds", 5) or 5)),
+                    oos_split=getattr(args, "oos_split", None),
+                )
+            else:
+                from src.factors.bench_runner import run_bench
         except ImportError as exc:
             _err(f"alpha bench failed: bench_runner unavailable ({exc})")
             return 1
@@ -550,10 +564,17 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
             _err(f"alpha bench failed: no alphas registered under zoo={zoo!r}")
             return 1
 
+        strict_banner = (
+            " [strict: random control"
+            + (f", oos {args.oos_split}" if getattr(args, "oos_split", None) else "")
+            + "]"
+            if getattr(args, "strict", False)
+            else ""
+        )
         _print(
-            f"[bold]Bench:[/bold] {n_target} alphas x {args.universe} x {args.period}"
+            f"[bold]Bench:[/bold] {n_target} alphas x {args.universe} x {args.period}{strict_banner}"
             if _console
-            else f"Bench: {n_target} alphas x {args.universe} x {args.period}"
+            else f"Bench: {n_target} alphas x {args.universe} x {args.period}{strict_banner}"
         )
         _print(
             "[dim]ETA: ~3-5 min (cache hit) / ~10-20 min (cold fetch)[/dim]"
@@ -678,6 +699,13 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
             "top": top_rows,
             "wall_seconds": result.get("wall_seconds"),
         }
+        if getattr(args, "strict", False):
+            envelope["strict"] = True
+            for key in ("confirmed_alive", "train_only", "reversed_strict", "noise"):
+                if key in result:
+                    envelope[key] = result[key]
+            if result.get("oos_split") is not None:
+                envelope["oos_split"] = result["oos_split"]
         if report_path is not None:
             envelope["report_path"] = str(report_path)
         print(json.dumps(envelope, indent=2, default=str))
@@ -918,6 +946,23 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
         help="Period spec: YYYY-YYYY or YYYY-MM-DD/YYYY-MM-DD (e.g. 2020-2025)",
     )
     p_bench.add_argument("--top", type=int, default=20, help="Top-N alphas to keep (default: 20)")
+    p_bench.add_argument(
+        "--strict",
+        action="store_true",
+        help="Strict gate: mandatory same-universe random control (bench_runner_strict)",
+    )
+    p_bench.add_argument(
+        "--oos-split",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Strict mode only: split train/test at this date for the OOS confirmation gate",
+    )
+    p_bench.add_argument(
+        "--random-seeds",
+        type=int,
+        default=5,
+        help="Strict mode only: row-shuffled random controls per alpha (default: 5)",
+    )
     p_bench.add_argument(
         "--yes",
         action="store_true",

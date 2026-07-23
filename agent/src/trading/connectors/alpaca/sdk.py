@@ -244,7 +244,8 @@ def _rest_timeframe(period: str) -> str:
     :func:`_timeframe`). Case-sensitive: ``1m`` is one minute, ``1M`` one month."""
     return {
         "1m": "1Min", "5m": "5Min", "15m": "15Min", "30m": "30Min",
-        "1h": "1Hour", "4h": "4Hour", "1w": "1Week", "1M": "1Month",
+        "1h": "1Hour", "1H": "1Hour", "4h": "4Hour", "4H": "4Hour",
+        "1w": "1Week", "1W": "1Week", "1M": "1Month",
     }.get(period.strip(), "1Day")
 
 
@@ -756,9 +757,9 @@ def _timeframe(period: str, time_frame_cls: Any, unit_cls: Any) -> Any:
     minute_amounts = {"1m": 1, "5m": 5, "15m": 15, "30m": 30}
     if token in minute_amounts:
         return time_frame_cls(minute_amounts[token], unit_cls.Minute)
-    if token in ("1h", "4h"):
-        return time_frame_cls(1 if token == "1h" else 4, unit_cls.Hour)
-    if token == "1w":
+    if token in ("1h", "1H", "4h", "4H"):
+        return time_frame_cls(1 if token in ("1h", "1H") else 4, unit_cls.Hour)
+    if token in ("1w", "1W"):
         return time_frame_cls(1, unit_cls.Week)
     if token == "1M":
         return time_frame_cls(1, unit_cls.Month)

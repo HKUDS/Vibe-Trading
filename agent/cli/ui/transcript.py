@@ -146,8 +146,14 @@ def _parse_table(lines: list[str]) -> Table | None:
 
 
 def _split_row(line: str) -> list[str]:
-    stripped = line.strip().strip("|")
-    return [cell.strip() for cell in stripped.split("|")]
+    # Peel only the row's bounding pipes; str.strip("|") would also drop empty
+    # leading/trailing cells (||Name| → Name, |a|b|| → a|b).
+    parts = line.strip().split("|")
+    if parts and parts[0] == "":
+        parts = parts[1:]
+    if parts and parts[-1] == "":
+        parts = parts[:-1]
+    return [cell.strip() for cell in parts]
 
 
 def _clean_inline_markdown(text: str) -> str:

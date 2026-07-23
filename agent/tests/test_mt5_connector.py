@@ -739,6 +739,99 @@ class TestCancelOrder:
 
 
 # --------------------------------------------------------------------------- #
+# _rate_to_dict numpy serialization regression (Issue #774)                     #
+# --------------------------------------------------------------------------- #
+
+
+class TestRateToDictSerialization:
+    def test_rate_to_dict_numpy_serializable(self) -> None:
+        """Verify _rate_to_dict converts numpy scalars to native Python types."""
+        import json
+
+        import numpy as np
+
+        from src.trading.connectors.mt5.reads import _rate_to_dict
+
+        # Simulate a numpy structured array row as returned by MT5 SDK.
+        dt = np.dtype([
+            ("time", "<i8"), ("open", "<f8"), ("high", "<f8"),
+            ("low", "<f8"), ("close", "<f8"), ("tick_volume", "<i8"),
+            ("spread", "<i4"), ("real_volume", "<i8"),
+        ])
+        row = np.array(
+            [(1_750_000_000, 1.0700, 1.0900, 1.0600, 1.0800, 1200, 6, 0)],
+            dtype=dt,
+        )[0]
+
+        result = _rate_to_dict(row)
+
+        # Must be JSON-serializable without raising.
+        serialized = json.dumps(result)
+        assert serialized  # non-empty string
+
+        # All numeric values must be native Python types, not numpy scalars.
+        for key in ("time", "volume", "spread", "real_volume"):
+            assert type(result[key]) is int, f"{key} should be int, got {type(result[key])}"
+        for key in ("open", "high", "low", "close"):
+            assert type(result[key]) is float, f"{key} should be float, got {type(result[key])}"
+
+        # Verify values are correct.
+        assert result["time"] == 1_750_000_000
+        assert result["close"] == 1.08
+        assert result["volume"] == 1200
+
+    def test_rate_to_dict_mapping_types(self) -> None:
+        """Plain dict input produces native Python types and is JSON-serializable."""
+        import json
+
+        from src.trading.connectors.mt5.reads import _rate_to_dict
+
+        rate = {
+            "time": 1_750_000_000,
+            "open": 1.07,
+            "high": 1.09,
+            "low": 1.06,
+            "close": 1.08,
+            "tick_volume": 1200,
+            "spread": 6,
+            "real_volume": 0,
+        }
+
+        result = _rate_to_dict(rate)
+        json.dumps(result)  # must not raise
+
+        assert type(result["time"]) is int
+        assert type(result["close"]) is float
+        assert type(result["volume"]) is int
+        assert type(result["spread"]) is int
+        assert type(result["real_volume"]) is int
+
+    def test_rate_to_dict_handles_none_values(self) -> None:
+        """None values pass through without raising and remain JSON-serializable."""
+        import json
+
+        from src.trading.connectors.mt5.reads import _rate_to_dict
+
+        rate = {
+            "time": None,
+            "open": None,
+            "high": None,
+            "low": None,
+            "close": None,
+            "tick_volume": None,
+            "spread": None,
+            "real_volume": None,
+        }
+
+        result = _rate_to_dict(rate)
+        json.dumps(result)  # must not raise
+
+        assert result["time"] is None
+        assert result["open"] is None
+        assert result["volume"] is None
+
+
+# --------------------------------------------------------------------------- #
 # Profiles, classification, service registration                               #
 # --------------------------------------------------------------------------- #
 

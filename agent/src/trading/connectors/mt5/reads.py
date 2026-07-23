@@ -259,6 +259,20 @@ def get_historical_bars(
     )
 
 
+def _int_or_none(value: Any) -> int | None:
+    """Cast *value* to a plain Python int (handles numpy scalars). Return None for None."""
+    if value is None:
+        return None
+    return int(value)
+
+
+def _float_or_none(value: Any) -> float | None:
+    """Cast *value* to a plain Python float (handles numpy scalars). Return None for None."""
+    if value is None:
+        return None
+    return float(value)
+
+
 def _rate_to_dict(rate: Any) -> dict[str, Any]:
     """Map one rates row (numpy structured row, mapping, or object) defensively."""
 
@@ -270,12 +284,12 @@ def _rate_to_dict(rate: Any) -> dict[str, Any]:
 
     volume = _get("tick_volume")
     return {
-        "time": _get("time"),
-        "open": _get("open"),
-        "high": _get("high"),
-        "low": _get("low"),
-        "close": _get("close"),
-        "volume": volume,
-        "spread": _get("spread"),
-        "real_volume": _get("real_volume"),
+        "time": _int_or_none(_get("time")),
+        "open": _float_or_none(_get("open")),
+        "high": _float_or_none(_get("high")),
+        "low": _float_or_none(_get("low")),
+        "close": _float_or_none(_get("close")),
+        "volume": _int_or_none(volume),
+        "spread": _int_or_none(_get("spread")),
+        "real_volume": _int_or_none(_get("real_volume")),
     }

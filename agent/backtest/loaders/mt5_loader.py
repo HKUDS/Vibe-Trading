@@ -38,10 +38,13 @@ logger = logging.getLogger(__name__)
 _MT5_CONFIG_PATH = Path.home() / ".vibe-trading" / "mt5.json"
 
 #: Canonical interval token → MetaTrader5 timeframe constant name.
+#: Lowercase ``1h``/``4h``/``1d`` alias the project-style tokens (connector parity).
 _INTERVAL_MAP = {
     "1m": "TIMEFRAME_M1", "5m": "TIMEFRAME_M5", "15m": "TIMEFRAME_M15",
-    "30m": "TIMEFRAME_M30", "1H": "TIMEFRAME_H1", "4H": "TIMEFRAME_H4",
-    "1D": "TIMEFRAME_D1",
+    "30m": "TIMEFRAME_M30",
+    "1H": "TIMEFRAME_H1", "1h": "TIMEFRAME_H1",
+    "4H": "TIMEFRAME_H4", "4h": "TIMEFRAME_H4",
+    "1D": "TIMEFRAME_D1", "1d": "TIMEFRAME_D1",
 }
 
 #: Process-lifetime attach cache: ``initialize`` can take seconds (it may even

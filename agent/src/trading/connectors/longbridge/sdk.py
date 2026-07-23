@@ -677,23 +677,31 @@ def _quote_context(cfg: LongbridgeConfig):
     return getattr(openapi, "QuoteContext")(_build_config(cfg))
 
 
+#: Canonical period token → Longbridge ``Period`` attribute name.
+#: ``1H``/``4H``/``1D``/``1W`` alias lowercase; ``1m`` vs ``1M`` stays case-sensitive.
+_PERIOD_MAP = {
+    "1m": "Min_1",
+    "5m": "Min_5",
+    "15m": "Min_15",
+    "30m": "Min_30",
+    "1h": "Min_60",
+    "1H": "Min_60",
+    "4h": "Min_60",
+    "4H": "Min_60",
+    "1d": "Day",
+    "1D": "Day",
+    "1w": "Week",
+    "1W": "Week",
+    "1M": "Month",
+}
+
+
 def _candlestick_enums(period: str):
     """Map a period string to the SDK ``Period`` and ``AdjustType`` enums."""
     openapi = _require_openapi()
     period_cls = getattr(openapi, "Period")
     adjust_cls = getattr(openapi, "AdjustType")
-    period_map = {
-        "1m": "Min_1",
-        "5m": "Min_5",
-        "15m": "Min_15",
-        "30m": "Min_30",
-        "1h": "Min_60",
-        "4h": "Min_60",
-        "1d": "Day",
-        "1w": "Week",
-        "1M": "Month",
-    }
-    attr = period_map.get(period.strip(), "Day")
+    attr = _PERIOD_MAP.get(period.strip(), "Day")
     period_enum = getattr(period_cls, attr, getattr(period_cls, "Day"))
     adjust_enum = getattr(adjust_cls, "NoAdjust", getattr(adjust_cls, "ForwardAdjust", None))
     return period_enum, adjust_enum

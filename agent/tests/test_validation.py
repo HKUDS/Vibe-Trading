@@ -389,3 +389,20 @@ class TestWriteValidationJson:
         assert parsed["walk_forward"]["n_windows"] == 2
         assert parsed["array"] == [1.0, None]
         assert written == parsed
+
+
+def test_load_trades_blank_holding_days_defaults_to_zero(tmp_path: Path) -> None:
+    """Blank holding_days cells must not abort validation with ValueError."""
+    from backtest.validation import _load_trades
+
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "trades.csv").write_text(
+        "timestamp,code,side,price,qty,reason,pnl,holding_days,return_pct\n"
+        "2024-01-02,AAPL.US,sell,100,1,signal,10,,0.1\n",
+        encoding="utf-8",
+    )
+    trades = _load_trades(tmp_path)
+    assert len(trades) == 1
+    assert trades[0].holding_bars == 0
+    assert trades[0].pnl == 10.0

@@ -223,6 +223,13 @@ def _pct_diff(reported: float, fetched: float) -> float:
     return abs(reported - fetched) / abs(reported)
 
 
+def _pct_diff_for_json(diff: float) -> float | None:
+    """Convert a relative diff to a JSON-safe percent (null when non-finite)."""
+    if not math.isfinite(diff):
+        return None
+    return round(diff * 100, 2)
+
+
 def render_verdict(results: list[dict[str, Any]], report_name: str = "") -> dict[str, Any]:
     """Render a PASS/FAIL verdict from per-point verification results.
 
@@ -271,7 +278,7 @@ def render_verdict(results: list[dict[str, Any]], report_name: str = "") -> dict
                     "reported": reported, "unit": unit,
                     "fetched": fetched, "source": source,
                     "fetched2": None, "source2": source2,
-                    "diff1_pct": round(diff1 * 100, 2), "diff2_pct": None,
+                    "diff1_pct": _pct_diff_for_json(diff1), "diff2_pct": None,
                     "raw_text": item.get("raw_text", ""),
                     "line_number": item.get("line_number", 0),
                 })
@@ -289,8 +296,8 @@ def render_verdict(results: list[dict[str, Any]], report_name: str = "") -> dict
                     "reported": reported, "unit": unit,
                     "fetched": fetched, "source": source,
                     "fetched2": f2, "source2": source2,
-                    "diff1_pct": round(diff1 * 100, 2),
-                    "diff2_pct": round(diff2 * 100, 2),
+                    "diff1_pct": _pct_diff_for_json(diff1),
+                    "diff2_pct": _pct_diff_for_json(diff2),
                     "raw_text": item.get("raw_text", ""),
                     "line_number": item.get("line_number", 0),
                 })
@@ -298,8 +305,8 @@ def render_verdict(results: list[dict[str, Any]], report_name: str = "") -> dict
                 warn_items.append({
                     "id": item.get("id"), "label": label,
                     "reported": reported, "unit": unit,
-                    "diff1_pct": round(diff1 * 100, 2),
-                    "diff2_pct": round(diff2 * 100, 2),
+                    "diff1_pct": _pct_diff_for_json(diff1),
+                    "diff2_pct": _pct_diff_for_json(diff2),
                 })
 
     fail_count = len(fail_items)
@@ -414,11 +421,16 @@ class ReportAuditTool(BaseTool):
             return json.dumps(
                 {"status": "error", "command": command, "error": str(exc)},
                 ensure_ascii=False,
+                allow_nan=False,
             )
         return json.dumps(
-            {"status": "ok", "command": command, **result}, ensure_ascii=False,
+            {"status": "ok", "command": command, **result},
+            ensure_ascii=False,
+            allow_nan=False,
         )
 
 
 def _err(msg: str) -> str:
-    return json.dumps({"status": "error", "error": msg}, ensure_ascii=False)
+    return json.dumps(
+        {"status": "error", "error": msg}, ensure_ascii=False, allow_nan=False,
+    )
