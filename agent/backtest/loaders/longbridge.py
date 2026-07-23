@@ -47,7 +47,9 @@ _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
 
 _INTERVAL_MAP: dict[str, str] = {
     "1D": "Day",
+    "1d": "Day",
     "1W": "Week",
+    "1w": "Week",
     "1M": "Month",
     "1H": "Min_60",
     "1h": "Min_60",
