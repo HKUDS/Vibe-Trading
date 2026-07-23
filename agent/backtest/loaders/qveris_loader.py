@@ -414,16 +414,25 @@ def _capability_text(item: dict[str, Any]) -> str:
 
 
 def _granularity_tokens(interval: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Return (wanted, unwanted) capability-text tokens for a bar interval."""
-    norm = interval.strip().lower()
+    """Return (wanted, unwanted) capability-text tokens for a bar interval.
+
+    ``1m``/``5m``/``15m``/``30m`` are case-sensitive minute tokens; ``1M`` is
+    month. Lowercasing first would collapse ``1m`` into an empty match and let
+    daily capabilities outrank minute ones.
+    """
+    token = interval.strip()
+    norm = token.lower()
     intraday = ("intraday", "minute", "1min", "5min", "15min", "30min", "60min", "hourly")
     if norm in ("", "1d", "d", "day", "daily"):
         return ("daily", "eod", "end-of-day", "end of day"), ("monthly", "weekly") + intraday
-    if "min" in norm or norm in ("1h", "4h") or "hour" in norm:
+    # Case-sensitive: ``1M`` (month) must not be treated as ``1m`` (minute).
+    if token == "1M" or "month" in norm:
+        return ("monthly",), ("weekly",) + intraday
+    if token in {"1m", "5m", "15m", "30m"} or "min" in norm or norm in ("1h", "4h") or "hour" in norm:
         return intraday, ("monthly", "weekly")
     if "w" in norm or "week" in norm:
         return ("weekly",), ("monthly",) + intraday
-    if "mo" in norm or "month" in norm:
+    if "mo" in norm:
         return ("monthly",), ("weekly",) + intraday
     return (), ()
 
