@@ -32,6 +32,7 @@ from src.channels.bus.events import OutboundMessage
 from src.channels.bus.queue import MessageBus
 from src.channels.base import BaseChannel
 from src.channels.utils import get_media_dir, get_runtime_subdir
+from src.config.paths import get_runtime_root
 from pydantic import BaseModel
 from src.channels.utils import split_message
 
@@ -177,13 +178,24 @@ class WeixinAccountRuntime(BaseChannel):
     def state_file(self) -> Path:
         return self._get_state_dir() / "account.json"
 
+    def _state_file_candidate(self) -> Path:
+        if self._state_dir is not None:
+            state_dir = self._state_dir
+        elif self.config.state_dir:
+            state_dir = Path(self.config.state_dir).expanduser()
+        else:
+            state_dir = get_runtime_root() / "runtime" / "weixin"
+        return state_dir / "account.json"
+
     @property
     def has_saved_credentials(self) -> bool:
         if self._token or self.config.token:
             return True
         try:
-            data = json.loads(self.state_file.read_text(encoding="utf-8"))
+            data = json.loads(self._state_file_candidate().read_text(encoding="utf-8"))
         except (OSError, ValueError):
+            return False
+        if not isinstance(data, dict):
             return False
         return bool(data.get("token"))
 
