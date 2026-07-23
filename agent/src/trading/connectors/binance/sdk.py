@@ -374,6 +374,14 @@ def get_quote(symbol: str, *, config: BinanceConfig | None = None, **_: Any) -> 
     }
 
 
+#: Project/canonical period token → ccxt unified timeframe (lowercase).
+_TIMEFRAME_MAP = {
+    "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",
+    "1h": "1h", "1H": "1h", "4h": "4h", "4H": "4h",
+    "1d": "1d", "1D": "1d", "1w": "1w", "1W": "1w", "1M": "1M",
+}
+
+
 def get_historical_bars(
     symbol: str,
     *,
@@ -387,7 +395,8 @@ def get_historical_bars(
     _assert_host(cfg)
     ex = _exchange(cfg)
     clean = normalize_symbol(symbol)
-    bars = ex.fetch_ohlcv(clean, timeframe=period, limit=int(limit))
+    timeframe = _TIMEFRAME_MAP.get(period.strip(), "1d")
+    bars = ex.fetch_ohlcv(clean, timeframe=timeframe, limit=int(limit))
     return {
         "status": "ok",
         "symbol": clean,
