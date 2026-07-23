@@ -93,6 +93,17 @@ def recording_runtime(monkeypatch) -> type[RecordingWeixinRuntime]:
     return RecordingWeixinRuntime
 
 
+@pytest.fixture
+def isolated_weixin_state_dir(monkeypatch, tmp_path: Path) -> Path:
+    runtime_root = tmp_path / "runtime"
+    monkeypatch.setattr(
+        wrapper_impl,
+        "get_runtime_subdir",
+        lambda name: runtime_root / name,
+    )
+    return runtime_root / "weixin"
+
+
 def test_no_accounts_builds_only_legacy_primary(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         "src.channels.weixin_account.get_runtime_root",
@@ -136,15 +147,22 @@ def test_invalid_auxiliary_alias_is_rejected(alias: str) -> None:
         WeixinConfig.model_validate({"accounts": {alias: {"enabled": True}}})
 
 
-def test_one_account_failure_does_not_cancel_siblings(monkeypatch) -> None:
+def test_one_account_failure_does_not_cancel_siblings(
+    monkeypatch, isolated_weixin_state_dir: Path,
+) -> None:
     channel = WeixinChannel(
-        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        {
+            "enabled": True,
+            "state_dir": str(isolated_weixin_state_dir),
+            "accounts": {"account2": {"enabled": True}},
+        },
         MessageBus(),
     )
 
     async def exercise() -> None:
         primary_started = asyncio.Event()
         auxiliary_failed = asyncio.Event()
+        stops: list[str] = []
 
         async def primary_start(*, allow_qr_login: bool = True) -> None:
             primary_started.set()
@@ -154,8 +172,16 @@ def test_one_account_failure_does_not_cancel_siblings(monkeypatch) -> None:
             auxiliary_failed.set()
             raise RuntimeError("isolated failure")
 
+        async def primary_stop() -> None:
+            stops.append("primary")
+
+        async def auxiliary_stop() -> None:
+            stops.append("account2")
+
         monkeypatch.setattr(channel.account("primary"), "start", primary_start)
         monkeypatch.setattr(channel.account("account2"), "start", auxiliary_start)
+        monkeypatch.setattr(channel.account("primary"), "stop", primary_stop)
+        monkeypatch.setattr(channel.account("account2"), "stop", auxiliary_stop)
         channel.account("primary")._token = "primary-test-token"
         channel.account("account2")._token = "auxiliary-test-token"
         task = asyncio.create_task(channel.start())
@@ -165,13 +191,24 @@ def test_one_account_failure_does_not_cancel_siblings(monkeypatch) -> None:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+        assert not channel._account_tasks["primary"].done()
+        await channel.stop()
+        assert sorted(stops) == ["account2", "primary"]
+        assert channel._account_tasks == {}
+        assert channel._account_waiter is None
 
     asyncio.run(exercise())
 
 
-def test_enabled_account_without_credentials_never_starts_qr_login(monkeypatch) -> None:
+def test_enabled_account_without_credentials_never_starts_qr_login(
+    monkeypatch, isolated_weixin_state_dir: Path,
+) -> None:
     channel = WeixinChannel(
-        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        {
+            "enabled": True,
+            "state_dir": str(isolated_weixin_state_dir),
+            "accounts": {"account2": {"enabled": True}},
+        },
         MessageBus(),
     )
     starts: list[str] = []
@@ -185,9 +222,15 @@ def test_enabled_account_without_credentials_never_starts_qr_login(monkeypatch) 
     assert "account2" in channel.login_required_accounts
 
 
-def test_concurrent_starts_reuse_active_account_tasks(monkeypatch) -> None:
+def test_concurrent_starts_reuse_active_account_tasks(
+    monkeypatch, isolated_weixin_state_dir: Path,
+) -> None:
     channel = WeixinChannel(
-        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        {
+            "enabled": True,
+            "state_dir": str(isolated_weixin_state_dir),
+            "accounts": {"account2": {"enabled": True}},
+        },
         MessageBus(),
     )
 
@@ -244,9 +287,112 @@ def test_concurrent_starts_reuse_active_account_tasks(monkeypatch) -> None:
     asyncio.run(exercise())
 
 
-def test_stop_failure_does_not_skip_siblings_or_task_cleanup(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "cancelled_index",
+    [0, 1],
+    ids=["first-waiter", "second-waiter"],
+)
+def test_cancelled_start_waiter_does_not_cancel_shared_account_tasks(
+    monkeypatch, isolated_weixin_state_dir: Path, cancelled_index: int,
+) -> None:
     channel = WeixinChannel(
-        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        {
+            "enabled": True,
+            "state_dir": str(isolated_weixin_state_dir),
+            "accounts": {"account2": {"enabled": True}},
+        },
+        MessageBus(),
+    )
+
+    async def exercise() -> None:
+        primary_started = asyncio.Event()
+        auxiliary_started = asyncio.Event()
+        second_start_entered = asyncio.Event()
+        starts: list[tuple[str, bool]] = []
+        stops: list[str] = []
+        sync_calls = 0
+
+        original_sync_flags = channel._sync_flags
+
+        def sync_flags() -> None:
+            nonlocal sync_calls
+            sync_calls += 1
+            original_sync_flags()
+            if sync_calls == 2:
+                second_start_entered.set()
+
+        async def primary_start(*, allow_qr_login: bool = True) -> None:
+            starts.append(("primary", allow_qr_login))
+            primary_started.set()
+            await asyncio.Event().wait()
+
+        async def auxiliary_start(*, allow_qr_login: bool = True) -> None:
+            starts.append(("account2", allow_qr_login))
+            auxiliary_started.set()
+            await asyncio.Event().wait()
+
+        async def primary_stop() -> None:
+            stops.append("primary")
+
+        async def auxiliary_stop() -> None:
+            stops.append("account2")
+
+        monkeypatch.setattr(channel.account("primary"), "start", primary_start)
+        monkeypatch.setattr(channel.account("account2"), "start", auxiliary_start)
+        monkeypatch.setattr(channel.account("primary"), "stop", primary_stop)
+        monkeypatch.setattr(channel.account("account2"), "stop", auxiliary_stop)
+        monkeypatch.setattr(channel, "_sync_flags", sync_flags)
+        channel.account("primary")._token = "primary-test-token"
+        channel.account("account2")._token = "auxiliary-test-token"
+
+        waiters = [asyncio.create_task(channel.start())]
+        await asyncio.wait_for(primary_started.wait(), 1)
+        await asyncio.wait_for(auxiliary_started.wait(), 1)
+        shared_tasks = dict(channel._account_tasks)
+        waiters.append(asyncio.create_task(channel.start()))
+        await asyncio.wait_for(second_start_entered.wait(), 1)
+        try:
+            cancelled = waiters[cancelled_index]
+            survivor = waiters[1 - cancelled_index]
+            cancelled.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await cancelled
+            await asyncio.sleep(0)
+
+            assert sorted(starts) == [
+                ("account2", False),
+                ("primary", False),
+            ]
+            assert channel._account_tasks == shared_tasks
+            assert all(not task.done() for task in shared_tasks.values())
+            assert not survivor.done()
+
+            await channel.stop()
+
+            assert sorted(stops) == ["account2", "primary"]
+            assert channel._account_tasks == {}
+            assert channel._account_waiter is None
+            await asyncio.wait_for(survivor, 1)
+        finally:
+            if channel._account_tasks:
+                await channel.stop()
+            for waiter in waiters:
+                if not waiter.done():
+                    waiter.cancel()
+            await asyncio.gather(*waiters, return_exceptions=True)
+
+    asyncio.run(exercise())
+
+
+def test_stop_failure_does_not_skip_siblings_or_task_cleanup(
+    monkeypatch, isolated_weixin_state_dir: Path,
+) -> None:
+    channel = WeixinChannel(
+        {
+            "enabled": True,
+            "state_dir": str(isolated_weixin_state_dir),
+            "accounts": {"account2": {"enabled": True}},
+        },
         MessageBus(),
     )
 
@@ -299,9 +445,15 @@ def test_stop_failure_does_not_skip_siblings_or_task_cleanup(monkeypatch) -> Non
     asyncio.run(exercise())
 
 
-def test_credentials_are_probed_once_per_enabled_account_per_cycle(monkeypatch) -> None:
+def test_credentials_are_probed_once_per_enabled_account_per_cycle(
+    monkeypatch, isolated_weixin_state_dir: Path,
+) -> None:
     channel = WeixinChannel(
-        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        {
+            "enabled": True,
+            "state_dir": str(isolated_weixin_state_dir),
+            "accounts": {"account2": {"enabled": True}},
+        },
         MessageBus(),
     )
     probes = {"primary": 0, "account2": 0}

@@ -52,6 +52,7 @@ class WeixinChannel(BaseChannel):
         super().__init__(parsed, bus)
         self._accounts = self._build_accounts(parsed)
         self._account_tasks: dict[str, asyncio.Task[None]] = {}
+        self._account_waiter: asyncio.Future[Any] | None = None
         self._account_errors: dict[str, str] = {}
         self._login_required: set[str] = set()
         self._lifecycle_lock = asyncio.Lock()
@@ -127,7 +128,12 @@ class WeixinChannel(BaseChannel):
         self._sync_flags()
         async with self._lifecycle_lock:
             account_tasks = tuple(self._account_tasks.values())
-            if not any(not task.done() for task in account_tasks):
+            account_waiter = self._account_waiter
+            cycle_complete = (
+                all(task.done() for task in account_tasks)
+                and (account_waiter is None or account_waiter.done())
+            )
+            if cycle_complete:
                 self._account_errors.clear()
                 enabled_accounts = {
                     alias: runtime
@@ -149,13 +155,20 @@ class WeixinChannel(BaseChannel):
                     if has_credentials
                 }
                 account_tasks = tuple(self._account_tasks.values())
-        if not account_tasks:
+                account_waiter = (
+                    asyncio.gather(*account_tasks, return_exceptions=True)
+                    if account_tasks
+                    else None
+                )
+                self._account_waiter = account_waiter
+        if account_waiter is None:
             return
-        await asyncio.gather(*account_tasks, return_exceptions=True)
+        await asyncio.shield(account_waiter)
 
     async def stop(self) -> None:
         async with self._lifecycle_lock:
             account_tasks = self._account_tasks
+            account_waiter = self._account_waiter
             cancelled_error: asyncio.CancelledError | None = None
             try:
                 for alias in tuple(account_tasks):
@@ -174,8 +187,14 @@ class WeixinChannel(BaseChannel):
                         *account_tasks.values(),
                         return_exceptions=True,
                     )
+                    if account_waiter is not None:
+                        await asyncio.gather(
+                            account_waiter,
+                            return_exceptions=True,
+                        )
                 finally:
                     self._account_tasks.clear()
+                    self._account_waiter = None
             if cancelled_error is not None:
                 raise cancelled_error
 
