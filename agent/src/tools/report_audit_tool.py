@@ -76,6 +76,20 @@ def _is_valid_label(label: str) -> bool:
     return True
 
 
+def _split_md_table_row(line: str) -> list[str]:
+    """Split a markdown table row, keeping empty leading/trailing/middle cells.
+
+    Filtering empties would shift later values onto earlier headers
+    (``| Profit |  | 25M |`` must stay under Q2, not Q1).
+    """
+    parts = line.strip().split("|")
+    if parts and parts[0] == "":
+        parts = parts[1:]
+    if parts and parts[-1] == "":
+        parts = parts[:-1]
+    return [c.strip().strip("*_~").strip() for c in parts]
+
+
 def _parse_md_tables(lines: list[str]) -> list[tuple[str, str, float, str, int, str]]:
     """Parse markdown tables into (row_label, col_header, value, unit, lineno, raw)."""
     results: list[tuple[str, str, float, str, int, str]] = []
@@ -83,21 +97,21 @@ def _parse_md_tables(lines: list[str]) -> list[tuple[str, str, float, str, int, 
     while i < len(lines):
         line = lines[i].strip()
         if "|" in line and not _TABLE_SEP_RE.match(line):
-            headers_raw = [h.strip().strip("*_").strip() for h in line.split("|")]
-            headers_raw = [h for h in headers_raw if h]
+            headers_raw = [h.strip().strip("*_").strip() for h in _split_md_table_row(line)]
             if i + 1 < len(lines) and _TABLE_SEP_RE.match(lines[i + 1].strip()):
                 i += 2  # skip the separator row
                 while i < len(lines):
                     dline = lines[i].strip()
                     if not dline or not dline.startswith("|"):
                         break
-                    cells = [c.strip().strip("*_~").strip() for c in dline.split("|")]
-                    cells = [c for c in cells if c != ""]
+                    cells = _split_md_table_row(dline)
                     if len(cells) < 2:
                         i += 1
                         continue
                     row_label = cells[0]
                     for col_idx, cell in enumerate(cells[1:], start=1):
+                        if not cell:
+                            continue
                         col_header = (
                             headers_raw[col_idx]
                             if col_idx < len(headers_raw)
