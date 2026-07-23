@@ -343,6 +343,10 @@ def get_quote(
     }
 
 
+#: Periods Dhan can serve without silently remapping to a different bar size.
+_SUPPORTED_PERIODS = frozenset({"1m", "5m", "15m", "30m", "1d", "1D"})
+
+
 def get_historical_bars(
     symbol: str,
     *,
@@ -356,26 +360,38 @@ def get_historical_bars(
     """Fetch historical OHLCV bars.
 
     ``period`` tokens: ``1m``, ``5m``, ``15m``, ``30m`` → intraday candles.
-    ``1d`` → daily candles. Dhan's intraday data is limited to last 5 trading
-    days; daily goes back much further.
+    ``1d`` / ``1D`` → daily candles. Dhan's intraday data is limited to last 5
+    trading days; daily goes back much further. Unsupported periods (including
+    ``1H`` / ``4H``) fail closed instead of silently substituting daily bars.
     """
     cfg = config or load_config()
     client = _dhan_client(cfg)
 
     sec_id = str(security_id or symbol).strip()
     segment = exchange_segment.strip().upper()
+    token = period.strip()
+    if token not in _SUPPORTED_PERIODS:
+        return {
+            "status": "error",
+            "error": (
+                f"unsupported period: {period!r}; "
+                f"supported: {sorted(_SUPPORTED_PERIODS)}"
+            ),
+            "symbol": symbol,
+        }
+    intraday = token in ("1m", "5m", "15m", "30m")
 
     from datetime import datetime, timedelta, timezone
 
     to_date = datetime.now(timezone.utc)
     # Intraday: max 5 days back; daily: use limit
-    if period in ("1m", "5m", "15m", "30m"):
+    if intraday:
         from_date = to_date - timedelta(days=5)
     else:
         from_date = to_date - timedelta(days=min(limit * 2, 365))
 
     try:
-        if period in ("1m", "5m", "15m", "30m"):
+        if intraday:
             data = client.intraday_daily_candle_data(
                 security_id=sec_id,
                 exchange_segment=segment,
