@@ -264,10 +264,15 @@ def parse_eastmoney(df: pd.DataFrame) -> list[TradeRecord]:
             continue
         raw_date = str(row.get("成交日期", "")).strip()
         # Excel numeric YYYYMMDD cells stringify as "20260115.0".
+        # Day-count serials (dtype=str load) arrive as "44941" / "44941.0".
         try:
             as_float = float(raw_date)
             if as_float.is_integer() and 19_000_001 <= int(as_float) <= 21_001_231:
                 raw_date = f"{int(as_float):08d}"
+            elif 1.0 <= as_float < 100_000.0:
+                ts = pd.to_datetime(as_float, unit="D", origin="1899-12-30", errors="coerce")
+                if pd.notna(ts):
+                    raw_date = ts.strftime("%Y-%m-%d")
         except (ValueError, OverflowError):
             pass
         raw_time = str(row.get("成交时间", "")).strip()
