@@ -72,6 +72,20 @@ def _sig_strip_cell(s: str) -> str:
     return s.strip()
 
 
+def _sig_split_row(line: str) -> list[str]:
+    """Split a markdown table row, keeping empty leading/trailing cells.
+
+    ``str.strip("|")`` would also drop empty edge cells (``||Name|`` → ``Name``,
+    ``|a|b||`` → ``a|b``), so only peel the row's bounding pipes.
+    """
+    parts = line.strip().split("|")
+    if parts and parts[0] == "":
+        parts = parts[1:]
+    if parts and parts[-1] == "":
+        parts = parts[:-1]
+    return [_sig_strip_cell(c) for c in parts]
+
+
 def _sig_render_table(table_lines: list[str]) -> str:
     """Render a markdown pipe-table as fixed-width plain text."""
 
@@ -81,7 +95,7 @@ def _sig_render_table(table_lines: list[str]) -> str:
     rows: list[list[str]] = []
     has_sep = False
     for line in table_lines:
-        cells = [_sig_strip_cell(c) for c in line.strip().strip("|").split("|")]
+        cells = _sig_split_row(line)
         if all(re.match(r"^:?-+:?$", c) for c in cells if c):
             has_sep = True
             continue
