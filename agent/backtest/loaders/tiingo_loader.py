@@ -177,6 +177,14 @@ class DataLoader:
         del fields
         validate_date_range(start_date, end_date)
 
+        # Daily-only EOD endpoint; do not silently return day bars for ``1H``.
+        if str(interval).strip().lower() not in {"1d", "d", "day", "daily"}:
+            logger.warning(
+                "tiingo supports daily bars only; rejecting interval=%r",
+                interval,
+            )
+            return {}
+
         key = _resolve_key()
         if not key:
             logger.warning("tiingo skipped: %s not configured", _AUTH_ENV)
