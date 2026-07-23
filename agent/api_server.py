@@ -280,6 +280,16 @@ register_alpha_routes(app)
 from src.api.auth_routes import register_auth_routes  # noqa: E402
 register_auth_routes(app)
 
+# --- OpenBB Workspace agent bridge (GET /agents.json, POST /v1/query) ---
+# Non-invasive adapter that exposes Vibe-Trading as an OpenBB Workspace custom
+# agent. Safe to import lazily; failures here must not break the core API.
+try:  # OPENBB-WORKSPACE-INTEGRATION
+    from src.openbb_bridge import register_openbb_routes  # noqa: E402
+
+    register_openbb_routes(app)
+except Exception as _openbb_exc:  # pragma: no cover - optional integration
+    logger.warning("OpenBB Workspace bridge not registered: %s", _openbb_exc)
+
 
 # ============================================================================
 # Scheduled Research Routes - defined in src/api/scheduled_routes.py

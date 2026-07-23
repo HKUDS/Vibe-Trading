@@ -52,6 +52,9 @@ pydantic>=2.0.0
 python-multipart>=0.0.18
 sse-starlette>=1.6.0
 
+# OpenBB Workspace agent bridge (protocol models + SSE helpers)
+openbb-ai>=2.0.0,<3
+
 # MCP Server
 fastmcp>=2.14.0
 

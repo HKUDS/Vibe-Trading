@@ -32,6 +32,10 @@ _DEFAULT_CORS_ORIGINS: tuple[str, ...] = (
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:8000",
+    # OpenBB Workspace (https://pro.openbb.co) consumes Vibe-Trading as a
+    # custom agent via /agents.json and /v1/query. Allowed by default so the
+    # bridge works regardless of .env load timing.
+    "https://pro.openbb.co",
 )
 
 _DEFAULT_LOOPBACK_HOSTS = frozenset({
