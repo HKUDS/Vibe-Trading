@@ -118,7 +118,8 @@ class DataLoader:
         """
         validate_date_range(start_date, end_date)
 
-        if interval != "1D":
+        # Daily-only endpoint; accept sina/tencent-style aliases, reject 1H/4H.
+        if str(interval).strip().lower() not in {"1d", "d", "day", "daily"}:
             logger.warning("fmp only supports 1D bars; got interval=%r", interval)
             return {}
 
