@@ -23,6 +23,7 @@ from typing import Any, Callable, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from backtest.constraints import apply_constraints_frame, load_constraints
 from backtest.loaders.rsshub_events import (
     FeedSpec,
     RSSHubEventProvider,
@@ -239,15 +240,24 @@ def _load_optimizer(config: Dict[str, Any]) -> Optional[Callable]:
         Optimizer callable, or None.
     """
     opt_name = config.get("optimizer")
+    constraints = load_constraints(config)
     if not opt_name:
+        if constraints:
+            print("[WARN] 'constraints' only act on optimizer output, "
+                  "set 'optimizer' to use them; ignoring")
         return None
     opt_params = config.get("optimizer_params") or {}
     try:
         mod = importlib.import_module(f"backtest.optimizers.{opt_name}")
-        return lambda ret, pos, dates: mod.optimize(ret, pos, dates, **opt_params)
     except (ImportError, AttributeError) as e:
         print(f"[WARN] Failed to load optimizer '{opt_name}': {e}, falling back to equal weight")
         return None
+
+    def optimize(ret: pd.DataFrame, pos: pd.DataFrame, dates: pd.DatetimeIndex) -> pd.DataFrame:
+        out = mod.optimize(ret, pos, dates, **opt_params)
+        return apply_constraints_frame(out, constraints)
+
+    return optimize
 
 
 def _normalise_fundamental_fields(config: Dict[str, Any]) -> dict[str, list[str]]:
