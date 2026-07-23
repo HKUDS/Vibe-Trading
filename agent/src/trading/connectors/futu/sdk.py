@@ -347,9 +347,22 @@ def get_quote(symbol: str, *, config: FutuConfig | None = None, **_: Any) -> dic
 
 
 #: Canonical period token → Futu ``KLType`` attribute name.
+#: ``1H``/``4H``/``1D``/``1W`` alias the lowercase forms; ``1m`` vs ``1M`` stays
+#: case-sensitive. ``4h``/``4H`` map to ``K_240M`` (not ``K_60M``).
 _KLTYPE_MAP = {
-    "1m": "K_1M", "5m": "K_5M", "15m": "K_15M", "30m": "K_30M",
-    "1h": "K_60M", "4h": "K_60M", "1d": "K_DAY", "1w": "K_WEEK", "1M": "K_MON",
+    "1m": "K_1M",
+    "5m": "K_5M",
+    "15m": "K_15M",
+    "30m": "K_30M",
+    "1h": "K_60M",
+    "1H": "K_60M",
+    "4h": "K_240M",
+    "4H": "K_240M",
+    "1d": "K_DAY",
+    "1D": "K_DAY",
+    "1w": "K_WEEK",
+    "1W": "K_WEEK",
+    "1M": "K_MON",
 }
 
 
