@@ -785,9 +785,17 @@ vibe-trading channels status --local   # inspect config and missing SDK hints wi
 vibe-trading channels status           # query the running API runtime
 vibe-trading channels start            # start enabled adapters through the API
 vibe-trading channels stop             # stop enabled adapters through the API
-vibe-trading channels login weixin     # run an adapter login hook when needed
+
+# Existing primary Weixin account (backward compatible)
+vibe-trading channels login weixin
+
+# Configured auxiliary account
+vibe-trading channels login weixin --account account2
+
 vibe-trading channels pairing --channel telegram list
 ```
+
+The primary Weixin account keeps its existing state path at `runtime/weixin/account.json`. Configure each auxiliary account under `channels.weixin.accounts.<alias>` before QR login; its state is isolated at `runtime/weixin/accounts/<alias>/account.json`.
 
 The built-in adapters cover `websocket`, `telegram`, `slack`, `discord`, `matrix`, `whatsapp`, `signal`, `qq`, `napcat`, `weixin`, `wecom`, `feishu`, `dingtalk`, `msteams`, `email`, and `mochat`. Use narrow extras such as `pip install "vibe-trading-ai[telegram]"`, or install the full channel set with `pip install "vibe-trading-ai[channels]"`.
 
