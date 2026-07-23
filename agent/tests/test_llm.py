@@ -543,6 +543,24 @@ class TestReasoningEffortPassthrough:
         assert captured["model"] == "gpt-5.6"
         assert captured["use_responses_api"] is True
 
+    def test_openai_responses_payload_bypasses_chat_message_rewrite(self) -> None:
+        import src.providers.llm as llm_mod
+
+        llm_mod._dotenv_loaded = True
+        env = {
+            "LANGCHAIN_PROVIDER": "openai",
+            "LANGCHAIN_MODEL_NAME": "gpt-5.6",
+            "OPENAI_API_KEY": "test-key",
+            "OPENAI_BASE_URL": "http://gateway.example/v1",
+            "VIBE_OPENAI_USE_RESPONSES_API": "1",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            model = build_llm()
+            payload = model._get_request_payload("probe")
+
+        assert "input" in payload
+        assert "messages" not in payload
+
 
 class TestKimiCodingProvider:
     """Kimi for Coding is a distinct provider with Moonshot-compatible behavior."""
