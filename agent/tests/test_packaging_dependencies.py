@@ -136,6 +136,19 @@ def test_channel_optional_extras_cover_all_sdk_backed_adapters() -> None:
         "wecom-aibot-sdk",
     }
     assert expected_packages.issubset(channel_extra)
+
+
+def test_weixin_qr_dependency_is_installed_in_runtime() -> None:
+    """The Docker runtime must render WeChat login QR codes locally."""
+    requirements_txt = {
+        _normalized_requirement_name(line)
+        for line in (ROOT / "agent" / "requirements.txt").read_text().splitlines()
+        if line and not line.startswith("#")
+    }
+
+    assert "qrcode" in requirements_txt
+
+
 def test_development_extra_includes_bounded_style_tools() -> None:
     """Contributor style commands should be installed by the dev extra."""
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
