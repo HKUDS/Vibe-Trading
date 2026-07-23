@@ -31,6 +31,21 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# Project / connector period tokens -> OKX candle ``bar`` strings.
+# ``1m`` vs ``1M`` stays case-sensitive; hour/day accept either case.
+_INTERVAL_MAP = {
+    "1m": "1m",
+    "5m": "5m",
+    "15m": "15m",
+    "30m": "30m",
+    "1h": "1H",
+    "1H": "1H",
+    "4h": "4H",
+    "4H": "4H",
+    "1d": "1D",
+    "1D": "1D",
+}
+
 from backtest.loaders.base import (
     cached_loader_fetch,
     check_budget,
@@ -129,7 +144,7 @@ class DataLoader:
             start_date: Start date (YYYY-MM-DD).
             end_date: End date (YYYY-MM-DD).
             fields: Ignored (OKX has no extra fields).
-            interval: Bar size (1m/5m/15m/30m/1H/4H/1D), default ``1D``.
+            interval: Bar size (1m/5m/15m/30m/1h/1H/4h/4H/1d/1D), default ``1D``.
 
         Returns:
             Mapping symbol -> DataFrame.
@@ -139,10 +154,16 @@ class DataLoader:
         if fields:
             logger.warning("OKX ignores extra fields: %s", fields)
 
-        valid_intervals = {"1m", "5m", "15m", "30m", "1H", "4H", "1D"}
-        if interval not in valid_intervals:
-            logger.warning("unsupported OKX interval %s, using 1D", interval)
-            interval = "1D"
+        # Case aliases: connector-style ``1h``/``4h`` must not fall through to daily.
+        mapped = _INTERVAL_MAP.get(interval.strip())
+        if mapped is None:
+            logger.warning(
+                "unsupported OKX interval %r; rejecting (supported: %s)",
+                interval,
+                sorted(set(_INTERVAL_MAP.values())),
+            )
+            return {}
+        interval = mapped
 
         codes = [c.replace("/", "-").upper() for c in codes]
 
