@@ -190,6 +190,15 @@ class MemoryLifecycle:
             List of action records [{name, action, importance, reason}].
         """
         if not is_gc_enabled():
+            # Warn if compression is enabled but GC is disabled
+            from src.config.accessor import get_env_config
+
+            cfg = get_env_config().memory
+            if cfg.compression_enabled:
+                logger.warning(
+                    "VT_MEMORY_COMPRESSION is enabled but VT_MEMORY_GC is disabled; "
+                    "compression will not trigger. Enable GC or set VT_MEMORY=on/full."
+                )
             return []
 
         entries = self._memory.list_entries()

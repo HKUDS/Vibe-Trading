@@ -20,6 +20,7 @@ Usage::
 from __future__ import annotations
 
 import os
+from enum import Enum
 
 from typing import Annotated, Any
 
@@ -365,9 +366,67 @@ class PathConfig(_EnvBase):
 # ---------------------------------------------------------------------------
 
 
-class MemoryConfig(_EnvBase):
-    """Memory lifecycle feature flags."""
+class _MemoryPreset(str, Enum):
+    """Business-friendly memory system presets."""
 
+    OFF = "off"    # All features disabled
+    ON = "on"     # Tier 1: quality + decay + gc
+    FULL = "full"  # Tier 1 + Tier 2: all features
+
+
+_PRESET_FLAGS: dict[str, dict[str, bool]] = {
+    "off": {
+        "quality_enabled": False,
+        "gc_enabled": False,
+        "decay_enabled": False,
+        "hierarchy_enabled": False,
+        "links_enabled": False,
+        "compression_enabled": False,
+        "fts_index_enabled": False,
+    },
+    "on": {
+        "quality_enabled": True,
+        "gc_enabled": True,
+        "decay_enabled": True,
+        "hierarchy_enabled": False,
+        "links_enabled": False,
+        "compression_enabled": False,
+        "fts_index_enabled": False,
+    },
+    "full": {
+        "quality_enabled": True,
+        "gc_enabled": True,
+        "decay_enabled": True,
+        "hierarchy_enabled": True,
+        "links_enabled": True,
+        "compression_enabled": True,
+        "fts_index_enabled": True,
+    },
+}
+
+# Mapping from field name to environment variable alias
+_MEMORY_FLAG_ALIASES: dict[str, str] = {
+    "quality_enabled": "VT_MEMORY_QUALITY",
+    "gc_enabled": "VT_MEMORY_GC",
+    "decay_enabled": "VT_MEMORY_DECAY",
+    "hierarchy_enabled": "VT_MEMORY_HIERARCHY",
+    "links_enabled": "VT_MEMORY_LINKS",
+    "compression_enabled": "VT_MEMORY_COMPRESSION",
+    "fts_index_enabled": "VT_MEMORY_FTS_INDEX",
+}
+
+
+class MemoryConfig(_EnvBase):
+    """Memory lifecycle feature flags.
+
+    Use VT_MEMORY=off|on|full as a business-friendly preset.
+    Individual VT_MEMORY_* flags can override the preset baseline.
+    """
+
+    # Preset: business-friendly one-liner
+    preset: str = Field(default="off", alias="VT_MEMORY")
+
+    # Tier 1 flags
     quality_enabled: EnvBool = Field(
         default=False,
         alias="VT_MEMORY_QUALITY",
@@ -384,7 +443,7 @@ class MemoryConfig(_EnvBase):
         description="Enable importance decay computation",
     )
 
-    # Tier 2 feature flags
+    # Tier 2 flags
     hierarchy_enabled: EnvBool = Field(
         default=False, alias="VT_MEMORY_HIERARCHY",
         description="Enable hierarchical directory routing",
@@ -401,6 +460,39 @@ class MemoryConfig(_EnvBase):
         default=False, alias="VT_MEMORY_FTS_INDEX",
         description="Enable SQLite FTS5 search index",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_preset(cls, data: Any) -> Any:
+        """Apply VT_MEMORY preset as baseline; explicit flags override."""
+        if not isinstance(data, dict):
+            return data
+
+        # Determine preset value from env or constructor data
+        preset_val = (
+            os.environ.get("VT_MEMORY")
+            or data.get("VT_MEMORY")
+            or data.get("preset")
+            or "off"
+        )
+        preset_val = preset_val.strip().lower()
+        if preset_val not in _PRESET_FLAGS:
+            preset_val = "off"
+
+        baseline = _PRESET_FLAGS[preset_val]
+
+        # For each flag: use explicit env var if set, otherwise apply preset
+        for field_name, env_alias in _MEMORY_FLAG_ALIASES.items():
+            # If user explicitly set this env var, don't override
+            if os.environ.get(env_alias) is not None:
+                continue
+            # If explicitly passed in constructor data, don't override
+            if field_name in data or env_alias in data:
+                continue
+            # Apply preset baseline using field name
+            data[field_name] = baseline[field_name]
+
+        return data
 
 
 # ---------------------------------------------------------------------------
