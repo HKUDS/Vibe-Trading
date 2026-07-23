@@ -106,6 +106,11 @@ def test_channels_login_selects_requested_weixin_account(monkeypatch) -> None:
     calls = []
 
     class FakeWeixinAdapter:
+        def account(self, account_id: str) -> object:
+            if account_id != "account2":
+                raise KeyError(account_id)
+            return object()
+
         async def login_account(
             self,
             account_id: str,
@@ -182,13 +187,16 @@ def test_channels_login_reports_unknown_weixin_account_without_secrets(
     class FakeWeixinAdapter:
         runtime_secret = sensitive_values[1]
 
+        def account(self, account_id: str) -> object:
+            raise KeyError(sensitive_values[1])
+
         async def login_account(
             self,
             account_id: str,
             *,
             force: bool = False,
         ) -> bool:
-            raise KeyError(f"Unknown configured Weixin account: {account_id}")
+            raise AssertionError("unknown accounts must be rejected before login")
 
     _install_login_adapter(
         monkeypatch,
@@ -205,6 +213,76 @@ def test_channels_login_reports_unknown_weixin_account_without_secrets(
     assert "Unknown configured Weixin account: missing" in output
     for value in sensitive_values:
         assert value not in output
+
+
+def test_channels_login_does_not_misreport_known_account_runtime_keyerror(
+    monkeypatch,
+    capsys,
+) -> None:
+    class FakeWeixinAdapter:
+        def account(self, account_id: str) -> object:
+            assert account_id == "account2"
+            return object()
+
+        async def login_account(
+            self,
+            account_id: str,
+            *,
+            force: bool = False,
+        ) -> bool:
+            raise KeyError("runtime lookup failed")
+
+    _install_login_adapter(
+        monkeypatch,
+        channel_name="weixin",
+        section={"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        adapter=FakeWeixinAdapter(),
+    )
+
+    with pytest.raises(KeyError, match="runtime lookup failed"):
+        _legacy.cmd_channels_login("weixin", account_id="account2")
+
+    output = capsys.readouterr().out
+    assert "Unknown configured Weixin account" not in output
+
+
+@pytest.mark.parametrize(
+    "account_id",
+    ["", "Account2", "../escape", "bad\x00alias", "a" * 33],
+)
+def test_channels_login_rejects_invalid_weixin_alias_without_echoing_input(
+    monkeypatch,
+    capsys,
+    account_id: str,
+) -> None:
+    calls = []
+
+    class FakeWeixinAdapter:
+        async def login_account(
+            self,
+            selected_account: str,
+            *,
+            force: bool = False,
+        ) -> bool:
+            calls.append((selected_account, force))
+            return True
+
+    _install_login_adapter(
+        monkeypatch,
+        channel_name="weixin",
+        section={"enabled": True},
+        adapter=FakeWeixinAdapter(),
+    )
+
+    assert (
+        _legacy.cmd_channels_login("weixin", account_id=account_id)
+        == _legacy.EXIT_USAGE_ERROR
+    )
+    output = capsys.readouterr().out
+    assert "Invalid Weixin account alias." in output
+    if account_id:
+        assert account_id not in output
+    assert calls == []
 
 
 def test_channels_pairing_command_runs_against_local_store(tmp_path: Path, monkeypatch) -> None:

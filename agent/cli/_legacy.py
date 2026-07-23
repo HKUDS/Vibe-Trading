@@ -3018,8 +3018,19 @@ def cmd_channels_login(
     from src.channels.config import load_channels_config
     from src.channels.manager import ChannelManager
     from src.channels.bus.queue import MessageBus
+    from src.channels.weixin_routing import (
+        PRIMARY_ACCOUNT_ID,
+        validate_account_alias,
+    )
 
-    if channel_name != "weixin" and account_id != "primary":
+    if account_id != PRIMARY_ACCOUNT_ID:
+        try:
+            account_id = validate_account_alias(account_id)
+        except ValueError:
+            console.print("[red]Invalid Weixin account alias.[/red]")
+            return EXIT_USAGE_ERROR
+
+    if channel_name != "weixin" and account_id != PRIMARY_ACCOUNT_ID:
         console.print("[red]--account is supported only for the weixin channel.[/red]")
         return EXIT_USAGE_ERROR
 
@@ -3043,15 +3054,16 @@ def cmd_channels_login(
         return EXIT_RUN_FAILED
     if channel_name == "weixin":
         try:
-            ok = asyncio.run(
-                adapter.login_account(account_id, force=force)
-            )
+            adapter.account(account_id)
         except KeyError:
             console.print(
                 "[red]Unknown configured Weixin account:[/red] "
                 f"{rich_escape(account_id)}"
             )
             return EXIT_USAGE_ERROR
+        ok = asyncio.run(
+            adapter.login_account(account_id, force=force)
+        )
     else:
         ok = asyncio.run(adapter.login(force=force))
     if ok:
