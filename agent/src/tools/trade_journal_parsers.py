@@ -402,9 +402,11 @@ def parse_generic(df: pd.DataFrame) -> list[TradeRecord]:
         if sym_col and _is_empty_code(row.get(sym_col)):
             continue
         if dt_col:
-            dt = str(row.get(dt_col, "")).strip()
+            raw_dt = row.get(dt_col, "")
+            dt = _generic_datetime_cell(raw_dt)
         elif date_col:
-            dt = str(row.get(date_col, "")).strip()
+            raw_dt = row.get(date_col, "")
+            dt = _generic_datetime_cell(raw_dt)
         else:
             dt = ""
         symbol = str(row.get(sym_col, "")).strip() if sym_col else ""
@@ -425,6 +427,33 @@ def parse_generic(df: pd.DataFrame) -> list[TradeRecord]:
             market=market,
         ))
     return records
+
+
+def _generic_datetime_cell(val: Any) -> str:
+    """Normalize a generic datetime/date cell; Excel serials become ISO datetime."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return ""
+    if pd.api.types.is_number(val) and not isinstance(val, (bool,)):
+        serial = float(val)
+        if 1.0 <= serial < 100_000.0:
+            ts = pd.to_datetime(serial, unit="D", origin="1899-12-30", errors="coerce")
+            if pd.notna(ts):
+                return ts.strftime("%Y-%m-%d %H:%M:%S")
+    text = str(val).strip()
+    if text and not any(ch in text for ch in "/-:"):
+        try:
+            serial = float(text)
+        except ValueError:
+            serial = None
+        else:
+            if 1.0 <= serial < 100_000.0:
+                ts = pd.to_datetime(serial, unit="D", origin="1899-12-30", errors="coerce")
+                if pd.notna(ts):
+                    return ts.strftime("%Y-%m-%d %H:%M:%S")
+    ts = pd.to_datetime(val, errors="coerce")
+    if pd.notna(ts):
+        return ts.strftime("%Y-%m-%d %H:%M:%S")
+    return text
 
 
 def _infer_market_from_symbol(symbol: str) -> str:
