@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 import src.channels.weixin as wrapper_impl
 import src.channels.weixin_account as account_impl
@@ -36,6 +37,7 @@ class RecordingWeixinRuntime:
         self.send_progress = False
         self.send_tool_hints = False
         self.show_reasoning = False
+        self.saved_credentials = True
 
     def _record(self, method: str, *args: Any) -> tuple[Any, ...]:
         call = (method, *args)
@@ -72,6 +74,10 @@ class RecordingWeixinRuntime:
         self._record("send_delta", chat_id, delta, metadata)
 
     @property
+    def has_saved_credentials(self) -> bool:
+        return self.saved_credentials
+
+    @property
     def is_running(self) -> object:
         self._record("is_running")
         return self.running_result
@@ -101,6 +107,82 @@ def test_no_accounts_builds_only_legacy_primary(monkeypatch, tmp_path: Path) -> 
         channel.account("primary").state_file
         == tmp_path / "runtime" / "weixin" / "account.json"
     )
+
+
+def test_auxiliary_accounts_have_confined_state_dirs(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        "src.channels.weixin.get_runtime_subdir",
+        lambda name: tmp_path / name,
+    )
+    channel = WeixinChannel(
+        {
+            "enabled": True,
+            "accounts": {
+                "account2": {"enabled": False, "allow_from": []},
+                "account3": {"enabled": True, "allow_from": []},
+            },
+        },
+        MessageBus(),
+    )
+    assert channel.account_ids == ("primary", "account2", "account3")
+    assert channel.account("account2").state_file == (
+        tmp_path / "weixin" / "accounts" / "account2" / "account.json"
+    )
+
+
+@pytest.mark.parametrize("alias", ["primary", "../escape", "Account2"])
+def test_invalid_auxiliary_alias_is_rejected(alias: str) -> None:
+    with pytest.raises(ValidationError):
+        WeixinConfig.model_validate({"accounts": {alias: {"enabled": True}}})
+
+
+def test_one_account_failure_does_not_cancel_siblings(monkeypatch) -> None:
+    channel = WeixinChannel(
+        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        MessageBus(),
+    )
+
+    async def exercise() -> None:
+        primary_started = asyncio.Event()
+        auxiliary_failed = asyncio.Event()
+
+        async def primary_start() -> None:
+            primary_started.set()
+            await asyncio.Event().wait()
+
+        async def auxiliary_start() -> None:
+            auxiliary_failed.set()
+            raise RuntimeError("isolated failure")
+
+        monkeypatch.setattr(channel.account("primary"), "start", primary_start)
+        monkeypatch.setattr(channel.account("account2"), "start", auxiliary_start)
+        channel.account("primary")._token = "primary-test-token"
+        channel.account("account2")._token = "auxiliary-test-token"
+        task = asyncio.create_task(channel.start())
+        await asyncio.wait_for(primary_started.wait(), 1)
+        await asyncio.wait_for(auxiliary_failed.wait(), 1)
+        assert not task.done()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(exercise())
+
+
+def test_enabled_account_without_credentials_never_starts_qr_login(monkeypatch) -> None:
+    channel = WeixinChannel(
+        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        MessageBus(),
+    )
+    starts: list[str] = []
+
+    async def record_start() -> None:
+        starts.append("started")
+
+    monkeypatch.setattr(channel.account("account2"), "start", record_start)
+    asyncio.run(channel.start())
+    assert starts == []
+    assert "account2" in channel.login_required_accounts
 
 
 def test_primary_wrapper_preserves_raw_route() -> None:
@@ -163,7 +245,7 @@ def test_saved_credentials_probe_rejects_non_object_json(
     assert runtime.has_saved_credentials is False
 
 
-def test_wrapper_ignores_accounts_and_copies_primary_config(recording_runtime) -> None:
+def test_wrapper_builds_accounts_and_copies_primary_config(recording_runtime) -> None:
     channel = WeixinChannel(
         WeixinConfig(
             enabled=True,
@@ -176,7 +258,7 @@ def test_wrapper_ignores_accounts_and_copies_primary_config(recording_runtime) -
         MessageBus(),
     )
 
-    assert channel.account_ids == ("primary",)
+    assert channel.account_ids == ("primary", "desk")
     runtime = channel.account("primary")
     assert runtime.account_id == "primary"
     assert runtime.config.enabled is True
@@ -185,6 +267,11 @@ def test_wrapper_ignores_accounts_and_copies_primary_config(recording_runtime) -
     assert runtime.config.route_tag == 7
     assert runtime.config.poll_timeout == 9
     assert not hasattr(runtime.config, "accounts")
+    auxiliary = channel.account("desk")
+    assert auxiliary.account_id == "desk"
+    assert auxiliary.config.enabled is True
+    assert auxiliary.config.allow_from == []
+    assert auxiliary.config.route_tag is None
 
 
 def test_wrapper_delegates_primary_lifecycle_and_sends(recording_runtime) -> None:
@@ -231,7 +318,7 @@ def test_wrapper_delegates_primary_lifecycle_and_sends(recording_runtime) -> Non
 
 @pytest.mark.parametrize(
     "method",
-    ["login", "start", "stop", "send", "send_delta", "is_running"],
+    ["login", "send", "send_delta", "is_running"],
 )
 def test_wrapper_propagates_primary_delegate_exceptions(
     recording_runtime, method: str,
@@ -256,6 +343,16 @@ def test_wrapper_propagates_primary_delegate_exceptions(
             _ = channel.is_running
         else:
             asyncio.run(invoke())
+
+
+def test_wrapper_records_primary_start_exception_class(recording_runtime) -> None:
+    channel = WeixinChannel(WeixinConfig(enabled=True), MessageBus())
+    runtime = channel.account("primary")
+    runtime.fail_on.add("start")
+
+    asyncio.run(channel.start())
+
+    assert channel._account_errors == {"primary": "RuntimeError"}
 
 
 def test_account_alias_validation() -> None:
