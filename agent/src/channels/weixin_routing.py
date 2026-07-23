@@ -8,6 +8,7 @@ import re
 PRIMARY_ACCOUNT_ID = "primary"
 _ROUTE_PREFIX = "weixin-route:v1:"
 _ACCOUNT_ALIAS_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+_ROUTE_PAYLOAD_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def validate_account_alias(value: str) -> str:
@@ -35,14 +36,18 @@ def decode_aux_route(value: str) -> tuple[str, str] | None:
         return None
     remainder = text[len(_ROUTE_PREFIX):]
     alias, separator, encoded = remainder.partition(":")
-    if not separator or not encoded:
+    if not separator or not _ROUTE_PAYLOAD_RE.fullmatch(encoded):
         raise ValueError("Malformed Weixin auxiliary route")
     alias = validate_account_alias(alias)
     try:
         padding = "=" * (-len(encoded) % 4)
-        peer = base64.b64decode(encoded + padding, altchars=b"-_", validate=True).decode("utf-8")
+        decoded = base64.b64decode(encoded + padding, altchars=b"-_", validate=True)
+        peer = decoded.decode("utf-8")
     except (ValueError, UnicodeDecodeError) as exc:
         raise ValueError("Malformed Weixin auxiliary route") from exc
+    canonical = base64.urlsafe_b64encode(decoded).decode("ascii").rstrip("=")
+    if canonical != encoded:
+        raise ValueError("Malformed Weixin auxiliary route")
     if not peer or "\x00" in peer:
         raise ValueError("Malformed Weixin auxiliary route")
     return alias, peer

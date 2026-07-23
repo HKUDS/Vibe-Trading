@@ -1,5 +1,6 @@
 import pytest
 
+from src.channels.registry import discover_channel_names
 from src.channels.weixin_routing import (
     PRIMARY_ACCOUNT_ID,
     decode_aux_route,
@@ -28,3 +29,16 @@ def test_aux_route_rejects_malformed_values() -> None:
         decode_aux_route("weixin-route:v1:account2:not-base64***")
     with pytest.raises(ValueError):
         encode_aux_route(PRIMARY_ACCOUNT_ID, "peer")
+
+
+@pytest.mark.parametrize("encoded", ["5L+A", "5L6/", "cGVlcg==", "cGVlch"])
+def test_aux_route_rejects_noncanonical_base64url(encoded: str) -> None:
+    with pytest.raises(ValueError, match="Malformed Weixin auxiliary route"):
+        decode_aux_route(f"weixin-route:v1:account2:{encoded}")
+
+
+def test_channel_discovery_excludes_weixin_helpers() -> None:
+    names = set(discover_channel_names())
+
+    assert "weixin" in names
+    assert {"weixin_routing", "weixin_account"}.isdisjoint(names)
