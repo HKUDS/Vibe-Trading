@@ -529,6 +529,20 @@ class TestReasoningEffortPassthrough:
         )
         assert captured["extra_body"]["reasoning"]["effort"] == "high"
 
+    def test_openai_responses_api_opt_in(self) -> None:
+        captured = self._capture(
+            {
+                "LANGCHAIN_PROVIDER": "openai",
+                "LANGCHAIN_MODEL_NAME": "gpt-5.6",
+                "OPENAI_API_KEY": "test-key",
+                "OPENAI_BASE_URL": "http://219.223.200.237:8080/v1",
+                "VIBE_OPENAI_USE_RESPONSES_API": "1",
+            }
+        )
+
+        assert captured["model"] == "gpt-5.6"
+        assert captured["use_responses_api"] is True
+
 
 class TestKimiCodingProvider:
     """Kimi for Coding is a distinct provider with Moonshot-compatible behavior."""
