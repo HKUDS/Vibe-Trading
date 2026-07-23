@@ -13,6 +13,7 @@ from src.channels.bus.events import InboundMessage, OutboundMessage
 from src.channels.bus.queue import MessageBus
 from src.channels.manager import ChannelManager
 from src.channels.registry import discover_channel_names, inspect_channels
+from src.channels.weixin_routing import encode_aux_route
 from src.config.schema import ChannelsConfig
 from src.channelsui.cli_apps_api import normalize_cli_app_mentions
 from src.channelsui.gateway_services import build_gateway_services
@@ -628,6 +629,74 @@ def test_channel_runtime_new_command_resets_session_and_creates_fresh_one(tmp_pa
             await runtime.stop()
 
         assert service.sent == [("session-1", "hello"), ("session-2", "after reset")]
+
+    asyncio.run(scenario())
+
+
+def test_weixin_account_routes_isolate_sessions_and_reset(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        from src.channels.runtime import ChannelRuntime
+
+        map_path = tmp_path / "channel_sessions.json"
+        bus = MessageBus()
+        service = FakeSessionService()
+        runtime = ChannelRuntime(
+            bus=bus,
+            session_service=service,
+            manager=None,
+            session_map_path=map_path,
+            reply_timeout_s=1,
+            poll_interval_s=0.01,
+        )
+        primary_chat_id = "same-peer"
+        auxiliary_chat_id = encode_aux_route("account2", "same-peer")
+        primary_key = f"weixin:{primary_chat_id}"
+        auxiliary_key = f"weixin:{auxiliary_chat_id}"
+
+        await runtime.start(start_manager=False)
+        try:
+            for chat_id in (primary_chat_id, auxiliary_chat_id):
+                await bus.publish_inbound(
+                    InboundMessage(
+                        channel="weixin",
+                        sender_id=chat_id,
+                        chat_id=chat_id,
+                        content="hello",
+                    )
+                )
+                await asyncio.wait_for(bus.consume_outbound(), timeout=1)
+
+            primary_session = runtime._session_map[primary_key]
+            auxiliary_session = runtime._session_map[auxiliary_key]
+            assert primary_session != auxiliary_session
+
+            await bus.publish_inbound(
+                InboundMessage(
+                    channel="weixin",
+                    sender_id=auxiliary_chat_id,
+                    chat_id=auxiliary_chat_id,
+                    content="/new",
+                )
+            )
+            reset_reply = await asyncio.wait_for(bus.consume_outbound(), timeout=1)
+            assert reset_reply.metadata.get("session_reset") is True
+            assert runtime._session_map[primary_key] == primary_session
+            assert auxiliary_key not in runtime._session_map
+
+            await bus.publish_inbound(
+                InboundMessage(
+                    channel="weixin",
+                    sender_id=auxiliary_chat_id,
+                    chat_id=auxiliary_chat_id,
+                    content="after reset",
+                )
+            )
+            await asyncio.wait_for(bus.consume_outbound(), timeout=1)
+
+            assert runtime._session_map[primary_key] == primary_session
+            assert runtime._session_map[auxiliary_key] != auxiliary_session
+        finally:
+            await runtime.stop()
 
     asyncio.run(scenario())
 

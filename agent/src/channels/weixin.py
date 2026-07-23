@@ -12,7 +12,11 @@ from src.channels.base import BaseChannel
 from src.channels.bus.events import OutboundMessage
 from src.channels.bus.queue import MessageBus
 from src.channels.utils import get_runtime_subdir
-from src.channels.weixin_routing import validate_account_alias
+from src.channels.weixin_routing import (
+    decode_aux_route,
+    encode_aux_route,
+    validate_account_alias,
+)
 
 
 class AuxiliaryWeixinAccountConfig(BaseModel):
@@ -100,9 +104,19 @@ class WeixinChannel(BaseChannel):
         return frozenset(self._login_required)
 
     def route_for(self, account_id: str, peer_id: str) -> str:
-        if account_id != "primary":
+        if account_id == "primary":
+            return str(peer_id)
+        if account_id not in self._accounts:
             raise KeyError(account_id)
-        return str(peer_id)
+        return encode_aux_route(account_id, peer_id)
+
+    def account_for_route(self, route: str) -> account_impl.WeixinAccountRuntime:
+        decoded = decode_aux_route(route)
+        alias = decoded[0] if decoded else "primary"
+        try:
+            return self._accounts[alias]
+        except KeyError as exc:
+            raise ValueError(f"Unknown Weixin account route: {alias}") from exc
 
     def _sync_flags(self) -> None:
         for runtime in self._accounts.values():
@@ -200,13 +214,15 @@ class WeixinChannel(BaseChannel):
 
     async def send(self, msg: OutboundMessage) -> None:
         self._sync_flags()
-        await self._accounts["primary"].send(msg)
+        runtime = self.account_for_route(msg.chat_id)
+        await runtime.send(msg)
 
     async def send_delta(
         self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None,
     ) -> None:
         self._sync_flags()
-        await self._accounts["primary"].send_delta(chat_id, delta, metadata)
+        runtime = self.account_for_route(chat_id)
+        await runtime.send_delta(chat_id, delta, metadata)
 
     @property
     def is_running(self) -> bool:

@@ -7,7 +7,9 @@ from pydantic import ValidationError
 
 import src.channels.weixin as wrapper_impl
 import src.channels.weixin_account as account_impl
+from src.channels.bus.events import InboundMessage, OutboundMessage
 from src.channels.bus.queue import MessageBus
+from src.channels.pairing.store import approve_code, list_pending
 from src.channels.registry import discover_channel_names
 from src.channels.weixin import WeixinChannel, WeixinConfig
 from src.channels.weixin_account import WeixinAccountConfig, WeixinAccountRuntime
@@ -538,6 +540,261 @@ def test_primary_wrapper_preserves_raw_route() -> None:
     assert channel.route_for("primary", "peer-1") == "peer-1"
 
 
+def test_primary_and_auxiliary_route_selection() -> None:
+    channel = WeixinChannel(
+        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        MessageBus(),
+    )
+
+    assert channel.route_for("primary", "peer") == "peer"
+    route = channel.route_for("account2", "peer")
+    assert route == encode_aux_route("account2", "peer")
+    assert channel.account_for_route(route).account_id == "account2"
+    assert channel.account_for_route("peer").account_id == "primary"
+
+
+def test_auxiliary_outbound_uses_selected_account(monkeypatch) -> None:
+    channel = WeixinChannel(
+        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        MessageBus(),
+    )
+    sent: list[tuple[str, str]] = []
+
+    async def capture_primary(msg: OutboundMessage) -> None:
+        sent.append(("primary", msg.chat_id))
+
+    async def capture_auxiliary(msg: OutboundMessage) -> None:
+        sent.append(("account2", msg.chat_id))
+
+    monkeypatch.setattr(channel.account("primary"), "send", capture_primary)
+    monkeypatch.setattr(channel.account("account2"), "send", capture_auxiliary)
+    route = encode_aux_route("account2", "peer")
+
+    asyncio.run(
+        channel.send(
+            OutboundMessage(channel="weixin", chat_id=route, content="ok")
+        )
+    )
+
+    assert sent == [("account2", route)]
+
+
+def test_auxiliary_delta_uses_selected_account(monkeypatch) -> None:
+    channel = WeixinChannel(
+        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        MessageBus(),
+    )
+    sent: list[tuple[str, str]] = []
+
+    async def capture_primary(
+        chat_id: str, delta: str, metadata: dict[str, Any] | None = None,
+    ) -> None:
+        sent.append(("primary", chat_id))
+
+    async def capture_auxiliary(
+        chat_id: str, delta: str, metadata: dict[str, Any] | None = None,
+    ) -> None:
+        sent.append(("account2", chat_id))
+
+    monkeypatch.setattr(channel.account("primary"), "send_delta", capture_primary)
+    monkeypatch.setattr(
+        channel.account("account2"), "send_delta", capture_auxiliary,
+    )
+    route = encode_aux_route("account2", "peer")
+
+    asyncio.run(channel.send_delta(route, "delta", {"_stream_end": True}))
+
+    assert sent == [("account2", route)]
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        encode_aux_route("account3", "peer"),
+        "weixin-route:v1:account2:not-base64***",
+    ],
+)
+def test_unknown_or_malformed_auxiliary_route_fails_closed(route: str) -> None:
+    channel = WeixinChannel(
+        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        MessageBus(),
+    )
+
+    with pytest.raises(ValueError):
+        channel.account_for_route(route)
+
+
+def test_auxiliary_pairing_identity_is_account_scoped(tmp_path, monkeypatch) -> None:
+    import src.channels.pairing.store as pairing_store
+
+    monkeypatch.setattr(
+        pairing_store,
+        "_store_path",
+        lambda: tmp_path / "pairing.json",
+    )
+    route2 = encode_aux_route("account2", "same-peer")
+    route3 = encode_aux_route("account3", "same-peer")
+
+    code2 = pairing_store.generate_code("weixin", route2)
+    pending = list_pending(restrict_channel="weixin")
+    assert [item["sender_id"] for item in pending] == [route2]
+    assert approve_code(code2, restrict_channel="weixin") is not None
+    assert pairing_store.is_approved("weixin", route2)
+    assert not pairing_store.is_approved("weixin", route3)
+
+
+def test_auxiliary_inbound_routes_identity_but_keeps_raw_transport_state(
+    tmp_path: Path,
+) -> None:
+    bus = MessageBus()
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(
+            enabled=True,
+            allow_from=["same-peer"],
+            state_dir=str(tmp_path),
+        ),
+        bus,
+        account_id="account2",
+    )
+    route = encode_aux_route("account2", "same-peer")
+
+    asyncio.run(
+        runtime._process_message(
+            {
+                "message_id": "fictional-message",
+                "from_user_id": "same-peer",
+                "context_token": "fictional-context",
+                "item_list": [
+                    {"type": account_impl.ITEM_TEXT, "text_item": {"text": "hi"}}
+                ],
+            }
+        )
+    )
+    inbound = asyncio.run(bus.consume_inbound())
+
+    assert inbound == InboundMessage(
+        channel="weixin",
+        sender_id=route,
+        chat_id=route,
+        content="hi",
+        timestamp=inbound.timestamp,
+        metadata={"message_id": "fictional-message"},
+    )
+    assert runtime._context_tokens == {"same-peer": "fictional-context"}
+    assert route not in runtime._context_tokens
+
+
+def test_auxiliary_authorization_uses_raw_allowlist_and_routed_pairing(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    import src.channels.pairing.store as pairing_store
+
+    monkeypatch.setattr(
+        pairing_store,
+        "_store_path",
+        lambda: tmp_path / "pairing.json",
+    )
+    route = encode_aux_route("account2", "same-peer")
+    other_route = encode_aux_route("account3", "same-peer")
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(allow_from=["same-peer"], state_dir=str(tmp_path)),
+        MessageBus(),
+        account_id="account2",
+    )
+
+    assert runtime.is_allowed(route)
+    with pytest.raises(ValueError):
+        runtime.is_allowed(other_route)
+
+    runtime.config = runtime.config.model_copy(update={"allow_from": []})
+    code = pairing_store.generate_code("weixin", route)
+    assert pairing_store.approve_code(code, restrict_channel="weixin") is not None
+    assert runtime.is_allowed(route)
+
+
+def test_auxiliary_send_decodes_route_before_transport(monkeypatch, tmp_path: Path) -> None:
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(state_dir=str(tmp_path)),
+        MessageBus(),
+        account_id="account2",
+    )
+    runtime._client = object()
+    runtime._token = "fictional-token"
+    runtime._context_tokens["same-peer"] = "fictional-context"
+    sent: list[tuple[str, str]] = []
+    refreshed: list[str] = []
+
+    async def capture_text(chat_id: str, content: str, context_token: str) -> None:
+        sent.append((chat_id, context_token))
+
+    async def no_typing_ticket(chat_id: str, context_token: str = "") -> str:
+        return ""
+
+    async def keep_context(chat_id: str, context_token: str) -> str:
+        refreshed.append(chat_id)
+        return context_token
+
+    monkeypatch.setattr(runtime, "_send_text", capture_text)
+    monkeypatch.setattr(runtime, "_get_typing_ticket", no_typing_ticket)
+    monkeypatch.setattr(runtime, "_refresh_context_token_if_stale", keep_context)
+    route = encode_aux_route("account2", "same-peer")
+
+    asyncio.run(
+        runtime.send(
+            OutboundMessage(channel="weixin", chat_id=route, content="ok")
+        )
+    )
+
+    assert refreshed == ["same-peer"]
+    assert sent == [("same-peer", "fictional-context")]
+
+
+def test_auxiliary_send_delta_decodes_route_before_flushing(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(state_dir=str(tmp_path)),
+        MessageBus(),
+        account_id="account2",
+    )
+    flushed: list[str] = []
+
+    async def capture_flush(chat_id: str) -> None:
+        flushed.append(chat_id)
+
+    monkeypatch.setattr(runtime, "_flush_tool_hints", capture_flush)
+    route = encode_aux_route("account2", "same-peer")
+
+    asyncio.run(runtime.send_delta(route, "", {"_stream_end": True}))
+
+    assert flushed == ["same-peer"]
+
+
+@pytest.mark.parametrize(
+    ("account_id", "route"),
+    [
+        ("primary", encode_aux_route("account2", "same-peer")),
+        ("account2", encode_aux_route("account3", "same-peer")),
+        ("account2", "same-peer"),
+    ],
+)
+def test_account_runtime_rejects_routes_owned_by_another_account(
+    account_id: str, route: str,
+) -> None:
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(),
+        MessageBus(),
+        account_id=account_id,
+    )
+
+    with pytest.raises(ValueError):
+        asyncio.run(
+            runtime.send(
+                OutboundMessage(channel="weixin", chat_id=route, content="ok")
+            )
+        )
+
+
 def test_saved_credentials_probe_does_not_create_default_state_dir(
     monkeypatch, tmp_path: Path,
 ) -> None:
@@ -625,7 +882,11 @@ def test_wrapper_builds_accounts_and_copies_primary_config(recording_runtime) ->
 def test_wrapper_delegates_primary_lifecycle_and_sends(recording_runtime) -> None:
     channel = WeixinChannel(WeixinConfig(enabled=True), MessageBus())
     runtime = channel.account("primary")
-    message = object()
+    message = OutboundMessage(
+        channel="weixin",
+        chat_id="primary-peer",
+        content="ok",
+    )
     metadata = {"stream": "value"}
     channel.send_progress = False
     channel.send_tool_hints = True
@@ -683,7 +944,13 @@ def test_wrapper_propagates_primary_delegate_exceptions(
         if method == "stop":
             return await channel.stop()
         if method == "send":
-            return await channel.send(object())
+            return await channel.send(
+                OutboundMessage(
+                    channel="weixin",
+                    chat_id="primary-peer",
+                    content="ok",
+                )
+            )
         return await channel.send_delta("chat", "delta")
 
     with pytest.raises(RuntimeError, match=method):

@@ -20,6 +20,7 @@ import time
 import uuid
 from collections import OrderedDict
 from contextlib import suppress
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -31,7 +32,9 @@ from pydantic import Field
 from src.channels.bus.events import OutboundMessage
 from src.channels.bus.queue import MessageBus
 from src.channels.base import BaseChannel
+from src.channels.pairing import is_approved
 from src.channels.utils import get_media_dir
+from src.channels.weixin_routing import decode_aux_route, encode_aux_route
 from src.config.paths import get_runtime_root
 from pydantic import BaseModel
 from src.channels.utils import split_message
@@ -177,6 +180,30 @@ class WeixinAccountRuntime(BaseChannel):
     @property
     def state_file(self) -> Path:
         return self._get_state_dir() / "account.json"
+
+    def _route_peer_id(self, peer_id: str) -> str:
+        if self.account_id == "primary":
+            return str(peer_id)
+        return encode_aux_route(self.account_id, peer_id)
+
+    def _decode_peer_id(self, route: str) -> str:
+        if self.account_id == "primary":
+            if decode_aux_route(route) is not None:
+                raise ValueError("Auxiliary route cannot be sent by primary account")
+            return str(route)
+        decoded = decode_aux_route(route)
+        if decoded is None or decoded[0] != self.account_id:
+            raise ValueError("Weixin route does not belong to this account")
+        return decoded[1]
+
+    def is_allowed(self, sender_id: str) -> bool:
+        raw_sender = self._decode_peer_id(sender_id)
+        allow_list = self.config.allow_from or []
+        return (
+            "*" in allow_list
+            or raw_sender in allow_list
+            or is_approved(self.name, str(sender_id))
+        )
 
     def _resolve_state_dir(self) -> Path:
         if self._state_dir is not None:
@@ -642,6 +669,7 @@ class WeixinAccountRuntime(BaseChannel):
         from_user_id = msg.get("from_user_id", "") or ""
         if not from_user_id:
             return
+        routed_sender_id = self._route_peer_id(from_user_id)
 
         # Deduplication by message_id
         if msg_id in self._processed_ids:
@@ -651,11 +679,11 @@ class WeixinAccountRuntime(BaseChannel):
             self._processed_ids.popitem(last=False)
 
         ctx_token = msg.get("context_token", "")
-        if not self.is_allowed(from_user_id):
+        if not self.is_allowed(routed_sender_id):
             if from_user_id.endswith("@chatroom"):
                 await self._handle_message(
-                    sender_id=from_user_id,
-                    chat_id=from_user_id,
+                    sender_id=routed_sender_id,
+                    chat_id=routed_sender_id,
                     content="",
                     metadata={"message_id": msg_id},
                     is_dm=False,
@@ -677,8 +705,8 @@ class WeixinAccountRuntime(BaseChannel):
             self._context_token_at[from_user_id] = time.time()
             try:
                 await self._handle_message(
-                    sender_id=from_user_id,
-                    chat_id=from_user_id,
+                    sender_id=routed_sender_id,
+                    chat_id=routed_sender_id,
                     content="",
                     metadata={"message_id": msg_id},
                     is_dm=True,
@@ -857,8 +885,8 @@ class WeixinAccountRuntime(BaseChannel):
         await self._start_typing(from_user_id, ctx_token)
 
         await self._handle_message(
-            sender_id=from_user_id,
-            chat_id=from_user_id,
+            sender_id=routed_sender_id,
+            chat_id=routed_sender_id,
             content=content,
             media=media_paths or None,
             metadata={"message_id": msg_id},
@@ -1120,6 +1148,8 @@ class WeixinAccountRuntime(BaseChannel):
             pass
 
     async def send(self, msg: OutboundMessage) -> None:
+        raw_chat_id = self._decode_peer_id(msg.chat_id)
+        msg = replace(msg, chat_id=raw_chat_id)
         if not self._client or not self._token:
             raise RuntimeError("WeChat client not initialized or not authenticated")
         self._assert_session_active()
@@ -1263,6 +1293,7 @@ class WeixinAccountRuntime(BaseChannel):
         when the final answer carries the ``_streamed`` flag and bypasses
         :meth:`send`.
         """
+        chat_id = self._decode_peer_id(chat_id)
         if metadata and metadata.get("_stream_end"):
             await self._flush_tool_hints(chat_id)
 
