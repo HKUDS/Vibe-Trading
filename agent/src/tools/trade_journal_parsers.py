@@ -245,10 +245,23 @@ def _ths_datetime(val: Any) -> str:
         ts = pd.to_datetime(float(val), unit="D", origin="1899-12-30", errors="coerce")
         if pd.notna(ts):
             return ts.strftime("%Y-%m-%d %H:%M:%S")
+    # load_dataframe uses dtype=str; Excel serials arrive as "44927" / "44927.5".
+    text = str(val).strip()
+    if text and not any(ch in text for ch in "/-:"):
+        try:
+            serial = float(text)
+        except ValueError:
+            serial = None
+        else:
+            # Civil day serials; YYYYMMDD ints are >= 19_000_001.
+            if 1.0 <= serial < 100_000.0:
+                ts = pd.to_datetime(serial, unit="D", origin="1899-12-30", errors="coerce")
+                if pd.notna(ts):
+                    return ts.strftime("%Y-%m-%d %H:%M:%S")
     ts = pd.to_datetime(val, errors="coerce")
     if pd.notna(ts):
         return ts.strftime("%Y-%m-%d %H:%M:%S")
-    return str(val).strip()
+    return text
 
 
 def parse_eastmoney(df: pd.DataFrame) -> list[TradeRecord]:
