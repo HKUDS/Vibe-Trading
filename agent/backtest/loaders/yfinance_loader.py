@@ -36,7 +36,9 @@ _INTERVAL_MAP = {
     "1D": "1d",
     "1H": "1h",
     "4H": "1h",
+    "4h": "1h",  # yfinance has no 4h; match project ``4H`` → ``1h``
     "1W": "1wk",
+    "1w": "1wk",
     "1M": "1mo",
     # Minute tokens stay lowercase; do not fold ``1M`` (month) via ``.lower()``.
     "1m": "1m",
