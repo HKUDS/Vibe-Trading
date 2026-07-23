@@ -134,6 +134,14 @@ class DataLoader:
         """
         validate_date_range(start_date, end_date)
 
+        # Daily-only TIME_SERIES_DAILY; do not silently return day bars for ``1H``.
+        if str(interval).strip().lower() not in {"1d", "d", "day", "daily"}:
+            logger.warning(
+                "alphavantage supports daily bars only; rejecting interval=%r",
+                interval,
+            )
+            return {}
+
         api_key = _resolve_api_key()
         if not api_key:
             logger.warning("alphavantage skipped: %s not set", _API_KEY_ENV)
