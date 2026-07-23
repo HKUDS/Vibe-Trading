@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 _INTERVAL_MAP_DAILY = {
     "1D": "daily",
+    "1d": "daily",
     "1W": "weekly",
+    "1w": "weekly",
     "1M": "monthly",
 }
 
