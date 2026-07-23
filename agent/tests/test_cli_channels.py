@@ -178,6 +178,29 @@ def test_channels_login_rejects_account_for_non_weixin_before_loading_config(
     assert "--account is supported only for the weixin channel." in output
 
 
+@pytest.mark.parametrize("account_id", ["../bad", "bad\x00alias"])
+def test_channels_login_non_weixin_rejection_precedes_alias_validation(
+    monkeypatch,
+    capsys,
+    account_id: str,
+) -> None:
+    import src.channels.config as channel_config
+
+    def fail_if_loaded():
+        raise AssertionError("configuration should not be loaded")
+
+    monkeypatch.setattr(channel_config, "load_channels_config", fail_if_loaded)
+
+    assert (
+        _legacy.cmd_channels_login("feishu", account_id=account_id)
+        == _legacy.EXIT_USAGE_ERROR
+    )
+    output = capsys.readouterr().out
+    assert "--account is supported only for the weixin channel." in output
+    assert "Invalid Weixin account alias." not in output
+    assert account_id not in output
+
+
 def test_channels_login_reports_unknown_weixin_account_without_secrets(
     monkeypatch,
     capsys,

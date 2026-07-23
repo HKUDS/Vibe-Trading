@@ -3023,16 +3023,16 @@ def cmd_channels_login(
         validate_account_alias,
     )
 
-    if account_id != PRIMARY_ACCOUNT_ID:
+    if channel_name != "weixin" and account_id != PRIMARY_ACCOUNT_ID:
+        console.print("[red]--account is supported only for the weixin channel.[/red]")
+        return EXIT_USAGE_ERROR
+
+    if channel_name == "weixin" and account_id != PRIMARY_ACCOUNT_ID:
         try:
             account_id = validate_account_alias(account_id)
         except ValueError:
             console.print("[red]Invalid Weixin account alias.[/red]")
             return EXIT_USAGE_ERROR
-
-    if channel_name != "weixin" and account_id != PRIMARY_ACCOUNT_ID:
-        console.print("[red]--account is supported only for the weixin channel.[/red]")
-        return EXIT_USAGE_ERROR
 
     config = load_channels_config()
     section = dict(config.get(channel_name, {})) if isinstance(config.get(channel_name), dict) else {}
