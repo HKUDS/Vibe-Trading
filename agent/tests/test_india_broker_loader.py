@@ -97,3 +97,22 @@ def test_supported_1h_still_maps(monkeypatch) -> None:
     out = loader.fetch(["RELIANCE.NS"], "2024-04-01", "2024-04-30", interval="1H")
     assert "RELIANCE.NS" in out
     assert fake.calls[0]["period"] == "1h"
+
+
+def test_lowercase_1h_maps_like_project_token(monkeypatch) -> None:
+    """Connector-style ``1h`` must map the same as project ``1H``."""
+    fake = _FakeSDK()
+    monkeypatch.setattr(mod, "_resolve_broker", lambda: ("shoonya", fake))
+    loader = DataLoader()
+    out = loader.fetch(["RELIANCE.NS"], "2024-04-01", "2024-04-30", interval="1h")
+    assert "RELIANCE.NS" in out
+    assert fake.calls[0]["period"] == "1h"
+
+
+def test_lowercase_1d_maps_to_daily(monkeypatch) -> None:
+    fake = _FakeSDK()
+    monkeypatch.setattr(mod, "_resolve_broker", lambda: ("shoonya", fake))
+    loader = DataLoader()
+    out = loader.fetch(["RELIANCE.NS"], "2024-04-01", "2024-04-30", interval="1d")
+    assert "RELIANCE.NS" in out
+    assert fake.calls[0]["period"] == "1d"

@@ -34,7 +34,17 @@ logger = logging.getLogger(__name__)
 
 _OUTPUT_COLUMNS = ["open", "high", "low", "close", "volume"]
 # Project interval -> broker ``period`` token (both connectors share this set).
-_PERIOD_MAP = {"1D": "1d", "1H": "1h", "5m": "5m", "15m": "15m", "30m": "30m", "1m": "1m"}
+# ``1h``/``1d`` alias the project-style tokens; ``1m`` vs ``1M`` stays case-sensitive.
+_PERIOD_MAP = {
+    "1D": "1d",
+    "1d": "1d",
+    "1H": "1h",
+    "1h": "1h",
+    "5m": "5m",
+    "15m": "15m",
+    "30m": "30m",
+    "1m": "1m",
+}
 
 
 def _resolve_broker():
