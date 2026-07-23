@@ -16,6 +16,7 @@ from src.channels.bus.events import InboundMessage, OutboundMessage
 from src.channels.bus.queue import MessageBus
 from src.channels.manager import ChannelManager
 from src.channels.pairing import PAIRING_COMMAND_META_KEY, handle_pairing_command
+from src.channels.utils import opaque_log_id
 from src.config.paths import get_data_dir
 from src.session.models import Message, Session
 
@@ -124,7 +125,7 @@ class ChannelRuntime:
                 if not is_operator:
                     logger.warning(
                         "Rejected /pairing from non-operator %s on %s",
-                        msg.sender_id,
+                        opaque_log_id(msg.sender_id),
                         msg.channel,
                     )
                     await self.bus.publish_outbound(
@@ -194,12 +195,17 @@ class ChannelRuntime:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - channel errors must surface to users
-            logger.exception("Channel runtime failed for %s:%s", msg.channel, msg.chat_id)
+            logger.error(
+                "Channel runtime failed: channel=%s chat=%s error=%s",
+                msg.channel,
+                opaque_log_id(msg.chat_id),
+                type(exc).__name__,
+            )
             await self.bus.publish_outbound(
                 OutboundMessage(
                     channel=msg.channel,
                     chat_id=msg.chat_id,
-                    content=f"Channel runtime error: {type(exc).__name__}: {exc}",
+                    content=f"Channel runtime error: {type(exc).__name__}",
                     metadata={"_channel_runtime": True, "error": True},
                 )
             )

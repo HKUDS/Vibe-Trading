@@ -1406,13 +1406,19 @@ def test_weixin_delivery_boundary_hides_runtime_exception_from_manager_logs(
         else:
             await channel.send(message)
 
-    with pytest.raises(RuntimeError) as exc_info:
-        asyncio.run(invoke_wrapper())
+    caplog.clear()
+    with caplog.at_level(logging.ERROR, logger="src.channels.base.weixin"):
+        with pytest.raises(RuntimeError) as exc_info:
+            asyncio.run(invoke_wrapper())
 
     assert type(exc_info.value).__name__ == "WeixinDeliveryError"
     assert str(exc_info.value) == "Weixin delivery failed"
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None
+    assert "account=account2" in caplog.text
+    assert "RuntimeError" in caplog.text
+    for sentinel in sentinels:
+        assert sentinel not in caplog.text
     direct_traceback = "".join(
         traceback.format_exception(
             type(exc_info.value),
@@ -1432,6 +1438,34 @@ def test_weixin_delivery_boundary_hides_runtime_exception_from_manager_logs(
     assert "Weixin delivery failed" in caplog.text
     for sentinel in sentinels:
         assert sentinel not in caplog.text
+
+
+def test_run_account_log_omits_runtime_exception_text(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    exception_sentinel = "FAKE-RUN-ACCOUNT-EXCEPTION-SENTINEL"
+    channel = WeixinChannel(
+        {
+            "enabled": True,
+            "accounts": {"account2": {"enabled": True}},
+        },
+        MessageBus(),
+    )
+
+    async def fail_start(*, allow_qr_login: bool = True) -> None:
+        del allow_qr_login
+        raise RuntimeError(exception_sentinel)
+
+    monkeypatch.setattr(channel.account("account2"), "start", fail_start)
+
+    with caplog.at_level(logging.ERROR, logger="src.channels.base.weixin"):
+        asyncio.run(channel._run_account("account2"))
+
+    assert channel._account_errors == {"account2": "RuntimeError"}
+    assert "account=account2" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert exception_sentinel not in caplog.text
 
 
 def test_wrapper_records_primary_start_exception_class(recording_runtime) -> None:
@@ -1785,7 +1819,8 @@ def test_weixin_media_failure_log_omits_full_path_and_exception_text(
 ) -> None:
     raw_peer = "FAKE-MEDIA-PEER"
     private_dir = "/FAKE-PRIVATE-DIR-SENTINEL"
-    media_path = f"{private_dir}/FAKE-media.txt"
+    filename = "东方财富_姓名_账号1234_交易记录.xlsx"
+    media_path = f"{private_dir}/{filename}"
     exception_sentinel = "FAKE-MEDIA-EXCEPTION-SENTINEL"
     runtime = WeixinAccountRuntime(
         WeixinAccountConfig(state_dir=str(tmp_path)),
@@ -1807,8 +1842,11 @@ def test_weixin_media_failure_log_omits_full_path_and_exception_text(
         del chat_id, path, context_token
         raise RuntimeError(exception_sentinel)
 
+    fallback_messages: list[str] = []
+
     async def capture_fallback(chat_id: str, text: str, context_token: str) -> None:
-        del chat_id, text, context_token
+        del chat_id, context_token
+        fallback_messages.append(text)
 
     monkeypatch.setattr(runtime, "_refresh_context_token_if_stale", keep_context)
     monkeypatch.setattr(runtime, "_get_typing_ticket", no_ticket)
@@ -1827,7 +1865,8 @@ def test_weixin_media_failure_log_omits_full_path_and_exception_text(
             )
         )
 
-    assert "FAKE-media.txt" in caplog.text
+    assert filename not in caplog.text
+    assert fallback_messages == [f"[Failed to send: {filename}]"]
     assert "RuntimeError" in caplog.text
     assert private_dir not in caplog.text
     assert exception_sentinel not in caplog.text

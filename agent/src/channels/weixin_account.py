@@ -1268,9 +1268,9 @@ class WeixinAccountRuntime(BaseChannel):
                     # the text send would also likely fail, and the outer
                     # except will re-raise so ChannelManager retries properly.
                     self.logger.warning(
-                        "Network error sending media: account=%s file=%s error=%s",
+                        "Network error sending media: account=%s media=%s error=%s",
                         self.account_id,
-                        Path(media_path).name,
+                        opaque_log_id(str(media_path)),
                         type(exc).__name__,
                     )
                     raise
@@ -1283,21 +1283,21 @@ class WeixinAccountRuntime(BaseChannel):
                     if status_code >= 500:
                         # Server-side / retryable HTTP error — same as network.
                         self.logger.error(
-                            "Server error (%s %s) sending media: account=%s file=%s",
+                            "Server error (%s %s) sending media: account=%s media=%s",
                             status_code,
                             http_err.response.reason_phrase
                             if http_err.response is not None
                             else "",
                             self.account_id,
-                            Path(media_path).name,
+                            opaque_log_id(str(media_path)),
                         )
                         raise
                     # 4xx client errors are NOT retryable — fall back to text.
                     filename = Path(media_path).name
                     self.logger.error(
-                        "Failed to send media: account=%s file=%s error=%s",
+                        "Failed to send media: account=%s media=%s error=%s",
                         self.account_id,
-                        filename,
+                        opaque_log_id(str(media_path)),
                         type(http_err).__name__,
                     )
                     await self._send_text(
@@ -1308,9 +1308,9 @@ class WeixinAccountRuntime(BaseChannel):
                     # notify the user via text fallback.
                     filename = Path(media_path).name
                     self.logger.error(
-                        "Failed to send media: account=%s file=%s error=%s",
+                        "Failed to send media: account=%s media=%s error=%s",
                         self.account_id,
-                        filename,
+                        opaque_log_id(str(media_path)),
                         type(exc).__name__,
                     )
                     # Notify user about failure via text

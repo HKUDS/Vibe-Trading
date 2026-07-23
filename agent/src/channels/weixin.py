@@ -133,6 +133,17 @@ class WeixinChannel(BaseChannel):
             runtime.send_tool_hints = self.send_tool_hints
             runtime.show_reasoning = self.show_reasoning
 
+    def _log_delivery_failure(
+        self,
+        account_id: str,
+        exc: Exception,
+    ) -> None:
+        self.logger.error(
+            "Weixin delivery failed: account=%s error=%s",
+            account_id,
+            type(exc).__name__,
+        )
+
     async def login_account(
         self,
         account_id: str = "primary",
@@ -162,7 +173,11 @@ class WeixinChannel(BaseChannel):
             raise
         except Exception as exc:
             self._account_errors[alias] = type(exc).__name__
-            self.logger.exception("Weixin account %s stopped unexpectedly", alias)
+            self.logger.error(
+                "Weixin account stopped unexpectedly: account=%s error=%s",
+                alias,
+                type(exc).__name__,
+            )
 
     async def start(self) -> None:
         self._sync_flags()
@@ -245,8 +260,8 @@ class WeixinChannel(BaseChannel):
             await runtime.send(msg)
         except asyncio.CancelledError:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log_delivery_failure(runtime.account_id, exc)
         else:
             return
         raise WeixinDeliveryError("Weixin delivery failed") from None
@@ -260,8 +275,8 @@ class WeixinChannel(BaseChannel):
             await runtime.send_delta(chat_id, delta, metadata)
         except asyncio.CancelledError:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log_delivery_failure(runtime.account_id, exc)
         else:
             return
         raise WeixinDeliveryError("Weixin delivery failed") from None
