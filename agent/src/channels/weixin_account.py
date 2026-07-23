@@ -31,7 +31,7 @@ from pydantic import Field
 from src.channels.bus.events import OutboundMessage
 from src.channels.bus.queue import MessageBus
 from src.channels.base import BaseChannel
-from src.channels.utils import get_media_dir, get_runtime_subdir
+from src.channels.utils import get_media_dir
 from src.config.paths import get_runtime_root
 from pydantic import BaseModel
 from src.channels.utils import split_message
@@ -178,14 +178,15 @@ class WeixinAccountRuntime(BaseChannel):
     def state_file(self) -> Path:
         return self._get_state_dir() / "account.json"
 
-    def _state_file_candidate(self) -> Path:
+    def _resolve_state_dir(self) -> Path:
         if self._state_dir is not None:
-            state_dir = self._state_dir
-        elif self.config.state_dir:
-            state_dir = Path(self.config.state_dir).expanduser()
-        else:
-            state_dir = get_runtime_root() / "runtime" / "weixin"
-        return state_dir / "account.json"
+            return self._state_dir
+        if self.config.state_dir:
+            return Path(self.config.state_dir).expanduser()
+        return get_runtime_root() / "runtime" / "weixin"
+
+    def _state_file_candidate(self) -> Path:
+        return self._resolve_state_dir() / "account.json"
 
     @property
     def has_saved_credentials(self) -> bool:
@@ -204,12 +205,7 @@ class WeixinAccountRuntime(BaseChannel):
     # ------------------------------------------------------------------
 
     def _get_state_dir(self) -> Path:
-        if self._state_dir:
-            return self._state_dir
-        if self.config.state_dir:
-            d = Path(self.config.state_dir).expanduser()
-        else:
-            d = get_runtime_subdir("weixin")
+        d = self._resolve_state_dir()
         d.mkdir(parents=True, exist_ok=True)
         self._state_dir = d
         return d

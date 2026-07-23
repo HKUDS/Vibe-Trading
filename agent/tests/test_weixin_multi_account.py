@@ -30,6 +30,7 @@ class RecordingWeixinRuntime:
         self.bus = bus
         self.account_id = account_id
         self.calls: list[tuple[Any, ...]] = []
+        self.flag_snapshots: list[tuple[str, bool, bool, bool]] = []
         self.fail_on: set[str] = set()
         self.running_result = object()
         self.send_progress = False
@@ -39,6 +40,15 @@ class RecordingWeixinRuntime:
     def _record(self, method: str, *args: Any) -> tuple[Any, ...]:
         call = (method, *args)
         self.calls.append(call)
+        if method in {"login", "start", "send", "send_delta"}:
+            self.flag_snapshots.append(
+                (
+                    method,
+                    self.send_progress,
+                    self.send_tool_hints,
+                    self.show_reasoning,
+                )
+            )
         if method in self.fail_on:
             raise RuntimeError(method)
         return call
@@ -79,15 +89,18 @@ def recording_runtime(monkeypatch) -> type[RecordingWeixinRuntime]:
 
 def test_no_accounts_builds_only_legacy_primary(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
-        "src.channels.weixin_account.get_runtime_subdir",
-        lambda name: tmp_path / name,
+        "src.channels.weixin_account.get_runtime_root",
+        lambda: tmp_path,
     )
     channel = WeixinChannel(
         WeixinConfig(enabled=True, allow_from=[]),
         MessageBus(),
     )
     assert list(channel.account_ids) == ["primary"]
-    assert channel.account("primary").state_file == tmp_path / "weixin" / "account.json"
+    assert (
+        channel.account("primary").state_file
+        == tmp_path / "runtime" / "weixin" / "account.json"
+    )
 
 
 def test_primary_wrapper_preserves_raw_route() -> None:
@@ -104,12 +117,6 @@ def test_saved_credentials_probe_does_not_create_default_state_dir(
         account_impl,
         "get_runtime_root",
         lambda: runtime_root,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        account_impl,
-        "get_runtime_subdir",
-        lambda name: runtime_root / "runtime" / name,
     )
     runtime = WeixinAccountRuntime(WeixinAccountConfig(), MessageBus())
 
@@ -180,25 +187,14 @@ def test_wrapper_ignores_accounts_and_copies_primary_config(recording_runtime) -
     assert not hasattr(runtime.config, "accounts")
 
 
-def test_wrapper_syncs_flags_to_primary_runtime(recording_runtime) -> None:
-    channel = WeixinChannel(WeixinConfig(enabled=True), MessageBus())
-    runtime = channel.account("primary")
-    channel.send_progress = False
-    channel.send_tool_hints = True
-    channel.show_reasoning = False
-
-    channel._sync_flags()
-
-    assert runtime.send_progress is False
-    assert runtime.send_tool_hints is True
-    assert runtime.show_reasoning is False
-
-
 def test_wrapper_delegates_primary_lifecycle_and_sends(recording_runtime) -> None:
     channel = WeixinChannel(WeixinConfig(enabled=True), MessageBus())
     runtime = channel.account("primary")
     message = object()
     metadata = {"stream": "value"}
+    channel.send_progress = False
+    channel.send_tool_hints = True
+    channel.show_reasoning = False
 
     async def exercise() -> tuple[Any, ...]:
         return (
@@ -224,6 +220,12 @@ def test_wrapper_delegates_primary_lifecycle_and_sends(recording_runtime) -> Non
         ("send", message),
         ("send_delta", "chat", "delta", metadata),
         ("is_running",),
+    ]
+    assert runtime.flag_snapshots == [
+        ("login", False, True, False),
+        ("start", False, True, False),
+        ("send", False, True, False),
+        ("send_delta", False, True, False),
     ]
 
 
