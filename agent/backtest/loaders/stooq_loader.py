@@ -101,8 +101,8 @@ class DataLoader:
             codes: Project-side symbols (e.g. ``["AAPL.US", "MSFT.US"]``).
             start_date: Inclusive start date (``YYYY-MM-DD``).
             end_date: Inclusive end date (``YYYY-MM-DD``).
-            interval: Bar size; only daily (``"1D"``) is supported by the
-                endpoint and any other value is fetched as daily.
+            interval: Bar size; only daily (``"1D"``) is supported. Other
+                intervals return an empty map so the fallback chain can continue.
             fields: Unused — the CSV always carries the full OHLCV set.
 
         Returns:
@@ -115,6 +115,14 @@ class DataLoader:
             ValueError: If ``start_date > end_date`` or a date is unparseable.
         """
         validate_date_range(start_date, end_date)
+
+        # Daily-only CSV endpoint; do not silently return day bars for ``1H``.
+        if str(interval).strip().lower() not in {"1d", "d", "day", "daily"}:
+            logger.warning(
+                "stooq supports daily bars only; rejecting interval=%r",
+                interval,
+            )
+            return {}
 
         result: Dict[str, pd.DataFrame] = {}
         for code in codes:
