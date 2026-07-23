@@ -13,6 +13,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import os
 import random
 import re
@@ -26,12 +27,11 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-import logging; logger = logging.getLogger(__name__)
-from pydantic import Field
+from pydantic import BaseModel, Field
 
+from src.channels.base import BaseChannel
 from src.channels.bus.events import OutboundMessage
 from src.channels.bus.queue import MessageBus
-from src.channels.base import BaseChannel
 from src.channels.pairing import is_approved
 from src.channels.utils import get_media_dir, opaque_log_id, split_message
 from src.channels.weixin_routing import (
@@ -40,7 +40,8 @@ from src.channels.weixin_routing import (
     validate_raw_peer_id,
 )
 from src.config.paths import get_runtime_root
-from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Protocol constants (from openclaw-weixin types.ts)
