@@ -1040,6 +1040,104 @@ def test_wrapper_builds_accounts_and_copies_primary_config(recording_runtime) ->
     assert auxiliary.config.route_tag is None
 
 
+def test_status_details_are_account_scoped_and_sanitized(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        wrapper_impl,
+        "get_runtime_subdir",
+        lambda name: tmp_path / "runtime" / name,
+    )
+    channel = WeixinChannel(
+        {
+            "enabled": True,
+            "state_dir": str(tmp_path / "primary"),
+            "accounts": {
+                "account2": {"enabled": True},
+                "account3": {"enabled": False},
+            },
+        },
+        MessageBus(),
+    )
+
+    details = channel.status_details()
+
+    assert set(details["accounts"]) == {"primary", "account2", "account3"}
+    assert set(details["accounts"]["account2"]) == {
+        "configured",
+        "enabled",
+        "loaded",
+        "running",
+        "login_required",
+        "error",
+    }
+    assert details["accounts"]["primary"]["login_required"] is True
+    assert details["accounts"]["account2"]["login_required"] is True
+    assert details["accounts"]["account3"]["login_required"] is False
+    serialized = repr(details)
+    assert "token" not in serialized.lower()
+    assert "context" not in serialized.lower()
+    assert "peer" not in serialized.lower()
+
+
+def test_status_details_omit_sensitive_runtime_state(recording_runtime) -> None:
+    channel = WeixinChannel(
+        WeixinConfig(
+            enabled=True,
+            accounts={"account2": {"enabled": True}},
+        ),
+        MessageBus(),
+    )
+    sensitive_values: list[str] = []
+    for index, runtime in enumerate(channel._accounts.values()):
+        values = [f"private-value-{index}-{suffix}" for suffix in range(6)]
+        sensitive_values.extend(values)
+        runtime._token = values[0]
+        runtime._context_tokens = {values[1]: values[2]}
+        runtime._typing_tickets = {values[1]: {"ticket": values[3]}}
+        runtime._raw_peer = {"peer": values[4]}
+        runtime._state_dir = Path(values[4])
+        runtime._route = values[5]
+
+    serialized = repr(channel.status_details())
+
+    for field_name in ("token", "context", "typing", "ticket", "peer", "state", "route"):
+        assert field_name not in serialized.lower()
+    for value in sensitive_values:
+        assert value not in serialized
+
+
+def test_status_details_are_read_only_for_missing_account_state(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    primary_state = runtime_root / "primary"
+    auxiliary_state = runtime_root / "weixin" / "accounts" / "account2"
+    monkeypatch.setattr(
+        wrapper_impl,
+        "get_runtime_subdir",
+        lambda name: runtime_root / name,
+    )
+    channel = WeixinChannel(
+        {
+            "enabled": True,
+            "state_dir": str(primary_state),
+            "accounts": {"account2": {"enabled": True}},
+        },
+        MessageBus(),
+    )
+
+    details = channel.status_details()
+
+    assert details["accounts"]["primary"]["login_required"] is True
+    assert details["accounts"]["account2"]["login_required"] is True
+    assert not primary_state.exists()
+    assert not auxiliary_state.exists()
+    for runtime in channel._accounts.values():
+        assert runtime._client is None
+        assert runtime._poll_task is None
+
+
 def test_wrapper_delegates_primary_lifecycle_and_sends(recording_runtime) -> None:
     channel = WeixinChannel(WeixinConfig(enabled=True), MessageBus())
     runtime = channel.account("primary")
@@ -1069,7 +1167,7 @@ def test_wrapper_delegates_primary_lifecycle_and_sends(recording_runtime) -> Non
         None,
         None,
     )
-    assert channel.is_running is runtime.running_result
+    assert channel.is_running is True
     assert runtime.calls == [
         ("login", True),
         ("start", False),
@@ -1084,6 +1182,32 @@ def test_wrapper_delegates_primary_lifecycle_and_sends(recording_runtime) -> Non
         ("send", False, True, False),
         ("send_delta", False, True, False),
     ]
+
+
+@pytest.mark.parametrize(
+    ("primary_running", "auxiliary_running", "expected"),
+    [
+        (False, True, True),
+        (False, False, False),
+    ],
+)
+def test_wrapper_running_aggregates_all_accounts(
+    recording_runtime,
+    primary_running: bool,
+    auxiliary_running: bool,
+    expected: bool,
+) -> None:
+    channel = WeixinChannel(
+        WeixinConfig(
+            enabled=True,
+            accounts={"account2": {"enabled": True}},
+        ),
+        MessageBus(),
+    )
+    channel.account("primary").running_result = primary_running
+    channel.account("account2").running_result = auxiliary_running
+
+    assert channel.is_running is expected
 
 
 @pytest.mark.parametrize(
@@ -1129,6 +1253,9 @@ def test_wrapper_records_primary_start_exception_class(recording_runtime) -> Non
     asyncio.run(channel.start())
 
     assert channel._account_errors == {"primary": "RuntimeError"}
+    details = channel.status_details()
+    assert details["accounts"]["primary"]["error"] == "RuntimeError"
+    assert "start" not in repr(details)
 
 
 def test_account_alias_validation() -> None:

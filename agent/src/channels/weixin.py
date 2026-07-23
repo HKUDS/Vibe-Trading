@@ -229,6 +229,21 @@ class WeixinChannel(BaseChannel):
         runtime = self.account_for_route(chat_id)
         await runtime.send_delta(chat_id, delta, metadata)
 
+    def status_details(self) -> dict[str, Any]:
+        accounts: dict[str, dict[str, Any]] = {}
+        for alias, runtime in self._accounts.items():
+            accounts[alias] = {
+                "configured": True,
+                "enabled": bool(runtime.config.enabled),
+                "loaded": True,
+                "running": bool(runtime.is_running),
+                "login_required": bool(
+                    runtime.config.enabled and not runtime.has_saved_credentials
+                ),
+                "error": self._account_errors.get(alias, ""),
+            }
+        return {"accounts": accounts}
+
     @property
     def is_running(self) -> bool:
-        return self._accounts["primary"].is_running
+        return any(runtime.is_running for runtime in self._accounts.values())

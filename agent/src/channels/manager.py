@@ -470,6 +470,9 @@ class ChannelManager:
                     "display_name": getattr(channel, "display_name", name),
                 }
             )
+            details = channel.status_details()
+            if details:
+                status[name].update(details)
         return status
 
     @property

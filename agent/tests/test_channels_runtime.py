@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from src.channels.base import BaseChannel
 from src.channels.bus.events import InboundMessage, OutboundMessage
 from src.channels.bus.queue import MessageBus
 from src.channels.manager import ChannelManager
@@ -70,6 +71,31 @@ class FakeSessionService:
     def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
         del limit
         return list(self.messages.get(session_id, []))
+
+
+class DefaultStatusChannel(BaseChannel):
+    name = "status-test"
+    display_name = "Status Test"
+
+    async def start(self) -> None:
+        return None
+
+    async def stop(self) -> None:
+        return None
+
+    async def send(self, msg: OutboundMessage) -> None:
+        del msg
+
+
+class DetailedStatusChannel(DefaultStatusChannel):
+    def __init__(self, bus: MessageBus, details: dict[str, Any]) -> None:
+        super().__init__({}, bus)
+        self.details = details
+        self.status_details_calls = 0
+
+    def status_details(self) -> dict[str, Any]:
+        self.status_details_calls += 1
+        return self.details
 
 
 def test_channel_manager_can_construct_websocket_with_default_gateway() -> None:
@@ -162,6 +188,46 @@ def test_channel_manager_status_includes_every_configured_adapter() -> None:
     if not status["slack"]["loaded"]:
         assert status["slack"]["error"]
         assert status["slack"]["install_hint"].startswith("pip install")
+
+
+def test_base_channel_status_details_default_to_empty() -> None:
+    channel = DefaultStatusChannel({}, MessageBus())
+
+    assert channel.status_details() == {}
+
+
+def test_channel_manager_merges_adapter_status_details() -> None:
+    bus = MessageBus()
+    manager = ChannelManager({}, bus)
+    channel = DetailedStatusChannel(
+        bus,
+        {"accounts": {"primary": {"running": True}}},
+    )
+    manager.channels["status-test"] = channel
+
+    status = manager.get_status()["status-test"]
+
+    assert status == {
+        "enabled": True,
+        "loaded": True,
+        "running": False,
+        "display_name": "Status Test",
+        "accounts": {"primary": {"running": True}},
+    }
+    assert channel.status_details_calls == 1
+
+
+def test_channel_manager_empty_status_details_do_not_change_payload() -> None:
+    bus = MessageBus()
+    manager = ChannelManager({}, bus)
+    manager.channels["status-test"] = DefaultStatusChannel({}, bus)
+
+    assert manager.get_status()["status-test"] == {
+        "enabled": True,
+        "loaded": True,
+        "running": False,
+        "display_name": "Status Test",
+    }
 
 
 def test_registry_marks_lazy_sdk_adapter_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:

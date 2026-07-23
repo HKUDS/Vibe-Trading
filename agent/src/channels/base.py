@@ -231,6 +231,10 @@ class BaseChannel(ABC):
         """Return default config for onboard. Override in plugins to auto-populate config."""
         return {"enabled": False}
 
+    def status_details(self) -> dict[str, Any]:
+        """Return redaction-safe adapter-specific status fields."""
+        return {}
+
     @property
     def is_running(self) -> bool:
         """Check if the channel is running."""
