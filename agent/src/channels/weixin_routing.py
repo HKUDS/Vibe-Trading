@@ -21,17 +21,27 @@ def validate_account_alias(value: str) -> str:
     return alias
 
 
+def validate_raw_peer_id(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("Weixin peer ID must be a string")
+    if not value or "\x00" in value:
+        raise ValueError("Weixin peer ID must be non-empty and contain no NUL")
+    if value.startswith(_ROUTE_PREFIX):
+        raise ValueError("Weixin peer ID uses the reserved route namespace")
+    return value
+
+
 def encode_aux_route(account_id: str, peer_id: str) -> str:
     alias = validate_account_alias(account_id)
-    peer = str(peer_id)
-    if not peer or "\x00" in peer:
-        raise ValueError("Weixin peer ID must be non-empty and contain no NUL")
+    peer = validate_raw_peer_id(peer_id)
     encoded = base64.urlsafe_b64encode(peer.encode("utf-8")).decode("ascii").rstrip("=")
     return f"{_ROUTE_PREFIX}{alias}:{encoded}"
 
 
 def decode_aux_route(value: str) -> tuple[str, str] | None:
-    text = str(value)
+    if not isinstance(value, str):
+        raise ValueError("Weixin route must be a string")
+    text = value
     if not text.startswith(_ROUTE_PREFIX):
         return None
     remainder = text[len(_ROUTE_PREFIX):]
@@ -48,6 +58,4 @@ def decode_aux_route(value: str) -> tuple[str, str] | None:
     canonical = base64.urlsafe_b64encode(decoded).decode("ascii").rstrip("=")
     if canonical != encoded:
         raise ValueError("Malformed Weixin auxiliary route")
-    if not peer or "\x00" in peer:
-        raise ValueError("Malformed Weixin auxiliary route")
-    return alias, peer
+    return alias, validate_raw_peer_id(peer)

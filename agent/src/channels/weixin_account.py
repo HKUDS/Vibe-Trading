@@ -34,7 +34,11 @@ from src.channels.bus.queue import MessageBus
 from src.channels.base import BaseChannel
 from src.channels.pairing import is_approved
 from src.channels.utils import get_media_dir
-from src.channels.weixin_routing import decode_aux_route, encode_aux_route
+from src.channels.weixin_routing import (
+    decode_aux_route,
+    encode_aux_route,
+    validate_raw_peer_id,
+)
 from src.config.paths import get_runtime_root
 from pydantic import BaseModel
 from src.channels.utils import split_message
@@ -182,15 +186,16 @@ class WeixinAccountRuntime(BaseChannel):
         return self._get_state_dir() / "account.json"
 
     def _route_peer_id(self, peer_id: str) -> str:
+        raw_peer_id = validate_raw_peer_id(peer_id)
         if self.account_id == "primary":
-            return str(peer_id)
-        return encode_aux_route(self.account_id, peer_id)
+            return raw_peer_id
+        return encode_aux_route(self.account_id, raw_peer_id)
 
     def _decode_peer_id(self, route: str) -> str:
         if self.account_id == "primary":
             if decode_aux_route(route) is not None:
                 raise ValueError("Auxiliary route cannot be sent by primary account")
-            return str(route)
+            return validate_raw_peer_id(route)
         decoded = decode_aux_route(route)
         if decoded is None or decoded[0] != self.account_id:
             raise ValueError("Weixin route does not belong to this account")
@@ -666,8 +671,8 @@ class WeixinAccountRuntime(BaseChannel):
         if not msg_id:
             msg_id = f"{msg.get('from_user_id', '')}_{msg.get('create_time_ms', '')}"
 
-        from_user_id = msg.get("from_user_id", "") or ""
-        if not from_user_id:
+        from_user_id = msg.get("from_user_id")
+        if from_user_id is None or from_user_id == "":
             return
         routed_sender_id = self._route_peer_id(from_user_id)
 

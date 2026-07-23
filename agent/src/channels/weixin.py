@@ -16,6 +16,7 @@ from src.channels.weixin_routing import (
     decode_aux_route,
     encode_aux_route,
     validate_account_alias,
+    validate_raw_peer_id,
 )
 
 
@@ -105,14 +106,18 @@ class WeixinChannel(BaseChannel):
 
     def route_for(self, account_id: str, peer_id: str) -> str:
         if account_id == "primary":
-            return str(peer_id)
+            return validate_raw_peer_id(peer_id)
         if account_id not in self._accounts:
             raise KeyError(account_id)
         return encode_aux_route(account_id, peer_id)
 
     def account_for_route(self, route: str) -> account_impl.WeixinAccountRuntime:
         decoded = decode_aux_route(route)
-        alias = decoded[0] if decoded else "primary"
+        if decoded is None:
+            validate_raw_peer_id(route)
+            alias = "primary"
+        else:
+            alias = decoded[0]
         try:
             return self._accounts[alias]
         except KeyError as exc:

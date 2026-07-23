@@ -1,4 +1,5 @@
 import asyncio
+import base64
 from pathlib import Path
 from typing import Any
 
@@ -553,6 +554,63 @@ def test_primary_and_auxiliary_route_selection() -> None:
     assert channel.account_for_route("peer").account_id == "primary"
 
 
+def test_primary_route_rejects_auxiliary_namespace() -> None:
+    channel = WeixinChannel(
+        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        MessageBus(),
+    )
+    auxiliary_route = encode_aux_route("account2", "peer")
+
+    with pytest.raises(ValueError):
+        channel.route_for("primary", auxiliary_route)
+
+
+@pytest.mark.parametrize(
+    "route",
+    [None, 7, {"peer": "fictional"}, "", "bad\x00peer"],
+)
+def test_wrapper_rejects_invalid_primary_routes(route: Any) -> None:
+    channel = WeixinChannel(
+        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        MessageBus(),
+    )
+
+    with pytest.raises(ValueError):
+        channel.account_for_route(route)
+
+
+@pytest.mark.parametrize(
+    "route",
+    [None, 7, {"peer": "fictional"}, "", "bad\x00peer"],
+)
+def test_wrapper_invalid_route_does_not_send(
+    route: Any, monkeypatch,
+) -> None:
+    channel = WeixinChannel(
+        {"enabled": True, "accounts": {"account2": {"enabled": True}}},
+        MessageBus(),
+    )
+    sent: list[str] = []
+
+    async def capture_primary(msg: OutboundMessage) -> None:
+        sent.append("primary")
+
+    async def capture_auxiliary(msg: OutboundMessage) -> None:
+        sent.append("account2")
+
+    monkeypatch.setattr(channel.account("primary"), "send", capture_primary)
+    monkeypatch.setattr(channel.account("account2"), "send", capture_auxiliary)
+
+    with pytest.raises(ValueError):
+        asyncio.run(
+            channel.send(
+                OutboundMessage(channel="weixin", chat_id=route, content="ok")
+            )
+        )
+
+    assert sent == []
+
+
 def test_auxiliary_outbound_uses_selected_account(monkeypatch) -> None:
     channel = WeixinChannel(
         {"enabled": True, "accounts": {"account2": {"enabled": True}}},
@@ -795,6 +853,109 @@ def test_account_runtime_rejects_routes_owned_by_another_account(
         )
 
 
+@pytest.mark.parametrize(
+    "route",
+    [None, 7, {"peer": "fictional"}, "", "bad\x00peer"],
+)
+def test_primary_account_runtime_rejects_invalid_raw_outbound_route(
+    route: Any,
+) -> None:
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(),
+        MessageBus(),
+        account_id="primary",
+    )
+
+    with pytest.raises(ValueError):
+        asyncio.run(
+            runtime.send(
+                OutboundMessage(channel="weixin", chat_id=route, content="ok")
+            )
+        )
+
+
+@pytest.mark.parametrize("sender_id", [None, ""])
+def test_empty_primary_inbound_peer_has_no_side_effects(
+    sender_id: Any, tmp_path: Path,
+) -> None:
+    bus = MessageBus()
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(
+            allow_from=["*"],
+            state_dir=str(tmp_path),
+        ),
+        bus,
+        account_id="primary",
+    )
+
+    asyncio.run(
+        runtime._process_message(
+            {
+                "message_id": "fictional-empty-peer-message",
+                "from_user_id": sender_id,
+                "context_token": "fictional-context",
+                "item_list": [
+                    {"type": account_impl.ITEM_TEXT, "text_item": {"text": "hi"}}
+                ],
+            }
+        )
+    )
+
+    assert bus.inbound_size == 0
+    assert not runtime._processed_ids
+    assert not runtime._context_tokens
+    assert not runtime._context_token_at
+    assert not runtime.state_file.exists()
+
+
+@pytest.mark.parametrize(
+    "sender_id",
+    [
+        7,
+        0,
+        False,
+        {"peer": "fictional"},
+        "bad\x00peer",
+        encode_aux_route("account2", "peer"),
+    ],
+)
+def test_invalid_primary_inbound_peer_fails_without_side_effects(
+    sender_id: Any, tmp_path: Path,
+) -> None:
+    bus = MessageBus()
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(
+            allow_from=["*"],
+            state_dir=str(tmp_path),
+        ),
+        bus,
+        account_id="primary",
+    )
+
+    with pytest.raises(ValueError):
+        asyncio.run(
+            runtime._process_message(
+                {
+                    "message_id": "fictional-invalid-peer-message",
+                    "from_user_id": sender_id,
+                    "context_token": "fictional-context",
+                    "item_list": [
+                        {
+                            "type": account_impl.ITEM_TEXT,
+                            "text_item": {"text": "hi"},
+                        }
+                    ],
+                }
+            )
+        )
+
+    assert bus.inbound_size == 0
+    assert not runtime._processed_ids
+    assert not runtime._context_tokens
+    assert not runtime._context_token_at
+    assert not runtime.state_file.exists()
+
+
 def test_saved_credentials_probe_does_not_create_default_state_dir(
     monkeypatch, tmp_path: Path,
 ) -> None:
@@ -983,6 +1144,42 @@ def test_aux_route_round_trip_is_account_qualified() -> None:
     assert route.startswith("weixin-route:v1:account2:")
     assert decode_aux_route(route) == ("account2", "peer:@chatroom/中文")
     assert decode_aux_route("plain-primary-peer") is None
+
+
+@pytest.mark.parametrize(
+    "peer_id",
+    [
+        None,
+        7,
+        {"peer": "fictional"},
+        "",
+        "bad\x00peer",
+        encode_aux_route("account3", "peer"),
+    ],
+)
+def test_aux_route_rejects_invalid_raw_peer_ids(peer_id: Any) -> None:
+    with pytest.raises(ValueError):
+        encode_aux_route("account2", peer_id)
+
+
+@pytest.mark.parametrize("route", [None, 7, {"route": "fictional"}])
+def test_aux_route_decode_rejects_non_string_input(route: Any) -> None:
+    with pytest.raises(ValueError):
+        decode_aux_route(route)
+
+
+def test_aux_route_decode_rejects_nested_internal_route() -> None:
+    nested_peer = encode_aux_route("account3", "peer")
+    outer_route = encode_aux_route("account2", "peer")
+    encoded_peer = (
+        base64.urlsafe_b64encode(nested_peer.encode("utf-8"))
+        .decode("ascii")
+        .rstrip("=")
+    )
+    nested_route = f"{outer_route.rsplit(':', 1)[0]}:{encoded_peer}"
+
+    with pytest.raises(ValueError):
+        decode_aux_route(nested_route)
 
 
 def test_aux_route_rejects_malformed_values() -> None:
