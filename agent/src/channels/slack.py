@@ -723,16 +723,30 @@ class SlackChannel(BaseChannel):
         return text
 
     @staticmethod
-    def _convert_table(match: re.Match) -> str:
+    def _split_md_row(line: str) -> list[str]:
+        """Split a markdown table row, keeping empty leading/trailing cells.
+
+        ``str.strip("|")`` would also drop empty edge cells (``||Name|`` → ``Name``,
+        ``|a|b||`` → ``a|b``), so only peel the row's bounding pipes.
+        """
+        parts = line.strip().split("|")
+        if parts and parts[0] == "":
+            parts = parts[1:]
+        if parts and parts[-1] == "":
+            parts = parts[:-1]
+        return [c.strip() for c in parts]
+
+    @classmethod
+    def _convert_table(cls, match: re.Match) -> str:
         """Convert a Markdown table to a Slack-readable list."""
         lines = [ln.strip() for ln in match.group(0).strip().splitlines() if ln.strip()]
         if len(lines) < 2:
             return match.group(0)
-        headers = [h.strip() for h in lines[0].strip("|").split("|")]
+        headers = cls._split_md_row(lines[0])
         start = 2 if re.fullmatch(r"[|\s:\-]+", lines[1]) else 1
         rows: list[str] = []
         for line in lines[start:]:
-            cells = [c.strip() for c in line.strip("|").split("|")]
+            cells = cls._split_md_row(line)
             cells = (cells + [""] * len(headers))[: len(headers)]
             parts = [f"**{headers[i]}**: {cells[i]}" for i in range(len(headers)) if cells[i]]
             if parts:
