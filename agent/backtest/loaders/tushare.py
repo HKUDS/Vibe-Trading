@@ -93,7 +93,11 @@ class DataLoader:
         """
         validate_date_range(start_date, end_date)
 
-        if interval != "1D":
+        # Daily aliases (sina/tencent/market_data style); bare ``1d`` must not
+        # fall into the minute path and return empty.
+        if str(interval).strip().lower() in {"1d", "d", "day", "daily"}:
+            interval = "1D"
+        elif interval != "1D":
             return self._fetch_minutes(codes, start_date, end_date, interval)
 
         sd = start_date.replace("-", "")
