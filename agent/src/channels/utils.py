@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import re
 import socket
@@ -11,6 +12,12 @@ from urllib.parse import urlparse
 from src.config.paths import get_data_dir
 
 _UNSAFE_CHARS = re.compile(r"[/\\:*?\"<>|]")
+
+
+def opaque_log_id(value: str) -> str:
+    """Return a stable non-reversible label for an identifier in logs."""
+    digest = hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:12]
+    return f"id:{digest}"
 
 
 def get_media_dir(channel_name: str) -> Path:

@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,9 @@ from pydantic import ValidationError
 
 import src.channels.weixin as wrapper_impl
 import src.channels.weixin_account as account_impl
+import src.channels.pairing.store as pairing_store
+import src.channels.utils as channel_utils
+from src.channels.base import BaseChannel
 from src.channels.bus.events import InboundMessage, OutboundMessage
 from src.channels.bus.queue import MessageBus
 from src.channels.pairing.store import approve_code, list_pending
@@ -20,6 +24,24 @@ from src.channels.weixin_routing import (
     encode_aux_route,
     validate_account_alias,
 )
+
+
+class RecordingBaseChannel(BaseChannel):
+    name = "redaction-test"
+    display_name = "Redaction Test"
+
+    def __init__(self, bus: MessageBus) -> None:
+        super().__init__({"allow_from": []}, bus)
+        self.sent: list[OutboundMessage] = []
+
+    async def start(self) -> None:
+        return None
+
+    async def stop(self) -> None:
+        return None
+
+    async def send(self, msg: OutboundMessage) -> None:
+        self.sent.append(msg)
 
 
 class RecordingWeixinRuntime:
@@ -1409,3 +1431,342 @@ def test_channel_discovery_excludes_weixin_helpers() -> None:
 
     assert "weixin" in names
     assert {"weixin_routing", "weixin_account"}.isdisjoint(names)
+
+
+def test_opaque_log_id_is_stable_fixed_length_and_hides_original() -> None:
+    raw_value = "FAKE-OPAQUE-ID-SENTINEL"
+
+    first = channel_utils.opaque_log_id(raw_value)
+    second = channel_utils.opaque_log_id(raw_value)
+
+    assert first == second
+    assert first.startswith("id:")
+    assert len(first) == 15
+    assert raw_value not in first
+
+
+def test_pairing_mutation_logs_never_include_codes_or_senders(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    fake_sender = "FAKE-PAIRING-SENDER-SENTINEL"
+    fake_characters = iter("FAKE0000DENY0000")
+    monkeypatch.setattr(
+        pairing_store,
+        "_store_path",
+        lambda: tmp_path / "pairing.json",
+    )
+    monkeypatch.setattr(
+        pairing_store.secrets,
+        "choice",
+        lambda alphabet: next(fake_characters),
+    )
+
+    with caplog.at_level(logging.INFO, logger=pairing_store.__name__):
+        approved_code = pairing_store.generate_code("weixin", fake_sender)
+        assert pairing_store.approve_code(approved_code) == ("weixin", fake_sender)
+        assert pairing_store.revoke("weixin", fake_sender) is True
+        denied_code = pairing_store.generate_code("weixin", fake_sender)
+        assert pairing_store.deny_code(denied_code) is True
+
+    assert approved_code == "FAKE-0000"
+    assert denied_code == "DENY-0000"
+    assert "weixin" in caplog.text
+    for sentinel in (fake_sender, approved_code, denied_code):
+        assert sentinel not in caplog.text
+
+
+def test_base_channel_pairing_reply_keeps_code_but_logs_only_opaque_sender(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_sender = "FAKE-BASE-SENDER-SENTINEL"
+    raw_chat = "FAKE-BASE-CHAT-SENTINEL"
+    fake_characters = iter("PAIR0000")
+    monkeypatch.setattr(
+        pairing_store,
+        "_store_path",
+        lambda: tmp_path / "pairing.json",
+    )
+    monkeypatch.setattr(
+        pairing_store.secrets,
+        "choice",
+        lambda alphabet: next(fake_characters),
+    )
+    channel = RecordingBaseChannel(MessageBus())
+
+    with caplog.at_level(logging.INFO, logger="src.channels.base"):
+        asyncio.run(
+            channel._handle_message(
+                sender_id=raw_sender,
+                chat_id=raw_chat,
+                content="",
+                is_dm=True,
+            )
+        )
+
+    assert len(channel.sent) == 1
+    outbound = channel.sent[0]
+    assert "PAIR-0000" in outbound.content
+    assert outbound.metadata == {"_pairing_code": "PAIR-0000"}
+    assert channel_utils.opaque_log_id(raw_sender) in caplog.text
+    for sentinel in (raw_sender, raw_chat, "PAIR-0000"):
+        assert sentinel not in caplog.text
+
+
+def test_base_channel_group_denial_log_uses_only_opaque_sender(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_sender = "FAKE-BASE-GROUP-SENDER-SENTINEL"
+    raw_chat = "FAKE-BASE-GROUP-CHAT-SENTINEL"
+    channel = RecordingBaseChannel(MessageBus())
+
+    with caplog.at_level(logging.WARNING, logger="src.channels.base"):
+        asyncio.run(
+            channel._handle_message(
+                sender_id=raw_sender,
+                chat_id=raw_chat,
+                content="",
+                is_dm=False,
+            )
+        )
+
+    assert channel.sent == []
+    assert "channel=redaction-test" in caplog.text
+    assert channel_utils.opaque_log_id(raw_sender) in caplog.text
+    assert raw_sender not in caplog.text
+    assert raw_chat not in caplog.text
+
+
+def test_weixin_inbound_log_uses_account_and_opaque_peer_only(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_peer = "FAKE-WEIXIN-RAW-PEER-SENTINEL"
+    route = encode_aux_route("account2", raw_peer)
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(
+            allow_from=[raw_peer],
+            state_dir=str(tmp_path),
+        ),
+        MessageBus(),
+        account_id="account2",
+    )
+
+    with caplog.at_level(logging.INFO, logger="src.channels.base.weixin"):
+        asyncio.run(
+            runtime._process_message(
+                {
+                    "message_id": "FAKE-INBOUND-MESSAGE",
+                    "from_user_id": raw_peer,
+                    "context_token": "FAKE-INBOUND-CONTEXT",
+                    "item_list": [
+                        {
+                            "type": account_impl.ITEM_TEXT,
+                            "text_item": {"text": "hello"},
+                        }
+                    ],
+                }
+            )
+        )
+
+    assert "account=account2" in caplog.text
+    assert channel_utils.opaque_log_id(raw_peer) in caplog.text
+    assert "items=1" in caplog.text
+    assert "bodyLen=5" in caplog.text
+    assert raw_peer not in caplog.text
+    assert route not in caplog.text
+
+
+def test_weixin_login_success_logs_opaque_bot_and_user_ids(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    fake_token = "FAKE-LOGIN-TOKEN-SENTINEL"
+    fake_bot_id = "FAKE-LOGIN-BOT-ID-SENTINEL"
+    fake_user_id = "FAKE-LOGIN-USER-ID-SENTINEL"
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(state_dir=str(tmp_path)),
+        MessageBus(),
+        account_id="account2",
+    )
+    runtime._running = True
+
+    async def fake_fetch_qr_code() -> tuple[str, str]:
+        return "FAKE-QR-ID", "FAKE-QR-SCAN-URL"
+
+    async def fake_qr_status(**kwargs: Any) -> dict[str, str]:
+        del kwargs
+        return {
+            "status": "confirmed",
+            "bot_token": fake_token,
+            "ilink_bot_id": fake_bot_id,
+            "ilink_user_id": fake_user_id,
+        }
+
+    monkeypatch.setattr(runtime, "_fetch_qr_code", fake_fetch_qr_code)
+    monkeypatch.setattr(runtime, "_api_get_with_base", fake_qr_status)
+    monkeypatch.setattr(runtime, "_print_qr_code", lambda value: None)
+
+    with caplog.at_level(logging.INFO, logger="src.channels.base.weixin"):
+        assert asyncio.run(runtime._qr_login()) is True
+
+    assert "account=account2" in caplog.text
+    assert channel_utils.opaque_log_id(fake_bot_id) in caplog.text
+    assert channel_utils.opaque_log_id(fake_user_id) in caplog.text
+    for sentinel in (fake_token, fake_bot_id, fake_user_id):
+        assert sentinel not in caplog.text
+
+
+def test_weixin_message_exception_log_does_not_include_peer_sentinel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_peer = "FAKE-EXCEPTION-PEER-SENTINEL"
+
+    class FakeClient:
+        timeout: Any = None
+
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(state_dir=str(tmp_path)),
+        MessageBus(),
+        account_id="account2",
+    )
+    runtime._client = FakeClient()  # type: ignore[assignment]
+
+    async def fake_api_post(endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
+        del endpoint, body
+        return {"msgs": [{"from_user_id": raw_peer}]}
+
+    async def fail_processing(msg: dict[str, Any]) -> None:
+        raise RuntimeError(f"failed while processing {msg['from_user_id']}")
+
+    monkeypatch.setattr(runtime, "_api_post", fake_api_post)
+    monkeypatch.setattr(runtime, "_process_message", fail_processing)
+
+    with caplog.at_level(logging.ERROR, logger="src.channels.base.weixin"):
+        asyncio.run(runtime._poll_once())
+
+    assert "account=account2" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert raw_peer not in caplog.text
+
+
+def test_weixin_typing_failure_logs_use_opaque_peer_and_exception_class(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_peer = "FAKE-TYPING-PEER-SENTINEL"
+    exception_sentinel = "FAKE-TYPING-EXCEPTION-SENTINEL"
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(state_dir=str(tmp_path)),
+        MessageBus(),
+        account_id="account2",
+    )
+    runtime._client = object()  # type: ignore[assignment]
+    runtime._token = "FAKE-TYPING-TOKEN"
+
+    async def fail_ticket(chat_id: str, context_token: str = "") -> str:
+        del chat_id, context_token
+        raise RuntimeError(exception_sentinel)
+
+    async def fail_send_typing(user_id: str, ticket: str, status: int) -> None:
+        del user_id, ticket, status
+        raise RuntimeError(exception_sentinel)
+
+    monkeypatch.setattr(runtime, "_get_typing_ticket", fail_ticket)
+    with caplog.at_level(logging.DEBUG, logger="src.channels.base.weixin"):
+        asyncio.run(runtime._start_typing(raw_peer, "FAKE-CONTEXT"))
+        runtime._typing_tickets[raw_peer] = {"ticket": "FAKE-TICKET"}
+        monkeypatch.setattr(runtime, "_send_typing", fail_send_typing)
+        asyncio.run(runtime._stop_typing(raw_peer, clear_remote=True))
+
+    assert "account=account2" in caplog.text
+    assert channel_utils.opaque_log_id(raw_peer) in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert raw_peer not in caplog.text
+    assert exception_sentinel not in caplog.text
+
+
+def test_weixin_media_failure_log_omits_full_path_and_exception_text(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_peer = "FAKE-MEDIA-PEER"
+    private_dir = "/FAKE-PRIVATE-DIR-SENTINEL"
+    media_path = f"{private_dir}/FAKE-media.txt"
+    exception_sentinel = "FAKE-MEDIA-EXCEPTION-SENTINEL"
+    runtime = WeixinAccountRuntime(
+        WeixinAccountConfig(state_dir=str(tmp_path)),
+        MessageBus(),
+    )
+    runtime._client = object()  # type: ignore[assignment]
+    runtime._token = "FAKE-MEDIA-TOKEN"
+    runtime._context_tokens[raw_peer] = "FAKE-MEDIA-CONTEXT"
+
+    async def keep_context(chat_id: str, context_token: str) -> str:
+        del chat_id
+        return context_token
+
+    async def no_ticket(chat_id: str, context_token: str = "") -> str:
+        del chat_id, context_token
+        return ""
+
+    async def fail_media(chat_id: str, path: str, context_token: str) -> None:
+        del chat_id, path, context_token
+        raise RuntimeError(exception_sentinel)
+
+    async def capture_fallback(chat_id: str, text: str, context_token: str) -> None:
+        del chat_id, text, context_token
+
+    monkeypatch.setattr(runtime, "_refresh_context_token_if_stale", keep_context)
+    monkeypatch.setattr(runtime, "_get_typing_ticket", no_ticket)
+    monkeypatch.setattr(runtime, "_send_media_file", fail_media)
+    monkeypatch.setattr(runtime, "_send_text", capture_fallback)
+
+    with caplog.at_level(logging.ERROR, logger="src.channels.base.weixin"):
+        asyncio.run(
+            runtime.send(
+                OutboundMessage(
+                    channel="weixin",
+                    chat_id=raw_peer,
+                    content="",
+                    media=[media_path],
+                )
+            )
+        )
+
+    assert "FAKE-media.txt" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert private_dir not in caplog.text
+    assert exception_sentinel not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [account_impl._encrypt_aes_ecb, account_impl._decrypt_aes_ecb],
+)
+def test_weixin_aes_parse_failure_log_omits_exception_text(
+    operation: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    exception_sentinel = "FAKE-AES-KEY-EXCEPTION-SENTINEL"
+
+    def fail_key_parse(value: str) -> bytes:
+        del value
+        raise RuntimeError(exception_sentinel)
+
+    monkeypatch.setattr(account_impl, "_parse_aes_key", fail_key_parse)
+
+    with caplog.at_level(logging.WARNING, logger=account_impl.__name__):
+        assert operation(b"fake-data", "FAKE-AES-KEY") == b"fake-data"
+
+    assert "RuntimeError" in caplog.text
+    assert exception_sentinel not in caplog.text

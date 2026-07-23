@@ -33,7 +33,7 @@ from src.channels.bus.events import OutboundMessage
 from src.channels.bus.queue import MessageBus
 from src.channels.base import BaseChannel
 from src.channels.pairing import is_approved
-from src.channels.utils import get_media_dir
+from src.channels.utils import get_media_dir, opaque_log_id, split_message
 from src.channels.weixin_routing import (
     decode_aux_route,
     encode_aux_route,
@@ -41,7 +41,6 @@ from src.channels.weixin_routing import (
 )
 from src.config.paths import get_runtime_root
 from pydantic import BaseModel
-from src.channels.utils import split_message
 
 # ---------------------------------------------------------------------------
 # Protocol constants (from openclaw-weixin types.ts)
@@ -273,8 +272,12 @@ class WeixinAccountRuntime(BaseChannel):
             if base_url:
                 self.config.base_url = base_url
             return bool(self._token)
-        except Exception:
-            self.logger.error("Failed to load Weixin account state", exc_info=True)
+        except Exception as exc:
+            self.logger.error(
+                "Failed to load Weixin account state: account=%s error=%s",
+                self.account_id,
+                type(exc).__name__,
+            )
             return False
 
     def _save_state(self) -> None:
@@ -434,9 +437,10 @@ class WeixinAccountRuntime(BaseChannel):
                             self.config.base_url = base_url
                         self._save_state()
                         self.logger.info(
-                            "login successful! bot_id={} user_id={}",
-                            bot_id,
-                            user_id,
+                            "login successful: account=%s bot=%s user=%s",
+                            self.account_id,
+                            opaque_log_id(bot_id),
+                            opaque_log_id(user_id),
                         )
                         return True
                     else:
@@ -455,9 +459,10 @@ class WeixinAccountRuntime(BaseChannel):
                     refresh_count += 1
                     if refresh_count > MAX_QR_REFRESH_COUNT:
                         self.logger.warning(
-                            "QR code expired too many times ({}/{}), giving up.",
+                            "QR code expired too many times (%s/%s), giving up: account=%s",
                             refresh_count - 1,
                             MAX_QR_REFRESH_COUNT,
+                            self.account_id,
                         )
                         return False
                     qrcode_id, scan_url = await self._fetch_qr_code()
@@ -468,8 +473,12 @@ class WeixinAccountRuntime(BaseChannel):
 
                 await asyncio.sleep(1)
 
-        except Exception:
-            self.logger.exception("QR login failed")
+        except Exception as exc:
+            self.logger.error(
+                "QR login failed: account=%s error=%s",
+                self.account_id,
+                type(exc).__name__,
+            )
 
         return False
 
@@ -547,7 +556,7 @@ class WeixinAccountRuntime(BaseChannel):
                 self._running = False
                 return
 
-        self.logger.info("channel starting with long-poll...")
+        self.logger.info("channel starting with long-poll: account=%s", self.account_id)
 
         consecutive_failures = 0
         while self._running:
@@ -557,10 +566,14 @@ class WeixinAccountRuntime(BaseChannel):
             except httpx.TimeoutException:
                 # Normal for long-poll, just retry
                 continue
-            except Exception:
+            except Exception as exc:
                 if not self._running:
                     break
-                self.logger.exception("WeChat poll loop error")
+                self.logger.error(
+                    "WeChat poll loop error: account=%s error=%s",
+                    self.account_id,
+                    type(exc).__name__,
+                )
                 consecutive_failures += 1
                 if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                     consecutive_failures = 0
@@ -629,9 +642,10 @@ class WeixinAccountRuntime(BaseChannel):
                 self._pause_session()
                 remaining = self._session_pause_remaining_s()
                 self.logger.warning(
-                    "session expired (errcode {}). Pausing {} min.",
+                    "session expired (errcode %s). Pausing %s min: account=%s",
                     errcode,
                     max((remaining + 59) // 60, 1),
+                    self.account_id,
                 )
                 return
             raise RuntimeError(
@@ -654,8 +668,12 @@ class WeixinAccountRuntime(BaseChannel):
         for msg in msgs:
             try:
                 await self._process_message(msg)
-            except Exception:
-                self.logger.exception("Failed to process WeChat message")
+            except Exception as exc:
+                self.logger.error(
+                    "Failed to process WeChat message: account=%s error=%s",
+                    self.account_id,
+                    type(exc).__name__,
+                )
 
     # ------------------------------------------------------------------
     # Inbound message processing  (matches inbound.ts + process-message.ts)
@@ -697,8 +715,9 @@ class WeixinAccountRuntime(BaseChannel):
 
             if not ctx_token:
                 self.logger.warning(
-                    "Access denied for sender {}; cannot send WeChat pairing code without context_token",
-                    from_user_id,
+                    "Access denied: account=%s peer=%s; cannot send WeChat pairing code without context_token",
+                    self.account_id,
+                    opaque_log_id(from_user_id),
                 )
                 return
 
@@ -881,8 +900,9 @@ class WeixinAccountRuntime(BaseChannel):
             return
 
         self.logger.info(
-            "inbound: from={} items={} bodyLen={}",
-            from_user_id,
+            "inbound: account=%s peer=%s items=%s bodyLen=%s",
+            self.account_id,
+            opaque_log_id(from_user_id),
             ",".join(str(i.get("type", 0)) for i in item_list),
             len(content),
         )
@@ -956,18 +976,18 @@ class WeixinAccountRuntime(BaseChannel):
                     resp.raise_for_status()
                     data = resp.content
                     break
-                except Exception as e:
+                except Exception as exc:
                     has_more_candidates = idx + 1 < len(download_candidates)
                     should_fallback = (
                         download_source == "full_url"
                         and has_more_candidates
-                        and self._is_retryable_media_download_error(e)
+                        and self._is_retryable_media_download_error(exc)
                     )
                     if should_fallback:
                         self.logger.warning(
-                            "media download failed via full_url, falling back to encrypt_query_param: type={} err={}",
+                            "media download failed via full_url, falling back to encrypt_query_param: type=%s error=%s",
                             media_type,
-                            e,
+                            type(exc).__name__,
                         )
                         continue
                     raise
@@ -990,8 +1010,12 @@ class WeixinAccountRuntime(BaseChannel):
             file_path.write_bytes(data)
             return str(file_path)
 
-        except Exception:
-            self.logger.exception("Error downloading media")
+        except Exception as exc:
+            self.logger.error(
+                "Error downloading media: account=%s error=%s",
+                self.account_id,
+                type(exc).__name__,
+            )
             return None
 
     # ------------------------------------------------------------------
@@ -1056,8 +1080,8 @@ class WeixinAccountRuntime(BaseChannel):
             return context_token
 
         self.logger.debug(
-            "WeChat context_token for {} is {:.0f}s old; refreshing via getconfig",
-            chat_id,
+            "WeChat context_token for peer=%s is %.0fs old; refreshing via getconfig",
+            opaque_log_id(chat_id),
             age,
         )
 
@@ -1068,25 +1092,31 @@ class WeixinAccountRuntime(BaseChannel):
         }
         try:
             data = await self._api_post("ilink/bot/getconfig", body)
-        except Exception as e:
-            self.logger.warning("WeChat getconfig failed for {}: {}", chat_id, e)
+        except Exception as exc:
+            self.logger.warning(
+                "WeChat getconfig failed: account=%s peer=%s error=%s",
+                self.account_id,
+                opaque_log_id(chat_id),
+                type(exc).__name__,
+            )
             return context_token
 
         if data.get("ret", 0) != 0:
             self.logger.warning(
-                "WeChat getconfig returned ret={} for {}: {}",
+                "WeChat getconfig returned ret=%s: account=%s peer=%s",
                 data.get("ret"),
-                chat_id,
-                data.get("errmsg", ""),
+                self.account_id,
+                opaque_log_id(chat_id),
             )
             return context_token
 
         new_token = str(data.get("context_token", "") or "")
         if new_token and new_token != context_token:
             self.logger.info(
-                "WeChat context_token refreshed for {} (age {:.0f}s -> fresh)",
-                chat_id,
+                "WeChat context_token refreshed for peer=%s (age %.0fs -> fresh): account=%s",
+                opaque_log_id(chat_id),
                 age,
+                self.account_id,
             )
             self._context_tokens[chat_id] = new_token
             self._context_token_at[chat_id] = now
@@ -1107,26 +1137,31 @@ class WeixinAccountRuntime(BaseChannel):
             return
 
         self.logger.info(
-            "Flushing {} buffered tool hint(s) for {}",
+            "Flushing %s buffered tool hint(s) for peer=%s: account=%s",
             len(hints),
-            chat_id,
+            opaque_log_id(chat_id),
+            self.account_id,
         )
 
         ctx_token = self._context_tokens.get(chat_id, "")
         ctx_token = await self._refresh_context_token_if_stale(chat_id, ctx_token)
         if not ctx_token:
             self.logger.warning(
-                "Dropped {} buffered tool hint(s) for {}: no context_token",
+                "Dropped %s buffered tool hint(s) for peer=%s: account=%s no context_token",
                 len(hints),
-                chat_id,
+                opaque_log_id(chat_id),
+                self.account_id,
             )
             return
 
         try:
             await self._send_text(chat_id, "\n\n".join(hints), ctx_token)
-        except Exception:
-            self.logger.exception(
-                "Failed to flush buffered tool hints for {}", chat_id
+        except Exception as exc:
+            self.logger.error(
+                "Failed to flush buffered tool hints: account=%s peer=%s error=%s",
+                self.account_id,
+                opaque_log_id(chat_id),
+                type(exc).__name__,
             )
 
     async def _send_typing(self, user_id: str, typing_ticket: str, status: int) -> None:
@@ -1168,9 +1203,10 @@ class WeixinAccountRuntime(BaseChannel):
                 return
             self._pending_tool_hints.setdefault(msg.chat_id, []).append(msg.content)
             self.logger.debug(
-                "Buffered tool hint for {} (count={})",
-                msg.chat_id,
+                "Buffered tool hint for peer=%s (count=%s): account=%s",
+                opaque_log_id(msg.chat_id),
                 len(self._pending_tool_hints[msg.chat_id]),
+                self.account_id,
             )
             return
 
@@ -1178,7 +1214,9 @@ class WeixinAccountRuntime(BaseChannel):
         # UI).  Skip them entirely — do not send and do not flush buffer.
         if is_progress and (msg.metadata or {}).get("_reasoning_delta"):
             self.logger.debug(
-                "Dropped invisible reasoning delta for {}", msg.chat_id
+                "Dropped invisible reasoning delta for peer=%s: account=%s",
+                opaque_log_id(msg.chat_id),
+                self.account_id,
             )
             return
 
@@ -1188,8 +1226,9 @@ class WeixinAccountRuntime(BaseChannel):
         # NOT act as separators — they have no visible content.
         if is_progress and not content and not (msg.media or []):
             self.logger.debug(
-                "Skipped empty progress message for {} (no visible content)",
-                msg.chat_id,
+                "Skipped empty progress message for peer=%s (no visible content): account=%s",
+                opaque_log_id(msg.chat_id),
+                self.account_id,
             )
             return
 
@@ -1202,9 +1241,7 @@ class WeixinAccountRuntime(BaseChannel):
         ctx_token = self._context_tokens.get(msg.chat_id, "")
         ctx_token = await self._refresh_context_token_if_stale(msg.chat_id, ctx_token)
         if not ctx_token:
-            raise RuntimeError(
-                f"WeChat context_token missing for chat_id={msg.chat_id}, cannot send"
-            )
+            raise RuntimeError("WeChat context_token missing; cannot send")
 
         typing_ticket = ""
         with suppress(Exception):
@@ -1226,13 +1263,15 @@ class WeixinAccountRuntime(BaseChannel):
             for media_path in (msg.media or []):
                 try:
                     await self._send_media_file(msg.chat_id, media_path, ctx_token)
-                except (httpx.TimeoutException, httpx.TransportError):
+                except (httpx.TimeoutException, httpx.TransportError) as exc:
                     # Network/transport errors: do NOT fall back to text —
                     # the text send would also likely fail, and the outer
                     # except will re-raise so ChannelManager retries properly.
-                    self.logger.opt(exception=True).warning(
-                        "Network error sending media {}",
-                        media_path,
+                    self.logger.warning(
+                        "Network error sending media: account=%s file=%s error=%s",
+                        self.account_id,
+                        Path(media_path).name,
+                        type(exc).__name__,
                     )
                     raise
                 except httpx.HTTPStatusError as http_err:
@@ -1243,26 +1282,37 @@ class WeixinAccountRuntime(BaseChannel):
                     )
                     if status_code >= 500:
                         # Server-side / retryable HTTP error — same as network.
-                        self.logger.exception(
-                            "Server error ({} {}) sending media {}",
+                        self.logger.error(
+                            "Server error (%s %s) sending media: account=%s file=%s",
                             status_code,
                             http_err.response.reason_phrase
                             if http_err.response is not None
                             else "",
-                            media_path,
+                            self.account_id,
+                            Path(media_path).name,
                         )
                         raise
                     # 4xx client errors are NOT retryable — fall back to text.
                     filename = Path(media_path).name
-                    self.logger.exception("Failed to send media {}", media_path)
+                    self.logger.error(
+                        "Failed to send media: account=%s file=%s error=%s",
+                        self.account_id,
+                        filename,
+                        type(http_err).__name__,
+                    )
                     await self._send_text(
                         msg.chat_id, f"[Failed to send: {filename}]", ctx_token,
                     )
-                except Exception:
+                except Exception as exc:
                     # Non-network errors (format, file-not-found, etc.):
                     # notify the user via text fallback.
                     filename = Path(media_path).name
-                    self.logger.exception("Failed to send media {}", media_path)
+                    self.logger.error(
+                        "Failed to send media: account=%s file=%s error=%s",
+                        self.account_id,
+                        filename,
+                        type(exc).__name__,
+                    )
                     # Notify user about failure via text
                     await self._send_text(
                         msg.chat_id, f"[Failed to send: {filename}]", ctx_token,
@@ -1275,8 +1325,13 @@ class WeixinAccountRuntime(BaseChannel):
             chunks = split_message(content, WEIXIN_MAX_MESSAGE_LEN)
             for chunk in chunks:
                 await self._send_text(msg.chat_id, chunk, ctx_token)
-        except Exception:
-            self.logger.exception("Error sending message")
+        except Exception as exc:
+            self.logger.error(
+                "Error sending message: account=%s peer=%s error=%s",
+                self.account_id,
+                opaque_log_id(msg.chat_id),
+                type(exc).__name__,
+            )
             raise
         finally:
             if typing_keepalive_task:
@@ -1312,8 +1367,13 @@ class WeixinAccountRuntime(BaseChannel):
             if not ticket:
                 return
             await self._send_typing(chat_id, ticket, TYPING_STATUS_TYPING)
-        except Exception as e:
-            self.logger.debug("typing indicator start failed for {}: {}", chat_id, e)
+        except Exception as exc:
+            self.logger.debug(
+                "typing indicator start failed: account=%s peer=%s error=%s",
+                self.account_id,
+                opaque_log_id(chat_id),
+                type(exc).__name__,
+            )
             return
 
         stop_event = asyncio.Event()
@@ -1351,8 +1411,13 @@ class WeixinAccountRuntime(BaseChannel):
             return
         try:
             await self._send_typing(chat_id, ticket, TYPING_STATUS_CANCEL)
-        except Exception as e:
-            self.logger.debug("typing clear failed for {}: {}", chat_id, e)
+        except Exception as exc:
+            self.logger.debug(
+                "typing clear failed: account=%s peer=%s error=%s",
+                self.account_id,
+                opaque_log_id(chat_id),
+                type(exc).__name__,
+            )
 
     async def _send_text(
         self,
@@ -1575,8 +1640,11 @@ def _encrypt_aes_ecb(data: bytes, aes_key_b64: str) -> bytes:
     """Encrypt data with AES-128-ECB and PKCS7 padding for CDN upload."""
     try:
         key = _parse_aes_key(aes_key_b64)
-    except Exception as e:
-        logger.warning("Failed to parse AES key for encryption, sending raw: {}", e)
+    except Exception as exc:
+        logger.warning(
+            "Failed to parse AES key for encryption, sending raw: error=%s",
+            type(exc).__name__,
+        )
         return data
 
     # PKCS7 padding
@@ -1607,8 +1675,11 @@ def _decrypt_aes_ecb(data: bytes, aes_key_b64: str) -> bytes:
     """
     try:
         key = _parse_aes_key(aes_key_b64)
-    except Exception as e:
-        logger.warning("Failed to parse AES key, returning raw data: {}", e)
+    except Exception as exc:
+        logger.warning(
+            "Failed to parse AES key, returning raw data: error=%s",
+            type(exc).__name__,
+        )
         return data
 
     decrypted: bytes | None = None

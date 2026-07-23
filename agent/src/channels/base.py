@@ -15,6 +15,7 @@ from src.channels.pairing import (
     generate_code,
     is_approved,
 )
+from src.channels.utils import opaque_log_id
 
 logger = logging.getLogger(__name__)
 
@@ -199,14 +200,16 @@ class BaseChannel(ABC):
                     )
                 )
                 logger.info(
-                    "Sent pairing code %s to sender %s in chat %s",
-                    code, sender_id, chat_id,
+                    "Sent pairing reply: channel=%s sender=%s",
+                    self.name,
+                    opaque_log_id(sender_id),
                 )
             else:
                 logger.warning(
-                    "Access denied for sender %s. "
+                    "Access denied: channel=%s sender=%s. "
                     "Add them to allow_from list in config to grant access.",
-                    sender_id,
+                    self.name,
+                    opaque_log_id(sender_id),
                 )
             return
 

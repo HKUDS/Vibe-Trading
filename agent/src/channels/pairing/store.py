@@ -99,7 +99,7 @@ def generate_code(
             "expires_at": time.time() + ttl,
         }
         _save(data)
-        logger.info("Generated pairing code %s for %s@%s", code, sender_id, channel)
+        logger.info("Generated pairing request for channel %s", channel)
         return code
 
 
@@ -131,7 +131,7 @@ def approve_code(code: str, *, restrict_channel: str | None = None) -> tuple[str
         sender_id = str(info["sender_id"])
         data.setdefault("approved", {}).setdefault(channel, set()).add(sender_id)
         _save(data)
-        logger.info("Approved pairing code %s for %s@%s", code, sender_id, channel)
+        logger.info("Approved pairing request for channel %s", channel)
         return channel, sender_id
 
 
@@ -155,9 +155,10 @@ def deny_code(code: str, *, restrict_channel: str | None = None) -> bool:
             return False
         if restrict_channel is not None and info.get("channel") != restrict_channel:
             return False
+        channel = str(info.get("channel", ""))
         del pending[code]
         _save(data)
-        logger.info("Denied pairing code %s", code)
+        logger.info("Denied pairing request for channel %s", channel)
         return True
 
 
@@ -202,7 +203,7 @@ def revoke(channel: str, sender_id: str) -> bool:
             if not users:
                 del approved[channel]
             _save(data)
-            logger.info("Revoked %s from %s", sid, channel)
+            logger.info("Revoked pairing approval for channel %s", channel)
             return True
         return False
 
