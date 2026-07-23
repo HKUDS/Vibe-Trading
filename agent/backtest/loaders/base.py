@@ -47,7 +47,12 @@ def validate_date_range(start_date: str, end_date: str) -> None:
         raise ValueError(f"start_date ({start_date}) > end_date ({end_date})")
 
 
-def validate_ohlc(frame: pd.DataFrame, *, strategy: str = "drop") -> pd.DataFrame:
+def validate_ohlc(
+    frame: pd.DataFrame,
+    *,
+    strategy: str = "drop",
+    allow_nonpositive_prices: bool = False,
+) -> pd.DataFrame:
     """Drop, flag, or reject bars that violate OHLC invariants.
 
     Loaders only drop NaN rows, so structurally dirty bars — ``high < low``,
@@ -57,11 +62,24 @@ def validate_ohlc(frame: pd.DataFrame, *, strategy: str = "drop") -> pd.DataFram
     canonical loader-boundary check; call it after the existing ``dropna`` so a
     single sanity pass guards every source.
 
+    Structural invariants (``high < low`` and high/low failing to bracket
+    open/close) are always enforced. The *positivity* invariant is
+    configurable: some markets clear at or below zero legitimately (European
+    day-ahead power routinely prints negative), and a rolling statistic over a
+    silently gap-filled series is worse than a well-defined negative bar. When
+    ``allow_nonpositive_prices`` is set, negative prices pass through and only
+    an exactly-zero price is rejected — zero is genuinely undefined for
+    notional sizing (``size = notional / price``) and margin, whereas a
+    negative price is handled by ``abs()``-based sizing in the engine.
+
     Args:
         frame: OHLCV frame with at least ``open``/``high``/``low``/``close``
             columns. NaN handling is left to the caller's ``dropna``.
         strategy: ``"drop"`` (remove offending rows, default), ``"warn"``
             (log and keep), or ``"raise"`` (raise on any violation).
+        allow_nonpositive_prices: when ``True``, keep bars with negative
+            prices and reject only exact zeros; when ``False`` (default,
+            unchanged behavior) reject any price ``<= 0``.
 
     Returns:
         The frame with invalid rows removed (``"drop"``) or unchanged
@@ -76,17 +94,18 @@ def validate_ohlc(frame: pd.DataFrame, *, strategy: str = "drop") -> pd.DataFram
         return frame
 
     open_, high, low, close = (frame[c] for c in required)
-    invalid = (
+    structural = (
         (high < low)
         | (high < open_)
         | (high < close)
         | (low > open_)
         | (low > close)
-        | (open_ <= 0)
-        | (high <= 0)
-        | (low <= 0)
-        | (close <= 0)
     )
+    if allow_nonpositive_prices:
+        nonpositive = (open_ == 0) | (high == 0) | (low == 0) | (close == 0)
+    else:
+        nonpositive = (open_ <= 0) | (high <= 0) | (low <= 0) | (close <= 0)
+    invalid = structural | nonpositive
     n_invalid = int(invalid.sum())
     if n_invalid == 0:
         return frame

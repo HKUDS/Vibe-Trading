@@ -360,6 +360,14 @@ class BaseEngine(ABC):
         self.config = config
         self.initial_capital: float = config.get("initial_cash", 1_000_000)
         self.default_leverage: float = config.get("leverage", 1.0)
+        # Markets that clear at or below zero (e.g. EU day-ahead power) opt in
+        # to opening on negative-price bars. Default False preserves the legacy
+        # "reject any open_price <= 0" behavior. An exactly-zero open is always
+        # rejected (undefined size = notional / price); negatives are handled by
+        # abs()-based sizing and margin below.
+        self.allow_nonpositive_prices: bool = bool(
+            config.get("allow_nonpositive_prices", False)
+        )
         self.capital: float = self.initial_capital
         self.positions: Dict[str, Position] = {}
         self.trades: List[TradeRecord] = []
@@ -439,14 +447,24 @@ class BaseEngine(ABC):
     def _calc_margin(
         self, symbol: str, size: float, price: float, leverage: float,
     ) -> float:
-        """Margin (collateral) required for a position."""
-        return size * price / leverage
+        """Margin (collateral) required for a position.
+
+        ``abs(price)`` so collateral stays positive when the entry price is
+        negative; for the usual positive price this is unchanged.
+        """
+        return size * abs(price) / leverage
 
     def _calc_raw_size(
         self, symbol: str, target_notional: float, price: float,
     ) -> float:
-        """Convert target notional exposure to number of units/contracts."""
-        return target_notional / price
+        """Convert target notional exposure to number of units/contracts.
+
+        Size is a positive magnitude — direction carries the sign elsewhere —
+        so divide by ``abs(price)``; a negative entry price must not flip the
+        size negative (which the ``size <= 0`` guard would then reject). For a
+        positive price this is unchanged.
+        """
+        return target_notional / abs(price)
 
     def _leverage_for_symbol(self, symbol: str) -> float:
         """Return leverage used to size and margin one symbol."""
@@ -949,7 +967,10 @@ class BaseEngine(ABC):
         if not self.can_execute(symbol, direction, bar):
             return None
         open_price = float(bar.get("open", bar.get("close", 0)))
-        if open_price <= 0:
+        # Zero is always rejected (size = notional / price is undefined);
+        # negatives are rejected unless this engine opted into non-positive
+        # prices, in which case abs()-based sizing/margin below handle them.
+        if open_price == 0 or (open_price < 0 and not self.allow_nonpositive_prices):
             return None
         price = self.apply_slippage(open_price, direction)
         leverage = self._leverage_for_symbol(symbol)

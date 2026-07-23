@@ -1,0 +1,14 @@
+# Real EU day-ahead power bars that clear at or below zero.
+# Source: ENTSO-E day-ahead prices via Energy-Charts (Fraunhofer ISE),
+#   Bundesnetzagentur | SMARD.de. Licensed CC BY 4.0.
+# Window 2025-07-20..2025-12-31. These are the daily bars whose *close* is
+# non-positive: four strictly negative (kept when allow_nonpositive_prices)
+# and one exactly zero (POWER-DA-DELU 2025-10-26, always rejected). Two also
+# open negative (POWER-DA-DELU 2025-10-04). Hourly-derived daily low goes far
+# below zero on solar-heavy DELU days.
+code,trade_date,open,high,low,close,volume
+POWER-DA-NO2,2025-10-04,11.22,12.64,-0.09,-0.09,0.0
+POWER-DA-DELU,2025-09-15,1.39,54.31,-14.27,-0.09,0.0
+POWER-DA-DELU,2025-10-03,82.76,128.62,-0.08,-0.02,0.0
+POWER-DA-DELU,2025-10-04,-0.01,4.02,-5.02,-1.03,0.0
+POWER-DA-DELU,2025-10-26,3.99,49.34,-1.05,0.00,0.0
