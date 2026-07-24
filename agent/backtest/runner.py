@@ -528,6 +528,7 @@ def _validate_signal_engine_class(engine_cls) -> None:
 
 # Back-compat: market type -> legacy source name (for engine selection & metrics)
 _MARKET_TO_SOURCE = {
+    "taiwan_equity": "tw_snapshot",
     "a_share": "tushare",
     "us_equity": "yfinance",
     "hk_equity": "yfinance",
@@ -541,7 +542,7 @@ _MARKET_TO_SOURCE = {
 }
 
 
-def _detect_source(code: str) -> str:
+def _detect_source(code: str, market_hint: str | None = None) -> str:
     """Infer legacy source name from symbol (back-compat for metrics/engine).
 
     Args:
@@ -550,11 +551,11 @@ def _detect_source(code: str) -> str:
     Returns:
         Source name (tushare/okx/yfinance/akshare).
     """
-    market = _detect_market(code)
+    market = _detect_market(code, market_hint=market_hint)
     return _MARKET_TO_SOURCE.get(market, "tushare")
 
 
-def _group_codes_by_market(codes: List[str]) -> Dict[str, List[str]]:
+def _group_codes_by_market(codes: List[str], market_hint: str | None = None) -> Dict[str, List[str]]:
     """Group symbols by detected market type.
 
     Args:
@@ -565,12 +566,12 @@ def _group_codes_by_market(codes: List[str]) -> Dict[str, List[str]]:
     """
     groups: Dict[str, List[str]] = {}
     for code in codes:
-        market = _detect_market(code)
+        market = _detect_market(code, market_hint=market_hint)
         groups.setdefault(market, []).append(code)
     return groups
 
 
-def _group_codes_by_source(codes: List[str]) -> Dict[str, List[str]]:
+def _group_codes_by_source(codes: List[str], market_hint: str | None = None) -> Dict[str, List[str]]:
     """Group symbols by inferred source (back-compat).
 
     Args:
@@ -581,7 +582,7 @@ def _group_codes_by_source(codes: List[str]) -> Dict[str, List[str]]:
     """
     groups: Dict[str, List[str]] = {}
     for code in codes:
-        src = _detect_source(code)
+        src = _detect_source(code, market_hint=market_hint)
         groups.setdefault(src, []).append(code)
     return groups
 
@@ -598,13 +599,17 @@ def _get_loader(source: str):
     try:
         return get_loader_cls_with_fallback(source)
     except NoAvailableSourceError:
+        if source in {"local", "qveris", "tw_snapshot"}:
+            raise
         # Ultimate fallback for unknown sources
         if "tushare" in LOADER_REGISTRY:
             return LOADER_REGISTRY["tushare"]
         raise
 
 
-def _normalize_codes(codes: List[str], source: str) -> List[str]:
+def _normalize_codes(
+    codes: List[str], source: str, market_hint: str | None = None,
+) -> List[str]:
     """Normalize symbol strings for a source.
 
     Args:
@@ -616,6 +621,10 @@ def _normalize_codes(codes: List[str], source: str) -> List[str]:
     """
     if source in ("okx", "ccxt"):
         return [c.replace("/", "-").upper() for c in codes]
+    if source == "tw_snapshot":
+        from src.tw_quant.market.symbols import parse_symbol
+
+        return [parse_symbol(code, market_hint=market_hint).canonical for code in codes]
     return codes
 
 
@@ -955,7 +964,7 @@ def main(run_dir: Path) -> None:
     signal_engine = engine_cls()
 
     # Annualization bars
-    effective_source = _detect_primary_source(codes, source)
+    effective_source = _detect_primary_source(codes, source, market_hint=config.get("market"))
     from backtest.metrics import calc_bars_per_year
     # Cross-market: use calendar-day annualization (bars_per_year=None)
     market_types = {_detect_market(c) for c in codes}
@@ -993,7 +1002,18 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
         BaseEngine subclass instance.
     """
     # Detect dominant market type from codes
-    markets = {_detect_market(c) for c in codes} if codes else set()
+    markets = {
+        _detect_market(c, market_hint=config.get("market")) for c in codes
+    } if codes else set()
+
+    # Phase 01 deliberately has no Taiwan execution/rule engine. Failing
+    # closed here prevents a Taiwan snapshot from silently using CryptoEngine
+    # or an unrelated equity engine.
+    if "taiwan_equity" in markets:
+        raise ValueError(
+            "Taiwan execution engine is not implemented in Phase 01; "
+            "use the snapshot loader contract only"
+        )
 
     # Cross-market -> CompositeEngine
     if len(markets) > 1:
@@ -1054,7 +1074,9 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
         return CryptoEngine(config)
 
 
-def _detect_primary_source(codes: List[str], source: str) -> str:
+def _detect_primary_source(
+    codes: List[str], source: str, market_hint: str | None = None,
+) -> str:
     """Pick primary source for annualization (e.g. bars per year).
 
     Args:
@@ -1066,7 +1088,7 @@ def _detect_primary_source(codes: List[str], source: str) -> str:
     """
     if source != "auto":
         return source
-    groups = _group_codes_by_source(codes)
+    groups = _group_codes_by_source(codes, market_hint=market_hint)
     if len(groups) == 1:
         return list(groups.keys())[0]
     # Mixed: use the source with the most symbols
@@ -1089,7 +1111,7 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
     Returns:
         Merged ``code -> DataFrame`` map.
     """
-    market_groups = _group_codes_by_market(codes)
+    market_groups = _group_codes_by_market(codes, market_hint=config.get("market"))
     merged = {}
     served_by: set[str] = set()
     start_date = config.get("start_date", "")
@@ -1106,7 +1128,9 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
             loader = LoaderCls()
 
         src_name = getattr(loader, "name", "unknown")
-        normalized_codes = _normalize_codes(market_codes, src_name)
+        normalized_codes = _normalize_codes(
+            market_codes, src_name, market_hint=config.get("market")
+        )
         fields = config.get("extra_fields") if src_name == "tushare" else None
         result = loader.fetch(
             normalized_codes,
@@ -1132,7 +1156,9 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
             fb_loader = LOADER_REGISTRY[fb_name]()
             if not fb_loader.is_available():
                 continue
-            fb_codes = _normalize_codes(missing, fb_name)
+            fb_codes = _normalize_codes(
+                missing, fb_name, market_hint=config.get("market")
+            )
             fallback_result = fb_loader.fetch(
                 fb_codes, start_date, end_date, interval=interval
             )
@@ -1171,6 +1197,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
     source = str(config.get("source") or "tushare")
     codes = list(config.get("codes") or [])
     interval = str(config.get("interval") or "1D")
+    market_hint = config.get("market")
 
     if source == "auto":
         data_map = _fetch_auto(codes, config, interval)
@@ -1182,7 +1209,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
             str(name) for name in recorded or [] if str(name).strip()
         ] or sorted(_group_codes_by_source(codes))
     else:
-        codes = _normalize_codes(codes, source)
+        codes = _normalize_codes(codes, source, market_hint=market_hint)
         primary_source = source
         loader = _get_loader(source)()
         # ``_get_loader`` may hand back a *different* loader when the requested
@@ -1227,7 +1254,9 @@ def fetch_data_map(config: dict) -> DataFetchResult:
                 fallback_loader = LOADER_REGISTRY[fallback_source]()
                 if not fallback_loader.is_available():
                     continue
-                fallback_codes = _normalize_codes(missing, fallback_source)
+                fallback_codes = _normalize_codes(
+                    missing, fallback_source, market_hint=market_hint
+                )
                 fallback_result = fallback_loader.fetch(
                     fallback_codes,
                     config.get("start_date", ""),

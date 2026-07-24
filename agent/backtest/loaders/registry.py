@@ -55,6 +55,7 @@ VALID_SOURCES: set[str] = {
     "longbridge",
     "mt5",
     "local",
+    "tw_snapshot",
     "auto",
 }
 
@@ -105,6 +106,7 @@ def _ensure_registered() -> None:
         "backtest.loaders.longbridge",
         "backtest.loaders.mt5_loader",
         "backtest.loaders.local_loader",
+        "src.tw_quant.data.loader",
     ]
     import importlib
     for mod in _loader_modules:
@@ -121,7 +123,7 @@ def _ensure_registered() -> None:
 # unavailable ``local`` request can degrade into an unrelated network source.
 # An explicit ``local`` request that is unavailable is a config problem the user
 # must see, not something to paper over with a Yahoo/Tencent fetch.
-_NO_NETWORK_FALLBACK_SOURCES: frozenset[str] = frozenset({"local", "qveris"})  # QVERIS-INTEGRATION
+_NO_NETWORK_FALLBACK_SOURCES: frozenset[str] = frozenset({"local", "qveris", "tw_snapshot"})  # QVERIS-INTEGRATION
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +149,8 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
     # mt5 leads when a local MetaTrader 5 terminal is attached (Windows-only,
     # broker feed); otherwise it reports unavailable and the chain proceeds.
     "forex":     ["mt5", "akshare", "yfinance", "local"],
+    # Taiwan is intentionally snapshot-only in Phase 01.
+    "taiwan_equity": ["tw_snapshot"],
 }
 
 

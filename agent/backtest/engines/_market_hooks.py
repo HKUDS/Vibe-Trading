@@ -23,6 +23,10 @@ from backtest.models import Position
 # ── Symbol -> market classification (shared by runner.py + composite.py) ──
 
 _MARKET_PATTERNS = [
+    # Taiwan equities: TWSE (.TW) and TPEX (.TWO). Keep this before the
+    # generic unknown -> A-share default so Taiwan never reaches a mainland
+    # or global network source by accident.
+    (re.compile(r"^\d{4,6}\.(TW|TWO)$", re.I), "taiwan_equity"),
     (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "a_share"),
     (re.compile(r"^(51|15|56)\d{4}\.(SZ|SH)$", re.I), "a_share"),
     (re.compile(r"^[A-Z]+\.US$", re.I), "us_equity"),
@@ -67,16 +71,22 @@ _CN_FUTURES_PRODUCTS = {
 }
 
 
-def _detect_market(code: str) -> str:
+def _detect_market(code: str, market_hint: str | None = None) -> str:
     """Infer market type from symbol format.
 
     Args:
         code: Ticker / symbol string.
+        market_hint: Optional explicit hint for a bare Taiwan numeric code.
 
     Returns:
-        Market type (a_share/us_equity/hk_equity/crypto/futures/forex);
+        Market type (taiwan_equity/a_share/us_equity/hk_equity/crypto/
+        futures/forex);
         unknown defaults to ``a_share``.
     """
+    hint = str(market_hint or "").strip().upper()
+    if hint in {"TW", "TWSE", "TWO", "TPEX", "TAIWAN", "TAIWAN_EQUITY"}:
+        if re.fullmatch(r"\d{4,6}", str(code).strip()):
+            return "taiwan_equity"
     for pattern, market in _MARKET_PATTERNS:
         if pattern.match(code):
             return market
