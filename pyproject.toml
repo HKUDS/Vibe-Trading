@@ -69,6 +69,7 @@ Issues = "https://github.com/HKUDS/Vibe-Trading/issues"
 [project.scripts]
 vibe-trading = "cli:main"
 vibe-trading-mcp = "mcp_server:main"
+tw-data = "src.tw_quant.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "agent"}
