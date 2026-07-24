@@ -164,7 +164,12 @@ def verify_snapshot(
                     errors.append(f"{dataset}: row count mismatch")
                 expected_min = entry.get("min_event_time")
                 expected_max = entry.get("max_event_time")
-                if (expected_min is None) != (min_time is None) or (expected_max is None) != (max_time is None):
+                if (
+                    (expected_min is None) != (min_time is None)
+                    or (expected_max is None) != (max_time is None)
+                    or (expected_min is not None and str(min_time) != str(expected_min))
+                    or (expected_max is not None and str(max_time) != str(expected_max))
+                ):
                     errors.append(f"{dataset}: event time range mismatch")
                 tables_report.append({
                     "dataset": dataset,
