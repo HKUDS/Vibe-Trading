@@ -5,6 +5,21 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Memory Tier 2: Structural Organization** — four independently-gated modules for memory lifecycle enhancement:
+  - H-MEM hierarchical directory routing (`VT_MEMORY_HIERARCHY`)
+  - A-MEM semantic linking via BM25 (`VT_MEMORY_LINKS`)
+  - Auto-compression pipeline with TF-IDF key-sentence extraction (`VT_MEMORY_COMPRESSION`)
+  - FTS5 full-text search index with CJK bigram tokenization (`VT_MEMORY_FTS_INDEX`)
+- **`VT_MEMORY=off|on|full` preset** — one-line business-friendly configuration replacing 7 individual flags
+  - `off`: no lifecycle management (default)
+  - `on`: quality scoring + auto-decay + garbage collection (Tier 1)
+  - `full`: all features including hierarchy, links, compression, and FTS (Tier 1 + Tier 2)
+  - Individual `VT_MEMORY_*` flags still work as explicit overrides
+- Dependency-conflict warnings when `VT_MEMORY_COMPRESSION=true` without `VT_MEMORY_GC`
+- Lazy FTS5 auto-rebuild on first search when index is empty
+- 9 end-to-end integration tests + 23 benchmark tests against real production corpus
+
 ## [0.1.12] — 2026-07-22
 
 ### Added
