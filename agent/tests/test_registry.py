@@ -132,7 +132,7 @@ class TestProtocol:
 
 class TestFallbackChains:
     def test_all_expected_markets_present(self) -> None:
-        expected = {"a_share", "us_equity", "hk_equity", "india_equity", "crypto", "futures", "fund", "macro", "forex"}
+        expected = {"a_share", "us_equity", "hk_equity", "india_equity", "crypto", "futures", "fund", "macro", "forex", "taiwan_equity"}
         assert expected == set(FALLBACK_CHAINS.keys())
 
     def test_chains_are_non_empty(self) -> None:
@@ -170,6 +170,9 @@ class TestFallbackChains:
     def test_a_share_includes_baostock(self) -> None:
         """'baostock' must remain a reachable A-share fallback."""
         assert "baostock" in FALLBACK_CHAINS["a_share"]
+
+    def test_taiwan_chain_is_snapshot_only(self) -> None:
+        assert FALLBACK_CHAINS["taiwan_equity"] == ["tw_snapshot"]
 
     def test_unchanged_chains_preserved(self) -> None:
         """crypto/futures/fund/macro/forex chains must be left untouched."""
