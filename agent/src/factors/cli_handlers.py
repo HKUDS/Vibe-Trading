@@ -659,6 +659,10 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
 
         top_rows = [_normalise_row(r) for r in top_rows_raw]
         failures_for_report = [_normalise_skipped(s) for s in skipped[:10]]
+        # Universe metadata (e.g. the sp500 loader's survivorship_bias flag),
+        # forwarded by bench_runner.run_bench as result["meta"] and already
+        # kept by alpha_routes._result_for_wire for the SSE/frontend path.
+        universe_meta = result.get("meta")
 
         report_path: Path | None = None
         try:
@@ -684,6 +688,8 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
                 "top": top_rows,
                 "failures": failures_for_report,
             }
+            if universe_meta:
+                context["meta"] = universe_meta
             report_path.write_text(_render_html(context), encoding="utf-8")
         except Exception as exc:  # noqa: BLE001 — report is nice-to-have
             _err(f"warning: could not write HTML report: {exc}")
@@ -706,6 +712,8 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
                     envelope[key] = result[key]
             if result.get("oos_split") is not None:
                 envelope["oos_split"] = result["oos_split"]
+        if universe_meta:
+            envelope["meta"] = universe_meta
         if report_path is not None:
             envelope["report_path"] = str(report_path)
         print(json.dumps(envelope, indent=2, default=str))
