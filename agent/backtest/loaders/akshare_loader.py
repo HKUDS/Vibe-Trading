@@ -23,13 +23,11 @@ _INTERVAL_MAP_DAILY = {
     "1M": "monthly",
 }
 
-# US / HK / ETF / forex endpoints only serve daily bars. Accept the same
-# daily aliases as sina/tencent so ``1d`` still works; reject ``1H``/``4H``.
+# US/HK/ETF/forex serve daily bars only.
 _DAILY_ONLY_ALIASES = frozenset({"1d", "d", "day", "daily"})
 
 
 def _require_daily_interval(interval: str, market: str) -> None:
-    """Raise when a daily-only AKShare market is asked for non-daily bars."""
     if str(interval).strip().lower() not in _DAILY_ONLY_ALIASES:
         raise ValueError(
             f"Unsupported interval {interval!r}; akshare {market} supports daily bars only"
