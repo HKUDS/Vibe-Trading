@@ -39,7 +39,7 @@
   <a href="#-examples">Examples</a> &nbsp;&middot;&nbsp;
   <a href="#-api-server">API / MCP</a> &nbsp;&middot;&nbsp;
   <a href="#-roadmap">Roadmap</a> &nbsp;&middot;&nbsp;
-  <a href="#-contributing">Contributing</a>
+  <a href="#contributing">Contributing</a>
 </p>
 
 <p align="center">
