@@ -200,8 +200,7 @@ class DataLoader:
         validate_date_range(start_date, end_date)
         timeframe_name = _INTERVAL_MAP.get(str(interval).strip())
         if timeframe_name is None:
-            # Never rewrite unknown intervals to daily — that caches day bars
-            # under the caller's timeframe key and poisons later sources.
+            # Reject unknown tokens; do not fetch TIMEFRAME_D1 under the caller's key.
             logger.warning("mt5 unsupported interval %r; rejecting", interval)
             return {}
 
