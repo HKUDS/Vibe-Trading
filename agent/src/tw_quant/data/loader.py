@@ -106,7 +106,7 @@ class TaiwanSnapshotLoader:
             "available_at", "ingested_at", "source", "source_dataset", "revision_id",
             "quality_flags", "row_hash",
         }
-        selected_fields = list(fields or (
+        selected_fields = list(fields if fields is not None else (
             "open", "high", "low", "close", "volume", "turnover", "trades",
             "reference_price", "price_limit_up", "price_limit_down", "is_suspended",
             "is_disposition", "is_full_delivery", "adjustment_factor", "effective_at",
