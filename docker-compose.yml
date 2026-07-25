@@ -7,6 +7,7 @@ services:
       - agent/.env
     environment:
       - VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1
+      - VIBE_TW_STOCK_DB=/data/tw-stock/latest.db
       # Ollama runs on the host; from inside the container "localhost" is the
       # container itself, so default to reaching the host via host.docker.internal.
       # Override by exporting OLLAMA_BASE_URL (or setting it in a top-level .env)
@@ -30,6 +31,8 @@ services:
       # src/api/helpers.py writes to /app/agent/.env) across container recreation.
       # env_file above still seeds the initial boot env from the same file.
       - ./agent/.env:/app/agent/.env
+      # Published Taiwan stock snapshots; read-only consumer mount.
+      - /home/chienfeng-tseng/apps/tw-stock-data/data/published:/data/tw-stock:ro
     # --- Runtime hardening (VT-007) ---
     cap_drop:
       - ALL
