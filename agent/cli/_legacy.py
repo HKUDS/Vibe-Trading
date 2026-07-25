@@ -4021,6 +4021,8 @@ def _print_connector_account(result: dict[str, Any]) -> int:
     # broker_sdk connectors (Longbridge, …) return a ``balances`` list instead of
     # IBKR-style ``summary`` tag/value rows; render that when present (#735).
     if not rows and result.get("balances"):
+        label = accounts if accounts != "(none)" else result.get("profile_id", result.get("profile", "unknown"))
+        console.print(f"Accounts: [cyan]{rich_escape(str(label))}[/cyan]")
         return _print_connector_balances(result)
     if not rows:
         # Not the broker_sdk flat shape — try the remote-MCP nested shape.
