@@ -10,7 +10,8 @@ import os
 import re
 import threading
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
+from datetime import date, datetime
 from typing import Any, Awaitable, Callable, Coroutine, Iterable, Protocol, TypeVar
 
 from fastmcp.client import Client
@@ -1074,6 +1075,16 @@ def _format_exception_message(exc: Exception) -> str:
 def _make_jsonable(value: Any) -> Any:
     """Convert FastMCP response payloads into JSON-serializable objects.
 
+    ``fastmcp``'s client auto-types ``CallToolResult.data`` from a tool's
+    output schema via ``json_schema_to_type``, which produces a plain
+    ``dataclasses`` instance (not a Pydantic ``BaseModel``) for any object
+    schema that doesn't set ``additionalProperties: true`` -- the common
+    case. Without a dedicated branch here, such an instance falls through
+    to the final ``return value`` unconverted; ``json.dumps``'s ``default``
+    then receives the same unconvertible object back and raises
+    ``ValueError: Circular reference detected``, since its cycle detector
+    can't distinguish "default() gave up" from an actual cycle.
+
     Args:
         value: Arbitrary response value.
 
@@ -1082,6 +1093,10 @@ def _make_jsonable(value: Any) -> Any:
     """
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json", by_alias=True, exclude_none=True)
+    if is_dataclass(value) and not isinstance(value, type):
+        return {field.name: _make_jsonable(getattr(value, field.name)) for field in fields(value)}
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
     if isinstance(value, list):
         return [_make_jsonable(item) for item in value]
     if isinstance(value, dict):
