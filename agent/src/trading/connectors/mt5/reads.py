@@ -259,6 +259,16 @@ def get_historical_bars(
     )
 
 
+def _native(value: Any) -> Any:
+    """Unwrap a numpy scalar to a native Python type, else return as-is."""
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            pass
+    return value
+
+
 def _rate_to_dict(rate: Any) -> dict[str, Any]:
     """Map one rates row (numpy structured row, mapping, or object) defensively."""
 
@@ -268,14 +278,14 @@ def _rate_to_dict(rate: Any) -> dict[str, Any]:
         except (TypeError, KeyError, IndexError, ValueError):
             return getattr(rate, key, None)
 
-    volume = _get("tick_volume")
+    volume = _native(_get("tick_volume"))
     return {
-        "time": _get("time"),
-        "open": _get("open"),
-        "high": _get("high"),
-        "low": _get("low"),
-        "close": _get("close"),
+        "time": _native(_get("time")),
+        "open": _native(_get("open")),
+        "high": _native(_get("high")),
+        "low": _native(_get("low")),
+        "close": _native(_get("close")),
         "volume": volume,
-        "spread": _get("spread"),
-        "real_volume": _get("real_volume"),
+        "spread": _native(_get("spread")),
+        "real_volume": _native(_get("real_volume")),
     }
