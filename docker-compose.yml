@@ -31,8 +31,8 @@ services:
       # src/api/helpers.py writes to /app/agent/.env) across container recreation.
       # env_file above still seeds the initial boot env from the same file.
       - ./agent/.env:/app/agent/.env
-      # Published Taiwan stock snapshots; read-only consumer mount.
-      - /home/chienfeng-tseng/apps/tw-stock-data/data/published:/data/tw-stock:ro
+      # Published Taiwan stock snapshots; override the host path in root .env.
+      - ${VIBE_TW_STOCK_DATA_DIR:-./data/tw-stock}:/data/tw-stock:ro
     # --- Runtime hardening (VT-007) ---
     cap_drop:
       - ALL
