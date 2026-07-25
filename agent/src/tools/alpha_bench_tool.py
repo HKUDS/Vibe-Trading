@@ -690,10 +690,18 @@ def _render_html_manual(ctx: dict[str, Any]) -> str:
         _esc(ctx["period"]),
         f" &middot; {int(ctx['n_alphas_tested'])} tested, {int(ctx['n_skipped'])} skipped",
         "</div>",
-        f"<h2>Top {len(ctx['top'])} by IR</h2><table>",
-        "<tr><th>#</th><th>Alpha ID</th><th>Zoo</th><th>Theme</th>"
-        "<th>IC mean</th><th>IC std</th><th>IR</th><th>IC+ ratio</th><th>N</th></tr>",
     ]
+    meta = ctx.get("meta") or {}
+    if meta.get("survivorship_bias"):
+        parts.append(
+            "<div class=\"warning\">&#9888; Survivorship-biased universe: "
+            "constituents are the current index members, not the point-in-time "
+            "roster. IC statistics may be overstated."
+            "</div>"
+        )
+    parts.append(f"<h2>Top {len(ctx['top'])} by IR</h2><table>")
+    parts.append("<tr><th>#</th><th>Alpha ID</th><th>Zoo</th><th>Theme</th>"
+        "<th>IC mean</th><th>IC std</th><th>IR</th><th>IC+ ratio</th><th>N</th></tr>")
     for i, row in enumerate(ctx["top"], start=1):
         ic_mean = _esc(f"{row['ic_mean']:.4f}")
         ic_std = _esc(f"{row['ic_std']:.4f}")

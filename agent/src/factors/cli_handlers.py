@@ -662,6 +662,7 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
                 "n_skipped": len(skipped),
                 "top": top_rows,
                 "failures": failures_for_report,
+                "meta": result.get("meta"),
             }
             report_path.write_text(_render_html(context), encoding="utf-8")
         except Exception as exc:  # noqa: BLE001 — report is nice-to-have
@@ -676,6 +677,7 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
             "n_alphas_tested": len(rows),
             "n_skipped": len(skipped),
             "top": top_rows,
+            "meta": result.get("meta"),
             "wall_seconds": result.get("wall_seconds"),
         }
         if report_path is not None:
