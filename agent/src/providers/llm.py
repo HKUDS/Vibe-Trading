@@ -464,20 +464,26 @@ def _build_anthropic(
             'extra: pip install "vibe-trading-ai[anthropic]" (or pip install langchain-anthropic).'
         ) from exc
 
-    return chat_anthropic(
-        model=model,
-        max_tokens=get_env_config().llm.anthropic_max_tokens,
-        temperature=temperature,
-        timeout=get_env_config().llm.timeout_seconds,
-        max_retries=get_env_config().llm.max_retries,
-        callbacks=callbacks,
-        api_key=os.getenv("ANTHROPIC_API_KEY") or None,  # noqa: env-gate — native provider credential
-        base_url=(
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "max_tokens": get_env_config().llm.anthropic_max_tokens,
+        "timeout": get_env_config().llm.timeout_seconds,
+        "max_retries": get_env_config().llm.max_retries,
+        "callbacks": callbacks,
+        "api_key": os.getenv("ANTHROPIC_API_KEY") or None,  # noqa: env-gate — native provider credential
+        "base_url": (
             os.getenv("ANTHROPIC_BASE_URL")  # noqa: env-gate — native provider endpoint
             or os.getenv("ANTHROPIC_API_URL")  # noqa: env-gate — SDK-compatible alias
             or None
         ),
+    }
+    is_opus_4_7 = re.search(
+        r"(?:^|[.:/])claude-opus-4-7(?:-|$)", model.lower()
     )
+    if not is_opus_4_7:
+        kwargs["temperature"] = temperature
+
+    return chat_anthropic(**kwargs)
 
 
 def _load_env_file(path: Path) -> None:
