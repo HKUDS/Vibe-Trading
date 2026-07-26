@@ -25,3 +25,16 @@ def test_split_message_preserves_indent_after_newline_cut() -> None:
     assert any("    def foo():" in c for c in chunks)
     assert any("        return 1" in c for c in chunks)
     assert all(len(c) <= 40 for c in chunks)
+
+
+def test_signal_partition_styles_keeps_indent_chunk_aligned() -> None:
+    # Signal rebases UTF-16 styles onto split_message chunks; must not skip
+    # indent spaces the way the old blanket lstrip mirror did.
+    from src.channels.signal import _partition_styles, _utf16_len
+
+    text = ("word " * 8) + "\n    def foo():\n        return 1\n" + ("tail " * 8)
+    chunks = split_message(text, max_len=40)
+    idx = text.index("def")
+    styles = [f"{_utf16_len(text[:idx])}:{_utf16_len('def')}:BOLD"]
+    parts = _partition_styles(text, chunks, styles)
+    assert any("BOLD" in entry for group in parts for entry in group)
