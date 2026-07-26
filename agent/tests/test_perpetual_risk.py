@@ -21,15 +21,15 @@ from backtest.perpetual_risk import (
 )
 
 
-def _brackets() -> tuple[MaintenanceBracket, ...]:
+def _brackets(coefficient: float | None = None) -> tuple[MaintenanceBracket, ...]:
     return (
-        MaintenanceBracket(1, 50_000.0, 0.004, 0.0),
-        MaintenanceBracket(2, 250_000.0, 0.005, 50.0),
+        MaintenanceBracket(1, 50_000.0, 0.004, 0.0, coefficient),
+        MaintenanceBracket(2, 250_000.0, 0.005, 50.0, coefficient),
     )
 
 
-def _schedule(symbol: str = "BTC-USDT-PERP", version: str = "abc123") -> MaintenanceSchedule:
-    return MaintenanceSchedule(symbol, version, _brackets())
+def _schedule(symbol: str = "BTC-USDT-PERP", version: str = "abc123", coefficient: float | None = None) -> MaintenanceSchedule:
+    return MaintenanceSchedule(symbol, version, _brackets(coefficient))
 
 
 def _risk_frame(
@@ -241,25 +241,13 @@ def test_frames_reject_invalid_prices_and_unpaired_funding_fields() -> None:
         )
 
 
-def test_maintenance_margin_uses_cap_and_cumulative_amount() -> None:
+@pytest.mark.parametrize("coefficient", [None, 1.5])
+def test_maintenance_margin_uses_boundaries_without_reapplying_coefficient(
+    coefficient: float | None,
+) -> None:
     position = PositionState("BTC-USDT-PERP", 1.0, 40_000.0, 10.0, 0.0, 4_000.0)
-    schedule = _schedule()
+    schedule = _schedule(coefficient=coefficient)
     assert maintenance_margin(position, 50_000.0, schedule) == pytest.approx(200.0)
-    assert maintenance_margin(position, 50_001.0, schedule) == pytest.approx(
-        50_001.0 * 0.005 - 50.0
-    )
-
-
-def test_notional_coefficient_is_not_applied_twice() -> None:
-    schedule = MaintenanceSchedule(
-        "BTC-USDT-PERP",
-        "adjusted-artifact",
-        (
-            MaintenanceBracket(1, 50_000.0, 0.004, 0.0, 1.5),
-            MaintenanceBracket(2, 250_000.0, 0.005, 50.0, 1.5),
-        ),
-    )
-    position = PositionState("BTC-USDT-PERP", 1.0, 40_000.0, 10.0, 0.0, 4_000.0)
     assert maintenance_margin(position, 50_001.0, schedule) == pytest.approx(
         50_001.0 * 0.005 - 50.0
     )
@@ -332,65 +320,93 @@ def test_isolated_liquidates_only_the_breached_position() -> None:
     )
 
 
-def test_isolated_liquidates_at_the_exact_maintenance_threshold() -> None:
-    account = AccountState(
-        1_000.0,
-        (PositionState("BTC-USDT-PERP", 1.0, 60_000.0, 10.0, 0.0, 747.5),),
-        "isolated",
-    )
-
-    snapshot = evaluate_isolated(account, {"BTC-USDT-PERP": _risk_frame()})
-
-    assert snapshot.per_position[0].margin_balance == pytest.approx(
-        snapshot.per_position[0].maintenance_margin
-    )
-    assert snapshot.status == "position_liquidation"
-    assert snapshot.liquidation_targets == ("BTC-USDT-PERP",)
+@pytest.mark.parametrize(
+    ("account", "frames", "status", "targets"),
+    [
+        (
+            AccountState(1_000.0, (PositionState("BTC-USDT-PERP", 1.0, 60_000.0, 10.0, 0.0, 747.5),), "isolated"),
+            {"BTC-USDT-PERP": _risk_frame()},
+            "position_liquidation",
+            ("BTC-USDT-PERP",),
+        ),
+        (
+            AccountState(759.5, (
+                PositionState("BTC-USDT-PERP", 1.0, 60_000.0, 10.0, 0.0, None),
+                PositionState("ETH-USDT-PERP", 1.0, 3_000.0, 10.0, 0.0, None),
+            ), "cross"),
+            {
+                "BTC-USDT-PERP": _risk_frame(),
+                "ETH-USDT-PERP": _risk_frame("ETH-USDT-PERP", mark_open=3_000.0,
+                                               mark_high=3_000.0, mark_low=3_000.0, mark_close=3_000.0),
+            },
+            "account_liquidation",
+            ("BTC-USDT-PERP", "ETH-USDT-PERP"),
+        ),
+    ],
+)
+def test_risk_models_liquidate_at_exact_maintenance_threshold(account: AccountState,
+                                                               frames: dict[str, MarketRiskFrame], status: str,
+                                                               targets: tuple[str, ...]) -> None:
+    evaluate = evaluate_isolated if account.margin_mode == "isolated" else CrossMarginRiskModel().evaluate
+    snapshot = evaluate(account, frames)
+    if account.margin_mode == "isolated":
+        risk = snapshot.per_position[0]
+        assert risk.margin_balance == pytest.approx(risk.maintenance_margin)
+    else:
+        assert snapshot.margin_balance == pytest.approx(snapshot.maintenance_margin)
+    assert snapshot.status == status
+    assert snapshot.liquidation_targets == targets
 
 
 @pytest.mark.parametrize("price_field", ["mark_open", "mark_high", "mark_low", "mark_close"])
 def test_isolated_accepts_explicit_mark_price_fields(price_field: str) -> None:
-    account = AccountState(
-        1_000.0,
-        (PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, 1_000.0),),
-        "isolated",
-    )
-
+    account = AccountState(1_000.0, (PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, 1_000.0),), "isolated")
     snapshot = evaluate_isolated(account, {"BTC-USDT-PERP": _risk_frame()}, price_field)
-
     assert snapshot.status == "healthy"
     assert snapshot.per_position[0].mark_price == getattr(_risk_frame(), price_field)
 
 
-def test_isolated_healthy_and_empty_accounts_do_not_liquidate() -> None:
-    healthy = AccountState(
-        1_000.0,
-        (PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, 1_000.0),),
-        "isolated",
-    )
-    empty = AccountState(1_000.0, (), "isolated")
-
-    healthy_snapshot = evaluate_isolated(healthy, {"BTC-USDT-PERP": _risk_frame()})
-    empty_snapshot = evaluate_isolated(empty, {})
-
-    assert healthy_snapshot.status == "healthy"
-    assert healthy_snapshot.liquidation_targets == ()
-    assert empty_snapshot.status == "healthy"
-    assert empty_snapshot.per_position == ()
-    assert empty_snapshot.margin_balance == pytest.approx(1_000.0)
+@pytest.mark.parametrize("margin_mode", ["isolated", "cross"])
+def test_empty_accounts_are_healthy(margin_mode: str) -> None:
+    account = AccountState(1_000.0, (), margin_mode)
+    evaluate = evaluate_isolated if margin_mode == "isolated" else CrossMarginRiskModel().evaluate
+    snapshot = evaluate(account, {})
+    assert snapshot.status == "healthy"
+    assert snapshot.liquidation_targets == ()
+    assert snapshot.per_position == ()
+    assert snapshot.margin_balance == pytest.approx(1_000.0)
 
 
-def test_isolated_rejects_wrong_margin_mode_and_missing_isolated_margin() -> None:
-    position = PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, 1_000.0)
-    with pytest.raises(ValueError, match="margin_mode"):
-        evaluate_isolated(AccountState(1_000.0, (position,), "cross"), {position.symbol: _risk_frame()})
-
-    missing_margin = PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, None)
-    with pytest.raises(ValueError, match="isolated_margin"):
-        evaluate_isolated(
-            AccountState(1_000.0, (missing_margin,), "isolated"),
-            {missing_margin.symbol: _risk_frame()},
-        )
+@pytest.mark.parametrize(
+    ("evaluate", "account", "match"),
+    [
+        (
+            evaluate_isolated,
+            AccountState(1_000.0, (PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, 1_000.0),), "cross"),
+            "margin_mode",
+        ),
+        (
+            evaluate_isolated,
+            AccountState(1_000.0, (PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, None),), "isolated"),
+            "isolated_margin",
+        ),
+        (
+            CrossMarginRiskModel().evaluate,
+            AccountState(1_000.0, (PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, None),), "isolated"),
+            "margin_mode",
+        ),
+        (
+            CrossMarginRiskModel().evaluate,
+            AccountState(1_000.0, (PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, 1_000.0),), "cross"),
+            "isolated_margin",
+        ),
+    ],
+)
+def test_risk_models_reject_wrong_modes_and_margin_assignments(
+    evaluate: object, account: AccountState, match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        evaluate(account, {"BTC-USDT-PERP": _risk_frame()})  # type: ignore[operator]
 
 
 def test_isolated_rejects_missing_or_invalid_market_risk_frames() -> None:
@@ -419,31 +435,6 @@ def test_isolated_rejects_missing_or_invalid_market_risk_frames() -> None:
         )
     with pytest.raises(ValueError, match="price_field"):
         evaluate_isolated(account, {position.symbol: _risk_frame()}, "last")
-
-
-def test_isolated_rejects_unsynchronized_position_frames() -> None:
-    account = AccountState(
-        1_000.0,
-        (
-            PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, 1_000.0),
-            PositionState("ETH-USDT-PERP", 1.0, 3_000.0, 10.0, 0.0, 1_000.0),
-        ),
-        "isolated",
-    )
-    frames = {
-        "BTC-USDT-PERP": _risk_frame(),
-        "ETH-USDT-PERP": _risk_frame(
-            "ETH-USDT-PERP",
-            timestamp=pd.Timestamp("2026-07-26T00:01:00Z"),
-            mark_open=3_000.0,
-            mark_high=3_010.0,
-            mark_low=2_990.0,
-            mark_close=3_000.0,
-        ),
-    }
-
-    with pytest.raises(ValueError, match="timestamps"):
-        evaluate_isolated(account, frames)
 
 
 def test_cross_offsets_profitable_and_losing_position_pnl() -> None:
@@ -484,36 +475,6 @@ def test_cross_offsets_profitable_and_losing_position_pnl() -> None:
     )
 
 
-def test_cross_liquidates_at_the_exact_account_maintenance_threshold() -> None:
-    account = AccountState(
-        759.5,
-        (
-            PositionState("BTC-USDT-PERP", 1.0, 60_000.0, 10.0, 0.0, None),
-            PositionState("ETH-USDT-PERP", 1.0, 3_000.0, 10.0, 0.0, None),
-        ),
-        "cross",
-    )
-    frames = {
-        "BTC-USDT-PERP": _risk_frame(),
-        "ETH-USDT-PERP": _risk_frame(
-            "ETH-USDT-PERP",
-            mark_open=3_000.0,
-            mark_high=3_000.0,
-            mark_low=3_000.0,
-            mark_close=3_000.0,
-        ),
-    }
-
-    snapshot = CrossMarginRiskModel().evaluate(account, frames)
-
-    assert snapshot.margin_balance == pytest.approx(snapshot.maintenance_margin)
-    assert snapshot.status == "account_liquidation"
-    assert snapshot.liquidation_targets == (
-        "BTC-USDT-PERP",
-        "ETH-USDT-PERP",
-    )
-
-
 def test_cross_remains_healthy_just_above_maintenance_threshold() -> None:
     account = AccountState(
         747.5000000000005,
@@ -530,38 +491,16 @@ def test_cross_remains_healthy_just_above_maintenance_threshold() -> None:
     assert snapshot.liquidation_targets == ()
 
 
-def test_cross_empty_account_is_healthy() -> None:
-    snapshot = CrossMarginRiskModel().evaluate(AccountState(1_000.0, (), "cross"), {})
-
-    assert snapshot.status == "healthy"
-    assert snapshot.liquidation_targets == ()
-    assert snapshot.margin_balance == pytest.approx(1_000.0)
-
-
-def test_cross_rejects_wrong_margin_mode_or_isolated_margin() -> None:
-    cross_position = PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, None)
-    with pytest.raises(ValueError, match="margin_mode"):
-        CrossMarginRiskModel().evaluate(
-            AccountState(1_000.0, (cross_position,), "isolated"),
-            {cross_position.symbol: _risk_frame()},
-        )
-
-    isolated_position = PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, 1_000.0)
-    with pytest.raises(ValueError, match="isolated_margin"):
-        CrossMarginRiskModel().evaluate(
-            AccountState(1_000.0, (isolated_position,), "cross"),
-            {isolated_position.symbol: _risk_frame()},
-        )
-
-
-def test_cross_rejects_unsynchronized_position_frames() -> None:
+@pytest.mark.parametrize("margin_mode", ["isolated", "cross"])
+def test_risk_models_reject_unsynchronized_position_frames(margin_mode: str) -> None:
+    margin = 1_000.0 if margin_mode == "isolated" else None
     account = AccountState(
         1_000.0,
         (
-            PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, None),
-            PositionState("ETH-USDT-PERP", 1.0, 3_000.0, 10.0, 0.0, None),
+            PositionState("BTC-USDT-PERP", 0.1, 60_000.0, 10.0, 0.0, margin),
+            PositionState("ETH-USDT-PERP", 1.0, 3_000.0, 10.0, 0.0, margin),
         ),
-        "cross",
+        margin_mode,
     )
     frames = {
         "BTC-USDT-PERP": _risk_frame(),
@@ -576,4 +515,4 @@ def test_cross_rejects_unsynchronized_position_frames() -> None:
     }
 
     with pytest.raises(ValueError, match="timestamps"):
-        CrossMarginRiskModel().evaluate(account, frames)
+        (evaluate_isolated if margin_mode == "isolated" else CrossMarginRiskModel().evaluate)(account, frames)
