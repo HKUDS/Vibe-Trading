@@ -486,10 +486,10 @@ def test_cross_offsets_profitable_and_losing_position_pnl() -> None:
 
 def test_cross_liquidates_at_the_exact_account_maintenance_threshold() -> None:
     account = AccountState(
-        669.46,
+        759.5,
         (
             PositionState("BTC-USDT-PERP", 1.0, 60_000.0, 10.0, 0.0, None),
-            PositionState("ETH-USDT-PERP", 1.0, 2_900.0, 10.0, 0.0, None),
+            PositionState("ETH-USDT-PERP", 1.0, 3_000.0, 10.0, 0.0, None),
         ),
         "cross",
     )
@@ -498,8 +498,8 @@ def test_cross_liquidates_at_the_exact_account_maintenance_threshold() -> None:
         "ETH-USDT-PERP": _risk_frame(
             "ETH-USDT-PERP",
             mark_open=3_000.0,
-            mark_high=3_010.0,
-            mark_low=2_990.0,
+            mark_high=3_000.0,
+            mark_low=3_000.0,
             mark_close=3_000.0,
         ),
     }
@@ -512,6 +512,22 @@ def test_cross_liquidates_at_the_exact_account_maintenance_threshold() -> None:
         "BTC-USDT-PERP",
         "ETH-USDT-PERP",
     )
+
+
+def test_cross_remains_healthy_just_above_maintenance_threshold() -> None:
+    account = AccountState(
+        747.5000000000005,
+        (PositionState("BTC-USDT-PERP", 1.0, 60_000.0, 10.0, 0.0, None),),
+        "cross",
+    )
+
+    snapshot = CrossMarginRiskModel().evaluate(
+        account, {"BTC-USDT-PERP": _risk_frame()}
+    )
+
+    assert snapshot.margin_balance > snapshot.maintenance_margin
+    assert snapshot.status == "healthy"
+    assert snapshot.liquidation_targets == ()
 
 
 def test_cross_empty_account_is_healthy() -> None:

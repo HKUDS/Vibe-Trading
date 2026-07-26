@@ -397,11 +397,7 @@ class CrossMarginRiskModel:
         maintenance = sum(risk.maintenance_margin for risk in risks)
         liquidation_targets = (
             tuple(position.symbol for position in account.positions)
-            if risks
-            and (
-                margin_balance <= maintenance
-                or math.isclose(margin_balance, maintenance, rel_tol=0.0, abs_tol=1e-12)
-            )
+            if risks and margin_balance <= maintenance
             else ()
         )
         return _risk_snapshot(
