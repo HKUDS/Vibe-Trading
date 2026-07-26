@@ -80,7 +80,12 @@ def split_message(content: str, max_len: int = 2000) -> list[str]:
         if pos <= 0:
             pos = max_len
         chunks.append(content[:pos])
-        content = content[pos:].lstrip()
+        # Drop only the separator we broke on. A blanket lstrip() also ate
+        # indentation on the next line (code blocks / nested markdown).
+        rest = content[pos:]
+        if rest.startswith("\n") or rest.startswith(" "):
+            rest = rest[1:]
+        content = rest
     return chunks
 
 
