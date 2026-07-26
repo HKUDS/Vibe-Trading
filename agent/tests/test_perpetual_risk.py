@@ -309,10 +309,11 @@ def test_isolated_liquidates_only_the_breached_position() -> None:
     assert snapshot.liquidation_targets == ("BTC-USDT-PERP",)
     assert snapshot.per_position[0].mark_price == 59_500.0
     assert snapshot.per_position[1].mark_price == 3_010.0
+    assert [risk.initial_margin for risk in snapshot.per_position] == pytest.approx([5_950.0, 301.0])
     assert snapshot.margin_balance == pytest.approx(490.0)
-    assert snapshot.initial_margin == pytest.approx(6_300.0)
+    assert snapshot.initial_margin == pytest.approx(6_251.0)
     assert snapshot.maintenance_margin == pytest.approx(259.54)
-    assert snapshot.available_balance == pytest.approx(-5_810.0)
+    assert snapshot.available_balance == pytest.approx(-5_761.0)
     assert snapshot.fidelity_flags == (
         "btc_mark",
         "eth_mark",
@@ -463,9 +464,9 @@ def test_cross_offsets_profitable_and_losing_position_pnl() -> None:
     assert snapshot.per_position[0].unrealized_pnl == pytest.approx(-500.0)
     assert snapshot.per_position[1].unrealized_pnl == pytest.approx(900.0)
     assert snapshot.margin_balance == pytest.approx(1_400.0)
-    assert snapshot.initial_margin == pytest.approx(8_900.0)
+    assert snapshot.initial_margin == pytest.approx(8_940.0)
     assert snapshot.maintenance_margin == pytest.approx(367.1)
-    assert snapshot.available_balance == pytest.approx(-7_500.0)
+    assert snapshot.available_balance == pytest.approx(-7_540.0)
     assert snapshot.status == "healthy"
     assert snapshot.liquidation_targets == ()
     assert snapshot.fidelity_flags == (

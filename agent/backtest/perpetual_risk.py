@@ -309,7 +309,7 @@ def _position_risks(
         fidelity_flags.extend(frame.fidelity_flags)
         mark_price = _mark_price(position, frame, price_field)
         unrealized_pnl = position.quantity * (mark_price - position.entry_price)
-        initial_margin = abs(position.quantity) * position.entry_price / position.leverage
+        initial_margin = abs(position.quantity) * mark_price / position.leverage
         margin_balance = (
             position.isolated_margin + unrealized_pnl if isolated else None
         )
