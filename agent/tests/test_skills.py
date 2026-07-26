@@ -55,6 +55,20 @@ class TestParseFrontmatter:
         assert "Line 1" in body
         assert "Line 3" in body
 
+    def test_closing_fence_at_eof_without_trailing_newline(self) -> None:
+        # Skill/memory writers often omit the final newline after ---.
+        text = "---\nname: eof-skill\ndescription: no trailing newline\n---"
+        meta, body = _parse_frontmatter(text)
+        assert meta["name"] == "eof-skill"
+        assert meta["description"] == "no trailing newline"
+        assert body == ""
+
+    def test_empty_frontmatter_block(self) -> None:
+        text = "---\n---\nBody only."
+        meta, body = _parse_frontmatter(text)
+        assert meta == {}
+        assert body == "Body only."
+
 
 # ---------------------------------------------------------------------------
 # Skill dataclass
