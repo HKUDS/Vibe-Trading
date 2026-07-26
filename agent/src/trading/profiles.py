@@ -18,6 +18,7 @@ from src.trading.connectors.robinhood.profiles import ROBINHOOD_PROFILES
 from src.trading.connectors.shoonya.profiles import SHOONYA_PROFILES
 from src.trading.connectors.tiger.profiles import TIGER_PROFILES
 from src.trading.connectors.trading212.profiles import TRADING212_PROFILES
+from src.trading.connectors.vnpy.profiles import VNPY_PROFILES
 from src.trading.types import TradingProfile
 
 CONFIG_FILENAME = "trading-connections.json"
@@ -36,6 +37,7 @@ BUILTIN_PROFILES: tuple[TradingProfile, ...] = (
     *SHOONYA_PROFILES,
     *TRADING212_PROFILES,
     *MT5_PROFILES,
+    *VNPY_PROFILES,
 )
 
 

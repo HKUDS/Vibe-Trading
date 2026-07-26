@@ -100,6 +100,11 @@ ibkr = [
 longbridge = [
     "longbridge>=0.2.5",
 ]
+vnpy = [
+    # Only vnpy.rpc + vnpy.trader.object/constant are used (the RPC bridge
+    # client), but the vnpy package itself pulls in its PySide6 GUI stack.
+    "vnpy>=4.0.0",
+]
 mt5 = [
     # Official Windows-only bridge to a locally running MetaTrader 5 terminal
     # (broker connector + mt5 data loader). Lazy-imported; on other platforms
