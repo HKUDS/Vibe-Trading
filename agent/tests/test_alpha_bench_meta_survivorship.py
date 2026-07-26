@@ -130,8 +130,8 @@ def test_html_context_includes_universe_meta_when_present(capsys, monkeypatch, _
 
 
 def test_meta_key_absent_from_envelope_and_context_when_loader_has_none(capsys, monkeypatch, _reg, _captured_html_context):
-    """csi300/other loaders return no _meta; final envelope/context must not gain a stray key."""
-    rc, cap = _run(monkeypatch, capsys, _ns(universe="csi300"), _result())
+    """Loaders without _meta must not gain a stray downstream key."""
+    rc, cap = _run(monkeypatch, capsys, _ns(universe="btc-usdt"), _result())
     assert rc == 0
     envelope = _envelope(cap.out)
     assert "meta" not in envelope

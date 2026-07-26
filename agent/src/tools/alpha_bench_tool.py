@@ -323,12 +323,15 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     ed = end.replace("-", "")
 
     codes: list[str] = []
+    constituent_source = "tushare index_weight"
+    constituent_source_date: str | None = None
     try:
         weights = pro.index_weight(
             index_code="399300.SZ", start_date=sd, end_date=ed
         )
         if weights is not None and not weights.empty:
             latest_date = weights["trade_date"].max()
+            constituent_source_date = str(latest_date)
             codes = (
                 weights[weights["trade_date"] == latest_date]["con_code"]
                 .drop_duplicates()
@@ -340,6 +343,8 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
 
     if not codes:
         codes = list(_CSI300_FALLBACK_CODES)
+        constituent_source = "hand-picked fallback"
+        constituent_source_date = None
         logger.warning("csi300: using %d-name fallback (degraded run)", len(codes))
 
     # Fetch raw daily in parallel — we need ``amount`` which the standard
@@ -381,6 +386,16 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
         panel["vwap"] = safe_div(
             panel["amount"] * 1000.0, panel["volume"] * 100.0 + 1.0
         )
+    panel["_meta"] = {
+        "universe": "csi300",
+        # A terminal snapshot is forward-looking relative to the start of the
+        # requested interval; the static fallback is survivor-selected too.
+        "survivorship_bias": True,
+        "degraded": constituent_source != "tushare index_weight",
+        "constituent_source": constituent_source,
+        "constituent_source_date": constituent_source_date,
+        "constituent_count": len(codes),
+    }
     return panel
 
 
@@ -396,14 +411,17 @@ def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     """
     codes = _fetch_sp500_constituents()
     constituent_source = "wikipedia"
+    constituent_source_date: str | None = _SP500_CONSTITUENT_SOURCE_DATE
     if not codes:
         codes = list(_SP500_FALLBACK_CODES)
         constituent_source = "hand-picked fallback"
+        constituent_source_date = None
         logger.warning("sp500: using %d-name fallback (degraded run)", len(codes))
 
     logger.warning(
         "SP500 universe uses current constituents (%s @ %s) → survivorship-biased",
-        constituent_source, _SP500_CONSTITUENT_SOURCE_DATE,
+        constituent_source,
+        constituent_source_date,
     )
 
     # yfinance loader expects project-style symbols (``AAPL.US``).
@@ -423,8 +441,9 @@ def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     panel["_meta"] = {
         "universe": "sp500",
         "survivorship_bias": True,
+        "degraded": constituent_source == "hand-picked fallback",
         "constituent_source": constituent_source,
-        "constituent_source_date": _SP500_CONSTITUENT_SOURCE_DATE,
+        "constituent_source_date": constituent_source_date,
         "constituent_count": len(codes),
     }
     return panel
