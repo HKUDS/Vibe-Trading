@@ -156,6 +156,42 @@ class PositionState:
 
 
 @dataclass(frozen=True)
+class PositionRisk:
+    symbol: str
+    mark_price: float
+    notional: float
+    unrealized_pnl: float
+    initial_margin: float
+    maintenance_margin: float
+    margin_balance: float | None
+
+
+@dataclass(frozen=True)
+class RiskSnapshot:
+    margin_balance: float
+    initial_margin: float
+    maintenance_margin: float
+    available_balance: float
+    per_position: tuple[PositionRisk, ...]
+    status: Literal["healthy", "position_liquidation", "account_liquidation"]
+    liquidation_targets: tuple[str, ...]
+    fidelity_flags: tuple[str, ...]
+
+
+def maintenance_margin(
+    position: PositionState, mark_price: float, schedule: MaintenanceSchedule
+) -> float:
+    if position.symbol != schedule.symbol:
+        raise ValueError("position and schedule symbols must match")
+    _require_finite("mark_price", mark_price, positive=True)
+    notional = abs(position.quantity) * mark_price
+    for bracket in schedule.brackets:
+        if notional <= bracket.notional_cap:
+            return notional * bracket.maintenance_rate - bracket.cumulative_maintenance_amount
+    raise ValueError("notional exceeds the final maintenance bracket cap")
+
+
+@dataclass(frozen=True)
 class AccountState:
     """Single-asset USDT account state without open-order margin."""
 

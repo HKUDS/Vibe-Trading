@@ -12,7 +12,10 @@ from backtest.perpetual_risk import (
     MaintenanceBracket,
     MaintenanceSchedule,
     MarketRiskFrame,
+    PositionRisk,
     PositionState,
+    RiskSnapshot,
+    maintenance_margin,
 )
 
 
@@ -209,3 +212,56 @@ def test_frames_reject_invalid_prices_and_unpaired_funding_fields() -> None:
             source="ccxt:binanceusdm",
             fidelity_flags=(),
         )
+
+
+def test_maintenance_margin_uses_cap_and_cumulative_amount() -> None:
+    position = PositionState("BTC-USDT-PERP", 1.0, 40_000.0, 10.0, 0.0, 4_000.0)
+    schedule = _schedule()
+    assert maintenance_margin(position, 50_000.0, schedule) == pytest.approx(200.0)
+    assert maintenance_margin(position, 50_001.0, schedule) == pytest.approx(
+        50_001.0 * 0.005 - 50.0
+    )
+
+
+def test_notional_coefficient_is_not_applied_twice() -> None:
+    schedule = MaintenanceSchedule(
+        "BTC-USDT-PERP",
+        "adjusted-artifact",
+        (
+            MaintenanceBracket(1, 50_000.0, 0.004, 0.0, 1.5),
+            MaintenanceBracket(2, 250_000.0, 0.005, 50.0, 1.5),
+        ),
+    )
+    position = PositionState("BTC-USDT-PERP", 1.0, 40_000.0, 10.0, 0.0, 4_000.0)
+    assert maintenance_margin(position, 50_001.0, schedule) == pytest.approx(
+        50_001.0 * 0.005 - 50.0
+    )
+
+
+@pytest.mark.parametrize(
+    ("mark_price", "match"),
+    [(0.0, "positive and finite"), (-1.0, "positive and finite"), (float("nan"), "positive and finite")],
+)
+def test_maintenance_margin_rejects_invalid_mark_price(mark_price: float, match: str) -> None:
+    position = PositionState("BTC-USDT-PERP", 1.0, 40_000.0, 10.0, 0.0, 4_000.0)
+    with pytest.raises(ValueError, match=match):
+        maintenance_margin(position, mark_price, _schedule())
+
+
+def test_maintenance_margin_rejects_symbol_mismatch_and_notional_above_final_cap() -> None:
+    position = PositionState("ETH-USDT-PERP", 1.0, 40_000.0, 10.0, 0.0, 4_000.0)
+    with pytest.raises(ValueError, match="symbol"):
+        maintenance_margin(position, 50_000.0, _schedule())
+
+    position = PositionState("BTC-USDT-PERP", 6.0, 40_000.0, 10.0, 0.0, 4_000.0)
+    with pytest.raises(ValueError, match="notional"):
+        maintenance_margin(position, 50_000.0, _schedule())
+
+
+def test_risk_outputs_are_frozen() -> None:
+    risk = PositionRisk("BTC-USDT-PERP", 50_000.0, 50_000.0, 10_000.0, 5_000.0, 200.0, 4_000.0)
+    snapshot = RiskSnapshot(4_000.0, 5_000.0, 200.0, -1_200.0, (risk,), "healthy", (), ())
+    with pytest.raises(FrozenInstanceError):
+        risk.mark_price = 1.0  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        snapshot.status = "account_liquidation"  # type: ignore[misc]
