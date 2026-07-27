@@ -369,6 +369,90 @@ def test_build_anthropic_uses_messages_api_proxy() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Anthropic temperature self-heal (next-gen models deprecate `temperature`)
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_anthropic_base():
+    """A minimal ChatAnthropic stand-in mimicking payload + generate wiring."""
+
+    class _FakeAnthropicBase:
+        def __init__(self, **kwargs: object) -> None:
+            self.model = kwargs.get("model")
+            self.temperature = kwargs.get("temperature")
+            self.calls: list[dict] = []
+
+        def _get_request_payload(self, *args: object, **kwargs: object) -> dict:
+            # Mirrors ChatAnthropic: temperature only present when not None.
+            payload: dict = {"model": self.model, "messages": []}
+            if self.temperature is not None:
+                payload["temperature"] = self.temperature
+            return payload
+
+        def _generate(self, *args: object, **kwargs: object):
+            payload = self._get_request_payload(*args, **kwargs)
+            self.calls.append(dict(payload))
+            if self.model == "deprecates-temp" and "temperature" in payload:
+                raise RuntimeError("`temperature` is deprecated for this model.")
+            return SimpleNamespace(payload=payload)
+
+    return _FakeAnthropicBase
+
+
+def test_anthropic_temperature_self_heal_drops_and_retries() -> None:
+    import src.providers.llm as llm_mod
+
+    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard("deprecates-temp")
+    base = _make_fake_anthropic_base()
+    safe_cls = llm_mod._make_temperature_safe_anthropic(base)
+    inst = safe_cls(model="deprecates-temp", temperature=0.0)
+
+    result = inst._generate([])
+
+    # First attempt carried temperature (and failed); retry dropped it.
+    assert len(inst.calls) == 2
+    assert "temperature" in inst.calls[0]
+    assert "temperature" not in inst.calls[1]
+    assert "temperature" not in result.payload
+    # Model is remembered so later calls omit temperature up front.
+    assert "deprecates-temp" in llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+
+
+def test_anthropic_temperature_preserved_for_supported_model() -> None:
+    import src.providers.llm as llm_mod
+
+    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard("supports-temp")
+    base = _make_fake_anthropic_base()
+    safe_cls = llm_mod._make_temperature_safe_anthropic(base)
+    inst = safe_cls(model="supports-temp", temperature=0.0)
+
+    result = inst._generate([])
+
+    # Deterministic temperature preserved; no retry, nothing remembered.
+    assert len(inst.calls) == 1
+    assert result.payload.get("temperature") == 0.0
+    assert "supports-temp" not in llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+
+
+def test_is_anthropic_temperature_unsupported_error_matching() -> None:
+    from src.providers.llm import _is_anthropic_temperature_unsupported_error
+
+    assert _is_anthropic_temperature_unsupported_error(
+        RuntimeError("`temperature` is deprecated for this model.")
+    )
+    assert _is_anthropic_temperature_unsupported_error(
+        ValueError("temperature is not supported")
+    )
+    # Unrelated errors must not trigger the temperature retry path.
+    assert not _is_anthropic_temperature_unsupported_error(
+        RuntimeError("max_tokens is required")
+    )
+    assert not _is_anthropic_temperature_unsupported_error(
+        RuntimeError("rate limit exceeded")
+    )
+
+
+# ---------------------------------------------------------------------------
 # MiniMax temperature clamping
 # ---------------------------------------------------------------------------
 
