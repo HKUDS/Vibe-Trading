@@ -1,0 +1,1316 @@
+[
+  {
+    "file": "commodity_research_team.yaml",
+    "name": "commodity_research_team",
+    "title": "Commodity Research Team",
+    "description": "Parallel deep-dive on supply and demand, synthesized by a cycle strategist into an investment thesis — DAG workflow",
+    "n_agents": 3,
+    "n_tasks": 3,
+    "agent_ids": [
+      "supply_analyst",
+      "demand_analyst",
+      "cycle_strategist"
+    ],
+    "task_ids": [
+      "task-supply-research",
+      "task-demand-research",
+      "task-cycle-strategy"
+    ],
+    "dependencies": [
+      {
+        "task": "task-cycle-strategy",
+        "depends_on": [
+          "task-supply-research",
+          "task-demand-research"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "commodity",
+        "description": "Commodity type, e.g.: crude oil / gold / copper / iron ore / natural gas / soybeans / aluminum / rebar",
+        "required": true
+      },
+      {
+        "name": "horizon",
+        "description": "Investment horizon, e.g.: 1 month / 3 months / 6 months / 1 year",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "convertible_bond_team.yaml",
+    "name": "convertible_bond_team",
+    "title": "Convertible Bond Research Team",
+    "description": "Parallel three-dimensional analysis — bond floor, equity optionality, and embedded option value — synthesized into a convertible bond investment strategy",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "bond_analyst",
+      "equity_analyst",
+      "option_analyst",
+      "cb_strategist"
+    ],
+    "task_ids": [
+      "task-bond",
+      "task-equity",
+      "task-option",
+      "task-strategy"
+    ],
+    "dependencies": [
+      {
+        "task": "task-strategy",
+        "depends_on": [
+          "task-bond",
+          "task-equity",
+          "task-option"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "market",
+        "description": "Target market (default: A-share convertible bonds)",
+        "required": true
+      },
+      {
+        "name": "goal",
+        "description": "Research focus (e.g.: uncover undervalued convertibles, position for conversion price reset candidates)",
+        "required": true
+      },
+      {
+        "name": "strategy_type",
+        "description": "Strategy type (low-price / dual-low / high-convexity / rotation; leave blank for strategist's discretion)",
+        "required": false
+      }
+    ]
+  },
+  {
+    "file": "credit_research_team.yaml",
+    "name": "credit_research_team",
+    "title": "Fixed Income Credit Research Team",
+    "description": "Credit quality + interest rate environment + sector credit three-dimensional parallel analysis → fixed income strategist synthesizes a complete bond investment strategy",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "credit_analyst",
+      "rate_analyst",
+      "sector_credit_analyst",
+      "fixed_income_strategist"
+    ],
+    "task_ids": [
+      "task-credit",
+      "task-rate",
+      "task-sector-credit",
+      "task-strategy"
+    ],
+    "dependencies": [
+      {
+        "task": "task-strategy",
+        "depends_on": [
+          "task-credit",
+          "task-rate",
+          "task-sector-credit"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "target",
+        "description": "Research subject or sector (e.g.: a specific LGFV platform, the property sector, steel bonds, AA-rated credit bond portfolio)",
+        "required": true
+      },
+      {
+        "name": "market",
+        "description": "Bond market (default: China bond market; options: credit bonds / LGFV bonds / rate bonds / convertible bonds)",
+        "required": false
+      }
+    ]
+  },
+  {
+    "file": "crypto_research_lab.yaml",
+    "name": "crypto_research_lab",
+    "title": "Crypto Asset Research Lab",
+    "description": "On-chain data + DeFi protocol + market sentiment three-dimensional parallel analysis → Alpha synthesizer converges investment recommendations",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "onchain_analyst",
+      "defi_analyst",
+      "crypto_sentiment_analyst",
+      "alpha_synthesizer"
+    ],
+    "task_ids": [
+      "task-onchain",
+      "task-defi",
+      "task-sentiment",
+      "task-alpha"
+    ],
+    "dependencies": [
+      {
+        "task": "task-alpha",
+        "depends_on": [
+          "task-onchain",
+          "task-defi",
+          "task-sentiment"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "target",
+        "description": "Target asset (e.g.: BTC / ETH / SOL; default BTC/ETH/SOL)",
+        "required": true
+      },
+      {
+        "name": "timeframe",
+        "description": "Analysis time horizon (short-term 1–4 weeks / medium-term 1–3 months / long-term 3–12 months)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "crypto_trading_desk.yaml",
+    "name": "crypto_trading_desk",
+    "title": "Crypto Trading & Risk Desk",
+    "description": "Execution-oriented crypto desk: funding/basis analyst + liquidation/microstructure analyst + on-chain/flow analyst + risk manager. Goes beyond research into position sizing, execution timing, and risk gating.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "funding_basis_analyst",
+      "liquidation_analyst",
+      "flow_analyst",
+      "desk_risk_manager"
+    ],
+    "task_ids": [
+      "task-funding",
+      "task-liquidation",
+      "task-flow",
+      "task-risk-decision"
+    ],
+    "dependencies": [
+      {
+        "task": "task-risk-decision",
+        "depends_on": [
+          "task-funding",
+          "task-liquidation",
+          "task-flow"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "target",
+        "description": "Target asset (e.g., BTC-USDT, ETH-USDT, SOL-USDT)",
+        "required": true
+      },
+      {
+        "name": "timeframe",
+        "description": "Trading horizon (intraday / swing 1-2 weeks / position 1-3 months)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "derivatives_strategy_desk.yaml",
+    "name": "derivatives_strategy_desk",
+    "title": "Derivatives Strategy Desk",
+    "description": "Volatility analysis → strategy design → Greeks risk management: sequential options trading desk workflow",
+    "n_agents": 3,
+    "n_tasks": 3,
+    "agent_ids": [
+      "vol_analyst",
+      "strategy_designer",
+      "greeks_manager"
+    ],
+    "task_ids": [
+      "task-vol",
+      "task-strategy",
+      "task-greeks"
+    ],
+    "dependencies": [
+      {
+        "task": "task-strategy",
+        "depends_on": [
+          "task-vol"
+        ]
+      },
+      {
+        "task": "task-greeks",
+        "depends_on": [
+          "task-strategy"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "target",
+        "description": "Underlying (e.g.: BTC, CSI 300 ETF, AAPL)",
+        "required": true
+      },
+      {
+        "name": "view",
+        "description": "Market view (bullish / bearish / neutral / long volatility / short volatility)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "earnings_research_desk.yaml",
+    "name": "earnings_research_desk",
+    "title": "Earnings Research Desk",
+    "description": "Earnings-focused research team: fundamental analyst + earnings revision tracker + options/event analyst + earnings strategist. Deep-dives into company financials, consensus revisions, earnings event trades, and post-earnings drift.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "fundamental_analyst",
+      "revision_tracker",
+      "event_options_analyst",
+      "earnings_strategist"
+    ],
+    "task_ids": [
+      "task-fundamental",
+      "task-revision",
+      "task-options-event",
+      "task-earnings-strategy"
+    ],
+    "dependencies": [
+      {
+        "task": "task-earnings-strategy",
+        "depends_on": [
+          "task-fundamental",
+          "task-revision",
+          "task-options-event"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "target",
+        "description": "Target stock (e.g., AAPL.US, NVDA.US, 700.HK, 600519.SH)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "equity_research_team.yaml",
+    "name": "equity_research_team",
+    "title": "Equity Research Team",
+    "description": "Macro → sector → stock three-tier deep research → research editor consolidates into a complete report",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "macro_analyst",
+      "sector_analyst",
+      "stock_picker",
+      "aggregator"
+    ],
+    "task_ids": [
+      "task-macro",
+      "task-sector",
+      "task-stock",
+      "task-aggregate"
+    ],
+    "dependencies": [
+      {
+        "task": "task-sector",
+        "depends_on": [
+          "task-macro"
+        ]
+      },
+      {
+        "task": "task-stock",
+        "depends_on": [
+          "task-sector"
+        ]
+      },
+      {
+        "task": "task-aggregate",
+        "depends_on": [
+          "task-stock"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "market",
+        "description": "Target market (e.g.: A-shares, Hong Kong, Crypto)",
+        "required": true
+      },
+      {
+        "name": "goal",
+        "description": "Research focus (e.g.: Q2 2026 outlook, opportunities in the new energy sector)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "etf_allocation_desk.yaml",
+    "name": "etf_allocation_desk",
+    "title": "ETF Allocation Desk",
+    "description": "ETF screening + macro allocation + risk budgeting three-dimensional parallel analysis → portfolio optimizer constructs the final ETF portfolio and backtests",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "etf_screener",
+      "macro_allocator",
+      "risk_budgeter",
+      "portfolio_optimizer"
+    ],
+    "task_ids": [
+      "task-etf-screen",
+      "task-macro-alloc",
+      "task-risk-budget",
+      "task-optimize"
+    ],
+    "dependencies": [
+      {
+        "task": "task-optimize",
+        "depends_on": [
+          "task-etf-screen",
+          "task-macro-alloc",
+          "task-risk-budget"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "risk_profile",
+        "description": "Risk profile (conservative / balanced / aggressive)",
+        "required": true
+      },
+      {
+        "name": "market",
+        "description": "Target market (default: A-shares; options: global multi-asset, HK/US equities, A-shares + HK)",
+        "required": false
+      }
+    ]
+  },
+  {
+    "file": "event_driven_task_force.yaml",
+    "name": "event_driven_task_force",
+    "title": "Event-Driven Task Force",
+    "description": "Event scanning → deep impact analysis → strategy construction: sequential deep-dive chain replicating an event-driven hedge fund special investigation unit workflow",
+    "n_agents": 3,
+    "n_tasks": 3,
+    "agent_ids": [
+      "event_scanner",
+      "impact_analyst",
+      "strategy_builder"
+    ],
+    "task_ids": [
+      "task-event-scan",
+      "task-impact-analysis",
+      "task-strategy-build"
+    ],
+    "dependencies": [
+      {
+        "task": "task-impact-analysis",
+        "depends_on": [
+          "task-event-scan"
+        ]
+      },
+      {
+        "task": "task-strategy-build",
+        "depends_on": [
+          "task-impact-analysis"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "market",
+        "description": "Target market, e.g.: A-shares / Hong Kong / US equities / Chinese ADRs",
+        "required": true
+      },
+      {
+        "name": "event_type",
+        "description": "Event type filter, e.g.: M&A / insider trading / earnings / policy / litigation / management change; enter 'all types' for no filter",
+        "required": false
+      }
+    ]
+  },
+  {
+    "file": "factor_research_committee.yaml",
+    "name": "factor_research_committee",
+    "title": "Factor Research Committee",
+    "description": "Factor mining + factor validation running in parallel → factor combination construction → backtest review: quant fund internal research review workflow",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "factor_miner",
+      "factor_validator",
+      "factor_combiner",
+      "backtest_reviewer"
+    ],
+    "task_ids": [
+      "task-mine",
+      "task-validate",
+      "task-combine",
+      "task-review"
+    ],
+    "dependencies": [
+      {
+        "task": "task-combine",
+        "depends_on": [
+          "task-mine",
+          "task-validate"
+        ]
+      },
+      {
+        "task": "task-review",
+        "depends_on": [
+          "task-combine"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "market",
+        "description": "Target market (e.g.: A-shares, Hong Kong, US equities)",
+        "required": true
+      },
+      {
+        "name": "factor_type",
+        "description": "Factor type (value / momentum / quality / growth / alternative)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "fund_selection_panel.yaml",
+    "name": "fund_selection_panel",
+    "title": "Fund Selection Panel",
+    "description": "Multi-dimensional quantitative screening → Brinson performance attribution and style analysis → FOF portfolio weight optimization, sequential professional review chain",
+    "n_agents": 3,
+    "n_tasks": 3,
+    "agent_ids": [
+      "fund_screener",
+      "attribution_analyst",
+      "fof_optimizer"
+    ],
+    "task_ids": [
+      "task-fund-screen",
+      "task-performance-attribution",
+      "task-fof-optimize"
+    ],
+    "dependencies": [
+      {
+        "task": "task-performance-attribution",
+        "depends_on": [
+          "task-fund-screen"
+        ]
+      },
+      {
+        "task": "task-fof-optimize",
+        "depends_on": [
+          "task-performance-attribution"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "fund_type",
+        "description": "Fund type, e.g.: equity / bond / balanced / index-enhanced / quant hedge / QDII",
+        "required": true
+      },
+      {
+        "name": "goal",
+        "description": "Investment objective, e.g.: build a steady FOF portfolio with annualized return >10% and max drawdown <15%",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "fundamental_research_team.yaml",
+    "name": "fundamental_research_team",
+    "title": "Fundamental Deep Research Team",
+    "description": "Financial / valuation / quality three-dimensional parallel analysis → research editor consolidates into a buy-side deep research report",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "financial_analyst",
+      "valuation_analyst",
+      "quality_analyst",
+      "report_editor"
+    ],
+    "task_ids": [
+      "task-financial",
+      "task-valuation",
+      "task-quality",
+      "task-report"
+    ],
+    "dependencies": [
+      {
+        "task": "task-report",
+        "depends_on": [
+          "task-financial",
+          "task-valuation",
+          "task-quality"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "target",
+        "description": "Research subject (stock code or name, e.g.: 600519 Kweichow Moutai)",
+        "required": true
+      },
+      {
+        "name": "market",
+        "description": "Market (e.g.: A-shares, Hong Kong, US equities)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "geopolitical_war_room.yaml",
+    "name": "geopolitical_war_room",
+    "title": "Geopolitical Risk War Room",
+    "description": "Geopolitical analysis, energy shock, and supply-chain impact run in parallel, then feed into the Chief Strategist for synthesis, producing emergency asset-allocation playbooks for geopolitical crises.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "geopolitical_analyst",
+      "energy_analyst",
+      "supply_chain_analyst",
+      "chief_strategist"
+    ],
+    "task_ids": [
+      "task-geopolitical",
+      "task-energy",
+      "task-supply-chain",
+      "task-strategy"
+    ],
+    "dependencies": [
+      {
+        "task": "task-strategy",
+        "depends_on": [
+          "task-geopolitical",
+          "task-energy",
+          "task-supply-chain"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "crisis",
+        "description": "Crisis narrative (e.g., Taiwan Strait escalation, Hormuz blockade, full Red Sea Houthi disruption)",
+        "required": true
+      },
+      {
+        "name": "market",
+        "description": "Focus market (e.g., A-shares, Hong Kong, global multi-asset)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "global_allocation_committee.yaml",
+    "name": "global_allocation_committee",
+    "title": "Global Allocation Committee",
+    "description": "Parallel A-shares + crypto + HK/US analysts; allocator synthesizes cross-market allocation with data-driven weighting, scenario analysis, and rebalancing rules.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "a_share_analyst",
+      "crypto_analyst",
+      "us_hk_analyst",
+      "allocator"
+    ],
+    "task_ids": [
+      "task-ashare",
+      "task-crypto",
+      "task-ushk",
+      "task-allocate"
+    ],
+    "dependencies": [
+      {
+        "task": "task-allocate",
+        "depends_on": [
+          "task-ashare",
+          "task-crypto",
+          "task-ushk"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "goal",
+        "description": "Investment objective (e.g., Q2 2026 multi-asset allocation)",
+        "required": true
+      },
+      {
+        "name": "risk_tolerance",
+        "description": "Risk tolerance (conservative / moderate / aggressive)",
+        "required": false
+      }
+    ]
+  },
+  {
+    "file": "global_equities_desk.yaml",
+    "name": "global_equities_desk",
+    "title": "Global Equities Research Desk",
+    "description": "Cross-market equity research: A-share analyst + HK/US analyst + crypto analyst + global strategist. Covers fundamental screening, earnings analysis, ETF flows, and cross-listing arbitrage for multi-market stock selection.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "a_share_researcher",
+      "us_hk_researcher",
+      "crypto_researcher",
+      "global_strategist"
+    ],
+    "task_ids": [
+      "task-ashare",
+      "task-ushk",
+      "task-crypto",
+      "task-strategy"
+    ],
+    "dependencies": [
+      {
+        "task": "task-strategy",
+        "depends_on": [
+          "task-ashare",
+          "task-ushk",
+          "task-crypto"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "goal",
+        "description": "Investment objective (e.g., Q2 2026 global equity allocation, tech sector deep-dive)",
+        "required": true
+      },
+      {
+        "name": "risk_tolerance",
+        "description": "Risk tolerance level (conservative / moderate / aggressive)",
+        "required": false
+      }
+    ]
+  },
+  {
+    "file": "investment_committee.yaml",
+    "name": "investment_committee",
+    "title": "Investment Committee",
+    "description": "Long–short debate → risk review → PM final call: buy-side fund investment committee workflow.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "bull_advocate",
+      "bear_advocate",
+      "risk_officer",
+      "portfolio_manager"
+    ],
+    "task_ids": [
+      "task-bull",
+      "task-bear",
+      "task-risk",
+      "task-decision"
+    ],
+    "dependencies": [
+      {
+        "task": "task-risk",
+        "depends_on": [
+          "task-bull",
+          "task-bear"
+        ]
+      },
+      {
+        "task": "task-decision",
+        "depends_on": [
+          "task-risk"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "target",
+        "description": "Security (e.g., 600519.SH Kweichow Moutai, BTC-USDT, AAPL)",
+        "required": true
+      },
+      {
+        "name": "market",
+        "description": "Market (e.g., A-shares, Hong Kong, US, crypto)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "macro_rates_fx_desk.yaml",
+    "name": "macro_rates_fx_desk",
+    "title": "Macro / Rates / FX Desk",
+    "description": "Cross-asset macro desk: global rates analyst + FX strategist + commodity/inflation analyst + macro portfolio manager. Covers central bank policy, yield curve dynamics, currency positioning, and macro-driven asset allocation.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "rates_analyst",
+      "fx_strategist",
+      "commodity_inflation_analyst",
+      "macro_pm"
+    ],
+    "task_ids": [
+      "task-rates",
+      "task-fx",
+      "task-commodity-inflation",
+      "task-macro-allocation"
+    ],
+    "dependencies": [
+      {
+        "task": "task-macro-allocation",
+        "depends_on": [
+          "task-rates",
+          "task-fx",
+          "task-commodity-inflation"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "goal",
+        "description": "Macro investment objective (e.g., Q2 2026 cross-asset positioning, rate cycle trade)",
+        "required": true
+      },
+      {
+        "name": "timeframe",
+        "description": "Investment horizon (tactical 1-3 months / strategic 6-12 months)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "macro_strategy_forum.yaml",
+    "name": "macro_strategy_forum",
+    "title": "Macro Strategy Forum",
+    "description": "Global + domestic + policy perspectives run in parallel; chief strategist delivers integrated cross-asset allocation guidance.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "global_economist",
+      "domestic_economist",
+      "policy_analyst",
+      "chief_strategist"
+    ],
+    "task_ids": [
+      "task-global",
+      "task-domestic",
+      "task-policy",
+      "task-strategy"
+    ],
+    "dependencies": [
+      {
+        "task": "task-strategy",
+        "depends_on": [
+          "task-global",
+          "task-domestic",
+          "task-policy"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "market",
+        "description": "Focus market (e.g., A-shares, Hong Kong, global multi-asset, crypto)",
+        "required": true
+      },
+      {
+        "name": "horizon",
+        "description": "Horizon (e.g., monthly, quarterly, annual)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "ml_quant_lab.yaml",
+    "name": "ml_quant_lab",
+    "title": "Machine Learning Quant Lab",
+    "description": "Feature engineering and model design in parallel; flows into the backtest engineer for strict out-of-sample validation.",
+    "n_agents": 3,
+    "n_tasks": 3,
+    "agent_ids": [
+      "feature_engineer",
+      "data_scientist",
+      "backtest_engineer"
+    ],
+    "task_ids": [
+      "task-features",
+      "task-model",
+      "task-backtest"
+    ],
+    "dependencies": [
+      {
+        "task": "task-backtest",
+        "depends_on": [
+          "task-features",
+          "task-model"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "market",
+        "description": "Target market (e.g., A-shares, Hong Kong/US equities)",
+        "required": true
+      },
+      {
+        "name": "target_variable",
+        "description": "Prediction target (return / direction / volatility)",
+        "required": true
+      },
+      {
+        "name": "goal",
+        "description": "Research focus (e.g., build a monthly stock-selection model, forecast daily volatility)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "pairs_research_lab.yaml",
+    "name": "pairs_research_lab",
+    "title": "Pairs Trading Research Lab",
+    "description": "Correlation scan and cointegration testing in parallel → converge into the pair strategist for strategy design → final microstructure review for execution feasibility.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "correlation_scanner",
+      "cointegration_tester",
+      "pair_strategist",
+      "microstructure_reviewer"
+    ],
+    "task_ids": [
+      "task-correlation-scan",
+      "task-cointegration-test",
+      "task-pair-strategy",
+      "task-microstructure-review"
+    ],
+    "dependencies": [
+      {
+        "task": "task-pair-strategy",
+        "depends_on": [
+          "task-correlation-scan",
+          "task-cointegration-test"
+        ]
+      },
+      {
+        "task": "task-microstructure-review",
+        "depends_on": [
+          "task-pair-strategy"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "market",
+        "description": "Target market (e.g. A-shares, Hong Kong, US, crypto)",
+        "required": true
+      },
+      {
+        "name": "sector",
+        "description": "Sector filter (e.g. banks, consumer, semis); empty = full market",
+        "required": false
+      }
+    ]
+  },
+  {
+    "file": "portfolio_review_board.yaml",
+    "name": "portfolio_review_board",
+    "title": "Portfolio Review Board",
+    "description": "Performance attribution, risk review, and execution quality in parallel; CIO synthesizes into rebalance decisions.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "attribution_analyst",
+      "risk_inspector",
+      "execution_analyst",
+      "chief_investment_officer"
+    ],
+    "task_ids": [
+      "task-attribution",
+      "task-risk",
+      "task-execution",
+      "task-cio-decision"
+    ],
+    "dependencies": [
+      {
+        "task": "task-cio-decision",
+        "depends_on": [
+          "task-attribution",
+          "task-risk",
+          "task-execution"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "portfolio",
+        "description": "Portfolio name or description (e.g., value-growth blend, CSI 300 enhanced)",
+        "required": true
+      },
+      {
+        "name": "review_period",
+        "description": "Review cadence (monthly / quarterly)",
+        "required": true
+      },
+      {
+        "name": "goal",
+        "description": "Focus of this review (e.g., assess Q1 performance, diagnose recent NAV drawdown)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "quant_strategy_desk.yaml",
+    "name": "quant_strategy_desk",
+    "title": "Quant Strategy Desk",
+    "description": "Stock screening + factor research in parallel → strategy backtest → risk audit.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "screener",
+      "factor_miner",
+      "backtester",
+      "risk_auditor"
+    ],
+    "task_ids": [
+      "task-screen",
+      "task-factor",
+      "task-backtest",
+      "task-risk"
+    ],
+    "dependencies": [
+      {
+        "task": "task-backtest",
+        "depends_on": [
+          "task-screen",
+          "task-factor"
+        ]
+      },
+      {
+        "task": "task-risk",
+        "depends_on": [
+          "task-backtest"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "market",
+        "description": "Target market",
+        "required": true
+      },
+      {
+        "name": "goal",
+        "description": "Strategy objective (e.g., momentum + value dual factor)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "risk_committee.yaml",
+    "name": "risk_committee",
+    "title": "Risk Committee",
+    "description": "Drawdown, tail risk, and market regime reviews run in parallel; head of risk signs off.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "drawdown_analyst",
+      "tail_risk_analyst",
+      "regime_detector",
+      "aggregator"
+    ],
+    "task_ids": [
+      "task-drawdown",
+      "task-tail",
+      "task-regime",
+      "task-aggregate"
+    ],
+    "dependencies": [
+      {
+        "task": "task-aggregate",
+        "depends_on": [
+          "task-drawdown",
+          "task-tail",
+          "task-regime"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "goal",
+        "description": "Audit target (e.g., BTC position risk, CSI 300 strategy risk)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "sector_rotation_team.yaml",
+    "name": "sector_rotation_team",
+    "title": "Sector Rotation Research Team",
+    "description": "Economic cycle + prosperity + capital flows in parallel → rotation strategist builds and backtests a sector rotation strategy.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "cycle_analyst",
+      "prosperity_analyst",
+      "flow_analyst",
+      "rotation_strategist"
+    ],
+    "task_ids": [
+      "task-cycle",
+      "task-prosperity",
+      "task-flow",
+      "task-strategy"
+    ],
+    "dependencies": [
+      {
+        "task": "task-strategy",
+        "depends_on": [
+          "task-cycle",
+          "task-prosperity",
+          "task-flow"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "market",
+        "description": "Target market (default A-shares; can specify HK/US)",
+        "required": true
+      },
+      {
+        "name": "goal",
+        "description": "Focus theme (e.g. new energy, tech growth, high dividend, exporters)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "sentiment_intelligence_team.yaml",
+    "name": "sentiment_intelligence_team",
+    "title": "Market Sentiment Intelligence Unit",
+    "description": "News intel / social sentiment / capital flows in parallel → sentiment signal synthesizer outputs composite score and reversal signals.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "news_analyst",
+      "social_analyst",
+      "flow_analyst",
+      "signal_synthesizer"
+    ],
+    "task_ids": [
+      "task-news-intel",
+      "task-social-sentiment",
+      "task-flow-analysis",
+      "task-signal-synthesis"
+    ],
+    "dependencies": [
+      {
+        "task": "task-signal-synthesis",
+        "depends_on": [
+          "task-news-intel",
+          "task-social-sentiment",
+          "task-flow-analysis"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "market",
+        "description": "Target market, e.g. A-shares / HK / US / crypto / CSI 300",
+        "required": true
+      },
+      {
+        "name": "timeframe",
+        "description": "Horizon: daily or weekly",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "social_alpha_team.yaml",
+    "name": "social_alpha_team",
+    "title": "Social-Media Alternative Data Team",
+    "description": "Twitter, Telegram, and Reddit analyzed in parallel → Alpha synthesizer extracts tradable social sentiment factors.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "twitter_analyst",
+      "telegram_analyst",
+      "reddit_analyst",
+      "alpha_synthesizer"
+    ],
+    "task_ids": [
+      "task-twitter",
+      "task-telegram",
+      "task-reddit",
+      "task-alpha-synthesis"
+    ],
+    "dependencies": [
+      {
+        "task": "task-alpha-synthesis",
+        "depends_on": [
+          "task-twitter",
+          "task-telegram",
+          "task-reddit"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "target",
+        "description": "Focus name or market (e.g. BTC, Tesla, A-share tech, Nasdaq)",
+        "required": true
+      },
+      {
+        "name": "timeframe",
+        "description": "Horizon (real-time / daily / weekly)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "statistical_arbitrage_desk.yaml",
+    "name": "statistical_arbitrage_desk",
+    "title": "Statistical Arbitrage Desk",
+    "description": "Pair scanning and microstructure analysis in parallel → converge into the arbitrage strategist to build the strategy → final risk-control review.",
+    "n_agents": 4,
+    "n_tasks": 4,
+    "agent_ids": [
+      "pair_scanner",
+      "microstructure_analyst",
+      "arb_strategist",
+      "risk_monitor"
+    ],
+    "task_ids": [
+      "task-pair-scan",
+      "task-microstructure",
+      "task-strategy",
+      "task-risk-review"
+    ],
+    "dependencies": [
+      {
+        "task": "task-strategy",
+        "depends_on": [
+          "task-pair-scan",
+          "task-microstructure"
+        ]
+      },
+      {
+        "task": "task-risk-review",
+        "depends_on": [
+          "task-strategy"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "market",
+        "description": "Target market (e.g. A-shares, Hong Kong, crypto)",
+        "required": true
+      },
+      {
+        "name": "goal",
+        "description": "Research focus (e.g. CSI 300 pair book, crypto arb ideas)",
+        "required": true
+      },
+      {
+        "name": "sector",
+        "description": "Sector filter (e.g. banks, consumer); empty = full market",
+        "required": false
+      }
+    ]
+  },
+  {
+    "file": "technical_analysis_panel.yaml",
+    "name": "technical_analysis_panel",
+    "title": "Technical Analysis Panel",
+    "description": "Classic TA + Ichimoku + harmonic patterns + Elliott Wave + SMC run in parallel → signal aggregator scores consensus and resonance.",
+    "n_agents": 6,
+    "n_tasks": 6,
+    "agent_ids": [
+      "classic_ta_analyst",
+      "ichimoku_analyst",
+      "harmonic_analyst",
+      "wave_analyst",
+      "smc_analyst",
+      "signal_aggregator"
+    ],
+    "task_ids": [
+      "task-classic-ta",
+      "task-ichimoku",
+      "task-harmonic",
+      "task-wave",
+      "task-smc",
+      "task-aggregate"
+    ],
+    "dependencies": [
+      {
+        "task": "task-aggregate",
+        "depends_on": [
+          "task-classic-ta",
+          "task-ichimoku",
+          "task-harmonic",
+          "task-wave",
+          "task-smc"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "target",
+        "description": "Symbol (e.g. 600519.SH Kweichow Moutai, BTC-USDT, AAPL)",
+        "required": true
+      },
+      {
+        "name": "timeframe",
+        "description": "Interval (e.g. daily, weekly, monthly, 4H)",
+        "required": true
+      }
+    ]
+  },
+  {
+    "file": "value_investing_committee.yaml",
+    "name": "value_investing_committee",
+    "title": "Value Investing Committee (Buffett / Munger / Duan / Li Lu)",
+    "description": "Four adversarial master perspectives — Buffett (moat & price), Munger (inversion & risk), Duan Yongping (good business & trustworthy management), Li Lu (10-year certainty & civilizational trend, incl. demographic/consumption macro) — run in parallel on one company, then a chair synthesizes consensus and contradictions into a verdict. Inspired by the ai-berkshire master-视角 framework. Use for deep v",
+    "n_agents": 5,
+    "n_tasks": 5,
+    "agent_ids": [
+      "buffett",
+      "munger",
+      "duan_yongping",
+      "li_lu",
+      "chair"
+    ],
+    "task_ids": [
+      "task-buffett",
+      "task-munger",
+      "task-duan",
+      "task-li",
+      "task-chair"
+    ],
+    "dependencies": [
+      {
+        "task": "task-chair",
+        "depends_on": [
+          "task-buffett",
+          "task-munger",
+          "task-duan",
+          "task-li"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "company",
+        "description": "Target company name or ticker (e.g.: Tencent, NVDA, Moutai)",
+        "required": true
+      },
+      {
+        "name": "market",
+        "description": "Market (e.g.: A-shares, Hong Kong, US)",
+        "required": true
+      }
+    ]
+  }
+]

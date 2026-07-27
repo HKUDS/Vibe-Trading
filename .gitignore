@@ -50,8 +50,12 @@ data/.duckdb_tmp/
 data/parquet/
 data/backup/
 
-# Internal docs (plans, specs)
-docs/
+# Internal docs (plans, specs) — keep private by default;
+# shared architecture handoff lives under docs/analysis/
+docs/*
+!docs/README.md
+!docs/analysis/
+!docs/analysis/**
 !wiki/docs/
 !wiki/docs/**
 docs/screenshots/agent-run.png
