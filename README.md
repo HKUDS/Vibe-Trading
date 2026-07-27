@@ -657,12 +657,16 @@ python -m venv .venv
 
 # Activate
 source .venv/bin/activate          # Linux / macOS
+# .venv\Scripts\activate.bat       # Windows CMD
 # .venv\Scripts\Activate.ps1       # Windows PowerShell
 
 pip install -e .
 cp agent/.env.example agent/.env   # Edit — set your LLM provider API key
 vibe-trading                       # Launch interactive TUI
 ```
+
+> [!NOTE]
+> **On Windows:** `cp` is a PowerShell alias for `Copy-Item`, so the snippets above work as-is in PowerShell. CMD has no `cp` — use `copy agent\.env.example agent\.env` instead (this applies to the Docker snippet above too). If PowerShell refuses to run `Activate.ps1`, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned` first; it applies to that shell session only.
 
 <details>
 <summary><b>Start web UI (optional)</b></summary>
