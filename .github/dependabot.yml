@@ -4,8 +4,8 @@ updates:
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 4
+      interval: "monthly"
+    open-pull-requests-limit: 2
     groups:
       # Minor/patch bumps are low-risk and reviewed as a single batch; majors
       # are excluded so they still arrive individually and get real scrutiny
@@ -20,24 +20,48 @@ updates:
       # not an oversight. Revisit as a dedicated migration, not a dep bump.
       - dependency-name: "pandas"
         update-types: ["version-update:semver-major"]
+      # caio is capped by our own dependency tree, not by choice: aiofile
+      # 3.11.1 (latest) requires caio~=0.9.0, so any bump to caio 0.10.x makes
+      # `pip install` unresolvable. Dependabot kept proposing it and the group
+      # PR failed CI with ResolutionImpossible. Drop this ignore once aiofile
+      # ships a release that accepts caio 0.10.
+      - dependency-name: "caio"
+      # websockets is likewise capped by our tree: langgraph-sdk 0.4.2 requires
+      # websockets<16, so a bump to 16.x is unresolvable. Drop this once
+      # langgraph-sdk widens its range.
+      - dependency-name: "websockets"
 
   # Frontend npm dependencies.
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 4
+      interval: "monthly"
+    open-pull-requests-limit: 2
     groups:
       npm-minor-patch:
         applies-to: version-updates
         update-types: ["minor", "patch"]
+    ignore:
+      # Both majors are blocked on infrastructure migrations we have not done,
+      # so they can only sit red. Same rationale as the pandas pin above:
+      # revisit each as a dedicated migration, not a dependency bump.
+      #   @vitejs/plugin-react 6.x peers vite@^8 (we are on vite 6.x).
+      #   @testing-library/jest-dom 7.x requires Node >=22 (CI/Docker use 20).
+      #   jsdom 30.x requires Node ^22.22.2 || ^24.15.0 || >=26 (same wall);
+      #     on Node 20 it surfaces as vitest failing to start its pool workers.
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@testing-library/jest-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "jsdom"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions workflow pins.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 4
+      interval: "monthly"
+    open-pull-requests-limit: 2
     groups:
       actions-minor-patch:
         applies-to: version-updates

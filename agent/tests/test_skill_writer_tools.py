@@ -37,6 +37,20 @@ class TestSanitizeSkillName:
     def test_empty(self) -> None:
         assert _sanitize_skill_name("") == ""
 
+    def test_cjk_name_keeps_distinct_slug(self) -> None:
+        a = _sanitize_skill_name("动量策略")
+        b = _sanitize_skill_name("均值回归")
+        assert a == "动量策略"
+        assert b == "均值回归"
+        assert a != b
+
+    def test_punctuation_only_uses_stable_digest(self) -> None:
+        slug = _sanitize_skill_name("???")
+        assert len(slug) == 8
+        assert slug.isalnum()
+        assert slug == _sanitize_skill_name("???")
+        assert slug != _sanitize_skill_name("!!!")
+
 
 # ---------------------------------------------------------------------------
 # SaveSkillTool

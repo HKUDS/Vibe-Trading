@@ -92,6 +92,20 @@ class TestBarsPerYear:
         # Falls back to 1 bar/day
         assert calc_bars_per_year("2H", "tushare") == 252
 
+    def test_lowercase_hour_matches_uppercase(self) -> None:
+        # Loaders accept 1h/4h after interval-map fixes; annualisation must too.
+        assert calc_bars_per_year("1h", "okx") == calc_bars_per_year("1H", "okx")
+        assert calc_bars_per_year("4h", "ccxt") == calc_bars_per_year("4H", "ccxt")
+        assert calc_bars_per_year("1h", "okx") == 365 * 24
+
+    def test_lowercase_day_matches_uppercase(self) -> None:
+        assert calc_bars_per_year("1d", "tushare") == calc_bars_per_year("1D", "tushare")
+
+    def test_yahoo_source_aliases_yfinance(self) -> None:
+        # Runner primary source for US equity is often "yahoo".
+        assert calc_bars_per_year("1H", "yahoo") == calc_bars_per_year("1H", "yfinance")
+        assert calc_bars_per_year("1H", "yahoo") == 252 * 7
+
 
 # ---------------------------------------------------------------------------
 # win_rate_and_stats

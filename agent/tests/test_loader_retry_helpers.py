@@ -251,6 +251,46 @@ def test_loader_cache_disabled_by_default_bypasses_home(tmp_path, monkeypatch):
     assert not (home / ".vibe-trading").exists()
 
 
+def test_stubbed_config_cannot_enable_cache_or_redirect_root_into_cwd(monkeypatch, tmp_path):
+    """A MagicMock config must not switch the cache on or escape the home root.
+
+    A bare ``MagicMock`` reads truthy and its ``__fspath__`` returns a
+    *relative* string, so an unguarded implementation both enabled the opt-in
+    cache and resolved its root against the CWD — writing market data inside
+    the working tree, which the project forbids.
+    """
+    from unittest.mock import MagicMock
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    stub = MagicMock()
+    monkeypatch.setattr(
+        "src.config.accessor.get_env_config", lambda: stub, raising=False
+    )
+
+    assert base.loader_cache_enabled() is False
+
+    root = base.loader_cache_root()
+    assert root.is_absolute()
+    assert root == home / ".vibe-trading" / "cache" / "loaders"
+
+
+def test_loader_cache_root_honors_real_string_override(monkeypatch, tmp_path):
+    """A genuine string override is still respected."""
+    stub = SimpleNamespace(
+        data=SimpleNamespace(
+            vibe_trading_data_cache=True,
+            vibe_trading_data_cache_root=str(tmp_path / "custom"),
+        )
+    )
+    monkeypatch.setattr(
+        "src.config.accessor.get_env_config", lambda: stub, raising=False
+    )
+
+    assert base.loader_cache_enabled() is True
+    assert base.loader_cache_root() == tmp_path / "custom"
+
+
 def test_loader_cache_key_partitions_source_symbol_timeframe_date_and_fields():
     base_args = {
         "source": "tushare",

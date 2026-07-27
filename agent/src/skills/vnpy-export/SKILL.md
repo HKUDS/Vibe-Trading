@@ -78,7 +78,7 @@ See `scripts/cta_template.py` for a complete, runnable example (MA crossover).
 The template below is the canonical skeleton — replace the `# SIGNAL LOGIC` section:
 
 ```python
-from vnpy.app.cta_strategy import (
+from vnpy_ctastrategy import (
     CtaTemplate,
     StopOrder,
     TickData,
@@ -270,7 +270,7 @@ To load in vnpy:
 To run the vnpy backtester:
 
 ```python
-from vnpy.app.cta_backtester import BacktestingEngine
+from vnpy_ctastrategy.backtesting import BacktestingEngine
 from vnpy.trader.constant import Interval
 
 engine = BacktestingEngine()

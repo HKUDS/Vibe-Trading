@@ -13,6 +13,10 @@ def test_unsupported_interval_does_not_hit_api() -> None:
         with patch("src.config.accessor.get_env_config") as cfg:
             c = MagicMock()
             c.data.finnhub_api_key = "KEY"
+            # Explicit: a bare MagicMock reads truthy, which would switch the
+            # opt-in loader cache on and write parquet into the working tree.
+            c.data.vibe_trading_data_cache = False
+            c.data.vibe_trading_data_cache_root = ""
             cfg.return_value = c
             out = fh.DataLoader().fetch(
                 ["AAPL"], "2024-01-01", "2024-01-31", interval="1H"
@@ -26,6 +30,10 @@ def test_four_hour_interval_also_rejected() -> None:
         with patch("src.config.accessor.get_env_config") as cfg:
             c = MagicMock()
             c.data.finnhub_api_key = "KEY"
+            # Explicit: a bare MagicMock reads truthy, which would switch the
+            # opt-in loader cache on and write parquet into the working tree.
+            c.data.vibe_trading_data_cache = False
+            c.data.vibe_trading_data_cache_root = ""
             cfg.return_value = c
             out = fh.DataLoader().fetch(
                 ["AAPL"], "2024-01-01", "2024-01-31", interval="4H"
@@ -48,6 +56,10 @@ def test_daily_interval_still_fetches() -> None:
         with patch("src.config.accessor.get_env_config") as cfg:
             c = MagicMock()
             c.data.finnhub_api_key = "KEY"
+            # Explicit: a bare MagicMock reads truthy, which would switch the
+            # opt-in loader cache on and write parquet into the working tree.
+            c.data.vibe_trading_data_cache = False
+            c.data.vibe_trading_data_cache_root = ""
             cfg.return_value = c
             out = fh.DataLoader().fetch(
                 ["AAPL"], "2024-01-01", "2024-01-31", interval="1D"

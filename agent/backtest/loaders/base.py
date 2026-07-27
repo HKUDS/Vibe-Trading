@@ -249,18 +249,34 @@ _LOADER_CACHE_VERSION = 3
 
 
 def loader_cache_enabled() -> bool:
-    """Return whether the local market-data cache is explicitly enabled."""
+    """Return whether the local market-data cache is explicitly enabled.
+
+    Returns:
+        True only when the config yields a real ``True``. Any other value —
+        including a truthy non-bool from a stubbed config — leaves the opt-in
+        cache off.
+    """
     from src.config.accessor import get_env_config
 
-    return get_env_config().data.vibe_trading_data_cache
+    return get_env_config().data.vibe_trading_data_cache is True
 
 
 def loader_cache_root() -> Path:
-    """Return the root directory for opt-in loader cache files."""
+    """Return the root directory for opt-in loader cache files.
+
+    The configured override is honored only when it is a genuine non-blank
+    ``str``. A non-string value (e.g. a stubbed config in tests) would
+    otherwise reach ``Path()`` via ``__fspath__`` and yield a *relative* path,
+    which resolves against the CWD and writes market data inside the working
+    tree — the repository forbids caching data in the repo.
+
+    Returns:
+        The configured cache root, or the default under the user's home.
+    """
     from src.config.accessor import get_env_config
 
     root = get_env_config().data.vibe_trading_data_cache_root
-    if root and root.strip():
+    if isinstance(root, str) and root.strip():
         return Path(root).expanduser()
     return Path.home() / ".vibe-trading" / "cache" / "loaders"
 

@@ -63,6 +63,19 @@ def test_gbk_fallback(tmp_path: Path) -> None:
     assert "中文" in result["text"]
 
 
+def test_utf16_bom_not_latin1_mojibake(tmp_path: Path) -> None:
+    # Notepad/Excel "Unicode text" writes UTF-16 with BOM. latin-1 never
+    # raises, so without utf-16 earlier in the fallback the file was accepted
+    # as mojibake (NUL bytes between ASCII letters).
+    p = tmp_path / "unicode.txt"
+    p.write_bytes("hello 动量\n".encode("utf-16"))
+    result = _call(p)
+    assert result["status"] == "ok"
+    assert result["encoding"] == "utf-16"
+    assert result["text"] == "hello 动量\n"
+    assert "\x00" not in result["text"]
+
+
 def test_unknown_extension_treated_as_text(tmp_path: Path) -> None:
     p = tmp_path / "weird.xyzfmt"
     p.write_text("abc", encoding="utf-8")

@@ -353,6 +353,14 @@ def _read_image(path: Path) -> str:
 def _read_text(path: Path) -> str:
     """Read a text-like file with encoding fallback."""
     data = path.read_bytes()
+    # UTF-16 with BOM (Notepad "Unicode", Excel Unicode Text) before latin-1:
+    # latin-1 never raises, so BOM+NUL bytes become mojibake without this.
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            decoded = data.decode("utf-16")
+            return _envelope(path, "text", decoded, encoding="utf-16", size=len(data))
+        except UnicodeDecodeError:
+            pass
     last_err: Exception | None = None
     for enc in _ENCODING_FALLBACK:
         try:

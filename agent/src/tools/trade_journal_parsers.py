@@ -9,11 +9,19 @@ Excel (.xlsx/.xls) always opens as utf-8 internally via openpyxl/xlrd.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+# Broker CSV/Excel cells often include ISO codes or currency glyphs around the
+# number (Schwab/IBKR "$1,234.56", JP/CN "¥1000"). Commas are already stripped;
+# without stripping these tokens float() fails and we silently store 0.0.
+_CURRENCY_TOKEN_RE = re.compile(
+    r"(?i)(?<![A-Za-z])(?:USDT|USDC|USD|EUR|GBP|JPY|CNY|HKD)(?![A-Za-z])|[$€£¥￥]"
+)
 
 FormatName = str  # "tonghuashun" | "eastmoney" | "futu" | "generic" | "unknown"
 
@@ -104,12 +112,13 @@ def load_dataframe(path: str | Path) -> pd.DataFrame:
         raise ValueError(f"Unsupported extension: {ext}")
 
     last_err: Exception | None = None
-    for enc in ("utf-8", "utf-8-sig", "gbk", "gb2312"):
+    # utf-16 covers Excel "CSV UTF-16" / Unicode exports (BOM required).
+    for enc in ("utf-8-sig", "utf-8", "utf-16", "gbk", "gb2312"):
         try:
             return pd.read_csv(p, dtype=str, encoding=enc)
         except UnicodeDecodeError as exc:
             last_err = exc
-    raise ValueError(f"Failed to decode CSV with utf-8/gbk/gb2312: {last_err}")
+    raise ValueError(f"Failed to decode CSV with utf-8/utf-16/gbk/gb2312: {last_err}")
 
 
 # ---------------- Format detection ----------------
@@ -201,7 +210,8 @@ def _to_float(val: Any, default: float = 0.0) -> float:
     if val is None:
         return default
     try:
-        s = str(val).replace(",", "").strip()
+        s = str(val).strip().replace("\u2212", "-")
+        s = _CURRENCY_TOKEN_RE.sub("", s).replace(",", "").strip()
         return float(s) if s else default
     except (ValueError, TypeError):
         return default
@@ -517,6 +527,13 @@ def _infer_market_from_symbol(symbol: str) -> str:
         return "china_a"
     if "-" in s and any(quote in s for quote in ("USDT", "USDC", "BTC", "USD")):
         return "crypto"
+    # Binance-style concatenated pairs (BTCUSDT) are purely alphabetic, so the
+    # isalpha() US-equity branch below would mis-label them without this check.
+    for quote in ("USDT", "USDC", "BUSD"):
+        if len(s) > len(quote) and s.endswith(quote):
+            base = s[: -len(quote)]
+            if base.isalpha() and len(base) >= 2:
+                return "crypto"
     if s.isalpha():
         return "us"
     return "other"

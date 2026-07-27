@@ -19,6 +19,8 @@ from src.tools.trade_journal_parsers import (
     _infer_market_from_symbol,
     _normalize_side,
     _qualify_a_share,
+    _to_float,
+    load_dataframe,
     parse_tonghuashun,
     parse_eastmoney,
     parse_futu,
@@ -120,6 +122,9 @@ def test_normalize_side_rejects_missing_or_unknown(raw: object) -> None:
         ("AAPL", "us"),
         ("BTC-USDT", "crypto"),
         ("ETH-USD", "crypto"),
+        ("BTCUSDT", "crypto"),
+        ("ethusdc", "crypto"),
+        ("SOLBUSD", "crypto"),
         ("123456", "other"),
     ],
 )
@@ -202,6 +207,18 @@ def test_parse_file_unknown_raises(tmp_path: Path) -> None:
     csv.write_text("foo,bar\n1,2\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Unrecognized"):
         parse_file(csv)
+
+
+def test_load_dataframe_accepts_utf16_bom_csv(tmp_path: Path) -> None:
+    # Excel "CSV UTF-16" / Unicode CSV exports a BOM; previously every
+    # encoding attempt raised UnicodeDecodeError and the load failed.
+    csv = tmp_path / "futu_utf16.csv"
+    body = "Date,Symbol,Side,Quantity,Price\n2024-01-02,AAPL,Buy,10,100\n"
+    csv.write_bytes(body.encode("utf-16"))
+    df = load_dataframe(csv)
+    assert list(df.columns) == ["Date", "Symbol", "Side", "Quantity", "Price"]
+    assert detect_format(df) == "futu"
+    assert df.iloc[0]["Symbol"] == "AAPL"
 
 
 @pytest.mark.parametrize(
@@ -640,3 +657,35 @@ def test_parse_tonghuashun_float_code_cell() -> None:
     rec = parse_tonghuashun(df)
     assert len(rec) == 1
     assert rec[0].symbol == "600519.SH"
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("$1,234.56", 1234.56),
+        ("USD 12.5", 12.5),
+        ("€99.00", 99.0),
+        ("¥1,000", 1000.0),
+        ("\u221212.5", -12.5),
+        ("CNY12.5", 12.5),
+    ],
+)
+def test_to_float_strips_currency_and_unicode_minus(raw: str, expected: float) -> None:
+    """US/EU/Asia broker cells with currency glyphs must not become 0.0."""
+    assert _to_float(raw) == expected
+
+
+def test_parse_generic_currency_price_not_zero() -> None:
+    df = pd.DataFrame([{
+        "datetime": "2024-01-02 10:00:00",
+        "symbol": "AAPL",
+        "side": "buy",
+        "quantity": "10",
+        "price": "$150.25",
+        "fee": "$1.00",
+    }])
+    rec = parse_generic(df)
+    assert len(rec) == 1
+    assert rec[0].price == 150.25
+    assert rec[0].fee == 1.0
+    assert rec[0].amount == 1502.5

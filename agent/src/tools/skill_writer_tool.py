@@ -11,6 +11,7 @@ User-created skills are stored separately from bundled skills:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -22,11 +23,27 @@ from src.agent.tools import BaseTool
 
 _ALLOWED_SUBDIRS = {"references", "templates", "examples", "assets"}
 
+# Keep CJK/other scripts in slugs (same ranges as persistent memory) so
+# distinct non-ASCII skill names do not all collapse to "--".
+_NON_LATIN_SCRIPT_RANGES = (
+    "一-鿿"  # CJK Unified Ideographs
+    "㐀-䶿"  # CJK Extension A
+    "฀-๿"  # Thai
+    "ؠ-ي"  # Arabic letters
+    "א-ת"  # Hebrew letters
+    "Ѐ-ӿ"  # Cyrillic
+)
+_SKILL_SLUG_DISALLOWED_RE = re.compile(rf"[^a-z0-9\-{_NON_LATIN_SCRIPT_RANGES}]")
+
 
 def _sanitize_skill_name(name: str) -> str:
     """Sanitize skill name to a safe directory slug."""
-    return re.sub(r"[^a-z0-9-]", "-", name.lower().strip())[:60]
-
+    slug = _SKILL_SLUG_DISALLOWED_RE.sub("-", name.lower().strip())[:60]
+    if not name.strip():
+        return ""
+    if slug.strip("-") == "":
+        return hashlib.sha256(name.strip().encode("utf-8")).hexdigest()[:8]
+    return slug
 
 class SaveSkillTool(BaseTool):
     """Save a successful workflow as a reusable skill."""

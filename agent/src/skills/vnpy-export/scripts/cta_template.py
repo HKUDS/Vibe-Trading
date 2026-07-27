@@ -5,14 +5,14 @@ This file is the reference implementation for the vnpy-export skill.
 Copy it to your vnpy project's strategies/ folder and adjust parameters.
 
 Requirements:
-    pip install vnpy vnpy_ctp  (or vnpy_tts for paper trading)
+    pip install vnpy vnpy_ctastrategy vnpy_ctp  (or vnpy_tts for paper trading)
 
 Usage in vnpy Trader:
     CTA Strategy App → Add Strategy → MaCrossStrategy
     Set vt_symbol, e.g. "IF2406.CFFEX" (futures) or "000001.SZSE" (A-share)
 """
 
-from vnpy.app.cta_strategy import (
+from vnpy_ctastrategy import (
     CtaTemplate,
     StopOrder,
     TickData,

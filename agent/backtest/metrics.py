@@ -31,19 +31,42 @@ _BARS_PER_DAY = {
     "1D":  {"tushare": 1,   "okx": 1,    "yfinance": 1,   "akshare": 1,   "ccxt": 1,    "mootdx": 1,   "futu": 1,   "mt5": 1},
 }
 
+# Runner/loaders also emit these aliases; map them onto the table keys above.
+_SOURCE_ALIASES = {"yahoo": "yfinance", "binance": "ccxt"}
+
+
+def _normalize_interval(interval: str) -> str:
+    """Map project interval tokens onto ``_BARS_PER_DAY`` keys.
+
+    Minute bars stay lowercase (``1m``); hour/day use the uppercase keys the
+    table already stores (``1H`` / ``4H`` / ``1D``). Loaders accept both cases
+    after the interval-map fixes; annualisation must too.
+    """
+    token = str(interval or "1D").strip()
+    lower = token.lower()
+    if lower in ("1m", "5m", "15m", "30m"):
+        return lower
+    if lower in ("1h", "4h", "1d"):
+        return lower.upper()
+    return token
+
 
 def calc_bars_per_year(interval: str = "1D", source: str = "tushare") -> int:
     """Number of bars per year for annualisation.
 
     Args:
-        interval: Bar size (1m / 5m / 15m / 30m / 1H / 4H / 1D).
-        source: Data source (tushare / yfinance / okx).
+        interval: Bar size (1m / 5m / 15m / 30m / 1H / 4H / 1D), case-insensitive
+            for hour/day tokens.
+        source: Data source (tushare / yfinance / okx). ``yahoo`` aliases to
+            ``yfinance``; ``binance`` aliases to ``ccxt``.
 
     Returns:
         Bars per year.
     """
-    trading_days = _TRADING_DAYS.get(source, 252)
-    bars_per_day = _BARS_PER_DAY.get(interval, {}).get(source, 1)
+    source_key = _SOURCE_ALIASES.get(str(source or "").strip().lower(), source)
+    interval_key = _normalize_interval(interval)
+    trading_days = _TRADING_DAYS.get(source_key, 252)
+    bars_per_day = _BARS_PER_DAY.get(interval_key, {}).get(source_key, 1)
     return trading_days * bars_per_day
 
 

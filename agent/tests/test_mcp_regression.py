@@ -185,10 +185,10 @@ def test_mcp_server_exposes_well_known_tool_names() -> None:
 # ---------------------------------------------------------------------------
 # Shell-tool opt-in policy (GHSA-6wjh-cc6v-xfrx / GHSA-m768-22r9-h4x7)
 #
-# The bash / background_run tools run arbitrary OS commands. The MCP server must
-# NOT register them unless the operator explicitly opts in — for EVERY transport.
-# stdio previously force-enabled them with no opt-out; that is the regression
-# these tests guard against.
+# The bash / background_run / cancel_background tools control OS processes. The
+# MCP server must NOT register them unless the operator explicitly opts in — for
+# EVERY transport. stdio previously force-enabled shell tools with no opt-out;
+# that is the regression these tests guard against.
 # ---------------------------------------------------------------------------
 
 
@@ -234,6 +234,7 @@ def test_mcp_registry_omits_shell_tools_under_default_policy(monkeypatch: pytest
 
     assert "bash" not in registry.tool_names
     assert "background_run" not in registry.tool_names
+    assert "cancel_background" not in registry.tool_names
 
 
 class _RecordingRegistry:

@@ -7,6 +7,7 @@ import subprocess
 from typing import Any
 
 from src.agent.tools import BaseTool
+from src.tools._shell_safety import broad_python_kill_error
 
 _OUTPUT_LIMIT = 50_000
 _DEFAULT_TIMEOUT = 120
@@ -16,7 +17,12 @@ class BashTool(BaseTool):
     """Execute shell commands in the working directory."""
 
     name = "bash"
-    description = "Execute a shell command in the working directory. Use for installing packages, running scripts, or inspecting files."
+    description = (
+        "Execute a shell command in the working directory. On Windows the "
+        "shell is cmd.exe, not PowerShell. Use for installing packages, "
+        "running scripts, or inspecting files. Never kill Python processes "
+        "by name; stop a background_run task with cancel_background."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -38,6 +44,12 @@ class BashTool(BaseTool):
         """
         command = kwargs["command"]
         cwd = kwargs.get("run_dir")
+        safety_error = broad_python_kill_error(command)
+        if safety_error:
+            return json.dumps(
+                {"status": "error", "error": safety_error},
+                ensure_ascii=False,
+            )
 
         try:
             result = subprocess.run(

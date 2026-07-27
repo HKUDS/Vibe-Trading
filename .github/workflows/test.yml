@@ -68,3 +68,41 @@ jobs:
         run: |
           cd frontend
           npx vitest run --reporter=verbose
+
+  windows-background:
+    name: ${{ matrix.name }} / Python 3.14 background lifecycle
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows 11 ARM64
+            runner: windows-11-arm
+            architecture: arm64
+          - name: Windows Server 2025 x64
+            runner: windows-2025
+            architecture: x64
+
+    steps:
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # actions/setup-python v7.0.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.14"
+          architecture: ${{ matrix.architecture }}
+          cache: pip
+
+      - name: Install focused test dependencies
+        run: python -m pip install pytest pydantic pyyaml python-dotenv
+
+      - name: Run Windows background safety regressions
+        env:
+          PYTHONPATH: agent
+        run: >-
+          python -m pytest
+          agent/tests/test_background_tools.py
+          agent/tests/test_bash_tool.py
+          -q

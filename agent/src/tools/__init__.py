@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _SUBCLASSES_CACHE: list[type[BaseTool]] | None = None
-_SHELL_TOOL_NAMES = {"bash", "background_run"}
+_SHELL_TOOL_NAMES = {"bash", "background_run", "cancel_background"}
 
 
 def _discover_subclasses() -> list[type[BaseTool]]:

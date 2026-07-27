@@ -81,8 +81,8 @@ logger = logging.getLogger(__name__)
 _skills_loader = None
 _registry = None
 _goal_store = None
-# Fail-closed default: the bash / background_run shell tools are a remote
-# code-execution surface once the MCP server is reachable by any client (stdio,
+# Fail-closed default: bash / background_run / cancel_background form a remote
+# process-control surface once the MCP server is reachable by any client (stdio,
 # SSE, or Streamable HTTP), so they stay OFF unless an operator explicitly opts
 # in. main() may flip this on via --enable-shell-tools or the
 # VIBE_TRADING_ENABLE_SHELL_TOOLS env var. Keeping the module-level default off
@@ -100,11 +100,12 @@ def _env_shell_tools_enabled() -> bool:
 def _resolve_include_shell_tools(cli_opt_in: bool) -> bool:
     """Resolve whether the MCP server should register shell tools.
 
-    Shell tools (``bash`` / ``background_run``) run arbitrary OS commands and are
-    an RCE surface regardless of transport. They are therefore disabled for every
-    transport unless the operator explicitly opts in. Transport type never
-    implicitly grants shell access: previously ``stdio`` force-enabled these tools
-    with no opt-out (GHSA-6wjh-cc6v-xfrx), which also widened the reachable
+    Process-control tools (``bash`` / ``background_run`` /
+    ``cancel_background``) run commands or terminate tracked command trees and
+    are an RCE surface regardless of transport. They are therefore disabled for
+    every transport unless the operator explicitly opts in. Transport type never
+    implicitly grants shell access: previously ``stdio`` force-enabled these
+    tools with no opt-out (GHSA-6wjh-cc6v-xfrx), which also widened the reachable
     surface of the ``bash`` OS-command-injection issue (GHSA-m768-22r9-h4x7).
 
     Args:
@@ -2126,9 +2127,9 @@ def main():
     parser.add_argument(
         "--enable-shell-tools",
         action="store_true",
-        help="Register the bash / background_run shell tools (arbitrary OS "
-        "command execution — RCE surface). OFF by default for every transport; "
-        "equivalent to setting VIBE_TRADING_ENABLE_SHELL_TOOLS=1.",
+        help="Register bash / background_run / cancel_background (OS process "
+        "control — RCE surface). OFF by default for every transport; equivalent "
+        "to setting VIBE_TRADING_ENABLE_SHELL_TOOLS=1.",
     )
     args = parser.parse_args()
     _include_shell_tools = _resolve_include_shell_tools(args.enable_shell_tools)
