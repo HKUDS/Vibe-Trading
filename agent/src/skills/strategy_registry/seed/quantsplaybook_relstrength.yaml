@@ -1,0 +1,30 @@
+strategy_id: quantsplaybook_relstrength
+name: Relative Strength Unidirectional Volatility (国信证券)
+source: builtin
+area: timing
+description: 国信证券相对强弱单向波动差值择时策略。基于价格相对强弱与波动率的关系：计算window=20日价格相对强弱指标，当其单向波动差值超过threshold=1.2时触发信号。回测标的：上证综指(000001.SH)，2015-2026年收益+30.3%，超额+3.9%，夏普0.014接近零，最大回撤-33.9%显著优于基准-52.3%。2018年熊市超额+6.4%，2022年超额+7.1%，2016年超额+4.0%。在熊市中有防御价值，但牛市中踏空(2019年超额-2.9%，2025年超额-20.0%)。结论：微弱有效，更适合作为风险预警而非独立择时。
+effective_scenarios:
+- bear_market_defense
+- high_volatility_regime
+failure_scenarios:
+- bull_market_momentum
+- momentum_continuation
+tuning_hints:
+- 'window: 缩短至10-15可提高灵敏度'
+- 'threshold: 降低至1.0可增加信号频率，提高至1.5可减少虚假信号'
+- 加入趋势过滤：MA(60)上行时降低阈值以增加持仓
+- 考虑非对称阈值：买入阈值低于卖出阈值
+- 加入波动率自适应：高波动时放宽阈值
+benchmark_results:
+  period: 2015-02-02 to 2026-06-04
+  total_return: 30.33
+  benchmark_return: 26.4
+  excess_return: 3.93
+  sharpe: 0.014
+  max_drawdown: -33.94
+  market_exposure: null
+  trades: 104
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

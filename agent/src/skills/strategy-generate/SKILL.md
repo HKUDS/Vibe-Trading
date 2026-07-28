@@ -197,6 +197,75 @@ When the user requests a backtest with codes from **different markets** (e.g. `[
 - Use volatility-adjusted weights so high-vol assets (crypto) don't dominate the risk budget
 - See the [cross-market-strategy](../cross-market-strategy/SKILL.md) skill for per-market parameters, vol-adjustment, and example code
 
+## Registry-Driven Generation (--registry-id)
+
+When `--registry-id` is provided, the strategy logic comes from the `StrategyRegistry` instead of the user's natural-language description. This lets you regenerate a validated strategy from the registry with its pre-tuned parameters and benchmark-proven logic.
+
+### Workflow
+
+1. **Read registry entry**: call `StrategyRegistry.get(strategy_id)` to retrieve the `StrategyEntry` for the given `--registry-id`.
+2. **Parse user input for instruments and time range**: the user still provides instrument codes and a time range. If not specified, default to `000001.SZ` and 10 years back from today.
+3. **Inject registry data into the generation prompt**: compose the prompt using the `StrategyEntry` fields as described below.
+4. **Generate strategy code**: write `config.json` and `code/signal_engine.py` following the injected strategy description, then proceed with the normal backtest workflow (steps 4–7).
+
+### Prompt Composition
+
+When `--registry-id` is provided, build the generation prompt as follows:
+
+```
+System: "Follow the strategy description below. Do not override the strategy logic with your own ideas."
+
+[REGISTRY STRATEGY DESCRIPTION START]
+{entry.description}
+[REGISTRY STRATEGY DESCRIPTION END]
+
+Tuning hints from validated backtests:
+1. {entry.tuning_hints[0]}
+2. {entry.tuning_hints[1]}
+...
+
+Expected performance: Sharpe {entry.benchmark_results.sharpe}, MaxDD {entry.benchmark_results.max_drawdown}%
+
+User request: {user's instrument codes and time range}
+```
+
+### Prompt Injection Mitigation
+
+The `description` field from the registry is **wrapped in delimited blocks** `[REGISTRY STRATEGY DESCRIPTION START] ... [REGISTRY STRATEGY DESCRIPTION END]`. This prevents the description content from escaping into the system prompt or overriding instructions. The system prompt explicitly states: **"Follow the strategy description below. Do not override the strategy logic with your own ideas."**
+
+### Field Injection Rules
+
+| Field | Injection Format | Fallback when null/empty |
+|-------|-----------------|--------------------------|
+| `description` | Delimited block (see above) | Skip the block; fall back to user description |
+| `tuning_hints` | Numbered list: `"1. ... 2. ..."` | Omit the tuning hints section |
+| `benchmark_results` | `"Expected performance: Sharpe X, MaxDD Y%"` | Omit the performance line |
+
+### Priority Rules
+
+- **When `--registry-id` is provided**: strategy logic comes from the registry entry. User-provided strategy descriptions are **ignored** — the registry entry wins.
+- **When both `--registry-id` and a manual description are provided**: `--registry-id` takes precedence. The manual description is discarded with a warning: `"--registry-id provided; ignoring manual strategy description."`
+- **Without `--registry-id`**: existing behavior is unchanged. Strategy logic is parsed from the user's natural-language description.
+
+### Instrument Codes and Time Range
+
+When `--registry-id` is provided, instrument codes and the time range are **still parsed from user input** — they are not part of the registry entry. Defaults:
+- **Instrument codes**: default to `["000001.SZ"]` if not specified
+- **Time range**: default to 10 years back from today
+
+### Example
+
+```
+User: strategy-generate --registry-id quantsplaybook_rsrs 600519.SH 2020-01-01 2025-12-31
+
+→ Registry lookup: StrategyRegistry.get("quantsplaybook_rsrs")
+→ Entry found: name="RSRS Right-Side Right-Scale", area="timing", source="builtin"
+→ Prompt injected with description + tuning hints + benchmark results
+→ config.json: codes=["600519.SH"], start_date="2020-01-01", end_date="2025-12-31"
+→ signal_engine.py: implements RSRS slope breakout logic from registry description
+→ Backtest runs as normal (steps 4–7)
+```
+
 ## Supporting Files
 
 - [examples.md](examples.md) — example call sequence

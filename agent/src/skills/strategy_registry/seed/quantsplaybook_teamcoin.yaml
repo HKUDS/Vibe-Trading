@@ -1,0 +1,31 @@
+strategy_id: quantsplaybook_teamcoin
+name: Team Coin Factor (球队硬币因子) (方正证券)
+source: builtin
+area: factor
+description: 方正证券球队硬币因子（动量效应识别）。同时满足两个条件：1) momentum_window=60日动量>0（正收益），2) 短期波动率(vol_short=5日)<长期波动率(vol_long=20日)（波动率收缩）。选前top_pct=20%股票，等权月度调仓，全市场top_n_liquid=500只流动性最佳股票。回测标的：全A股，基准沪深300。2018-2026年累计超额+265.8%，年化+18.2%，夏普0.45。在2019(+43.5%超额)、2020(+78.5%超额)、2025(+58.1%超额)大牛市中表现出色，但2022年熊市回撤-50.2%(-28.6%超额)，波动率35.6%较高。
+effective_scenarios:
+- regime_agnostic
+- bull_market_momentum
+- momentum_continuation
+failure_scenarios:
+- bear_market_defense
+- high_volatility_regime
+tuning_hints:
+- 'momentum_window: 缩至30日可提高动量灵敏度，增以120日可平滑'
+- 'vol_short/vol_long: 调整为(10/30)或(10/60)可改变波动率收缩识别'
+- 'top_pct: 缩至10%可更集中，扩大至30%可降低波动'
+- 加入止损机制：个股或组合层面最大回撤限制
+- 考虑加入成交量确认：仅当成交量放大时确认动量信号
+benchmark_results:
+  period: 2018-01-01 to 2026-06-30
+  total_return: 285.8
+  benchmark_return: 20.0
+  excess_return: 265.82
+  sharpe: 0.45
+  max_drawdown: -62.86
+  market_exposure: null
+  trades: null
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

@@ -1,0 +1,31 @@
+strategy_id: quantsplaybook_rsrs
+name: RSRS Market Timing (光大证券)
+source: builtin
+area: timing
+description: 光大证券RSRS（阻力支撑相对强度）择时策略。基于日频最高价与最低价的线性回归斜率Z-score：计算N=18日最高价对最低价的回归斜率，再对M=600日滚动窗口做Z-score标准化。当RSRS
+  Z-score > buy_threshold=0.7时做多，< sell_threshold=-0.7时空仓。回测标的：上证综指(000001.SH)，2017-2026年整体跑输基准(-39.6%超额)，但2018年熊市有+16.5%超额保护，2022年也有正超额。纯技术指标择时在A股长牛中系统性踏空。
+effective_scenarios:
+- bear_market_defense
+- high_volatility_regime
+failure_scenarios:
+- bull_market_momentum
+- structural_market
+tuning_hints:
+- 'N(回归窗口): 可尝试12-24范围，缩短窗口提高灵敏度但增加噪声'
+- 'M(Z-score标准化窗口): 缩短至252可更快适应市场结构变化'
+- 'buy_threshold: 降低至0.5可增加多头信号，减少踏空'
+- 'sell_threshold: 提高至-0.5可减少空头信号，延长持仓时间'
+- 考虑加入波动率过滤：仅在高波动时启用RSRS信号
+benchmark_results:
+  period: 2015-01-01 to 2026-06-04
+  total_return: -10.358
+  benchmark_return: 29.228
+  excess_return: -39.586
+  sharpe: -0.281
+  max_drawdown: -38.466
+  market_exposure: 0.361
+  trades: 37
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

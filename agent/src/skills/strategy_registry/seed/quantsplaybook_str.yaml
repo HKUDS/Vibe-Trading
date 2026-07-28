@@ -1,0 +1,30 @@
+strategy_id: quantsplaybook_str
+name: STR Salience Factor (招商证券)
+source: builtin
+area: factor
+description: 招商证券STR凸显因子（Salience Theory，行为金融）。基于投资者注意力理论：做多低凸显度（salience）股票，即被市场忽视的标的。计算rolling_std=60日标准差和rolling_max=5日高点，构建凸显度指标，选pct_long=20%最低凸显度股票，等权月度调仓，n_top_stocks=500流动性筛选。回测标的：全A股，2018-2026年累计超额+116.8%，年化+11.2%，夏普0.39。行为金融因子，2025年表现突出(+48.8%)，但2023年几乎持平(+0.3%)。最大回撤-42.2%，信息比率0.85。
+effective_scenarios:
+- regime_agnostic
+- mean_reversion
+failure_scenarios:
+- momentum_continuation
+- bull_market_momentum
+tuning_hints:
+- 'rolling_std: 缩短至30日可提高凸显度检测灵敏度'
+- 'rolling_max: 增加至10日可扩大参考窗口'
+- 'pct_long: 缩至10%可更集中低凸显度股票'
+- 加入行业中性化：避免单一行业集中
+- 考虑加入反转因子叠加：低凸显度+短期超跌信号
+benchmark_results:
+  period: 2018-01-01 to 2026-06-30
+  total_return: 133.39
+  benchmark_return: 16.58
+  excess_return: 116.82
+  sharpe: 0.39
+  max_drawdown: -42.15
+  market_exposure: null
+  trades: 13820
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

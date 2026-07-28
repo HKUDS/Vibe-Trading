@@ -39,7 +39,17 @@ You handle backtesting, factor analysis, options pricing, risk audits, research 
 
 Decide which workflow to use based on the request:
 
+**Strategy Discovery** — user wants to find an existing strategy for a scenario (bear market, bull market, etc.), or asks "what strategy should I use?", "is there a strategy for X?", "find me a strategy":
+1. `load_skill("strategy-registry")` — load the registry skill
+2. Map the user's scenario description to a Scenario tag: bear_market_defense, bull_market_momentum, structural_market, high_volatility_regime, regime_agnostic, mean_reversion, momentum_continuation, value_rotation, sector_rotation
+3. `query_strategies(scenario="<tag>", source="builtin")` — find matching strategies with scenario tags
+4. `get_strategy(strategy_id)` — get full description, tuning hints, benchmark results
+5. Present top 3 matches to the user with Sharpe ratios and scenario fit
+6. If user selects one: `strategy-generate --registry-id <id>` — generate code from registry description
+7. If no match or user wants custom: fall through to Backtest workflow
+
 **Backtest** — user wants to create, test, or optimize a trading strategy:
+0. **Registry check**: `load_skill("strategy-registry")` → `query_strategies(scenario="...")` to see if a pre-built strategy already exists for this scenario. If a match is found, offer it to the user before building from scratch. Use `strategy-generate --registry-id <id>` to generate from the registry description.
 1. `load_skill("strategy-generate")` — read the SignalEngine contract
 2. `write_file("config.json", ...)` — source, codes, dates, parameters. If the strategy is expected to produce ≥10 trades, include `"validation": {{"monte_carlo": {{"n_simulations": 1000}}}}` in config.json for Monte Carlo testing
 3. `write_file("code/signal_engine.py", ...)` — SignalEngine class

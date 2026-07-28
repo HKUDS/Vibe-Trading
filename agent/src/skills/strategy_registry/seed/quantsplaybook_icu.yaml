@@ -1,0 +1,32 @@
+strategy_id: quantsplaybook_icu
+name: ICU Moving Average Timing
+source: builtin
+area: timing
+description: 'ICU均线择时策略。基于MA(20)的零轴交叉和中性区间变体：Variant A: 价格在MA(20)之上做多，之下空仓，322笔交易，收益-4.6%，超额-31.0%。Variant
+  B: 加入中性区间，仅在价格显著偏离MA(20)时交易，82笔交易，收益+3.1%，超额-23.3%。回测标的：上证综指(000001.SH)，2015-2026年均跑输基准。简单均线策略在A股长牛中因频繁交易和低胜率(27.8%/26.1%)而失效。Variant
+  B的中性区间减少了交易频率但未能改善超额收益。'
+effective_scenarios:
+- mean_reversion
+failure_scenarios:
+- structural_market
+- bull_market_momentum
+- momentum_continuation
+tuning_hints:
+- 'ma_window: 使用MA(60)或MA(120)可减少交易频率，捕获更大趋势'
+- '中性区间宽度: 扩大Variant B的中性区间可进一步减少交易'
+- 加入成交量确认：仅当成交量放大时确认均线信号
+- 加入多周期均线：使用MA(5/20/60)三层均线系统
+- 考虑使用EMA替代SMA：降低滞后性
+benchmark_results:
+  period: 2015-01-30 to 2026-06-04
+  total_return: 3.09
+  benchmark_return: 26.4
+  excess_return: -23.31
+  sharpe: 0.021
+  max_drawdown: -43.66
+  market_exposure: 0.496
+  trades: 82
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

@@ -1,0 +1,32 @@
+strategy_id: quantsplaybook_cck
+name: CCK Herding Model (羊群效应)
+source: builtin
+area: timing
+description: CCK（Chang-Cheng-Khorana）羊群效应模型择时策略。基于横截面绝对偏离度(CSAD)：计算CSAD的csad_ma=20日均线与norm_ma=60日标准化，当标准化CSAD
+  < buy_threshold=0.5（羊群效应弱）时做多，> sell_threshold=1.5（羊群效应强）时空仓，趋势过滤MA(60)。回测标的：上证综指(000001.SH)，2015-2026年收益-54.0%，超额-45.4%，夏普-0.95全场最差，持仓仅19.2%。2018年熊市有+24.2%超额保护，但2019年-33.3%和2024年-22.4%超额严重踏空。参数过保守导致信号过于稀疏，需大幅调参才能产生足够交易。
+effective_scenarios:
+- bear_market_defense
+- high_volatility_regime
+failure_scenarios:
+- structural_market
+- bull_market_momentum
+- momentum_continuation
+tuning_hints:
+- 'buy_threshold: 大幅提高至1.0-1.5可增加持仓时间'
+- 'sell_threshold: 降低至1.0可减少空仓'
+- 'csad_ma: 缩短至10日可更快响应羊群效应变化'
+- 'norm_ma: 缩短至20日可更快适应均值变化'
+- 考虑加入不对称参数：牛市和熊市使用不同阈值
+benchmark_results:
+  period: 2015-01-01 to 2026-06-30
+  total_return: -54.02
+  benchmark_return: -8.64
+  excess_return: -45.37
+  sharpe: -0.946
+  max_drawdown: -54.02
+  market_exposure: 0.192
+  trades: 657
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

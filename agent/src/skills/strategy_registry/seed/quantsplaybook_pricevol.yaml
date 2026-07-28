@@ -1,0 +1,30 @@
+strategy_id: quantsplaybook_pricevol
+name: Alternative Price-Volume Resonance
+source: builtin
+area: timing
+description: 另类价量共振择时策略。当价格动量(price_roc_days=5日涨跌幅>price_roc_threshold=2%)且成交量放大(vol_ratio=当日成交量/vol_ma_days=20日均量>vol_ratio_threshold=1.5)时做多，否则空仓。回测标的：上证综指(000001.SH)，仅4笔交易，持仓占比85.7%，实为长期持有策略。信号过于稀疏，无法有效择时，最大回撤-54.43%创全场最高。
+effective_scenarios:
+- momentum_continuation
+failure_scenarios:
+- structural_market
+- high_volatility_regime
+- bear_market_defense
+tuning_hints:
+- 'price_roc_threshold: 降低至0.5-1%可大幅增加信号频率'
+- 'vol_ratio_threshold: 降低至1.2可捕获更多量价共振机会'
+- 'price_roc_days: 缩短至3日可提高灵敏度'
+- 'vol_ma_days: 缩短至10日可更快响应成交量变化'
+- 加入退出条件：不再仅依赖买入信号，增加止损/止盈机制
+benchmark_results:
+  period: 2015-01-05 to 2026-06-04
+  total_return: 2.64
+  benchmark_return: 21.11
+  excess_return: -18.47
+  sharpe: -0.09
+  max_drawdown: -54.43
+  market_exposure: 0.857
+  trades: 4
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

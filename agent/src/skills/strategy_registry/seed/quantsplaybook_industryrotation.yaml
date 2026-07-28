@@ -1,0 +1,32 @@
+strategy_id: quantsplaybook_industryrotation
+name: Industry Price-Volume Rotation (华西证券)
+source: builtin
+area: rotation
+description: 华西证券行业量价轮动策略。基于动量+波动率双因子打分：momentum_window=20日动量权重momentum_weight=0.6，vol_window=60日波动率(反向)权重vol_weight=0.4，综合得分选top_n=5个板块，月度调仓，等权配置。回测标的：板块指数，2020-2026年累计收益+221.0%，超额+104.1%，夏普0.64。2020-2022年强超额(+26~+42%)，但2023-2025连续三年跑输(-1.7%~-23.1%)。量价动量因子在震荡结构市中失效，行业轮动对市场环境高度敏感。
+effective_scenarios:
+- bull_market_momentum
+- sector_rotation
+- momentum_continuation
+failure_scenarios:
+- structural_market
+- bear_market_defense
+- mean_reversion
+tuning_hints:
+- 'momentum_window: 缩短至10日可更快响应行业轮动'
+- 'momentum_weight: 增加至0.8可更偏重动量，降低至0.5可增加波动率权重'
+- 'top_n: 减少至3可更集中，增加至8可更分散'
+- 加入行业相关性过滤：避免选择高度相关行业
+- 加入趋势过滤：仅在大盘MA(60)上行时启用行业轮动
+benchmark_results:
+  period: 2020-01-01 to 2026-06-04
+  total_return: 220.95
+  benchmark_return: 116.86
+  excess_return: 104.09
+  sharpe: 0.64
+  max_drawdown: -40.24
+  market_exposure: null
+  trades: 75
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

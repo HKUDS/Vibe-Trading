@@ -1,0 +1,32 @@
+strategy_id: quantsplaybook_macross
+name: MA Cross + Channel Breakout Timing (均线交叉+通道突破)
+source: builtin
+area: timing
+description: '均线交叉+通道突破复合择时策略。组合两个子策略：MA Cross: EMA(12)与EMA(26)金叉做多/死叉空仓，收益+15.5%，超额-15.6%。Channel
+  Breakout: 20日通道突破，收益-5.0%，超额-36.1%，仅12.4%持仓。Combined: 两子策略取交集，收益+29.6%，超额-1.5%，夏普0.25，最大回撤-39.6%改善显著(vs
+  基准-52.3%)，交易76笔，持仓50.3%。回测标的：上证综指(000001.SH)，复合策略接近基准收益但回撤控制更好。'
+effective_scenarios:
+- mean_reversion
+failure_scenarios:
+- structural_market
+- bull_market_momentum
+- momentum_continuation
+tuning_hints:
+- 'EMA周期: 调整(12/26)为(10/50)或(20/60)可减少交易频率'
+- 'channel_period: 增加至30-60可减少假突破'
+- '组合逻辑: 使用OR替代AND可增加持仓时间'
+- 加入波动率自适应通道：高波动时拓宽通道
+- 加入趋势过滤：仅在MA(60)上行时做多
+benchmark_results:
+  period: 2015-01-01 to 2026-06-30
+  total_return: 29.64
+  benchmark_return: 31.1
+  excess_return: -1.46
+  sharpe: 0.25
+  max_drawdown: -39.64
+  market_exposure: 0.503
+  trades: 76
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

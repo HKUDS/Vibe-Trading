@@ -1,0 +1,31 @@
+strategy_id: quantsplaybook_lowlatency
+name: Low Latency Trendline EMA(5/20) (广发证券)
+source: builtin
+area: timing
+description: 广发证券低延迟趋势线（LLT）择时策略，基于EMA(5)与EMA(20)交叉信号。当快线EMA(5)上穿慢线EMA(20)时做多，下穿时空仓。LLT版本（二阶低延迟滤波器）几乎完全复制了买入持有收益(21.06%
+  vs 21.11%)，但波动率降低35%。基础EMA版本跑输基准(-12.9%超额)，交易频率过高(178笔)，胜率仅27.9%。回测标的：上证综指(000001.SH)。
+effective_scenarios:
+- mean_reversion
+failure_scenarios:
+- structural_market
+- bull_market_momentum
+- high_volatility_regime
+tuning_hints:
+- 使用LLT版本替代EMA交叉：二阶低延迟滤波器可大幅改善收益
+- LLT版本参数调优：调整滤波器截止频率以匹配当前市场周期
+- 'EMA周期: 可尝试(10/50)或(20/60)减少交易频率'
+- 加入通道确认：仅当突破通道上轨且EMA交叉时做多
+- 加入波动率过滤：高波动时缩小仓位或暂停交易
+benchmark_results:
+  period: 2015-01-01 to 2026-06-04
+  total_return: 8.2
+  benchmark_return: 21.11
+  excess_return: -12.91
+  sharpe: -0.1
+  max_drawdown: -46.3
+  market_exposure: null
+  trades: 178
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

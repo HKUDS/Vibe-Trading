@@ -1,0 +1,32 @@
+strategy_id: quantsplaybook_csvc
+name: CSVC Bull-Bear Indicator (华泰证券)
+source: builtin
+area: timing
+description: 华泰证券CSVC框架下的熊牛指标择时策略。基于波动率和换手率双维度过滤：当滚动波动率低于历史20分位数且换手率高于历史80分位数时发出牛市信号（做多）；当波动率高于历史80分位数且换手率低于历史20分位数时发出熊市信号（空仓）。参数：vol_window=20,
+  turnover_vol_ma=60, turnover_sma=20, rolling_lookback=252, bull_vol_pctile=20, bull_turn_pctile=80,
+  bear_vol_pctile=80, bear_turn_pctile=20。回测标的：上证综指(000001.SH)，在2018年熊市(+18.55%超额)和2016年(+10.67%超额)有效保护，最大回撤-27.27%远优于基准-52.3%。择时类中唯一有效策略，超额+19.6%。
+effective_scenarios:
+- bear_market_defense
+- high_volatility_regime
+failure_scenarios:
+- bull_market_momentum
+- structural_market
+tuning_hints:
+- 'vol_window: 缩短至10-15可提高信号灵敏度，但会增加虚假信号'
+- 'rolling_lookback: 缩短至126(半年)可更快适应市场结构变化'
+- 'bull_vol_pctile: 降低至15可减少牛市误判，但可能错过早期反弹'
+- 'bear_vol_pctile: 降低至70可更早触发避险，但熊市误判增加'
+- 'turnover_sma: 调整为10可更快响应换手率变化'
+benchmark_results:
+  period: 2015-01-01 to 2026-06-04
+  total_return: 40.69
+  benchmark_return: 21.11
+  excess_return: 19.58
+  sharpe: 0.2986
+  max_drawdown: -27.27
+  market_exposure: 0.7317
+  trades: 4
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

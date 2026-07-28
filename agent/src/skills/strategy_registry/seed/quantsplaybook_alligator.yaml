@@ -1,0 +1,31 @@
+strategy_id: quantsplaybook_alligator
+name: Alligator Line Index Timing (鳄鱼线指数择时)
+source: builtin
+area: timing
+description: '鳄鱼线指数择时策略，基于Bill Williams的鳄鱼线指标：Jaw(蓝线): SMMA(13, offset=8), Teeth(红线):
+  SMMA(8, offset=5), Lips(绿线): SMMA(5, offset=3)。三线多头排列(Jaw<Teeth<Lips)做多，空头排列(Jaw>Teeth>Lips)做空，纠缠(沉睡)状态空仓。回测标的：上证综指(000001.SH)，2015-2026年收益-6.2%，超额-34.1%，夏普-0.19。三线纠缠(sleeping)占比14.7%，熊市信号占比39.5%。鳄鱼线在A股长牛中持续发出错误信号，最大回撤-48.4%。'
+effective_scenarios:
+- mean_reversion
+failure_scenarios:
+- structural_market
+- bull_market_momentum
+- high_volatility_regime
+tuning_hints:
+- 缩短Jaw/Teeth/Lips周期：如(8/5/3)可提高灵敏度
+- 增加offset偏移：更大的偏移可提前识别趋势
+- 加入波动率过滤：高波动时忽略鳄鱼线信号
+- 加入成交量确认：仅当成交量放大时确认趋势信号
+- 考虑仅使用清醒状态信号：忽略沉睡状态以减少误判
+benchmark_results:
+  period: 2015-01-01 to 2026-06-04
+  total_return: -6.194
+  benchmark_return: 27.883
+  excess_return: -34.076
+  sharpe: -0.189
+  max_drawdown: -48.446
+  market_exposure: 0.527
+  trades: 38
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

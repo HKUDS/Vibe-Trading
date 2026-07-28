@@ -1,0 +1,30 @@
+strategy_id: quantsplaybook_ffscore
+name: HuaTai F-Score + Low PB Value Strategy (华泰证券)
+source: builtin
+area: factor
+description: 华泰证券Piotroski F-Score价值选股策略。基于Piotroski九因子评分体系，筛选F-Score>=7（财务健康度极高）且PB处于全市场最低30%分位的股票，等权持仓，季度调仓。F-Score从盈利能力(ROA/CFO/ΔROA/Accrual)、财务杠杆与流动性(ΔLeverage/ΔLiquidity/EquityOffering)、运营效率(ΔGrossMargin/ΔAssetTurnover)三个维度评估财务质量。回测标的：全A股，2018-2026年累计收益+601.6%，年化+28.1%，夏普1.15为全场最高，最大回撤仅-21.7%，季胜率55.2%。基本面质量+低估值双因子驱动，全场最佳策略。
+effective_scenarios:
+- regime_agnostic
+- value_rotation
+- bear_market_defense
+failure_scenarios:
+- momentum_continuation
+tuning_hints:
+- 'fscore_threshold: 降低至6可扩大候选池，但平均质量下降'
+- 'pb_percentile: 调整至0.2可更集中于深度价值，降低至0.4可扩大范围'
+- '调仓频率: 可尝试月度调仓以更快响应财务变化'
+- 增加行业中性化：避免单一行业过度集中
+- 考虑加入动量过滤：剔除短期跌幅过大的股票以减少价值陷阱
+benchmark_results:
+  period: 2018-01-01 to 2026-06-30
+  total_return: 601.563
+  benchmark_return: 28.282
+  excess_return: 573.282
+  sharpe: 1.151
+  max_drawdown: -21.709
+  market_exposure: null
+  trades: 33
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

@@ -1,0 +1,33 @@
+strategy_id: quantsplaybook_sentiment
+name: Investor Sentiment Index Timing (国信证券)
+source: builtin
+area: timing
+description: 国信证券投资者情绪指数择时策略。构建复合情绪指标：换手率代理(turnover_rate_proxy) + 价格动量(price_momentum_ma60)
+  + 量比(volume_ratio_20)，经zscore_window=252日标准化。当情绪Z-score > sentiment_buy_threshold=0.5时做多，<
+  sentiment_sell_threshold=-0.5时空仓。回测标的：上证综指(000001.SH)，策略收益+13.7% vs 基准+31.7%。2018年熊市有显著超额保护(-7.5%
+  vs -24.6%)，2022年也跑赢(+0.7% vs -15.1%)。但在2019/2025牛市中系统性踏空，表现中性。
+effective_scenarios:
+- bear_market_defense
+- high_volatility_regime
+failure_scenarios:
+- bull_market_momentum
+- momentum_continuation
+tuning_hints:
+- 'sentiment_buy_threshold: 降低至0.3可增加多头持仓，减少踏空'
+- 'zscore_window: 缩短至126可更快适应情绪均值变化'
+- 'sentiment_sell_threshold: 提高至-0.3可减少空仓频率'
+- 考虑加入资金流(moneyflow)组件：当前moneyflow_available=false
+- 加入趋势过滤：在MA(60)上行时降低买入阈值
+benchmark_results:
+  period: 2016-04-15 to 2026-06-04
+  total_return: 13.68
+  benchmark_return: 31.65
+  excess_return: -17.97
+  sharpe: -0.077
+  max_drawdown: -24.09
+  market_exposure: null
+  trades: 144
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose

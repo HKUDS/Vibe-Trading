@@ -1,0 +1,31 @@
+strategy_id: quantsplaybook_qrs
+name: QRS Timing (中金公司)
+source: builtin
+area: timing
+description: 中金公司QRS（量化择时艺术）择时策略。基于多周期RSI的加权融合：计算n_low=20日和n_high=60日的RSI，取最小值作为QRS指标，经EMA(5)平滑后，当QRS
+  > buy_threshold=0.7时做多，< sell_threshold=0.3时空仓。回测标的：上证综指(000001.SH)，市场参与率仅15.8%，71笔交易，投胜率8.77%极低，系统性踏空。在长牛市场中频繁空仓导致严重跑输。
+effective_scenarios:
+- bear_market_defense
+failure_scenarios:
+- bull_market_momentum
+- structural_market
+- momentum_continuation
+tuning_hints:
+- 'buy_threshold: 降低至0.5-0.6可大幅增加持仓时间，减少踏空'
+- 'sell_threshold: 降低至0.2可减少空仓频率'
+- 'ema_smooth: 增加到10-15可减少虚假信号'
+- 'n_low/n_high: 缩窄周期差(如10/30)可提高灵敏度'
+- 考虑加入趋势过滤：仅在MA(60)上行时启用QRS信号
+benchmark_results:
+  period: 2015-01-06 to 2026-06-04
+  total_return: -18.39
+  benchmark_return: 21.11
+  excess_return: -39.5
+  sharpe: -0.47
+  max_drawdown: -37.2
+  market_exposure: 0.158
+  trades: 71
+implementation:
+  skill: strategy-generate
+  factor_backend: factor-research
+  decay_monitor: backtest-diagnose
