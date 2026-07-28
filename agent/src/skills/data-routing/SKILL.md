@@ -29,6 +29,7 @@ per-source skill.
 | mootdx | A-shares (TDX servers, never-banned) | No | China network | data-routing |
 | futu | A/HK/US via OpenD gateway | Yes (OpenD running) | Local gateway | data-routing (runner-internal) |
 | mt5 | Forex & metals (your broker's MT5 feed) | Yes (running, logged-in MT5 terminal; optional `~/.vibe-trading/mt5.json`) | Local terminal (Windows) | data-routing (runner-internal) |
+| tickerall | Forex & metals (your broker's MT5 feed, hosted) | Yes (`TICKERALL_API_KEY` + `TICKERALL_ACCOUNT_ID`) | Hosted API (any OS, no terminal) | data-routing (runner-internal) |
 | local | User CSV/parquet on disk | No | Offline | data-routing (runner-internal) |
 | eastmoney | A-shares, HK, US equities | No (IP-throttled) | Unrestricted | data-routing |
 | sina | US equities (daily OHLCV) | No (IP-throttled) | Unrestricted | data-routing |
@@ -99,7 +100,7 @@ same-market sources automatically. Only set a concrete source when the user asks
 - **HK stocks**: tencent > eastmoney / yahoo > yfinance.
 - **Crypto**: okx (single exchange) > ccxt (multi-exchange).
 - **Futures / macro**: tushare > akshare.
-- **Forex / metals**: mt5 (local MetaTrader 5 terminal, Windows) > akshare.
+- **Forex / metals**: mt5 (local MetaTrader 5 terminal, Windows) > tickerall (hosted MT5 API, any OS) > akshare.
 
 ## Symbol Format Reference
 

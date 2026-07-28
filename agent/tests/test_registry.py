@@ -172,14 +172,14 @@ class TestFallbackChains:
         assert "baostock" in FALLBACK_CHAINS["a_share"]
 
     def test_unchanged_chains_preserved(self) -> None:
-        """crypto/futures/fund/macro/forex chains must be left untouched."""
+        """crypto/futures/fund/macro chains stay pinned; forex adds only tickerall."""
         assert FALLBACK_CHAINS["crypto"] == ["okx", "binance", "ccxt", "yfinance", "local"]
         assert FALLBACK_CHAINS["futures"] == ["tushare", "akshare", "local"]
         assert FALLBACK_CHAINS["fund"] == ["tushare", "akshare", "local"]
         assert FALLBACK_CHAINS["macro"] == ["akshare", "tushare", "local"]
-        # mt5 heads the forex chain (terminal feed when attached), degrading to
-        # the previous chain unchanged.
-        assert FALLBACK_CHAINS["forex"] == ["mt5", "akshare", "yfinance", "local"]
+        # mt5 heads the forex chain (terminal feed when attached); tickerall is the
+        # hosted, no-terminal alternative to the same broker feed; then the fallbacks.
+        assert FALLBACK_CHAINS["forex"] == ["mt5", "tickerall", "akshare", "yfinance", "local"]
 
 
 # ---------------------------------------------------------------------------

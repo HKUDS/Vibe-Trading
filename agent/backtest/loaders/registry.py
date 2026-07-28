@@ -53,6 +53,7 @@ VALID_SOURCES: set[str] = {
     "india_broker",
     "longbridge",
     "mt5",
+    "tickerall",
     "local",
     "auto",
 }
@@ -102,6 +103,7 @@ def _ensure_registered() -> None:
         "backtest.loaders.india_broker_loader",
         "backtest.loaders.longbridge",
         "backtest.loaders.mt5_loader",
+        "backtest.loaders.tickerall_loader",
         "backtest.loaders.local_loader",
     ]
     import importlib
@@ -142,8 +144,9 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
     "fund":      ["tushare", "akshare", "local"],
     "macro":     ["akshare", "tushare", "local"],
     # mt5 leads when a local MetaTrader 5 terminal is attached (Windows-only,
-    # broker feed); otherwise it reports unavailable and the chain proceeds.
-    "forex":     ["mt5", "akshare", "yfinance", "local"],
+    # broker feed); tickerall is the hosted, no-terminal alternative to the same
+    # broker feed (opt-in via TICKERALL_API_KEY); otherwise the chain proceeds.
+    "forex":     ["mt5", "tickerall", "akshare", "yfinance", "local"],
 }
 
 
