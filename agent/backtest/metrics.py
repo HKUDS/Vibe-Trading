@@ -92,6 +92,19 @@ def bar_returns(close: Any, *, label: str = "") -> Any:
     never ``inf`` or ``nan``. For an all-positive series this is identical to
     ``pct_change().fillna(0.0)``, so ordinary equity/crypto runs are unchanged.
 
+    The prior price is carried forward across gaps. ``pct_change`` did this
+    implicitly via ``fill_method='pad'`` — its default on pandas < 3, removed
+    in 3.0 — so *not* forwarding it would silently change every gapped series
+    (a halt longer than ``_align``'s ``ffill_limit``, a thinly-traded symbol)
+    and would make the bit-identity claim above false on the pinned pandas.
+    Doing it here explicitly keeps that promise and, unlike the old default,
+    gives the same answer on every supported pandas version. Note the effect
+    is to attribute the whole across-gap move to the resumed bar; that is what
+    a position held through the halt actually earned. Whether that is the right
+    convention for *statistics* (it is not, for correlation — see
+    ``correlation.py``, which drops the observation instead) is a separate
+    question from whether this function may change it as a side effect.
+
     Args:
         close: Raw price ``Series`` or per-symbol ``DataFrame``.
         label: Optional name used when warning about undefined bars.
@@ -99,10 +112,13 @@ def bar_returns(close: Any, *, label: str = "") -> Any:
     Returns:
         Returns aligned to ``close``, with the first bar ``0.0``.
     """
-    prev = close.shift(1)
-    positive_prev = prev.where(prev > 0)
+    # ffill *then* shift: the divisor is the last known price, not NaN.
+    prev = close.ffill().shift(1)
+    # ``inf > 0`` is True, so finiteness has to be asserted, not assumed.
+    usable_prev = np.isfinite(prev) & (prev > 0)
+    positive_prev = prev.where(usable_prev)
 
-    undefined = int((prev.notna() & ~(prev > 0)).to_numpy().sum())
+    undefined = int((prev.notna() & ~usable_prev).to_numpy().sum())
     if undefined:
         # Silence is the actual hazard here: a wrong return is a wrong reported
         # number, not a crash, so the run has to say it defaulted.
@@ -141,7 +157,9 @@ def buy_and_hold_return(close: Any) -> Optional[float]:
         return None
     first = float(close.iloc[0])
     last = float(close.iloc[-1])
-    if not (first > 0) or not np.isfinite(last):
+    # ``inf > 0`` is True, so an infinite entry price would otherwise yield a
+    # clean-looking -100% instead of "no honest percentage exists".
+    if not (np.isfinite(first) and first > 0) or not np.isfinite(last):
         return None
     return last / first - 1.0
 
