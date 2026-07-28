@@ -2856,8 +2856,12 @@ def cmd_upload(file_path: str) -> None:
 def cmd_provider_login(provider: str) -> int:
     """Authenticate OAuth-backed LLM providers."""
     normalized = provider.strip().lower().replace("_", "-")
+    if normalized in {"copilot", "github-copilot"}:
+        return _login_copilot()
     if normalized != "openai-codex":
-        console.print("[red]Unknown OAuth provider.[/red] Supported: openai-codex")
+        console.print(
+            "[red]Unknown OAuth provider.[/red] Supported: openai-codex, copilot"
+        )
         return EXIT_USAGE_ERROR
     try:
         from src.providers.openai_codex import login_openai_codex
@@ -2873,6 +2877,49 @@ def cmd_provider_login(provider: str) -> int:
     except Exception as exc:
         console.print(f"[red]Authentication error:[/red] {exc}")
         return EXIT_RUN_FAILED
+
+
+def _login_copilot() -> int:
+    """Authenticate GitHub Copilot via the OAuth device code flow.
+
+    Skips the flow entirely when a credential is already discoverable (env
+    var, ``gh`` CLI, or the editor Copilot config), so re-running the command
+    is cheap and does not force a redundant browser round trip.
+    """
+    from src.providers.copilot_auth import (
+        COPILOT_TOKEN_ENV,
+        login_copilot,
+        resolve_copilot_token,
+    )
+
+    existing, source = resolve_copilot_token()
+    if existing:
+        console.print(
+            f"[green]Already authenticated with GitHub Copilot[/green]  [dim]via {source}[/dim]"
+        )
+        return EXIT_SUCCESS
+
+    console.print("[cyan]Starting GitHub Copilot device code login...[/cyan]")
+    try:
+        token = login_copilot(print_fn=lambda text: console.print(text))
+    except Exception as exc:  # noqa: BLE001 - surfaced to the user verbatim
+        console.print(f"[red]Authentication error:[/red] {exc}")
+        return EXIT_RUN_FAILED
+
+    if not token:
+        console.print("[red]Login cancelled or failed.[/red]")
+        return EXIT_RUN_FAILED
+
+    # The token is a secret: persist it via the shared atomic dotenv writer,
+    # and never echo it back to the terminal.
+    from src.api.helpers import ENV_PATH, _write_env_values
+
+    _write_env_values(ENV_PATH, {COPILOT_TOKEN_ENV: token})
+    console.print(
+        f"[green]Authenticated with GitHub Copilot[/green]  "
+        f"[dim]saved to {COPILOT_TOKEN_ENV}[/dim]"
+    )
+    return EXIT_SUCCESS
 
 
 # ---------------------------------------------------------------------------

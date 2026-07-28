@@ -203,6 +203,20 @@ def _build_llm_settings_response(
             token = None
         api_key_configured = bool(token)
         api_key_hint = None
+    elif provider.auth_type == "gh_cli":
+        # Copilot resolves its credential from the env var, the gh CLI, or the
+        # editor Copilot config, so an unset api_key_env does not mean
+        # unconfigured.
+        try:
+            from src.providers.copilot_auth import resolve_copilot_token
+
+            token, source = resolve_copilot_token()
+        except Exception:
+            token, source = "", ""
+        api_key_configured = bool(token)
+        # Name the source, never the secret, so a user can tell where the
+        # credential came from without it leaking into the UI.
+        api_key_hint = f"via {source}" if token else None
     return LLMSettingsResponse(
         provider=provider.name,
         model_name=env_values.get("LANGCHAIN_MODEL_NAME", provider.default_model),
@@ -259,7 +273,21 @@ def _sync_runtime_env(provider: LLMProviderOption, updates: Dict[str, str]) -> N
         else:
             os.environ.pop(key, None)
 
-    if provider.api_key_env:
+    if provider.auth_type == "gh_cli":
+        # Copilot's env var is optional: fall back to the gh CLI / editor
+        # config rather than clearing the key, which would make an otherwise
+        # working install look unauthenticated.
+        try:
+            from src.providers.copilot_auth import resolve_copilot_token
+
+            resolved_token = resolve_copilot_token()[0]
+        except Exception:
+            resolved_token = ""
+        if resolved_token:
+            os.environ["OPENAI_API_KEY"] = resolved_token
+        else:
+            os.environ.pop("OPENAI_API_KEY", None)
+    elif provider.api_key_env:
         key_value = os.environ.get(provider.api_key_env, "")  # noqa: env-gate — dynamic provider api_key_env
         if host._is_configured_secret(key_value, LLM_API_KEY_PLACEHOLDERS):
             os.environ["OPENAI_API_KEY"] = key_value

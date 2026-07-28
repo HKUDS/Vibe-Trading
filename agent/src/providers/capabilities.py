@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
-import subprocess
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
@@ -68,36 +66,20 @@ _VIBE_USER_AGENT = f"Vibe-Trading/{_package_version()}"
 
 @lru_cache(maxsize=1)
 def _gh_cli_token() -> str:
-    """Return a GitHub token from the `gh` CLI for the Copilot provider.
+    """Return a Copilot credential from the first available local source.
 
-    GitHub Copilot's OpenAI-compatible endpoint accepts the long-lived
-    `gho_`/`ghu_` token directly as a Bearer credential, so no short-lived JWT
-    exchange (and therefore no refresh loop) is needed. Cached because `gh` is
-    a subprocess and the token does not rotate within a process lifetime.
+    Delegates to :mod:`src.providers.copilot_auth`, which checks
+    ``COPILOT_GITHUB_TOKEN``, then the ``gh`` CLI, then the editor Copilot
+    config -- so the GitHub CLI is never a hard requirement. The token is
+    long-lived (no JWT exchange, hence no refresh loop), so caching it for the
+    process lifetime is safe.
 
     Returns:
-        The token string, or ``""`` when `gh` is absent or not logged in.
+        The token string, or ``""`` when the user has not authenticated.
     """
-    for candidate in ("gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"):
-        exe = shutil.which(candidate) or (
-            candidate if os.path.isfile(candidate) and os.access(candidate, os.X_OK) else None
-        )
-        if not exe:
-            continue
-        try:
-            proc = subprocess.run(
-                [exe, "auth", "token"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError):
-            continue
-        token = proc.stdout.strip()
-        if proc.returncode == 0 and token:
-            return token
-    return ""
+    from src.providers.copilot_auth import resolve_copilot_token
+
+    return resolve_copilot_token()[0]
 
 
 _MOONSHOT_CAPABILITIES = ProviderCapabilities(
