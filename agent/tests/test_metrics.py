@@ -176,6 +176,29 @@ class TestBarsPerYear:
             bp_1m = calc_bars_per_year("1m", src)
             assert bp_1m > 0, f"source {src!r} 1m returned {bp_1m}"
 
+    def test_lowercase_hour_matches_uppercase(self) -> None:
+        # Loaders accept 1h/4h after interval-map fixes; annualisation must too.
+        assert calc_bars_per_year("1h", "okx") == calc_bars_per_year("1H", "okx")
+        assert calc_bars_per_year("4h", "ccxt") == calc_bars_per_year("4H", "ccxt")
+        assert calc_bars_per_year("1h", "okx") == 365 * 24
+
+    def test_lowercase_day_matches_uppercase(self) -> None:
+        assert calc_bars_per_year("1d", "tushare") == calc_bars_per_year("1D", "tushare")
+
+    def test_yahoo_source_aliases_yfinance(self) -> None:
+        # Runner primary source for US equity is often "yahoo".
+        assert calc_bars_per_year("1H", "yahoo") == calc_bars_per_year("1H", "yfinance")
+        assert calc_bars_per_year("1H", "yahoo") == 252 * 7
+
+    def test_source_is_case_insensitive(self) -> None:
+        # source is normalised to lowercase before lookup, mirroring interval
+        # normalisation — regression guard for the alias layer that used to
+        # skip .strip().lower() on the fallback path.
+        assert calc_bars_per_year("1m", "Yahoo") == calc_bars_per_year("1m", "yahoo")
+        assert calc_bars_per_year("1m", "OKX") == calc_bars_per_year("1m", "okx")
+        assert calc_bars_per_year("1m", "Yahoo") == 252 * 390
+        assert calc_bars_per_year("1m", "OKX") == 365 * 1440
+
 
 # ---------------------------------------------------------------------------
 # win_rate_and_stats

@@ -113,19 +113,43 @@ _BARS_PER_DAY = {
             },
 }
 
+# Runner/loaders also emit these aliases; map them onto the table keys above.
+_SOURCE_ALIASES = {"yahoo": "yfinance", "binance": "ccxt"}
+
+
+def _normalize_interval(interval: str) -> str:
+    """Map project interval tokens onto ``_BARS_PER_DAY`` keys.
+
+    Minute bars stay lowercase (``1m``); hour/day use the uppercase keys the
+    table already stores (``1H`` / ``4H`` / ``1D``). Loaders accept both cases
+    after the interval-map fixes; annualisation must too.
+    """
+    token = str(interval or "1D").strip()
+    lower = token.lower()
+    if lower in ("1m", "5m", "15m", "30m"):
+        return lower
+    if lower in ("1h", "4h", "1d"):
+        return lower.upper()
+    return token
+
 
 def calc_bars_per_year(interval: str = "1D", source: str = "tushare") -> int:
     """Number of bars per year for annualisation.
 
     Args:
-        interval: Bar size (1m / 5m / 15m / 30m / 1H / 4H / 1D).
-        source: Data source (any VALID_SOURCES entry). Defaults to 252 days, 1 bar/day when source is missing from the table.
+        interval: Bar size (1m / 5m / 15m / 30m / 1H / 4H / 1D), case-insensitive
+            like loaders accept (``1h`` → ``1H``, ``4h`` → ``4H``, ``1d`` → ``1D``).
+        source: Data source (any VALID_SOURCES entry). Defaults to 252 days, 1 bar/day
+            when source is missing from the table.
 
     Returns:
         Bars per year.
     """
-    trading_days = _TRADING_DAYS.get(source, 252)
-    bars_per_day = _BARS_PER_DAY.get(interval, {}).get(source, 1)
+    interval_key = _normalize_interval(interval)
+    source_key = str(source or "").strip().lower()
+    source_key = _SOURCE_ALIASES.get(source_key, source_key)
+    trading_days = _TRADING_DAYS.get(source_key, 252)
+    bars_per_day = _BARS_PER_DAY.get(interval_key, {}).get(source_key, 1)
     return trading_days * bars_per_day
 
 
