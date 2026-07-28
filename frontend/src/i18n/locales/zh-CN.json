@@ -265,9 +265,11 @@
     "apiAuthKey": "API 认证密钥",
     "loading": "加载中…",
     "temperature": "温度",
+    "temperatureDesc": "控制回答的随机性，而不是模型的聪明程度。数值越低越稳定，更适合金融分析；建议保持在 0–0.2。",
     "timeoutSeconds": "超时（秒）",
     "maxRetries": "最大重试次数",
     "reasoningEffort": "推理强度",
+    "providerDefault": "提供商默认",
     "useDefaultModel": "使用默认模型",
     "useDefaultUrl": "使用默认 URL",
     "dataSourcesDesc": "配置回测引擎的外部数据源。",
@@ -290,7 +292,7 @@
     "reasoningEffortMedium": "中",
     "reasoningEffortHigh": "高",
     "reasoningEffortMax": "最大",
-    "reasoningEffortDesc": "模型回答前先思考多久。调高更周全，但也更慢；想要最快回复就选「关闭」。选「无（显式）」会显式发送该字段并关闭推理——部分 OpenAI 模型需要这样才能调用工具。",
+    "reasoningEffortDesc": "控制支持该功能的模型所使用的推理深度。强度越高，复杂分析可能更充分，但耗时也可能更长；不支持的提供商可能会忽略此设置。选择「无（显式）」会显式发送该字段并关闭推理——部分 OpenAI 模型需要这样才能调用工具。",
     "localApiAccess": "本地 API 访问",
     "localApiAccessDesc": "对远程或专用 Web UI 部署，请在浏览器中输入一次服务器 API 密钥。本地主机（localhost）使用可保持为空。",
     "serverApiKey": "服务器 API 密钥",
@@ -304,6 +306,10 @@
     "model": "模型",
     "useProviderDefaults": "使用提供商默认设置",
     "modelIdHint": "使用提供商所需的准确模型 ID。",
+    "loadModels": "加载模型",
+    "modelsLoaded": "已加载 {{count}} 个可用模型。",
+    "modelsLoadFailed": "无法加载提供商的模型列表。",
+    "modelPickerHint": "加载提供商的模型选项，或直接输入准确的自定义模型 ID。",
     "clearApiKey": "清除已保存的 API 密钥",
     "channels": {
       "title": "IM 通道",
@@ -388,6 +394,9 @@
     "notConfigured": "未配置"
   },
   "agent": {
+    "reasoningStrength": "推理强度",
+    "unknownProvider": "未知提供商",
+    "unknownModel": "未知模型",
     "connectionLostReconnect": "连接已断开，正在重连…",
     "connectionRestored": "连接已恢复",
     "agentWorking": "开始动手了…",
@@ -866,8 +875,10 @@
     "adjustRequestMessage": "针对授权提案「{{label}}」（选项 {{ordinal}}）的调整：{{text}}"
   },
   "messageBubble": {
+    "elapsedTime": "本次回复总耗时",
     "copied": "已复制",
     "copy": "复制",
+    "copyFailed": "复制失败，请选择文本后按 Ctrl+C。",
     "timeoutHint": "执行超时。可简化策略或减少资产。",
     "apiFailedHint": "API 请求失败。请稍后重试。",
     "executionFailedHint": "执行失败。请重试。",

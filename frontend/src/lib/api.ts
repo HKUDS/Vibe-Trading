@@ -200,6 +200,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  listLLMModels: (settings: ListLLMModelsRequest) =>
+    request<LLMModelsResponse>("/settings/llm/models", {
+      method: "POST",
+      body: JSON.stringify(settings),
+    }),
   getDataSourceSettings: () => request<DataSourceSettings>("/settings/data-sources"),
   updateDataSourceSettings: (settings: UpdateDataSourceSettingsRequest) =>
     request<DataSourceSettings>("/settings/data-sources", {
@@ -214,7 +219,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-
   // Alpha Zoo API
   listAlphas: (params: AlphaListParams = {}) => {
     const q = new URLSearchParams();
@@ -343,6 +347,19 @@ export interface UpdateLLMSettingsRequest {
   timeout_seconds: number;
   max_retries: number;
   reasoning_effort?: string;
+}
+
+export interface ListLLMModelsRequest {
+  provider: string;
+  base_url?: string;
+  api_key?: string;
+}
+
+export interface LLMModelsResponse {
+  provider: string;
+  models: string[];
+  source: "provider" | "default";
+  warning?: string | null;
 }
 
 export interface DataSourceSettings {

@@ -10,12 +10,13 @@ import {
   type StoredAgentMessage,
 } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
-import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted } from "@/lib/api";
+import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LLMSettings } from "@/lib/api";
 import { isReportWorthyRun } from "@/lib/runReports";
 import type { AgentMessage, SwarmRunStatus, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
 import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
 import { MarkdownContent, MessageBubble } from "@/components/chat/MessageBubble";
+import { ModelRuntimeBar } from "@/components/chat/ModelRuntimeBar";
 import { ThinkingTimeline } from "@/components/chat/ThinkingTimeline";
 import { ConversationTimeline } from "@/components/chat/ConversationTimeline";
 import { ActivityLine } from "@/components/chat/ActivityLine";
@@ -236,6 +237,8 @@ export function Agent() {
   const [liveItems, setLiveItems] = useState<LiveItem[]>([]);
   const [visibleRowCount, setVisibleRowCount] = useState(TIMELINE_WINDOW_SIZE);
   const visibleRowsSessionRef = useRef<string | null>(null);
+  const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
+  const [runtimeIdentity, setRuntimeIdentity] = useState<{ provider?: string; model?: string }>({});
 
   const messages = useAgentStore(s => s.messages);
   const streamingText = useAgentStore(s => s.streamingText);
@@ -490,10 +493,18 @@ export function Agent() {
       const msgs = await api.getSessionMessages(sid);
       if (genRef.current !== gen) return;
       const agentMsgs: StoredAgentMessage[] = [];
+      let latestRuntimeIdentity: { provider?: string; model?: string } | null = null;
       for (const m of msgs) {
         const meta = m.metadata as Record<string, unknown> | undefined;
         const runId = meta?.run_id as string | undefined;
         const metrics = meta?.metrics as Record<string, number> | undefined;
+        const elapsedMs = typeof meta?.elapsed_ms === "number" ? meta.elapsed_ms : undefined;
+        if (m.role === "assistant" && (typeof meta?.provider === "string" || typeof meta?.model === "string")) {
+          latestRuntimeIdentity = {
+            provider: typeof meta?.provider === "string" ? meta.provider : undefined,
+            model: typeof meta?.model === "string" ? meta.model : undefined,
+          };
+        }
         const ts = new Date(m.created_at).getTime();
         const toolTimeline = m.role === "assistant"
           ? buildToolTimelineMessages(m.tool_trail ?? [], {
@@ -525,7 +536,7 @@ export function Agent() {
         } else if (runId) {
           // Show text answer first (if non-empty), then chart card
           if (m.content && m.content !== "Strategy execution completed.") {
-            agentMsgs.push({ id: m.message_id + "_ans", type: "answer", content: m.content, timestamp: assistantTs });
+            agentMsgs.push({ id: m.message_id + "_ans", type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
           }
           if (metrics && Object.keys(metrics).length > 0) {
             agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, metrics, timestamp: assistantTs + 1 });
@@ -559,13 +570,14 @@ export function Agent() {
             }
           }
         } else {
-          agentMsgs.push({ id: m.message_id, type: "answer", content: m.content, timestamp: assistantTs });
+          agentMsgs.push({ id: m.message_id, type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
         }
       }
       if (genRef.current !== gen) return;
       act().loadHistory(agentMsgs);
       act().setSessionLoading(false);
       act().cacheSession(sid, agentMsgs);
+      if (latestRuntimeIdentity) setRuntimeIdentity(latestRuntimeIdentity);
       setTimeout(() => forceScrollToBottom(), 50);
     } catch {
       act().setSessionLoading(false);
@@ -836,7 +848,19 @@ export function Agent() {
         const summary = String(d.summary || "");
         const finalAnswer = summary.trim() ? summary : streamedAnswer;
         if (finalAnswer) {
-          s.addMessage({ id: "", type: "answer", content: finalAnswer, timestamp: Date.now() });
+          s.addMessage({
+            id: "",
+            type: "answer",
+            content: finalAnswer,
+            elapsed_ms: Number(d.elapsed_ms || 0) || undefined,
+            timestamp: Date.now(),
+          });
+        }
+        if (d.provider || d.model) {
+          setRuntimeIdentity({
+            provider: d.provider ? String(d.provider) : undefined,
+            model: d.model ? String(d.model) : undefined,
+          });
         }
 
         // First completed exchange → ask the backend for a Codex-style
@@ -1168,6 +1192,7 @@ export function Agent() {
   useEffect(() => {
     api.getLLMSettings().then((s) => {
       sseTimeoutMsRef.current = s.sse_timeout_seconds * 1000;
+      setLlmSettings(s);
     }).catch(() => {});
   }, []);
 
@@ -1553,6 +1578,11 @@ export function Agent() {
 
   return (
     <div className="flex flex-col flex-1 min-w-0 overflow-hidden h-full">
+      <ModelRuntimeBar
+        settings={llmSettings}
+        runtimeProvider={runtimeIdentity.provider}
+        runtimeModel={runtimeIdentity.model}
+      />
       <div
         ref={listRef}
         data-streaming={status === "streaming" ? "true" : undefined}
