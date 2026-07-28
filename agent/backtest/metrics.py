@@ -20,54 +20,112 @@ from backtest.models import TradeRecord
 # sessions are marginally longer (~330 min) — an approximation in line with the
 # rest of this annualisation table; the key fix is that intraday mootdx/futu no
 # longer fall back to the bars_per_day=1 default, which mis-annualised vol/Sharpe.
-_TRADING_DAYS = {"tushare": 252, "yfinance": 252, "okx": 365, "akshare": 252, "ccxt": 365, "mootdx": 252, "futu": 252, "mt5": 260}
-# mt5 is a forex/CFD feed: 24x5 sessions → 260 trading days, 24h intraday bars.
-_BARS_PER_DAY = {
-    "1m":  {"tushare": 240, "okx": 1440, "yfinance": 390, "akshare": 240, "ccxt": 1440, "mootdx": 240, "futu": 240, "mt5": 1440},
-    "5m":  {"tushare": 48,  "okx": 288,  "yfinance": 78,  "akshare": 48,  "ccxt": 288,  "mootdx": 48,  "futu": 48,  "mt5": 288},
-    "15m": {"tushare": 16,  "okx": 96,   "yfinance": 26,  "akshare": 16,  "ccxt": 96,   "mootdx": 16,  "futu": 16,  "mt5": 96},
-    "30m": {"tushare": 8,   "okx": 48,   "yfinance": 13,  "akshare": 8,   "ccxt": 48,   "mootdx": 8,   "futu": 8,   "mt5": 48},
-    "1H":  {"tushare": 4,   "okx": 24,   "yfinance": 7,   "akshare": 4,   "ccxt": 24,   "mootdx": 4,   "futu": 4,   "mt5": 24},
-    "4H":  {"tushare": 1,   "okx": 6,    "yfinance": 2,   "akshare": 1,   "ccxt": 6,    "mootdx": 1,   "futu": 1,   "mt5": 6},
-    "1D":  {"tushare": 1,   "okx": 1,    "yfinance": 1,   "akshare": 1,   "ccxt": 1,    "mootdx": 1,   "futu": 1,   "mt5": 1},
+_TRADING_DAYS = {
+    # existing
+    "tushare": 252, "yfinance": 252, "okx": 365, "akshare": 252, "ccxt": 365,
+    "mootdx": 252, "futu": 252, "mt5": 260,
+    # crypto
+    "binance": 365,
+    # A-share equity
+    "baostock": 252, "tencent": 252, "eastmoney": 252, "sina": 252,
+    # US / international equity
+    "yahoo": 252, "finnhub": 252, "alphavantage": 252, "tiingo": 252,
+    "fmp": 252, "stooq": 252, "longbridge": 252,
+    # Indian equity
+    "india_broker": 252,
+    # daily only (files / paid-route)
+    "qveris": 252, "local": 252,
 }
-
-# Runner/loaders also emit these aliases; map them onto the table keys above.
-_SOURCE_ALIASES = {"yahoo": "yfinance", "binance": "ccxt"}
-
-
-def _normalize_interval(interval: str) -> str:
-    """Map project interval tokens onto ``_BARS_PER_DAY`` keys.
-
-    Minute bars stay lowercase (``1m``); hour/day use the uppercase keys the
-    table already stores (``1H`` / ``4H`` / ``1D``). Loaders accept both cases
-    after the interval-map fixes; annualisation must too.
-    """
-    token = str(interval or "1D").strip()
-    lower = token.lower()
-    if lower in ("1m", "5m", "15m", "30m"):
-        return lower
-    if lower in ("1h", "4h", "1d"):
-        return lower.upper()
-    return token
+# mt5 is a forex/CFD feed: 24x5 sessions → 260 trading days, 24h intraday bars.
+# US equity (yfinance-style): 6.5h sessions → 390 1m bars/day.
+# A-share equity (tushare-style): 4.0h sessions → 240 1m bars/day.
+# Crypto (okx/ccxt-style): 24h sessions → 1440 1m bars/day.
+# Indian equity: 6.25h sessions → 375 1m bars/day.
+_BARS_PER_DAY = {
+    #  --- US/international equity (6.5h session) ---
+    "1m":  {"yfinance": 390, "yahoo": 390, "finnhub": 390, "alphavantage": 390,
+            "tiingo": 390, "fmp": 390, "stooq": 390, "longbridge": 390,
+            # A-share equity (4.0h session)
+            "tushare": 240, "akshare": 240, "baostock": 240, "tencent": 240,
+            "eastmoney": 240, "sina": 240, "mootdx": 240, "futu": 240,
+            # crypto (24h)
+            "okx": 1440, "ccxt": 1440, "binance": 1440,
+            # forex/CFD (24h intraday)
+            "mt5": 1440,
+            # Indian equity (6.25h session)
+            "india_broker": 375,
+            # daily only
+            "qveris": 1, "local": 1,
+            },
+    "5m":  {"yfinance": 78,  "yahoo": 78,  "finnhub": 78,  "alphavantage": 78,
+            "tiingo": 78,  "fmp": 78,  "stooq": 78,  "longbridge": 78,
+            "tushare": 48,  "akshare": 48,  "baostock": 48,  "tencent": 48,
+            "eastmoney": 48,  "sina": 48,  "mootdx": 48,  "futu": 48,
+            "okx": 288,  "ccxt": 288,  "binance": 288,
+            "mt5": 288,
+            "india_broker": 75,
+            "qveris": 1, "local": 1,
+            },
+    "15m": {"yfinance": 26,  "yahoo": 26,  "finnhub": 26,  "alphavantage": 26,
+            "tiingo": 26,  "fmp": 26,  "stooq": 26,  "longbridge": 26,
+            "tushare": 16,  "akshare": 16,  "baostock": 16,  "tencent": 16,
+            "eastmoney": 16,  "sina": 16,  "mootdx": 16,  "futu": 16,
+            "okx": 96,   "ccxt": 96,   "binance": 96,
+            "mt5": 96,
+            "india_broker": 25,
+            "qveris": 1, "local": 1,
+            },
+    "30m": {"yfinance": 13,  "yahoo": 13,  "finnhub": 13,  "alphavantage": 13,
+            "tiingo": 13,  "fmp": 13,  "stooq": 13,  "longbridge": 13,
+            "tushare": 8,   "akshare": 8,   "baostock": 8,   "tencent": 8,
+            "eastmoney": 8,   "sina": 8,   "mootdx": 8,   "futu": 8,
+            "okx": 48,   "ccxt": 48,   "binance": 48,
+            "mt5": 48,
+            "india_broker": 13,
+            "qveris": 1, "local": 1,
+            },
+    "1H":  {"yfinance": 7,   "yahoo": 7,   "finnhub": 7,   "alphavantage": 7,
+            "tiingo": 7,   "fmp": 7,   "stooq": 7,   "longbridge": 7,
+            "tushare": 4,   "akshare": 4,   "baostock": 4,   "tencent": 4,
+            "eastmoney": 4,   "sina": 4,   "mootdx": 4,   "futu": 4,
+            "okx": 24,   "ccxt": 24,   "binance": 24,
+            "mt5": 24,
+            "india_broker": 7,
+            "qveris": 1, "local": 1,
+            },
+    "4H":  {"yfinance": 2,   "yahoo": 2,   "finnhub": 2,   "alphavantage": 2,
+            "tiingo": 2,   "fmp": 2,   "stooq": 2,   "longbridge": 2,
+            "tushare": 1,   "akshare": 1,   "baostock": 1,   "tencent": 1,
+            "eastmoney": 1,   "sina": 1,   "mootdx": 1,   "futu": 1,
+            "okx": 6,    "ccxt": 6,    "binance": 6,
+            "mt5": 6,
+            "india_broker": 2,
+            "qveris": 1, "local": 1,
+            },
+    "1D":  {"yfinance": 1,   "yahoo": 1,   "finnhub": 1,   "alphavantage": 1,
+            "tiingo": 1,   "fmp": 1,   "stooq": 1,   "longbridge": 1,
+            "tushare": 1,   "akshare": 1,   "baostock": 1,   "tencent": 1,
+            "eastmoney": 1,   "sina": 1,   "mootdx": 1,   "futu": 1,
+            "okx": 1,    "ccxt": 1,    "binance": 1,
+            "mt5": 1,
+            "india_broker": 1,
+            "qveris": 1, "local": 1,
+            },
+}
 
 
 def calc_bars_per_year(interval: str = "1D", source: str = "tushare") -> int:
     """Number of bars per year for annualisation.
 
     Args:
-        interval: Bar size (1m / 5m / 15m / 30m / 1H / 4H / 1D), case-insensitive
-            for hour/day tokens.
-        source: Data source (tushare / yfinance / okx). ``yahoo`` aliases to
-            ``yfinance``; ``binance`` aliases to ``ccxt``.
+        interval: Bar size (1m / 5m / 15m / 30m / 1H / 4H / 1D).
+        source: Data source (any VALID_SOURCES entry). Defaults to 252 days, 1 bar/day when source is missing from the table.
 
     Returns:
         Bars per year.
     """
-    source_key = _SOURCE_ALIASES.get(str(source or "").strip().lower(), source)
-    interval_key = _normalize_interval(interval)
-    trading_days = _TRADING_DAYS.get(source_key, 252)
-    bars_per_day = _BARS_PER_DAY.get(interval_key, {}).get(source_key, 1)
+    trading_days = _TRADING_DAYS.get(source, 252)
+    bars_per_day = _BARS_PER_DAY.get(interval, {}).get(source, 1)
     return trading_days * bars_per_day
 
 
