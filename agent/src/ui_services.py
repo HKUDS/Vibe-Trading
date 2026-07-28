@@ -352,25 +352,29 @@ def build_indicator_series(
     return output
 
 
-def _load_ohlcv_artifacts(run_dir: Path) -> List[Dict[str, Any]]:
-    """Read individual ohlcv_*.csv files saved by the backtest engine.
+def _load_ohlcv_artifacts(
+    run_dir: Path, symbols: Optional[set[str]] = None
+) -> List[Dict[str, Any]]:
+    """Read saved OHLCV artifacts, optionally opening only selected symbols.
 
-    The engine writes ``ohlcv_{code}.csv`` per symbol with columns
-    ``trade_date,open,high,low,close,volume``. This function reads
-    them all and returns a flat list of normalized rows.
-
-    Args:
-        run_dir: The run directory under ``runs/``.
-
-    Returns:
-        Normalized OHLC rows, empty list if no files found.
+    ``symbols`` is used by the report detail chart endpoint.  It prevents a
+    single-symbol request from parsing every ``ohlcv_*.csv`` file in a large
+    portfolio run.
     """
     artifacts = run_dir / "artifacts"
     if not artifacts.is_dir():
         return []
-    ohlcv_files = sorted(artifacts.glob("ohlcv_*.csv"))
-    if not ohlcv_files:
-        return []
+    if symbols:
+        ohlcv_files = []
+        for code in sorted(symbols):
+            # Symbols are file-name components, never relative paths.
+            if Path(code).name != code:
+                continue
+            candidate = artifacts / f"ohlcv_{code}.csv"
+            if candidate.is_file():
+                ohlcv_files.append(candidate)
+    else:
+        ohlcv_files = sorted(artifacts.glob("ohlcv_*.csv"))
     rows: List[Dict[str, Any]] = []
     for f in ohlcv_files:
         code = f.stem.removeprefix("ohlcv_")
@@ -387,21 +391,21 @@ def _load_ohlcv_artifacts(run_dir: Path) -> List[Dict[str, Any]]:
     return _normalize_price_rows(rows)
 
 
-def load_price_series(run_dir: Path) -> List[Dict[str, Any]]:
-    """Load chart-ready price rows: price_series.csv > ohlcv_*.csv > API reconstruct.
-
-    Args:
-        run_dir: The run directory under ``runs/``.
-
-    Returns:
-        Normalized OHLC rows sorted by (code, date).
-    """
+def load_price_series(
+    run_dir: Path, symbols: Optional[set[str]] = None
+) -> List[Dict[str, Any]]:
+    """Load chart-ready rows, avoiding unrelated OHLCV files when possible."""
     artifact_path = run_dir / "artifacts" / "price_series.csv"
     if artifact_path.exists():
-        return _normalize_price_rows(load_csv_records(artifact_path))
-    rows = _load_ohlcv_artifacts(run_dir)
+        rows = _normalize_price_rows(load_csv_records(artifact_path))
+        return [row for row in rows if not symbols or str(row.get("code") or "") in symbols]
+    rows = _load_ohlcv_artifacts(run_dir, symbols)
     if rows:
         return rows
+    if symbols:
+        # A targeted chart request must not turn into a full-portfolio network
+        # reconstruction when its persisted artifact is missing.
+        return []
     return reconstruct_price_series(run_dir)
 
 
@@ -515,12 +519,10 @@ def build_run_analysis(
             "run_logs": collect_run_logs(run_dir),
         }
 
-    price_rows = load_price_series(run_dir)
+    selected_symbols = {symbol for symbol in (symbols or []) if symbol}
+    price_rows = load_price_series(run_dir, selected_symbols or None)
     if include_symbol_list and not chart_symbols:
         chart_symbols = sorted({str(row.get("code") or "") for row in price_rows if row.get("code")})
-    selected_symbols = {symbol for symbol in (symbols or []) if symbol}
-    if selected_symbols:
-        price_rows = [row for row in price_rows if str(row.get("code") or "") in selected_symbols]
     periods = infer_indicator_periods(run_dir)
     trades = load_csv_records(run_dir / "artifacts" / "trades.csv")
 

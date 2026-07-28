@@ -71,6 +71,24 @@ describe("RunDetail page", () => {
     expect(screen.queryByText("OLD_CODE")).not.toBeInTheDocument();
   });
 
+  it("hides Load All when a report has more than 20 symbols", async () => {
+    const symbols = Array.from({ length: 21 }, (_, index) => `S${index}`);
+    apiMock.getRun.mockResolvedValue({
+      status: "success",
+      run_id: "large",
+      prompt: "Large portfolio",
+      chart_symbols: symbols,
+      equity_curve: [{ time: "2026-01-01", equity: 100 }],
+    });
+    apiMock.getRunCode.mockResolvedValue({});
+
+    renderRunDetail("/runs/large");
+
+    expect(await screen.findByText("Large portfolio")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load All" })).not.toBeInTheDocument();
+    expect(screen.getByText(/21.*Symbol/)).toBeInTheDocument();
+  });
+
   it("ignores a chart response that finishes after the route changes", async () => {
     const oldChart = deferred<RunData>();
     apiMock.getRun.mockImplementation((runId: string, params: Record<string, string>) => {

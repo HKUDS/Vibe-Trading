@@ -577,6 +577,7 @@ function ChartTab({
     .map((symbol) => [symbol, chartCache[symbol]?.price_series?.[symbol] || []] as const)
     .filter(([, bars]) => bars.length > 0);
   const hasEquity = run.equity_curve && run.equity_curve.length > 0;
+  const canLoadAllCharts = chartSymbols.length <= 20;
   const progressPercent = bulkProgress.total > 0 ? Math.round((bulkProgress.done / bulkProgress.total) * 100) : 0;
 
   if (chartSymbols.length === 0 && entries.length === 0 && !hasEquity) {
@@ -596,16 +597,26 @@ function ChartTab({
             <label className="text-xs font-medium text-muted-foreground" htmlFor="chart-symbol-select">
               {i18n.t("runDetail.symbol")}
             </label>
-            <select
-              id="chart-symbol-select"
-              value={chartPickerSymbol}
-              onChange={(event) => onPickSymbol(event.target.value)}
-              className="h-8 rounded-md border border-border/60 bg-background px-2 text-sm"
-            >
-              {chartSymbols.map((symbol) => (
-                <option key={symbol} value={symbol}>{symbol}</option>
-              ))}
-            </select>
+            {canLoadAllCharts ? (
+              <select
+                id="chart-symbol-select"
+                value={chartPickerSymbol}
+                onChange={(event) => onPickSymbol(event.target.value)}
+                className="h-8 rounded-md border border-border/60 bg-background px-2 text-sm"
+              >
+                {chartSymbols.map((symbol) => (
+                  <option key={symbol} value={symbol}>{symbol}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="chart-symbol-select"
+                value={chartPickerSymbol}
+                onChange={(event) => onPickSymbol(event.target.value.trim())}
+                placeholder={i18n.t("runDetail.symbol")}
+                className="h-8 w-44 rounded-md border border-border/60 bg-background px-2 text-sm"
+              />
+            )}
             <button
               onClick={() => onCurrentOnly(chartPickerSymbol)}
               className="rounded-md border border-border/60 px-3 py-1.5 text-xs font-medium hover:bg-muted/60"
@@ -621,14 +632,20 @@ function ChartTab({
             >
               {i18n.t("runDetail.addSymbol")}
             </button>
-            <button
-              onClick={() => void onLoadAll()}
-              className="rounded-md border border-border/60 px-3 py-1.5 text-xs font-medium hover:bg-muted/60"
-              disabled={bulkLoading}
-            >
-              {bulkLoading ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : null}
-              {i18n.t("runDetail.loadAll")}
-            </button>
+            {canLoadAllCharts ? (
+              <button
+                onClick={() => void onLoadAll()}
+                className="rounded-md border border-border/60 px-3 py-1.5 text-xs font-medium hover:bg-muted/60"
+                disabled={bulkLoading}
+              >
+                {bulkLoading ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : null}
+                {i18n.t("runDetail.loadAll")}
+              </button>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                {chartSymbols.length} {i18n.t("runDetail.symbol")} · {i18n.t("runDetail.pickSymbolToLoad")}
+              </span>
+            )}
             {bulkLoading && (
               <button
                 onClick={onCancelLoadAll}

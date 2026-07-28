@@ -5,6 +5,7 @@ Mounted by ``agent/api_server.py`` via ``register_runs_routes(app, ...)``.
 
 from __future__ import annotations
 
+import base64
 import csv
 import json
 from datetime import datetime
@@ -44,6 +45,42 @@ def _load_csv_to_dict(path: Path, limit: Optional[int] = None) -> List[Dict[str,
         return []
 
 
+def _encode_run_relative_path(relative_path: Path) -> str:
+    """Encode a nested run directory as an opaque, URL-safe legacy run ID."""
+    raw = relative_path.as_posix().encode("utf-8")
+    return "nested_" + base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_run_id(runs_dir: Path, run_id: str) -> Path:
+    """Resolve a top-level or encoded nested run ID under ``runs_dir`` safely."""
+    if not run_id.startswith("nested_"):
+        return runs_dir / run_id
+    encoded = run_id.removeprefix("nested_")
+    try:
+        raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode("utf-8")
+        relative = Path(raw)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("unsafe relative path")
+        resolved_root = runs_dir.resolve()
+        resolved = (resolved_root / relative).resolve()
+        resolved.relative_to(resolved_root)
+        return resolved
+    except (UnicodeDecodeError, ValueError, OSError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid run_id") from exc
+
+
+def _report_run_dirs(runs_dir: Path) -> List[Path]:
+    """Return top-level runs plus nested backtest leaves that carry run cards.
+
+    Discovery is deliberately limited to ``*/backtests/*/run_card.json``: it
+    supports persisted strategy sub-runs without recursively indexing arbitrary
+    artifacts or turning every symbol into a report row.
+    """
+    top_level = [path for path in runs_dir.iterdir() if path.is_dir()]
+    nested = [card.parent for card in runs_dir.glob("*/backtests/*/run_card.json")]
+    return sorted({*top_level, *nested}, key=lambda path: path.name, reverse=True)
+
+
 def _run_response_payload(response: Any) -> Dict[str, Any]:
     """Return a JSON-ready payload for opt-in run response variants."""
     return response.model_dump(mode="json")
@@ -53,6 +90,7 @@ def _build_response_from_run_dir(
     run_dir: Path,
     elapsed: float,
     *,
+    response_run_id: Optional[str] = None,
     include_analysis: bool = False,
     chart_symbol: Optional[str] = None,
     chart_payload: str = "full",
@@ -67,7 +105,7 @@ def _build_response_from_run_dir(
     RAGSelection = host.RAGSelection
     Artifact = host.Artifact
 
-    run_id = run_dir.name
+    run_id = response_run_id or run_dir.name
 
     response = RunResponse(
         status="unknown",
@@ -88,6 +126,13 @@ def _build_response_from_run_dir(
             response.status = state_status or "unknown"
     else:
         response.status = "unknown"
+
+    if response.status == "unknown" and (
+        (run_dir / "run_card.json").exists() or (run_dir / "artifacts" / "metrics.csv").exists()
+    ):
+        # Strategy sub-runs are persisted below a parent session and commonly
+        # omit their own state.json, while still carrying completed artifacts.
+        response.status = "success"
 
     planner_path = run_dir / "planner_output.json"
     response.planner_output = _load_json_file(planner_path)
@@ -246,6 +291,10 @@ def register_runs_routes(
         h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
         return h.RUNS_DIR
 
+    def _resolve_run_dir(run_id: str) -> Path:
+        _host_validate_path_param(run_id, "run_id")
+        return _decode_run_id(_host_RUNS_DIR(), run_id)
+
     # Pydantic models for response_model (resolved at registration time)
     RunResponse = host.RunResponse
     RunInfo = host.RunInfo
@@ -262,8 +311,7 @@ def register_runs_routes(
         Returns:
             Map filename -> source text.
         """
-        _host_validate_path_param(run_id, "run_id")
-        run_dir = _host_RUNS_DIR() / run_id / "code"
+        run_dir = _resolve_run_dir(run_id) / "code"
         if not run_dir.exists():
             raise HTTPException(status_code=404, detail=f"Code directory for run {run_id} not found")
         result = {}
@@ -283,8 +331,7 @@ def register_runs_routes(
         Returns:
             Object with pine script content and exists flag.
         """
-        _host_validate_path_param(run_id, "run_id")
-        pine_path = _host_RUNS_DIR() / run_id / "artifacts" / "strategy.pine"
+        pine_path = _resolve_run_dir(run_id) / "artifacts" / "strategy.pine"
         if not pine_path.exists():
             return {"exists": False, "content": None}
         return {
@@ -306,10 +353,9 @@ def register_runs_routes(
         The default response stays unchanged for existing consumers. Chart-heavy
         optimizations are opt-in via query parameters.
         """
-        _host_validate_path_param(run_id, "run_id")
         if chart_payload not in (None, "summary"):
             raise HTTPException(status_code=400, detail="invalid chart_payload")
-        run_dir = _host_RUNS_DIR() / run_id
+        run_dir = _resolve_run_dir(run_id)
 
         if not run_dir.exists():
             raise HTTPException(
@@ -322,6 +368,7 @@ def register_runs_routes(
         response = _build_response_from_run_dir(
             run_dir,
             elapsed=0.0,
+            response_run_id=run_id,
             include_analysis=True,
             chart_symbol=chart_symbol,
             chart_payload=chart_payload or "full",
@@ -346,15 +393,16 @@ def register_runs_routes(
         if not runs_dir.exists():
             return []
 
-        run_dirs = sorted(
-            [d for d in runs_dir.iterdir() if d.is_dir()],
-            key=lambda x: x.name,
-            reverse=True
-        )
+        report_dirs = _report_run_dirs(runs_dir)
 
         results = []
-        for d in run_dirs[:limit]:
-            run_id = d.name
+        for d in report_dirs[:limit]:
+            relative_path = d.relative_to(runs_dir)
+            run_id = (
+                relative_path.name
+                if len(relative_path.parts) == 1
+                else _encode_run_relative_path(relative_path)
+            )
 
             # Status from state.json or artifacts
             status_val = "unknown"
@@ -422,6 +470,20 @@ def register_runs_routes(
                     pass
 
             run_context = load_run_context(d)
+            run_card = _load_json_file(d / "run_card.json") or {}
+            backtest = run_card.get("backtest") or {}
+            if not run_context.get("codes"):
+                run_context["codes"] = [str(code) for code in backtest.get("codes") or []]
+            if not run_context.get("start_date"):
+                run_context["start_date"] = backtest.get("start_date")
+            if not run_context.get("end_date"):
+                run_context["end_date"] = backtest.get("end_date")
+            if total_return is None:
+                value = (run_card.get("metrics") or {}).get("total_return")
+                total_return = float(value) if value is not None else None
+            if sharpe is None:
+                value = (run_card.get("metrics") or {}).get("sharpe")
+                sharpe = float(value) if value is not None else None
             results.append(RunInfo(
                 run_id=run_id,
                 status=status_val,
