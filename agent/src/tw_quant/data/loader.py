@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from backtest.loaders.registry import register
+from src.config.accessor import get_env_value
 from src.tw_quant.config import snapshot_root as default_snapshot_root
 from src.tw_quant.data.verifier import verify_snapshot
 from src.tw_quant.market.symbols import SymbolParseError, parse_symbol
@@ -35,8 +35,12 @@ class TaiwanSnapshotLoader:
     requires_auth = False
 
     def __init__(self, snapshot_id: str | None = None, snapshot_root: str | Path | None = None) -> None:
-        self.snapshot_id = snapshot_id or os.getenv("TW_QUANT_SNAPSHOT_ID", "").strip() or None
-        self.snapshot_root = Path(snapshot_root or os.getenv("TW_QUANT_SNAPSHOT_ROOT", "") or default_snapshot_root())
+        self.snapshot_id = snapshot_id or get_env_value("TW_QUANT_SNAPSHOT_ID").strip() or None
+        self.snapshot_root = Path(
+            snapshot_root
+            or get_env_value("TW_QUANT_SNAPSHOT_ROOT")
+            or default_snapshot_root()
+        )
         self._provenance: dict[str, Any] = {}
 
     @property

@@ -532,6 +532,17 @@ def test_snapshot_loader_fails_closed_for_invalid_requests(tmp_path: Path) -> No
         loader.fetch(["2330.TW"], "2026-01-01", "2026-01-02", interval="1H")
 
 
+def test_snapshot_loader_reads_environment_defaults(tmp_path: Path, monkeypatch) -> None:
+    snapshot_root = tmp_path / "snapshots"
+    monkeypatch.setenv("TW_QUANT_SNAPSHOT_ID", "from-env")
+    monkeypatch.setenv("TW_QUANT_SNAPSHOT_ROOT", str(snapshot_root))
+
+    loader = TaiwanSnapshotLoader()
+
+    assert loader.snapshot_id == "from-env"
+    assert loader.snapshot_root == snapshot_root
+
+
 def test_snapshot_loader_supports_selected_fields_and_bare_codes(
     tmp_path: Path, monkeypatch
 ) -> None:

@@ -22,7 +22,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.config.env_schema import EnvConfig
 
-__all__ = ["get_env_config", "reset_env_config", "_parse_bool", "get_env_or"]
+__all__ = [
+    "get_env_config",
+    "reset_env_config",
+    "_parse_bool",
+    "get_env_or",
+    "get_env_value",
+]
 
 # ---------------------------------------------------------------------------
 # Module-level singleton state
@@ -130,3 +136,14 @@ def get_env_or(primary: str, fallback: str, default: str = "") -> str:
     if value:
         return value
     return default
+
+
+def get_env_value(name: str, default: str = "") -> str:
+    """Read one environment variable through the central config layer.
+
+    This is the non-alias counterpart to :func:`get_env_or`.  Extension
+    modules can use it for their own settings without reading ``os.environ``
+    directly outside ``src/config/``.
+    """
+    value = os.getenv(name)
+    return value if value else default

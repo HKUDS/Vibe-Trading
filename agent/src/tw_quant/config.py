@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
+
+from src.config.accessor import get_env_value
 
 
 class PathSafetyError(ValueError):
@@ -16,7 +17,7 @@ _SAFE_SNAPSHOT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 def data_root() -> Path:
     """Return the configured state root, without creating it."""
-    configured = os.getenv("TW_QUANT_DATA_ROOT", "").strip()
+    configured = get_env_value("TW_QUANT_DATA_ROOT").strip()
     if configured:
         return Path(configured).expanduser().resolve(strict=False)
     return (Path.home() / ".vibe-trading" / "tw-quant").resolve(strict=False)
@@ -31,13 +32,13 @@ def _resolve_configured_path(value: str, *, base: Path) -> Path:
 
 def db_path() -> Path:
     """Return the configured DuckDB path, relative to ``data_root`` if needed."""
-    configured = os.getenv("TW_QUANT_DB_PATH", "").strip()
+    configured = get_env_value("TW_QUANT_DB_PATH").strip()
     return _resolve_configured_path(configured, base=data_root()) if configured else data_root() / "tw_quant.duckdb"
 
 
 def snapshot_root() -> Path:
     """Return the configured immutable snapshot root."""
-    configured = os.getenv("TW_QUANT_SNAPSHOT_ROOT", "").strip()
+    configured = get_env_value("TW_QUANT_SNAPSHOT_ROOT").strip()
     return _resolve_configured_path(configured, base=data_root()) if configured else data_root() / "snapshots"
 
 
@@ -70,4 +71,3 @@ def ensure_snapshot_id(snapshot_id: str) -> str:
     if not value or not _SAFE_SNAPSHOT_ID.fullmatch(value) or value in {".", ".."}:
         raise PathSafetyError(f"invalid snapshot_id: {snapshot_id!r}")
     return value
-

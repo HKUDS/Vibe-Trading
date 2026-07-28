@@ -10,6 +10,7 @@ Covers:
 - Thread safety
 - _parse_bool utility
 - get_env_or utility
+- get_env_value utility
 - _parse_env_bool (EnvBool BeforeValidator)
 """
 
@@ -23,6 +24,7 @@ from src.config.accessor import (
     _parse_bool,
     get_env_config,
     get_env_or,
+    get_env_value,
     reset_env_config,
 )
 from src.config.env_schema import (
@@ -457,6 +459,27 @@ class TestGetEnvOr:
         monkeypatch.setenv("PRIMARY", "")
         monkeypatch.setenv("FALLBACK", "")
         assert get_env_or("PRIMARY", "FALLBACK", "default") == "default"
+
+
+# ===================================================================
+# TestGetEnvValue
+# ===================================================================
+
+
+class TestGetEnvValue:
+    """Verify the single-variable config accessor."""
+
+    def test_set_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EXTENSION_SETTING", "configured")
+        assert get_env_value("EXTENSION_SETTING") == "configured"
+
+    def test_missing_value_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("EXTENSION_SETTING", raising=False)
+        assert get_env_value("EXTENSION_SETTING", "default") == "default"
+
+    def test_empty_value_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EXTENSION_SETTING", "")
+        assert get_env_value("EXTENSION_SETTING", "default") == "default"
 
 
 # ===================================================================
