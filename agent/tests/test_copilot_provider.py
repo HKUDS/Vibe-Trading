@@ -102,6 +102,27 @@ def test_copilot_default_model_supports_chat_completions() -> None:
     )
 
 
+def test_copilot_default_model_emits_tool_calls_non_streaming() -> None:
+    """The default must return tool calls on non-streaming requests.
+
+    claude-sonnet-4.6 on Copilot answers a tool-bound non-streaming request
+    with finish_reason="tool_calls" but an empty tool_calls array (streaming
+    is unaffected). An agent framework that calls invoke() therefore silently
+    gets no tool call at all, which breaks every agentic flow. Keep the
+    default off any model with that defect.
+    """
+    providers_path = (
+        Path(__file__).resolve().parents[1] / "src" / "providers" / "llm_providers.json"
+    )
+    entries = {
+        item["name"]: item
+        for item in json.loads(providers_path.read_text(encoding="utf-8"))
+    }
+
+    known_empty_tool_call_models = {"claude-sonnet-4.6"}
+    assert entries["copilot"]["default_model"] not in known_empty_tool_call_models
+
+
 def test_copilot_sends_editor_identification_headers() -> None:
     caps = get_provider_capabilities("copilot", "claude-sonnet-4.6")
 

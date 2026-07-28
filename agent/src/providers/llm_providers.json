@@ -208,7 +208,7 @@
     "label": "GitHub Copilot (gh CLI token)",
     "api_key_env": "COPILOT_GITHUB_TOKEN",
     "base_url_env": "COPILOT_BASE_URL",
-    "default_model": "claude-sonnet-4.6",
+    "default_model": "claude-sonnet-5",
     "default_base_url": "https://api.githubcopilot.com",
     "api_key_required": false,
     "auth_type": "gh_cli",
