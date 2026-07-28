@@ -11,10 +11,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
-
-# Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
-_AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from src.session.events import EventBus
 from src.session.models import (
@@ -25,6 +22,12 @@ from src.session.models import (
 )
 from src.session.search import get_shared_index
 from src.session.store import SessionStore
+
+if TYPE_CHECKING:
+    from src.agent.loop import AgentLoop
+
+# Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
+_AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
 
 
 #: Terminal attempt status -> SSE event name. Cancellation is its own event so
@@ -238,6 +241,7 @@ class SessionService:
         including in the pre-run bookkeeping below — must not leave the session
         permanently busy.
         """
+        started_at = time.perf_counter()
         try:
             attempt.mark_running()
             self.store.update_attempt(attempt)
@@ -272,6 +276,18 @@ class SessionService:
             reply_metadata["status"] = attempt.status.value
             if attempt.metrics:
                 reply_metadata["metrics"] = attempt.metrics
+            reply_metadata["elapsed_ms"] = max(0, round((time.perf_counter() - started_at) * 1000))
+            runtime_keys = (
+                "provider",
+                "configured_model",
+                "model",
+                "model_source",
+                "reasoning_effort",
+            )
+            for key in runtime_keys:
+                value = result.get(key)
+                if value is not None:
+                    reply_metadata[key] = value
 
             reply = Message(
                 session_id=session.session_id, role="assistant",
@@ -290,7 +306,8 @@ class SessionService:
                 session.session_id,
                 _TERMINAL_EVENTS.get(attempt.status.value, "attempt.failed"),
                 {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
-                 "summary": attempt.summary, "error": attempt.error, "run_dir": attempt.run_dir},
+                 "summary": attempt.summary, "error": attempt.error, "run_dir": attempt.run_dir,
+                 **{key: reply_metadata[key] for key in ("elapsed_ms", *runtime_keys) if key in reply_metadata}},
             )
 
         except asyncio.CancelledError:

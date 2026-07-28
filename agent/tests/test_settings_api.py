@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api_server
+from src.api import settings_routes
 
 
 @pytest.fixture
@@ -56,6 +57,47 @@ def test_get_llm_settings_is_side_effect_free_and_hides_placeholders(
     assert body["env_path"].endswith(".env")
     assert body["reasoning_effort"] == "max"
     assert not (tmp_path / ".env").exists()
+
+
+def test_extract_model_ids_normalizes_openai_compatible_payloads() -> None:
+    assert settings_routes._extract_model_ids(
+        {"data": [{"id": "model-b"}, {"id": "model-a"}, {"id": "model-a"}]}
+    ) == ["model-a", "model-b"]
+    assert settings_routes._extract_model_ids(
+        {"models": [{"name": "models/gemini-test"}, "custom-model"]}
+    ) == ["custom-model", "models/gemini-test"]
+
+
+def test_list_llm_models_uses_unsaved_form_values(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, str] = {}
+
+    async def fake_list(provider, *, base_url: str, api_key: str):
+        observed.update(provider=provider.name, base_url=base_url, api_key=api_key)
+        return settings_routes.LLMModelsResponse(
+            provider=provider.name,
+            models=[provider.default_model, "deepseek-v4-flash"],
+            source="provider",
+        )
+
+    monkeypatch.setattr(settings_routes, "_list_provider_models", fake_list)
+    response = client.post(
+        "/settings/llm/models",
+        json={
+            "provider": "deepseek",
+            "base_url": "https://api.deepseek.com/v1",
+            "api_key": "temporary-form-key",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["models"] == ["deepseek-v4-pro", "deepseek-v4-flash"]
+    assert observed == {
+        "provider": "deepseek",
+        "base_url": "https://api.deepseek.com/v1",
+        "api_key": "temporary-form-key",
+    }
 
 
 @pytest.mark.parametrize("placeholder", ["sk-xxx", "xxx", "gsk_xxx"])
@@ -138,7 +180,6 @@ def test_update_deepseek_settings_uses_exact_reported_payload(
     env_text = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "DEEPSEEK_API_KEY=sk-deepseek-test" in env_text
     assert "DEEPSEEK_BASE_URL=https://api.deepseek.com/v1" in env_text
-
 
 @pytest.mark.parametrize(
     ("provider", "api_key_env", "base_url_env", "base_url"),
