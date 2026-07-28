@@ -6,8 +6,9 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 54 tools: skills, research goals, backtest/factor/options/pattern
-analysis, market data, fundamentals & capital-flow & news & discovery
+Surfaces 57 tools: skills, research goals, strategy registry discovery
+(list_strategies / query_strategies / get_strategy), backtest/factor/options/
+pattern analysis, market data, fundamentals & capital-flow & news & discovery
 (get_fund_flow / get_dragon_tiger / get_northbound_flow / get_margin_trading /
 get_block_trades / get_shareholder_count / get_lockup_expiry / get_sector_info /
 get_research_reports / get_stock_news / get_sec_filings /
@@ -2130,6 +2131,87 @@ def scan_shadow_signals(
     if date:
         params["date"] = date
     return registry.execute("scan_shadow_signals", params)
+
+
+# ---------------------------------------------------------------------------
+# Strategy Registry tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool
+def list_strategies(limit: int = 50, offset: int = 0) -> str:
+    """List all strategies in the registry with summary metadata.
+
+    Returns a paginated list of {strategy_id, name, source, area,
+    effective_scenarios, sharpe} summaries.
+
+    Args:
+        limit: Maximum strategies to return (default 50, capped at 50).
+        offset: Number of strategies to skip for pagination (default 0).
+    """
+    try:
+        from src.skills.strategy_registry.tools.registry_tools import list_strategies as _impl
+
+        return _impl(limit=limit, offset=offset)
+    except Exception as exc:
+        return _json_error(f"strategy registry unavailable: {exc}")
+
+
+@mcp.tool
+def query_strategies(
+    scenario: str | None = None,
+    market: str | None = None,
+    min_sharpe: float | None = None,
+    source: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> str:
+    """Query strategies filtered by scenario, market, source, or minimum Sharpe.
+
+    Returns {strategy_id, name, source, area, effective_scenarios, sharpe}
+    summaries for strategies matching all provided filters.
+
+    Args:
+        scenario: Filter by effective scenario (e.g. 'bear_market_defense',
+            'value_rotation'). Must be a valid Scenario enum value.
+        market: Filter by market universe (e.g. 'china_a', 'us', 'hk').
+            Matches against implementation.universe.
+        min_sharpe: Minimum benchmark Sharpe ratio (inclusive).
+        source: Filter by strategy source ('builtin', 'sdm', 'user').
+        limit: Maximum results (default 50, capped at 50).
+        offset: Number of results to skip for pagination (default 0).
+    """
+    try:
+        from src.skills.strategy_registry.tools.registry_tools import query_strategies as _impl
+
+        return _impl(
+            scenario=scenario,
+            market=market,
+            min_sharpe=min_sharpe,
+            source=source,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as exc:
+        return _json_error(f"strategy registry unavailable: {exc}")
+
+
+@mcp.tool
+def get_strategy(strategy_id: str) -> str:
+    """Get full details for a single strategy by its ID.
+
+    Returns the complete StrategyEntry including description, tuning_hints,
+    benchmark_results, and implementation metadata.
+
+    Args:
+        strategy_id: Unique strategy identifier (e.g. 'quantsplaybook_ffscore').
+    """
+    try:
+        from src.skills.strategy_registry.tools.registry_tools import get_strategy as _impl
+
+        return _impl(strategy_id=strategy_id)
+    except Exception as exc:
+        return _json_error(f"strategy registry unavailable: {exc}")
 
 
 # ---------------------------------------------------------------------------

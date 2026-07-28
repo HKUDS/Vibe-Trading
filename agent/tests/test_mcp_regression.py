@@ -166,6 +166,9 @@ def test_mcp_server_exposes_well_known_tool_names() -> None:
         "get_research_goal",
         "add_goal_evidence",
         "update_research_goal_status",
+        "list_strategies",
+        "query_strategies",
+        "get_strategy",
         "trading_connections",
         "trading_select_connection",
         "trading_check",
@@ -295,3 +298,55 @@ def test_trading_mcp_wrappers_forward_explicit_local_overrides(monkeypatch: pyte
         ),
         ("trading_check", {"account": "DU12345"}),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Strategy Registry MCP wrapper smoke tests
+# ---------------------------------------------------------------------------
+
+
+def test_mcp_list_strategies_returns_valid_json() -> None:
+    mod = _import_mcp_server()
+    result = mod.list_strategies(limit=5, offset=0)
+    import json
+
+    payload = json.loads(result)
+    assert payload["status"] == "ok"
+    assert "items" in payload
+    assert "total" in payload
+    assert isinstance(payload["items"], list)
+
+
+def test_mcp_query_strategies_returns_valid_json() -> None:
+    mod = _import_mcp_server()
+    result = mod.query_strategies(limit=5)
+    import json
+
+    payload = json.loads(result)
+    assert payload["status"] == "ok"
+    assert "items" in payload
+
+
+def test_mcp_get_strategy_returns_valid_json() -> None:
+    mod = _import_mcp_server()
+    listing = mod.list_strategies(limit=1, offset=0)
+    import json
+
+    listing_payload = json.loads(listing)
+    if not listing_payload.get("items"):
+        pytest.skip("No strategies in registry to test get_strategy")
+    strategy_id = listing_payload["items"][0]["strategy_id"]
+
+    result = mod.get_strategy(strategy_id=strategy_id)
+    payload = json.loads(result)
+    assert payload["status"] == "ok"
+    assert "strategy" in payload
+
+
+def test_mcp_get_strategy_returns_error_for_unknown_id() -> None:
+    mod = _import_mcp_server()
+    result = mod.get_strategy(strategy_id="nonexistent_strategy_xyz")
+    import json
+
+    payload = json.loads(result)
+    assert payload["status"] == "error"
