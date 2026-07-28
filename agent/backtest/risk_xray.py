@@ -18,11 +18,15 @@ Conventions:
 
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
+
+from backtest.validation import _json_safe
 
 MIN_HISTORY_DAYS = 30
 PERIODS_PER_YEAR = 252
@@ -275,3 +279,75 @@ def _correlation(returns: pd.DataFrame, port: pd.Series) -> dict[str, Any]:
         "max_pair": max_pair,
         "beta_to_equal_weight": _finite(beta),
     }
+
+
+def average_invested_weights(target_pos: pd.DataFrame) -> tuple[dict[str, float], float]:
+    """Derive the run's average basket from the target position frame.
+
+    Returns ``(weights, avg_invested)``: the mean target weight per symbol
+    restricted to symbols the strategy actually held on average, and the mean
+    row sum (how much of the book was invested at all). The final row alone
+    would be the wrong object here, since many strategies end flat.
+
+    Raises:
+        ValueError: when the frame is empty or the strategy never held
+            anything on average, in which case there is no basket to x-ray.
+    """
+    if target_pos is None or target_pos.empty:
+        raise ValueError("target position frame is empty")
+    means = target_pos.mean(axis=0)
+    weights = {str(sym): float(w) for sym, w in means.items() if float(w) > 0}
+    avg_invested = float(target_pos.sum(axis=1).mean())
+    if not weights:
+        raise ValueError("strategy held no average exposure")
+    return weights, avg_invested
+
+
+def render_risk_xray_markdown(report: dict[str, Any]) -> str:
+    """Render an x-ray report as a compact Markdown summary."""
+    inputs = report["inputs"]
+    conc = report["concentration"]
+    vol = report["volatility"]
+    dd = report["drawdown"]
+    tail = report["tail_risk"]
+    lines = [
+        "# Portfolio Risk X-Ray",
+        "",
+        f"- basket: {', '.join(inputs['symbols'])}",
+        f"- window: {inputs['first_date']} .. {inputs['last_date']} "
+        f"({inputs['aligned_days']} aligned days)",
+    ]
+    if conc.get("hhi") is not None:
+        lines.append(
+            f"- concentration: hhi {conc['hhi']:.4f}, "
+            f"effective n {conc['effective_n']:.2f}, "
+            f"top1 {conc['top1_weight']:.2%}, top3 {conc['top3_weight']:.2%}"
+        )
+    if vol.get("annualized_vol") is not None:
+        lines.append(f"- annualized vol: {vol['annualized_vol']:.2%}")
+    if dd.get("max_drawdown") is not None:
+        lines.append(f"- max drawdown: {dd['max_drawdown']:.2%}")
+    if tail.get("var_95") is not None:
+        lines.append(
+            f"- tail (historical): VaR95 {tail['var_95']:.2%}, ES95 {tail['expected_shortfall_95']:.2%}"
+        )
+    if report["skipped"]:
+        joined = ", ".join(item["symbol"] for item in report["skipped"])
+        lines.append(f"- skipped: {joined}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_risk_xray(path: Path, report: dict[str, Any]) -> dict[str, Any]:
+    """Write the report to ``path`` as strict, RFC-8259 JSON.
+
+    Same contract as ``write_rebalance_notes``: sanitize with ``_json_safe``
+    and serialize with ``allow_nan=False``. Returns the sanitized payload.
+    """
+    safe_report = _json_safe(report)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(safe_report, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    return safe_report

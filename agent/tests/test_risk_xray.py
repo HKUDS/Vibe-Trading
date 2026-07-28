@@ -8,7 +8,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from backtest.risk_xray import compute_risk_xray
+from backtest.risk_xray import (
+    average_invested_weights,
+    compute_risk_xray,
+    render_risk_xray_markdown,
+    write_risk_xray,
+)
 from src.tools.portfolio_risk_tool import PortfolioRiskXrayTool
 
 
@@ -242,3 +247,104 @@ def test_tool_survives_records_without_dates():
     tool = PortfolioRiskXrayTool(data_fetcher=fetch)
     payload = json.loads(tool.execute(symbols=["AAA", "BBB"]))
     assert payload["status"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# average_invested_weights / artifact writers (run emission slice)
+
+
+def test_average_invested_weights_basic():
+    idx = pd.date_range("2026-01-01", periods=4, freq="D")
+    target_pos = pd.DataFrame(
+        {"AAA": [0.5, 0.5, 0.25, 0.0], "BBB": [0.25, 0.25, 0.25, 0.0], "CCC": [0.0] * 4},
+        index=idx,
+    )
+    weights, avg_invested = average_invested_weights(target_pos)
+    assert weights == {"AAA": pytest.approx(0.3125), "BBB": pytest.approx(0.1875)}
+    assert avg_invested == pytest.approx(0.5)
+
+
+def test_average_invested_weights_rejects_flat_strategy():
+    idx = pd.date_range("2026-01-01", periods=3, freq="D")
+    target_pos = pd.DataFrame({"AAA": [0.0, 0.0, 0.0]}, index=idx)
+    with pytest.raises(ValueError, match="no average exposure"):
+        average_invested_weights(target_pos)
+    with pytest.raises(ValueError, match="empty"):
+        average_invested_weights(pd.DataFrame())
+
+
+def test_write_risk_xray_strict_json_and_markdown(tmp_path):
+    closes = _closes({"AAA": list(range(100, 140)), "BBB": [50.0 + 0.1 * i for i in range(40)]})
+    report = compute_risk_xray(closes, {"AAA": 0.6, "BBB": 0.4})
+
+    out = tmp_path / "risk_xray.json"
+    safe = write_risk_xray(out, report)
+    on_disk = json.loads(out.read_text(encoding="utf-8"))
+    assert on_disk == safe
+    _assert_strict_json(on_disk)
+    assert on_disk["concentration"]["hhi"] == pytest.approx(0.52)
+
+    md = render_risk_xray_markdown(report)
+    assert "# Portfolio Risk X-Ray" in md
+    assert "AAA" in md and "BBB" in md
+    assert "annualized vol" in md
+
+
+def test_run_backtest_emits_risk_xray_artifacts(tmp_path):
+    from backtest.engines.base import BaseEngine
+
+    class _FlatEngine(BaseEngine):
+        def can_execute(self, symbol, direction, bar):
+            return True
+
+        def round_size(self, raw_size, price):
+            return float(raw_size)
+
+        def calc_commission(self, size, price, direction, is_open):
+            return 0.0
+
+        def apply_slippage(self, price, direction):
+            return price
+
+    dates = pd.bdate_range("2026-01-05", periods=40)
+    data_map = {
+        "AAA": pd.DataFrame(
+            {"open": [100.0 + i for i in range(40)], "close": [100.0 + i for i in range(40)]},
+            index=dates,
+        ),
+        "BBB": pd.DataFrame(
+            {"open": [50.0 + 0.2 * i for i in range(40)], "close": [50.0 + 0.2 * i for i in range(40)]},
+            index=dates,
+        ),
+    }
+
+    class _Loader:
+        def fetch(self, codes, start_date, end_date, fields=None, interval="1D"):
+            return data_map
+
+    class _Signals:
+        def generate(self, data):
+            return {code: pd.Series(1.0, index=frame.index) for code, frame in data.items()}
+
+    engine = _FlatEngine({"initial_cash": 100_000.0})
+    metrics = engine.run_backtest(
+        {"codes": ["AAA", "BBB"], "start_date": "2026-01-05", "end_date": "2026-03-01"},
+        _Loader(),
+        _Signals(),
+        tmp_path,
+    )
+
+    out_json = tmp_path / "artifacts" / "risk_xray.json"
+    out_md = tmp_path / "artifacts" / "risk_xray.md"
+    assert out_json.exists() and out_md.exists()
+    payload = json.loads(out_json.read_text(encoding="utf-8"))
+    _assert_strict_json(payload)
+    # constant 1.0 signals normalize to an even two-name basket
+    assert payload["concentration"]["hhi"] == pytest.approx(0.5)
+    assert set(payload["inputs"]["symbols"]) == {"AAA", "BBB"}
+    assert "# Portfolio Risk X-Ray" in out_md.read_text(encoding="utf-8")
+
+    assert metrics["risk_xray_hhi"] == pytest.approx(0.5)
+    assert metrics["risk_xray_effective_n"] == pytest.approx(2.0)
+    assert metrics["risk_xray_annualized_vol"] is not None
+    assert metrics["risk_xray_avg_invested"] == pytest.approx(39 / 40, abs=1e-6)

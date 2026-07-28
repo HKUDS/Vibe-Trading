@@ -623,6 +623,33 @@ class BaseEngine(ABC):
         m["rebalance_turnover_mean"] = rebalance_notes["summary"]["turnover_mean"]
         m["rebalance_turnover_max"] = rebalance_notes["summary"]["turnover_max"]
 
+        # Portfolio Studio: risk x-ray over the strategy's average basket.
+        # Short runs and never-invested strategies raise ValueError in the
+        # derivation and simply get no x-ray artifact.
+        from backtest.risk_xray import (
+            average_invested_weights,
+            compute_risk_xray,
+            render_risk_xray_markdown,
+            write_risk_xray,
+        )
+        try:
+            basket_weights, avg_invested = average_invested_weights(target_pos)
+            risk_xray = compute_risk_xray(
+                close_df, basket_weights, periods_per_year=bars_per_year,
+            )
+        except ValueError:
+            pass
+        else:
+            write_risk_xray(run_dir / "artifacts" / "risk_xray.json", risk_xray)
+            (run_dir / "artifacts" / "risk_xray.md").write_text(
+                render_risk_xray_markdown(risk_xray), encoding="utf-8"
+            )
+            m["risk_xray_hhi"] = risk_xray["concentration"]["hhi"]
+            m["risk_xray_effective_n"] = risk_xray["concentration"]["effective_n"]
+            m["risk_xray_annualized_vol"] = risk_xray["volatility"]["annualized_vol"]
+            m["risk_xray_max_drawdown"] = risk_xray["drawdown"]["max_drawdown"]
+            m["risk_xray_avg_invested"] = avg_invested
+
         # 7. Validation (optional — triggered by config["validation"])
         if config.get("validation"):
             from backtest.validation import run_validation, write_validation_json
