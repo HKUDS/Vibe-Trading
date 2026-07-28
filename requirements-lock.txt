@@ -151,9 +151,9 @@ akracer==0.0.14 \
     --hash=sha256:629eaccd0e1d18366804b797eb2692ed47bed0028f55b5a5af3cc277d521df04 \
     --hash=sha256:e084c14bf6d9a02d5da375e3af1cba3d46f103aa1cf3a2010593b3e95bf1c29a
     # via akshare
-akshare==1.18.79 \
-    --hash=sha256:3e84a59bf80f163b072906f34d268484e8aa5c3a3726638188df862b8236182d \
-    --hash=sha256:4da6c57690d52e167e776c45bdcd853a3e086ad309f0c8ab70f6bac7ff19b72f
+akshare==1.18.80 \
+    --hash=sha256:bd1698fe49f2a5f99bfb4ec10b753e65c6725da06b5efd3555ab7cb01055e560 \
+    --hash=sha256:c2ad1c2ab9f05ec62a8216685e646056775bbf49fe0a309566c9160326423c28
     # via -r agent/requirements.txt
 annotated-doc==0.0.4 \
     --hash=sha256:571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320 \
@@ -930,17 +930,17 @@ fake-useragent==2.2.0 \
     --hash=sha256:4e6ab6571e40cc086d788523cf9e018f618d07f9050f822ff409a4dfe17c16b2 \
     --hash=sha256:67f35ca4d847b0d298187443aaf020413746e56acd985a611908c73dba2daa24
     # via ddgs
-fastapi==0.140.0 \
-    --hash=sha256:e951c0a0d9540bf5d9a2a9e078fd415da2ab7e312d435139e7d9e2e7fe9f0b23 \
-    --hash=sha256:f338951b82fd74ca8f843163aec43ea1a1ce84d515415a50fa98fa25572a5544
+fastapi==0.140.7 \
+    --hash=sha256:09a640af2d29006345e1f28e4f031fa60f89b1a75d29f26070f3afa677d66cce \
+    --hash=sha256:960bb9696d8fd19dff488aa4f67f276364542cfcce9f7e68a82fe49dce126626
     # via -r agent/requirements.txt
-fastmcp==3.4.4 \
-    --hash=sha256:378202e26ec15b23819d9a1c0d1b0ebda096bc712720532010a0b82a45c2b1df \
-    --hash=sha256:f86f208713212260068cf55c32936839eee856fefc7808e18a032f31eb0f718e
+fastmcp==3.4.5 \
+    --hash=sha256:5d3d438eb2917e63e6faf53e8cb8fe26d887ec3232f848093a4eecad7fa34861 \
+    --hash=sha256:a95f2bc876bef42e8b50f7872f24f3f2fe3b1d37408c734e8b9d9e03014b72d3
     # via -r agent/requirements.txt
-fastmcp-slim[client,server]==3.4.4 \
-    --hash=sha256:9d3a6327b9ee835188eb7323fc3b5d4cd061631b48da8ece56794bb538972505 \
-    --hash=sha256:dcaa3e0be2127d7eacdce592c2ef0039204923dc0ec396454615cb4a3275b078
+fastmcp-slim[client,server]==3.4.5 \
+    --hash=sha256:5badc3bceee61f61297eeb9494f499325f3ce1cafabf4611b31f6c3e9d7dff59 \
+    --hash=sha256:bc31217827c4999812543c83ee95ed9a47f3ed1e3fd0bd4f64371e375b748eca
     # via fastmcp
 fonttools[woff]==4.63.0 \
     --hash=sha256:032038247a96c1690f9f31e377c389383c902531b085aa4e4dabd6f57f870e69 \
@@ -2183,9 +2183,9 @@ oauth-cli-kit==0.1.6 \
     --hash=sha256:7252f57e1a2f9dba7a94894c11b979f83884b3c88af3b4fe0206370a2b120499 \
     --hash=sha256:d4a73beae7333ae642a9e5766ab0a04de53279667fefdf064c23db77a3494e7f
     # via -r agent/requirements.txt
-openai==2.48.0 \
-    --hash=sha256:231b1e7661dda14574986c2f71451e9d584b7fe69e0ee6480e12ed090b48fc16 \
-    --hash=sha256:c98df30aaaf93c51979f64d3e7c5b76464f8be0173368266229eb8fe6bd30f2c
+openai==2.49.0 \
+    --hash=sha256:80f934333b5b83cef2fde9af7151dacaa72e150f43f92b7675f7647ca6157f48 \
+    --hash=sha256:b694201eaa42a1ccf2aa125fe29458150108fb22df1abfb55d7188599da81d8c
     # via langchain-openai
 openapi-pydantic==0.5.1 \
     --hash=sha256:a3a09ef4586f5bd760a8df7f43028b60cafb6d9f61de2acba9574766255ab146 \
@@ -3597,9 +3597,9 @@ tinyhtml5==2.1.0 \
     --hash=sha256:60a50ec3d938a37e491efa01af895853060943dcebb5627de5b10d188b338a67 \
     --hash=sha256:6e11cfff38515834268daf89d5f85bbde0b6dd02e8d9e212d1385c2289b89f0a
     # via weasyprint
-tqdm==4.69.1 \
-    --hash=sha256:0a654b96f7a2660cceb615b56f307ec2bef96c515409014a429a561981ab52b4 \
-    --hash=sha256:2be21080a0ce17e902c2f1baeb6a74bf551b67bbdfa4bc0109fad471d0b4cb0d
+tqdm==4.70.0 \
+    --hash=sha256:55b0b0dbd97462d06ebee91e4dac24ed4d4702be82b24f07e6c1d27e08cea220 \
+    --hash=sha256:7f585706bfddbdebf89daac705b2dfcc16890130727d3197ca62c732b4310953
     # via
     #   akshare
     #   openai
