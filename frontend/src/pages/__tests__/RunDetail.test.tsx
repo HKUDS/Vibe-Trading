@@ -87,6 +87,9 @@ describe("RunDetail page", () => {
     expect(await screen.findByText("Large portfolio")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Load All" })).not.toBeInTheDocument();
     expect(screen.getByText(/21.*Symbol/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Symbol"), { target: { value: "S1" } });
+    expect(screen.getByRole("button", { name: "S1" })).toBeInTheDocument();
   });
 
   it("ignores a chart response that finishes after the route changes", async () => {

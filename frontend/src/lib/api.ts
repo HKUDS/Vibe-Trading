@@ -397,6 +397,7 @@ export interface ChannelPairingCommandResponse {
 
 export interface RunListItem {
   run_id: string;
+  display_name?: string;
   status: string;
   created_at: string;
   prompt?: string;

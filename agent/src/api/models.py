@@ -43,6 +43,7 @@ class RunInfo(BaseModel):
     """Compact run row for list views."""
 
     run_id: str
+    display_name: Optional[str] = None
     status: str
     created_at: str
     prompt: Optional[str] = None

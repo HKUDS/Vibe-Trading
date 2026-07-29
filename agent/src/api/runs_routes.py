@@ -486,6 +486,7 @@ def register_runs_routes(
                 sharpe = float(value) if value is not None else None
             results.append(RunInfo(
                 run_id=run_id,
+                display_name=d.name if len(relative_path.parts) > 1 else None,
                 status=status_val,
                 created_at=created_at,
                 prompt=prompt or "Manual Analysis",

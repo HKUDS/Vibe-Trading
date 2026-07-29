@@ -77,6 +77,7 @@ def test_nested_backtest_is_listed_and_opened_via_safe_report_id(
     report = next(row for row in rows if row["codes"] == ["00700.HK", "03690.HK"])
     report_id = report["run_id"]
     assert "/" not in report_id
+    assert report["display_name"] == "hk21_123"
     assert report["total_return"] == 0.1
 
     detail = client.get(f"/runs/{report_id}?chart_payload=summary")

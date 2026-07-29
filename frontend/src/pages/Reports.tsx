@@ -209,7 +209,7 @@ function ReportRow({ run }: { run: RunListItem }) {
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={run.status} />
             <Link to={`/runs/${run.run_id}`} className="truncate font-mono text-sm font-medium hover:text-primary">
-              {run.run_id}
+              {run.display_name || run.run_id}
             </Link>
             <span className="text-xs text-muted-foreground">
               {formatRunDate(run.created_at, t("reports.unknown", { defaultValue: "Unknown" }))}

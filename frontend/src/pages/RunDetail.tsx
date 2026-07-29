@@ -1,5 +1,5 @@
 import i18n from '@/i18n';
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useNavigate } from "react-router";
@@ -578,6 +578,11 @@ function ChartTab({
     .filter(([, bars]) => bars.length > 0);
   const hasEquity = run.equity_curve && run.equity_curve.length > 0;
   const canLoadAllCharts = chartSymbols.length <= 20;
+  const symbolMatches = useMemo(() => {
+    if (canLoadAllCharts || !chartPickerSymbol.trim()) return [];
+    const query = chartPickerSymbol.trim().toLowerCase();
+    return chartSymbols.filter((symbol) => symbol.toLowerCase().includes(query)).slice(0, 20);
+  }, [canLoadAllCharts, chartPickerSymbol, chartSymbols]);
   const progressPercent = bulkProgress.total > 0 ? Math.round((bulkProgress.done / bulkProgress.total) * 100) : 0;
 
   if (chartSymbols.length === 0 && entries.length === 0 && !hasEquity) {
@@ -609,13 +614,29 @@ function ChartTab({
                 ))}
               </select>
             ) : (
-              <input
-                id="chart-symbol-select"
-                value={chartPickerSymbol}
-                onChange={(event) => onPickSymbol(event.target.value.trim())}
-                placeholder={i18n.t("runDetail.symbol")}
-                className="h-8 w-44 rounded-md border border-border/60 bg-background px-2 text-sm"
-              />
+              <div className="relative">
+                <input
+                  id="chart-symbol-select"
+                  value={chartPickerSymbol}
+                  onChange={(event) => onPickSymbol(event.target.value.trim())}
+                  placeholder={i18n.t("runDetail.symbol")}
+                  className="h-8 w-44 rounded-md border border-border/60 bg-background px-2 text-sm"
+                />
+                {symbolMatches.length > 0 && (
+                  <div className="absolute z-10 mt-1 max-h-48 w-44 overflow-y-auto rounded-md border bg-popover p-1 shadow-md">
+                    {symbolMatches.map((symbol) => (
+                      <button
+                        key={symbol}
+                        type="button"
+                        onClick={() => onPickSymbol(symbol)}
+                        className="block w-full rounded px-2 py-1 text-left font-mono text-xs hover:bg-muted"
+                      >
+                        {symbol}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             <button
               onClick={() => onCurrentOnly(chartPickerSymbol)}
