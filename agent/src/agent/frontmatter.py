@@ -8,7 +8,7 @@ from typing import Any, Dict
 # Opening ---, optional meta lines, closing ---. The closing fence may be at
 # EOF (no trailing newline) or followed by a body; empty meta (---\n---) is ok.
 _FRONTMATTER_RE = re.compile(
-    r"^---[ \t]*\r?\n(.*?)(?:\r?\n)?---[ \t]*(?:\r?\n(.*))?$",
+    r"^---[ \t]*\r?\n(?:(.*?)\r?\n)?---[ \t]*(?:\r?\n(.*))?$",
     re.DOTALL,
 )
 
@@ -29,7 +29,7 @@ def parse_frontmatter(text: str) -> tuple[Dict[str, Any], str]:
         return {}, text.strip()
 
     meta: Dict[str, Any] = {}
-    for line in match.group(1).strip().split("\n"):
+    for line in (match.group(1) or "").strip().split("\n"):
         line = line.strip()
         if ":" not in line:
             continue
