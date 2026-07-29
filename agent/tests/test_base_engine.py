@@ -14,23 +14,11 @@ from backtest.engines.china_a import ChinaAEngine
 from backtest.models import Position
 
 
-class _LifecycleEngine(BaseEngine):
+class _LifecycleEngine(ChinaAEngine):
     def __init__(self, *, stop_before: bool = False):
-        super().__init__({"initial_cash": 1_000.0})
+        super().__init__({"initial_cash": 1_000_000.0})
         self.stop_before = stop_before
         self.lifecycle: list[str] = []
-
-    def can_execute(self, symbol, direction, bar):
-        return True
-
-    def round_size(self, raw_size, price):
-        return raw_size
-
-    def calc_commission(self, size, price, direction, is_open):
-        return 0.0
-
-    def apply_slippage(self, price, direction):
-        return price
 
     def before_rebalance_bar(self, timestamp, data_map, codes):
         self.lifecycle.append("pre")
@@ -46,35 +34,29 @@ class _LifecycleEngine(BaseEngine):
 
 
 def _run_lifecycle(engine: _LifecycleEngine) -> None:
-    timestamp = pd.Timestamp("2026-01-01")
-    dates = pd.DatetimeIndex([timestamp])
+    dates = pd.DatetimeIndex([pd.Timestamp("2026-01-02")])
     frame = pd.DataFrame({"open": [100.0], "close": [100.0]}, index=dates)
-    targets = pd.DataFrame({"TEST": [1.0]}, index=dates)
     engine._execute_bars(
         dates,
         {"TEST": frame},
         frame[["close"]].rename(columns={"close": "TEST"}),
-        targets,
+        pd.DataFrame({"TEST": [1.0]}, index=dates),
         ["TEST"],
     )
 
 
-def test_execute_bars_runs_pre_fill_post_lifecycle() -> None:
-    engine = _LifecycleEngine()
-
+@pytest.mark.parametrize(("stop_before", "expected"), [
+    (False, ["pre", "fill", "post"]), (True, ["pre"]),
+])
+def test_execute_bars_lifecycle_and_pre_fill_stop(
+    stop_before: bool, expected: list[str]
+) -> None:
+    engine = _LifecycleEngine(stop_before=stop_before)
     _run_lifecycle(engine)
-
-    assert engine.lifecycle == ["pre", "fill", "post"]
-
-
-def test_pre_lifecycle_can_stop_before_fill_and_still_snapshot() -> None:
-    engine = _LifecycleEngine(stop_before=True)
-
-    _run_lifecycle(engine)
-
-    assert engine.lifecycle == ["pre"]
-    assert engine.trades == []
+    assert engine.lifecycle == expected
     assert len(engine.equity_snapshots) == 1
+    if stop_before:
+        assert engine.trades == []
 
 
 # ---------------------------------------------------------------------------

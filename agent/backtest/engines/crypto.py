@@ -18,9 +18,13 @@ from backtest.engines._market_hooks import (
     check_crypto_liquidation,
 )
 from backtest.perpetual_risk import (
+    AccountState,
+    CrossMarginRiskModel,
     ExecutionFrame,
     MaintenanceSchedule,
     MarketRiskFrame,
+    PositionState,
+    evaluate_isolated,
 )
 
 
@@ -45,23 +49,25 @@ class CryptoEngine(BaseEngine):
         self.perpetual_strict = bool(config.get("perpetual_strict", False))
         self.funding_mode = str(config.get("funding_mode", "fixed"))
         self.margin_mode = str(config.get("margin_mode", "isolated"))
+        self.liquidation_fee_rate = float(config.get("liquidation_fee_rate", 0.0))
         if self.perpetual_strict and self.funding_mode != "data":
             raise ValueError("perpetual_strict requires funding_mode='data'")
         if self.perpetual_strict and self.margin_mode not in {"isolated", "cross"}:
             raise ValueError("margin_mode must be 'isolated' or 'cross'")
+        if self.perpetual_strict and not 0 <= self.liquidation_fee_rate < 1:
+            raise ValueError("liquidation_fee_rate must be between zero and one")
         self.terminal_status = "active"
         self._strict_funding_applied: set[tuple[str, pd.Timestamp]] = set()
         self._isolated_margins: dict[str, float] = {}
         self._schedule_cache: dict[tuple[str, str], MaintenanceSchedule] = {}
-        self._execution_frames: dict[str, ExecutionFrame] = {}
         self._risk_frames: dict[str, MarketRiskFrame] = {}
-        self._current_mark_prices: dict[str, float] = {}
+        self._blocked_symbols: set[str] = set()
         self._funding_applied: set = set()   # (symbol, date, hour) — per-slot dedup
         self._funding_daily_done: set = set()  # (symbol, date) — daily fallback dedup
 
     def can_execute(self, symbol: str, direction: int, bar: pd.Series) -> bool:
         """Crypto: 24/7, long/short/close all allowed."""
-        return True
+        return not (self.perpetual_strict and symbol in self._blocked_symbols)
 
     def round_size(self, raw_size: float, price: float) -> float:
         """Crypto supports fractional sizes, round to 6 decimals."""
@@ -91,7 +97,10 @@ class CryptoEngine(BaseEngine):
         return float(bar["mark_open"])
 
     def _schedule(self, symbol: str, bar: pd.Series) -> MaintenanceSchedule:
-        version = str(bar["maintenance_bracket_version"])
+        version = bar["maintenance_bracket_version"]
+        if pd.isna(version):
+            raise ValueError(f"missing maintenance bracket version for {symbol}")
+        version = str(version)
         key = (symbol, version)
         if key not in self._schedule_cache:
             self._schedule_cache[key] = MaintenanceSchedule.from_loader_columns(
@@ -105,7 +114,6 @@ class CryptoEngine(BaseEngine):
         data_map: dict[str, pd.DataFrame],
         codes: list[str],
     ) -> None:
-        executions: dict[str, ExecutionFrame] = {}
         risks: dict[str, MarketRiskFrame] = {}
         for symbol in codes:
             frame = data_map.get(symbol)
@@ -114,9 +122,7 @@ class CryptoEngine(BaseEngine):
             bar = frame.loc[timestamp]
             if not isinstance(bar, pd.Series):
                 raise ValueError(f"duplicate frame timestamp for {symbol} at {timestamp}")
-            executions[symbol] = ExecutionFrame(
-                timestamp, float(bar["execution_open"])
-            )
+            ExecutionFrame(timestamp, float(bar["execution_open"]))
             rate = bar["funding_rate"]
             settlement = bar["funding_settlement_time"]
             if pd.isna(rate):
@@ -141,7 +147,6 @@ class CryptoEngine(BaseEngine):
                 schedule=self._schedule(symbol, bar),
                 source=str(self.config.get("market_risk_source", "ccxt:binanceusdm")),
             )
-        self._execution_frames = executions
         self._risk_frames = risks
 
     def _apply_data_funding(self) -> None:
@@ -154,15 +159,64 @@ class CryptoEngine(BaseEngine):
             if key in self._strict_funding_applied:
                 continue
             payment = (
-                position.direction
-                * position.size
-                * frame.mark_open
+                position.direction * position.size * frame.mark_open
                 * float(frame.funding_rate)
             )
             self.capital -= payment
             if self.margin_mode == "isolated":
                 self._isolated_margins[symbol] -= payment
             self._strict_funding_applied.add(key)
+
+    def _account_state(self) -> AccountState:
+        positions = tuple(
+            PositionState(
+                symbol=symbol,
+                quantity=position.direction * position.size,
+                entry_price=position.entry_price,
+                leverage=position.leverage,
+                accumulated_entry_fee=position.entry_commission,
+                isolated_margin=self._isolated_margins.get(symbol),
+            )
+            for symbol, position in self.positions.items()
+        )
+        locked_margin = sum(
+            self._calc_margin(
+                position.symbol, position.size, position.entry_price, position.leverage
+            )
+            for position in self.positions.values()
+        )
+        return AccountState(
+            wallet_balance=self.capital + locked_margin,
+            positions=positions,
+            margin_mode=self.margin_mode,
+            terminal_status=self.terminal_status,
+        )
+
+    def _evaluate_and_liquidate(
+        self, timestamp: pd.Timestamp, price_field: str
+    ) -> bool:
+        if not self.positions:
+            return False
+        account = self._account_state()
+        snapshot = (
+            evaluate_isolated(account, self._risk_frames, price_field)
+            if self.margin_mode == "isolated"
+            else CrossMarginRiskModel().evaluate(account, self._risk_frames, price_field)
+        )
+        if snapshot.status == "healthy":
+            return False
+        prices = {risk.symbol: risk.mark_price for risk in snapshot.per_position}
+        for symbol in snapshot.liquidation_targets:
+            position = self.positions[symbol]
+            price = prices[symbol]
+            fee = position.size * price * self.liquidation_fee_rate
+            self._close_position(symbol, price, timestamp, snapshot.status)
+            self.capital -= fee
+        if snapshot.status == "account_liquidation":
+            self.terminal_status = "account_liquidation"
+            return True
+        self._blocked_symbols.update(snapshot.liquidation_targets)
+        return False
 
     def before_rebalance_bar(
         self,
@@ -172,12 +226,10 @@ class CryptoEngine(BaseEngine):
     ) -> bool:
         if not self.perpetual_strict:
             return super().before_rebalance_bar(timestamp, data_map, codes)
+        self._blocked_symbols.clear()
         self._build_strict_frames(timestamp, data_map, codes)
-        self._current_mark_prices = {
-            symbol: frame.mark_open for symbol, frame in self._risk_frames.items()
-        }
         self._apply_data_funding()
-        return False
+        return self._evaluate_and_liquidate(timestamp, "mark_open")
 
     def after_rebalance_bar(
         self,
@@ -187,17 +239,13 @@ class CryptoEngine(BaseEngine):
     ) -> bool:
         if not self.perpetual_strict:
             return super().after_rebalance_bar(timestamp, data_map, codes)
-        self._current_mark_prices = {
-            symbol: frame.mark_close for symbol, frame in self._risk_frames.items()
-        }
-        return False
+        return self._evaluate_and_liquidate(timestamp, "adverse")
 
     def _execute_bars(self, dates, data_map, close_df, target_pos, codes) -> None:
         if self.perpetual_strict:
             try:
                 close_df = pd.DataFrame(
-                    {symbol: data_map[symbol]["mark_close"] for symbol in codes},
-                    index=dates,
+                    {symbol: data_map[symbol]["mark_close"] for symbol in codes}, index=dates
                 )
             except KeyError as exc:
                 raise ValueError(f"missing strict mark-close data: {exc}") from exc

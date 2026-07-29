@@ -11,8 +11,6 @@ Validates:
 
 from __future__ import annotations
 
-import json
-
 import pandas as pd
 import pytest
 
@@ -22,6 +20,11 @@ from backtest.engines._market_hooks import (
     _maintenance_rate,
 )
 from backtest.models import Position
+
+_BRACKETS = (
+    '[{"bracket_tier":1,"notional_cap":1000000.0,'
+    '"maintenance_rate":0.004,"cumulative_maintenance_amount":0.0}]'
+)
 
 
 # ---------------------------------------------------------------------------
@@ -63,34 +66,28 @@ def _strict_engine(**overrides) -> CryptoEngine:
 def _strict_frame(
     dates: pd.DatetimeIndex,
     *,
-    execution_open: list[float],
-    mark_open: list[float],
-    mark_high: list[float],
-    mark_low: list[float],
-    mark_close: list[float],
+    price: float = 100.0,
+    mark: list[float] | None = None,
+    execution_open: list[float] | None = None,
+    mark_open: list[float] | None = None,
+    mark_high: list[float] | None = None,
+    mark_low: list[float] | None = None,
+    mark_close: list[float] | None = None,
     funding_rate: list[float] | None = None,
     settlements: list[pd.Timestamp | None] | None = None,
 ) -> pd.DataFrame:
-    brackets = json.dumps(
-        [{
-            "bracket_tier": 1,
-            "notional_cap": 1_000_000.0,
-            "maintenance_rate": 0.004,
-            "cumulative_maintenance_amount": 0.0,
-        }]
-    )
+    base = [price] * len(dates)
+    marks = mark or base
     return pd.DataFrame(
         {
-            "open": [1.0] * len(dates),
-            "close": mark_close,
-            "execution_open": execution_open,
-            "mark_open": mark_open,
-            "mark_high": mark_high,
-            "mark_low": mark_low,
-            "mark_close": mark_close,
+            "execution_open": execution_open or base,
+            "mark_open": mark_open or marks,
+            "mark_high": mark_high or marks,
+            "mark_low": mark_low or marks,
+            "mark_close": mark_close or marks,
             "funding_rate": funding_rate or [0.0] * len(dates),
             "funding_settlement_time": settlements or [pd.NaT] * len(dates),
-            "maintenance_brackets": [brackets] * len(dates),
+            "maintenance_brackets": [_BRACKETS] * len(dates),
             "maintenance_bracket_version": ["fixture-v1"] * len(dates),
         },
         index=dates,
@@ -104,14 +101,10 @@ def _run_strict(
 ) -> None:
     dates = next(iter(data_map.values())).index
     codes = list(data_map)
-    close_df = pd.DataFrame(
-        {symbol: frame["close"] for symbol, frame in data_map.items()},
-        index=dates,
-    )
     engine._execute_bars(
         dates,
         data_map,
-        close_df,
+        pd.DataFrame(index=dates),
         pd.DataFrame(targets, index=dates),
         codes,
     )
@@ -467,11 +460,7 @@ class TestStrictPerpetualLifecycle:
         dates = pd.date_range("2026-01-01", periods=2, freq="8h", tz="UTC")
         frame = _strict_frame(
             dates,
-            execution_open=[60_000.0, 60_000.0],
-            mark_open=[60_000.0, 60_000.0],
-            mark_high=[60_000.0, 60_000.0],
-            mark_low=[60_000.0, 60_000.0],
-            mark_close=[60_000.0, 60_000.0],
+            price=60_000.0,
             funding_rate=[0.001, 0.001],
             settlements=list(dates),
         )
@@ -480,3 +469,79 @@ class TestStrictPerpetualLifecycle:
         _run_strict(engine, {"BTC-USDT-PERP": frame}, {"BTC-USDT-PERP": [1.0, 0.0]})
 
         assert engine.capital == pytest.approx(990.0, abs=0.001)
+
+    def test_isolated_liquidation_closes_only_breached_position(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC")
+        btc = _strict_frame(
+            dates,
+            mark_low=[90.0, 100.0],
+            mark_close=[95.0, 100.0],
+        )
+        eth = _strict_frame(dates)
+        engine = _strict_engine(
+            initial_cash=2_000.0,
+            taker_rate=0.0,
+            maker_rate=0.0,
+            liquidation_fee_rate=0.01,
+        )
+
+        _run_strict(
+            engine,
+            {"BTC-USDT-PERP": btc, "ETH-USDT-PERP": eth},
+            {"BTC-USDT-PERP": [0.5, 0.0], "ETH-USDT-PERP": [0.5, 0.5]},
+        )
+
+        reasons = {trade.symbol: trade.exit_reason for trade in engine.trades}
+        assert reasons == {
+            "BTC-USDT-PERP": "position_liquidation",
+            "ETH-USDT-PERP": "end_of_backtest",
+        }
+        assert engine.terminal_status == "completed"
+        assert engine.capital == pytest.approx(910.0)
+
+    def test_open_mark_liquidation_blocks_same_bar_reopen(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC")
+        frame = _strict_frame(
+            dates,
+            mark=[100.0, 90.0],
+        )
+        engine = _strict_engine(taker_rate=0.0, maker_rate=0.0)
+
+        _run_strict(engine, {"BTC-USDT-PERP": frame}, {"BTC-USDT-PERP": [1.0, 1.0]})
+
+        assert [trade.exit_reason for trade in engine.trades] == [
+            "position_liquidation"
+        ]
+        assert not engine.positions
+
+    def test_cross_liquidation_closes_account_and_stops_later_bars(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
+        frames = {
+            symbol: _strict_frame(
+                dates,
+                mark_low=[100.0, low, 100.0],
+            )
+            for symbol, low in (
+                ("BTC-USDT-PERP", 80.0),
+                ("ETH-USDT-PERP", 100.0),
+            )
+        }
+        engine = _strict_engine(
+            initial_cash=2_000.0,
+            taker_rate=0.0,
+            maker_rate=0.0,
+            margin_mode="cross",
+        )
+
+        _run_strict(
+            engine,
+            frames,
+            {symbol: [0.5] * 3 for symbol in frames},
+        )
+
+        assert {trade.exit_reason for trade in engine.trades} == {
+            "account_liquidation"
+        }
+        assert engine.terminal_status == "account_liquidation"
+        assert len(engine.equity_snapshots) == 2
+        assert engine.equity_snapshots[-1].timestamp == dates[1]

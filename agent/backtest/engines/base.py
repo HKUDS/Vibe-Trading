@@ -866,8 +866,8 @@ class BaseEngine(ABC):
 
         # f. Force close all remaining positions
         if len(dates) > 0:
-            last_ts = dates[-1]
-            _last_row = len(dates) - 1
+            _last_row = min(self._bar_idx, len(dates) - 1)
+            last_ts = dates[_last_row]
             for c in list(self.positions.keys()):
                 pos = self.positions[c]
                 mark_price = self._safe_price(
