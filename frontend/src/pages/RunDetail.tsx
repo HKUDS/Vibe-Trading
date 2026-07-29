@@ -234,17 +234,17 @@ export function RunDetail() {
   async function handleAddChartSymbol(symbol: string) {
     if (!symbol) return;
     setSelectedSymbol(symbol);
-    setChartPickerSymbol(symbol);
     setSelectedSymbols((prev) => prev.includes(symbol) ? prev : [...prev, symbol]);
     await loadChartSymbol(symbol);
+    setChartPickerSymbol("");
   }
 
   async function handleCurrentChartOnly(symbol: string) {
     if (!symbol) return;
     setSelectedSymbol(symbol);
-    setChartPickerSymbol(symbol);
     setSelectedSymbols([symbol]);
     await loadChartSymbol(symbol);
+    setChartPickerSymbol("");
   }
 
   function handleRemoveChartSymbol(symbol: string) {

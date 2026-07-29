@@ -89,7 +89,14 @@ describe("RunDetail page", () => {
     expect(screen.getByText(/21.*Symbol/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText("Symbol"), { target: { value: "S1" } });
-    expect(screen.getByRole("button", { name: "S1" })).toBeInTheDocument();
+    const suggestion = screen.getByRole("button", { name: "S1" });
+    expect(suggestion).toBeInTheDocument();
+    fireEvent.click(suggestion);
+    expect(screen.getByDisplayValue("S1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show only" }));
+    await waitFor(() => expect(screen.getByPlaceholderText("Symbol")).toHaveValue(""));
+    expect(screen.queryByRole("button", { name: "S1" })).not.toBeInTheDocument();
   });
 
   it("ignores a chart response that finishes after the route changes", async () => {
