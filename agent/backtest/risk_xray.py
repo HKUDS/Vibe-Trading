@@ -290,12 +290,21 @@ def average_invested_weights(target_pos: pd.DataFrame) -> tuple[dict[str, float]
     would be the wrong object here, since many strategies end flat.
 
     Raises:
-        ValueError: when the frame is empty or the strategy never held
-            anything on average, in which case there is no basket to x-ray.
+        ValueError: when the frame is empty, the strategy never held
+            anything on average, or any symbol's average exposure is net
+            short — ``compute_risk_xray`` is long-only, and silently
+            x-raying just the long half of a long-short book would present
+            a partial basket as the whole strategy.
     """
     if target_pos is None or target_pos.empty:
         raise ValueError("target position frame is empty")
     means = target_pos.mean(axis=0)
+    short_book = [str(sym) for sym, w in means.items() if float(w) < 0]
+    if short_book:
+        raise ValueError(
+            "long-only x-ray cannot describe net short average exposure "
+            f"in {', '.join(short_book)}"
+        )
     weights = {str(sym): float(w) for sym, w in means.items() if float(w) > 0}
     avg_invested = float(target_pos.sum(axis=1).mean())
     if not weights:

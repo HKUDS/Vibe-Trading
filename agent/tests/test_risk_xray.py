@@ -273,6 +273,18 @@ def test_average_invested_weights_rejects_flat_strategy():
         average_invested_weights(pd.DataFrame())
 
 
+def test_average_invested_weights_rejects_long_short_book():
+    # A net-short leg must refuse the x-ray outright, not silently shrink the
+    # basket to the long half and present it as the whole strategy.
+    idx = pd.date_range("2026-01-01", periods=4, freq="D")
+    target_pos = pd.DataFrame(
+        {"AAA": [0.5, 0.5, 0.5, 0.5], "BBB": [-0.25, -0.25, -0.25, -0.25]},
+        index=idx,
+    )
+    with pytest.raises(ValueError, match="long-only .* BBB"):
+        average_invested_weights(target_pos)
+
+
 def test_write_risk_xray_strict_json_and_markdown(tmp_path):
     closes = _closes({"AAA": list(range(100, 140)), "BBB": [50.0 + 0.1 * i for i in range(40)]})
     report = compute_risk_xray(closes, {"AAA": 0.6, "BBB": 0.4})
