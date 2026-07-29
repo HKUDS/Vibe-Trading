@@ -162,7 +162,7 @@ def test_undefined_bars_are_logged(delu: pd.Series, caplog) -> None:
         bar_returns(delu, label="DE-LU")
 
     assert "DE-LU" in caplog.text
-    assert "3 bar(s) follow a non-positive price" in caplog.text
+    assert "3 bar(s) follow a non-positive or non-finite prior price" in caplog.text
 
 
 def test_clean_series_log_nothing(caplog) -> None:

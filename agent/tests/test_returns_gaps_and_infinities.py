@@ -111,7 +111,7 @@ def test_infinite_prior_price_is_logged(caplog) -> None:
         bar_returns(pd.Series([10.0, np.inf, 42.0]), label="INF")
 
     assert "INF" in caplog.text
-    assert "non-positive price" in caplog.text
+    assert "non-positive or non-finite prior price" in caplog.text
 
 
 def test_buy_and_hold_rejects_an_infinite_entry_price() -> None:
@@ -142,3 +142,41 @@ def test_gapless_positive_series_unchanged() -> None:
     expected = (prices / prices.shift(1) - 1).fillna(0.0)
 
     assert (bar_returns(prices).to_numpy() == expected.to_numpy()).all()
+
+
+# ---------------------------------------------------------------------------
+# The engine boundary where the gap actually leaks in
+# ---------------------------------------------------------------------------
+
+
+def test_align_keeps_move_across_halt_longer_than_ffill_limit() -> None:
+    """A suspension longer than ``_align``'s ffill limit must not erase the move.
+
+    ``_align`` forward-fills close with ``limit=5`` (single market) precisely so
+    long halts stay visible as NaN; the returns matrix it hands to the optimizer
+    and the benchmark must still credit the across-gap move to the resumed bar.
+    """
+    from backtest.engines.base import _align
+
+    dates = pd.date_range("2025-01-06", periods=10, freq="B")
+
+    def _frame(closes: pd.Series) -> pd.DataFrame:
+        return pd.DataFrame({"close": closes})
+
+    # HALTED prints days 0-1, goes dark for six sessions (> limit 5), resumes
+    # day 8 at 121: a real +10% earned by anyone holding through the halt.
+    halted = pd.Series([100.0, 110.0, 121.0, 122.0],
+                       index=dates[[0, 1, 8, 9]])
+    normal = pd.Series(np.linspace(50.0, 59.0, 10), index=dates)
+
+    data_map = {"HALTED": _frame(halted), "NORMAL": _frame(normal)}
+    signal_map = {c: pd.Series(1.0, index=df.index) for c, df in data_map.items()}
+
+    _, close, _, ret = _align(data_map, signal_map, ["HALTED", "NORMAL"])
+
+    # Precondition: the halt really does outlive the ffill limit.
+    assert np.isnan(close.loc[dates[7], "HALTED"])
+    # The resumed bar carries 110 -> 121, not a silent 0.0.
+    assert ret.loc[dates[8], "HALTED"] == pytest.approx(121.0 / 110.0 - 1.0)
+    # Bars inside the halt stay flat.
+    assert ret.loc[dates[7], "HALTED"] == 0.0

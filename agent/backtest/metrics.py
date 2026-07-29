@@ -123,8 +123,8 @@ def bar_returns(close: Any, *, label: str = "") -> Any:
         # Silence is the actual hazard here: a wrong return is a wrong reported
         # number, not a crash, so the run has to say it defaulted.
         _log.warning(
-            "%s: %d bar(s) follow a non-positive price; their return is "
-            "undefined and reported as 0.0 (issue #872)",
+            "%s: %d bar(s) follow a non-positive or non-finite prior price; "
+            "their return is undefined and reported as 0.0 (issue #872)",
             label or "returns",
             undefined,
         )
