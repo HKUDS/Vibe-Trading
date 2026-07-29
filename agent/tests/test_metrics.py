@@ -94,15 +94,15 @@ class TestBarsPerYear:
 
     # ── newly covered sources (#884) ──
 
-    # daily-only: every interval returns trading_days * 1
-    def test_daily_only_qveris(self) -> None:
+    # resampling sources (local files / paid data, default to US equity session)
+    def test_resampling_qveris(self) -> None:
         assert calc_bars_per_year("1D", "qveris") == 252
-        assert calc_bars_per_year("1m", "qveris") == 252
-        assert calc_bars_per_year("1H", "qveris") == 252
+        assert calc_bars_per_year("1m", "qveris") == 252 * 390
+        assert calc_bars_per_year("1H", "qveris") == 252 * 7
 
-    def test_daily_only_local(self) -> None:
+    def test_resampling_local(self) -> None:
         assert calc_bars_per_year("1D", "local") == 252
-        assert calc_bars_per_year("5m", "local") == 252
+        assert calc_bars_per_year("1m", "local") == 252 * 390
 
     # crypto (365-day) sources
     def test_crypto_binance(self) -> None:
@@ -169,10 +169,25 @@ class TestBarsPerYear:
     def test_no_intraday_source_falls_to_default(self) -> None:
         """Every entry in VALID_SOURCES must have a trading-days lookup."""
         from backtest.loaders.registry import VALID_SOURCES
+        from backtest.metrics import _TRADING_DAYS, _BARS_PER_DAY
+
+        # A source is "covered" if it has an entry in _TRADING_DAYS AND in at
+        # least one _BARS_PER_DAY interval layer.  Both tables must be kept in
+        # sync when new loaders are registered.
+        trading_covered = set(_TRADING_DAYS)
+        bars_covered = set()
+        for interval_layer in _BARS_PER_DAY.values():
+            bars_covered |= set(interval_layer)
+        covered = trading_covered & bars_covered
+
+        unregistered = (VALID_SOURCES - {"auto"}) - covered
+        assert not unregistered, (
+            f"sources missing annualisation entries: {sorted(unregistered)}"
+        )
+
         for src in sorted(VALID_SOURCES - {"auto"}):
             bp = calc_bars_per_year("1D", src)
             assert bp > 0, f"source {src!r} 1D returned {bp}"
-            # intraday for a daily-only source is still trading_days × 1, which is fine
             bp_1m = calc_bars_per_year("1m", src)
             assert bp_1m > 0, f"source {src!r} 1m returned {bp_1m}"
 
