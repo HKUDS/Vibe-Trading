@@ -387,7 +387,7 @@ def _terminal_width() -> int:
 
 
 def _ensure_cli_env() -> None:
-    """Load dotenv values before rendering CLI-only settings."""
+    """Load dotenv values before a CLI path reads configuration."""
     try:
         from src.providers.llm import _ensure_dotenv
 
@@ -4513,6 +4513,7 @@ def cmd_connector_revoke(profile_id: Optional[str]) -> int:
 
 def _dispatch_connector(args: argparse.Namespace) -> int:
     """Route parsed ``connector`` subcommands."""
+    _ensure_cli_env()
     sub = getattr(args, "connector_command", None)
     if sub == "list":
         return cmd_connector_list()
