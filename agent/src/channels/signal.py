@@ -260,13 +260,13 @@ def _partition_styles(
         return [[] for _ in chunks]
 
     # Mirror split_message: after chunk 0, skip one separator char if present
-    # and not already part of the next chunk (so indented lines stay aligned).
+    # (split_message unconditionally drops at most one leading \n or space).
     chunk_ranges: list[tuple[int, int]] = []
     cursor = 0  # Python codepoint cursor in plain_text
     for i, chunk in enumerate(chunks):
         if i > 0 and cursor < len(plain_text):
             ch = plain_text[cursor]
-            if (ch == "\n" or ch == " ") and not chunk.startswith(ch):
+            if ch == "\n" or ch == " ":
                 cursor += 1
         utf16_start = _utf16_len(plain_text[:cursor])
         utf16_end = utf16_start + _utf16_len(chunk)

@@ -38,3 +38,18 @@ def test_signal_partition_styles_keeps_indent_chunk_aligned() -> None:
     styles = [f"{_utf16_len(text[:idx])}:{_utf16_len('def')}:BOLD"]
     parts = _partition_styles(text, chunks, styles)
     assert any("BOLD" in entry for group in parts for entry in group)
+def test_signal_partition_styles_handles_space_separator_with_indented_next_chunk() -> None:
+    # When split_message cuts at a space separator and the next chunk is also
+    # indented with spaces, _partition_styles must still advance the cursor
+    # over the dropped separator space.
+    from src.channels.signal import _partition_styles, _utf16_len
+
+    # "12345 78" with max_len=5 cuts into "12345" and "78", dropping the space.
+    text = "12345   abc"
+    chunks = split_message(text, max_len=5)
+    # text is ["12345", "  abc"] — separator space at index 5 was dropped
+    idx = text.index("abc")
+    styles = [f"{_utf16_len(text[:idx])}:{_utf16_len('abc')}:BOLD"]
+    parts = _partition_styles(text, chunks, styles)
+    # "abc" is at offset 2 in the second chunk "  abc"
+    assert parts[1] == ["2:3:BOLD"]
