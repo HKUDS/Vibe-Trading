@@ -18,6 +18,7 @@ import {
   Loader2,
   ShieldCheck,
   XCircle,
+  CircleSlash,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -196,6 +197,7 @@ export function RunDetail() {
   );
 
   const ok = run.status === "success";
+  const cancelled = run.status === "cancelled";
 
   async function loadChartSymbol(
     symbol: string,
@@ -300,6 +302,11 @@ export function RunDetail() {
             <>
               <CheckCircle2 className="h-5 w-5 text-success" aria-hidden="true" />
               <span className="sr-only">{t("swarm.status.completed")}</span>
+            </>
+          ) : cancelled ? (
+            <>
+              <CircleSlash className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+              <span className="sr-only">{t("swarm.status.cancelled")}</span>
             </>
           ) : (
             <>

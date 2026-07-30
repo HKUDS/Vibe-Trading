@@ -43,12 +43,13 @@ _INTERVAL_MAP = {
 def _is_supported(code: str) -> bool:
     """Return whether *code* is a symbol this loader handles.
 
-    Covers US/HK/India equities plus Yahoo's own futures (``GC=F``) and forex
-    (``EURUSD=X``) suffix conventions, which the public chart endpoint serves
-    verbatim (the code is used as-is in the request URL, no conversion) (#718).
+    Covers US/HK/India/Korea equities plus Yahoo's own futures (``GC=F``) and
+    forex (``EURUSD=X``) suffix conventions, which the public chart endpoint
+    serves verbatim (the code is used as-is in the request URL, no
+    conversion) (#718).
     """
     upper = code.strip().upper()
-    return upper.endswith((".US", ".HK", ".NS", ".BO", "=F", "=X"))
+    return upper.endswith((".US", ".HK", ".NS", ".BO", ".KS", ".KQ", "=F", "=X"))
 
 
 def _to_yahoo_interval(interval: str) -> str:
@@ -171,7 +172,7 @@ class DataLoader:
     """Yahoo Finance US/HK equity OHLCV loader (free, direct HTTP, no auth)."""
 
     name = "yahoo"
-    markets = {"us_equity", "hk_equity", "india_equity"}
+    markets = {"us_equity", "hk_equity", "india_equity", "kr_equity"}
     requires_auth = False
 
     def is_available(self) -> bool:

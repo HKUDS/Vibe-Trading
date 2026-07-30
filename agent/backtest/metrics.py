@@ -36,12 +36,18 @@ _TRADING_DAYS = {
     "local": 252, "qveris": 252,
     # Indian equity
     "india_broker": 252,
+    # Korean equity (KRX)
+    "pykrx": 252,
 }
 # mt5 is a forex/CFD feed: 24x5 sessions → 260 trading days, 24h intraday bars.
 # US equity (yfinance-style): 6.5h sessions → 390 1m bars/day.
 # A-share equity (tushare-style): 4.0h sessions → 240 1m bars/day.
 # Crypto (okx/ccxt-style): 24h sessions → 1440 1m bars/day.
 # Indian equity: 6.25h sessions → 375 1m bars/day.
+# Korean equity (pykrx): 6.5h sessions → 390 1m bars/day. The loader itself
+# serves daily bars only, so the intraday rows exist to keep the table complete
+# (and correct if KRX intraday ever arrives under this key), not because pykrx
+# can return them.
 _BARS_PER_DAY = {
     #  --- US/international equity (6.5h session) ---
     "1m":  {"yfinance": 390, "yahoo": 390, "finnhub": 390, "alphavantage": 390,
@@ -56,6 +62,8 @@ _BARS_PER_DAY = {
             "mt5": 1440,
             # Indian equity (6.25h session)
             "india_broker": 375,
+            # Korean equity (6.5h session, 09:00-15:30 KST)
+            "pykrx": 390,
             },
     "5m":  {"yfinance": 78,  "yahoo": 78,  "finnhub": 78,  "alphavantage": 78,
             "tiingo": 78,  "fmp": 78,  "stooq": 78,  "longbridge": 78,
@@ -65,6 +73,7 @@ _BARS_PER_DAY = {
             "okx": 288,  "ccxt": 288,  "binance": 288,
             "mt5": 288,
             "india_broker": 75,
+            "pykrx": 78,
             },
     "15m": {"yfinance": 26,  "yahoo": 26,  "finnhub": 26,  "alphavantage": 26,
             "tiingo": 26,  "fmp": 26,  "stooq": 26,  "longbridge": 26,
@@ -74,6 +83,7 @@ _BARS_PER_DAY = {
             "okx": 96,   "ccxt": 96,   "binance": 96,
             "mt5": 96,
             "india_broker": 25,
+            "pykrx": 26,
             },
     "30m": {"yfinance": 13,  "yahoo": 13,  "finnhub": 13,  "alphavantage": 13,
             "tiingo": 13,  "fmp": 13,  "stooq": 13,  "longbridge": 13,
@@ -83,6 +93,7 @@ _BARS_PER_DAY = {
             "okx": 48,   "ccxt": 48,   "binance": 48,
             "mt5": 48,
             "india_broker": 13,
+            "pykrx": 13,
             },
     "1H":  {"yfinance": 7,   "yahoo": 7,   "finnhub": 7,   "alphavantage": 7,
             "tiingo": 7,   "fmp": 7,   "stooq": 7,   "longbridge": 7,
@@ -92,6 +103,7 @@ _BARS_PER_DAY = {
             "okx": 24,   "ccxt": 24,   "binance": 24,
             "mt5": 24,
             "india_broker": 7,
+            "pykrx": 7,
             },
     "4H":  {"yfinance": 2,   "yahoo": 2,   "finnhub": 2,   "alphavantage": 2,
             "tiingo": 2,   "fmp": 2,   "stooq": 2,   "longbridge": 2,
@@ -101,6 +113,7 @@ _BARS_PER_DAY = {
             "okx": 6,    "ccxt": 6,    "binance": 6,
             "mt5": 6,
             "india_broker": 2,
+            "pykrx": 2,
             },
     "1D":  {"yfinance": 1,   "yahoo": 1,   "finnhub": 1,   "alphavantage": 1,
             "tiingo": 1,   "fmp": 1,   "stooq": 1,   "longbridge": 1,
@@ -110,6 +123,7 @@ _BARS_PER_DAY = {
             "okx": 1,    "ccxt": 1,    "binance": 1,
             "mt5": 1,
             "india_broker": 1,
+            "pykrx": 1,
             },
 }
 

@@ -2,7 +2,11 @@
 name = "vibe-trading-ai"
 version = "0.1.12"
 description = "Natural-language finance research AI agent with backtesting"
-requires-python = ">=3.11"
+# Upper bound is real, not cautionary: smartmoneyconcepts -> numba -> llvmlite,
+# and llvmlite ships no 3.14 wheel, so pip falls back to a source build that
+# needs cmake and fails with a 103-line traceback. Raise this once llvmlite
+# publishes cp314 wheels.
+requires-python = ">=3.11,<3.14"
 license = "MIT"
 readme = "README.md"
 authors = [
@@ -14,6 +18,7 @@ classifiers = [
     "Intended Audience :: Financial and Insurance Industry",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Office/Business :: Financial :: Investment",
 ]
 dependencies = [
@@ -114,6 +119,17 @@ anthropic = [
     # _build_anthropic lazy-imports it and raises an actionable install hint
     # when absent, so the base install stays lean for users who don't use it.
     "langchain-anthropic>=1.3.0,<2",
+]
+openbb = [
+    # OpenBB Workspace custom-agent bridge (src/openbb_bridge): protocol models
+    # + SSE helpers. api_server.py registers /agents.json and /v1/query only
+    # when this import succeeds, so a base install stays unaffected.
+    "openbb-ai>=2.0.0,<3",
+]
+krx = [
+    # Free, no-auth Korea (KRX: KOSPI/KOSDAQ) EOD OHLCV. Without this extra
+    # the kr_equity chain falls back to yahoo/yfinance (.KS/.KQ suffixes).
+    "pykrx>=1.0.45",
 ]
 ashare = [
     # Free, no-auth A-share source over BaoStock's TCP protocol; bypasses the

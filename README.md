@@ -52,13 +52,14 @@
 
 > ⚠️ **Security warning:** The X account `VibeTrading_HKU`, Virtuals project `101845`, and token contract `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` are not official Vibe-Trading assets. We have never launched or endorsed any token or memecoin. Do not buy, connect a wallet, or sign anything. [Details](SECURITY.md#official-channels--impersonation).
 
+- **2026-07-30** 🎨 **Rebuilt WebUI + Korea (KRX) market + an OpenBB Workspace bridge**: The web UI lands its guided-minimalism overhaul — no first-frame flash, one durable activity object per turn with a live reasoning whisper and a reload-safe tool trail, LLM-written session titles, full five-locale parity. **Korea equity (KRX: KOSPI/KOSDAQ)** becomes the 9th backtest engine — execution-time ±30% band, long-only, 2026 0.20% transaction tax, optional `pykrx` loader ([#693](https://github.com/HKUDS/Vibe-Trading/pull/693), thanks @JungHoonGhae) — plus an **OpenBB Workspace bridge** ([#817](https://github.com/HKUDS/Vibe-Trading/pull/817), thanks @shugaoye) and a read-only **Taiwan snapshot** tool ([#848](https://github.com/HKUDS/Vibe-Trading/pull/848), thanks @TSENGCHIENFENG). Correctness: daily price bands are judged **at execution time**, not from the decision bar's close; a session runs one attempt at a time (HTTP 409) and a user stop is its own terminal state ([#676](https://github.com/HKUDS/Vibe-Trading/pull/676), thanks @tyj147454413-cmd). Plus durable traces ([#662](https://github.com/HKUDS/Vibe-Trading/pull/662)), secret-scrubbed tool results ([#675](https://github.com/HKUDS/Vibe-Trading/pull/675)), fail-closed tool arguments ([#913](https://github.com/HKUDS/Vibe-Trading/pull/913)/[#911](https://github.com/HKUDS/Vibe-Trading/pull/911), thanks @santhreal), direct-OpenAI `reasoning_effort` ([#755](https://github.com/HKUDS/Vibe-Trading/pull/755), thanks @1anter), and numeric guards across the risk x-ray / edge density / options engine ([#909](https://github.com/HKUDS/Vibe-Trading/pull/909)/[#908](https://github.com/HKUDS/Vibe-Trading/pull/908)/[#907](https://github.com/HKUDS/Vibe-Trading/pull/907)).
 - **2026-07-29** 🔧 **Gap-safe returns + liquidation risk modeling + a risk x-ray in every run**: `bar_returns` no longer erases the real move across a trading halt longer than the forward-fill window — the resumption move was silently recorded as 0, understating volatility and inflating Sharpe — and an `inf` prior price can no longer read as a clean −100% ([#895](https://github.com/HKUDS/Vibe-Trading/pull/895), thanks @darkknight4563). Annualisation now covers **all 24 data sources** at every interval, with a coverage test that fails CI when a loader lands without entries ([#891](https://github.com/HKUDS/Vibe-Trading/pull/891), closes [#884](https://github.com/HKUDS/Vibe-Trading/issues/884), thanks @Robin1987China). USD-M perpetual research gains deterministic **isolated & cross margin liquidation** evaluation ([#889](https://github.com/HKUDS/Vibe-Trading/pull/889), thanks @honginp), and every portfolio backtest now emits **risk x-ray artifacts** (`risk_xray.json`/`.md`) with headline concentration/vol/drawdown metrics ([#900](https://github.com/HKUDS/Vibe-Trading/pull/900), thanks @he-yufeng). The `connector` CLI now loads `~/.vibe-trading/.env`, so env-sourced broker credentials resolve again ([#902](https://github.com/HKUDS/Vibe-Trading/pull/902), closes [#901](https://github.com/HKUDS/Vibe-Trading/issues/901), thanks @MuggleJinx). Plus indent-preserving channel message splits and skill-frontmatter parsing at EOF ([#867](https://github.com/HKUDS/Vibe-Trading/pull/867)/[#861](https://github.com/HKUDS/Vibe-Trading/pull/861), thanks @santhreal).
 - **2026-07-28** 🔧 **Next-gen Claude models unblocked + sign-safe returns**: Claude models that deprecate the `temperature` field (opus-4-7, opus-5, sonnet-5) now work — the adapter drops the field when the API rejects it, retries once, and remembers the model, so no per-release patch is needed ([#890](https://github.com/HKUDS/Vibe-Trading/pull/890), closes [#856](https://github.com/HKUDS/Vibe-Trading/issues/856), thanks @yagnikpipaliya). Non-interactive `vibe-trading run` now injects a host session id: research-goal tools previously failed on every call while the run still reported success ([#885](https://github.com/HKUDS/Vibe-Trading/issues/885)). Buy-and-hold returns are sign-safe — a near-zero prior close no longer explodes the compounded benchmark, and an exact-zero close no longer yields `inf`/`nan` ([#872](https://github.com/HKUDS/Vibe-Trading/issues/872), thanks @darkknight4563). The frontend moves to **Node 22 + React Router 8**, clearing a high-severity advisory.
-- **2026-07-27** 🔧 **Correlation integrity + vn.py 4.0 export repair + an encoding batch**: The rolling correlation matrix no longer forward-fills missing closes — a halted session was being scored as a fabricated 0% return against the peer's real move, distorting the matrix ([#873](https://github.com/HKUDS/Vibe-Trading/pull/873), thanks @ddy4633). The **vn.py export** skill is repaired for the vn.py 4.x layout, where `vnpy.app.cta_strategy` no longer exists upstream — templates now import from `vnpy_ctastrategy` ([#869](https://github.com/HKUDS/Vibe-Trading/pull/869), thanks @y85998607). Plus a six-fix batch: UTF-16 BOM decoding in the document reader and trade-journal CSVs, currency symbols stripped before numeric coercion, `BTCUSDT`-style symbols inferred as crypto, lowercase `1h`/`1d` intervals annualized correctly, and CJK characters preserved in skill directory slugs ([#862](https://github.com/HKUDS/Vibe-Trading/pull/862), [#863](https://github.com/HKUDS/Vibe-Trading/pull/863), [#864](https://github.com/HKUDS/Vibe-Trading/pull/864), [#865](https://github.com/HKUDS/Vibe-Trading/pull/865), [#866](https://github.com/HKUDS/Vibe-Trading/pull/866), [#868](https://github.com/HKUDS/Vibe-Trading/pull/868), thanks @santhreal).
 
 <details>
 <summary>Earlier news</summary>
 
+- **2026-07-27** 🔧 **Correlation integrity + vn.py 4.0 export repair + an encoding batch**: The rolling correlation matrix no longer forward-fills missing closes — a halted session was being scored as a fabricated 0% return against the peer's real move, distorting the matrix ([#873](https://github.com/HKUDS/Vibe-Trading/pull/873), thanks @ddy4633). The **vn.py export** skill is repaired for the vn.py 4.x layout, where `vnpy.app.cta_strategy` no longer exists upstream — templates now import from `vnpy_ctastrategy` ([#869](https://github.com/HKUDS/Vibe-Trading/pull/869), thanks @y85998607). Plus a six-fix batch: UTF-16 BOM decoding in the document reader and trade-journal CSVs, currency symbols stripped before numeric coercion, `BTCUSDT`-style symbols inferred as crypto, lowercase `1h`/`1d` intervals annualized correctly, and CJK characters preserved in skill directory slugs ([#862](https://github.com/HKUDS/Vibe-Trading/pull/862), [#863](https://github.com/HKUDS/Vibe-Trading/pull/863), [#864](https://github.com/HKUDS/Vibe-Trading/pull/864), [#865](https://github.com/HKUDS/Vibe-Trading/pull/865), [#866](https://github.com/HKUDS/Vibe-Trading/pull/866), [#868](https://github.com/HKUDS/Vibe-Trading/pull/868), thanks @santhreal).
 - **2026-07-26** 🔒 **Dependency lock + universe transparency**: Docker’s hash-locked install works again, with a new CI lock check ([#858](https://github.com/HKUDS/Vibe-Trading/pull/858), closes [#847](https://github.com/HKUDS/Vibe-Trading/issues/847)). `alpha bench` now discloses CSI300/SP500 sources, counts, degraded fallbacks, and survivorship bias ([#859](https://github.com/HKUDS/Vibe-Trading/pull/859), closes [#845](https://github.com/HKUDS/Vibe-Trading/issues/845)). Actions and five frontend dependencies were also refreshed ([#850](https://github.com/HKUDS/Vibe-Trading/pull/850)–[#852](https://github.com/HKUDS/Vibe-Trading/pull/852)).
 - **2026-07-25** 🔧 **Perpetual realism + MCP crash fix + a correctness batch**: USD-M perpetuals gain **margin state contracts** ([#798](https://github.com/HKUDS/Vibe-Trading/pull/798), thanks @honginp) and the engine now consumes **historical funding rates** instead of fetching-and-ignoring them ([#819](https://github.com/HKUDS/Vibe-Trading/pull/819), thanks @g0rdonL). MCP dataclass results no longer crash on a false `Circular reference detected` ([#849](https://github.com/HKUDS/Vibe-Trading/pull/849), thanks @Echoandelementwebsites), and `alpha bench` CLI/HTML forward the `_meta` survivorship disclosure ([#841](https://github.com/HKUDS/Vibe-Trading/pull/841), closes [#797](https://github.com/HKUDS/Vibe-Trading/issues/797), thanks @AmirF194). Plus 12 correctness fixes across journals, connectors, and channels ([#799](https://github.com/HKUDS/Vibe-Trading/pull/799)–[#810](https://github.com/HKUDS/Vibe-Trading/pull/810), thanks @santhreal), and a real account label in CLI balances ([#843](https://github.com/HKUDS/Vibe-Trading/pull/843), closes [#846](https://github.com/HKUDS/Vibe-Trading/issues/846), thanks @Robin1987China).
 - **2026-07-24** 🔀 **Memory Tier 2, composable optimizer constraints + an interval-handling sweep**: Persistent memory gains **Tier 2 structural organization** ([#815](https://github.com/HKUDS/Vibe-Trading/pull/815), thanks @shadowinlife), and backtest optimizers accept **composable weight constraints** ([#818](https://github.com/HKUDS/Vibe-Trading/pull/818), thanks @he-yufeng). Correctness: the daily-bar validator can opt in to **non-positive prices** — opening on negative bars while still rejecting zero ([#816](https://github.com/HKUDS/Vibe-Trading/pull/816), closes [#571](https://github.com/HKUDS/Vibe-Trading/issues/571), thanks @darkknight4563). Plus a 19-PR loader **interval-normalization sweep**: lowercase `1h/4h/1d/1w` aliases accepted everywhere, unsupported intervals now fail fast instead of silently returning daily bars, Yahoo `4H` maps to `1h`, and MT5 accepts `1W/1M` ([#812](https://github.com/HKUDS/Vibe-Trading/pull/812)–[#838](https://github.com/HKUDS/Vibe-Trading/pull/838), thanks @santhreal), a trade-journal fix for Eastmoney Excel-serial dates ([#811](https://github.com/HKUDS/Vibe-Trading/pull/811), thanks @santhreal), and a README nav-anchor fix ([#840](https://github.com/HKUDS/Vibe-Trading/pull/840), thanks @dvirarad).
@@ -226,7 +227,7 @@
       <img src="assets/feature-cross-market-data-backtesting.png" height="130" alt="Cross-market data and backtesting"/><br>
       <h3>📊 Cross-Market Data & Backtesting</h3>
       <div align="left">
-        • A/HK/US equities, crypto, futures, and forex<br>
+        • A / HK / US / India / Korea equities, crypto, futures, and forex<br>
         • Data fallback and composite backtests<br>
         • PIT data, validation, and run cards
       </div>
@@ -325,7 +326,7 @@ Most runs follow the same evidence path: route the request, load the right marke
 
 ## 📡 Data Sources & Smart Fallback
 
-One `get_market_data` call, **22 free market-data sources** (plus the optional **QVeris** premium marketplace). Set `source: "auto"` — the loader picks by symbol, then walks a per-market chain ordered by **IP-ban risk**: never-banned public sources first, throttled / key-gated ones last. Zero config, no single point of failure.
+One `get_market_data` call, **23 free market-data sources** (plus the optional **QVeris** premium marketplace). Set `source: "auto"` — the loader picks by symbol, then walks a per-market chain ordered by **IP-ban risk**: never-banned public sources first, throttled / key-gated ones last. Zero config, no single point of failure.
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
@@ -341,6 +342,7 @@ One `get_market_data` call, **22 free market-data sources** (plus the optional *
 | `okx` · `ccxt` · `binance` | crypto | none | OKX + 100+ exchanges + Binance historical / USD-M perps |
 | `futu` | HK / A | OpenD | optional local FutuOpenD |
 | `mt5` | forex / metals | MT5 terminal | MetaTrader 5 (Exness-style) forex / metal bars, 1m–1D |
+| `pykrx` | Korea (KRX: KOSPI/KOSDAQ) | none | daily KOSPI / KOSDAQ bars for `.KS` / `.KQ` (optional `krx` extra) |
 | `india_broker` | India (NSE/BSE) | broker login | read-only Shoonya / Dhan bars for `.NS` / `.BO` (fallback-chain tail) |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
@@ -350,6 +352,7 @@ One `get_market_data` call, **22 free market-data sources** (plus the optional *
 - **US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **HK** → `eastmoney` · `yahoo` · `futu` · `yfinance` · `akshare` · `longbridge` · `local`
 - **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
+- **Korea (KOSPI/KOSDAQ)** → `pykrx` · `yahoo` · `yfinance` · `local`
 - **Crypto** → `okx` · `ccxt` · `binance` · `yfinance` · `local`
 - **Forex / metals** → `mt5` · `yfinance` · `akshare` · `local` &nbsp;·&nbsp; *(futures / fund / macro → `tushare`/`akshare` → `local`)*
 
@@ -390,7 +393,7 @@ Beyond OHLCV, **18 read-only data tools** reach into fundamentals & flow — fun
 
 <img src="https://www.qveris.com/logo-color.png" alt="QVeris" height="36">
 
-**Data: free routing or premium, your choice.** Free stays the default: 22 built-in sources with ban-risk fallback, no key, no cost. Premium via QVeris adds 10,000+ capabilities (per QVeris) across 63+ providers for options Greeks, premium fundamentals, China/HK/global data, macro, crypto, news, and filings; failed calls are not charged. Enable it in Settings -> QVeris or `vibe-trading data mode paid`.
+**Data: free routing or premium, your choice.** Free stays the default: 23 built-in sources with ban-risk fallback, no key, no cost. Premium via QVeris adds 10,000+ capabilities (per QVeris) across 63+ providers for options Greeks, premium fundamentals, China/HK/global data, macro, crypto, news, and filings; failed calls are not charged. Enable it in Settings -> QVeris or `vibe-trading data mode paid`.
 
 *QVeris disclosure: [signing up through the Vibe-Trading referral link](https://qveris.ai/?ref=Vyjjo5G_1cAHJA) gets you **+1,000 bonus credits** and supports the project.*
 <!-- QVERIS-END -->
@@ -538,13 +541,14 @@ Run `vibe-trading alpha list` to browse, `vibe-trading alpha show <id>` for form
 </details>
 
 <details>
-<summary><b>Backtest Engines</b> <sub>8 engines + options portfolio, cross-market composite</sub></summary>
+<summary><b>Backtest Engines</b> <sub>9 engines + options portfolio, cross-market composite</sub></summary>
 
 | Engine | Market | Notes |
 |--------|--------|-------|
 | **ChinaA** | A-share | T+1, price limits, pre-ST filter |
 | **GlobalEquity** | US / HK | T+0 |
 | **IndiaEquity** | India (NSE/BSE) | T+1, circuit bands, config-driven STT / stamp / SEBI / GST cost stack |
+| **KoreaEquity** | Korea (KRX: KOSPI/KOSDAQ) | long-only, ±30% band judged at execution time on the unified tick grid, 2026 0.20% transaction tax |
 | **Crypto** | crypto spot / USD-M perps | funding settlements, execution/mark split |
 | **ChinaFutures** · **GlobalFutures** | futures | margin, contract multipliers |
 | **Forex** | FX / metals | via the `mt5` loader |
@@ -725,6 +729,8 @@ Copy `agent/.env.example` to `agent/.env` and uncomment the provider block you w
 | `VIBE_TRADING_ENABLE_SHELL_TOOLS` | No | Explicit opt-in for shell-capable tools in remote API/MCP-SSE style deployments |
 | `VIBE_TRADING_ALLOWED_FILE_ROOTS` | No | Extra comma-separated roots for document and broker-journal imports |
 | `VIBE_TRADING_ALLOWED_RUN_ROOTS` | No | Extra comma-separated roots for generated-code run directories |
+| `VIBE_TW_STOCK_DB` | No | Path to a Taiwan-market SQLite snapshot; the read-only `taiwan_stock_data` tool registers only when it is schema-valid |
+| `VIBE_TRADING_EXTRA_CORS_ORIGINS` | No | Comma-separated origins **added** to the loopback CORS defaults (`CORS_ORIGINS` replaces them instead) |
 | `CONTENT_FILTER_WARNING_THRESHOLD` | No | Content-filter warning ratio threshold (default 0.05 = 5%). When the ratio of LLM responses blocked by content moderation exceeds this, the run card warns you to switch providers. |
 
 <sub>* Ollama does not require an API key. OpenAI Codex uses ChatGPT OAuth and stores tokens via `oauth-cli-kit`, not in `agent/.env`.</sub>
@@ -985,6 +991,10 @@ vibe-trading serve --port 8899
 | `POST` | `/scheduled-runs` | Create a scheduled research job (interval-ms or cron) |
 | `GET` | `/scheduled-runs` | List scheduled jobs |
 | `DELETE` | `/scheduled-runs/{job_id}` | Cancel a scheduled job |
+| `POST` | `/sessions/{id}/cancel` | Stop the session's in-flight run (recorded as cancelled, not failed) |
+| `POST` | `/sessions/{id}/title/auto` | Summarize the first exchange into a session title (never overwrites a manual rename) |
+| `GET` | `/correlation/regime` | Correlation edge-density regime timeline |
+| `GET` | `/agents.json` · `POST` `/v1/query` | OpenBB Workspace bridge — registered only with the optional `openbb` extra; `/v1/query` requires auth |
 
 Interactive docs: `http://localhost:8899/docs`
 
@@ -1418,8 +1428,8 @@ Vibe-Trading/
 │   │   └── providers/              # LLM provider abstraction
 │   │
 │   └── backtest/                   # Backtest engines
-│       ├── engines/                #   7 engines + composite cross-market engine + options_portfolio
-│       ├── loaders/                #   23 sources: tushare, okx, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, qveris, india_broker
+│       ├── engines/                #   8 engines + composite cross-market engine + options_portfolio
+│       ├── loaders/                #   24 sources: tushare, okx, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, qveris, india_broker
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + auto-fallback chains
 │       └── optimizers/             #   MVO, equal vol, max div, risk parity

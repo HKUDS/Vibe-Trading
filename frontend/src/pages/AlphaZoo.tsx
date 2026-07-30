@@ -74,10 +74,33 @@ const ZOO_CARDS: ZooCard[] = [
   },
 ];
 
+// Benchmarkable data universes (bench + compare): each one needs a panel loader
+// on the backend, so there is no Korea/India entry — the KRX factor capability
+// is a metadata universe, not a benchmark universe.
 const UNIVERSE_OPTIONS = [
   { value: "csi300" },
   { value: "sp500" },
   { value: "btc-usdt" },
+];
+
+// Metadata universe -> the benchmark universe whose panel represents it. Markets
+// without a panel (equity_in, equity_kr, futures) are intentionally absent.
+const BENCH_UNIVERSE_FOR_METADATA: Record<string, string> = {
+  equity_cn: "csi300",
+  equity_us: "sp500",
+  crypto: "btc-usdt",
+};
+
+// Factor-metadata universes for the browse filter; GET /alpha/list filters on
+// these directly (they are the values shown in each alpha's "universe" column).
+const FILTER_UNIVERSE_OPTIONS = [
+  { value: "equity_us" },
+  { value: "equity_cn" },
+  { value: "equity_hk" },
+  { value: "equity_in" },
+  { value: "equity_kr" },
+  { value: "crypto" },
+  { value: "futures" },
 ];
 
 const PAGE_SIZE = 50;
@@ -307,7 +330,7 @@ function BrowseView() {
             className="w-full px-3 py-2 rounded-lg border border-border/60 bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
             <option value="">{i18n.t("alphaZoo.allUniverses")}</option>
-            {UNIVERSE_OPTIONS.map((u) => (
+            {FILTER_UNIVERSE_OPTIONS.map((u) => (
               <option key={u.value} value={u.value}>
                 {i18n.t("alphaZoo.universeOption." + u.value as any)}
               </option>
@@ -500,12 +523,18 @@ function DetailView({ alphaId }: DetailProps) {
   const meta = a.meta || {};
   const formulaLatex = (meta["formula_latex"] as string | undefined) || "";
   const nickname = (meta["nickname"] as string | undefined) || "";
-  const firstUniverse = ((meta["universe"] as string[] | undefined) || [])[0] || "";
+  // An alpha's metadata universes (equity_us, equity_kr, ...) are not bench
+  // universes; only the three names with panel loaders are. Translate, and drop
+  // the prefill when the alpha's markets have no benchmark panel (Korea, India)
+  // rather than handing BenchView a value its selector cannot hold.
+  const benchUniverse = (((meta["universe"] as string[] | undefined) || [])
+    .map((u) => BENCH_UNIVERSE_FOR_METADATA[u])
+    .find(Boolean)) || "";
 
   // Keep period in sync with the BenchView form default so the prefilled
   // form values match what users see if they click "Run bench" from here.
-  const benchHref = firstUniverse
-    ? `/alpha-zoo/bench?zoo=${encodeURIComponent(a.zoo)}&universe=${encodeURIComponent(firstUniverse)}&period=2020-2025`
+  const benchHref = benchUniverse
+    ? `/alpha-zoo/bench?zoo=${encodeURIComponent(a.zoo)}&universe=${encodeURIComponent(benchUniverse)}&period=2020-2025`
     : `/alpha-zoo/bench?zoo=${encodeURIComponent(a.zoo)}&period=2020-2025`;
 
   return (

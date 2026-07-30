@@ -51,6 +51,7 @@ websockets>=12.0
 pydantic>=2.0.0
 python-multipart>=0.0.18
 sse-starlette>=1.6.0
+# optional: pip install "vibe-trading-ai[openbb]" — OpenBB Workspace custom-agent bridge (openbb-ai protocol models + SSE helpers)
 
 # MCP Server
 fastmcp>=2.14.0

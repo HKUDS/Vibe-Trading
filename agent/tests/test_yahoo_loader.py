@@ -307,6 +307,8 @@ class TestLoaderMetadata:
     def test_name_and_markets(self):
         loader = DataLoader()
         assert loader.name == "yahoo"
-        assert loader.markets == {"us_equity", "hk_equity", "india_equity"}
+        assert loader.markets == {
+            "us_equity", "hk_equity", "india_equity", "kr_equity",
+        }
         assert loader.requires_auth is False
         assert loader.is_available() is True

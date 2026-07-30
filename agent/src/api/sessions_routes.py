@@ -16,6 +16,8 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from src.session.service import SessionBusyError
+
 logger = logging.getLogger(__name__)
 
 
@@ -693,6 +695,10 @@ def register_sessions_routes(app: FastAPI) -> None:
                 include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
             )
             return result
+        except SessionBusyError as exc:
+            # Must precede ValueError-style handling and stay distinct from 404:
+            # the session exists, it is simply already running.
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 

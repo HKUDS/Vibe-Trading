@@ -7,6 +7,7 @@ selected profile from ``~/.vibe-trading/trading-connections.json``.
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 from src.agent.tools import BaseTool
@@ -39,16 +40,92 @@ def _connection(value: Any) -> str | None:
     return text or None
 
 
-def _int_or_none(value: Any) -> int | None:
-    if value in (None, ""):
-        return None
-    return int(value)
+class InvalidTradingArgument(ValueError):
+    """A numeric trading argument was supplied but is malformed or non-finite."""
 
 
-def _num_or_none(value: Any) -> float | None:
-    if value in (None, ""):
+def _brief(value: Any) -> str:
+    """Render a rejected argument for an error message without ever raising.
+
+    ``repr()`` is not total: an int with more than 4300 digits raises
+    ``ValueError`` under Python's int→str limit. An order tool must not fail to
+    describe why it refused, so fall back to the type name.
+
+    Args:
+        value: The rejected argument value.
+
+    Returns:
+        A short, printable description of the value.
+    """
+    try:
+        text = repr(value)
+    except Exception:  # noqa: BLE001 — building an error message must never fail
+        return f"<unprintable {type(value).__name__}>"
+    return text if len(text) <= 80 else f"{text[:77]}..."
+
+
+def _finite_float(value: Any, field: str) -> float:
+    """Convert a supplied numeric argument to a finite float.
+
+    Args:
+        value: Raw argument value (already known to be present).
+        field: Argument name, used in the error message.
+
+    Returns:
+        The value as a finite float.
+
+    Raises:
+        InvalidTradingArgument: If the value is not numeric, or is NaN/Infinity.
+            Trading tools are action-bearing, so a malformed size/price/port is
+            rejected outright rather than coerced to a default.
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise InvalidTradingArgument(f"{field} must be a finite number, got {_brief(value)}") from None
+    if not math.isfinite(number):
+        raise InvalidTradingArgument(f"{field} must be a finite number, got {_brief(value)}")
+    return number
+
+
+def _int_or_none(value: Any, field: str = "value") -> int | None:
+    """Coerce an optional whole-number argument, rejecting malformed input.
+
+    Args:
+        value: Raw argument value; ``None`` and ``""`` mean "not supplied".
+        field: Argument name, used in the error message.
+
+    Returns:
+        The integer value, or ``None`` when the argument was not supplied.
+
+    Raises:
+        InvalidTradingArgument: If the value is present but not a finite whole
+            number.
+    """
+    if value is None or value == "":
         return None
-    return float(value)
+    number = _finite_float(value, field)
+    if number != int(number):
+        raise InvalidTradingArgument(f"{field} must be a whole number, got {_brief(value)}")
+    return int(number)
+
+
+def _num_or_none(value: Any, field: str = "value") -> float | None:
+    """Coerce an optional numeric argument, rejecting malformed input.
+
+    Args:
+        value: Raw argument value; ``None`` and ``""`` mean "not supplied".
+        field: Argument name, used in the error message.
+
+    Returns:
+        The float value, or ``None`` when the argument was not supplied.
+
+    Raises:
+        InvalidTradingArgument: If the value is present but not a finite number.
+    """
+    if value is None or value == "":
+        return None
+    return _finite_float(value, field)
 
 
 TRADING_COMMON_PARAMETERS = {
@@ -76,10 +153,23 @@ TRADING_COMMON_PARAMETERS = {
 
 
 def _overrides(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Build the local-connector override dict, rejecting malformed numerics.
+
+    Args:
+        kwargs: Raw tool arguments.
+
+    Returns:
+        Override mapping with ``None`` for every unsupplied field.
+
+    Raises:
+        InvalidTradingArgument: If ``port`` or ``client_id`` is supplied but
+            malformed. Silently dropping them would connect to a different
+            terminal than the caller asked for.
+    """
     return {
         "host": _connection(kwargs.get("host")),
-        "port": _int_or_none(kwargs.get("port")),
-        "client_id": _int_or_none(kwargs.get("client_id")),
+        "port": _int_or_none(kwargs.get("port"), "port"),
+        "client_id": _int_or_none(kwargs.get("client_id"), "client_id"),
         "account": _connection(kwargs.get("account")),
     }
 
@@ -341,12 +431,24 @@ class TradingPlaceOrderTool(BaseTool):
     is_readonly = False
 
     def execute(self, **kwargs: Any) -> str:
-        """Place an order via the connector profile."""
-        # LLMs frequently populate BOTH sizing fields, leaving the unused one at
-        # 0; a zero size is never valid, so treat it as absent to preserve the
-        # "exactly one of quantity/notional" contract.
-        quantity = _num_or_none(kwargs.get("quantity")) or None
-        notional = _num_or_none(kwargs.get("notional")) or None
+        """Place an order via the connector profile.
+
+        Every numeric argument is converted first and a malformed or non-finite
+        value aborts with an error envelope BEFORE the service is called: an
+        order tool must fail closed rather than drop a bad size field and place
+        a different, plausible-looking order.
+        """
+        try:
+            # LLMs frequently populate BOTH sizing fields, leaving the unused
+            # one at 0; a zero size is never valid, so treat it as absent to
+            # preserve the "exactly one of quantity/notional" contract.
+            quantity = _num_or_none(kwargs.get("quantity"), "quantity") or None
+            notional = _num_or_none(kwargs.get("notional"), "notional") or None
+            limit_price = _num_or_none(kwargs.get("limit_price"), "limit_price")
+            overrides = _overrides(kwargs)
+        except InvalidTradingArgument as exc:
+            return _json_result({"status": "error", "error": str(exc)})
+
         try:
             return _json_result(
                 place_order(
@@ -356,9 +458,9 @@ class TradingPlaceOrderTool(BaseTool):
                     quantity=quantity,
                     notional=notional,
                     order_type=str(kwargs.get("order_type") or "market"),
-                    limit_price=_num_or_none(kwargs.get("limit_price")),
+                    limit_price=limit_price,
                     time_in_force=str(kwargs.get("time_in_force") or "day"),
-                    **_overrides(kwargs),
+                    **overrides,
                 )
             )
         except Exception as exc:  # noqa: BLE001
@@ -383,14 +485,23 @@ class TradingCancelOrderTool(BaseTool):
     is_readonly = False
 
     def execute(self, **kwargs: Any) -> str:
-        """Cancel an order via the connector profile."""
+        """Cancel an order via the connector profile.
+
+        Malformed connector overrides are rejected before the service call, so a
+        cancel never silently targets a different terminal than requested.
+        """
+        try:
+            overrides = _overrides(kwargs)
+        except InvalidTradingArgument as exc:
+            return _json_result({"status": "error", "error": str(exc)})
+
         try:
             return _json_result(
                 cancel_order(
                     str(kwargs["order_id"]),
                     _connection(kwargs.get("connection")),
                     symbol=_connection(kwargs.get("symbol")),
-                    **_overrides(kwargs),
+                    **overrides,
                 )
             )
         except Exception as exc:  # noqa: BLE001

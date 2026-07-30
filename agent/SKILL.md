@@ -1,7 +1,7 @@
 ---
 name: vibe-trading
 version: 0.1.12
-description: Professional finance research toolkit — backtesting (8 engines + benchmark comparison panel), factor analysis, Alpha Zoo (462 pre-built alphas across qlib158/alpha101/gtja191/academic/fundamental), options pricing, 88 finance skills, 30 multi-agent swarm teams, Trade Journal analyzer, and Shadow Account (extract → backtest → render) across 23 market-data sources (tushare, yfinance, okx, binance, akshare, baostock, tencent, mootdx, ccxt, futu, mt5, local, eastmoney, sina, stooq, yahoo, india_broker, qveris, longbridge, plus optional-key finnhub/alphavantage/tiingo/fmp).
+description: Professional finance research toolkit — backtesting (9 engines + benchmark comparison panel), factor analysis, Alpha Zoo (462 pre-built alphas across qlib158/alpha101/gtja191/academic/fundamental), options pricing, 88 finance skills, 30 multi-agent swarm teams, Trade Journal analyzer, and Shadow Account (extract → backtest → render) across 24 market-data sources (tushare, yfinance, okx, binance, akshare, baostock, tencent, mootdx, ccxt, futu, mt5, local, eastmoney, sina, stooq, yahoo, pykrx, india_broker, qveris, longbridge, plus optional-key finnhub/alphavantage/tiingo/fmp).
 dependencies:
   python: ">=3.11"
   pip:
@@ -23,7 +23,7 @@ mcp:
 
 # Vibe-Trading
 
-Professional finance research toolkit with AI-powered backtesting (8 engines), multi-agent teams, 88 specialized skills, the **Alpha Zoo** (462 pre-built quantitative alphas across qlib158 / alpha101 / gtja191 / academic / fundamental with one-line CLI benchmarking), and the Shadow Account loop — extract your implicit trading rules from a journal, backtest them across A股/港股/美股/crypto, then see where they would have served you better.
+Professional finance research toolkit with AI-powered backtesting (9 engines), multi-agent teams, 88 specialized skills, the **Alpha Zoo** (462 pre-built quantitative alphas across qlib158 / alpha101 / gtja191 / academic / fundamental with one-line CLI benchmarking), and the Shadow Account loop — extract your implicit trading rules from a journal, backtest them across A股/港股/美股/crypto, then see where they would have served you better.
 
 ## Setup
 
@@ -74,9 +74,10 @@ Feed a CSV broker export (同花顺 / 东财 / 富途 / generic), and the agent 
 5. `scan_shadow_signals` — list today's symbols that match your shadow's entry cadence (research only).
 
 ### Backtesting
-Create and run quantitative strategies across 8 engines (ChinaA, GlobalEquity, IndiaEquity, Crypto, ChinaFutures, GlobalFutures, Forex + options) with 23 market-data sources (auto-detect + ordered fallback):
+Create and run quantitative strategies across 9 engines (ChinaA, GlobalEquity, IndiaEquity, KoreaEquity, Crypto, ChinaFutures, GlobalFutures, Forex + options) with 24 market-data sources (auto-detect + ordered fallback):
 - **HK/US equities** via yfinance / stooq / yahoo (free, no API key); optionally via **Longbridge** historical OHLCV (`longbridge`, requires the optional SDK and `LONGBRIDGE_APP_KEY` / `LONGBRIDGE_APP_SECRET` / `LONGBRIDGE_ACCESS_TOKEN`). To force it for a run, set `"source": "longbridge"` in `config.json`.
 - **India equities (NSE/BSE)** via yahoo / yfinance using `<SYMBOL>.NS` (NSE, e.g. `RELIANCE.NS`) or `<SCRIP>.BO` (BSE, e.g. `500325.BO`) — free, no API key. The `IndiaEquityEngine` models T+1 delivery, no overnight shorts (set `allow_short` for intraday), configurable circuit bands, 1-share lots, and the STT/stamp-duty/exchange/GST cost stack. Optionally back-fill from your live broker via the `india_broker` source (Shoonya/Dhan; requires broker login).
+- **Korea equities (KRX: KOSPI/KOSDAQ)** via pykrx using `<CODE>.KS` (KOSPI, e.g. `005930.KS`) or `<CODE>.KQ` (KOSDAQ, e.g. `247540.KQ`) — free, no API key (`pip install "vibe-trading-ai[krx]"`; yahoo/yfinance fallback needs no extra). pykrx serves **daily bars only** (an intraday request falls through to another source) and its adjusted series is Naver-backed rather than a verbatim KRX print. The `KoreaEquityEngine` models same-day round trips (no T+1), the ±30% daily price limit measured from the previous close and quantized to the KRX tick grid, tick-rounded fills, the 0.20% sell-side transaction tax (2026 rate), and 1-share lots. It is **long-only**: `allow_short` is refused, because KRX covered-short and uptick rules cannot be enforced on daily bars.
 - **Cryptocurrency** via OKX or CCXT/100+ exchanges (free, no API key)
 - **China A-shares** via AKShare / baostock / tencent / sina / eastmoney / mootdx (free, no API key) — `TUSHARE_TOKEN` optional for premium quality
 - **Futures, forex, macro** via AKShare (free, no API key)
@@ -85,7 +86,7 @@ Create and run quantitative strategies across 8 engines (ChinaA, GlobalEquity, I
 - **Premium cross-market data** via QVeris (optional API key)
 - **Premium US data** via optional-key finnhub / alphavantage / tiingo / fmp (graceful fallback to free sources)
 
-Factors: the Alpha101 and QLib158 zoos are tagged for the `equity_in` universe, so they compute on NSE/BSE bars (the GTJA191 zoo stays China-only). Live/paper India trading uses the Shoonya / Dhan connectors (paper + read-only live; live order placement is structurally disabled because those brokers expose no paper/live switch).
+Factors: the Alpha101 and QLib158 zoos are tagged for the `equity_in` and `equity_kr` universes, so they compute on NSE/BSE and KRX bars (the GTJA191 zoo stays China-only). Live/paper India trading uses the Shoonya / Dhan connectors (paper + read-only live; live order placement is structurally disabled because those brokers expose no paper/live switch).
 
 Example workflow:
 1. Use `list_skills()` to discover strategy patterns
@@ -143,7 +144,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `factor_analysis` | IC/IR analysis + layered backtest | None* |
 | `analyze_options` | Black-Scholes price + Greeks | None |
 | `pattern_recognition` | Detect chart patterns (H&S, double top, etc.) | None |
-| `get_market_data` | Fetch OHLCV data (auto-detect + ordered fallback across 23 sources) | None* |
+| `get_market_data` | Fetch OHLCV data (auto-detect + ordered fallback across 24 sources) | None* |
 | `get_fund_flow` | Capital fund-flow (main/retail net inflow) | None* |
 | `get_dragon_tiger` | Dragon-tiger list (龙虎榜) top buyer/seller seats | None* |
 | `get_northbound_flow` | Northbound (Stock Connect) net flow | None* |

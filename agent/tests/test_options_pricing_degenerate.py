@@ -87,6 +87,40 @@ def test_non_finite_inputs_rejected_with_error(kw):
     assert "finite" in out["error"]
 
 
+@pytest.mark.parametrize("field", ["spot", "strike", "expiry_days", "volatility"])
+def test_missing_required_argument_is_error_not_keyerror(field):
+    """A required argument that is absent or null yields an error envelope."""
+    kw = dict(spot=100, strike=100, expiry_days=30, volatility=0.25, option_type="call")
+    del kw[field]
+    assert _run(**kw)["status"] == "error"
+
+    kw[field] = None
+    out = _run(**kw)
+    assert out["status"] == "error"
+    assert out["error"]
+
+
+@pytest.mark.parametrize("field", ["spot", "strike", "expiry_days", "volatility", "risk_free_rate"])
+def test_unrepresentable_integer_is_error_not_overflowerror(field):
+    """float(10**10000) raises OverflowError; it must not escape the envelope."""
+    kw = dict(spot=100, strike=100, expiry_days=30, volatility=0.25, option_type="call")
+    kw[field] = 10 ** 10000
+    out = _run(**kw)
+    assert out["status"] == "error"
+    assert "invalid or missing input argument" in out["error"]
+
+
+def test_risk_free_rate_none_falls_back_to_schema_default():
+    """risk_free_rate is optional: explicit null means "use the 0.05 default"."""
+    explicit_null = _run(spot=100, strike=100, expiry_days=30, volatility=0.25,
+                         risk_free_rate=None, option_type="call")
+    omitted = _run(spot=100, strike=100, expiry_days=30, volatility=0.25, option_type="call")
+
+    assert explicit_null["status"] == "ok"
+    assert explicit_null["inputs"]["risk_free_rate"] == 0.05
+    assert explicit_null["price"] == omitted["price"]
+
+
 def test_output_is_strict_json_no_nan():
     # json.loads already enforces strict JSON; assert it parses for all branches.
     for kw in (

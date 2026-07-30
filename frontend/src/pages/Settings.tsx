@@ -586,6 +586,7 @@ export function Settings() {
                 className={fieldClass}
               >
                 <option value="">{t("settings.off")}</option>
+                <option value="none">{t("settings.reasoningEffortNone")}</option>
                 <option value="low">{t("settings.reasoningEffortLow")}</option>
                 <option value="medium">{t("settings.reasoningEffortMedium")}</option>
                 <option value="high">{t("settings.reasoningEffortHigh")}</option>

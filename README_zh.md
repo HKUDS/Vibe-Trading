@@ -52,13 +52,14 @@
 
 > ⚠️ **安全警告：** X 账号 `VibeTrading_HKU`、Virtuals 项目 `101845` 及代币合约 `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` 均非 Vibe-Trading 官方。我们从未发行或背书任何代币或 meme 币。请勿购买、连接钱包或签名。[详细说明](SECURITY.md#official-channels--impersonation)。
 
+- **2026-07-30** 🎨 **全新 WebUI + 韩国（KRX）市场 + OpenBB Workspace 桥接**：Web 界面完成 guided-minimalism 改造——首帧不再闪烁，每轮只保留一个持久活动对象（实时推理耳语 + 刷新后可重建的工具轨迹），会话标题由 LLM 生成，五语言完整对齐。**韩国股票（KRX：KOSPI/KOSDAQ）**成为第 9 个回测引擎——成交时刻判定 ±30% 涨跌停、只做多、2026 年 0.20% 证券交易税、可选 `pykrx` 源（[#693](https://github.com/HKUDS/Vibe-Trading/pull/693)，感谢 @JungHoonGhae）；另有 **OpenBB Workspace 桥接**（[#817](https://github.com/HKUDS/Vibe-Trading/pull/817)，感谢 @shugaoye）与只读**台湾股票快照**工具（[#848](https://github.com/HKUDS/Vibe-Trading/pull/848)，感谢 @TSENGCHIENFENG）。正确性：涨跌停改在**成交时刻**判定，不再用决策 bar 自己的收盘价；同一会话同时只跑一次运行（HTTP 409），用户停止是独立终态（[#676](https://github.com/HKUDS/Vibe-Trading/pull/676)，感谢 @tyj147454413-cmd）。另有 trace 落盘可靠（[#662](https://github.com/HKUDS/Vibe-Trading/pull/662)）、工具结果敏感信息擦除（[#675](https://github.com/HKUDS/Vibe-Trading/pull/675)）、畸形工具参数失败关闭（[#913](https://github.com/HKUDS/Vibe-Trading/pull/913)/[#911](https://github.com/HKUDS/Vibe-Trading/pull/911)，感谢 @santhreal）、OpenAI 直连顶层 `reasoning_effort`（[#755](https://github.com/HKUDS/Vibe-Trading/pull/755)，感谢 @1anter），以及风险透视 / 边密度 / 期权引擎的数值防护（[#909](https://github.com/HKUDS/Vibe-Trading/pull/909)/[#908](https://github.com/HKUDS/Vibe-Trading/pull/908)/[#907](https://github.com/HKUDS/Vibe-Trading/pull/907)）。
 - **2026-07-29** 🔧 **停牌缺口收益修复 + 强平风险建模 + 每次回测自带风险透视**：`bar_returns` 不再吞掉超过前向填充窗口的停牌复牌行情——此前跨缺口的真实涨跌被静默记为 0，导致波动率被低估、Sharpe 被高估；`inf` 前收价也不再被误读成干净的 −100%（[#895](https://github.com/HKUDS/Vibe-Trading/pull/895)，感谢 @darkknight4563）。年化系数表现已覆盖**全部 24 个数据源**的每个周期，并新增覆盖测试：新 loader 缺少年化条目将直接使 CI 失败（[#891](https://github.com/HKUDS/Vibe-Trading/pull/891)，关闭 [#884](https://github.com/HKUDS/Vibe-Trading/issues/884)，感谢 @Robin1987China）。USD-M 永续研究获得确定性的**逐仓/全仓强平**评估（[#889](https://github.com/HKUDS/Vibe-Trading/pull/889)，感谢 @honginp），每次组合回测现在都会产出**风险透视工件**（`risk_xray.json`/`.md`）及集中度/波动率/回撤头条指标（[#900](https://github.com/HKUDS/Vibe-Trading/pull/900)，感谢 @he-yufeng）。`connector` CLI 现在会加载 `~/.vibe-trading/.env`，环境变量类券商凭证恢复可用（[#902](https://github.com/HKUDS/Vibe-Trading/pull/902)，关闭 [#901](https://github.com/HKUDS/Vibe-Trading/issues/901)，感谢 @MuggleJinx）。另有 IM 消息分块保留缩进与技能 frontmatter 文件尾解析两项修复（[#867](https://github.com/HKUDS/Vibe-Trading/pull/867)/[#861](https://github.com/HKUDS/Vibe-Trading/pull/861)，感谢 @santhreal）。
 - **2026-07-28** 🔧 **新一代 Claude 模型解锁 + 收益率符号安全**：弃用 `temperature` 字段的 Claude 模型（opus-4-7、opus-5、sonnet-5）现已可用——适配层在 API 拒绝该字段时自动移除并重试一次，随后记住该模型，无需为每次模型发布单独打补丁（[#890](https://github.com/HKUDS/Vibe-Trading/pull/890)，关闭 [#856](https://github.com/HKUDS/Vibe-Trading/issues/856)，感谢 @yagnikpipaliya）。非交互式 `vibe-trading run` 现在会注入宿主 session id：此前研究目标类工具每次调用都失败，而运行仍报告成功（[#885](https://github.com/HKUDS/Vibe-Trading/issues/885)）。买入持有收益率现已符号安全——前一根收盘价接近零不再让复利基准爆炸，收盘价恰为零也不再产生 `inf`/`nan`（[#872](https://github.com/HKUDS/Vibe-Trading/issues/872)，感谢 @darkknight4563）。前端迁移到 **Node 22 + React Router 8**，消除一条高危安全公告。
-- **2026-07-27** 🔧 **相关性矩阵修正 + vn.py 4.0 导出修复 + 编码修复批次**：滚动相关性矩阵不再对缺失收盘价做前向填充——停牌交易日此前会被算成虚构的 0% 收益，并与对手标的的真实涨跌配对，从而扭曲整个矩阵（[#873](https://github.com/HKUDS/Vibe-Trading/pull/873)，感谢 @ddy4633）。**vn.py 导出**技能已适配 vn.py 4.x 结构，上游 `vnpy.app.cta_strategy` 已不存在，模板改从 `vnpy_ctastrategy` 导入（[#869](https://github.com/HKUDS/Vibe-Trading/pull/869)，感谢 @y85998607）。另有六项修复：文档阅读器与交易流水 CSV 的 UTF-16 BOM 解码、数值转换前剥离货币符号、`BTCUSDT` 形式的代码识别为加密货币、小写 `1h`/`1d` 周期的年化计算修正，以及技能目录名保留中日韩字符（[#862](https://github.com/HKUDS/Vibe-Trading/pull/862)、[#863](https://github.com/HKUDS/Vibe-Trading/pull/863)、[#864](https://github.com/HKUDS/Vibe-Trading/pull/864)、[#865](https://github.com/HKUDS/Vibe-Trading/pull/865)、[#866](https://github.com/HKUDS/Vibe-Trading/pull/866)、[#868](https://github.com/HKUDS/Vibe-Trading/pull/868)，感谢 @santhreal）。
 
 <details>
 <summary>更早的更新</summary>
 
+- **2026-07-27** 🔧 **相关性矩阵修正 + vn.py 4.0 导出修复 + 编码修复批次**：滚动相关性矩阵不再对缺失收盘价做前向填充——停牌交易日此前会被算成虚构的 0% 收益，并与对手标的的真实涨跌配对，从而扭曲整个矩阵（[#873](https://github.com/HKUDS/Vibe-Trading/pull/873)，感谢 @ddy4633）。**vn.py 导出**技能已适配 vn.py 4.x 结构，上游 `vnpy.app.cta_strategy` 已不存在，模板改从 `vnpy_ctastrategy` 导入（[#869](https://github.com/HKUDS/Vibe-Trading/pull/869)，感谢 @y85998607）。另有六项修复：文档阅读器与交易流水 CSV 的 UTF-16 BOM 解码、数值转换前剥离货币符号、`BTCUSDT` 形式的代码识别为加密货币、小写 `1h`/`1d` 周期的年化计算修正，以及技能目录名保留中日韩字符（[#862](https://github.com/HKUDS/Vibe-Trading/pull/862)、[#863](https://github.com/HKUDS/Vibe-Trading/pull/863)、[#864](https://github.com/HKUDS/Vibe-Trading/pull/864)、[#865](https://github.com/HKUDS/Vibe-Trading/pull/865)、[#866](https://github.com/HKUDS/Vibe-Trading/pull/866)、[#868](https://github.com/HKUDS/Vibe-Trading/pull/868)，感谢 @santhreal）。
 - **2026-07-26** 🔒 **依赖锁修复 + 基准成分透明度**：Docker 哈希锁定安装恢复正常，CI 新增锁文件校验（[#858](https://github.com/HKUDS/Vibe-Trading/pull/858)，关闭 [#847](https://github.com/HKUDS/Vibe-Trading/issues/847)）。`alpha bench` 现在披露 CSI300/SP500 的来源、成分数量、降级 fallback 与幸存者偏差（[#859](https://github.com/HKUDS/Vibe-Trading/pull/859)，关闭 [#845](https://github.com/HKUDS/Vibe-Trading/issues/845)）。同时更新了 Actions 和 5 项前端依赖（[#850](https://github.com/HKUDS/Vibe-Trading/pull/850)–[#852](https://github.com/HKUDS/Vibe-Trading/pull/852)）。
 - **2026-07-25** 🔧 **永续合约回测更真实 + MCP 崩溃修复 + 正确性批量修复**：USD-M 永续合约获得**保证金状态合约**（[#798](https://github.com/HKUDS/Vibe-Trading/pull/798)，感谢 @honginp），引擎现在真正消费**历史资金费率**，不再“取了不用”（[#819](https://github.com/HKUDS/Vibe-Trading/pull/819)，感谢 @g0rdonL）。MCP dataclass 结果不再因误报的 `Circular reference detected` 崩溃（[#849](https://github.com/HKUDS/Vibe-Trading/pull/849)，感谢 @Echoandelementwebsites），`alpha bench` CLI/HTML 透传 `_meta` 幸存者偏差披露（[#841](https://github.com/HKUDS/Vibe-Trading/pull/841)，关闭 [#797](https://github.com/HKUDS/Vibe-Trading/issues/797)，感谢 @AmirF194）。另有 12 个横跨日志、连接器与渠道的正确性修复（[#799](https://github.com/HKUDS/Vibe-Trading/pull/799)–[#810](https://github.com/HKUDS/Vibe-Trading/pull/810)，感谢 @santhreal），以及 CLI 余额视图显示真实账户标签（[#843](https://github.com/HKUDS/Vibe-Trading/pull/843)，关闭 [#846](https://github.com/HKUDS/Vibe-Trading/issues/846)，感谢 @Robin1987China）。
 - **2026-07-24** 🔀 **记忆 Tier 2、可组合优化器权重约束 + 周期处理大扫荡**：持久化记忆获得 **Tier 2 结构化组织**（[#815](https://github.com/HKUDS/Vibe-Trading/pull/815)，感谢 @shadowinlife），回测优化器支持**可组合权重约束**（[#818](https://github.com/HKUDS/Vibe-Trading/pull/818)，感谢 @he-yufeng）。正确性：日线 bar 校验器可选**非正价格**——允许在负价格 bar 上开仓，但仍拒绝零价格（[#816](https://github.com/HKUDS/Vibe-Trading/pull/816)，关闭 [#571](https://github.com/HKUDS/Vibe-Trading/issues/571)，感谢 @darkknight4563）。另有 19 个 loader **周期规范化修复**：全面接受小写 `1h/4h/1d/1w` 别名，不支持的周期现在直接快速报错，不再静默退回日线；Yahoo `4H` 映射为 `1h`，MT5 接受 `1W/1M`（[#812](https://github.com/HKUDS/Vibe-Trading/pull/812)–[#838](https://github.com/HKUDS/Vibe-Trading/pull/838)，感谢 @santhreal）；交易日志修复东财 Excel 序列日期（[#811](https://github.com/HKUDS/Vibe-Trading/pull/811)，感谢 @santhreal）；README 导航锚点修复（[#840](https://github.com/HKUDS/Vibe-Trading/pull/840)，感谢 @dvirarad）。
@@ -226,7 +227,7 @@
       <img src="assets/feature-cross-market-data-backtesting.png" height="130" alt="Cross-market data and backtesting"/><br>
       <h3>📊 跨市场数据与回测</h3>
       <div align="left">
-        • A 股、港股、美股、加密、期货与外汇<br>
+        • A 股、港股、美股、印度、韩国、加密、期货与外汇<br>
         • 数据 fallback 与组合回测<br>
         • PIT 数据、验证与 run cards
       </div>
@@ -325,7 +326,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 
 ## 📡 数据源与智能 Fallback
 
-一次 `get_market_data` 调用，**22 个免费行情数据源**（另有可选付费市场 **QVeris**）。设 `source: "auto"`——loader 按符号自动选源，再沿按 **被封 IP 风险** 排序的同市场链向下走（永不封的公开源在前，限速 / 需 key 的在后）。零配置，无单点故障。
+一次 `get_market_data` 调用，**23 个免费行情数据源**（另有可选付费市场 **QVeris**）。设 `source: "auto"`——loader 按符号自动选源，再沿按 **被封 IP 风险** 排序的同市场链向下走（永不封的公开源在前，限速 / 需 key 的在后）。零配置，无单点故障。
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
@@ -341,6 +342,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 | `okx` · `ccxt` · `binance` | crypto | none | OKX + 100+ exchanges + Binance 历史 / USD-M 永续 |
 | `futu` | HK / A | OpenD | optional local FutuOpenD |
 | `mt5` | 外汇 / 贵金属 | MT5 终端 | MetaTrader 5（Exness 风格）外汇 / 贵金属行情，1m–1D |
+| `pykrx` | 韩国（KRX：KOSPI/KOSDAQ） | 无 | `.KS` / `.KQ` 的 KOSPI / KOSDAQ 日线（可选 `krx` extra） |
 | `india_broker` | 印度（NSE/BSE） | 券商登录 | 只读 Shoonya / Dhan bars，服务 `.NS` / `.BO`（fallback 链尾） |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
@@ -350,6 +352,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 - **美股** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **港股** → `eastmoney` · `yahoo` · `futu` · `yfinance` · `akshare` · `longbridge` · `local`
 - **印度（NSE/BSE）** → `yahoo` · `yfinance` · `india_broker` · `local`
+- **韩国（KOSPI/KOSDAQ）** → `pykrx` · `yahoo` · `yfinance` · `local`
 - **加密** → `okx` · `ccxt` · `binance` · `yfinance` · `local`
 - **外汇 / 贵金属** → `mt5` · `yfinance` · `akshare` · `local` &nbsp;·&nbsp; *(期货 / 基金 / 宏观 → `tushare`/`akshare` → `local`)*
 
@@ -390,7 +393,7 @@ LONGBRIDGE_ACCESS_TOKEN=...
 
 <img src="https://www.qveris.com/logo-color.png" alt="QVeris" height="36">
 
-**数据可走免费，也可按需上付费。** 默认仍是 22 个内置免费源：自动 fallback、无需 key、无成本。通过 QVeris 可用一个 key 解锁 63+ provider、10,000+ capabilities（per QVeris），覆盖期权 Greeks、高级基本面、中国/港股/全球数据、宏观、加密、新闻与 filings；失败调用不扣费。入口在 Settings → QVeris 或 `vibe-trading data mode paid`。
+**数据可走免费，也可按需上付费。** 默认仍是 23 个内置免费源：自动 fallback、无需 key、无成本。通过 QVeris 可用一个 key 解锁 63+ provider、10,000+ capabilities（per QVeris），覆盖期权 Greeks、高级基本面、中国/港股/全球数据、宏观、加密、新闻与 filings；失败调用不扣费。入口在 Settings → QVeris 或 `vibe-trading data mode paid`。
 
 *QVeris 披露：通过 [Vibe-Trading 推荐链接](https://qveris.ai/?ref=Vyjjo5G_1cAHJA) 注册可额外获得 **1,000 积分**，同时支持本项目。*
 <!-- QVERIS-END -->
@@ -532,13 +535,14 @@ LONGBRIDGE_ACCESS_TOKEN=...
 </details>
 
 <details>
-<summary><b>Backtest Engines</b> <sub>8 个引擎 + options portfolio，跨市场 composite</sub></summary>
+<summary><b>Backtest Engines</b> <sub>9 个引擎 + options portfolio，跨市场 composite</sub></summary>
 
 | 引擎 | 市场 | 说明 |
 |------|------|------|
 | **ChinaA** | A 股 | T+1、涨跌停、pre-ST 筛选 |
 | **GlobalEquity** | 美股 / 港股 | T+0 |
 | **IndiaEquity** | 印度（NSE/BSE） | T+1、熔断带、config 驱动的 STT / 印花税 / SEBI / GST 成本栈 |
+| **KoreaEquity** | 韩国（KRX：KOSPI/KOSDAQ） | 只做多，统一最小价位网格上于成交时刻判定 ±30% 涨跌停，2026 年 0.20% 证券交易税 |
 | **Crypto** | 加密现货 / USD-M 永续 | 资金费结算、成交价/标记价分离 |
 | **ChinaFutures** · **GlobalFutures** | 期货 | 保证金、合约乘数 |
 | **Forex** | 外汇 / 贵金属 | 经 `mt5` loader |
@@ -714,6 +718,8 @@ skill + MCP config 会下载到你的智能体 skills 目录。详情见 [ClawHu
 | `VIBE_TRADING_ENABLE_SHELL_TOOLS` | No | 在远程 API/MCP-SSE 风格部署中显式启用 shell-capable tools |
 | `VIBE_TRADING_ALLOWED_FILE_ROOTS` | No | 文档和券商日志导入额外允许的逗号分隔 roots |
 | `VIBE_TRADING_ALLOWED_RUN_ROOTS` | No | 生成代码 run directories 额外允许的逗号分隔 roots |
+| `VIBE_TW_STOCK_DB` | No | 台湾市场 SQLite 快照路径；只读的 `taiwan_stock_data` 工具仅在 schema 合法时才注册 |
+| `VIBE_TRADING_EXTRA_CORS_ORIGINS` | No | 在回环 CORS 默认值之上**追加**的源，逗号分隔（`CORS_ORIGINS` 则是整体替换） |
 
 <sub>* Ollama 不需要 API key。OpenAI Codex 使用 ChatGPT OAuth，并通过 `oauth-cli-kit` 存储 token，不写入 `agent/.env`。</sub>
 
@@ -950,6 +956,10 @@ vibe-trading serve --port 8899
 | `POST` | `/scheduled-runs` | 创建定时研究任务（间隔毫秒或 cron） |
 | `GET` | `/scheduled-runs` | 列出定时任务 |
 | `DELETE` | `/scheduled-runs/{job_id}` | 取消定时任务 |
+| `POST` | `/sessions/{id}/cancel` | 停止该会话进行中的运行（记为已取消，而非失败） |
+| `POST` | `/sessions/{id}/title/auto` | 由首轮对话生成会话标题（不会覆盖手动重命名） |
+| `GET` | `/correlation/regime` | 相关性边密度 regime 时间线 |
+| `GET` | `/agents.json` · `POST` `/v1/query` | OpenBB Workspace 桥接——仅在装了可选 `openbb` extra 时注册，`/v1/query` 强制鉴权 |
 
 交互式文档：`http://localhost:8899/docs`
 
@@ -1177,8 +1187,8 @@ Vibe-Trading/
 │   │   └── providers/              # LLM provider 抽象层
 │   │
 │   └── backtest/                   # 回测引擎
-│       ├── engines/                #   7 个引擎 + 跨市场 composite 引擎 + options_portfolio
-│       ├── loaders/                #   23 个数据源：tushare、okx、binance、yfinance、akshare、baostock、tencent、mootdx、ccxt、futu、local、eastmoney、sina、stooq、yahoo、finnhub、alphavantage、tiingo、fmp、longbridge、mt5、qveris、india_broker
+│       ├── engines/                #   8 个引擎 + 跨市场 composite 引擎 + options_portfolio
+│       ├── loaders/                #   24 个数据源：tushare、okx、binance、yfinance、akshare、baostock、tencent、mootdx、ccxt、futu、pykrx、local、eastmoney、sina、stooq、yahoo、finnhub、alphavantage、tiingo、fmp、longbridge、mt5、qveris、india_broker
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + 自动 fallback 链路
 │       └── optimizers/             #   MVO、equal vol、max div、risk parity

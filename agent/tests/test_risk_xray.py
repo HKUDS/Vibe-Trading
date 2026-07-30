@@ -197,6 +197,13 @@ def _stub_fetcher(closes_map: dict[str, list[float]]):
 
     return fetch
 
+def test_compute_risk_xray_surviving_symbols_zero_weight():
+    closes = pd.DataFrame({
+        "AAA": [10.0 + i for i in range(10)],
+        "BBB": [5.0] + [None] * 9,
+    })
+    with pytest.raises(ValueError, match="surviving symbols have zero total weight"):
+        compute_risk_xray(closes, {"AAA": 0.0, "BBB": 1.0}, min_history=5)
 
 def test_tool_happy_path_equal_weights():
     tool = PortfolioRiskXrayTool(

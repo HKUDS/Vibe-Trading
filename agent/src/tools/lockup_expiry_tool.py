@@ -65,7 +65,7 @@ def _clamp_horizon(horizon_days: Any) -> int:
     """
     try:
         value = int(horizon_days)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return _DEFAULT_HORIZON_DAYS
     if value < 1:
         return 1

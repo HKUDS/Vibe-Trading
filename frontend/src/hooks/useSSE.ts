@@ -88,6 +88,7 @@ export function useSSE(config?: SSEConfig) {
       "tool_heartbeat", "tool_progress", "llm_usage",
       "swarm.started", "swarm.event",
       "attempt.created", "attempt.started", "attempt.completed", "attempt.failed",
+      "attempt.cancelled",
       "message.received", "session.created",
       "goal.created", "goal.evidence", "goal.updated",
       "mandate.proposal", "mandate.committed", "live.halted", "live.resumed", "live.action",

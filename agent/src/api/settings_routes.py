@@ -119,7 +119,9 @@ def _load_llm_providers() -> List[LLMProviderOption]:
 
 LLM_PROVIDERS = _load_llm_providers()
 LLM_PROVIDER_BY_NAME = {provider.name: provider for provider in LLM_PROVIDERS}
-LLM_REASONING_EFFORTS = {"", "low", "medium", "high", "max"}
+# "" leaves the setting unset (Off); "none" is an explicit value direct OpenAI
+# needs to allow function tools on gpt-5.6-* models.
+LLM_REASONING_EFFORTS = {"", "none", "low", "medium", "high", "max"}
 LLM_API_KEY_PLACEHOLDERS = {"", "sk-or-v1-your-key-here", "sk-xxx", "xxx", "gsk_xxx"}
 TUSHARE_TOKEN_PLACEHOLDERS = {"", "your-tushare-token"}
 
@@ -380,7 +382,10 @@ def register_settings_routes(
         if reasoning_effort not in LLM_REASONING_EFFORTS:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Reasoning effort must be low, medium, high, or max",
+                detail=(
+                    "Reasoning effort must be none, low, medium, high, or max, "
+                    "or empty to leave it unset"
+                ),
             )
 
         current_values = _read_settings_env_values()

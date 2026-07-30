@@ -74,7 +74,29 @@ from src.factors.registry import Registry, RegistryError
 # We treat ``<repo>`` (and any subdirectory thereof) as the write-allow root.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
+# Benchmarkable data universes: every name here must have a panel loader in
+# ``src.tools.alpha_bench_tool._UNIVERSE_TAG``. There is no KRX (or NSE/BSE)
+# panel yet, so Korea/India are deliberately absent — ``alpha bench`` would
+# fail at universe load, not produce a Korean benchmark.
 _UNIVERSE_CHOICES = ["csi300", "sp500", "btc-usdt"]
+
+# Factor-metadata universes accepted by ``alpha list --universe`` — these are
+# the values carried in each alpha's ``universe`` metadata, which is what
+# ``Registry.list`` filters on. Keep in sync with
+# ``src.factors.registry.Universe`` and the REST allowlist in
+# ``src.api.alpha_routes._VALID_UNIVERSES``.
+_LIST_UNIVERSE_CHOICES = [
+    "equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr",
+    "crypto", "futures",
+]
+# Benchmark universe -> the metadata universe its panel represents, so
+# ``alpha list --universe csi300`` keeps working (it used to filter on a name no
+# alpha carries and silently listed nothing). Mirrors the REST alias map.
+_LIST_UNIVERSE_ALIASES = {
+    "csi300": "equity_cn",
+    "sp500": "equity_us",
+    "btc-usdt": "crypto",
+}
 
 
 def _print(msg: str) -> None:
@@ -145,7 +167,10 @@ def cmd_alpha_list(args: argparse.Namespace) -> int:
     """
     try:
         reg = Registry()
-        ids = reg.list(zoo=args.zoo, theme=args.theme, universe=args.universe)
+        universe = args.universe
+        if universe is not None:
+            universe = _LIST_UNIVERSE_ALIASES.get(universe, universe)
+        ids = reg.list(zoo=args.zoo, theme=args.theme, universe=universe)
 
         limit = getattr(args, "limit", None)
         total = len(ids)
@@ -905,8 +930,12 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
     p_list.add_argument(
         "--universe",
         default=None,
-        choices=_UNIVERSE_CHOICES,
-        help=f"Filter by universe ({', '.join(_UNIVERSE_CHOICES)})",
+        choices=_LIST_UNIVERSE_CHOICES + _UNIVERSE_CHOICES,
+        help=(
+            "Filter by factor universe "
+            f"({', '.join(_LIST_UNIVERSE_CHOICES)}); the benchmark names "
+            f"({', '.join(_UNIVERSE_CHOICES)}) are accepted as aliases"
+        ),
     )
     p_list.add_argument(
         "--limit",

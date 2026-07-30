@@ -532,6 +532,7 @@ _MARKET_TO_SOURCE = {
     "us_equity": "yfinance",
     "hk_equity": "yfinance",
     "india_equity": "yahoo",
+    "kr_equity": "pykrx",
     "crypto": "okx",
     "futures": "tushare",
     "fund": "tushare",
@@ -1020,6 +1021,12 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
         from backtest.engines.india_equity import IndiaEquityEngine
         return IndiaEquityEngine(config)
 
+    # Korea equity routing — same reason as India: its effective source
+    # (``pykrx``) has no Wave-1 branch and would fall through to the default.
+    if "kr_equity" in markets:
+        from backtest.engines.korea_equity import KoreaEquityEngine
+        return KoreaEquityEngine(config)
+
     # Original routing (Wave 1)
     if source in ("okx", "ccxt"):
         from backtest.engines.crypto import CryptoEngine
@@ -1071,7 +1078,12 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
 
     Args:
         codes: All symbols.
-        config: Backtest config dict.
+        config: Backtest config dict. On success the loaders that actually
+            returned rows are recorded under the private key
+            ``_actual_sources`` so the caller can report true provenance
+            instead of the symbol-pattern guess (``_group_codes_by_source``
+            names the *head* of each chain, which lies whenever that head is an
+            optional package that is not installed).
         interval: Bar interval string.
 
     Returns:
@@ -1079,6 +1091,7 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
     """
     market_groups = _group_codes_by_market(codes)
     merged = {}
+    served_by: set[str] = set()
     start_date = config.get("start_date", "")
     end_date = config.get("end_date", "")
 
@@ -1105,6 +1118,8 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
         market_result = _restore_original_codes(
             result, market_codes, normalized_codes
         )
+        if market_result:
+            served_by.add(src_name)
         missing = [code for code in market_codes if code not in market_result]
 
         # Retry only missing symbols so a partial primary response does not
@@ -1125,6 +1140,7 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
             if mapped:
                 market_result.update(mapped)
                 missing = [code for code in missing if code not in mapped]
+                served_by.add(str(getattr(fb_loader, "name", fb_name) or fb_name))
                 logger.info(
                     "Runtime fallback: %s -> %s for %s", src_name, fb_name, market
                 )
@@ -1135,6 +1151,7 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
             )
         merged.update(market_result)
 
+    config["_actual_sources"] = sorted(served_by)
     return merged
 
 
@@ -1158,11 +1175,28 @@ def fetch_data_map(config: dict) -> DataFetchResult:
     if source == "auto":
         data_map = _fetch_auto(codes, config, interval)
         loader: Any = _AutoLoader(data_map)
-        used_sources: list[str] = []
+        # Prefer the loaders that actually served rows; the symbol-pattern guess
+        # is only a fallback for a stubbed/patched fetcher that recorded nothing.
+        recorded = config.pop("_actual_sources", None)
+        used_sources: list[str] = [
+            str(name) for name in recorded or [] if str(name).strip()
+        ] or sorted(_group_codes_by_source(codes))
     else:
         codes = _normalize_codes(codes, source)
         primary_source = source
         loader = _get_loader(source)()
+        # ``_get_loader`` may hand back a *different* loader when the requested
+        # one is unavailable (e.g. an optional package like pykrx is missing, so
+        # the kr_equity chain resolves to yahoo). Record who actually served the
+        # bars, never the name that was asked for — a run card that claims
+        # ``pykrx`` while Yahoo supplied the data is a provenance lie.
+        served_by = str(getattr(loader, "name", source) or source)
+        if served_by != source:
+            logger.warning(
+                "source=%s is unavailable; %s served this request",
+                source,
+                served_by,
+            )
         data_map = loader.fetch(
             codes,
             config.get("start_date", ""),
@@ -1170,7 +1204,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
             fields=config.get("extra_fields") or None,
             interval=interval,
         )
-        used_sources = [source] if data_map else []
+        used_sources = [served_by] if data_map else []
         missing = [code for code in codes if code not in data_map]
         if missing:
             logger.warning(
@@ -1206,12 +1240,16 @@ def fetch_data_map(config: dict) -> DataFetchResult:
                 if mapped:
                     data_map.update(mapped)
                     missing = [code for code in missing if code not in mapped]
+                    fb_served_by = str(
+                        getattr(fallback_loader, "name", fallback_source)
+                        or fallback_source
+                    )
                     if not used_sources:
-                        source = fallback_source
+                        source = fb_served_by
                         loader = fallback_loader
-                    used_sources.append(fallback_source)
+                    used_sources.append(fb_served_by)
                     logger.info(
-                        "Runtime fallback: %s -> %s", primary_source, fallback_source
+                        "Runtime fallback: %s -> %s", primary_source, fb_served_by
                     )
 
         if missing:
@@ -1220,15 +1258,12 @@ def fetch_data_map(config: dict) -> DataFetchResult:
             )
 
     data_map = _sanitize_data_map(data_map)
-    effective_sources = (
-        sorted(_group_codes_by_source(codes)) if source == "auto" else used_sources
-    )
     return DataFetchResult(
         data_map=data_map,
         codes=codes,
         source=source,
         loader=loader,
-        effective_sources=effective_sources,
+        effective_sources=used_sources,
     )
 
 

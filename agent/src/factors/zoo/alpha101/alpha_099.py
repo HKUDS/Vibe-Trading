@@ -43,7 +43,7 @@ __alpha_meta__ = {
     'columns_required': ['high', 'low', 'volume', 'close'],
     'extras_required': [],
     'requires_sector': False,
-    'universe': ['equity_us', 'equity_in'],
+    'universe': ['equity_us', 'equity_in', 'equity_kr'],
     'frequency': ['1D'],
     'decay_horizon': 5,
     'min_warmup_bars': 68,

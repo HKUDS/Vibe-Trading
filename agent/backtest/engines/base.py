@@ -379,6 +379,10 @@ class BaseEngine(ABC):
         self.allow_nonpositive_prices: bool = bool(
             config.get("allow_nonpositive_prices", False)
         )
+        #: Bar fields consulted, in order, for the price-limit base price.
+        #: Futures engines put ``pre_settle`` first: exchanges set the band off
+        #: the previous settlement, not the previous close.
+        self.base_price_fields: tuple[str, ...] = ("pre_close",)
         self.capital: float = self.initial_capital
         self.positions: Dict[str, Position] = {}
         self.trades: List[TradeRecord] = []
@@ -438,6 +442,96 @@ class BaseEngine(ABC):
         Returns:
             Slipped price.
         """
+
+    def historical_base_price(self, symbol: str, bar: pd.Series) -> Optional[float]:
+        """Return a reference price that is known before this bar's fill.
+
+        Price-limit bands must be derived from a base price the market already
+        knew when the order was placed. ``can_execute`` runs before the fill,
+        and this engine fills at the CURRENT bar's open, so the current bar's
+        close is not available information: using it is lookahead.
+
+        Both sources here are strictly historical:
+          1. the first field of :attr:`base_price_fields` present on the bar —
+             ``pre_close`` for cash equity, ``pre_settle`` first for futures,
+             whose exchanges set the band off the previous settlement;
+          2. the previous row of the close panel the run pre-extracts, which is
+             absent in a cross-market composite run (its sub-engines are
+             stateless rule books with no panel of their own).
+
+        Args:
+            symbol: Symbol whose base price is wanted.
+            bar: Current bar.
+
+        Returns:
+            The base price, or None when no historical close is reachable
+            (first bar of a run, or a composite sub-engine).
+        """
+        for field in self.base_price_fields:
+            if field in bar.index:
+                raw = bar[field]
+                if pd.notna(raw) and float(raw) > 0:
+                    return float(raw)
+
+        close_arr = getattr(self, "_close_arr", None)
+        col = getattr(self, "_code_to_col", {}).get(symbol)
+        row = getattr(self, "_bar_idx", 0) - 1
+        if close_arr is not None and col is not None and row >= 0:
+            value = close_arr[row, col]
+            if pd.notna(value) and float(value) > 0:
+                return float(value)
+
+        # Last resort: reconstruct the prior close from tushare's pct_chg, which
+        # is in percentage points. Both inputs sit on the current bar, but their
+        # ratio is the PREVIOUS close, so the result is still historical.
+        if "pct_chg" in bar.index and "close" in bar.index:
+            pct, close = bar["pct_chg"], bar["close"]
+            if pd.notna(pct) and pd.notna(close) and float(close) > 0:
+                denominator = 1.0 + float(pct) / 100.0
+                if denominator > 0:
+                    return float(close) / denominator
+        return None
+
+    def prospective_fill_price(self, bar: pd.Series, direction: int) -> Optional[float]:
+        """Return the price this engine would fill at on this bar.
+
+        Mirrors the sizing path: the bar's open, with slippage applied in the
+        trade direction. Comparing THIS against a price-limit band keeps the
+        simulation from ever transacting outside the exchange's legal range.
+
+        Args:
+            bar: Current bar.
+            direction: 1 (buy / cover), -1 (sell / short), 0 (close).
+
+        Returns:
+            The prospective fill price, or None when the bar has no usable open.
+        """
+        raw = bar.get("open", bar.get("close"))
+        if raw is None or pd.isna(raw):
+            return None
+        price = float(raw)
+        if price <= 0 and not self.allow_nonpositive_prices:
+            return None
+        return self.apply_slippage(price, direction)
+
+    def limit_band(
+        self, symbol: str, bar: pd.Series, limit: float
+    ) -> Optional[tuple[float, float]]:
+        """Return the (lower, upper) legal price band for this bar.
+
+        Args:
+            symbol: Symbol whose band is wanted.
+            bar: Current bar.
+            limit: Band half-width as a fraction (0.1 for +/-10%).
+
+        Returns:
+            The (lower, upper) band, or None when no historical base price is
+            reachable — in which case the caller must not fabricate a block.
+        """
+        base = self.historical_base_price(symbol, bar)
+        if base is None or base <= 0 or not limit:
+            return None
+        return base * (1.0 - float(limit)), base * (1.0 + float(limit))
 
     def on_bar(self, symbol: str, bar: pd.Series, timestamp: pd.Timestamp) -> None:
         """Per-bar market-rule hook (funding fees, liquidation, etc.).

@@ -207,3 +207,19 @@ class Attempt:
         self.status = AttemptStatus.FAILED
         self.completed_at = _utc_now_iso()
         self.error = error
+
+    def mark_cancelled(self, reason: str = "") -> None:
+        """Mark the attempt as user-cancelled.
+
+        Cancelled is a distinct terminal status from FAILED so the UI does
+        not misreport a cooperative cancel as an outage. ``AttemptStatus.CANCELLED``
+        was previously dead code: ``SessionService._run_attempt`` lumped the
+        result in with the failure branch and overwrote the status with FAILED.
+
+        Args:
+            reason: Optional free-text reason (usually ``"cancelled by user"``).
+        """
+        self.status = AttemptStatus.CANCELLED
+        self.completed_at = _utc_now_iso()
+        if reason:
+            self.error = reason

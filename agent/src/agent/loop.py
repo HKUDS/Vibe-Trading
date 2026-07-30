@@ -45,7 +45,7 @@ from src.providers.content_filter import (
 )
 from src.config.accessor import get_env_config
 from src.tools.background_tools import get_background_manager
-from src.tools.redaction import redact_payload
+from src.tools.redaction import redact_payload, redact_tool_result
 
 RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
 SESSIONS_DIR = Path(__file__).resolve().parents[2] / "sessions"
@@ -201,24 +201,6 @@ def _record_llm_usage(
         logger.debug("LLM usage artifact write skipped: %s", exc)
 
     return normalized
-
-
-def _redact_trace_result(result: str) -> str:
-    """Redact structured sensitive fields before persisting trace/event previews.
-
-    Args:
-        result: Raw tool result string.
-
-    Returns:
-        Redacted JSON string when ``result`` is JSON, otherwise the original
-        text. Plain text is left unchanged because reliable free-text secret
-        scrubbing would be more error-prone than helpful here.
-    """
-    try:
-        payload = json.loads(result)
-    except (TypeError, json.JSONDecodeError):
-        return result
-    return json.dumps(redact_payload(payload), ensure_ascii=False)
 
 
 def _format_timeout(seconds: float) -> str:
@@ -1007,7 +989,7 @@ class AgentLoop:
         final_reason: str | None = None
         if self._cancel_event.is_set():
             final_reason = "cancelled by user"
-            state_store.mark_failure(run_dir, final_reason)
+            state_store.mark_cancelled(run_dir, final_reason)
             final_status = "cancelled"
         elif content_filter_circuit_breaker:
             final_reason = (
@@ -1488,7 +1470,9 @@ class AgentLoop:
         truncated = result[:TOOL_RESULT_LIMIT]
         messages.append(context.format_tool_result(tc.id, tc.name, truncated))
 
-        trace_result = _redact_trace_result(result)
+        # One redaction feeds every subscriber below: the persisted trace
+        # record, the react trace, and the SSE preview.
+        trace_result = redact_tool_result(result)
         trace.write_tool_result(
             call_id=tc.id,
             result=trace_result,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from urllib.parse import urlparse
 import re
 from collections.abc import Sequence
 from importlib import import_module
@@ -695,6 +696,48 @@ def _sync_provider_env() -> None:
         os.environ["OPENAI_BASE_URL"] = base_url
 
 
+def _supports_top_level_reasoning_effort(provider: str, caps_name: str) -> bool:
+    """Report whether a provider accepts a top-level ``reasoning_effort`` field.
+
+    Direct OpenAI is the only verified consumer: its ``gpt-5.6-*`` models reject
+    function tools on ``/v1/chat/completions`` unless the request carries an
+    explicit ``reasoning_effort`` — including the literal ``"none"``. Every other
+    OpenAI-compatible provider (DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu,
+    NVIDIA, Spark, MiniMax, …) may reject the unknown field, so this is a
+    positive allowlist, never "everything without ``openrouter_reasoning_body``".
+    Relays that take the field inside ``extra_body.reasoning`` (OpenRouter,
+    Requesty) keep that path and are excluded here.
+
+    Args:
+        provider: Configured ``LANGCHAIN_PROVIDER`` value.
+        caps_name: Canonical capability name resolved for the provider/model.
+
+    Returns:
+        True only for direct OpenAI. The configured name is checked alongside the
+        resolved capability because unknown provider names fall back to OpenAI
+        capabilities — an unverified gateway must not inherit the field — while
+        the capability name check drops model-inferred providers (e.g. provider
+        ``openai`` with a ``deepseek-*`` model resolves to DeepSeek).
+    """
+    if caps_name != "openai" or provider.strip().lower() not in {"", "openai"}:
+        return False
+    # A base-URL override points the OpenAI client at some other gateway
+    # (Ollama, LiteLLM, a corporate proxy). Those speak the OpenAI wire format
+    # but need not accept this field, so the label alone is not enough.
+    try:
+        base_url = (
+            get_llm_credentials("openai", get_env_config().llm.langchain_model_name)
+            .get("base_url")
+            or ""
+        ).strip()
+    except Exception:  # noqa: BLE001 - a credential lookup must not break the check
+        return False
+    if not base_url:
+        return True
+    host = urlparse(base_url if "//" in base_url else f"https://{base_url}").hostname or ""
+    return host.lower() in {"api.openai.com", "openai.com"}
+
+
 def provider_diagnostics() -> dict[str, Any]:
     """Build a redacted provider diagnostic snapshot.
 
@@ -790,6 +833,9 @@ def provider_diagnostics() -> dict[str, Any]:
             "send_reasoning_content": caps.send_reasoning_content,
             "gemini_thought_signatures": caps.gemini_thought_signatures,
             "openrouter_reasoning_body": caps.openrouter_reasoning_body,
+            "top_level_reasoning_effort": _supports_top_level_reasoning_effort(
+                provider, caps.name
+            ),
         },
     }
 
@@ -874,6 +920,15 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         "extra_body": (
             {"reasoning": {"effort": effort}}
             if effort and caps.openrouter_reasoning_body
+            else None
+        ),
+        # Direct OpenAI takes the effort as a top-level request field instead
+        # (gpt-5.6-* require it, even "none", to accept function tools).
+        # None is dropped by langchain-openai, so unsupported providers keep a
+        # payload without the field.
+        "reasoning_effort": (
+            effort
+            if effort and _supports_top_level_reasoning_effort(provider, caps.name)
             else None
         ),
         "vibe_provider": provider,

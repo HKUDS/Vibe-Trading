@@ -161,6 +161,66 @@ def test_verdict_two_sources_split_is_warn_not_fail() -> None:
     assert out["warn_count"] == 1 and out["fail_count"] == 0
 
 
+def test_verdict_missing_reported_value_fails_against_nonzero_fetched() -> None:
+    """A None reported value is unverifiable evidence, so the point fails."""
+    out = render_verdict([{"reported_value": None, "fetched_value": 100.0, "label": "rev"}])
+    assert out["verdict"] == "FAIL"
+    assert out["fail_count"] == 1
+    assert out["pass_count"] == 0
+
+
+def test_verdict_missing_reported_value_fails_against_zero_fetched() -> None:
+    """The false-PASS case: None vs fetched 0 must NOT be read as 0 == 0.
+
+    Mapping a missing reported value to 0.0 makes ``_pct_diff(0, 0) == 0``, which
+    would certify a report from evidence that was never verified.
+    """
+    out = render_verdict([{"reported_value": None, "fetched_value": 0.0, "label": "rev"}])
+    assert out["verdict"] == "FAIL"
+    assert out["fail_count"] == 1
+    assert out["pass_count"] == 0
+    assert "missing" in out["fail_items"][0]["reason"]
+    assert out["fail_items"][0]["reported"] is None
+
+
+def test_verdict_absent_reported_value_key_fails() -> None:
+    """An entirely absent reported_value key is the same unverifiable case."""
+    out = render_verdict([{"fetched_value": 0.0, "label": "rev"}])
+    assert out["verdict"] == "FAIL"
+    assert out["fail_count"] == 1
+
+
+def test_verdict_genuine_reported_zero_still_passes() -> None:
+    """A real reported 0 is valid data and must keep passing against fetched 0."""
+    out = render_verdict([{"reported_value": 0, "fetched_value": 0.0, "label": "rev"}])
+    assert out["verdict"] == "PASS"
+    assert out["pass_count"] == 1
+    assert out["fail_count"] == 0
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), "n/a", {}])
+def test_verdict_non_finite_reported_value_fails_with_reason(bad: Any) -> None:
+    """NaN/Infinity/junk are equally unverifiable and stay JSON-serializable."""
+    out = render_verdict([{"reported_value": bad, "fetched_value": 12.0, "label": "rev"}])
+    assert out["verdict"] == "FAIL"
+    assert "cannot verify" in out["fail_items"][0]["reason"]
+    json.dumps(out, allow_nan=False)  # must not leak NaN/Infinity tokens
+
+
+def test_execute_verdict_missing_reported_value_is_reported_not_certified() -> None:
+    """End-to-end through the tool envelope: unverifiable evidence fails."""
+    raw = ReportAuditTool().execute(
+        command="verdict",
+        results=[{"id": 1, "label": "rev", "reported_value": None,
+                  "fetched_value": 0.0, "fetched_source": "m"}],
+    )
+    assert "NaN" not in raw and "Infinity" not in raw
+    env = json.loads(raw)
+    assert env["status"] == "ok"
+    assert env["verdict"] == "FAIL"
+    assert env["fail_items"][0]["reason"]
+
+
 def test_verdict_skips_points_without_fetched_value() -> None:
     out = render_verdict([
         {"id": 1, "label": "a", "reported_value": 100, "fetched_value": None},

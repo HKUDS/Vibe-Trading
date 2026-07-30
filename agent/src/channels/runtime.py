@@ -18,6 +18,7 @@ from src.channels.manager import ChannelManager
 from src.channels.pairing import PAIRING_COMMAND_META_KEY, handle_pairing_command
 from src.config.paths import get_data_dir
 from src.session.models import Message, Session
+from src.session.service import SessionBusyError
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +194,21 @@ class ChannelRuntime:
             )
         except asyncio.CancelledError:
             raise
+        except SessionBusyError:
+            # A chat maps to one persistent session, so a second message sent
+            # while the first is still running is ordinary user behaviour, not
+            # a fault. Say so plainly instead of surfacing an exception name.
+            await self.bus.publish_outbound(
+                OutboundMessage(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    content=(
+                        "Still working on your previous message — send this again "
+                        "once I reply, or use the reset command to start over."
+                    ),
+                    metadata={"_channel_runtime": True, "busy": True},
+                )
+            )
         except Exception as exc:  # noqa: BLE001 - channel errors must surface to users
             logger.exception("Channel runtime failed for %s:%s", msg.channel, msg.chat_id)
             await self.bus.publish_outbound(

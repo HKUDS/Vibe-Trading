@@ -500,7 +500,11 @@ export function Agent() {
               fallbackTimestamp: ts,
               idPrefix: `${m.message_id}_`,
               attemptId: m.linked_attempt_id || `${m.message_id}_attempt`,
-              state: meta?.status === "failed" ? "failed" : "done",
+              state: meta?.status === "failed"
+                ? "failed"
+                : meta?.status === "cancelled"
+                  ? "stopped"
+                  : "done",
               endedAt: ts,
             })
           : [];
@@ -920,6 +924,42 @@ export function Agent() {
         }
         clearStreamingView();
         act().addMessage({ id: "", type: "error", content: String(d.error || "Execution failed"), timestamp: Date.now() });
+        act().setStatus("idle");
+        scrollToBottom();
+      },
+
+      // A user stop is its own terminal event now, so it no longer arrives as
+      // attempt.failed and no longer needs the pre-marked "stopped" workaround
+      // to avoid showing an error bubble.
+      "attempt.cancelled": (d) => {
+        touch();
+        const attemptId = String(d.attempt_id || "");
+        if (act().sessionId !== sid) {
+          act().clearStreamingSession(sid);
+          return;
+        }
+        const archived = act().messages.find(
+          (message) => message.meta?.activity?.attemptId === attemptId,
+        )?.meta?.activity;
+        if (archived && archived.state !== "stopped") {
+          useAgentStore.setState((state) => ({
+            messages: state.messages.map((message) => (
+              message.meta?.activity?.attemptId === attemptId
+                ? {
+                    ...message,
+                    meta: {
+                      ...message.meta,
+                      activity: { ...archived, state: "stopped", endedAt: Date.now() },
+                    },
+                  }
+                : message
+            )),
+          }));
+        } else if (!archived) {
+          if (!act().activity) act().startActivity(attemptId || `cancelled-${Date.now()}`);
+          archiveActivity("stopped");
+        }
+        clearStreamingView();
         act().setStatus("idle");
         scrollToBottom();
       },

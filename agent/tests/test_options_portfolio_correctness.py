@@ -109,3 +109,26 @@ def test_daily_bar_annualization_still_finite() -> None:
     assert metrics["annual_return"] is not None
     assert np.isfinite(metrics["annual_return"])
     json.dumps(metrics, allow_nan=False)
+def test_null_and_non_numeric_trade_pnl_handled_safely() -> None:
+    """Trades containing pnl: None or non-numeric strings must not raise TypeError."""
+    trades = [
+        {"pnl": None},
+        {"pnl": "invalid"},
+        {"pnl": 100.0},
+        {"pnl": -50.0},
+    ]
+    metrics = _calc_options_metrics(pd.Series([100.0, 150.0]), 100.0, trades)
+    assert metrics["trade_count"] == 4
+    assert metrics["win_rate"] == 0.5
+    assert metrics["profit_loss_ratio"] == 2.0
+    ignored_warnings = [w for w in metrics["warnings"] if "Ignored PnL" in w]
+    assert ignored_warnings and "2 trade records" in ignored_warnings[0]
+    json.dumps(metrics, allow_nan=False)
+
+
+def test_all_numeric_trade_pnl_emits_no_ignored_warning() -> None:
+    """Clean numeric trades must not trigger the ignored-PnL warning."""
+    trades = [{"pnl": 100.0}, {"pnl": -50.0}, {"pnl": 0.0}]
+    metrics = _calc_options_metrics(pd.Series([100.0, 150.0]), 100.0, trades)
+    assert not any("Ignored PnL" in w for w in metrics["warnings"])
+    json.dumps(metrics, allow_nan=False)

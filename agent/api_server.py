@@ -52,6 +52,7 @@ from src.api.security import (  # noqa: F401, E402
     _mint_sse_ticket,
     _origin_matches_request_host,
     _parse_cors_origins,
+    _parse_extra_cors_origins,
     _parse_extra_loopback_hosts,
     _redact_query_secrets,
     _reject_cross_site_browser_request,
@@ -279,6 +280,11 @@ register_alpha_routes(app)
 # --- Auth helpers (SSE tickets) ---
 from src.api.auth_routes import register_auth_routes  # noqa: E402
 register_auth_routes(app)
+
+# --- OpenBB Workspace agent bridge (GET /agents.json, POST /v1/query) ---
+# No-op unless the optional `openbb` extra is installed; self-reports either way.
+from src.openbb_bridge import try_register_openbb_routes  # noqa: E402  # OPENBB-WORKSPACE-INTEGRATION
+try_register_openbb_routes(app)
 
 
 # ============================================================================

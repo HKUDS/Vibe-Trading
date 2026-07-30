@@ -69,7 +69,8 @@ def _to_yfinance_symbol(code: str) -> str:
         return upper[:-5] + "-USD"
     if upper.endswith("-USDC"):
         return upper[:-5] + "-USD"
-    # India NSE/BSE (RELIANCE.NS, 500325.BO): yfinance carries the suffix as-is.
+    # India NSE/BSE (RELIANCE.NS, 500325.BO) and Korea KRX (005930.KS,
+    # 247540.KQ): yfinance carries these suffixes as-is.
     return upper
 
 
@@ -223,7 +224,7 @@ class DataLoader:
     """Fetch HK/US equity bars from Yahoo Finance via yfinance."""
 
     name = "yfinance"
-    markets = {"us_equity", "hk_equity", "india_equity", "crypto"}
+    markets = {"us_equity", "hk_equity", "india_equity", "kr_equity", "crypto"}
     requires_auth = False
 
     def is_available(self) -> bool:

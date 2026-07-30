@@ -52,13 +52,14 @@
 
 > ⚠️ **セキュリティ警告：** Xアカウント `VibeTrading_HKU`、Virtualsプロジェクト `101845`、およびトークンコントラクト `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` は、いずれもVibe-Trading公式のものではありません。Vibe-Tradingはこれまで、いかなるトークンやミームコインも発行・公認していません。購入、ウォレットの接続、署名は行わないでください。[詳細](SECURITY.md#official-channels--impersonation)
 
+- **2026-07-30** 🎨 **WebUI 刷新 + 韓国（KRX）市場対応 + OpenBB Workspace ブリッジ**：Web UI の guided-minimalism 改修が着地——初期フレームのちらつきを解消し、各ターンは単一の永続アクティビティオブジェクト（推論のライブ・ウィスパー + リロードでも復元されるツールトレイル）を持ち、セッション名は LLM が自動生成、5 言語が完全整合。**韓国株式（KRX：KOSPI/KOSDAQ）**が 9 番目のバックテストエンジンに——±30% 制限値幅を約定時点で判定、ロングオンリー、2026 年 0.20% の証券取引税、任意の `pykrx` ローダー（[#693](https://github.com/HKUDS/Vibe-Trading/pull/693)、thanks @JungHoonGhae）。加えて **OpenBB Workspace ブリッジ**（[#817](https://github.com/HKUDS/Vibe-Trading/pull/817)、thanks @shugaoye）と読み取り専用の**台湾株スナップショット**ツール（[#848](https://github.com/HKUDS/Vibe-Trading/pull/848)、thanks @TSENGCHIENFENG）。整合性：日次の値幅制限は判断バーの終値ではなく**約定時点**で判定。1 セッションの実行は常に 1 つ（HTTP 409）で、ユーザーの停止は独立した終端状態（[#676](https://github.com/HKUDS/Vibe-Trading/pull/676)、thanks @tyj147454413-cmd）。ほかにトレースの永続化（[#662](https://github.com/HKUDS/Vibe-Trading/pull/662)）、ツール結果の秘匿情報スクラブ（[#675](https://github.com/HKUDS/Vibe-Trading/pull/675)）、不正なツール引数のフェイルクローズ（[#913](https://github.com/HKUDS/Vibe-Trading/pull/913)/[#911](https://github.com/HKUDS/Vibe-Trading/pull/911)、thanks @santhreal）、OpenAI 直接接続の `reasoning_effort`（[#755](https://github.com/HKUDS/Vibe-Trading/pull/755)、thanks @1anter）、リスク X 線 / エッジ密度 / オプションエンジンの数値ガード（[#909](https://github.com/HKUDS/Vibe-Trading/pull/909)/[#908](https://github.com/HKUDS/Vibe-Trading/pull/908)/[#907](https://github.com/HKUDS/Vibe-Trading/pull/907)）。
 - **2026-07-29** 🔧 **ギャップ安全なリターン + 強制清算リスクモデル + 全ランにリスクX線**：`bar_returns` はフォワードフィル窓を超える取引停止をまたぐ実際の値動きを消さなくなりました——再開バーの動きが無音で 0 と記録され、ボラティリティ過小評価と Sharpe 過大評価を招いていました。`inf` の直前価格がきれいな −100% に読める問題も修正（[#895](https://github.com/HKUDS/Vibe-Trading/pull/895)、thanks @darkknight4563）。年率換算は**全 24 データソース**の全インターバルをカバーし、エントリ欠落時に CI が失敗するカバレッジテストを追加（[#891](https://github.com/HKUDS/Vibe-Trading/pull/891)、closes [#884](https://github.com/HKUDS/Vibe-Trading/issues/884)、thanks @Robin1987China）。USD-M 永久先物リサーチに決定論的な**分離/クロスマージン清算**評価が追加され（[#889](https://github.com/HKUDS/Vibe-Trading/pull/889)、thanks @honginp）、ポートフォリオバックテストは毎回**リスクX線アーティファクト**（`risk_xray.json`/`.md`）を出力します（[#900](https://github.com/HKUDS/Vibe-Trading/pull/900)、thanks @he-yufeng）。`connector` CLI が `~/.vibe-trading/.env` を読み込むようになり、環境変数由来のブローカー資格情報が復活（[#902](https://github.com/HKUDS/Vibe-Trading/pull/902)、closes [#901](https://github.com/HKUDS/Vibe-Trading/issues/901)、thanks @MuggleJinx）。ほか、チャネルメッセージ分割のインデント保持とスキル frontmatter の EOF 解析を修正（[#867](https://github.com/HKUDS/Vibe-Trading/pull/867)/[#861](https://github.com/HKUDS/Vibe-Trading/pull/861)、thanks @santhreal）。
 - **2026-07-28** 🔧 **次世代 Claude モデルの解禁 + 符号安全なリターン計算**：`temperature` フィールドを廃止した Claude モデル（opus-4-7、opus-5、sonnet-5）が利用可能になりました。API が当該フィールドを拒否するとアダプタが自動的に除去して一度だけ再試行し、そのモデルを記憶するため、モデルのリリースごとにパッチを当てる必要がありません（[#890](https://github.com/HKUDS/Vibe-Trading/pull/890)、[#856](https://github.com/HKUDS/Vibe-Trading/issues/856) をクローズ、@yagnikpipaliya さんに感謝）。非対話モードの `vibe-trading run` がホストのセッション ID を注入するようになりました。従来はリサーチゴール系ツールが毎回失敗する一方で、実行自体は成功として報告されていました（[#885](https://github.com/HKUDS/Vibe-Trading/issues/885)）。バイ・アンド・ホールドのリターンが符号安全になり、直前終値がゼロに近い場合に複利ベンチマークが発散する問題と、終値がちょうどゼロの場合に `inf`/`nan` になる問題を解消しました（[#872](https://github.com/HKUDS/Vibe-Trading/issues/872)、@darkknight4563 さんに感謝）。フロントエンドを **Node 22 + React Router 8** に移行し、重大度「高」のセキュリティ勧告を解消しています。
-- **2026-07-27** 🔧 **相関行列の整合性修正 + vn.py 4.0 エクスポート修復 + エンコーディング修正バッチ**：ローリング相関行列が欠損終値を前方補完しなくなりました。従来は売買停止セッションが架空の 0% リターンとして扱われ、対象銘柄の実際の値動きと対比されて行列が歪んでいました（[#873](https://github.com/HKUDS/Vibe-Trading/pull/873)、@ddy4633 さんに感謝）。**vn.py エクスポート**スキルを vn.py 4.x のレイアウトに対応させました。上流で `vnpy.app.cta_strategy` が廃止されたため、テンプレートは `vnpy_ctastrategy` からインポートします（[#869](https://github.com/HKUDS/Vibe-Trading/pull/869)、@y85998607 さんに感謝）。さらに 6 件の修正：ドキュメントリーダーと取引履歴 CSV の UTF-16 BOM デコード、数値変換前の通貨記号除去、`BTCUSDT` 形式シンボルの暗号資産判定、小文字 `1h`/`1d` インターバルの年率換算、スキルディレクトリ名での CJK 文字保持（[#862](https://github.com/HKUDS/Vibe-Trading/pull/862)、[#863](https://github.com/HKUDS/Vibe-Trading/pull/863)、[#864](https://github.com/HKUDS/Vibe-Trading/pull/864)、[#865](https://github.com/HKUDS/Vibe-Trading/pull/865)、[#866](https://github.com/HKUDS/Vibe-Trading/pull/866)、[#868](https://github.com/HKUDS/Vibe-Trading/pull/868)、@santhreal さんに感謝）。
 
 <details>
 <summary>過去のニュース</summary>
 
+- **2026-07-27** 🔧 **相関行列の整合性修正 + vn.py 4.0 エクスポート修復 + エンコーディング修正バッチ**：ローリング相関行列が欠損終値を前方補完しなくなりました。従来は売買停止セッションが架空の 0% リターンとして扱われ、対象銘柄の実際の値動きと対比されて行列が歪んでいました（[#873](https://github.com/HKUDS/Vibe-Trading/pull/873)、@ddy4633 さんに感謝）。**vn.py エクスポート**スキルを vn.py 4.x のレイアウトに対応させました。上流で `vnpy.app.cta_strategy` が廃止されたため、テンプレートは `vnpy_ctastrategy` からインポートします（[#869](https://github.com/HKUDS/Vibe-Trading/pull/869)、@y85998607 さんに感謝）。さらに 6 件の修正：ドキュメントリーダーと取引履歴 CSV の UTF-16 BOM デコード、数値変換前の通貨記号除去、`BTCUSDT` 形式シンボルの暗号資産判定、小文字 `1h`/`1d` インターバルの年率換算、スキルディレクトリ名での CJK 文字保持（[#862](https://github.com/HKUDS/Vibe-Trading/pull/862)、[#863](https://github.com/HKUDS/Vibe-Trading/pull/863)、[#864](https://github.com/HKUDS/Vibe-Trading/pull/864)、[#865](https://github.com/HKUDS/Vibe-Trading/pull/865)、[#866](https://github.com/HKUDS/Vibe-Trading/pull/866)、[#868](https://github.com/HKUDS/Vibe-Trading/pull/868)、@santhreal さんに感謝）。
 - **2026-07-26** 🔒 **依存関係ロック修復 + ベンチマーク・ユニバースの透明性**：Docker のハッシュロック付きインストールが復旧し、CI にロック検証を追加しました（[#858](https://github.com/HKUDS/Vibe-Trading/pull/858)、[#847](https://github.com/HKUDS/Vibe-Trading/issues/847) をクローズ）。`alpha bench` は CSI300/SP500 の出典、銘柄数、縮退フォールバック、生存者バイアスを開示します（[#859](https://github.com/HKUDS/Vibe-Trading/pull/859)、[#845](https://github.com/HKUDS/Vibe-Trading/issues/845) をクローズ）。Actions とフロントエンド依存関係 5 件も更新しました（[#850](https://github.com/HKUDS/Vibe-Trading/pull/850)–[#852](https://github.com/HKUDS/Vibe-Trading/pull/852)）。
 - **2026-07-25** 🔧 **パーペチュアルのリアリティ向上 + MCP クラッシュ修正 + 正確性バッチ**: USD-M パーペチュアルが**証抠金ステートコントラクト**を獲得（[#798](https://github.com/HKUDS/Vibe-Trading/pull/798)、@honginp さんに感謝）。エンジンは取得して無視していた**過去の資金調達率**を実際に消費するようになりました（[#819](https://github.com/HKUDS/Vibe-Trading/pull/819)、@g0rdonL さんに感謝）。MCP の dataclass 結果が誤検出の `Circular reference detected` でクラッシュしなくなり（[#849](https://github.com/HKUDS/Vibe-Trading/pull/849)、@Echoandelementwebsites さんに感謝）、`alpha bench` の CLI/HTML が `_meta` の生存者バイアス開示を転送します（[#841](https://github.com/HKUDS/Vibe-Trading/pull/841)、[#797](https://github.com/HKUDS/Vibe-Trading/issues/797) をクローズ、@AmirF194 さんに感謝）。さらにジャーナル・コネクタ・チャネル横断の 12 件の正確性修正（[#799](https://github.com/HKUDS/Vibe-Trading/pull/799)–[#810](https://github.com/HKUDS/Vibe-Trading/pull/810)、@santhreal さんに感謝）、CLI 残高ビューに実際のアカウントラベルを表示（[#843](https://github.com/HKUDS/Vibe-Trading/pull/843)、[#846](https://github.com/HKUDS/Vibe-Trading/issues/846) をクローズ、@Robin1987China さんに感謝）。
 - **2026-07-24** 🔀 **メモリ Tier 2、合成可能なオプティマイザ制約 + インターバル処理の総点検**：永続メモリが **Tier 2 の構造的な整理**を獲得しました（[#815](https://github.com/HKUDS/Vibe-Trading/pull/815)、@shadowinlife さんに感謝）。バックテストのオプティマイザが**合成可能な重み制約**を受け付けるようになりました（[#818](https://github.com/HKUDS/Vibe-Trading/pull/818)、@he-yufeng さんに感謝）。正確性：日次バーのバリデーターが**非正の価格**をオプトインできるようになり、負の価格バーでは始値を取りつつ、ゼロは引き続き拒否します（[#816](https://github.com/HKUDS/Vibe-Trading/pull/816)、[#571](https://github.com/HKUDS/Vibe-Trading/issues/571) をクローズ、@darkknight4563 さんに感謝）。さらに 19 件の PR によるローダーの**インターバル正規化の総点検**：小文字の `1h/4h/1d/1w` エイリアスを全域で受け付け、未対応のインターバルは日足を黙って返す代わりに fail fast し、Yahoo の `4H` は `1h` にマップ、MT5 は `1W/1M` を受け付けます（[#812](https://github.com/HKUDS/Vibe-Trading/pull/812)–[#838](https://github.com/HKUDS/Vibe-Trading/pull/838)、@santhreal さんに感謝）。加えて、トレードジャーナルの Eastmoney Excel シリアル日付の修正（[#811](https://github.com/HKUDS/Vibe-Trading/pull/811)、@santhreal さんに感謝）と README ナビゲーションアンカーの修正（[#840](https://github.com/HKUDS/Vibe-Trading/pull/840)、@dvirarad さんに感謝）。
@@ -227,7 +228,7 @@
       <img src="assets/feature-cross-market-data-backtesting.png" height="130" alt="Cross-market data and backtesting"/><br>
       <h3>📊 クロスマーケットデータ & バックテスト</h3>
       <div align="left">
-        • A/HK/US 株式、暗号資産、先物、FX<br>
+        • A/HK/US/インド/韓国株式、暗号資産、先物、FX<br>
         • データフォールバックと複合バックテスト<br>
         • PIT データ、検証、run cards
       </div>
@@ -326,7 +327,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 
 ## 📡 データソースとスマートフォールバック
 
-1 回の `get_market_data` 呼び出しで **22 の無料マーケットデータソース**（およびオプションの有料マーケットプレイス **QVeris**）にアクセスできます。`source: "auto"` を指定すれば、loader が銘柄に応じてソースを選び、**IP 規制リスク**の順に並んだ市場別チェーンをたどります。規制を受けない公開ソースを先に、スロットリングや key を要するソースを最後に試します。設定不要、単一障害点なし。
+1 回の `get_market_data` 呼び出しで **23 の無料マーケットデータソース**（およびオプションの有料マーケットプレイス **QVeris**）にアクセスできます。`source: "auto"` を指定すれば、loader が銘柄に応じてソースを選び、**IP 規制リスク**の順に並んだ市場別チェーンをたどります。規制を受けない公開ソースを先に、スロットリングや key を要するソースを最後に試します。設定不要、単一障害点なし。
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
@@ -342,6 +343,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 | `okx` · `ccxt` · `binance` | crypto | none | OKX + 100+ exchanges + Binance historical / USD-M perps |
 | `futu` | HK / A | OpenD | optional local FutuOpenD |
 | `mt5` | forex / metals | MT5 terminal | MetaTrader 5 (Exness-style) forex / metal bars, 1m–1D |
+| `pykrx` | 韓国（KRX：KOSPI/KOSDAQ） | 不要 | `.KS` / `.KQ` の KOSPI / KOSDAQ 日足（任意の `krx` extra） |
 | `india_broker` | インド（NSE/BSE） | ブローカーログイン | `.NS` / `.BO` 向けの読み取り専用 Shoonya / Dhan bars（フォールバックチェーン末尾） |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
@@ -351,6 +353,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 - **米国株** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **香港株** → `eastmoney` · `yahoo` · `futu` · `yfinance` · `akshare` · `longbridge` · `local`
 - **インド株（NSE/BSE）** → `yahoo` · `yfinance` · `india_broker` · `local`
+- **韓国（KOSPI/KOSDAQ）** → `pykrx` · `yahoo` · `yfinance` · `local`
 - **暗号資産** → `okx` · `ccxt` · `binance` · `yfinance` · `local`
 - **為替/貴金属** → `mt5` · `yfinance` · `akshare` · `local` &nbsp;·&nbsp; *(先物 / ファンド / マクロ → `tushare`/`akshare` → `local`)*
 
@@ -361,7 +364,7 @@ OHLCV にとどまらず、**18 の読み取り専用データツール**がフ�
 
 <img src="https://www.qveris.com/logo-color.png" alt="QVeris" height="36">
 
-**データは無料ルーティングが標準、必要なときだけプレミアム。** 既定では 22 の内蔵ソースが自動フォールバックし、key も費用も不要です。QVeris を使うと、63+ providers と 10,000+ capabilities（per QVeris）で、オプション Greeks、高度なファンダメンタルズ、中国・香港・グローバルデータ、マクロ、暗号資産、ニュース、filings を補えます。失敗した call は課金されません。Settings → QVeris または `vibe-trading data mode paid` で有効化できます。
+**データは無料ルーティングが標準、必要なときだけプレミアム。** 既定では 23 の内蔵ソースが自動フォールバックし、key も費用も不要です。QVeris を使うと、63+ providers と 10,000+ capabilities（per QVeris）で、オプション Greeks、高度なファンダメンタルズ、中国・香港・グローバルデータ、マクロ、暗号資産、ニュース、filings を補えます。失敗した call は課金されません。Settings → QVeris または `vibe-trading data mode paid` で有効化できます。
 
 *QVeris disclosure: [Vibe-Trading の紹介リンク](https://qveris.ai/?ref=Vyjjo5G_1cAHJA) から登録すると **+1,000 クレジット** が追加付与され、プロジェクトの支援にもなります。*
 <!-- QVERIS-END -->
@@ -505,13 +508,14 @@ Paper-vs-live is a **structural per-broker runtime guard** (account-id format, h
 </details>
 
 <details>
-<summary><b>Backtest Engines</b> <sub>8 engines + options portfolio, cross-market composite</sub></summary>
+<summary><b>Backtest Engines</b> <sub>9 engines + options portfolio, cross-market composite</sub></summary>
 
 | Engine | Market | Notes |
 |--------|--------|-------|
 | **ChinaA** | A-share | T+1, price limits, pre-ST filter |
 | **GlobalEquity** | US / HK | T+0 |
 | **IndiaEquity** | India (NSE/BSE) | T+1, circuit bands, config-driven STT / stamp / SEBI / GST cost stack |
+| **KoreaEquity** | 韓国（KRX：KOSPI/KOSDAQ） | ロングオンリー、統一呼値グリッド上で ±30% 制限値幅を約定時点に判定、2026 年 0.20% の証券取引税 |
 | **Crypto** | crypto spot / USD-M perps | funding settlements, execution/mark split |
 | **ChinaFutures** · **GlobalFutures** | futures | margin, contract multipliers |
 | **Forex** | FX / metals | via the `mt5` loader |
@@ -687,6 +691,8 @@ skill + MCP config が agent の skills directory にダウンロードされま
 | `VIBE_TRADING_ENABLE_SHELL_TOOLS` | No | remote API/MCP-SSE style deployments で shell-capable tools を明示 opt-in |
 | `VIBE_TRADING_ALLOWED_FILE_ROOTS` | No | document と broker-journal imports 用の追加 comma-separated roots |
 | `VIBE_TRADING_ALLOWED_RUN_ROOTS` | No | generated-code run directories 用の追加 comma-separated roots |
+| `VIBE_TW_STOCK_DB` | No | 台湾市場の SQLite スナップショットのパス。読み取り専用 `taiwan_stock_data` ツールはスキーマ妥当な場合のみ登録されます |
+| `VIBE_TRADING_EXTRA_CORS_ORIGINS` | No | ループバックの CORS 既定値に**追加**するオリジン（カンマ区切り。`CORS_ORIGINS` は置き換え） |
 
 <sub>* Ollama は API key 不要です。OpenAI Codex は ChatGPT OAuth を使い、tokens は `agent/.env` ではなく `oauth-cli-kit` 経由で保存します。</sub>
 
@@ -923,6 +929,10 @@ vibe-trading serve --port 8899
 | `POST` | `/scheduled-runs` | 定期リサーチジョブを作成（interval-ms または cron） |
 | `GET` | `/scheduled-runs` | スケジュール済みジョブを一覧 |
 | `DELETE` | `/scheduled-runs/{job_id}` | スケジュール済みジョブをキャンセル |
+| `POST` | `/sessions/{id}/cancel` | 進行中の実行を停止（失敗ではなくキャンセルとして記録） |
+| `POST` | `/sessions/{id}/title/auto` | 最初のやり取りからセッション名を生成（手動リネームは上書きしない） |
+| `GET` | `/correlation/regime` | 相関エッジ密度のレジームタイムライン |
+| `GET` | `/agents.json` · `POST` `/v1/query` | OpenBB Workspace ブリッジ — 任意の `openbb` extra 導入時のみ登録、`/v1/query` は認証必須 |
 
 Interactive docs: `http://localhost:8899/docs`
 
@@ -1150,8 +1160,8 @@ Vibe-Trading/
 │   │   └── providers/              # LLM プロバイダー抽象化
 │   │
 │   └── backtest/                   # バックテストエンジン
-│       ├── engines/                #   7 エンジン + クロスマーケット composite engine + options_portfolio
-│       ├── loaders/                #   23 ソース: tushare、okx、binance、yfinance、akshare、baostock、tencent、mootdx、ccxt、futu、local、eastmoney、sina、stooq、yahoo、finnhub、alphavantage、tiingo、fmp、longbridge、mt5、qveris、india_broker
+│       ├── engines/                #   8 エンジン + クロスマーケット composite engine + options_portfolio
+│       ├── loaders/                #   24 ソース: tushare、okx、binance、yfinance、akshare、baostock、tencent、mootdx、ccxt、futu、pykrx、local、eastmoney、sina、stooq、yahoo、finnhub、alphavantage、tiingo、fmp、longbridge、mt5、qveris、india_broker
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + 自動フォールバックチェーン
 │       └── optimizers/             #   MVO、equal vol、max div、risk parity

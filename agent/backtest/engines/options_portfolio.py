@@ -732,11 +732,29 @@ def _calc_options_metrics(
         warnings.append("Sortino ratio requires finite returns.")
 
     # Trade statistics
-    closed_pnl = [
-        float(t["pnl"])
-        for t in trades
-        if t.get("pnl", 0) != 0 and np.isfinite(float(t["pnl"]))
-    ]
+    closed_pnl: List[float] = []
+    ignored_pnl_records = 0
+    for t in trades:
+        raw_pnl = t.get("pnl")
+        if raw_pnl is None:
+            ignored_pnl_records += 1
+            continue
+        try:
+            val = float(raw_pnl)
+        except (TypeError, ValueError):
+            ignored_pnl_records += 1
+            continue
+        if not np.isfinite(val):
+            ignored_pnl_records += 1
+            continue
+        if val != 0:
+            closed_pnl.append(val)
+    if ignored_pnl_records:
+        warnings.append(
+            f"Ignored PnL for {ignored_pnl_records} trade records "
+            "(missing or non-numeric pnl); win rate and profit/loss ratio "
+            "are computed from the remaining trades only."
+        )
     wins = [p for p in closed_pnl if p > 0]
     losses = [p for p in closed_pnl if p < 0]
     win_rate = len(wins) / len(closed_pnl) if closed_pnl else 0.0

@@ -16,6 +16,7 @@ import re
 
 import pandas as pd
 
+from backtest.engines.china_a import _blocked_by_limit
 from backtest.engines.futures_base import FuturesBaseEngine
 
 
@@ -141,6 +142,8 @@ class GlobalFuturesEngine(FuturesBaseEngine):
         leverage = config.get("leverage", 10.0)
         config = {**config, "leverage": leverage}
         super().__init__(config)
+        # Futures bands come off the previous settlement, not the previous close.
+        self.base_price_fields = ("pre_settle", "pre_close")
         self.slippage_rate: float = config.get("slippage", 0.0003)
         self._comm_override = config.get("commission_per_contract")
 
@@ -160,20 +163,18 @@ class GlobalFuturesEngine(FuturesBaseEngine):
         if limit is None:
             return True  # no price limit for most commodities
 
-        pct_chg = _calc_pct_change(bar)
-        if pct_chg is not None:
-            if direction == 1 and pct_chg >= limit - 0.001:
-                return False  # limit-up
-            if direction == -1 and pct_chg <= -limit + 0.001:
-                return False  # limit-down
-            if direction == 0:
-                pos = self.positions.get(symbol)
-                if pos is not None:
-                    if pos.direction == 1 and pct_chg <= -limit + 0.001:
-                        return False
-                    if pos.direction == -1 and pct_chg >= limit - 0.001:
-                        return False
-        return True
+        # Tested at execution time (see _blocked_by_limit).
+        pos = self.positions.get(symbol) if direction == 0 else None
+        if pos is None and direction == 0:
+            return True
+        return not _blocked_by_limit(
+            self,
+            symbol,
+            direction,
+            bar,
+            limit,
+            position_direction=pos.direction if pos is not None else None,
+        )
 
     def round_size(self, raw_size: float, price: float) -> float:
         """Integer contracts, minimum 1."""
@@ -219,33 +220,3 @@ class GlobalFuturesEngine(FuturesBaseEngine):
 
 # ── Helpers ──
 
-
-# Note: china_a uses close/pre_close-only; china_futures prioritises
-# settle/pre_settle. This global-futures variant prefers close/pre_close
-# because CME data feeds (yfinance/IB) expose continuous close more
-# reliably than settlement. See those modules for the equity /
-# China-futures equivalents.
-def _calc_pct_change(bar: pd.Series):
-    """Calculate bar price change percentage.
-
-    Priority: close/pre_close > settle/pre_settle > pct_chg.
-    Falls back to pct_chg only when price fields are absent.
-    """
-    close = bar.get("close")
-    pre_close = bar.get("pre_close")
-    if close is not None and pre_close is not None and pre_close > 0:
-        return (float(close) - float(pre_close)) / float(pre_close)
-
-    settle = bar.get("settle")
-    pre_settle = bar.get("pre_settle")
-    if settle is not None and pre_settle is not None and pre_settle > 0:
-        return (float(settle) - float(pre_settle)) / float(pre_settle)
-
-    if "pct_chg" in bar.index:
-        val = bar["pct_chg"]
-        if pd.notna(val):
-            raw = float(val)
-            # Heuristic: values > 1 are likely percentage points
-            return raw / 100.0 if abs(raw) > 1.0 else raw
-
-    return None

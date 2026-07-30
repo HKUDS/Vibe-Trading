@@ -41,13 +41,24 @@ class SessionSearchTool(BaseTool):
             **kwargs: Must include query; optionally max_results.
 
         Returns:
-            JSON with search results or error.
+            JSON with search results or error. An absent ``max_results`` falls
+            back to 3; an explicitly malformed one is an error, not a default.
         """
         query = kwargs.get("query", "")
         if not query:
             return json.dumps({"status": "error", "error": "query required"})
 
-        max_results = min(int(kwargs.get("max_results", 3)), 10)
+        raw_max = kwargs.get("max_results")
+        if raw_max is None or raw_max == "":
+            max_results = 3
+        else:
+            try:
+                max_results = min(max(1, int(raw_max)), 10)
+            except (TypeError, ValueError, OverflowError):
+                return json.dumps(
+                    {"status": "error", "error": f"max_results must be an integer, got {raw_max!r}"},
+                    ensure_ascii=False,
+                )
 
         try:
             from src.session.search import get_shared_index

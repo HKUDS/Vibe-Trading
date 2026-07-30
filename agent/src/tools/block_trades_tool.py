@@ -79,7 +79,7 @@ def _clamp_days(days: Any) -> int:
     """
     try:
         value = int(days)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return _DEFAULT_DAYS
     if value < 1:
         return 1
