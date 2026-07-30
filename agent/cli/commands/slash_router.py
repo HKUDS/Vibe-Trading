@@ -71,6 +71,8 @@ def _parse_token(input_text: str) -> str:
     >>> _parse_token("not a slash")
     ''
     """
+    if not isinstance(input_text, str):
+        return ""
     text = input_text.lstrip()
     if not text.startswith("/"):
         return ""
@@ -123,9 +125,9 @@ def match_commands(input_text: str) -> list[Command]:
     Returns:
         A new list — callers may freely mutate without side effects.
     """
-    token = _parse_token(input_text)
-    if not input_text.lstrip().startswith("/"):
+    if not isinstance(input_text, str) or not input_text.lstrip().startswith("/"):
         return []
+    token = _parse_token(input_text)
 
     # Resolve aliases up front so ``/q`` shows the ``quit`` row.
     if token in _ALIASES:
@@ -148,6 +150,8 @@ def find_exact(name: str) -> Command | None:
     Returns ``None`` if no match — callers handle the "unknown command"
     response themselves so error UX stays consistent.
     """
+    if not isinstance(name, str):
+        return None
     key = name.lstrip("/").strip()
     key = _ALIASES.get(key, key)
     for cmd in SLASH_COMMANDS:

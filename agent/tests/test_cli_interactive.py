@@ -62,6 +62,15 @@ class TestSlashRouter:
         from cli.commands.slash_router import match_commands
 
         assert match_commands("plain text") == []
+    def test_match_commands_handles_none_input(self) -> None:
+        from cli.commands.slash_router import match_commands
+
+        assert match_commands(None) == []
+
+    def test_find_exact_handles_none_input(self) -> None:
+        from cli.commands.slash_router import find_exact
+
+        assert find_exact(None) is None
 
     def test_handler_module_uses_cli_package(self) -> None:
         from cli.commands.slash_router import SLASH_COMMANDS
