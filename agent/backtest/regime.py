@@ -41,6 +41,9 @@ def compute_edge_density(
         Edge-density series aligned to ``returns.index`` (NaN during warmup)
     """
     n_assets = returns.shape[1]
+    if n_assets < 2:
+        return pd.Series(np.nan, index=returns.index)
+
     n_pairs = n_assets * (n_assets - 1) // 2
     upper_mask = np.triu(np.ones((n_assets, n_assets), dtype=bool), k=1)
 

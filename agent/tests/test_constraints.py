@@ -208,3 +208,10 @@ class TestEngineWiring:
         config = {"constraints": [{"type": "max_weight", "cap": 0.4}]}
         assert _load_optimizer(config) is None
         assert "constraints" in capsys.readouterr().out
+
+def test_group_exposure_zero_total_weight() -> None:
+    group_cap = GroupExposure({"AAPL": "tech"}, {"tech": -0.1})
+    weights = np.array([0.0, 0.0])
+    codes = ["AAPL", "GOOG"]
+    adjusted = group_cap.apply(weights, codes)
+    assert np.array_equal(adjusted, np.array([0.0, 0.0]))

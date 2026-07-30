@@ -145,6 +145,15 @@ class TestAlignedReturns:
         assert not (aligned["GAP"] == 0.0).any()
 
 
+def test_compute_edge_density_fewer_than_two_assets() -> None:
+    df_single = pd.DataFrame(
+        {"AAPL": [0.01, -0.02, 0.015, -0.01, 0.005]},
+        index=pd.date_range("2024-01-01", periods=5),
+    )
+    density = compute_edge_density(df_single, corr_window=3)
+    assert len(density) == 5
+    assert density.isna().all()
+
 class _ServesPanelLoader:
     """Fake loader serving a prebuilt panel, keyed by normalized symbol."""
 
