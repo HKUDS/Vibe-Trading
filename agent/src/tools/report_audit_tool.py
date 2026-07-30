@@ -271,7 +271,8 @@ def render_verdict(results: list[dict[str, Any]], report_name: str = "") -> dict
         if fetched is None:
             continue  # not verified — skip, do not count
         total += 1
-        reported = float(item.get("reported_value", 0))
+        raw_rep = item.get("reported_value")
+        reported = 0.0 if raw_rep is None else float(raw_rep)
         label = item.get("label", "?")
         unit = item.get("unit", "")
         source = item.get("fetched_source", "?")

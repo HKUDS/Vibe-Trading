@@ -32,6 +32,10 @@ def test_clean_num_handles_wide_comma() -> None:
     assert _clean_num("1,234") == 1234.0
     assert _clean_num("1，234") == 1234.0  # wide (full-width) comma
     assert _clean_num("abc") is None
+def test_render_verdict_handles_none_reported_value() -> None:
+    res = render_verdict([{"reported_value": None, "fetched_value": 100.0, "symbol": "AAPL"}])
+    assert res["verdict"] == "FAIL"
+    assert res["fail_count"] == 1
 
 
 def test_is_valid_label_filters_noise() -> None:
