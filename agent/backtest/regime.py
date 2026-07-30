@@ -42,6 +42,8 @@ def compute_edge_density(
     """
     n_assets = returns.shape[1]
     n_pairs = n_assets * (n_assets - 1) // 2
+    if n_pairs == 0:
+        return pd.Series(np.nan, index=returns.index)
     upper_mask = np.triu(np.ones((n_assets, n_assets), dtype=bool), k=1)
 
     density = pd.Series(np.nan, index=returns.index)
