@@ -196,3 +196,21 @@ def test_max_results_capped_at_10(monkeypatch):
         WebSearchTool().execute(query="q", max_results=50)
 
     assert seen["max_results"] == 10
+def test_web_search_null_query_returns_error_envelope():
+    out = json.loads(WebSearchTool().execute(query=None))
+    assert out["status"] == "error"
+    assert "query is mandatory" in out["error"]
+
+
+def test_web_search_none_max_results_uses_default(monkeypatch):
+    seen = {}
+
+    def text_impl(query, max_results, **kwargs):
+        seen["max_results"] = max_results
+        return []
+
+    with _patch_ddgs(monkeypatch, text_impl):
+        out = json.loads(WebSearchTool().execute(query="q", max_results=None))
+
+    assert out["status"] == "ok"
+    assert seen["max_results"] == 5
