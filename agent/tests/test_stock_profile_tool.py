@@ -168,6 +168,12 @@ class TestStockProfileErrors:
         assert payload["ok"] is False
         assert "unknown section" in payload["error"]
 
+    def test_noniterable_sections_returns_error_envelope(self):
+        out = sp.StockProfileTool().execute(ticker="AAPL.US", sections=123)
+        payload = json.loads(out)
+        assert payload["ok"] is False
+        assert "sections must be a list" in payload["error"]
+
     def test_upstream_failure_becomes_error_envelope(self):
         with patch.object(
             sp, "get_quote_summary", side_effect=RuntimeError("HTTP 429 banned")

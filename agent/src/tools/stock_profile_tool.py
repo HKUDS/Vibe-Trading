@@ -196,6 +196,10 @@ def _resolve_sections(sections: Optional[List[str]]) -> List[str]:
     Raises:
         ValueError: If any requested name is not a supported section.
     """
+    if sections is None:
+        return list(_ALL_SECTIONS)
+    if not isinstance(sections, (list, tuple, set)):
+        raise ValueError(f"sections must be a list of strings, got {type(sections).__name__}")
     if not sections:
         return list(_ALL_SECTIONS)
     resolved: List[str] = []
