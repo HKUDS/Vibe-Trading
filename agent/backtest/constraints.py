@@ -125,7 +125,7 @@ class GroupExposure:
                 continue
             total = float(w[idx].sum())
             if total > cap + _TOL:
-                w[idx] *= cap / total
+                w[idx] = w[idx] * cap / total if total != 0 else np.zeros_like(w[idx])
         return w
 
 
