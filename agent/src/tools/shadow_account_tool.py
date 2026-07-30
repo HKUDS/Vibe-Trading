@@ -93,11 +93,18 @@ class ExtractShadowStrategyTool(BaseTool):
             journal_path = str(safe_user_path(journal_path))
         except ValueError as exc:
             return _err(str(exc))
+        raw_supp = kwargs.get("min_support", 3)
+        raw_rules = kwargs.get("max_rules", 5)
+        try:
+            min_support = int(raw_supp if raw_supp is not None and raw_supp != "" else 3)
+            max_rules = int(raw_rules if raw_rules is not None and raw_rules != "" else 5)
+        except (TypeError, ValueError, OverflowError):
+            return _err("min_support and max_rules must be integers")
         try:
             profile = extract_shadow_profile(
                 journal_path,
-                min_support=int(kwargs.get("min_support", 3)),
-                max_rules=int(kwargs.get("max_rules", 5)),
+                min_support=min_support,
+                max_rules=max_rules,
             )
         except (FileNotFoundError, ValueError) as exc:
             return _err(str(exc))
@@ -324,7 +331,11 @@ class ScanShadowSignalsTool(BaseTool):
             return _err(str(exc))
 
         target = kwargs.get("date") or None
-        per_market = int(kwargs.get("per_market", 3))
+        raw_pm = kwargs.get("per_market", 3)
+        try:
+            per_market = int(raw_pm if raw_pm is not None and raw_pm != "" else 3)
+        except (TypeError, ValueError, OverflowError):
+            per_market = 3
         signals = scan_today_signals(profile, target_date=target, per_market=per_market)
         return _ok(
             shadow_id=profile.shadow_id,

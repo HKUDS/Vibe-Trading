@@ -42,13 +42,19 @@ def _connection(value: Any) -> str | None:
 def _int_or_none(value: Any) -> int | None:
     if value in (None, ""):
         return None
-    return int(value)
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def _num_or_none(value: Any) -> float | None:
     if value in (None, ""):
         return None
-    return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 TRADING_COMMON_PARAMETERS = {

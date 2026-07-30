@@ -62,7 +62,7 @@ def _coerce_limit(value: Any) -> int:
     """
     try:
         limit = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return _DEFAULT_LIMIT
     if limit < 1:
         return _DEFAULT_LIMIT

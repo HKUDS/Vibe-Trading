@@ -365,9 +365,14 @@ class QVerisSearchTool(_QVerisBaseTool):
     def execute(self, **kwargs: Any) -> str:
         if not is_qveris_configured():
             return _json_response({"ok": False, "error": "QVeris is not configured"})
+        raw_limit = kwargs.get("limit", 20)
+        try:
+            limit = int(raw_limit if raw_limit is not None and raw_limit != "" else 20)
+        except (TypeError, ValueError, OverflowError):
+            limit = 20
         payload = self._client().search(
-            str(kwargs["query"]),
-            limit=int(kwargs.get("limit", 20)),
+            str(kwargs.get("query", "")),
+            limit=limit,
             session_id=kwargs.get("session_id"),
         )
         return _json_response({"ok": True, **payload})
@@ -481,13 +486,18 @@ class QVerisExecuteTool(_QVerisBaseTool):
             _SESSION_RESERVED[session_id] = reserved + expected
 
         try:
+            raw_size = kwargs.get("max_response_size", 20480)
+            try:
+                max_response_size = int(raw_size if raw_size is not None and raw_size != "" else 20480)
+            except (TypeError, ValueError, OverflowError):
+                max_response_size = 20480
             payload = client.execute(
                 tool_id,
-                parameters=dict(kwargs["parameters"]),
+                parameters=dict(kwargs.get("parameters") or {}),
                 search_id=kwargs.get("search_id"),
                 session_id=kwargs.get("session_id"),
                 model=kwargs.get("model"),
-                max_response_size=int(kwargs.get("max_response_size", 20480)),
+                max_response_size=max_response_size,
             )
         except Exception:
             with _SESSION_BUDGET_LOCK:

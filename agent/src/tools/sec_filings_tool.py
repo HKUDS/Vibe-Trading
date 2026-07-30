@@ -152,7 +152,7 @@ def _clamp_limit(value: Any) -> int:
     """Coerce a requested count into the supported ``1.._MAX_LIMIT`` range."""
     try:
         n = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return _DEFAULT_LIMIT
     return max(1, min(n, _MAX_LIMIT))
 

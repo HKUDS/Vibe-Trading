@@ -404,9 +404,16 @@ class ReportAuditTool(BaseTool):
                 report_text = kwargs.get("report_text")
                 if not isinstance(report_text, str) or not report_text.strip():
                     return _err("report_text (non-empty markdown) is required for extract")
-                ratio = float(kwargs.get("ratio") or 0.15)
-                seed = kwargs.get("seed")
-                seed = int(seed) if seed is not None else None
+                raw_ratio = kwargs.get("ratio")
+                try:
+                    ratio = float(raw_ratio) if raw_ratio is not None and raw_ratio != "" else 0.15
+                except (TypeError, ValueError):
+                    return _err(f"invalid ratio: {raw_ratio!r}")
+                raw_seed = kwargs.get("seed")
+                try:
+                    seed = int(raw_seed) if raw_seed is not None and raw_seed != "" else None
+                except (TypeError, ValueError, OverflowError):
+                    return _err(f"invalid seed: {raw_seed!r}")
                 points = extract_data_points(report_text)
                 sampled = sample_points(points, ratio=ratio, seed=seed)
                 result: dict[str, Any] = {

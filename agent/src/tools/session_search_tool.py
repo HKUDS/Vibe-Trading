@@ -47,7 +47,11 @@ class SessionSearchTool(BaseTool):
         if not query:
             return json.dumps({"status": "error", "error": "query required"})
 
-        max_results = min(int(kwargs.get("max_results", 3)), 10)
+        raw_max = kwargs.get("max_results", 3)
+        try:
+            max_results = min(max(1, int(raw_max if raw_max is not None and raw_max != "" else 3)), 10)
+        except (TypeError, ValueError, OverflowError):
+            max_results = 3
 
         try:
             from src.session.search import get_shared_index

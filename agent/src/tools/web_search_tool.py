@@ -180,8 +180,18 @@ class WebSearchTool(BaseTool):
             JSON envelope with status, query, the backend list used, and results
             (or an actionable error message on persistent failure).
         """
-        query = kwargs["query"]
-        max_results = min(int(kwargs.get("max_results", 5)), 10)
+        raw_query = kwargs.get("query")
+        if not isinstance(raw_query, str) or not raw_query.strip():
+            return json.dumps(
+                {"status": "error", "tool": "web_search", "error": "query is mandatory (non-empty string)"},
+                ensure_ascii=False,
+            )
+        query = raw_query.strip()
+        raw_max = kwargs.get("max_results", 5)
+        try:
+            max_results = min(max(1, int(raw_max if raw_max is not None and raw_max != "" else 5)), 10)
+        except (TypeError, ValueError, OverflowError):
+            max_results = 5
         backends = (get_env_config().agent_tuning.vibe_trading_search_backends or _DEFAULT_BACKENDS).strip() or "auto"
 
         # Fast path: Alibaba Cloud IQS if configured (official API, CN-direct,

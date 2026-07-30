@@ -134,7 +134,7 @@ def _clamp_periods(value: Any) -> int:
     """Coerce a requested period count into the supported ``1.._MAX_PERIODS`` range."""
     try:
         n = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return _MAX_PERIODS
     return max(1, min(n, _MAX_PERIODS))
 
