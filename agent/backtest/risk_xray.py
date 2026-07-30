@@ -136,6 +136,8 @@ def compute_risk_xray(
         # fully invested basket, and say so.
         kept_weights = {sym: weights[sym] for sym in kept}
         total = sum(kept_weights.values())
+        if total <= 0:
+            raise ValueError("surviving symbols have zero total weight")
         weights = {sym: value / total for sym, value in kept_weights.items()}
         warnings.append("weights renormalized over symbols that survived the history filter")
 
