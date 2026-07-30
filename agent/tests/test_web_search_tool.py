@@ -196,13 +196,17 @@ def test_max_results_capped_at_10(monkeypatch):
         WebSearchTool().execute(query="q", max_results=50)
 
     assert seen["max_results"] == 10
+
+
 def test_web_search_null_query_returns_error_envelope():
+    """A null query returns an error envelope instead of raising TypeError."""
     out = json.loads(WebSearchTool().execute(query=None))
     assert out["status"] == "error"
     assert "query is mandatory" in out["error"]
 
 
 def test_web_search_none_max_results_uses_default(monkeypatch):
+    """A null max_results value uses the documented default of five."""
     seen = {}
 
     def text_impl(query, max_results, **kwargs):
