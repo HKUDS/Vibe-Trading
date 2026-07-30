@@ -96,3 +96,7 @@ def test_output_is_strict_json_no_nan():
         raw = OptionsPricingTool().execute(risk_free_rate=0.03, **kw)
         assert "NaN" not in raw and "Infinity" not in raw
         json.loads(raw)  # must not raise
+def test_risk_free_rate_none_uses_default():
+    out = _run(spot=100, strike=100, expiry_days=30, volatility=0.25, option_type="call", risk_free_rate=None)
+    assert out["status"] == "ok"
+    assert out["inputs"]["risk_free_rate"] == 0.05

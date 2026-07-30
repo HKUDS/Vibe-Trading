@@ -135,7 +135,8 @@ class OptionsPricingTool(BaseTool):
         spot = float(kwargs["spot"])
         strike = float(kwargs["strike"])
         expiry_days = float(kwargs["expiry_days"])
-        r = float(kwargs.get("risk_free_rate", 0.05))
+        raw_r = kwargs.get("risk_free_rate")
+        r = float(0.05 if raw_r is None else raw_r)
         sigma = float(kwargs["volatility"])
         option_type = kwargs["option_type"]
 
