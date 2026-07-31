@@ -10,12 +10,20 @@ Market rules:
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
 import pandas as pd
 
 from backtest.engines.base import BaseEngine
 from backtest.engines._market_hooks import (
     calc_crypto_funding_fee,
     check_crypto_liquidation,
+)
+from backtest.perpetual_evidence import (
+    SCHEMA_VERSION,
+    build_perpetual_summary,
+    write_perpetual_evidence,
 )
 from backtest.perpetual_risk import (
     AccountState,
@@ -24,6 +32,7 @@ from backtest.perpetual_risk import (
     MaintenanceSchedule,
     MarketRiskFrame,
     PositionState,
+    RiskSnapshot,
     evaluate_isolated,
 )
 
@@ -56,7 +65,13 @@ class CryptoEngine(BaseEngine):
             raise ValueError("margin_mode must be 'isolated' or 'cross'")
         if self.perpetual_strict and not 0 <= self.liquidation_fee_rate < 1:
             raise ValueError("liquidation_fee_rate must be between zero and one")
+        self._validate_strict_resolution(config)
         self.terminal_status = "active"
+        self._perpetual_events: list[dict[str, Any]] = []
+        self._run_interval = str(config.get("interval", "1D"))
+        self._maintenance_bracket_versions: dict[str, str] = {}
+        self._market_risk_sources: set[str] = set()
+        self._liquidation_price_source: str | None = None
         self._strict_funding_applied: set[tuple[str, pd.Timestamp]] = set()
         self._isolated_margins: dict[str, float] = {}
         self._schedule_cache: dict[tuple[str, str], MaintenanceSchedule] = {}
@@ -64,6 +79,29 @@ class CryptoEngine(BaseEngine):
         self._blocked_symbols: set[str] = set()
         self._funding_applied: set = set()   # (symbol, date, hour) — per-slot dedup
         self._funding_daily_done: set = set()  # (symbol, date) — daily fallback dedup
+
+    def _validate_strict_resolution(self, config: dict[str, Any]) -> None:
+        if not self.perpetual_strict or self.default_leverage < 100:
+            return
+        interval = str(config.get("interval", "1D")).strip().lower()
+        if interval not in {"1m", "5m", "15m", "30m", "1h"}:
+            raise ValueError(
+                "strict 100x requires a supported interval <= 1H "
+                "(1m/5m/15m/30m/1H); 1H is only a resolution boundary, "
+                "not a liquidation-sequence guarantee"
+            )
+
+    def run_backtest(
+        self,
+        config: dict[str, Any],
+        loader: Any,
+        signal_engine: Any,
+        run_dir: Path,
+        bars_per_year: int = 252,
+    ) -> dict[str, Any]:
+        self._validate_strict_resolution(config)
+        self._run_interval = str(config.get("interval", "1D"))
+        return super().run_backtest(config, loader, signal_engine, run_dir, bars_per_year)
 
     def can_execute(self, symbol: str, direction: int, bar: pd.Series) -> bool:
         """Crypto: 24/7, long/short/close all allowed."""
@@ -101,6 +139,9 @@ class CryptoEngine(BaseEngine):
         if pd.isna(version):
             raise ValueError(f"missing maintenance bracket version for {symbol}")
         version = str(version)
+        previous = self._maintenance_bracket_versions.setdefault(symbol, version)
+        if previous != version:
+            raise ValueError(f"maintenance bracket version changed for {symbol}")
         key = (symbol, version)
         if key not in self._schedule_cache:
             self._schedule_cache[key] = MaintenanceSchedule.from_loader_columns(
@@ -147,7 +188,53 @@ class CryptoEngine(BaseEngine):
                 schedule=self._schedule(symbol, bar),
                 source=str(self.config.get("market_risk_source", "ccxt:binanceusdm")),
             )
+            self._market_risk_sources.add(risks[symbol].source)
         self._risk_frames = risks
+
+    def _record_event(self, timestamp: pd.Timestamp, event_type: str, **details: Any) -> None:
+        if not self.perpetual_strict:
+            return
+        self._perpetual_events.append(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "sequence": len(self._perpetual_events) + 1,
+                "timestamp": pd.Timestamp(timestamp).isoformat(),
+                "event_type": event_type,
+                **details,
+            }
+        )
+
+    def _record_risk_snapshot(
+        self,
+        timestamp: pd.Timestamp,
+        price_field: str,
+        snapshot: RiskSnapshot,
+    ) -> None:
+        self._record_event(
+            timestamp,
+            "risk_snapshot",
+            phase="pre_fill" if price_field == "mark_open" else "post_fill",
+            price_source=("mark_open" if price_field == "mark_open" else "adverse_mark_extrema"),
+            status=snapshot.status,
+            margin_balance=snapshot.margin_balance,
+            initial_margin=snapshot.initial_margin,
+            maintenance_margin=snapshot.maintenance_margin,
+            available_balance=snapshot.available_balance,
+            liquidation_targets=list(snapshot.liquidation_targets),
+            fidelity_flags=list(snapshot.fidelity_flags),
+            positions=[
+                {
+                    "symbol": risk.symbol,
+                    "mark_price": risk.mark_price,
+                    "notional": risk.notional,
+                    "unrealized_pnl": risk.unrealized_pnl,
+                    "initial_margin": risk.initial_margin,
+                    "maintenance_margin": risk.maintenance_margin,
+                    "margin_balance": risk.margin_balance,
+                }
+                for risk in snapshot.per_position
+            ],
+        )
 
     def _apply_data_funding(self) -> None:
         for symbol, position in self.positions.items():
@@ -166,6 +253,16 @@ class CryptoEngine(BaseEngine):
             if self.margin_mode == "isolated":
                 self._isolated_margins[symbol] -= payment
             self._strict_funding_applied.add(key)
+            self._record_event(
+                settlement,
+                "funding_settlement",
+                symbol=symbol,
+                signed_quantity=position.direction * position.size,
+                mark_price=frame.mark_open,
+                price_source="mark_open",
+                funding_rate=frame.funding_rate,
+                funding_pnl=-payment,
+            )
 
     def _account_state(self) -> AccountState:
         positions = tuple(
@@ -203,18 +300,45 @@ class CryptoEngine(BaseEngine):
             if self.margin_mode == "isolated"
             else CrossMarginRiskModel().evaluate(account, self._risk_frames, price_field)
         )
+        self._record_risk_snapshot(timestamp, price_field, snapshot)
         if snapshot.status == "healthy":
             return False
         prices = {risk.symbol: risk.mark_price for risk in snapshot.per_position}
+        price_source = "mark_open" if price_field == "mark_open" else "adverse_mark_extrema"
+        liquidation_details = []
         for symbol in snapshot.liquidation_targets:
             position = self.positions[symbol]
             price = prices[symbol]
             fee = position.size * price * self.liquidation_fee_rate
-            self._close_position(symbol, price, timestamp, snapshot.status)
-            self.capital -= fee
+            self._liquidation_price_source = price_source
+            try:
+                self._close_position(symbol, price, timestamp, snapshot.status)
+                self.capital -= fee
+            finally:
+                self._liquidation_price_source = None
+            liquidation_details.append((symbol, price, fee))
         if snapshot.status == "account_liquidation":
             self.terminal_status = "account_liquidation"
+            self._record_event(
+                timestamp,
+                "account_liquidation",
+                symbols=sorted(symbol for symbol, _, _ in liquidation_details),
+                liquidation_prices={symbol: price for symbol, price, _ in liquidation_details},
+                price_source=price_source,
+                liquidation_fee=sum(fee for _, _, fee in liquidation_details),
+                fidelity_flags=list(snapshot.fidelity_flags),
+            )
             return True
+        for symbol, price, fee in liquidation_details:
+            self._record_event(
+                timestamp,
+                "position_liquidation",
+                symbol=symbol,
+                liquidation_price=price,
+                price_source=price_source,
+                liquidation_fee=fee,
+                fidelity_flags=list(snapshot.fidelity_flags),
+            )
         self._blocked_symbols.update(snapshot.liquidation_targets)
         return False
 
@@ -255,6 +379,19 @@ class CryptoEngine(BaseEngine):
 
     def _execute_open_order(self, order, timestamp: pd.Timestamp) -> None:
         super()._execute_open_order(order, timestamp)
+        if self.perpetual_strict:
+            self._record_event(
+                timestamp,
+                "market_fill",
+                action="open",
+                symbol=order.symbol,
+                side="buy" if order.direction == 1 else "sell",
+                signed_quantity=order.direction * order.size,
+                execution_price=order.price,
+                execution_price_source="execution_open",
+                trading_fee=order.commission,
+                reason="signal",
+            )
         if self.perpetual_strict and self.margin_mode == "isolated":
             self._isolated_margins[order.symbol] = order.margin
 
@@ -265,8 +402,72 @@ class CryptoEngine(BaseEngine):
         exit_time: pd.Timestamp,
         reason: str,
     ) -> None:
+        position = self.positions.get(symbol)
         super()._close_position(symbol, exit_price, exit_time, reason)
+        if self.perpetual_strict and position is not None:
+            trade = self.trades[-1]
+            price_source = self._liquidation_price_source
+            if price_source is None:
+                price_source = "mark_close" if reason == "end_of_backtest" else "execution_open"
+            self._record_event(
+                exit_time,
+                "market_fill",
+                action="close",
+                symbol=symbol,
+                side="sell" if position.direction == 1 else "buy",
+                signed_quantity=-position.direction * position.size,
+                execution_price=exit_price,
+                execution_price_source=price_source,
+                trading_fee=trade.commission - position.entry_commission,
+                reason=reason,
+            )
         self._isolated_margins.pop(symbol, None)
+
+    def _write_artifacts(
+        self,
+        run_dir: Path,
+        data_map: dict[str, pd.DataFrame],
+        dates: pd.DatetimeIndex,
+        equity_series: pd.Series,
+        bench_equity: pd.Series,
+        bench_ret: pd.Series,
+        target_pos: pd.DataFrame,
+        metrics: dict,
+        codes: list[str],
+    ) -> None:
+        summary = None
+        if self.perpetual_strict:
+            summary = build_perpetual_summary(
+                config={**self.config, "interval": self._run_interval},
+                events=self._perpetual_events,
+                trades=self.trades,
+                terminal_status=self.terminal_status,
+                maintenance_bracket_versions=self._maintenance_bracket_versions,
+                market_risk_sources=sorted(self._market_risk_sources),
+            )
+            metrics.update(
+                {
+                    "perpetual_funding_settlements": summary["funding_settlement_count"],
+                    "perpetual_funding_pnl": summary["total_funding_pnl"],
+                    "perpetual_liquidation_events": summary["liquidation_event_count"],
+                    "perpetual_liquidated_positions": summary["liquidated_position_count"],
+                    "perpetual_trading_fees": summary["total_trading_fee"],
+                    "perpetual_liquidation_fees": summary["total_liquidation_fee"],
+                }
+            )
+        super()._write_artifacts(
+            run_dir,
+            data_map,
+            dates,
+            equity_series,
+            bench_equity,
+            bench_ret,
+            target_pos,
+            metrics,
+            codes,
+        )
+        if summary is not None:
+            write_perpetual_evidence(run_dir, self._perpetual_events, summary)
 
     def on_bar(self, symbol: str, bar: pd.Series, timestamp: pd.Timestamp) -> None:
         """Crypto per-bar hooks: funding fee + liquidation check."""

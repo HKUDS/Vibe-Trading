@@ -87,6 +87,19 @@ def _simple_data_and_signals():
 
 
 class TestAlign:
+    def test_common_timezone_is_preserved(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
+        frame = pd.DataFrame({"open": [100.0] * 3, "close": [100.0] * 3}, index=dates)
+        signals = pd.Series([0.0, 1.0, 0.0], index=dates)
+
+        out_dates, close_df, pos_df, _ = _align(
+            {"BTC-USDT-PERP": frame}, {"BTC-USDT-PERP": signals}, ["BTC-USDT-PERP"]
+        )
+
+        assert str(out_dates.tz) == "UTC"
+        assert close_df.index.equals(dates)
+        assert pos_df.index.equals(dates)
+
     def test_output_shapes(self) -> None:
         data_map, signal_map, dates = _simple_data_and_signals()
         out_dates, close_df, pos_df, ret_df = _align(data_map, signal_map, ["A", "B"])

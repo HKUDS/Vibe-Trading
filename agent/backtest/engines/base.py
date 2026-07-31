@@ -153,9 +153,13 @@ def _align(
         (dates, close_df, positions_df, returns_df)
     """
     # Build unified sorted date index from all symbols' trading calendars
-    all_idx_arrays = [data_map[c].index.values for c in codes]
-    merged = np.unique(np.concatenate(all_idx_arrays))
-    dates = pd.DatetimeIndex(merged)
+    indexes = [data_map[c].index for c in codes]
+    merged = np.unique(np.concatenate([index.asi8 for index in indexes]))
+    common_tz = indexes[0].tz
+    if all(index.tz == common_tz for index in indexes) and common_tz is not None:
+        dates = pd.DatetimeIndex(pd.to_datetime(merged, utc=True).tz_convert(common_tz))
+    else:
+        dates = pd.DatetimeIndex(merged)
 
     n_dates = len(dates)
     n_codes = len(codes)

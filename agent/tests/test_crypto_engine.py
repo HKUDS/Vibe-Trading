@@ -11,6 +11,8 @@ Validates:
 
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 import pytest
 
@@ -108,6 +110,69 @@ def _run_strict(
         pd.DataFrame(targets, index=dates),
         codes,
     )
+
+
+def _write_strict_artifacts(
+    engine: CryptoEngine,
+    data_map: dict[str, pd.DataFrame],
+    targets: dict[str, list[float]],
+    run_dir,
+) -> dict:
+    dates = next(iter(data_map.values())).index
+    equity = pd.Series(
+        [snapshot.equity for snapshot in engine.equity_snapshots],
+        index=[snapshot.timestamp for snapshot in engine.equity_snapshots],
+    )
+    benchmark_return = pd.Series(0.0, index=dates)
+    metrics: dict = {}
+    engine._write_artifacts(
+        run_dir,
+        data_map,
+        dates,
+        equity,
+        pd.Series(engine.initial_capital, index=dates),
+        benchmark_return,
+        pd.DataFrame(targets, index=dates),
+        metrics,
+        list(data_map),
+    )
+    return metrics
+
+
+def _read_strict_evidence(run_dir) -> tuple[list[dict], dict]:
+    artifacts = run_dir / "artifacts"
+    events = [
+        json.loads(line)
+        for line in (artifacts / "perpetual_events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    summary = json.loads(
+        (artifacts / "perpetual_summary.json").read_text(encoding="utf-8")
+    )
+    return events, summary
+
+
+def _run_liquidation_case(margin_mode: str):
+    dates = pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC")
+    frames = {
+        symbol: _strict_frame(dates, mark_low=[100.0, low])
+        for symbol, low in (
+            ("BTC-USDT-PERP", 80.0),
+            ("ETH-USDT-PERP", 100.0),
+        )
+    }
+    engine = _strict_engine(
+        initial_cash=2_000.0,
+        interval="1H",
+        taker_rate=0.0,
+        maker_rate=0.0,
+        liquidation_fee_rate=0.01,
+        margin_mode=margin_mode,
+    )
+    targets = {symbol: [0.5, 0.5] for symbol in frames}
+    _run_strict(engine, frames, targets)
+    return engine, frames, targets
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +500,35 @@ class TestHistoricalFundingRate:
 
 
 class TestStrictPerpetualLifecycle:
+    @pytest.mark.parametrize("interval", ["3m", "60m", "4H", "1D"])
+    def test_strict_100x_rejects_unsupported_or_coarse_intervals(
+        self, interval: str
+    ) -> None:
+        with pytest.raises(ValueError, match="resolution boundary"):
+            _strict_engine(leverage=100.0, interval=interval)
+
+    @pytest.mark.parametrize("interval", ["1m", "30m", "1H"])
+    def test_strict_100x_accepts_at_most_one_hour(self, interval: str) -> None:
+        engine = _strict_engine(leverage=100.0, interval=interval)
+        assert engine.default_leverage == 100.0
+
+    def test_strict_100x_revalidates_run_config_before_loading(
+        self, tmp_path
+    ) -> None:
+        class LoaderThatMustNotRun:
+            def fetch(self, *args, **kwargs):
+                raise AssertionError("loader ran before strict interval validation")
+
+        engine = _strict_engine(leverage=100.0, interval="1H")
+        run_config = {
+            **engine.config,
+            "codes": ["BTC-USDT-PERP"],
+            "interval": "1D",
+        }
+
+        with pytest.raises(ValueError, match="resolution boundary"):
+            engine.run_backtest(run_config, LoaderThatMustNotRun(), object(), tmp_path)
+
     def test_market_fills_use_execution_open_and_taker_rate(self) -> None:
         dates = pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC")
         frame = _strict_frame(
@@ -545,3 +639,108 @@ class TestStrictPerpetualLifecycle:
         assert engine.terminal_status == "account_liquidation"
         assert len(engine.equity_snapshots) == 2
         assert engine.equity_snapshots[-1].timestamp == dates[1]
+
+    def test_evidence_records_funding_before_fill_and_separate_fee_totals(
+        self, tmp_path
+    ) -> None:
+        dates = pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
+        frame = _strict_frame(
+            dates,
+            funding_rate=[0.0, 0.001, 0.0],
+            settlements=[None, dates[1], None],
+        )
+        engine = _strict_engine(
+            interval="1H",
+            taker_rate=0.001,
+            liquidation_fee_rate=0.02,
+        )
+        targets = {"BTC-USDT-PERP": [0.5, 0.0, 0.0]}
+
+        _run_strict(engine, {"BTC-USDT-PERP": frame}, targets)
+        metrics = _write_strict_artifacts(
+            engine, {"BTC-USDT-PERP": frame}, targets, tmp_path
+        )
+
+        events, summary = _read_strict_evidence(tmp_path)
+        settlement = next(
+            event for event in events if event["event_type"] == "funding_settlement"
+        )
+        close_fill = next(
+            event
+            for event in events
+            if event["event_type"] == "market_fill" and event["action"] == "close"
+        )
+        assert settlement["timestamp"] == dates[1].isoformat()
+        assert settlement["funding_pnl"] == pytest.approx(-5.0)
+        assert settlement["sequence"] < close_fill["sequence"]
+        assert close_fill["execution_price_source"] == "execution_open"
+
+        assert summary["funding_settlement_count"] == 1
+        assert summary["total_funding_pnl"] == pytest.approx(-5.0)
+        assert summary["total_trading_fee"] == pytest.approx(10.0)
+        assert summary["total_liquidation_fee"] == 0.0
+        assert summary["leverage"] == 10.0
+        assert summary["taker_rate"] == 0.001
+        assert summary["liquidation_fee_rate"] == 0.02
+        assert summary["fee_model"] == {
+            "market_fill_rate": "taker_rate",
+            "maker_rate_used": False,
+            "funding_separate": True,
+            "liquidation_separate": True,
+        }
+        assert metrics["perpetual_funding_pnl"] == pytest.approx(-5.0)
+        assert metrics["perpetual_trading_fees"] == pytest.approx(10.0)
+
+    def test_evidence_records_cross_liquidation_and_intrabar_limitation(
+        self, tmp_path
+    ) -> None:
+        engine, frames, targets = _run_liquidation_case("cross")
+        metrics = _write_strict_artifacts(engine, frames, targets, tmp_path)
+
+        events, summary = _read_strict_evidence(tmp_path)
+        liquidation = next(
+            event for event in events if event["event_type"] == "account_liquidation"
+        )
+        assert liquidation["symbols"] == ["BTC-USDT-PERP", "ETH-USDT-PERP"]
+        assert liquidation["price_source"] == "adverse_mark_extrema"
+        assert liquidation["liquidation_fee"] == pytest.approx(180.0)
+
+        assert summary["terminal_status"] == "account_liquidation"
+        assert summary["liquidation_event_count"] == 1
+        assert summary["liquidated_position_count"] == 2
+        assert summary["total_liquidation_fee"] == pytest.approx(180.0)
+        assert summary["maintenance_bracket_versions"] == {
+            "BTC-USDT-PERP": "fixture-v1",
+            "ETH-USDT-PERP": "fixture-v1",
+        }
+        assert summary["fidelity_flags"] == ["conservative_intrabar_assumption"]
+        assert "not guaranteed" in summary["resolution_limitation"]
+        assert metrics["perpetual_liquidation_events"] == 1
+        assert metrics["perpetual_liquidation_fees"] == pytest.approx(180.0)
+
+    def test_evidence_keeps_isolated_liquidation_position_scoped(
+        self, tmp_path
+    ) -> None:
+        engine, frames, targets = _run_liquidation_case("isolated")
+        _write_strict_artifacts(engine, frames, targets, tmp_path)
+
+        events, _ = _read_strict_evidence(tmp_path)
+        liquidations = [
+            event
+            for event in events
+            if event["event_type"]
+            in {
+                "position_liquidation",
+                "account_liquidation",
+            }
+        ]
+        assert [event["event_type"] for event in liquidations] == [
+            "position_liquidation"
+        ]
+        assert liquidations[0]["symbol"] == "BTC-USDT-PERP"
+        assert liquidations[0]["liquidation_fee"] == pytest.approx(80.0)
+        assert engine.terminal_status == "completed"
+        assert {trade.symbol: trade.exit_reason for trade in engine.trades} == {
+            "BTC-USDT-PERP": "position_liquidation",
+            "ETH-USDT-PERP": "end_of_backtest",
+        }
