@@ -113,6 +113,7 @@ def _default_run_roots() -> list[Path]:
     runtime_root = get_runtime_root()
     return [
         agent_root / "runs",
+        agent_root / ".swarm" / "runs",  # un-migrated legacy swarm runs
         swarm_runs_root(),
         cwd / "runs",
         home / ".vibe-trading" / "shadow_runs",

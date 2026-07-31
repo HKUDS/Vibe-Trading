@@ -943,7 +943,7 @@ Interactive docs: `http://localhost:8899/docs`
 
 localhost 개발에서 `vibe-trading serve`는 browser workflow를 단순하게 유지합니다. non-local client에서는 민감한 API endpoint에 `API_AUTH_KEY`가 필요합니다. JSON/upload request에는 `Authorization: Bearer <key>`를 사용하세요. Browser EventSource stream은 Web UI Settings에 같은 key를 한 번 입력하면 Web UI가 처리합니다.
 
-Shell-capable process tools(`bash` / `background_run` / `cancel_background`)는 대화형 local CLI에서만 활성화됩니다. 그 외 모든 표면 — HTTP/SSE API와 MCP server의 **모든** transport(stdio 포함) — 는 `VIBE_TRADING_ENABLE_SHELL_TOOLS=1`을 명시적으로 설정하지 않는 한(또는 `vibe-trading-mcp`에 `--enable-shell-tools`를 전달하지 않는 한) 비활성 상태로 유지됩니다. transport 종류가 암묵적으로 shell 접근을 부여하는 일은 없습니다. Document와 journal reader는 기본적으로 upload/import roots로 제한됩니다. 파일은 `agent/uploads`, `agent/runs`, `./uploads`, `./data`, `~/.vibe-trading/uploads`, `~/.vibe-trading/imports` 아래에 두거나, `VIBE_TRADING_ALLOWED_FILE_ROOTS`로 전용 directory를 추가하세요.
+Shell-capable process tools(`bash` / `background_run` / `cancel_background`)는 대화형 local CLI에서만 활성화됩니다. 그 외 모든 표면 — HTTP/SSE API와 MCP server의 **모든** transport(stdio 포함) — 는 `VIBE_TRADING_ENABLE_SHELL_TOOLS=1`을 명시적으로 설정하지 않는 한(또는 `vibe-trading-mcp`에 `--enable-shell-tools`를 전달하지 않는 한) 비활성 상태로 유지됩니다. transport 종류가 암묵적으로 shell 접근을 부여하는 일은 없습니다. Document와 journal reader는 기본적으로 upload/import roots로 제한됩니다. 파일은 `~/.vibe-trading/uploads`, `~/.vibe-trading/runs`, `./uploads`, `./data`(또는 레거시 `agent/uploads` / `agent/runs`) 아래에 두거나, `VIBE_TRADING_ALLOWED_FILE_ROOTS`로 전용 directory를 추가하세요. 세션, 실행 산출물, swarm 실행, 업로드, `sessions.db` 인덱스는 `~/.vibe-trading` 아래로 통합되며(shell 환경 변수 `VIBE_TRADING_HOME`으로 전체 이동 가능), 기존 위치의 이력은 첫 실행 시 자동으로 이전됩니다.
 
 ### Web UI Settings
 

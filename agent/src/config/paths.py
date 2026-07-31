@@ -26,6 +26,10 @@ def get_runtime_root(config_path: Path | None = None) -> Path:
         return config_path.expanduser().parent
     env_root = os.environ.get(_HOME_ENV_VAR, "").strip()
     if env_root:
+        if env_root.startswith(("//", "\\\\")):
+            raise ValueError(
+                f"{_HOME_ENV_VAR} must not be a UNC path: {env_root!r}"
+            )
         return Path(env_root).expanduser()
     return Path.home() / ".vibe-trading"
 

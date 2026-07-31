@@ -379,9 +379,10 @@ class TraceWriter:
 
         Args:
             run_id: Run or session ID.
-            runs_dir: Base runs directory. Defaults to ``agent/runs``.
-            sessions_dir: Base sessions directory. Defaults to
-                ``agent/sessions``.
+            runs_dir: Base runs directory. Defaults to the user-level
+                runs dir under the runtime root.
+            sessions_dir: Base sessions directory. Defaults to the
+                user-level sessions dir under the runtime root.
 
         Returns:
             Directory containing ``trace.jsonl``, or ``None`` when absent.

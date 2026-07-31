@@ -4,7 +4,8 @@ Stores an inverted index of all conversation messages. The primary data
 remains in the file-based SessionStore; this module provides a fast search
 layer on top.
 
-Database location: ~/.vibe-trading/sessions.db (WAL mode for concurrent reads).
+Database location: ``sessions.db`` under the runtime root (default
+``~/.vibe-trading``; WAL mode for concurrent reads).
 """
 
 from __future__ import annotations
@@ -18,9 +19,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+from src.config.paths import get_runtime_root
+
 logger = logging.getLogger(__name__)
 
-_DB_PATH = Path.home() / ".vibe-trading" / "sessions.db"
+_DB_PATH = get_runtime_root() / "sessions.db"
 
 
 @dataclass(frozen=True)

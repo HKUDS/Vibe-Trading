@@ -44,6 +44,23 @@ def test_explicit_config_path_beats_env_override(
     assert get_runtime_root(config_path) == config_path.parent
 
 
+def test_home_override_rejects_unc_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Match the UNC hardening every other root-widening env var enforces."""
+    for unc in ("//server/share", r"\\server\share"):
+        monkeypatch.setenv("VIBE_TRADING_HOME", unc)
+        with pytest.raises(ValueError, match="UNC"):
+            get_runtime_root()
+
+
+def test_legacy_swarm_runs_kept_in_run_root_allowlist() -> None:
+    """Un-migrated legacy swarm runs must stay reachable, like legacy runs/uploads."""
+    from src.tools.path_utils import _agent_root, _default_run_roots
+
+    roots = [p.resolve() for p in _default_run_roots()]
+
+    assert (_agent_root() / ".swarm" / "runs").resolve() in roots
+
+
 def test_state_dir_helpers_live_under_runtime_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -89,6 +106,23 @@ def test_api_constants_derive_from_runtime_root() -> None:
     assert helpers.SESSIONS_DIR == paths.get_sessions_dir()
     assert helpers.UPLOADS_DIR == paths.get_uploads_dir()
     assert uploads_routes.UPLOADS_DIR == paths.get_uploads_dir()
+
+
+def test_api_swarm_runtime_uses_swarm_runs_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The HTTP API swarm store must share swarm_runs_root() with CLI/MCP."""
+    from src.api import swarm_routes
+    from src.swarm.store import swarm_runs_root
+
+    monkeypatch.setattr(swarm_routes, "_swarm_runtime", None)
+    monkeypatch.setattr(
+        "src.config.load_swarm_agent_config", lambda *a, **k: object()
+    )
+
+    runtime = swarm_routes._get_swarm_runtime()
+
+    assert runtime._store.base_dir == swarm_runs_root()
 
 
 def test_swarm_runs_root_derives_from_runtime_root() -> None:
@@ -142,6 +176,47 @@ def test_sandbox_roots_follow_home_override(
     assert (root / "runs").resolve() in file_roots
     assert (root / "uploads").resolve() in write_roots
     assert (root / "runs").resolve() in write_roots
+
+
+def test_sessions_db_and_goal_db_follow_home_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The FTS index and goal store must live beside the sessions they index."""
+    import importlib
+
+    from src.goal import store as goal_store
+    from src.session import search
+
+    root = tmp_path / "state-root"
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(root))
+    try:
+        assert importlib.reload(search)._DB_PATH == root / "sessions.db"
+        assert (
+            importlib.reload(goal_store)._DEFAULT_DB_PATH == root / "sessions.db"
+        )
+    finally:
+        monkeypatch.delenv("VIBE_TRADING_HOME")
+        importlib.reload(search)
+        importlib.reload(goal_store)
+
+
+def test_banner_session_probe_follows_home_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import sqlite3
+
+    import importlib
+
+    cli_main = importlib.import_module("cli.main")
+
+    root = tmp_path / "state-root"
+    root.mkdir()
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(root))
+    with sqlite3.connect(str(root / "sessions.db")) as conn:
+        conn.execute("CREATE TABLE sessions (id TEXT)")
+        conn.execute("INSERT INTO sessions VALUES ('a'), ('b')")
+
+    assert cli_main._probe_session_count() == 2
 
 
 def test_welcome_panel_reports_runtime_root_as_workspace(
