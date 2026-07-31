@@ -100,6 +100,53 @@ def test_list_llm_models_uses_unsaved_form_values(
     }
 
 
+def test_list_llm_models_does_not_send_saved_key_to_unsaved_endpoint(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "LANGCHAIN_PROVIDER=deepseek",
+                "LANGCHAIN_MODEL_NAME=deepseek-v4-pro",
+                "DEEPSEEK_BASE_URL=https://api.deepseek.com/v1",
+                "DEEPSEEK_API_KEY=stored-secret-key",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    observed: list[tuple[str, str]] = []
+
+    async def fake_list(provider, *, base_url: str, api_key: str):
+        del provider
+        observed.append((base_url, api_key))
+        return settings_routes.LLMModelsResponse(
+            provider="deepseek",
+            models=["deepseek-v4-pro"],
+            source="provider",
+        )
+
+    monkeypatch.setattr(settings_routes, "_list_provider_models", fake_list)
+
+    trusted = client.post(
+        "/settings/llm/models",
+        json={"provider": "deepseek", "base_url": "https://api.deepseek.com/v1"},
+    )
+    untrusted = client.post(
+        "/settings/llm/models",
+        json={"provider": "deepseek", "base_url": "https://models.example.test/v1"},
+    )
+
+    assert trusted.status_code == 200
+    assert untrusted.status_code == 200
+    assert observed == [
+        ("https://api.deepseek.com/v1", "stored-secret-key"),
+        ("https://models.example.test/v1", ""),
+    ]
+
+
 @pytest.mark.parametrize("placeholder", ["sk-xxx", "xxx", "gsk_xxx"])
 def test_llm_settings_treat_documented_key_placeholders_as_unconfigured(
     client: TestClient, tmp_path: Path, placeholder: str,

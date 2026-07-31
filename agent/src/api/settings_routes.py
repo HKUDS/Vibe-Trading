@@ -11,6 +11,7 @@ import os
 import sys as _sys
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -209,6 +210,20 @@ def _model_list_url(base_url: str) -> str:
             url = url[: -len(suffix)]
             break
     return f"{url}/models"
+
+
+def _validate_model_base_url(base_url: str) -> str:
+    """Accept HTTP(S) provider endpoints without embedded URL credentials."""
+    normalized = base_url.strip().rstrip("/")
+    parsed = urlsplit(normalized)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError("Provider base URL must be an HTTP(S) URL without embedded credentials")
+    return normalized
 
 
 def _extract_model_ids(payload: Any) -> List[str]:
@@ -555,20 +570,31 @@ def register_settings_routes(
             )
 
         current_values = _read_settings_env_values()
-        base_url = (
-            payload.base_url
-            or current_values.get(provider.base_url_env)
-            or provider.default_base_url
+        requested_base_url = (payload.base_url or "").strip()
+        saved_base_url = (
+            current_values.get(provider.base_url_env) or provider.default_base_url
         ).strip()
-        if not base_url:
+        try:
+            base_url = _validate_model_base_url(requested_base_url or saved_base_url)
+        except ValueError as exc:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Provider base URL is required"
-            )
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
         api_key = (payload.api_key or "").strip()
         if not api_key and provider.api_key_env:
-            saved_key = current_values.get(provider.api_key_env, "").strip()
-            if _host()._is_configured_secret(saved_key, LLM_API_KEY_PLACEHOLDERS):
-                api_key = saved_key
+            trusted_base_urls = {
+                _validate_model_base_url(candidate)
+                for candidate in (
+                    saved_base_url,
+                    provider.default_base_url,
+                    *provider.base_url_options,
+                )
+                if candidate.strip()
+            }
+            if not requested_base_url or base_url in trusted_base_urls:
+                saved_key = current_values.get(provider.api_key_env, "").strip()
+                if _host()._is_configured_secret(saved_key, LLM_API_KEY_PLACEHOLDERS):
+                    api_key = saved_key
         return await _list_provider_models(
             provider,
             base_url=base_url,
