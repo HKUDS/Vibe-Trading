@@ -30,7 +30,12 @@ def _coerce_ids(raw: Any) -> list[str]:
     Returns:
         Ordered, de-duplicated list of non-empty id strings.
     """
-    items = re.split(r"[\s,]+", raw) if isinstance(raw, str) else (raw or [])
+    if isinstance(raw, str):
+        items = re.split(r"[\s,]+", raw)
+    elif isinstance(raw, (list, tuple, set)):
+        items = raw
+    else:
+        items = []
     seen: set[str] = set()
     out: list[str] = []
     for item in items:
