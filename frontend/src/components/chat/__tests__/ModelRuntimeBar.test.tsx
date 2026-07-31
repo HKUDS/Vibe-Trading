@@ -38,4 +38,14 @@ describe("ModelRuntimeBar", () => {
     expect(screen.getByText("deepseek-v4-flash-202607")).toBeInTheDocument();
     expect(screen.getByText(/Reasoning Effort: High/)).toBeInTheDocument();
   });
+
+  it("distinguishes explicit no-reasoning from the provider default", () => {
+    render(
+      <ModelRuntimeBar
+        settings={{ ...settings, reasoning_effort: "none" }}
+      />,
+    );
+
+    expect(screen.getByText(/Reasoning Effort: None \(explicit\)/)).toBeInTheDocument();
+  });
 });

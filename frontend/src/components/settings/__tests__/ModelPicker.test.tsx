@@ -18,8 +18,11 @@ function Harness() {
 describe("ModelPicker", () => {
   it("shows every loaded model even when the current value is different", async () => {
     render(<Harness />);
+    const user = userEvent.setup();
+    const input = screen.getByRole("combobox", { name: "Model" });
 
-    await userEvent.setup().click(screen.getByRole("combobox", { name: "Model" }));
+    await user.clear(input);
+    await user.type(input, "vendor/custom-model");
 
     expect(screen.getByRole("option", { name: "deepseek-v4-pro" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "deepseek-v4-flash" })).toBeInTheDocument();
@@ -33,5 +36,17 @@ describe("ModelPicker", () => {
     await userEvent.setup().type(input, "vendor/custom-model");
 
     expect(input).toHaveValue("vendor/custom-model");
+  });
+
+  it("selects the first loaded model with ArrowDown after custom input", async () => {
+    render(<Harness />);
+    const user = userEvent.setup();
+    const input = screen.getByRole("combobox", { name: "Model" });
+
+    await user.clear(input);
+    await user.type(input, "vendor/custom-model");
+    await user.keyboard("{ArrowDown}{Enter}");
+
+    expect(input).toHaveValue("deepseek-v4-pro");
   });
 });

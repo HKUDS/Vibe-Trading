@@ -17,6 +17,7 @@ export function ModelRuntimeBar({ settings, runtimeProvider, runtimeModel }: Pro
   const providerLabel = provider?.label || providerId || t("agent.unknownProvider");
   const model = runtimeModel || settings.model_name || t("agent.unknownModel");
   const effortLabels: Record<string, string> = {
+    none: t("settings.reasoningEffortNone"),
     low: t("settings.reasoningEffortLow"),
     medium: t("settings.reasoningEffortMedium"),
     high: t("settings.reasoningEffortHigh"),

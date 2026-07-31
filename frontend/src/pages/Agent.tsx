@@ -577,7 +577,7 @@ export function Agent() {
       act().loadHistory(agentMsgs);
       act().setSessionLoading(false);
       act().cacheSession(sid, agentMsgs);
-      if (latestRuntimeIdentity) setRuntimeIdentity(latestRuntimeIdentity);
+      setRuntimeIdentity(latestRuntimeIdentity ?? {});
       setTimeout(() => forceScrollToBottom(), 50);
     } catch {
       act().setSessionLoading(false);

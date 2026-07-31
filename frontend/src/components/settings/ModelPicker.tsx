@@ -47,8 +47,8 @@ export function ModelPicker({ value, options, onChange, ariaLabel }: ModelPicker
       }
       const direction = event.key === "ArrowDown" ? 1 : -1;
       setActiveIndex((current) => {
-        const start = current < 0 ? 0 : current;
-        return (start + direction + uniqueOptions.length) % uniqueOptions.length;
+        if (current < 0) return direction > 0 ? 0 : uniqueOptions.length - 1;
+        return (current + direction + uniqueOptions.length) % uniqueOptions.length;
       });
       return;
     }
