@@ -51,13 +51,22 @@ from rich.text import Text
 
 from cli.theme import get_console
 from src.config.accessor import get_env_config, reset_env_config
+from src.config.paths import (
+    get_runs_dir,
+    get_runtime_root,
+    get_sessions_dir,
+    get_swarm_runs_dir,
+    get_uploads_dir,
+)
 
 console = get_console()
+# AGENT_DIR is a code location (frontend defaults, dev-server cwd). State
+# lives under the user-level runtime root, never relative to the code (#904).
 AGENT_DIR = Path(__file__).resolve().parents[1]
-RUNS_DIR = AGENT_DIR / "runs"
-SWARM_DIR = AGENT_DIR / ".swarm" / "runs"
-SESSIONS_DIR = AGENT_DIR / "sessions"
-UPLOADS_DIR = AGENT_DIR / "uploads"
+RUNS_DIR = get_runs_dir()
+SWARM_DIR = get_swarm_runs_dir()
+SESSIONS_DIR = get_sessions_dir()
+UPLOADS_DIR = get_uploads_dir()
 
 EXIT_SUCCESS = 0
 EXIT_RUN_FAILED = 1
@@ -1660,7 +1669,7 @@ def _build_welcome_panel(term_width: Optional[int] = None) -> Panel:
             ("Credential", key_state, "bold green" if credential_ready else "bold yellow"),
             ("Runs", str(recent_runs), "cyan"),
             ("Swarms", str(recent_swarms), "cyan"),
-            ("Workspace", str(AGENT_DIR), "dim"),
+            ("Workspace", str(get_runtime_root()), "dim"),
         ]
         for label, value, value_style in rows:
             config_lines.append(
@@ -1677,7 +1686,7 @@ def _build_welcome_panel(term_width: Optional[int] = None) -> Panel:
         rows = [
             ("Provider", str(provider), "bold cyan", "Credential", key_state, "bold green" if credential_ready else "bold yellow"),
             ("Model", str(model), "white", "Runs", str(recent_runs), "cyan"),
-            ("Workspace", str(AGENT_DIR), "dim", "Swarms", str(recent_swarms), "cyan"),
+            ("Workspace", str(get_runtime_root()), "dim", "Swarms", str(recent_swarms), "cyan"),
         ]
         for left_label, left_value, left_style, right_label, right_value, right_style in rows:
             config_lines.append(

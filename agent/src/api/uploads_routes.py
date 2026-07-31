@@ -13,11 +13,13 @@ from typing import Any, Awaitable, Callable
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
+from src.config.paths import get_uploads_dir
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
+UPLOADS_DIR = get_uploads_dir()
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 _UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
 

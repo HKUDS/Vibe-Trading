@@ -20,6 +20,7 @@ hits :func:`main`.
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 import sys
 import threading
@@ -1309,6 +1310,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         Process exit code.
     """
     raw_argv = list(sys.argv[1:] if argv is None else argv)
+
+    # One-time move of pre-#904 code-relative state into the runtime root.
+    # A failed migration must never block the CLI.
+    try:
+        from src.config import migrate as _migrate
+
+        _migrate.migrate_legacy_state()
+    except Exception:  # pragma: no cover — best-effort
+        logging.getLogger(__name__).warning(
+            "Legacy state migration failed", exc_info=True
+        )
+
     interactive = _is_interactive_invocation(raw_argv)
 
     if interactive:

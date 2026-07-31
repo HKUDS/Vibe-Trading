@@ -159,6 +159,12 @@ async def _run_startup_preflight() -> None:
     """Run preflight checks on server startup."""
     from src.preflight import run_preflight
 
+    from src.config import migrate as _migrate
+
+    try:
+        _migrate.migrate_legacy_state()  # one-time pre-#904 state move; must never block startup
+    except Exception:  # pragma: no cover — best-effort
+        logging.getLogger(__name__).warning("Legacy state migration failed", exc_info=True)
     run_preflight(console)
     _start_scheduled_research_executor()
     from src.config.accessor import get_env_config

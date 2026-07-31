@@ -44,11 +44,12 @@ from src.providers.content_filter import (
     compute_content_filter_warnings,
 )
 from src.config.accessor import get_env_config
+from src.config.paths import get_runs_dir, get_sessions_dir
 from src.tools.background_tools import get_background_manager
 from src.tools.redaction import redact_payload, redact_tool_result
 
-RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
-SESSIONS_DIR = Path(__file__).resolve().parents[2] / "sessions"
+RUNS_DIR = get_runs_dir()
+SESSIONS_DIR = get_sessions_dir()
 KEEP_RECENT = 3
 TOOL_RESULT_LIMIT = 10_000
 LLM_USAGE_ARTIFACT = "llm_usage.json"
