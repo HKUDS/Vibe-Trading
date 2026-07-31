@@ -209,7 +209,7 @@ def double_top_bottom(close: pd.Series, window: int = 10) -> pd.Series:
         if np.isnan(v1) or np.isnan(v2):
             continue
         avg = (v1 + v2) / 2
-        if avg != 0 and abs(v1 - v2) / avg < 0.03:
+        if avg != 0 and abs(v1 - v2) / abs(avg) < 0.03:
             result.iloc[pv["peaks"][i + 1]] = 1
 
     for i in range(len(pv["valleys"]) - 1):
