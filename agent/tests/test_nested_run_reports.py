@@ -147,3 +147,58 @@ def test_missing_selected_ohlcv_does_not_reconstruct_entire_portfolio(
 
     assert ui_services.load_price_series(run_dir, {"MISSING"}) == []
     assert called is False
+
+
+def test_list_run_card_with_non_numeric_metrics_degrades_to_null(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_card metrics carrying human-readable strings must not crash /runs."""
+    client = _client(tmp_path, monkeypatch)
+    parent = tmp_path / "runs" / "20260728_135942_02_5e8bb3"
+    child = parent / "backtests" / "hk21_123"
+    (child / "artifacts").mkdir(parents=True)
+    (child / "run_card.json").write_text(
+        json.dumps(
+            {
+                "backtest": {
+                    "codes": ["00700.HK"],
+                    "start_date": "2021-07-28",
+                    "end_date": "2026-07-27",
+                },
+                "metrics": {"total_return": "12.3%", "sharpe": "n/a"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    listed = client.get("/runs?limit=20")
+
+    assert listed.status_code == 200
+    report = next(row for row in listed.json() if row["display_name"] == "hk21_123")
+    assert report["total_return"] is None
+    assert report["sharpe"] is None
+    assert report["status"] == "success"
+
+
+def test_list_run_card_only_subrun_reports_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sub-run with completed artifacts but no state.json lists as success."""
+    client = _client(tmp_path, monkeypatch)
+    parent = tmp_path / "runs" / "20260728_135942_02_5e8bb3"
+    child = parent / "backtests" / "hk21_123"
+    artifacts = child / "artifacts"
+    artifacts.mkdir(parents=True)
+    (child / "run_card.json").write_text(
+        json.dumps({"backtest": {"codes": ["00700.HK"]}}), encoding="utf-8"
+    )
+    with (artifacts / "metrics.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["total_return"])
+        writer.writeheader()
+        writer.writerow({"total_return": 0.1})
+
+    listed = client.get("/runs?limit=20")
+
+    assert listed.status_code == 200
+    report = next(row for row in listed.json() if row["display_name"] == "hk21_123")
+    assert report["status"] == "success"

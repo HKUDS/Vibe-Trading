@@ -45,6 +45,20 @@ def _load_csv_to_dict(path: Path, limit: Optional[int] = None) -> List[Dict[str,
         return []
 
 
+def _safe_float(value: Any) -> Optional[float]:
+    """Coerce a persisted metric value to float, tolerating non-numeric values.
+
+    run_card.json metrics can carry human-readable strings (e.g. ``"12.3%"``);
+    a bad value must degrade to ``None`` instead of crashing the whole listing.
+    """
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _encode_run_relative_path(relative_path: Path) -> str:
     """Encode a nested run directory as an opaque, URL-safe legacy run ID."""
     raw = relative_path.as_posix().encode("utf-8")
@@ -414,6 +428,13 @@ def register_runs_routes(
             elif (d / "review_report.json").exists():
                 status_val = "success"
 
+            if status_val == "unknown" and (
+                (d / "run_card.json").exists() or (d / "artifacts" / "metrics.csv").exists()
+            ):
+                # Strategy sub-runs commonly omit their own state.json while
+                # still carrying completed artifacts; mirror the detail endpoint.
+                status_val = "success"
+
             # Parse created_at from run_id (YYYYMMDD_HHMMSS or run_YYYYMMDD_HHMMSS)
             created_at = "Unknown"
             if run_id.startswith("run_"):
@@ -479,11 +500,9 @@ def register_runs_routes(
             if not run_context.get("end_date"):
                 run_context["end_date"] = backtest.get("end_date")
             if total_return is None:
-                value = (run_card.get("metrics") or {}).get("total_return")
-                total_return = float(value) if value is not None else None
+                total_return = _safe_float((run_card.get("metrics") or {}).get("total_return"))
             if sharpe is None:
-                value = (run_card.get("metrics") or {}).get("sharpe")
-                sharpe = float(value) if value is not None else None
+                sharpe = _safe_float((run_card.get("metrics") or {}).get("sharpe"))
             results.append(RunInfo(
                 run_id=run_id,
                 display_name=d.name if len(relative_path.parts) > 1 else None,
