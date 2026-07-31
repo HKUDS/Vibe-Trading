@@ -10,6 +10,7 @@ Excel (.xlsx/.xls) always opens as utf-8 internally via openpyxl/xlrd.
 from __future__ import annotations
 
 import re
+import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -212,7 +213,10 @@ def _to_float(val: Any, default: float = 0.0) -> float:
     try:
         s = str(val).strip().replace("\u2212", "-")
         s = _CURRENCY_TOKEN_RE.sub("", s).replace(",", "").strip()
-        return float(s) if s else default
+        if not s:
+            return default
+        parsed = float(s)
+        return parsed if math.isfinite(parsed) else default
     except (ValueError, TypeError):
         return default
 
