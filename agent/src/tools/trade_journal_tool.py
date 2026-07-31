@@ -60,7 +60,9 @@ def pair_trades_fifo(df: pd.DataFrame) -> list[dict[str, Any]]:
         while remaining > 1e-9 and q:
             lot = q[0]
             take = min(lot["qty"], remaining)
-            hold = (row.datetime - lot["dt"]).total_seconds() / 86400.0
+            sell_dt = pd.to_datetime(row.datetime)
+            buy_dt = pd.to_datetime(lot["dt"])
+            hold = (sell_dt - buy_dt).total_seconds() / 86400.0 if pd.notna(sell_dt) and pd.notna(buy_dt) else 0.0
             gross = (row.price - lot["price"]) * take
             # Proportional fee allocation
             buy_fee = lot["fee"] * (take / lot["qty"]) if lot["qty"] else 0.0
