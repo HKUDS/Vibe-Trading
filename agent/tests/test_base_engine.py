@@ -24,6 +24,8 @@ class _AdjustmentEngine(BaseEngine):
         config.update(overrides)
         super().__init__(config)
         self.bar_positions: list[dict[str, Position]] = []
+        self.bar_capitals: list[float] = []
+        self.adjustment_events: list[dict] = []
 
     def can_execute(self, symbol, direction, bar):
         return True
@@ -35,10 +37,14 @@ class _AdjustmentEngine(BaseEngine):
         return size * price * float(self.config.get("fee_rate", 0.0))
 
     def apply_slippage(self, price, direction):
-        return price
+        return price * (1 + direction * float(self.config.get("slippage", 0.0)))
+
+    def after_position_adjustment(self, **event):
+        self.adjustment_events.append(event)
 
     def after_rebalance_bar(self, timestamp, data_map, codes):
         self.bar_positions.append(dict(self.positions))
+        self.bar_capitals.append(self.capital)
         return False
 
 
@@ -46,6 +52,17 @@ class _ChangingLeverageAdjustmentEngine(_AdjustmentEngine):
     def _leverage_for_symbol(self, symbol):
         del symbol
         return 1.0 if self._bar_idx == 0 else 2.0
+
+
+class _SymbolRulesAdjustmentEngine(_AdjustmentEngine):
+    def round_size(self, raw_size, price):
+        del price
+        lot = {"A": 1.0, "B": 0.25}[self._active_symbol]
+        return int(max(raw_size, 0.0) / lot) * lot
+
+    def calc_commission(self, size, price, direction, is_open):
+        del direction, is_open
+        return size * price * {"A": 0.01, "B": 0.02}[self._active_symbol]
 
 
 def _run_adjustments(
@@ -128,6 +145,52 @@ def test_rebalance_reduces_short_with_correct_signed_pnl():
     assert partial.pnl == pytest.approx(26.66667, rel=1e-5)
 
 
+@pytest.mark.parametrize(
+    ("direction", "target_weight", "expected_size", "expected_price", "action"),
+    [
+        (1, 0.80, 7.272727, 110.0, "increase"),
+        (-1, -0.80, 8.888889, 90.0, "increase"),
+        (1, 0.20, 2.222222, 90.0, "partial_reduction"),
+        (-1, -0.20, 1.818182, 110.0, "partial_reduction"),
+    ],
+)
+def test_existing_rebalance_sizes_target_at_action_fill(
+    direction, target_weight, expected_size, expected_price, action
+):
+    engine = _AdjustmentEngine(slippage=0.10)
+    ts = pd.Timestamp("2026-01-03")
+    frame = pd.DataFrame({"open": [100.0], "close": [100.0]}, index=[ts])
+    engine.positions["A"] = Position(
+        "A", direction, 100.0, pd.Timestamp("2026-01-02"), 5.0
+    )
+
+    engine._execute_target_rebalance(
+        {"A": target_weight}, {"A": frame}, ts, 1_000.0, ["A"]
+    )
+
+    assert engine.positions["A"].size == expected_size
+    assert engine.adjustment_events[-1]["action"] == action
+    assert engine.adjustment_events[-1]["execution_price"] == pytest.approx(expected_price)
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_existing_rebalance_does_not_churn_inside_slippage_band(direction):
+    engine = _AdjustmentEngine(slippage=0.10)
+    ts = pd.Timestamp("2026-01-03")
+    frame = pd.DataFrame({"open": [100.0], "close": [100.0]}, index=[ts])
+    before = Position("A", direction, 100.0, pd.Timestamp("2026-01-02"), 5.0)
+    engine.positions["A"] = before
+
+    engine._execute_target_rebalance(
+        {"A": direction * 0.50}, {"A": frame}, ts, 1_000.0, ["A"]
+    )
+
+    assert engine.positions == {"A": before}
+    assert engine.capital == 1_000.0
+    assert engine.trades == []
+    assert engine.adjustment_events == []
+
+
 def test_rebalance_insufficient_capital_is_atomic():
     engine = _AdjustmentEngine(fee_rate=0.10)
     with pytest.raises(ValueError, match="insufficient capital"):
@@ -135,6 +198,43 @@ def test_rebalance_insufficient_capital_is_atomic():
     assert engine.capital == 1_000.0
     assert engine.positions == {}
     assert engine.trades == []
+
+
+def test_existing_multi_symbol_rebalance_failure_is_atomic():
+    engine = _AdjustmentEngine(fee_rate=0.01)
+
+    with pytest.raises(ValueError, match="insufficient capital"):
+        _run_adjustments(engine, {"A": [0.25, 0.10], "B": [0.25, 0.90]})
+
+    assert engine.capital == engine.bar_capitals[0] == 495.0
+    assert engine.positions == engine.bar_positions[0]
+    assert engine.trades == []
+    assert engine.adjustment_events == []
+    assert len(engine.bar_positions) == 1
+
+
+@pytest.mark.parametrize(
+    ("target_weight", "expected_position", "bar_capital", "trade_fees"),
+    [
+        (0.0, None, 990.0, [10.0]),
+        (-0.50, (-1, 4.975, 4.975), 487.525, [10.0, 9.95]),
+    ],
+)
+def test_rebalance_full_zero_and_reversal_allocate_nonzero_fees(
+    target_weight, expected_position, bar_capital, trade_fees
+):
+    engine = _AdjustmentEngine(fee_rate=0.01)
+
+    _run_adjustments(engine, {"A": [0.50, target_weight]})
+
+    position = engine.bar_positions[1].get("A")
+    if expected_position is None:
+        assert position is None
+    else:
+        assert (position.direction, position.size, position.entry_commission) == expected_position
+    assert engine.bar_capitals[1] == pytest.approx(bar_capital)
+    assert [trade.commission for trade in engine.trades] == pytest.approx(trade_fees)
+    assert engine.trades[0].exit_reason == "signal"
 
 
 def test_rebalance_basket_is_independent_of_input_code_order():
@@ -150,6 +250,24 @@ def test_rebalance_basket_is_independent_of_input_code_order():
     assert [snapshot.capital for snapshot in first.equity_snapshots] == [
         snapshot.capital for snapshot in second.equity_snapshots
     ]
+
+
+def test_existing_rebalance_uses_each_symbol_rules_independent_of_code_order():
+    weights = {"A": [0.20, 0.35], "B": [0.20, 0.15]}
+    first = _SymbolRulesAdjustmentEngine()
+    second = _SymbolRulesAdjustmentEngine()
+
+    _run_adjustments(first, weights, codes=["A", "B"])
+    _run_adjustments(second, weights, codes=["B", "A"])
+
+    expected = [{"A": 2.0, "B": 2.0}, {"A": 3.0, "B": 1.25}]
+    assert [
+        {symbol: position.size for symbol, position in state.items()}
+        for state in first.bar_positions
+    ] == expected
+    assert first.bar_positions == second.bar_positions
+    assert first.bar_capitals == pytest.approx([594.0, 566.5])
+    assert first.bar_capitals == second.bar_capitals
 
 
 class _LifecycleEngine(ChinaAEngine):

@@ -41,6 +41,7 @@ from backtest.metrics import (
     calc_metrics,
     calc_trade_turnover_series,
 )
+from backtest.models import EquitySnapshot, Position, TradeRecord
 
 
 def _json_safe_scalar_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
@@ -50,8 +51,6 @@ def _json_safe_scalar_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
         for k, v in metrics.items()
         if not isinstance(v, dict)
     }
-from backtest.models import EquitySnapshot, Position, TradeRecord
-
 logger = logging.getLogger(__name__)
 
 
@@ -1235,6 +1234,7 @@ class BaseEngine(ABC):
             if not math.isfinite(target_weight):
                 raise ValueError("non-finite position rebalance value")
 
+            self._active_symbol = symbol
             before = self.positions.get(symbol)
             target_direction = 1 if target_weight > 1e-9 else (-1 if target_weight < -1e-9 else 0)
             frame = data_map.get(symbol)
@@ -1271,54 +1271,46 @@ class BaseEngine(ABC):
             raw_price = self.execution_open(bar)
             leverage = self._leverage_for_symbol(symbol)
             self._validate_rebalance_values(raw_price, before.leverage, leverage)
-            target_size = self.round_size(
-                self._calc_raw_size(
-                    symbol,
-                    abs(target_weight) * equity * before.leverage,
-                    raw_price,
-                ),
-                raw_price,
+            target_notional = abs(target_weight) * equity * before.leverage
+            prices = (
+                self.apply_slippage(raw_price, before.direction),
+                self.apply_slippage(raw_price, -before.direction),
             )
-            self._validate_rebalance_values(target_size)
-            if (
-                not math.isclose(target_size, before.size, rel_tol=1e-9, abs_tol=1e-9)
-                and not math.isclose(leverage, before.leverage, rel_tol=1e-9, abs_tol=1e-9)
-            ):
+            sizes = tuple(
+                self.round_size(
+                    self._calc_raw_size(symbol, target_notional, price), price
+                )
+                for price in prices
+            )
+            self._validate_rebalance_values(*prices, *sizes)
+            increase = sizes[0] > before.size + 1e-9
+            reduction = sizes[1] < before.size - 1e-9
+            # Both or neither means the target lies inside the fill-price band.
+            if increase == reduction:
+                continue
+            target_size, price = (sizes[0], prices[0]) if increase else (sizes[1], prices[1])
+            if not math.isclose(leverage, before.leverage, rel_tol=1e-9, abs_tol=1e-9):
                 raise ValueError("cannot rebalance a position with changed leverage")
-            if target_size > before.size + 1e-9:
+            if increase:
                 if not self.can_execute(symbol, target_direction, bar):
                     continue
-                order = self._plan_open_order(
-                    symbol,
-                    target_weight,
-                    frame,
-                    ts,
-                    equity,
-                    allow_existing=True,
+                size = target_size - before.size
+                order = _OpenOrder(
+                    symbol=symbol,
+                    direction=before.direction,
+                    price=price,
+                    size=size,
+                    leverage=leverage,
+                    margin=self._calc_margin(symbol, size, price, leverage),
+                    commission=self.calc_commission(
+                        size, price, before.direction, is_open=True
+                    ),
                 )
-                if order is not None:
-                    order = _OpenOrder(
-                        symbol=order.symbol,
-                        direction=order.direction,
-                        price=order.price,
-                        size=target_size - before.size,
-                        leverage=order.leverage,
-                        margin=self._calc_margin(
-                            symbol, target_size - before.size, order.price, order.leverage
-                        ),
-                        commission=self.calc_commission(
-                            target_size - before.size,
-                            order.price,
-                            order.direction,
-                            is_open=True,
-                        ),
-                    )
-                    self._validate_rebalance_values(
-                        order.price, order.leverage, order.size, order.margin, order.commission
-                    )
-                    opens.append(order)
-            elif target_size < before.size - 1e-9 and self.can_execute(symbol, 0, bar):
-                price = self.apply_slippage(raw_price, -before.direction)
+                self._validate_rebalance_values(
+                    order.price, order.leverage, order.size, order.margin, order.commission
+                )
+                opens.append(order)
+            elif self.can_execute(symbol, 0, bar):
                 reductions.append(self._plan_reduction(before, target_size, price))
 
         projected_capital = self.capital + sum(
