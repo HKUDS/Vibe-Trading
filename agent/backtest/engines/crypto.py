@@ -59,6 +59,10 @@ class CryptoEngine(BaseEngine):
         self.funding_mode = str(config.get("funding_mode", "fixed"))
         self.margin_mode = str(config.get("margin_mode", "isolated"))
         self.liquidation_fee_rate = float(config.get("liquidation_fee_rate", 0.0))
+        if self.perpetual_strict and self.position_adjustment == "rebalance":
+            raise ValueError(
+                "strict USD-M position rebalancing requires margin-state integration"
+            )
         if self.perpetual_strict and self.funding_mode != "data":
             raise ValueError("perpetual_strict requires funding_mode='data'")
         if self.perpetual_strict and self.margin_mode not in {"isolated", "cross"}:

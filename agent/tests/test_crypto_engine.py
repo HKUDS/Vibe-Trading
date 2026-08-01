@@ -500,6 +500,10 @@ class TestHistoricalFundingRate:
 
 
 class TestStrictPerpetualLifecycle:
+    def test_strict_rebalance_fails_closed_until_margin_integration(self) -> None:
+        with pytest.raises(ValueError, match="strict USD-M position rebalancing"):
+            _strict_engine(position_adjustment="rebalance")
+
     @pytest.mark.parametrize("interval", ["3m", "60m", "4H", "1D"])
     def test_strict_100x_rejects_unsupported_or_coarse_intervals(
         self, interval: str
