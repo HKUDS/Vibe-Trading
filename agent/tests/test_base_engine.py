@@ -42,6 +42,12 @@ class _AdjustmentEngine(BaseEngine):
         return False
 
 
+class _ChangingLeverageAdjustmentEngine(_AdjustmentEngine):
+    def _leverage_for_symbol(self, symbol):
+        del symbol
+        return 1.0 if self._bar_idx == 0 else 2.0
+
+
 def _run_adjustments(
     engine: _AdjustmentEngine,
     weights: dict[str, list[float]],
@@ -97,6 +103,16 @@ def test_rebalance_scale_in_uses_weighted_average_entry():
     assert engine.bar_positions[0]["A"].size == 2.5
     assert engine.bar_positions[1]["A"].size == 4.375
     assert engine.bar_positions[1]["A"].entry_price == pytest.approx(108.5714285714)
+
+
+def test_rebalance_rejects_same_direction_adjustment_with_changed_leverage():
+    engine = _ChangingLeverageAdjustmentEngine()
+    with pytest.raises(ValueError, match="leverage"):
+        _run_adjustments(engine, {"A": [0.25, 0.50]})
+    assert engine.capital == 750.0
+    assert engine.bar_positions == [
+        {"A": Position("A", 1, 100.0, pd.Timestamp("2026-01-02"), 2.5)}
+    ]
 
 
 def test_rebalance_reduces_short_with_correct_signed_pnl():

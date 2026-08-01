@@ -1269,7 +1269,8 @@ class BaseEngine(ABC):
                 continue
 
             raw_price = self.execution_open(bar)
-            self._validate_rebalance_values(raw_price, before.leverage)
+            leverage = self._leverage_for_symbol(symbol)
+            self._validate_rebalance_values(raw_price, before.leverage, leverage)
             target_size = self.round_size(
                 self._calc_raw_size(
                     symbol,
@@ -1279,6 +1280,11 @@ class BaseEngine(ABC):
                 raw_price,
             )
             self._validate_rebalance_values(target_size)
+            if (
+                not math.isclose(target_size, before.size, rel_tol=1e-9, abs_tol=1e-9)
+                and not math.isclose(leverage, before.leverage, rel_tol=1e-9, abs_tol=1e-9)
+            ):
+                raise ValueError("cannot rebalance a position with changed leverage")
             if target_size > before.size + 1e-9:
                 if not self.can_execute(symbol, target_direction, bar):
                     continue
