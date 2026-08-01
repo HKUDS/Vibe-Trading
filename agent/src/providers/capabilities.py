@@ -133,6 +133,22 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
         capture_reasoning=True,
         openrouter_reasoning_body=True,
     ),
+    # OrcaRouter is an OpenAI-compatible LLM gateway using the same
+    # ``provider/model`` naming as OpenRouter. Reasoning models relayed through
+    # it (deepseek-reasoner, gpt-5.x, …) emit ``reasoning_content`` by default,
+    # so capture is on. ``openrouter_reasoning_body`` stays OFF deliberately:
+    # verified live 2026-08-01, the gateway accepts an ``extra_body.reasoning``
+    # object with HTTP 200 but does not act on it — an Anthropic route sent
+    # ``{"reasoning": {"effort": "low"}}`` returned no ``reasoning_content``,
+    # and a bogus effort value was silently tolerated rather than rejected.
+    # Sending the opt-in body would therefore be dead weight that also masks
+    # typos, and it is not needed: reasoning already arrives unprompted.
+    "orcarouter": ProviderCapabilities(
+        "orcarouter",
+        "ORCAROUTER_API_KEY",
+        "ORCAROUTER_BASE_URL",
+        capture_reasoning=True,
+    ),
     # Requesty is an OpenAI-compatible LLM gateway using the same
     # ``provider/model`` naming and the same opt-in ``extra_body.reasoning``
     # request option as OpenRouter, so it shares OpenRouter's capability shape.

@@ -231,6 +231,21 @@ class TestRelayOptIn:
         assert kwargs["extra_body"] == {"reasoning": {"effort": "high"}}
         assert kwargs["reasoning_effort"] is None
 
+    def test_orcarouter_sends_neither_delivery_path(self) -> None:
+        """OrcaRouter is a gateway, but not one of the extra_body opt-in relays."""
+        kwargs = _capture_kwargs(
+            {
+                "LANGCHAIN_PROVIDER": "orcarouter",
+                "ORCAROUTER_API_KEY": "sk-orca-test",
+                "ORCAROUTER_BASE_URL": "https://api.orcarouter.ai/v1",
+                "LANGCHAIN_MODEL_NAME": "deepseek/deepseek-v4-pro",
+                "LANGCHAIN_REASONING_EFFORT": "high",
+            }
+        )
+
+        assert kwargs["extra_body"] is None
+        assert kwargs["reasoning_effort"] is None
+
     def test_requesty_keeps_extra_body_and_no_top_level_field(self) -> None:
         kwargs = _capture_kwargs(
             {
