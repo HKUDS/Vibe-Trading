@@ -65,6 +65,12 @@ class _SymbolRulesAdjustmentEngine(_AdjustmentEngine):
         return size * price * {"A": 0.01, "B": 0.02}[self._active_symbol]
 
 
+class _ForcedFillAdjustmentEngine(_AdjustmentEngine):
+    def apply_slippage(self, price, direction):
+        forced = self.config.get("forced_fill_price")
+        return super().apply_slippage(price, direction) if forced is None else forced
+
+
 def _run_adjustments(
     engine: _AdjustmentEngine,
     weights: dict[str, list[float]],
@@ -98,6 +104,81 @@ def test_hold_mode_keeps_same_direction_size():
     engine = _AdjustmentEngine(position_adjustment="hold")
     _run_adjustments(engine, {"A": [0.25, 0.50, 0.20]})
     assert [state["A"].size for state in engine.bar_positions] == [2.5, 2.5, 2.5]
+
+
+def test_hold_mode_preserves_legacy_negative_open_support():
+    engine = _AdjustmentEngine(
+        position_adjustment="hold", allow_nonpositive_prices=True
+    )
+    _run_adjustments(
+        engine, {"A": [0.50]}, execution_prices={"A": [-100.0]}
+    )
+    assert engine.bar_positions[0]["A"].entry_price == -100.0
+
+
+@pytest.mark.parametrize(
+    ("existing", "target_weight"),
+    [
+        pytest.param(False, 0.50, id="initial-open"),
+        pytest.param(True, 0.0, id="full-close"),
+        pytest.param(True, -0.50, id="reversal"),
+        pytest.param(True, 0.80, id="increase"),
+        pytest.param(True, 0.20, id="reduction"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("raw_price", "forced_fill"),
+    [
+        pytest.param(0.0, None, id="zero-raw"),
+        pytest.param(-1.0, None, id="negative-raw"),
+        pytest.param(np.nan, None, id="nan-raw"),
+        pytest.param(np.inf, None, id="infinite-raw"),
+        pytest.param(100.0, 0.0, id="zero-fill"),
+        pytest.param(100.0, -1.0, id="negative-fill"),
+        pytest.param(100.0, np.nan, id="nan-fill"),
+        pytest.param(100.0, np.inf, id="infinite-fill"),
+    ],
+)
+def test_rebalance_rejects_invalid_execution_prices_before_mutation(
+    existing, target_weight, raw_price, forced_fill
+):
+    engine = _ForcedFillAdjustmentEngine(
+        allow_nonpositive_prices=True, forced_fill_price=forced_fill
+    )
+    ts = pd.Timestamp("2026-01-03")
+    frame = pd.DataFrame({"open": [raw_price], "close": [100.0]}, index=[ts])
+    if existing:
+        engine.positions["A"] = Position(
+            "A", 1, 100.0, pd.Timestamp("2026-01-02"), 5.0
+        )
+    positions = dict(engine.positions)
+
+    with pytest.raises(ValueError, match="positive execution price"):
+        engine._execute_target_rebalance(
+            {"A": target_weight}, {"A": frame}, ts, 1_000.0, ["A"]
+        )
+
+    assert engine.capital == 1_000.0
+    assert engine.positions == positions
+    assert engine.trades == []
+    assert engine.adjustment_events == []
+
+
+def test_rebalance_empty_zero_target_ignores_invalid_price():
+    engine = _ForcedFillAdjustmentEngine(
+        allow_nonpositive_prices=True, forced_fill_price=0.0
+    )
+    ts = pd.Timestamp("2026-01-03")
+    frame = pd.DataFrame({"open": [0.0], "close": [100.0]}, index=[ts])
+
+    engine._execute_target_rebalance(
+        {"A": 0.0}, {"A": frame}, ts, 1_000.0, ["A"]
+    )
+
+    assert engine.capital == 1_000.0
+    assert engine.positions == {}
+    assert engine.trades == []
+    assert engine.adjustment_events == []
 
 
 def test_rebalance_increases_then_reduces_same_direction_position():

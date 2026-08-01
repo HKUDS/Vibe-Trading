@@ -1173,6 +1173,7 @@ class BaseEngine(ABC):
         equity: float,
         *,
         allow_existing: bool = False,
+        require_positive_price: bool = False,
     ) -> Optional[_OpenOrder]:
         """Price an opening order without mutating portfolio state."""
         self._active_symbol = symbol
@@ -1188,12 +1189,16 @@ class BaseEngine(ABC):
         if not self.can_execute(symbol, direction, bar):
             return None
         open_price = self.execution_open(bar)
+        if require_positive_price:
+            self._validate_positive_rebalance_prices(open_price)
         # Zero is always rejected (size = notional / price is undefined);
         # negatives are rejected unless this engine opted into non-positive
         # prices, in which case abs()-based sizing/margin below handle them.
-        if open_price == 0 or (open_price < 0 and not self.allow_nonpositive_prices):
+        elif open_price == 0 or (open_price < 0 and not self.allow_nonpositive_prices):
             return None
         price = self.apply_slippage(open_price, direction)
+        if require_positive_price:
+            self._validate_positive_rebalance_prices(price)
         leverage = self._leverage_for_symbol(symbol)
         target_notional = abs(target_weight) * equity * leverage
         size = self.round_size(
@@ -1245,12 +1250,21 @@ class BaseEngine(ABC):
             if before is not None and (target_direction == 0 or target_direction != before.direction):
                 if not self.can_execute(symbol, 0, bar):
                     continue
-                price = self.apply_slippage(self.execution_open(bar), -before.direction)
+                raw_price = self.execution_open(bar)
+                self._validate_positive_rebalance_prices(raw_price)
+                price = self.apply_slippage(raw_price, -before.direction)
+                self._validate_positive_rebalance_prices(price)
                 reductions.append(self._plan_reduction(before, 0.0, price))
                 if target_direction == 0:
                     continue
                 order = self._plan_open_order(
-                    symbol, target_weight, frame, ts, equity, allow_existing=True
+                    symbol,
+                    target_weight,
+                    frame,
+                    ts,
+                    equity,
+                    allow_existing=True,
+                    require_positive_price=True,
                 )
                 if order is not None:
                     self._validate_rebalance_values(
@@ -1260,7 +1274,14 @@ class BaseEngine(ABC):
                 continue
 
             if before is None:
-                order = self._plan_open_order(symbol, target_weight, frame, ts, equity)
+                order = self._plan_open_order(
+                    symbol,
+                    target_weight,
+                    frame,
+                    ts,
+                    equity,
+                    require_positive_price=True,
+                )
                 if order is not None:
                     self._validate_rebalance_values(
                         order.price, order.leverage, order.size, order.margin, order.commission
@@ -1269,6 +1290,7 @@ class BaseEngine(ABC):
                 continue
 
             raw_price = self.execution_open(bar)
+            self._validate_positive_rebalance_prices(raw_price)
             leverage = self._leverage_for_symbol(symbol)
             self._validate_rebalance_values(raw_price, before.leverage, leverage)
             target_notional = abs(target_weight) * equity * before.leverage
@@ -1276,6 +1298,7 @@ class BaseEngine(ABC):
                 self.apply_slippage(raw_price, before.direction),
                 self.apply_slippage(raw_price, -before.direction),
             )
+            self._validate_positive_rebalance_prices(*prices)
             sizes = tuple(
                 self.round_size(
                     self._calc_raw_size(symbol, target_notional, price), price
@@ -1331,6 +1354,11 @@ class BaseEngine(ABC):
                 self._execute_position_increase(order, ts)
             else:
                 self._execute_open_order(order, ts)
+
+    @staticmethod
+    def _validate_positive_rebalance_prices(*prices: float) -> None:
+        if not all(math.isfinite(float(price)) and float(price) > 0 for price in prices):
+            raise ValueError("rebalance requires a finite positive execution price")
 
     @staticmethod
     def _validate_rebalance_values(*values: float) -> None:
