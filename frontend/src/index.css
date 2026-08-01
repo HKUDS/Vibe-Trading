@@ -43,23 +43,25 @@
   }
 
   .dark {
-    /* Dark mode: 4-level surface system */
+    /* Dark mode: 4-level surface system. Keep >=5 lightness points between
+       adjacent surfaces — smaller deltas are indistinguishable on most
+       panels (sidebar vs main blended at 5%/8%). */
     --background: 220 20% 5%;       /* bg-base */
-    --foreground: 220 10% 92%;
-    --card: 220 20% 8%;             /* surface-1 */
-    --card-foreground: 220 10% 92%;
+    --foreground: 220 10% 93%;
+    --card: 220 18% 10%;            /* surface-1 */
+    --card-foreground: 220 10% 93%;
 
-    --popover: 220 20% 9%;          /* surface-1.5 (slightly lighter than card) */
-    --popover-foreground: 220 10% 92%;
+    --popover: 220 18% 12%;         /* surface-1.5 (slightly lighter than card) */
+    --popover-foreground: 220 10% 93%;
 
     --primary: 27 90% 52%;
     --primary-foreground: 0 0% 100%;
 
-    --muted: 220 20% 13%;           /* surface-2 */
-    --muted-foreground: 220 10% 55%;
+    --muted: 220 16% 16%;           /* surface-2 */
+    --muted-foreground: 220 10% 64%;
     --destructive: 0 62% 50%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 20% 18%;          /* surface-3 */
+    --border: 220 14% 24%;          /* surface-3 */
 
     /* Semantic colors */
     --success: 142 71% 45%;
@@ -68,9 +70,9 @@
     --info: 217 91% 60%;
 
     /* Chart tokens */
-    --chart-grid: 220 20% 12%;
-    --chart-text: 220 10% 42%;
-    --chart-axis: 220 20% 22%;
+    --chart-grid: 220 20% 14%;
+    --chart-text: 220 10% 55%;
+    --chart-axis: 220 20% 26%;
     --chart-compare-a: #60a5fa;
     --chart-compare-b: #fbbf24;
   }
@@ -95,6 +97,25 @@
   0%   { transform: translateX(-100%); }
   50%  { transform: translateX(200%); }
   100% { transform: translateX(-100%); }
+}
+
+.chat-scroll-container[data-streaming="true"] {
+  overflow-anchor: none;
+}
+
+.katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Message/hero entrance — one subtle rise per mount; removed under reduced motion */
+@keyframes msg-enter {
+  from { opacity: 0; transform: translateY(10px); }
+}
+.msg-enter { animation: msg-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .msg-enter { animation: none; }
 }
 
 /* RTL: mirror directional icons (chevrons, arrows) automatically */

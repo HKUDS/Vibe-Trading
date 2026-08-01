@@ -32,7 +32,7 @@ from src.swarm.models import (
 )
 from src.tools import build_swarm_registry
 from src.tools.mcp import MCPRemoteTool
-from src.tools.redaction import is_sensitive_arg, redact_payload
+from src.tools.redaction import is_sensitive_arg, redact_payload, redact_tool_result
 
 logger = logging.getLogger(__name__)
 
@@ -665,6 +665,7 @@ def run_worker(
             _emit(
                 event_callback, "tool_call", agent_id, task_id,
                 {"tool": tc.name, "iteration": iteration,
+                 "call_id": tc.id,
                  "arguments": _preview_tool_arguments(tc.arguments),
                  **mcp_meta},
             )
@@ -701,6 +702,7 @@ def run_worker(
                 task_id,
                 {
                     "tool": tc.name,
+                    "call_id": tc.id,
                     "elapsed_ms": int(tc_elapsed * 1000),
                     "status": "error" if result_is_error else "ok",
                     "iteration": iteration,
@@ -798,12 +800,13 @@ def _preview_tool_arguments(arguments: dict) -> dict[str, str]:
 
 
 def _preview_tool_result(result: str) -> str:
-    """Return a short, redacted result preview for streamed events."""
-    try:
-        parsed = json.loads(result)
-    except (TypeError, ValueError):
-        return _truncate_preview(result)
-    return _truncate_preview(redact_payload(parsed))
+    """Return a short, redacted result preview for streamed events.
+
+    Delegates to the shared :func:`redact_tool_result` choke point so a
+    plain-text result is pattern-scrubbed instead of streamed raw (a JSON
+    result was already scrubbed by key).
+    """
+    return _truncate_preview(redact_tool_result(result))
 
 
 def _truncate_preview(value: Any, *, limit: int = 200) -> str:

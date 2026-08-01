@@ -16,6 +16,7 @@ import re
 
 import pandas as pd
 
+from backtest.engines.china_a import _blocked_by_limit
 from backtest.engines.futures_base import FuturesBaseEngine
 
 
@@ -151,6 +152,8 @@ class ChinaFuturesEngine(FuturesBaseEngine):
                 leverage = 10.0  # ~10% margin default
         config = {**config, "leverage": leverage}
         super().__init__(config)
+        # Futures bands come off the previous settlement, not the previous close.
+        self.base_price_fields = ("pre_settle", "pre_close")
         self.slippage_rate: float = config.get("slippage", 0.0005)
         self._margin_rate_override = margin_override if margin_override else None
         self._commission_override = config.get("commission_override")
@@ -169,24 +172,20 @@ class ChinaFuturesEngine(FuturesBaseEngine):
         # T+0: no same-day sell restriction
         # Both long and short allowed
 
-        # Price limit check
-        pct_chg = _calc_pct_change(bar)
-        if pct_chg is not None:
-            product = _extract_product(symbol)
-            limit = _PRICE_LIMIT.get(product, _DEFAULT_PRICE_LIMIT)
-            if direction == 1 and pct_chg >= limit - 0.001:
-                return False  # limit-up: can't open long / can't buy
-            if direction == -1 and pct_chg <= -limit + 0.001:
-                return False  # limit-down: can't open short
-            if direction == 0:
-                pos = self.positions.get(symbol)
-                if pos is not None:
-                    # Can't close long at limit-down, can't close short at limit-up
-                    if pos.direction == 1 and pct_chg <= -limit + 0.001:
-                        return False
-                    if pos.direction == -1 and pct_chg >= limit - 0.001:
-                        return False
-        return True
+        # Price limit, tested at execution time (see _blocked_by_limit).
+        product = _extract_product(symbol)
+        limit = _PRICE_LIMIT.get(product, _DEFAULT_PRICE_LIMIT)
+        pos = self.positions.get(symbol) if direction == 0 else None
+        if pos is None and direction == 0:
+            return True
+        return not _blocked_by_limit(
+            self,
+            symbol,
+            direction,
+            bar,
+            limit,
+            position_direction=pos.direction if pos is not None else None,
+        )
 
     def round_size(self, raw_size: float, price: float) -> float:
         """Minimum 1 contract, integer lots only."""
@@ -253,33 +252,3 @@ class ChinaFuturesEngine(FuturesBaseEngine):
 
 # ── Helpers ──
 
-
-# Note: china_a uses close/pre_close-only; global_futures prioritises
-# close/pre_close before settle. This China-futures variant prefers
-# settle/pre_settle because tushare reports settlement as the canonical
-# daily price for domestic contracts. See those modules for the equity /
-# global-futures equivalents.
-def _calc_pct_change(bar: pd.Series):
-    """Calculate bar price change percentage.
-
-    Priority: settle/pre_settle (futures native) > close/pre_close > pct_chg.
-    pct_chg from tushare is always in percentage points (0.5 = 0.5%).
-    """
-    # Prefer settlement prices (unambiguous for futures)
-    settle = bar.get("settle")
-    pre_settle = bar.get("pre_settle")
-    if settle is not None and pre_settle is not None and pre_settle > 0:
-        return (float(settle) - float(pre_settle)) / float(pre_settle)
-
-    close = bar.get("close")
-    pre_close = bar.get("pre_close")
-    if close is not None and pre_close is not None and pre_close > 0:
-        return (float(close) - float(pre_close)) / float(pre_close)
-
-    # tushare pct_chg is in percentage points (e.g. 0.5 = 0.5%)
-    if "pct_chg" in bar.index:
-        val = bar["pct_chg"]
-        if pd.notna(val):
-            return float(val) / 100.0
-
-    return None

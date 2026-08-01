@@ -1,5 +1,5 @@
 import { render } from "@testing-library/react";
-import { MessageBubble } from "../MessageBubble";
+import { MarkdownContent, MessageBubble } from "../MessageBubble";
 import type { AgentMessage } from "@/types/agent";
 
 // Unlike MessageBubble.test.tsx, react-markdown is NOT mocked here: these tests
@@ -43,5 +43,32 @@ describe("MessageBubble LaTeX rendering", () => {
       <MessageBubble msg={answer('```python\nre.match(r"\\(x\\)", s)\n```')} />,
     );
     expect(container.querySelector(".katex")).toBeNull();
+  });
+
+  it("keeps streaming markdown structural without running KaTeX enhancement", () => {
+    const { container } = render(
+      <MarkdownContent content={"Sharpe: \\(\\frac{R_p}{\\sigma_p}\\)"} streaming showCursor />,
+    );
+    expect(container.querySelector(".katex")).toBeNull();
+    expect(container.textContent).toContain("Sharpe:");
+    expect(container.querySelector(".animate-pulse")).not.toBeNull();
+  });
+
+  it("wraps markdown tables in a horizontal scroll container", () => {
+    const { container } = render(
+      <MarkdownContent content={"| Symbol | Return |\n| --- | ---: |\n| AAPL | 12% |"} />,
+    );
+    const table = container.querySelector("table");
+    expect(table).not.toBeNull();
+    expect(table?.parentElement).toHaveClass("overflow-x-auto");
+  });
+
+  it("opens markdown links in a separate, isolated tab", () => {
+    const { container } = render(
+      <MarkdownContent content={"[Source](https://example.com/report)"} />,
+    );
+    const link = container.querySelector("a");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
   });
 });

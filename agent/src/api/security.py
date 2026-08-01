@@ -34,6 +34,20 @@ _DEFAULT_CORS_ORIGINS: tuple[str, ...] = (
     "http://127.0.0.1:8000",
 )
 
+# Opt-in additive CORS origins. Unlike ``CORS_ORIGINS`` — which *replaces* the
+# loopback defaults — entries here are appended to whatever the effective origin
+# list already is, so trusting one extra browser origin never silently drops the
+# bundled Web UI. Every entry widens a credentialed CORS surface across the whole
+# API (see ``add_middleware(CORSMiddleware, allow_credentials=True)`` in
+# ``api_server.py``), so it stays empty by default and off the loopback contract.
+# Example — trust OpenBB Workspace as a custom-agent host:
+#     VIBE_TRADING_EXTRA_CORS_ORIGINS=https://pro.openbb.co
+# Set it as a real process env var (shell export / docker-compose `environment:` /
+# systemd). Like ``CORS_ORIGINS``, it is resolved when ``api_server`` builds the
+# middleware, which happens before ``run_preflight()`` loads ``agent/.env`` —
+# a value living only in that file would be read too late.
+_EXTRA_CORS_ORIGINS_ENV = "VIBE_TRADING_EXTRA_CORS_ORIGINS"
+
 _DEFAULT_LOOPBACK_HOSTS = frozenset({
     "localhost",
     "127.0.0.1",
@@ -59,6 +73,30 @@ def _parse_cors_origins(raw: Optional[str]) -> List[str]:
         raise RuntimeError(
             "CORS_ORIGINS='*' is not allowed while credentials are enabled; "
             "configure explicit Web UI origins instead."
+        )
+    return origins
+
+
+def _parse_extra_cors_origins(raw: Optional[str]) -> List[str]:
+    """Parse the additive CORS origin allow-list, rejecting a wildcard.
+
+    Args:
+        raw: Comma-separated origin list from ``VIBE_TRADING_EXTRA_CORS_ORIGINS``,
+            or ``None`` / empty when the operator opted out.
+
+    Returns:
+        The explicit extra origins, in declaration order.
+
+    Raises:
+        RuntimeError: If ``*`` is requested; credentialed CORS forbids it.
+    """
+    if raw is None or not raw.strip():
+        return []
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    if "*" in origins:
+        raise RuntimeError(
+            f"{_EXTRA_CORS_ORIGINS_ENV}='*' is not allowed while credentials are "
+            "enabled; list explicit origins instead."
         )
     return origins
 
@@ -105,8 +143,17 @@ def _is_loopback_bind_host(host: str) -> bool:
 
 
 def _get_cors_origins() -> List[str]:
+    """Return the effective CORS allow-list: base origins plus opt-in extras."""
     from src.config.accessor import get_env_config
-    return _parse_cors_origins(get_env_config().api.cors_origins or None)
+
+    config = get_env_config().api
+    origins = _parse_cors_origins(config.cors_origins or None)
+    for origin in _parse_extra_cors_origins(
+        config.vibe_trading_extra_cors_origins or None
+    ):
+        if origin not in origins:
+            origins.append(origin)
+    return origins
 
 
 # ============================================================================

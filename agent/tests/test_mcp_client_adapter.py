@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from typing import Any
 
 import pytest
@@ -275,6 +277,85 @@ def test_remote_tool_execute_forwards_arguments_for_composed_schema() -> None:
 
     assert payload["status"] == "ok"
     assert state["call_records"][0]["arguments"] == {"symbol": "AAPL"}
+
+
+@dataclass
+class _RobinhoodPosition:
+    """FastMCP-style generated dataclass nested in a Robinhood response."""
+
+    symbol: str
+    quantity: float
+    opened_on: date
+    updated_at: datetime
+
+
+@dataclass
+class _RobinhoodPortfolio:
+    """Representative account/positions payload from Robinhood Agentic MCP."""
+
+    account_number: str
+    buying_power: float
+    positions: list[_RobinhoodPosition]
+    market_dates: dict[str, date]
+
+
+def test_robinhood_dataclass_dates_are_json_safe_end_to_end() -> None:
+    """Generated dataclasses must not raise the false circular-reference error (#922)."""
+    portfolio = _RobinhoodPortfolio(
+        account_number="RH-123",
+        buying_power=2500.75,
+        positions=[
+            _RobinhoodPosition(
+                symbol="AAPL",
+                quantity=3.5,
+                opened_on=date(2026, 7, 31),
+                updated_at=datetime(2026, 8, 1, 7, 30, tzinfo=timezone.utc),
+            )
+        ],
+        market_dates={"next_open": date(2026, 8, 3)},
+    )
+    state = {
+        "list_calls": 0,
+        "call_calls": 0,
+        "call_records": [],
+        "list_outcomes": [[
+            mcp_types.Tool(
+                name="get_portfolio",
+                description="Read the Robinhood portfolio",
+                inputSchema={"type": "object", "properties": {}},
+            )
+        ]],
+        "call_outcomes": [
+            CallToolResult(
+                content=[],
+                structured_content=None,
+                meta=None,
+                data=portfolio,
+            )
+        ],
+    }
+
+    tool = build_mcp_tool_wrappers(
+        "robinhood",
+        _make_config(enabled_tools=["get_portfolio"]),
+        client_factory=_make_factory(state),
+    )[0]
+    payload = json.loads(tool.execute())
+
+    assert payload["status"] == "ok"
+    assert payload["data"] == {
+        "account_number": "RH-123",
+        "buying_power": 2500.75,
+        "positions": [
+            {
+                "symbol": "AAPL",
+                "quantity": 3.5,
+                "opened_on": "2026-07-31",
+                "updated_at": "2026-08-01T07:30:00+00:00",
+            }
+        ],
+        "market_dates": {"next_open": "2026-08-03"},
+    }
 
 
 def test_build_mcp_tool_wrappers_disambiguates_colliding_local_names() -> None:

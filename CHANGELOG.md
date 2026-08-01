@@ -20,6 +20,32 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - Lazy FTS5 auto-rebuild on first search when index is empty
 - 9 end-to-end integration tests + 23 benchmark tests against real production corpus
 
+## [0.1.13] — 2026-08-01
+
+### Added
+- **Read-only sentiment tool** (#939): local lexicon scoring for arbitrary text
+  plus the crypto Fear & Greed Index from Alternative.me's free, no-auth API.
+
+### Fixed
+- **Agent identity ordering and evidence grounding** (#887/#886): market-sensitive
+  consumers now require a canonical symbol/venue locked before their assistant
+  tool-call batch starts, so a resolver and its consumer cannot race in one
+  parallel batch. Silent exchange-suffix rewrites are rejected, listed-company
+  evidence cannot be overwritten by model memory, and ambiguous/not-found/
+  conflicting/invalidated identities are persisted as first-class states.
+- **Final numeric consistency gate** (#886): full untruncated OHLC tool results
+  are recorded as structured evidence with symbol, venue, currency, actual data
+  source, and explicit conversion status. Contradictory final prices are rejected
+  before streaming; derived levels require a visible, arithmetically correct
+  formula anchored to observed inputs, and repeated bad drafts fail closed to
+  verified observations.
+  Tool envelopes with `ok: false`, `success: false`, or failed status are no
+  longer recorded as successful calls.
+- **Robinhood Agentic MCP response serialization** (#922): nested FastMCP
+  dataclasses containing `date`/`datetime` values serialize to JSON instead of
+  surfacing the misleading `Circular reference detected` error. A representative
+  Robinhood portfolio/account shape now has an end-to-end regression test.
+
 ## [0.1.12] — 2026-07-22
 
 ### Added

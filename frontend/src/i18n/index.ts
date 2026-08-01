@@ -1,11 +1,8 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
+import { safeRemove } from "@/lib/storage";
 import en from "./locales/en.json";
-import zhCN from "./locales/zh-CN.json";
-import ja from "./locales/ja.json";
-import ko from "./locales/ko.json";
-import ar from "./locales/ar.json";
 
 // Language registry — keep in sync with the Layout switcher and README_xx.md.
 // `dir` flags whether the language is right-to-left so the app can mirror the
@@ -19,6 +16,51 @@ export const SUPPORTED_LANGUAGES = [
 ] as const;
 
 export type SupportedLanguageCode = (typeof SUPPORTED_LANGUAGES)[number]["code"];
+type LazyLanguageCode = Exclude<SupportedLanguageCode, "en">;
+
+const localeLoaders = {
+  "zh-CN": () => import("./locales/zh-CN.json"),
+  ja: () => import("./locales/ja.json"),
+  ko: () => import("./locales/ko.json"),
+  ar: () => import("./locales/ar.json"),
+} satisfies Record<LazyLanguageCode, () => Promise<{ default: typeof en }>>;
+
+const LANGUAGE_STORAGE_KEY = "i18nextLng";
+const LOCALE_LOAD_ATTEMPTS = 2;
+const loadedLanguages = new Set<SupportedLanguageCode>(["en"]);
+const loadingLanguages = new Map<LazyLanguageCode, Promise<void>>();
+let lastStableLanguage: SupportedLanguageCode = "en";
+
+function getLazyLanguage(code: string): LazyLanguageCode | undefined {
+  return (Object.keys(localeLoaders) as LazyLanguageCode[]).find(
+    (supportedCode) => code === supportedCode || code.startsWith(`${supportedCode}-`),
+  );
+}
+
+async function loadLanguage(code: LazyLanguageCode): Promise<void> {
+  if (loadedLanguages.has(code)) return;
+
+  const inFlight = loadingLanguages.get(code);
+  if (inFlight) return inFlight;
+
+  const load = (async () => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < LOCALE_LOAD_ATTEMPTS; attempt += 1) {
+      try {
+        const { default: resources } = await localeLoaders[code]();
+        i18n.addResourceBundle(code, "translation", resources, true, true);
+        loadedLanguages.add(code);
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError;
+  })().finally(() => loadingLanguages.delete(code));
+
+  loadingLanguages.set(code, load);
+  return load;
+}
 
 const RTL_CODES = new Set<SupportedLanguageCode>(
   SUPPORTED_LANGUAGES.filter((l) => l.dir === "rtl").map((l) => l.code),
@@ -37,17 +79,55 @@ export function applyDocumentDirection(code: string): void {
   document.documentElement.setAttribute("lang", code);
 }
 
+// Keep the <html dir/lang> attributes in sync with the active language and
+// lazily register non-English resources. English remains available as the
+// fallback while a requested locale is loading, so the UI never renders keys.
+i18n.on("languageChanged", (lng) => {
+  applyDocumentDirection(lng);
+
+  const lazyLanguage = getLazyLanguage(lng);
+  if (!lazyLanguage) {
+    lastStableLanguage = "en";
+    return;
+  }
+  if (loadedLanguages.has(lazyLanguage)) {
+    lastStableLanguage = lazyLanguage;
+    return;
+  }
+
+  const previousLanguage = lastStableLanguage;
+
+  void loadLanguage(lazyLanguage)
+    .then(() => {
+      // Do not let a slow import undo a newer language selection.
+      if (getLazyLanguage(i18n.language) === lazyLanguage) {
+        return i18n.changeLanguage(lazyLanguage);
+      }
+    })
+    .catch(async (error: unknown) => {
+      // A later selection owns the document now; do not roll it back.
+      if (getLazyLanguage(i18n.language) !== lazyLanguage) return;
+
+      console.warn(
+        `[i18n] Failed to load locale "${lazyLanguage}" after ${LOCALE_LOAD_ATTEMPTS} attempts; reverting to "${previousLanguage}".`,
+        error,
+      );
+      safeRemove(LANGUAGE_STORAGE_KEY);
+      await i18n.changeLanguage(previousLanguage);
+      // LanguageDetector caches every change, including the rollback. Keep the
+      // failed explicit selection cleared so the next load starts from a safe default.
+      safeRemove(LANGUAGE_STORAGE_KEY);
+    });
+});
+
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources: {
       en: { translation: en },
-      "zh-CN": { translation: zhCN },
-      ja: { translation: ja },
-      ko: { translation: ko },
-      ar: { translation: ar },
     },
+    initAsync: false,
     // Default to English for everyone on first visit; only an explicit toggle
     // (persisted to localStorage) switches language. After a manual choice
     // the navigator value can act as a fallback when the saved language is
@@ -71,14 +151,7 @@ i18n
     },
   });
 
-// Keep the <html dir/lang> attributes in sync with the active language so
-// RTL languages (Arabic today, Hebrew if added later) render correctly
-// without a page reload.
 applyDocumentDirection(i18n.language || "en");
-i18n.on("languageChanged", (lng) => applyDocumentDirection(lng));
-// Re-apply after async detection resolves — the synchronous call above may
-// fire before LanguageDetector finishes, causing a brief LTR flash for RTL
-// users on first visit.
 i18n.on("initialized", () => {
   if (i18n.language) applyDocumentDirection(i18n.language);
 });

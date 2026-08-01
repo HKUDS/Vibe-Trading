@@ -5,7 +5,9 @@ import { Activity, BarChart3, Bot, Check, ChevronDown, FileText, Languages, Moon
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
+import { safeGet, safeSet } from "@/lib/storage";
 import { useAgentStore } from "@/stores/agent";
+import { BrandMark } from "@/components/common/BrandMark";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
 import { SUPPORTED_LANGUAGES } from "@/i18n";
 
@@ -15,9 +17,10 @@ import { SUPPORTED_LANGUAGES } from "@/i18n";
 export function Layout() {
   const { t } = useTranslation();
 
+  // "/" is the product (chat); marketing moved to /about. The Agent entry
+  // matches both "/" and legacy "/agent" deep links.
   const NAV = [
-    { to: "/", icon: BarChart3, label: t('layout.home') },
-    { to: "/agent", icon: Bot, label: t('layout.agent') },
+    { to: "/", icon: Bot, label: t('layout.agent') },
     { to: "/runtime", icon: Activity, label: t('layout.runtime') },
     { to: "/reports", icon: FileText, label: t('layout.reports') },
     { to: "/alpha-zoo", icon: Layers, label: t('layout.alphaZoo') },
@@ -31,14 +34,23 @@ export function Layout() {
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const sseStatus = useAgentStore(s => s.sseStatus);
   const sseRetryAttempt = useAgentStore(s => s.sseRetryAttempt);
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("qa-sidebar") === "collapsed");
+  const [collapsed, setCollapsed] = useState(() => safeGet("qa-sidebar") === "collapsed");
 
   const activeSessionId = searchParams.get("session");
   const streamingSessionId = useAgentStore(s => s.streamingSessionId);
 
   useEffect(() => {
-    localStorage.setItem("qa-sidebar", collapsed ? "collapsed" : "expanded");
+    safeSet("qa-sidebar", collapsed ? "collapsed" : "expanded");
   }, [collapsed]);
+
+  useEffect(() => {
+    const syncSidebarPreference = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== "qa-sidebar") return;
+      setCollapsed(safeGet("qa-sidebar") === "collapsed");
+    };
+    window.addEventListener("storage", syncSidebarPreference);
+    return () => window.removeEventListener("storage", syncSidebarPreference);
+  }, []);
 
   const loadSessions = () => {
     api.listSessions()
@@ -51,6 +63,14 @@ export function Layout() {
   // the active session changes (covers new session creation from Agent).
   const isAgentPage = pathname.startsWith("/agent");
   useEffect(() => { loadSessions(); }, [isAgentPage, activeSessionId]);
+
+  // Re-list after out-of-band title changes (e.g. LLM auto-titling on the
+  // first completed exchange).
+  useEffect(() => {
+    const refresh = () => loadSessions();
+    window.addEventListener("vibe:sessions-refresh", refresh);
+    return () => window.removeEventListener("vibe:sessions-refresh", refresh);
+  }, []);
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
@@ -75,38 +95,57 @@ export function Layout() {
 
   return (
     <div className="flex h-screen bg-background rtl:flex-row-reverse">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-[70] focus:rounded-md focus:bg-background focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-foreground focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+      >
+        {t('layout.skipToMain', { defaultValue: 'Skip to main content' })}
+      </a>
       {/* Sidebar */}
-      <aside className={cn(
-        "border-e bg-card flex flex-col shrink-0 transition-all duration-200 overflow-visible",
-        collapsed ? "w-12" : "w-64"
-      )}>
+      <aside
+        aria-label={t('layout.sidebar', { defaultValue: 'Vibe-Trading sidebar' })}
+        className={cn(
+          "max-md:w-12 border-e border-border/60 bg-card flex flex-col shrink-0 transition-all duration-200 overflow-visible",
+          collapsed ? "w-12" : "w-64"
+        )}
+      >
         {/* Brand */}
-        <div className={cn("border-b", collapsed ? "p-2 flex justify-center" : "p-4")}>
-          <Link to="/" className={cn("flex items-center font-bold text-base tracking-tight", collapsed ? "justify-center" : "gap-2")}>
-            <BarChart3 className="h-5 w-5 text-primary shrink-0" />
-            {!collapsed && "Vibe-Trading"}
+        <div className={cn("border-b border-border/60", collapsed ? "p-2 flex justify-center" : "p-4 max-md:p-2 max-md:flex max-md:justify-center")}>
+          <Link
+            to="/"
+            aria-label="Vibe-Trading"
+            className={cn("flex items-center", collapsed ? "justify-center" : "gap-2 max-md:justify-center")}
+          >
+            <BrandMark className="h-6 w-6 shrink-0" />
+            {!collapsed && (
+              <span className="text-[15px] font-semibold tracking-tight max-md:hidden">Vibe-Trading</span>
+            )}
           </Link>
         </div>
 
         {/* Nav */}
-        <nav className={cn("space-y-0.5", collapsed ? "p-1" : "p-2")}>
+        <nav
+          aria-label={t('layout.mainNavigation', { defaultValue: 'Main navigation' })}
+          className={cn("space-y-0.5", collapsed ? "p-1" : "p-2 max-md:p-1")}
+        >
           {NAV.map(({ to, icon: Icon, label }) => {
             const text = label;
             return (
               <Link
                 key={to}
                 to={to}
+                aria-label={text}
                 className={cn(
-                  "flex items-center rounded-md text-sm transition-colors",
-                  collapsed ? "justify-center p-2" : "gap-3 px-3 py-2",
-                  (to === "/" ? pathname === "/" : pathname.startsWith(to))
+                  "flex items-center rounded-md text-[13px] transition-colors",
+                  collapsed ? "justify-center px-2 py-1.5" : "gap-3 px-3 py-1.5 max-md:justify-center max-md:px-2",
+                  (to === "/" ? pathname === "/" || pathname.startsWith("/agent") : pathname.startsWith(to))
                     ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                 )}
                 title={collapsed ? text : undefined}
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                {!collapsed && text}
+                {!collapsed && <span className="max-md:hidden">{text}</span>}
               </Link>
             );
           })}
@@ -114,7 +153,7 @@ export function Layout() {
 
         {/* Sessions — hidden when collapsed */}
         {!collapsed && (
-          <div className="flex-1 overflow-auto border-t mt-2 flex flex-col">
+          <div className="flex-1 overflow-auto border-t border-border/60 mt-2 flex flex-col max-md:hidden">
             <div className="flex items-center justify-between px-4 py-2">
               <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <MessageSquare className="h-3.5 w-3.5" />
@@ -122,10 +161,11 @@ export function Layout() {
               </span>
               <Link
                 to="/agent"
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                aria-label={t('layout.newChat')}
+                className="flex items-center gap-1 p-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 title={t('layout.newChat')}
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               </Link>
             </div>
 
@@ -152,7 +192,8 @@ export function Layout() {
                         onChange={(e) => setRenameValue(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") renameSession(s.session_id); if (e.key === "Escape") setRenameTarget(null); }}
                         onBlur={() => renameSession(s.session_id)}
-                        className="flex-1 min-w-0 ps-3 pe-2 py-1 rounded-md text-xs border border-primary bg-background outline-none"
+                        aria-label={`${t('layout.rename')}: ${s.title || s.session_id}`}
+                        className="flex-1 min-w-0 ps-3 pe-2 py-1.5 rounded-md text-xs border border-primary bg-background outline-none focus:ring-2 focus:ring-primary/40"
                       />
                     ) : (
                       <Link
@@ -165,36 +206,38 @@ export function Layout() {
                         )}
                         title={s.title || s.session_id}
                       >
-                        <span className="flex items-center gap-1.5">
+                        <span className="flex min-w-0 items-center gap-1.5">
                           {streamingSessionId === s.session_id ? (
                             <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
                           ) : (
+                            // Transparent placeholder keeps titles aligned with
+                            // spinner rows without a meaningless gray dot.
                             <span className={cn(
                               "h-1.5 w-1.5 rounded-full shrink-0",
-                              isActive ? "bg-primary/70" : "bg-muted-foreground/40"
+                              isActive ? "bg-primary/70" : "bg-transparent"
                             )} />
                           )}
-                          {s.title || s.session_id.slice(0, 16)}
+                          <span className="min-w-0 truncate">{s.title || s.session_id.slice(0, 16)}</span>
                         </span>
                       </Link>
                     )}
                     {!isRenaming && isDeleting ? (
                       <div className="absolute right-0.5 flex items-center gap-0.5">
-                        <button onClick={() => deleteSession(s.session_id)} className="p-1 text-danger hover:bg-danger/10 rounded text-[10px] font-medium">{t('layout.confirm')}</button>
-                        <button onClick={() => setDeleteTarget(null)} className="p-1 text-muted-foreground hover:bg-muted rounded text-[10px]">{t('layout.cancel')}</button>
+                        <button onClick={() => deleteSession(s.session_id)} className="p-1.5 text-danger hover:bg-danger/10 rounded text-[10px] font-medium">{t('layout.confirm')}</button>
+                        <button onClick={() => setDeleteTarget(null)} className="p-1.5 text-muted-foreground hover:bg-muted rounded text-[10px]">{t('layout.cancel')}</button>
                       </div>
                     ) : !isRenaming ? (
-                      <div className="absolute right-1 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
+                      <div className="absolute right-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center gap-0.5 transition-opacity">
                         <button
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameTarget(s.session_id); setRenameValue(s.title || ""); }}
-                          className="p-1 text-muted-foreground hover:text-foreground rounded"
+                          className="p-1.5 text-muted-foreground hover:text-foreground rounded"
                           title={t('layout.rename')}
                         >
                           <Pencil className="h-3 w-3" />
                         </button>
                         <button
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(s.session_id); }}
-                          className="p-1 text-muted-foreground hover:text-danger rounded"
+                          className="p-1.5 text-muted-foreground hover:text-danger rounded"
                           title={t('layout.delete')}
                         >
                           <Trash2 className="h-3 w-3" />
@@ -212,7 +255,7 @@ export function Layout() {
         {collapsed && <div className="flex-1" />}
 
         {/* Footer */}
-        <div className={cn("border-t", collapsed ? "p-1 flex flex-col items-center gap-1" : "p-3 space-y-2")}>
+        <div className={cn("mt-auto border-t border-border/60", collapsed ? "p-1 flex flex-col items-center gap-1" : "p-3 space-y-2 max-md:p-1 max-md:flex max-md:flex-col max-md:items-center max-md:gap-1 max-md:space-y-0")}>
           {collapsed ? (
             <>
               <button onClick={toggle} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={dark ? t('layout.light') : t('layout.dark')}>
@@ -224,27 +267,35 @@ export function Layout() {
             </>
           ) : (
             <>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between max-md:flex-col">
                 <button
                   onClick={toggle}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  className="flex items-center gap-1.5 p-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-                  {dark ? t('layout.light') : t('layout.dark')}
+                  <span className="max-md:hidden">{dark ? t('layout.light') : t('layout.dark')}</span>
                 </button>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 max-md:hidden">
                   <button
                     onClick={() => setCollapsed(true)}
-                    className="p-1 text-muted-foreground hover:text-foreground rounded transition-colors"
+                    className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors"
                     title={t('layout.collapse')}
                   >
                     <ChevronsLeft className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 max-md:items-center">
                 <LanguageSwitcher />
-                <p className="text-[10px] text-muted-foreground/60">{t('app.version')}</p>
+                {/* About is marketing, not a work surface — it lives here by
+                    the version stamp instead of in the primary nav. */}
+                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60 max-md:hidden">
+                  <span>{t('app.version')}</span>
+                  <span aria-hidden="true">·</span>
+                  <Link to="/about" className="transition-colors hover:text-foreground">
+                    {t('layout.about')}
+                  </Link>
+                </div>
               </div>
             </>
           )}
@@ -252,9 +303,9 @@ export function Layout() {
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="relative flex-1 flex flex-col overflow-hidden">
         <ConnectionBanner status={sseStatus} retryAttempt={sseRetryAttempt} />
-        <main className="flex-1 overflow-auto">
+        <main id="main" className="flex-1 overflow-auto">
           <Outlet />
         </main>
       </div>
@@ -355,14 +406,13 @@ function LanguageSwitcher() {
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t("layout.language")}
-        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        className="flex items-center gap-1 p-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors max-md:justify-center"
       >
         <Languages className="h-3.5 w-3.5 shrink-0" />
-        <span className="whitespace-nowrap">{current.label}</span>
-        <ChevronDown className={cn("h-3 w-3 shrink-0 transition-transform", open && "rotate-180")} />
+        <span className="whitespace-nowrap max-md:hidden">{current.label}</span>
+        <ChevronDown className={cn("h-3 w-3 shrink-0 transition-transform max-md:hidden", open && "rotate-180")} />
       </button>
       {open && menuStyle && (
         <ul
@@ -375,7 +425,7 @@ function LanguageSwitcher() {
             minWidth: menuStyle.minWidth,
             zIndex: 60,
           }}
-          className="rounded-md border border-border bg-popover shadow-lg ring-1 ring-black/5"
+          className="rounded-md border border-border/60 bg-popover shadow-lg ring-1 ring-black/5"
         >
           {SUPPORTED_LANGUAGES.map((lang) => {
             const active = lang.code === current.code;

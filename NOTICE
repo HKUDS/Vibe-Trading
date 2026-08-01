@@ -20,3 +20,6 @@ repository as factual mathematical content (formulas are not copyrightable):
 Prose, tables, and figures from the source papers and reports are NOT
 reproduced in this repository. Only the mathematical formulas — which are
 factual content and not subject to copyright — are reimplemented here.
+
+This product bundles Inter and JetBrains Mono fonts from @fontsource 5.3.0
+under the SIL Open Font License 1.1. See frontend/public/fonts/LICENSE.

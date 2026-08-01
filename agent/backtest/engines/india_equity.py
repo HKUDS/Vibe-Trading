@@ -32,7 +32,7 @@ from __future__ import annotations
 import pandas as pd
 
 from backtest.engines.base import BaseEngine
-from backtest.engines.china_a import _calc_pct_change
+from backtest.engines.china_a import _blocked_by_limit
 
 
 class IndiaEquityEngine(BaseEngine):
@@ -86,15 +86,11 @@ class IndiaEquityEngine(BaseEngine):
                 if bar_date is not None and entry_date is not None and bar_date == entry_date:
                     return False
 
-        # 3. Circuit bands (single configurable band; disabled when falsy).
-        if self.price_limit:
-            pct_chg = _calc_pct_change(bar)
-            if pct_chg is not None:
-                limit = float(self.price_limit)
-                if direction == 1 and pct_chg >= limit - 0.001:
-                    return False  # upper circuit: can't buy
-                if direction == 0 and pct_chg <= -limit + 0.001:
-                    return False  # lower circuit: can't sell
+        # 3. Circuit bands, tested at execution time (see _blocked_by_limit).
+        if self.price_limit and _blocked_by_limit(
+            self, symbol, direction, bar, float(self.price_limit)
+        ):
+            return False
 
         return True
 

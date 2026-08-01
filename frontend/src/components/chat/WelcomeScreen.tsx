@@ -1,5 +1,7 @@
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Bot, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen, Landmark, Gem } from "lucide-react";
+import { ChevronDown, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen, Landmark, Gem } from "lucide-react";
+import { BrandMark } from "@/components/common/BrandMark";
 
 interface Example {
   titleKey: string;
@@ -10,7 +12,6 @@ interface Example {
 interface Category {
   labelKey: string;
   icon: React.ReactNode;
-  color: string;
   examples: Example[];
 }
 
@@ -18,7 +19,6 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.multiMarketBacktest",
     icon: <TrendingUp className="h-4 w-4" />,
-    color: "text-red-400 border-red-500/30 hover:border-red-500/60 hover:bg-red-500/5",
     examples: [
       {
         titleKey: "welcome.examples.crossMarketPortfolio",
@@ -40,7 +40,6 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.researchAnalysis",
     icon: <Sparkles className="h-4 w-4" />,
-    color: "text-amber-400 border-amber-500/30 hover:border-amber-500/60 hover:bg-amber-500/5",
     examples: [
       {
         titleKey: "welcome.examples.multiFactorAlpha",
@@ -57,7 +56,6 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.valueInvesting",
     icon: <Gem className="h-4 w-4" />,
-    color: "text-yellow-400 border-yellow-500/30 hover:border-yellow-500/60 hover:bg-yellow-500/5",
     examples: [
       {
         titleKey: "welcome.examples.valueCommittee",
@@ -84,7 +82,6 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.swarmTeams",
     icon: <Users className="h-4 w-4" />,
-    color: "text-violet-400 border-violet-500/30 hover:border-violet-500/60 hover:bg-violet-500/5",
     examples: [
       {
         titleKey: "welcome.examples.investmentCommittee",
@@ -101,7 +98,6 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.docWebResearch",
     icon: <Globe className="h-4 w-4" />,
-    color: "text-blue-400 border-blue-500/30 hover:border-blue-500/60 hover:bg-blue-500/5",
     examples: [
       {
         titleKey: "welcome.examples.earningsReport",
@@ -118,7 +114,6 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.tradeJournal",
     icon: <NotebookPen className="h-4 w-4" />,
-    color: "text-orange-400 border-orange-500/30 hover:border-orange-500/60 hover:bg-orange-500/5",
     examples: [
       {
         titleKey: "welcome.examples.analyzeBrokerExport",
@@ -135,7 +130,6 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.tradingConnectors",
     icon: <Landmark className="h-4 w-4" />,
-    color: "text-cyan-400 border-cyan-500/30 hover:border-cyan-500/60 hover:bg-cyan-500/5",
     examples: [
       {
         titleKey: "welcome.examples.checkConnector",
@@ -157,7 +151,6 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.shadowAccount",
     icon: <UserCircle2 className="h-4 w-4" />,
-    color: "text-emerald-400 border-emerald-500/30 hover:border-emerald-500/60 hover:bg-emerald-500/5",
     examples: [
       {
         titleKey: "welcome.examples.trainShadow",
@@ -178,23 +171,65 @@ const CATEGORIES: Category[] = [
   },
 ];
 
-const CAPABILITY_CHIP_KEYS = [
-  "welcome.capabilities.financeSkills",
-  "welcome.capabilities.swarmTeams",
-  "welcome.capabilities.autoTools",
-  "welcome.capabilities.markets",
-  "welcome.capabilities.connectors",
-  "welcome.capabilities.timeframes",
-  "welcome.capabilities.optimizers",
-  "welcome.capabilities.riskMetrics",
-  "welcome.capabilities.options",
-  "welcome.capabilities.pdfWeb",
-  "welcome.capabilities.factorML",
-  "welcome.capabilities.journalAnalyzer",
-  "welcome.capabilities.shadowBacktest",
-  "welcome.capabilities.memory",
-  "welcome.capabilities.sessionSearch",
+const GREETING_KEYS = {
+  morning: [
+    "welcome.greetings.morning1",
+    "welcome.greetings.morning2",
+    "welcome.greetings.morning3",
+  ],
+  afternoon: [
+    "welcome.greetings.afternoon1",
+    "welcome.greetings.afternoon2",
+    "welcome.greetings.afternoon3",
+  ],
+  evening: [
+    "welcome.greetings.evening1",
+    "welcome.greetings.evening2",
+    "welcome.greetings.evening3",
+  ],
+  night: [
+    "welcome.greetings.night1",
+    "welcome.greetings.night2",
+    "welcome.greetings.night3",
+  ],
+} as const;
+
+const QUICK_ACTIONS = [
+  {
+    titleKey: "welcome.examples.valuationCheck",
+    promptKey: "welcome.examples.valuationCheckPrompt",
+    icon: <Gem className="h-4 w-4" aria-hidden="true" />,
+  },
+  {
+    titleKey: "welcome.examples.optionsGreeks",
+    promptKey: "welcome.examples.optionsGreeksPrompt",
+    icon: <Sparkles className="h-4 w-4" aria-hidden="true" />,
+  },
+  {
+    titleKey: "welcome.examples.crossMarketPortfolio",
+    promptKey: "welcome.examples.crossMarketPortfolioPrompt",
+    icon: <TrendingUp className="h-4 w-4" aria-hidden="true" />,
+  },
+  {
+    titleKey: "welcome.examples.investmentCommittee",
+    promptKey: "welcome.examples.investmentCommitteePrompt",
+    icon: <Users className="h-4 w-4" aria-hidden="true" />,
+  },
 ] as const;
+
+function pickGreetingKey(): string {
+  const hour = new Date().getHours();
+  const bucket =
+    hour >= 5 && hour < 12
+      ? "morning"
+      : hour >= 12 && hour < 17
+        ? "afternoon"
+        : hour >= 17 && hour < 22
+          ? "evening"
+          : "night";
+  const variants = GREETING_KEYS[bucket];
+  return variants[Math.floor(Math.random() * variants.length)] ?? variants[0];
+}
 
 interface Props {
   onExample: (s: string) => void;
@@ -202,64 +237,128 @@ interface Props {
 
 export function WelcomeScreen({ onExample }: Props) {
   const { t } = useTranslation();
+  const [greetingKey] = useState(() => pickGreetingKey());
+  const [isExamplesOpen, setIsExamplesOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState(0);
+  const examplesTriggerRef = useRef<HTMLButtonElement>(null);
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-8 text-center">
-      {/* Header */}
-      <div className="space-y-3">
-        <div className="h-16 w-16 mx-auto rounded-2xl bg-gradient-to-br from-primary/80 to-info/80 flex items-center justify-center shadow-lg">
-          <Bot className="h-8 w-8 text-white" />
-        </div>
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">{t('welcome.title')}</h2>
-          <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto leading-relaxed">
-            {t('welcome.subtitle')}
-          </p>
-          <p className="text-sm text-muted-foreground mt-2 max-w-md leading-relaxed mx-auto">
-            {t('welcome.describePrompt')}
+    <div className="flex w-full flex-col items-center px-4 pb-14 text-center">
+      <div className="w-full max-w-3xl">
+        <div className="mx-auto max-w-2xl">
+          <div className="flex items-center justify-center gap-3">
+            <BrandMark className="h-9 w-9 shrink-0" />
+            <h1 className="font-serif text-[34px] font-normal leading-tight sm:text-[40px]">
+              {t(greetingKey as any)}
+            </h1>
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {t("welcome.taskSubtitle" as any)}
           </p>
         </div>
-      </div>
 
-      {/* Capability chips */}
-      <div className="flex flex-wrap justify-center gap-2 max-w-lg">
-        {CAPABILITY_CHIP_KEYS.map((key) => (
-          <span
-            key={key}
-            className="px-2.5 py-1 text-xs rounded-full border border-border/60 text-muted-foreground bg-muted/30"
-          >
-            {t(key)}
-          </span>
-        ))}
-      </div>
+        <div
+          className="mt-8 flex flex-wrap justify-center gap-2"
+          role="group"
+          aria-label={t("welcome.quickActions" as any)}
+        >
+          {QUICK_ACTIONS.map((action, index) => (
+            <button
+              key={action.titleKey}
+              type="button"
+              onClick={() => onExample(t(action.promptKey as any))}
+              className={
+                index === 0
+                  ? "inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/[0.08] px-4 py-2 text-sm text-primary transition-colors hover:border-primary/50 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  : "inline-flex items-center gap-2 rounded-full border border-border/60 bg-card px-4 py-2 text-sm transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              }
+            >
+              {action.icon}
+              <span>{t(action.titleKey as any)}</span>
+            </button>
+          ))}
+        </div>
 
-      {/* Example categories grid */}
-      <div className="w-full max-w-2xl text-left space-y-4">
-        <p className="text-xs text-muted-foreground px-1">{t('welcome.tryExample')}</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {CATEGORIES.map((cat) => (
-            <div key={cat.labelKey} className="space-y-2">
-              <div className={`flex items-center gap-1.5 text-xs font-medium px-1 ${cat.color.split(" ").filter(c => c.startsWith("text-")).join(" ")}`}>
-                {cat.icon}
-                <span>{t(cat.labelKey as any)}</span>
+        <button
+          ref={examplesTriggerRef}
+          type="button"
+          aria-expanded={isExamplesOpen}
+          aria-controls="welcome-example-library"
+          onClick={() => setIsExamplesOpen((open) => !open)}
+          className="mt-10 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <span>{t("welcome.browseAllExamples" as any)}</span>
+          <ChevronDown
+            className={`h-4 w-4 transition-transform duration-300 ${isExamplesOpen ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          />
+        </button>
+
+        <div
+          id="welcome-example-library"
+          aria-hidden={!isExamplesOpen}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || !isExamplesOpen) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setIsExamplesOpen(false);
+            examplesTriggerRef.current?.focus();
+          }}
+          className={`grid text-left transition-[grid-template-rows,opacity] duration-300 ease-out ${
+            isExamplesOpen
+              ? "grid-rows-[1fr] opacity-100"
+              : "grid-rows-[0fr] opacity-0"
+          }`}
+        >
+          <div className="min-h-0 overflow-hidden">
+            {/* One category at a time: a chip tab bar + that category's cards.
+                Rendering all 8 categories at once (grid or masonry) reads as
+                an unstructured wall — categories have uneven card counts. */}
+            <div className="pt-6">
+              <div
+                className="flex flex-wrap justify-center gap-1.5"
+                role="tablist"
+                aria-label={t("welcome.browseAllExamples" as any)}
+              >
+                {CATEGORIES.map((cat, index) => (
+                  <button
+                    key={cat.labelKey}
+                    type="button"
+                    role="tab"
+                    aria-selected={index === activeCategory}
+                    tabIndex={isExamplesOpen ? 0 : -1}
+                    onClick={() => setActiveCategory(index)}
+                    className={
+                      index === activeCategory
+                        ? "inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary"
+                        : "inline-flex items-center gap-1.5 rounded-full border border-transparent px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border/60 hover:text-foreground"
+                    }
+                  >
+                    {cat.icon}
+                    <span>{t(cat.labelKey as any)}</span>
+                  </button>
+                ))}
               </div>
-              <div className="space-y-1.5">
-                {cat.examples.map((ex) => (
+              <div role="tabpanel" className="mt-4 grid gap-2 text-left sm:grid-cols-2">
+                {CATEGORIES[activeCategory].examples.map((ex) => (
                   <button
                     key={ex.titleKey}
+                    type="button"
+                    tabIndex={isExamplesOpen ? 0 : -1}
                     onClick={() => onExample(t(ex.promptKey as any))}
-                    className={`block w-full text-left px-3 py-2.5 rounded-xl border transition-colors ${cat.color}`}
+                    className="block w-full rounded-xl border border-border/60 px-3 py-2.5 text-left transition-colors hover:border-primary/40 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                   >
-                    <span className="text-sm font-medium text-foreground leading-snug">
+                    <span className="text-sm font-medium leading-snug text-foreground">
                       {t(ex.titleKey as any)}
                     </span>
-                    <span className="block text-xs text-muted-foreground mt-0.5 leading-snug">
+                    <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
                       {t(ex.descKey as any)}
                     </span>
                   </button>
                 ))}
               </div>
             </div>
-          ))}
+          </div>
         </div>
       </div>
     </div>

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import i18n from "@/i18n";
 import { echarts } from "@/lib/echarts";
 import { getChartTheme } from "@/lib/chart-theme";
+import { useThemeDark } from "@/lib/theme-store";
 
 interface Props {
   labels: string[];
@@ -11,6 +12,7 @@ interface Props {
 
 export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const dark = useThemeDark();
 
   useEffect(() => {
     if (!ref.current || labels.length === 0 || matrix.length === 0) return;
@@ -97,10 +99,21 @@ export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
       ],
     });
 
-    const ro = new ResizeObserver(() => chart.resize());
+    let resizeFrame: number | null = null;
+    const ro = new ResizeObserver(() => {
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null;
+        chart.resize();
+      });
+    });
     ro.observe(ref.current!);
-    return () => { ro.disconnect(); chart.dispose(); };
-  }, [labels, matrix]);
+    return () => {
+      ro.disconnect();
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
+      chart.dispose();
+    };
+  }, [labels, matrix, dark]);
 
   if (labels.length === 0) {
     return <div className="text-muted-foreground text-sm p-4">{i18n.t("charts.noCorrelationData")}</div>;

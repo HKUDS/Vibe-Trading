@@ -50,7 +50,7 @@ FROM python:3.11-slim@sha256:e031123e3d85762b141ad1cbc56452ba69c6e722ebf2f042cc0
 
 LABEL org.opencontainers.image.title="Vibe-Trading" \
     org.opencontainers.image.description="Natural-language finance research AI agent with backtesting" \
-    org.opencontainers.image.version="0.1.12" \
+    org.opencontainers.image.version="0.1.13" \
     org.opencontainers.image.source="https://github.com/HKUDS/Vibe-Trading" \
     org.opencontainers.image.licenses="MIT"
 

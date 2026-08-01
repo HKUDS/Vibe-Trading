@@ -124,4 +124,24 @@ describe("RunnerStatus compact connector panel", () => {
 
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("refreshes timestamps and status immediately when a hidden tab becomes visible", () => {
+    const onRefresh = vi.fn();
+    render(
+      <RunnerStatus
+        status={status([
+          broker("longbridge", { configured: true, connection_state: "connected" }),
+        ])}
+        onRefresh={onRefresh}
+      />,
+    );
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
 });

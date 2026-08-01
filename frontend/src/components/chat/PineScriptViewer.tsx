@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { memo, useState, useCallback } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Copy, Check, ExternalLink } from "lucide-react";
 
 interface Props {
@@ -10,6 +11,22 @@ interface Props {
 export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }: Props) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement;
+    closeRef.current?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+    };
+  }, [onClose]);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -29,9 +46,12 @@ export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }
     }
   }, [code]);
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("pineViewer.pineScript")}
         className="relative w-full max-w-3xl max-h-[80vh] mx-4 rounded-xl border bg-background shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
@@ -59,6 +79,9 @@ export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }
               {t("pineViewer.docs")}
             </a>
             <button
+              ref={closeRef}
+              type="button"
+              aria-label={t("layout.cancel")}
               onClick={onClose}
               className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             >
@@ -81,6 +104,7 @@ export const PineScriptViewer = memo(function PineScriptViewer({ code, onClose }
           </p>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 });

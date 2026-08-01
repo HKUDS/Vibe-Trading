@@ -61,14 +61,9 @@ class ChinaAEngine(BaseEngine):
                 if bar_date is not None and entry_date is not None and bar_date == entry_date:
                     return False
 
-        # 3. Price limits
-        pct_chg = _calc_pct_change(bar)
-        if pct_chg is not None:
-            limit = _price_limit(symbol)
-            if direction == 1 and pct_chg >= limit - 0.001:
-                return False  # limit-up: can't buy
-            if direction == 0 and pct_chg <= -limit + 0.001:
-                return False  # limit-down: can't sell
+        # 3. Price limits, tested at execution time (see _blocked_by_limit).
+        if _blocked_by_limit(self, symbol, direction, bar, _price_limit(symbol)):
+            return False
 
         return True
 
@@ -117,21 +112,63 @@ def _bar_date(bar: pd.Series):
     return None
 
 
-# Note: china_futures and global_futures have variants that prioritise
-# settle/pre_settle (futures-native); see those modules for the
-# futures-specific logic.
-def _calc_pct_change(bar: pd.Series):
-    """Calculate price change percentage from bar data."""
-    if "pct_chg" in bar.index:
-        val = bar["pct_chg"]
-        if pd.notna(val):
-            return float(val) / 100.0  # tushare pct_chg is in percentage points
+def _blocked_by_limit(
+    engine,
+    symbol: str,
+    direction: int,
+    bar: pd.Series,
+    limit: float,
+    position_direction: int | None = None,
+) -> bool:
+    """Whether a price-limit band blocks a fill on this bar.
 
-    close = bar.get("close")
-    pre_close = bar.get("pre_close")
-    if close is not None and pre_close is not None and pre_close > 0:
-        return (float(close) - float(pre_close)) / float(pre_close)
-    return None
+    Shared by every engine with a daily band (A-share, India, China futures,
+    global futures). The band comes from a base price the market knew before
+    the order — ``pre_close``, else the prior bar's close — and is compared
+    against the price the engine would actually fill at, which is this bar's
+    open plus slippage.
+
+    The earlier implementation derived the day's move from the CURRENT bar's
+    close, which is lookahead and wrong in both directions: a name that opened
+    locked but drifted back by the close was allowed to trade at the locked
+    open, and a name that opened freely but closed limit-up was refused a fill
+    it would have got.
+
+    Args:
+        engine: Engine instance (needs the BaseEngine band helpers).
+        symbol: Symbol being traded.
+        direction: 1 (buy / open long), -1 (sell short), 0 (close).
+        bar: Current bar.
+        limit: Band half-width as a fraction (0.1 for +/-10%).
+        position_direction: For ``direction == 0``, the direction of the
+            position being closed: 1 closes a long (a sell, blocked at the
+            lower band), -1 closes a short (a buy, blocked at the upper band).
+            Defaults to a long close, which is the cash-equity case.
+
+    Returns:
+        True when the band blocks the fill. False when it does not, and also
+        when no historical base price is reachable — an unknown band must not
+        fabricate a block.
+    """
+    band = engine.limit_band(symbol, bar, limit)
+    if band is None:
+        return False
+    lower, upper = band
+    # BaseEngine books a close with the OPPOSITE of the position's direction,
+    # so slippage moves the price the other way. Checking the raw open here
+    # would approve a fill that is then booked outside the band.
+    fill_direction = -(position_direction or 1) if direction == 0 else direction
+    fill = engine.prospective_fill_price(bar, fill_direction)
+    if fill is None:
+        return False
+
+    # Relative tolerance: a fill within a rounding step of the band counts as
+    # touching it, matching the old check's 0.1pp slack in percentage terms.
+    tol = 1e-9 * max(abs(lower), abs(upper), 1.0)
+    buying = direction == 1 or (direction == 0 and position_direction == -1)
+    if buying:
+        return fill >= upper - tol
+    return fill <= lower + tol
 
 
 def _price_limit(symbol: str) -> float:

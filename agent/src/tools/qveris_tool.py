@@ -9,6 +9,7 @@ import re
 import tempfile
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -327,6 +328,33 @@ class QVerisClient:
         return self._request("GET", "/auth/credits/ledger", params=params)
 
 
+def _positive_int(value: Any, field: str, default: int) -> int:
+    """Resolve an optional positive-integer option from tool kwargs.
+
+    Args:
+        value: Raw argument value; ``None`` and ``""`` mean "not supplied".
+        field: Argument name, used in the error message.
+        default: Value to use when the argument was not supplied.
+
+    Returns:
+        The requested integer, or ``default`` when the argument was absent.
+
+    Raises:
+        ValueError: If the value is present but not a finite positive integer.
+            QVeris calls are billable, so an explicitly malformed option is
+            rejected instead of being replaced by a default.
+    """
+    if value is None or value == "":
+        return default
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{field} must be a positive integer, got {value!r}") from None
+    if not math.isfinite(number) or number != int(number) or int(number) < 1:
+        raise ValueError(f"{field} must be a positive integer, got {value!r}")
+    return int(number)
+
+
 class _QVerisBaseTool(BaseTool):
     """Shared availability and client helpers for QVeris tools."""
 
@@ -363,11 +391,25 @@ class QVerisSearchTool(_QVerisBaseTool):
     }
 
     def execute(self, **kwargs: Any) -> str:
+        """Search QVeris capabilities after validating the request schema.
+
+        A missing ``query`` is a schema-invalid request, not an empty search:
+        it is rejected rather than sent to the marketplace as ``""``.
+        """
         if not is_qveris_configured():
             return _json_response({"ok": False, "error": "QVeris is not configured"})
+        query = kwargs.get("query")
+        if not isinstance(query, str) or not query.strip():
+            return _json_response(
+                {"ok": False, "error": "query is required (non-empty string)"}
+            )
+        try:
+            limit = _positive_int(kwargs.get("limit"), "limit", 20)
+        except ValueError as exc:
+            return _json_response({"ok": False, "error": str(exc)})
         payload = self._client().search(
-            str(kwargs["query"]),
-            limit=int(kwargs.get("limit", 20)),
+            query.strip(),
+            limit=limit,
             session_id=kwargs.get("session_id"),
         )
         return _json_response({"ok": True, **payload})
@@ -449,11 +491,38 @@ class QVerisExecuteTool(_QVerisBaseTool):
         return _quote_from_tool(first)
 
     def execute(self, **kwargs: Any) -> str:
+        """Execute a QVeris capability behind the per-session credit budget.
+
+        The request schema is validated FIRST — before the quote lookup, before
+        the budget reservation, and before ``client.execute`` — because this
+        tool is not read-only and every call spends real credits. A missing
+        ``tool_id``/``parameters`` is a schema-invalid request, so it must never
+        be normalised into an empty-parameter call to the marketplace.
+        """
         cfg = load_qveris_config()
         if not is_qveris_configured(cfg):
             return _json_response({"ok": False, "error": "QVeris is not configured"})
+        raw_tool_id = kwargs.get("tool_id")
+        if not isinstance(raw_tool_id, str) or not raw_tool_id.strip():
+            return _json_response(
+                {"ok": False, "error": "tool_id is required (non-empty string)"}
+            )
+        if "parameters" not in kwargs or not isinstance(kwargs["parameters"], Mapping):
+            return _json_response(
+                {
+                    "ok": False,
+                    "error": "parameters is required and must be an object; refusing a billable call with an unvalidated request",
+                }
+            )
+        try:
+            max_response_size = _positive_int(
+                kwargs.get("max_response_size"), "max_response_size", 20480
+            )
+        except ValueError as exc:
+            return _json_response({"ok": False, "error": str(exc)})
+        parameters = dict(kwargs["parameters"])
         client = self._client()
-        tool_id = str(kwargs["tool_id"])
+        tool_id = raw_tool_id.strip()
         quote = self._quote(client, tool_id, kwargs)
         session_id = str(kwargs.get("session_id") or "default")
         budget = max(float(cfg.budget_credits_per_session), 0.0)
@@ -483,11 +552,11 @@ class QVerisExecuteTool(_QVerisBaseTool):
         try:
             payload = client.execute(
                 tool_id,
-                parameters=dict(kwargs["parameters"]),
+                parameters=parameters,
                 search_id=kwargs.get("search_id"),
                 session_id=kwargs.get("session_id"),
                 model=kwargs.get("model"),
-                max_response_size=int(kwargs.get("max_response_size", 20480)),
+                max_response_size=max_response_size,
             )
         except Exception:
             with _SESSION_BUDGET_LOCK:

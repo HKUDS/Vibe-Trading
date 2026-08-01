@@ -106,7 +106,10 @@ _VALID_THEMES = {
     "momentum", "reversal", "volume", "volatility", "quality", "value",
     "liquidity", "microstructure", "sentiment", "growth", "leverage",
 }
-_VALID_UNIVERSES = {"equity_us", "equity_cn", "equity_hk", "crypto", "futures"}
+_VALID_UNIVERSES = {
+    "equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr",
+    "crypto", "futures",
+}
 # Ranking metrics for /alpha/compare — keep in sync with
 # ``src.factors.compare_runner.SORT_KEYS`` (kept local to avoid a heavy import).
 _VALID_SORTS = {"ir", "ic_mean", "ic_positive_ratio", "ic_count"}

@@ -1,5 +1,6 @@
 import { useAgentStore } from "../agent";
 import { makeMessage, makeToolCall, resetFactories } from "@/tests/helpers/factories";
+import type { SwarmRunStatus } from "@/types/agent";
 
 beforeEach(() => {
   useAgentStore.getState().reset();
@@ -15,6 +16,8 @@ describe("agent store — initial state", () => {
     expect(s.streamingText).toBe("");
     expect(s.streamingSessionId).toBeNull();
     expect(s.toolCalls).toEqual([]);
+    expect(s.activity).toBeNull();
+    expect(s.swarmRuns).toEqual({});
     expect(s.sseStatus).toBe("disconnected");
     expect(s.sseRetryAttempt).toBe(0);
     expect(s.sessionLoading).toBe(false);
@@ -81,6 +84,18 @@ describe("setStatus", () => {
     useAgentStore.getState().setStatus("streaming");
     expect(useAgentStore.getState().streamingSessionId).toBeNull();
   });
+
+  it("clears only the matching replay session spinner", () => {
+    const store = useAgentStore.getState();
+    store.setSessionId("sess-1");
+    store.setStatus("streaming");
+    store.switchSession("sess-2");
+
+    store.clearStreamingSession("sess-2");
+    expect(useAgentStore.getState().streamingSessionId).toBe("sess-1");
+    store.clearStreamingSession("sess-1");
+    expect(useAgentStore.getState().streamingSessionId).toBeNull();
+  });
 });
 
 describe("setSessionId / loadHistory", () => {
@@ -120,6 +135,171 @@ describe("tool calls", () => {
     useAgentStore.getState().updateToolCall("nonexistent", { status: "error" });
     expect(useAgentStore.getState().toolCalls[0].status).toBe("running");
   });
+
+  it("matches interleaved parallel same-name calls by call_id", () => {
+    const store = useAgentStore.getState();
+    store.addToolCall(makeToolCall({ id: "call-1", tool: "search" }));
+    store.addToolCall(makeToolCall({ id: "call-2", tool: "search" }));
+
+    store.updateRunningToolCall("call-2", "search", {
+      elapsed_s: 2,
+      progress: { stage: "second", current: 8, total: 10 },
+    });
+    store.updateRunningToolCall("call-1", "search", {
+      elapsed_s: 4,
+      progress: { stage: "first", current: 3, total: 10 },
+    });
+    store.updateRunningToolCall("call-2", "search", {
+      status: "ok",
+      preview: "second-result",
+    });
+
+    expect(useAgentStore.getState().toolCalls).toMatchObject([
+      {
+        id: "call-1",
+        status: "running",
+        elapsed_s: 4,
+        progress: { stage: "first", current: 3, total: 10 },
+      },
+      {
+        id: "call-2",
+        status: "ok",
+        elapsed_s: 2,
+        preview: "second-result",
+        progress: { stage: "second", current: 8, total: 10 },
+      },
+    ]);
+
+    store.updateRunningToolCall("call-1", "search", {
+      status: "error",
+      preview: "first-result",
+    });
+    expect(useAgentStore.getState().toolCalls.map((tc) => tc.status)).toEqual([
+      "error",
+      "ok",
+    ]);
+  });
+
+  it("does not fall back to tool name when a call_id is unknown", () => {
+    const store = useAgentStore.getState();
+    store.addToolCall(makeToolCall({ id: "call-1", tool: "search" }));
+    store.updateRunningToolCall("missing-call", "search", { status: "ok" });
+    expect(useAgentStore.getState().toolCalls[0].status).toBe("running");
+  });
+
+  it("updates repeated running tool calls in FIFO order", () => {
+    const store = useAgentStore.getState();
+    store.addToolCall(makeToolCall({ id: "search#1", tool: "search" }));
+    store.addToolCall(makeToolCall({ id: "search#2", tool: "search" }));
+
+    store.updateRunningToolCall(undefined, "search", { status: "ok" });
+    expect(useAgentStore.getState().toolCalls.map((tc) => tc.status)).toEqual([
+      "ok",
+      "running",
+    ]);
+
+    store.updateRunningToolCall(undefined, "search", { status: "error" });
+    expect(useAgentStore.getState().toolCalls.map((tc) => tc.status)).toEqual([
+      "ok",
+      "error",
+    ]);
+  });
+
+  it("live-updates one activity object from thinking through tool work", () => {
+    const store = useAgentStore.getState();
+    store.startActivity("attempt-1", 1000);
+    expect(useAgentStore.getState().activity).toMatchObject({
+      attemptId: "attempt-1",
+      state: "thinking",
+      verb: "working",
+      steps: [],
+      startedAt: 1000,
+    });
+
+    store.addToolCall(makeToolCall({
+      id: "market-1",
+      tool: "get_market_data",
+      timestamp: 1100,
+    }));
+    expect(useAgentStore.getState().activity).toMatchObject({
+      state: "working",
+      verb: "readingMarketData",
+      steps: [{ id: "market-1", status: "running" }],
+    });
+
+    store.updateToolCall("market-1", { status: "ok", elapsed_ms: 500 });
+    expect(useAgentStore.getState().activity?.steps[0]).toMatchObject({
+      status: "ok",
+      elapsed_ms: 500,
+    });
+  });
+
+  it("derives strategy, backtest, validation and fallback verbs", () => {
+    const store = useAgentStore.getState();
+    store.startActivity("attempt-map", 1000);
+    const tools = [
+      ["write_file", "writingStrategy"],
+      ["run_backtest", "runningBacktest"],
+      ["walk_forward_validation", "validatingNumbers"],
+      ["run_swarm", "working"],
+    ] as const;
+
+    for (const [tool, verb] of tools) {
+      store.addToolCall(makeToolCall({ id: tool, tool }));
+      expect(useAgentStore.getState().activity?.verb).toBe(verb);
+    }
+  });
+
+  it("freezes terminal activity timing and can replace a pending attempt id", () => {
+    const store = useAgentStore.getState();
+    store.startActivity("pending-1", 1000);
+    store.setActivityAttemptId("attempt-final");
+    store.setActivityState("responding", 1500);
+    store.setActivityState("stopped", 4000);
+
+    expect(useAgentStore.getState().activity).toMatchObject({
+      attemptId: "attempt-final",
+      state: "stopped",
+      startedAt: 1000,
+      endedAt: 4000,
+    });
+  });
+});
+
+describe("swarm status ordering", () => {
+  it("keeps a stable placeholder message while status updates in its own slice", () => {
+    const now = vi.spyOn(Date, "now");
+    now.mockReturnValue(100);
+    const status: SwarmRunStatus = {
+      runId: "swarm-1",
+      preset: "research",
+      status: "running",
+      currentLayer: 0,
+      totalLayers: 2,
+      startedAt: 100,
+      agents: [],
+    };
+
+    const store = useAgentStore.getState();
+    store.upsertSwarmStatus(status);
+    const placeholderMessages = useAgentStore.getState().messages;
+    now.mockReturnValue(200);
+    store.upsertSwarmStatus({ ...status, currentLayer: 1 });
+    store.updateSwarmStatus("swarm-1", (current) => ({
+      ...current,
+      status: "completed",
+    }));
+
+    expect(useAgentStore.getState().messages).toHaveLength(1);
+    expect(useAgentStore.getState().messages).toBe(placeholderMessages);
+    expect(useAgentStore.getState().messages[0].timestamp).toBe(100);
+    expect(useAgentStore.getState().messages[0].swarmStatus).toBeUndefined();
+    expect(useAgentStore.getState().swarmRuns["swarm-1"]).toMatchObject({
+      currentLayer: 1,
+      status: "completed",
+    });
+    now.mockRestore();
+  });
 });
 
 describe("session cache", () => {
@@ -154,6 +334,30 @@ describe("session cache", () => {
     expect(useAgentStore.getState().getCachedSession("sess-2")).toBeUndefined();
     expect(useAgentStore.getState().getCachedSession("sess-1")).toBeDefined();
   });
+
+  it("restores cached swarm state without mutating placeholder messages", () => {
+    const status: SwarmRunStatus = {
+      runId: "swarm-cache",
+      preset: "research",
+      status: "running",
+      currentLayer: 1,
+      totalLayers: 2,
+      startedAt: 100,
+      agents: [],
+    };
+    const store = useAgentStore.getState();
+    store.upsertSwarmStatus(status);
+    store.cacheSession("swarm-session", useAgentStore.getState().messages);
+
+    store.switchSession("other-session");
+    store.switchSession(
+      "swarm-session",
+      useAgentStore.getState().getCachedSession("swarm-session"),
+    );
+
+    expect(useAgentStore.getState().swarmRuns["swarm-cache"]).toEqual(status);
+    expect(useAgentStore.getState().messages[0].swarmStatus).toBeUndefined();
+  });
 });
 
 describe("setSseStatus", () => {
@@ -183,6 +387,8 @@ describe("switchSession", () => {
     expect(s.sessionId).toBe("new-sess");
     expect(s.messages).toEqual([]);
     expect(s.toolCalls).toEqual([]);
+    expect(s.activity).toBeNull();
+    expect(s.swarmRuns).toEqual({});
     expect(s.streamingText).toBe("");
     expect(s.status).toBe("idle");
     expect(s.sessionLoading).toBe(true);
@@ -229,6 +435,8 @@ describe("reset", () => {
     expect(s.sessionId).toBeNull();
     expect(s.streamingText).toBe("");
     expect(s.toolCalls).toEqual([]);
+    expect(s.activity).toBeNull();
+    expect(s.swarmRuns).toEqual({});
     expect(s.status).toBe("idle");
     expect(s.streamingSessionId).toBeNull();
     expect(s.sessionLoading).toBe(false);

@@ -7,6 +7,7 @@ services:
       - agent/.env
     environment:
       - VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1
+      - VIBE_TW_STOCK_DB=/data/tw-stock/latest.db
       # Ollama runs on the host; from inside the container "localhost" is the
       # container itself, so default to reaching the host via host.docker.internal.
       # Override by exporting OLLAMA_BASE_URL (or setting it in a top-level .env)
@@ -30,6 +31,12 @@ services:
       # src/api/helpers.py writes to /app/agent/.env) across container recreation.
       # env_file above still seeds the initial boot env from the same file.
       - ./agent/.env:/app/agent/.env
+      # Published Taiwan stock snapshots, mounted read-only. The default host
+      # path stays OUTSIDE the checkout: no market data may ever land in the
+      # working tree. Compose does not expand "~" in volume paths, so this uses
+      # ${HOME}. Override VIBE_TW_STOCK_DATA_DIR in the root .env with another
+      # absolute path outside the repo.
+      - ${VIBE_TW_STOCK_DATA_DIR:-${HOME}/.vibe-trading/tw-stock}:/data/tw-stock:ro
     # --- Runtime hardening (VT-007) ---
     cap_drop:
       - ALL

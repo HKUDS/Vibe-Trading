@@ -1,6 +1,7 @@
 // @vitest-environment node
 
 import { renderToStaticMarkup } from "react-dom/server";
+import i18n from "../../../i18n";
 import { SwarmStatusCard } from "../SwarmStatusCard";
 import {
   applySwarmEvent,
@@ -30,16 +31,40 @@ function makeStatus(overrides: Partial<SwarmRunStatus> = {}): SwarmRunStatus {
 }
 
 describe("SwarmStatusCard", () => {
+  beforeAll(async () => {
+    i18n.addResourceBundle(
+      "en",
+      "translation",
+      {
+        swarmStatus: {
+          detailsUnavailable: "details unavailable",
+          teamStarting:
+            "The team is spinning up — first updates in a few seconds…",
+        },
+        swarm: {
+          presets: {
+            investment_committee: "Investment Committee Review",
+            quant_strategy_desk: "Quant Strategy Desk",
+            value_investing_committee: "Value Investing Committee",
+          },
+        },
+      },
+      true,
+      true,
+    );
+    await i18n.changeLanguage("en");
+  });
+
   it("renders agent status rows", () => {
     const html = renderToStaticMarkup(<SwarmStatusCard status={makeStatus()} />);
 
-    expect(html).toContain("demo_team");
-    expect(html).toContain("running");
-    expect(html).toContain("waiting");
-    expect(html).toContain("done");
-    expect(html).toContain("failed");
-    expect(html).toContain("blocked");
-    expect(html).toContain("retry");
+    expect(html).toContain("Demo team");
+    expect(html).toContain("Running");
+    expect(html).toContain("Waiting");
+    expect(html).toContain("Done");
+    expect(html).toContain("Failed");
+    expect(html).toContain("Blocked");
+    expect(html).toContain("Retrying");
     expect(html).toContain("checking exposure");
     expect(html).toContain("missing data");
   });
@@ -47,7 +72,81 @@ describe("SwarmStatusCard", () => {
   it("shows empty state while waiting for events", () => {
     const html = renderToStaticMarkup(<SwarmStatusCard status={makeStatus({ agents: [] })} />);
 
-    expect(html).toContain("Waiting for agent events...");
+    expect(html).toContain(
+      "The team is spinning up — first updates in a few seconds…",
+    );
+  });
+
+  it("renders honest indeterminate progress while totals are unknown", () => {
+    const html = renderToStaticMarkup(
+      <SwarmStatusCard
+        status={makeStatus({ agents: [], currentLayer: 0, totalLayers: 0 })}
+      />,
+    );
+
+    expect(html).not.toContain("0/1");
+    expect(html).not.toContain("Round 1 of 1");
+    expect(html).not.toContain('value="0" max="1"');
+    expect(html).toContain('data-layer-state="indeterminate"');
+    expect(html).toContain(
+      "animate-[pulse-slide_2s_ease-in-out_infinite]",
+    );
+    expect(html.match(/animate-pulse/g)).toHaveLength(2);
+    expect(html).toMatch(
+      /<progress class="sr-only" aria-label="[^"]+"><\/progress>/,
+    );
+  });
+
+  it("keeps determinate counts when real totals are available", () => {
+    const html = renderToStaticMarkup(<SwarmStatusCard status={makeStatus()} />);
+
+    expect(html).toContain("3/6 agents");
+    expect(html).toContain("Round 1 of 2");
+    expect(html).toContain('data-layer-state="determinate"');
+    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-valuemin="0"');
+    expect(html).toContain('aria-valuetext="Round 1 of 2"');
+    expect(html).toContain("grid h-1.5 min-w-0 gap-1");
+    expect(html).not.toContain("grid h-2 min-w-0 gap-1");
+    expect(html).not.toContain(
+      "animate-[pulse-slide_2s_ease-in-out_infinite]",
+    );
+  });
+
+  it("renders a static terminal empty state without active-run copy", () => {
+    const html = renderToStaticMarkup(
+      <SwarmStatusCard
+        status={makeStatus({
+          agents: [],
+          status: "completed",
+          currentLayer: 0,
+          totalLayers: 0,
+        })}
+      />,
+    );
+
+    expect(html).toContain("Completed — details unavailable");
+    expect(html).not.toContain("Assembling team");
+    expect(html).not.toContain("Preparing layers");
+    expect(html).not.toContain("The team is spinning up");
+    expect(html).not.toContain("animate-pulse");
+    expect(html).not.toContain("pulse-slide");
+    expect(html).not.toContain("<progress");
+  });
+
+  it("uses translated preset names and humanizes custom preset ids", () => {
+    const translated = renderToStaticMarkup(
+      <SwarmStatusCard
+        status={makeStatus({ preset: "value_investing_committee" })}
+      />,
+    );
+    const custom = renderToStaticMarkup(
+      <SwarmStatusCard status={makeStatus({ preset: "custom_alpha_team" })} />,
+    );
+
+    expect(translated).toContain("Value Investing Committee");
+    expect(translated).not.toContain("value_investing_committee");
+    expect(custom).toContain("Custom alpha team");
   });
 
   it("builds a card model from swarm.started payload", () => {

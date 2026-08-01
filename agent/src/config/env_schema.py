@@ -167,6 +167,7 @@ class DataConfig(_EnvBase):
     fred_api_key: str = Field(alias="FRED_API_KEY", default="")
     vibe_trading_iwencai_key: str = Field(alias="VIBE_TRADING_IWENCAI_KEY", default="")
     vibe_trading_sec_ua: str = Field(alias="VIBE_TRADING_SEC_UA", default="")
+    vibe_tw_stock_db: str = Field(alias="VIBE_TW_STOCK_DB", default="")
     vibe_trading_data_cache: EnvBool = Field(alias="VIBE_TRADING_DATA_CACHE", default=False)
     vibe_trading_data_cache_root: str = Field(alias="VIBE_TRADING_DATA_CACHE_ROOT", default="")
     aliyun_iqs_api_key: str = Field(alias="ALIYUN_IQS_API_KEY", default="")
@@ -234,6 +235,12 @@ class APIConfig(_EnvBase):
     api_auth_key: str = Field(alias="API_AUTH_KEY", default="")
     vibe_trading_api_key: str = Field(alias="VIBE_TRADING_API_KEY", default="")
     cors_origins: str = Field(alias="CORS_ORIGINS", default="")
+    # Additive, unlike CORS_ORIGINS: these origins are appended to the loopback
+    # defaults instead of replacing them. Used to admit a hosted console (e.g.
+    # OpenBB Workspace) without discarding the local-dev origins.
+    vibe_trading_extra_cors_origins: str = Field(
+        alias="VIBE_TRADING_EXTRA_CORS_ORIGINS", default="",
+    )
     api_allowed_hosts: str = Field(alias="API_ALLOWED_HOSTS", default="")
     # Comma-separated Host/Origin allow-list for the network MCP transports
     # (--transport sse / http). Empty means loopback-only (127.0.0.1,

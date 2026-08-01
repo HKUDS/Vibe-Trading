@@ -91,7 +91,7 @@ export function Reports() {
               {t("reports.badge")}
             </div>
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">{t("reports.title")}</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">{t("reports.title")}</h1>
               <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{t("reports.subtitle")}</p>
             </div>
           </div>
@@ -108,18 +108,20 @@ export function Reports() {
 
         <section className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_160px_150px_150px_170px]">
           <label className="relative block">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t("reports.searchPlaceholder")}
-              className="w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm outline-none transition focus:border-primary"
+              aria-label={t("alphaZoo.search")}
+              className="w-full rounded-md border bg-background py-2 ps-9 pe-3 text-sm outline-none transition focus:border-primary"
             />
           </label>
           <select
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
             className="rounded-md border bg-background px-3 py-2 text-sm"
+            aria-label={t("settings.status")}
           >
             {statusOptions.map((status) => (
               <option key={status} value={status}>
@@ -167,8 +169,8 @@ export function Reports() {
         ) : null}
 
         {!loading && error ? (
-          <section className="rounded-md border border-amber-500/30 bg-amber-500/5 p-5">
-            <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
+          <section className="rounded-md border border-warning/30 bg-warning/5 p-5">
+            <div className="flex items-center gap-2 font-medium text-warning">
               <AlertTriangle className="h-5 w-5" />
               {t("reports.unavailable")}
             </div>
@@ -209,7 +211,9 @@ function ReportRow({ run }: { run: RunListItem }) {
             <Link to={`/runs/${run.run_id}`} className="truncate font-mono text-sm font-medium hover:text-primary">
               {run.run_id}
             </Link>
-            <span className="text-xs text-muted-foreground">{formatRunDate(run.created_at)}</span>
+            <span className="text-xs text-muted-foreground">
+              {formatRunDate(run.created_at, t("reports.unknown", { defaultValue: "Unknown" }))}
+            </span>
           </div>
           <p className="line-clamp-2 text-sm text-muted-foreground">{run.prompt || t("reports.noPrompt")}</p>
           <div className="flex flex-wrap gap-1.5">
@@ -227,7 +231,7 @@ function ReportRow({ run }: { run: RunListItem }) {
         </div>
 
         <div className="flex flex-col gap-3 lg:items-end">
-          <div className="grid grid-cols-2 gap-2 text-right sm:flex sm:flex-wrap sm:justify-end">
+          <div className="grid grid-cols-2 gap-2 text-end sm:flex sm:flex-wrap sm:justify-end">
             <MetricPill label={t("reports.return")} value={formatOptionalMetric("total_return", run.total_return)} />
             <MetricPill label={t("reports.sharpe")} value={formatOptionalMetric("sharpe", run.sharpe)} />
           </div>
@@ -253,6 +257,7 @@ function ReportRow({ run }: { run: RunListItem }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const normalized = status.toLowerCase();
   const ok = ["success", "done", "completed", "complete"].includes(normalized);
   return (
@@ -263,7 +268,7 @@ function StatusBadge({ status }: { status: string }) {
       )}
     >
       {ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-      {status || "unknown"}
+      {status || t("reports.unknown", { defaultValue: "Unknown" })}
     </span>
   );
 }
@@ -301,9 +306,9 @@ function dateMs(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatRunDate(value: string): string {
+function formatRunDate(value: string, unknownLabel: string): string {
   const parsed = new Date(value);
-  if (!Number.isFinite(parsed.getTime())) return value || "unknown";
+  if (!Number.isFinite(parsed.getTime())) return value || unknownLabel;
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",

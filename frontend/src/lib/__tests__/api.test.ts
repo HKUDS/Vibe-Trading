@@ -127,4 +127,32 @@ describe("api request helper", () => {
       }),
     );
   });
+
+  it("resolves authorization errors through the active i18n key", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail: "server fallback" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    const apiModule = await loadApiModule();
+    const { default: i18n } = await import("@/i18n");
+    i18n.addResource(
+      "en",
+      "translation",
+      "agent.authRequired",
+      "Add an API key in Settings.",
+    );
+    await i18n.changeLanguage("en");
+
+    expect(apiModule.AUTH_REQUIRED_MESSAGE).toBe("Add an API key in Settings.");
+    await expect(apiModule.api.getCorrelation("A,B", 90, "pearson")).rejects.toMatchObject({
+      status: 401,
+      message: "Add an API key in Settings.",
+    } satisfies Partial<ApiError>);
+  });
 });

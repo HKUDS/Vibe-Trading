@@ -13,12 +13,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from typing import Any
 
 from src.agent.tools import BaseTool
-from src.config.accessor import _parse_bool, get_env_config
+from src.config.accessor import get_env_config
 from src.security.scanner import with_security_warnings
 
 logger = logging.getLogger(__name__)
@@ -178,10 +177,32 @@ class WebSearchTool(BaseTool):
 
         Returns:
             JSON envelope with status, query, the backend list used, and results
-            (or an actionable error message on persistent failure).
+            (or an actionable error message on persistent failure). An absent
+            ``max_results`` falls back to 5; an explicitly malformed one is an
+            error, not a silent default.
         """
-        query = kwargs["query"]
-        max_results = min(int(kwargs.get("max_results", 5)), 10)
+        raw_query = kwargs.get("query")
+        if not isinstance(raw_query, str) or not raw_query.strip():
+            return json.dumps(
+                {"status": "error", "tool": "web_search", "error": "query is mandatory (non-empty string)"},
+                ensure_ascii=False,
+            )
+        query = raw_query.strip()
+        raw_max = kwargs.get("max_results")
+        if raw_max is None or raw_max == "":
+            max_results = 5
+        else:
+            try:
+                max_results = min(max(1, int(raw_max)), 10)
+            except (TypeError, ValueError, OverflowError):
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "tool": "web_search",
+                        "error": f"max_results must be an integer, got {raw_max!r}",
+                    },
+                    ensure_ascii=False,
+                )
         backends = (get_env_config().agent_tuning.vibe_trading_search_backends or _DEFAULT_BACKENDS).strip() or "auto"
 
         # Fast path: Alibaba Cloud IQS if configured (official API, CN-direct,

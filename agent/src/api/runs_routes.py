@@ -81,8 +81,8 @@ def _build_response_from_run_dir(
         state_status = str(state_data.get("status") or "").lower()
         if state_status == "success":
             response.status = "success"
-        elif state_status == "failed":
-            response.status = "failed"
+        elif state_status in {"failed", "cancelled"}:
+            response.status = state_status
             response.reason = state_data.get("reason", "")
         else:
             response.status = state_status or "unknown"

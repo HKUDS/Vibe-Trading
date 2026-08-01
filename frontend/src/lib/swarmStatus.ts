@@ -18,10 +18,33 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function timestampMs(value: unknown, fallback = Date.now()): number {
-  if (typeof value !== "string") return fallback;
+function timestampMs(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
   const parsed = new Date(value).getTime();
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function serverRunTimes(record: AnyRecord): {
+  startedAt?: number;
+  completedAt?: number;
+} {
+  const tasks = Array.isArray(record.tasks) ? record.tasks.map(asRecord) : [];
+  const taskStarts = tasks
+    .map((task) => timestampMs(task.started_at))
+    .filter((value): value is number => value != null);
+  const taskCompletions = tasks
+    .map((task) => timestampMs(task.completed_at))
+    .filter((value): value is number => value != null);
+  const explicitStart = timestampMs(record.started_at)
+    ?? timestampMs(record.created_at)
+    ?? timestampMs(record.timestamp);
+  const explicitCompletion = timestampMs(record.completed_at);
+
+  return {
+    startedAt: explicitStart ?? (taskStarts.length > 0 ? Math.min(...taskStarts) : undefined),
+    completedAt: explicitCompletion
+      ?? (taskCompletions.length > 0 ? Math.max(...taskCompletions) : undefined),
+  };
 }
 
 function normalizeRunStatus(value: unknown): SwarmRunStatus["status"] {
@@ -83,7 +106,7 @@ function updateAgent(
   return { ...status, agents };
 }
 
-export function buildSwarmStatusFromStarted(data: AnyRecord, now = Date.now()): SwarmRunStatus | null {
+export function buildSwarmStatusFromStarted(data: AnyRecord): SwarmRunStatus | null {
   const runId = asString(data.run_id);
   if (!runId) return null;
 
@@ -123,16 +146,16 @@ export function buildSwarmStatusFromStarted(data: AnyRecord, now = Date.now()): 
     status: normalizeRunStatus(data.status),
     currentLayer: 0,
     totalLayers: 0,
-    startedAt: now,
+    startedAt: serverRunTimes(data).startedAt ?? 0,
     agents,
   };
 }
 
-export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown, now = Date.now()): SwarmRunStatus {
+export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown): SwarmRunStatus {
   const event = asRecord(rawEvent);
   const data = asRecord(event.data);
   const type = asString(event.type);
-  const eventTime = timestampMs(event.timestamp, now);
+  const eventTime = timestampMs(event.timestamp);
   const { agentId, taskId } = eventAgentKey(event);
 
   if (type === "layer_started") {
@@ -146,19 +169,27 @@ export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown, now 
   }
 
   if (type === "run_started") {
-    return { ...current, status: "running", startedAt: current.startedAt || eventTime };
+    return {
+      ...current,
+      status: "running",
+      startedAt: current.startedAt || eventTime || 0,
+    };
   }
 
   if (type === "run_completed") {
     return {
       ...current,
       status: normalizeRunStatus(data.status),
-      completedAt: eventTime,
+      completedAt: eventTime ?? current.completedAt,
     };
   }
 
   if (type === "run_error") {
-    return { ...current, status: "failed", completedAt: eventTime };
+    return {
+      ...current,
+      status: "failed",
+      completedAt: eventTime ?? current.completedAt,
+    };
   }
 
   if (type === "task_started" || type === "worker_started") {
@@ -167,7 +198,7 @@ export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown, now 
       agentId: agent.agentId || agentId,
       taskId: agent.taskId || taskId,
       status: "running",
-      startedAt: eventTime,
+      startedAt: eventTime ?? agent.startedAt,
     }));
   }
 
@@ -215,7 +246,9 @@ export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown, now 
     return updateAgent(current, { agentId, taskId }, (agent) => ({
       ...agent,
       status: "done",
-      elapsed_s: agent.startedAt ? Math.max(0, (eventTime - agent.startedAt) / 1000) : agent.elapsed_s,
+      elapsed_s: agent.startedAt && eventTime
+        ? Math.max(0, (eventTime - agent.startedAt) / 1000)
+        : agent.elapsed_s,
       iterations: asNumber(data.iterations) ?? agent.iterations,
       lastText: asString(data.summary) || agent.lastText,
     }));
@@ -225,7 +258,9 @@ export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown, now 
     return updateAgent(current, { agentId, taskId }, (agent) => ({
       ...agent,
       status: "failed",
-      elapsed_s: agent.startedAt ? Math.max(0, (eventTime - agent.startedAt) / 1000) : agent.elapsed_s,
+      elapsed_s: agent.startedAt && eventTime
+        ? Math.max(0, (eventTime - agent.startedAt) / 1000)
+        : agent.elapsed_s,
       error: asString(data.error) || asString(data.reason) || agent.error,
     }));
   }
@@ -251,21 +286,25 @@ export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown, now 
   return current;
 }
 
-export function buildSwarmStatusFromToolResultPreview(preview: string, now = Date.now()): SwarmRunStatus | null {
+export function buildSwarmStatusFromToolResultPreview(preview: string): SwarmRunStatus | null {
   if (!preview.includes("run_id") && !preview.includes("preset")) return null;
 
   try {
     const parsed = JSON.parse(preview) as AnyRecord;
     const runId = asString(parsed.run_id);
     if (!runId) return null;
+    const times = serverRunTimes(parsed);
+    const status = normalizeRunStatus(parsed.status);
     return {
       runId,
       preset: asString(parsed.preset) || "swarm",
-      status: normalizeRunStatus(parsed.status),
+      status,
       currentLayer: 0,
       totalLayers: 0,
-      startedAt: now,
-      completedAt: ["completed", "failed", "cancelled"].includes(asString(parsed.status)) ? now : undefined,
+      startedAt: times.startedAt ?? 0,
+      completedAt: ["completed", "failed", "cancelled"].includes(status)
+        ? times.completedAt
+        : undefined,
       agents: [],
     };
   } catch {
@@ -274,14 +313,22 @@ export function buildSwarmStatusFromToolResultPreview(preview: string, now = Dat
     const preset = preview.match(/"preset"\s*:\s*"([^"]+)"/)?.[1] || "swarm";
     const rawStatus = preview.match(/"status"\s*:\s*"([^"]+)"/)?.[1] || "unknown";
     const status = normalizeRunStatus(rawStatus);
+    const startedAt = timestampMs(
+      preview.match(/"(?:started_at|created_at|timestamp)"\s*:\s*"([^"]+)"/)?.[1],
+    );
+    const completedAt = timestampMs(
+      preview.match(/"completed_at"\s*:\s*"([^"]+)"/)?.[1],
+    );
     return {
       runId,
       preset,
       status,
       currentLayer: 0,
       totalLayers: 0,
-      startedAt: now,
-      completedAt: ["completed", "failed", "cancelled"].includes(status) ? now : undefined,
+      startedAt: startedAt ?? 0,
+      completedAt: ["completed", "failed", "cancelled"].includes(status)
+        ? completedAt
+        : undefined,
       agents: [],
     };
   }

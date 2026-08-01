@@ -1,3 +1,4 @@
+import i18n from "@/i18n";
 import { authHeaders, withAuthTicket } from "@/lib/apiAuth";
 
 const BASE = "";
@@ -12,8 +13,18 @@ export class ApiError extends Error {
   }
 }
 
-export const AUTH_REQUIRED_MESSAGE =
-  "Remote API access requires an API key. Add it in Settings, or run the backend on localhost for local-only use.";
+const AUTH_REQUIRED_MESSAGE_KEY = "agent.authRequired";
+
+function getAuthRequiredMessage(): string {
+  return i18n.t(AUTH_REQUIRED_MESSAGE_KEY as never);
+}
+
+// Keep the existing string export compatible with consumers while updating its
+// live ES-module binding whenever the active locale changes.
+export let AUTH_REQUIRED_MESSAGE = getAuthRequiredMessage();
+i18n.on("languageChanged", () => {
+  AUTH_REQUIRED_MESSAGE = getAuthRequiredMessage();
+});
 
 export function isAuthRequiredError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);
@@ -53,7 +64,7 @@ async function errorFromResponse(res: Response): Promise<ApiError> {
     detail = body.detail || body.message || detail;
   } catch { /* ignore */ }
   if (res.status === 401 || res.status === 403) {
-    detail = AUTH_REQUIRED_MESSAGE;
+    detail = getAuthRequiredMessage();
   }
   return new ApiError(detail, res.status);
 }
@@ -133,6 +144,9 @@ export const api = {
   createSession: (title?: string) => request<SessionItem>("/sessions", { method: "POST", body: JSON.stringify({ title: title || "" }) }),
   deleteSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "DELETE" }),
   renameSession: (sid: string, title: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "PATCH", body: JSON.stringify({ title }) }),
+  // Codex-style LLM summary title from the first exchange; backend refuses to
+  // overwrite a manual rename, so this is safe to fire-and-forget.
+  autoTitleSession: (sid: string) => request<{ status: string; title: string }>(`/sessions/${sid}/title/auto`, { method: "POST" }),
   sendMessage: (sid: string, content: string) => request<{ message_id: string; attempt_id: string }>(`/sessions/${sid}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
   cancelSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}/cancel`, { method: "POST" }),
   getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${sid}/messages`),
@@ -239,6 +253,11 @@ export const api = {
     request<HaltLiveResponse>("/live/halt", {
       method: "POST",
       body: JSON.stringify({ session_id, broker, reason }),
+    }),
+  resumeLive: (session_id?: string, broker?: string) =>
+    request<HaltLiveResponse>("/live/resume", {
+      method: "POST",
+      body: JSON.stringify({ session_id, broker }),
     }),
   // Read the persistent runtime status across all authorized brokers (SPEC §7.5).
   // Polled by the RunnerStatus panel; a plain authenticated GET, never a chat message.
@@ -421,6 +440,19 @@ export interface EquityPoint {
   drawdown: string | number;
 }
 
+/** Monte Carlo fan-chart payload: percentile envelope + sampled paths over trade order. */
+export interface MonteCarloEquityPaths {
+  steps: number[];
+  initial_capital: number;
+  actual: number[];
+  band_p5: number[];
+  band_p25: number[];
+  band_p50: number[];
+  band_p75: number[];
+  band_p95: number[];
+  samples: number[][];
+}
+
 export interface ValidationData {
   monte_carlo?: {
     actual_sharpe: number;
@@ -433,6 +465,8 @@ export interface ValidationData {
     simulated_sharpe_p95: number;
     n_simulations: number;
     n_trades: number;
+    sharpe_samples?: number[];
+    equity_paths?: MonteCarloEquityPaths;
     error?: string;
   };
   bootstrap?: {
@@ -443,6 +477,7 @@ export interface ValidationData {
     prob_positive: number;
     confidence: number;
     n_bootstrap: number;
+    sharpe_samples?: number[];
     error?: string;
   };
   walk_forward?: {
@@ -1044,4 +1079,15 @@ export interface MessageItem {
   created_at: string;
   linked_attempt_id?: string;
   metadata?: Record<string, unknown>;
+  tool_trail?: ToolTrailItem[];
+}
+
+export interface ToolTrailItem {
+  tool: string;
+  status: "running" | "ok" | "error";
+  arguments?: Record<string, string>;
+  elapsed_ms?: number;
+  preview?: string;
+  call_id?: string;
+  timestamp?: number;
 }

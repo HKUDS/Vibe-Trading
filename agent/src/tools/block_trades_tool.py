@@ -22,6 +22,7 @@ from typing import Any
 
 from backtest.loaders.eastmoney_client import get_json, resolve_secid
 from src.agent.tools import BaseTool
+from src.tools.trade_journal_parsers import _qualify_a_share
 
 logger = logging.getLogger(__name__)
 
@@ -58,13 +59,16 @@ def _resolve_code(symbol: str) -> str | None:
         The bare 6-digit code (e.g. ``"600519"``), or ``None`` when the symbol
         is not a resolvable A-share.
     """
-    secid = resolve_secid(symbol)
+    s = symbol.strip() if symbol else ""
+    if s and "." not in s and len(s) == 6 and s.isdigit():
+        s = _qualify_a_share(s)
+    secid = resolve_secid(s)
     if not secid or "." not in secid:
         return None
     market = secid.split(".", 1)[0]
     if market not in ("0", "1"):  # 0=SZ/BJ, 1=SH; HK/US are not A-share blocks.
         return None
-    code = symbol.rpartition(".")[0].strip().upper()
+    code = secid.split(".", 1)[1].strip().upper()
     return code or None
 
 
@@ -79,7 +83,7 @@ def _clamp_days(days: Any) -> int:
     """
     try:
         value = int(days)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return _DEFAULT_DAYS
     if value < 1:
         return 1

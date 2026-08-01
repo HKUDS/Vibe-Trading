@@ -46,7 +46,8 @@ export const router = createBrowserRouter([
   {
     element: <Layout />,
     children: [
-      { path: "/", element: wrap(Home) },
+      { path: "/", element: wrap(Agent) },
+      { path: "/about", element: wrap(Home) },
       { path: "/agent", element: wrap(Agent) },
       { path: "/runtime", element: wrap(Runtime) },
       { path: "/reports", element: wrap(Reports) },

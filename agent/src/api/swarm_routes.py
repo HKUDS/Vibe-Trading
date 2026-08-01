@@ -6,7 +6,6 @@ Mounted by ``agent/api_server.py`` via ``register_swarm_routes(app, ...)``.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -25,12 +24,10 @@ def _get_swarm_runtime():
     if _swarm_runtime is not None:
         return _swarm_runtime
     from src.config import load_swarm_agent_config
-    from src.swarm.store import SwarmStore
+    from src.swarm.store import SwarmStore, swarm_runs_root
     from src.swarm.runtime import SwarmRuntime
 
-    # Adjust path: this file is at agent/src/api/, so parent.parent.parent = agent/
-    swarm_dir = Path(__file__).resolve().parent.parent.parent / ".swarm" / "runs"
-    store = SwarmStore(base_dir=swarm_dir)
+    store = SwarmStore(base_dir=swarm_runs_root())
     # Boot-time / operator-trusted: REST API callers cannot influence the
     # config path. See docs/2026-05-25_swarm_mcp_tools_roadmap.md.
     agent_config = load_swarm_agent_config()

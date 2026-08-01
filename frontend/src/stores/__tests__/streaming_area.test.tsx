@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import { useAgentStore } from "@/stores/agent";
-import type { AgentMessage } from "@/types/agent";
 
 /**
  * Extracted streaming area component matching Agent.tsx structure.
@@ -10,10 +9,7 @@ import type { AgentMessage } from "@/types/agent";
 function StreamingArea() {
   const status = useAgentStore((s) => s.status);
   const streamingText = useAgentStore((s) => s.streamingText);
-  const toolCalls = useAgentStore((s) => s.toolCalls);
-  const messages = useAgentStore((s) => s.messages);
-
-  const reasoningActive = streamingText.startsWith("Thinking:");
+  const activity = useAgentStore((s) => s.activity);
 
   if (status !== "streaming") return null;
 
@@ -22,27 +18,18 @@ function StreamingArea() {
       <div className="flex gap-3">
         <div data-testid="avatar">A</div>
         <div className="flex-1 min-w-0 space-y-1.5">
-          {!reasoningActive && !streamingText && toolCalls.length === 0 && !messages.some((m: AgentMessage) => m.type === "swarm_status") && (
-            <div data-testid="placeholder">
-              <span>Agent working...</span>
-            </div>
-          )}
-          {reasoningActive && !streamingText && (
-            <div data-testid="reasoning">
-              <span>Reasoning...</span>
+          {activity && (
+            <div data-testid="activity-line">
+              <span>{activity.state}</span>
+              {activity.steps.map((step) => (
+                <span key={step.id} data-testid={`tool-${step.id}`}>{step.tool}</span>
+              ))}
             </div>
           )}
           {streamingText && (
             <div data-testid="streaming-text">
               {streamingText}
               <span data-testid="cursor" />
-            </div>
-          )}
-          {toolCalls.length > 0 && (
-            <div data-testid="tool-progress">
-              {toolCalls.map((tc) => (
-                <span key={tc.id} data-testid={`tool-${tc.id}`}>{tc.tool}</span>
-              ))}
             </div>
           )}
         </div>
@@ -56,37 +43,37 @@ beforeEach(() => {
 });
 
 describe("StreamingArea — DOM stability during state transitions", () => {
-  it("renders placeholder when streaming starts with no content", () => {
+  it("renders one activity line when streaming starts with no content", () => {
     act(() => {
       useAgentStore.getState().setSessionId("s1");
+      useAgentStore.getState().startActivity("attempt-1");
       useAgentStore.getState().setStatus("streaming");
     });
 
     render(<StreamingArea />);
     expect(screen.getByTestId("streaming-wrapper")).toBeInTheDocument();
-    expect(screen.getByTestId("placeholder")).toBeInTheDocument();
+    expect(screen.getByTestId("activity-line")).toHaveTextContent("thinking");
   });
 
-  it("wrapper stays in DOM when placeholder transitions to streaming text", () => {
+  it("wrapper and activity line stay in DOM when text starts streaming", () => {
     act(() => {
       useAgentStore.getState().setSessionId("s1");
+      useAgentStore.getState().startActivity("attempt-1");
       useAgentStore.getState().setStatus("streaming");
     });
 
     render(<StreamingArea />);
     const wrapper = screen.getByTestId("streaming-wrapper");
+    const activityLine = screen.getByTestId("activity-line");
 
-    // Placeholder visible initially
-    expect(screen.getByTestId("placeholder")).toBeInTheDocument();
-
-    // Transition: append delta → placeholder disappears, text appears
     act(() => {
+      useAgentStore.getState().setActivityState("responding");
       useAgentStore.getState().appendDelta("Hello");
     });
 
-    // Wrapper must still be the same DOM node
     expect(screen.getByTestId("streaming-wrapper")).toBe(wrapper);
-    expect(screen.queryByTestId("placeholder")).not.toBeInTheDocument();
+    expect(screen.getByTestId("activity-line")).toBe(activityLine);
+    expect(screen.getByTestId("activity-line")).toHaveTextContent("responding");
     expect(screen.getByTestId("streaming-text")).toBeInTheDocument();
     expect(screen.getByTestId("streaming-text")).toHaveTextContent("Hello");
   });
@@ -94,6 +81,7 @@ describe("StreamingArea — DOM stability during state transitions", () => {
   it("wrapper stays in DOM when text transitions to include tool calls", () => {
     act(() => {
       useAgentStore.getState().setSessionId("s1");
+      useAgentStore.getState().startActivity("attempt-1");
       useAgentStore.getState().setStatus("streaming");
       useAgentStore.getState().appendDelta("Analyzing...");
     });
@@ -113,7 +101,6 @@ describe("StreamingArea — DOM stability during state transitions", () => {
 
     expect(screen.getByTestId("streaming-wrapper")).toBe(wrapper);
     expect(screen.getByTestId("streaming-text")).toBeInTheDocument();
-    expect(screen.getByTestId("tool-progress")).toBeInTheDocument();
     expect(screen.getByTestId("tool-tc-1")).toHaveTextContent("run_backtest");
   });
 
@@ -131,6 +118,7 @@ describe("StreamingArea — DOM stability during state transitions", () => {
 
     act(() => {
       useAgentStore.getState().setSessionId("s1");
+      useAgentStore.getState().startActivity("attempt-1");
       useAgentStore.getState().setStatus("streaming");
     });
 
@@ -178,6 +166,7 @@ describe("StreamingArea — DOM stability during state transitions", () => {
   it("wrapper unmounts cleanly when streaming ends", () => {
     act(() => {
       useAgentStore.getState().setSessionId("s1");
+      useAgentStore.getState().startActivity("attempt-1");
       useAgentStore.getState().setStatus("streaming");
       useAgentStore.getState().appendDelta("text");
     });
@@ -196,6 +185,7 @@ describe("StreamingArea — DOM stability during state transitions", () => {
   it("stream_reset clears text but keeps wrapper mounted", () => {
     act(() => {
       useAgentStore.getState().setSessionId("s1");
+      useAgentStore.getState().startActivity("attempt-1");
       useAgentStore.getState().setStatus("streaming");
       useAgentStore.getState().appendDelta("partial");
     });
@@ -209,6 +199,6 @@ describe("StreamingArea — DOM stability during state transitions", () => {
 
     expect(screen.getByTestId("streaming-wrapper")).toBe(wrapper);
     expect(screen.queryByTestId("streaming-text")).not.toBeInTheDocument();
-    expect(screen.getByTestId("placeholder")).toBeInTheDocument();
+    expect(screen.getByTestId("activity-line")).toBeInTheDocument();
   });
 });

@@ -10,6 +10,7 @@ Excel (.xlsx/.xls) always opens as utf-8 internally via openpyxl/xlrd.
 from __future__ import annotations
 
 import re
+import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -212,7 +213,10 @@ def _to_float(val: Any, default: float = 0.0) -> float:
     try:
         s = str(val).strip().replace("\u2212", "-")
         s = _CURRENCY_TOKEN_RE.sub("", s).replace(",", "").strip()
-        return float(s) if s else default
+        if not s:
+            return default
+        parsed = float(s)
+        return parsed if math.isfinite(parsed) else default
     except (ValueError, TypeError):
         return default
 
@@ -525,7 +529,7 @@ def _infer_market_from_symbol(symbol: str) -> str:
         return "hk"
     if s.endswith(".SH") or s.endswith(".SZ") or s.endswith(".BJ"):
         return "china_a"
-    if "-" in s and any(quote in s for quote in ("USDT", "USDC", "BTC", "USD")):
+    if ("-" in s or "/" in s) and any(quote in s for quote in ("USDT", "USDC", "BTC", "USD")):
         return "crypto"
     # Binance-style concatenated pairs (BTCUSDT) are purely alphabetic, so the
     # isalpha() US-equity branch below would mis-label them without this check.

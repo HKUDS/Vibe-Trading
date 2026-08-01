@@ -20,6 +20,7 @@ hits :func:`main`.
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 import sys
 import threading
@@ -169,7 +170,9 @@ def _probe_skill_count() -> int:
 
 def _probe_session_count() -> int:
     """Count recorded sessions from the SQLite store."""
-    db_path = Path.home() / ".vibe-trading" / "sessions.db"
+    from src.config.paths import get_runtime_root
+
+    db_path = get_runtime_root() / "sessions.db"
     if not db_path.exists():
         return 0
     try:
@@ -363,7 +366,7 @@ class InteractiveContext:
 
 
 def _session_store() -> Any:
-    """Return a process-wide :class:`SessionStore` rooted at ``agent/sessions``.
+    """Return a process-wide :class:`SessionStore` rooted at the user-level sessions dir.
 
     Cached on the module so repeat ``_append_message`` / ``_new_session``
     calls don't re-import ``src.session.store`` every turn.
@@ -399,8 +402,8 @@ def _new_session(prompt_preview: str) -> Optional[str]:
     """Create a fresh session record. Returns the id, or None on failure.
 
     Dual-writes to the filesystem :class:`SessionStore` (canonical JSONL
-    log under ``agent/sessions/``) *and* to the SQLite FTS5 search index
-    (``~/.vibe-trading/sessions.db``) so cross-session search via
+    log in the user-level sessions dir) *and* to the SQLite FTS5 search
+    index (``sessions.db`` beside it) so cross-session search via
     :class:`SessionSearchIndex` finds turns recorded from the interactive
     loop. Matches the pattern in :class:`SessionService`.
     """
@@ -1309,6 +1312,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         Process exit code.
     """
     raw_argv = list(sys.argv[1:] if argv is None else argv)
+
+    # One-time move of pre-#904 code-relative state into the runtime root.
+    # A failed migration must never block the CLI.
+    try:
+        from src.config import migrate as _migrate
+
+        _migrate.migrate_legacy_state()
+    except Exception:  # pragma: no cover — best-effort
+        logging.getLogger(__name__).warning(
+            "Legacy state migration failed", exc_info=True
+        )
+
     interactive = _is_interactive_invocation(raw_argv)
 
     if interactive:

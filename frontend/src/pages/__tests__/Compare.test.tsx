@@ -93,4 +93,23 @@ describe("Compare page", () => {
     });
     expect(await screen.findByText("20.00%")).toBeInTheDocument();
   });
+
+  it("localizes the title and gives metric deltas non-color verdicts", async () => {
+    apiMock.getRun.mockImplementation((runId: string) => Promise.resolve({
+      status: "success",
+      run_id: runId,
+      metrics: runId === "right"
+        ? { total_return: 0.2, volatility: 0.2 }
+        : { total_return: 0.1, volatility: 0.1 },
+    }));
+
+    render(<Compare />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Strategy Comparison" })).toHaveClass("text-2xl", "font-semibold");
+    expect(await screen.findByText("Better:")).toHaveClass("sr-only");
+    expect(screen.getByText("Worse:")).toHaveClass("sr-only");
+    expect(screen.getByText("\u2191")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByText("\u2193")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("table").parentElement).toHaveClass("overflow-x-auto");
+  });
 });

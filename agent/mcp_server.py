@@ -2166,6 +2166,18 @@ def main():
         "to setting VIBE_TRADING_ENABLE_SHELL_TOOLS=1.",
     )
     args = parser.parse_args()
+
+    # One-time move of pre-#904 code-relative state into the runtime root.
+    # A failed migration must never block the server.
+    try:
+        from src.config import migrate as _migrate
+
+        _migrate.migrate_legacy_state()
+    except Exception:  # pragma: no cover — best-effort
+        logging.getLogger(__name__).warning(
+            "Legacy state migration failed", exc_info=True
+        )
+
     _include_shell_tools = _resolve_include_shell_tools(args.enable_shell_tools)
     _registry = None
     _get_registry()  # pre-warm: avoids deadlock when first tools/call lazy-inits inside FastMCP worker thread

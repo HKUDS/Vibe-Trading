@@ -38,6 +38,30 @@ def _ok(**payload: Any) -> str:
     return json.dumps({"status": "ok", **payload}, ensure_ascii=False, default=str)
 
 
+def _int_arg(value: Any, field: str, default: int) -> int:
+    """Resolve an optional integer argument from tool kwargs.
+
+    Args:
+        value: Raw argument value; ``None`` and ``""`` mean "not supplied".
+        field: Argument name, used in the error message.
+        default: Value to use when the argument was not supplied.
+
+    Returns:
+        The requested integer, or ``default`` when the argument was absent.
+
+    Raises:
+        ValueError: If the value is present but not an integer. Only an absent
+            value may fall back to the default — silently replacing a malformed
+            explicit value would answer a different question than was asked.
+    """
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{field} must be an integer, got {value!r}") from None
+
+
 def _validate_optional_journal_path(raw: Any) -> str | None:
     """Validate a journal_path kwarg that may be missing/empty.
 
@@ -94,10 +118,15 @@ class ExtractShadowStrategyTool(BaseTool):
         except ValueError as exc:
             return _err(str(exc))
         try:
+            min_support = _int_arg(kwargs.get("min_support"), "min_support", 3)
+            max_rules = _int_arg(kwargs.get("max_rules"), "max_rules", 5)
+        except ValueError as exc:
+            return _err(str(exc))
+        try:
             profile = extract_shadow_profile(
                 journal_path,
-                min_support=int(kwargs.get("min_support", 3)),
-                max_rules=int(kwargs.get("max_rules", 5)),
+                min_support=min_support,
+                max_rules=max_rules,
             )
         except (FileNotFoundError, ValueError) as exc:
             return _err(str(exc))
@@ -318,13 +347,18 @@ class ScanShadowSignalsTool(BaseTool):
         shadow_id = kwargs.get("shadow_id")
         if not shadow_id:
             return _err("shadow_id is required")
+        # Arguments are validated before the profile load so a schema error is
+        # reported as such instead of being masked by a missing-profile error.
+        try:
+            per_market = _int_arg(kwargs.get("per_market"), "per_market", 3)
+        except ValueError as exc:
+            return _err(str(exc))
         try:
             profile = load_profile(shadow_id)
         except FileNotFoundError as exc:
             return _err(str(exc))
 
         target = kwargs.get("date") or None
-        per_market = int(kwargs.get("per_market", 3))
         signals = scan_today_signals(profile, target_date=target, per_market=per_market)
         return _ok(
             shadow_id=profile.shadow_id,

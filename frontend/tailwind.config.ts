@@ -21,6 +21,9 @@ export default {
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
+        // Display serif for the hero greeting only — system stack, no webfont.
+        // Deliberately NOT used for answers/tables (numeric content stays sans/mono).
+        serif: ["Georgia", "Songti SC", "Noto Serif SC", "serif"],
         mono: ["JetBrains Mono", "ui-monospace", "monospace"],
       },
       borderRadius: { lg: "var(--radius)", md: "calc(var(--radius) - 2px)", sm: "calc(var(--radius) - 4px)" },

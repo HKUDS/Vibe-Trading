@@ -27,12 +27,18 @@ function formatUsd(value: number): string {
   return `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
+function translateManifestKey(key: string, values: Record<string, string | number>): string {
+  return String(i18n.t(key as never, values as never));
+}
+
 function formatLeverage(leverage: MandateProfile["leverage"]): string {
   if (typeof leverage === "number") {
-    return leverage <= 1 ? "no leverage" : `${leverage}× leverage`;
+    return leverage <= 1
+      ? i18n.t("mandate.noLeverage")
+      : i18n.t("mandate.leverageValue", { value: leverage });
   }
   const lowered = leverage.toLowerCase();
-  return lowered === "none" || lowered === "" ? "no leverage" : leverage;
+  return lowered === "none" || lowered === "" ? i18n.t("mandate.noLeverage") : leverage;
 }
 
 function formatUniverse(universe: MandateProfile["universe"]): string {
@@ -109,7 +115,9 @@ function ProfileTile({
         </div>
         <div>
           <dt className="text-muted-foreground">{i18n.t("mandate.dailyCap")}</dt>
-          <dd className="font-mono font-medium text-foreground">{profile.daily_trade_cap} trades/day</dd>
+          <dd className="font-mono font-medium text-foreground">
+            {i18n.t("mandate.tradesPerDay", { count: profile.daily_trade_cap })}
+          </dd>
         </div>
         <div>
           <dt className="text-muted-foreground">{i18n.t("mandate.leverage")}</dt>
@@ -235,15 +243,25 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
           <span className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
             <ShieldCheck className="h-3 w-3 shrink-0" />
             <span className="shrink-0">
-              Mandate {committed.selected_ordinal != null ? `#${committed.selected_ordinal} ` : ""}active
+              {i18n.t("mandate.mandateActive", {
+                id: committed.selected_ordinal != null ? `#${committed.selected_ordinal}` : "",
+              })}
             </span>
             {maxOrder != null && (
-              <span className="shrink-0 font-mono text-[11px]">· ≤{formatUsd(maxOrder)}/order</span>
+              <span className="shrink-0 font-mono text-[11px]">
+                · {translateManifestKey("mandate.maxPerOrder", { amount: formatUsd(maxOrder) })}
+              </span>
             )}
-            {dailyCap != null && <span className="shrink-0 font-mono text-[11px]">· {dailyCap}/day</span>}
+            {dailyCap != null && (
+              <span className="shrink-0 font-mono text-[11px]">
+                · {i18n.t("mandate.tradesPerDay", { count: dailyCap })}
+              </span>
+            )}
             {expires && (
               <span className="shrink-0 text-[10px] text-muted-foreground">
-                · expires {expires.toLocaleDateString()}
+                · {translateManifestKey("mandate.expiresOn", {
+                  date: expires.toLocaleDateString(i18n.resolvedLanguage || i18n.language),
+                })}
               </span>
             )}
           </span>
@@ -273,7 +291,11 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
             )}
             {proposal.account && (
               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {proposal.account.broker} · {proposal.account.type} account · funded by {proposal.account.funded_by}
+                {translateManifestKey("mandate.accountSummary", {
+                  broker: proposal.account.broker,
+                  type: proposal.account.type,
+                  fundedBy: proposal.account.funded_by,
+                })}
               </p>
             )}
           </div>
@@ -295,7 +317,11 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
               onAdjustCancel={() => setAdjustingOrdinal(null)}
               onAdjustSubmit={(text) => {
                 setAdjustingOrdinal(null);
-                onAdjust(`For mandate proposal "${profile.label}" (option ${profile.ordinal}): ${text}`);
+                onAdjust(translateManifestKey("mandate.adjustRequestMessage", {
+                  label: profile.label,
+                  ordinal: profile.ordinal,
+                  text,
+                }));
               }}
             />
           ))}

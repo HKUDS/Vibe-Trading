@@ -66,7 +66,7 @@ describe("RunDetail page", () => {
 
     expect(screen.getByText("New run")).toBeInTheDocument();
     expect(screen.queryByText("Old run")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Code" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Code" }));
     expect(await screen.findByText("NEW_CODE")).toBeInTheDocument();
     expect(screen.queryByText("OLD_CODE")).not.toBeInTheDocument();
   });
@@ -103,7 +103,69 @@ describe("RunDetail page", () => {
 
     expect(screen.getByText("New run")).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "OLD" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Trades" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Trades" }));
     expect(screen.queryByText("OLD TRADE")).not.toBeInTheDocument();
+  });
+
+  it("exposes run status and tab state while keeping the trades table scrollable", async () => {
+    apiMock.getRun.mockResolvedValue({
+      status: "success",
+      run_id: "accessible",
+      prompt: "Accessible run",
+      trade_log: [{
+        time: "2026-07-29",
+        code: "AAPL",
+        side: "BUY",
+        price: "200",
+        qty: "2",
+        reason: "signal",
+      }],
+    });
+    apiMock.getRunCode.mockResolvedValue({});
+
+    renderRunDetail("/runs/accessible");
+
+    await screen.findByText("Accessible run");
+    expect(screen.getByText("Completed")).toHaveClass("sr-only");
+    expect(screen.getByRole("heading", { level: 1, name: "accessible" })).toHaveClass("text-2xl", "font-semibold");
+    expect(screen.getByRole("tablist")).toBeInTheDocument();
+
+    const chartTab = screen.getByRole("tab", { name: "Chart" });
+    const tradesTab = screen.getByRole("tab", { name: "Trades" });
+    expect(chartTab).toHaveAttribute("aria-selected", "true");
+    expect(chartTab).toHaveClass("font-medium");
+    expect(tradesTab).toHaveAttribute("aria-selected", "false");
+
+    fireEvent.click(tradesTab);
+
+    expect(tradesTab).toHaveAttribute("aria-selected", "true");
+    expect(tradesTab).toHaveClass("font-medium");
+    const table = screen.getByRole("table");
+    expect(table.parentElement).toHaveClass("overflow-x-auto", "rounded-xl", "border");
+    expect(screen.getByRole("columnheader", { name: "Time" })).toHaveClass("ps-4");
+  });
+
+  it("pads and scroll-wraps run-card key/value and artifact tables", async () => {
+    apiMock.getRun.mockResolvedValue({
+      status: "success",
+      run_id: "card",
+      prompt: "Run card",
+      run_card: {
+        backtest: { engine: "vectorized" },
+        artifacts: [{ path: "artifacts/result.json", size_bytes: 42, sha256: "abc123" }],
+      } as NonNullable<RunData["run_card"]>,
+    });
+    apiMock.getRunCode.mockResolvedValue({});
+
+    renderRunDetail("/runs/card");
+
+    await screen.findByText("Run card");
+    fireEvent.click(screen.getByRole("tab", { name: "Run Card" }));
+
+    const keyCell = await screen.findByText("engine");
+    expect(keyCell).toHaveClass("ps-4");
+    expect(keyCell.closest("table")?.parentElement).toHaveClass("overflow-x-auto");
+    expect(screen.getByRole("columnheader", { name: "Path" })).toHaveClass("ps-4");
+    expect(screen.getByText("artifacts/result.json")).toHaveClass("ps-4");
   });
 });

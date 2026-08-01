@@ -63,7 +63,7 @@ _PRICE_COLS = {"open", "high", "low", "close", "volume", "vwap", "amount"}
 
 PanelColumn = str
 
-Universe = Literal["equity_us", "equity_cn", "equity_hk", "equity_in", "crypto", "futures"]
+Universe = Literal["equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr", "crypto", "futures"]
 
 
 def validate_columns_required(cols: list[str]) -> None:

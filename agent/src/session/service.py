@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -23,6 +25,25 @@ from src.session.models import (
 )
 from src.session.search import get_shared_index
 from src.session.store import SessionStore
+
+
+#: Terminal attempt status -> SSE event name. Cancellation is its own event so
+#: the UI can distinguish a user stop from a failure, both live and on reload.
+_TERMINAL_EVENTS = {
+    "completed": "attempt.completed",
+    "cancelled": "attempt.cancelled",
+    "failed": "attempt.failed",
+}
+
+
+class SessionBusyError(RuntimeError):
+    """Raised when a session already has an in-flight run.
+
+    One AgentLoop per session: a second concurrent send is rejected rather
+    than queued, because two loops writing the same session would interleave
+    their messages and attempts. Callers surface this as HTTP 409 so the user
+    can wait for the running attempt or cancel it first.
+    """
 
 
 class SessionService:
@@ -50,8 +71,45 @@ class SessionService:
         self.store = store
         self.event_bus = event_bus
         self.runs_dir = runs_dir
+        # _active_loops is the cancellation handle only. It is populated after
+        # the registry is built, which is far too late to serve as the
+        # concurrency gate, so in-flight sessions are tracked separately and
+        # reserved synchronously in send_message.
         self._active_loops: Dict[str, "AgentLoop"] = {}
+        # Task handles are kept from the moment the run is scheduled, so a run
+        # still building its registry can be cancelled. _active_loops only
+        # exists once construction finished, which is far too late to be the
+        # only cancellation route: a hung discovery would otherwise hold the
+        # claim forever and lock the session behind 409.
+        self._active_tasks: Dict[str, "asyncio.Task"] = {}
+        self._inflight: set[str] = set()
+        self._inflight_lock = threading.Lock()
         self._search_index = get_shared_index()
+
+    def _reserve_session(self, session_id: str) -> None:
+        """Claim a session for one in-flight run.
+
+        Args:
+            session_id: Session to claim.
+
+        Raises:
+            SessionBusyError: If the session is already claimed.
+        """
+        with self._inflight_lock:
+            if session_id in self._inflight:
+                raise SessionBusyError(
+                    f"Session {session_id} already has a run in progress"
+                )
+            self._inflight.add(session_id)
+
+    def _release_session(self, session_id: str) -> None:
+        """Release a session claim. Safe to call when no claim is held.
+
+        Args:
+            session_id: Session to release.
+        """
+        with self._inflight_lock:
+            self._inflight.discard(session_id)
 
     def create_session(self, title: str = "", config: Optional[Dict[str, Any]] = None) -> Session:
         """Create a new session.
@@ -100,29 +158,52 @@ class SessionService:
 
         Returns:
             Dictionary containing message_id and attempt_id.
+
+        Raises:
+            ValueError: If the session does not exist.
+            SessionBusyError: If the session already has a run in progress.
+                Callers surface this as HTTP 409; the user can wait for the
+                running attempt or cancel it first.
         """
         session = self.store.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
 
-        message = Message(session_id=session_id, role=role, content=content)
-        self.store.append_message(message)
-        self._search_index.index_message(session_id, role, content)
-        self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": role, "content": content})
+        # Claim the session before persisting anything. Reserving after the
+        # user message is appended (or relying on _active_loops, which is only
+        # populated once the registry is built) lets two concurrent sends both
+        # store a message and create an attempt.
+        if role == "user":
+            self._reserve_session(session_id)
+        handed_off = False
 
-        if role != "user":
-            return {"message_id": message.message_id}
+        try:
+            message = Message(session_id=session_id, role=role, content=content)
+            self.store.append_message(message)
+            self._search_index.index_message(session_id, role, content)
+            self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": role, "content": content})
 
-        attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
-        self.store.create_attempt(attempt)
-        session.config["include_shell_tools"] = include_shell_tools
-        session.last_attempt_id = attempt.attempt_id
-        session.updated_at = datetime.now().isoformat()
-        self.store.update_session(session)
-        self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
+            if role != "user":
+                return {"message_id": message.message_id}
 
-        asyncio.create_task(self._run_attempt(session, attempt, include_shell_tools=include_shell_tools))
-        return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
+            attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
+            self.store.create_attempt(attempt)
+            session.config["include_shell_tools"] = include_shell_tools
+            session.last_attempt_id = attempt.attempt_id
+            session.updated_at = datetime.now().isoformat()
+            self.store.update_session(session)
+            self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
+
+            task = asyncio.create_task(
+                self._run_attempt(session, attempt, include_shell_tools=include_shell_tools)
+            )
+            self._active_tasks[session_id] = task
+            # _run_attempt now owns the claim and releases it in its finally.
+            handed_off = True
+            return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
+        finally:
+            if role == "user" and not handed_off:
+                self._release_session(session_id)
 
     def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
         """Return the message history."""
@@ -138,18 +219,29 @@ class SessionService:
             Whether cancellation succeeded. True means an active loop existed and received a cancel signal.
         """
         loop = self._active_loops.get(session_id)
-        if loop is None:
-            return False
-        loop.cancel()
-        return True
+        if loop is not None:
+            loop.cancel()
+            return True
+        # No loop yet: the run is still building its registry. Cancel the task
+        # itself so the claim is released instead of stranding the session.
+        task = self._active_tasks.get(session_id)
+        if task is not None and not task.done():
+            task.cancel()
+            return True
+        return False
 
     async def _run_attempt(self, session: Session, attempt: Attempt, *, include_shell_tools: bool = False) -> None:
-        """Execute an Attempt in the background."""
-        attempt.mark_running()
-        self.store.update_attempt(attempt)
-        self.event_bus.emit(session.session_id, "attempt.started", {"attempt_id": attempt.attempt_id})
+        """Execute an Attempt in the background.
 
+        The whole body runs under try/finally: this coroutine owns the
+        in-flight claim taken in :meth:`send_message`, and a failure anywhere —
+        including in the pre-run bookkeeping below — must not leave the session
+        permanently busy.
+        """
         try:
+            attempt.mark_running()
+            self.store.update_attempt(attempt)
+            self.event_bus.emit(session.session_id, "attempt.started", {"attempt_id": attempt.attempt_id})
             messages = self.store.get_messages(session.session_id)
             result = await self._run_with_agent(
                 attempt,
@@ -157,11 +249,21 @@ class SessionService:
                 include_shell_tools=include_shell_tools,
                 session_config=dict(session.config),
             )
-            if result.get("status") == "success":
+            status = result.get("status")
+            if status == "success":
                 attempt.mark_completed(summary=result.get("content", ""))
+            elif status == "cancelled":
+                # A cooperative cancel is not an outage; AttemptStatus.CANCELLED
+                # existed but was dead because every non-success landed in the
+                # failure branch.
+                attempt.mark_cancelled(reason=result.get("reason", "cancelled by user"))
             else:
                 attempt.mark_failed(error=result.get("reason", "unknown"))
             attempt.run_dir = result.get("run_dir")
+            if result.get("metrics"):
+                # Metrics were loaded from the run directory but never reached
+                # the attempt, so the reply metadata below was always empty.
+                attempt.metrics = result["metrics"]
 
             self.store.update_attempt(attempt)
             reply_metadata = {}
@@ -176,20 +278,41 @@ class SessionService:
                 content=self._format_result_message(attempt),
                 linked_attempt_id=attempt.attempt_id,
                 metadata=reply_metadata,
+                tool_trail=(
+                    result.get("tool_trail", [])
+                    if attempt.status == AttemptStatus.COMPLETED
+                    else []
+                ),
             )
             self.store.append_message(reply)
             self._search_index.index_message(session.session_id, "assistant", reply.content)
             self.event_bus.emit(
                 session.session_id,
-                "attempt.completed" if attempt.status == AttemptStatus.COMPLETED else "attempt.failed",
+                _TERMINAL_EVENTS.get(attempt.status.value, "attempt.failed"),
                 {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
                  "summary": attempt.summary, "error": attempt.error, "run_dir": attempt.run_dir},
             )
 
+        except asyncio.CancelledError:
+            # cancel_current() cancels this task when the run has not reached
+            # its AgentLoop yet. CancelledError is a BaseException, so it would
+            # slip past the handler below and leave the attempt stuck RUNNING.
+            attempt.mark_cancelled(reason="cancelled by user")
+            self.store.update_attempt(attempt)
+            self.event_bus.emit(
+                session.session_id,
+                "attempt.cancelled",
+                {"attempt_id": attempt.attempt_id, "status": attempt.status.value},
+            )
+            raise
         except Exception as exc:
             attempt.mark_failed(error=str(exc))
             self.store.update_attempt(attempt)
             self.event_bus.emit(session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)})
+        finally:
+            # The only release path for the claim taken in send_message.
+            self._active_tasks.pop(session.session_id, None)
+            self._release_session(session.session_id)
 
     async def _run_with_agent(
         self,
@@ -225,12 +348,15 @@ class SessionService:
         session_id = attempt.session_id
         attempt_id = attempt.attempt_id
         loop = asyncio.get_running_loop()
+        tool_trail: list[Dict[str, Any]] = []
 
         safe_overrides = sanitize_session_overrides(session_config) if session_config else session_config
         agent_config = load_runtime_agent_config(overrides=safe_overrides)
 
         def event_callback(event_type: str, data: Dict[str, Any]) -> None:
             """Forward AgentLoop events to the SSE event bus."""
+            if event_type in {"tool_call", "tool_result"}:
+                self._record_tool_trail_event(tool_trail, event_type, data)
             data["attempt_id"] = attempt_id
             self.event_bus.emit(session_id, event_type, data)
 
@@ -274,6 +400,8 @@ class SessionService:
         finally:
             self._active_loops.pop(session_id, None)
 
+        result["tool_trail"] = tool_trail
+
         # Load metrics from the run output when available.
         if result.get("run_dir"):
             metrics = self._load_metrics(Path(result["run_dir"]))
@@ -281,6 +409,79 @@ class SessionService:
                 result["metrics"] = metrics
 
         return result
+
+    @staticmethod
+    def _record_tool_trail_event(
+        tool_trail: list[Dict[str, Any]],
+        event_type: str,
+        data: Dict[str, Any],
+    ) -> None:
+        """Consolidate live tool events into a compact history record.
+
+        Args:
+            tool_trail: Mutable per-attempt trail.
+            event_type: Agent event type (`tool_call` or `tool_result`).
+            data: Already-redacted live event payload.
+        """
+        tool = str(data.get("tool") or "")
+        if not tool:
+            return
+
+        call_id_value = data.get("call_id")
+        call_id = call_id_value if isinstance(call_id_value, str) and call_id_value else None
+
+        if event_type == "tool_call":
+            entry: Dict[str, Any] = {
+                "tool": tool,
+                "status": "running",
+                "arguments": (
+                    dict(data["arguments"])
+                    if isinstance(data.get("arguments"), dict)
+                    else {}
+                ),
+                "timestamp": int(time.time() * 1000),
+            }
+            if call_id:
+                entry["call_id"] = call_id
+            tool_trail.append(entry)
+            return
+
+        match = None
+        if call_id:
+            match = next(
+                (
+                    entry
+                    for entry in tool_trail
+                    if entry.get("call_id") == call_id
+                    and entry.get("status") == "running"
+                ),
+                None,
+            )
+        if match is None:
+            match = next(
+                (
+                    entry
+                    for entry in tool_trail
+                    if entry.get("tool") == tool
+                    and entry.get("status") == "running"
+                ),
+                None,
+            )
+        if match is None:
+            match = {
+                "tool": tool,
+                "arguments": {},
+                "timestamp": int(time.time() * 1000),
+            }
+            tool_trail.append(match)
+
+        match["status"] = "ok" if data.get("status") == "ok" else "error"
+        elapsed_ms = data.get("elapsed_ms")
+        if isinstance(elapsed_ms, (int, float)) and not isinstance(elapsed_ms, bool):
+            match["elapsed_ms"] = max(0, int(elapsed_ms))
+        match["preview"] = str(data.get("preview") or "")
+        if call_id:
+            match["call_id"] = call_id
 
     @staticmethod
     def _convert_messages_to_history(messages: list) -> list[Dict[str, Any]]:
@@ -320,11 +521,18 @@ class SessionService:
         total_chars = 0
         trimmed: list = []
         for msg in reversed(history):
-            msg_len = len(msg.get("content", ""))
-            if total_chars + msg_len > MAX_HISTORY_CHARS:
-                break
-            trimmed.append(msg)
-            total_chars += msg_len
+            content = msg.get("content", "")
+            remaining = MAX_HISTORY_CHARS - total_chars
+            if len(content) <= remaining:
+                trimmed.append(msg)
+                total_chars += len(content)
+                continue
+            # A single oversized message must not wipe the whole window: when
+            # nothing has been kept yet, the newest turn survives truncated
+            # rather than the agent starting with no history at all.
+            if not trimmed:
+                trimmed.append({**msg, "content": content[:remaining] + "\n[... truncated]"})
+            break
         return list(reversed(trimmed))
 
     @staticmethod
@@ -345,7 +553,23 @@ class SessionService:
 
     @staticmethod
     def _format_result_message(attempt: Attempt) -> str:
-        """Format the final execution result message."""
+        """Format the final execution result message.
+
+        Args:
+            attempt: The terminal attempt.
+
+        Returns:
+            The reply text shown in the transcript.
+        """
         if attempt.status == AttemptStatus.COMPLETED:
-            return attempt.summary or "Strategy execution completed."
+            if attempt.summary:
+                return attempt.summary
+            # Do not dress an empty answer up as a finished strategy run: say
+            # that nothing came back so the user knows to retry or rephrase.
+            return (
+                "The run finished without producing any text output. "
+                "Check the run artifacts, or rephrase the request and try again."
+            )
+        if attempt.status == AttemptStatus.CANCELLED:
+            return "Run cancelled."
         return f"Execution failed: {attempt.error or 'unknown error'}"

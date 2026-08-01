@@ -28,7 +28,15 @@ jobs:
           -r requirements-lock.txt
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        # `openbb` is included so agent/tests/test_openbb_bridge actually runs:
+        # those tests importorskip on openbb_ai, so without the extra the whole
+        # OpenBB Workspace bridge would report green while never being exercised.
+        run: pip install -e ".[dev,openbb]"
+
+      - name: Verify optional extras under test are importable
+        # Fails loudly if the openbb extra stops resolving, instead of letting
+        # the bridge suite silently degrade to skips.
+        run: python -c "import openbb_ai, importlib.metadata as m; print('openbb-ai', m.version('openbb-ai'))"
 
       - name: Repository safety gates
         run: bash tools/ci_grep_gates.sh

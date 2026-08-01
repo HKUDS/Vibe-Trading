@@ -5,6 +5,7 @@ Mounted by ``agent/api_server.py`` via ``register_sessions_routes(app)``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -14,6 +15,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+from src.session.service import SessionBusyError
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,7 @@ class MessageResponse(BaseModel):
     created_at: str
     linked_attempt_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    tool_trail: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class CreateGoalRequest(BaseModel):
@@ -614,6 +618,69 @@ def register_sessions_routes(app: FastAPI) -> None:
         svc.store.update_session(session)
         return {"status": "updated", "session_id": session_id}
 
+    @app.post("/sessions/{session_id}/title/auto", dependencies=[Depends(require_auth)])
+    async def auto_title_session(session_id: str):
+        """Summarize the first exchange into a short LLM-generated title.
+
+        Never clobbers a manual rename: only rewrites when the current title
+        is empty or still the auto-set first-prompt prefix from create time.
+        """
+        _host_validate_path_param(session_id, "session_id")
+        svc = _host_get_session_service()
+        if not svc:
+            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        session = svc.store.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+        messages = svc.get_messages(session_id, limit=6)
+        first_user = next(
+            (m for m in messages if m.role == "user" and (m.content or "").strip()), None
+        )
+        if first_user is None:
+            raise HTTPException(status_code=409, detail="Session has no user message to summarize")
+
+        current = (session.title or "").strip()
+        auto_prefix = first_user.content.strip()[:50].strip()
+        if current and current != auto_prefix:
+            return {"status": "kept", "session_id": session_id, "title": current}
+
+        first_assistant = next(
+            (m for m in messages if m.role == "assistant" and (m.content or "").strip()), None
+        )
+        excerpt = f"User: {first_user.content.strip()[:600]}"
+        if first_assistant:
+            excerpt += f"\nAssistant: {first_assistant.content.strip()[:600]}"
+        prompt = (
+            "Write a session title for the conversation below: at most 8 words "
+            "(or 16 CJK characters), in the same language as the user's message, "
+            "no quotes, no trailing punctuation. Reply with the title only.\n\n"
+            + excerpt
+        )
+
+        def _generate() -> str:
+            from src.providers.chat import ChatLLM
+
+            response = ChatLLM().chat([{"role": "user", "content": prompt}], timeout=30)
+            return (getattr(response, "content", "") or "").strip()
+
+        try:
+            raw = await asyncio.to_thread(_generate)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"title generation failed: {exc}")
+
+        title = raw.splitlines()[0].strip().strip("\"'“”「」『』").strip()
+        chars = list(title)
+        if len(chars) > 40:
+            title = "".join(chars[:40])
+        if not title:
+            raise HTTPException(status_code=502, detail="empty title from model")
+
+        session.title = title
+        session.updated_at = datetime.now(timezone.utc).isoformat()
+        svc.store.update_session(session)
+        return {"status": "updated", "session_id": session_id, "title": title}
+
     @app.post("/sessions/{session_id}/messages", dependencies=[Depends(require_auth)])
     async def send_message(session_id: str, payload: SendMessageRequest, http_request: Request):
         """Send a user message and start the agent loop (natural language strategy)."""
@@ -628,6 +695,10 @@ def register_sessions_routes(app: FastAPI) -> None:
                 include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
             )
             return result
+        except SessionBusyError as exc:
+            # Must precede ValueError-style handling and stay distinct from 404:
+            # the session exists, it is simply already running.
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
@@ -660,6 +731,7 @@ def register_sessions_routes(app: FastAPI) -> None:
                 created_at=m.created_at,
                 linked_attempt_id=m.linked_attempt_id,
                 metadata=m.metadata if m.metadata else None,
+                tool_trail=m.tool_trail,
             )
             for m in messages
         ]

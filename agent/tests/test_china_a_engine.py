@@ -18,7 +18,6 @@ import pytest
 from backtest.engines.china_a import (
     ChinaAEngine,
     _bar_date,
-    _calc_pct_change,
     _price_limit,
 )
 from backtest.models import Position
@@ -258,20 +257,6 @@ class TestPriceLimit:
     )
     def test_price_limits(self, symbol: str, expected: float) -> None:
         assert _price_limit(symbol) == expected
-
-
-class TestCalcPctChange:
-    def test_from_pct_chg_field(self) -> None:
-        bar = _make_bar(pct_chg=5.0)
-        assert _calc_pct_change(bar) == pytest.approx(0.05)
-
-    def test_from_close_and_pre_close(self) -> None:
-        bar = _make_bar(close=16.5, pre_close=15.0)
-        assert _calc_pct_change(bar) == pytest.approx(0.1)
-
-    def test_none_when_no_data(self) -> None:
-        bar = pd.Series({"close": 15.0})
-        assert _calc_pct_change(bar) is None
 
 
 class TestBarDate:

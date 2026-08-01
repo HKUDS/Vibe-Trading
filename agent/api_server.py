@@ -52,6 +52,7 @@ from src.api.security import (  # noqa: F401, E402
     _mint_sse_ticket,
     _origin_matches_request_host,
     _parse_cors_origins,
+    _parse_extra_cors_origins,
     _parse_extra_loopback_hosts,
     _redact_query_secrets,
     _reject_cross_site_browser_request,
@@ -158,6 +159,12 @@ async def _run_startup_preflight() -> None:
     """Run preflight checks on server startup."""
     from src.preflight import run_preflight
 
+    from src.config import migrate as _migrate
+
+    try:
+        _migrate.migrate_legacy_state()  # one-time pre-#904 state move; must never block startup
+    except Exception:  # pragma: no cover — best-effort
+        logging.getLogger(__name__).warning("Legacy state migration failed", exc_info=True)
     run_preflight(console)
     _start_scheduled_research_executor()
     from src.config.accessor import get_env_config
@@ -279,6 +286,11 @@ register_alpha_routes(app)
 # --- Auth helpers (SSE tickets) ---
 from src.api.auth_routes import register_auth_routes  # noqa: E402
 register_auth_routes(app)
+
+# --- OpenBB Workspace agent bridge (GET /agents.json, POST /v1/query) ---
+# No-op unless the optional `openbb` extra is installed; self-reports either way.
+from src.openbb_bridge import try_register_openbb_routes  # noqa: E402  # OPENBB-WORKSPACE-INTEGRATION
+try_register_openbb_routes(app)
 
 
 # ============================================================================

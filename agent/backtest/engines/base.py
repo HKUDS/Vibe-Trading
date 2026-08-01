@@ -153,9 +153,13 @@ def _align(
         (dates, close_df, positions_df, returns_df)
     """
     # Build unified sorted date index from all symbols' trading calendars
-    all_idx_arrays = [data_map[c].index.values for c in codes]
-    merged = np.unique(np.concatenate(all_idx_arrays))
-    dates = pd.DatetimeIndex(merged)
+    indexes = [data_map[c].index for c in codes]
+    merged = np.unique(np.concatenate([index.asi8 for index in indexes]))
+    common_tz = indexes[0].tz
+    if all(index.tz == common_tz for index in indexes) and common_tz is not None:
+        dates = pd.DatetimeIndex(pd.to_datetime(merged, utc=True).tz_convert(common_tz))
+    else:
+        dates = pd.DatetimeIndex(merged)
 
     n_dates = len(dates)
     n_codes = len(codes)
@@ -379,6 +383,10 @@ class BaseEngine(ABC):
         self.allow_nonpositive_prices: bool = bool(
             config.get("allow_nonpositive_prices", False)
         )
+        #: Bar fields consulted, in order, for the price-limit base price.
+        #: Futures engines put ``pre_settle`` first: exchanges set the band off
+        #: the previous settlement, not the previous close.
+        self.base_price_fields: tuple[str, ...] = ("pre_close",)
         self.capital: float = self.initial_capital
         self.positions: Dict[str, Position] = {}
         self.trades: List[TradeRecord] = []
@@ -439,11 +447,130 @@ class BaseEngine(ABC):
             Slipped price.
         """
 
+    def historical_base_price(self, symbol: str, bar: pd.Series) -> Optional[float]:
+        """Return a reference price that is known before this bar's fill.
+
+        Price-limit bands must be derived from a base price the market already
+        knew when the order was placed. ``can_execute`` runs before the fill,
+        and this engine fills at the CURRENT bar's open, so the current bar's
+        close is not available information: using it is lookahead.
+
+        Both sources here are strictly historical:
+          1. the first field of :attr:`base_price_fields` present on the bar —
+             ``pre_close`` for cash equity, ``pre_settle`` first for futures,
+             whose exchanges set the band off the previous settlement;
+          2. the previous row of the close panel the run pre-extracts, which is
+             absent in a cross-market composite run (its sub-engines are
+             stateless rule books with no panel of their own).
+
+        Args:
+            symbol: Symbol whose base price is wanted.
+            bar: Current bar.
+
+        Returns:
+            The base price, or None when no historical close is reachable
+            (first bar of a run, or a composite sub-engine).
+        """
+        for field in self.base_price_fields:
+            if field in bar.index:
+                raw = bar[field]
+                if pd.notna(raw) and float(raw) > 0:
+                    return float(raw)
+
+        close_arr = getattr(self, "_close_arr", None)
+        col = getattr(self, "_code_to_col", {}).get(symbol)
+        row = getattr(self, "_bar_idx", 0) - 1
+        if close_arr is not None and col is not None and row >= 0:
+            value = close_arr[row, col]
+            if pd.notna(value) and float(value) > 0:
+                return float(value)
+
+        # Last resort: reconstruct the prior close from tushare's pct_chg, which
+        # is in percentage points. Both inputs sit on the current bar, but their
+        # ratio is the PREVIOUS close, so the result is still historical.
+        if "pct_chg" in bar.index and "close" in bar.index:
+            pct, close = bar["pct_chg"], bar["close"]
+            if pd.notna(pct) and pd.notna(close) and float(close) > 0:
+                denominator = 1.0 + float(pct) / 100.0
+                if denominator > 0:
+                    return float(close) / denominator
+        return None
+
+    def prospective_fill_price(self, bar: pd.Series, direction: int) -> Optional[float]:
+        """Return the price this engine would fill at on this bar.
+
+        Mirrors the sizing path: the bar's open, with slippage applied in the
+        trade direction. Comparing THIS against a price-limit band keeps the
+        simulation from ever transacting outside the exchange's legal range.
+
+        Args:
+            bar: Current bar.
+            direction: 1 (buy / cover), -1 (sell / short), 0 (close).
+
+        Returns:
+            The prospective fill price, or None when the bar has no usable open.
+        """
+        raw = bar.get("open", bar.get("close"))
+        if raw is None or pd.isna(raw):
+            return None
+        price = float(raw)
+        if price <= 0 and not self.allow_nonpositive_prices:
+            return None
+        return self.apply_slippage(price, direction)
+
+    def limit_band(
+        self, symbol: str, bar: pd.Series, limit: float
+    ) -> Optional[tuple[float, float]]:
+        """Return the (lower, upper) legal price band for this bar.
+
+        Args:
+            symbol: Symbol whose band is wanted.
+            bar: Current bar.
+            limit: Band half-width as a fraction (0.1 for +/-10%).
+
+        Returns:
+            The (lower, upper) band, or None when no historical base price is
+            reachable — in which case the caller must not fabricate a block.
+        """
+        base = self.historical_base_price(symbol, bar)
+        if base is None or base <= 0 or not limit:
+            return None
+        return base * (1.0 - float(limit)), base * (1.0 + float(limit))
+
     def on_bar(self, symbol: str, bar: pd.Series, timestamp: pd.Timestamp) -> None:
         """Per-bar market-rule hook (funding fees, liquidation, etc.).
 
         Default: no-op. Override in subclass as needed.
         """
+
+    def before_rebalance_bar(
+        self,
+        timestamp: pd.Timestamp,
+        data_map: Dict[str, pd.DataFrame],
+        codes: List[str],
+    ) -> bool:
+        """Run pre-execution hooks; return True to stop after this snapshot."""
+        return False
+
+    def after_rebalance_bar(
+        self,
+        timestamp: pd.Timestamp,
+        data_map: Dict[str, pd.DataFrame],
+        codes: List[str],
+    ) -> bool:
+        """Run the legacy post-fill bar hooks; return True to stop."""
+        for code in codes:
+            if timestamp in data_map[code].index:
+                self.on_bar(code, data_map[code].loc[timestamp], timestamp)
+        return False
+
+    def execution_open(self, bar: pd.Series) -> float:
+        """Return the normal market-fill price for a bar."""
+        return float(bar.get("open", bar.get("close", 0)))
+
+    def valuation_open(self, bar: pd.Series) -> float:
+        """Return the price observable when open orders are sized."""
+        return float(bar.get("open", bar.get("close", 0)))
 
     # ── PnL / margin calculation hooks ──
     # Override in FuturesBaseEngine to inject contract multiplier.
@@ -623,6 +750,33 @@ class BaseEngine(ABC):
         m["rebalance_turnover_mean"] = rebalance_notes["summary"]["turnover_mean"]
         m["rebalance_turnover_max"] = rebalance_notes["summary"]["turnover_max"]
 
+        # Portfolio Studio: risk x-ray over the strategy's average basket.
+        # Short runs and never-invested strategies raise ValueError in the
+        # derivation and simply get no x-ray artifact.
+        from backtest.risk_xray import (
+            average_invested_weights,
+            compute_risk_xray,
+            render_risk_xray_markdown,
+            write_risk_xray,
+        )
+        try:
+            basket_weights, avg_invested = average_invested_weights(target_pos)
+            risk_xray = compute_risk_xray(
+                close_df, basket_weights, periods_per_year=bars_per_year,
+            )
+        except ValueError:
+            pass
+        else:
+            write_risk_xray(run_dir / "artifacts" / "risk_xray.json", risk_xray)
+            (run_dir / "artifacts" / "risk_xray.md").write_text(
+                render_risk_xray_markdown(risk_xray), encoding="utf-8"
+            )
+            m["risk_xray_hhi"] = risk_xray["concentration"]["hhi"]
+            m["risk_xray_effective_n"] = risk_xray["concentration"]["effective_n"]
+            m["risk_xray_annualized_vol"] = risk_xray["volatility"]["annualized_vol"]
+            m["risk_xray_max_drawdown"] = risk_xray["drawdown"]["max_drawdown"]
+            m["risk_xray_avg_invested"] = avg_invested
+
         # 7. Validation (optional — triggered by config["validation"])
         if config.get("validation"):
             from backtest.validation import run_validation, write_validation_json
@@ -684,6 +838,8 @@ class BaseEngine(ABC):
         for i, ts in enumerate(dates):
             self._bar_idx = i
 
+            stop_run = self.before_rebalance_bar(ts, data_map, codes)
+
             # a. Value the book at prices observable when orders execute.
             # Rebalances happen at the bar open, so using close_df[ts] here
             # would let the yet-unknown decision-bar close affect order size.
@@ -692,7 +848,9 @@ class BaseEngine(ABC):
             for c in codes:
                 try:
                     val = _target_arr[i, _code_to_col[c]]
-                    target_weights[c] = float(val) if not np.isnan(val) else 0.0
+                    target_weights[c] = (
+                        None if stop_run else (float(val) if not np.isnan(val) else 0.0)
+                    )
                 except Exception as exc:
                     target_weights[c] = None
                     logger.warning("Target weight failed for %s at %s: %s", c, ts, exc)
@@ -766,13 +924,9 @@ class BaseEngine(ABC):
             for order in planned:
                 self._execute_open_order(order, ts)
 
-            # d. Apply close/within-bar hooks after open execution.  Hooks use
-            # the current bar's close for funding, swaps, and liquidation, so
-            # running them first could liquidate a position that was scheduled
-            # to exit at the open (or charge a position before it was opened).
-            for c in codes:
-                if ts in data_map[c].index:
-                    self.on_bar(c, data_map[c].loc[ts], ts)
+            # d. Apply post-execution hooks after all normal market fills.
+            if not stop_run:
+                stop_run = self.after_rebalance_bar(ts, data_map, codes)
 
             # e. Record equity snapshot
             snap_equity = self._calc_equity(close_df, ts)
@@ -805,10 +959,13 @@ class BaseEngine(ABC):
                 positions=len(self.positions),
             ))
 
+            if stop_run:
+                break
+
         # f. Force close all remaining positions
         if len(dates) > 0:
-            last_ts = dates[-1]
-            _last_row = len(dates) - 1
+            _last_row = min(self._bar_idx, len(dates) - 1)
+            last_ts = dates[_last_row]
             for c in list(self.positions.keys()):
                 pos = self.positions[c]
                 mark_price = self._safe_price(
@@ -862,10 +1019,9 @@ class BaseEngine(ABC):
             )
             frame = data_map.get(sym)
             if frame is not None and ts in frame.index:
-                open_price = frame.loc[ts].get("open")
+                open_price = self.valuation_open(frame.loc[ts])
                 if (
-                    open_price is not None
-                    and pd.notna(open_price)
+                    pd.notna(open_price)
                     and float(open_price) > 0
                 ):
                     current_price = float(open_price)
@@ -950,7 +1106,7 @@ class BaseEngine(ABC):
             need_close = target_dir == 0 or target_dir != current_pos.direction
             if need_close:
                 if self.can_execute(symbol, 0, bar):
-                    open_price = float(bar.get("open", bar.get("close", 0)))
+                    open_price = self.execution_open(bar)
                     price = self.apply_slippage(open_price, -current_pos.direction)
                     self._close_position(symbol, price, ts, "signal")
                 else:
@@ -977,7 +1133,7 @@ class BaseEngine(ABC):
         bar = df.loc[ts]
         if not self.can_execute(symbol, direction, bar):
             return None
-        open_price = float(bar.get("open", bar.get("close", 0)))
+        open_price = self.execution_open(bar)
         # Zero is always rejected (size = notional / price is undefined);
         # negatives are rejected unless this engine opted into non-positive
         # prices, in which case abs()-based sizing/margin below handle them.

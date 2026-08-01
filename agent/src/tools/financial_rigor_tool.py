@@ -297,7 +297,7 @@ def benford_check(values: list[Any]) -> dict[str, Any]:
     digits: list[int] = []
     for raw in values:
         v = abs(float(raw))
-        if v > 0:
+        if v > 0 and math.isfinite(v):
             sig = 10 ** (math.log10(v) - math.floor(math.log10(v)))
             d = int(sig)
             if 1 <= d <= 9:

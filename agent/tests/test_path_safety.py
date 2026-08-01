@@ -105,10 +105,12 @@ class TestSafeUserPath:
 
 
 class TestSafeDocumentPath:
-    def test_upload_handle_resolves_to_agent_uploads(self) -> None:
+    def test_upload_handle_resolves_to_runtime_uploads(self) -> None:
+        from src.config.paths import get_uploads_dir
+
         result = safe_document_path("uploads/local.csv")
 
-        assert result == (Path(__file__).resolve().parents[1] / "uploads" / "local.csv").resolve()
+        assert result == (get_uploads_dir() / "local.csv").resolve()
 
     def test_upload_handle_traversal_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="outside allowed document roots"):

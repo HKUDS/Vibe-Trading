@@ -64,9 +64,15 @@ def monte_carlo_test(
     sharpe_count = 0
     dd_count = 0
     sim_sharpes = []
+    # The full path matrix feeds the fan-chart payload; skip it for
+    # pathological sizes so a huge run cannot balloon memory or the JSON.
+    keep_paths = n_simulations * len(pnls) <= 2_000_000
+    sim_equities = np.empty((n_simulations, len(pnls))) if keep_paths else None
 
-    for _ in range(n_simulations):
+    for i in range(n_simulations):
         shuffled = rng.permutation(pnls)
+        if sim_equities is not None:
+            sim_equities[i] = initial_capital + np.cumsum(shuffled)
         sim = _path_metrics(shuffled, initial_capital)
         sim_sharpes.append(sim["sharpe"])
         if sim["sharpe"] >= actual["sharpe"]:
@@ -75,7 +81,7 @@ def monte_carlo_test(
             dd_count += 1
 
     sim_arr = np.array(sim_sharpes)
-    return {
+    result = {
         "actual_sharpe": round(actual["sharpe"], 4),
         "actual_max_dd": round(actual["max_dd"], 4),
         "p_value_sharpe": round(sharpe_count / n_simulations, 4),
@@ -86,7 +92,25 @@ def monte_carlo_test(
         "simulated_sharpe_p95": round(float(np.percentile(sim_arr, 95)), 4),
         "n_simulations": n_simulations,
         "n_trades": len(trades),
+        "sharpe_samples": [round(float(s), 4) for s in sim_sharpes],
     }
+    if sim_equities is not None:
+        idx = np.unique(np.linspace(0, len(pnls) - 1, min(len(pnls), 400)).astype(int))
+        sample_rows = np.unique(
+            np.linspace(0, n_simulations - 1, min(30, n_simulations)).astype(int)
+        )
+        result["equity_paths"] = {
+            "steps": (idx + 1).tolist(),
+            "initial_capital": round(float(initial_capital), 2),
+            "actual": np.round((initial_capital + np.cumsum(pnls))[idx], 2).tolist(),
+            "band_p5": np.round(np.percentile(sim_equities[:, idx], 5, axis=0), 2).tolist(),
+            "band_p25": np.round(np.percentile(sim_equities[:, idx], 25, axis=0), 2).tolist(),
+            "band_p50": np.round(np.percentile(sim_equities[:, idx], 50, axis=0), 2).tolist(),
+            "band_p75": np.round(np.percentile(sim_equities[:, idx], 75, axis=0), 2).tolist(),
+            "band_p95": np.round(np.percentile(sim_equities[:, idx], 95, axis=0), 2).tolist(),
+            "samples": np.round(sim_equities[np.ix_(sample_rows, idx)], 2).tolist(),
+        }
+    return result
 
 
 def _path_metrics(pnls: np.ndarray, initial_capital: float) -> Dict[str, float]:
@@ -154,7 +178,7 @@ def bootstrap_sharpe_ci(
     upper = float(np.percentile(arr, (1 - alpha) * 100))
     prob_pos = float(np.mean(arr > 0))
 
-    return {
+    result = {
         "observed_sharpe": round(observed, 4),
         "ci_lower": round(lower, 4),
         "ci_upper": round(upper, 4),
@@ -163,6 +187,9 @@ def bootstrap_sharpe_ci(
         "confidence": confidence,
         "n_bootstrap": n_bootstrap,
     }
+    if n_bootstrap <= 20_000:
+        result["sharpe_samples"] = [round(float(s), 4) for s in boot_sharpes]
+    return result
 
 
 def _sharpe(returns: np.ndarray, bars_per_year: int = 252) -> float:

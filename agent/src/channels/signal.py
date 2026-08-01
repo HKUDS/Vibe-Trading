@@ -248,27 +248,25 @@ def _partition_styles(
 ) -> list[list[str]]:
     """Partition Signal textStyle ranges across message chunks.
 
-    ``split_message`` slices ``plain_text`` into pieces (optionally trimming
-    whitespace at the boundaries), but the style ranges produced by
-    ``_markdown_to_signal`` are expressed in UTF-16 offsets relative to the
-    full ``plain_text``. This redistributes them per chunk with offsets
-    rebased to each chunk's start. Ranges that span a boundary are split
-    across the chunks they touch; ranges that fall entirely in trimmed
-    whitespace are dropped.
+    ``split_message`` slices ``plain_text`` into pieces and drops at most one
+    leading ``\\n`` or space at each cut (indent on the next line is kept).
+    Style ranges from ``_markdown_to_signal`` use UTF-16 offsets into the full
+    ``plain_text``; this rebases them per chunk. Ranges that land only on the
+    dropped separator are omitted.
     """
     if not chunks:
         return []
     if not text_styles:
         return [[] for _ in chunks]
 
-    # Locate each chunk's UTF-16 start in plain_text. split_message lstrips at
-    # boundaries (but not before the first chunk), so we skip whitespace
-    # between chunks to mirror that.
+    # Mirror split_message: after chunk 0, skip one separator char if present
+    # (split_message unconditionally drops at most one leading \n or space).
     chunk_ranges: list[tuple[int, int]] = []
     cursor = 0  # Python codepoint cursor in plain_text
     for i, chunk in enumerate(chunks):
-        if i > 0:
-            while cursor < len(plain_text) and plain_text[cursor].isspace():
+        if i > 0 and cursor < len(plain_text):
+            ch = plain_text[cursor]
+            if ch == "\n" or ch == " ":
                 cursor += 1
         utf16_start = _utf16_len(plain_text[:cursor])
         utf16_end = utf16_start + _utf16_len(chunk)

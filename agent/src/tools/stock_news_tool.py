@@ -66,7 +66,7 @@ def _clamp_limit(raw: Any) -> int:
     """
     try:
         value = int(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return _DEFAULT_LIMIT
     if value < 1:
         return 1

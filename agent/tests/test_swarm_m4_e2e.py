@@ -480,6 +480,8 @@ def test_tool_call_events_carry_mcp_metadata_and_redact_sensitive_arguments(
     assert call_data["remote_tool"] == "search"
     assert result_data["server"] == "kb"
     assert result_data["remote_tool"] == "search"
+    assert call_data["call_id"] == "tc-1"
+    assert result_data["call_id"] == "tc-1"
     assert result_data["status"] == "ok"
 
     # R-10: redaction is applied to known sensitive keys.

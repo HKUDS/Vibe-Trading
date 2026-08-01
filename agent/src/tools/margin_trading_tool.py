@@ -62,14 +62,13 @@ def _extract_code(symbol: str) -> str | None:
     if not symbol:
         return None
     token = symbol.strip().upper()
-    if "." in token:
-        token = token.rpartition(".")[0]
-    for prefix in ("SH", "SZ", "BJ"):
-        if token.startswith(prefix):
-            token = token[len(prefix) :]
-    token = token.strip()
-    if len(token) == 6 and token.isdigit():
-        return token
+    parts = [p.strip() for p in token.split(".") if p.strip()]
+    for part in parts:
+        for prefix in ("SH", "SZ", "BJ"):
+            if part.startswith(prefix):
+                part = part[len(prefix):]
+        if len(part) == 6 and part.isdigit():
+            return part
     return None
 
 
@@ -84,7 +83,7 @@ def _clamp_days(days: Any) -> int:
     """
     try:
         value = int(days)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return _DEFAULT_DAYS
     if value <= 0:
         return _DEFAULT_DAYS

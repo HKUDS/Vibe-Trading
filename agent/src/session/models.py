@@ -92,6 +92,7 @@ class Message:
         created_at: Creation time in ISO format.
         linked_attempt_id: Related Attempt ID, if any.
         metadata: Additional metadata.
+        tool_trail: Compact completed tool-call records for history hydration.
     """
 
     message_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
@@ -101,6 +102,7 @@ class Message:
     created_at: str = field(default_factory=_utc_now_iso)
     linked_attempt_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    tool_trail: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize the message to a dictionary.
@@ -205,3 +207,19 @@ class Attempt:
         self.status = AttemptStatus.FAILED
         self.completed_at = _utc_now_iso()
         self.error = error
+
+    def mark_cancelled(self, reason: str = "") -> None:
+        """Mark the attempt as user-cancelled.
+
+        Cancelled is a distinct terminal status from FAILED so the UI does
+        not misreport a cooperative cancel as an outage. ``AttemptStatus.CANCELLED``
+        was previously dead code: ``SessionService._run_attempt`` lumped the
+        result in with the failure branch and overwrote the status with FAILED.
+
+        Args:
+            reason: Optional free-text reason (usually ``"cancelled by user"``).
+        """
+        self.status = AttemptStatus.CANCELLED
+        self.completed_at = _utc_now_iso()
+        if reason:
+            self.error = reason

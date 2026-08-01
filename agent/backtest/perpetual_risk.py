@@ -156,6 +156,42 @@ class PositionState:
 
 
 @dataclass(frozen=True)
+class PositionRisk:
+    symbol: str
+    mark_price: float
+    notional: float
+    unrealized_pnl: float
+    initial_margin: float
+    maintenance_margin: float
+    margin_balance: float | None
+
+
+@dataclass(frozen=True)
+class RiskSnapshot:
+    margin_balance: float
+    initial_margin: float
+    maintenance_margin: float
+    available_balance: float
+    per_position: tuple[PositionRisk, ...]
+    status: Literal["healthy", "position_liquidation", "account_liquidation"]
+    liquidation_targets: tuple[str, ...]
+    fidelity_flags: tuple[str, ...]
+
+
+def maintenance_margin(
+    position: PositionState, mark_price: float, schedule: MaintenanceSchedule
+) -> float:
+    if position.symbol != schedule.symbol:
+        raise ValueError("position and schedule symbols must match")
+    _require_finite("mark_price", mark_price, positive=True)
+    notional = abs(position.quantity) * mark_price
+    for bracket in schedule.brackets:
+        if notional <= bracket.notional_cap:
+            return notional * bracket.maintenance_rate - bracket.cumulative_maintenance_amount
+    raise ValueError("notional exceeds the final maintenance bracket cap")
+
+
+@dataclass(frozen=True)
 class AccountState:
     """Single-asset USDT account state without open-order margin."""
 
@@ -233,3 +269,141 @@ class MarketRiskFrame:
             raise ValueError("source must not be empty")
         if len(self.fidelity_flags) != len(set(self.fidelity_flags)):
             raise ValueError("fidelity_flags must not contain duplicates")
+
+
+def _mark_price(
+    position: PositionState, frame: MarketRiskFrame, price_field: str
+) -> float:
+    if price_field == "adverse":
+        return frame.mark_low if position.quantity > 0 else frame.mark_high
+    if price_field not in {"mark_open", "mark_high", "mark_low", "mark_close"}:
+        raise ValueError("unsupported price_field")
+    return getattr(frame, price_field)
+
+
+def _position_risks(
+    account: AccountState,
+    frames: dict[str, MarketRiskFrame],
+    price_field: str,
+    *,
+    isolated: bool,
+) -> tuple[tuple[PositionRisk, ...], tuple[str, ...]]:
+    if price_field not in {"adverse", "mark_open", "mark_high", "mark_low", "mark_close"}:
+        raise ValueError("unsupported price_field")
+
+    risks: list[PositionRisk] = []
+    timestamps: set[pd.Timestamp] = set()
+    fidelity_flags: list[str] = []
+    for position in account.positions:
+        frame = frames.get(position.symbol)
+        if frame is None:
+            raise ValueError("missing market risk frame")
+        if frame.schedule is None:
+            raise ValueError("missing maintenance schedule")
+        if frame.schedule.symbol != position.symbol:
+            raise ValueError("position and schedule symbols must match")
+        if isolated and position.isolated_margin is None:
+            raise ValueError("isolated_margin is required")
+
+        timestamps.add(frame.timestamp)
+        fidelity_flags.extend(frame.fidelity_flags)
+        mark_price = _mark_price(position, frame, price_field)
+        unrealized_pnl = position.quantity * (mark_price - position.entry_price)
+        initial_margin = abs(position.quantity) * mark_price / position.leverage
+        margin_balance = (
+            position.isolated_margin + unrealized_pnl if isolated else None
+        )
+        risks.append(
+            PositionRisk(
+                symbol=position.symbol,
+                mark_price=mark_price,
+                notional=abs(position.quantity) * mark_price,
+                unrealized_pnl=unrealized_pnl,
+                initial_margin=initial_margin,
+                maintenance_margin=maintenance_margin(position, mark_price, frame.schedule),
+                margin_balance=margin_balance,
+            )
+        )
+
+    if len(timestamps) > 1:
+        raise ValueError("position frame timestamps must match")
+    if len(account.positions) > 1 and price_field == "adverse":
+        fidelity_flags.append("conservative_intrabar_assumption")
+    return tuple(risks), tuple(dict.fromkeys(fidelity_flags))
+
+
+def _risk_snapshot(
+    account: AccountState,
+    risks: tuple[PositionRisk, ...],
+    fidelity_flags: tuple[str, ...],
+    status: Literal["healthy", "position_liquidation", "account_liquidation"],
+    liquidation_targets: tuple[str, ...],
+) -> RiskSnapshot:
+    margin_balance = account.wallet_balance + sum(risk.unrealized_pnl for risk in risks)
+    initial_margin = sum(risk.initial_margin for risk in risks)
+    maintenance = sum(risk.maintenance_margin for risk in risks)
+    return RiskSnapshot(
+        margin_balance=margin_balance,
+        initial_margin=initial_margin,
+        maintenance_margin=maintenance,
+        available_balance=margin_balance - initial_margin,
+        per_position=risks,
+        status=status,
+        liquidation_targets=liquidation_targets,
+        fidelity_flags=fidelity_flags,
+    )
+
+
+def evaluate_isolated(
+    account: AccountState,
+    frames: dict[str, MarketRiskFrame],
+    price_field: str = "adverse",
+) -> RiskSnapshot:
+    if account.margin_mode != "isolated":
+        raise ValueError("account margin_mode must be 'isolated'")
+    risks, fidelity_flags = _position_risks(account, frames, price_field, isolated=True)
+    liquidation_targets = tuple(
+        risk.symbol
+        for risk in risks
+        if risk.margin_balance is not None
+        and risk.margin_balance <= risk.maintenance_margin
+    )
+    return _risk_snapshot(
+        account,
+        risks,
+        fidelity_flags,
+        "position_liquidation" if liquidation_targets else "healthy",
+        liquidation_targets,
+    )
+
+
+class CrossMarginRiskModel:
+    def evaluate(
+        self,
+        account: AccountState,
+        frames: dict[str, MarketRiskFrame],
+        price_field: str = "adverse",
+    ) -> RiskSnapshot:
+        if account.margin_mode != "cross":
+            raise ValueError("account margin_mode must be 'cross'")
+        if any(position.isolated_margin is not None for position in account.positions):
+            raise ValueError("cross positions must not have isolated_margin")
+        risks, fidelity_flags = _position_risks(
+            account, frames, price_field, isolated=False
+        )
+        margin_balance = account.wallet_balance + sum(
+            risk.unrealized_pnl for risk in risks
+        )
+        maintenance = sum(risk.maintenance_margin for risk in risks)
+        liquidation_targets = (
+            tuple(position.symbol for position in account.positions)
+            if risks and margin_balance <= maintenance
+            else ()
+        )
+        return _risk_snapshot(
+            account,
+            risks,
+            fidelity_flags,
+            "account_liquidation" if liquidation_targets else "healthy",
+            liquidation_targets,
+        )

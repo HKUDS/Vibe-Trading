@@ -85,14 +85,14 @@ export function Runtime() {
   return (
     <div className="min-h-screen p-6 lg:p-8">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <section className="flex flex-col gap-4 border-b pb-6 lg:flex-row lg:items-end lg:justify-between">
+        <section className="flex flex-col gap-4 border-b border-border/60 pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground">
+            <div className="inline-flex items-center gap-2 rounded-md border border-border/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
               <Activity className="h-3.5 w-3.5" />
               {t("runtime.monitorBadge")}
             </div>
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">{t("runtime.title")}</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">{t("runtime.title")}</h1>
               <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
                 {t("runtime.subtitlePre")} <span className="font-mono">/live/status</span>
                 {t("runtime.subtitlePost")}
@@ -103,7 +103,7 @@ export function Runtime() {
             type="button"
             onClick={() => loadStatus("refresh")}
             disabled={refreshing}
-            className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition hover:bg-muted disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-md border border-border/60 px-4 py-2 text-sm font-medium transition hover:bg-muted/60 disabled:opacity-50"
           >
             {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             {t("runtime.refresh")}
@@ -113,14 +113,14 @@ export function Runtime() {
         {loading ? (
           <div className="grid gap-3 md:grid-cols-4">
             {[1, 2, 3, 4].map((item) => (
-              <div key={item} className="h-24 animate-pulse rounded-md border bg-muted/40" />
+              <div key={item} className="h-24 animate-pulse rounded-xl border border-border/60 bg-card shadow-sm" />
             ))}
           </div>
         ) : null}
 
         {!loading && error ? (
-          <section className="rounded-md border border-amber-500/30 bg-amber-500/5 p-5">
-            <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
+          <section className="rounded-xl border border-warning/30 bg-warning/5 p-5 shadow-sm">
+            <div className="flex items-center gap-2 font-medium text-warning">
               <AlertTriangle className="h-5 w-5" />
               {t("runtime.unavailableTitle")}
             </div>
@@ -154,9 +154,9 @@ export function Runtime() {
             </section>
 
             {status.brokers.length === 0 ? (
-              <section className="rounded-md border border-dashed p-8 text-center">
+              <section className="rounded-xl border border-dashed border-border/60 bg-card p-5 text-center shadow-sm">
                 <ShieldOff className="mx-auto h-8 w-8 text-muted-foreground" />
-                <h2 className="mt-3 font-medium">{t("runtime.noProfilesTitle")}</h2>
+                <h2 className="mt-3 text-sm font-semibold">{t("runtime.noProfilesTitle")}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">{t("runtime.noProfilesBody")}</p>
               </section>
             ) : (
@@ -197,9 +197,9 @@ function isCurrentStatusRequest(
 
 function SummaryTile({ label, value, tone, icon: Icon }: SummaryTileProps) {
   return (
-    <div className="rounded-md border p-4">
+    <div className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-medium uppercase text-muted-foreground">{label}</span>
+        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
         <Icon
           className={cn(
             "h-4 w-4",
@@ -247,11 +247,11 @@ function BrokerRuntimeCard({
   }
 
   return (
-    <article className="rounded-md border p-4">
+    <article className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-semibold capitalize">{brokerKey}</h2>
+            <h2 className="text-sm font-semibold capitalize">{brokerKey}</h2>
             <StatusPill
               label={broker.auth.oauth_token_present ? t("runtime.authPresent") : t("runtime.authMissing")}
               tone={broker.auth.oauth_token_present ? "success" : "neutral"}
@@ -318,11 +318,11 @@ function SdkBrokerRuntimeCard({ broker, t, onRefresh }: { broker: LiveBrokerStat
   }, [onRefresh, profileId, t, verifying]);
 
   return (
-    <article className="rounded-md border p-4">
+    <article className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-semibold capitalize">{auth.broker}</h2>
+            <h2 className="text-sm font-semibold capitalize">{auth.broker}</h2>
             <StatusPill label={state.label} tone={state.tone} />
           </div>
           {isReadOnlyCompatible(auth) ? (
@@ -334,7 +334,7 @@ function SdkBrokerRuntimeCard({ broker, t, onRefresh }: { broker: LiveBrokerStat
             type="button"
             onClick={verify}
             disabled={verifying}
-            className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition hover:bg-muted disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-md border border-border/60 px-4 py-2 text-sm font-medium transition hover:bg-muted/60 disabled:opacity-50"
           >
             {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             {t(state.action)}
@@ -343,7 +343,7 @@ function SdkBrokerRuntimeCard({ broker, t, onRefresh }: { broker: LiveBrokerStat
       </div>
 
       {state.kind === "not_configured" ? (
-        <section className="mt-4 rounded-md border border-dashed p-3">
+        <section className="mt-4 rounded-xl border border-dashed border-border/60 bg-muted/40 p-4 shadow-sm">
           <p className="text-sm text-muted-foreground">{t("runtime.missingLongbridgeVariables")}</p>
           <ul className="mt-2 grid gap-1 font-mono text-sm">
             <li>LONGBRIDGE_APP_KEY</li>
@@ -449,8 +449,8 @@ function formatCapabilities(auth: LiveBrokerStatus["auth"], t: TFunction): strin
 
 function RuntimePanel({ title, icon: Icon, children }: { title: string; icon: typeof Activity; children: ReactNode }) {
   return (
-    <section className="rounded-md border bg-muted/20 p-3">
-      <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
+    <section className="rounded-xl border border-border/60 bg-muted/40 p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         <Icon className="h-3.5 w-3.5" />
         {title}
       </div>
@@ -475,7 +475,7 @@ function StatusPill({ label, tone }: { label: string; tone: "success" | "danger"
         "inline-flex items-center rounded px-2 py-0.5 text-xs font-medium",
         tone === "success" && "bg-success/10 text-success",
         tone === "danger" && "bg-danger/10 text-danger",
-        tone === "warning" && "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+        tone === "warning" && "bg-warning/10 text-warning",
         tone === "neutral" && "bg-muted text-muted-foreground",
       )}
     >

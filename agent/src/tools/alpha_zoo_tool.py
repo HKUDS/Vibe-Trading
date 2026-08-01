@@ -117,7 +117,7 @@ def run_alpha_zoo(**kwargs: Any) -> dict[str, Any]:
             limit_raw = kwargs.get("limit", _DEFAULT_LIMIT)
             try:
                 limit = int(limit_raw)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 return {"status": "error", "error": f"limit must be int, got {limit_raw!r}"}
             if limit <= 0:
                 return {"status": "error", "error": "limit must be > 0"}

@@ -1,15 +1,17 @@
+import { safeGet, safeRemove, safeSet } from "@/lib/storage";
+
 const STORAGE_KEY = "vibe_trading_api_auth_key";
 
 export function getApiAuthKey(): string {
-  return window.localStorage.getItem(STORAGE_KEY) || "";
+  return safeGet(STORAGE_KEY) || "";
 }
 
 export function setApiAuthKey(value: string): void {
   const trimmed = value.trim();
   if (trimmed) {
-    window.localStorage.setItem(STORAGE_KEY, trimmed);
+    safeSet(STORAGE_KEY, trimmed);
   } else {
-    window.localStorage.removeItem(STORAGE_KEY);
+    safeRemove(STORAGE_KEY);
   }
 }
 

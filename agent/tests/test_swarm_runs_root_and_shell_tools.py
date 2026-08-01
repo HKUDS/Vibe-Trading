@@ -38,7 +38,7 @@ def test_default_run_roots_uses_single_source():
 def test_swarm_runs_root_stable_and_swarm_scoped():
     root = swarm_runs_root()
     assert root == swarm_runs_root()  # deterministic
-    assert root.name == "runs" and root.parent.name == ".swarm"
+    assert root.name == "runs" and root.parent.name == "swarm"
 
 
 # ---- P03-B: filtered registry must keep / not silently drop tools ----------

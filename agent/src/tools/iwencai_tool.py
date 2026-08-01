@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from typing import Any
 
 from backtest.loaders._http import resolve_min_interval, throttled_get_json
@@ -62,7 +61,7 @@ def _coerce_limit(value: Any) -> int:
     """
     try:
         limit = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return _DEFAULT_LIMIT
     if limit < 1:
         return _DEFAULT_LIMIT

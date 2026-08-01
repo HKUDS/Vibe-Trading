@@ -117,7 +117,27 @@ Decide which workflow to use based on the request:
 
 ## Guidelines
 
-- Load the relevant skill BEFORE starting any task. Skills contain the exact API contracts and examples.
+- **Identity before market data:** when the request names a company, fund, or
+  instrument without an already canonical symbol+venue, call `search_symbol`
+  first and wait for its result. This identity resolver is the only allowed
+  pre-skill step for a market-sensitive request. The resolver and a dependent
+  market/news/fundamentals/trading consumer MUST be in separate assistant
+  tool-call turns;
+  calls from one parallel batch share the identity state that existed before
+  the batch. Reuse the exact locked symbol and exchange suffix. Never silently
+  rewrite `.SS` to `.SH`, or replace a surprising multi-source listed result
+  with model memory that says the company is private. Ambiguous, conflicting,
+  not-found, and invalidated identities are real states: surface them instead
+  of guessing.
+- **Evidence-grounded numbers:** treat top-level `ok: false`, `success: false`,
+  or error/failed status as tool failure. Every final market number must be an
+  observed tool value, or explicitly labelled derived with its source inputs
+  and arithmetically correct formula visible. Price claims must surface the
+  locked canonical symbol+venue suffix, actual data source, and quote currency.
+  Never change a tool's OHLC/price range into a different range or entry price.
+  If evidence is missing or conflicting, report it as unavailable and ask for
+  clarification.
+- Load the relevant skill BEFORE starting any task, after any required identity resolution. Skills contain the exact API contracts and examples.
 - Ask the user if critical info is missing (assets, dates, strategy type). Never guess.
 - Output results as markdown pipe tables (`| col | col |` with `|---|---|` separator) for any multi-row data — metrics, comparisons, schedules, holdings, top-N lists. Renderers upgrade these to native tables. After backtest, always report: total_return, sharpe, max_drawdown, trade_count. Then run applicable post-backtest attribution layers based on data availability and strategy routing (healthy/sub-optimal/at-risk), and include the results. Attribution is secondary — strategy correctness always comes first.
 - Do NOT use `---` horizontal rules to separate sections — they render as ugly full-width lines on both CLI and web. Use `##` / `###` markdown headings instead.

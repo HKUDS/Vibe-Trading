@@ -1,9 +1,14 @@
 import i18n from '@/i18n';
 import { cn } from "@/lib/utils";
 import type { ValidationData } from "@/lib/api";
+import { DistributionChart } from "@/components/charts/DistributionChart";
+import { MonteCarloPathsChart } from "@/components/charts/MonteCarloPathsChart";
+import { WalkForwardChart } from "@/components/charts/WalkForwardChart";
 
 interface Props {
   data: ValidationData;
+  /** Skip page padding and per-section card chrome when hosted inside another card. */
+  compact?: boolean;
 }
 
 function Badge({ value, good }: { value: string; good: boolean | null }) {
@@ -53,18 +58,40 @@ function MonteCarloSection({ mc }: { mc: NonNullable<ValidationData["monte_carlo
         <Stat label={i18n.t("validation.simulatedMean")} value={mc.simulated_sharpe_mean.toFixed(2)} sub={`std ${mc.simulated_sharpe_std.toFixed(2)}`} />
         <Stat label={i18n.t("validation.simulatedRange")} value={`[${mc.simulated_sharpe_p5.toFixed(2)}, ${mc.simulated_sharpe_p95.toFixed(2)}]`} />
       </div>
-      {/* Visual: where actual falls in distribution */}
-      <div className="space-y-1">
-        <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
-          <span>P5: {mc.simulated_sharpe_p5.toFixed(2)}</span>
-          <span>Actual: {mc.actual_sharpe.toFixed(2)}</span>
-          <span>P95: {mc.simulated_sharpe_p95.toFixed(2)}</span>
+      {/* Fan chart: full simulated path envelope over trade order */}
+      {mc.equity_paths && mc.equity_paths.steps.length > 0 && (
+        <div>
+          <p className="mb-1 text-xs font-medium text-muted-foreground">{i18n.t("validation.pathsTitle")}</p>
+          <MonteCarloPathsChart paths={mc.equity_paths} height={260} />
         </div>
-        <div className="relative h-3 rounded-full bg-muted overflow-hidden">
-          <div className="absolute inset-y-0 bg-zinc-300 dark:bg-zinc-600 rounded-full" style={barStyle(mc.simulated_sharpe_p5, mc.simulated_sharpe_p95, mc.simulated_sharpe_p5, mc.simulated_sharpe_p95)} />
-          <div className="absolute top-0 bottom-0 w-0.5 bg-emerald-500" style={markerStyle(mc.actual_sharpe, mc.simulated_sharpe_p5, mc.simulated_sharpe_p95)} />
+      )}
+      {/* Distribution: every simulated Sharpe, or the compact fallback bar
+          for runs validated before distributions were persisted. */}
+      {mc.sharpe_samples && mc.sharpe_samples.length > 0 ? (
+        <div>
+          <p className="mb-1 text-xs font-medium text-muted-foreground">{i18n.t("validation.sharpeDist")}</p>
+          <DistributionChart
+            samples={mc.sharpe_samples}
+            markerValue={mc.actual_sharpe}
+            markerLabel={`${i18n.t("validation.actualLabel")} ${mc.actual_sharpe.toFixed(2)}`}
+            bandFrom={mc.simulated_sharpe_p5}
+            bandTo={mc.simulated_sharpe_p95}
+            height={200}
+          />
         </div>
-      </div>
+      ) : (
+        <div className="space-y-1">
+          <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+            <span>P5: {mc.simulated_sharpe_p5.toFixed(2)}</span>
+            <span>Actual: {mc.actual_sharpe.toFixed(2)}</span>
+            <span>P95: {mc.simulated_sharpe_p95.toFixed(2)}</span>
+          </div>
+          <div className="relative h-3 rounded-full bg-muted overflow-hidden">
+            <div className="absolute inset-y-0 bg-zinc-300 dark:bg-zinc-600 rounded-full" style={barStyle(mc.simulated_sharpe_p5, mc.simulated_sharpe_p95, mc.simulated_sharpe_p5, mc.simulated_sharpe_p95)} />
+            <div className="absolute top-0 bottom-0 w-0.5 bg-emerald-500" style={markerStyle(mc.actual_sharpe, mc.simulated_sharpe_p5, mc.simulated_sharpe_p95)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -87,17 +114,32 @@ function BootstrapSection({ bs }: { bs: NonNullable<ValidationData["bootstrap"]>
         <Stat label={i18n.t("validation.medianSharpe")} value={bs.median_sharpe.toFixed(2)} />
         <Stat label={i18n.t("validation.probSharpePositive")} value={pctFmt(bs.prob_positive)} />
       </div>
-      {/* CI bar */}
-      <div className="space-y-1">
-        <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
-          <span>{bs.ci_lower.toFixed(2)}</span>
-          <span>{bs.ci_upper.toFixed(2)}</span>
+      {/* Distribution of bootstrap Sharpes, or the compact CI bar fallback */}
+      {bs.sharpe_samples && bs.sharpe_samples.length > 0 ? (
+        <div>
+          <p className="mb-1 text-xs font-medium text-muted-foreground">{i18n.t("validation.sharpeDist")}</p>
+          <DistributionChart
+            samples={bs.sharpe_samples}
+            markerValue={bs.observed_sharpe}
+            markerLabel={`${i18n.t("validation.actualLabel")} ${bs.observed_sharpe.toFixed(2)}`}
+            bandFrom={bs.ci_lower}
+            bandTo={bs.ci_upper}
+            bandLabel={i18n.t("validation.ci", { pct: (bs.confidence * 100).toFixed(0) + "%" })}
+            height={200}
+          />
         </div>
-        <div className="relative h-3 rounded-full bg-muted overflow-hidden">
-          <div className={cn("absolute inset-y-0 rounded-full", reliable ? "bg-emerald-500/30" : "bg-amber-500/30")} style={barStyle(bs.ci_lower, bs.ci_upper, Math.min(bs.ci_lower, 0), Math.max(bs.ci_upper, 1))} />
-          <div className="absolute top-0 bottom-0 w-0.5 bg-foreground" style={markerStyle(bs.observed_sharpe, Math.min(bs.ci_lower, 0), Math.max(bs.ci_upper, 1))} />
+      ) : (
+        <div className="space-y-1">
+          <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+            <span>{bs.ci_lower.toFixed(2)}</span>
+            <span>{bs.ci_upper.toFixed(2)}</span>
+          </div>
+          <div className="relative h-3 rounded-full bg-muted overflow-hidden">
+            <div className={cn("absolute inset-y-0 rounded-full", reliable ? "bg-emerald-500/30" : "bg-amber-500/30")} style={barStyle(bs.ci_lower, bs.ci_upper, Math.min(bs.ci_lower, 0), Math.max(bs.ci_upper, 1))} />
+            <div className="absolute top-0 bottom-0 w-0.5 bg-foreground" style={markerStyle(bs.observed_sharpe, Math.min(bs.ci_lower, 0), Math.max(bs.ci_upper, 1))} />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -120,7 +162,15 @@ function WalkForwardSection({ wf }: { wf: NonNullable<ValidationData["walk_forwa
         <Stat label={i18n.t("validation.avgSharpe")} value={wf.sharpe_mean.toFixed(2)} sub={`std ${wf.sharpe_std.toFixed(2)}`} />
         <Stat label={i18n.t("validation.windows")} value={String(wf.n_windows)} />
       </div>
+      {/* Per-window OOS returns over time */}
+      {wf.windows.length > 0 && (
+        <div>
+          <p className="mb-1 text-xs font-medium text-muted-foreground">{i18n.t("validation.windowReturns")}</p>
+          <WalkForwardChart windows={wf.windows} height={200} />
+        </div>
+      )}
       {/* Per-window table */}
+      <div className="overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b text-left text-muted-foreground">
@@ -147,6 +197,7 @@ function WalkForwardSection({ wf }: { wf: NonNullable<ValidationData["walk_forwa
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -165,7 +216,7 @@ function markerStyle(value: number, min: number, max: number) {
   return { left: `${Math.max(0, Math.min(100, left))}%` };
 }
 
-export function ValidationPanel({ data }: Props) {
+export function ValidationPanel({ data, compact = false }: Props) {
   const hasMC = !!data.monte_carlo;
   const hasBS = !!data.bootstrap;
   const hasWF = !!data.walk_forward;
@@ -174,11 +225,12 @@ export function ValidationPanel({ data }: Props) {
     return <p className="p-8 text-sm text-muted-foreground">{i18n.t("validation.noData")}</p>;
   }
 
+  const sectionClass = compact ? undefined : "rounded-xl border border-border/60 bg-card p-4 shadow-sm";
   return (
-    <div className="p-4 space-y-6">
-      {hasMC && <MonteCarloSection mc={data.monte_carlo!} />}
-      {hasBS && <BootstrapSection bs={data.bootstrap!} />}
-      {hasWF && <WalkForwardSection wf={data.walk_forward!} />}
+    <div className={compact ? "space-y-6" : "p-4 space-y-4"}>
+      {hasMC && <section className={sectionClass}><MonteCarloSection mc={data.monte_carlo!} /></section>}
+      {hasBS && <section className={sectionClass}><BootstrapSection bs={data.bootstrap!} /></section>}
+      {hasWF && <section className={sectionClass}><WalkForwardSection wf={data.walk_forward!} /></section>}
     </div>
   );
 }

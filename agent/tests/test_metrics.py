@@ -92,6 +92,105 @@ class TestBarsPerYear:
         # Falls back to 1 bar/day
         assert calc_bars_per_year("2H", "tushare") == 252
 
+    # ── newly covered sources (#884) ──
+
+    # resampling sources (local files / paid data, default to US equity session)
+    def test_resampling_qveris(self) -> None:
+        assert calc_bars_per_year("1D", "qveris") == 252
+        assert calc_bars_per_year("1m", "qveris") == 252 * 390
+        assert calc_bars_per_year("1H", "qveris") == 252 * 7
+
+    def test_resampling_local(self) -> None:
+        assert calc_bars_per_year("1D", "local") == 252
+        assert calc_bars_per_year("1m", "local") == 252 * 390
+
+    # crypto (365-day) sources
+    def test_crypto_binance(self) -> None:
+        assert calc_bars_per_year("1D", "binance") == 365
+        assert calc_bars_per_year("1m", "binance") == 365 * 1440
+        assert calc_bars_per_year("1H", "binance") == 365 * 24
+
+    # A-share equity (252-day, 240-min session) sources
+    def test_ashare_baostock(self) -> None:
+        assert calc_bars_per_year("1D", "baostock") == 252
+        assert calc_bars_per_year("1m", "baostock") == 252 * 240
+
+    def test_ashare_tencent(self) -> None:
+        assert calc_bars_per_year("1D", "tencent") == 252
+        assert calc_bars_per_year("1m", "tencent") == 252 * 240
+
+    def test_ashare_eastmoney(self) -> None:
+        assert calc_bars_per_year("1D", "eastmoney") == 252
+        assert calc_bars_per_year("1m", "eastmoney") == 252 * 240
+
+    def test_ashare_sina(self) -> None:
+        assert calc_bars_per_year("1D", "sina") == 252
+        assert calc_bars_per_year("1m", "sina") == 252 * 240
+
+    # US equity (252-day, 390-min session) sources
+    def test_us_yahoo(self) -> None:
+        assert calc_bars_per_year("1D", "yahoo") == 252
+        assert calc_bars_per_year("1m", "yahoo") == 252 * 390
+        # same as yfinance
+        assert calc_bars_per_year("1m", "yahoo") == calc_bars_per_year("1m", "yfinance")
+
+    def test_us_finnhub(self) -> None:
+        assert calc_bars_per_year("1D", "finnhub") == 252
+        assert calc_bars_per_year("1m", "finnhub") == 252 * 390
+
+    def test_us_alphavantage(self) -> None:
+        assert calc_bars_per_year("1D", "alphavantage") == 252
+        assert calc_bars_per_year("1m", "alphavantage") == 252 * 390
+
+    def test_us_tiingo(self) -> None:
+        assert calc_bars_per_year("1D", "tiingo") == 252
+        assert calc_bars_per_year("1m", "tiingo") == 252 * 390
+
+    def test_us_fmp(self) -> None:
+        assert calc_bars_per_year("1D", "fmp") == 252
+        assert calc_bars_per_year("1m", "fmp") == 252 * 390
+
+    def test_us_stooq(self) -> None:
+        assert calc_bars_per_year("1D", "stooq") == 252
+        assert calc_bars_per_year("1m", "stooq") == 252 * 390
+
+    def test_us_longbridge(self) -> None:
+        assert calc_bars_per_year("1D", "longbridge") == 252
+        assert calc_bars_per_year("1m", "longbridge") == 252 * 390
+
+    # Indian equity (252-day, 375-min session)
+    def test_india_broker(self) -> None:
+        assert calc_bars_per_year("1D", "india_broker") == 252
+        assert calc_bars_per_year("1m", "india_broker") == 252 * 375
+        assert calc_bars_per_year("5m", "india_broker") == 252 * 75
+        assert calc_bars_per_year("1H", "india_broker") == 252 * 7
+
+    # Verify the default for every VALID_SOURCES entry is not the misleading 252×1 at intraday
+    def test_no_intraday_source_falls_to_default(self) -> None:
+        """Every entry in VALID_SOURCES must have a trading-days lookup."""
+        from backtest.loaders.registry import VALID_SOURCES
+        from backtest.metrics import _TRADING_DAYS, _BARS_PER_DAY
+
+        # A source is "covered" if it has an entry in _TRADING_DAYS AND in at
+        # least one _BARS_PER_DAY interval layer.  Both tables must be kept in
+        # sync when new loaders are registered.
+        trading_covered = set(_TRADING_DAYS)
+        bars_covered = set()
+        for interval_layer in _BARS_PER_DAY.values():
+            bars_covered |= set(interval_layer)
+        covered = trading_covered & bars_covered
+
+        unregistered = (VALID_SOURCES - {"auto"}) - covered
+        assert not unregistered, (
+            f"sources missing annualisation entries: {sorted(unregistered)}"
+        )
+
+        for src in sorted(VALID_SOURCES - {"auto"}):
+            bp = calc_bars_per_year("1D", src)
+            assert bp > 0, f"source {src!r} 1D returned {bp}"
+            bp_1m = calc_bars_per_year("1m", src)
+            assert bp_1m > 0, f"source {src!r} 1m returned {bp_1m}"
+
     def test_lowercase_hour_matches_uppercase(self) -> None:
         # Loaders accept 1h/4h after interval-map fixes; annualisation must too.
         assert calc_bars_per_year("1h", "okx") == calc_bars_per_year("1H", "okx")
@@ -105,6 +204,15 @@ class TestBarsPerYear:
         # Runner primary source for US equity is often "yahoo".
         assert calc_bars_per_year("1H", "yahoo") == calc_bars_per_year("1H", "yfinance")
         assert calc_bars_per_year("1H", "yahoo") == 252 * 7
+
+    def test_source_is_case_insensitive(self) -> None:
+        # source is normalised to lowercase before lookup, mirroring interval
+        # normalisation — regression guard for the alias layer that used to
+        # skip .strip().lower() on the fallback path.
+        assert calc_bars_per_year("1m", "Yahoo") == calc_bars_per_year("1m", "yahoo")
+        assert calc_bars_per_year("1m", "OKX") == calc_bars_per_year("1m", "okx")
+        assert calc_bars_per_year("1m", "Yahoo") == 252 * 390
+        assert calc_bars_per_year("1m", "OKX") == 365 * 1440
 
 
 # ---------------------------------------------------------------------------

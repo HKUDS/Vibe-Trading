@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 _DEFAULT_FILENAMES = ("agent.json", "agent.yaml", "agent.yml")
+
+_HOME_ENV_VAR = "VIBE_TRADING_HOME"
 
 
 def get_runtime_root(config_path: Path | None = None) -> Path:
@@ -16,11 +19,39 @@ def get_runtime_root(config_path: Path | None = None) -> Path:
 
     Returns:
         The directory containing the explicit structured config file when one
-        is provided, otherwise the default ``~/.vibe-trading`` runtime root.
+        is provided, otherwise the ``VIBE_TRADING_HOME`` environment override,
+        otherwise the default ``~/.vibe-trading`` runtime root.
     """
     if config_path is not None:
         return config_path.expanduser().parent
+    env_root = os.environ.get(_HOME_ENV_VAR, "").strip()
+    if env_root:
+        if env_root.startswith(("//", "\\\\")):
+            raise ValueError(
+                f"{_HOME_ENV_VAR} must not be a UNC path: {env_root!r}"
+            )
+        return Path(env_root).expanduser()
     return Path.home() / ".vibe-trading"
+
+
+def get_sessions_dir() -> Path:
+    """Return the user-level directory holding chat session records."""
+    return get_runtime_root() / "sessions"
+
+
+def get_runs_dir() -> Path:
+    """Return the user-level directory holding run artifacts."""
+    return get_runtime_root() / "runs"
+
+
+def get_swarm_runs_dir() -> Path:
+    """Return the user-level directory holding swarm run records."""
+    return get_runtime_root() / "swarm" / "runs"
+
+
+def get_uploads_dir() -> Path:
+    """Return the user-level directory holding uploaded files."""
+    return get_runtime_root() / "uploads"
 
 
 def get_config_candidates(config_path: Path | None = None) -> list[Path]:

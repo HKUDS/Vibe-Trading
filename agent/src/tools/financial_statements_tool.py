@@ -390,7 +390,7 @@ def _classify_market(code: str) -> str | None:
         The market label, or ``None`` when the suffix is unrecognized.
     """
     suffix = code.rpartition(".")[2].strip().upper()
-    if suffix in ("SH", "SZ", "BJ"):
+    if suffix in ("SH", "SZ", "BJ", "SS"):
         return "a_share"
     if suffix == "US":
         return "us"

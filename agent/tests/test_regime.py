@@ -68,6 +68,11 @@ class TestComputeEdgeDensity:
         observed = density.dropna()
         assert ((observed >= 0.0) & (observed <= 1.0)).all()
 
+    def test_single_asset_returns_nan_density(self):
+        returns = pd.DataFrame({"AAPL": [0.01] * 70})
+        density = compute_edge_density(returns, corr_window=60)
+        assert density.isna().all()
+
 
 class TestDetectRegimes:
     def _series(self, values: list[float]) -> pd.Series:
