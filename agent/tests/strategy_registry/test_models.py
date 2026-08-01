@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
 
 from src.skills.strategy_registry.registry.models import (
     Scenario,
-    StrategyArea,
     StrategyEntry,
-    StrategySource,
-    _STRATEGY_ID_RE,
     _TYPE_TO_AREA,
 )
 
@@ -275,36 +271,39 @@ class TestFromArtifact:
     """Tests for StrategyEntry.from_artifact()."""
 
     def test_from_artifact_round_trip(self) -> None:
-        """from_artifact() with a mock Artifact should produce correct entry."""
-        mock_artifact = MagicMock()
-        mock_artifact.id = "sdm_factor_01"
-        mock_artifact.name = "SDM Factor Strategy"
-        mock_artifact.theme = ("bear_market_defense", "value_rotation")
-        mock_artifact.source_paper = "test paper"
-        mock_artifact.source_url = "http://example.com"
-        mock_artifact.universe = "china_a"
+        """from_artifact() should map a real Artifact onto a StrategyEntry."""
+        from src.strategy_store.models import Artifact, ArtifactStatus, ArtifactType
 
-        # Mock ArtifactType as an enum
-        mock_type = MagicMock()
-        mock_type.value = "factor"
-        mock_artifact.type = mock_type
+        artifact = Artifact(
+            id="sdm_factor_01",
+            type=ArtifactType.FACTOR,
+            name="SDM Factor Strategy",
+            universe="china_a",
+            source_paper="test paper",
+            source_url="http://example.com",
+            theme=("bear_market_defense", "value_rotation"),
+            formula_latex="rank(close / delay(close, 20))",
+            status=ArtifactStatus.ACTIVE,
+        )
 
-        # Patch the lazy import
-        with pytest.MonkeyPatch().context() as mp:
-            # We need to make the isinstance check pass
-            import src.strategy_store.models as store_models
-            mp.setattr(
-                "src.skills.strategy_registry.registry.models.Artifact",
-                store_models.Artifact,
-                raising=False,
-            )
-            mp.setattr(
-                "src.skills.strategy_registry.registry.models.ArtifactType",
-                store_models.ArtifactType,
-                raising=False,
-            )
-            # Actually, since the mock won't pass isinstance, we test the error path
-            # and a separate integration-ish test with a real-ish mock
+        entry = StrategyEntry.from_artifact(artifact)
+
+        assert entry.strategy_id == "sdm_factor_01"
+        assert entry.name == "SDM Factor Strategy"
+        assert entry.source == "sdm"
+        assert entry.area == "factor"
+        assert entry.status == "active"
+        assert entry.effective_scenarios == [
+            Scenario.BEAR_MARKET_DEFENSE,
+            Scenario.VALUE_ROTATION,
+        ]
+        assert entry.implementation == {
+            "source_paper": "test paper",
+            "source_url": "http://example.com",
+            "universe": "china_a",
+        }
+        # The formula carries the logic needed for description-driven generation.
+        assert "rank(close / delay(close, 20))" in entry.description
 
     def test_from_artifact_rejects_non_artifact(self) -> None:
         """from_artifact() should raise TypeError for non-Artifact input."""
@@ -313,44 +312,96 @@ class TestFromArtifact:
 
     def test_from_artifact_empty_themes(self) -> None:
         """from_artifact() with empty themes should produce empty effective_scenarios."""
-        mock_artifact = MagicMock()
-        mock_artifact.id = "empty_theme"
-        mock_artifact.name = "Empty Theme"
-        mock_artifact.theme = ()
-        mock_artifact.source_paper = None
-        mock_artifact.source_url = None
-        mock_artifact.universe = None
-
-        mock_type = MagicMock()
-        mock_type.value = "strategy"
-        mock_artifact.type = mock_type
-
-        # We need to bypass the isinstance check - use a duck-type approach
-        # Create a simple object that passes isinstance
         from src.strategy_store.models import Artifact, ArtifactType
 
-        # Instead of mocking, construct a minimal Artifact-like object
-        # Since we can't easily construct Artifact, test the TypeError path
-        # and test the happy path via a real Artifact if available.
-        # For now, test the TypeError path is solid.
-        pass
+        artifact = Artifact(
+            id="empty_theme",
+            type=ArtifactType.STRATEGY,
+            name="Empty Theme",
+            universe="",
+            theme=(),
+        )
+
+        entry = StrategyEntry.from_artifact(artifact)
+
+        assert entry.effective_scenarios == []
+        assert entry.area == "combination"
+        assert entry.implementation is None
+        # No rule fields stored → fall back to the display name.
+        assert entry.description == "Empty Theme"
 
     def test_from_artifact_unknown_scenario_skipped(self) -> None:
         """from_artifact() should skip theme values that don't match any Scenario."""
-        mock_artifact = MagicMock()
-        mock_artifact.id = "partial_theme"
-        mock_artifact.name = "Partial Theme"
-        mock_artifact.theme = ("bear_market_defense", "unknown_theme", "value_rotation")
-        mock_artifact.source_paper = None
-        mock_artifact.source_url = None
-        mock_artifact.universe = None
+        from src.strategy_store.models import Artifact, ArtifactType
 
-        mock_type = MagicMock()
-        mock_type.value = "factor"
-        mock_artifact.type = mock_type
+        artifact = Artifact(
+            id="partial_theme",
+            type=ArtifactType.FACTOR,
+            name="Partial Theme",
+            universe="china_a",
+            theme=("bear_market_defense", "unknown_theme", "value_rotation"),
+        )
 
-        # Same issue - needs real Artifact for isinstance
-        pass
+        entry = StrategyEntry.from_artifact(artifact)
+
+        assert entry.effective_scenarios == [
+            Scenario.BEAR_MARKET_DEFENSE,
+            Scenario.VALUE_ROTATION,
+        ]
+
+    def test_from_artifact_maps_decayed_status(self) -> None:
+        """A decayed artifact should surface as status='decayed'."""
+        from src.strategy_store.models import Artifact, ArtifactStatus, ArtifactType
+
+        artifact = Artifact(
+            id="stale_factor",
+            type=ArtifactType.FACTOR,
+            name="Stale Factor",
+            universe="china_a",
+            status=ArtifactStatus.DECAYED,
+        )
+
+        assert StrategyEntry.from_artifact(artifact).status == "decayed"
+
+    def test_from_artifact_maps_bench_sharpe(self) -> None:
+        """A bench result should populate benchmark_results so min_sharpe can match."""
+        from src.strategy_store.models import Artifact, ArtifactType, BenchResult
+
+        artifact = Artifact(
+            id="benched_strategy",
+            type=ArtifactType.STRATEGY,
+            name="Benched Strategy",
+            universe="china_a",
+            signal_definition="long when ma20 > ma60",
+        )
+        bench = BenchResult(
+            artifact_id="benched_strategy",
+            sharpe=1.42,
+            max_drawdown=-0.18,
+            test_start="2020-01-01",
+            test_end="2026-01-01",
+        )
+
+        entry = StrategyEntry.from_artifact(artifact, bench=bench)
+
+        assert entry.benchmark_results is not None
+        assert entry.benchmark_results["sharpe"] == 1.42
+        assert entry.benchmark_results["max_drawdown"] == -0.18
+        assert entry.benchmark_results["period"] == "2020-01-01 to 2026-01-01"
+        assert "long when ma20 > ma60" in entry.description
+
+    def test_from_artifact_without_bench_has_no_results(self) -> None:
+        """Without a bench result, benchmark_results stays None."""
+        from src.strategy_store.models import Artifact, ArtifactType
+
+        artifact = Artifact(
+            id="unbenched",
+            type=ArtifactType.STRATEGY,
+            name="Unbenched",
+            universe="china_a",
+        )
+
+        assert StrategyEntry.from_artifact(artifact).benchmark_results is None
 
     def test_from_artifact_type_mapping(self) -> None:
         """_TYPE_TO_AREA should map factor→factor, strategy→combination."""

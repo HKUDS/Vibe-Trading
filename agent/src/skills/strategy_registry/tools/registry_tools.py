@@ -47,6 +47,7 @@ def _strategy_summary(entry: StrategyEntry) -> dict[str, Any]:
         "area": entry.area,
         "effective_scenarios": [s.value for s in entry.effective_scenarios],
         "sharpe": sharpe,
+        "status": entry.status,
     }
 
 
@@ -110,13 +111,14 @@ def query_strategies(
     market: str | None = None,
     min_sharpe: float | None = None,
     source: str | None = None,
+    decay_status: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> str:
-    """Query strategies filtered by scenario, market, source, or minimum Sharpe.
+    """Query strategies filtered by scenario, market, source, status, or Sharpe.
 
-    Returns {strategy_id, name, source, area, effective_scenarios, sharpe}
-    summaries for strategies matching all provided filters.
+    Returns {strategy_id, name, source, area, effective_scenarios, sharpe,
+    status} summaries for strategies matching all provided filters.
 
     Args:
         scenario: Filter by effective scenario (e.g. 'bear_market_defense',
@@ -125,6 +127,8 @@ def query_strategies(
             Matches against ``implementation.universe``.
         min_sharpe: Minimum benchmark Sharpe ratio (inclusive).
         source: Filter by strategy source ('builtin', 'sdm', 'user').
+        decay_status: Filter by lifecycle status ('active', 'monitoring',
+            'decayed', 'disabled', 'created', 'benching').
         limit: Maximum results (default 50, capped at 50).
         offset: Number of results to skip for pagination (default 0).
     """
@@ -149,6 +153,7 @@ def query_strategies(
             market=market,
             min_sharpe=min_sharpe,
             source=source,
+            decay_status=decay_status,
             limit=_FETCH_ALL,
             offset=0,
         )
@@ -169,6 +174,7 @@ def query_strategies(
             "market": market,
             "min_sharpe": min_sharpe,
             "source": source,
+            "decay_status": decay_status,
         },
         items=summaries,
     )

@@ -3,6 +3,8 @@
 Design contract:
     - All methods are ``@classmethod`` — the registry is a process-wide singleton.
     - ``load()`` scans YAML seed files, validates against ``StrategyEntry``.
+    - The bundled seed directory is auto-loaded on first read access, so callers
+      never have to prime the registry themselves.
     - SDM entries are lazily fetched from ``strategy_store`` via ``get_store()``.
     - ``yaml.safe_load`` only, with a 5 MB size cap per file.
 """
@@ -11,18 +13,16 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-from pydantic import ValidationError
+from typing import Any
 
 from .models import Scenario, StrategyEntry
-
-if TYPE_CHECKING:
-    from src.strategy_store.models import Artifact
 
 logger = logging.getLogger(__name__)
 
 _MAX_YAML_BYTES = 5_000_000
+
+# Seed YAML shipped with the skill: <skill>/seed, i.e. one level up from registry/.
+_BUNDLED_SEED_DIR = Path(__file__).resolve().parent.parent / "seed"
 
 
 class StrategyRegistry:
@@ -33,10 +33,24 @@ class StrategyRegistry:
     """
 
     _builtin: dict[str, StrategyEntry] = {}
+    _loaded: bool = False
 
     # ------------------------------------------------------------------
     # load
     # ------------------------------------------------------------------
+
+    @classmethod
+    def ensure_loaded(cls) -> None:
+        """Load the bundled seed directory once, on first read access.
+
+        Read paths (``list`` / ``get`` / ``query`` / ``health``) call this so the
+        builtin catalog is available without an explicit startup hook. An
+        explicit ``load()`` also marks the registry as loaded, so callers that
+        prime a custom seed directory are never overridden.
+        """
+        if cls._loaded:
+            return
+        cls.load(_BUNDLED_SEED_DIR)
 
     @classmethod
     def load(cls, seed_dir: str | Path) -> int:
@@ -46,11 +60,10 @@ class StrategyRegistry:
         skipped with a warning logged.  Returns the number of successfully
         loaded entries.
         """
-        import yaml
-
         seed_path = Path(seed_dir)
         if not seed_path.is_dir():
             logger.warning("StrategyRegistry: seed_dir not found: %s", seed_path)
+            cls._loaded = True
             return 0
 
         loaded: dict[str, StrategyEntry] = {}
@@ -75,6 +88,7 @@ class StrategyRegistry:
             loaded[entry.strategy_id] = entry
 
         cls._builtin = loaded
+        cls._loaded = True
         logger.info("StrategyRegistry: loaded %d builtin strategies from %s", len(loaded), seed_path)
         return len(loaded)
 
@@ -105,6 +119,7 @@ class StrategyRegistry:
         SDM entries are lazy-fetched from the strategy store.  Results are
         sorted by ``strategy_id`` for deterministic ordering.
         """
+        cls.ensure_loaded()
         entries: list[StrategyEntry] = list(cls._builtin.values())
         entries.extend(cls._sdm_entries())
         entries.sort(key=lambda e: e.strategy_id)
@@ -117,6 +132,7 @@ class StrategyRegistry:
     @classmethod
     def get(cls, strategy_id: str) -> StrategyEntry | None:
         """Return a single entry by *strategy_id*, or ``None``."""
+        cls.ensure_loaded()
         if strategy_id in cls._builtin:
             return cls._builtin[strategy_id]
         # Try SDM
@@ -136,20 +152,23 @@ class StrategyRegistry:
         market: str | None = None,
         min_sharpe: float | None = None,
         source: str | None = None,
+        decay_status: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[StrategyEntry]:
         """Unified facade query with optional filters.
 
         Args:
-            scenario: Filter builtin entries where *scenario* is in
-                ``effective_scenarios``.  SDM entries are filtered by matching
-                theme tags.
-            market: Filter by ``implementation.universe`` (SDM only; builtin
-                entries are skipped when *market* is set and *source* is not
-                ``"builtin"``).
+            scenario: Filter entries where *scenario* is in
+                ``effective_scenarios``.  SDM entries are matched through the
+                theme tags mapped by ``StrategyEntry.from_artifact``.
+            market: Filter by ``implementation.universe`` — applies to builtin
+                and SDM entries alike.  Entries without a universe are excluded
+                while this filter is active.
             min_sharpe: Filter by ``benchmark_results.sharpe >= min_sharpe``.
             source: ``"builtin"`` only, ``"sdm"`` only, or ``None`` for both.
+            decay_status: Filter by lifecycle status (e.g. ``"active"``,
+                ``"decayed"``).  Builtin entries are ``"active"`` by default.
             limit: Max results returned.
             offset: Pagination offset.
 
@@ -157,6 +176,7 @@ class StrategyRegistry:
             Sorted list of matching ``StrategyEntry`` objects (empty list when
             no matches).
         """
+        cls.ensure_loaded()
         results: list[StrategyEntry] = []
 
         # Resolve scenario to enum
@@ -177,14 +197,14 @@ class StrategyRegistry:
         # Builtin entries
         if source is None or source == "builtin":
             for entry in cls._builtin.values():
-                if not cls._match_entry(entry, scenario_enum, market, min_sharpe, source="builtin"):
+                if not cls._match_entry(entry, scenario_enum, market, min_sharpe, decay_status):
                     continue
                 results.append(entry)
 
         # SDM entries
         if source is None or source == "sdm":
             for entry in cls._sdm_entries():
-                if not cls._match_entry(entry, scenario_enum, market, min_sharpe, source="sdm"):
+                if not cls._match_entry(entry, scenario_enum, market, min_sharpe, decay_status):
                     continue
                 results.append(entry)
 
@@ -198,6 +218,7 @@ class StrategyRegistry:
     @classmethod
     def health(cls) -> dict[str, Any]:
         """Return a health snapshot: ``{builtin_loaded, sdm_available, total}``."""
+        cls.ensure_loaded()
         sdm_available = cls._sdm_is_available()
         sdm_count = len(cls._sdm_entries()) if sdm_available else 0
         return {
@@ -217,7 +238,7 @@ class StrategyRegistry:
         scenario_enum: Scenario | None,
         market: str | None,
         min_sharpe: float | None,
-        source: str,
+        decay_status: str | None = None,
     ) -> bool:
         """Return ``True`` if *entry* passes all active filters."""
         # Scenario filter
@@ -225,17 +246,12 @@ class StrategyRegistry:
             if scenario_enum not in entry.effective_scenarios:
                 return False
 
-        # Market filter (only meaningful for SDM entries with implementation.universe)
+        # Market filter — matched against implementation.universe for every source
         if market is not None:
-            if source == "builtin":
-                # builtin entries don't have implementation.universe;
-                # skip them when market filter is active
-                return False
             impl = entry.implementation
             if impl is None:
                 return False
-            universe = impl.get("universe")
-            if universe is None or universe != market:
+            if impl.get("universe") != market:
                 return False
 
         # Sharpe filter
@@ -246,6 +262,10 @@ class StrategyRegistry:
             sharpe = bench.get("sharpe")
             if sharpe is None or sharpe < min_sharpe:
                 return False
+
+        # Lifecycle / decay filter
+        if decay_status is not None and entry.status != decay_status:
+            return False
 
         return True
 
@@ -277,7 +297,9 @@ class StrategyRegistry:
         entries: list[StrategyEntry] = []
         for artifact in artifacts:
             try:
-                entries.append(StrategyEntry.from_artifact(artifact))
+                entries.append(
+                    StrategyEntry.from_artifact(artifact, bench=cls._latest_bench(store, artifact.id))
+                )
             except Exception:
                 logger.debug(
                     "StrategyRegistry: failed to convert artifact %r",
@@ -285,6 +307,22 @@ class StrategyRegistry:
                     exc_info=True,
                 )
         return entries
+
+    @staticmethod
+    def _latest_bench(store: Any, artifact_id: str) -> Any | None:
+        """Return the newest ``BenchResult`` for *artifact_id*, or ``None``.
+
+        Sharpe lives in the bench history rather than on the artifact, so it has
+        to be fetched here for ``min_sharpe`` to be able to match SDM entries.
+        """
+        try:
+            history = store.get_bench_history(artifact_id, limit=1)
+        except Exception:
+            logger.debug(
+                "StrategyRegistry: get_bench_history(%r) failed", artifact_id, exc_info=True
+            )
+            return None
+        return history[0] if history else None
 
     @classmethod
     def _sdm_is_available(cls) -> bool:

@@ -31,3 +31,4 @@ implementation:
   skill: strategy-generate
   factor_backend: factor-research
   decay_monitor: backtest-diagnose
+  universe: china_a

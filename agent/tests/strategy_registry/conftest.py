@@ -131,10 +131,13 @@ def isolated_registry() -> None:
     """Reset the registry and mock SDM entries to return empty lists.
 
     This prevents SDM artifacts from leaking into tests that need
-    a clean, deterministic state.
+    a clean, deterministic state.  ``_loaded`` is forced on so the bundled
+    seed directory is not auto-loaded behind the test's back.
     """
     StrategyRegistry._builtin = {}
+    StrategyRegistry._loaded = True
     with patch.object(StrategyRegistry, "_sdm_entries", return_value=[]), \
          patch.object(StrategyRegistry, "_sdm_is_available", return_value=False):
         yield
     StrategyRegistry._builtin = {}
+    StrategyRegistry._loaded = False

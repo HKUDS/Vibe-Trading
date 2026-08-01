@@ -24,6 +24,10 @@ class Scenario(str, Enum):
 
 StrategyArea = Literal["timing", "factor", "rotation", "value", "combination"]
 StrategySource = Literal["builtin", "sdm", "user"]
+# Mirrors strategy_store.models.ArtifactStatus; builtin seed entries are "active".
+StrategyStatus = Literal[
+    "created", "benching", "active", "monitoring", "decayed", "disabled"
+]
 
 _STRATEGY_ID_RE = r"^[a-z][a-z0-9_]{0,63}$"
 
@@ -41,6 +45,7 @@ class StrategyEntry(BaseModel):
         - ``strategy_id`` must match ``_STRATEGY_ID_RE`` (max 64 chars, lowercase + digits + underscore).
         - ``description`` max 5 000 chars.
         - ``tuning_hints`` max 10 items, each max 500 chars.
+        - ``status`` carries the lifecycle/decay state (``"active"`` by default).
         - ``extra="forbid"`` — no unregistered fields allowed.
     """
 
@@ -58,9 +63,10 @@ class StrategyEntry(BaseModel):
     )
     benchmark_results: dict[str, Any] | None = None
     implementation: dict[str, Any] | None = None
+    status: StrategyStatus = "active"
 
     @classmethod
-    def from_artifact(cls, artifact: Any) -> StrategyEntry:
+    def from_artifact(cls, artifact: Any, bench: Any | None = None) -> StrategyEntry:
         """Reconstruct a ``StrategyEntry`` from a strategy-store ``Artifact``.
 
         Lazy-imports ``Artifact`` to avoid a module-level dependency on
@@ -73,8 +79,13 @@ class StrategyEntry(BaseModel):
             - ``artifact.type`` → ``area`` (FACTOR→factor, STRATEGY→combination)
             - ``artifact.theme`` (tuple of str) → ``effective_scenarios``
               (any value that matches a ``Scenario`` enum member)
+            - ``artifact.status`` → ``status`` (drives the ``decay_status`` filter)
+            - the signal / entry / exit / sizing rules (or ``formula_latex`` for
+              factors) → ``description``, falling back to ``artifact.name``
             - ``artifact.source_paper``, ``source_url``, ``universe`` →
               ``implementation`` dict
+            - *bench*: optional newest ``BenchResult`` → ``benchmark_results``
+              (so ``min_sharpe`` can match SDM entries)
         """
         from src.strategy_store.models import Artifact, ArtifactType
 
@@ -110,8 +121,56 @@ class StrategyEntry(BaseModel):
             name=artifact.name,
             source="sdm",
             area=area,
-            description=artifact.name,
+            description=_artifact_description(artifact),
             effective_scenarios=effective,
             failure_scenarios=[],
+            benchmark_results=_bench_to_results(bench),
             implementation=impl if impl else None,
+            status=_artifact_status(artifact),
         )
+
+
+def _artifact_description(artifact: Any) -> str:
+    """Compose a description from an artifact's rule fields.
+
+    Description-driven code generation needs the actual strategy logic, so the
+    stored rules are preferred over the bare display name.
+    """
+    parts: list[str] = []
+    for label, value in (
+        ("Signal", artifact.signal_definition),
+        ("Formula", artifact.formula_latex),
+        ("Entry", artifact.entry_rules),
+        ("Exit", artifact.exit_rules),
+        ("Sizing", artifact.position_sizing),
+    ):
+        if value:
+            parts.append(f"{label}: {value}")
+
+    description = "\n".join(parts) if parts else artifact.name
+    return description[:5000]
+
+
+def _artifact_status(artifact: Any) -> str:
+    """Return the artifact's lifecycle status as a plain string."""
+    status = artifact.status
+    return status.value if hasattr(status, "value") else str(status)
+
+
+def _bench_to_results(bench: Any | None) -> dict[str, Any] | None:
+    """Map a ``BenchResult`` onto the ``benchmark_results`` dict shape."""
+    if bench is None:
+        return None
+
+    results: dict[str, Any] = {}
+    for key in ("sharpe", "annual_return", "max_drawdown", "calmar", "ic_mean", "ir"):
+        value = getattr(bench, key, None)
+        if value is not None:
+            results[key] = value
+
+    test_start = getattr(bench, "test_start", None)
+    test_end = getattr(bench, "test_end", None)
+    if test_start and test_end:
+        results["period"] = f"{test_start} to {test_end}"
+
+    return results or None

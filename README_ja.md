@@ -377,9 +377,9 @@ OHLCV にとどまらず、**18 の読み取り専用データツール**がフ�
 メイン README を読みやすく保つため、詳細な一覧は以下に折りたたんでいます。利用できる構成要素を確認したいときに開いてください。
 
 <details>
-<summary><b>Finance Skill Library</b> <sub>9カテゴリにわたる88 skills</sub></summary>
+<summary><b>Finance Skill Library</b> <sub>9カテゴリにわたる89 skills</sub></summary>
 
-- 📊 88 の金融特化 skills を 9 カテゴリに整理
+- 📊 89 の金融特化 skills を 9 カテゴリに整理
 - 🌐 伝統的市場から crypto & DeFi まで完全カバー
 - 🔬 データ取得からクオンツリサーチまでを横断する包括的能力
 
@@ -392,7 +392,7 @@ OHLCV にとどまらず、**18 の読み取り専用データツール**がフ�
 | Crypto | 7 | `perp-funding-basis`, `liquidation-heatmap`, `stablecoin-flow`, `defi-yield`, `onchain-analysis` |
 | Flow | 8 | `hk-connect-flow`, `us-etf-flow`, `edgar-sec-filings`, `financial-statement`, `adr-hshare` |
 | Tool | 10 | `backtest-diagnose`, `report-generate`, `pine-script`, `doc-reader`, `web-reader`, `vnpy-export`, `trade-journal` |
-| Research | 2 | `alpha-zoo`, `strategy-dev-manager` |
+| Research | 3 | `alpha-zoo`, `strategy-dev-manager`, `strategy-registry` |
 | Risk Analysis | 1 | `ashare-pre-st-filter` |
 
 </details>
@@ -729,7 +729,7 @@ vibe-trading channels status --local  # IM チャンネル設定と install hint
 | Command | Description |
 |---------|-------------|
 | `/help` | 全コマンドを表示 |
-| `/skills` | 88 finance skills を一覧表示 |
+| `/skills` | 89 finance skills を一覧表示 |
 | `/swarm` | 30 swarm team presets を一覧表示 |
 | `/swarm run <preset> [vars_json]` | live streaming で swarm team を実行 |
 | `/swarm list` | Swarm run history |
@@ -1063,7 +1063,7 @@ OpenSpace と使うには、agent config に両方の MCP servers を追加し�
 }
 ```
 
-OpenSpace は 88 skills を自動検出し、auto-fix、auto-improve、community sharing を可能にします。OpenSpace-connected agent では `search_skills("finance backtest")` から Vibe-Trading skills を検索できます。
+OpenSpace は 89 skills を自動検出し、auto-fix、auto-improve、community sharing を可能にします。OpenSpace-connected agent では `search_skills("finance backtest")` から Vibe-Trading skills を検索できます。
 
 </details>
 
@@ -1127,7 +1127,7 @@ Vibe-Trading/
 │   │   ├── agent/                  # ReAct エージェントコア
 │   │   │   ├── loop.py             #   5 層コンテキスト圧縮 + read/write ツールバッチング
 │   │   │   ├── context.py          #   システムプロンプト + 永続メモリからの自動 recall
-│   │   │   ├── skills.py           #   skill ローダー（88 個同梱 + CRUD でユーザー作成）
+│   │   │   ├── skills.py           #   skill ローダー（89 個同梱 + CRUD でユーザー作成）
 │   │   │   ├── tools.py            #   ツール基底クラス + レジストリ
 │   │   │   ├── memory.py           #   run ごとの軽量ワークスペース状態
 │   │   │   ├── frontmatter.py      #   共有 YAML frontmatter パーサー
@@ -1154,7 +1154,7 @@ Vibe-Trading/
 │   │   ├── api/                    # FastAPI ルートモジュール
 │   │   │   └── alpha_routes.py     #   /alpha/list、/alpha/{id}、/alpha/bench、SSE ストリーム
 │   │   │
-│   │   ├── skills/                 # 9 カテゴリ 88 個の finance skills（各 SKILL.md）
+│   │   ├── skills/                 # 9 カテゴリ 89 個の finance skills（各 SKILL.md）
 │   │   ├── swarm/                  # Swarm DAG 実行エンジン
 │   │   │   └── presets/            #   30 個の swarm preset YAML 定義
 │   │   ├── session/                # マルチターンチャット + FTS5 セッション検索

@@ -19,6 +19,7 @@ Decision tree for routing user requests:
 - "list all strategies" or "what strategies do we have" → `list_strategies`
 - "find strategies for bear market" or "strategies that work in high volatility" → `query_strategies` with `scenario`
 - "show me strategies with Sharpe above 1.0" → `query_strategies` with `min_sharpe`
+- "which strategies are still alive / not decayed" → `query_strategies` with `decay_status='active'`
 - "get details for quantsplaybook_ffscore" → `get_strategy`
 - "generate code from this strategy" → `get_strategy` first, then load the `strategy-generate` skill and pass the `implementation` block
 - "is the registry loaded" or "how many strategies are available" → `list_strategies` (check `total`) or call `StrategyRegistry.health()` directly
@@ -29,10 +30,10 @@ Decision tree for routing user requests:
 | Tool | When to use |
 |------|------|
 | `list_strategies` | Paginated listing of all strategies with summary metadata (id, name, source, area, scenarios, sharpe). Use for overview or browsing. |
-| `query_strategies` | Filtered search by scenario, market, source, or minimum Sharpe. Use for targeted discovery (e.g. "what works in mean reversion?"). |
+| `query_strategies` | Filtered search by scenario, market, source, lifecycle status, or minimum Sharpe. Use for targeted discovery (e.g. "what works in mean reversion?"). |
 | `get_strategy` | Full detail for a single strategy by ID. Returns description, tuning_hints, benchmark_results, and implementation metadata. |
 
-All tools return JSON with a `status` field (`"ok"` or `"error"`). Summary responses include `strategy_id`, `name`, `source`, `area`, `effective_scenarios`, and `sharpe`. Full detail responses include every field from `StrategyEntry`.
+All tools return JSON with a `status` field (`"ok"` or `"error"`). Summary responses include `strategy_id`, `name`, `source`, `area`, `effective_scenarios`, `sharpe`, and `status`. Full detail responses include every field from `StrategyEntry`.
 
 ## Workflow
 
@@ -40,7 +41,7 @@ The typical workflow has three steps:
 
 ### 1. Import (startup)
 
-Seed YAML files are loaded at server startup via `StrategyRegistry.load(seed_dir)`. Each `.yaml` file is validated against the `StrategyEntry` schema. Invalid or duplicate files are skipped with warnings. No manual import step is required in normal operation.
+The bundled seed directory is loaded automatically the first time the registry is read, so no startup hook or manual import step is required. Each `.yaml` file is validated against the `StrategyEntry` schema; invalid or duplicate files are skipped with warnings. Call `StrategyRegistry.load(seed_dir)` explicitly only to point the registry at a custom seed directory — an explicit load wins over the bundled default.
 
 To check if the registry is populated, inspect `list_strategies` output: a non-zero `total` means the seed data loaded successfully.
 
@@ -49,9 +50,10 @@ To check if the registry is populated, inspect `list_strategies` output: a non-z
 Use `list_strategies` for broad browsing or `query_strategies` for targeted search. The `query_strategies` tool supports compound filters:
 
 - `scenario`: Match against `effective_scenarios`. Must be a valid `Scenario` enum value (see schema reference below).
-- `market`: Match against `implementation.universe`. Only applies to SDM entries; builtin entries are excluded when this filter is active.
-- `min_sharpe`: Inclusive lower bound on `benchmark_results.sharpe`. Entries without benchmark data are excluded.
+- `market`: Match against `implementation.universe`. Applies to builtin and SDM entries alike; entries that declare no universe are excluded while this filter is active.
+- `min_sharpe`: Inclusive lower bound on `benchmark_results.sharpe`. Entries without benchmark data are excluded. For SDM entries the Sharpe comes from the newest bench result in the strategy store.
 - `source`: `"builtin"` only, `"sdm"` only, or omit for both.
+- `decay_status`: Match against the lifecycle status (`active`, `monitoring`, `decayed`, `disabled`, `created`, `benching`). SDM entries report the strategy store's artifact status; builtin entries are `active`.
 
 ### 3. Generate
 
@@ -72,7 +74,8 @@ Once you have a `strategy_id`, call `get_strategy` to retrieve the full entry. T
 | `failure_scenarios` | `list[Scenario]` | no | Scenarios where the strategy underperforms or fails |
 | `tuning_hints` | `list[str]` | no | Max 10 items, each max 500 chars |
 | `benchmark_results` | `dict` or `None` | no | Common keys: `period`, `total_return`, `benchmark_return`, `excess_return`, `sharpe`, `max_drawdown`, `trades` |
-| `implementation` | `dict` or `None` | no | Common keys: `skill`, `factor_backend`, `decay_monitor` |
+| `implementation` | `dict` or `None` | no | Common keys: `skill`, `factor_backend`, `decay_monitor`, `universe` |
+| `status` | `StrategyStatus` | no | One of: `created`, `benching`, `active`, `monitoring`, `decayed`, `disabled` (default: `active`) |
 
 All entries use `extra="forbid"` — no unregistered fields are allowed in YAML seed files.
 

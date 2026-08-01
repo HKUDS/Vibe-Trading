@@ -288,7 +288,7 @@ class TestGetStrategy:
         expected_fields = {
             "strategy_id", "name", "source", "area", "description",
             "effective_scenarios", "failure_scenarios", "tuning_hints",
-            "benchmark_results", "implementation",
+            "benchmark_results", "implementation", "status",
         }
         assert set(strategy.keys()) == expected_fields
 

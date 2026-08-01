@@ -22,7 +22,6 @@ class TestLoad:
         """load() should return the number of successfully loaded entries."""
         count = StrategyRegistry.load(temp_seed_dir)
         assert count == 2
-
     def test_load_populates_registry(self, isolated_registry: None, temp_seed_dir: Path) -> None:
         """After load(), the registry should contain the loaded entries."""
         StrategyRegistry.load(temp_seed_dir)
@@ -118,7 +117,6 @@ class TestLoad:
         )
 
         count = StrategyRegistry.load(seed_dir)
-        # safe_load should reject the file entirely
         assert count == 0
 
     def test_load_yaml_parse_error_skipped(self, isolated_registry: None, tmp_path: Path) -> None:
@@ -133,6 +131,56 @@ class TestLoad:
 
         count = StrategyRegistry.load(seed_dir)
         assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# ensure_loaded() / bundled seed data
+# ---------------------------------------------------------------------------
+
+
+class TestBundledSeed:
+    """The shipped seed catalog must be reachable without an explicit load()."""
+
+    @pytest.fixture(autouse=True)
+    def _reset(self) -> None:
+        """Force a cold registry so ensure_loaded() has to do the work."""
+        StrategyRegistry._builtin = {}
+        StrategyRegistry._loaded = False
+        yield
+        StrategyRegistry._builtin = {}
+        StrategyRegistry._loaded = False
+
+    def test_query_auto_loads_bundled_seed(self) -> None:
+        """A read on a cold registry should auto-load the bundled seed files."""
+        results = StrategyRegistry.query(source="builtin", limit=50)
+        assert len(results) == 15
+
+    def test_bundled_seed_declares_market_universe(self) -> None:
+        """Bundled entries must carry a universe so the market filter can match."""
+        results = StrategyRegistry.query(source="builtin", market="china_a", limit=50)
+        assert len(results) == 15
+
+    def test_bundled_bear_market_query(self) -> None:
+        """The scenario the issue calls out must resolve to real strategies."""
+        results = StrategyRegistry.query(
+            scenario="bear_market_defense",
+            market="china_a",
+            min_sharpe=0.0,
+            decay_status="active",
+            source="builtin",
+            limit=5,
+        )
+        assert [r.strategy_id for r in results] == [
+            "quantsplaybook_csvc",
+            "quantsplaybook_ffscore",
+            "quantsplaybook_relstrength",
+        ]
+
+    def test_get_auto_loads_bundled_seed(self) -> None:
+        """get() on a cold registry should resolve a bundled strategy id."""
+        entry = StrategyRegistry.get("quantsplaybook_csvc")
+        assert entry is not None
+        assert entry.source == "builtin"
 
 
 # ---------------------------------------------------------------------------
@@ -271,11 +319,22 @@ class TestQuery:
         results = StrategyRegistry.query(min_sharpe=10.0)
         assert len(results) == 0
 
-    def test_query_by_market_skips_builtin(self) -> None:
-        """query() with market filter should skip builtin entries."""
+    def test_query_by_market_excludes_entries_without_universe(self) -> None:
+        """query() with market filter should drop entries that carry no universe."""
         results = StrategyRegistry.query(market="china_a")
-        # Builtin entries are skipped when market filter is active
+        # Fixture entries have no implementation.universe → nothing matches
         assert len(results) == 0
+
+    def test_query_by_market_matches_builtin_universe(self) -> None:
+        """query() with market filter should match builtin entries by universe."""
+        entry = StrategyRegistry._builtin["quantsplaybook_ffscore"]
+        StrategyRegistry._builtin["quantsplaybook_ffscore"] = entry.model_copy(
+            update={"implementation": {**(entry.implementation or {}), "universe": "china_a"}}
+        )
+
+        results = StrategyRegistry.query(market="china_a")
+        assert [r.strategy_id for r in results] == ["quantsplaybook_ffscore"]
+        assert StrategyRegistry.query(market="us") == []
 
     def test_query_combined_filters(self) -> None:
         """query() should support combined filters."""
@@ -303,6 +362,27 @@ class TestQuery:
         StrategyRegistry._builtin = {}
         results = StrategyRegistry.query()
         assert results == []
+
+    def test_query_by_decay_status(self) -> None:
+        """query() should filter by lifecycle status; builtin entries are active."""
+        assert len(StrategyRegistry.query(decay_status="active")) == 2
+        assert StrategyRegistry.query(decay_status="decayed") == []
+
+    def test_query_matches_issue_scenario(self) -> None:
+        """The issue's canonical compound query should return the ffscore entry."""
+        entry = StrategyRegistry._builtin["quantsplaybook_ffscore"]
+        StrategyRegistry._builtin["quantsplaybook_ffscore"] = entry.model_copy(
+            update={"implementation": {**(entry.implementation or {}), "universe": "china_a"}}
+        )
+
+        results = StrategyRegistry.query(
+            scenario="bear_market_defense",
+            market="china_a",
+            min_sharpe=0.0,
+            decay_status="active",
+            limit=5,
+        )
+        assert [r.strategy_id for r in results] == ["quantsplaybook_ffscore"]
 
 
 # ---------------------------------------------------------------------------
