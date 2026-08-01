@@ -73,6 +73,23 @@ class _OpenOrder:
         return self.margin + self.commission
 
 
+@dataclass(frozen=True)
+class _ReductionOrder:
+    """A fully priced position reduction that can be committed atomically."""
+
+    before: Position
+    target_size: float
+    price: float
+    released_margin: float
+    realized_pnl: float
+    exit_commission: float
+
+    @property
+    def capital_credit(self) -> float:
+        """Cash returned by the fill."""
+        return self.released_margin + self.realized_pnl - self.exit_commission
+
+
 def _run_card_data_sources(config: Dict[str, Any], loader: Any) -> List[str]:
     """Return source names for run-card evidence."""
     configured = config.get("_run_card_effective_sources")
@@ -375,6 +392,9 @@ class BaseEngine(ABC):
         self.config = config
         self.initial_capital: float = config.get("initial_cash", 1_000_000)
         self.default_leverage: float = config.get("leverage", 1.0)
+        self.position_adjustment = str(config.get("position_adjustment", "hold")).lower()
+        if self.position_adjustment not in {"hold", "rebalance"}:
+            raise ValueError("position_adjustment must be 'hold' or 'rebalance'")
         # Markets that clear at or below zero (e.g. EU day-ahead power) opt in
         # to opening on negative-price bars. Default False preserves the legacy
         # "reject any open_price <= 0" behavior. An exactly-zero open is always
@@ -563,6 +583,30 @@ class BaseEngine(ABC):
             if timestamp in data_map[code].index:
                 self.on_bar(code, data_map[code].loc[timestamp], timestamp)
         return False
+
+    def after_position_adjustment(
+        self,
+        *,
+        action: str,
+        timestamp: pd.Timestamp,
+        before: Position,
+        after: Position,
+        execution_price: float,
+        trading_fee: float,
+        realized_pnl: float = 0.0,
+        released_margin: float = 0.0,
+    ) -> None:
+        """Allow engines to update risk state/evidence after a committed delta fill."""
+        del (
+            action,
+            timestamp,
+            before,
+            after,
+            execution_price,
+            trading_fee,
+            realized_pnl,
+            released_margin,
+        )
 
     def execution_open(self, bar: pd.Series) -> float:
         """Return the normal market-fill price for a bar."""
@@ -855,11 +899,15 @@ class BaseEngine(ABC):
                     target_weights[c] = None
                     logger.warning("Target weight failed for %s at %s: %s", c, ts, exc)
 
+            if self.position_adjustment == "rebalance":
+                self._execute_target_rebalance(target_weights, data_map, ts, equity, codes)
+                target_weights = {}
+
             # b. Release capital before opening replacement positions.  A
             # single mixed close/open pass makes rotations depend on symbol
             # iteration order when the new name is visited before the old one.
             for c in codes:
-                target_w = target_weights[c]
+                target_w = target_weights.get(c)
                 current_pos = self.positions.get(c)
                 if target_w is None or current_pos is None:
                     continue
@@ -879,7 +927,7 @@ class BaseEngine(ABC):
             # order; sequential cash clipping would privilege the first name.
             open_targets: list[tuple[str, float, Optional[pd.DataFrame]]] = []
             for c in sorted(codes):
-                target_w = target_weights[c]
+                target_w = target_weights.get(c)
                 if target_w is None:
                     continue
                 target_dir = 1 if target_w > 1e-9 else (-1 if target_w < -1e-9 else 0)
@@ -1124,11 +1172,18 @@ class BaseEngine(ABC):
         df: Optional[pd.DataFrame],
         ts: pd.Timestamp,
         equity: float,
+        *,
+        allow_existing: bool = False,
     ) -> Optional[_OpenOrder]:
         """Price an opening order without mutating portfolio state."""
         self._active_symbol = symbol
         direction = 1 if target_weight > 1e-9 else (-1 if target_weight < -1e-9 else 0)
-        if direction == 0 or symbol in self.positions or df is None or ts not in df.index:
+        if (
+            direction == 0
+            or (symbol in self.positions and not allow_existing)
+            or df is None
+            or ts not in df.index
+        ):
             return None
         bar = df.loc[ts]
         if not self.can_execute(symbol, direction, bar):
@@ -1159,6 +1214,242 @@ class BaseEngine(ABC):
             leverage=leverage,
             margin=margin,
             commission=commission,
+        )
+
+    def _execute_target_rebalance(
+        self,
+        target_weights: Dict[str, Optional[float]],
+        data_map: Dict[str, pd.DataFrame],
+        ts: pd.Timestamp,
+        equity: float,
+        codes: List[str],
+    ) -> None:
+        """Plan every target delta, preflight capital, then commit the basket."""
+        reductions: list[_ReductionOrder] = []
+        opens: list[_OpenOrder] = []
+
+        for symbol in sorted(codes):
+            target_weight = target_weights.get(symbol)
+            if target_weight is None:
+                continue
+            if not math.isfinite(target_weight):
+                raise ValueError("non-finite position rebalance value")
+
+            before = self.positions.get(symbol)
+            target_direction = 1 if target_weight > 1e-9 else (-1 if target_weight < -1e-9 else 0)
+            frame = data_map.get(symbol)
+            if frame is None or ts not in frame.index:
+                continue
+            bar = frame.loc[ts]
+
+            if before is not None and (target_direction == 0 or target_direction != before.direction):
+                if not self.can_execute(symbol, 0, bar):
+                    continue
+                price = self.apply_slippage(self.execution_open(bar), -before.direction)
+                reductions.append(self._plan_reduction(before, 0.0, price))
+                if target_direction == 0:
+                    continue
+                order = self._plan_open_order(
+                    symbol, target_weight, frame, ts, equity, allow_existing=True
+                )
+                if order is not None:
+                    self._validate_rebalance_values(
+                        order.price, order.leverage, order.size, order.margin, order.commission
+                    )
+                    opens.append(order)
+                continue
+
+            if before is None:
+                order = self._plan_open_order(symbol, target_weight, frame, ts, equity)
+                if order is not None:
+                    self._validate_rebalance_values(
+                        order.price, order.leverage, order.size, order.margin, order.commission
+                    )
+                    opens.append(order)
+                continue
+
+            raw_price = self.execution_open(bar)
+            self._validate_rebalance_values(raw_price, before.leverage)
+            target_size = self.round_size(
+                self._calc_raw_size(
+                    symbol,
+                    abs(target_weight) * equity * before.leverage,
+                    raw_price,
+                ),
+                raw_price,
+            )
+            self._validate_rebalance_values(target_size)
+            if target_size > before.size + 1e-9:
+                if not self.can_execute(symbol, target_direction, bar):
+                    continue
+                order = self._plan_open_order(
+                    symbol,
+                    target_weight,
+                    frame,
+                    ts,
+                    equity,
+                    allow_existing=True,
+                )
+                if order is not None:
+                    order = _OpenOrder(
+                        symbol=order.symbol,
+                        direction=order.direction,
+                        price=order.price,
+                        size=target_size - before.size,
+                        leverage=order.leverage,
+                        margin=self._calc_margin(
+                            symbol, target_size - before.size, order.price, order.leverage
+                        ),
+                        commission=self.calc_commission(
+                            target_size - before.size,
+                            order.price,
+                            order.direction,
+                            is_open=True,
+                        ),
+                    )
+                    self._validate_rebalance_values(
+                        order.price, order.leverage, order.size, order.margin, order.commission
+                    )
+                    opens.append(order)
+            elif target_size < before.size - 1e-9 and self.can_execute(symbol, 0, bar):
+                price = self.apply_slippage(raw_price, -before.direction)
+                reductions.append(self._plan_reduction(before, target_size, price))
+
+        projected_capital = self.capital + sum(
+            order.capital_credit for order in reductions
+        ) - sum(order.cost for order in opens)
+        if not math.isfinite(projected_capital):
+            raise ValueError("non-finite position rebalance value")
+        if projected_capital < -1e-9:
+            raise ValueError("insufficient capital for position rebalance")
+
+        for order in reductions:
+            if order.target_size <= 1e-9:
+                self._close_position(order.before.symbol, order.price, ts, "signal")
+            else:
+                self._execute_partial_reduction(order, ts)
+        for order in opens:
+            if order.symbol in self.positions:
+                self._execute_position_increase(order, ts)
+            else:
+                self._execute_open_order(order, ts)
+
+    @staticmethod
+    def _validate_rebalance_values(*values: float) -> None:
+        if not all(math.isfinite(float(value)) for value in values):
+            raise ValueError("non-finite position rebalance value")
+
+    def _plan_reduction(
+        self, before: Position, target_size: float, price: float
+    ) -> _ReductionOrder:
+        closed_size = before.size - target_size
+        released_margin = self._calc_margin(
+            before.symbol, closed_size, before.entry_price, before.leverage
+        )
+        realized_pnl = self._calc_pnl(
+            before.symbol, before.direction, closed_size, before.entry_price, price
+        )
+        exit_commission = self.calc_commission(
+            closed_size, price, before.direction, is_open=False
+        )
+        self._validate_rebalance_values(
+            target_size,
+            price,
+            released_margin,
+            realized_pnl,
+            exit_commission,
+        )
+        return _ReductionOrder(
+            before=before,
+            target_size=target_size,
+            price=price,
+            released_margin=released_margin,
+            realized_pnl=realized_pnl,
+            exit_commission=exit_commission,
+        )
+
+    def _execute_position_increase(self, order: _OpenOrder, ts: pd.Timestamp) -> None:
+        """Commit a same-direction opening delta."""
+        before = self.positions[order.symbol]
+        if order.direction != before.direction:
+            raise ValueError("position increase direction must match the open position")
+        if order.cost > self.capital + 1e-7:
+            raise RuntimeError(
+                f"planned order for {order.symbol} exceeds available capital"
+            )
+        new_size = before.size + order.size
+        after = Position(
+            symbol=before.symbol,
+            direction=before.direction,
+            entry_price=(before.size * before.entry_price + order.size * order.price) / new_size,
+            entry_time=before.entry_time,
+            size=new_size,
+            leverage=before.leverage,
+            entry_bar_idx=before.entry_bar_idx,
+            entry_commission=before.entry_commission + order.commission,
+        )
+        self.capital -= order.cost
+        self.positions[order.symbol] = after
+        self.after_position_adjustment(
+            action="increase",
+            timestamp=ts,
+            before=before,
+            after=after,
+            execution_price=order.price,
+            trading_fee=order.commission,
+        )
+
+    def _execute_partial_reduction(self, order: _ReductionOrder, ts: pd.Timestamp) -> None:
+        """Commit a same-direction closing delta."""
+        before = self.positions[order.before.symbol]
+        closed_size = before.size - order.target_size
+        entry_commission = before.entry_commission * closed_size / before.size
+        after = Position(
+            symbol=before.symbol,
+            direction=before.direction,
+            entry_price=before.entry_price,
+            entry_time=before.entry_time,
+            size=order.target_size,
+            leverage=before.leverage,
+            entry_bar_idx=before.entry_bar_idx,
+            entry_commission=before.entry_commission - entry_commission,
+        )
+        exit_margin = self._calc_margin(
+            before.symbol, closed_size, order.price, before.leverage
+        )
+        pnl_pct = (
+            order.realized_pnl / order.released_margin * 100
+            if order.released_margin > 1e-9
+            else 0.0
+        )
+        self.capital += order.capital_credit
+        self.positions[before.symbol] = after
+        self.trades.append(TradeRecord(
+            symbol=before.symbol,
+            direction=before.direction,
+            entry_price=before.entry_price,
+            exit_price=order.price,
+            entry_time=before.entry_time,
+            exit_time=ts,
+            size=closed_size,
+            leverage=before.leverage,
+            pnl=order.realized_pnl,
+            pnl_pct=pnl_pct,
+            exit_reason="target_rebalance",
+            holding_bars=max(self._bar_idx - before.entry_bar_idx, 0),
+            commission=entry_commission + order.exit_commission,
+            entry_margin=order.released_margin,
+            exit_margin=exit_margin,
+        ))
+        self.after_position_adjustment(
+            action="partial_reduction",
+            timestamp=ts,
+            before=before,
+            after=after,
+            execution_price=order.price,
+            trading_fee=order.exit_commission,
+            realized_pnl=order.realized_pnl,
+            released_margin=order.released_margin,
         )
 
     def _execute_open_order(self, order: _OpenOrder, ts: pd.Timestamp) -> None:

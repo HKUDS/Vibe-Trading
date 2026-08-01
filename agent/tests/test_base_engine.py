@@ -14,6 +14,128 @@ from backtest.engines.china_a import ChinaAEngine
 from backtest.models import Position
 
 
+class _AdjustmentEngine(BaseEngine):
+    def __init__(self, **overrides):
+        config = {
+            "initial_cash": 1_000.0,
+            "leverage": 1.0,
+            "position_adjustment": "rebalance",
+        }
+        config.update(overrides)
+        super().__init__(config)
+        self.bar_positions: list[dict[str, Position]] = []
+
+    def can_execute(self, symbol, direction, bar):
+        return True
+
+    def round_size(self, raw_size, price):
+        return round(max(raw_size, 0.0), 6)
+
+    def calc_commission(self, size, price, direction, is_open):
+        return size * price * float(self.config.get("fee_rate", 0.0))
+
+    def apply_slippage(self, price, direction):
+        return price
+
+    def after_rebalance_bar(self, timestamp, data_map, codes):
+        self.bar_positions.append(dict(self.positions))
+        return False
+
+
+def _run_adjustments(
+    engine: _AdjustmentEngine,
+    weights: dict[str, list[float]],
+    *,
+    execution_prices: dict[str, list[float]] | None = None,
+    codes: list[str] | None = None,
+) -> None:
+    dates = pd.date_range("2026-01-02", periods=len(next(iter(weights.values()))))
+    codes = codes or list(weights)
+    data_map = {}
+    close_data = {}
+    for symbol in weights:
+        prices = (execution_prices or {}).get(symbol, [100.0] * len(dates))
+        data_map[symbol] = pd.DataFrame({"open": prices, "close": prices}, index=dates)
+        close_data[symbol] = prices
+    engine._execute_bars(
+        dates,
+        data_map,
+        pd.DataFrame(close_data, index=dates),
+        pd.DataFrame(weights, index=dates),
+        codes,
+    )
+
+
+def test_position_adjustment_rejects_unknown_mode():
+    with pytest.raises(ValueError, match="position_adjustment"):
+        _AdjustmentEngine(position_adjustment="resize")
+
+
+def test_hold_mode_keeps_same_direction_size():
+    engine = _AdjustmentEngine(position_adjustment="hold")
+    _run_adjustments(engine, {"A": [0.25, 0.50, 0.20]})
+    assert [state["A"].size for state in engine.bar_positions] == [2.5, 2.5, 2.5]
+
+
+def test_rebalance_increases_then_reduces_same_direction_position():
+    engine = _AdjustmentEngine()
+    _run_adjustments(engine, {"A": [0.25, 0.50, 0.20]})
+    assert [state["A"].size for state in engine.bar_positions] == [2.5, 5.0, 2.0]
+    partial = next(t for t in engine.trades if t.exit_reason == "target_rebalance")
+    assert partial.size == 3.0
+    assert partial.entry_margin == 300.0
+    assert partial.pnl == 0.0
+
+
+def test_rebalance_scale_in_uses_weighted_average_entry():
+    engine = _AdjustmentEngine()
+    _run_adjustments(
+        engine,
+        {"A": [0.25, 0.50]},
+        execution_prices={"A": [100.0, 120.0]},
+    )
+    assert engine.bar_positions[0]["A"].size == 2.5
+    assert engine.bar_positions[1]["A"].size == 4.375
+    assert engine.bar_positions[1]["A"].entry_price == pytest.approx(108.5714285714)
+
+
+def test_rebalance_reduces_short_with_correct_signed_pnl():
+    engine = _AdjustmentEngine()
+    _run_adjustments(
+        engine,
+        {"A": [-0.50, -0.20]},
+        execution_prices={"A": [100.0, 90.0]},
+    )
+    partial = next(t for t in engine.trades if t.exit_reason == "target_rebalance")
+    assert partial.direction == -1
+    assert partial.size == pytest.approx(2.666667)
+    assert partial.pnl == pytest.approx(26.66667, rel=1e-5)
+
+
+def test_rebalance_insufficient_capital_is_atomic():
+    engine = _AdjustmentEngine(fee_rate=0.10)
+    with pytest.raises(ValueError, match="insufficient capital"):
+        _run_adjustments(engine, {"A": [1.0]})
+    assert engine.capital == 1_000.0
+    assert engine.positions == {}
+    assert engine.trades == []
+
+
+def test_rebalance_basket_is_independent_of_input_code_order():
+    weights = {"A": [0.50], "B": [0.50]}
+    first = _AdjustmentEngine()
+    second = _AdjustmentEngine()
+    _run_adjustments(first, weights, codes=["A", "B"])
+    _run_adjustments(second, weights, codes=["B", "A"])
+    assert {
+        symbol: position.size for symbol, position in first.bar_positions[0].items()
+    } == {"A": 5.0, "B": 5.0}
+    assert first.bar_positions == second.bar_positions
+    assert [snapshot.capital for snapshot in first.equity_snapshots] == [
+        snapshot.capital for snapshot in second.equity_snapshots
+    ]
+
+
 class _LifecycleEngine(ChinaAEngine):
     def __init__(self, *, stop_before: bool = False):
         super().__init__({"initial_cash": 1_000_000.0})
