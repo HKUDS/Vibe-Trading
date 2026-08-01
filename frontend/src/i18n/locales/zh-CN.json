@@ -309,6 +309,10 @@
     "loadModels": "加载模型",
     "modelsLoaded": "已加载 {{count}} 个可用模型。",
     "modelsLoadFailed": "无法加载提供商的模型列表。",
+    "modelOptions": "可用模型",
+    "modelDiscoveryOauthUnsupported": "此提供商的 OAuth 端点不支持模型发现。",
+    "modelDiscoveryApiKeyRequired": "请输入或保存此提供商的 API 密钥以加载可用模型。",
+    "modelDiscoveryUnavailable": "提供商未返回模型列表。你仍可输入准确的模型 ID。",
     "modelPickerHint": "加载提供商的模型选项，或直接输入准确的自定义模型 ID。",
     "clearApiKey": "清除已保存的 API 密钥",
     "channels": {

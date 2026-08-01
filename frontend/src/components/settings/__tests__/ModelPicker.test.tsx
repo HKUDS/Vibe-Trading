@@ -11,6 +11,7 @@ function Harness() {
       options={["deepseek-v4-pro", "deepseek-v4-flash"]}
       onChange={setValue}
       ariaLabel="Model"
+      optionsAriaLabel="Available models"
     />
   );
 }
@@ -48,5 +49,13 @@ describe("ModelPicker", () => {
     await user.keyboard("{ArrowDown}{Enter}");
 
     expect(input).toHaveValue("deepseek-v4-pro");
+  });
+
+  it("uses the translated options label without appending English prose", async () => {
+    render(<Harness />);
+    await userEvent.setup().click(screen.getByRole("combobox", { name: "Model" }));
+
+    expect(screen.getByRole("listbox", { name: "Available models" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Available models" })).toBeInTheDocument();
   });
 });

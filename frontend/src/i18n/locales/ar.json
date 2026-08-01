@@ -309,6 +309,10 @@
     "loadModels": "تحميل النماذج",
     "modelsLoaded": "تم تحميل {{count}} نموذجًا متاحًا.",
     "modelsLoadFailed": "تعذر تحميل قائمة نماذج المزوّد.",
+    "modelOptions": "النماذج المتاحة",
+    "modelDiscoveryOauthUnsupported": "لا يدعم طرف OAuth لهذا المزوّد اكتشاف النماذج.",
+    "modelDiscoveryApiKeyRequired": "أدخل مفتاح API لهذا المزوّد أو احفظه لتحميل النماذج المتاحة.",
+    "modelDiscoveryUnavailable": "لم يُرجع المزوّد قائمة نماذج. لا يزال بإمكانك إدخال معرّف نموذج دقيق.",
     "modelPickerHint": "حمّل خيارات المزوّد أو اكتب معرّف نموذج مخصصًا بدقة.",
     "clearApiKey": "مسح مفتاح API المحفوظ",
     "channels": {

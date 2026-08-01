@@ -69,6 +69,15 @@ class ToolCallRequest:
     extra_content: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class LLMRuntimeSnapshot:
+    """Immutable identity of the model configuration used by one ChatLLM."""
+
+    provider: str
+    configured_model: str
+    reasoning_effort: str
+
+
 @dataclass
 class LLMResponse:
     """LLM response.
@@ -275,8 +284,17 @@ class ChatLLM:
         Args:
             model_name: Model name; defaults to the environment variable value.
         """
-        self.model_name = model_name
         self._llm = build_llm(model_name=model_name)
+        runtime_cfg = get_env_config().llm
+        configured_model = (
+            model_name or runtime_cfg.langchain_model_name
+        ).strip()
+        self.model_name = configured_model
+        self.runtime_snapshot = LLMRuntimeSnapshot(
+            provider=runtime_cfg.langchain_provider.strip().lower() or "openai",
+            configured_model=configured_model,
+            reasoning_effort=runtime_cfg.langchain_reasoning_effort.strip().lower(),
+        )
 
     def chat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> LLMResponse:
         """Call the LLM synchronously.

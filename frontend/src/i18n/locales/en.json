@@ -314,6 +314,10 @@
     "loadModels": "Load models",
     "modelsLoaded": "Loaded {{count}} available models.",
     "modelsLoadFailed": "Could not load the provider model list.",
+    "modelOptions": "Available models",
+    "modelDiscoveryOauthUnsupported": "This provider does not expose model discovery through its OAuth endpoint.",
+    "modelDiscoveryApiKeyRequired": "Enter or save this provider's API key to load its available models.",
+    "modelDiscoveryUnavailable": "The provider did not return a model list. You can still type an exact model ID.",
     "modelPickerHint": "Load provider choices or type an exact custom model ID.",
     "clearApiKey": "Clear saved API key",
     "channels": {

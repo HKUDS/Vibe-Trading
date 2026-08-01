@@ -68,6 +68,34 @@ def test_extract_model_ids_normalizes_openai_compatible_payloads() -> None:
     ) == ["custom-model", "models/gemini-test"]
 
 
+@pytest.mark.parametrize(
+    ("payload", "expected_code"),
+    [
+        (
+            {"provider": "openrouter", "base_url": "https://openrouter.ai/api/v1"},
+            "api_key_required",
+        ),
+        (
+            {
+                "provider": "openai-codex",
+                "base_url": "https://chatgpt.com/backend-api/codex/responses",
+            },
+            "oauth_discovery_unsupported",
+        ),
+    ],
+)
+def test_model_discovery_returns_stable_warning_codes_not_english_prose(
+    client: TestClient,
+    payload: dict[str, str],
+    expected_code: str,
+) -> None:
+    response = client.post("/settings/llm/models", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["warning_code"] == expected_code
+    assert "warning" not in response.json()
+
+
 def test_list_llm_models_uses_unsaved_form_values(
     client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -359,7 +359,11 @@ export interface LLMModelsResponse {
   provider: string;
   models: string[];
   source: "provider" | "default";
-  warning?: string | null;
+  warning_code?:
+    | "oauth_discovery_unsupported"
+    | "api_key_required"
+    | "model_list_unavailable"
+    | null;
 }
 
 export interface DataSourceSettings {

@@ -309,6 +309,10 @@
     "loadModels": "모델 불러오기",
     "modelsLoaded": "사용 가능한 모델 {{count}}개를 불러왔습니다.",
     "modelsLoadFailed": "프로바이더 모델 목록을 불러오지 못했습니다.",
+    "modelOptions": "사용 가능한 모델",
+    "modelDiscoveryOauthUnsupported": "이 프로바이더의 OAuth 엔드포인트는 모델 검색을 지원하지 않습니다.",
+    "modelDiscoveryApiKeyRequired": "사용 가능한 모델을 불러오려면 이 프로바이더의 API 키를 입력하거나 저장하세요.",
+    "modelDiscoveryUnavailable": "프로바이더가 모델 목록을 반환하지 않았습니다. 정확한 모델 ID를 직접 입력할 수도 있습니다.",
     "modelPickerHint": "프로바이더 모델을 불러오거나 정확한 사용자 지정 모델 ID를 입력하세요.",
     "clearApiKey": "저장된 API 키 삭제",
     "channels": {

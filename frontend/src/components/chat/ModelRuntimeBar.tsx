@@ -6,9 +6,15 @@ interface Props {
   settings: LLMSettings | null;
   runtimeProvider?: string;
   runtimeModel?: string;
+  runtimeReasoningEffort?: string;
 }
 
-export function ModelRuntimeBar({ settings, runtimeProvider, runtimeModel }: Props) {
+export function ModelRuntimeBar({
+  settings,
+  runtimeProvider,
+  runtimeModel,
+  runtimeReasoningEffort,
+}: Props) {
   const { t } = useTranslation();
   if (!settings) return null;
 
@@ -23,7 +29,10 @@ export function ModelRuntimeBar({ settings, runtimeProvider, runtimeModel }: Pro
     high: t("settings.reasoningEffortHigh"),
     max: t("settings.reasoningEffortMax"),
   };
-  const effortLabel = effortLabels[settings.reasoning_effort] || t("settings.providerDefault");
+  const reasoningEffort = runtimeReasoningEffort !== undefined
+    ? runtimeReasoningEffort
+    : settings.reasoning_effort;
+  const effortLabel = effortLabels[reasoningEffort] || t("settings.providerDefault");
 
   return (
     <div className="shrink-0 border-b border-border/70 bg-background/95 px-6 py-2 backdrop-blur-sm">

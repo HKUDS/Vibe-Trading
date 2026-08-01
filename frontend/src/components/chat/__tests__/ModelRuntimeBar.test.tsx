@@ -48,4 +48,18 @@ describe("ModelRuntimeBar", () => {
 
     expect(screen.getByText(/Reasoning Effort: None \(explicit\)/)).toBeInTheDocument();
   });
+
+  it("shows the persisted historical reasoning effort instead of current settings", () => {
+    render(
+      <ModelRuntimeBar
+        settings={{ ...settings, reasoning_effort: "low" }}
+        runtimeProvider="deepseek"
+        runtimeModel="deepseek-v4-flash-202607"
+        runtimeReasoningEffort="high"
+      />,
+    );
+
+    expect(screen.getByText(/Reasoning Effort: High/)).toBeInTheDocument();
+    expect(screen.queryByText(/Reasoning Effort: Low/)).not.toBeInTheDocument();
+  });
 });

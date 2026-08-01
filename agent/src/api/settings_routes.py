@@ -10,7 +10,7 @@ import json
 import os
 import sys as _sys
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
 from urllib.parse import urlsplit
 
 import httpx
@@ -84,13 +84,20 @@ class ListLLMModelsRequest(BaseModel):
     api_key: Optional[str] = None
 
 
+ModelDiscoveryWarningCode = Literal[
+    "oauth_discovery_unsupported",
+    "api_key_required",
+    "model_list_unavailable",
+]
+
+
 class LLMModelsResponse(BaseModel):
     """Model IDs suitable for an editable settings combobox."""
 
     provider: str
     models: List[str]
     source: str
-    warning: Optional[str] = None
+    warning_code: Optional[ModelDiscoveryWarningCode] = None
 
 
 class DataSourceSettingsResponse(BaseModel):
@@ -262,14 +269,14 @@ async def _list_provider_models(
             provider=provider.name,
             models=fallback,
             source="default",
-            warning="This provider does not expose model discovery through its OAuth endpoint.",
+            warning_code="oauth_discovery_unsupported",
         )
     if provider.api_key_required and not api_key:
         return LLMModelsResponse(
             provider=provider.name,
             models=fallback,
             source="default",
-            warning="Enter or save this provider's API key to load its available models.",
+            warning_code="api_key_required",
         )
 
     if provider.name == "ollama" and not base_url.rstrip("/").endswith("/v1"):
@@ -288,7 +295,7 @@ async def _list_provider_models(
             provider=provider.name,
             models=fallback,
             source="default",
-            warning="The provider did not return a model list. You can still type an exact model ID.",
+            warning_code="model_list_unavailable",
         )
 
     discovered = bool(models)

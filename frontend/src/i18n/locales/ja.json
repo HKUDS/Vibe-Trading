@@ -309,6 +309,10 @@
     "loadModels": "モデルを読み込む",
     "modelsLoaded": "{{count}} 個の利用可能なモデルを読み込みました。",
     "modelsLoadFailed": "プロバイダーのモデル一覧を読み込めませんでした。",
+    "modelOptions": "利用可能なモデル",
+    "modelDiscoveryOauthUnsupported": "このプロバイダーの OAuth エンドポイントはモデル検出に対応していません。",
+    "modelDiscoveryApiKeyRequired": "利用可能なモデルを読み込むには、このプロバイダーの API キーを入力または保存してください。",
+    "modelDiscoveryUnavailable": "プロバイダーからモデル一覧が返されませんでした。正確なモデル ID を直接入力することもできます。",
     "modelPickerHint": "プロバイダーの候補を読み込むか、正確なカスタムモデル ID を入力してください。",
     "clearApiKey": "保存済み API キーをクリア",
     "channels": {

@@ -6,9 +6,16 @@ interface ModelPickerProps {
   options: string[];
   onChange: (value: string) => void;
   ariaLabel: string;
+  optionsAriaLabel: string;
 }
 
-export function ModelPicker({ value, options, onChange, ariaLabel }: ModelPickerProps) {
+export function ModelPicker({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  optionsAriaLabel,
+}: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -84,7 +91,7 @@ export function ModelPicker({ value, options, onChange, ariaLabel }: ModelPicker
           type="button"
           onClick={() => open ? setOpen(false) : openList()}
           className="absolute inset-y-0 right-0 inline-flex w-10 items-center justify-center rounded-r-md text-muted-foreground transition hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40"
-          aria-label={`${ariaLabel} options`}
+          aria-label={optionsAriaLabel}
           aria-expanded={open}
           aria-controls={listId}
         >
@@ -96,7 +103,7 @@ export function ModelPicker({ value, options, onChange, ariaLabel }: ModelPicker
         <div
           id={listId}
           role="listbox"
-          aria-label={`${ariaLabel} options`}
+          aria-label={optionsAriaLabel}
           className="absolute z-50 mt-1.5 max-h-64 w-full overflow-y-auto rounded-md border bg-card p-1.5 shadow-lg ring-1 ring-black/5"
         >
           {uniqueOptions.map((model, index) => {

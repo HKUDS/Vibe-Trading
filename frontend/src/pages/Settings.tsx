@@ -189,9 +189,14 @@ export function Settings() {
         selectedProvider.default_model,
         ...result.models,
       ].filter(Boolean))));
+      const warningMessages = {
+        oauth_discovery_unsupported: t("settings.modelDiscoveryOauthUnsupported"),
+        api_key_required: t("settings.modelDiscoveryApiKeyRequired"),
+        model_list_unavailable: t("settings.modelDiscoveryUnavailable"),
+      };
       setModelListHint(
-        result.warning
-          ? result.warning
+        result.warning_code
+          ? warningMessages[result.warning_code]
           : t("settings.modelsLoaded", { count: result.models.length }),
       );
     } catch (error) {
@@ -498,6 +503,7 @@ export function Settings() {
                   options={modelOptions}
                   onChange={(modelName) => setForm({ ...form, model_name: modelName })}
                   ariaLabel={t("settings.model")}
+                  optionsAriaLabel={t("settings.modelOptions")}
                 />
                 <button
                   type="button"

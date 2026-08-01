@@ -83,6 +83,13 @@ interface PendingToolProgress {
   progress: NonNullable<ToolCallEntry["progress"]>;
 }
 
+interface RuntimeIdentity {
+  sessionId?: string;
+  provider?: string;
+  model?: string;
+  reasoningEffort?: string;
+}
+
 function toolProgressKey(callId: string | undefined, tool: string): string {
   return callId ? `call:${callId}` : `tool:${tool}`;
 }
@@ -238,7 +245,7 @@ export function Agent() {
   const [visibleRowCount, setVisibleRowCount] = useState(TIMELINE_WINDOW_SIZE);
   const visibleRowsSessionRef = useRef<string | null>(null);
   const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
-  const [runtimeIdentity, setRuntimeIdentity] = useState<{ provider?: string; model?: string }>({});
+  const [runtimeIdentity, setRuntimeIdentity] = useState<RuntimeIdentity>({});
 
   const messages = useAgentStore(s => s.messages);
   const streamingText = useAgentStore(s => s.streamingText);
@@ -253,6 +260,9 @@ export function Agent() {
   const { connect, disconnect, onStatusChange } = useSSE();
 
   const urlSessionId = searchParams.get("session");
+  const visibleRuntimeIdentity = runtimeIdentity.sessionId === urlSessionId
+    ? runtimeIdentity
+    : {};
 
   /* Smart scroll — only auto-scroll when near bottom */
   const isNearBottom = useCallback(() => {
@@ -493,16 +503,27 @@ export function Agent() {
       const msgs = await api.getSessionMessages(sid);
       if (genRef.current !== gen) return;
       const agentMsgs: StoredAgentMessage[] = [];
-      let latestRuntimeIdentity: { provider?: string; model?: string } | null = null;
+      let latestRuntimeIdentity: RuntimeIdentity | null = null;
       for (const m of msgs) {
         const meta = m.metadata as Record<string, unknown> | undefined;
         const runId = meta?.run_id as string | undefined;
         const metrics = meta?.metrics as Record<string, number> | undefined;
         const elapsedMs = typeof meta?.elapsed_ms === "number" ? meta.elapsed_ms : undefined;
-        if (m.role === "assistant" && (typeof meta?.provider === "string" || typeof meta?.model === "string")) {
+        if (
+          m.role === "assistant"
+          && (
+            typeof meta?.provider === "string"
+            || typeof meta?.model === "string"
+            || typeof meta?.reasoning_effort === "string"
+          )
+        ) {
           latestRuntimeIdentity = {
+            sessionId: sid,
             provider: typeof meta?.provider === "string" ? meta.provider : undefined,
             model: typeof meta?.model === "string" ? meta.model : undefined,
+            reasoningEffort: typeof meta?.reasoning_effort === "string"
+              ? meta.reasoning_effort
+              : undefined,
           };
         }
         const ts = new Date(m.created_at).getTime();
@@ -580,6 +601,8 @@ export function Agent() {
       setRuntimeIdentity(latestRuntimeIdentity ?? {});
       setTimeout(() => forceScrollToBottom(), 50);
     } catch {
+      if (genRef.current !== gen) return;
+      setRuntimeIdentity({});
       act().setSessionLoading(false);
     }
   }, [forceScrollToBottom]);
@@ -858,8 +881,12 @@ export function Agent() {
         }
         if (d.provider || d.model) {
           setRuntimeIdentity({
+            sessionId: sid,
             provider: d.provider ? String(d.provider) : undefined,
             model: d.model ? String(d.model) : undefined,
+            reasoningEffort: typeof d.reasoning_effort === "string"
+              ? d.reasoning_effort
+              : undefined,
           });
         }
 
@@ -1126,6 +1153,7 @@ export function Agent() {
       const gen = genRef.current + 1;
       genRef.current = gen;
       doDisconnect();
+      setRuntimeIdentity({});
       // Live-channel timeline items are per-session; clear on switch.
       setLiveItems([]);
       liveRuntimeRef.current?.resetSession();
@@ -1152,6 +1180,7 @@ export function Agent() {
       // (covers an attempt that finished while we were away), then re-subscribe.
       const gen = genRef.current + 1;
       genRef.current = gen;
+      setRuntimeIdentity({});
       const seed = curMsgs.length > 0 ? curMsgs : getCachedSession(urlSessionId);
       switchSession(urlSessionId, seed);
       loadSessionMessages(urlSessionId, gen);
@@ -1159,6 +1188,7 @@ export function Agent() {
     } else if (!urlSessionId && curSid) {
       genRef.current += 1;
       doDisconnect();
+      setRuntimeIdentity({});
       setLiveItems([]);
       liveRuntimeRef.current?.resetSession();
       if (curSid && curMsgs.length > 0) cacheSession(curSid, curMsgs);
@@ -1580,8 +1610,9 @@ export function Agent() {
     <div className="flex flex-col flex-1 min-w-0 overflow-hidden h-full">
       <ModelRuntimeBar
         settings={llmSettings}
-        runtimeProvider={runtimeIdentity.provider}
-        runtimeModel={runtimeIdentity.model}
+        runtimeProvider={visibleRuntimeIdentity.provider}
+        runtimeModel={visibleRuntimeIdentity.model}
+        runtimeReasoningEffort={visibleRuntimeIdentity.reasoningEffort}
       />
       <div
         ref={listRef}
