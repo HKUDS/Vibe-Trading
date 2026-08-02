@@ -137,6 +137,8 @@
     "advancedHint": "選択したタイムゾーンで評価される 5 フィールドの cron 式（分 時 日 月 曜日；リストと範囲に対応）、またはミリ秒単位の間隔。",
     "timezoneLabel": "タイムゾーン",
     "create": "スケジュールを作成",
+    "promptRequired": "スケジュール作成の前にリサーチプロンプトを入力してください。",
+    "invalidTime": "有効な時刻を HH:MM 形式で入力してください。",
     "executorHint": "サーバーで VIBE_TRADING_ENABLE_SCHEDULER が有効な場合のみ実行されます。",
     "listTitle": "スケジュール一覧",
     "loading": "スケジュールを読み込み中…",
@@ -153,7 +155,9 @@
     "nextRun": "次回実行：{{when}}",
     "lastError": "直近のエラー：{{error}}",
     "delete": "削除",
-    "confirmDelete": "削除を確認"
+    "deleteAria": "スケジュールを削除：{{prompt}}",
+    "confirmDelete": "削除を確認",
+    "confirmDeleteAria": "スケジュールの削除を確認：{{prompt}}"
   },
   "reports": {
     "badge": "レポート",

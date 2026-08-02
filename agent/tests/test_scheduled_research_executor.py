@@ -600,6 +600,9 @@ def test_tz_aware_next_due_defaults_match_legacy_signature() -> None:
 
 def test_interval_schedule_ignores_timezone() -> None:
     assert next_due("60000", 5_000, "Pacific/Auckland") == 65_000
+    # Even an unresolvable key: interval advancement must not depend on the
+    # host's timezone database.
+    assert next_due("60000", 5_000, "Not/AZone") == 65_000
 
 
 def test_unknown_timezone_raises_value_error() -> None:
@@ -666,3 +669,31 @@ def test_executor_marks_job_failed_when_timezone_unresolvable(tmp_path: Path) ->
     assert saved.status == JobStatus.FAILED
     assert saved.failure_kind == "schedule"
     assert saved.last_error is not None
+
+
+def test_tick_continues_past_a_job_whose_lifecycle_write_raises(tmp_path: Path) -> None:
+    class ExplodingUpsertStore(ScheduledResearchJobStore):
+        def upsert(self, job: ScheduledResearchJob) -> None:
+            if job.id == "bad":
+                raise RuntimeError("disk full")
+            super().upsert(job)
+
+    store = ExplodingUpsertStore(path=tmp_path / "jobs.json")
+    good_store = ScheduledResearchJobStore(path=tmp_path / "jobs.json")
+    good_store.save({j.id: j for j in (_job("bad", next_run_at=10), _job("good", next_run_at=20))})
+    calls: list[str] = []
+
+    async def dispatch(job: ScheduledResearchJob) -> None:
+        calls.append(job.id)
+
+    async def scenario() -> None:
+        executor = ScheduledResearchExecutor(store, dispatch)
+        await executor.tick(100)
+
+    asyncio.run(scenario())
+
+    # "bad" exploded on its mark-RUNNING write; "good" must still have run.
+    assert calls == ["good"]
+    saved = good_store.get("good")
+    assert saved is not None
+    assert saved.status == JobStatus.COMPLETED

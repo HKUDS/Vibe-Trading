@@ -104,6 +104,10 @@ def validate_schedule(schedule: str) -> None:
         raise ValueError("schedule must be a non-empty string")
 
     if _INTERVAL_MS_RE.fullmatch(schedule.strip()):
+        # 15 digits ≈ 31,000 years in milliseconds — anything longer is not a
+        # usable interval and would only feed int() conversion of huge strings.
+        if len(schedule.strip()) > 15:
+            raise ValueError("interval is too large; expected at most 15 digits of milliseconds")
         return  # valid interval
 
     parts = schedule.strip().split()
@@ -271,10 +275,14 @@ class ScheduledResearchJob:
         if failure_kind is not None and failure_kind not in {"dispatch", "schedule"}:
             raise ValueError("'failure_kind' must be 'dispatch', 'schedule', or null")
         # Type-checked only: resolving the zone at load time would let one
-        # unresolvable key quarantine the whole store file. Absent -> None (UTC).
+        # unresolvable key quarantine the whole store file. Absent -> None
+        # (UTC); a blank string normalizes to None too, so every loaded record
+        # satisfies the shape check the store re-runs on lifecycle writes.
         tz = data.get("timezone")
         if tz is not None and not isinstance(tz, str):
             raise TypeError("'timezone' must be a string or null")
+        if tz is not None and not tz.strip():
+            tz = None
         status = JobStatus(data["status"])
         raw_config = data.get("config")
         config: Dict[str, Any] = raw_config if isinstance(raw_config, dict) else {}

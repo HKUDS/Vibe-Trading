@@ -103,18 +103,37 @@ describe("Scheduled page", () => {
     );
   });
 
-  it("deletes only after an explicit confirm click", async () => {
+  it("deletes only after an explicit confirm click, and cancel disarms", async () => {
     mocked.listScheduledRuns.mockResolvedValue([run()]);
     mocked.deleteScheduledRun.mockResolvedValue(undefined);
     render(<Scheduled />);
 
-    const deleteButton = await screen.findByRole("button", { name: /Delete/ });
-    fireEvent.click(deleteButton);
+    fireEvent.click(await screen.findByRole("button", { name: /Delete scheduled run/ }));
     expect(mocked.deleteScheduledRun).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: /Confirm delete/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("button", { name: /Confirm deleting/ })).not.toBeInTheDocument();
+    expect(mocked.deleteScheduledRun).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Delete scheduled run/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Confirm deleting/ }));
     await waitFor(() =>
       expect(mocked.deleteScheduledRun).toHaveBeenCalledWith("auckland-scan"),
     );
+  });
+
+  it("blocks a whitespace-only prompt client-side", async () => {
+    render(<Scheduled />);
+    await screen.findByText(/No scheduled runs yet/);
+
+    fireEvent.change(screen.getByLabelText("Research prompt"), {
+      target: { value: "   " },
+    });
+    fireEvent.submit(screen.getByRole("button", { name: /Schedule run/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Enter a research prompt",
+    );
+    expect(mocked.createScheduledRun).not.toHaveBeenCalled();
   });
 });

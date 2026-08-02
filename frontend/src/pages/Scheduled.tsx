@@ -43,14 +43,16 @@ function displayZone(run: ScheduledRun): string {
 }
 
 function formatInZone(epochMs: number, zone: string, locale: string): string {
+  const date = new Date(epochMs);
+  if (Number.isNaN(date.getTime())) return "—";
   try {
     return new Intl.DateTimeFormat(locale, {
       timeZone: zone,
       dateStyle: "medium",
       timeStyle: "short",
-    }).format(new Date(epochMs));
+    }).format(date);
   } catch {
-    return new Date(epochMs).toISOString();
+    return date.toISOString();
   }
 }
 
@@ -84,53 +86,80 @@ export function Scheduled() {
   const [time, setTime] = useState("09:00");
   const [days, setDays] = useState<DaysChoice>("weekdays");
   const [advanced, setAdvanced] = useState("");
-  const [timezone, setTimezone] = useState(browserTimezone());
+  const [timezone, setTimezone] = useState(() => browserTimezone());
   const [saving, setSaving] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
 
   const zonesRef = useRef<string[] | null>(null);
   if (zonesRef.current === null) zonesRef.current = timezoneOptions();
 
-  const refresh = useCallback(async (signal?: AbortSignal) => {
+  // Stale-response guard: each refresh aborts the previous request and only
+  // the newest sequence number may write state, so a slow 15s poll can never
+  // overwrite the list a create/delete just updated.
+  const refreshSeq = useRef(0);
+  const refreshController = useRef<AbortController | null>(null);
+
+  const refresh = useCallback(async () => {
+    refreshController.current?.abort();
+    const controller = new AbortController();
+    refreshController.current = controller;
+    const seq = ++refreshSeq.current;
     try {
-      const rows = await api.listScheduledRuns();
-      if (signal?.aborted) return;
+      const rows = await api.listScheduledRuns(controller.signal);
+      if (seq !== refreshSeq.current) return;
       setRuns(rows);
       setListError(null);
     } catch (error) {
-      if (signal?.aborted) return;
+      if (seq !== refreshSeq.current || controller.signal.aborted) return;
       setListError(error instanceof ApiError ? error.message : String(error));
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (seq === refreshSeq.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void refresh(controller.signal);
-    const timer = setInterval(() => void refresh(controller.signal), POLL_MS);
+    void refresh();
+    const timer = setInterval(() => void refresh(), POLL_MS);
     return () => {
-      controller.abort();
+      refreshSeq.current++; // invalidate any in-flight response
+      refreshController.current?.abort();
       clearInterval(timer);
     };
   }, [refresh]);
 
-  function composedSchedule(): string {
-    if (mode === "advanced") return advanced.trim();
-    const [hh = "9", mm = "0"] = time.split(":");
-    return `${Number(mm)} ${Number(hh)} * * ${days === "every" ? "*" : "1-5"}`;
+  // Auto-disarm an armed delete after a few seconds (blur is unreliable on
+  // Safari/iOS, where buttons do not take focus on click).
+  useEffect(() => {
+    if (pendingDelete === null) return;
+    const timer = setTimeout(() => setPendingDelete(null), 5_000);
+    return () => clearTimeout(timer);
+  }, [pendingDelete]);
+
+  function composedSchedule(): string | null {
+    if (mode === "advanced") {
+      const spec = advanced.trim();
+      return spec ? spec : null;
+    }
+    const match = /^(\d{1,2}):(\d{2})$/.exec(time);
+    if (!match) return null;
+    return `${Number(match[2])} ${Number(match[1])} * * ${days === "every" ? "*" : "1-5"}`;
   }
 
   async function handleCreate(event: React.FormEvent) {
     event.preventDefault();
-    setSaving(true);
     setComposerError(null);
+    if (!prompt.trim()) {
+      setComposerError(t("scheduled.promptRequired"));
+      return;
+    }
+    const schedule = composedSchedule();
+    if (schedule === null) {
+      setComposerError(t("scheduled.invalidTime"));
+      return;
+    }
+    setSaving(true);
     try {
-      await api.createScheduledRun({
-        prompt: prompt.trim(),
-        schedule: composedSchedule(),
-        timezone,
-      });
+      await api.createScheduledRun({ prompt: prompt.trim(), schedule, timezone });
       setPrompt("");
       await refresh();
     } catch (error) {
@@ -140,11 +169,7 @@ export function Scheduled() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (pendingDelete !== id) {
-      setPendingDelete(id);
-      return;
-    }
+  async function handleConfirmedDelete(id: string) {
     setPendingDelete(null);
     try {
       await api.deleteScheduledRun(id);
@@ -319,7 +344,7 @@ export function Scheduled() {
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             {t("scheduled.loading")}
           </div>
-        ) : listError ? (
+        ) : listError && runs.length === 0 ? (
           <div className="space-y-2 p-6 text-sm">
             <p className="text-danger">{listError}</p>
             <button
@@ -333,6 +358,12 @@ export function Scheduled() {
         ) : runs.length === 0 ? (
           <p className="p-8 text-center text-sm text-muted-foreground">{t("scheduled.empty")}</p>
         ) : (
+          <>
+          {listError && (
+            <p role="alert" className="border-b px-4 py-2 text-xs text-danger">
+              {listError}
+            </p>
+          )}
           <ul className="divide-y">
             {runs.map((run) => {
               const status = statusLabel(run);
@@ -357,24 +388,43 @@ export function Scheduled() {
                       </p>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleDelete(run.id)}
-                    onBlur={() => setPendingDelete(null)}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition",
-                      pendingDelete === run.id
-                        ? "border-danger bg-danger/10 text-danger"
-                        : "text-muted-foreground hover:bg-muted",
-                    )}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                    {pendingDelete === run.id ? t("scheduled.confirmDelete") : t("scheduled.delete")}
-                  </button>
+                  {pendingDelete === run.id ? (
+                    <div className="flex items-center gap-1.5">
+                      {/* Cancel first so it inherits the Delete button's spot —
+                          an accidental double-click disarms instead of destroying. */}
+                      <button
+                        type="button"
+                        onClick={() => setPendingDelete(null)}
+                        className="rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted"
+                      >
+                        {t("layout.cancel")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleConfirmedDelete(run.id)}
+                        aria-label={t("scheduled.confirmDeleteAria", { prompt: run.prompt })}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-danger bg-danger/10 px-2.5 py-1.5 text-xs text-danger transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                        {t("scheduled.confirmDelete")}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPendingDelete(run.id)}
+                      aria-label={t("scheduled.deleteAria", { prompt: run.prompt })}
+                      className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                      {t("scheduled.delete")}
+                    </button>
+                  )}
                 </li>
               );
             })}
           </ul>
+          </>
         )}
       </section>
     </div>

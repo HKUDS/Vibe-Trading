@@ -137,6 +137,8 @@
     "advancedHint": "تعبير cron من 5 حقول يُقيّم في المنطقة الزمنية المحددة (دقيقة ساعة يوم شهر يوم-أسبوع؛ تُدعم القوائم والنطاقات)، أو فاصل زمني بالمللي ثانية.",
     "timezoneLabel": "المنطقة الزمنية",
     "create": "إنشاء جدولة",
+    "promptRequired": "أدخل موجّه البحث قبل إنشاء الجدولة.",
+    "invalidTime": "أدخل وقتًا صالحًا بصيغة HH:MM.",
     "executorHint": "تُنفّذ المهام فقط عندما يعمل الخادم مع تفعيل VIBE_TRADING_ENABLE_SCHEDULER.",
     "listTitle": "المهام المجدولة",
     "loading": "جارٍ تحميل المهام المجدولة…",
@@ -153,7 +155,9 @@
     "nextRun": "التشغيل التالي: {{when}}",
     "lastError": "آخر خطأ: {{error}}",
     "delete": "حذف",
-    "confirmDelete": "تأكيد الحذف"
+    "deleteAria": "حذف المهمة المجدولة: {{prompt}}",
+    "confirmDelete": "تأكيد الحذف",
+    "confirmDeleteAria": "تأكيد حذف المهمة المجدولة: {{prompt}}"
   },
   "reports": {
     "badge": "التقارير",

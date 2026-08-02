@@ -39,8 +39,10 @@ DispatchCallback = Callable[[ScheduledResearchJob], Awaitable[None]]
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 # Search by day, not by minute, so an impossible date (e.g. Feb 31) fails fast
 # instead of scanning years of minutes on the event loop. Four years covers any
-# real recurrence, including a Feb-29 leap day.
-_CRON_SEARCH_LIMIT_DAYS = 4 * 366 + 1
+# real recurrence, including a Feb-29 leap day; the extra headroom absorbs a
+# yearly occurrence landing in a DST spring-forward gap (skipped by policy)
+# several years in a row before a real instant exists again.
+_CRON_SEARCH_LIMIT_DAYS = 6 * 366 + 1
 
 
 def _now_ms() -> int:
@@ -92,10 +94,12 @@ def next_due(schedule: str, after_ms: int, tz: str | None = None) -> int:
     field existed. Interval schedules ignore *tz* entirely.
     """
     validate_schedule(schedule)
-    validate_timezone(tz)
     spec = schedule.strip()
     if spec.isdigit():
+        # Before the timezone check: interval schedules must keep advancing
+        # even when the stored key cannot resolve on this host.
         return after_ms + int(spec)
+    validate_timezone(tz)
     return _next_cron_due(spec, after_ms, tz)
 
 
@@ -272,7 +276,14 @@ class ScheduledResearchExecutor:
             key=lambda job: job.next_run_at,
         )
         for job in jobs:
-            await self._run_job(job, now)
+            # One job's unexpected persistence/lifecycle error must not starve
+            # every job sorted after it, tick after tick.
+            try:
+                await self._run_job(job, now)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.error("scheduled research job %s failed its run cycle", job.id, exc_info=True)
 
     def recover_stale_running(self) -> int:
         """Reset jobs left ``RUNNING`` by a previous executor process.

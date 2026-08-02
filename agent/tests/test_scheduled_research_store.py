@@ -103,6 +103,11 @@ class TestValidateSchedule:
     def test_accepts_weekday_range(self) -> None:
         validate_schedule("30 23 * * 1-5")
 
+    def test_rejects_oversized_interval(self) -> None:
+        validate_schedule("9" * 15)  # ~31,000 years is the accepted ceiling
+        with pytest.raises(ValueError, match="interval is too large"):
+            validate_schedule("9" * 16)
+
     def test_accepts_list_and_mixed_range(self) -> None:
         validate_schedule("0 9 * * 1,3,5")
         validate_schedule("0 9 * * 1,3-5")
@@ -327,6 +332,13 @@ class TestScheduledResearchJobStore:
         raw["timezone"] = 13
         with pytest.raises(TypeError, match="'timezone' must be a string or null"):
             ScheduledResearchJob.from_dict(raw)
+
+    def test_from_dict_normalizes_blank_timezone_to_none(self) -> None:
+        # A blank string must load as None so every loaded record satisfies
+        # the shape check the store re-runs on executor lifecycle writes.
+        raw = _make_job("tz-blank-load").to_dict()
+        raw["timezone"] = "   "
+        assert ScheduledResearchJob.from_dict(raw).timezone is None
 
     def test_retry_state_round_trips_and_legacy_jobs_get_defaults(self, tmp_path: Path) -> None:
         store_path = tmp_path / "jobs.json"

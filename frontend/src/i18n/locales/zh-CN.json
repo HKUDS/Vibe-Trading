@@ -137,6 +137,8 @@
     "advancedHint": "在所选时区求值的 5 字段 cron 表达式（分 时 日 月 星期；支持列表和范围），或以毫秒为单位的间隔。",
     "timezoneLabel": "时区",
     "create": "创建定时任务",
+    "promptRequired": "请先填写研究提示词再创建定时任务。",
+    "invalidTime": "请输入有效时间（格式 HH:MM）。",
     "executorHint": "仅当服务端启用 VIBE_TRADING_ENABLE_SCHEDULER 时才会执行。",
     "listTitle": "定时任务",
     "loading": "正在加载定时任务…",
@@ -153,7 +155,9 @@
     "nextRun": "下次运行：{{when}}",
     "lastError": "最近错误：{{error}}",
     "delete": "删除",
-    "confirmDelete": "确认删除"
+    "deleteAria": "删除定时任务：{{prompt}}",
+    "confirmDelete": "确认删除",
+    "confirmDeleteAria": "确认删除定时任务：{{prompt}}"
   },
   "reports": {
     "badge": "报告",

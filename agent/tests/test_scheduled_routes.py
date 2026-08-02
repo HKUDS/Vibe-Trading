@@ -261,3 +261,62 @@ def test_list_includes_timezone(client: TestClient, store: ScheduledResearchJobS
     assert response.status_code == 200
     rows = {row["id"]: row for row in response.json()}
     assert rows["tz-listed"]["timezone"] == "Australia/Adelaide"
+
+
+def test_create_tz_cron_defaults_next_run_to_first_authored_occurrence(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    from src.scheduled_research.executor import next_due
+
+    before = int(__import__("time").time() * 1000)
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "first-occurrence",
+            "prompt": "scan",
+            "schedule": "30 23 * * 1-5",
+            "timezone": "Pacific/Auckland",
+        },
+    )
+    after = int(__import__("time").time() * 1000)
+
+    assert response.status_code == 201
+    next_run_at = response.json()["next_run_at"]
+    # The first fire is the first authored wall-clock occurrence, which for a
+    # 23:30 weekday cadence is strictly in the future — never "now".
+    assert next_run_at > after
+    assert next_due("30 23 * * 1-5", before, "Pacific/Auckland") <= next_run_at
+    assert next_run_at <= next_due("30 23 * * 1-5", after, "Pacific/Auckland")
+
+
+def test_create_without_timezone_keeps_immediate_first_fire(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    before = int(__import__("time").time() * 1000)
+    response = client.post(
+        "/scheduled-runs",
+        json={"id": "legacy-default", "prompt": "scan", "schedule": "0 9 * * *"},
+    )
+    after = int(__import__("time").time() * 1000)
+
+    assert response.status_code == 201
+    assert before <= response.json()["next_run_at"] <= after
+
+
+def test_create_interval_with_timezone_keeps_immediate_first_fire(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    before = int(__import__("time").time() * 1000)
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "interval-tz",
+            "prompt": "scan",
+            "schedule": "60000",
+            "timezone": "Pacific/Auckland",
+        },
+    )
+    after = int(__import__("time").time() * 1000)
+
+    assert response.status_code == 201
+    assert before <= response.json()["next_run_at"] <= after

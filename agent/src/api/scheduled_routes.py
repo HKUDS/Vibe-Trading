@@ -205,6 +205,8 @@ def register_scheduled_routes(
             validate_timezone,
         )
 
+        from src.scheduled_research.executor import next_due
+
         try:
             validate_schedule(request.schedule)
             validate_timezone(request.timezone)
@@ -212,11 +214,24 @@ def register_scheduled_routes(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         now_ms = int(time.time() * 1000)
+        next_run_at = request.next_run_at
+        if next_run_at is None:
+            next_run_at = now_ms
+            if request.timezone is not None and not request.schedule.strip().isdigit():
+                # A timezone-carrying cron job's contract is the authored wall
+                # clock, so its first fire is the first authored occurrence —
+                # not the creation moment. Interval jobs and timezone-less
+                # jobs keep the pre-existing immediate-first-fire default.
+                try:
+                    next_run_at = next_due(request.schedule, now_ms, request.timezone)
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
+
         job = ScheduledResearchJob(
             id=request.id or str(uuid.uuid4()),
             prompt=request.prompt,
             schedule=request.schedule,
-            next_run_at=request.next_run_at if request.next_run_at is not None else now_ms,
+            next_run_at=next_run_at,
             status=JobStatus.PENDING,
             created_at=now_ms,
             config=request.config,

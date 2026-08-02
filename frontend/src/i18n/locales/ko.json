@@ -137,6 +137,8 @@
     "advancedHint": "선택한 시간대 기준으로 평가되는 5필드 cron 표현식(분 시 일 월 요일; 목록과 범위 지원) 또는 밀리초 단위 간격.",
     "timezoneLabel": "시간대",
     "create": "예약 생성",
+    "promptRequired": "예약을 만들기 전에 리서치 프롬프트를 입력하세요.",
+    "invalidTime": "유효한 시각을 HH:MM 형식으로 입력하세요.",
     "executorHint": "서버에서 VIBE_TRADING_ENABLE_SCHEDULER가 활성화된 경우에만 실행됩니다.",
     "listTitle": "예약 목록",
     "loading": "예약을 불러오는 중…",
@@ -153,7 +155,9 @@
     "nextRun": "다음 실행: {{when}}",
     "lastError": "최근 오류: {{error}}",
     "delete": "삭제",
-    "confirmDelete": "삭제 확인"
+    "deleteAria": "예약 삭제: {{prompt}}",
+    "confirmDelete": "삭제 확인",
+    "confirmDeleteAria": "예약 삭제 확인: {{prompt}}"
   },
   "reports": {
     "badge": "리포트",
