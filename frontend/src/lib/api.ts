@@ -147,6 +147,13 @@ export const api = {
   // Codex-style LLM summary title from the first exchange; backend refuses to
   // overwrite a manual rename, so this is safe to fire-and-forget.
   autoTitleSession: (sid: string) => request<{ status: string; title: string }>(`/sessions/${sid}/title/auto`, { method: "POST" }),
+  // Scheduled research: cadence + timezone are stored as authored (local
+  // wall-clock cron + IANA key), so list rows render without any UTC math.
+  listScheduledRuns: () => request<ScheduledRun[]>("/scheduled-runs"),
+  createScheduledRun: (body: CreateScheduledRunRequest) =>
+    request<ScheduledRun>("/scheduled-runs", { method: "POST", body: JSON.stringify(body) }),
+  deleteScheduledRun: (id: string) =>
+    request<void>(`/scheduled-runs/${encodeURIComponent(id)}`, { method: "DELETE" }),
   sendMessage: (sid: string, content: string) => request<{ message_id: string; attempt_id: string }>(`/sessions/${sid}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
   cancelSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}/cancel`, { method: "POST" }),
   getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${sid}/messages`),
@@ -283,6 +290,31 @@ export const api = {
       body: JSON.stringify({ broker }),
     }),
 };
+
+// --- Scheduled research types ---
+
+export interface ScheduledRun {
+  id: string;
+  prompt: string;
+  schedule: string;
+  next_run_at: number;
+  status: string;
+  created_at: number;
+  last_run_at: number | null;
+  consecutive_failures: number;
+  last_error: string | null;
+  failure_kind: string | null;
+  config: Record<string, unknown>;
+  timezone: string | null;
+}
+
+export interface CreateScheduledRunRequest {
+  id?: string;
+  prompt: string;
+  schedule: string;
+  timezone?: string | null;
+  config?: Record<string, unknown>;
+}
 
 // --- Swarm types ---
 

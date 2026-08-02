@@ -957,19 +957,24 @@ vibe-trading serve --port 8899
 
 ### البحث المجدول (Scheduled research)
 
-شغّل prompt بحثي أو backtest وفق جدول متكرر. المنفّذ الخلفي **معطّل افتراضياً** — شغّل الخادم بـ `VIBE_TRADING_ENABLE_SCHEDULER=1` لتفعيله:
+شغّل prompt بحثي أو backtest وفق جدول متكرر — من صفحة **المجدولة** في واجهة الويب أو عبر REST. المنفّذ الخلفي **معطّل افتراضياً** — شغّل الخادم بـ `VIBE_TRADING_ENABLE_SCHEDULER=1` لتفعيله:
 
 ```bash
 VIBE_TRADING_ENABLE_SCHEDULER=1 vibe-trading serve --port 8899
 ```
 
-ثم أنشئ المهام عبر REST. الحقل `schedule` إما عدد صحيح بسيط (الفاصل بـ**المللي ثانية**) أو تعبير cron من 5 حقول (`دقيقة ساعة يوم شهر يوم-الأسبوع`):
+ثم أنشئ المهام عبر REST. الحقل `schedule` إما عدد صحيح بسيط (الفاصل بـ**المللي ثانية**) أو تعبير cron من 5 حقول (`دقيقة ساعة يوم شهر يوم-الأسبوع`؛ يقبل كل حقل `*` و`*/n` وأرقاماً وقوائم بفواصل ونطاقات مثل `1-5`). يُقيَّم cron وفق الساعة الحائطية لـ `timezone` الاختيارية للمهمة (مفتاح IANA)، فيبقى الإيقاع ثابتاً عبر تغييرات التوقيت الصيفي — يُتخطى الوقت غير الموجود في الربيع، ويُنفَّذ الوقت المكرر في الخريف مرة واحدة عند أول ظهور. المهام بدون `timezone` تحتفظ بدلالات UTC كما هي:
 
 ```bash
 # كل 6 ساعات (cron)
 curl -X POST http://localhost:8899/scheduled-runs \
   -H "Content-Type: application/json" \
   -d '{"prompt":"Scan CSI300 for momentum breakouts and backtest the top 5","schedule":"0 */6 * * *"}'
+
+# أيام العمل 23:30 بتوقيت أوكلاند المحلي — ثابت عبر التوقيت الصيفي
+curl -X POST http://localhost:8899/scheduled-runs \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"Pre-open scan of NZX names","schedule":"30 23 * * 1-5","timezone":"Pacific/Auckland"}'
 
 # السرد / الإلغاء
 curl http://localhost:8899/scheduled-runs

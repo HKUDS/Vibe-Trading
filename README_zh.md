@@ -981,19 +981,24 @@ Settings 读取无副作用：`GET /settings/llm` 和 `GET /settings/data-source
 
 ### 定时研究（Scheduled research）
 
-让研究 prompt 或回测按固定周期重复运行。后台执行器**默认关闭**——启动服务时设置 `VIBE_TRADING_ENABLE_SCHEDULER=1` 才会开启：
+让研究 prompt 或回测按固定周期重复运行——既可以在 Web UI 的**定时任务**页面操作，也可以走 REST。后台执行器**默认关闭**——启动服务时设置 `VIBE_TRADING_ENABLE_SCHEDULER=1` 才会开启：
 
 ```bash
 VIBE_TRADING_ENABLE_SCHEDULER=1 vibe-trading serve --port 8899
 ```
 
-然后通过 REST 创建任务。`schedule` 可以是纯整数（间隔**毫秒**）或 5 段 cron 表达式（`分 时 日 月 周`）：
+然后通过 REST 创建任务。`schedule` 可以是纯整数（间隔**毫秒**）或 5 段 cron 表达式（`分 时 日 月 周`，每段支持 `*`、`*/n`、数字、逗号列表和 `1-5` 这样的范围）。cron 按任务可选的 `timezone`（IANA 时区名）的挂钟求值，夏令时切换后节奏保持不变——春季不存在的时间会被跳过，秋季重复的时间只在第一次出现时运行一次。不带 `timezone` 的任务保持原有 UTC 语义：
 
 ```bash
 # 每 6 小时（cron）
 curl -X POST http://localhost:8899/scheduled-runs \
   -H "Content-Type: application/json" \
   -d '{"prompt":"Scan CSI300 for momentum breakouts and backtest the top 5","schedule":"0 */6 * * *"}'
+
+# 工作日 23:30（奥克兰挂钟时间，夏令时不漂移）
+curl -X POST http://localhost:8899/scheduled-runs \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"Pre-open scan of NZX names","schedule":"30 23 * * 1-5","timezone":"Pacific/Auckland"}'
 
 # 列出 / 取消
 curl http://localhost:8899/scheduled-runs

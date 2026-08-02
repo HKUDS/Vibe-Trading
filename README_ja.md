@@ -954,19 +954,24 @@ Settings reads は side-effect free です。`GET /settings/llm` と `GET /setti
 
 ### Scheduled research（定期リサーチ）
 
-リサーチ prompt や backtest を繰り返しスケジュールで実行します。バックグラウンド executor は**既定でオフ**です。`VIBE_TRADING_ENABLE_SCHEDULER=1` を付けて server を起動すると有効になります:
+リサーチ prompt や backtest を繰り返しスケジュールで実行します。Web UI の**スケジュール**ページからも REST からも操作できます。バックグラウンド executor は**既定でオフ**です。`VIBE_TRADING_ENABLE_SCHEDULER=1` を付けて server を起動すると有効になります:
 
 ```bash
 VIBE_TRADING_ENABLE_SCHEDULER=1 vibe-trading serve --port 8899
 ```
 
-その後、REST でジョブを作成します。`schedule` は単なる整数（interval は**ミリ秒**）か、5 フィールドの cron 式（`分 時 日 月 曜日`）です:
+その後、REST でジョブを作成します。`schedule` は単なる整数（interval は**ミリ秒**）か、5 フィールドの cron 式（`分 時 日 月 曜日`。各フィールドは `*`、`*/n`、数値、カンマ区切りリスト、`1-5` のような範囲に対応）です。cron はジョブの任意の `timezone`（IANA キー）の壁時計で評価され、夏時間の切り替え後もリズムは変わりません——存在しない時刻（春の進み）はスキップされ、重複する時刻（秋の戻り）は最初の 1 回だけ実行されます。`timezone` のないジョブは従来どおり UTC で動作します:
 
 ```bash
 # 6 時間ごと（cron）
 curl -X POST http://localhost:8899/scheduled-runs \
   -H "Content-Type: application/json" \
   -d '{"prompt":"Scan CSI300 for momentum breakouts and backtest the top 5","schedule":"0 */6 * * *"}'
+
+# 平日 23:30（オークランドの壁時計、夏時間でもずれない）
+curl -X POST http://localhost:8899/scheduled-runs \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"Pre-open scan of NZX names","schedule":"30 23 * * 1-5","timezone":"Pacific/Auckland"}'
 
 # 一覧 / キャンセル
 curl http://localhost:8899/scheduled-runs
