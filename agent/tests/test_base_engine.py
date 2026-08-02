@@ -171,6 +171,19 @@ def test_rebalance_increases_then_reduces_same_direction_position():
     assert partial.pnl == 0.0
 
 
+def test_partial_reduction_allocates_nonzero_entry_and_exit_fees():
+    engine = _AdjustmentEngine(fee_rate=0.01)
+    _run_adjustments(engine, {"A": [0.50, 0.20]})
+
+    partial = next(t for t in engine.trades if t.exit_reason == "target_rebalance")
+    event = next(e for e in engine.adjustment_events if e["action"] == "partial_reduction")
+    remaining = engine.bar_positions[1]["A"]
+    allocated_entry_fee = event["before"].entry_commission - remaining.entry_commission
+    assert (allocated_entry_fee, event["trading_fee"]) == pytest.approx((3.01, 3.01))
+    assert (partial.commission, remaining.entry_commission) == pytest.approx((6.02, 1.99))
+    assert engine.bar_capitals[1] == pytest.approx(792.99)
+
+
 def test_rebalance_scale_in_uses_weighted_average_entry():
     engine = _AdjustmentEngine()
     _run_adjustments(
