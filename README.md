@@ -951,11 +951,14 @@ vibe-trading --swarm-run strategy_research_lab '{"market": "US", "goal": "RSI me
 
 # Dedicated Monte Carlo validation lab (large-batch path sims)
 vibe-trading --swarm-run monte_carlo_validation_lab '{"market": "US", "goal": "validate trend strategy path risk"}'
+
+# HFT / short-horizon risk desk (bar/tick-proxy; not co-lo)
+vibe-trading --swarm-run hft_short_horizon_desk '{"market": "US", "goal": "inventory mean-reversion with hard DD kill"}'
 ```
 
 ### Monte Carlo & enhanced backtests
 
-Large-batch path simulation (default **10_000** paths, batched/vectorized, up to **5_000_000**) with antithetic / **Sobol** / stratified QMC, optional `n_jobs` (process pool for block bootstrap), and `correlated_gbm` multi-asset portfolios — plus stress / walk-forward OOS / post-hoc + **signal / SignalEngine** parameter grids / multi-axis regimes / **regime-conditional IC** / PSR·DSR / **CSCV PBO** (exact or random subsample when `n_groups>16`):
+Large-batch path simulation (default **10_000** paths, batched/vectorized, up to **5_000_000**) with antithetic / **Sobol** / stratified QMC, optional `n_jobs` (process pool for block bootstrap), and `correlated_gbm` multi-asset portfolios — plus stress / walk-forward OOS / post-hoc + **signal / SignalEngine** parameter grids / multi-axis regimes / **regime-conditional IC** / PSR·DSR / **CSCV PBO** (exact or random subsample when `n_groups>16`) / **risk-adjusted ranking** / causal **`risk_overlay`**:
 
 ```bash
 # Runnable demo (synthetic equity; no broker keys required)
@@ -963,25 +966,35 @@ cd agent && python scripts/demo_monte_carlo.py
 cd agent && python scripts/demo_monte_carlo.py --n-paths 100000 --method gbm --antithetic --sampling sobol --n-jobs 4
 cd agent && python scripts/demo_monte_carlo.py --correlated
 
+# Risk overlay A/B on synthetic high-turnover paths (drawdown / ruin reduction)
+cd agent && python scripts/demo_risk_overlay_hft.py
+
 # Enable in a strategy config.json (post-backtest validation)
+# "risk_overlay": {
+#   "vol_target": 0.12, "max_gross_leverage": 1.0, "max_net_exposure": 0.4,
+#   "max_drawdown_kill": 0.10, "max_turnover": 0.3, "inventory_mean_reversion": 0.15
+# }
 # "validation": {
 #   "monte_carlo": {"n_simulations": 1000},
 #   "monte_carlo_paths": {"method": "gbm", "n_paths": 100000, "sampling": "sobol", "antithetic": true},
 #   "walk_forward_oos": {"n_windows": 5, "mode": "rolling"},
 #   "stress": {},
 #   "parameter_sensitivity": {},
-#   "signal_parameter_grid": {"strategy": "ma_crossover", "cost_bps": 5, "collect_trial_returns": true, "use_signal_engine": true},
+#   "signal_parameter_grid": {"strategy": "ma_crossover", "cost_bps": 5, "collect_trial_returns": true, "use_signal_engine": true, "risk_ranking": {"max_dd_limit": 0.15, "min_psr": 0.55}},
 #   "regime_conditioned": {"vol_window": 21, "include_trend": true, "export_regime_labels": true},
 #   "regime_conditional_ic": {"axis": "vol", "min_obs": 20},
-#   "risk_metrics": {"n_trials": 20, "n_bootstrap": 1000, "include_pbo": true, "pbo_n_groups": 8, "pbo_max_combinations": 12870}
+#   "risk_metrics": {"n_trials": 20, "n_bootstrap": 1000, "include_pbo": true, "pbo_n_groups": 8, "pbo_max_combinations": 12870},
+#   "risk_adjusted_ranking": {"objective": "sharpe_dd_penalty", "max_dd_limit": 0.15, "min_psr": 0.55, "max_cvar": 0.04}
 # }
 
 # Agent tool: monte_carlo(run_dir=..., n_paths=100000, sampling="sobol", antithetic=true)
-# Skills: monte-carlo-sim, enhanced-backtest
+# Skills: monte-carlo-sim, enhanced-backtest, hft-risk-alpha
+# Swarm: hft_short_horizon_desk
 ```
 
-Modules: `agent/backtest/monte_carlo.py`, `agent/backtest/enhanced_validation.py`, `agent/backtest/risk_metrics.py` (wired through `backtest.validation.run_validation`).
+Modules: `agent/backtest/monte_carlo.py`, `agent/backtest/enhanced_validation.py`, `agent/backtest/risk_metrics.py`, `agent/backtest/risk_overlay.py`, `agent/backtest/hft_costs.py`, `agent/backtest/hft_config_gate.py` (wired through `backtest.validation.run_validation` + engine pre-fill overlay + **live fill** HFT costs; runner auto-enforces risk-first defaults for `1s`/minute/HFT-tagged configs).
 
+**Limit:** true exchange co-lo / LOB HFT is not simulable here — overlays use bar/tick proxies (`partial_fill_rate`, `next_bar_open_slippage_bps`, `ohlc_stop`, `max_adv_participation`, trailing CVaR/vol budgets, spread+impact+adverse-selection on fills).
 ### Cross-Session Memory
 
 ```bash

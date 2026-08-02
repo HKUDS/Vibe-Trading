@@ -7,6 +7,7 @@ Implements:
   - Exact CSCV Probability of Backtest Overfitting (PBO) on per-trial return
     matrices — Bailey & López de Prado (2014)
   - Approximate PBO when only a vector of trial Sharpes is available
+  - Risk-adjusted trial ranking with max-DD / PSR / CVaR gates
 
 These are descriptive research diagnostics — not trading signals.
 """
@@ -409,6 +410,254 @@ def probability_of_backtest_overfitting(
         "note": (
             "Approximate PBO from trial Sharpe vector; supply trial_returns "
             "(T×N matrix) for exact CSCV via cscv_probability_of_backtest_overfitting."
+        ),
+    }
+
+
+    return out
+
+
+def expected_shortfall(
+    returns: np.ndarray,
+    *,
+    alpha: float = 0.95,
+) -> float:
+    """CVaR / ES on a return series (positive = loss magnitude)."""
+    r = np.asarray(returns, dtype=float)
+    r = r[np.isfinite(r)]
+    if len(r) < 5:
+        return float("nan")
+    if not (0.5 < float(alpha) < 1.0):
+        raise ValueError(f"alpha must be in (0.5, 1), got {alpha}")
+    losses = -r
+    cutoff = float(np.quantile(losses, float(alpha)))
+    tail = losses[losses >= cutoff]
+    if len(tail) == 0:
+        return cutoff
+    return float(np.mean(tail))
+
+
+def _sortino(returns: np.ndarray, bars_per_year: int = 252) -> float:
+    r = np.asarray(returns, dtype=float)
+    r = r[np.isfinite(r)]
+    if len(r) < 2:
+        return 0.0
+    downside = r[r < 0.0]
+    dd = float(np.std(downside, ddof=1)) if len(downside) > 1 else 0.0
+    return float(np.mean(r) / (dd + 1e-15) * math.sqrt(max(int(bars_per_year), 1)))
+
+
+def _calmar(returns: np.ndarray, bars_per_year: int = 252) -> float:
+    r = np.asarray(returns, dtype=float)
+    r = r[np.isfinite(r)]
+    if len(r) < 2:
+        return 0.0
+    equity = np.cumprod(1.0 + r)
+    peak = np.maximum.accumulate(equity)
+    dd = (equity - peak) / np.where(peak > 0, peak, 1.0)
+    mdd = float(np.min(dd))
+    ann = float(np.mean(r) * max(int(bars_per_year), 1))
+    return float(ann / (abs(mdd) + 1e-15))
+
+
+def _max_drawdown_from_returns(returns: np.ndarray) -> float:
+    r = np.asarray(returns, dtype=float)
+    r = r[np.isfinite(r)]
+    if len(r) < 2:
+        return 0.0
+    equity = np.cumprod(1.0 + r)
+    peak = np.maximum.accumulate(equity)
+    dd = (equity - peak) / np.where(peak > 0, peak, 1.0)
+    return float(np.min(dd))
+
+
+def score_trial_risk_adjusted(
+    returns: np.ndarray,
+    *,
+    bars_per_year: int = 252,
+    objective: str = "sharpe_dd_penalty",
+    max_dd_limit: float = 0.20,
+    min_psr: float = 0.5,
+    max_cvar: Optional[float] = None,
+    cvar_alpha: float = 0.95,
+    dd_penalty: float = 2.0,
+    n_trials: int = 1,
+) -> Dict[str, Any]:
+    """Score one trial with risk gates + risk-adjusted objective.
+
+    Objectives:
+      - ``sharpe`` — raw annualised Sharpe
+      - ``sortino`` — Sortino
+      - ``calmar`` — Calmar
+      - ``sharpe_dd_penalty`` — Sharpe − dd_penalty × |max_dd|  (default)
+      - ``psr`` — probabilistic Sharpe vs 0
+
+    Hard rejects (``accepted=False``) when:
+      - |max_dd| > max_dd_limit
+      - PSR < min_psr
+      - CVaR > max_cvar (when max_cvar set; CVaR is positive loss)
+    """
+    r = np.asarray(returns, dtype=float)
+    r = r[np.isfinite(r)]
+    if len(r) < 5:
+        return {"accepted": False, "reason": "insufficient_observations", "score": float("-inf")}
+
+    sharpe = observed_sharpe(r, bars_per_year)
+    moments = _sample_moments(r)
+    psr = probabilistic_sharpe_ratio(
+        sharpe,
+        int(moments["n"]),
+        skew=float(moments["skew"]),
+        kurtosis=float(moments["kurtosis"]),
+        bars_per_year=bars_per_year,
+    )
+    mdd = _max_drawdown_from_returns(r)
+    cvar = expected_shortfall(r, alpha=cvar_alpha)
+    sortino = _sortino(r, bars_per_year)
+    calmar = _calmar(r, bars_per_year)
+
+    reject_reasons: list[str] = []
+    if abs(mdd) > float(max_dd_limit) + 1e-12:
+        reject_reasons.append(f"max_dd={mdd:.4f} exceeds limit={max_dd_limit}")
+    psr_val = float(psr.get("psr", 0.0)) if "psr" in psr else 0.0
+    if psr_val < float(min_psr):
+        reject_reasons.append(f"psr={psr_val:.4f} below min_psr={min_psr}")
+    if max_cvar is not None and np.isfinite(cvar) and cvar > float(max_cvar):
+        reject_reasons.append(f"cvar={cvar:.4f} exceeds max_cvar={max_cvar}")
+
+    obj = (objective or "sharpe_dd_penalty").strip().lower().replace("-", "_")
+    # Reject return-only objectives — risk-first ranking must use a risk-aware score.
+    _return_only = {
+        "return",
+        "returns",
+        "total_return",
+        "raw_return",
+        "pnl",
+        "profit",
+        "cumret",
+        "cumulative_return",
+        "mean_return",
+        "expected_return",
+    }
+    if obj in _return_only:
+        return {
+            "accepted": False,
+            "reason": f"return_only_objective_rejected:{obj}",
+            "reject_reasons": [f"objective={obj} is return-only"],
+            "score": float("-inf"),
+            "objective": obj,
+        }
+
+    if obj == "sharpe":
+        score = sharpe
+    elif obj == "sortino":
+        score = sortino
+    elif obj == "calmar":
+        score = calmar
+    elif obj == "psr":
+        score = psr_val
+    else:
+        # Default / unknown → sharpe with drawdown penalty (never raw return).
+        obj = "sharpe_dd_penalty" if obj not in {"sharpe_dd_penalty"} else obj
+        score = sharpe - float(dd_penalty) * abs(mdd)
+
+    dsr = deflated_sharpe_ratio(
+        sharpe,
+        int(moments["n"]),
+        int(n_trials),
+        skew=float(moments["skew"]),
+        kurtosis=float(moments["kurtosis"]),
+        bars_per_year=bars_per_year,
+    )
+
+    return {
+        "accepted": len(reject_reasons) == 0,
+        "reject_reasons": reject_reasons,
+        "score": round(float(score), 6),
+        "objective": obj,
+        "sharpe": round(float(sharpe), 6),
+        "sortino": round(float(sortino), 6),
+        "calmar": round(float(calmar), 6),
+        "max_dd": round(float(mdd), 6),
+        "cvar": round(float(cvar), 6) if np.isfinite(cvar) else None,
+        "psr": round(psr_val, 6),
+        "dsr": dsr.get("dsr"),
+        "n_obs": int(moments["n"]),
+    }
+
+
+def rank_trials_risk_adjusted(
+    trial_returns: Union[np.ndarray, Sequence[Sequence[float]], pd.DataFrame],
+    *,
+    bars_per_year: int = 252,
+    objective: str = "sharpe_dd_penalty",
+    max_dd_limit: float = 0.20,
+    min_psr: float = 0.5,
+    max_cvar: Optional[float] = None,
+    cvar_alpha: float = 0.95,
+    dd_penalty: float = 2.0,
+    labels: Optional[Sequence[Any]] = None,
+) -> Dict[str, Any]:
+    """Rank / reject a (T, N) trial return matrix with risk-adjusted scores.
+
+    Prefer this over raw Sharpe max when selecting alphas under risk budgets.
+    """
+    if isinstance(trial_returns, pd.DataFrame):
+        mat = trial_returns.to_numpy(dtype=float)
+        col_labels: list[Any] = list(labels) if labels is not None else list(trial_returns.columns)
+    else:
+        mat = np.asarray(trial_returns, dtype=float)
+        col_labels = list(labels) if labels is not None else list(range(mat.shape[1] if mat.ndim == 2 else 0))
+
+    if mat.ndim != 2:
+        return {"error": f"trial_returns must be 2-D (T, N), got shape {mat.shape}"}
+    t_obs, n_trials = mat.shape
+    if n_trials < 1:
+        return {"error": "need at least 1 trial"}
+
+    scored: list[Dict[str, Any]] = []
+    for j in range(n_trials):
+        row = score_trial_risk_adjusted(
+            mat[:, j],
+            bars_per_year=bars_per_year,
+            objective=objective,
+            max_dd_limit=max_dd_limit,
+            min_psr=min_psr,
+            max_cvar=max_cvar,
+            cvar_alpha=cvar_alpha,
+            dd_penalty=dd_penalty,
+            n_trials=n_trials,
+        )
+        row["trial_index"] = int(j)
+        row["label"] = col_labels[j] if j < len(col_labels) else j
+        scored.append(row)
+
+    accepted = [s for s in scored if s["accepted"]]
+    rejected = [s for s in scored if not s["accepted"]]
+    ranking = sorted(accepted, key=lambda s: float(s["score"]), reverse=True)
+    best = ranking[0] if ranking else None
+
+    return {
+        "n_trials": int(n_trials),
+        "n_obs": int(t_obs),
+        "n_accepted": len(accepted),
+        "n_rejected": len(rejected),
+        "objective": objective,
+        "gates": {
+            "max_dd_limit": float(max_dd_limit),
+            "min_psr": float(min_psr),
+            "max_cvar": float(max_cvar) if max_cvar is not None else None,
+            "cvar_alpha": float(cvar_alpha),
+            "dd_penalty": float(dd_penalty),
+        },
+        "best": best,
+        "ranking": ranking,
+        "rejected": rejected,
+        "all_scores": scored,
+        "note": (
+            "Risk-first ranking: reject high-DD / low-PSR / high-CVaR trials, "
+            "then sort survivors by the chosen risk-adjusted objective "
+            "(default Sharpe with drawdown penalty)."
         ),
     }
 

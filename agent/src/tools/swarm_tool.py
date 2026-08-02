@@ -392,6 +392,21 @@ _PRESET_KEYWORDS: list[tuple[str, list[str], float]] = [
         ],
         1.0,
     ),
+    (
+        "hft_short_horizon_desk",
+        [
+            r"\bHFT\b",
+            r"high[- ]frequency",
+            r"short[- ]horizon",
+            r"microstructure\s+desk",
+            r"inventory\s+risk",
+            r"latency[- ]aware",
+            "高频",
+            "短周期",
+            "做市",
+        ],
+        1.0,
+    ),
 ]
 
 # Market labels used in YAML templates (English, compatible with {market} placeholders).

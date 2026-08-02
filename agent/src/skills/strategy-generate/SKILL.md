@@ -36,7 +36,7 @@ Before writing code, think through these 5 questions:
 
 1. **Data requirements**: what fields are needed (basic OHLCV only, daily valuation fields such as `pe/pb/roe`, or statement fields such as `income_total_revenue` / `fina_indicator_roe`?), data frequency (daily), and market (which determines the data source)
 2. **Signal logic**: what are the entry conditions? What are the exit conditions? Direction (long / short / long-short)? Are there filters (volume, trend confirmation, and so on)?
-3. **Position management**: equal-weight allocation or scaling in/out? Risk control (stop-loss, maximum position)? In portfolio strategies, once top N names are selected, each weight = 1/N
+3. **Position management**: equal-weight allocation or scaling in/out? **Risk budgets first** — max DD kill-switch (+ hysteresis), vol/CVaR budgets, leverage, concentration, turnover, inventory, partial-fill / next-bar-open proxies (see `risk_overlay` / skill `hft-risk-alpha`). For short-horizon / HFT-proxy styles these are **mandatory**: emit active `risk_overlay` + `validation.risk_adjusted_ranking`, plus `hft_costs` on minute bars. Reject return-only objectives (`pnl` / `total_return`). Gate: `backtest.hft_config_gate`.
 4. **Backtest parameters**: time range, initial capital (default 1,000,000), commission (default 0.1%)
 5. **Validation checklist**: signal consistency (no NaN signals), position check (normalized to prevent leverage), and completeness of generated artifacts
 
@@ -124,6 +124,7 @@ Self-check after writing `signal_engine.py`:
   "optimizer": null,
   "optimizer_params": {},
   "engine": "daily",
+  "risk_overlay": null,
   "validation": null
 }
 ```
@@ -141,6 +142,8 @@ Self-check after writing `signal_engine.py`:
 - `engine`: backtest engine, default `"daily"`. For options strategies, set `"options"` (requires `OptionsSignalEngine`)
 - `initial_cash`: default 1,000,000
 - `commission`: default 0.1%
+- `risk_overlay`: optional causal risk controls applied after signals/optimizer and before fills (vol target, leverage/net/name caps, turnover throttle, DD kill-switch + hysteresis, stop-loss / `ohlc_stop`, inventory mean-reversion, partial fills, next-bar-open slippage haircut, per-name vol / portfolio CVaR budgets). See skill `hft-risk-alpha`. Off by default; **required** for short-horizon / HFT-proxy configs (runner auto-injects via `hft_config_gate.enforce_risk_first_config`).
+- `hft_costs`: spread + impact + adverse-selection applied on **live engine fills** (`backtest.hft_costs`); optional `participation_cap` / `max_adv_participation`. Auto-injected for `1s`/minute/HFT-tagged configs.
 - `validation`: optional statistical validation after backtest completes. Omit to skip. Example:
   ```json
   "validation": {
@@ -151,9 +154,20 @@ Self-check after writing `signal_engine.py`:
     "walk_forward_oos": {"n_windows": 5, "train_ratio": 0.7, "mode": "rolling"},
     "stress": {"seed": 42},
     "parameter_sensitivity": {},
-    "signal_parameter_grid": {"strategy": "ma_crossover", "cost_bps": 5},
+    "signal_parameter_grid": {
+      "strategy": "ma_crossover",
+      "cost_bps": 5,
+      "collect_trial_returns": true,
+      "risk_ranking": {"objective": "sharpe_dd_penalty", "max_dd_limit": 0.15, "min_psr": 0.55}
+    },
     "regime_conditioned": {"vol_window": 21, "high_vol_percentile": 70, "include_trend": true},
-    "risk_metrics": {"n_trials": 1, "n_bootstrap": 1000}
+    "risk_metrics": {"n_trials": 1, "n_bootstrap": 1000},
+    "risk_adjusted_ranking": {
+      "objective": "sharpe_dd_penalty",
+      "max_dd_limit": 0.15,
+      "min_psr": 0.55,
+      "max_cvar": 0.04
+    }
   }
   ```
   - `monte_carlo`: permutation test — shuffles trade order to compute p-value (is Sharpe significantly better than random?)
@@ -162,9 +176,11 @@ Self-check after writing `signal_engine.py`:
   - `walk_forward`: splits equity curve into N windows, checks performance consistency
   - `walk_forward_oos`: rolling/expanding IS vs OOS folds with Sharpe degradation
   - `stress` / `parameter_sensitivity` / `signal_parameter_grid` / `regime_conditioned` / `risk_metrics`: enhanced robustness suite (`enhanced-backtest` skill)
+  - `risk_adjusted_ranking`: reject high-DD / low-PSR / high-CVaR trials; rank survivors by Sharpe−DD penalty (or Sortino/Calmar/PSR)
   - Each key is optional — include only the validations you want
   - Can also run standalone on past results: `python -m backtest.validation <run_dir>`
   - Path Monte Carlo tool: `monte_carlo(run_dir=...)` or `python scripts/demo_monte_carlo.py`
+  - Risk overlay A/B demo: `python scripts/demo_risk_overlay_hft.py`
 
 ## Review Criteria
 

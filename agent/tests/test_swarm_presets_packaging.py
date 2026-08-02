@@ -19,7 +19,7 @@ from src.swarm.presets import PRESETS_DIR, list_presets, load_preset
 
 # Lock to the canonical roster shipped today. Bump intentionally if a preset
 # is added or removed so a release that silently drops files is caught here.
-EXPECTED_PRESET_COUNT = 35
+EXPECTED_PRESET_COUNT = 36
 
 
 def test_presets_dir_lives_inside_swarm_package() -> None:

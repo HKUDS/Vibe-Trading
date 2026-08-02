@@ -908,6 +908,26 @@ def main(run_dir: Path) -> None:
         sys.exit(1)
 
     config = raw_config
+    # Short-horizon / HFT-tagged: inject risk-first defaults and fail closed
+    # before data fetch so return-only configs never run.
+    try:
+        from backtest.hft_config_gate import (
+            enforce_risk_first_config,
+            is_short_horizon_config,
+        )
+
+        if is_short_horizon_config(config):
+            config = enforce_risk_first_config(config, inject=True)
+            print(json.dumps({
+                "risk_first_enforced": True,
+                "interval": config.get("interval"),
+                "has_risk_overlay": bool(config.get("risk_overlay")),
+                "has_hft_costs": bool(config.get("hft_costs")),
+            }))
+    except ValueError as exc:
+        print(json.dumps({"error": f"risk-first config rejected: {exc}"}))
+        sys.exit(1)
+
     source = config.get("source", "tushare")
     codes = config.get("codes", [])
 

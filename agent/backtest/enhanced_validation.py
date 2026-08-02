@@ -107,6 +107,19 @@ _DEFAULT_STRESS: List[Dict[str, Any]] = [
     {"name": "vol_spike_2x", "vol_multiplier": 2.0},
     {"name": "vol_spike_3x", "vol_multiplier": 3.0},
     {"name": "liquidity_crunch", "shock_return": -0.08, "vol_multiplier": 1.5, "spread_bars": 3},
+    # HFT / short-horizon bar-proxy stresses (not co-lo latency simulation)
+    {
+        "name": "adverse_selection_burst",
+        "shock_return": -0.03,
+        "vol_multiplier": 1.8,
+        "spread_bars": 2,
+        "note": "Proxy for informed-flow toxicity: short sharp adverse move + vol",
+    },
+    {
+        "name": "latency_slippage_tax",
+        "cost_drag_bps": 25.0,
+        "note": "Proxy for delayed fills: extra cost drag on every bar return",
+    },
 ]
 
 
@@ -123,6 +136,7 @@ def stress_scenarios(
       - spread_bars: bars over which the shock is distributed (default 1)
       - vol_multiplier: scale residual returns around their mean
       - start_frac: where in [0,1] to place the shock (default mid-sample)
+      - cost_drag_bps: subtract a constant per-bar cost (latency / slippage proxy)
     """
     if len(equity_curve) < 5:
         return {"error": "need at least 5 equity observations"}
@@ -162,6 +176,11 @@ def stress_scenarios(
             noise = float(raw["add_noise"])
             shocked = shocked + rng.normal(0.0, abs(noise), size=len(shocked))
 
+        # Latency / adverse-selection cost tax (bps per bar on returns).
+        cost_drag_bps = raw.get("cost_drag_bps")
+        if cost_drag_bps is not None:
+            shocked = shocked - abs(float(cost_drag_bps)) / 10_000.0
+
         start_eq = float(equity_curve.iloc[0])
         path = start_eq * np.cumprod(1.0 + shocked)
         idx = equity_curve.index[1 : len(path) + 1]
@@ -172,6 +191,7 @@ def stress_scenarios(
                 "name": name,
                 "shock_return": raw.get("shock_return"),
                 "vol_multiplier": vol_mult,
+                "cost_drag_bps": cost_drag_bps,
                 "metrics": metrics,
                 "delta_return": round(metrics["return"] - base["return"], 6),
                 "delta_sharpe": round(metrics["sharpe"] - base["sharpe"], 4),
@@ -1039,6 +1059,7 @@ def _score_grid_cells(
     cost_bps: float,
     trial_return_cols: Optional[List[np.ndarray]] = None,
     pbo_n_groups: int = 8,
+    risk_ranking: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     if not cells:
         return {"error": "no grid cells evaluated"}
@@ -1095,6 +1116,51 @@ def _score_grid_cells(
         except Exception as exc:  # pragma: no cover — defensive
             out["cscv_pbo"] = {"error": str(exc)}
 
+        # Risk-adjusted ranking / hard gates (prefer over raw Sharpe max).
+        try:
+            from backtest.risk_metrics import rank_trials_risk_adjusted
+
+            rk_cfg = risk_ranking if isinstance(risk_ranking, dict) else {}
+            labels = [c.get("params", i) for i, c in enumerate(cells)]
+            ranking = rank_trials_risk_adjusted(
+                mat,
+                bars_per_year=252,
+                objective=str(rk_cfg.get("objective", "sharpe_dd_penalty")),
+                max_dd_limit=float(rk_cfg.get("max_dd_limit", 0.20)),
+                min_psr=float(rk_cfg.get("min_psr", 0.5)),
+                max_cvar=(
+                    float(rk_cfg["max_cvar"])
+                    if rk_cfg.get("max_cvar") is not None
+                    else None
+                ),
+                cvar_alpha=float(rk_cfg.get("cvar_alpha", 0.95)),
+                dd_penalty=float(rk_cfg.get("dd_penalty", 2.0)),
+                labels=labels,
+            )
+            out["risk_adjusted_ranking"] = {
+                k: ranking[k]
+                for k in (
+                    "n_trials",
+                    "n_accepted",
+                    "n_rejected",
+                    "objective",
+                    "gates",
+                    "best",
+                    "ranking",
+                    "rejected",
+                    "note",
+                )
+                if k in ranking
+            }
+            # Prefer risk-gated best when any trial survives.
+            if ranking.get("best") is not None:
+                best_idx = int(ranking["best"]["trial_index"])
+                if 0 <= best_idx < len(cells):
+                    out["best_risk_adjusted"] = cells[best_idx]
+                    out["best_risk_adjusted_score"] = ranking["best"]
+        except Exception as exc:  # pragma: no cover — defensive
+            out["risk_adjusted_ranking"] = {"error": str(exc)}
+
     return out
 
 
@@ -1110,6 +1176,7 @@ def signal_parameter_grid(
     max_combinations: int = 500,
     collect_trial_returns: bool = False,
     pbo_n_groups: int = 8,
+    risk_ranking: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Re-run a signal function across a parameter grid and score each cell.
 
@@ -1123,7 +1190,7 @@ def signal_parameter_grid(
     ``vol_target_momentum``. Pass ``signal_fn`` to override.
 
     When ``collect_trial_returns`` is True, attaches a ``(T, N)`` trial return
-    matrix and exact CSCV PBO (``cscv_pbo``) for overfitting diagnostics.
+    matrix, CSCV PBO, and risk-adjusted ranking (max-DD / PSR / CVaR gates).
     """
     if not isinstance(prices, pd.Series) or len(prices) < 10:
         return {"error": "need a price Series with at least 10 observations"}
@@ -1204,6 +1271,7 @@ def signal_parameter_grid(
         cost_bps=float(cost_bps),
         trial_return_cols=trial_cols if collect_trial_returns else None,
         pbo_n_groups=int(pbo_n_groups),
+        risk_ranking=risk_ranking,
     )
 
 
@@ -1350,6 +1418,7 @@ def signal_engine_param_grid(
     max_combinations: int = 200,
     collect_trial_returns: bool = True,
     pbo_n_groups: int = 8,
+    risk_ranking: Optional[Dict[str, Any]] = None,
     run_dir: Optional[Union[str, Path]] = None,
     allow_roots: Optional[Sequence[Union[str, Path]]] = None,
 ) -> Dict[str, Any]:
@@ -1471,6 +1540,7 @@ def signal_engine_param_grid(
         cost_bps=float(cost_bps),
         trial_return_cols=trial_cols if collect_trial_returns else None,
         pbo_n_groups=int(pbo_n_groups),
+        risk_ranking=risk_ranking,
     )
     out["interface"] = "SignalEngine.generate"
     out["symbol"] = symbol
@@ -1581,6 +1651,7 @@ def run_enhanced_validation(
                 initial_capital=float(g_cfg.get("initial_capital", float(equity_curve.iloc[0]))),
                 collect_trial_returns=bool(g_cfg.get("collect_trial_returns", True)),
                 pbo_n_groups=int(g_cfg.get("pbo_n_groups", 8)),
+                risk_ranking=g_cfg.get("risk_ranking"),
                 run_dir=g_cfg.get("run_dir"),
                 allow_roots=g_cfg.get("allow_roots"),
             )
@@ -1594,6 +1665,7 @@ def run_enhanced_validation(
                 initial_capital=float(g_cfg.get("initial_capital", float(equity_curve.iloc[0]))),
                 collect_trial_returns=bool(g_cfg.get("collect_trial_returns", False)),
                 pbo_n_groups=int(g_cfg.get("pbo_n_groups", 8)),
+                risk_ranking=g_cfg.get("risk_ranking"),
             )
 
     if "regime_conditional_ic" in config:

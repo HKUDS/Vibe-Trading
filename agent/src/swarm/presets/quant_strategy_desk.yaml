@@ -94,14 +94,16 @@ agents:
       3. **Tail risk** — VaR/CVaR estimates; behavior in extreme markets
       4. **Overfitting checks** — Prefer cscv_pbo from trial_returns + PSR/DSR (n_trials);
          monte_carlo_paths with sampling=sobol when sizing capital
-      5. **Risk recommendations** — Position sizing, stops, risk-control improvements
+      5. **Risk recommendations** — Position sizing, stops, risk-control improvements;
+         prefer config.risk_overlay (vol target / DD kill / inventory caps) for short-horizon books
 
       Use load_skill for volatility methods.
-      Prefer config.validation.risk_metrics (include_pbo=true) + monte_carlo +
-      enhanced-backtest when a backtest run_dir is available.
+      Prefer config.validation.risk_metrics (include_pbo=true) + risk_adjusted_ranking +
+      monte_carlo + enhanced-backtest when a backtest run_dir is available.
       Ask for n_trials when reporting Deflated Sharpe.
+      For HFT / short-horizon goals, also load_skill("hft-risk-alpha").
     tools: [bash, read_file, write_file, load_skill, monte_carlo]
-    skills: [volatility, monte-carlo-sim, enhanced-backtest, risk-analysis]
+    skills: [volatility, monte-carlo-sim, enhanced-backtest, risk-analysis, hft-risk-alpha]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1

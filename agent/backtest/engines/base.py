@@ -447,6 +447,22 @@ class BaseEngine(ABC):
             Slipped price.
         """
 
+    def _execution_price(self, price: float, direction: int) -> float:
+        """Market slippage plus optional HFT spread/adverse-selection haircut.
+
+        When ``config.hft_costs`` is active, fill prices are worsened by
+        ``spread_bps + adverse_selection_bps`` on top of the engine's native
+        slippage. Nonlinear impact is charged separately as equity drag in
+        ``_execute_bars`` (bar proxy — not LOB).
+        """
+        slipped = self.apply_slippage(price, direction)
+        model = getattr(self, "_hft_cost_model", None)
+        if model is None:
+            return slipped
+        from backtest.hft_costs import apply_hft_fill_slippage
+
+        return apply_hft_fill_slippage(slipped, direction, model=model)
+
     def historical_base_price(self, symbol: str, bar: pd.Series) -> Optional[float]:
         """Return a reference price that is known before this bar's fill.
 
@@ -516,7 +532,7 @@ class BaseEngine(ABC):
         price = float(raw)
         if price <= 0 and not self.allow_nonpositive_prices:
             return None
-        return self.apply_slippage(price, direction)
+        return self._execution_price(price, direction)
 
     def limit_band(
         self, symbol: str, bar: pd.Series, limit: float
@@ -633,6 +649,30 @@ class BaseEngine(ABC):
         Returns:
             Metrics dictionary.
         """
+        # Short-horizon / HFT-tagged configs: inject risk-first defaults and
+        # fail closed on return-only objectives (bar/tick proxy — not co-lo).
+        # Runner may already have enforced; skip duplicate inject/assert.
+        try:
+            from backtest.hft_config_gate import (
+                enforce_risk_first_config,
+                is_short_horizon_config,
+            )
+
+            if is_short_horizon_config(config) and not config.get("_risk_first_enforced"):
+                config = enforce_risk_first_config(config, inject=True)
+                self.config = config
+                print(json.dumps({
+                    "risk_first_enforced": True,
+                    "interval": config.get("interval"),
+                    "has_risk_overlay": bool(config.get("risk_overlay")),
+                    "has_hft_costs": bool(config.get("hft_costs")),
+                }))
+            elif config.get("_risk_first_enforced"):
+                self.config = config
+        except ValueError as exc:
+            print(json.dumps({"error": f"risk-first config rejected: {exc}"}))
+            sys.exit(1)
+
         codes = config.get("codes", [])
         interval = config.get("interval", "1D")
         extra_fields = config.get("extra_fields") or None
@@ -680,6 +720,121 @@ class BaseEngine(ABC):
 
         # Sync codes after _align may have dropped all-NaN symbols
         valid_codes = [c for c in valid_codes if c in target_pos.columns]
+
+        # 3b. Optional causal risk overlay (vol target / caps / kill-switch)
+        risk_overlay_diag: Optional[Dict[str, Any]] = None
+        try:
+            from backtest.risk_overlay import apply_risk_overlay, load_risk_overlay
+
+            overlay_cfg = load_risk_overlay(config)
+            if overlay_cfg is not None:
+                # Optional OHLC frames for next-bar-open slippage + OHLC stops.
+                open_df = None
+                high_df = None
+                low_df = None
+                try:
+                    open_cols: Dict[str, pd.Series] = {}
+                    high_cols: Dict[str, pd.Series] = {}
+                    low_cols: Dict[str, pd.Series] = {}
+                    for code in valid_codes:
+                        frame = data_map.get(code)
+                        if frame is None:
+                            continue
+                        if "open" in frame.columns:
+                            open_cols[code] = frame["open"].reindex(close_df.index)
+                        if "high" in frame.columns:
+                            high_cols[code] = frame["high"].reindex(close_df.index)
+                        if "low" in frame.columns:
+                            low_cols[code] = frame["low"].reindex(close_df.index)
+                    if open_cols:
+                        open_df = pd.DataFrame(open_cols)
+                    if high_cols:
+                        high_df = pd.DataFrame(high_cols)
+                    if low_cols:
+                        low_df = pd.DataFrame(low_cols)
+                except Exception:
+                    open_df = None
+                    high_df = None
+                    low_df = None
+                target_pos, risk_overlay_diag = apply_risk_overlay(
+                    target_pos,
+                    ret_df[valid_codes] if set(valid_codes) <= set(ret_df.columns) else ret_df,
+                    config=overlay_cfg,
+                    close=close_df,
+                    open_=open_df,
+                    high=high_df,
+                    low=low_df,
+                )
+                print(json.dumps({"risk_overlay": {
+                    k: risk_overlay_diag[k]
+                    for k in (
+                        "applied",
+                        "kill_events",
+                        "kill_rearms",
+                        "stop_events",
+                        "ohlc_stop_events",
+                        "turnover_clips",
+                        "partial_fill_bars",
+                        "cvar_scales",
+                        "final_gross_mean",
+                        "final_net_mean",
+                    )
+                    if k in risk_overlay_diag
+                }}))
+        except ValueError as exc:
+            print(json.dumps({"error": f"risk_overlay config invalid: {exc}"}))
+            sys.exit(1)
+
+        # 3c. HFT cost model: participation/ADV clips + live fill haircuts
+        hft_cost_diag: Optional[Dict[str, Any]] = None
+        self._hft_cost_model = None
+        try:
+            from backtest.hft_costs import (
+                load_hft_cost_model,
+                prepare_positions_for_hft_costs,
+            )
+
+            hft_model = load_hft_cost_model(config)
+            if hft_model is not None:
+                dollar_vol = None
+                try:
+                    dv_cols: Dict[str, pd.Series] = {}
+                    for code in valid_codes:
+                        frame = data_map.get(code)
+                        if frame is None or "volume" not in frame.columns:
+                            continue
+                        px = close_df[code] if code in close_df.columns else None
+                        if px is None:
+                            continue
+                        vol = frame["volume"].reindex(close_df.index).astype(float)
+                        dv_cols[code] = (px.astype(float) * vol).fillna(0.0)
+                    if dv_cols:
+                        dollar_vol = pd.DataFrame(dv_cols)
+                except Exception:
+                    dollar_vol = None
+                target_pos, hft_cost_diag = prepare_positions_for_hft_costs(
+                    target_pos,
+                    model=hft_model,
+                    dollar_volume=dollar_vol,
+                    equity=float(self.initial_capital),
+                )
+                self._hft_cost_model = hft_model
+                print(json.dumps({
+                    "hft_costs": {
+                        "enabled": True,
+                        "fill_slippage_bps": hft_model.fill_slippage_bps(),
+                        "participation_clips": (hft_cost_diag or {}).get(
+                            "participation_clips"
+                        ),
+                        "adv_participation_clips": (hft_cost_diag or {}).get(
+                            "adv_participation_clips"
+                        ),
+                        "fidelity": "bar_proxy — no LOB / co-lo",
+                    }
+                }))
+        except ValueError as exc:
+            print(json.dumps({"error": f"hft_costs config invalid: {exc}"}))
+            sys.exit(1)
 
         # 4. Bar-by-bar execution
         self._execute_bars(dates, data_map, close_df, target_pos, valid_codes)
@@ -733,6 +888,42 @@ class BaseEngine(ABC):
         m.update(benchmark_metadata)
         m["by_symbol"] = by_symbol_stats(self.trades)
         m["by_exit_reason"] = by_exit_reason_stats(self.trades)
+        if risk_overlay_diag:
+            m["risk_overlay_kill_events"] = risk_overlay_diag.get("kill_events")
+            m["risk_overlay_stop_events"] = risk_overlay_diag.get("stop_events")
+            m["risk_overlay_ohlc_stop_events"] = risk_overlay_diag.get("ohlc_stop_events")
+            m["risk_overlay_turnover_clips"] = risk_overlay_diag.get("turnover_clips")
+            m["risk_overlay_final_gross_mean"] = risk_overlay_diag.get("final_gross_mean")
+            # Persist full diagnostics alongside other portfolio-studio artifacts.
+            try:
+                (run_dir / "artifacts" / "risk_overlay.json").write_text(
+                    json.dumps(risk_overlay_diag, indent=2, default=str),
+                    encoding="utf-8",
+                )
+            except OSError:
+                pass
+
+        impact_diag = getattr(self, "_hft_impact_diag", None)
+        if hft_cost_diag or impact_diag:
+            hft_artifact = {
+                "pre_fill": hft_cost_diag or {},
+                "live_fills": impact_diag or {},
+            }
+            m["hft_costs_enabled"] = True
+            m["hft_fill_slippage_bps"] = (impact_diag or {}).get("fill_slippage_bps")
+            m["hft_impact_charged"] = (impact_diag or {}).get("impact_charged")
+            m["hft_participation_clips"] = (hft_cost_diag or {}).get("participation_clips")
+            m["hft_adv_participation_clips"] = (hft_cost_diag or {}).get(
+                "adv_participation_clips"
+            )
+            try:
+                (run_dir / "artifacts" / "hft_costs.json").write_text(
+                    json.dumps(hft_artifact, indent=2, default=str),
+                    encoding="utf-8",
+                )
+            except OSError:
+                pass
+            self._hft_impact_diag = None
 
         # Portfolio Studio: per-rebalance weight-drift notes from the target
         # positions. Optimizer-agnostic, so they land for the baseline too.
@@ -835,6 +1026,11 @@ class BaseEngine(ABC):
         self._close_arr = _close_arr
         self._code_to_col = _code_to_col
 
+        hft_model = getattr(self, "_hft_cost_model", None)
+        prev_weights = np.zeros(len(codes), dtype=float)
+        hft_impact_charged = 0.0
+        hft_impact_bars = 0
+
         for i, ts in enumerate(dates):
             self._bar_idx = i
 
@@ -924,6 +1120,26 @@ class BaseEngine(ABC):
             for order in planned:
                 self._execute_open_order(order, ts)
 
+            # c2. Nonlinear HFT impact drag (spread/AS already in fill prices).
+            if hft_model is not None and not stop_run:
+                cur = np.array(
+                    [
+                        float(target_weights.get(c) or 0.0)
+                        if target_weights.get(c) is not None
+                        else prev_weights[j]
+                        for j, c in enumerate(codes)
+                    ],
+                    dtype=float,
+                )
+                turnover = float(np.sum(np.abs(cur - prev_weights)))
+                impact_frac = hft_model.impact_cost_fraction(turnover)
+                if impact_frac > 0 and equity > 0:
+                    drag = impact_frac * float(equity)
+                    self.capital = max(0.0, self.capital - drag)
+                    hft_impact_charged += drag
+                    hft_impact_bars += 1
+                prev_weights = cur
+
             # d. Apply post-execution hooks after all normal market fills.
             if not stop_run:
                 stop_run = self.after_rebalance_bar(ts, data_map, codes)
@@ -973,7 +1189,7 @@ class BaseEngine(ABC):
                     _arr=_close_arr, _row=_last_row, _col=_code_to_col.get(c),
                 )
                 self._active_symbol = c
-                exit_price = self.apply_slippage(mark_price, -pos.direction)
+                exit_price = self._execution_price(mark_price, -pos.direction)
                 self._close_position(c, exit_price, last_ts, "end_of_backtest")
 
             # The final snapshot feeds metrics and artifacts.  Replace its
@@ -991,6 +1207,17 @@ class BaseEngine(ABC):
         # Clean up temporary instance attributes
         self._close_arr = None
         self._code_to_col = None
+        if hft_model is not None:
+            self._hft_impact_diag = {
+                "impact_charged": round(float(hft_impact_charged), 6),
+                "impact_bars": int(hft_impact_bars),
+                "fill_slippage_bps": hft_model.fill_slippage_bps(),
+                "model": hft_model.to_dict(),
+                "fidelity": "bar_proxy — fill haircut + impact drag; no LOB",
+            }
+        else:
+            self._hft_impact_diag = None
+        self._hft_cost_model = None
 
     def _calc_open_equity(
         self,
@@ -1107,7 +1334,7 @@ class BaseEngine(ABC):
             if need_close:
                 if self.can_execute(symbol, 0, bar):
                     open_price = self.execution_open(bar)
-                    price = self.apply_slippage(open_price, -current_pos.direction)
+                    price = self._execution_price(open_price, -current_pos.direction)
                     self._close_position(symbol, price, ts, "signal")
                 else:
                     return  # blocked (e.g. limit-down can't sell)
@@ -1139,7 +1366,7 @@ class BaseEngine(ABC):
         # prices, in which case abs()-based sizing/margin below handle them.
         if open_price == 0 or (open_price < 0 and not self.allow_nonpositive_prices):
             return None
-        price = self.apply_slippage(open_price, direction)
+        price = self._execution_price(open_price, direction)
         leverage = self._leverage_for_symbol(symbol)
         target_notional = abs(target_weight) * equity * leverage
         size = self.round_size(

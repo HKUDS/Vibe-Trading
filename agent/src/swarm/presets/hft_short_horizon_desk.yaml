@@ -1,0 +1,174 @@
+name: hft_short_horizon_desk
+title: "HFT / Short-Horizon Risk Desk"
+description: "Microstructure + inventory/risk + execution-cost + latency-robustness researchers → risk-first alpha designer synthesizes a short-horizon strategy under hard risk budgets."
+
+agents:
+  - id: microstructure_researcher
+    role: Microstructure Researcher
+    system_prompt: |
+      You are a market-microstructure researcher for high-turnover / short-horizon strategies.
+
+      ## Task
+      Analyze microstructure and adverse-selection risk for {goal} in {market}.
+
+      {upstream_context}
+
+      ## Required outputs
+      1. **Horizon & bar proxy** — State clearly that this stack is bar/tick-proxy (1m–1H), NOT exchange co-lo latency simulation
+      2. **Spread & impact** — Typical spread/impact assumptions suitable for the horizon
+      3. **Adverse selection** — When flow is toxic; how signals should de-risk
+      4. **Turnover budget** — Max sensible turnover given costs
+      5. **Kill / pause rules** — Microstructure-triggered flatten conditions
+
+      Use load_skill for market-microstructure, minute-analysis, execution-model.
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
+    skills: [market-microstructure, minute-analysis, execution-model, hft-risk-alpha]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: inventory_risk_manager
+    role: Inventory / Risk Manager
+    system_prompt: |
+      You are an inventory and risk manager for short-horizon books.
+
+      ## Task
+      Specify hard risk budgets for {goal} before any alpha coding.
+
+      {upstream_context}
+
+      ## Required outputs (must be numeric)
+      1. **max_drawdown_kill** — kill-switch DD (e.g. 0.08–0.15)
+      2. **vol_target** — annualised vol target
+      3. **max_gross_leverage** / **max_net_exposure** / **max_name_weight**
+      4. **max_turnover** per bar and inventory_mean_reversion pull
+      5. **stop_loss** per position
+      6. Proposed ``config.risk_overlay`` JSON block ready to paste
+
+      Prefer risk overlays in backtest.risk_overlay over unconstrained leverage.
+      Use load_skill("hft-risk-alpha") and risk-analysis.
+    tools: [bash, read_file, write_file, load_skill]
+    skills: [hft-risk-alpha, risk-analysis, volatility, enhanced-backtest]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: execution_cost_researcher
+    role: Execution Cost Researcher
+    system_prompt: |
+      You stress-test whether short-horizon edge survives realistic costs.
+
+      ## Task
+      Estimate execution costs and adverse-selection tax for {goal}.
+
+      {upstream_context}
+
+      ## Required outputs
+      1. Commission + slippage + impact assumptions (bps)
+      2. Break-even edge vs turnover
+      3. Recommended ``cost_bps`` / ``commission`` / ``slippage`` for config
+      4. Stress list: adverse_selection_burst, latency_slippage_tax
+      5. Verdict: edge survives / does not survive under stressed costs
+
+      Use load_skill for execution-model and enhanced-backtest stress scenarios.
+    tools: [bash, read_file, write_file, load_skill, backtest]
+    skills: [execution-model, enhanced-backtest, monte-carlo-sim]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: latency_robustness_checker
+    role: Latency / Robustness Checker
+    system_prompt: |
+      You audit robustness of short-horizon alphas under delayed fills and regime stress.
+
+      ## Task
+      Check that {goal} remains acceptable after latency proxies and risk gates.
+
+      {upstream_context}
+
+      ## Required outputs
+      1. Signal shift / next-bar realism check
+      2. Stress + Monte Carlo ruin / ES commentary
+      3. Risk-adjusted ranking gates (max_dd, min_psr, max_cvar)
+      4. Pass/fail on risk budgets from inventory manager
+      5. Required config.validation keys
+
+      Prefer config.validation with stress, monte_carlo_paths, risk_metrics,
+      risk_adjusted_ranking, and signal_parameter_grid.risk_ranking.
+    tools: [bash, read_file, write_file, load_skill, monte_carlo, backtest]
+    skills: [enhanced-backtest, monte-carlo-sim, hft-risk-alpha, research-discipline]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: risk_first_alpha_designer
+    role: Risk-First Alpha Designer
+    system_prompt: |
+      You design short-horizon alphas under hard risk budgets (profit secondary to survival).
+
+      ## Task
+      Synthesize upstream research into a risk-constrained strategy for {market} / {goal}.
+
+      {upstream_context}
+
+      ## Required outputs
+      1. Strategy logic (entry/exit) with explicit risk overlay knobs
+      2. ``config.json`` including ``risk_overlay`` + ``validation.risk_adjusted_ranking`` + ``hft_costs``
+         (use ``backtest.hft_config_gate.inject_risk_first_defaults``; reject return-only objectives)
+      3. ``signal_engine.py`` following strategy-generate + hft-risk-alpha
+      4. Backtest metrics emphasizing Sharpe/Sortino/Calmar/PSR and max DD — not raw return
+      5. Honest limits: no co-lo / queue-priority claim; bar proxies only
+
+      You must run **backtest** with real outputs—do not fabricate numbers.
+      Rank trials with risk_adjusted_ranking / risk_ranking; reject high-DD or low-PSR.
+      Before writing config, call validate via load_skill("hft-risk-alpha") hard-requirements.
+    tools: [bash, read_file, write_file, edit_file, load_skill, backtest, monte_carlo]
+    skills: [strategy-generate, hft-risk-alpha, enhanced-backtest, technical-basic]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+tasks:
+  - id: task-micro
+    agent_id: microstructure_researcher
+    prompt_template: "Analyze microstructure and adverse-selection risk for '{goal}' in {market}."
+    depends_on: []
+
+  - id: task-inventory
+    agent_id: inventory_risk_manager
+    prompt_template: "Specify numeric risk budgets and risk_overlay JSON for '{goal}'."
+    depends_on: []
+
+  - id: task-exec
+    agent_id: execution_cost_researcher
+    prompt_template: "Estimate execution costs and adverse-selection tax for '{goal}'."
+    depends_on: [task-micro]
+    input_from:
+      microstructure: task-micro
+
+  - id: task-latency
+    agent_id: latency_robustness_checker
+    prompt_template: "Audit latency proxies and risk gates for '{goal}'."
+    depends_on: [task-inventory, task-exec]
+    input_from:
+      risk_budgets: task-inventory
+      execution: task-exec
+
+  - id: task-design
+    agent_id: risk_first_alpha_designer
+    prompt_template: "Design and backtest a risk-constrained short-horizon strategy for '{goal}'."
+    depends_on: [task-micro, task-inventory, task-exec, task-latency]
+    input_from:
+      microstructure: task-micro
+      risk_budgets: task-inventory
+      execution: task-exec
+      robustness: task-latency
+
+variables:
+  - name: market
+    description: "Target market (e.g. US equities, crypto perps)"
+    required: true
+  - name: goal
+    description: "Short-horizon / HFT-like objective (e.g. inventory MR, spread capture proxy)"
+    required: true

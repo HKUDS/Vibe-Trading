@@ -307,7 +307,7 @@ def run_validation(
       - bootstrap: {n_bootstrap, confidence, seed}
       - walk_forward: {n_windows}
       - stress / walk_forward_oos / parameter_sensitivity / signal_parameter_grid
-      - regime_conditioned / risk_metrics
+      - regime_conditioned / risk_metrics / risk_adjusted_ranking
 
     Args:
         config: Backtest config (must contain "validation" key).
@@ -407,6 +407,34 @@ def run_validation(
             trial_returns=trial_returns,
             pbo_n_groups=int(rm_cfg.get("pbo_n_groups", 16)),
             pbo_max_combinations=int(rm_cfg.get("pbo_max_combinations", 12_870)),
+        )
+
+    if "risk_adjusted_ranking" in v_cfg:
+        from backtest.risk_metrics import rank_trials_risk_adjusted
+
+        rk_cfg = (
+            v_cfg["risk_adjusted_ranking"]
+            if isinstance(v_cfg["risk_adjusted_ranking"], dict)
+            else {}
+        )
+        trial_returns = rk_cfg.get("trial_returns")
+        if trial_returns is None and isinstance(results.get("signal_parameter_grid"), dict):
+            trial_returns = results["signal_parameter_grid"].get("trial_returns")
+        if trial_returns is None:
+            rets = equity_curve.pct_change().dropna().to_numpy(dtype=float)
+            trial_returns = rets.reshape(-1, 1)
+        results["risk_adjusted_ranking"] = rank_trials_risk_adjusted(
+            trial_returns,
+            bars_per_year=bars_per_year,
+            objective=str(rk_cfg.get("objective", "sharpe_dd_penalty")),
+            max_dd_limit=float(rk_cfg.get("max_dd_limit", 0.20)),
+            min_psr=float(rk_cfg.get("min_psr", 0.5)),
+            max_cvar=(
+                float(rk_cfg["max_cvar"]) if rk_cfg.get("max_cvar") is not None else None
+            ),
+            cvar_alpha=float(rk_cfg.get("cvar_alpha", 0.95)),
+            dd_penalty=float(rk_cfg.get("dd_penalty", 2.0)),
+            labels=rk_cfg.get("labels"),
         )
 
     return results

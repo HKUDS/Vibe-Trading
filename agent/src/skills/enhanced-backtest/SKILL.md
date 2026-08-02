@@ -20,7 +20,13 @@ enable richer checks under `config.validation`:
 | `regime_conditioned` | Vol + trend (+ optional correlation-fused) splits; optional `export_regime_labels` |
 | `regime_conditional_ic` | Spearman IC overall + per-regime (needs `factor_df` / `return_df` + labels) |
 | `risk_metrics` | PSR, DSR, bootstrap CI, CSCV PBO (`trial_returns`) or approx |
+| `risk_adjusted_ranking` | Reject high-DD / low-PSR / high-CVaR; rank by Sharpe−DD / Sortino / Calmar / PSR |
 | `monte_carlo_paths` | Large-batch path simulation (see `monte-carlo-sim` skill) |
+
+Also pair with top-level ``config.risk_overlay`` (vol target, leverage/net/name caps,
+turnover throttle, DD kill-switch, inventory pull, stop-loss) — see skill `hft-risk-alpha`.
+Default stress scenarios include HFT-proxy cases `adverse_selection_burst` and
+`latency_slippage_tax` (bar proxies — not co-lo latency).
 
 ## Example config
 
