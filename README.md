@@ -955,28 +955,32 @@ vibe-trading --swarm-run monte_carlo_validation_lab '{"market": "US", "goal": "v
 
 ### Monte Carlo & enhanced backtests
 
-Large-batch path simulation (default **10_000** paths, batched/vectorized, up to **5_000_000**) plus stress / walk-forward OOS / sensitivity / regime hooks:
+Large-batch path simulation (default **10_000** paths, batched/vectorized, up to **5_000_000**) with antithetic / **Sobol** / stratified QMC, optional `n_jobs` (process pool for block bootstrap), and `correlated_gbm` multi-asset portfolios — plus stress / walk-forward OOS / post-hoc + **signal / SignalEngine** parameter grids / multi-axis regimes / **regime-conditional IC** / PSR·DSR / **CSCV PBO** (exact or random subsample when `n_groups>16`):
 
 ```bash
 # Runnable demo (synthetic equity; no broker keys required)
 cd agent && python scripts/demo_monte_carlo.py
-cd agent && python scripts/demo_monte_carlo.py --n-paths 100000 --method block_bootstrap
+cd agent && python scripts/demo_monte_carlo.py --n-paths 100000 --method gbm --antithetic --sampling sobol --n-jobs 4
+cd agent && python scripts/demo_monte_carlo.py --correlated
 
 # Enable in a strategy config.json (post-backtest validation)
 # "validation": {
 #   "monte_carlo": {"n_simulations": 1000},
-#   "monte_carlo_paths": {"method": "bootstrap", "n_paths": 100000, "batch_size": 10000},
+#   "monte_carlo_paths": {"method": "gbm", "n_paths": 100000, "sampling": "sobol", "antithetic": true},
 #   "walk_forward_oos": {"n_windows": 5, "mode": "rolling"},
 #   "stress": {},
 #   "parameter_sensitivity": {},
-#   "regime_conditioned": {"vol_window": 21}
+#   "signal_parameter_grid": {"strategy": "ma_crossover", "cost_bps": 5, "collect_trial_returns": true, "use_signal_engine": true},
+#   "regime_conditioned": {"vol_window": 21, "include_trend": true, "export_regime_labels": true},
+#   "regime_conditional_ic": {"axis": "vol", "min_obs": 20},
+#   "risk_metrics": {"n_trials": 20, "n_bootstrap": 1000, "include_pbo": true, "pbo_n_groups": 8, "pbo_max_combinations": 12870}
 # }
 
-# Agent tool: monte_carlo(run_dir=..., n_paths=100000)
+# Agent tool: monte_carlo(run_dir=..., n_paths=100000, sampling="sobol", antithetic=true)
 # Skills: monte-carlo-sim, enhanced-backtest
 ```
 
-Modules: `agent/backtest/monte_carlo.py`, `agent/backtest/enhanced_validation.py` (wired through `backtest.validation.run_validation`).
+Modules: `agent/backtest/monte_carlo.py`, `agent/backtest/enhanced_validation.py`, `agent/backtest/risk_metrics.py` (wired through `backtest.validation.run_validation`).
 
 ### Cross-Session Memory
 

@@ -10,7 +10,9 @@ Extended tools (via ``backtest.monte_carlo`` / ``backtest.enhanced_validation``)
   - ``stress``: shock and volatility stress scenarios
   - ``walk_forward_oos``: rolling/expanding IS vs OOS folds
   - ``parameter_sensitivity``: return / vol / cost robustness grid
-  - ``regime_conditioned``: high-vol vs low-vol performance split
+  - ``signal_parameter_grid``: true signal re-runs across a param grid
+  - ``regime_conditioned``: vol + trend (+ optional correlation) splits
+  - ``risk_metrics``: probabilistic / deflated Sharpe (+ PBO hooks)
 
 Usage: called automatically by BaseEngine.run_backtest when config[\"validation\"]
 is present, or invoked directly on backtest outputs.
@@ -304,7 +306,8 @@ def run_validation(
       - monte_carlo_paths: {method, n_paths, batch_size, seed, ...}
       - bootstrap: {n_bootstrap, confidence, seed}
       - walk_forward: {n_windows}
-      - stress / walk_forward_oos / parameter_sensitivity / regime_conditioned
+      - stress / walk_forward_oos / parameter_sensitivity / signal_parameter_grid
+      - regime_conditioned / risk_metrics
 
     Args:
         config: Backtest config (must contain "validation" key).
@@ -366,7 +369,9 @@ def run_validation(
         "stress",
         "walk_forward_oos",
         "parameter_sensitivity",
+        "signal_parameter_grid",
         "regime_conditioned",
+        "regime_conditional_ic",
     }
     if enhanced_keys & set(v_cfg):
         from backtest.enhanced_validation import run_enhanced_validation
@@ -378,6 +383,30 @@ def run_validation(
                 trades,
                 bars_per_year=bars_per_year,
             )
+        )
+
+    if "risk_metrics" in v_cfg:
+        from backtest.risk_metrics import run_risk_metrics
+
+        rm_cfg = v_cfg["risk_metrics"] if isinstance(v_cfg["risk_metrics"], dict) else {}
+        trial_returns = rm_cfg.get("trial_returns")
+        # Prefer exact CSCV matrix produced by a co-located signal grid.
+        if trial_returns is None and isinstance(results.get("signal_parameter_grid"), dict):
+            trial_returns = results["signal_parameter_grid"].get("trial_returns")
+        results["risk_metrics"] = run_risk_metrics(
+            equity_curve,
+            bars_per_year=bars_per_year,
+            n_trials=int(rm_cfg.get("n_trials", 1)),
+            n_bootstrap=int(rm_cfg.get("n_bootstrap", 1000)),
+            confidence=float(rm_cfg.get("confidence", 0.95)),
+            seed=int(rm_cfg.get("seed", 42)),
+            skew=rm_cfg.get("skew"),
+            kurtosis=rm_cfg.get("kurtosis"),
+            include_pbo=bool(rm_cfg.get("include_pbo", False)),
+            trial_sharpes=rm_cfg.get("trial_sharpes"),
+            trial_returns=trial_returns,
+            pbo_n_groups=int(rm_cfg.get("pbo_n_groups", 16)),
+            pbo_max_combinations=int(rm_cfg.get("pbo_max_combinations", 12_870)),
         )
 
     return results

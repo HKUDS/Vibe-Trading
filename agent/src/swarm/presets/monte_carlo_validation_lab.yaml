@@ -21,6 +21,9 @@ agents:
       5. Fan-chart / percentile commentary
 
       Defaults: n_paths=10000 (raise to 1e5–1e6 when justified), batch_size=5000.
+      Prefer sampling=sobol (or stratified) + antithetic=true for gbm/correlated_gbm.
+      Use n_jobs>1 for large batches; process backend auto for block_bootstrap.
+      For multi-asset portfolios use method=correlated_gbm with asset_mu/asset_cov/weights.
       Always call the monte_carlo tool; load_skill("monte-carlo-sim").
     tools: [bash, read_file, write_file, load_skill, monte_carlo, get_market_data]
     skills: [monte-carlo-sim, quant-statistics, enhanced-backtest]
@@ -69,9 +72,39 @@ agents:
       4. Assumption risks (i.i.d., stationarity, regime breaks)
       5. Audit verdict
 
-      Use enhanced-backtest skill and tools as available.
+      Prefer config.validation with signal_parameter_grid.collect_trial_returns=true
+      (inspect cscv_pbo), regime_conditioned.export_regime_labels=true, and
+      monte_carlo_paths.sampling=sobol. Use enhanced-backtest skill and tools.
     tools: [bash, read_file, write_file, load_skill, monte_carlo, backtest]
     skills: [enhanced-backtest, monte-carlo-sim, research-discipline]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: risk_metrician
+    role: Risk Metrician (PSR/DSR/PBO)
+    system_prompt: |
+      You quantify overfitting risk with probabilistic and deflated Sharpe metrics.
+
+      ## Task
+      Compute and interpret PSR, DSR, bootstrap Sharpe CI, and CSCV PBO for {goal}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Observed Sharpe + return moments (skew / kurtosis)
+      2. Probabilistic Sharpe Ratio vs SR*=0
+      3. Deflated Sharpe given n_trials (state the trial count assumed)
+      4. Bootstrap Sharpe CI
+      5. Prefer exact/subsample CSCV PBO via trial_returns (cscv_pbo / risk_metrics.pbo);
+         fall back to trial_sharpes approx only if no return matrix exists
+
+      Prefer config.validation.risk_metrics with include_pbo=true and pbo_n_groups
+      (8–16 exact; >16 auto-subsamples). Feed signal_parameter_grid.trial_returns
+      when available. load_skill("enhanced-backtest").
+      Use bash to run small Python snippets importing backtest.risk_metrics when needed.
+    tools: [bash, read_file, write_file, load_skill, monte_carlo, backtest]
+    skills: [enhanced-backtest, quant-statistics, monte-carlo-sim, research-discipline]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1
@@ -82,16 +115,17 @@ agents:
       You produce the final Monte Carlo validation report.
 
       ## Task
-      Aggregate simulation, tail, and audit findings for {market} / {goal}.
+      Aggregate simulation, tail, audit, and risk-metric findings for {market} / {goal}.
 
       {upstream_context}
 
       ## Output Requirements
       1. Executive risk summary
-      2. Simulation design
+      2. Simulation design (incl. sobol/stratified sampling, antithetic, n_jobs)
       3. Distributional outcomes table
-      4. Audit findings
-      5. Recommended limits / kill switches
+      4. PSR / DSR / CSCV-PBO overfitting assessment
+      5. Audit findings
+      6. Recommended limits / kill switches
     tools: [bash, read_file, write_file]
     skills: [report-generate]
     max_iterations: 50
@@ -101,7 +135,7 @@ agents:
 tasks:
   - id: task-simulate
     agent_id: path_simulation_engineer
-    prompt_template: "Run large-batch Monte Carlo path simulations for {goal} in {market}."
+    prompt_template: "Run large-batch Monte Carlo path simulations for {goal} in {market} (prefer sampling=sobol for GBM family)."
     depends_on: []
 
   - id: task-tail
@@ -113,7 +147,14 @@ tasks:
 
   - id: task-audit
     agent_id: robustness_auditor
-    prompt_template: "Audit Monte Carlo assumptions against stress and walk-forward evidence."
+    prompt_template: "Audit Monte Carlo assumptions against stress, walk-forward, multi-axis regime, and cscv_pbo evidence."
+    depends_on: [task-simulate]
+    input_from:
+      simulation: task-simulate
+
+  - id: task-risk-metrics
+    agent_id: risk_metrician
+    prompt_template: "Compute PSR, DSR, bootstrap Sharpe, and CSCV PBO (prefer trial_returns / cscv_pbo over Sharpe-vector approx)."
     depends_on: [task-simulate]
     input_from:
       simulation: task-simulate
@@ -121,11 +162,12 @@ tasks:
   - id: task-aggregate
     agent_id: aggregator
     prompt_template: "Produce the final Monte Carlo validation report."
-    depends_on: [task-tail, task-audit]
+    depends_on: [task-tail, task-audit, task-risk-metrics]
     input_from:
       simulation: task-simulate
       tail: task-tail
       audit: task-audit
+      risk_metrics: task-risk-metrics
 
 variables:
   - name: market

@@ -44,9 +44,11 @@ agents:
       4. Transition indicators
       5. Which factors historically work in each regime
 
+      Prefer regime_conditioned.export_regime_labels=true then
+      regime_labels_to_frame / regime_conditional_ic for IC-by-regime tables.
       Use load_skill("correlation-regime") and volatility tools.
-    tools: [bash, read_file, write_file, load_skill, get_market_data]
-    skills: [correlation-regime, volatility, sector-rotation, technical-basic]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis]
+    skills: [correlation-regime, volatility, sector-rotation, technical-basic, enhanced-backtest]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1
@@ -62,13 +64,16 @@ agents:
       {upstream_context}
 
       ## Output Requirements
-      1. Regime-conditioned performance table (high-vol vs low-vol at minimum)
-      2. Walk-forward OOS notes
-      3. Parameter sensitivity / stability comments
-      4. Stress scenario results if available
-      5. Pass / fail recommendation with caveats
+      1. Regime-conditioned performance table (vol, trend, vol×trend cross; fused/defused if multi-asset)
+      2. Regime-conditional IC (regime_conditional_ic on factor + return panels)
+      3. Walk-forward OOS notes
+      4. Parameter sensitivity + signal_parameter_grid stability + cscv_pbo
+      5. Stress scenario results if available
+      6. PSR/DSR notes when n_trials is known; prefer risk_metrics.include_pbo
+      7. Pass / fail recommendation with caveats
 
-      Prefer config.validation hooks and load_skill("enhanced-backtest").
+      Prefer config.validation hooks (export_regime_labels, collect_trial_returns,
+      sampling=sobol) and load_skill("enhanced-backtest").
       Use backtest and monte_carlo tools when a run_dir exists.
     tools: [bash, read_file, write_file, load_skill, backtest, monte_carlo, factor_analysis]
     skills: [enhanced-backtest, monte-carlo-sim, strategy-generate, quant-statistics]

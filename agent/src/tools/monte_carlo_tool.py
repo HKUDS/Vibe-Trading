@@ -56,6 +56,13 @@ def run_monte_carlo_tool(
     es_alpha: float = 0.95,
     returns: Optional[List[float]] = None,
     initial_capital: float = 1_000_000.0,
+    antithetic: bool = False,
+    n_jobs: int = 1,
+    sampling: str = "iid",
+    parallel_backend: str = "auto",
+    asset_mu: Optional[List[float]] = None,
+    asset_cov: Optional[List[List[float]]] = None,
+    asset_weights: Optional[List[float]] = None,
 ) -> str:
     """Execute Monte Carlo path simulation and return JSON."""
     emit_progress("validate", message="preparing Monte Carlo inputs")
@@ -80,7 +87,7 @@ def run_monte_carlo_tool(
             except (OSError, json.JSONDecodeError, TypeError, ValueError):
                 pass
 
-    if equity is None and not returns:
+    if equity is None and not returns and method != "correlated_gbm":
         return json.dumps(
             {
                 "status": "error",
@@ -103,6 +110,13 @@ def run_monte_carlo_tool(
         block_size=int(block_size),
         ruin_level=float(ruin_level),
         es_alpha=float(es_alpha),
+        antithetic=bool(antithetic),
+        n_jobs=int(n_jobs),
+        sampling=str(sampling),
+        parallel_backend=str(parallel_backend),
+        asset_mu=asset_mu,
+        asset_cov=asset_cov,
+        asset_weights=asset_weights,
         progress=_progress_bridge,
     )
 
@@ -130,10 +144,11 @@ class MonteCarloTool(BaseTool):
     name = "monte_carlo"
     description = (
         "Run large-batch Monte Carlo path simulations (GBM / bootstrap / "
-        "block_bootstrap) on a backtest run_dir or raw returns. Returns "
-        "distributional outcomes: percentiles, ruin probability, expected "
-        "shortfall, max-drawdown bands. Default 10_000 paths; supports up to "
-        "5_000_000 with batched vectorization."
+        "block_bootstrap / correlated_gbm) on a backtest run_dir or raw returns. "
+        "Supports antithetic variates, Sobol/stratified QMC sampling, and "
+        "threaded/process batch parallelism. Returns distributional outcomes: "
+        "percentiles, ruin probability, expected shortfall, max-drawdown bands. "
+        "Default 10_000 paths; supports up to 5_000_000 with batched vectorization."
     )
     parameters = {
         "type": "object",
@@ -144,7 +159,10 @@ class MonteCarloTool(BaseTool):
             },
             "method": {
                 "type": "string",
-                "description": "gbm | bootstrap | block_bootstrap (default bootstrap)",
+                "description": (
+                    "gbm | bootstrap | block_bootstrap | correlated_gbm "
+                    "(default bootstrap)"
+                ),
             },
             "n_paths": {
                 "type": "integer",
@@ -172,6 +190,37 @@ class MonteCarloTool(BaseTool):
             "es_alpha": {
                 "type": "number",
                 "description": "Expected-shortfall confidence level (default 0.95)",
+            },
+            "antithetic": {
+                "type": "boolean",
+                "description": "Antithetic variates for gbm / correlated_gbm (default false)",
+            },
+            "n_jobs": {
+                "type": "integer",
+                "description": "Parallel batch workers (default 1; >1 uses threads/process)",
+            },
+            "sampling": {
+                "type": "string",
+                "description": "iid | sobol | stratified for GBM family (default iid)",
+            },
+            "parallel_backend": {
+                "type": "string",
+                "description": "auto | thread | process (auto→process for block_bootstrap)",
+            },
+            "asset_mu": {
+                "type": "array",
+                "items": {"type": "number"},
+                "description": "Per-asset drift for correlated_gbm",
+            },
+            "asset_cov": {
+                "type": "array",
+                "items": {"type": "array", "items": {"type": "number"}},
+                "description": "Asset covariance matrix for correlated_gbm",
+            },
+            "asset_weights": {
+                "type": "array",
+                "items": {"type": "number"},
+                "description": "Portfolio weights for correlated_gbm (default equal)",
             },
             "returns": {
                 "type": "array",
@@ -203,4 +252,11 @@ class MonteCarloTool(BaseTool):
             es_alpha=kwargs.get("es_alpha", 0.95),
             returns=kwargs.get("returns"),
             initial_capital=kwargs.get("initial_capital", 1_000_000.0),
+            antithetic=kwargs.get("antithetic", False),
+            n_jobs=kwargs.get("n_jobs", 1),
+            sampling=kwargs.get("sampling", "iid"),
+            parallel_backend=kwargs.get("parallel_backend", "auto"),
+            asset_mu=kwargs.get("asset_mu"),
+            asset_cov=kwargs.get("asset_cov"),
+            asset_weights=kwargs.get("asset_weights"),
         )

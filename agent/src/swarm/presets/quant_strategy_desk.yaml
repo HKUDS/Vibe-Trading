@@ -43,10 +43,12 @@ agents:
       3. **Factor correlation** — Correlation matrix; remove highly correlated factors
       4. **Factor combination** — Suggest equal-weight or optimized combo of 3–5 factors
       5. **Risk notes** — Factor-decay scenarios and cyclicality
+      6. **Regime-conditional IC** — When regime labels exist, report IC by vol/trend via
+         regime_conditional_ic / export_regime_labels (enhanced-backtest)
 
-      Use factor_analysis for computations.
+      Use factor_analysis for computations; prefer joining regime_labels_to_frame output.
     tools: [bash, read_file, write_file, load_skill, factor_analysis]
-    skills: [multi-factor, factor-research]
+    skills: [multi-factor, factor-research, enhanced-backtest]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1
@@ -68,9 +70,10 @@ agents:
       4. **Equity curve commentary** — Phase-by-phase performance vs benchmark excess
       5. **Improvement ideas** — Potential optimizations
 
-      You must run **backtest** with real outputs—do not fabricate numbers.
+      Prefer config.validation.signal_parameter_grid with collect_trial_returns=true
+      so cscv_pbo is available. You must run **backtest** with real outputs—do not fabricate numbers.
     tools: [bash, read_file, write_file, edit_file, load_skill, backtest]
-    skills: [strategy-generate, technical-basic]
+    skills: [strategy-generate, technical-basic, enhanced-backtest]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1
@@ -89,11 +92,14 @@ agents:
       1. **Drawdown analysis** — Top historical drawdowns: drivers and duration
       2. **Volatility assessment** — Annual vol, downside vol, volatility clustering
       3. **Tail risk** — VaR/CVaR estimates; behavior in extreme markets
-      4. **Overfitting checks** — In-sample vs out-of-sample gaps; parameter sensitivity
+      4. **Overfitting checks** — Prefer cscv_pbo from trial_returns + PSR/DSR (n_trials);
+         monte_carlo_paths with sampling=sobol when sizing capital
       5. **Risk recommendations** — Position sizing, stops, risk-control improvements
 
       Use load_skill for volatility methods.
-      Prefer monte_carlo + enhanced-backtest when a backtest run_dir is available.
+      Prefer config.validation.risk_metrics (include_pbo=true) + monte_carlo +
+      enhanced-backtest when a backtest run_dir is available.
+      Ask for n_trials when reporting Deflated Sharpe.
     tools: [bash, read_file, write_file, load_skill, monte_carlo]
     skills: [volatility, monte-carlo-sim, enhanced-backtest, risk-analysis]
     max_iterations: 50

@@ -121,6 +121,126 @@ class TestMonteCarloPaths:
         )
         assert result["outcomes"]["n_paths"] == 50_000
 
+    def test_antithetic_gbm(self) -> None:
+        result = run_monte_carlo_paths(
+            method="gbm",
+            equity_curve=_equity(),
+            n_paths=400,
+            horizon=40,
+            seed=11,
+            antithetic=True,
+            keep_fan_chart=False,
+        )
+        assert result["antithetic"] is True
+        assert result["outcomes"]["n_paths"] == 400
+
+    def test_correlated_gbm(self) -> None:
+        result = run_monte_carlo_paths(
+            method="correlated_gbm",
+            n_paths=300,
+            horizon=60,
+            seed=4,
+            asset_mu=[0.0004, 0.0003, 0.0002],
+            asset_cov=[
+                [0.0001, 0.00004, 0.00002],
+                [0.00004, 0.00012, 0.00003],
+                [0.00002, 0.00003, 0.00009],
+            ],
+            asset_weights=[0.5, 0.3, 0.2],
+            antithetic=True,
+            keep_fan_chart=False,
+            initial_capital=100_000,
+        )
+        assert "error" not in result
+        assert result["method"] == "correlated_gbm"
+        assert result["calibration"]["n_assets"] == 3
+        assert result["outcomes"]["n_paths"] == 300
+
+    def test_parallel_batches(self) -> None:
+        result = run_monte_carlo_paths(
+            method="bootstrap",
+            equity_curve=_equity(),
+            n_paths=600,
+            batch_size=200,
+            horizon=30,
+            seed=2,
+            n_jobs=2,
+            keep_fan_chart=False,
+        )
+        assert result["n_jobs"] == 2
+        assert result["outcomes"]["n_paths"] == 600
+        assert result["parallel_backend"] == "thread"
+
+    def test_sobol_gbm(self) -> None:
+        result = run_monte_carlo_paths(
+            method="gbm",
+            equity_curve=_equity(),
+            n_paths=256,
+            horizon=32,
+            seed=5,
+            sampling="sobol",
+            keep_fan_chart=False,
+        )
+        assert "error" not in result
+        assert result["sampling"] == "sobol"
+        assert result["outcomes"]["n_paths"] == 256
+
+    def test_stratified_gbm(self) -> None:
+        result = run_monte_carlo_paths(
+            method="gbm",
+            equity_curve=_equity(),
+            n_paths=200,
+            horizon=40,
+            seed=6,
+            sampling="stratified",
+            antithetic=True,
+            keep_fan_chart=False,
+        )
+        assert result["sampling"] == "stratified"
+        assert result["antithetic"] is True
+
+    def test_block_bootstrap_process_pool(self) -> None:
+        result = run_monte_carlo_paths(
+            method="block_bootstrap",
+            equity_curve=_equity(),
+            n_paths=400,
+            batch_size=100,
+            horizon=40,
+            block_size=8,
+            seed=8,
+            n_jobs=2,
+            parallel_backend="process",
+            keep_fan_chart=False,
+        )
+        assert "error" not in result
+        assert result["parallel_backend"] == "process"
+        assert result["outcomes"]["n_paths"] == 400
+
+    def test_vectorized_block_bootstrap_reproducible(self) -> None:
+        eq = _equity()
+        a = run_monte_carlo_paths(
+            method="block_bootstrap",
+            equity_curve=eq,
+            n_paths=500,
+            batch_size=250,
+            block_size=8,
+            horizon=40,
+            seed=21,
+            keep_fan_chart=False,
+        )
+        b = run_monte_carlo_paths(
+            method="block_bootstrap",
+            equity_curve=eq,
+            n_paths=500,
+            batch_size=250,
+            block_size=8,
+            horizon=40,
+            seed=21,
+            keep_fan_chart=False,
+        )
+        assert a["outcomes"]["terminal_wealth"]["mean"] == b["outcomes"]["terminal_wealth"]["mean"]
+        assert a["outcomes"]["ruin_probability"] == b["outcomes"]["ruin_probability"]
+
 
 class TestConfigDispatch:
     def test_from_config_bootstrap(self) -> None:
