@@ -23,6 +23,7 @@ def allow_tmp_documents(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
 
 # ---------------- Plain text variants ----------------
 
+
 @pytest.mark.parametrize("ext", [".txt", ".md", ".log", ".rst"])
 def test_plain_text(tmp_path: Path, ext: str) -> None:
     p = tmp_path / f"note{ext}"
@@ -96,6 +97,7 @@ def test_csv_read_as_text(tmp_path: Path) -> None:
 
 # ---------------- DOCX ----------------
 
+
 def test_docx_paragraphs_and_tables(tmp_path: Path) -> None:
     import docx  # type: ignore
 
@@ -121,6 +123,7 @@ def test_docx_paragraphs_and_tables(tmp_path: Path) -> None:
 
 # ---------------- Excel ----------------
 
+
 def test_xlsx_multiple_sheets(tmp_path: Path) -> None:
     p = tmp_path / "book.xlsx"
     with pd.ExcelWriter(p) as w:
@@ -136,6 +139,7 @@ def test_xlsx_multiple_sheets(tmp_path: Path) -> None:
 
 
 # ---------------- PPTX ----------------
+
 
 def test_pptx_slides(tmp_path: Path) -> None:
     from pptx import Presentation  # type: ignore
@@ -154,6 +158,7 @@ def test_pptx_slides(tmp_path: Path) -> None:
 
 
 # ---------------- Error handling ----------------
+
 
 def test_missing_file(tmp_path: Path) -> None:
     result = _call(tmp_path / "missing.pdf")

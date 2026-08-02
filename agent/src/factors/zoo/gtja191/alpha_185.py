@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #185
 # 简要说明: 国泰君安191短周期交易型alpha因子第185号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     RANK((-1*((1-(OPEN/CLOSE))^2)))
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_185"
 
 __alpha_meta__ = {
-    'id': 'gtja191_185',
-    'theme': ['reversal'],
-    'formula_latex': 'rank(-1*(1-open/close)^2)',
-    'columns_required': ['open', 'close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 1,
-    'min_warmup_bars': 1,
-    'notes': '',
+    "id": "gtja191_185",
+    "theme": ["reversal"],
+    "formula_latex": "rank(-1*(1-open/close)^2)",
+    "columns_required": ["open", "close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 1,
+    "min_warmup_bars": 1,
+    "notes": "",
 }
 
 

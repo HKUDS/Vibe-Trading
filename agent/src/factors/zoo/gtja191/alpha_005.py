@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #5 - 量价秩相关极值
 # 简要说明: (-1 * TSMAX(CORR(TSRANK(VOLUME,5), TSRANK(HIGH,5), 5), 3))，成交量与最高价的5日秩相关在3日内的最大值取负。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_005",
-    "theme": ['volume'],
-    "formula_latex": '(-1 * TSMAX(CORR(TSRANK(VOLUME,5), TSRANK(HIGH,5), 5), 3))',
-    "columns_required": ['volume', 'high'],
+    "theme": ["volume"],
+    "formula_latex": "(-1 * TSMAX(CORR(TSRANK(VOLUME,5), TSRANK(HIGH,5), 5), 3))",
+    "columns_required": ["volume", "high"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
     "min_warmup_bars": 13,
-    "notes": 'Max over 3 days of 5d corr of TSRANK(volume,5) and TSRANK(high,5).',
+    "notes": "Max over 3 days of 5d corr of TSRANK(volume,5) and TSRANK(high,5).",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     v = panel["volume"]

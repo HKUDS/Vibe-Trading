@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #8 - 价格加权均线变化
 # 简要说明: RANK(DELTA(((HIGH+LOW)/2)*0.2 + VWAP*0.8, 4)) * -1，加权价格4日变化排名取反。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_008",
-    "theme": ['reversal'],
-    "formula_latex": 'RANK(DELTA(((HIGH+LOW)/2)*0.2 + VWAP*0.8, 4)) * -1',
-    "columns_required": ['high', 'low', 'volume', 'amount'],
+    "theme": ["reversal"],
+    "formula_latex": "RANK(DELTA(((HIGH+LOW)/2)*0.2 + VWAP*0.8, 4)) * -1",
+    "columns_required": ["high", "low", "volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 4,
     "min_warmup_bars": 5,
-    "notes": 'Negated rank of 4d change in mid-vwap composite.',
+    "notes": "Negated rank of 4d change in mid-vwap composite.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     h = panel["high"]

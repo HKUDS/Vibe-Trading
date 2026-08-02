@@ -44,9 +44,7 @@ def _finite(value: float | None) -> float | None:
     return out if math.isfinite(out) else None
 
 
-def _validate_weights(
-    closes: pd.DataFrame, weights: Mapping[str, float]
-) -> tuple[dict[str, float], list[str]]:
+def _validate_weights(closes: pd.DataFrame, weights: Mapping[str, float]) -> tuple[dict[str, float], list[str]]:
     """Normalize weights to sum 1; reject unknown symbols and bad values.
 
     Returns the cleaned weight map (restricted to available columns) and any
@@ -69,9 +67,7 @@ def _validate_weights(
         if not math.isfinite(value):
             raise ValueError(f"weight for {sym!r} is not finite: {raw!r}")
         if value < 0:
-            raise ValueError(
-                f"weight for {sym!r} is negative ({value}); the risk x-ray is long-only for now"
-            )
+            raise ValueError(f"weight for {sym!r} is negative ({value}); the risk x-ray is long-only for now")
         cleaned[sym] = value
 
     total = sum(cleaned.values())
@@ -143,9 +139,7 @@ def compute_risk_xray(
 
     aligned = frame[kept].dropna(axis=0, how="any")
     if len(aligned) < 2:
-        raise ValueError(
-            "fewer than 2 shared trading days after aligning calendars across symbols"
-        )
+        raise ValueError("fewer than 2 shared trading days after aligning calendars across symbols")
 
     returns = aligned.pct_change(fill_method=None).dropna(how="any")
     if returns.empty:
@@ -194,9 +188,7 @@ def _volatility(port: pd.Series, ppy: int) -> dict[str, Any]:
     return {
         "daily_vol": _finite(vol),
         "annualized_vol": _finite(vol * math.sqrt(ppy)) if vol is not None else None,
-        "downside_deviation_annualized": (
-            _finite(downside_dev * math.sqrt(ppy)) if downside_dev is not None else None
-        ),
+        "downside_deviation_annualized": (_finite(downside_dev * math.sqrt(ppy)) if downside_dev is not None else None),
     }
 
 
@@ -232,9 +224,7 @@ def _tail_risk(port: pd.Series, levels: Sequence[float]) -> dict[str, Any]:
     return out
 
 
-def _diversification(
-    returns: pd.DataFrame, w: np.ndarray, port: pd.Series, ppy: int
-) -> dict[str, Any]:
+def _diversification(returns: pd.DataFrame, w: np.ndarray, port: pd.Series, ppy: int) -> dict[str, Any]:
     if returns.shape[1] < 2:
         return {"diversification_ratio": None, "note": "needs at least 2 assets"}
     asset_vols = returns.std(ddof=1).to_numpy(dtype=float)
@@ -303,10 +293,7 @@ def average_invested_weights(target_pos: pd.DataFrame) -> tuple[dict[str, float]
     means = target_pos.mean(axis=0)
     short_book = [str(sym) for sym, w in means.items() if float(w) < 0]
     if short_book:
-        raise ValueError(
-            "long-only x-ray cannot describe net short average exposure "
-            f"in {', '.join(short_book)}"
-        )
+        raise ValueError(f"long-only x-ray cannot describe net short average exposure in {', '.join(short_book)}")
     weights = {str(sym): float(w) for sym, w in means.items() if float(w) > 0}
     avg_invested = float(target_pos.sum(axis=1).mean())
     if not weights:
@@ -325,8 +312,7 @@ def render_risk_xray_markdown(report: dict[str, Any]) -> str:
         "# Portfolio Risk X-Ray",
         "",
         f"- basket: {', '.join(inputs['symbols'])}",
-        f"- window: {inputs['first_date']} .. {inputs['last_date']} "
-        f"({inputs['aligned_days']} aligned days)",
+        f"- window: {inputs['first_date']} .. {inputs['last_date']} ({inputs['aligned_days']} aligned days)",
     ]
     if conc.get("hhi") is not None:
         lines.append(
@@ -339,9 +325,7 @@ def render_risk_xray_markdown(report: dict[str, Any]) -> str:
     if dd.get("max_drawdown") is not None:
         lines.append(f"- max drawdown: {dd['max_drawdown']:.2%}")
     if tail.get("var_95") is not None:
-        lines.append(
-            f"- tail (historical): VaR95 {tail['var_95']:.2%}, ES95 {tail['expected_shortfall_95']:.2%}"
-        )
+        lines.append(f"- tail (historical): VaR95 {tail['var_95']:.2%}, ES95 {tail['expected_shortfall_95']:.2%}")
     if report["skipped"]:
         joined = ", ".join(item["symbol"] for item in report["skipped"])
         lines.append(f"- skipped: {joined}")

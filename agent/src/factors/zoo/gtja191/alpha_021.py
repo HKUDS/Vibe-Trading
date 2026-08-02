@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #21 - 均线斜率
 # 简要说明: REGBETA(MEAN(CLOSE,6), SEQUENCE(6))，6日均线的线性回归斜率。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_021",
-    "theme": ['momentum'],
-    "formula_latex": 'REGBETA(MEAN(CLOSE,6), SEQUENCE(6))',
-    "columns_required": ['close'],
+    "theme": ["momentum"],
+    "formula_latex": "REGBETA(MEAN(CLOSE,6), SEQUENCE(6))",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 6,
     "min_warmup_bars": 12,
-    "notes": 'Rolling 6-day slope of MA6(close) vs time index. REGBETA proxied by ts_cov / ts_std**2.',
+    "notes": "Rolling 6-day slope of MA6(close) vs time index. REGBETA proxied by ts_cov / ts_std**2.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]
@@ -51,6 +51,7 @@ def compute(panel: dict) -> pd.DataFrame:
     # build a sequence DataFrame: 1..N broadcast on every column
     seq = pd.DataFrame(
         np.broadcast_to(np.arange(1, c.shape[0] + 1, dtype=float)[:, None], c.shape).copy(),
-        index=c.index, columns=c.columns,
+        index=c.index,
+        columns=c.columns,
     )
     return safe_div(ts_cov(ma6, seq, 6), ts_std(seq, 6) ** 2)

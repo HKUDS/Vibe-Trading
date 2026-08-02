@@ -227,7 +227,9 @@ if DISCORD_AVAILABLE:
                 if not await self._interaction_channel_allowed(interaction, channel):
                     await self._reply_ephemeral(interaction, "This channel is not allowed for this bot.")
                     return
-                await self._reply_ephemeral(interaction, "Use /help for available commands. Docs: https://github.com/HKUDS/Vibe-Trading")
+                await self._reply_ephemeral(
+                    interaction, "Use /help for available commands. Docs: https://github.com/HKUDS/Vibe-Trading"
+                )
 
             @self.tree.error
             async def on_app_command_error(
@@ -270,9 +272,7 @@ if DISCORD_AVAILABLE:
                 else:
                     failed_media.append(Path(media_path).name)
 
-            for index, chunk in enumerate(
-                self._build_chunks(msg.content or "", failed_media, sent_media)
-            ):
+            for index, chunk in enumerate(self._build_chunks(msg.content or "", failed_media, sent_media)):
                 kwargs: dict[str, Any] = {"content": chunk}
                 if index == 0 and reference is not None and not sent_media:
                     kwargs["reference"] = reference
@@ -470,9 +470,7 @@ class DiscordChannel(BaseChannel):
                 await self._stop_typing(msg.chat_id)
                 await self._clear_reactions(msg.chat_id)
 
-    async def send_delta(
-        self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None
-    ) -> None:
+    async def send_delta(self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None) -> None:
         """Progressive Discord delivery: send once, then edit until the stream ends."""
         client = self._client
         if client is None or not client.is_ready():
@@ -492,9 +490,7 @@ class DiscordChannel(BaseChannel):
             return
 
         buf = self._stream_bufs.get(chat_id)
-        if buf is None or (
-            stream_id is not None and buf.stream_id is not None and buf.stream_id != stream_id
-        ):
+        if buf is None or (stream_id is not None and buf.stream_id is not None and buf.stream_id != stream_id):
             buf = _StreamBuf(stream_id=stream_id)
             self._stream_bufs[chat_id] = buf
         elif buf.stream_id is None:
@@ -704,11 +700,7 @@ class DiscordChannel(BaseChannel):
     @staticmethod
     def _build_inbound_metadata(message: discord.Message) -> dict[str, str | None]:
         """Build metadata for inbound Discord messages."""
-        reply_to = (
-            str(message.reference.message_id)
-            if message.reference and message.reference.message_id
-            else None
-        )
+        reply_to = str(message.reference.message_id) if message.reference and message.reference.message_id else None
         return {
             "message_id": str(message.id),
             "guild_id": str(message.guild.id) if message.guild else None,
@@ -725,9 +717,7 @@ class DiscordChannel(BaseChannel):
             if bot_user_id is None and self._client and self._client.user:
                 bot_user_id = str(self._client.user.id)
             if bot_user_id is None:
-                self.logger.debug(
-                    "message in {} ignored (bot identity unavailable)", message.channel.id
-                )
+                self.logger.debug("message in {} ignored (bot identity unavailable)", message.channel.id)
                 return False
 
             if any(str(user.id) == bot_user_id for user in message.mentions):
@@ -750,9 +740,7 @@ class DiscordChannel(BaseChannel):
         reference = getattr(message, "reference", None)
         if reference is None:
             return False
-        referenced_message = getattr(reference, "resolved", None) or getattr(
-            reference, "cached_message", None
-        )
+        referenced_message = getattr(reference, "resolved", None) or getattr(reference, "cached_message", None)
         author = getattr(referenced_message, "author", None)
         return str(getattr(author, "id", "")) == bot_user_id
 

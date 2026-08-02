@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #143
 # 简要说明: 国泰君安191短周期交易型alpha因子第143号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: Recursive SELF unrolled to cumulative product of (1 + up_return) since series start.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_143"
 
 __alpha_meta__ = {
-    'id': 'gtja191_143',
-    'theme': ['momentum'],
-    'formula_latex': 'cumprod(1 + (c/delay(c,1)-1) if c>delay(c,1) else 0)',
-    'columns_required': ['close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 1,
-    'min_warmup_bars': 2,
-    'notes': 'Recursive SELF unrolled to cumulative product of (1 + up_return) since series start.',
+    "id": "gtja191_143",
+    "theme": ["momentum"],
+    "formula_latex": "cumprod(1 + (c/delay(c,1)-1) if c>delay(c,1) else 0)",
+    "columns_required": ["close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 1,
+    "min_warmup_bars": 2,
+    "notes": "Recursive SELF unrolled to cumulative product of (1 + up_return) since series start.",
 }
 
 

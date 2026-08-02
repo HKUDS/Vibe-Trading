@@ -63,9 +63,19 @@ class TestTradeRecord:
 
     def test_frozen(self) -> None:
         trade = TradeRecord(
-            "X", 1, 10.0, 11.0,
-            pd.Timestamp("2025-01-01"), pd.Timestamp("2025-01-02"),
-            100.0, 1.0, 100.0, 0.1, "signal", 1, 0.0,
+            "X",
+            1,
+            10.0,
+            11.0,
+            pd.Timestamp("2025-01-01"),
+            pd.Timestamp("2025-01-02"),
+            100.0,
+            1.0,
+            100.0,
+            0.1,
+            "signal",
+            1,
+            0.0,
         )
         with pytest.raises(AttributeError):
             trade.pnl = 999.0  # type: ignore[misc]

@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #41 - VWAP标准差
 # 简要说明: RANK(MAX(DELTA(VWAP,1),3))*RANK(DELTA(VOLUME,3))，VWAP与成交量3日变化的极值排名乘积。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_041",
-    "theme": ['microstructure'],
-    "formula_latex": '(RANK(MAX(DELTA(VWAP,3),5))*-1)',
-    "columns_required": ['volume', 'amount'],
+    "theme": ["microstructure"],
+    "formula_latex": "(RANK(MAX(DELTA(VWAP,3),5))*-1)",
+    "columns_required": ["volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
     "min_warmup_bars": 9,
-    "notes": '5d max of 3d delta(vwap), ranked, negated.',
+    "notes": "5d max of 3d delta(vwap), ranked, negated.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     v = panel["volume"]

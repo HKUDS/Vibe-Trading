@@ -16,13 +16,15 @@ from src.tools.trade_journal_parsers import (
 
 
 def test_parse_generic_stringified_excel_serial_datetime() -> None:
-    df = pd.DataFrame({
-        "datetime": ["45321.375", "45322.0"],
-        "symbol": ["AAPL", "MSFT"],
-        "side": ["buy", "sell"],
-        "quantity": ["10", "5"],
-        "price": ["150", "200"],
-    })
+    df = pd.DataFrame(
+        {
+            "datetime": ["45321.375", "45322.0"],
+            "symbol": ["AAPL", "MSFT"],
+            "side": ["buy", "sell"],
+            "quantity": ["10", "5"],
+            "price": ["150", "200"],
+        }
+    )
     recs = parse_generic(df)
     assert [r.datetime for r in recs] == [
         "2024-01-30 09:00:00",
@@ -35,8 +37,7 @@ def test_parse_generic_stringified_excel_serial_datetime() -> None:
 def test_parse_file_generic_csv_excel_serial() -> None:
     path = Path(tempfile.mkdtemp()) / "generic.csv"
     path.write_text(
-        "datetime,symbol,side,quantity,price\n"
-        "45321.375,AAPL,buy,10,150\n",
+        "datetime,symbol,side,quantity,price\n45321.375,AAPL,buy,10,150\n",
         encoding="utf-8",
     )
     loaded = load_dataframe(path)

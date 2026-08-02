@@ -53,12 +53,10 @@ amount | float | Y | 成交额（元）
 **接口用法**
 
 ```python
-
 pro = ts.pro_api()
 
-#获取科创新能源ETF易方达589960.SH的实时分钟数据
-df = pro.rt_min(ts_code='589960.SH', freq='1MIN')
-
+# 获取科创新能源ETF易方达589960.SH的实时分钟数据
+df = pro.rt_min(ts_code="589960.SH", freq="1MIN")
 ```
 
 <br>

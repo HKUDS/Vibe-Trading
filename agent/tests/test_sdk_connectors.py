@@ -46,14 +46,22 @@ def test_sdk_profiles_registered() -> None:
     """All broker connectors register paper and read-only live profiles."""
     ids = {p.id for p in profiles.list_profiles()}
     assert {
-        "tiger-paper-sdk", "tiger-live-sdk-readonly",
-        "longbridge-paper-sdk", "longbridge-live-sdk-readonly",
-        "alpaca-paper-sdk", "alpaca-live-sdk-readonly",
-        "okx-paper-sdk", "okx-live-sdk-readonly",
-        "binance-paper-sdk", "binance-live-sdk-readonly",
-        "futu-paper-sdk", "futu-live-sdk-readonly",
-        "dhan-paper-sdk", "dhan-live-sdk-readonly",
-        "shoonya-paper-sdk", "shoonya-live-sdk-readonly",
+        "tiger-paper-sdk",
+        "tiger-live-sdk-readonly",
+        "longbridge-paper-sdk",
+        "longbridge-live-sdk-readonly",
+        "alpaca-paper-sdk",
+        "alpaca-live-sdk-readonly",
+        "okx-paper-sdk",
+        "okx-live-sdk-readonly",
+        "binance-paper-sdk",
+        "binance-live-sdk-readonly",
+        "futu-paper-sdk",
+        "futu-live-sdk-readonly",
+        "dhan-paper-sdk",
+        "dhan-live-sdk-readonly",
+        "shoonya-paper-sdk",
+        "shoonya-live-sdk-readonly",
     } <= ids
 
 
@@ -110,11 +118,11 @@ def test_sdk_profiles_are_readonly_broker_sdk(profile_id, connector, environment
 @pytest.mark.parametrize(
     "account, is_paper",
     [
-        ("20191106192858300", True),   # 17-digit paper
-        ("51230321", False),            # prime/standard
-        ("U12300123", False),           # global
+        ("20191106192858300", True),  # 17-digit paper
+        ("51230321", False),  # prime/standard
+        ("U12300123", False),  # global
         ("", False),
-        ("2019110619285830", False),    # 16 digits
+        ("2019110619285830", False),  # 16 digits
         ("201911061928583000", False),  # 18 digits
     ],
 )
@@ -185,9 +193,7 @@ def test_longbridge_with_overrides_preserves_atomic_credentials() -> None:
         _credential_source="environment",
     )
 
-    updated = cfg.with_overrides(
-        app_key="ignored-key", profile="live-readonly", region="cn"
-    )
+    updated = cfg.with_overrides(app_key="ignored-key", profile="live-readonly", region="cn")
 
     assert (updated.app_key, updated.app_secret, updated.access_token) == (
         "atomic-key",
@@ -299,10 +305,7 @@ def test_connector_reports_conflict_without_sdk_call(monkeypatch, tmp_path) -> N
     assert report["connection_state"] == "error"
     assert report["credential_source"] is None
     assert report["error_code"] == "credentials_conflict"
-    assert all(
-        field in report["error"]
-        for field in ("app_key", "app_secret", "access_token")
-    )
+    assert all(field in report["error"] for field in ("app_key", "app_secret", "access_token"))
     with pytest.raises(lb.LongbridgeConfigError, match="sources conflict"):
         lb._require_resolved_config(lb.build_config())
 
@@ -313,9 +316,7 @@ def test_connector_status_redacts_credentials(monkeypatch, tmp_path) -> None:
         "app_secret": "status-sensitive-secret",
         "access_token": "status-sensitive-token",
     }
-    secret_exception = RuntimeError(
-        "authentication failed for " + "/".join(values.values())
-    )
+    secret_exception = RuntimeError("authentication failed for " + "/".join(values.values()))
     _set_longbridge_environment(monkeypatch, values)
     monkeypatch.setattr(lb, "get_runtime_root", lambda: tmp_path)
     monkeypatch.setattr(lb_credentials, "get_runtime_root", lambda: tmp_path)
@@ -323,9 +324,7 @@ def test_connector_status_redacts_credentials(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         lb,
         "_trade_context",
-        lambda cfg: SimpleNamespace(
-            account_balance=lambda: (_ for _ in ()).throw(secret_exception)
-        ),
+        lambda cfg: SimpleNamespace(account_balance=lambda: (_ for _ in ()).throw(secret_exception)),
     )
 
     report = lb.check_status(lb.build_config())
@@ -675,7 +674,9 @@ class _FakeOkxMarket:
 
 def test_okx_history_maps_candles_and_period(monkeypatch) -> None:
     monkeypatch.setattr(ox, "_market_client", lambda cfg: _FakeOkxMarket())
-    out = ox.get_historical_bars("BTC-USDT", config=ox.OKXConfig(api_key="k", api_secret="s", passphrase="p"), period="1h")
+    out = ox.get_historical_bars(
+        "BTC-USDT", config=ox.OKXConfig(api_key="k", api_secret="s", passphrase="p"), period="1h"
+    )
     assert out["period"] == "1h" and out["bar"] == "1H"
     assert len(out["bars"]) == 1
     bar = out["bars"][0]
@@ -744,9 +745,7 @@ def test_dhan_redacts_access_token() -> None:
 
 
 def test_shoonya_redacts_secrets() -> None:
-    cfg = sh.ShoonyaConfig(
-        user_id="USER1", password="pw", vendor_code="V", api_secret="sec", totp_secret="totp"
-    )
+    cfg = sh.ShoonyaConfig(user_id="USER1", password="pw", vendor_code="V", api_secret="sec", totp_secret="totp")
     pub = sh._public_config(cfg)
     for secret in ("password", "api_secret", "totp_secret"):
         assert pub[secret] == "***redacted***"

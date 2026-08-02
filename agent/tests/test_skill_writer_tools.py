@@ -14,7 +14,6 @@ from src.tools.skill_writer_tool import (
     DeleteSkillTool,
     SkillFileTool,
     _sanitize_skill_name,
-    USER_SKILLS_DIR,
 )
 
 
@@ -207,50 +206,74 @@ class TestSkillFileTool:
 
     def test_write_file(self, setup) -> None:
         tool, _, skill_dir = setup
-        result = json.loads(tool.execute(
-            action="write", skill_name="file-test",
-            path="templates/strategy.py", content="def run(): pass",
-        ))
+        result = json.loads(
+            tool.execute(
+                action="write",
+                skill_name="file-test",
+                path="templates/strategy.py",
+                content="def run(): pass",
+            )
+        )
         assert result["status"] == "ok"
         assert (skill_dir / "templates" / "strategy.py").exists()
 
     def test_write_invalid_subdir(self, setup) -> None:
         tool, _, _ = setup
-        result = json.loads(tool.execute(
-            action="write", skill_name="file-test",
-            path="invalid_dir/file.py", content="code",
-        ))
+        result = json.loads(
+            tool.execute(
+                action="write",
+                skill_name="file-test",
+                path="invalid_dir/file.py",
+                content="code",
+            )
+        )
         assert result["status"] == "error"
 
     def test_write_missing_path(self, setup) -> None:
         tool, _, _ = setup
-        result = json.loads(tool.execute(
-            action="write", skill_name="file-test", content="code",
-        ))
+        result = json.loads(
+            tool.execute(
+                action="write",
+                skill_name="file-test",
+                content="code",
+            )
+        )
         assert result["status"] == "error"
 
     def test_remove_file(self, setup) -> None:
         tool, _, skill_dir = setup
         (skill_dir / "assets").mkdir()
         (skill_dir / "assets" / "data.csv").write_text("1,2,3", encoding="utf-8")
-        result = json.loads(tool.execute(
-            action="remove", skill_name="file-test", path="assets/data.csv",
-        ))
+        result = json.loads(
+            tool.execute(
+                action="remove",
+                skill_name="file-test",
+                path="assets/data.csv",
+            )
+        )
         assert result["status"] == "ok"
         assert not (skill_dir / "assets" / "data.csv").exists()
 
     def test_remove_skill_md_blocked(self, setup) -> None:
         tool, _, _ = setup
-        result = json.loads(tool.execute(
-            action="remove", skill_name="file-test", path="SKILL.md",
-        ))
+        result = json.loads(
+            tool.execute(
+                action="remove",
+                skill_name="file-test",
+                path="SKILL.md",
+            )
+        )
         assert result["status"] == "error"
 
     def test_remove_nonexistent_file(self, setup) -> None:
         tool, _, _ = setup
-        result = json.loads(tool.execute(
-            action="remove", skill_name="file-test", path="assets/ghost.txt",
-        ))
+        result = json.loads(
+            tool.execute(
+                action="remove",
+                skill_name="file-test",
+                path="assets/ghost.txt",
+            )
+        )
         assert result["status"] == "error"
 
     def test_nonexistent_skill(self, setup) -> None:
@@ -288,10 +311,14 @@ class TestSkillCRUDLifecycle:
             assert "new_code()" in text
 
             # 3. Add auxiliary file
-            r = json.loads(file_tool.execute(
-                action="write", skill_name="lifecycle",
-                path="templates/helper.py", content="def helper(): pass",
-            ))
+            r = json.loads(
+                file_tool.execute(
+                    action="write",
+                    skill_name="lifecycle",
+                    path="templates/helper.py",
+                    content="def helper(): pass",
+                )
+            )
             assert r["status"] == "ok"
 
             # 4. List files

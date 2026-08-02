@@ -54,11 +54,14 @@ def _build_panel(n_rows: int = 30, n_cols: int = 5) -> dict[str, pd.DataFrame]:
         index=idx,
         columns=cols,
     )
-    low = pd.DataFrame(
-        np.minimum(close.to_numpy(), open_.to_numpy()) - rng.rand(n_rows, n_cols),
-        index=idx,
-        columns=cols,
-    ).abs() + 0.01
+    low = (
+        pd.DataFrame(
+            np.minimum(close.to_numpy(), open_.to_numpy()) - rng.rand(n_rows, n_cols),
+            index=idx,
+            columns=cols,
+        ).abs()
+        + 0.01
+    )
     volume = pd.DataFrame(
         rng.randint(1_000, 100_000, size=(n_rows, n_cols)).astype(float),
         index=idx,
@@ -106,12 +109,9 @@ def test_alpha101_sample_matches_golden(
     actual = registry.compute(alpha_id, panel)
     expected = _load_golden(alpha_id)
 
-    assert actual.shape == expected.shape, (
-        f"{alpha_id}: shape mismatch — got {actual.shape}, expected {expected.shape}"
-    )
+    assert actual.shape == expected.shape, f"{alpha_id}: shape mismatch — got {actual.shape}, expected {expected.shape}"
     assert list(actual.columns) == list(expected.columns), (
-        f"{alpha_id}: column mismatch — got {list(actual.columns)}, "
-        f"expected {list(expected.columns)}"
+        f"{alpha_id}: column mismatch — got {list(actual.columns)}, expected {list(expected.columns)}"
     )
 
     actual_arr = actual.to_numpy(dtype=np.float64, na_value=np.nan)
@@ -129,9 +129,5 @@ def test_alpha101_sample_matches_golden(
 
 def test_all_sampled_goldens_exist() -> None:
     """Sanity gate: every sampled alpha must have a corresponding golden CSV."""
-    missing = [
-        alpha_id
-        for alpha_id in SAMPLED_ALPHAS
-        if not (GOLDEN_DIR / f"{alpha_id}.csv").is_file()
-    ]
+    missing = [alpha_id for alpha_id in SAMPLED_ALPHAS if not (GOLDEN_DIR / f"{alpha_id}.csv").is_file()]
     assert not missing, f"missing golden CSVs for: {missing}"

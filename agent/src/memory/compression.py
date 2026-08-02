@@ -118,9 +118,7 @@ def _score_sentence(sentence: str, idf_scores: Dict[str, float]) -> float:
     return total / len(tokens)
 
 
-def extract_key_sentences(
-    content: str, idf_scores: Dict[str, float], top_k: int = DAILY_TOP_K_SENTENCES
-) -> str:
+def extract_key_sentences(content: str, idf_scores: Dict[str, float], top_k: int = DAILY_TOP_K_SENTENCES) -> str:
     """Extract top-k sentences ranked by TF-IDF weight sum.
 
     Always includes first and last sentence for context framing.
@@ -165,9 +163,7 @@ class CompressionPipeline:
         self._memory_dir = memory_dir
         self._archive_dir = memory_dir / "archive"
 
-    def should_compress(
-        self, compression_level: str, last_accessed: float, now: float = 0.0
-    ) -> Optional[str]:
+    def should_compress(self, compression_level: str, last_accessed: float, now: float = 0.0) -> Optional[str]:
         """Determine if an entry should be compressed and to what level.
 
         Args:
@@ -279,9 +275,7 @@ class CompressionPipeline:
         except OSError as exc:
             logger.error("Archive failed for %s: %s", entry_path, exc)
             # Clean up tmp file if it exists
-            tmp_path = (self._archive_dir / entry_path.name).with_suffix(
-                entry_path.suffix + ".tmp"
-            )
+            tmp_path = (self._archive_dir / entry_path.name).with_suffix(entry_path.suffix + ".tmp")
             if tmp_path.exists():
                 try:
                     tmp_path.unlink()
@@ -289,9 +283,7 @@ class CompressionPipeline:
                     pass
             return None
 
-    def apply_compression(
-        self, entry_path: Path, content: str, keywords: tuple, target_level: str
-    ) -> Optional[str]:
+    def apply_compression(self, entry_path: Path, content: str, keywords: tuple, target_level: str) -> Optional[str]:
         """Execute compression: archive original, compute compressed content.
 
         Args:
@@ -307,9 +299,7 @@ class CompressionPipeline:
         archive_result = self.archive_original(entry_path)
         if archive_result is None and entry_path.exists():
             # Archive failed but file exists - abort to avoid data loss
-            logger.error(
-                "Compression aborted: archive failed for %s", entry_path
-            )
+            logger.error("Compression aborted: archive failed for %s", entry_path)
             return None
 
         try:

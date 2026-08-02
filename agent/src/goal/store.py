@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import sqlite3
 import threading
 import uuid
@@ -714,13 +713,18 @@ class GoalStore:
                 self._validate_completion_audit(goal, audit or [])
 
             now = _now_iso()
-            completed_at = now if status in {
-                GoalStatus.COMPLETE,
-                GoalStatus.BLOCKED,
-                GoalStatus.CANCELLED,
-                GoalStatus.SUPERSEDED,
-                GoalStatus.USAGE_LIMITED,
-            } else None
+            completed_at = (
+                now
+                if status
+                in {
+                    GoalStatus.COMPLETE,
+                    GoalStatus.BLOCKED,
+                    GoalStatus.CANCELLED,
+                    GoalStatus.SUPERSEDED,
+                    GoalStatus.USAGE_LIMITED,
+                }
+                else None
+            )
             self._conn.execute(
                 """
                 UPDATE goals
@@ -788,10 +792,7 @@ class GoalStore:
             turns_used = goal.turns_used + turn_delta
             crosses_budget = (
                 (goal.token_budget is not None and tokens_used >= goal.token_budget)
-                or (
-                    goal.time_budget_seconds is not None
-                    and time_used_seconds >= goal.time_budget_seconds
-                )
+                or (goal.time_budget_seconds is not None and time_used_seconds >= goal.time_budget_seconds)
                 or (goal.turn_budget is not None and turns_used >= goal.turn_budget)
             )
             next_status = GoalStatus.BUDGET_LIMITED if crosses_budget else goal.status
@@ -918,9 +919,7 @@ class GoalStore:
                 if evidence is None or evidence.goal_id != goal.goal_id:
                     raise ValueError(f"unknown evidence_id: {evidence_id}")
                 if evidence.criterion_id != criterion.criterion_id:
-                    raise ValueError(
-                        f"evidence {evidence_id} does not match criterion {criterion.criterion_id}"
-                    )
+                    raise ValueError(f"evidence {evidence_id} does not match criterion {criterion.criterion_id}")
                 if evidence.verification_status == "verified":
                     has_verified_evidence = True
             if row.result in {"satisfied", "satisfied_with_caveat"} and not has_verified_evidence:

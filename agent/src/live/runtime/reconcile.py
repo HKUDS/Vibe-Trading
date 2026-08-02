@@ -47,7 +47,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -330,9 +330,7 @@ def reconcile(
         deltas.extend(_diff_orders(recorded_orders, broker_orders))
         deltas.extend(_diff_positions(recorded_positions, broker_positions))
 
-    recorded_client_order_ids = tuple(
-        coid for coid in (_client_order_id(o) for o in recorded_orders) if coid
-    )
+    recorded_client_order_ids = tuple(coid for coid in (_client_order_id(o) for o in recorded_orders) if coid)
 
     report = ReconcileReport(
         broker=broker,
@@ -382,11 +380,7 @@ def _diff_orders(
         side via :func:`_diff_positions`; a broker order the recorded side lacks
         but is still *open* is benign and not raised.)
     """
-    broker_by_id = {
-        ident: order
-        for order in broker_orders
-        if (ident := _order_identity(order)) is not None
-    }
+    broker_by_id = {ident: order for order in broker_orders if (ident := _order_identity(order)) is not None}
 
     deltas: list[ReconcileDelta] = []
     for recorded in recorded_orders:
@@ -460,11 +454,7 @@ def _diff_positions(
         One :class:`ReconcileDelta` per symbol where broker truth diverges from
         (or matches) the recorded snapshot.
     """
-    recorded_by_symbol = {
-        sym: _position_qty(p)
-        for p in recorded_positions
-        if (sym := _position_symbol(p)) is not None
-    }
+    recorded_by_symbol = {sym: _position_qty(p) for p in recorded_positions if (sym := _position_symbol(p)) is not None}
 
     deltas: list[ReconcileDelta] = []
     broker_symbols: set[str] = set()
@@ -499,11 +489,7 @@ def _diff_positions(
                         f"(recorded={recorded_qty}, broker={broker_qty}); "
                         "real money moved without a matching audit record"
                     ),
-                    recorded=(
-                        None
-                        if recorded_qty is None
-                        else {"symbol": symbol, "qty": recorded_qty}
-                    ),
+                    recorded=(None if recorded_qty is None else {"symbol": symbol, "qty": recorded_qty}),
                     broker=dict(position),
                 )
             )
@@ -557,13 +543,9 @@ def _load_state(broker: str) -> dict[str, Any] | None:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise CorruptRuntimeState(
-            f"reconcile({broker}): runtime_state.json is unreadable; repair is required"
-        ) from exc
+        raise CorruptRuntimeState(f"reconcile({broker}): runtime_state.json is unreadable; repair is required") from exc
     if not isinstance(raw, dict):
-        raise CorruptRuntimeState(
-            f"reconcile({broker}): runtime_state.json is not an object; repair is required"
-        )
+        raise CorruptRuntimeState(f"reconcile({broker}): runtime_state.json is not an object; repair is required")
     return raw
 
 

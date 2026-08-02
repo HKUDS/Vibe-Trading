@@ -24,9 +24,7 @@ class AgentManifest(BaseModel):
     name: str = Field(description="Human readable name of the agent.")
     description: str = Field(description="Short description shown in the UI.")
     image: str = Field(default="", description="URL of the agent avatar image.")
-    endpoints: Dict[str, str] = Field(
-        description="Map of endpoint kind -> URL, e.g. {'query': '/v1/query'}."
-    )
+    endpoints: Dict[str, str] = Field(description="Map of endpoint kind -> URL, e.g. {'query': '/v1/query'}.")
     features: Dict[str, bool] = Field(
         default_factory=dict,
         description="Feature flags such as streaming / widget-dashboard-select.",

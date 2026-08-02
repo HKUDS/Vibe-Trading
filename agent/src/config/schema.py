@@ -45,9 +45,7 @@ LIVE_BROKER_WRITE_SCOPES: dict[str, frozenset[str]] = {
     "ibkr": frozenset({"mcp.write"}),
 }
 ROBINHOOD_AGENT_CONFIG_PATH = "~/.vibe-trading/agent.json"
-LIVE_BROKER_WILDCARD_ALLOWLIST_ERROR = (
-    "enabledTools allowlist ('*'); pin an explicit read-only tool list"
-)
+LIVE_BROKER_WILDCARD_ALLOWLIST_ERROR = "enabledTools allowlist ('*'); pin an explicit read-only tool list"
 
 
 def _url_host(url: str) -> str:
@@ -106,9 +104,7 @@ def live_broker_key_for_url(url: str) -> str | None:
     return None
 
 
-def live_broker_key_for_entry(
-    server_key: str, server: "MCPServerConfig | MCPServerConfigOverride"
-) -> str | None:
+def live_broker_key_for_entry(server_key: str, server: "MCPServerConfig | MCPServerConfigOverride") -> str | None:
     """Resolve the canonical broker key for a config entry.
 
     Args:
@@ -142,9 +138,7 @@ def is_live_broker_entry(server_key: str, server: "MCPServerConfig | MCPServerCo
     return live_broker_key_for_entry(server_key, server) is not None
 
 
-def _allows_readonly_wildcard_probe(
-    server_key: str, server: "MCPServerConfig | MCPServerConfigOverride"
-) -> bool:
+def _allows_readonly_wildcard_probe(server_key: str, server: "MCPServerConfig | MCPServerConfigOverride") -> bool:
     """Return whether a live broker may use ``enabled_tools=["*"]``.
 
     The only supported exception today is IBKR's official MCP read probe:
@@ -172,11 +166,10 @@ def _allows_readonly_wildcard_probe(
 
     scopes = {scope.strip() for scope in getattr(auth, "scopes", []) if scope.strip()}
     write_scopes = LIVE_BROKER_WRITE_SCOPES.get(broker, frozenset())
-    allowed_extras = LIVE_BROKER_READONLY_WILDCARD_ALLOWED_EXTRA_SCOPES.get(
-        broker, frozenset()
-    )
+    allowed_extras = LIVE_BROKER_READONLY_WILDCARD_ALLOWED_EXTRA_SCOPES.get(broker, frozenset())
     allowed = set(required | allowed_extras)
     return required.issubset(scopes) and scopes.isdisjoint(write_scopes) and scopes <= allowed
+
 
 # Canonical seed for the operator-side ``~/.vibe-trading/agent.json`` mcpServers
 # entry that wires the Robinhood Agentic Trading channel. It ships OFF-by-default
@@ -285,10 +278,7 @@ def format_robinhood_mcp_config_guidance(*, reason: str = "missing") -> str:
     """Build operator-facing guidance for enabling Robinhood MCP safely."""
     tools = ", ".join(robinhood_readonly_enabled_tools())
     if reason == "wildcard":
-        lead = (
-            'Robinhood MCP config uses enabledTools: ["*"], which is not allowed for '
-            "live brokers."
-        )
+        lead = 'Robinhood MCP config uses enabledTools: ["*"], which is not allowed for live brokers.'
     else:
         lead = "Robinhood MCP server is missing from mcpServers."
     return (
@@ -486,9 +476,7 @@ class AgentConfig(ConfigBase):
                     )
                 else:
                     detail = LIVE_BROKER_WILDCARD_ALLOWLIST_ERROR
-                raise ValueError(
-                    f"Live-broker MCP server '{server_key}' may not use a wildcard {detail}"
-                )
+                raise ValueError(f"Live-broker MCP server '{server_key}' may not use a wildcard {detail}")
         return self
 
 

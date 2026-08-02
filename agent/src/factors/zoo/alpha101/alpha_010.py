@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Alpha #10 - 连续价格变动
 # 简要说明: rank((0 < ts_min(delta(close, 1), 4)) ? delta(close, 1) : ((ts_max(delta(close, 1), 4) < 0) ? delta(close, 1) : (-1 * delta(close, 1))))，类似Alpha #9的4日版本。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_010"
 
 __alpha_meta__ = {
-    'id': 'alpha101_010',
-    'nickname': 'Kakushadze Alpha #10',
-    'theme': ['momentum'],
-    'formula_latex': 'rank((0<ts_min(delta(close,1),4))?delta(close,1):((ts_max(delta(close,1),4)<0)?delta(close,1):(-1*delta(close,1))))',
-    'columns_required': ['close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 5,
-    'notes': '',
+    "id": "alpha101_010",
+    "nickname": "Kakushadze Alpha #10",
+    "theme": ["momentum"],
+    "formula_latex": "rank((0<ts_min(delta(close,1),4))?delta(close,1):((ts_max(delta(close,1),4)<0)?delta(close,1):(-1*delta(close,1))))",
+    "columns_required": ["close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 5,
+    "notes": "",
 }
 
 
@@ -75,7 +74,6 @@ def _where_ternary(cond, a, b):
 def compute(panel: dict) -> pd.DataFrame:
     """Compute the alpha on the OHLCV+ panel and return a wide DataFrame."""
     close = panel["close"]
-
 
     # Helper aliases (local closures keep the file standalone & purity-safe).
     where_ternary = _where_ternary

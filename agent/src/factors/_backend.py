@@ -22,7 +22,7 @@ from typing import Any
 # numpy sliding_window_view — always available (numpy >= 1.20)
 from numpy.lib.stride_tricks import sliding_window_view
 
-__all__ = ["HAS_BOTTLENECK", "bn", "sliding_window_view"]
+__all__ = ["HAS_BOTTLENECK", "bn", "sliding_window_view"]  # noqa: F822 — lazily resolved via module __getattr__ (PEP 562)
 
 # ---------------------------------------------------------------------------
 # Lazy bottleneck initialisation

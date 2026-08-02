@@ -6,7 +6,6 @@ from typing import Optional
 
 import requests
 import pandas as pd
-from datetime import datetime
 
 BASE_URL = "https://www.okx.com/api/v5"
 
@@ -26,9 +25,7 @@ def get_candles(inst_id: str, bar: str = "1D", limit: int = 100) -> Optional[pd.
         DataFrame (ts, open, high, low, close, vol)，失败返回 None。
     """
     try:
-        resp = requests.get(f"{BASE_URL}/market/candles", params={
-            "instId": inst_id, "bar": bar, "limit": str(limit)
-        })
+        resp = requests.get(f"{BASE_URL}/market/candles", params={"instId": inst_id, "bar": bar, "limit": str(limit)})
         data = resp.json()
         if data["code"] != "0":
             print(f"API错误: {data['msg']}")
@@ -57,9 +54,9 @@ def get_index_candles(inst_id: str, bar: str = "1D", limit: int = 100) -> Option
         DataFrame (ts, open, high, low, close)，失败返回 None。
     """
     try:
-        resp = requests.get(f"{BASE_URL}/market/index-candles", params={
-            "instId": inst_id, "bar": bar, "limit": str(limit)
-        })
+        resp = requests.get(
+            f"{BASE_URL}/market/index-candles", params={"instId": inst_id, "bar": bar, "limit": str(limit)}
+        )
         data = resp.json()
         if data["code"] != "0":
             print(f"API错误: {data['msg']}")

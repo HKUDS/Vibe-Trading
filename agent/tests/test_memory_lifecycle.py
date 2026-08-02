@@ -98,8 +98,12 @@ class TestMemoryEntryNewFields:
     def test_new_file_with_all_fields(self, tmp_path: Path) -> None:
         """Files with extended frontmatter should parse all fields correctly."""
         _create_memory_file(
-            tmp_path, "full-entry", quality_score=0.8, access_count=5,
-            keywords=["alpha", "beta"], entry_id="aa11bb",
+            tmp_path,
+            "full-entry",
+            quality_score=0.8,
+            access_count=5,
+            keywords=["alpha", "beta"],
+            entry_id="aa11bb",
             related_memories=["cc22dd", "ee33ff"],
         )
         pm = PersistentMemory(memory_dir=tmp_path)
@@ -143,7 +147,8 @@ class TestMemoryEntryNewFields:
     def test_keywords_truncated_to_five(self, tmp_path: Path) -> None:
         """More than 5 keywords should be truncated."""
         _create_memory_file(
-            tmp_path, "many-kw",
+            tmp_path,
+            "many-kw",
             keywords=["a", "b", "c", "d", "e", "f", "g"],
         )
         pm = PersistentMemory(memory_dir=tmp_path)
@@ -153,7 +158,8 @@ class TestMemoryEntryNewFields:
     def test_related_memories_filters_invalid_ids(self, tmp_path: Path) -> None:
         """Non-6-char or non-hex IDs in related_memories should be dropped."""
         _create_memory_file(
-            tmp_path, "bad-rel",
+            tmp_path,
+            "bad-rel",
             related_memories=["ab12cd", "too_long_id", "0a33ff", "x", "ok33ff"],
         )
         pm = PersistentMemory(memory_dir=tmp_path)

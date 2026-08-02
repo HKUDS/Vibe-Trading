@@ -104,9 +104,7 @@ def user_presets_dir(tmp_path, monkeypatch):
 
 
 def test_user_preset_is_discovered(user_presets_dir) -> None:
-    (user_presets_dir / "my_custom_desk.yaml").write_text(
-        _USER_PRESET_YAML, encoding="utf-8"
-    )
+    (user_presets_dir / "my_custom_desk.yaml").write_text(_USER_PRESET_YAML, encoding="utf-8")
     data = load_preset("my_custom_desk")
     assert data["agents"][0]["id"] == "analyst"
 
@@ -120,7 +118,7 @@ def test_user_preset_overrides_bundled_stem(user_presets_dir) -> None:
     (user_presets_dir / "risk_committee.yaml").write_text(override, encoding="utf-8")
 
     data = load_preset("risk_committee")
-    assert len(data["agents"]) == 1                     # the user file won
+    assert len(data["agents"]) == 1  # the user file won
     entries = {p["name"]: p for p in list_presets()}
     assert entries["risk_committee"]["source"] == "user"
     # Override replaces, never duplicates.
@@ -152,9 +150,7 @@ def test_explicit_user_preset_accepted_by_swarm_tool(user_presets_dir) -> None:
     """run_swarm(preset_name=...) reaches user presets; keyword routing does not."""
     from src.tools.swarm_tool import _match_preset, _normalize_preset_name
 
-    (user_presets_dir / "my_custom_desk.yaml").write_text(
-        _USER_PRESET_YAML, encoding="utf-8"
-    )
+    (user_presets_dir / "my_custom_desk.yaml").write_text(_USER_PRESET_YAML, encoding="utf-8")
     assert _normalize_preset_name("My Custom Desk") == "my_custom_desk"
     assert _normalize_preset_name("no_such_preset_anywhere") is None
     # A user preset must never be reachable via keyword auto-routing.

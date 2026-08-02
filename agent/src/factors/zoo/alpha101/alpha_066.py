@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #66
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第66号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_066"
 
 __alpha_meta__ = {
-    'id': 'alpha101_066',
-    'nickname': 'Kakushadze Alpha #66',
-    'theme': ['momentum'],
-    'formula_latex': '(rank(decay_linear(delta(vwap,4), 7)) + Ts_Rank(decay_linear(((0.966*low+0.034*low - vwap)/(open-(high+low)/2)), 11), 7)) * -1',
-    'columns_required': ['open', 'high', 'low', 'vwap', 'close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 18,
-    'notes': '',
+    "id": "alpha101_066",
+    "nickname": "Kakushadze Alpha #66",
+    "theme": ["momentum"],
+    "formula_latex": "(rank(decay_linear(delta(vwap,4), 7)) + Ts_Rank(decay_linear(((0.966*low+0.034*low - vwap)/(open-(high+low)/2)), 11), 7)) * -1",
+    "columns_required": ["open", "high", "low", "vwap", "close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 18,
+    "notes": "",
 }
 
 
@@ -57,7 +56,6 @@ def compute(panel: dict) -> pd.DataFrame:
     high = panel["high"]
     low = panel["low"]
     vwap = panel["vwap"]
-
 
     # Helper aliases (local closures keep the file standalone & purity-safe).
     t1 = rank(decay_linear(delta(vwap, 4), 7))

@@ -64,12 +64,14 @@ def scan_today_signals(
             frame = _get_price_frame(symbol, market, d, price_frames, fetcher)
             if frame is None or not _entry_condition_matches(frame, rule, d):
                 continue
-            matches.append({
-                "symbol": symbol,
-                "market": market,
-                "rule_id": rule.rule_id,
-                "reason": reason,
-            })
+            matches.append(
+                {
+                    "symbol": symbol,
+                    "market": market,
+                    "rule_id": rule.rule_id,
+                    "reason": reason,
+                }
+            )
             market_count += 1
     return matches
 
@@ -189,7 +191,7 @@ def _compute_features(bars: pd.DataFrame, rule: ShadowRule) -> dict[str, float |
         volume = bars["volume"].dropna()
         if len(volume) >= 2 and volume.iloc[-1] > 0:
             volume_window = min(_int_condition_value(rule.entry_condition.get("volume_window"), 5), len(volume) - 1)
-            baseline = volume.iloc[-volume_window - 1:-1].mean()
+            baseline = volume.iloc[-volume_window - 1 : -1].mean()
             if baseline > 0:
                 features["volume_ratio"] = float(volume.iloc[-1] / baseline)
 

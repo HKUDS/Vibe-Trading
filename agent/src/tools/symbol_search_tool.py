@@ -38,8 +38,8 @@ _EASTMONEY_SUGGEST_URL = "https://searchapi.eastmoney.com/api/suggest/get"
 # Eastmoney market-number -> our symbol suffix. Anything else is left unmapped
 # (those candidates are skipped rather than emitted with a wrong suffix).
 _EASTMONEY_SUFFIX_BY_MARKET: Dict[str, str] = {
-    "1": "SH",   # Shanghai
-    "0": "SZ",   # Shenzhen / Beijing share the 0 prefix on Eastmoney
+    "1": "SH",  # Shanghai
+    "0": "SZ",  # Shenzhen / Beijing share the 0 prefix on Eastmoney
     "116": "HK",
     "105": "US",  # NASDAQ
     "106": "US",  # NYSE
@@ -93,8 +93,7 @@ class SymbolSearchTool(BaseTool):
             "limit": {
                 "type": "integer",
                 "description": (
-                    f"Maximum number of merged candidates to return "
-                    f"(1-{_MAX_LIMIT}). Defaults to {_DEFAULT_LIMIT}."
+                    f"Maximum number of merged candidates to return (1-{_MAX_LIMIT}). Defaults to {_DEFAULT_LIMIT}."
                 ),
                 "default": _DEFAULT_LIMIT,
             },
@@ -302,9 +301,7 @@ def _yahoo_candidate(quote: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not raw_symbol:
         return None
     symbol, market = _from_yahoo_symbol(raw_symbol, quote)
-    name = (
-        str(quote.get("shortname") or quote.get("longname") or "").strip() or None
-    )
+    name = str(quote.get("shortname") or quote.get("longname") or "").strip() or None
     return {
         "symbol": symbol,
         "name": name,
@@ -391,10 +388,7 @@ def _enrich_us_cik(
         U.S. equity was present, ``"ok"`` on a clean pass, or a short error
         string when a SEC lookup failed.
     """
-    has_us = any(
-        isinstance(c.get("symbol"), str) and c["symbol"].upper().endswith(".US")
-        for c in candidates
-    )
+    has_us = any(isinstance(c.get("symbol"), str) and c["symbol"].upper().endswith(".US") for c in candidates)
     if not has_us:
         return candidates, _NO_US
 

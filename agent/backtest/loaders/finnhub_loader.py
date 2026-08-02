@@ -110,10 +110,7 @@ def _rows_from_payload(payload: Any) -> List[Dict[str, Any]]:
 
     rows: List[Dict[str, Any]] = []
     for index, epoch in enumerate(timestamps):
-        values = {
-            field: _at(payload.get(key), index)
-            for key, field in _FINNHUB_TO_OHLCV.items()
-        }
+        values = {field: _at(payload.get(key), index) for key, field in _FINNHUB_TO_OHLCV.items()}
         if any(values[field] is None for field in ("open", "high", "low", "close")):
             continue
         # Keep the raw epoch here; the resolution is normalized in one place
@@ -222,9 +219,7 @@ class DataLoader:
                     start_date=start_date,
                     end_date=end_date,
                     fields=None,
-                    fetch=lambda code=code: self._fetch_one(
-                        code, start_date, end_date, api_key
-                    ),
+                    fetch=lambda code=code: self._fetch_one(code, start_date, end_date, api_key),
                 )
                 if df is not None and not df.empty:
                     result[code] = df
@@ -232,9 +227,7 @@ class DataLoader:
                 logger.warning("finnhub failed for %s: %s", code, exc)
         return result
 
-    def _fetch_one(
-        self, code: str, start_date: str, end_date: str, api_key: str
-    ) -> Optional[pd.DataFrame]:
+    def _fetch_one(self, code: str, start_date: str, end_date: str, api_key: str) -> Optional[pd.DataFrame]:
         """Fetch and normalize one symbol's daily candles.
 
         Args:
@@ -269,11 +262,7 @@ class DataLoader:
         # dtype (``datetime64[ns]``) stays consistent with the other loaders
         # rather than collapsing to the second resolution pandas infers from a
         # ``unit="s"`` conversion.
-        df["trade_date"] = pd.to_datetime(df["trade_date"], unit="s").astype(
-            "datetime64[ns]"
-        )
+        df["trade_date"] = pd.to_datetime(df["trade_date"], unit="s").astype("datetime64[ns]")
         df = df.set_index("trade_date").sort_index()
-        df = df[_OHLCV_COLUMNS].astype(float).dropna(
-            subset=["open", "high", "low", "close"]
-        )
+        df = df[_OHLCV_COLUMNS].astype(float).dropna(subset=["open", "high", "low", "close"])
         return df

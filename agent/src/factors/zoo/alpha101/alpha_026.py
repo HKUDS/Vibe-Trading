@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #26
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第26号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_026"
 
 __alpha_meta__ = {
-    'id': 'alpha101_026',
-    'nickname': 'Kakushadze Alpha #26',
-    'theme': ['volume'],
-    'formula_latex': '-1 * ts_max(correlation(ts_rank(volume,5),ts_rank(high,5),5),3)',
-    'columns_required': ['high', 'volume', 'close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 13,
-    'notes': '',
+    "id": "alpha101_026",
+    "nickname": "Kakushadze Alpha #26",
+    "theme": ["volume"],
+    "formula_latex": "-1 * ts_max(correlation(ts_rank(volume,5),ts_rank(high,5),5),3)",
+    "columns_required": ["high", "volume", "close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 13,
+    "notes": "",
 }
 
 
@@ -55,7 +54,6 @@ def compute(panel: dict) -> pd.DataFrame:
     """Compute the alpha on the OHLCV+ panel and return a wide DataFrame."""
     high = panel["high"]
     volume = panel["volume"]
-
 
     # Helper aliases (local closures keep the file standalone & purity-safe).
     out = -1.0 * ts_max(ts_corr(ts_rank(volume, 5), ts_rank(high, 5), 5), 3)

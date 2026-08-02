@@ -36,13 +36,16 @@ from src.tools.redaction import is_sensitive_arg, redact_payload, redact_tool_re
 
 logger = logging.getLogger(__name__)
 
+
 def _default_max_iterations() -> int:
     from src.config.accessor import get_env_config
+
     return get_env_config().swarm.swarm_worker_max_iter
 
 
 def _default_timeout_seconds() -> int:
     from src.config.accessor import get_env_config
+
     return get_env_config().swarm.swarm_worker_timeout
 
 
@@ -204,10 +207,7 @@ def build_worker_prompt(
         sections = []
         for key, summary in upstream_summaries.items():
             sections.append(f"### {key}\n{summary}")
-        upstream_block = (
-            "## Upstream Context (from previous agents)\n\n"
-            + "\n\n".join(sections)
-        )
+        upstream_block = "## Upstream Context (from previous agents)\n\n" + "\n\n".join(sections)
 
     prompt_parts = [
         f"## Role\n\n{agent_spec.role}",
@@ -258,8 +258,8 @@ def build_worker_prompt(
         "If you cannot back a number with (a), (b), or (c), you have two "
         "choices:\n"
         "  - call a data tool to fetch it (preferred), or\n"
-        "  - omit the number and qualify the statement (e.g. \"directional "
-        "only — not verified against live data\").\n\n"
+        '  - omit the number and qualify the statement (e.g. "directional '
+        'only — not verified against live data").\n\n'
         "This rule applies equally to synthesis / aggregator / editor roles "
         "that lack data tools. If upstream did not provide a specific number, "
         "do NOT introduce one from training data — say the upstream omitted "
@@ -285,10 +285,7 @@ def build_worker_prompt(
     )
 
     now = datetime.now(timezone.utc)
-    prompt_parts.append(
-        f"## Current Date & Time\n\n"
-        f"Today is {now.strftime('%A, %B %d, %Y %H:%M UTC')}"
-    )
+    prompt_parts.append(f"## Current Date & Time\n\nToday is {now.strftime('%A, %B %d, %Y %H:%M UTC')}")
 
     return "\n\n".join(prompt_parts)
 
@@ -357,12 +354,16 @@ def run_worker(
     skills_loader = SkillsLoader()
     skill_desc = _filter_skill_descriptions(skills_loader, agent_spec.skills)
     system_prompt = build_worker_prompt(
-        agent_spec, upstream_summaries, skill_desc, grounding_block=grounding_block,
+        agent_spec,
+        upstream_summaries,
+        skill_desc,
+        grounding_block=grounding_block,
     )
 
     # 4. Resolve prompt template with user vars (missing vars → LLM infers)
     class _FallbackDict(dict):
         """Dict that hints LLM to infer missing template variables."""
+
         def __missing__(self, key: str) -> str:
             return f"(determine the appropriate {key} based on the objective)"
 
@@ -374,8 +375,12 @@ def run_worker(
         error_msg = f"Failed to render prompt template: {exc}"
         _emit(event_callback, "worker_failed", agent_id, task_id, {"error": error_msg})
         return WorkerResult(
-            status="failed", summary="", iterations=0, error=error_msg,
-            input_tokens=0, output_tokens=0,
+            status="failed",
+            summary="",
+            iterations=0,
+            error=error_msg,
+            input_tokens=0,
+            output_tokens=0,
         )
 
     # 5. Build initial messages
@@ -415,7 +420,10 @@ def run_worker(
         # Check timeout
         elapsed = time.monotonic() - t0
         if elapsed > timeout:
-            summary = _best_summary(messages, last_assistant_content) or f"Worker timed out after {elapsed:.0f}s ({iteration} iterations)"
+            summary = (
+                _best_summary(messages, last_assistant_content)
+                or f"Worker timed out after {elapsed:.0f}s ({iteration} iterations)"
+            )
             summary = _resolve_summary(artifact_dir, summary)
             _emit(event_callback, "worker_timeout", agent_id, task_id, {"elapsed": elapsed})
             _write_summary(artifact_dir, summary)
@@ -428,14 +436,17 @@ def run_worker(
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
                 content_filter_warnings=compute_content_filter_warnings(
-                    content_filter_count, iteration + 1,
+                    content_filter_count,
+                    iteration + 1,
                 ),
             )
 
         # Check token estimate
         token_estimate = len(json.dumps(messages, ensure_ascii=False)) // 4
         if token_estimate > _MAX_TOKEN_ESTIMATE:
-            summary = last_assistant_content or f"Worker context too large (~{token_estimate} tokens, {iteration} iterations)"
+            summary = (
+                last_assistant_content or f"Worker context too large (~{token_estimate} tokens, {iteration} iterations)"
+            )
             summary = _resolve_summary(artifact_dir, summary)
             _emit(event_callback, "worker_token_limit", agent_id, task_id, {"tokens": token_estimate})
             _write_summary(artifact_dir, summary)
@@ -447,21 +458,24 @@ def run_worker(
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
                 content_filter_warnings=compute_content_filter_warnings(
-                    content_filter_count, iteration + 1,
+                    content_filter_count,
+                    iteration + 1,
                 ),
             )
 
         # Inject wrap-up nudge when approaching iteration limit
         if iteration == wrap_up_at:
             remaining = max_iterations - iteration
-            messages.append({
-                "role": "user",
-                "content": (
-                    f"[SYSTEM] You have {remaining} iterations remaining. "
-                    "If report.md is not written yet, make one final write_file call for report.md. "
-                    "Otherwise stop calling tools and output your final analysis summary as plain text."
-                ),
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"[SYSTEM] You have {remaining} iterations remaining. "
+                        "If report.md is not written yet, make one final write_file call for report.md. "
+                        "Otherwise stop calling tools and output your final analysis summary as plain text."
+                    ),
+                }
+            )
 
         # On last iteration, call LLM without tool definitions to force text output
         is_last_iteration = iteration == max_iterations - 1
@@ -470,9 +484,9 @@ def run_worker(
         # Stream the LLM — moonshot/kimi non-streaming invoke is unreliable
         # (issue #42), and streaming also feeds dashboard live progress.
         try:
+
             def _on_text_chunk(delta: str) -> None:
-                _emit(event_callback, "worker_text", agent_id, task_id,
-                      {"content": delta, "iteration": iteration})
+                _emit(event_callback, "worker_text", agent_id, task_id, {"content": delta, "iteration": iteration})
 
             # LLM streaming can stall for 30s+ between request start and the
             # first text chunk (slow first-token providers, reasoning models'
@@ -552,7 +566,8 @@ def run_worker(
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
                 content_filter_warnings=compute_content_filter_warnings(
-                    content_filter_count, iteration + 1,
+                    content_filter_count,
+                    iteration + 1,
                 ),
             )
 
@@ -593,7 +608,8 @@ def run_worker(
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
                     content_filter_warnings=compute_content_filter_warnings(
-                        content_filter_count, iteration + 1,
+                        content_filter_count,
+                        iteration + 1,
                     ),
                 )
             _emit(
@@ -603,10 +619,12 @@ def run_worker(
                 task_id,
                 {"iteration": iteration, "content_filter_count": content_filter_count},
             )
-            messages.append({
-                "role": "system",
-                "content": CONTENT_FILTER_SKIP_MESSAGE,
-            })
+            messages.append(
+                {
+                    "role": "system",
+                    "content": CONTENT_FILTER_SKIP_MESSAGE,
+                }
+            )
             continue
 
         consecutive_content_filter_count = 0
@@ -623,8 +641,13 @@ def run_worker(
                 data_tool_calls=data_tool_calls,
             )
             if reason:
-                _emit(event_callback, "worker_incomplete", agent_id, task_id,
-                      {"iterations": iteration + 1, "reason": reason})
+                _emit(
+                    event_callback,
+                    "worker_incomplete",
+                    agent_id,
+                    task_id,
+                    {"iterations": iteration + 1, "reason": reason},
+                )
                 return WorkerResult(
                     status="incomplete",
                     summary=summary,
@@ -634,7 +657,8 @@ def run_worker(
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
                     content_filter_warnings=compute_content_filter_warnings(
-                        content_filter_count, iteration + 1,
+                        content_filter_count,
+                        iteration + 1,
                     ),
                 )
             _emit(event_callback, "worker_completed", agent_id, task_id, {"iterations": iteration + 1})
@@ -646,7 +670,8 @@ def run_worker(
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
                 content_filter_warnings=compute_content_filter_warnings(
-                    content_filter_count, iteration + 1,
+                    content_filter_count,
+                    iteration + 1,
                 ),
             )
 
@@ -663,11 +688,17 @@ def run_worker(
         for tc in response.tool_calls:
             mcp_meta = _remote_tool_metadata(registry, tc.name)
             _emit(
-                event_callback, "tool_call", agent_id, task_id,
-                {"tool": tc.name, "iteration": iteration,
-                 "call_id": tc.id,
-                 "arguments": _preview_tool_arguments(tc.arguments),
-                 **mcp_meta},
+                event_callback,
+                "tool_call",
+                agent_id,
+                task_id,
+                {
+                    "tool": tc.name,
+                    "iteration": iteration,
+                    "call_id": tc.id,
+                    "arguments": _preview_tool_arguments(tc.arguments),
+                    **mcp_meta,
+                },
             )
             tc_start = time.monotonic()
             args = {**tc.arguments, "run_dir": str(artifact_dir)}
@@ -710,17 +741,18 @@ def run_worker(
                     **mcp_meta,
                 },
             )
-            messages.append(
-                ContextBuilder.format_tool_result(tc.id, tc.name, result[:10_000])
-            )
+            messages.append(ContextBuilder.format_tool_result(tc.id, tc.name, result[:10_000]))
 
     # Content filter ratio tracking
     content_filter_warnings = compute_content_filter_warnings(
-        content_filter_count, iteration + 1,
+        content_filter_count,
+        iteration + 1,
     )
 
     # Hit iteration limit — use last meaningful content as summary
-    summary = _best_summary(messages, last_assistant_content) or f"Worker hit iteration limit ({max_iterations} iterations)"
+    summary = (
+        _best_summary(messages, last_assistant_content) or f"Worker hit iteration limit ({max_iterations} iterations)"
+    )
     summary = _resolve_summary(artifact_dir, summary)
     _write_summary(artifact_dir, summary)
     _persist_messages(artifact_dir, messages)
@@ -731,8 +763,13 @@ def run_worker(
         data_tool_calls=data_tool_calls,
     )
     if reason:
-        _emit(event_callback, "worker_incomplete", agent_id, task_id,
-              {"iterations": max_iterations, "reason": f"iteration limit; {reason}"})
+        _emit(
+            event_callback,
+            "worker_incomplete",
+            agent_id,
+            task_id,
+            {"iterations": max_iterations, "reason": f"iteration limit; {reason}"},
+        )
         return WorkerResult(
             status="incomplete",
             summary=summary,
@@ -758,9 +795,9 @@ def run_worker(
 def _best_summary(messages: list[dict], fallback: str) -> str:
     """Extract the best summary from all assistant messages."""
     texts = [
-        m["content"] for m in messages
-        if m.get("role") == "assistant" and m.get("content")
-        and len(m["content"].strip()) > 100
+        m["content"]
+        for m in messages
+        if m.get("role") == "assistant" and m.get("content") and len(m["content"].strip()) > 100
     ]
     if texts:
         return max(texts, key=len)
@@ -834,14 +871,29 @@ _UNPARSED_TOOL_MARKERS = (
 )
 _FABRICATION_MARKERS = ("mock data", "without actual data", "fabricated data", "placeholder data")
 _PLAN_PREFIXES = (
-    "# phase 1", "## phase 1", "### phase 1",
-    "phase 1 \u2014 plan", "phase 1 - plan", "phase 1: plan",
-    "# plan", "## plan", "### plan", "**plan**",
+    "# phase 1",
+    "## phase 1",
+    "### phase 1",
+    "phase 1 \u2014 plan",
+    "phase 1 - plan",
+    "phase 1: plan",
+    "# plan",
+    "## plan",
+    "### plan",
+    "**plan**",
 )
 _HANDOFF_TAILS = (
-    "execute", "execute.", "execute:", "skills.", "skills", "proceed?",
-    "proceed.", "without writing files.", "let me adjust the approach",
-    "let me adjust the approach.", "stand by for final synthesis.",
+    "execute",
+    "execute.",
+    "execute:",
+    "skills.",
+    "skills",
+    "proceed?",
+    "proceed.",
+    "without writing files.",
+    "let me adjust the approach",
+    "let me adjust the approach.",
+    "stand by for final synthesis.",
 )
 
 
@@ -905,15 +957,11 @@ def _classify_deliverable(
         return "unparsed tool-call markup (provider did not parse tool calls)"
     if any(m in low for m in _FABRICATION_MARKERS):
         return "explicitly fabricated / mock data"
-    if text.startswith("{") and '"status"' in text[:40] and (
-        '"content"' in text[:300] or '"ok"' in text[:40]
-    ):
+    if text.startswith("{") and '"status"' in text[:40] and ('"content"' in text[:300] or '"ok"' in text[:40]):
         return "raw tool-result envelope, not analysis"
     if low.startswith(_PLAN_PREFIXES):
         tail = low.rsplit("phase 2", 1)[-1].strip() if "phase 2" in low else ""
-        if len(text) < 600 or low.rstrip().endswith(_HANDOFF_TAILS) or (
-            "phase 2" in low and len(tail) < 80
-        ):
+        if len(text) < 600 or low.rstrip().endswith(_HANDOFF_TAILS) or ("phase 2" in low and len(tail) < 80):
             return "plan-only stub (no executed analysis / conclusion)"
     if is_data_agent and not report_written and data_tool_calls == 0:
         return "data agent produced no tool calls and no report.md"

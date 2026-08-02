@@ -186,9 +186,7 @@ class ScheduledResearchExecutor:
             else tuning.vibe_trading_scheduler_retry_base_delay_ms
         )
         self._retry_max_delay_ms = (
-            retry_max_delay_ms
-            if retry_max_delay_ms is not None
-            else tuning.vibe_trading_scheduler_retry_max_delay_ms
+            retry_max_delay_ms if retry_max_delay_ms is not None else tuning.vibe_trading_scheduler_retry_max_delay_ms
         )
         if self._max_consecutive_failures < 1:
             raise ValueError("max_consecutive_failures must be at least 1")

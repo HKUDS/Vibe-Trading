@@ -23,12 +23,10 @@ _INTERNAL = frozenset({"base", "bus", "config", "manager", "pairing", "registry"
 _LEGACY_GLOBAL_CONFIG_KEYS = frozenset(
     {"restrictToWorkspace", "restrict_to_workspace", "showReasoning", "show_reasoning"}
 )
-_GLOBAL_CONFIG_KEYS = frozenset(
-    key
-    for name, field in ChannelsConfig.model_fields.items()
-    for key in (name, field.alias)
-    if key
-) | _LEGACY_GLOBAL_CONFIG_KEYS
+_GLOBAL_CONFIG_KEYS = (
+    frozenset(key for name, field in ChannelsConfig.model_fields.items() for key in (name, field.alias) if key)
+    | _LEGACY_GLOBAL_CONFIG_KEYS
+)
 
 _INSTALL_HINTS: dict[str, str] = {
     "dingtalk": "pip install 'vibe-trading-ai[dingtalk]'",
@@ -88,11 +86,7 @@ def discover_channel_names() -> list[str]:
     """Return all built-in channel module names by scanning the package (zero imports)."""
     import src.channels as pkg
 
-    return [
-        name
-        for _, name, ispkg in pkgutil.iter_modules(pkg.__path__)
-        if name not in _INTERNAL and not ispkg
-    ]
+    return [name for _, name, ispkg in pkgutil.iter_modules(pkg.__path__) if name not in _INTERNAL and not ispkg]
 
 
 def _channel_class_from_module(module: ModuleType, module_name: str) -> type[BaseChannel]:
@@ -112,9 +106,7 @@ def _missing_optional_dependency(name: str, module: ModuleType) -> str:
         if getattr(module, flag, True) is False:
             return f"missing optional dependency for {name}"
     missing_packages = [
-        package
-        for package in _LAZY_IMPORT_PACKAGES.get(name, ())
-        if importlib.util.find_spec(package) is None
+        package for package in _LAZY_IMPORT_PACKAGES.get(name, ()) if importlib.util.find_spec(package) is None
     ]
     if missing_packages:
         return "missing optional dependency: " + ", ".join(missing_packages)
@@ -267,9 +259,7 @@ def discover_enabled(
     if _include_all_external:
         result.update({k: v for k, v in external.items() if k not in shadowed})
     else:
-        result.update(
-            {k: v for k, v in external.items() if k not in shadowed and k in enabled_names}
-        )
+        result.update({k: v for k, v in external.items() if k not in shadowed and k in enabled_names})
 
     return result
 

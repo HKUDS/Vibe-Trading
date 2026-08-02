@@ -39,11 +39,8 @@ adj_circle | str | Y | 指数成份证券调整周期
 **接口示例**
 
 ```python
-
-#获取当前ETF跟踪的基准指数列表
-df = pro.etf_index(fields='ts_code,indx_name,pub_date,bp')
-
-
+# 获取当前ETF跟踪的基准指数列表
+df = pro.etf_index(fields="ts_code,indx_name,pub_date,bp")
 ```
 <br>
 <br>

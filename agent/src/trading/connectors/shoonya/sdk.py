@@ -59,13 +59,14 @@ class ShoonyaConfigError(RuntimeError):
 # NSE exchange codes for Shoonya
 # ---------------------------------------------------------------------------
 
+
 class ShoonyaExchange:
     NSE = "NSE"
-    NFO = "NFO"      # NSE F&O
+    NFO = "NFO"  # NSE F&O
     BSE = "BSE"
-    BFO = "BFO"      # BSE F&O
-    CDS = "CDS"      # Currency
-    MCX = "MCX"      # Commodity
+    BFO = "BFO"  # BSE F&O
+    CDS = "CDS"  # Currency
+    MCX = "MCX"  # Commodity
 
 
 @dataclass(frozen=True)
@@ -141,10 +142,7 @@ def build_config(
         if value is not None:
             base[key] = value
     cfg = ShoonyaConfig.from_mapping(base)
-    clean = {
-        k: v for k, v in dict(overrides or {}).items()
-        if k in _OVERRIDE_KEYS and v not in (None, "")
-    }
+    clean = {k: v for k, v in dict(overrides or {}).items() if k in _OVERRIDE_KEYS and v not in (None, "")}
     return cfg.with_overrides(**clean) if clean else cfg
 
 
@@ -250,18 +248,20 @@ def get_positions(config: ShoonyaConfig | None = None) -> dict[str, Any]:
 
     rows = []
     for item in _as_list(positions):
-        rows.append({
-            "symbol": item.get("tsym", ""),
-            "exchange": item.get("exch", ""),
-            "product_type": item.get("prd", ""),
-            "quantity": int(item.get("netqty", 0)),
-            "average_cost": float(item.get("netavgprc", 0)),
-            "ltp": float(item.get("lp", 0)),
-            "unrealized_pnl": float(item.get("urmtom", 0)),
-            "realized_pnl": float(item.get("rpnl", 0)),
-            "day_buy_qty": int(item.get("daybuyqty", 0)),
-            "day_sell_qty": int(item.get("daysellqty", 0)),
-        })
+        rows.append(
+            {
+                "symbol": item.get("tsym", ""),
+                "exchange": item.get("exch", ""),
+                "product_type": item.get("prd", ""),
+                "quantity": int(item.get("netqty", 0)),
+                "average_cost": float(item.get("netavgprc", 0)),
+                "ltp": float(item.get("lp", 0)),
+                "unrealized_pnl": float(item.get("urmtom", 0)),
+                "realized_pnl": float(item.get("rpnl", 0)),
+                "day_buy_qty": int(item.get("daybuyqty", 0)),
+                "day_sell_qty": int(item.get("daysellqty", 0)),
+            }
+        )
 
     return {
         "status": "ok",
@@ -367,10 +367,7 @@ def get_historical_bars(
     if interval is None:
         return {
             "status": "error",
-            "error": (
-                f"unsupported period: {period!r}; "
-                f"supported: {sorted(_INTERVAL_MAP)}"
-            ),
+            "error": (f"unsupported period: {period!r}; supported: {sorted(_INTERVAL_MAP)}"),
             "symbol": clean,
         }
 
@@ -395,14 +392,16 @@ def get_historical_bars(
 
     bars = []
     for item in _as_list(data):
-        bars.append({
-            "time": item.get("time", item.get("ssboe", "")),
-            "open": float(item.get("into", item.get("o", 0))),
-            "high": float(item.get("inth", item.get("h", 0))),
-            "low": float(item.get("intl", item.get("l", 0))),
-            "close": float(item.get("intc", item.get("c", 0))),
-            "volume": int(item.get("intv", item.get("v", 0))),
-        })
+        bars.append(
+            {
+                "time": item.get("time", item.get("ssboe", "")),
+                "open": float(item.get("into", item.get("o", 0))),
+                "high": float(item.get("inth", item.get("h", 0))),
+                "low": float(item.get("intl", item.get("l", 0))),
+                "close": float(item.get("intc", item.get("c", 0))),
+                "volume": int(item.get("intv", item.get("v", 0))),
+            }
+        )
 
     return {
         "status": "ok",
@@ -547,8 +546,7 @@ def _login(cfg: ShoonyaConfig):
     missing = _missing_fields(cfg)
     if missing:
         raise ShoonyaConfigError(
-            f"Shoonya connector not configured: missing {', '.join(missing)}. "
-            "Set them in ~/.vibe-trading/shoonya.json"
+            f"Shoonya connector not configured: missing {', '.join(missing)}. Set them in ~/.vibe-trading/shoonya.json"
         )
 
     cached = _api_cache.get(cfg.user_id)
@@ -561,8 +559,7 @@ def _login(cfg: ShoonyaConfig):
         import pyotp
     except ModuleNotFoundError as exc:
         raise ShoonyaDependencyError(
-            "pyotp is not installed (required for Shoonya TOTP login); run "
-            "`pip install pyotp`."
+            "pyotp is not installed (required for Shoonya TOTP login); run `pip install pyotp`."
         ) from exc
 
     class ShoonyaApi(NorenApi.NorenApi):

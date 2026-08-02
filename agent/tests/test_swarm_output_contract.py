@@ -238,9 +238,7 @@ class _ScriptedLLM:
         self._responses = [
             LLMResponse(
                 content=None,
-                tool_calls=[
-                    ToolCallRequest(id="call-1", name="market_probe", arguments={})
-                ],
+                tool_calls=[ToolCallRequest(id="call-1", name="market_probe", arguments={})],
                 finish_reason="tool_calls",
             ),
             LLMResponse(
@@ -272,9 +270,7 @@ def test_tool_result_event_status_and_evidence_credit_agree(
 ) -> None:
     registry = ToolRegistry()
     registry.register(_ResultTool(result, raises=raises))
-    monkeypatch.setattr(
-        worker_mod, "build_swarm_registry", lambda *args, **kwargs: registry
-    )
+    monkeypatch.setattr(worker_mod, "build_swarm_registry", lambda *args, **kwargs: registry)
     monkeypatch.setattr(worker_mod, "ChatLLM", lambda *args, **kwargs: _ScriptedLLM())
 
     events: list[SwarmEvent] = []
@@ -286,9 +282,7 @@ def test_tool_result_event_status_and_evidence_credit_agree(
             tools=["market_probe"],
             max_iterations=3,
         ),
-        task=SwarmTask(
-            id="task", agent_id="analyst", prompt_template="Probe the market."
-        ),
+        task=SwarmTask(id="task", agent_id="analyst", prompt_template="Probe the market."),
         upstream_summaries={},
         user_vars={},
         run_dir=tmp_path,

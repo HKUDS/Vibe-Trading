@@ -148,8 +148,8 @@ from src.factors.registry import Registry
 
 registry = Registry()
 ids = registry.list(theme="momentum", universe="equity_cn")  # filter the catalogue
-factor_panel = registry.compute("alpha101_001", panel)        # wide DataFrame, same shape as panel["close"]
-factor_panel.to_csv("factor_alpha101_001.csv")                # ready for factor_analysis tool
+factor_panel = registry.compute("alpha101_001", panel)  # wide DataFrame, same shape as panel["close"]
+factor_panel.to_csv("factor_alpha101_001.csv")  # ready for factor_analysis tool
 ```
 
 For combining several validated alphas into one composite signal, see the `multi-factor` skill's `ZooSignalEngine` (it z-scores, weights, and ranks alphas for you, with per-alpha skip isolation). For browsing the catalogue and inspecting individual `__alpha_meta__` records, see the `alpha-zoo` skill.

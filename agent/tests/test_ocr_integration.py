@@ -18,6 +18,7 @@ def _has_rapid_ocr() -> bool:
     """Check if RapidOCR is available for testing."""
     try:
         from rapidocr_onnxruntime import RapidOCR  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -120,6 +121,4 @@ class TestOcrEngineDiscovery:
 
         engine = get_ocr_engine()
         if engine is not None:
-            assert engine.is_cloud is False, (
-                f"auto mode returned cloud engine: {engine.name}"
-            )
+            assert engine.is_cloud is False, f"auto mode returned cloud engine: {engine.name}"

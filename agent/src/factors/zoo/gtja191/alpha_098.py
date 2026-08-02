@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #98
 # 简要说明: 国泰君安191短周期交易型alpha因子第98号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_098",
-    "theme": ['reversal'],
-    "formula_latex": '((((DELTA((SUM(CLOSE,100)/100),100)/DELAY(CLOSE,100))<0.05) || ((DELTA((SUM(CLOSE,100)/100),100)/DELAY(CLOSE,100))==0.05)) ? (-1*(CLOSE-TSMIN(CLOSE,100))) : (-1*DELTA(CLOSE,3)))',
-    "columns_required": ['close'],
+    "theme": ["reversal"],
+    "formula_latex": "((((DELTA((SUM(CLOSE,100)/100),100)/DELAY(CLOSE,100))<0.05) || ((DELTA((SUM(CLOSE,100)/100),100)/DELAY(CLOSE,100))==0.05)) ? (-1*(CLOSE-TSMIN(CLOSE,100))) : (-1*DELTA(CLOSE,3)))",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 30,
     "min_warmup_bars": 60,
-    "notes": '100d windows truncated to 30d for warmup feasibility.',
+    "notes": "100d windows truncated to 30d for warmup feasibility.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

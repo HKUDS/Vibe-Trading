@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #95
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第95号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_095"
 
 __alpha_meta__ = {
-    'id': 'alpha101_095',
-    'nickname': 'Kakushadze Alpha #95',
-    'theme': ['volume'],
-    'formula_latex': 'rank(open-ts_min(open,13)) < Ts_Rank((rank(correlation(sum((high+low)/2,19), sum(adv40,19),13))^5), 12)',
-    'columns_required': ['open', 'high', 'low', 'volume', 'close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 63,
-    'notes': '',
+    "id": "alpha101_095",
+    "nickname": "Kakushadze Alpha #95",
+    "theme": ["volume"],
+    "formula_latex": "rank(open-ts_min(open,13)) < Ts_Rank((rank(correlation(sum((high+low)/2,19), sum(adv40,19),13))^5), 12)",
+    "columns_required": ["open", "high", "low", "volume", "close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 63,
+    "notes": "",
 }
 
 

@@ -178,9 +178,7 @@ def _cancel_resting_orders(
         try:
             response = submit(request)
         except Exception as exc:  # noqa: BLE001 — record + move on, never retry
-            report["errors"].append(
-                {"phase": "cancel", "order_id": order_id, "error": str(exc)}
-            )
+            report["errors"].append({"phase": "cancel", "order_id": order_id, "error": str(exc)})
             _audit(
                 broker,
                 _sweep_tool(broker, "cancel_order", _CANCEL_TOOL),
@@ -245,9 +243,7 @@ def _flatten_open_positions(
         try:
             response = submit(request)
         except Exception as exc:  # noqa: BLE001 — record + move on, never retry
-            report["errors"].append(
-                {"phase": "flatten", "symbol": symbol, "error": str(exc)}
-            )
+            report["errors"].append({"phase": "flatten", "symbol": symbol, "error": str(exc)})
             _audit(
                 broker,
                 _sweep_tool(broker, "submit_order", _FLATTEN_TOOL),

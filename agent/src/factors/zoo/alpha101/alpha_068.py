@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #68
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第68号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_068"
 
 __alpha_meta__ = {
-    'id': 'alpha101_068',
-    'nickname': 'Kakushadze Alpha #68',
-    'theme': ['volume'],
-    'formula_latex': '(Ts_Rank(correlation(rank(high), rank(adv15), 9), 14) < rank(delta(0.518*close+0.482*low, 1))) * -1',
-    'columns_required': ['high', 'low', 'close', 'volume'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 36,
-    'notes': '',
+    "id": "alpha101_068",
+    "nickname": "Kakushadze Alpha #68",
+    "theme": ["volume"],
+    "formula_latex": "(Ts_Rank(correlation(rank(high), rank(adv15), 9), 14) < rank(delta(0.518*close+0.482*low, 1))) * -1",
+    "columns_required": ["high", "low", "close", "volume"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 36,
+    "notes": "",
 }
 
 

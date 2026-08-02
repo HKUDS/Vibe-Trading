@@ -44,7 +44,11 @@ class _FakeLoader:
         self.fetched: List[str] = []
 
     def fetch(
-        self, codes: List[str], start_date: str, end_date: str, **kwargs: object,
+        self,
+        codes: List[str],
+        start_date: str,
+        end_date: str,
+        **kwargs: object,
     ) -> Dict[str, pd.DataFrame]:
         self.fetched.extend(codes)
         index = pd.date_range("2023-01-03", periods=len(self._closes), freq="D")
@@ -77,7 +81,8 @@ class _SwappedNetworkLoader:
 
 class TestBenchmarkLoaderForwarding:
     def test_explicit_source_loader_is_used_instead_of_yfinance(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         def _no_network() -> None:
             raise AssertionError("yfinance loader must not be created")
@@ -100,10 +105,13 @@ class TestBenchmarkLoaderForwarding:
         assert result.total_ret == pytest.approx(0.1)
 
     @pytest.mark.parametrize(
-        "loader", [_EmptyLoader(), _RaisingLoader(), _SwappedNetworkLoader(), None],
+        "loader",
+        [_EmptyLoader(), _RaisingLoader(), _SwappedNetworkLoader(), None],
     )
     def test_local_source_fails_closed_without_yfinance(
-        self, monkeypatch: pytest.MonkeyPatch, loader: object,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        loader: object,
     ) -> None:
         """source=local must never touch the network, even when the local
         loader yields no benchmark data, raises, or was silently swapped for
@@ -126,7 +134,8 @@ class TestBenchmarkLoaderForwarding:
         assert result is None
 
     def test_non_local_source_falls_back_to_yfinance_when_no_data(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         fallback = _FakeLoader([100.0, 105.0])
         monkeypatch.setattr("backtest.benchmark.YfinanceLoader", lambda: fallback)
@@ -145,7 +154,8 @@ class TestBenchmarkLoaderForwarding:
         assert result.total_ret == pytest.approx(0.05)
 
     def test_no_loader_keeps_yfinance_default(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         fallback = _FakeLoader([100.0, 102.0])
         monkeypatch.setattr("backtest.benchmark.YfinanceLoader", lambda: fallback)

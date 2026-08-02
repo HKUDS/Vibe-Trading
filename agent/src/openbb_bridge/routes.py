@@ -110,9 +110,7 @@ def register_openbb_routes(app: FastAPI) -> None:
         through, because Workspace stores it verbatim and calls it directly.
         """
         manifest = _MANIFEST.model_dump()
-        manifest["endpoints"] = {
-            "query": urljoin(str(request.base_url), QUERY_PATH.lstrip("/"))
-        }
+        manifest["endpoints"] = {"query": urljoin(str(request.base_url), QUERY_PATH.lstrip("/"))}
         return JSONResponse(content={AGENT_KEY: manifest})
 
     @app.post(QUERY_PATH, dependencies=[Depends(require_auth)])
@@ -135,9 +133,7 @@ def register_openbb_routes(app: FastAPI) -> None:
                     )
                 ).model_dump()
 
-            return EventSourceResponse(
-                content=unavailable(), media_type="text/event-stream"
-            )
+            return EventSourceResponse(content=unavailable(), media_type="text/event-stream")
 
         async def event_stream() -> AsyncGenerator[dict, None]:
             try:
@@ -145,17 +141,9 @@ def register_openbb_routes(app: FastAPI) -> None:
                     yield sse.model_dump()
             except Exception as exc:  # pragma: no cover - defensive
                 logger.exception("Unexpected error while handling OpenBB query")
-                yield reasoning_step(
-                    message=f"Internal error: {exc}", event_type="ERROR"
-                ).model_dump()
-                yield message_chunk(
-                    text=f"Sorry, an internal error occurred: {exc}"
-                ).model_dump()
+                yield reasoning_step(message=f"Internal error: {exc}", event_type="ERROR").model_dump()
+                yield message_chunk(text=f"Sorry, an internal error occurred: {exc}").model_dump()
 
-        return EventSourceResponse(
-            content=event_stream(), media_type="text/event-stream"
-        )
+        return EventSourceResponse(content=event_stream(), media_type="text/event-stream")
 
-    logger.info(
-        "OpenBB Workspace agent routes registered (/agents.json, %s)", QUERY_PATH
-    )
+    logger.info("OpenBB Workspace agent routes registered (/agents.json, %s)", QUERY_PATH)

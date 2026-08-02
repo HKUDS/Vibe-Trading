@@ -127,7 +127,11 @@ class TestPriceLimits:
         """Mainboard -10% limit-down: can't sell."""
         engine = _make_engine()
         engine.positions["000001.SZ"] = Position(
-            "000001.SZ", 1, 15.0, pd.Timestamp("2025-06-09"), 100.0,
+            "000001.SZ",
+            1,
+            15.0,
+            pd.Timestamp("2025-06-09"),
+            100.0,
         )
         bar = _make_bar(close=13.5, pre_close=15.0, trade_date="2025-06-10")
         assert engine.can_execute("000001.SZ", 0, bar) is False
@@ -248,11 +252,11 @@ class TestPriceLimit:
     @pytest.mark.parametrize(
         "symbol, expected",
         [
-            ("000001.SZ", 0.10),   # Mainboard
+            ("000001.SZ", 0.10),  # Mainboard
             ("600519.SH", 0.10),
-            ("300750.SZ", 0.20),   # ChiNext
-            ("688001.SH", 0.20),   # STAR Market
-            ("830799.BJ", 0.30),   # Beijing
+            ("300750.SZ", 0.20),  # ChiNext
+            ("688001.SH", 0.20),  # STAR Market
+            ("830799.BJ", 0.30),  # Beijing
         ],
     )
     def test_price_limits(self, symbol: str, expected: float) -> None:

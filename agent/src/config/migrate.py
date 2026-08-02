@@ -111,9 +111,7 @@ def _remove_empty_source(source: Path) -> None:
         pass  # non-empty (collision children remain) or already gone
 
 
-def migrate_legacy_state(
-    legacy_root: Path | None = None, runtime_root: Path | None = None
-) -> list[tuple[Path, Path]]:
+def migrate_legacy_state(legacy_root: Path | None = None, runtime_root: Path | None = None) -> list[tuple[Path, Path]]:
     """Move legacy code-relative state directories under the runtime root.
 
     Idempotent: once a legacy entry has been moved (or was never there),

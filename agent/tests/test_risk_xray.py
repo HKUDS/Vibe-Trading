@@ -92,9 +92,7 @@ def test_thin_symbol_skipped_and_weights_renormalized():
             "THIN": [10.0] * 5,
         }
     )
-    result = compute_risk_xray(
-        closes, {"AAA": 0.34, "BBB": 0.33, "THIN": 0.33}, min_history=30
-    )
+    result = compute_risk_xray(closes, {"AAA": 0.34, "BBB": 0.33, "THIN": 0.33}, min_history=30)
     assert [s["symbol"] for s in result["skipped"]] == ["THIN"]
     assert result["inputs"]["symbols"] == ["AAA", "BBB"]
     assert result["inputs"]["weights"] == pytest.approx({"AAA": 0.34 / 0.67, "BBB": 0.33 / 0.67})
@@ -189,31 +187,29 @@ def _stub_fetcher(closes_map: dict[str, list[float]]):
             values = closes_map.get(code)
             if values is None:
                 continue
-            out[code] = [
-                {"date": str(idx[i].date()), "close": price} for i, price in enumerate(values)
-            ]
+            out[code] = [{"date": str(idx[i].date()), "close": price} for i, price in enumerate(values)]
         out["_unresolved"] = [c for c in codes if c not in out]
         return out
 
     return fetch
 
+
 def test_compute_risk_xray_surviving_symbols_zero_weight():
-    closes = pd.DataFrame({
-        "AAA": [10.0 + i for i in range(10)],
-        "BBB": [5.0] + [None] * 9,
-    })
+    closes = pd.DataFrame(
+        {
+            "AAA": [10.0 + i for i in range(10)],
+            "BBB": [5.0] + [None] * 9,
+        }
+    )
     with pytest.raises(ValueError, match="surviving symbols have zero total weight"):
         compute_risk_xray(closes, {"AAA": 0.0, "BBB": 1.0}, min_history=5)
 
+
 def test_tool_happy_path_equal_weights():
     tool = PortfolioRiskXrayTool(
-        data_fetcher=_stub_fetcher(
-            {"AAA": list(range(100, 160)), "BBB": list(range(50, 110))}
-        )
+        data_fetcher=_stub_fetcher({"AAA": list(range(100, 160)), "BBB": list(range(50, 110))})
     )
-    payload = json.loads(
-        tool.execute(symbols=["AAA", "BBB"], start_date="2026-01-01", end_date="2026-03-01")
-    )
+    payload = json.loads(tool.execute(symbols=["AAA", "BBB"], start_date="2026-01-01", end_date="2026-03-01"))
     assert payload["status"] == "ok"
     assert payload["data"]["concentration"]["hhi"] == pytest.approx(0.5)
     assert payload["data"]["concentration"]["effective_n"] == pytest.approx(2.0)
@@ -234,9 +230,7 @@ def test_tool_rejects_bad_arguments():
     assert payload["status"] == "error"
     payload = json.loads(tool.execute(symbols=["AAA"], weights={"AAA": 0.5, "ZZZ": 0.5}))
     assert payload["status"] == "error"
-    payload = json.loads(
-        tool.execute(symbols=["AAA"], start_date="2026-03-01", end_date="2026-01-01")
-    )
+    payload = json.loads(tool.execute(symbols=["AAA"], start_date="2026-03-01", end_date="2026-01-01"))
     assert payload["status"] == "error"
 
 
@@ -245,10 +239,7 @@ def test_tool_survives_records_without_dates():
         return {
             "AAA": [{"close": 100 + i} for i in range(40)],  # no date fields at all
             # partially dated → whole series falls back to loader order
-            "BBB": (
-                [{"date": "2026-02-01", "close": 50.0}]
-                + [{"close": 50 + i} for i in range(1, 40)]
-            ),
+            "BBB": ([{"date": "2026-02-01", "close": 50.0}] + [{"close": 50 + i} for i in range(1, 40)]),
         }
 
     tool = PortfolioRiskXrayTool(data_fetcher=fetch)

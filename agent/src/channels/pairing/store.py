@@ -274,9 +274,7 @@ def handle_pairing_command(
         lines = ["Pending pairing requests:"]
         for item in pending:
             expiry = format_expiry(item.get("expires_at", 0))
-            lines.append(
-                f"- `{item['code']}` | {item['channel']} | {item['sender_id']} | {expiry}"
-            )
+            lines.append(f"- `{item['code']}` | {item['channel']} | {item['sender_id']} | {expiry}")
         return "\n".join(lines)
 
     elif sub == "approve":

@@ -87,9 +87,7 @@ def test_status_unconfigured_is_fail_closed(client: TestClient):
     assert body["recent"] == []
 
 
-def test_status_paid_mode_uses_qveris_search_and_usage_history(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-):
+def test_status_paid_mode_uses_qveris_search_and_usage_history(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     qt.save_qveris_config(qt.QVerisConfig(enabled=True, api_key="sk-live", mode="paid"))
 
     class FakeClient:

@@ -18,11 +18,7 @@ import pytest
 from backtest.engines.global_futures import (
     GlobalFuturesEngine,
     _extract_product,
-    _MULTIPLIER,
-    _MARGIN_PER_CONTRACT,
-    _COMMISSION_PER_CONTRACT,
 )
-from backtest.models import Position
 
 
 # ---------------------------------------------------------------------------

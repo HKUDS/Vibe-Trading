@@ -62,21 +62,24 @@ def _make_kline_df(dates=None) -> pd.DataFrame:
     """Build a minimal Futu kline DataFrame mirroring request_history_kline output."""
     dates = dates or ["2024-01-02 00:00:00", "2024-01-03 00:00:00"]
     n = len(dates)
-    return pd.DataFrame({
-        "code":     ["HK.00700"] * n,
-        "time_key": dates,
-        "open":     [350.0] * n,
-        "high":     [360.0] * n,
-        "low":      [345.0] * n,
-        "close":    [355.0] * n,
-        "volume":   [1_000_000] * n,
-        "turnover": [350_000_000.0] * n,
-    })
+    return pd.DataFrame(
+        {
+            "code": ["HK.00700"] * n,
+            "time_key": dates,
+            "open": [350.0] * n,
+            "high": [360.0] * n,
+            "low": [345.0] * n,
+            "close": [355.0] * n,
+            "volume": [1_000_000] * n,
+            "turnover": [350_000_000.0] * n,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # Symbol mapping
 # ---------------------------------------------------------------------------
+
 
 class TestSymbolMapping:
     def test_hk_five_digit(self):
@@ -164,6 +167,7 @@ class TestNormalizeFrame:
 # is_available()
 # ---------------------------------------------------------------------------
 
+
 class TestIsAvailable:
     def test_false_when_host_missing(self, monkeypatch):
         from src.config.accessor import reset_env_config
@@ -209,6 +213,7 @@ class TestIsAvailable:
 # ---------------------------------------------------------------------------
 # fetch()
 # ---------------------------------------------------------------------------
+
 
 class TestFetch:
     @pytest.fixture()
@@ -260,9 +265,7 @@ class TestFetch:
             loader.fetch(["700.HK"], "2024-01-01", "2024-01-31", interval="2m")
         _futu_stub.OpenQuoteContext.assert_not_called()
 
-    def test_forwards_page_key_and_normalizes_all_pages_once(
-        self, loader, mock_ctx, monkeypatch
-    ):
+    def test_forwards_page_key_and_normalizes_all_pages_once(self, loader, mock_ctx, monkeypatch):
         import backtest.loaders.futu as futu_loader
 
         first = _make_kline_df(["2024-01-02 00:00:00"])
@@ -279,14 +282,8 @@ class TestFetch:
         assert len(result["700.HK"]) == 2
         assert normalize.call_count == 1
         assert len(normalize.call_args.args[0]) == 2
-        assert (
-            mock_ctx.request_history_kline.call_args_list[0].kwargs["page_req_key"]
-            is None
-        )
-        assert (
-            mock_ctx.request_history_kline.call_args_list[1].kwargs["page_req_key"]
-            == b"next-page"
-        )
+        assert mock_ctx.request_history_kline.call_args_list[0].kwargs["page_req_key"] is None
+        assert mock_ctx.request_history_kline.call_args_list[1].kwargs["page_req_key"] == b"next-page"
 
     def test_later_page_failure_discards_symbol(self, loader, mock_ctx, monkeypatch):
         import backtest.loaders.futu as futu_loader
@@ -303,9 +300,7 @@ class TestFetch:
         assert "700.HK" not in result
         cache_put.assert_not_called()
 
-    def test_empty_success_is_not_returned_or_cached(
-        self, loader, mock_ctx, monkeypatch
-    ):
+    def test_empty_success_is_not_returned_or_cached(self, loader, mock_ctx, monkeypatch):
         import backtest.loaders.futu as futu_loader
 
         mock_ctx.request_history_kline.return_value = (0, pd.DataFrame(), None)

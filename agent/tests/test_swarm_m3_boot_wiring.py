@@ -44,13 +44,7 @@ def _write_agent_json(path: Path, server_name: str) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    server_name: {"command": "uvx", "args": [f"{server_name}-server"]}
-                }
-            }
-        ),
+        json.dumps({"mcpServers": {server_name: {"command": "uvx", "args": [f"{server_name}-server"]}}}),
         encoding="utf-8",
     )
 

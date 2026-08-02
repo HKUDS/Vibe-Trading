@@ -95,12 +95,9 @@ def load_preset(name: str) -> dict:
     """
     path = resolve_preset_path(name)
     if path is None:
-        available = sorted({
-            p.stem
-            for directory in _preset_search_dirs()
-            if directory.exists()
-            for p in directory.glob("*.yaml")
-        })
+        available = sorted(
+            {p.stem for directory in _preset_search_dirs() if directory.exists() for p in directory.glob("*.yaml")}
+        )
         raise FileNotFoundError(
             f"Preset {name!r} not found in {_redact_home(USER_PRESETS_DIR)} or "
             f"the bundled presets. Available: {available}"
@@ -195,9 +192,7 @@ def inspect_preset(name: str) -> dict:
             errors.append(f"Task '{task.id}' references unknown agent '{task.agent_id}'")
         for _, upstream_task_id in task.input_from.items():
             if upstream_task_id not in task_id_set:
-                errors.append(
-                    f"Task '{task.id}' input_from references unknown task '{upstream_task_id}'"
-                )
+                errors.append(f"Task '{task.id}' input_from references unknown task '{upstream_task_id}'")
 
     layers: list[list[str]] = []
     try:
@@ -244,14 +239,9 @@ def inspect_preset(name: str) -> dict:
     missing_declarations = sorted(used_variables - declared_variables)
     unused_declarations = sorted(declared_variables - used_variables)
     if missing_declarations:
-        warnings.append(
-            "Prompt templates use undeclared variables: " + ", ".join(missing_declarations)
-        )
+        warnings.append("Prompt templates use undeclared variables: " + ", ".join(missing_declarations))
     if unused_declarations:
-        warnings.append(
-            "Declared variables are not used by task prompt templates: "
-            + ", ".join(unused_declarations)
-        )
+        warnings.append("Declared variables are not used by task prompt templates: " + ", ".join(unused_declarations))
 
     task_agent = {task.id: task.agent_id for task in run.tasks}
     return {
@@ -264,8 +254,7 @@ def inspect_preset(name: str) -> dict:
         "variables": sorted(declared_variables),
         "used_variables": sorted(used_variables),
         "agents": [
-            {"id": agent.id, "role": agent.role, "tools": agent.tools, "skills": agent.skills}
-            for agent in run.agents
+            {"id": agent.id, "role": agent.role, "tools": agent.tools, "skills": agent.skills} for agent in run.agents
         ],
         "tasks": [
             {
@@ -277,8 +266,7 @@ def inspect_preset(name: str) -> dict:
             for task in run.tasks
         ],
         "layers": [
-            [{"task_id": task_id, "agent_id": task_agent.get(task_id, "")} for task_id in layer]
-            for layer in layers
+            [{"task_id": task_id, "agent_id": task_agent.get(task_id, "")} for task_id in layer] for layer in layers
         ],
     }
 
@@ -309,32 +297,36 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
     # Parse agents
     agents: list[SwarmAgentSpec] = []
     for agent_data in data.get("agents", []):
-        agents.append(SwarmAgentSpec(
-            id=agent_data["id"],
-            role=agent_data.get("role", ""),
-            system_prompt=agent_data.get("system_prompt", ""),
-            tools=agent_data.get("tools", []),
-            skills=agent_data.get("skills", []),
-            max_iterations=agent_data.get("max_iterations", 25),
-            timeout_seconds=agent_data.get("timeout_seconds", 300),
-            model_name=agent_data.get("model_name"),
-            max_retries=agent_data.get("max_retries", 2),
-        ))
+        agents.append(
+            SwarmAgentSpec(
+                id=agent_data["id"],
+                role=agent_data.get("role", ""),
+                system_prompt=agent_data.get("system_prompt", ""),
+                tools=agent_data.get("tools", []),
+                skills=agent_data.get("skills", []),
+                max_iterations=agent_data.get("max_iterations", 25),
+                timeout_seconds=agent_data.get("timeout_seconds", 300),
+                model_name=agent_data.get("model_name"),
+                max_retries=agent_data.get("max_retries", 2),
+            )
+        )
 
     # Parse tasks, initialize blocked_by from depends_on
     tasks: list[SwarmTask] = []
     for task_data in data.get("tasks", []):
         depends_on = task_data.get("depends_on", [])
         status = TaskStatus.blocked if depends_on else TaskStatus.pending
-        tasks.append(SwarmTask(
-            id=task_data["id"],
-            agent_id=task_data["agent_id"],
-            prompt_template=task_data.get("prompt_template", ""),
-            depends_on=depends_on,
-            blocked_by=list(depends_on),
-            input_from=task_data.get("input_from", {}),
-            status=status,
-        ))
+        tasks.append(
+            SwarmTask(
+                id=task_data["id"],
+                agent_id=task_data["agent_id"],
+                prompt_template=task_data.get("prompt_template", ""),
+                depends_on=depends_on,
+                blocked_by=list(depends_on),
+                input_from=task_data.get("input_from", {}),
+                status=status,
+            )
+        )
 
     # Generate run ID
     now = datetime.now(timezone.utc)

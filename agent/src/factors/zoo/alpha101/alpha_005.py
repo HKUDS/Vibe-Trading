@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Alpha #5 - 高低价差动量
 # 简要说明: (rank((open - (sum(vwap, 10) / 10))) * (-1 * abs(rank((close - vwap))))) ，开盘价与VWAP均值的偏离乘以收盘价偏离的绝对值取负。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_005"
 
 __alpha_meta__ = {
-    'id': 'alpha101_005',
-    'nickname': 'Kakushadze Alpha #5',
-    'theme': ['reversal'],
-    'formula_latex': 'rank((open - sum(vwap,10)/10)) * (-1 * abs(rank((close - vwap))))',
-    'columns_required': ['open', 'close', 'vwap'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 10,
-    'notes': '',
+    "id": "alpha101_005",
+    "nickname": "Kakushadze Alpha #5",
+    "theme": ["reversal"],
+    "formula_latex": "rank((open - sum(vwap,10)/10)) * (-1 * abs(rank((close - vwap))))",
+    "columns_required": ["open", "close", "vwap"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 10,
+    "notes": "",
 }
 
 
@@ -61,7 +60,6 @@ def compute(panel: dict) -> pd.DataFrame:
     close = panel["close"]
     open_ = panel["open"]
     vwap = panel["vwap"]
-
 
     # Helper aliases (local closures keep the file standalone & purity-safe).
     rolling_sum = _rolling_sum

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from backtest.enhanced_validation import (
     parameter_sensitivity,
@@ -216,9 +215,7 @@ class TestSignalParameterGrid:
 
     def test_regime_conditional_ic(self) -> None:
         eq = _equity(160)
-        regime = regime_conditioned_backtest(
-            eq, include_trend=False, export_regime_labels=True, vol_window=10
-        )
+        regime = regime_conditioned_backtest(eq, include_trend=False, export_regime_labels=True, vol_window=10)
         idx = eq.index
         rng = np.random.default_rng(12)
         cols = [f"A{i}" for i in range(10)]
@@ -228,9 +225,7 @@ class TestSignalParameterGrid:
             index=idx,
             columns=cols,
         )
-        out = regime_conditional_ic(
-            factor, rets, regime_result=regime, axis="vol", min_obs=5
-        )
+        out = regime_conditional_ic(factor, rets, regime_result=regime, axis="vol", min_obs=5)
         assert "error" not in out
         assert "overall" in out
         assert out["overall"]["mean_ic"] is not None

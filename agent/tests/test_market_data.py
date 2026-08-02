@@ -182,10 +182,7 @@ class _StubLoader:
     def fetch(self, codes, start_date, end_date, interval="1D"):
         idx = pd.to_datetime(["2026-01-01", "2026-01-02"])
         idx.name = "trade_date"
-        return {
-            code: pd.DataFrame({"close": [1.0, 2.0], "volume": [100, 200]}, index=idx)
-            for code in codes
-        }
+        return {code: pd.DataFrame({"close": [1.0, 2.0], "volume": [100, 200]}, index=idx) for code in codes}
 
 
 class _BadLoader:

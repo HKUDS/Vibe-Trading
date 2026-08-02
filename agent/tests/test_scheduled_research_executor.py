@@ -397,9 +397,7 @@ def test_retry_backoff_is_exponential_and_capped(tmp_path: Path) -> None:
         ),
     ],
 )
-def test_invalid_retry_policy_is_rejected(
-    tmp_path: Path, kwargs: dict[str, int], message: str
-) -> None:
+def test_invalid_retry_policy_is_rejected(tmp_path: Path, kwargs: dict[str, int], message: str) -> None:
     async def dispatch(job: ScheduledResearchJob) -> None:
         return None
 

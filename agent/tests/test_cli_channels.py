@@ -81,13 +81,9 @@ def test_channels_api_call_sends_configured_bearer_token(monkeypatch) -> None:
     assert captured["headers"] == {"Authorization": "Bearer secret-token"}
 
 
-@pytest.mark.parametrize(
-    "command", [_legacy.cmd_channels_start, _legacy.cmd_channels_stop]
-)
+@pytest.mark.parametrize("command", [_legacy.cmd_channels_start, _legacy.cmd_channels_stop])
 @pytest.mark.parametrize("json_mode", [False, True])
-def test_channels_start_stop_return_failure_in_every_output_mode(
-    command, json_mode, monkeypatch
-) -> None:
+def test_channels_start_stop_return_failure_in_every_output_mode(command, json_mode, monkeypatch) -> None:
     monkeypatch.setattr(
         _legacy,
         "_channels_api_call",
@@ -97,13 +93,9 @@ def test_channels_start_stop_return_failure_in_every_output_mode(
     assert command(json_mode=json_mode) == _legacy.EXIT_RUN_FAILED
 
 
-@pytest.mark.parametrize(
-    "command", [_legacy.cmd_channels_start, _legacy.cmd_channels_stop]
-)
+@pytest.mark.parametrize("command", [_legacy.cmd_channels_start, _legacy.cmd_channels_stop])
 @pytest.mark.parametrize("json_mode", [False, True])
-def test_channels_start_stop_return_success_in_every_output_mode(
-    command, json_mode, monkeypatch
-) -> None:
+def test_channels_start_stop_return_success_in_every_output_mode(command, json_mode, monkeypatch) -> None:
     monkeypatch.setattr(
         _legacy,
         "_channels_api_call",

@@ -108,9 +108,7 @@ class ResearchReportsTool(BaseTool):
 
         suffix = code.rpartition(".")[2]
         if suffix not in _A_SHARE_SUFFIXES:
-            return _error(
-                f"research reports are China A-share only (.SH/.SZ/.BJ); got '{code}'"
-            )
+            return _error(f"research reports are China A-share only (.SH/.SZ/.BJ); got '{code}'")
         if resolve_secid(code) is None:
             return _error(f"could not resolve A-share symbol '{code}'")
 
@@ -245,9 +243,7 @@ def _fetch_consensus_eps(code: str) -> list[dict]:
         response = throttled_get(
             _THS_CONSENSUS_URL,
             host_key=_THS_HOST_KEY,
-            min_interval=resolve_min_interval(
-                _THS_MIN_INTERVAL_ENV, _THS_DEFAULT_MIN_INTERVAL
-            ),
+            min_interval=resolve_min_interval(_THS_MIN_INTERVAL_ENV, _THS_DEFAULT_MIN_INTERVAL),
             params={"code": _bare_code(code)},
             headers={
                 "User-Agent": DEFAULT_USER_AGENT,

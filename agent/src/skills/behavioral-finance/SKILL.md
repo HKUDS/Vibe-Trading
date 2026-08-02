@@ -113,11 +113,11 @@ Quant implementation:
 ```python
 # Multi-dimensional sentiment score (0-100, 50 = neutral)
 sentiment_components = {
-    'turnover_ratio': normalize(all_a_turnover, historical_percentile),      # weight 25%
-    'margin_growth': normalize(monthly_margin_growth, historical_percentile), # weight 25%
-    'new_high_ratio': normalize(new_high_ratio, historical_percentile),       # weight 20%
-    'limit_up_count': normalize(limit_up_count, historical_percentile),       # weight 15%
-    'fund_discount': normalize(closed_end_fund_discount, historical_percentile), # weight 15% (inverse)
+    "turnover_ratio": normalize(all_a_turnover, historical_percentile),  # weight 25%
+    "margin_growth": normalize(monthly_margin_growth, historical_percentile),  # weight 25%
+    "new_high_ratio": normalize(new_high_ratio, historical_percentile),  # weight 20%
+    "limit_up_count": normalize(limit_up_count, historical_percentile),  # weight 15%
+    "fund_discount": normalize(closed_end_fund_discount, historical_percentile),  # weight 15% (inverse)
 }
 
 sentiment_score = weighted_sum(components)

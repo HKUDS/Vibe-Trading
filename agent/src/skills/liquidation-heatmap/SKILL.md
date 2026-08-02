@@ -17,10 +17,10 @@ Analyze the distribution of leveraged positions and their liquidation price leve
 
 ```python
 # Long position liquidation
-long_liquidation_price = entry_price * (1 - 1/leverage + maintenance_margin)
+long_liquidation_price = entry_price * (1 - 1 / leverage + maintenance_margin)
 
 # Short position liquidation
-short_liquidation_price = entry_price * (1 + 1/leverage - maintenance_margin)
+short_liquidation_price = entry_price * (1 + 1 / leverage - maintenance_margin)
 
 # Example: BTC long at $65,000, 10x leverage, 0.5% maintenance margin
 # Liquidation: $65,000 * (1 - 1/10 + 0.005) = $58,825
@@ -70,25 +70,23 @@ def identify_liquidation_clusters(open_interest_by_price, leverage_distribution)
 
     for price_level in price_range:
         # Long liquidations: positions opened above this level with high leverage
-        long_liq_volume = estimate_long_liq_at_price(
-            open_interest_by_price, leverage_distribution, price_level
-        )
+        long_liq_volume = estimate_long_liq_at_price(open_interest_by_price, leverage_distribution, price_level)
 
         # Short liquidations: positions opened below this level with high leverage
-        short_liq_volume = estimate_short_liq_at_price(
-            open_interest_by_price, leverage_distribution, price_level
-        )
+        short_liq_volume = estimate_short_liq_at_price(open_interest_by_price, leverage_distribution, price_level)
 
         total = long_liq_volume + short_liq_volume
 
         if total > significance_threshold:
-            clusters.append({
-                "price": price_level,
-                "long_liq": long_liq_volume,
-                "short_liq": short_liq_volume,
-                "type": "long" if long_liq_volume > short_liq_volume else "short",
-                "magnitude": total,
-            })
+            clusters.append(
+                {
+                    "price": price_level,
+                    "long_liq": long_liq_volume,
+                    "short_liq": short_liq_volume,
+                    "type": "long" if long_liq_volume > short_liq_volume else "short",
+                    "magnitude": total,
+                }
+            )
 
     return sorted(clusters, key=lambda x: x["magnitude"], reverse=True)
 ```
@@ -113,11 +111,11 @@ def liquidation_magnet_signal(current_price, clusters):
         below_magnitude = nearest_below["magnitude"]
 
         if above_magnitude > below_magnitude * 2:
-            return "upward_magnet"      # Larger cluster above → price likely moves up
+            return "upward_magnet"  # Larger cluster above → price likely moves up
         elif below_magnitude > above_magnitude * 2:
-            return "downward_magnet"    # Larger cluster below → price likely moves down
+            return "downward_magnet"  # Larger cluster below → price likely moves down
         else:
-            return "balanced"           # Both sides have similar clusters
+            return "balanced"  # Both sides have similar clusters
 ```
 
 **Signal 2: Cascade Risk**
@@ -127,11 +125,15 @@ def cascade_risk(current_price, clusters, direction="down"):
     Assess risk of liquidation cascade — multiple clusters stacked close together.
     """
     if direction == "down":
-        relevant = sorted([c for c in clusters if c["price"] < current_price and c["type"] == "long"],
-                         key=lambda c: c["price"], reverse=True)
+        relevant = sorted(
+            [c for c in clusters if c["price"] < current_price and c["type"] == "long"],
+            key=lambda c: c["price"],
+            reverse=True,
+        )
     else:
-        relevant = sorted([c for c in clusters if c["price"] > current_price and c["type"] == "short"],
-                         key=lambda c: c["price"])
+        relevant = sorted(
+            [c for c in clusters if c["price"] > current_price and c["type"] == "short"], key=lambda c: c["price"]
+        )
 
     if len(relevant) < 2:
         return "low_cascade_risk"
@@ -139,11 +141,11 @@ def cascade_risk(current_price, clusters, direction="down"):
     # Check if clusters are stacked within 5% of each other
     gaps = []
     for i in range(len(relevant) - 1):
-        gap = abs(relevant[i]["price"] - relevant[i+1]["price"]) / current_price * 100
+        gap = abs(relevant[i]["price"] - relevant[i + 1]["price"]) / current_price * 100
         gaps.append(gap)
 
     if min(gaps) < 2:
-        return "high_cascade_risk"      # Clusters stacked tightly → cascade likely
+        return "high_cascade_risk"  # Clusters stacked tightly → cascade likely
     elif min(gaps) < 5:
         return "moderate_cascade_risk"
     else:
@@ -159,12 +161,14 @@ def post_liquidation_sr(price_history, liquidation_events):
     sr_levels = []
     for event in liquidation_events:
         if event.total_liquidated > 100_000_000:  # >$100M liquidated
-            sr_levels.append({
-                "price": event.price_level,
-                "type": "support" if event.liquidation_type == "long" else "resistance",
-                "strength": event.total_liquidated,
-                "date": event.date,
-            })
+            sr_levels.append(
+                {
+                    "price": event.price_level,
+                    "type": "support" if event.liquidation_type == "long" else "resistance",
+                    "strength": event.total_liquidated,
+                    "date": event.date,
+                }
+            )
     return sr_levels
 ```
 

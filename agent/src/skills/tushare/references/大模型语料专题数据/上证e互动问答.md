@@ -41,12 +41,10 @@ pub_time | datetime | Y | 回复时间
 **接口调用**
 
 ```python
-
 pro = ts.pro_api()
 
-#获取2025年2月12日上证e互动的问答文本
-df = pro.irm_qa_sh(ann_date='20250212')
-
+# 获取2025年2月12日上证e互动的问答文本
+df = pro.irm_qa_sh(ann_date="20250212")
 ```
 
 <br>

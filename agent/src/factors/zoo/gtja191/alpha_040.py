@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #40 - 成交量比率
 # 简要说明: SUM((CLOSE>DELAY(CLOSE,1)?VOLUME:0),26)/SUM((CLOSE<=DELAY(CLOSE,1)?VOLUME:0),26)*100，上涨日成交量与下跌日成交量比率。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_040",
-    "theme": ['volume'],
-    "formula_latex": 'SUM((CLOSE>DELAY(CLOSE,1)?VOLUME:0),26)/SUM((CLOSE<=DELAY(CLOSE,1)?VOLUME:0),26)*100',
-    "columns_required": ['close', 'volume'],
+    "theme": ["volume"],
+    "formula_latex": "SUM((CLOSE>DELAY(CLOSE,1)?VOLUME:0),26)/SUM((CLOSE<=DELAY(CLOSE,1)?VOLUME:0),26)*100",
+    "columns_required": ["close", "volume"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 26,
     "min_warmup_bars": 27,
-    "notes": 'Up-volume vs down-volume ratio over 26 days.',
+    "notes": "Up-volume vs down-volume ratio over 26 days.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

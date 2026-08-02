@@ -24,27 +24,59 @@ from backtest.engines.futures_base import FuturesBaseEngine
 
 _MULTIPLIER: dict[str, float] = {
     # Equity index (CME)
-    "ES": 50, "NQ": 20, "YM": 5, "RTY": 50,
+    "ES": 50,
+    "NQ": 20,
+    "YM": 5,
+    "RTY": 50,
     # Micro equity index
-    "MES": 5, "MNQ": 2, "MYM": 0.5, "M2K": 5,
+    "MES": 5,
+    "MNQ": 2,
+    "MYM": 0.5,
+    "M2K": 5,
     # Energy (NYMEX)
-    "CL": 1000, "NG": 10000, "RB": 42000, "HO": 42000,
+    "CL": 1000,
+    "NG": 10000,
+    "RB": 42000,
+    "HO": 42000,
     # Metals (COMEX)
-    "GC": 100, "SI": 5000, "HG": 25000, "PL": 50, "PA": 100,
+    "GC": 100,
+    "SI": 5000,
+    "HG": 25000,
+    "PL": 50,
+    "PA": 100,
     # Micro metals
-    "MGC": 10, "SIL": 1000,
+    "MGC": 10,
+    "SIL": 1000,
     # Grains (CBOT)
-    "ZC": 50, "ZS": 50, "ZW": 50, "ZM": 100, "ZL": 600,
+    "ZC": 50,
+    "ZS": 50,
+    "ZW": 50,
+    "ZM": 100,
+    "ZL": 600,
     # Bonds (CBOT)
-    "ZB": 1000, "ZN": 1000, "ZF": 1000, "ZT": 2000,
+    "ZB": 1000,
+    "ZN": 1000,
+    "ZF": 1000,
+    "ZT": 2000,
     # Currencies (CME)
-    "6E": 125000, "6J": 12500000, "6B": 62500, "6A": 100000, "6C": 100000,
+    "6E": 125000,
+    "6J": 12500000,
+    "6B": 62500,
+    "6A": 100000,
+    "6C": 100000,
     # Softs (ICE)
-    "KC": 37500, "SB": 112000, "CC": 10, "CT": 50000,
+    "KC": 37500,
+    "SB": 112000,
+    "CC": 10,
+    "CT": 50000,
     # Livestock (CME)
-    "LE": 400, "HE": 400, "GF": 500,
+    "LE": 400,
+    "HE": 400,
+    "GF": 500,
     # Eurex
-    "FESX": 10, "FDAX": 25, "FGBL": 1000,
+    "FESX": 10,
+    "FDAX": 25,
+    "FGBL": 1000,
 }
 
 # ── Margin per contract (approximate USD, initial margin) ──
@@ -52,27 +84,45 @@ _MULTIPLIER: dict[str, float] = {
 
 _MARGIN_PER_CONTRACT: dict[str, float] = {
     # Equity index
-    "ES": 12650, "NQ": 17600, "YM": 8800, "RTY": 6600,
-    "MES": 1265, "MNQ": 1760,
+    "ES": 12650,
+    "NQ": 17600,
+    "YM": 8800,
+    "RTY": 6600,
+    "MES": 1265,
+    "MNQ": 1760,
     # Energy
-    "CL": 6270, "NG": 3300,
+    "CL": 6270,
+    "NG": 3300,
     # Metals
-    "GC": 9950, "SI": 11000, "HG": 4400, "PL": 3300,
+    "GC": 9950,
+    "SI": 11000,
+    "HG": 4400,
+    "PL": 3300,
     "MGC": 995,
     # Grains
-    "ZC": 1650, "ZS": 2200, "ZW": 1925,
+    "ZC": 1650,
+    "ZS": 2200,
+    "ZW": 1925,
     # Bonds
-    "ZB": 4400, "ZN": 2200, "ZF": 1375,
+    "ZB": 4400,
+    "ZN": 2200,
+    "ZF": 1375,
     # Currencies
-    "6E": 2475, "6J": 3300, "6B": 2750,
+    "6E": 2475,
+    "6J": 3300,
+    "6B": 2750,
 }
 
 # ── Price limit (fraction of prev settlement) ──
 
 _PRICE_LIMIT: dict[str, float] = {
     # Equity index: 7% (Level 1), simplified to single level
-    "ES": 0.07, "NQ": 0.07, "YM": 0.07, "RTY": 0.07,
-    "MES": 0.07, "MNQ": 0.07,
+    "ES": 0.07,
+    "NQ": 0.07,
+    "YM": 0.07,
+    "RTY": 0.07,
+    "MES": 0.07,
+    "MNQ": 0.07,
     # Energy: varies, typically ~$10-15 for CL
     # Not easily expressed as %, skip for most commodities
 }
@@ -80,14 +130,27 @@ _PRICE_LIMIT: dict[str, float] = {
 # ── Per-contract commission (USD, one side) ──
 
 _COMMISSION_PER_CONTRACT: dict[str, float] = {
-    "ES": 2.25, "NQ": 2.25, "YM": 2.25, "RTY": 2.25,
-    "MES": 0.62, "MNQ": 0.62,
-    "CL": 2.25, "NG": 2.25,
-    "GC": 2.25, "SI": 2.25, "HG": 2.25,
+    "ES": 2.25,
+    "NQ": 2.25,
+    "YM": 2.25,
+    "RTY": 2.25,
+    "MES": 0.62,
+    "MNQ": 0.62,
+    "CL": 2.25,
+    "NG": 2.25,
+    "GC": 2.25,
+    "SI": 2.25,
+    "HG": 2.25,
     "MGC": 0.62,
-    "ZC": 2.25, "ZS": 2.25, "ZW": 2.25,
-    "ZB": 1.52, "ZN": 1.52, "ZF": 1.02,
-    "6E": 2.25, "6J": 2.25, "6B": 2.25,
+    "ZC": 2.25,
+    "ZS": 2.25,
+    "ZW": 2.25,
+    "ZB": 1.52,
+    "ZN": 1.52,
+    "ZF": 1.02,
+    "6E": 2.25,
+    "6J": 2.25,
+    "6B": 2.25,
 }
 _DEFAULT_COMMISSION = 2.50
 
@@ -191,7 +254,11 @@ class GlobalFuturesEngine(FuturesBaseEngine):
         return self.calc_commission_for_symbol(self._active_symbol, size, price, is_open)
 
     def calc_commission_for_symbol(
-        self, symbol: str, size: float, price: float, is_open: bool,
+        self,
+        symbol: str,
+        size: float,
+        price: float,
+        is_open: bool,
     ) -> float:
         """Symbol-aware commission.
 
@@ -219,4 +286,3 @@ class GlobalFuturesEngine(FuturesBaseEngine):
 
 
 # ── Helpers ──
-

@@ -168,9 +168,13 @@ class ContextBuilder:
         skills_loader: Skills loader.
     """
 
-    def __init__(self, registry: ToolRegistry, memory: WorkspaceMemory,
-                 skills_loader: Optional[SkillsLoader] = None,
-                 persistent_memory: Optional[PersistentMemory] = None) -> None:
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        memory: WorkspaceMemory,
+        skills_loader: Optional[SkillsLoader] = None,
+        persistent_memory: Optional[PersistentMemory] = None,
+    ) -> None:
         """Initialize ContextBuilder.
 
         Args:
@@ -260,10 +264,7 @@ class ContextBuilder:
                 if recalls:
                     lines = [f"- **{r.title}** ({r.memory_type}): {r.body[:500]}" for r in recalls]
                     recall_block = "\n".join(lines)
-                    enriched = (
-                        f"<recalled-memories>\n{recall_block}\n</recalled-memories>\n\n"
-                        f"{user_message}"
-                    )
+                    enriched = f"<recalled-memories>\n{recall_block}\n</recalled-memories>\n\n{user_message}"
             except Exception as exc:
                 logger.debug("Auto-recall failed: %s", exc)
 

@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #33 - 量价秩相关
 # 简要说明: RANK(-1*CORR(RANK(OPEN),RANK(VOLUME),10))，开盘价与成交量10日秩相关取负后排名。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_033",
-    "theme": ['momentum', 'volume'],
-    "formula_latex": '((((-1*TSMIN(LOW,5))+DELAY(TSMIN(LOW,5),5))*RANK(((SUM(RET,240)-SUM(RET,20))/220)))*TSRANK(VOLUME,5))',
-    "columns_required": ['low', 'close', 'volume'],
+    "theme": ["momentum", "volume"],
+    "formula_latex": "((((-1*TSMIN(LOW,5))+DELAY(TSMIN(LOW,5),5))*RANK(((SUM(RET,240)-SUM(RET,20))/220)))*TSRANK(VOLUME,5))",
+    "columns_required": ["low", "close", "volume"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
     "min_warmup_bars": 61,
-    "notes": '240d/20d long-window approximated with 60d/20d (warmup feasibility).',
+    "notes": "240d/20d long-window approximated with 60d/20d (warmup feasibility).",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     l = panel["low"]

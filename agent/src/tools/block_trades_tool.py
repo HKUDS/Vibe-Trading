@@ -103,11 +103,7 @@ def _date_filter(code: str, start: date, end: date) -> str:
     Returns:
         An Eastmoney report filter expression string.
     """
-    return (
-        f"(SECURITY_CODE=\"{code}\")"
-        f"(TRADE_DATE>='{start.isoformat()}')"
-        f"(TRADE_DATE<='{end.isoformat()}')"
-    )
+    return f"(SECURITY_CODE=\"{code}\")(TRADE_DATE>='{start.isoformat()}')(TRADE_DATE<='{end.isoformat()}')"
 
 
 def _to_float(value: Any) -> float | None:
@@ -187,17 +183,11 @@ class BlockTradesTool(BaseTool):
         "properties": {
             "code": {
                 "type": "string",
-                "description": (
-                    "A-share symbol with exchange suffix, e.g. '600519.SH', "
-                    "'000001.SZ', or '830799.BJ'."
-                ),
+                "description": ("A-share symbol with exchange suffix, e.g. '600519.SH', '000001.SZ', or '830799.BJ'."),
             },
             "days": {
                 "type": "integer",
-                "description": (
-                    "Lookback window in calendar days ending today; clamped to "
-                    f"[1, {_MAX_DAYS}]."
-                ),
+                "description": (f"Lookback window in calendar days ending today; clamped to [1, {_MAX_DAYS}]."),
                 "default": _DEFAULT_DAYS,
             },
         },
@@ -219,19 +209,14 @@ class BlockTradesTool(BaseTool):
         """
         symbol = str(kwargs.get("code") or "").strip()
         if not symbol:
-            return json.dumps(
-                {"ok": False, "error": "code is required"}, ensure_ascii=False
-            )
+            return json.dumps({"ok": False, "error": "code is required"}, ensure_ascii=False)
 
         code = _resolve_code(symbol)
         if code is None:
             return json.dumps(
                 {
                     "ok": False,
-                    "error": (
-                        f"{symbol!r} is not a resolvable A-share symbol "
-                        "(use .SH/.SZ/.BJ)"
-                    ),
+                    "error": (f"{symbol!r} is not a resolvable A-share symbol (use .SH/.SZ/.BJ)"),
                 },
                 ensure_ascii=False,
             )

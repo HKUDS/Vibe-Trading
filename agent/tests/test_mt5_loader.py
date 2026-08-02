@@ -25,8 +25,14 @@ pytestmark = pytest.mark.unit
 
 
 _RATES_DTYPE = [
-    ("time", "<i8"), ("open", "<f8"), ("high", "<f8"), ("low", "<f8"),
-    ("close", "<f8"), ("tick_volume", "<i8"), ("spread", "<i4"), ("real_volume", "<i8"),
+    ("time", "<i8"),
+    ("open", "<f8"),
+    ("high", "<f8"),
+    ("low", "<f8"),
+    ("close", "<f8"),
+    ("tick_volume", "<i8"),
+    ("spread", "<i4"),
+    ("real_volume", "<i8"),
 ]
 
 #: 2026-06-02 00:00 UTC and the next two days, hourly-ish spacing irrelevant.
@@ -162,9 +168,7 @@ class TestIntervalsAndFrames:
         loader.fetch(["EUR/USD"], "2026-06-01", "2026-06-10", interval="1h")
         assert fake_mod.rates_calls[-1][1] == _FakeMT5Module.TIMEFRAME_H1
 
-    def test_unknown_interval_is_rejected_not_rewritten_to_daily(
-        self, fake_mod: _FakeMT5Module
-    ) -> None:
+    def test_unknown_interval_is_rejected_not_rewritten_to_daily(self, fake_mod: _FakeMT5Module) -> None:
         loader = DataLoader()
         before = len(fake_mod.rates_calls)
         frames = loader.fetch(["EUR/USD"], "2026-06-01", "2026-06-10", interval="7z")

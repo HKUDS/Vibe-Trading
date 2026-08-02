@@ -6,7 +6,6 @@
 
 from typing import Dict, List
 
-import numpy as np
 import pandas as pd
 
 
@@ -91,7 +90,7 @@ class SignalEngine:
             # 双重确认：月份和周内方向一致时才有信号
             combined = signal + weekday_signal
             signal = pd.Series(0, index=idx)
-            signal[combined >= 2] = 1    # 月份看多 + 周内看多
+            signal[combined >= 2] = 1  # 月份看多 + 周内看多
             signal[combined <= -2] = -1  # 月份看空 + 周内看空
 
         return signal.fillna(0).astype(int)

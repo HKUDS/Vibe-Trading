@@ -29,54 +29,66 @@ from backtest.loaders.tushare import (
 
 
 class TestIsEtfListed:
-    @pytest.mark.parametrize("code", [
-        "510050.SH",  # 50 ETF
-        "510300.SH",  # CSI 300 ETF
-        "159915.SZ",  # ChiNext ETF
-        "161725.SZ",  # LOF
-        "520000.SH",  # 52 prefix
-        "560000.SH",  # 56 prefix
-        "588000.SH",  # STAR ETF
-    ])
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "510050.SH",  # 50 ETF
+            "510300.SH",  # CSI 300 ETF
+            "159915.SZ",  # ChiNext ETF
+            "161725.SZ",  # LOF
+            "520000.SH",  # 52 prefix
+            "560000.SH",  # 56 prefix
+            "588000.SH",  # STAR ETF
+        ],
+    )
     def test_etf_codes_match(self, code: str) -> None:
         assert _is_etf_listed(code)
 
-    @pytest.mark.parametrize("code", [
-        "000001.SZ",   # Ping An Bank — stock
-        "600519.SH",   # Moutai — stock
-        "300750.SZ",   # CATL — ChiNext stock
-        "002594.SZ",   # BYD — SME stock
-        "AAPL.US",     # US equity
-        "00700.HK",    # HK equity
-        "BTC-USDT",    # crypto
-        "",            # empty
-        "ABC.SH",      # non-digit
-        "12345.SH",    # too short
-        "5188800.SH",  # too long
-    ])
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "000001.SZ",  # Ping An Bank — stock
+            "600519.SH",  # Moutai — stock
+            "300750.SZ",  # CATL — ChiNext stock
+            "002594.SZ",  # BYD — SME stock
+            "AAPL.US",  # US equity
+            "00700.HK",  # HK equity
+            "BTC-USDT",  # crypto
+            "",  # empty
+            "ABC.SH",  # non-digit
+            "12345.SH",  # too short
+            "5188800.SH",  # too long
+        ],
+    )
     def test_non_etf_codes_skip(self, code: str) -> None:
         assert not _is_etf_listed(code)
 
 
 class TestIsIndex:
-    @pytest.mark.parametrize("code", [
-        "000001.SH",  # Shanghai Composite
-        "000300.SH",  # CSI 300
-        "000016.SH",  # SSE 50
-        "399001.SZ",  # Shenzhen Component
-        "399006.SZ",  # ChiNext Index
-    ])
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "000001.SH",  # Shanghai Composite
+            "000300.SH",  # CSI 300
+            "000016.SH",  # SSE 50
+            "399001.SZ",  # Shenzhen Component
+            "399006.SZ",  # ChiNext Index
+        ],
+    )
     def test_index_codes_match(self, code: str) -> None:
         assert _is_index(code)
 
-    @pytest.mark.parametrize("code", [
-        "600519.SH",   # stock
-        "000001.SZ",   # stock (SZ 000 is not index)
-        "510050.SH",   # ETF
-        "300750.SZ",   # ChiNext stock (300 not 399)
-        "AAPL.US",
-        "",
-    ])
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "600519.SH",  # stock
+            "000001.SZ",  # stock (SZ 000 is not index)
+            "510050.SH",  # ETF
+            "300750.SZ",  # ChiNext stock (300 not 399)
+            "AAPL.US",
+            "",
+        ],
+    )
     def test_non_index_codes_skip(self, code: str) -> None:
         assert not _is_index(code)
 
@@ -123,16 +135,18 @@ class TestIsCrypto:
 
 def _make_ohlcv_df() -> pd.DataFrame:
     """Build a minimal OHLCV DataFrame matching tushare's column layout."""
-    return pd.DataFrame({
-        "ts_code": ["X"] * 3,
-        "trade_date": ["20250102", "20250103", "20250106"],
-        "open": [10.0, 10.5, 11.0],
-        "high": [11.0, 11.5, 12.0],
-        "low": [9.5, 10.0, 10.5],
-        "close": [10.5, 11.0, 11.5],
-        "vol": [1000.0, 1200.0, 1100.0],
-        "amount": [10500.0, 13200.0, 12650.0],
-    })
+    return pd.DataFrame(
+        {
+            "ts_code": ["X"] * 3,
+            "trade_date": ["20250102", "20250103", "20250106"],
+            "open": [10.0, 10.5, 11.0],
+            "high": [11.0, 11.5, 12.0],
+            "low": [9.5, 10.0, 10.5],
+            "close": [10.5, 11.0, 11.5],
+            "vol": [1000.0, 1200.0, 1100.0],
+            "amount": [10500.0, 13200.0, 12650.0],
+        }
+    )
 
 
 class TestFetchDailyFrameRouting:
@@ -202,16 +216,19 @@ class TestFetchDailyFrameRouting:
 # E2E tests (real tushare API — gated behind TUSHARE_TOKEN env var)
 # ---------------------------------------------------------------------------
 
+
 def _make_minute_df() -> pd.DataFrame:
-    return pd.DataFrame({
-        "ts_code": ["X"] * 3,
-        "trade_time": ["2025-01-02 09:31:00", "2025-01-02 09:32:00", "2025-01-02 09:33:00"],
-        "open": [10.0, 10.5, 11.0],
-        "high": [11.0, 11.5, 12.0],
-        "low": [9.5, 10.0, 10.5],
-        "close": [10.5, 11.0, 11.5],
-        "vol": [1000.0, 1200.0, 1100.0],
-    })
+    return pd.DataFrame(
+        {
+            "ts_code": ["X"] * 3,
+            "trade_time": ["2025-01-02 09:31:00", "2025-01-02 09:32:00", "2025-01-02 09:33:00"],
+            "open": [10.0, 10.5, 11.0],
+            "high": [11.0, 11.5, 12.0],
+            "low": [9.5, 10.0, 10.5],
+            "close": [10.5, 11.0, 11.5],
+            "vol": [1000.0, 1200.0, 1100.0],
+        }
+    )
 
 
 class TestFetchMinutesRouting:
@@ -264,7 +281,9 @@ class TestFetchMinutesRouting:
         loader.api.stk_mins.return_value = _make_minute_df()
         result = loader._fetch_minutes(
             ["600519.SH", "510050.SH", "000300.SH", "00700.HK"],
-            "2025-01-02", "2025-01-03", "5m",
+            "2025-01-02",
+            "2025-01-03",
+            "5m",
         )
         loader.api.stk_mins.assert_called_once()
         assert "600519.SH" in result
@@ -289,22 +308,27 @@ class TestMergeBasicFieldsGuard:
 
     def test_stock_calls_daily_basic(self) -> None:
         loader = self._make_loader()
-        loader.api.daily_basic.return_value = pd.DataFrame({
-            "ts_code": ["000001.SZ"],
-            "trade_date": ["20250102"],
-            "pe_ttm": [12.5],
-        })
+        loader.api.daily_basic.return_value = pd.DataFrame(
+            {
+                "ts_code": ["000001.SZ"],
+                "trade_date": ["20250102"],
+                "pe_ttm": [12.5],
+            }
+        )
         result = {"000001.SZ": self._make_daily_df()}
         loader._merge_basic_fields(result, ["000001.SZ"], "2025-01-02", "2025-01-03", ["pe_ttm"])
         loader.api.daily_basic.assert_called_once()
 
-    @pytest.mark.parametrize("code", [
-        "510050.SH",  # ETF
-        "000300.SH",  # index
-        "00700.HK",   # HK
-        "AAPL.US",    # US
-        "BTC-USDT",   # crypto
-    ])
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "510050.SH",  # ETF
+            "000300.SH",  # index
+            "00700.HK",  # HK
+            "AAPL.US",  # US
+            "BTC-USDT",  # crypto
+        ],
+    )
     def test_non_stock_skips_daily_basic(self, code: str) -> None:
         loader = self._make_loader()
         result = {code: self._make_daily_df()}

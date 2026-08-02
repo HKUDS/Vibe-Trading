@@ -105,9 +105,7 @@ def monte_carlo_test(
     }
     if sim_equities is not None:
         idx = np.unique(np.linspace(0, len(pnls) - 1, min(len(pnls), 400)).astype(int))
-        sample_rows = np.unique(
-            np.linspace(0, n_simulations - 1, min(30, n_simulations)).astype(int)
-        )
+        sample_rows = np.unique(np.linspace(0, n_simulations - 1, min(30, n_simulations)).astype(int))
         result["equity_paths"] = {
             "steps": (idx + 1).tolist(),
             "initial_capital": round(float(initial_capital), 2),
@@ -334,11 +332,7 @@ def run_validation(
     if "monte_carlo_paths" in v_cfg:
         from backtest.monte_carlo import run_monte_carlo_from_config
 
-        mc_paths_cfg = (
-            v_cfg["monte_carlo_paths"]
-            if isinstance(v_cfg["monte_carlo_paths"], dict)
-            else {}
-        )
+        mc_paths_cfg = v_cfg["monte_carlo_paths"] if isinstance(v_cfg["monte_carlo_paths"], dict) else {}
         results["monte_carlo_paths"] = run_monte_carlo_from_config(
             mc_paths_cfg,
             equity_curve,
@@ -412,11 +406,7 @@ def run_validation(
     if "risk_adjusted_ranking" in v_cfg:
         from backtest.risk_metrics import rank_trials_risk_adjusted
 
-        rk_cfg = (
-            v_cfg["risk_adjusted_ranking"]
-            if isinstance(v_cfg["risk_adjusted_ranking"], dict)
-            else {}
-        )
+        rk_cfg = v_cfg["risk_adjusted_ranking"] if isinstance(v_cfg["risk_adjusted_ranking"], dict) else {}
         trial_returns = rk_cfg.get("trial_returns")
         if trial_returns is None and isinstance(results.get("signal_parameter_grid"), dict):
             trial_returns = results["signal_parameter_grid"].get("trial_returns")
@@ -429,9 +419,7 @@ def run_validation(
             objective=str(rk_cfg.get("objective", "sharpe_dd_penalty")),
             max_dd_limit=float(rk_cfg.get("max_dd_limit", 0.20)),
             min_psr=float(rk_cfg.get("min_psr", 0.5)),
-            max_cvar=(
-                float(rk_cfg["max_cvar"]) if rk_cfg.get("max_cvar") is not None else None
-            ),
+            max_cvar=(float(rk_cfg["max_cvar"]) if rk_cfg.get("max_cvar") is not None else None),
             cvar_alpha=float(rk_cfg.get("cvar_alpha", 0.95)),
             dd_penalty=float(rk_cfg.get("dd_penalty", 2.0)),
             labels=rk_cfg.get("labels"),
@@ -450,9 +438,7 @@ def _load_equity(run_dir: Path) -> pd.Series:
     for col in ("equity", "nav", "value"):
         if col in df.columns:
             return df[col]
-    raise ValueError(
-        f"equity.csv must contain an equity/nav/value column; got {list(df.columns)}"
-    )
+    raise ValueError(f"equity.csv must contain an equity/nav/value column; got {list(df.columns)}")
 
 
 def _load_trades(run_dir: Path) -> List[TradeRecord]:

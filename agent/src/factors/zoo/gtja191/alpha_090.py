@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #90
 # 简要说明: 国泰君安191短周期交易型alpha因子第90号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_090",
-    "theme": ['volume'],
-    "formula_latex": '((-1*RANK(CORR(RANK(VWAP),RANK(VOLUME),5))))',
-    "columns_required": ['volume', 'amount'],
+    "theme": ["volume"],
+    "formula_latex": "((-1*RANK(CORR(RANK(VWAP),RANK(VOLUME),5))))",
+    "columns_required": ["volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
     "min_warmup_bars": 6,
-    "notes": 'Negated rank of 5d corr(rank vwap, rank volume).',
+    "notes": "Negated rank of 5d corr(rank vwap, rank volume).",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     v = panel["volume"]

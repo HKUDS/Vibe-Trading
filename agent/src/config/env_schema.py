@@ -206,10 +206,7 @@ class OcrConfig(_EnvBase):
         import logging
 
         old_val = os.getenv("VIBE_TRADING_OCR_QWEN_MODEL", "")
-        new_val = (
-            data.get("vibe_trading_ocr_llm_model")
-            or os.getenv("VIBE_TRADING_OCR_LLM_MODEL", "")
-        )
+        new_val = data.get("vibe_trading_ocr_llm_model") or os.getenv("VIBE_TRADING_OCR_LLM_MODEL", "")
         if old_val and not new_val:
             logging.getLogger(__name__).warning(
                 "VIBE_TRADING_OCR_QWEN_MODEL is deprecated; "
@@ -239,33 +236,41 @@ class APIConfig(_EnvBase):
     # defaults instead of replacing them. Used to admit a hosted console (e.g.
     # OpenBB Workspace) without discarding the local-dev origins.
     vibe_trading_extra_cors_origins: str = Field(
-        alias="VIBE_TRADING_EXTRA_CORS_ORIGINS", default="",
+        alias="VIBE_TRADING_EXTRA_CORS_ORIGINS",
+        default="",
     )
     api_allowed_hosts: str = Field(alias="API_ALLOWED_HOSTS", default="")
     # Comma-separated Host/Origin allow-list for the network MCP transports
     # (--transport sse / http). Empty means loopback-only (127.0.0.1,
     # localhost), which blocks DNS-rebinding while keeping local use working.
     vibe_trading_mcp_allowed_hosts: str = Field(
-        alias="VIBE_TRADING_MCP_ALLOWED_HOSTS", default="",
+        alias="VIBE_TRADING_MCP_ALLOWED_HOSTS",
+        default="",
     )
     enable_session_runtime: EnvBool = Field(alias="ENABLE_SESSION_RUNTIME", default=True)
     vibe_trading_trust_docker_loopback: EnvBool = Field(
-        alias="VIBE_TRADING_TRUST_DOCKER_LOOPBACK", default=False,
+        alias="VIBE_TRADING_TRUST_DOCKER_LOOPBACK",
+        default=False,
     )
     vibe_trading_enable_shell_tools: EnvBool = Field(
-        alias="VIBE_TRADING_ENABLE_SHELL_TOOLS", default=False,
+        alias="VIBE_TRADING_ENABLE_SHELL_TOOLS",
+        default=False,
     )
     vibe_trading_allowed_file_roots: str = Field(
-        alias="VIBE_TRADING_ALLOWED_FILE_ROOTS", default="",
+        alias="VIBE_TRADING_ALLOWED_FILE_ROOTS",
+        default="",
     )
     vibe_trading_allowed_write_roots: str = Field(
-        alias="VIBE_TRADING_ALLOWED_WRITE_ROOTS", default="",
+        alias="VIBE_TRADING_ALLOWED_WRITE_ROOTS",
+        default="",
     )
     vibe_trading_allowed_run_roots: str = Field(
-        alias="VIBE_TRADING_ALLOWED_RUN_ROOTS", default="",
+        alias="VIBE_TRADING_ALLOWED_RUN_ROOTS",
+        default="",
     )
     vibe_trading_api_url: str = Field(
-        alias="VIBE_TRADING_API_URL", default="http://127.0.0.1:8000",
+        alias="VIBE_TRADING_API_URL",
+        default="http://127.0.0.1:8000",
     )
     futu_trade_pwd_md5: str = Field(alias="FUTU_TRADE_PWD_MD5", default="")
 
@@ -308,47 +313,60 @@ class AgentTuningConfig(_EnvBase):
     token_threshold: int = Field(alias="TOKEN_THRESHOLD", default=40000)
     vt_heartbeat_interval_s: float = Field(alias="VT_HEARTBEAT_INTERVAL_S", default=3.0)
     vt_reasoning_delta_min_interval_s: float = Field(
-        alias="VT_REASONING_DELTA_MIN_INTERVAL_S", default=1.0,
+        alias="VT_REASONING_DELTA_MIN_INTERVAL_S",
+        default=1.0,
     )
     vt_stream_retry_delay_s: float = Field(alias="VT_STREAM_RETRY_DELAY_S", default=1.0)
     vibe_trading_tool_timeout_seconds: float = Field(
-        alias="VIBE_TRADING_TOOL_TIMEOUT_SECONDS", default=1800.0,
+        alias="VIBE_TRADING_TOOL_TIMEOUT_SECONDS",
+        default=1800.0,
     )
     vibe_trading_goal_max_continuations: int = Field(
-        alias="VIBE_TRADING_GOAL_MAX_CONTINUATIONS", default=3,
+        alias="VIBE_TRADING_GOAL_MAX_CONTINUATIONS",
+        default=3,
     )
     vibe_trading_sse_timeout: int = Field(alias="VIBE_TRADING_SSE_TIMEOUT", default=90)
     content_filter_warning_threshold: float = Field(
-        alias="CONTENT_FILTER_WARNING_THRESHOLD", default=0.05,
+        alias="CONTENT_FILTER_WARNING_THRESHOLD",
+        default=0.05,
     )
     vibe_trading_enable_advisory: EnvBool = Field(
-        alias="VIBE_TRADING_ENABLE_ADVISORY", default=False,
+        alias="VIBE_TRADING_ENABLE_ADVISORY",
+        default=False,
     )
     vibe_trading_enable_scheduler: EnvBool = Field(
-        alias="VIBE_TRADING_ENABLE_SCHEDULER", default=False,
+        alias="VIBE_TRADING_ENABLE_SCHEDULER",
+        default=False,
     )
     vibe_trading_scheduler_max_consecutive_failures: int = Field(
-        alias="VIBE_TRADING_SCHEDULER_MAX_CONSECUTIVE_FAILURES", default=3,
+        alias="VIBE_TRADING_SCHEDULER_MAX_CONSECUTIVE_FAILURES",
+        default=3,
     )
     vibe_trading_scheduler_retry_base_delay_ms: int = Field(
-        alias="VIBE_TRADING_SCHEDULER_RETRY_BASE_DELAY_MS", default=60_000,
+        alias="VIBE_TRADING_SCHEDULER_RETRY_BASE_DELAY_MS",
+        default=60_000,
     )
     vibe_trading_scheduler_retry_max_delay_ms: int = Field(
-        alias="VIBE_TRADING_SCHEDULER_RETRY_MAX_DELAY_MS", default=3_600_000,
+        alias="VIBE_TRADING_SCHEDULER_RETRY_MAX_DELAY_MS",
+        default=3_600_000,
     )
     vibe_trading_channels_auto_start: EnvBool = Field(
-        alias="VIBE_TRADING_CHANNELS_AUTO_START", default=False,
+        alias="VIBE_TRADING_CHANNELS_AUTO_START",
+        default=False,
     )
     vibe_trading_disable_bottleneck: EnvBool = Field(
-        alias="VIBE_TRADING_DISABLE_BOTTLENECK", default=False,
+        alias="VIBE_TRADING_DISABLE_BOTTLENECK",
+        default=False,
     )
     vibe_trading_bench_workers: int = Field(alias="VIBE_TRADING_BENCH_WORKERS", default=0)
     vibe_trading_search_backends: str = Field(alias="VIBE_TRADING_SEARCH_BACKENDS", default="")
     vibe_trading_search_bing_fallback: EnvBool = Field(
-        alias="VIBE_TRADING_SEARCH_BING_FALLBACK", default=True,
+        alias="VIBE_TRADING_SEARCH_BING_FALLBACK",
+        default=True,
     )
     vibe_live_authorize_timeout_s: int = Field(
-        alias="VIBE_LIVE_AUTHORIZE_TIMEOUT_SECONDS", default=300,
+        alias="VIBE_LIVE_AUTHORIZE_TIMEOUT_SECONDS",
+        default=300,
     )
 
 
@@ -367,13 +385,15 @@ class PathConfig(_EnvBase):
     vibe_trading_hypotheses_path: str = Field(alias="VIBE_TRADING_HYPOTHESES_PATH", default="")
     vibe_trading_goal_db_path: str = Field(alias="VIBE_TRADING_GOAL_DB_PATH", default="")
     vibe_trading_swarm_agent_config: str = Field(
-        alias="VIBE_TRADING_SWARM_AGENT_CONFIG", default="",
+        alias="VIBE_TRADING_SWARM_AGENT_CONFIG",
+        default="",
     )
     allow_session_mcp_servers: EnvBool = Field(alias="ALLOW_SESSION_MCP_SERVERS", default=False)
     vibe_trading_theme: str = Field(alias="VIBE_TRADING_THEME", default="")
     vibe_goal_session_id: str = Field(alias="VIBE_GOAL_SESSION_ID", default="")
     vibe_trading_strategy_store_db_path: str = Field(
-        alias="VIBE_TRADING_STRATEGY_STORE_DB_PATH", default="",
+        alias="VIBE_TRADING_STRATEGY_STORE_DB_PATH",
+        default="",
     )
 
 
@@ -385,8 +405,8 @@ class PathConfig(_EnvBase):
 class _MemoryPreset(str, Enum):
     """Business-friendly memory system presets."""
 
-    OFF = "off"    # All features disabled
-    ON = "on"     # Tier 1: quality + decay + gc
+    OFF = "off"  # All features disabled
+    ON = "on"  # Tier 1: quality + decay + gc
     FULL = "full"  # Tier 1 + Tier 2: all features
 
 
@@ -461,19 +481,23 @@ class MemoryConfig(_EnvBase):
 
     # Tier 2 flags
     hierarchy_enabled: EnvBool = Field(
-        default=False, alias="VT_MEMORY_HIERARCHY",
+        default=False,
+        alias="VT_MEMORY_HIERARCHY",
         description="Enable hierarchical directory routing",
     )
     links_enabled: EnvBool = Field(
-        default=False, alias="VT_MEMORY_LINKS",
+        default=False,
+        alias="VT_MEMORY_LINKS",
         description="Enable BM25 semantic linking",
     )
     compression_enabled: EnvBool = Field(
-        default=False, alias="VT_MEMORY_COMPRESSION",
+        default=False,
+        alias="VT_MEMORY_COMPRESSION",
         description="Enable auto-compression pipeline",
     )
     fts_index_enabled: EnvBool = Field(
-        default=False, alias="VT_MEMORY_FTS_INDEX",
+        default=False,
+        alias="VT_MEMORY_FTS_INDEX",
         description="Enable SQLite FTS5 search index",
     )
 
@@ -485,12 +509,7 @@ class MemoryConfig(_EnvBase):
             return data
 
         # Determine preset value from env or constructor data
-        preset_val = (
-            os.environ.get("VT_MEMORY")
-            or data.get("VT_MEMORY")
-            or data.get("preset")
-            or "off"
-        )
+        preset_val = os.environ.get("VT_MEMORY") or data.get("VT_MEMORY") or data.get("preset") or "off"
         preset_val = preset_val.strip().lower()
         if preset_val not in _PRESET_FLAGS:
             preset_val = "off"

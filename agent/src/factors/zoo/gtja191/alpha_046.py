@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #46 - 条件量价排名
 # 简要说明: (MEAN(CLOSE,20)-LOW+MEAN(CLOSE,20)-HIGH)/MEAN(CLOSE,20)*VOLUME，价格偏离均值的量加权指标。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_046",
-    "theme": ['reversal'],
-    "formula_latex": '(MEAN(CLOSE,3)+MEAN(CLOSE,6)+MEAN(CLOSE,12)+MEAN(CLOSE,24))/(4*CLOSE)',
-    "columns_required": ['close'],
+    "theme": ["reversal"],
+    "formula_latex": "(MEAN(CLOSE,3)+MEAN(CLOSE,6)+MEAN(CLOSE,12)+MEAN(CLOSE,24))/(4*CLOSE)",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 24,
     "min_warmup_bars": 25,
-    "notes": 'Mean of four MA windows over price.',
+    "notes": "Mean of four MA windows over price.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

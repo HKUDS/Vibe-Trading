@@ -79,9 +79,7 @@ def test_save_overwrites_in_place(live_runtime: Path) -> None:
     assert loaded["a"].next_run_at == 9999
 
 
-def test_sigkill_mid_write_leaves_old_store_intact(
-    live_runtime: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_sigkill_mid_write_leaves_old_store_intact(live_runtime: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A crash during the write (modeled as os.replace raising) must leave the
     previously-committed store fully readable, never a truncated file."""
     store = JobStore()

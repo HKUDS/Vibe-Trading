@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #41
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第41号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_041"
 
 __alpha_meta__ = {
-    'id': 'alpha101_041',
-    'nickname': 'Kakushadze Alpha #41',
-    'theme': ['reversal'],
-    'formula_latex': '(high*low)^0.5 - vwap',
-    'columns_required': ['high', 'low', 'vwap', 'close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 1,
-    'notes': '',
+    "id": "alpha101_041",
+    "nickname": "Kakushadze Alpha #41",
+    "theme": ["reversal"],
+    "formula_latex": "(high*low)^0.5 - vwap",
+    "columns_required": ["high", "low", "vwap", "close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 1,
+    "notes": "",
 }
 
 
@@ -56,7 +55,6 @@ def compute(panel: dict) -> pd.DataFrame:
     high = panel["high"]
     low = panel["low"]
     vwap = panel["vwap"]
-
 
     # Helper aliases (local closures keep the file standalone & purity-safe).
     out = (high * low).pow(0.5) - vwap

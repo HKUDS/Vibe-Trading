@@ -36,9 +36,9 @@ from src.factors.registry import Registry, RegistryError, SkipAlpha
 
 N_ROWS = 300
 N_SYMS = 10
-PROBE_T = 260           # row whose value must be invariant under future edits
-PERTURB_FROM = 270      # first row to corrupt (strictly > PROBE_T)
-PERTURB_VALUE = 1e10    # sentinel; alternates with NaN per column
+PROBE_T = 260  # row whose value must be invariant under future edits
+PERTURB_FROM = 270  # first row to corrupt (strictly > PROBE_T)
+PERTURB_VALUE = 1e10  # sentinel; alternates with NaN per column
 
 
 # ---------------------------------------------------------------- fixtures
@@ -56,22 +56,28 @@ def _baseline_panel(seed: int = 0) -> dict[str, pd.DataFrame]:
     cols = [f"SYM{i}" for i in range(N_SYMS)]
 
     # Random walk close, derive others to keep them positive and sensible.
-    close = pd.DataFrame(
-        100.0 + np.cumsum(rng.normal(0.0, 1.0, size=(N_ROWS, N_SYMS)), axis=0),
-        index=idx,
-        columns=cols,
-    ).abs() + 1.0
+    close = (
+        pd.DataFrame(
+            100.0 + np.cumsum(rng.normal(0.0, 1.0, size=(N_ROWS, N_SYMS)), axis=0),
+            index=idx,
+            columns=cols,
+        ).abs()
+        + 1.0
+    )
     open_ = close.shift(1).fillna(close.iloc[0])
     high = pd.DataFrame(
         np.maximum(close.to_numpy(), open_.to_numpy()) + rng.uniform(0.0, 1.0, size=(N_ROWS, N_SYMS)),
         index=idx,
         columns=cols,
     )
-    low = pd.DataFrame(
-        np.minimum(close.to_numpy(), open_.to_numpy()) - rng.uniform(0.0, 1.0, size=(N_ROWS, N_SYMS)),
-        index=idx,
-        columns=cols,
-    ).abs() + 0.01
+    low = (
+        pd.DataFrame(
+            np.minimum(close.to_numpy(), open_.to_numpy()) - rng.uniform(0.0, 1.0, size=(N_ROWS, N_SYMS)),
+            index=idx,
+            columns=cols,
+        ).abs()
+        + 0.01
+    )
     volume = pd.DataFrame(
         rng.integers(1_000, 100_000, size=(N_ROWS, N_SYMS)).astype(float),
         index=idx,

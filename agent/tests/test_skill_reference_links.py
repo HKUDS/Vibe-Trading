@@ -34,9 +34,7 @@ _SKILLS_UNDER_TEST = ("tushare", "okx-market", "eastmoney", "sec-edgar", "yfinan
 # The target itself may contain parentheses (some tushare filenames do, e.g.
 # "社融增量(月度).md"), so anchor on the trailing ".md)"/".py)" rather than the
 # first ")".
-_MD_LINK_RE = re.compile(
-    r"\]\((?P<target>[^(]*(?:references/.+?\.md|scripts/.+?\.py))\)"
-)
+_MD_LINK_RE = re.compile(r"\]\((?P<target>[^(]*(?:references/.+?\.md|scripts/.+?\.py))\)")
 
 
 def _extract_reference_links(skill: str) -> List[str]:
@@ -86,9 +84,7 @@ def test_reference_links_carry_skill_prefix(skill: str, link: str) -> None:
     A bare ``references/...`` / ``scripts/...`` link is unreachable because
     read_file roots at ``skills/`` and ``skills/references/`` does not exist.
     """
-    assert link.startswith(f"{skill}/"), (
-        f"{skill}/SKILL.md link must carry the '{skill}/' prefix, got: {link}"
-    )
+    assert link.startswith(f"{skill}/"), f"{skill}/SKILL.md link must carry the '{skill}/' prefix, got: {link}"
 
 
 @pytest.mark.parametrize("skill,link", _all_links())
@@ -105,6 +101,6 @@ def test_bare_reference_link_would_fail() -> None:
     This documents the exact failure mode the prefix convention prevents.
     """
     skill, link = _all_links()[0]
-    bare = link[len(f"{skill}/"):]  # strip the skill-name prefix
+    bare = link[len(f"{skill}/") :]  # strip the skill-name prefix
     body = _read(bare)
     assert body["status"] == "error"

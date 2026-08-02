@@ -86,9 +86,7 @@ class TestOsEnvironSubscriptReadFlagged:
         assert "read" in violations[0][1].lower()
 
     def test_subscript_read_in_expression(self) -> None:
-        violations, _ = _run_visitor(
-            'import os\nif os.environ["DEBUG"] == "1": pass\n'
-        )
+        violations, _ = _run_visitor('import os\nif os.environ["DEBUG"] == "1": pass\n')
         assert len(violations) == 1
 
 
@@ -109,9 +107,7 @@ class TestEnvironItemsAllowed:
     """os.environ.items() is NOT flagged."""
 
     def test_items(self) -> None:
-        violations, _ = _run_visitor(
-            "import os\nfor k, v in os.environ.items(): pass\n"
-        )
+        violations, _ = _run_visitor("import os\nfor k, v in os.environ.items(): pass\n")
         assert len(violations) == 0
 
 
@@ -119,9 +115,7 @@ class TestEnvironSetdefaultAllowed:
     """os.environ.setdefault() is NOT flagged."""
 
     def test_setdefault(self) -> None:
-        violations, _ = _run_visitor(
-            'import os\nos.environ.setdefault("FOO", "bar")\n'
-        )
+        violations, _ = _run_visitor('import os\nos.environ.setdefault("FOO", "bar")\n')
         assert len(violations) == 0
 
 
@@ -240,31 +234,31 @@ class TestAllowlistFlag:
 
 
 class TestNoqaSuppression:
-    """Lines with '# noqa: env-gate' are not flagged."""
+    """Lines with '# env-gate' are not flagged."""
 
     def test_noqa_suppresses_getenv(self) -> None:
-        source = 'import os\nx = os.getenv("FOO")  # noqa: env-gate\n'
+        source = 'import os\nx = os.getenv("FOO")  # env-gate\n'
         violations, _ = _run_visitor(source)
         assert len(violations) == 0
 
     def test_noqa_suppresses_environ_get(self) -> None:
-        source = 'import os\nx = os.environ.get("FOO")  # noqa: env-gate\n'
+        source = 'import os\nx = os.environ.get("FOO")  # env-gate\n'
         violations, _ = _run_visitor(source)
         assert len(violations) == 0
 
     def test_noqa_suppresses_subscript_read(self) -> None:
-        source = 'import os\nx = os.environ["FOO"]  # noqa: env-gate\n'
+        source = 'import os\nx = os.environ["FOO"]  # env-gate\n'
         violations, _ = _run_visitor(source)
         assert len(violations) == 0
 
     def test_noqa_does_not_affect_other_lines(self) -> None:
-        source = 'import os\nx = os.getenv("FOO")  # noqa: env-gate\ny = os.getenv("BAR")\n'
+        source = 'import os\nx = os.getenv("FOO")  # env-gate\ny = os.getenv("BAR")\n'
         violations, _ = _run_visitor(source)
         assert len(violations) == 1
         assert "BAR" not in violations[0][1]  # the violation is for BAR, not FOO
 
     def test_partial_noqa_not_matched(self) -> None:
-        """Only exact '# noqa: env-gate' is recognized, not '# noqa' alone."""
+        """Only exact '# env-gate' is recognized, not '# noqa' alone."""
         source = 'import os\nx = os.getenv("FOO")  # noqa\n'
         violations, _ = _run_visitor(source)
         assert len(violations) == 1

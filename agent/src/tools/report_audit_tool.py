@@ -42,8 +42,21 @@ _NUMUNIT_RE = re.compile(r"[~约]?\$?([\d,，.]+)\s*(亿[元美港]?元?|万亿|
 _TABLE_SEP_RE = re.compile(r"^\|[\-\s|:]+\|$")
 
 _SKIP_LABELS = {
-    "来源", "sources", "source", "说明", "注意", "备注", "数据来源",
-    "n/a", "—", "-", "/", "合计", "total", "单位", "趋势",
+    "来源",
+    "sources",
+    "source",
+    "说明",
+    "注意",
+    "备注",
+    "数据来源",
+    "n/a",
+    "—",
+    "-",
+    "/",
+    "合计",
+    "total",
+    "单位",
+    "趋势",
 }
 
 _QUARTER_RE = re.compile(r"(20\d{2}|Q[1-4]|\d{4}\s*Q[1-4])")
@@ -112,11 +125,7 @@ def _parse_md_tables(lines: list[str]) -> list[tuple[str, str, float, str, int, 
                     for col_idx, cell in enumerate(cells[1:], start=1):
                         if not cell:
                             continue
-                        col_header = (
-                            headers_raw[col_idx]
-                            if col_idx < len(headers_raw)
-                            else f"col{col_idx}"
-                        )
+                        col_header = headers_raw[col_idx] if col_idx < len(headers_raw) else f"col{col_idx}"
                         m = _NUMUNIT_RE.search(cell)
                         if m:
                             val = _clean_num(m.group(1))
@@ -157,14 +166,16 @@ def extract_data_points(md_text: str) -> list[dict[str, Any]]:
         if key in seen:
             return
         seen.add(key)
-        points.append({
-            "id": len(points) + 1,
-            "label": label,
-            "reported_value": val,
-            "unit": unit,
-            "raw_text": raw[:120],
-            "line_number": lineno,
-        })
+        points.append(
+            {
+                "id": len(points) + 1,
+                "label": label,
+                "reported_value": val,
+                "unit": unit,
+                "raw_text": raw[:120],
+                "line_number": lineno,
+            }
+        )
 
     lines = md_text.split("\n")
     in_code = False
@@ -202,7 +213,9 @@ def extract_data_points(md_text: str) -> list[dict[str, Any]]:
 
 
 def sample_points(
-    points: list[dict[str, Any]], ratio: float = 0.15, seed: int | None = None,
+    points: list[dict[str, Any]],
+    ratio: float = 0.15,
+    seed: int | None = None,
 ) -> list[dict[str, Any]]:
     """Draw a random sample, clamped to [3, 30], ordered by line number.
 
@@ -303,21 +316,27 @@ def render_verdict(results: list[dict[str, Any]], report_name: str = "") -> dict
         raw_reported = item.get("reported_value")
         reported = _finite_number(raw_reported)
         if reported is None:
-            fail_items.append({
-                "id": item.get("id"), "label": label,
-                "reported": None, "unit": unit,
-                "fetched": _finite_number(fetched), "source": source,
-                "fetched2": _finite_number(item.get("fetched_value2")),
-                "source2": item.get("fetched_source2", ""),
-                "diff1_pct": None, "diff2_pct": None,
-                "reason": (
-                    "reported value missing — cannot verify"
-                    if raw_reported is None
-                    else f"reported value is not a finite number ({raw_reported!r}) — cannot verify"
-                ),
-                "raw_text": item.get("raw_text", ""),
-                "line_number": item.get("line_number", 0),
-            })
+            fail_items.append(
+                {
+                    "id": item.get("id"),
+                    "label": label,
+                    "reported": None,
+                    "unit": unit,
+                    "fetched": _finite_number(fetched),
+                    "source": source,
+                    "fetched2": _finite_number(item.get("fetched_value2")),
+                    "source2": item.get("fetched_source2", ""),
+                    "diff1_pct": None,
+                    "diff2_pct": None,
+                    "reason": (
+                        "reported value missing — cannot verify"
+                        if raw_reported is None
+                        else f"reported value is not a finite number ({raw_reported!r}) — cannot verify"
+                    ),
+                    "raw_text": item.get("raw_text", ""),
+                    "line_number": item.get("line_number", 0),
+                }
+            )
             continue
 
         fetched = float(fetched)
@@ -332,15 +351,22 @@ def render_verdict(results: list[dict[str, Any]], report_name: str = "") -> dict
             if pass1:
                 pass_count += 1
             else:
-                fail_items.append({
-                    "id": item.get("id"), "label": label,
-                    "reported": reported, "unit": unit,
-                    "fetched": fetched, "source": source,
-                    "fetched2": None, "source2": source2,
-                    "diff1_pct": _pct_diff_for_json(diff1), "diff2_pct": None,
-                    "raw_text": item.get("raw_text", ""),
-                    "line_number": item.get("line_number", 0),
-                })
+                fail_items.append(
+                    {
+                        "id": item.get("id"),
+                        "label": label,
+                        "reported": reported,
+                        "unit": unit,
+                        "fetched": fetched,
+                        "source": source,
+                        "fetched2": None,
+                        "source2": source2,
+                        "diff1_pct": _pct_diff_for_json(diff1),
+                        "diff2_pct": None,
+                        "raw_text": item.get("raw_text", ""),
+                        "line_number": item.get("line_number", 0),
+                    }
+                )
         else:
             # Two sources: PASS only if both agree within tolerance; FAIL if
             # both miss; otherwise WARN (a caliber / GAAP mismatch, not a fail).
@@ -350,23 +376,33 @@ def render_verdict(results: list[dict[str, Any]], report_name: str = "") -> dict
             if pass1 and pass2:
                 pass_count += 1
             elif not pass1 and not pass2:
-                fail_items.append({
-                    "id": item.get("id"), "label": label,
-                    "reported": reported, "unit": unit,
-                    "fetched": fetched, "source": source,
-                    "fetched2": f2, "source2": source2,
-                    "diff1_pct": _pct_diff_for_json(diff1),
-                    "diff2_pct": _pct_diff_for_json(diff2),
-                    "raw_text": item.get("raw_text", ""),
-                    "line_number": item.get("line_number", 0),
-                })
+                fail_items.append(
+                    {
+                        "id": item.get("id"),
+                        "label": label,
+                        "reported": reported,
+                        "unit": unit,
+                        "fetched": fetched,
+                        "source": source,
+                        "fetched2": f2,
+                        "source2": source2,
+                        "diff1_pct": _pct_diff_for_json(diff1),
+                        "diff2_pct": _pct_diff_for_json(diff2),
+                        "raw_text": item.get("raw_text", ""),
+                        "line_number": item.get("line_number", 0),
+                    }
+                )
             else:
-                warn_items.append({
-                    "id": item.get("id"), "label": label,
-                    "reported": reported, "unit": unit,
-                    "diff1_pct": _pct_diff_for_json(diff1),
-                    "diff2_pct": _pct_diff_for_json(diff2),
-                })
+                warn_items.append(
+                    {
+                        "id": item.get("id"),
+                        "label": label,
+                        "reported": reported,
+                        "unit": unit,
+                        "diff1_pct": _pct_diff_for_json(diff1),
+                        "diff2_pct": _pct_diff_for_json(diff2),
+                    }
+                )
 
     fail_count = len(fail_items)
     verdict = "PASS" if fail_count == 0 else "FAIL"
@@ -409,7 +445,8 @@ class ReportAuditTool(BaseTool):
                 "description": "extract: full markdown text of the report to audit.",
             },
             "ratio": {
-                "type": "number", "default": 0.15,
+                "type": "number",
+                "default": 0.15,
                 "description": "extract: fraction of data points to sample.",
             },
             "seed": {
@@ -417,10 +454,11 @@ class ReportAuditTool(BaseTool):
                 "description": "extract: random seed for reproducible sampling.",
             },
             "results": {
-                "type": "array", "items": {"type": "object"},
+                "type": "array",
+                "items": {"type": "object"},
                 "description": "verdict: list of {id, label, reported_value, unit, "
-                               "fetched_value, fetched_source, (optional) "
-                               "fetched_value2, fetched_source2}.",
+                "fetched_value, fetched_source, (optional) "
+                "fetched_value2, fetched_source2}.",
             },
             "report_name": {
                 "type": "string",
@@ -431,7 +469,7 @@ class ReportAuditTool(BaseTool):
     }
     is_readonly = True
     repeatable = True  # loop.py dedups non-repeatable tools by name; extract
-                       # and verdict are commonly called back-to-back.
+    # and verdict are commonly called back-to-back.
 
     def execute(self, **kwargs: Any) -> str:
         """Dispatch to ``extract`` or ``verdict`` and return a JSON envelope.
@@ -479,7 +517,8 @@ class ReportAuditTool(BaseTool):
                 if not isinstance(results, list) or not results:
                     return _err("results (non-empty list) is required for verdict")
                 result = render_verdict(
-                    results, report_name=str(kwargs.get("report_name") or ""),
+                    results,
+                    report_name=str(kwargs.get("report_name") or ""),
                 )
             else:
                 return _err(f"unknown command: {command}")
@@ -498,5 +537,7 @@ class ReportAuditTool(BaseTool):
 
 def _err(msg: str) -> str:
     return json.dumps(
-        {"status": "error", "error": msg}, ensure_ascii=False, allow_nan=False,
+        {"status": "error", "error": msg},
+        ensure_ascii=False,
+        allow_nan=False,
     )

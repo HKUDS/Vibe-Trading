@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #39 - 量价反转排名
 # 简要说明: (-1*RANK(CORR(RANK(HIGH),RANK(VOLUME),7)) * RANK(CORR(RANK(LOW),RANK(VOLUME),7)))，高低价与成交量秩相关的乘积取负排名。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_039",
-    "theme": ['volume'],
-    "formula_latex": '((RANK(DECAYLINEAR(DELTA(CLOSE,2),8)) - RANK(DECAYLINEAR(CORR(((VWAP*0.3)+(OPEN*0.7)),SUM(MEAN(VOLUME,180),37),14),12)))*-1)',
-    "columns_required": ['close', 'open', 'volume', 'amount'],
+    "theme": ["volume"],
+    "formula_latex": "((RANK(DECAYLINEAR(DELTA(CLOSE,2),8)) - RANK(DECAYLINEAR(CORR(((VWAP*0.3)+(OPEN*0.7)),SUM(MEAN(VOLUME,180),37),14),12)))*-1)",
+    "columns_required": ["close", "open", "volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 14,
     "min_warmup_bars": 63,
-    "notes": '180d / 37d windows approximated with 30d / 10d. See notes.',
+    "notes": "180d / 37d windows approximated with 30d / 10d. See notes.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

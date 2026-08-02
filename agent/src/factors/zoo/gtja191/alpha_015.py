@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #15 - 收益排名差
 # 简要说明: (-1*sum(rank(correlation(rank(high), rank(volume), 3)), 3))，最高价与成交量3日秩相关的3日累计取负。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_015",
-    "theme": ['reversal'],
-    "formula_latex": '(OPEN/DELAY(CLOSE,1) - 1)',
-    "columns_required": ['open', 'close'],
+    "theme": ["reversal"],
+    "formula_latex": "(OPEN/DELAY(CLOSE,1) - 1)",
+    "columns_required": ["open", "close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 1,
     "min_warmup_bars": 2,
-    "notes": 'Overnight gap return.',
+    "notes": "Overnight gap return.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     o = panel["open"]

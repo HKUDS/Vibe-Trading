@@ -83,18 +83,14 @@ def _parse_period(period: str) -> tuple[str, str]:
         if m:
             start, end = f"{m.group(1)}-01-01", f"{m.group(2)}-12-31"
         else:
-            raise ValueError(
-                f"period {period!r} must be YYYY-YYYY or YYYY-MM-DD/YYYY-MM-DD"
-            )
+            raise ValueError(f"period {period!r} must be YYYY-YYYY or YYYY-MM-DD/YYYY-MM-DD")
     # Match backtest loaders.validate_date_range: reject inverted ranges.
     if pd.Timestamp(start) > pd.Timestamp(end):
         raise ValueError(f"start_date ({start}) > end_date ({end})")
     return start, end
 
 
-def _load_universe_panel(
-    universe: str, period: str, *, use_cache: bool = True
-) -> dict[str, pd.DataFrame]:
+def _load_universe_panel(universe: str, period: str, *, use_cache: bool = True) -> dict[str, pd.DataFrame]:
     """Load OHLCV(+amount, +vwap) wide panel for the requested universe.
 
     Returns a dict keyed by panel column (open/high/low/close/volume/amount/vwap)
@@ -113,9 +109,7 @@ def _load_universe_panel(
         RuntimeError: ``TUSHARE_TOKEN`` unset when csi300 is requested.
     """
     if universe not in _UNIVERSE_TAG:
-        raise ValueError(
-            f"universe {universe!r} not recognized; expected one of {sorted(_UNIVERSE_TAG)}"
-        )
+        raise ValueError(f"universe {universe!r} not recognized; expected one of {sorted(_UNIVERSE_TAG)}")
     start, end = _parse_period(period)
 
     cache_dir = Path.home() / ".vibe-trading" / "cache"
@@ -137,8 +131,7 @@ def _load_universe_panel(
 
     if not panel or "close" not in panel or panel["close"].empty:
         raise RuntimeError(
-            f"universe {universe!r} produced empty panel for {start}..{end}; "
-            "check network / token / date range"
+            f"universe {universe!r} produced empty panel for {start}..{end}; check network / token / date range"
         )
 
     # btc-usdt loader returns a single-column close (one instrument). Cross-
@@ -235,7 +228,9 @@ def _read_pickle_cache(cache_path: Path) -> dict[str, pd.DataFrame] | None:
     if not _hashes_equal(expected, actual):
         logger.warning(
             "cache integrity mismatch for %s (expected %s..., got %s...); refetching",
-            cache_path.name, expected[:12], actual[:12],
+            cache_path.name,
+            expected[:12],
+            actual[:12],
         )
         return None
 
@@ -250,9 +245,7 @@ def _read_pickle_cache(cache_path: Path) -> dict[str, pd.DataFrame] | None:
     return cached
 
 
-def _write_pickle_cache(
-    cache_dir: Path, cache_path: Path, panel: dict[str, Any]
-) -> None:
+def _write_pickle_cache(cache_dir: Path, cache_path: Path, panel: dict[str, Any]) -> None:
     """Pickle ``panel`` + write its keyed HMAC sidecar. Failures are non-fatal."""
     import pickle
 
@@ -260,9 +253,7 @@ def _write_pickle_cache(
         cache_dir.mkdir(parents=True, exist_ok=True)
         blob = pickle.dumps(panel, protocol=pickle.HIGHEST_PROTOCOL)
         cache_path.write_bytes(blob)
-        _sha256_path(cache_path).write_text(
-            _cache_mac(_cache_hmac_key(cache_dir), blob), encoding="utf-8"
-        )
+        _sha256_path(cache_path).write_text(_cache_mac(_cache_hmac_key(cache_dir), blob), encoding="utf-8")
     except Exception as exc:  # noqa: BLE001 — cache miss is non-fatal
         logger.warning("cache write failed: %s", exc)
 
@@ -280,23 +271,91 @@ def _hashes_equal(a: str, b: str) -> bool:
 _CSI300_FALLBACK_CODES = [
     # Blue-chip A-share representatives — used only when index_weight fails.
     # Hand-picked across sectors so a degraded run still gives diverse signal.
-    "600519.SH", "601318.SH", "600036.SH", "000333.SZ", "000858.SZ",
-    "601166.SH", "600276.SH", "601398.SH", "601288.SH", "600030.SH",
-    "600887.SH", "601012.SH", "601888.SH", "000651.SZ", "600028.SH",
-    "601628.SH", "600000.SH", "601088.SH", "601857.SH", "600009.SH",
-    "601899.SH", "002594.SZ", "600585.SH", "300750.SZ", "601658.SH",
-    "600048.SH", "601138.SH", "601668.SH", "000001.SZ", "000002.SZ",
+    "600519.SH",
+    "601318.SH",
+    "600036.SH",
+    "000333.SZ",
+    "000858.SZ",
+    "601166.SH",
+    "600276.SH",
+    "601398.SH",
+    "601288.SH",
+    "600030.SH",
+    "600887.SH",
+    "601012.SH",
+    "601888.SH",
+    "000651.SZ",
+    "600028.SH",
+    "601628.SH",
+    "600000.SH",
+    "601088.SH",
+    "601857.SH",
+    "600009.SH",
+    "601899.SH",
+    "002594.SZ",
+    "600585.SH",
+    "300750.SZ",
+    "601658.SH",
+    "600048.SH",
+    "601138.SH",
+    "601668.SH",
+    "000001.SZ",
+    "000002.SZ",
 ]
 
 
 # Hand-picked US large-cap representatives. Used when Wikipedia fetch fails.
 _SP500_FALLBACK_CODES = [
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "BRK-B",
-    "JPM", "JNJ", "V", "PG", "UNH", "MA", "HD", "XOM", "LLY", "MRK",
-    "PEP", "KO", "ABBV", "AVGO", "CVX", "WMT", "COST", "ADBE", "MCD",
-    "CRM", "ACN", "BAC", "TMO", "ORCL", "CSCO", "ABT", "WFC", "DHR",
-    "VZ", "PFE", "INTC", "DIS", "CMCSA", "AMD", "TXN", "PM", "QCOM",
-    "NEE", "RTX", "HON", "T", "IBM",
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "TSLA",
+    "BRK-B",
+    "JPM",
+    "JNJ",
+    "V",
+    "PG",
+    "UNH",
+    "MA",
+    "HD",
+    "XOM",
+    "LLY",
+    "MRK",
+    "PEP",
+    "KO",
+    "ABBV",
+    "AVGO",
+    "CVX",
+    "WMT",
+    "COST",
+    "ADBE",
+    "MCD",
+    "CRM",
+    "ACN",
+    "BAC",
+    "TMO",
+    "ORCL",
+    "CSCO",
+    "ABT",
+    "WFC",
+    "DHR",
+    "VZ",
+    "PFE",
+    "INTC",
+    "DIS",
+    "CMCSA",
+    "AMD",
+    "TXN",
+    "PM",
+    "QCOM",
+    "NEE",
+    "RTX",
+    "HON",
+    "T",
+    "IBM",
 ]
 
 
@@ -309,9 +368,7 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     """
     token = get_env_config().data.tushare_token.strip()
     if not token or token == "your-tushare-token":
-        raise RuntimeError(
-            "TUSHARE_TOKEN not in agent/.env or environment; required for csi300 universe"
-        )
+        raise RuntimeError("TUSHARE_TOKEN not in agent/.env or environment; required for csi300 universe")
 
     try:
         import tushare as ts
@@ -326,17 +383,11 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     constituent_source = "tushare index_weight"
     constituent_source_date: str | None = None
     try:
-        weights = pro.index_weight(
-            index_code="399300.SZ", start_date=sd, end_date=ed
-        )
+        weights = pro.index_weight(index_code="399300.SZ", start_date=sd, end_date=ed)
         if weights is not None and not weights.empty:
             latest_date = weights["trade_date"].max()
             constituent_source_date = str(latest_date)
-            codes = (
-                weights[weights["trade_date"] == latest_date]["con_code"]
-                .drop_duplicates()
-                .tolist()
-            )
+            codes = weights[weights["trade_date"] == latest_date]["con_code"].drop_duplicates().tolist()
             logger.info("csi300: %d constituents from index_weight @ %s", len(codes), latest_date)
     except Exception as exc:  # noqa: BLE001
         logger.warning("csi300 index_weight failed (%s); using fallback list", exc)
@@ -383,9 +434,7 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     if "amount" in panel and "volume" in panel:
         from src.factors.base import safe_div
 
-        panel["vwap"] = safe_div(
-            panel["amount"] * 1000.0, panel["volume"] * 100.0 + 1.0
-        )
+        panel["vwap"] = safe_div(panel["amount"] * 1000.0, panel["volume"] * 100.0 + 1.0)
     panel["_meta"] = {
         "universe": "csi300",
         # A terminal snapshot is forward-looking relative to the start of the
@@ -459,12 +508,7 @@ def _fetch_sp500_constituents() -> list[str]:
 
         resp = requests.get(
             url,
-            headers={
-                "User-Agent": (
-                    "Vibe-Trading/0.1 (research bench; "
-                    "https://github.com/HKUDS/Vibe-Trading)"
-                )
-            },
+            headers={"User-Agent": ("Vibe-Trading/0.1 (research bench; https://github.com/HKUDS/Vibe-Trading)")},
             timeout=20,
         )
         resp.raise_for_status()
@@ -493,9 +537,7 @@ def _load_btc_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     return panel
 
 
-def _wide_from_fetched(
-    fetched: dict[str, pd.DataFrame], *, include_amount: bool
-) -> dict[str, pd.DataFrame]:
+def _wide_from_fetched(fetched: dict[str, pd.DataFrame], *, include_amount: bool) -> dict[str, pd.DataFrame]:
     """Stack per-code OHLCV frames into wide panels keyed by field."""
     if not fetched:
         return {}
@@ -510,9 +552,7 @@ def _wide_from_fetched(
 
     panel: dict[str, pd.DataFrame] = {}
     for field in fields:
-        present = {
-            code: df[field] for code, df in fetched.items() if field in df.columns
-        }
+        present = {code: df[field] for code, df in fetched.items() if field in df.columns}
         if not present:
             continue
         # pd.concat over a dict of Series gives a wide frame with codes as
@@ -535,7 +575,7 @@ def _retry(fn, *, tries: int = 3, base_delay: float = 1.0):
             last_exc = exc
             if attempt == tries - 1:
                 break
-            delay = base_delay * (2 ** attempt)
+            delay = base_delay * (2**attempt)
             logger.debug("retry %d/%d after %.1fs: %s", attempt + 1, tries, delay, exc)
             time.sleep(delay)
     if last_exc is not None:
@@ -570,9 +610,7 @@ def _bench_one_alpha(
     factor_df = registry.compute(alpha_id, panel)
     ic_series = compute_ic_series(factor_df, return_df)
     if ic_series.empty:
-        raise RuntimeError(
-            f"{alpha_id}: IC series empty — insufficient overlap between factor and returns"
-        )
+        raise RuntimeError(f"{alpha_id}: IC series empty — insufficient overlap between factor and returns")
     ic_mean = float(ic_series.mean())
     ic_std = float(ic_series.std())
     ir = ic_mean / ic_std if ic_std > 0 else 0.0
@@ -592,9 +630,7 @@ def _bench_one_alpha(
     }
 
 
-def _select_alpha_ids(
-    registry: Any, *, alpha_id: str | None, zoo: str | None
-) -> list[str]:
+def _select_alpha_ids(registry: Any, *, alpha_id: str | None, zoo: str | None) -> list[str]:
     if alpha_id and zoo:
         raise ValueError("alpha_id and zoo are mutually exclusive")
     if alpha_id:
@@ -610,7 +646,7 @@ def _select_alpha_ids(
 # ---------------------------------------------------------------------------
 
 _CSP = (
-    "<meta http-equiv=\"Content-Security-Policy\" "
+    '<meta http-equiv="Content-Security-Policy" '
     "content=\"default-src 'none'; style-src 'unsafe-inline'; script-src 'none'\">"
 )
 
@@ -697,11 +733,11 @@ def _esc(value: Any) -> str:
 def _render_html_manual(ctx: dict[str, Any]) -> str:
     """Hand-rolled fallback. Every interpolated value goes through html.escape."""
     parts: list[str] = [
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">",
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">',
         _CSP,
         f"<title>Alpha Bench Report</title><style>{_REPORT_CSS}</style></head><body>",
         "<h1>Alpha Bench Report</h1>",
-        "<div class=\"meta\">Generated ",
+        '<div class="meta">Generated ',
         _esc(ctx["generated_at"]),
         " &middot; Universe ",
         _esc(ctx["universe"]),
@@ -732,21 +768,14 @@ def _render_html_manual(ctx: dict[str, Any]) -> str:
     parts.append("</table><h2>Formulas</h2><table>")
     parts.append("<tr><th>Alpha ID</th><th>Formula (LaTeX source)</th></tr>")
     for row in ctx["top"]:
-        parts.append(
-            f"<tr><td>{_esc(row['id'])}</td>"
-            f"<td class=\"formula\">{_esc(row['formula_latex'])}</td></tr>"
-        )
+        parts.append(f'<tr><td>{_esc(row["id"])}</td><td class="formula">{_esc(row["formula_latex"])}</td></tr>')
     parts.append("</table>")
     failures = ctx.get("failures") or []
     if failures:
-        parts.append(
-            f"<h2 class=\"skipped\">Skipped / Failed ({len(failures)} shown)</h2><table>"
-        )
+        parts.append(f'<h2 class="skipped">Skipped / Failed ({len(failures)} shown)</h2><table>')
         parts.append("<tr><th>Alpha ID</th><th>Reason</th></tr>")
         for f in failures:
-            parts.append(
-                f"<tr><td>{_esc(f['alpha_id'])}</td><td>{_esc(f['reason'])}</td></tr>"
-            )
+            parts.append(f"<tr><td>{_esc(f['alpha_id'])}</td><td>{_esc(f['reason'])}</td></tr>")
         parts.append("</table>")
     parts.append("</body></html>")
     return "".join(parts)
@@ -798,9 +827,7 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
         return {"status": "error", "error": f"registry init failed: {exc}"}
 
     try:
-        alpha_ids = _select_alpha_ids(
-            registry, alpha_id=kwargs.get("alpha_id"), zoo=kwargs.get("zoo")
-        )
+        alpha_ids = _select_alpha_ids(registry, alpha_id=kwargs.get("alpha_id"), zoo=kwargs.get("zoo"))
     except (KeyError, ValueError) as exc:
         return {"status": "error", "error": str(exc)}
 

@@ -79,6 +79,7 @@ def test_docker_gateway_dev_write_allowed_only_with_compose_trust_flag(
 
     monkeypatch.setenv("VIBE_TRADING_TRUST_DOCKER_LOOPBACK", "1")
     from src.config.accessor import reset_env_config
+
     reset_env_config()
 
     assert api_server._is_local_client(request)
@@ -479,10 +480,7 @@ def test_default_cors_origins_are_loopback_only() -> None:
 
     assert origins
     assert "*" not in origins
-    assert all(
-        origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:")
-        for origin in origins
-    )
+    assert all(origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:") for origin in origins)
 
 
 def test_cors_origins_reject_credentialed_wildcard() -> None:
@@ -556,9 +554,9 @@ def test_loopback_shutdown_accepts_valid_bearer(
     "value",
     [
         # Real formats produced by the codebase.
-        "20260105_120342_12_a1b2c3",            # state.create_run_dir
-        "swarm-20260105_120342-a1b2c3",         # swarm presets.run_id
-        "abcdef012345",                         # session_id (uuid.uuid4().hex[:12])
+        "20260105_120342_12_a1b2c3",  # state.create_run_dir
+        "swarm-20260105_120342-a1b2c3",  # swarm presets.run_id
+        "abcdef012345",  # session_id (uuid.uuid4().hex[:12])
         "run-1",
         "A" * 128,
     ],
@@ -576,7 +574,7 @@ def test_validate_path_param_accepts_known_good_values(value: str) -> None:
         "foo/bar",
         "foo\\bar",
         "foo bar",
-        "foo.bar",             # dot is not in the safe class
+        "foo.bar",  # dot is not in the safe class
         "foo\n",
         "foo\r",
         "foo\t",

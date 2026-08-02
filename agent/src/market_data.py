@@ -118,12 +118,7 @@ def fetch_market_data(
 
     results: dict[str, Any] = {}
     provenance: dict[str, dict[str, Any]] = {}
-    result_aliases = {
-        code: code.split(":", 1)[1]
-        if code.lower().startswith("local:")
-        else code
-        for code in codes
-    }
+    result_aliases = {code: code.split(":", 1)[1] if code.lower().startswith("local:") else code for code in codes}
 
     if source == "auto":
         groups: dict[str, list[str]] = {}
@@ -176,14 +171,18 @@ def fetch_market_data(
             except Exception as exc:  # noqa: BLE001 — contained per-symbol fallback
                 logger.error(
                     "market-data loader %r failed for %s; trying next source in chain: %s",
-                    attempt_src, src_codes, exc,
+                    attempt_src,
+                    src_codes,
+                    exc,
                 )
                 continue
 
         if used_source and used_source != src:
             logger.info(
                 "market-data source %r unavailable for %s; fell back to %r",
-                src, src_codes, used_source,
+                src,
+                src_codes,
+                used_source,
             )
 
         for symbol, df in data_map.items():
@@ -201,11 +200,7 @@ def fetch_market_data(
                     "currency_conversion": "none",
                 }
 
-    unresolved = [
-        code
-        for code in codes
-        if code not in results and result_aliases[code] not in results
-    ]
+    unresolved = [code for code in codes if code not in results and result_aliases[code] not in results]
     if unresolved:
         results["_unresolved"] = unresolved
     if include_provenance and provenance:

@@ -75,14 +75,11 @@ class TestToCompactDate:
 class TestFetchWithMockedClient:
     def test_a_share_builds_canonical_frame(self) -> None:
         loader = DataLoader()
-        with patch.object(
-            eastmoney_client, "resolve_secid", return_value="1.600519"
-        ) as resolve, patch.object(
-            eastmoney_client, "fetch_kline", return_value=_client_rows()
-        ) as fetch_kline:
-            out = loader.fetch(
-                ["600519.SH"], "2024-01-01", "2024-01-31", interval="1D"
-            )
+        with (
+            patch.object(eastmoney_client, "resolve_secid", return_value="1.600519") as resolve,
+            patch.object(eastmoney_client, "fetch_kline", return_value=_client_rows()) as fetch_kline,
+        ):
+            out = loader.fetch(["600519.SH"], "2024-01-01", "2024-01-31", interval="1D")
 
         resolve.assert_called_once_with("600519.SH")
         # 1D -> klt 101, compact dates passed through.
@@ -103,9 +100,10 @@ class TestFetchWithMockedClient:
 
     def test_unsupported_interval_yields_no_frame(self) -> None:
         loader = DataLoader()
-        with patch.object(eastmoney_client, "resolve_secid") as resolve, patch.object(
-            eastmoney_client, "fetch_kline"
-        ) as fetch_kline:
+        with (
+            patch.object(eastmoney_client, "resolve_secid") as resolve,
+            patch.object(eastmoney_client, "fetch_kline") as fetch_kline,
+        ):
             out = loader.fetch(["600519.SH"], "2024-01-01", "2024-01-31", interval="3m")
 
         assert out == {}
@@ -114,9 +112,10 @@ class TestFetchWithMockedClient:
 
     def test_unresolvable_symbol_omitted(self) -> None:
         loader = DataLoader()
-        with patch.object(
-            eastmoney_client, "resolve_secid", return_value=None
-        ), patch.object(eastmoney_client, "fetch_kline") as fetch_kline:
+        with (
+            patch.object(eastmoney_client, "resolve_secid", return_value=None),
+            patch.object(eastmoney_client, "fetch_kline") as fetch_kline,
+        ):
             out = loader.fetch(["WAT.XYZ"], "2024-01-01", "2024-01-31")
 
         assert out == {}
@@ -133,21 +132,21 @@ class TestFetchWithMockedClient:
                 raise RuntimeError("eastmoney boom")
             return _client_rows()
 
-        with patch.object(eastmoney_client, "resolve_secid", side_effect=_resolve), patch.object(
-            eastmoney_client, "fetch_kline", side_effect=_fetch_kline
+        with (
+            patch.object(eastmoney_client, "resolve_secid", side_effect=_resolve),
+            patch.object(eastmoney_client, "fetch_kline", side_effect=_fetch_kline),
         ):
-            out = loader.fetch(
-                ["000001.SZ", "600519.SH"], "2024-01-01", "2024-01-31"
-            )
+            out = loader.fetch(["000001.SZ", "600519.SH"], "2024-01-01", "2024-01-31")
 
         # The boom symbol is dropped; the healthy one survives.
         assert set(out) == {"600519.SH"}
 
     def test_empty_klines_omitted(self) -> None:
         loader = DataLoader()
-        with patch.object(
-            eastmoney_client, "resolve_secid", return_value="116.00700"
-        ), patch.object(eastmoney_client, "fetch_kline", return_value=[]):
+        with (
+            patch.object(eastmoney_client, "resolve_secid", return_value="116.00700"),
+            patch.object(eastmoney_client, "fetch_kline", return_value=[]),
+        ):
             out = loader.fetch(["00700.HK"], "2024-01-01", "2024-01-31")
 
         assert out == {}
@@ -175,9 +174,7 @@ class TestFetchEndToEndHttpMocked:
             }
         }
         loader = DataLoader()
-        with patch.object(
-            eastmoney_client, "throttled_get_json", return_value=payload
-        ) as http:
+        with patch.object(eastmoney_client, "throttled_get_json", return_value=payload) as http:
             out = loader.fetch(["600519.SH"], "2024-01-01", "2024-01-31")
 
         http.assert_called_once()

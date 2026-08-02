@@ -19,6 +19,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+from src.tools.ocr import get_ocr_engine, get_ocr_install_hint
+
 from src.agent.progress import emit_progress
 from src.agent.tools import BaseTool
 from src.security.scanner import with_security_warnings
@@ -31,20 +33,56 @@ _ENCODING_FALLBACK = ("utf-8", "utf-8-sig", "gbk", "gb2312", "big5", "latin-1")
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
 _TEXT_EXTS = {
     # docs / structured
-    ".txt", ".md", ".log", ".rst",
-    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".env",
-    ".csv", ".tsv", ".html", ".htm", ".xml",
+    ".txt",
+    ".md",
+    ".log",
+    ".rst",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".env",
+    ".csv",
+    ".tsv",
+    ".html",
+    ".htm",
+    ".xml",
     # source code (best-effort, LLM can read raw)
-    ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx",
-    ".go", ".rs", ".java", ".kt", ".swift",
-    ".c", ".h", ".cpp", ".hpp", ".cc",
-    ".rb", ".php", ".pl", ".lua",
-    ".sh", ".bash", ".zsh", ".ps1", ".bat",
-    ".sql", ".r", ".m",
-    ".dockerfile", ".makefile", ".cmake",
+    ".py",
+    ".pyi",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".go",
+    ".rs",
+    ".java",
+    ".kt",
+    ".swift",
+    ".c",
+    ".h",
+    ".cpp",
+    ".hpp",
+    ".cc",
+    ".rb",
+    ".php",
+    ".pl",
+    ".lua",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".ps1",
+    ".bat",
+    ".sql",
+    ".r",
+    ".m",
+    ".dockerfile",
+    ".makefile",
+    ".cmake",
 }
-
-from src.tools.ocr import get_ocr_engine, get_ocr_install_hint
 
 _cached_ocr_engine = None
 _cached_ocr_checked = False
@@ -72,6 +110,7 @@ def _ocr_image_array(img) -> str:
 
 
 # ---------------- shared helpers ----------------
+
 
 def _err(msg: str) -> str:
     return json.dumps({"status": "error", "error": msg}, ensure_ascii=False)
@@ -102,14 +141,11 @@ def _envelope(path: Path, fmt: str, text: str, **extra: Any) -> str:
 
 # ---------------- PDF ----------------
 
+
 def _parse_pages(pages_str: str, total: int) -> list[int]:
     """Parse '1-10' / '5' / '1,3,5-8' into zero-based indices."""
     # Word/LLM paste often uses en/em/minus dashes; treat as ASCII hyphen.
-    pages_str = (
-        pages_str.replace("\u2013", "-")
-        .replace("\u2014", "-")
-        .replace("\u2212", "-")
-    )
+    pages_str = pages_str.replace("\u2013", "-").replace("\u2014", "-").replace("\u2212", "-")
     out: list[int] = []
     for part in pages_str.split(","):
         part = part.strip()
@@ -222,7 +258,9 @@ def _read_pdf(path: Path, pages: str, min_text_per_page: int = _MIN_TEXT_PER_PAG
         }
 
         return _envelope(
-            path, "pdf", full,
+            path,
+            "pdf",
+            full,
             total_pages=total_pages,
             pages_read=len(targets),
             ocr_pages=ocr_pages,
@@ -235,6 +273,7 @@ def _read_pdf(path: Path, pages: str, min_text_per_page: int = _MIN_TEXT_PER_PAG
 
 
 # ---------------- DOCX ----------------
+
 
 def _read_docx(path: Path) -> str:
     try:
@@ -253,6 +292,7 @@ def _read_docx(path: Path) -> str:
 
 
 # ---------------- Excel ----------------
+
 
 def _read_excel(path: Path) -> str:
     try:
@@ -280,6 +320,7 @@ def _read_excel(path: Path) -> str:
 
 # ---------------- PPTX ----------------
 
+
 def _read_pptx(path: Path) -> str:
     try:
         from pptx import Presentation  # type: ignore
@@ -301,6 +342,7 @@ def _read_pptx(path: Path) -> str:
 
 # ---------------- Image OCR ----------------
 
+
 def _read_image(path: Path) -> str:
     try:
         import numpy as np  # type: ignore
@@ -316,10 +358,7 @@ def _read_image(path: Path) -> str:
     if not _ocr_available():
         engine = _get_ocr()
         hint = get_ocr_install_hint(engine)
-        return _err(
-            f"This image requires OCR to extract text, but no OCR engine is "
-            f"available. {hint}"
-        )
+        return _err(f"This image requires OCR to extract text, but no OCR engine is available. {hint}")
 
     text = _ocr_image_array(img)
     engine = _get_ocr()
@@ -330,7 +369,9 @@ def _read_image(path: Path) -> str:
             "quality_flag": "degraded",
         }
         return _envelope(
-            path, "image", "",
+            path,
+            "image",
+            "",
             ocr_engine=engine.name if engine else None,
             ocr_quality=ocr_quality,
             note="OCR returned no text (empty or unreadable image)",
@@ -342,13 +383,16 @@ def _read_image(path: Path) -> str:
         "quality_flag": "good",
     }
     return _envelope(
-        path, "image", text,
+        path,
+        "image",
+        text,
         ocr_engine=engine.name if engine else None,
         ocr_quality=ocr_quality,
     )
 
 
 # ---------------- Plain text ----------------
+
 
 def _read_text(path: Path) -> str:
     """Read a text-like file with encoding fallback."""

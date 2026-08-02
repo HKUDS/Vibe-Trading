@@ -75,17 +75,13 @@ def test_trend_line_slope_flat_series_is_zero() -> None:
 
 def test_candlestick_doji_is_neutral() -> None:
     # Tiny body relative to range -> doji -> stays 0 (not a hammer).
-    out = candlestick_patterns(
-        pd.Series([100.0]), pd.Series([101.0]), pd.Series([99.0]), pd.Series([100.05])
-    )
+    out = candlestick_patterns(pd.Series([100.0]), pd.Series([101.0]), pd.Series([99.0]), pd.Series([100.05]))
     assert list(out) == [0]
 
 
 def test_candlestick_hammer_is_bullish() -> None:
     # Long lower shadow, small upper shadow, real body -> hammer -> 1.
-    out = candlestick_patterns(
-        pd.Series([100.0]), pd.Series([101.2]), pd.Series([96.0]), pd.Series([101.0])
-    )
+    out = candlestick_patterns(pd.Series([100.0]), pd.Series([101.2]), pd.Series([96.0]), pd.Series([101.0]))
     assert list(out) == [1]
 
 

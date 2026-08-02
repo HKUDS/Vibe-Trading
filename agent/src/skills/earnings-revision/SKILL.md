@@ -138,10 +138,10 @@ def score_guidance_change(current_guide, prior_guide, consensus):
 **Quality scoring:**
 ```python
 earnings_quality = {
-    "fcf_conversion": fcf / net_income,           # >0.8 = good, <0.5 = poor
+    "fcf_conversion": fcf / net_income,  # >0.8 = good, <0.5 = poor
     "accrual_ratio": (net_income - ocf) / avg_assets,  # <5% = good, >10% = concern
     "revenue_cash_alignment": revenue_growth - ocf_growth,  # small gap = good
-    "non_gaap_gap": non_gaap_eps - gaap_eps,      # large gap = red flag
+    "non_gaap_gap": non_gaap_eps - gaap_eps,  # large gap = red flag
     "buyback_eps_boost": eps_growth - net_income_growth,  # large = artificial
 }
 ```

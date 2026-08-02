@@ -13,7 +13,7 @@ def test_resolve_code_accepts_bare_a_share_code():
     # Market-suffixed A-shares
     assert _resolve_code("600519.SH") == "600519"
     assert _resolve_code("000001.SZ") == "000001"
-    
+
     # Bare 6-digit A-shares (previously returned None on un-fixed code)
     assert _resolve_code("600519") == "600519"
     assert _resolve_code("000001") == "000001"

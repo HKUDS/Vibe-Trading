@@ -218,9 +218,7 @@ def retrieve_top_k(
 
     for record in corpus:
         if treatment and idf is not None:
-            relevance = compute_relevance_bm25(
-                query_tokens, record, idf, avg_doc_len
-            )
+            relevance = compute_relevance_bm25(query_tokens, record, idf, avg_doc_len)
         else:
             relevance = compute_relevance(query_tokens, record)
 
@@ -352,32 +350,16 @@ def run_ab_comparison(
         query_tokens = tokenize(q.query)
 
         # Baseline retrieval (uniform token weights, no importance)
-        baseline_results = retrieve_top_k(
-            query_tokens, corpus, treatment=False
-        )
-        baseline_p5_scores.append(
-            precision_at_k(baseline_results, q.ground_truth_top5, k=TOP_K)
-        )
-        baseline_mrr_scores.append(
-            mean_reciprocal_rank(baseline_results, q.ground_truth_top5)
-        )
-        baseline_ndcg5_scores.append(
-            ndcg_at_k(baseline_results, q.ground_truth_top5, k=TOP_K)
-        )
+        baseline_results = retrieve_top_k(query_tokens, corpus, treatment=False)
+        baseline_p5_scores.append(precision_at_k(baseline_results, q.ground_truth_top5, k=TOP_K))
+        baseline_mrr_scores.append(mean_reciprocal_rank(baseline_results, q.ground_truth_top5))
+        baseline_ndcg5_scores.append(ndcg_at_k(baseline_results, q.ground_truth_top5, k=TOP_K))
 
         # Treatment retrieval (BM25-weighted + importance boost)
-        treatment_results = retrieve_top_k(
-            query_tokens, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len
-        )
-        treatment_p5_scores.append(
-            precision_at_k(treatment_results, q.ground_truth_top5, k=TOP_K)
-        )
-        treatment_mrr_scores.append(
-            mean_reciprocal_rank(treatment_results, q.ground_truth_top5)
-        )
-        treatment_ndcg5_scores.append(
-            ndcg_at_k(treatment_results, q.ground_truth_top5, k=TOP_K)
-        )
+        treatment_results = retrieve_top_k(query_tokens, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len)
+        treatment_p5_scores.append(precision_at_k(treatment_results, q.ground_truth_top5, k=TOP_K))
+        treatment_mrr_scores.append(mean_reciprocal_rank(treatment_results, q.ground_truth_top5))
+        treatment_ndcg5_scores.append(ndcg_at_k(treatment_results, q.ground_truth_top5, k=TOP_K))
 
         # Track by difficulty
         diff = q.difficulty
@@ -450,15 +432,9 @@ def generate_report(result: ABResult, output_path: Path | None = None) -> dict:
             "ndcg_at_5": round(result.treatment_ndcg5, 4),
         },
         "improvement": {
-            "p_at_5_relative": relative_improvement(
-                result.treatment_p5, result.baseline_p5
-            ),
-            "mrr_relative": relative_improvement(
-                result.treatment_mrr, result.baseline_mrr
-            ),
-            "ndcg_at_5_relative": relative_improvement(
-                result.treatment_ndcg5, result.baseline_ndcg5
-            ),
+            "p_at_5_relative": relative_improvement(result.treatment_p5, result.baseline_p5),
+            "mrr_relative": relative_improvement(result.treatment_mrr, result.baseline_mrr),
+            "ndcg_at_5_relative": relative_improvement(result.treatment_ndcg5, result.baseline_ndcg5),
         },
         "by_difficulty": result.by_difficulty,
         "gate_passed": _check_gate(result),

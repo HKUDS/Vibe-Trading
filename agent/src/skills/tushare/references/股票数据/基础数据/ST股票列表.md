@@ -38,13 +38,10 @@ type_name | str | Y | 类型名称
 **接口用法**
 
 ```python
-
 pro = ts.pro_api()
 
-#获取20250813日所有的ST股票
-df = pro.stock_st(trade_date='20250813')
-
-
+# 获取20250813日所有的ST股票
+df = pro.stock_st(trade_date="20250813")
 ```
 
 <br>

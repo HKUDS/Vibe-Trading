@@ -90,10 +90,13 @@ class TestSuccessEnvelope:
 
 class TestErrorEnvelope:
     def test_http_failure_returns_error_envelope(self):
-        with patch.object(nb, "get_json", side_effect=RuntimeError("HTTP 429")), patch.object(
-            nb.tushare_fallbacks,
-            "fetch_northbound_flow",
-            side_effect=RuntimeError("no fallback"),
+        with (
+            patch.object(nb, "get_json", side_effect=RuntimeError("HTTP 429")),
+            patch.object(
+                nb.tushare_fallbacks,
+                "fetch_northbound_flow",
+                side_effect=RuntimeError("no fallback"),
+            ),
         ):
             text = nb.NorthboundFlowTool().execute(lookback_days=5)
         payload = json.loads(text)
@@ -107,11 +110,14 @@ class TestErrorEnvelope:
             "realtime": {"total": 100.0},
             "history": [{"trade_date": "2024-01-03", "total": 100.0}],
         }
-        with patch.object(nb, "get_json", side_effect=RuntimeError("HTTP 429")), patch.object(
-            nb.tushare_fallbacks,
-            "fetch_northbound_flow",
-            return_value=fallback,
-        ) as fallback_fetch:
+        with (
+            patch.object(nb, "get_json", side_effect=RuntimeError("HTTP 429")),
+            patch.object(
+                nb.tushare_fallbacks,
+                "fetch_northbound_flow",
+                return_value=fallback,
+            ) as fallback_fetch,
+        ):
             text = nb.NorthboundFlowTool().execute(lookback_days=5)
 
         fallback_fetch.assert_called_once_with(lookback_days=5)

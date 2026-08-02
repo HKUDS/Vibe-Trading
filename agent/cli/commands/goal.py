@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from rich import box
@@ -311,8 +310,7 @@ def cmd_complete(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
         criterion_evidence = [
             item
             for item in evidence
-            if item.get("criterion_id") == criterion["criterion_id"]
-            and item.get("verification_status") == "verified"
+            if item.get("criterion_id") == criterion["criterion_id"] and item.get("verification_status") == "verified"
         ]
         if not criterion_evidence:
             _resolve_console().print(

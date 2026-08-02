@@ -85,9 +85,7 @@ class TestExecuteSuccess:
     def test_returns_rows_with_auth_header(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(_KEY_ENV, "secret-token")
         tool = IWenCaiSearchTool()
-        with patch.object(
-            iwencai_tool, "throttled_get_json", return_value=_robot_payload()
-        ) as http:
+        with patch.object(iwencai_tool, "throttled_get_json", return_value=_robot_payload()) as http:
             out = json.loads(tool.execute(query="市盈率低于15的银行股", limit=10))
 
         http.assert_called_once()

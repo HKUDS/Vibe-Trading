@@ -46,11 +46,13 @@ def test_write_file_returns_recoverable_errors_for_missing_arguments() -> None:
 def test_write_file_rejects_unconfigured_absolute_run_dir(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", raising=False)
 
-    body = _body(WriteFileTool().execute(
-        path="code/signal_engine.py",
-        content="print('nope')",
-        run_dir=str(tmp_path),
-    ))
+    body = _body(
+        WriteFileTool().execute(
+            path="code/signal_engine.py",
+            content="print('nope')",
+            run_dir=str(tmp_path),
+        )
+    )
 
     assert body["status"] == "error"
     assert "outside allowed run roots" in body["error"]
@@ -64,12 +66,14 @@ def test_read_and_edit_file_accept_configured_run_root(tmp_path: Path, monkeypat
     target.write_text("alpha beta", encoding="utf-8")
 
     read_body = _body(ReadFileTool().execute(path="notes.md", run_dir=str(target.parent)))
-    edit_body = _body(EditFileTool().execute(
-        path="notes.md",
-        old_text="beta",
-        new_text="gamma",
-        run_dir=str(target.parent),
-    ))
+    edit_body = _body(
+        EditFileTool().execute(
+            path="notes.md",
+            old_text="beta",
+            new_text="gamma",
+            run_dir=str(target.parent),
+        )
+    )
 
     assert read_body["status"] == "ok"
     assert "alpha beta" in read_body["content"]
@@ -132,7 +136,7 @@ def test_read_write_separation_prevent_cross_escalation(tmp_path: Path, monkeypa
     write_res = _body(WriteFileTool().execute(path=str(ro_file), content="poison"))
     assert write_res["status"] == "error"
     assert "run_dir is required" in write_res["error"] or "escapes" in write_res["error"]
-    assert ro_file.read_text(encoding="utf-8") == '{"key": "val"}' # Intact
+    assert ro_file.read_text(encoding="utf-8") == '{"key": "val"}'  # Intact
 
     # 3. Write should succeed on write-only root
     wo_file = write_only_dir / "output.txt"
@@ -155,7 +159,9 @@ def test_resolve_safe_path_run_dir_escapes_fallback(tmp_path: Path, monkeypatch)
     assert resolved_1 == run_dir / "script.py"
 
     # 2. Escapes run_dir but inside extra_write -> resolves to extra_write (fallback)
-    resolved_2 = resolve_safe_path(str(extra_write_dir / "tool.py"), str(run_dir), allowed_write_roots(), purpose="write")
+    resolved_2 = resolve_safe_path(
+        str(extra_write_dir / "tool.py"), str(run_dir), allowed_write_roots(), purpose="write"
+    )
     assert resolved_2 == extra_write_dir / "tool.py"
 
     # 3. Escapes run_dir and not in extra_write -> raises ValueError

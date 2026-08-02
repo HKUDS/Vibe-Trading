@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #66
 # 简要说明: 国泰君安191短周期交易型alpha因子第66号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_066",
-    "theme": ['reversal'],
-    "formula_latex": '(CLOSE-MEAN(CLOSE,6))/MEAN(CLOSE,6)*100',
-    "columns_required": ['close'],
+    "theme": ["reversal"],
+    "formula_latex": "(CLOSE-MEAN(CLOSE,6))/MEAN(CLOSE,6)*100",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 6,
     "min_warmup_bars": 7,
-    "notes": 'Bias-6 pct.',
+    "notes": "Bias-6 pct.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

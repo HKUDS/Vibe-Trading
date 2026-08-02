@@ -44,12 +44,8 @@ class TestSuccessEnvelope:
     """A successful screen yields the ok envelope with shaped rows."""
 
     def test_change_pct_screen_parses_rows(self):
-        with patch(
-            "src.tools.market_screener_tool.get_json", return_value=_CLIST_PAYLOAD
-        ):
-            text = MarketScreenerTool().execute(
-                market="a", sort_by="change_pct", top_n=20
-            )
+        with patch("src.tools.market_screener_tool.get_json", return_value=_CLIST_PAYLOAD):
+            text = MarketScreenerTool().execute(market="a", sort_by="change_pct", top_n=20)
 
         payload = json.loads(text)
         assert payload["ok"] is True
@@ -78,9 +74,7 @@ class TestSuccessEnvelope:
         assert rows[1]["turnover_rate"] is None
 
     def test_sort_by_maps_to_eastmoney_fid(self):
-        with patch(
-            "src.tools.market_screener_tool.get_json", return_value=_CLIST_PAYLOAD
-        ) as mock_get:
+        with patch("src.tools.market_screener_tool.get_json", return_value=_CLIST_PAYLOAD) as mock_get:
             MarketScreenerTool().execute(market="us", sort_by="amount", top_n=5)
 
         params = mock_get.call_args.kwargs["params"]
@@ -91,9 +85,7 @@ class TestSuccessEnvelope:
 
     def test_diff_as_dict_is_normalized(self):
         dict_diff = {"data": {"diff": {"0": _CLIST_PAYLOAD["data"]["diff"][0]}}}
-        with patch(
-            "src.tools.market_screener_tool.get_json", return_value=dict_diff
-        ):
+        with patch("src.tools.market_screener_tool.get_json", return_value=dict_diff):
             text = MarketScreenerTool().execute(market="hk")
 
         rows = json.loads(text)["data"]["rows"]
@@ -101,17 +93,13 @@ class TestSuccessEnvelope:
         assert rows[0]["code"] == "600519"
 
     def test_top_n_caps_returned_rows(self):
-        with patch(
-            "src.tools.market_screener_tool.get_json", return_value=_CLIST_PAYLOAD
-        ):
+        with patch("src.tools.market_screener_tool.get_json", return_value=_CLIST_PAYLOAD):
             text = MarketScreenerTool().execute(market="a", top_n=1)
 
         assert len(json.loads(text)["data"]["rows"]) == 1
 
     def test_rowless_payload_yields_empty_data(self):
-        with patch(
-            "src.tools.market_screener_tool.get_json", return_value={"data": None}
-        ):
+        with patch("src.tools.market_screener_tool.get_json", return_value={"data": None}):
             text = MarketScreenerTool().execute(market="a")
 
         payload = json.loads(text)
@@ -136,9 +124,7 @@ class TestErrorEnvelope:
         assert "market" in payload["error"]
 
     def test_invalid_sort_by_rejected(self):
-        payload = json.loads(
-            MarketScreenerTool().execute(market="a", sort_by="price")
-        )
+        payload = json.loads(MarketScreenerTool().execute(market="a", sort_by="price"))
         assert payload["ok"] is False
         assert "sort_by" in payload["error"]
 

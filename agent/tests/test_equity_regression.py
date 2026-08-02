@@ -52,8 +52,12 @@ class TestEquityVectorization:
         entry_price = 100.0
         size = 50.0
         engine.positions["AAPL"] = Position(
-            symbol="AAPL", direction=1, size=size,
-            entry_price=entry_price, leverage=1.0, entry_time=ts,
+            symbol="AAPL",
+            direction=1,
+            size=size,
+            entry_price=entry_price,
+            leverage=1.0,
+            entry_time=ts,
         )
         engine.capital = 1_000_000 - size * entry_price
 
@@ -73,8 +77,11 @@ class TestEquityVectorization:
         for i, sym in enumerate(symbols):
             direction = 1 if i % 2 == 0 else -1
             engine.positions[sym] = Position(
-                symbol=sym, direction=direction, size=10.0 + i * 5,
-                entry_price=95.0 + i * 2, leverage=1.0 + i * 0.5,
+                symbol=sym,
+                direction=direction,
+                size=10.0 + i * 5,
+                entry_price=95.0 + i * 2,
+                leverage=1.0 + i * 0.5,
                 entry_time=ts,
             )
 
@@ -97,21 +104,25 @@ class TestEquityVectorization:
 
         engine.capital = 800_000
         engine.positions["A"] = Position(
-            symbol="A", direction=1, size=100.0,
-            entry_price=50.0, leverage=2.0, entry_time=ts,
+            symbol="A",
+            direction=1,
+            size=100.0,
+            entry_price=50.0,
+            leverage=2.0,
+            entry_time=ts,
         )
         engine.positions["B"] = Position(
-            symbol="B", direction=-1, size=50.0,
-            entry_price=80.0, leverage=1.0, entry_time=ts,
+            symbol="B",
+            direction=-1,
+            size=50.0,
+            entry_price=80.0,
+            leverage=1.0,
+            entry_time=ts,
         )
 
         equity = engine._calc_equity(close_df, ts)
 
         cp_a = float(close_df.at[ts, "A"])
         cp_b = float(close_df.at[ts, "B"])
-        expected = (
-            800_000
-            + (100 * 50 / 2.0 + 1 * 100 * (cp_a - 50))
-            + (50 * 80 / 1.0 + (-1) * 50 * (cp_b - 80))
-        )
+        expected = 800_000 + (100 * 50 / 2.0 + 1 * 100 * (cp_a - 50)) + (50 * 80 / 1.0 + (-1) * 50 * (cp_b - 80))
         assert abs(equity - expected) < 1e-8

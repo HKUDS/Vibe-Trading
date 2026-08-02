@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #101
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第101号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_101"
 
 __alpha_meta__ = {
-    'id': 'alpha101_101',
-    'nickname': 'Kakushadze Alpha #101',
-    'theme': ['reversal'],
-    'formula_latex': '(close - open) / ((high - low) + 0.001)',
-    'columns_required': ['open', 'high', 'low', 'close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 1,
-    'notes': '',
+    "id": "alpha101_101",
+    "nickname": "Kakushadze Alpha #101",
+    "theme": ["reversal"],
+    "formula_latex": "(close - open) / ((high - low) + 0.001)",
+    "columns_required": ["open", "high", "low", "close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 1,
+    "notes": "",
 }
 
 
@@ -57,7 +56,6 @@ def compute(panel: dict) -> pd.DataFrame:
     open_ = panel["open"]
     high = panel["high"]
     low = panel["low"]
-
 
     # Helper aliases (local closures keep the file standalone & purity-safe).
     out = safe_div((close - open_), (high - low + 0.001))

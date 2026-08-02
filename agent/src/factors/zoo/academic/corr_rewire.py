@@ -134,9 +134,7 @@ def _rewiring_scores(
         # window). Nothing after row t is ever touched.
         event = returns[t - event_window + 1 : t + 1]
         calm = returns[t - warmup + 1 : t - event_window + 1]
-        delta = np.abs(
-            _window_corr(event, min_obs_event) - _window_corr(calm, min_obs_calm)
-        )
+        delta = np.abs(_window_corr(event, min_obs_event) - _window_corr(calm, min_obs_calm))
         delta[diag, diag] = np.nan
         finite = np.isfinite(delta)
         n_finite = finite.sum(axis=1)

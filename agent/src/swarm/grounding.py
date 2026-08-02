@@ -50,7 +50,6 @@ are told to cite only symbols they analyze.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from datetime import date, timedelta
 from typing import Iterable
@@ -90,31 +89,147 @@ _BARE_US_TICKER_PATTERN = re.compile(r"(?<![\w.])[A-Z]{2,5}(?!\w)(?!\.\w)")
 # All-caps tokens that show up in finance prompts but must never be promoted
 # to a .US symbol — either not tickers at all, or colliding with unrelated
 # listed products (CEO and MSCI are both real Yahoo symbols).
-_BARE_TICKER_STOPWORDS = frozenset({
-    # geography / venues / index & data providers
-    "US", "USA", "UK", "EU", "HK", "CN", "JP", "NYSE", "AMEX", "SSE", "SZSE",
-    "HKEX", "SPX", "NDX", "DJI", "DJIA", "HSI", "CSI", "FTSE", "MSCI", "VIX",
-    # instruments / structures
-    "ETF", "ETN", "ADR", "IPO", "REIT", "BOND", "SWAP", "PERP",
-    # macro / institutions
-    "FED", "FOMC", "SEC", "IMF", "GDP", "CPI", "PPI", "PMI", "PCE", "OPEC",
-    "YOY", "QOQ", "MOM", "YTD", "EOD",
-    # metrics / indicators
-    "PE", "PB", "PS", "EPS", "ROE", "ROA", "ROI", "EBIT", "EV", "DCF",
-    "CAGR", "IRR", "NAV", "AUM", "ATH", "ATL", "RSI", "MACD", "EMA", "SMA",
-    "KDJ", "BOLL", "OHLC", "ADV", "PNL",
-    # currencies / crypto traded under other loaders
-    "USD", "EUR", "JPY", "GBP", "CNY", "CNH", "RMB", "KRW", "INR", "AUD",
-    "CAD", "CHF", "FX", "BTC", "ETH", "SOL", "XRP", "BNB", "ADA", "DOGE",
-    "USDT", "USDC", "DEFI", "NFT", "DAO",
-    # trading verbs / order words
-    "BUY", "SELL", "HOLD", "LONG", "SHORT", "CALL", "PUT", "STOP", "LIMIT",
-    "TP", "SL", "DCA",
-    # tech / prose acronyms
-    "AI", "ML", "LLM", "API", "JSON", "CSV", "PDF", "URL", "HTML", "CEO",
-    "CFO", "CTO", "COO", "CIO", "VP", "OK", "FAQ", "ASAP", "AM", "PM",
-    "EST", "PST", "UTC", "GMT",
-})
+_BARE_TICKER_STOPWORDS = frozenset(
+    {
+        # geography / venues / index & data providers
+        "US",
+        "USA",
+        "UK",
+        "EU",
+        "HK",
+        "CN",
+        "JP",
+        "NYSE",
+        "AMEX",
+        "SSE",
+        "SZSE",
+        "HKEX",
+        "SPX",
+        "NDX",
+        "DJI",
+        "DJIA",
+        "HSI",
+        "CSI",
+        "FTSE",
+        "MSCI",
+        "VIX",
+        # instruments / structures
+        "ETF",
+        "ETN",
+        "ADR",
+        "IPO",
+        "REIT",
+        "BOND",
+        "SWAP",
+        "PERP",
+        # macro / institutions
+        "FED",
+        "FOMC",
+        "SEC",
+        "IMF",
+        "GDP",
+        "CPI",
+        "PPI",
+        "PMI",
+        "PCE",
+        "OPEC",
+        "YOY",
+        "QOQ",
+        "MOM",
+        "YTD",
+        "EOD",
+        # metrics / indicators
+        "PE",
+        "PB",
+        "PS",
+        "EPS",
+        "ROE",
+        "ROA",
+        "ROI",
+        "EBIT",
+        "EV",
+        "DCF",
+        "CAGR",
+        "IRR",
+        "NAV",
+        "AUM",
+        "ATH",
+        "ATL",
+        "RSI",
+        "MACD",
+        "EMA",
+        "SMA",
+        "KDJ",
+        "BOLL",
+        "OHLC",
+        "ADV",
+        "PNL",
+        # currencies / crypto traded under other loaders
+        "USD",
+        "EUR",
+        "JPY",
+        "GBP",
+        "CNY",
+        "CNH",
+        "RMB",
+        "KRW",
+        "INR",
+        "AUD",
+        "CAD",
+        "CHF",
+        "FX",
+        "BTC",
+        "ETH",
+        "SOL",
+        "XRP",
+        "BNB",
+        "ADA",
+        "DOGE",
+        "USDT",
+        "USDC",
+        "DEFI",
+        "NFT",
+        "DAO",
+        # trading verbs / order words
+        "BUY",
+        "SELL",
+        "HOLD",
+        "LONG",
+        "SHORT",
+        "CALL",
+        "PUT",
+        "STOP",
+        "LIMIT",
+        "TP",
+        "SL",
+        "DCA",
+        # tech / prose acronyms
+        "AI",
+        "ML",
+        "LLM",
+        "API",
+        "JSON",
+        "CSV",
+        "PDF",
+        "URL",
+        "HTML",
+        "CEO",
+        "CFO",
+        "CTO",
+        "COO",
+        "CIO",
+        "VP",
+        "OK",
+        "FAQ",
+        "ASAP",
+        "AM",
+        "PM",
+        "EST",
+        "PST",
+        "UTC",
+        "GMT",
+    }
+)
 
 
 def extract_symbols_from_user_vars(user_vars: dict[str, str]) -> list[str]:
@@ -197,9 +312,7 @@ def fetch_grounding_data(
             loader = resolve_loader(market)  # already a ready-to-use instance
             df_map = loader.fetch([code], start_str, end_str, interval="1D")
         except Exception as exc:  # pragma: no cover — depends on network
-            logger.warning(
-                "grounding: failed to fetch %s — %s", code, exc, exc_info=False
-            )
+            logger.warning("grounding: failed to fetch %s — %s", code, exc, exc_info=False)
             continue
         df = df_map.get(code)
         if df is None or df.empty:
@@ -207,14 +320,16 @@ def fetch_grounding_data(
             continue
         rows: list[dict] = []
         for ts, row in df.iterrows():
-            rows.append({
-                "trade_date": getattr(ts, "isoformat", lambda: str(ts))(),
-                "open": float(row.get("open", 0.0)),
-                "high": float(row.get("high", 0.0)),
-                "low": float(row.get("low", 0.0)),
-                "close": float(row.get("close", 0.0)),
-                "volume": float(row.get("volume", 0.0)),
-            })
+            rows.append(
+                {
+                    "trade_date": getattr(ts, "isoformat", lambda: str(ts))(),
+                    "open": float(row.get("open", 0.0)),
+                    "high": float(row.get("high", 0.0)),
+                    "low": float(row.get("low", 0.0)),
+                    "close": float(row.get("close", 0.0)),
+                    "volume": float(row.get("volume", 0.0)),
+                }
+            )
         if rows:
             out[code] = rows
     return out
@@ -248,14 +363,10 @@ def format_grounding_block(grounding: dict[str, list[dict]]) -> str:
             "| --- | ---: | ---: |",
         ]
         for row in rows[-PROMPT_TABLE_TAIL:]:
-            lines.append(
-                f"| {row['trade_date'][:10]} | {row['close']:.2f} "
-                f"| {int(row['volume']):,} |"
-            )
+            lines.append(f"| {row['trade_date'][:10]} | {row['close']:.2f} | {int(row['volume']):,} |")
         lines.append("")
         lines.append(
-            f"**Latest close:** {last_close:.2f} ({last_date})  "
-            f"**Window range:** {window_low:.2f} – {window_high:.2f}"
+            f"**Latest close:** {last_close:.2f} ({last_date})  **Window range:** {window_low:.2f} – {window_high:.2f}"
         )
         sections.append("\n".join(lines))
 

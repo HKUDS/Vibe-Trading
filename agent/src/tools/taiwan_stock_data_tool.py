@@ -25,6 +25,8 @@ def _configured_db_path() -> str:
         ``VIBE_TW_STOCK_DB`` when set, otherwise :data:`DEFAULT_DB_PATH`.
     """
     return get_env_config().data.vibe_tw_stock_db.strip() or DEFAULT_DB_PATH
+
+
 STOCK_ID_PATTERN = re.compile(r"^\d{4}$")
 MAX_QUERY_STOCKS = 50
 MAX_RESULT_ROWS = 200
@@ -98,10 +100,7 @@ TRUNCATION_HINT = (
 
 def _json_safe(value: Any) -> Any:
     if isinstance(value, dict):
-        return {
-            key: _json_safe(item)
-            for key, item in value.items()
-        }
+        return {key: _json_safe(item) for key, item in value.items()}
 
     if isinstance(value, list):
         return [_json_safe(item) for item in value]
@@ -163,24 +162,12 @@ def _schema_problems(
             problems.append(f"missing table {table!r}")
             continue
 
-        present_columns = {
-            str(row[1]).lower()
-            for row in connection.execute(
-                f'PRAGMA table_info("{table}")'
-            )
-        }
+        present_columns = {str(row[1]).lower() for row in connection.execute(f'PRAGMA table_info("{table}")')}
 
-        missing = [
-            column
-            for column in columns
-            if column.lower() not in present_columns
-        ]
+        missing = [column for column in columns if column.lower() not in present_columns]
 
         if missing:
-            problems.append(
-                f"table {table!r} is missing columns "
-                f"{', '.join(repr(column) for column in missing)}"
-            )
+            problems.append(f"table {table!r} is missing columns {', '.join(repr(column) for column in missing)}")
 
     return problems
 
@@ -239,14 +226,7 @@ def _retention_order(
         reverse=True,
     )
 
-    return [
-        index
-        for tier in zip_longest(
-            *(indices for _, indices in ordered)
-        )
-        for index in tier
-        if index is not None
-    ]
+    return [index for tier in zip_longest(*(indices for _, indices in ordered)) for index in tier if index is not None]
 
 
 class TaiwanStockDataTool(BaseTool):
@@ -298,44 +278,32 @@ class TaiwanStockDataTool(BaseTool):
             },
             "start_date": {
                 "type": "string",
-                "description": (
-                    "Optional history start date in YYYY-MM-DD format."
-                ),
+                "description": ("Optional history start date in YYYY-MM-DD format."),
             },
             "end_date": {
                 "type": "string",
-                "description": (
-                    "Optional history end date in YYYY-MM-DD format."
-                ),
+                "description": ("Optional history end date in YYYY-MM-DD format."),
             },
             "market": {
                 "type": "string",
                 "enum": ["twse", "tpex"],
-                "description": (
-                    "Optional market filter for universe queries."
-                ),
+                "description": ("Optional market filter for universe queries."),
             },
             "industry": {
                 "type": "string",
-                "description": (
-                    "Optional partial industry-name filter for universe queries."
-                ),
+                "description": ("Optional partial industry-name filter for universe queries."),
             },
             "active_only": {
                 "type": "boolean",
                 "default": True,
-                "description": (
-                    "For universe queries, return only active analysis stocks."
-                ),
+                "description": ("For universe queries, return only active analysis stocks."),
             },
             "limit": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": MAX_RESULT_ROWS,
                 "default": 60,
-                "description": (
-                    "Maximum universe rows, or maximum history rows per stock."
-                ),
+                "description": ("Maximum universe rows, or maximum history rows per stock."),
             },
         },
         "required": ["action"],
@@ -397,8 +365,7 @@ class TaiwanStockDataTool(BaseTool):
 
         if not path.is_file():
             raise FileNotFoundError(
-                f"Taiwan stock snapshot not found: {path}. Point "
-                "VIBE_TW_STOCK_DB at a published snapshot file."
+                f"Taiwan stock snapshot not found: {path}. Point VIBE_TW_STOCK_DB at a published snapshot file."
             )
 
         connection = sqlite3.connect(
@@ -411,10 +378,7 @@ class TaiwanStockDataTool(BaseTool):
             problems = _schema_problems(connection)
         except sqlite3.DatabaseError as error:
             connection.close()
-            raise ValueError(
-                f"Taiwan stock snapshot {path} is not a readable SQLite "
-                f"database: {error}"
-            ) from error
+            raise ValueError(f"Taiwan stock snapshot {path} is not a readable SQLite database: {error}") from error
 
         if problems:
             connection.close()
@@ -448,9 +412,7 @@ class TaiwanStockDataTool(BaseTool):
         """
         if stock_ids is None:
             if required:
-                raise ValueError(
-                    "stock_ids is required for this action"
-                )
+                raise ValueError("stock_ids is required for this action")
             return []
 
         if not isinstance(stock_ids, list):
@@ -462,22 +424,16 @@ class TaiwanStockDataTool(BaseTool):
             stock_id = str(raw_stock_id).strip()
 
             if not STOCK_ID_PATTERN.fullmatch(stock_id):
-                raise ValueError(
-                    f"Invalid Taiwan stock ID: {stock_id!r}"
-                )
+                raise ValueError(f"Invalid Taiwan stock ID: {stock_id!r}")
 
             if stock_id not in normalized:
                 normalized.append(stock_id)
 
         if required and not normalized:
-            raise ValueError(
-                "stock_ids must contain at least one stock ID"
-            )
+            raise ValueError("stock_ids must contain at least one stock ID")
 
         if len(normalized) > MAX_QUERY_STOCKS:
-            raise ValueError(
-                f"At most {MAX_QUERY_STOCKS} stock IDs are allowed"
-            )
+            raise ValueError(f"At most {MAX_QUERY_STOCKS} stock IDs are allowed")
 
         return normalized
 
@@ -506,9 +462,7 @@ class TaiwanStockDataTool(BaseTool):
         try:
             parsed = date.fromisoformat(text)
         except ValueError as error:
-            raise ValueError(
-                f"{field_name} must use YYYY-MM-DD format"
-            ) from error
+            raise ValueError(f"{field_name} must use YYYY-MM-DD format") from error
 
         return parsed.isoformat()
 
@@ -531,9 +485,7 @@ class TaiwanStockDataTool(BaseTool):
             raise ValueError("limit must be an integer") from error
 
         if not 1 <= limit <= MAX_RESULT_ROWS:
-            raise ValueError(
-                f"limit must be between 1 and {MAX_RESULT_ROWS}"
-            )
+            raise ValueError(f"limit must be between 1 and {MAX_RESULT_ROWS}")
 
         return limit
 
@@ -569,11 +521,7 @@ class TaiwanStockDataTool(BaseTool):
             price_date = record.get("price_date")
             feature_date = record.get("feature_date")
 
-            record["stale_features"] = bool(
-                price_date
-                and feature_date
-                and price_date != feature_date
-            )
+            record["stale_features"] = bool(price_date and feature_date and price_date != feature_date)
 
     def _status(
         self,
@@ -589,21 +537,15 @@ class TaiwanStockDataTool(BaseTool):
             and the SQLite integrity verdict.
         """
         counts = {
-            "stock_master_rows": connection.execute(
-                "SELECT COUNT(*) FROM stock_master"
-            ).fetchone()[0],
-            "daily_price_rows": connection.execute(
-                "SELECT COUNT(*) FROM daily_price"
-            ).fetchone()[0],
+            "stock_master_rows": connection.execute("SELECT COUNT(*) FROM stock_master").fetchone()[0],
+            "daily_price_rows": connection.execute("SELECT COUNT(*) FROM daily_price").fetchone()[0],
             "daily_price_stocks": connection.execute(
                 """
                 SELECT COUNT(DISTINCT stock_id)
                 FROM daily_price
                 """
             ).fetchone()[0],
-            "stock_feature_rows": connection.execute(
-                "SELECT COUNT(*) FROM stock_feature"
-            ).fetchone()[0],
+            "stock_feature_rows": connection.execute("SELECT COUNT(*) FROM stock_feature").fetchone()[0],
             "stock_feature_stocks": connection.execute(
                 """
                 SELECT COUNT(DISTINCT stock_id)
@@ -632,15 +574,9 @@ class TaiwanStockDataTool(BaseTool):
         }
 
         return {
-            "latest_market_date": connection.execute(
-                "SELECT MAX(date) FROM daily_price"
-            ).fetchone()[0],
-            "integrity": connection.execute(
-                "PRAGMA integrity_check"
-            ).fetchone()[0],
-            "journal_mode": connection.execute(
-                "PRAGMA journal_mode"
-            ).fetchone()[0],
+            "latest_market_date": connection.execute("SELECT MAX(date) FROM daily_price").fetchone()[0],
+            "integrity": connection.execute("PRAGMA integrity_check").fetchone()[0],
+            "journal_mode": connection.execute("PRAGMA journal_mode").fetchone()[0],
             **counts,
             "reason_distribution": reason_distribution,
         }
@@ -688,18 +624,11 @@ class TaiwanStockDataTool(BaseTool):
             )
         )
 
-        found = {
-            str(record["stock_id"])
-            for record in records
-        }
+        found = {str(record["stock_id"]) for record in records}
 
         return {
             "records": records,
-            "not_found": [
-                stock_id
-                for stock_id in stock_ids
-                if stock_id not in found
-            ],
+            "not_found": [stock_id for stock_id in stock_ids if stock_id not in found],
         }
 
     def _latest(
@@ -788,18 +717,11 @@ class TaiwanStockDataTool(BaseTool):
 
         self._flag_stale_features(records)
 
-        found = {
-            str(record["stock_id"])
-            for record in records
-        }
+        found = {str(record["stock_id"]) for record in records}
 
         return {
             "records": records,
-            "not_found": [
-                stock_id
-                for stock_id in stock_ids
-                if stock_id not in found
-            ],
+            "not_found": [stock_id for stock_id in stock_ids if stock_id not in found],
         }
 
     def _history(
@@ -828,9 +750,7 @@ class TaiwanStockDataTool(BaseTool):
         """
         placeholders = ",".join("?" for _ in stock_ids)
 
-        conditions = [
-            f"dp.stock_id IN ({placeholders})"
-        ]
+        conditions = [f"dp.stock_id IN ({placeholders})"]
         parameters: list[Any] = [*stock_ids]
 
         if start_date:
@@ -905,19 +825,12 @@ class TaiwanStockDataTool(BaseTool):
             )
         )
 
-        returned_ids = {
-            str(record["stock_id"])
-            for record in records
-        }
+        returned_ids = {str(record["stock_id"]) for record in records}
 
         return {
             "records": records,
             "limit_per_stock": limit,
-            "not_found_or_no_rows": [
-                stock_id
-                for stock_id in stock_ids
-                if stock_id not in returned_ids
-            ],
+            "not_found_or_no_rows": [stock_id for stock_id in stock_ids if stock_id not in returned_ids],
         }
 
     def _universe(
@@ -955,9 +868,7 @@ class TaiwanStockDataTool(BaseTool):
             market = market.strip().lower()
 
             if market not in {"twse", "tpex"}:
-                raise ValueError(
-                    "market must be twse or tpex"
-                )
+                raise ValueError("market must be twse or tpex")
 
             conditions.append("au.market = ?")
             parameters.append(market)
@@ -966,11 +877,7 @@ class TaiwanStockDataTool(BaseTool):
             conditions.append("au.industry LIKE ?")
             parameters.append(f"%{industry.strip()}%")
 
-        where_clause = (
-            f"WHERE {' AND '.join(conditions)}"
-            if conditions
-            else ""
-        )
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         parameters.append(limit)
 
@@ -1064,11 +971,7 @@ class TaiwanStockDataTool(BaseTool):
 
         def attempt(keep: int) -> str:
             retained = set(order[:keep])
-            data["records"] = [
-                record
-                for index, record in enumerate(records)
-                if index in retained
-            ]
+            data["records"] = [record for index, record in enumerate(records) if index in retained]
             data["returned_rows"] = keep
             return _dump(payload)
 
@@ -1104,9 +1007,7 @@ class TaiwanStockDataTool(BaseTool):
             ValueError: If the action or a parameter is invalid, or the
                 snapshot does not match the required schema.
         """
-        action = str(
-            kwargs.get("action", "")
-        ).strip().lower()
+        action = str(kwargs.get("action", "")).strip().lower()
 
         if action not in {
             "status",
@@ -1115,9 +1016,7 @@ class TaiwanStockDataTool(BaseTool):
             "history",
             "universe",
         }:
-            raise ValueError(
-                "action must be status, lookup, latest, history, or universe"
-            )
+            raise ValueError("action must be status, lookup, latest, history, or universe")
 
         requires_stock_ids = action in {
             "lookup",
@@ -1139,18 +1038,10 @@ class TaiwanStockDataTool(BaseTool):
             "end_date",
         )
 
-        if (
-            start_date
-            and end_date
-            and start_date > end_date
-        ):
-            raise ValueError(
-                "start_date must not be after end_date"
-            )
+        if start_date and end_date and start_date > end_date:
+            raise ValueError("start_date must not be after end_date")
 
-        limit = self._validate_limit(
-            kwargs.get("limit", 60)
-        )
+        limit = self._validate_limit(kwargs.get("limit", 60))
 
         with closing(self._connect()) as connection:
             if action == "status":

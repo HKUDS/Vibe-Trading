@@ -28,11 +28,7 @@ def broker_consensus(code: str, limit: int = 10) -> None:
 
 def us_hk_indicators(code: str) -> None:
     """打印美股/港股主要指标的最新报告期。"""
-    envelope = json.loads(
-        FinancialStatementsTool().execute(
-            code=code, statement="indicators", period="annual"
-        )
-    )
+    envelope = json.loads(FinancialStatementsTool().execute(code=code, statement="indicators", period="annual"))
     if not envelope.get("ok"):
         print(f"财报获取失败：{envelope.get('error')}")
         return
@@ -48,10 +44,7 @@ def holder_trend(code: str) -> None:
         print(f"股东户数获取失败：{envelope.get('error')}")
         return
     for period in envelope["data"]["periods"][:2]:
-        print(
-            f"  {period['end_date']} 户数={period['holder_count']} "
-            f"环比={period['holder_count_change_pct']}%"
-        )
+        print(f"  {period['end_date']} 户数={period['holder_count']} 环比={period['holder_count_change_pct']}%")
 
 
 def main() -> None:

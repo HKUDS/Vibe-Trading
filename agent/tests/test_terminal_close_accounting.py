@@ -113,9 +113,7 @@ def test_futures_terminal_close_uses_multiplier_fees_and_exit_slippage(
         )
     )
     assert trade.commission > 0.0
-    assert engine.capital == pytest.approx(
-        config["initial_cash"] + trade.pnl - trade.commission
-    )
+    assert engine.capital == pytest.approx(config["initial_cash"] + trade.pnl - trade.commission)
     assert engine.equity_snapshots[-1].equity == pytest.approx(engine.capital)
 
 
@@ -129,12 +127,8 @@ def test_composite_terminal_close_routes_costs_per_symbol() -> None:
         )
         for code in codes
     }
-    close_df = pd.DataFrame(
-        {code: data_map[code]["close"] for code in codes}, index=dates
-    )
-    target_pos = pd.DataFrame(
-        {"AAPL.US": [0.2], "ESZ4": [0.2]}, index=dates
-    )
+    close_df = pd.DataFrame({code: data_map[code]["close"] for code in codes}, index=dates)
+    target_pos = pd.DataFrame({"AAPL.US": [0.2], "ESZ4": [0.2]}, index=dates)
     config = {"initial_cash": 1_000_000.0, "codes": codes}
     engine = CompositeEngine(config, codes)
 
@@ -147,11 +141,8 @@ def test_composite_terminal_close_routes_costs_per_symbol() -> None:
     for symbol, trade in trades.items():
         sub_engine = engine._rule_for(symbol)
         sub_engine._active_symbol = symbol
-        assert trade.exit_price == pytest.approx(
-            sub_engine.apply_slippage(100.0, -trade.direction)
-        )
+        assert trade.exit_price == pytest.approx(sub_engine.apply_slippage(100.0, -trade.direction))
     assert engine.capital == pytest.approx(
-        config["initial_cash"]
-        + sum(trade.pnl - trade.commission for trade in trades.values())
+        config["initial_cash"] + sum(trade.pnl - trade.commission for trade in trades.values())
     )
     assert engine.equity_snapshots[-1].equity == pytest.approx(engine.capital)

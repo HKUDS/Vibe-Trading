@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #118
 # 简要说明: 国泰君安191短周期交易型alpha因子第118号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     SUM(HIGH-OPEN,20)/SUM(OPEN-LOW,20)*100
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_118"
 
 __alpha_meta__ = {
-    'id': 'gtja191_118',
-    'theme': ['reversal'],
-    'formula_latex': 'sum(h-o,20)/sum(o-l,20)*100',
-    'columns_required': ['open', 'high', 'low', 'close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 20,
-    'notes': '',
+    "id": "gtja191_118",
+    "theme": ["reversal"],
+    "formula_latex": "sum(h-o,20)/sum(o-l,20)*100",
+    "columns_required": ["open", "high", "low", "close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 20,
+    "notes": "",
 }
 
 

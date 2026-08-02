@@ -9,7 +9,7 @@ Tests mock the session or the helper that creates it.
 from __future__ import annotations
 
 import importlib
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
@@ -64,9 +64,7 @@ def _no_sleep(monkeypatch):
 def test_transient_then_success(monkeypatch):
     """Transient errors are retried; after retrying, the page succeeds."""
     session = MagicMock()
-    seq = _Seq(
-        [requests.ConnectionError("blip"), requests.ConnectionError("blip"), _ok_page()]
-    )
+    seq = _Seq([requests.ConnectionError("blip"), requests.ConnectionError("blip"), _ok_page()])
     session.get = seq
     df = DataLoader()._paginate(session, okx.CANDLES_PATH, "BTC-USDT", S, E, "1D", 20)
     assert seq.calls >= 3

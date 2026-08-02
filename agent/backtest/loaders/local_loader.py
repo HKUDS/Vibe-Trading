@@ -110,8 +110,7 @@ def _resample_to_interval(df: pd.DataFrame, interval: str, symbol: str) -> pd.Da
         if pd.notna(source):
             if target < source:
                 logger.warning(
-                    "local loader: cannot upsample %s source bars to %s for %s; "
-                    "returning source bars",
+                    "local loader: cannot upsample %s source bars to %s for %s; returning source bars",
                     source,
                     interval,
                     symbol,
@@ -155,9 +154,7 @@ def _normalize_columns(
         return None
 
     if date_fmt:
-        parsed_dates = pd.to_datetime(
-            df[date_col], format=date_fmt, errors="coerce", utc=True
-        )
+        parsed_dates = pd.to_datetime(df[date_col], format=date_fmt, errors="coerce", utc=True)
     else:
         parsed_dates = pd.to_datetime(df[date_col], errors="coerce", utc=True)
     # Normalize every input to the loader's UTC-naive index contract. Parsing
@@ -199,9 +196,7 @@ def _read_parquet(path: str, col_map: dict[str, str], date_fmt: str | None) -> p
     return _normalize_columns(df, col_map, date_fmt)
 
 
-def _read_duckdb(
-    db_path: str, query: str, col_map: dict[str, str], date_fmt: str | None
-) -> pd.DataFrame | None:
+def _read_duckdb(db_path: str, query: str, col_map: dict[str, str], date_fmt: str | None) -> pd.DataFrame | None:
     import duckdb
 
     with duckdb.connect(db_path, read_only=True) as conn:
@@ -295,7 +290,11 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self, symbol: str, start_date: str, end_date: str, interval: str = "1D",
+        self,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        interval: str = "1D",
     ) -> pd.DataFrame | None:
         entry = self._source_by_symbol.get(symbol)
         if entry is None:
@@ -323,9 +322,7 @@ class DataLoader:
             db_path = str(Path(entry.get("db_path", "")).expanduser())
             query = entry.get("query", "").strip()
             if not db_path or not query:
-                logger.warning(
-                    "local loader: missing db_path or query for duckdb symbol %s", symbol
-                )
+                logger.warning("local loader: missing db_path or query for duckdb symbol %s", symbol)
                 return None
             df = _read_duckdb(db_path, query, col_map, date_fmt)
         else:

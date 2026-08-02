@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import os
 import random
 import time
@@ -14,7 +15,6 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import aiohttp
-import logging; logger = logging.getLogger(__name__)
 from pydantic import Field
 from websockets.asyncio.client import ClientConnection
 from websockets.asyncio.client import connect as ws_connect
@@ -26,6 +26,8 @@ from src.channels.utils import get_media_dir
 from pydantic import BaseModel
 from src.channels.utils import validate_url_target
 from src.channels.utils import safe_filename
+
+logger = logging.getLogger(__name__)
 
 _DOWNLOAD_TIMEOUT = aiohttp.ClientTimeout(total=60)
 _ACTION_TIMEOUT = 20.0
@@ -257,9 +259,7 @@ class NapcatChannel(BaseChannel):
             if group_id is None:
                 return
 
-            replying_to_bot = (
-                isinstance(reply_to_id, int) and reply_to_id in self._bot_outbound_ids
-            )
+            replying_to_bot = isinstance(reply_to_id, int) and reply_to_id in self._bot_outbound_ids
             if not self._should_reply_in_group(
                 group_id=group_id,
                 mentioned_self=mentioned_self,
@@ -305,9 +305,7 @@ class NapcatChannel(BaseChannel):
             return [{"type": "text", "data": {"text": message}}]
         return []
 
-    def _parse_segments(
-        self, segments: list[dict[str, Any]]
-    ) -> tuple[str, list[dict[str, Any]], bool, int | None]:
+    def _parse_segments(self, segments: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]], bool, int | None]:
         parts: list[str] = []
         images: list[dict[str, Any]] = []
         mentioned_self = False
@@ -353,9 +351,7 @@ class NapcatChannel(BaseChannel):
         text = " ".join(p.strip() for p in parts if p.strip()).strip()
         return text, images, mentioned_self, reply_to
 
-    def _should_reply_in_group(
-        self, *, group_id: Any, mentioned_self: bool, replying_to_bot: bool
-    ) -> bool:
+    def _should_reply_in_group(self, *, group_id: Any, mentioned_self: bool, replying_to_bot: bool) -> bool:
         if mentioned_self or replying_to_bot:
             return True
         policy = self.config.group_policy_overrides.get(str(group_id), self.config.group_policy)
@@ -493,16 +489,12 @@ class NapcatChannel(BaseChannel):
         fut: asyncio.Future[dict[str, Any]] = loop.create_future()
         self._pending[echo] = fut
         try:
-            await self._ws.send(
-                json.dumps({"action": action, "params": params, "echo": echo}, ensure_ascii=False)
-            )
+            await self._ws.send(json.dumps({"action": action, "params": params, "echo": echo}, ensure_ascii=False))
             resp = await asyncio.wait_for(fut, timeout=timeout)
             status = resp.get("status")
             retcode = resp.get("retcode")
             if (status and status != "ok") or (retcode not in (None, 0)):
-                raise RuntimeError(
-                    f"napcat: action {action} failed status={status!r} retcode={retcode!r}"
-                )
+                raise RuntimeError(f"napcat: action {action} failed status={status!r} retcode={retcode!r}")
             return resp
         finally:
             self._pending.pop(echo, None)
@@ -557,9 +549,7 @@ class NapcatChannel(BaseChannel):
                         truncated = True
                         break
                 if truncated:
-                    logger.warning(
-                        "napcat: image exceeds max_image_bytes={} url={}", max_bytes, url
-                    )
+                    logger.warning("napcat: image exceeds max_image_bytes={} url={}", max_bytes, url)
                     return None
                 data = bytes(buf)
         except Exception as e:

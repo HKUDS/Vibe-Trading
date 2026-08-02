@@ -20,9 +20,7 @@ import pandas as pd
 # Broker CSV/Excel cells often include ISO codes or currency glyphs around the
 # number (Schwab/IBKR "$1,234.56", JP/CN "¥1000"). Commas are already stripped;
 # without stripping these tokens float() fails and we silently store 0.0.
-_CURRENCY_TOKEN_RE = re.compile(
-    r"(?i)(?<![A-Za-z])(?:USDT|USDC|USD|EUR|GBP|JPY|CNY|HKD)(?![A-Za-z])|[$€£¥￥]"
-)
+_CURRENCY_TOKEN_RE = re.compile(r"(?i)(?<![A-Za-z])(?:USDT|USDC|USD|EUR|GBP|JPY|CNY|HKD)(?![A-Za-z])|[$€£¥￥]")
 
 FormatName = str  # "tonghuashun" | "eastmoney" | "futu" | "generic" | "unknown"
 
@@ -89,6 +87,7 @@ class TradeRecord:
 
 # ---------------- File loading ----------------
 
+
 def load_dataframe(path: str | Path) -> pd.DataFrame:
     """Load a CSV/Excel file into a DataFrame with encoding fallback.
 
@@ -124,6 +123,7 @@ def load_dataframe(path: str | Path) -> pd.DataFrame:
 
 # ---------------- Format detection ----------------
 
+
 def detect_format(df: pd.DataFrame) -> FormatName:
     """Detect broker format by column-name signature.
 
@@ -153,6 +153,7 @@ def detect_format(df: pd.DataFrame) -> FormatName:
 
 
 # ---------------- Parsers ----------------
+
 
 def _normalize_side(raw: Any) -> str:
     """Return ``buy`` or ``sell`` for an exact supported direction alias.
@@ -236,17 +237,19 @@ def parse_tonghuashun(df: pd.DataFrame) -> list[TradeRecord]:
         price = _to_float(row.get("成交价格"))
         amount = _to_float(row.get("成交金额")) or qty * price
         fee = _to_float(row.get("手续费")) + _to_float(row.get("印花税")) + _to_float(row.get("过户费"))
-        records.append(TradeRecord(
-            datetime=_ths_datetime(row.get("成交时间", "")),
-            symbol=_qualify_a_share(raw_code),
-            name=str(row.get("证券名称", "")).strip(),
-            side=_normalize_side(row.get("操作")),
-            quantity=qty,
-            price=price,
-            amount=amount,
-            fee=fee,
-            market="china_a",
-        ))
+        records.append(
+            TradeRecord(
+                datetime=_ths_datetime(row.get("成交时间", "")),
+                symbol=_qualify_a_share(raw_code),
+                name=str(row.get("证券名称", "")).strip(),
+                side=_normalize_side(row.get("操作")),
+                quantity=qty,
+                price=price,
+                amount=amount,
+                fee=fee,
+                market="china_a",
+            )
+        )
     return records
 
 
@@ -312,17 +315,19 @@ def parse_eastmoney(df: pd.DataFrame) -> list[TradeRecord]:
         price = _to_float(row.get("成交均价"))
         amount = _to_float(row.get("成交金额")) or qty * price
         fee = _to_float(row.get("佣金")) + _to_float(row.get("印花税"))
-        records.append(TradeRecord(
-            datetime=dt,
-            symbol=_qualify_a_share(raw_code),
-            name=str(row.get("股票名称", "")).strip(),
-            side=_normalize_side(row.get("买卖标志")),
-            quantity=qty,
-            price=price,
-            amount=amount,
-            fee=fee,
-            market="china_a",
-        ))
+        records.append(
+            TradeRecord(
+                datetime=dt,
+                symbol=_qualify_a_share(raw_code),
+                name=str(row.get("股票名称", "")).strip(),
+                side=_normalize_side(row.get("买卖标志")),
+                quantity=qty,
+                price=price,
+                amount=amount,
+                fee=fee,
+                market="china_a",
+            )
+        )
     return records
 
 
@@ -354,18 +359,12 @@ def _futu_datetime(date_val: Any, time_val: Any) -> str:
                         time_is_frac = True
             ts = pd.to_datetime(serial + frac, unit="D", origin="1899-12-30", errors="coerce")
             if pd.notna(ts):
-                if time_is_frac or time_val is None or (
-                    isinstance(time_val, float) and pd.isna(time_val)
-                ):
+                if time_is_frac or time_val is None or (isinstance(time_val, float) and pd.isna(time_val)):
                     return ts.strftime("%Y-%m-%d %H:%M:%S")
                 # Numeric Excel date + string/clock Time column.
                 return f"{ts.strftime('%Y-%m-%d')} {str(time_val).strip()}".strip()
     # load_dataframe uses dtype=str; Excel serial dates arrive as "45321" / "45321.0".
-    date_text = (
-        ""
-        if date_val is None or (isinstance(date_val, float) and pd.isna(date_val))
-        else str(date_val).strip()
-    )
+    date_text = "" if date_val is None or (isinstance(date_val, float) and pd.isna(date_val)) else str(date_val).strip()
     if date_text and not any(ch in date_text for ch in "/-:"):
         try:
             serial = float(date_text)
@@ -416,17 +415,19 @@ def parse_futu(df: pd.DataFrame) -> list[TradeRecord]:
         price = _to_float(row.get("Price"))
         amount = _to_float(row.get("Amount")) or qty * price
         fee = _to_float(row.get("Commission")) + _to_float(row.get("Platform Fee"))
-        records.append(TradeRecord(
-            datetime=dt,
-            symbol=symbol,
-            name=str(row.get("Name", "")).strip(),
-            side=_normalize_side(row.get("Side") if "Side" in df.columns else row.get("Direction")),
-            quantity=qty,
-            price=price,
-            amount=amount,
-            fee=fee,
-            market=_futu_market(symbol, str(row.get("Market", ""))),
-        ))
+        records.append(
+            TradeRecord(
+                datetime=dt,
+                symbol=symbol,
+                name=str(row.get("Name", "")).strip(),
+                side=_normalize_side(row.get("Side") if "Side" in df.columns else row.get("Direction")),
+                quantity=qty,
+                price=price,
+                amount=amount,
+                fee=fee,
+                market=_futu_market(symbol, str(row.get("Market", ""))),
+            )
+        )
     return records
 
 
@@ -459,9 +460,7 @@ def parse_generic(df: pd.DataFrame) -> list[TradeRecord]:
     fee_col = pick("fee", "commission", "fees")
 
     if side_col is None:
-        raise ValueError(
-            "Generic trade journal requires a side, direction, or action column"
-        )
+        raise ValueError("Generic trade journal requires a side, direction, or action column")
 
     records: list[TradeRecord] = []
     for _, row in df.iterrows():
@@ -481,17 +480,19 @@ def parse_generic(df: pd.DataFrame) -> list[TradeRecord]:
         amount = _to_float(row.get(amount_col)) if amount_col else qty * price
         fee = _to_float(row.get(fee_col)) if fee_col else 0.0
         market = _infer_market_from_symbol(symbol)
-        records.append(TradeRecord(
-            datetime=dt,
-            symbol=symbol.upper(),
-            name=str(row.get(name_col, "")).strip() if name_col else "",
-            side=_normalize_side(row.get(side_col)),
-            quantity=qty,
-            price=price,
-            amount=amount or qty * price,
-            fee=fee,
-            market=market,
-        ))
+        records.append(
+            TradeRecord(
+                datetime=dt,
+                symbol=symbol.upper(),
+                name=str(row.get(name_col, "")).strip() if name_col else "",
+                side=_normalize_side(row.get(side_col)),
+                quantity=qty,
+                price=price,
+                amount=amount or qty * price,
+                fee=fee,
+                market=market,
+            )
+        )
     return records
 
 

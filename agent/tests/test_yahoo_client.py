@@ -170,9 +170,7 @@ class TestGetQuoteSummary:
             assert kwargs["params"]["crumb"] == "the-crumb"
             assert kwargs["params"]["modules"] == "price,summaryDetail"
             assert kwargs["headers"]["Cookie"] == "A1=token"
-            return _FakeResponse(
-                json_body={"quoteSummary": {"error": None, "result": [{"price": {"symbol": "AAPL"}}]}}
-            )
+            return _FakeResponse(json_body={"quoteSummary": {"error": None, "result": [{"price": {"symbol": "AAPL"}}]}})
 
         monkeypatch.setattr(yahoo_client, "throttled_get", fake_get)
 
@@ -260,9 +258,7 @@ class TestGetOptions:
             captured["url"] = url
             captured["params"] = kwargs.get("params")
             captured["headers"] = kwargs.get("headers")
-            return _FakeResponse(
-                json_body={"optionChain": {"result": [{"expirationDates": [1, 2]}]}}
-            )
+            return _FakeResponse(json_body={"optionChain": {"result": [{"expirationDates": [1, 2]}]}})
 
         monkeypatch.setattr(yahoo_client, "throttled_get", fake_get)
 
@@ -340,9 +336,7 @@ class TestGetOptions:
                 return _FakeResponse(cookies={"A1": "c"})
             if url == yahoo_client._CRUMB_URL:
                 return _FakeResponse(text="crumb")
-            return _FakeResponse(
-                json_body={"optionChain": {"error": {"description": "bad symbol"}}}
-            )
+            return _FakeResponse(json_body={"optionChain": {"error": {"description": "bad symbol"}}})
 
         monkeypatch.setattr(yahoo_client, "throttled_get", fake_get)
 

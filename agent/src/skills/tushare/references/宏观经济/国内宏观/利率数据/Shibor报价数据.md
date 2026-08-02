@@ -48,11 +48,9 @@ on_a | float | Y | 隔夜_Ask
 **接口调用**
 
 ```python
-
 pro = ts.pro_api()
 
-df = pro.shibor_quote(start_date='20180101', end_date='20181101')
-
+df = pro.shibor_quote(start_date="20180101", end_date="20181101")
 ```
 
 <br>

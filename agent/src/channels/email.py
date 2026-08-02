@@ -3,6 +3,7 @@
 import asyncio
 import html
 import imaplib
+import logging
 import mimetypes
 import re
 import smtplib
@@ -19,7 +20,6 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Literal
 
-import logging; logger = logging.getLogger(__name__)
 from pydantic import Field
 
 from src.channels.bus.events import OutboundMessage
@@ -28,6 +28,8 @@ from src.channels.base import BaseChannel
 from src.channels.utils import get_media_dir
 from pydantic import BaseModel
 from src.channels.utils import safe_filename
+
+logger = logging.getLogger(__name__)
 
 
 class EmailConfig(BaseModel):
@@ -63,8 +65,8 @@ class EmailConfig(BaseModel):
     allow_from: list[str] = Field(default_factory=list)
 
     # Email authentication verification (anti-spoofing)
-    verify_dkim: bool = True   # Require Authentication-Results with dkim=pass
-    verify_spf: bool = True    # Require Authentication-Results with spf=pass
+    verify_dkim: bool = True  # Require Authentication-Results with dkim=pass
+    verify_spf: bool = True  # Require Authentication-Results with spf=pass
 
     # Attachment handling — set allowed types to enable (e.g. ["application/pdf", "image/*"], or ["*"] for all)
     allowed_attachment_types: list[str] = Field(default_factory=list)
@@ -329,7 +331,7 @@ class EmailChannel(BaseChannel):
             missing.append("post_action_move_mailbox")
 
         if missing:
-            self.logger.error("Channel not configured, missing: {}", ', '.join(missing))
+            self.logger.error("Channel not configured, missing: {}", ", ".join(missing))
             return False
         return True
 
@@ -474,8 +476,7 @@ class EmailChannel(BaseChannel):
                 spf_pass, dkim_pass = self._check_authentication_results(parsed)
                 if self.config.verify_spf and not spf_pass:
                     self.logger.warning(
-                        "From {} rejected: SPF verification failed "
-                        "(no 'spf=pass' in Authentication-Results header)",
+                        "From {} rejected: SPF verification failed (no 'spf=pass' in Authentication-Results header)",
                         sender,
                     )
                     self._remember_processed_uid(uid, dedupe, cycle_uids)
@@ -484,8 +485,7 @@ class EmailChannel(BaseChannel):
                     continue
                 if self.config.verify_dkim and not dkim_pass:
                     self.logger.warning(
-                        "From {} rejected: DKIM verification failed "
-                        "(no 'dkim=pass' in Authentication-Results header)",
+                        "From {} rejected: DKIM verification failed (no 'dkim=pass' in Authentication-Results header)",
                         sender,
                     )
                     self._remember_processed_uid(uid, dedupe, cycle_uids)
@@ -511,11 +511,7 @@ class EmailChannel(BaseChannel):
 
                 body = body[: self.config.max_body_chars]
                 content = (
-                    f"[EMAIL-CONTEXT] Email received.\n"
-                    f"From: {sender}\n"
-                    f"Subject: {subject}\n"
-                    f"Date: {date_value}\n\n"
-                    f"{body}"
+                    f"[EMAIL-CONTEXT] Email received.\nFrom: {sender}\nSubject: {subject}\nDate: {date_value}\n\n{body}"
                 )
 
                 # --- Attachment extraction ---
@@ -596,11 +592,7 @@ class EmailChannel(BaseChannel):
             self.config.smtp_username,
             self.config.imap_username,
         )
-        normalized = {
-            addr
-            for candidate in candidates
-            if (addr := self._normalize_address(candidate))
-        }
+        normalized = {addr for candidate in candidates if (addr := self._normalize_address(candidate))}
         return normalized
 
     @staticmethod
@@ -631,7 +623,7 @@ class EmailChannel(BaseChannel):
             # mark_seen is the primary dedup; this set is a safety net
             if len(self._processed_uids) > self._MAX_PROCESSED_UIDS:
                 # Evict a random half to cap memory; mark_seen is the primary dedup
-                self._processed_uids = set(list(self._processed_uids)[len(self._processed_uids) // 2:])
+                self._processed_uids = set(list(self._processed_uids)[len(self._processed_uids) // 2 :])
 
     def _should_apply_post_action(self) -> bool:
         return self.config.post_action in {"delete", "move"}

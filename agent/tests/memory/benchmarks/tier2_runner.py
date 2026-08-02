@@ -14,29 +14,25 @@ from __future__ import annotations
 
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
-# Ensure agent source is importable
+# Ensure agent source is importable (must precede the src.* imports).
 _AGENT_ROOT = Path(__file__).resolve().parents[4] / "agent"
 if str(_AGENT_ROOT) not in sys.path:
     sys.path.insert(0, str(_AGENT_ROOT))
 
-from src.memory.search_index import MemorySearchIndex
-from src.memory.semantic_links import (
+from src.memory.search_index import MemorySearchIndex  # noqa: E402
+from src.memory.semantic_links import (  # noqa: E402
     SemanticLinker,
     _tokenize_for_bm25,
-    compute_bm25_score,
-    compute_idf,
 )
-from src.memory.compression import CompressionPipeline, _tokenize_for_tfidf
-from src.memory.hierarchy import CATEGORIES, MemoryHierarchy
+from src.memory.compression import CompressionPipeline  # noqa: E402
+from src.memory.hierarchy import CATEGORIES, MemoryHierarchy  # noqa: E402
 
-from .metrics import mean_reciprocal_rank, ndcg_at_k, precision_at_k
-from .runner import (
-    MemoryRecord,
-    QueryRecord,
+from .metrics import mean_reciprocal_rank, ndcg_at_k, precision_at_k  # noqa: E402
+from .runner import (  # noqa: E402
     load_corpus,
     load_queries,
     retrieve_top_k,
@@ -178,9 +174,7 @@ def run_fts5_evaluation(
         # O(n) scan retrieval with timing (use treatment=True for BM25)
         query_tokens = tokenize(q.query)
         t0 = time.perf_counter()
-        scan_ids = retrieve_top_k(
-            query_tokens, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len
-        )
+        scan_ids = retrieve_top_k(query_tokens, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len)
         scan_latencies.append((time.perf_counter() - t0) * 1000)
 
         scan_p5_scores.append(precision_at_k(scan_ids, gt, k=TOP_K))
@@ -240,21 +234,20 @@ def run_links_evaluation(
     id_to_tokens: Dict[str, List[str]] = {}
     for entry in corpus_data:
         entry_id = entry["id"]
-        text = " ".join([
-            entry.get("name", ""),
-            entry.get("description", ""),
-            " ".join(entry.get("keywords", [])),
-            entry.get("content", ""),
-        ])
+        text = " ".join(
+            [
+                entry.get("name", ""),
+                entry.get("description", ""),
+                " ".join(entry.get("keywords", [])),
+                entry.get("content", ""),
+            ]
+        )
         tokens = _tokenize_for_bm25(text)
         all_entries_tokens.append((entry_id, tokens))
         id_to_tokens[entry_id] = tokens
 
     # Pre-compute BM25 links for all entries (top-5 per entry)
     linker = SemanticLinker(tmp_path / "memory")
-    bm25_corpus = [tokens for _, tokens in all_entries_tokens]
-    idf_links = compute_idf(bm25_corpus)
-    avg_dl = _mean([float(len(t)) for t in bm25_corpus])
 
     # Build adjacency: entry_id -> [(linked_id, score), ...]
     adjacency: Dict[str, List[Tuple[str, float]]] = {}
@@ -277,15 +270,11 @@ def run_links_evaluation(
         query_tokens = tokenize(q.query)
 
         # Direct top-5
-        direct_ids = retrieve_top_k(
-            query_tokens, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len, k=TOP_K
-        )
+        direct_ids = retrieve_top_k(query_tokens, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len, k=TOP_K)
         direct_p5_scores.append(precision_at_k(direct_ids, gt, k=TOP_K))
 
         # Top-3 then expand via links
-        top3_ids = retrieve_top_k(
-            query_tokens, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len, k=3
-        )
+        top3_ids = retrieve_top_k(query_tokens, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len, k=3)
 
         # Expand: collect linked entries from top-3, ranked by link score
         seen: Set[str] = set(top3_ids)
@@ -389,23 +378,16 @@ def run_compression_evaluation(
         query_tokens = tokenize(q.query)
 
         # Raw retrieval
-        raw_ids = retrieve_top_k(
-            query_tokens, raw_corpus, treatment=True,
-            idf=raw_idf, avg_doc_len=raw_avg_dl
-        )
+        raw_ids = retrieve_top_k(query_tokens, raw_corpus, treatment=True, idf=raw_idf, avg_doc_len=raw_avg_dl)
         raw_p5_scores.append(precision_at_k(raw_ids, gt, k=TOP_K))
 
         # Daily retrieval
-        daily_ids = retrieve_top_k(
-            query_tokens, daily_corpus, treatment=True,
-            idf=daily_idf, avg_doc_len=daily_avg_dl
-        )
+        daily_ids = retrieve_top_k(query_tokens, daily_corpus, treatment=True, idf=daily_idf, avg_doc_len=daily_avg_dl)
         daily_p5_scores.append(precision_at_k(daily_ids, gt, k=TOP_K))
 
         # Digest retrieval
         digest_ids = retrieve_top_k(
-            query_tokens, digest_corpus, treatment=True,
-            idf=digest_idf, avg_doc_len=digest_avg_dl
+            query_tokens, digest_corpus, treatment=True, idf=digest_idf, avg_doc_len=digest_avg_dl
         )
         digest_p5_scores.append(precision_at_k(digest_ids, gt, k=TOP_K))
 
@@ -478,10 +460,12 @@ def run_hierarchy_evaluation(
         md_path = cat_dir / f"{entry_id}.md"
         md_path.write_text(entry.get("name", entry_id), encoding="utf-8")
 
-        entries_for_index.append({
-            "memory_type": category,
-            "keywords": entry.get("keywords", []),
-        })
+        entries_for_index.append(
+            {
+                "memory_type": category,
+                "keywords": entry.get("keywords", []),
+            }
+        )
 
     # Build hierarchy index
     hierarchy.rebuild_index(entries_for_index)
@@ -509,22 +493,15 @@ def run_hierarchy_evaluation(
         query_tokens = tokenize(q.query)
 
         # Full scan retrieval
-        full_ids = retrieve_top_k(
-            query_tokens, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len
-        )
+        full_ids = retrieve_top_k(query_tokens, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len)
         full_p5_scores.append(precision_at_k(full_ids, gt, k=TOP_K))
 
         # Category-pruned retrieval: filter corpus to relevant categories
         target_cats = query_cat_to_mem_cats.get(q.category, list(CATEGORIES))
-        pruned_corpus = [
-            rec for rec in corpus
-            if id_to_category.get(rec.id, "") in target_cats
-        ]
+        pruned_corpus = [rec for rec in corpus if id_to_category.get(rec.id, "") in target_cats]
         pruned_counts.append(len(pruned_corpus))
 
-        pruned_ids = retrieve_top_k(
-            query_tokens, pruned_corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len
-        )
+        pruned_ids = retrieve_top_k(query_tokens, pruned_corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len)
         pruned_p5_scores.append(precision_at_k(pruned_ids, gt, k=TOP_K))
 
     pruned_avg = _mean([float(c) for c in pruned_counts])

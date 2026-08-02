@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #176
 # 简要说明: 国泰君安191短周期交易型alpha因子第176号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     CORR(RANK(((CLOSE-TSMIN(LOW,12))/(TSMAX(HIGH,12)-TSMIN(LOW,12)))),RANK(VOLUME),6)
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_176"
 
 __alpha_meta__ = {
-    'id': 'gtja191_176',
-    'theme': ['volume'],
-    'formula_latex': 'see body',
-    'columns_required': ['open', 'high', 'low', 'close', 'volume'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 12,
-    'min_warmup_bars': 18,
-    'notes': '',
+    "id": "gtja191_176",
+    "theme": ["volume"],
+    "formula_latex": "see body",
+    "columns_required": ["open", "high", "low", "close", "volume"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 12,
+    "min_warmup_bars": 18,
+    "notes": "",
 }
 
 

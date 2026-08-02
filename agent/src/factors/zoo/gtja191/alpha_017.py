@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #17 - 价格振幅比
 # 简要说明: RANK(DELTA(VWAP, 1))^3 / RANK(CORR(LOW, MEAN(VOLUME,50), 12))，VWAP变化与量价相关的比率。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_017",
-    "theme": ['reversal'],
-    "formula_latex": '(RANK(VWAP - MAX(VWAP,15))^DELTA(CLOSE,5))',
-    "columns_required": ['close', 'volume', 'amount'],
+    "theme": ["reversal"],
+    "formula_latex": "(RANK(VWAP - MAX(VWAP,15))^DELTA(CLOSE,5))",
+    "columns_required": ["close", "volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 15,
     "min_warmup_bars": 16,
-    "notes": 'rank(vwap - 15d max(vwap)) is non-positive; we use signed_power for safety.',
+    "notes": "rank(vwap - 15d max(vwap)) is non-positive; we use signed_power for safety.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

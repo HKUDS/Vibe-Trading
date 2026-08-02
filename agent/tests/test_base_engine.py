@@ -45,12 +45,14 @@ def _run_lifecycle(engine: _LifecycleEngine) -> None:
     )
 
 
-@pytest.mark.parametrize(("stop_before", "expected"), [
-    (False, ["pre", "fill", "post"]), (True, ["pre"]),
-])
-def test_execute_bars_lifecycle_and_pre_fill_stop(
-    stop_before: bool, expected: list[str]
-) -> None:
+@pytest.mark.parametrize(
+    ("stop_before", "expected"),
+    [
+        (False, ["pre", "fill", "post"]),
+        (True, ["pre"]),
+    ],
+)
+def test_execute_bars_lifecycle_and_pre_fill_stop(stop_before: bool, expected: list[str]) -> None:
     engine = _LifecycleEngine(stop_before=stop_before)
     _run_lifecycle(engine)
     assert engine.lifecycle == expected
@@ -92,9 +94,7 @@ class TestAlign:
         frame = pd.DataFrame({"open": [100.0] * 3, "close": [100.0] * 3}, index=dates)
         signals = pd.Series([0.0, 1.0, 0.0], index=dates)
 
-        out_dates, close_df, pos_df, _ = _align(
-            {"BTC-USDT-PERP": frame}, {"BTC-USDT-PERP": signals}, ["BTC-USDT-PERP"]
-        )
+        out_dates, close_df, pos_df, _ = _align({"BTC-USDT-PERP": frame}, {"BTC-USDT-PERP": signals}, ["BTC-USDT-PERP"])
 
         assert str(out_dates.tz) == "UTC"
         assert close_df.index.equals(dates)
@@ -196,7 +196,12 @@ class TestClosePosition:
         engine = ChinaAEngine({"initial_cash": 1_000_000})
         engine._bar_idx = 5
         engine.positions["000001.SZ"] = Position(
-            "000001.SZ", 1, 15.0, pd.Timestamp("2025-01-02"), 1000.0, entry_bar_idx=0,
+            "000001.SZ",
+            1,
+            15.0,
+            pd.Timestamp("2025-01-02"),
+            1000.0,
+            entry_bar_idx=0,
         )
         engine.capital = 985_000.0  # after buying
         engine._close_position("000001.SZ", 16.0, pd.Timestamp("2025-01-10"), "signal")
@@ -212,7 +217,12 @@ class TestClosePosition:
         engine = ChinaAEngine({"initial_cash": 1_000_000})
         engine._bar_idx = 3
         engine.positions["600519.SH"] = Position(
-            "600519.SH", 1, 1800.0, pd.Timestamp("2025-01-02"), 100.0, entry_bar_idx=0,
+            "600519.SH",
+            1,
+            1800.0,
+            pd.Timestamp("2025-01-02"),
+            100.0,
+            entry_bar_idx=0,
         )
         engine.capital = 820_000.0
         engine._close_position("600519.SH", 1750.0, pd.Timestamp("2025-01-06"), "signal")
@@ -230,7 +240,11 @@ class TestClosePosition:
         engine = ChinaAEngine({"initial_cash": 1_000_000})
         engine._bar_idx = 1
         engine.positions["000001.SZ"] = Position(
-            "000001.SZ", 1, 15.0, pd.Timestamp("2025-01-02"), 1000.0,
+            "000001.SZ",
+            1,
+            15.0,
+            pd.Timestamp("2025-01-02"),
+            1000.0,
         )
         capital_before = 985_000.0
         engine.capital = capital_before

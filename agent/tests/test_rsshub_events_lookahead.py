@@ -63,9 +63,7 @@ def test_future_event_does_not_leak_into_earlier_bars() -> None:
     )
 
     base = enrich_price_frames_with_events({"AAA": _price_frame()}, _StubProvider(past), as_of=probe)
-    poisoned = enrich_price_frames_with_events(
-        {"AAA": _price_frame()}, _StubProvider(past_plus_future), as_of=probe
-    )
+    poisoned = enrich_price_frames_with_events({"AAA": _price_frame()}, _StubProvider(past_plus_future), as_of=probe)
 
     # The future (2024-01-25) event must not move the score at 2024-01-15.
     assert base["AAA"].loc[probe, "event_score"] == poisoned["AAA"].loc[probe, "event_score"]
@@ -89,8 +87,6 @@ def test_decay_is_monotonic_with_age() -> None:
 
 def test_empty_events_yield_zero_columns() -> None:
     empty = _events([])
-    enriched = enrich_price_frames_with_events(
-        {"AAA": _price_frame()}, _StubProvider(empty), as_of="2024-01-31"
-    )
+    enriched = enrich_price_frames_with_events({"AAA": _price_frame()}, _StubProvider(empty), as_of="2024-01-31")
     assert (enriched["AAA"]["event_score"] == 0.0).all()
     assert (enriched["AAA"]["event_count"] == 0).all()

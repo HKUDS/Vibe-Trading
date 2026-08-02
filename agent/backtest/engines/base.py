@@ -41,6 +41,9 @@ from backtest.metrics import (
     calc_metrics,
     calc_trade_turnover_series,
 )
+from backtest.models import EquitySnapshot, Position, TradeRecord
+
+logger = logging.getLogger(__name__)
 
 
 def _json_safe_scalar_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
@@ -50,9 +53,6 @@ def _json_safe_scalar_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
         for k, v in metrics.items()
         if not isinstance(v, dict)
     }
-from backtest.models import EquitySnapshot, Position, TradeRecord
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -248,8 +248,7 @@ def _load_optimizer(config: Dict[str, Any]) -> Optional[Callable]:
     constraints = load_constraints(config)
     if not opt_name:
         if constraints:
-            print("[WARN] 'constraints' only act on optimizer output, "
-                  "set 'optimizer' to use them; ignoring")
+            print("[WARN] 'constraints' only act on optimizer output, set 'optimizer' to use them; ignoring")
         return None
     opt_params = config.get("optimizer_params") or {}
     try:
@@ -311,9 +310,7 @@ def _maybe_enrich_fundamentals(
             periods=config.get("fundamental_periods"),
         )
     except Exception as exc:
-        raise RuntimeError(
-            f"fundamental_fields requested but Tushare enrichment failed: {exc}"
-        ) from exc
+        raise RuntimeError(f"fundamental_fields requested but Tushare enrichment failed: {exc}") from exc
 
 
 def _event_feed_specs(config: Dict[str, Any]) -> List[FeedSpec]:
@@ -352,9 +349,7 @@ def _maybe_enrich_events(
             lookback=int(config.get("event_lookback", 30)),
         )
     except Exception as exc:
-        raise RuntimeError(
-            f"event_feeds requested but RSSHub enrichment failed: {exc}"
-        ) from exc
+        raise RuntimeError(f"event_feeds requested but RSSHub enrichment failed: {exc}") from exc
 
 
 # ─── Base Engine ───
@@ -380,9 +375,7 @@ class BaseEngine(ABC):
         # "reject any open_price <= 0" behavior. An exactly-zero open is always
         # rejected (undefined size = notional / price); negatives are handled by
         # abs()-based sizing and margin below.
-        self.allow_nonpositive_prices: bool = bool(
-            config.get("allow_nonpositive_prices", False)
-        )
+        self.allow_nonpositive_prices: bool = bool(config.get("allow_nonpositive_prices", False))
         #: Bar fields consulted, in order, for the price-limit base price.
         #: Futures engines put ``pre_settle`` first: exchanges set the band off
         #: the previous settlement, not the previous close.
@@ -534,9 +527,7 @@ class BaseEngine(ABC):
             return None
         return self._execution_price(price, direction)
 
-    def limit_band(
-        self, symbol: str, bar: pd.Series, limit: float
-    ) -> Optional[tuple[float, float]]:
+    def limit_band(self, symbol: str, bar: pd.Series, limit: float) -> Optional[tuple[float, float]]:
         """Return the (lower, upper) legal price band for this bar.
 
         Args:
@@ -592,14 +583,22 @@ class BaseEngine(ABC):
     # Override in FuturesBaseEngine to inject contract multiplier.
 
     def _calc_pnl(
-        self, symbol: str, direction: int, size: float,
-        entry_price: float, exit_price: float,
+        self,
+        symbol: str,
+        direction: int,
+        size: float,
+        entry_price: float,
+        exit_price: float,
     ) -> float:
         """Realised PnL for a closed position."""
         return direction * size * (exit_price - entry_price)
 
     def _calc_margin(
-        self, symbol: str, size: float, price: float, leverage: float,
+        self,
+        symbol: str,
+        size: float,
+        price: float,
+        leverage: float,
     ) -> float:
         """Margin (collateral) required for a position.
 
@@ -609,7 +608,10 @@ class BaseEngine(ABC):
         return size * abs(price) / leverage
 
     def _calc_raw_size(
-        self, symbol: str, target_notional: float, price: float,
+        self,
+        symbol: str,
+        target_notional: float,
+        price: float,
     ) -> float:
         """Convert target notional exposure to number of units/contracts.
 
@@ -661,12 +663,16 @@ class BaseEngine(ABC):
             if is_short_horizon_config(config) and not config.get("_risk_first_enforced"):
                 config = enforce_risk_first_config(config, inject=True)
                 self.config = config
-                print(json.dumps({
-                    "risk_first_enforced": True,
-                    "interval": config.get("interval"),
-                    "has_risk_overlay": bool(config.get("risk_overlay")),
-                    "has_hft_costs": bool(config.get("hft_costs")),
-                }))
+                print(
+                    json.dumps(
+                        {
+                            "risk_first_enforced": True,
+                            "interval": config.get("interval"),
+                            "has_risk_overlay": bool(config.get("risk_overlay")),
+                            "has_hft_costs": bool(config.get("hft_costs")),
+                        }
+                    )
+                )
             elif config.get("_risk_first_enforced"):
                 self.config = config
         except ValueError as exc:
@@ -694,18 +700,30 @@ class BaseEngine(ABC):
         # 2. Generate signals
         signal_map = signal_engine.generate(data_map)
         if not isinstance(signal_map, dict):
-            print(json.dumps({"error": (
-                f"SignalEngine.generate() must return Dict[str, pd.Series], "
-                f"got {type(signal_map).__name__}. "
-                "Return a dict mapping symbol codes to pandas Series of signals."
-            )}))
+            print(
+                json.dumps(
+                    {
+                        "error": (
+                            f"SignalEngine.generate() must return Dict[str, pd.Series], "
+                            f"got {type(signal_map).__name__}. "
+                            "Return a dict mapping symbol codes to pandas Series of signals."
+                        )
+                    }
+                )
+            )
             sys.exit(1)
         for _code, _sig in signal_map.items():
             if not isinstance(_sig, pd.Series):
-                print(json.dumps({"error": (
-                    f"SignalEngine.generate() returned {type(_sig).__name__} for '{_code}', "
-                    "expected pd.Series. Each value must be a pandas Series with DatetimeIndex."
-                )}))
+                print(
+                    json.dumps(
+                        {
+                            "error": (
+                                f"SignalEngine.generate() returned {type(_sig).__name__} for '{_code}', "
+                                "expected pd.Series. Each value must be a pandas Series with DatetimeIndex."
+                            )
+                        }
+                    )
+                )
                 sys.exit(1)
         valid_codes = sorted(c for c in signal_map if c in data_map)
         if not valid_codes:
@@ -715,7 +733,10 @@ class BaseEngine(ABC):
         # 3. Pre-compute target weights (with optimizer)
         opt_fn = _load_optimizer(config)
         dates, close_df, target_pos, ret_df = _align(
-            data_map, signal_map, valid_codes, optimizer=opt_fn,
+            data_map,
+            signal_map,
+            valid_codes,
+            optimizer=opt_fn,
         )
 
         # Sync codes after _align may have dropped all-NaN symbols
@@ -765,22 +786,28 @@ class BaseEngine(ABC):
                     high=high_df,
                     low=low_df,
                 )
-                print(json.dumps({"risk_overlay": {
-                    k: risk_overlay_diag[k]
-                    for k in (
-                        "applied",
-                        "kill_events",
-                        "kill_rearms",
-                        "stop_events",
-                        "ohlc_stop_events",
-                        "turnover_clips",
-                        "partial_fill_bars",
-                        "cvar_scales",
-                        "final_gross_mean",
-                        "final_net_mean",
+                print(
+                    json.dumps(
+                        {
+                            "risk_overlay": {
+                                k: risk_overlay_diag[k]
+                                for k in (
+                                    "applied",
+                                    "kill_events",
+                                    "kill_rearms",
+                                    "stop_events",
+                                    "ohlc_stop_events",
+                                    "turnover_clips",
+                                    "partial_fill_bars",
+                                    "cvar_scales",
+                                    "final_gross_mean",
+                                    "final_net_mean",
+                                )
+                                if k in risk_overlay_diag
+                            }
+                        }
                     )
-                    if k in risk_overlay_diag
-                }}))
+                )
         except ValueError as exc:
             print(json.dumps({"error": f"risk_overlay config invalid: {exc}"}))
             sys.exit(1)
@@ -819,19 +846,19 @@ class BaseEngine(ABC):
                     equity=float(self.initial_capital),
                 )
                 self._hft_cost_model = hft_model
-                print(json.dumps({
-                    "hft_costs": {
-                        "enabled": True,
-                        "fill_slippage_bps": hft_model.fill_slippage_bps(),
-                        "participation_clips": (hft_cost_diag or {}).get(
-                            "participation_clips"
-                        ),
-                        "adv_participation_clips": (hft_cost_diag or {}).get(
-                            "adv_participation_clips"
-                        ),
-                        "fidelity": "bar_proxy — no LOB / co-lo",
-                    }
-                }))
+                print(
+                    json.dumps(
+                        {
+                            "hft_costs": {
+                                "enabled": True,
+                                "fill_slippage_bps": hft_model.fill_slippage_bps(),
+                                "participation_clips": (hft_cost_diag or {}).get("participation_clips"),
+                                "adv_participation_clips": (hft_cost_diag or {}).get("adv_participation_clips"),
+                                "fidelity": "bar_proxy — no LOB / co-lo",
+                            }
+                        }
+                    )
+                )
         except ValueError as exc:
             print(json.dumps({"error": f"hft_costs config invalid: {exc}"}))
             sys.exit(1)
@@ -851,6 +878,7 @@ class BaseEngine(ABC):
         bench_ticker = config.get("benchmark")
         if bench_ticker and bench_ticker != "auto":
             from backtest.benchmark import resolve_benchmark
+
             bench_source = config.get("source", "yfinance")
             bench_result = resolve_benchmark(
                 strategy_codes=codes,
@@ -913,9 +941,7 @@ class BaseEngine(ABC):
             m["hft_fill_slippage_bps"] = (impact_diag or {}).get("fill_slippage_bps")
             m["hft_impact_charged"] = (impact_diag or {}).get("impact_charged")
             m["hft_participation_clips"] = (hft_cost_diag or {}).get("participation_clips")
-            m["hft_adv_participation_clips"] = (hft_cost_diag or {}).get(
-                "adv_participation_clips"
-            )
+            m["hft_adv_participation_clips"] = (hft_cost_diag or {}).get("adv_participation_clips")
             try:
                 (run_dir / "artifacts" / "hft_costs.json").write_text(
                     json.dumps(hft_artifact, indent=2, default=str),
@@ -932,6 +958,7 @@ class BaseEngine(ABC):
             render_rebalance_notes_markdown,
             write_rebalance_notes,
         )
+
         rebalance_notes = compute_rebalance_notes(target_pos)
         write_rebalance_notes(run_dir / "artifacts" / "rebalance_notes.json", rebalance_notes)
         (run_dir / "artifacts" / "rebalance_notes.md").write_text(
@@ -950,18 +977,19 @@ class BaseEngine(ABC):
             render_risk_xray_markdown,
             write_risk_xray,
         )
+
         try:
             basket_weights, avg_invested = average_invested_weights(target_pos)
             risk_xray = compute_risk_xray(
-                close_df, basket_weights, periods_per_year=bars_per_year,
+                close_df,
+                basket_weights,
+                periods_per_year=bars_per_year,
             )
         except ValueError:
             pass
         else:
             write_risk_xray(run_dir / "artifacts" / "risk_xray.json", risk_xray)
-            (run_dir / "artifacts" / "risk_xray.md").write_text(
-                render_risk_xray_markdown(risk_xray), encoding="utf-8"
-            )
+            (run_dir / "artifacts" / "risk_xray.md").write_text(render_risk_xray_markdown(risk_xray), encoding="utf-8")
             m["risk_xray_hhi"] = risk_xray["concentration"]["hhi"]
             m["risk_xray_effective_n"] = risk_xray["concentration"]["effective_n"]
             m["risk_xray_annualized_vol"] = risk_xray["volatility"]["annualized_vol"]
@@ -971,8 +999,13 @@ class BaseEngine(ABC):
         # 7. Validation (optional — triggered by config["validation"])
         if config.get("validation"):
             from backtest.validation import run_validation, write_validation_json
+
             v_results = run_validation(
-                config, equity_series, self.trades, self.initial_capital, bars_per_year,
+                config,
+                equity_series,
+                self.trades,
+                self.initial_capital,
+                bars_per_year,
             )
             m["validation"] = v_results
             # Write validation.json through the shared strict writer so a
@@ -984,12 +1017,20 @@ class BaseEngine(ABC):
 
         # 8. Artifacts
         self._write_artifacts(
-            run_dir, data_map, dates, equity_series, bench_equity, bench_ret,
-            target_pos, m, valid_codes,
+            run_dir,
+            data_map,
+            dates,
+            equity_series,
+            bench_equity,
+            bench_ret,
+            target_pos,
+            m,
+            valid_codes,
         )
 
         # 9. Trust Layer run card
         from backtest.run_card import write_run_card
+
         write_run_card(
             run_dir,
             config,
@@ -1044,9 +1085,7 @@ class BaseEngine(ABC):
             for c in codes:
                 try:
                     val = _target_arr[i, _code_to_col[c]]
-                    target_weights[c] = (
-                        None if stop_run else (float(val) if not np.isnan(val) else 0.0)
-                    )
+                    target_weights[c] = None if stop_run else (float(val) if not np.isnan(val) else 0.0)
                 except Exception as exc:
                     target_weights[c] = None
                     logger.warning("Target weight failed for %s at %s: %s", c, ts, exc)
@@ -1064,9 +1103,7 @@ class BaseEngine(ABC):
                     try:
                         self._rebalance(c, 0.0, data_map.get(c), ts, equity)
                     except Exception as exc:
-                        logger.warning(
-                            "Rebalance close failed for %s at %s: %s", c, ts, exc
-                        )
+                        logger.warning("Rebalance close failed for %s at %s: %s", c, ts, exc)
 
             # c. Price every opening order before committing any of them.  If
             # the requested basket does not fit after fees/lot rounding, apply
@@ -1080,9 +1117,7 @@ class BaseEngine(ABC):
                     continue
                 target_dir = 1 if target_w > 1e-9 else (-1 if target_w < -1e-9 else 0)
                 current_pos = self.positions.get(c)
-                if current_pos is not None and (
-                    target_dir == 0 or target_dir != current_pos.direction
-                ):
+                if current_pos is not None and (target_dir == 0 or target_dir != current_pos.direction):
                     continue
                 if current_pos is None and target_dir != 0:
                     open_targets.append((c, target_w, data_map.get(c)))
@@ -1091,9 +1126,7 @@ class BaseEngine(ABC):
                 result: list[_OpenOrder] = []
                 for c, target_w, frame in open_targets:
                     try:
-                        order = self._plan_open_order(
-                            c, target_w * scale, frame, ts, equity
-                        )
+                        order = self._plan_open_order(c, target_w * scale, frame, ts, equity)
                     except Exception as exc:
                         logger.warning(
                             "Rebalance open plan failed for %s at %s: %s",
@@ -1124,9 +1157,7 @@ class BaseEngine(ABC):
             if hft_model is not None and not stop_run:
                 cur = np.array(
                     [
-                        float(target_weights.get(c) or 0.0)
-                        if target_weights.get(c) is not None
-                        else prev_weights[j]
+                        float(target_weights.get(c) or 0.0) if target_weights.get(c) is not None else prev_weights[j]
                         for j, c in enumerate(codes)
                     ],
                     dtype=float,
@@ -1151,29 +1182,43 @@ class BaseEngine(ABC):
                 _eps = np.array([p.entry_price for p in self.positions.values()])
                 _dirs = np.array([p.direction for p in self.positions.values()])
                 _sizes = np.array([p.size for p in self.positions.values()])
-                _cps = np.array([
-                    self._safe_price(
-                        close_df, ts, s, ep,
-                        _arr=_close_arr, _row=i, _col=_code_to_col.get(s),
-                    )
-                    for s, ep in zip(_syms, _eps)
-                ])
+                _cps = np.array(
+                    [
+                        self._safe_price(
+                            close_df,
+                            ts,
+                            s,
+                            ep,
+                            _arr=_close_arr,
+                            _row=i,
+                            _col=_code_to_col.get(s),
+                        )
+                        for s, ep in zip(_syms, _eps)
+                    ]
+                )
                 total_unrealized = float(np.sum(_dirs * _sizes * (_cps - _eps)))
             else:
                 total_unrealized = 0.0
                 for p in self.positions.values():
                     cp = self._safe_price(
-                        close_df, ts, p.symbol, p.entry_price,
-                        _arr=_close_arr, _row=i, _col=_code_to_col.get(p.symbol),
+                        close_df,
+                        ts,
+                        p.symbol,
+                        p.entry_price,
+                        _arr=_close_arr,
+                        _row=i,
+                        _col=_code_to_col.get(p.symbol),
                     )
                     total_unrealized += self._calc_pnl(p.symbol, p.direction, p.size, p.entry_price, cp)
-            self.equity_snapshots.append(EquitySnapshot(
-                timestamp=ts,
-                capital=self.capital,
-                unrealized=total_unrealized,
-                equity=snap_equity,
-                positions=len(self.positions),
-            ))
+            self.equity_snapshots.append(
+                EquitySnapshot(
+                    timestamp=ts,
+                    capital=self.capital,
+                    unrealized=total_unrealized,
+                    equity=snap_equity,
+                    positions=len(self.positions),
+                )
+            )
 
             if stop_run:
                 break
@@ -1185,8 +1230,13 @@ class BaseEngine(ABC):
             for c in list(self.positions.keys()):
                 pos = self.positions[c]
                 mark_price = self._safe_price(
-                    close_df, last_ts, c, pos.entry_price,
-                    _arr=_close_arr, _row=_last_row, _col=_code_to_col.get(c),
+                    close_df,
+                    last_ts,
+                    c,
+                    pos.entry_price,
+                    _arr=_close_arr,
+                    _row=_last_row,
+                    _col=_code_to_col.get(c),
                 )
                 self._active_symbol = c
                 exit_price = self._execution_price(mark_price, -pos.direction)
@@ -1241,22 +1291,22 @@ class BaseEngine(ABC):
             _row = getattr(self, "_bar_idx", None)
             _c2c = getattr(self, "_code_to_col", None)
             current_price = self._safe_price(
-                close_df, ts, sym, pos.entry_price,
-                _arr=_arr, _row=_row, _col=(_c2c.get(sym) if _c2c else None),
+                close_df,
+                ts,
+                sym,
+                pos.entry_price,
+                _arr=_arr,
+                _row=_row,
+                _col=(_c2c.get(sym) if _c2c else None),
             )
             frame = data_map.get(sym)
             if frame is not None and ts in frame.index:
                 open_price = self.valuation_open(frame.loc[ts])
-                if (
-                    pd.notna(open_price)
-                    and float(open_price) > 0
-                ):
+                if pd.notna(open_price) and float(open_price) > 0:
                     current_price = float(open_price)
 
             margin = self._calc_margin(sym, pos.size, pos.entry_price, pos.leverage)
-            unrealized = self._calc_pnl(
-                sym, pos.direction, pos.size, pos.entry_price, current_price
-            )
+            unrealized = self._calc_pnl(sym, pos.direction, pos.size, pos.entry_price, current_price)
             equity += margin + unrealized
         return equity
 
@@ -1284,13 +1334,20 @@ class BaseEngine(ABC):
             directions = np.array([p.direction for p in self.positions.values()])
             leverages = np.array([p.leverage for p in self.positions.values()])
 
-            current_prices = np.array([
-                self._safe_price(
-                    close_df, ts, s, ep,
-                    _arr=_arr, _row=_row, _col=(_c2c.get(s) if _c2c else None),
-                )
-                for s, ep in zip(syms, entry_prices)
-            ])
+            current_prices = np.array(
+                [
+                    self._safe_price(
+                        close_df,
+                        ts,
+                        s,
+                        ep,
+                        _arr=_arr,
+                        _row=_row,
+                        _col=(_c2c.get(s) if _c2c else None),
+                    )
+                    for s, ep in zip(syms, entry_prices)
+                ]
+            )
 
             margins = sizes * entry_prices / leverages
             pnls = directions * sizes * (current_prices - entry_prices)
@@ -1299,8 +1356,13 @@ class BaseEngine(ABC):
         equity = self.capital
         for sym, pos in self.positions.items():
             cp = self._safe_price(
-                close_df, ts, sym, pos.entry_price,
-                _arr=_arr, _row=_row, _col=(_c2c.get(sym) if _c2c else None),
+                close_df,
+                ts,
+                sym,
+                pos.entry_price,
+                _arr=_arr,
+                _row=_row,
+                _col=(_c2c.get(sym) if _c2c else None),
             )
             margin = self._calc_margin(sym, pos.size, pos.entry_price, pos.leverage)
             unrealized = self._calc_pnl(sym, pos.direction, pos.size, pos.entry_price, cp)
@@ -1369,15 +1431,11 @@ class BaseEngine(ABC):
         price = self._execution_price(open_price, direction)
         leverage = self._leverage_for_symbol(symbol)
         target_notional = abs(target_weight) * equity * leverage
-        size = self.round_size(
-            self._calc_raw_size(symbol, target_notional, price), price
-        )
+        size = self.round_size(self._calc_raw_size(symbol, target_notional, price), price)
         if size <= 0:
             return None
         margin = self._calc_margin(symbol, size, price, leverage)
-        commission = self.calc_commission(
-            size, price, direction, is_open=True
-        )
+        commission = self.calc_commission(size, price, direction, is_open=True)
         return _OpenOrder(
             symbol=symbol,
             direction=direction,
@@ -1391,9 +1449,7 @@ class BaseEngine(ABC):
     def _execute_open_order(self, order: _OpenOrder, ts: pd.Timestamp) -> None:
         """Commit a previously priced opening order."""
         if order.cost > self.capital + 1e-7:
-            raise RuntimeError(
-                f"planned order for {order.symbol} exceeds available capital"
-            )
+            raise RuntimeError(f"planned order for {order.symbol} exceeds available capital")
         self.capital -= order.cost
         self.positions[order.symbol] = Position(
             symbol=order.symbol,
@@ -1429,23 +1485,25 @@ class BaseEngine(ABC):
 
         holding_bars = max(self._bar_idx - pos.entry_bar_idx, 0)
 
-        self.trades.append(TradeRecord(
-            symbol=symbol,
-            direction=pos.direction,
-            entry_price=pos.entry_price,
-            exit_price=exit_price,
-            entry_time=pos.entry_time,
-            exit_time=exit_time,
-            size=pos.size,
-            leverage=pos.leverage,
-            pnl=pnl,
-            pnl_pct=pnl_pct,
-            exit_reason=reason,
-            holding_bars=holding_bars,
-            commission=pos.entry_commission + exit_comm,
-            entry_margin=margin,
-            exit_margin=exit_margin,
-        ))
+        self.trades.append(
+            TradeRecord(
+                symbol=symbol,
+                direction=pos.direction,
+                entry_price=pos.entry_price,
+                exit_price=exit_price,
+                entry_time=pos.entry_time,
+                exit_time=exit_time,
+                size=pos.size,
+                leverage=pos.leverage,
+                pnl=pnl,
+                pnl_pct=pnl_pct,
+                exit_reason=reason,
+                holding_bars=holding_bars,
+                commission=pos.entry_commission + exit_comm,
+                entry_margin=margin,
+                exit_margin=exit_margin,
+            )
+        )
 
     # ── Artifacts ──
 
@@ -1473,13 +1531,16 @@ class BaseEngine(ABC):
         port_ret = equity_series.pct_change().fillna(0.0)
         peak = equity_series.cummax()
         dd = (equity_series - peak) / peak.replace(0, 1)
-        eq_df = pd.DataFrame({
-            "ret": port_ret,
-            "equity": equity_series,
-            "drawdown": dd,
-            "benchmark_equity": bench_equity.reindex(dates),
-            "active_ret": port_ret - bench_ret.reindex(dates).fillna(0.0),
-        }, index=dates)
+        eq_df = pd.DataFrame(
+            {
+                "ret": port_ret,
+                "equity": equity_series,
+                "drawdown": dd,
+                "benchmark_equity": bench_equity.reindex(dates),
+                "active_ret": port_ret - bench_ret.reindex(dates).fillna(0.0),
+            },
+            index=dates,
+        )
         eq_df.index.name = "timestamp"
         eq_df.to_csv(out / "equity.csv")
 
@@ -1491,33 +1552,37 @@ class BaseEngine(ABC):
         trade_rows = []
         for t in self.trades:
             # Entry event
-            trade_rows.append({
-                "timestamp": str(t.entry_time.date()) if hasattr(t.entry_time, "date") else str(t.entry_time),
-                "code": t.symbol,
-                "side": "buy" if t.direction == 1 else "sell",
-                "price": round(t.entry_price, 4),
-                "qty": round(t.size, 6),
-                "reason": "signal",
-                "pnl": 0.0,
-                "holding_days": 0,
-                "return_pct": 0.0,
-            })
+            trade_rows.append(
+                {
+                    "timestamp": str(t.entry_time.date()) if hasattr(t.entry_time, "date") else str(t.entry_time),
+                    "code": t.symbol,
+                    "side": "buy" if t.direction == 1 else "sell",
+                    "price": round(t.entry_price, 4),
+                    "qty": round(t.size, 6),
+                    "reason": "signal",
+                    "pnl": 0.0,
+                    "holding_days": 0,
+                    "return_pct": 0.0,
+                }
+            )
             # Exit event
             try:
                 hold_days = (t.exit_time - t.entry_time).days
             except Exception:
                 hold_days = 0
-            trade_rows.append({
-                "timestamp": str(t.exit_time.date()) if hasattr(t.exit_time, "date") else str(t.exit_time),
-                "code": t.symbol,
-                "side": "sell" if t.direction == 1 else "buy",
-                "price": round(t.exit_price, 4),
-                "qty": round(t.size, 6),
-                "reason": t.exit_reason,
-                "pnl": round(t.pnl, 4),
-                "holding_days": hold_days,
-                "return_pct": round(t.pnl_pct, 2),
-            })
+            trade_rows.append(
+                {
+                    "timestamp": str(t.exit_time.date()) if hasattr(t.exit_time, "date") else str(t.exit_time),
+                    "code": t.symbol,
+                    "side": "sell" if t.direction == 1 else "buy",
+                    "price": round(t.exit_price, 4),
+                    "qty": round(t.size, 6),
+                    "reason": t.exit_reason,
+                    "pnl": round(t.pnl, 4),
+                    "holding_days": hold_days,
+                    "return_pct": round(t.pnl_pct, 2),
+                }
+            )
 
         trade_cols = ["timestamp", "code", "side", "price", "qty", "reason", "pnl", "holding_days", "return_pct"]
         pd.DataFrame(trade_rows or [], columns=trade_cols).to_csv(out / "trades.csv", index=False)

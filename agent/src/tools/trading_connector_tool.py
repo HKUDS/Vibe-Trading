@@ -419,8 +419,14 @@ class TradingPlaceOrderTool(BaseTool):
             **TRADING_COMMON_PARAMETERS,
             "symbol": {"type": "string", "description": "Symbol, e.g. AAPL, BTC-USDT, 700.HK, HK.00700."},
             "side": {"type": "string", "enum": ["buy", "sell"]},
-            "quantity": {"type": "number", "description": "Order size in units/shares/contracts. Exactly one of quantity/notional."},
-            "notional": {"type": "number", "description": "Order size as an account-currency amount. Exactly one of quantity/notional."},
+            "quantity": {
+                "type": "number",
+                "description": "Order size in units/shares/contracts. Exactly one of quantity/notional.",
+            },
+            "notional": {
+                "type": "number",
+                "description": "Order size as an account-currency amount. Exactly one of quantity/notional.",
+            },
             "order_type": {"type": "string", "enum": ["market", "limit"], "default": "market"},
             "limit_price": {"type": "number", "description": "Required for limit orders."},
             "time_in_force": {"type": "string", "enum": ["day", "gtc"], "default": "day"},

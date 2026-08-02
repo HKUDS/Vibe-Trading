@@ -96,9 +96,7 @@ class TestProviderCapabilityAliases:
             ("openrouter", "glm-4.6", "openrouter"),
         ],
     )
-    def test_gateway_provider_not_inferred_from_model(
-        self, provider: str, model: str, expected: str
-    ) -> None:
+    def test_gateway_provider_not_inferred_from_model(self, provider: str, model: str, expected: str) -> None:
         """Gateway providers (OpenRouter/Requesty) must never be overridden. (#549)
 
         Their model names contain direct-provider prefixes like ``deepseek/``
@@ -175,10 +173,7 @@ class TestSyncProviderEnv:
             }
         )
         assert result["OPENAI_API_KEY"] == ""
-        assert (
-            result["OPENAI_API_BASE"]
-            == "https://chatgpt.com/backend-api/codex/responses"
-        )
+        assert result["OPENAI_API_BASE"] == "https://chatgpt.com/backend-api/codex/responses"
 
     def test_deepseek_provider(self) -> None:
         result = self._run_sync(
@@ -215,11 +210,13 @@ class TestSyncProviderEnv:
         base_env: str,
         base_url: str,
     ) -> None:
-        result = self._run_sync({
-            "LANGCHAIN_PROVIDER": provider,
-            key_env: "sf-key-123",
-            base_env: base_url,
-        })
+        result = self._run_sync(
+            {
+                "LANGCHAIN_PROVIDER": provider,
+                key_env: "sf-key-123",
+                base_env: base_url,
+            }
+        )
 
         assert result["OPENAI_API_KEY"] == "sf-key-123"
         assert result["OPENAI_API_BASE"] == base_url
@@ -437,19 +434,11 @@ def test_anthropic_temperature_preserved_for_supported_model() -> None:
 def test_is_anthropic_temperature_unsupported_error_matching() -> None:
     from src.providers.llm import _is_anthropic_temperature_unsupported_error
 
-    assert _is_anthropic_temperature_unsupported_error(
-        RuntimeError("`temperature` is deprecated for this model.")
-    )
-    assert _is_anthropic_temperature_unsupported_error(
-        ValueError("temperature is not supported")
-    )
+    assert _is_anthropic_temperature_unsupported_error(RuntimeError("`temperature` is deprecated for this model."))
+    assert _is_anthropic_temperature_unsupported_error(ValueError("temperature is not supported"))
     # Unrelated errors must not trigger the temperature retry path.
-    assert not _is_anthropic_temperature_unsupported_error(
-        RuntimeError("max_tokens is required")
-    )
-    assert not _is_anthropic_temperature_unsupported_error(
-        RuntimeError("rate limit exceeded")
-    )
+    assert not _is_anthropic_temperature_unsupported_error(RuntimeError("max_tokens is required"))
+    assert not _is_anthropic_temperature_unsupported_error(RuntimeError("rate limit exceeded"))
 
 
 # ---------------------------------------------------------------------------
@@ -482,9 +471,7 @@ class TestMinimaxTemperature:
         with patch.dict(os.environ, env, clear=True):
             with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                 build_llm()
-        assert (
-            captured["temperature"] == 0.01
-        ), "MiniMax temperature must be clamped to 0.01 when 0.0 is configured"
+        assert captured["temperature"] == 0.01, "MiniMax temperature must be clamped to 0.01 when 0.0 is configured"
 
     def test_minimax_positive_temperature_preserved(self) -> None:
         """When an explicit positive temperature is set, it should be preserved."""
@@ -521,6 +508,7 @@ class TestKimiTemperature:
 
     def _capture_temperature(self, model: str, configured_temp: str) -> float:
         import src.providers.llm as llm_mod
+
         llm_mod._dotenv_loaded = True
 
         captured: dict[str, float] = {}
@@ -624,9 +612,7 @@ class TestKimiCodingProvider:
         assert kimi.capture_reasoning is True
         assert kimi.send_reasoning_content is True
         assert kimi.normalize_assistant_content is True
-        assert kimi.default_headers.get("User-Agent") == moonshot.default_headers.get(
-            "User-Agent"
-        )
+        assert kimi.default_headers.get("User-Agent") == moonshot.default_headers.get("User-Agent")
 
     def test_env_mapping_to_openai_vars(self) -> None:
         import src.providers.llm as llm_mod
@@ -722,15 +708,11 @@ class TestGetLlmCredentials:
             assert creds["base_url"] == "https://openrouter.ai/api/v1"
 
     def test_base_url_falls_back_to_openai_base_url(self) -> None:
-        with patch.dict(
-            os.environ, {"OPENAI_BASE_URL": "https://fallback.example/v1"}, clear=True
-        ):
+        with patch.dict(os.environ, {"OPENAI_BASE_URL": "https://fallback.example/v1"}, clear=True):
             creds = get_llm_credentials("deepseek", "deepseek-v4-pro")
             assert creds["base_url"] == "https://fallback.example/v1"
 
     def test_base_url_falls_back_to_openai_api_base(self) -> None:
-        with patch.dict(
-            os.environ, {"OPENAI_API_BASE": "https://legacy.example/v1"}, clear=True
-        ):
+        with patch.dict(os.environ, {"OPENAI_API_BASE": "https://legacy.example/v1"}, clear=True):
             creds = get_llm_credentials("deepseek", "deepseek-v4-pro")
             assert creds["base_url"] == "https://legacy.example/v1"

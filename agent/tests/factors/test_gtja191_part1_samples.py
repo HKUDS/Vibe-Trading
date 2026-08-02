@@ -38,15 +38,21 @@ def _seeded_panel() -> dict[str, pd.DataFrame]:
     open_ = close.shift(1).fillna(close.iloc[0])
     high = pd.DataFrame(
         np.maximum(close.to_numpy(), open_.to_numpy()) + rng.uniform(0, 1, (n_rows, 5)),
-        index=idx, columns=codes,
+        index=idx,
+        columns=codes,
     )
-    low = pd.DataFrame(
-        np.minimum(close.to_numpy(), open_.to_numpy()) - rng.uniform(0, 1, (n_rows, 5)),
-        index=idx, columns=codes,
-    ).abs() + 0.01
+    low = (
+        pd.DataFrame(
+            np.minimum(close.to_numpy(), open_.to_numpy()) - rng.uniform(0, 1, (n_rows, 5)),
+            index=idx,
+            columns=codes,
+        ).abs()
+        + 0.01
+    )
     volume = pd.DataFrame(
         rng.randint(1000, 100000, (n_rows, 5)).astype(float),
-        index=idx, columns=codes,
+        index=idx,
+        columns=codes,
     )
     amount = volume * close * 100.0
     return {"open": open_, "high": high, "low": low, "close": close, "volume": volume, "amount": amount}

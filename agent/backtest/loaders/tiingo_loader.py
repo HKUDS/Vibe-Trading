@@ -209,7 +209,11 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self, code: str, start_date: str, end_date: str, key: str,
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
+        key: str,
     ) -> Optional[pd.DataFrame]:
         """Fetch and normalize a single symbol's daily bars.
 

@@ -97,9 +97,7 @@ def test_unconfigured_tap_fails_closed(monkeypatch) -> None:
 
 
 def test_immediate_read_success(tap_env, monkeypatch) -> None:
-    _install_urlopen(
-        monkeypatch, lambda req: _FakeResponse(200, json.dumps({"cash": "1000"}))
-    )
+    _install_urlopen(monkeypatch, lambda req: _FakeResponse(200, json.dumps({"cash": "1000"})))
     result = tf.forward("https://api.example/v2/account", "GET", None, _CRED)
 
     assert result["ok"] is True
@@ -127,12 +125,14 @@ def _write_then_poll(monkeypatch, poll_bodies: list[str]):
 
 
 def test_approved_write_polls_until_forwarded(tap_env, monkeypatch) -> None:
-    calls = _write_then_poll(monkeypatch, [
-        json.dumps({"status": "pending"}),
-        json.dumps({"status": "forwarded",
-                    "response": {"status": 200, "body": '{"id": "ord-1"}'}}),
-    ])
-    result = tf.forward(f"https://api.example/v2/orders", "POST", "{}", _CRED, timeout=30)
+    calls = _write_then_poll(
+        monkeypatch,
+        [
+            json.dumps({"status": "pending"}),
+            json.dumps({"status": "forwarded", "response": {"status": 200, "body": '{"id": "ord-1"}'}}),
+        ],
+    )
+    result = tf.forward("https://api.example/v2/orders", "POST", "{}", _CRED, timeout=30)
 
     assert result["ok"] is True
     assert result["decision"] == "forwarded"
@@ -144,10 +144,12 @@ def test_approved_write_polls_until_forwarded(tap_env, monkeypatch) -> None:
 
 
 def test_forwarded_with_upstream_error_is_not_ok(tap_env, monkeypatch) -> None:
-    _write_then_poll(monkeypatch, [
-        json.dumps({"status": "forwarded",
-                    "response": {"status": 422, "body": '{"message": "rejected"}'}}),
-    ])
+    _write_then_poll(
+        monkeypatch,
+        [
+            json.dumps({"status": "forwarded", "response": {"status": 422, "body": '{"message": "rejected"}'}}),
+        ],
+    )
     result = tf.forward("https://api.example/v2/orders", "POST", "{}", _CRED, timeout=30)
 
     assert result["ok"] is False  # forwarded but upstream refused → still fail-closed
@@ -166,9 +168,7 @@ def test_terminal_refusals_fail_closed(tap_env, monkeypatch, decision) -> None:
 
 def test_no_decision_within_timeout_fails_closed(tap_env, monkeypatch) -> None:
     # timeout=0 → the poll loop never runs; the deadline path must fail closed.
-    _install_urlopen(
-        monkeypatch, lambda req: _FakeResponse(202, json.dumps({"txn_id": "txn-1"}))
-    )
+    _install_urlopen(monkeypatch, lambda req: _FakeResponse(202, json.dumps({"txn_id": "txn-1"})))
     result = tf.forward("https://api.example/v2/orders", "POST", "{}", _CRED, timeout=0)
 
     assert result["ok"] is False
@@ -189,17 +189,19 @@ def _respond_202(monkeypatch, payload: dict):
         if state["first"]:
             state["first"] = False
             return _FakeResponse(202, json.dumps(payload))
-        return _FakeResponse(200, json.dumps(
-            {"status": "forwarded", "response": {"status": 200, "body": "{}"}}))
+        return _FakeResponse(200, json.dumps({"status": "forwarded", "response": {"status": 200, "body": "{}"}}))
 
     return _install_urlopen(monkeypatch, handler)
 
 
-@pytest.mark.parametrize("poll_url", [
-    "https://evil.example/steal",   # absolute URL → refused
-    "//evil.example/steal",         # protocol-relative → refused (no leading single "/")
-    "agent/approvals/txn-1",        # not "/"-prefixed → refused
-])
+@pytest.mark.parametrize(
+    "poll_url",
+    [
+        "https://evil.example/steal",  # absolute URL → refused
+        "//evil.example/steal",  # protocol-relative → refused (no leading single "/")
+        "agent/approvals/txn-1",  # not "/"-prefixed → refused
+    ],
+)
 def test_tampered_poll_url_is_rejected_and_never_contacted(tap_env, monkeypatch, poll_url) -> None:
     calls = _respond_202(monkeypatch, {"poll_url": poll_url})
     result = tf.forward("https://api.example/v2/orders", "POST", "{}", _CRED, timeout=30)

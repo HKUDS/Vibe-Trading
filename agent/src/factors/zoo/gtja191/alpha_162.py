@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #162
 # 简要说明: 国泰君安191短周期交易型alpha因子第162号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: RSI-style normalised.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_162"
 
 __alpha_meta__ = {
-    'id': 'gtja191_162',
-    'theme': ['momentum'],
-    'formula_latex': 'see body',
-    'columns_required': ['close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 12,
-    'min_warmup_bars': 24,
-    'notes': 'RSI-style normalised.',
+    "id": "gtja191_162",
+    "theme": ["momentum"],
+    "formula_latex": "see body",
+    "columns_required": ["close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 12,
+    "min_warmup_bars": 24,
+    "notes": "RSI-style normalised.",
 }
 
 
@@ -59,9 +59,11 @@ def compute(panel):
     Returns:
         pd.DataFrame with index = panel["close"].index, columns = panel["close"].columns.
     """
+
     def _sma(x, n, m):
         """SMA(x, n, m) per GTJA convention -> ewm with alpha = m/n."""
         return x.ewm(alpha=m / n, adjust=False).mean()
+
     c = panel["close"]
     dc = c - c.shift(1)
     rsi = safe_div(_sma(dc.clip(lower=0.0), 12, 1), _sma(dc.abs(), 12, 1)) * 100.0

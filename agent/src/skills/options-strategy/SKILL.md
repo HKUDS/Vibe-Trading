@@ -68,11 +68,11 @@ Iron Condor opening signal:
     "action": "open",
     "underlying": "000300.SH",
     "legs": [
-        {"type": "put",  "strike": 3800, "expiry": "2024-02-15", "qty": -1},  # Sell put
-        {"type": "put",  "strike": 3700, "expiry": "2024-02-15", "qty":  1},  # Buy protective put
+        {"type": "put", "strike": 3800, "expiry": "2024-02-15", "qty": -1},  # Sell put
+        {"type": "put", "strike": 3700, "expiry": "2024-02-15", "qty": 1},  # Buy protective put
         {"type": "call", "strike": 4200, "expiry": "2024-02-15", "qty": -1},  # Sell call
-        {"type": "call", "strike": 4300, "expiry": "2024-02-15", "qty":  1},  # Buy protective call
-    ]
+        {"type": "call", "strike": 4300, "expiry": "2024-02-15", "qty": 1},  # Buy protective call
+    ],
 }
 ```
 

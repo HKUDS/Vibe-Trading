@@ -19,10 +19,10 @@ class TestSpaHtmlRouteMatcher:
     @pytest.mark.parametrize(
         "path",
         [
-            "/correlation",        # Correlation page
-            "/runs/abc",           # RunDetail (no trailing slash)
-            "/runs/abc-123",       # RunDetail with dashes
-            "/runs/abc/",          # RunDetail (trailing slash)
+            "/correlation",  # Correlation page
+            "/runs/abc",  # RunDetail (no trailing slash)
+            "/runs/abc-123",  # RunDetail with dashes
+            "/runs/abc/",  # RunDetail (trailing slash)
         ],
     )
     def test_spa_pages_match(self, path: str) -> None:
@@ -33,15 +33,15 @@ class TestSpaHtmlRouteMatcher:
     @pytest.mark.parametrize(
         "path",
         [
-            "/runs",                # collection endpoint (API only)
-            "/runs/abc/code",       # API-only — must NOT be hijacked
-            "/runs/abc/pine",       # API-only — must NOT be hijacked
+            "/runs",  # collection endpoint (API only)
+            "/runs/abc/code",  # API-only — must NOT be hijacked
+            "/runs/abc/pine",  # API-only — must NOT be hijacked
             "/runs/abc/code/",
-            "/runs/abc/foo/bar",    # deeper nested — defensive
-            "/sessions/xyz",        # different namespace
+            "/runs/abc/foo/bar",  # deeper nested — defensive
+            "/sessions/xyz",  # different namespace
             "/api",
             "/skills",
-            "/correlation/extra",   # only the bare /correlation page exists
+            "/correlation/extra",  # only the bare /correlation page exists
         ],
     )
     def test_api_only_paths_do_not_match(self, path: str) -> None:

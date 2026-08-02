@@ -41,6 +41,12 @@ jobs:
       - name: Repository safety gates
         run: bash tools/ci_grep_gates.sh
 
+      - name: Lint with Ruff
+        run: ruff check agent/ tools/
+
+      - name: Format check with Ruff
+        run: ruff format --check agent/ tools/
+
       - name: Test environment variable gate
         run: pytest tools/test_ci_env_var_gate.py -q
 

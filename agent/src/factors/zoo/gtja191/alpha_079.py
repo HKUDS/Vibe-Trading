@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #79
 # 简要说明: 国泰君安191短周期交易型alpha因子第79号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_079",
-    "theme": ['momentum'],
-    "formula_latex": 'SMA(MAX(CLOSE-DELAY(CLOSE,1),0),12,1)/SMA(ABS(CLOSE-DELAY(CLOSE,1)),12,1)*100',
-    "columns_required": ['close'],
+    "theme": ["momentum"],
+    "formula_latex": "SMA(MAX(CLOSE-DELAY(CLOSE,1),0),12,1)/SMA(ABS(CLOSE-DELAY(CLOSE,1)),12,1)*100",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 12,
     "min_warmup_bars": 13,
-    "notes": 'RSI-12.',
+    "notes": "RSI-12.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

@@ -34,7 +34,8 @@ from src.tools import web_reader_tool
     ],
 )
 def test_read_url_rejects_non_public_targets_without_network(
-    monkeypatch: pytest.MonkeyPatch, url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    url: str,
 ) -> None:
     def fail_get(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("requests.get should not be called for blocked URLs")

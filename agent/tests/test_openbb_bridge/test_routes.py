@@ -24,9 +24,7 @@ def _remote_client() -> TestClient:
 
 
 def _query_body() -> dict:
-    return QueryRequest(
-        messages=[LlmClientMessage(role="human", content="hi")]
-    ).model_dump(mode="json")
+    return QueryRequest(messages=[LlmClientMessage(role="human", content="hi")]).model_dump(mode="json")
 
 
 @pytest.fixture(autouse=True)
@@ -86,9 +84,7 @@ def test_query_streams_from_adapter(client: TestClient, fake_adapter: None):
     assert "hello from vibe" in response.text
 
 
-def test_query_reports_when_runtime_unavailable(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-):
+def test_query_reports_when_runtime_unavailable(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(bridge_routes, "_get_adapter", lambda: None)
 
     response = client.post("/v1/query", json=_query_body())
@@ -105,9 +101,7 @@ def test_remote_query_requires_api_key_when_key_unset(fake_adapter: None):
     assert "API_AUTH_KEY" in response.json()["detail"]
 
 
-def test_query_rejects_missing_or_wrong_bearer_when_key_configured(
-    monkeypatch: pytest.MonkeyPatch, fake_adapter: None
-):
+def test_query_rejects_missing_or_wrong_bearer_when_key_configured(monkeypatch: pytest.MonkeyPatch, fake_adapter: None):
     monkeypatch.setenv("API_AUTH_KEY", "secret")
     monkeypatch.setattr(api_server, "_API_KEY", "secret")
 
@@ -121,9 +115,7 @@ def test_query_rejects_missing_or_wrong_bearer_when_key_configured(
         assert wrong.status_code == 401
 
 
-def test_query_accepts_valid_bearer_when_key_configured(
-    monkeypatch: pytest.MonkeyPatch, fake_adapter: None
-):
+def test_query_accepts_valid_bearer_when_key_configured(monkeypatch: pytest.MonkeyPatch, fake_adapter: None):
     monkeypatch.setenv("API_AUTH_KEY", "secret")
     monkeypatch.setattr(api_server, "_API_KEY", "secret")
 

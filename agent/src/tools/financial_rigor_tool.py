@@ -140,8 +140,12 @@ def _safe_arith(expr: str) -> Decimal:
 # Core verification routines (pure, return structured dicts, no I/O)
 # ---------------------------------------------------------------------------
 
+
 def verify_market_cap(
-    price: Any, shares: Any, reported_cap: Any, currency: str = "",
+    price: Any,
+    shares: Any,
+    reported_cap: Any,
+    currency: str = "",
 ) -> dict[str, Any]:
     """Verify ``market cap = price × shares`` against a reported value.
 
@@ -266,12 +270,14 @@ def cross_validate(
         dev = abs(float(val) - median) / median * 100 if median != 0 else 0.0
         consistent = dev <= tolerance_pct
         all_consistent = all_consistent and consistent
-        per_source.append({
-            "source": src,
-            "value": float(val),
-            "deviation_pct": round(dev, 4),
-            "consistent": consistent,
-        })
+        per_source.append(
+            {
+                "source": src,
+                "value": float(val),
+                "deviation_pct": round(dev, 4),
+                "consistent": consistent,
+            }
+        )
     return {
         "field": field_name,
         "unit": unit,
@@ -314,9 +320,7 @@ def benford_check(values: list[Any]) -> dict[str, Any]:
         counts[d] += 1
     observed = {d: counts[d] / n for d in range(1, 10)}
     mad = sum(abs(observed[d] - _BENFORD[d]) for d in range(1, 10)) / 9
-    chi2 = sum(
-        (counts[d] - _BENFORD[d] * n) ** 2 / (_BENFORD[d] * n) for d in range(1, 10)
-    )
+    chi2 = sum((counts[d] - _BENFORD[d] * n) ** 2 / (_BENFORD[d] * n) for d in range(1, 10))
     if mad < 0.006:
         conformity = "close"
     elif mad < 0.012:
@@ -414,14 +418,16 @@ def three_scenario_valuation(
             future_eps = _CTX.multiply(future_eps, _CTX.add(Decimal("1"), g))
         target_price = _CTX.multiply(future_eps, target_pe)
         upside = float(target_price - p) / float(p) * 100 if p != 0 else 0.0
-        scenarios.append({
-            "scenario": name,
-            "annual_growth": float(g),
-            "target_pe": float(target_pe),
-            "future_eps": float(future_eps),
-            "target_price": float(target_price),
-            "upside_pct": round(upside, 2),
-        })
+        scenarios.append(
+            {
+                "scenario": name,
+                "annual_growth": float(g),
+                "target_pe": float(target_pe),
+                "future_eps": float(future_eps),
+                "target_price": float(target_price),
+                "upside_pct": round(upside, 2),
+            }
+        )
     result: dict[str, Any] = {
         "current_price": float(p),
         "current_eps": float(eps),
@@ -461,16 +467,19 @@ class FinancialRigorTool(BaseTool):
             "command": {
                 "type": "string",
                 "enum": [
-                    "verify_market_cap", "verify_valuation", "cross_validate",
-                    "benford", "calc", "three_scenario",
+                    "verify_market_cap",
+                    "verify_valuation",
+                    "cross_validate",
+                    "benford",
+                    "calc",
+                    "three_scenario",
                 ],
                 "description": "Which verification to run.",
             },
             "price": {"type": "number", "description": "Share price."},
             "shares": {
                 "type": "number",
-                "description": "verify_market_cap: total share count; "
-                               "three_scenario: share count in billions.",
+                "description": "verify_market_cap: total share count; three_scenario: share count in billions.",
             },
             "reported_cap": {"type": "number", "description": "Reported market cap."},
             "currency": {"type": "string", "description": "Currency label (display only)."},
@@ -486,11 +495,13 @@ class FinancialRigorTool(BaseTool):
             },
             "unit": {"type": "string", "description": "cross_validate: unit label."},
             "tolerance_pct": {
-                "type": "number", "default": 2.0,
+                "type": "number",
+                "default": 2.0,
                 "description": "cross_validate: max acceptable percent deviation.",
             },
             "values": {
-                "type": "array", "items": {"type": "number"},
+                "type": "array",
+                "items": {"type": "number"},
                 "description": "benford: list of financial values to inspect.",
             },
             "expr": {
@@ -498,13 +509,17 @@ class FinancialRigorTool(BaseTool):
                 "description": "calc: arithmetic expression (numbers and + - * /).",
             },
             "growth": {
-                "type": "array", "items": {"type": "number"},
-                "minItems": 3, "maxItems": 3,
+                "type": "array",
+                "items": {"type": "number"},
+                "minItems": 3,
+                "maxItems": 3,
                 "description": "three_scenario: annual EPS growth as a decimal [bull, base, bear], e.g. 0.15 for 15% (values > 1 are auto-treated as percent).",
             },
             "pe": {
-                "type": "array", "items": {"type": "number"},
-                "minItems": 3, "maxItems": 3,
+                "type": "array",
+                "items": {"type": "number"},
+                "minItems": 3,
+                "maxItems": 3,
                 "description": "three_scenario: target PE [bull, base, bear].",
             },
             "years": {"type": "integer", "default": 3, "description": "three_scenario horizon."},
@@ -513,7 +528,7 @@ class FinancialRigorTool(BaseTool):
     }
     is_readonly = True
     repeatable = True  # loop.py dedups non-repeatable tools by name; users call
-                       # different sub-commands / params in one session.
+    # different sub-commands / params in one session.
 
     def execute(self, **kwargs: Any) -> str:
         """Dispatch to the requested sub-command and return a JSON envelope.
@@ -532,22 +547,28 @@ class FinancialRigorTool(BaseTool):
                     if kwargs.get(key) is None:
                         return _err(f"{key} is required for verify_market_cap")
                 result: dict[str, Any] = verify_market_cap(
-                    kwargs["price"], kwargs["shares"], kwargs["reported_cap"],
+                    kwargs["price"],
+                    kwargs["shares"],
+                    kwargs["reported_cap"],
                     currency=str(kwargs.get("currency") or ""),
                 )
             elif command == "verify_valuation":
                 if kwargs.get("price") is None:
                     return _err("price is required for verify_valuation")
                 result = verify_valuation(
-                    kwargs["price"], kwargs.get("eps"), kwargs.get("bvps"),
-                    kwargs.get("fcf_per_share"), kwargs.get("dividend"),
+                    kwargs["price"],
+                    kwargs.get("eps"),
+                    kwargs.get("bvps"),
+                    kwargs.get("fcf_per_share"),
+                    kwargs.get("dividend"),
                     kwargs.get("revenue_per_share"),
                 )
             elif command == "cross_validate":
                 if not kwargs.get("field") or not kwargs.get("source_values"):
                     return _err("field and source_values are required for cross_validate")
                 result = cross_validate(
-                    str(kwargs["field"]), kwargs["source_values"],
+                    str(kwargs["field"]),
+                    kwargs["source_values"],
                     unit=str(kwargs.get("unit") or ""),
                     tolerance_pct=float(kwargs.get("tolerance_pct") or 2.0),
                 )
@@ -571,9 +592,15 @@ class FinancialRigorTool(BaseTool):
                 if not isinstance(pe, list) or len(pe) != 3:
                     return _err("pe must be a list of 3 numbers [bull, base, bear]")
                 result = three_scenario_valuation(
-                    kwargs["price"], kwargs["eps"], kwargs["shares"],
-                    growth[0], growth[1], growth[2],
-                    pe[0], pe[1], pe[2],
+                    kwargs["price"],
+                    kwargs["eps"],
+                    kwargs["shares"],
+                    growth[0],
+                    growth[1],
+                    growth[2],
+                    pe[0],
+                    pe[1],
+                    pe[2],
                     years=int(kwargs.get("years") or 3),
                     currency=str(kwargs.get("currency") or ""),
                 )
@@ -585,5 +612,6 @@ class FinancialRigorTool(BaseTool):
                 ensure_ascii=False,
             )
         return json.dumps(
-            {"status": "ok", "command": command, **result}, ensure_ascii=False,
+            {"status": "ok", "command": command, **result},
+            ensure_ascii=False,
         )

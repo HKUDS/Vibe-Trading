@@ -176,9 +176,7 @@ def test_orphan_order_is_safe(live_runtime: Path) -> None:
     """A confirmed order the broker no longer lists is orphan_order, not a halt."""
     _seed_state(
         "robinhood",
-        open_orders=[
-            {"order_id": "o9", "status": "accepted", "client_order_id": "c-9"}
-        ],
+        open_orders=[{"order_id": "o9", "status": "accepted", "client_order_id": "c-9"}],
     )
     rp, rb, ro = _readers(open_orders=[])  # broker shows nothing
     report = reconcile("robinhood", rp, rb, ro)
@@ -204,9 +202,7 @@ def test_mid_order_ambiguous_forces_halt(live_runtime: Path) -> None:
     """
     _seed_state(
         "robinhood",
-        open_orders=[
-            {"client_order_id": "c-pending", "status": "submitted", "symbol": "AAPL"}
-        ],
+        open_orders=[{"client_order_id": "c-pending", "status": "submitted", "symbol": "AAPL"}],
     )
     rp, rb, ro = _readers(open_orders=[])  # broker neither shows it open nor confirms
     report = reconcile("robinhood", rp, rb, ro)
@@ -256,9 +252,7 @@ def test_reconcile_never_invokes_a_write_callable(live_runtime: Path) -> None:
     # reconcile's signature only accepts the three readers — the trap is never
     # reachable, which is the point; we still keep a reference to prove intent.
     _ = trap_write
-    report = reconcile(
-        "robinhood", counting_positions, counting_balance, counting_open_orders
-    )
+    report = reconcile("robinhood", counting_positions, counting_balance, counting_open_orders)
 
     assert "WRITE" not in calls
     assert calls.count("read_positions") == 1
@@ -300,17 +294,13 @@ def test_unsafe_reconcile_does_not_advance_state(live_runtime: Path) -> None:
         open_orders=[{"client_order_id": "c-pending", "status": "submitted"}],
         positions=[{"symbol": "NVDA", "qty": 3}],
     )
-    before = (paths.broker_dir("robinhood") / "runtime_state.json").read_text(
-        encoding="utf-8"
-    )
+    before = (paths.broker_dir("robinhood") / "runtime_state.json").read_text(encoding="utf-8")
     rp, rb, ro = _readers(positions=[{"symbol": "NVDA", "qty": 3}], open_orders=[])
     report = reconcile("robinhood", rp, rb, ro)
 
     assert report.requires_halt is True
     assert report.state_persisted is False
-    after = (paths.broker_dir("robinhood") / "runtime_state.json").read_text(
-        encoding="utf-8"
-    )
+    after = (paths.broker_dir("robinhood") / "runtime_state.json").read_text(encoding="utf-8")
     assert before == after  # durable state preserved untouched
 
 

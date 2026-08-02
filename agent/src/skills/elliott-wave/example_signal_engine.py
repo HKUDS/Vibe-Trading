@@ -5,9 +5,8 @@
 纯 pandas/numpy 实现，无外部波浪库依赖。
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
-import numpy as np
 import pandas as pd
 
 
@@ -50,9 +49,7 @@ class SignalEngine:
         self.fib_tolerance = fib_tolerance
         self.min_wave_bars = min_wave_bars
 
-    def _find_swings(
-        self, high: pd.Series, low: pd.Series
-    ) -> List[Dict]:
+    def _find_swings(self, high: pd.Series, low: pd.Series) -> List[Dict]:
         """用滚动窗口找局部高低点，生成交替的 Zigzag 序列。
 
         Args:
@@ -105,9 +102,7 @@ class SignalEngine:
 
         return zigzag
 
-    def _check_fib_ratios(
-        self, w1: float, w2: float, w3: float, w4: float, w5: float
-    ) -> bool:
+    def _check_fib_ratios(self, w1: float, w2: float, w3: float, w4: float, w5: float) -> bool:
         """验证 5 浪推动结构的 Fibonacci 浪间关系。
 
         检查项：
@@ -197,11 +192,11 @@ class SignalEngine:
             if types == ["L", "H", "L", "H", "L", "H"]:
                 x, p1, p2, p3, p4, p5 = swings[i : i + 6]
 
-                wave1 = p1["price"] - x["price"]     # 上升
-                wave2 = p1["price"] - p2["price"]     # 回撤（正值）
-                wave3 = p3["price"] - p2["price"]     # 上升
-                wave4 = p3["price"] - p4["price"]     # 回撤（正值）
-                wave5 = p5["price"] - p4["price"]     # 上升
+                wave1 = p1["price"] - x["price"]  # 上升
+                wave2 = p1["price"] - p2["price"]  # 回撤（正值）
+                wave3 = p3["price"] - p2["price"]  # 上升
+                wave4 = p3["price"] - p4["price"]  # 回撤（正值）
+                wave5 = p5["price"] - p4["price"]  # 上升
 
                 if wave1 <= 0 or wave3 <= 0 or wave5 <= 0:
                     continue
@@ -233,11 +228,11 @@ class SignalEngine:
             elif types == ["H", "L", "H", "L", "H", "L"]:
                 x, p1, p2, p3, p4, p5 = swings[i : i + 6]
 
-                wave1 = x["price"] - p1["price"]     # 下跌
-                wave2 = p2["price"] - p1["price"]     # 反弹（正值）
-                wave3 = p2["price"] - p3["price"]     # 下跌
-                wave4 = p4["price"] - p3["price"]     # 反弹（正值）
-                wave5 = p4["price"] - p5["price"]     # 下跌
+                wave1 = x["price"] - p1["price"]  # 下跌
+                wave2 = p2["price"] - p1["price"]  # 反弹（正值）
+                wave3 = p2["price"] - p3["price"]  # 下跌
+                wave4 = p4["price"] - p3["price"]  # 反弹（正值）
+                wave5 = p4["price"] - p5["price"]  # 下跌
 
                 if wave1 <= 0 or wave3 <= 0 or wave5 <= 0:
                     continue
@@ -290,9 +285,9 @@ class SignalEngine:
             if types == ["H", "L", "H", "L"]:
                 start, pa, pb, pc = swings[i : i + 4]
 
-                wave_a = start["price"] - pa["price"]   # A 下跌幅度
-                wave_b = pb["price"] - pa["price"]       # B 反弹幅度
-                wave_c = pb["price"] - pc["price"]       # C 下跌幅度
+                wave_a = start["price"] - pa["price"]  # A 下跌幅度
+                wave_b = pb["price"] - pa["price"]  # B 反弹幅度
+                wave_c = pb["price"] - pc["price"]  # C 下跌幅度
 
                 if wave_a <= 0 or wave_b <= 0 or wave_c <= 0:
                     continue
@@ -322,9 +317,9 @@ class SignalEngine:
             elif types == ["L", "H", "L", "H"]:
                 start, pa, pb, pc = swings[i : i + 4]
 
-                wave_a = pa["price"] - start["price"]   # A 上涨幅度
-                wave_b = pa["price"] - pb["price"]       # B 回落幅度
-                wave_c = pc["price"] - pb["price"]       # C 上涨幅度
+                wave_a = pa["price"] - start["price"]  # A 上涨幅度
+                wave_b = pa["price"] - pb["price"]  # B 回落幅度
+                wave_c = pc["price"] - pb["price"]  # C 上涨幅度
 
                 if wave_a <= 0 or wave_b <= 0 or wave_c <= 0:
                     continue
@@ -352,9 +347,7 @@ class SignalEngine:
 
         return results
 
-    def generate(
-        self, data_map: Dict[str, pd.DataFrame]
-    ) -> Dict[str, pd.Series]:
+    def generate(self, data_map: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
         """根据艾略特波浪理论生成交易信号。
 
         Args:
@@ -390,9 +383,7 @@ class SignalEngine:
         return result
 
 
-def _fetch_okx(
-    inst_id: str, bar: str = "1D", limit: int = 300
-) -> pd.DataFrame:
+def _fetch_okx(inst_id: str, bar: str = "1D", limit: int = 300) -> pd.DataFrame:
     """从 OKX API 获取 K 线数据。
 
     Args:
@@ -414,8 +405,15 @@ def _fetch_okx(
     )
     candles = resp.json()["data"]
     columns = [
-        "ts", "open", "high", "low", "close",
-        "vol", "volCcy", "volCcyQuote", "confirm",
+        "ts",
+        "open",
+        "high",
+        "low",
+        "close",
+        "vol",
+        "volCcy",
+        "volCcyQuote",
+        "confirm",
     ]
     df = pd.DataFrame(reversed(candles), columns=columns)
     df["ts"] = pd.to_datetime(df["ts"].astype("int64"), unit="ms")
@@ -435,11 +433,7 @@ if __name__ == "__main__":
     for sym in symbols:
         print(f"获取 {sym} 数据...")
         data_map[sym] = _fetch_okx(sym, bar="1D", limit=300)
-        print(
-            f"  {len(data_map[sym])} 根K线, "
-            f"{data_map[sym].index[0]:%Y-%m-%d} ~ "
-            f"{data_map[sym].index[-1]:%Y-%m-%d}"
-        )
+        print(f"  {len(data_map[sym])} 根K线, {data_map[sym].index[0]:%Y-%m-%d} ~ {data_map[sym].index[-1]:%Y-%m-%d}")
 
     engine = SignalEngine()
     signals = engine.generate(data_map)

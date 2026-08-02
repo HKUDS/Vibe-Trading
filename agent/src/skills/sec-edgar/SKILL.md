@@ -34,9 +34,9 @@ Script path — call the `sec_edgar_client` transport directly when you need raw
 ```python
 from backtest.loaders.sec_edgar_client import cik_for, get_submissions, get_company_facts
 
-cik = cik_for("AAPL")            # "0000320193", or None if not in the SEC table
-submissions = get_submissions(cik)   # recent-filings index + company metadata
-facts = get_company_facts(cik)       # all reported XBRL concepts
+cik = cik_for("AAPL")  # "0000320193", or None if not in the SEC table
+submissions = get_submissions(cik)  # recent-filings index + company metadata
+facts = get_company_facts(cik)  # all reported XBRL concepts
 ```
 
 A runnable end-to-end example lives at `sec-edgar/scripts/sec_filings_example.py`.

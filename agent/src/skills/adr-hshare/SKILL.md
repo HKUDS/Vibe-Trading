@@ -32,6 +32,7 @@ def calculate_ah_premium(a_price_cny, h_price_hkd, usdcny, usdhkd):
     ah_premium = (a_price_cny / h_price_cny - 1) * 100
     return ah_premium
 
+
 # Example: PetroChina
 # A-share: 8.50 CNY, H-share: 6.20 HKD
 # USDCNY: 7.25, USDHKD: 7.82
@@ -69,6 +70,7 @@ def calculate_adr_premium(adr_price_usd, hk_price_hkd, adr_ratio, usdhkd):
     hk_equivalent_usd = (hk_price_hkd * adr_ratio) / usdhkd
     premium = (adr_price_usd / hk_equivalent_usd - 1) * 100
     return premium
+
 
 # Example: Alibaba
 # BABA ADR: $85.00, 9988.HK: HKD 82.50
@@ -114,12 +116,12 @@ Since 2022, PCAOB gained access to audit workpapers of Chinese companies. Key ri
 **Delisting risk indicators:**
 ```python
 delisting_risk_factors = {
-    "pcaob_status": "inspected",     # inspected / pending / blocked
-    "sec_identified_years": 0,        # 0, 1, 2, or 3 (3 = delist)
-    "has_hk_listing": True,           # Backup listing reduces impact
-    "hk_listing_type": "primary",     # primary (can be in Connect) vs secondary
-    "vie_structure": True,            # Variable Interest Entity adds legal risk
-    "state_owned": False,             # SOE status adds geopolitical risk
+    "pcaob_status": "inspected",  # inspected / pending / blocked
+    "sec_identified_years": 0,  # 0, 1, 2, or 3 (3 = delist)
+    "has_hk_listing": True,  # Backup listing reduces impact
+    "hk_listing_type": "primary",  # primary (can be in Connect) vs secondary
+    "vie_structure": True,  # Variable Interest Entity adds legal risk
+    "state_owned": False,  # SOE status adds geopolitical risk
 }
 
 # Companies with HK primary listing (BABA, JD, BIDU, NTES, etc.) have
@@ -134,14 +136,14 @@ delisting_risk_factors = {
 # When AH premium for a specific stock diverges significantly from its historical average
 ah_premium_current = 45  # current premium
 ah_premium_mean_12m = 35  # 12-month average
-ah_premium_std = 8        # standard deviation
+ah_premium_std = 8  # standard deviation
 
 z_score = (ah_premium_current - ah_premium_mean_12m) / ah_premium_std
 
 if z_score > 2.0:
     signal = "fade_premium"  # A-share overvalued vs H; buy H, avoid A
 elif z_score < -2.0:
-    signal = "buy_premium"   # A-share undervalued vs H; buy A, avoid H
+    signal = "buy_premium"  # A-share undervalued vs H; buy A, avoid H
 else:
     signal = "neutral"
 ```

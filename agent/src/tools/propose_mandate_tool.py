@@ -27,12 +27,27 @@ from src.live.mandate.commit import _normalize_limits, save_proposal
 #: Ordered profile templates synthesized when the caller gives no explicit
 #: profiles. Each is a fraction of the funded ceiling so they always clamp down.
 _PROFILE_TEMPLATES: tuple[dict[str, Any], ...] = (
-    {"ordinal": 1, "label": "稳健", "order_fraction": 0.05, "daily_trade_cap": 2,
-     "notes": "Smallest clips, fewest trades — capital-preservation tilt."},
-    {"ordinal": 2, "label": "均衡", "order_fraction": 0.15, "daily_trade_cap": 5,
-     "notes": "Moderate sizing, cash-only."},
-    {"ordinal": 3, "label": "激进", "order_fraction": 0.30, "daily_trade_cap": 10,
-     "notes": "Largest clips this account allows — still cash-only."},
+    {
+        "ordinal": 1,
+        "label": "稳健",
+        "order_fraction": 0.05,
+        "daily_trade_cap": 2,
+        "notes": "Smallest clips, fewest trades — capital-preservation tilt.",
+    },
+    {
+        "ordinal": 2,
+        "label": "均衡",
+        "order_fraction": 0.15,
+        "daily_trade_cap": 5,
+        "notes": "Moderate sizing, cash-only.",
+    },
+    {
+        "ordinal": 3,
+        "label": "激进",
+        "order_fraction": 0.30,
+        "daily_trade_cap": 10,
+        "notes": "Largest clips this account allows — still cash-only.",
+    },
 )
 
 
@@ -151,8 +166,7 @@ class ProposeMandateProfilesTool(BaseTool):
             "ceilings": dict(ceilings),
             "profiles": profiles,
             "funding_note": (
-                "Funding is set by YOU inside the broker's dedicated trading "
-                "account; the agent cannot move money."
+                "Funding is set by YOU inside the broker's dedicated trading account; the agent cannot move money."
             ),
             "halt_note": "随时一句『停』= kill switch, halts everything instantly.",
         }

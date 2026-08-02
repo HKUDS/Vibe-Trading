@@ -38,10 +38,7 @@ def _literal_safe_value(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(_literal_safe_value(item) for item in value)
     if isinstance(value, dict):
-        return {
-            _literal_safe_value(key): _literal_safe_value(item)
-            for key, item in value.items()
-        }
+        return {_literal_safe_value(key): _literal_safe_value(item) for key, item in value.items()}
     raise TypeError(
         f"Unsupported generated Python literal type: {type(value).__name__}",
     )
@@ -223,6 +220,7 @@ def write_run_dir(
         initial_capital=initial_capital,
     )
     (run_dir / "config.json").write_text(
-        json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8",
+        json.dumps(cfg, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
     return run_dir

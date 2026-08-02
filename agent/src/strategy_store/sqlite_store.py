@@ -105,9 +105,7 @@ class SqliteStrategyStore:
                 ``VIBE_TRADING_STRATEGY_STORE_DB_PATH`` can override the
                 default ``~/.vibe-trading/strategy_store.db``.
         """
-        self.db_path = (
-            Path(db_path) if db_path is not None else _default_db_path()
-        )
+        self.db_path = Path(db_path) if db_path is not None else _default_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -347,8 +345,7 @@ class SqliteStrategyStore:
         except sqlite3.IntegrityError as exc:
             if "artifacts.name" in str(exc):
                 raise ValueError(
-                    f"artifact '{artifact.name}' already exists in "
-                    f"universe '{artifact.universe}'"
+                    f"artifact '{artifact.name}' already exists in universe '{artifact.universe}'"
                 ) from exc
             raise
         return artifact_id
@@ -356,9 +353,7 @@ class SqliteStrategyStore:
     @_synchronized
     def get_artifact(self, artifact_id: str) -> Artifact | None:
         """Get a single artifact by ID.  Returns ``None`` if not found."""
-        row = self._conn.execute(
-            "SELECT * FROM artifacts WHERE id = ?", (artifact_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
         return self._row_to_artifact(row) if row else None
 
     @_synchronized
@@ -530,9 +525,7 @@ class SqliteStrategyStore:
             return cursor.lastrowid  # type: ignore[return-value]
 
     @_synchronized
-    def get_bench_history(
-        self, artifact_id: str, *, limit: int = 50
-    ) -> Sequence[BenchResult]:
+    def get_bench_history(self, artifact_id: str, *, limit: int = 50) -> Sequence[BenchResult]:
         """Get bench history for an artifact, newest first."""
         rows = self._conn.execute(
             """
@@ -578,9 +571,7 @@ class SqliteStrategyStore:
             return cursor.lastrowid  # type: ignore[return-value]
 
     @_synchronized
-    def get_decay_history(
-        self, artifact_id: str, *, limit: int = 20
-    ) -> Sequence[DecaySnapshot]:
+    def get_decay_history(self, artifact_id: str, *, limit: int = 20) -> Sequence[DecaySnapshot]:
         """Get decay snapshots for an artifact, newest first."""
         rows = self._conn.execute(
             """

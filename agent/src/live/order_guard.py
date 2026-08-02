@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -199,8 +198,11 @@ class LiveOrderGuardTool(MCPRemoteTool):
 
                 if breach is None:
                     return self._allow(
-                        mandate=mandate, intent=intent, kwargs=kwargs,
-                        positions=positions, balance=balance,
+                        mandate=mandate,
+                        intent=intent,
+                        kwargs=kwargs,
+                        positions=positions,
+                        balance=balance,
                     )
         except DailyOrderLockUnavailable as exc:
             return self._deny(
@@ -303,9 +305,7 @@ class LiveOrderGuardTool(MCPRemoteTool):
         """
         for remote in self._read_tools("quote", _QUOTE_TOOLS):
             try:
-                result = self._adapter.call_tool(
-                    remote, {"symbol": symbol}, local_name=remote
-                )
+                result = self._adapter.call_tool(remote, {"symbol": symbol}, local_name=remote)
             except Exception as exc:
                 logger.warning("broker quote tool %s failed: %s", remote, exc)
                 continue
@@ -349,10 +349,18 @@ class LiveOrderGuardTool(MCPRemoteTool):
         is_error = self._is_error_envelope(broker_response)
 
         checked = [
-            "mandate", "expiry", "halt_flag", "intent",
-            "exclude_symbols", "allowed_instruments", "asset_classes",
-            "max_order_notional_usd", "max_total_exposure_usd",
-            "max_leverage", "max_trades_per_day", "account_funding_usd",
+            "mandate",
+            "expiry",
+            "halt_flag",
+            "intent",
+            "exclude_symbols",
+            "allowed_instruments",
+            "asset_classes",
+            "max_order_notional_usd",
+            "max_total_exposure_usd",
+            "max_leverage",
+            "max_trades_per_day",
+            "account_funding_usd",
             "universe_floors",
         ]
         if advisory is not None:
@@ -409,9 +417,7 @@ class LiveOrderGuardTool(MCPRemoteTool):
 
         providers = get_advisory_providers()
         if not providers:
-            logger.info(
-                "advisory enabled but no providers registered — skipping review"
-            )
+            logger.info("advisory enabled but no providers registered — skipping review")
             return None
 
         try:
@@ -487,9 +493,7 @@ class LiveOrderGuardTool(MCPRemoteTool):
             gate_decision={"allowed": False, "decision": _DECISION_DENY, "checked_limits": checked},
             error=reason,
         )
-        return self._refusal(
-            decision=_DECISION_DENY, reason=reason, reauth=reauth, record=record
-        )
+        return self._refusal(decision=_DECISION_DENY, reason=reason, reauth=reauth, record=record)
 
     def _deny_breach(
         self,

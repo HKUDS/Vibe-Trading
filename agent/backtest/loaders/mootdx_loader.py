@@ -78,6 +78,7 @@ class DataLoader:
         """Available if mootdx is installed."""
         try:
             import mootdx  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -85,6 +86,7 @@ class DataLoader:
     def _get_client(self):
         if self._client is None:
             from mootdx.quotes import Quotes
+
             self._client = Quotes.factory(market="std")
         return self._client
 
@@ -148,7 +150,11 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self, code: str, start_date: str, end_date: str, interval: str,
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
+        interval: str,
     ) -> Optional[pd.DataFrame]:
         symbol = code.split(".")[0]
         client = self._get_client()
@@ -165,7 +171,11 @@ class DataLoader:
 
     @staticmethod
     def _fetch_bars_paginated(
-        client, symbol: str, freq: int, start_date: str, end_date: str,
+        client,
+        symbol: str,
+        freq: int,
+        start_date: str,
+        end_date: str,
     ) -> Optional[pd.DataFrame]:
         """Walk backward through ``bars()`` pages until the requested
         window is covered, then clip and concatenate.
@@ -215,14 +225,14 @@ class DataLoader:
         out.index.name = "trade_date"
         for col in ("open", "high", "low", "close", "volume"):
             out[col] = pd.to_numeric(out[col], errors="coerce")
-        out = out[["open", "high", "low", "close", "volume"]].dropna(
-            subset=["open", "high", "low", "close"]
-        )
+        out = out[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
         return out.sort_index() if not out.empty else None
 
     @staticmethod
     def _normalize_bars(
-        df: Optional[pd.DataFrame], start_date: str, end_date: str,
+        df: Optional[pd.DataFrame],
+        start_date: str,
+        end_date: str,
     ) -> Optional[pd.DataFrame]:
         """Normalize `bars()` output and clip to the requested window.
 
@@ -243,10 +253,8 @@ class DataLoader:
         out = out.sort_index()
         for col in ("open", "high", "low", "close", "volume"):
             out[col] = pd.to_numeric(out[col], errors="coerce")
-        out = out[["open", "high", "low", "close", "volume"]].dropna(
-            subset=["open", "high", "low", "close"]
-        )
+        out = out[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
         # Inclusive end-of-day so a `2025-02-01` window keeps the 15:00 bar.
         end_ts = pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-        out = out.loc[pd.Timestamp(start_date):end_ts]
+        out = out.loc[pd.Timestamp(start_date) : end_ts]
         return out if not out.empty else None

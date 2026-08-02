@@ -53,7 +53,7 @@ pytestmark = pytest.mark.unit
 # identity, so this only overflows on paths that go through ``float()`` — the
 # ``int()``-based clamp helpers legitimately clamp it to their maximum instead.
 # Kept under Python's 4300-digit int→str limit so pytest can build a test id.
-_UNREPRESENTABLE_INT = 10 ** 400
+_UNREPRESENTABLE_INT = 10**400
 
 
 # ── read-only clamp helpers: non-finite falls back, finite is unchanged ────────
@@ -143,9 +143,7 @@ def test_place_order_never_reaches_service_with_malformed_arguments(
     monkeypatch.setattr("src.tools.trading_connector_tool.place_order", fail_place_order)
 
     payload = json.loads(
-        TradingPlaceOrderTool().execute(
-            symbol="NVDA", connection="alpaca-paper-trade", side="buy", **bad_kwargs
-        )
+        TradingPlaceOrderTool().execute(symbol="NVDA", connection="alpaca-paper-trade", side="buy", **bad_kwargs)
     )
 
     assert payload["status"] == "error"
@@ -294,9 +292,7 @@ def test_qveris_execute_accepts_a_genuinely_empty_parameters_object(
     monkeypatch.setattr(qt.QVerisExecuteTool, "_client", lambda self: FakeClient())
 
     payload = json.loads(
-        qt.QVerisExecuteTool().execute(
-            tool_id="tool_1", parameters={}, session_id="s1", expected_cost="1 credit"
-        )
+        qt.QVerisExecuteTool().execute(tool_id="tool_1", parameters={}, session_id="s1", expected_cost="1 credit")
     )
 
     assert payload["ok"] is True
@@ -309,15 +305,11 @@ def test_qveris_execute_accepts_a_genuinely_empty_parameters_object(
 
 def test_report_audit_rejects_invalid_ratio_and_seed() -> None:
     """Malformed sampling options error instead of silently reshaping the sample."""
-    bad_ratio = json.loads(
-        ReportAuditTool().execute(command="extract", report_text="收入：1亿", ratio="invalid")
-    )
+    bad_ratio = json.loads(ReportAuditTool().execute(command="extract", report_text="收入：1亿", ratio="invalid"))
     assert bad_ratio["status"] == "error"
     assert "invalid ratio" in bad_ratio["error"]
 
-    bad_seed = json.loads(
-        ReportAuditTool().execute(command="extract", report_text="收入：1亿", seed=float("inf"))
-    )
+    bad_seed = json.loads(ReportAuditTool().execute(command="extract", report_text="收入：1亿", seed=float("inf")))
     assert bad_seed["status"] == "error"
     assert "invalid seed" in bad_seed["error"]
 
@@ -329,9 +321,7 @@ def test_report_audit_rejects_invalid_ratio_and_seed() -> None:
 def test_options_pricing_rejects_unusable_spot(bad_spot: Any) -> None:
     """A missing/malformed required argument returns an error envelope."""
     payload = json.loads(
-        OptionsPricingTool().execute(
-            spot=bad_spot, strike=100, expiry_days=30, volatility=0.2, option_type="call"
-        )
+        OptionsPricingTool().execute(spot=bad_spot, strike=100, expiry_days=30, volatility=0.2, option_type="call")
     )
     assert payload["status"] == "error"
     assert payload["error"]
@@ -457,9 +447,7 @@ def test_extract_shadow_strategy_rejects_malformed_integers(
     monkeypatch.setattr(sat, "extract_shadow_profile", fail_extract)
     monkeypatch.setattr(sat, "safe_user_path", lambda raw: journal)
 
-    payload = json.loads(
-        sat.ExtractShadowStrategyTool().execute(journal_path=str(journal), **{field: float("inf")})
-    )
+    payload = json.loads(sat.ExtractShadowStrategyTool().execute(journal_path=str(journal), **{field: float("inf")}))
 
     assert payload["status"] == "error"
     assert f"{field} must be an integer" in payload["error"]
@@ -473,9 +461,7 @@ def test_scan_shadow_signals_rejects_malformed_per_market(monkeypatch: pytest.Mo
 
     monkeypatch.setattr(sat, "load_profile", fail_load)
 
-    payload = json.loads(
-        sat.ScanShadowSignalsTool().execute(shadow_id="shadow-1", per_market=float("inf"))
-    )
+    payload = json.loads(sat.ScanShadowSignalsTool().execute(shadow_id="shadow-1", per_market=float("inf")))
 
     assert payload["status"] == "error"
     assert "per_market must be an integer" in payload["error"]

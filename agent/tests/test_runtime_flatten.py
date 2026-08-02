@@ -66,9 +66,7 @@ def test_cancel_only_default_when_mandate_absent(live_runtime: Path) -> None:
         open_orders=[{"order_id": "o1"}, {"order_id": "o2"}],
         positions=[{"symbol": "NVDA", "qty": 3}],
     )
-    report = flatten.flatten_and_cancel(
-        "robinhood", broker.submit, broker.read_positions, broker.read_open_orders
-    )
+    report = flatten.flatten_and_cancel("robinhood", broker.submit, broker.read_positions, broker.read_open_orders)
     assert report["cancelled_order_ids"] == ["o1", "o2"]
     assert report["flatten_orders_submitted"] == []
     assert report["flatten_skipped_reason"] is not None
@@ -119,17 +117,13 @@ def test_errored_cancel_is_not_retried(live_runtime: Path) -> None:
         positions=[],
         fail_on={"o1"},
     )
-    report = flatten.flatten_and_cancel(
-        "robinhood", broker.submit, broker.read_positions, broker.read_open_orders
-    )
+    report = flatten.flatten_and_cancel("robinhood", broker.submit, broker.read_positions, broker.read_open_orders)
     # o1 failed once and was NOT retried; o2 still cancelled.
     assert [r for r in broker.calls if r[1].get("order_id") == "o1"] == [
         ("cancel", {"action": "cancel", "order_id": "o1"})
     ]
     assert report["cancelled_order_ids"] == ["o2"]
-    assert report["errors"] == [
-        {"phase": "cancel", "order_id": "o1", "error": "broker rejected o1"}
-    ]
+    assert report["errors"] == [{"phase": "cancel", "order_id": "o1", "error": "broker rejected o1"}]
 
 
 def test_errored_flatten_is_not_retried(live_runtime: Path) -> None:
@@ -148,9 +142,7 @@ def test_errored_flatten_is_not_retried(live_runtime: Path) -> None:
     nvda_calls = [r for r in broker.calls if r[1].get("symbol") == "NVDA"]
     assert len(nvda_calls) == 1  # errored once, not retried
     assert [s["symbol"] for s in report["flatten_orders_submitted"]] == ["AAPL"]
-    assert report["errors"] == [
-        {"phase": "flatten", "symbol": "NVDA", "error": "broker rejected NVDA"}
-    ]
+    assert report["errors"] == [{"phase": "flatten", "symbol": "NVDA", "error": "broker rejected NVDA"}]
 
 
 def test_every_action_is_audited(live_runtime: Path) -> None:
@@ -185,15 +177,11 @@ def test_read_failure_recorded_not_raised(live_runtime: Path) -> None:
         raise RuntimeError("read failed")
 
     broker = _Broker(open_orders=[], positions=[])
-    report = flatten.flatten_and_cancel(
-        "robinhood", broker.submit, broker.read_positions, boom_orders
-    )
+    report = flatten.flatten_and_cancel("robinhood", broker.submit, broker.read_positions, boom_orders)
     assert {"phase": "read_open_orders", "error": "read failed"} in report["errors"]
 
 
-def test_mandate_flatten_flag_honored(
-    live_runtime: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_mandate_flatten_flag_honored(live_runtime: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # When a (future) mandate exposes a truthy flatten_on_halt, flatten runs
     # without an explicit allow_flatten override.
     class _Mandate:
@@ -201,8 +189,6 @@ def test_mandate_flatten_flag_honored(
 
     monkeypatch.setattr(flatten, "load_mandate", lambda broker: _Mandate())
     broker = _Broker(open_orders=[], positions=[{"symbol": "NVDA", "qty": 1}])
-    report = flatten.flatten_and_cancel(
-        "robinhood", broker.submit, broker.read_positions, broker.read_open_orders
-    )
+    report = flatten.flatten_and_cancel("robinhood", broker.submit, broker.read_positions, broker.read_open_orders)
     assert [s["symbol"] for s in report["flatten_orders_submitted"]] == ["NVDA"]
     assert report["flatten_skipped_reason"] is None

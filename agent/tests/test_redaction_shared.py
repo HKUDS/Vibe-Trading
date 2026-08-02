@@ -176,9 +176,7 @@ def test_redact_payload_keeps_account_ref_provenance() -> None:
 
 
 def test_redact_payload_scrubs_top_level_sensitive_keys() -> None:
-    out = redact_payload(
-        {"symbol": "NVDA", "authorization": "Bearer rh-oauth-token", "qty": 3}
-    )
+    out = redact_payload({"symbol": "NVDA", "authorization": "Bearer rh-oauth-token", "qty": 3})
     assert out == {"symbol": "NVDA", "authorization": "[redacted]", "qty": 3}
 
 
@@ -220,9 +218,7 @@ def test_redact_payload_passes_through_scalars() -> None:
 
 
 def test_redact_tool_result_scrubs_json_keys_and_keeps_valid_json() -> None:
-    out = redact_tool_result(
-        json.dumps({"status": "ok", "api_key": "raw", "nested": {"token": "raw"}})
-    )
+    out = redact_tool_result(json.dumps({"status": "ok", "api_key": "raw", "nested": {"token": "raw"}}))
     assert json.loads(out) == {
         "status": "ok",
         "api_key": "[redacted]",
@@ -246,9 +242,7 @@ def test_redact_tool_result_scrubs_free_text_inside_a_json_envelope() -> None:
     )
     out = redact_tool_result(envelope)
     assert "shell-leak-1" not in out and "shell-leak-2" not in out
-    assert json.loads(out)["stdout"] == (
-        "api_key=[redacted]\nAuthorization: Bearer [redacted]\n"
-    )
+    assert json.loads(out)["stdout"] == ("api_key=[redacted]\nAuthorization: Bearer [redacted]\n")
 
 
 def test_redact_tool_result_scrubs_plain_text_results() -> None:
@@ -258,9 +252,7 @@ def test_redact_tool_result_scrubs_plain_text_results() -> None:
 
 def test_redact_tool_result_keeps_document_content_readable() -> None:
     """The over-redaction the sink policy fixes: a document envelope stays legible."""
-    out = redact_tool_result(
-        json.dumps({"status": "ok", "path": "a.md", "content": "# Q3\nRevenue +12%"})
-    )
+    out = redact_tool_result(json.dumps({"status": "ok", "path": "a.md", "content": "# Q3\nRevenue +12%"}))
     assert json.loads(out)["content"] == "# Q3\nRevenue +12%"
 
 
@@ -290,9 +282,7 @@ def test_redact_tool_result_none_and_empty_safe() -> None:
 _PLAINTEXT_KEY_SECRET = "pk-live-plaintext-9df3"
 _PLAINTEXT_BEARER_SECRET = "bearer-body-77aa"
 _PLAINTEXT_RESULT = (
-    "connect failed\n"
-    f'api_key="{_PLAINTEXT_KEY_SECRET}"\n'
-    f"Authorization: Bearer {_PLAINTEXT_BEARER_SECRET}\n"
+    f'connect failed\napi_key="{_PLAINTEXT_KEY_SECRET}"\nAuthorization: Bearer {_PLAINTEXT_BEARER_SECRET}\n'
 )
 _WRITE_FILE_DOC_SECRET = "PRIVATE DOC BODY 4b1c-do-not-persist"
 
@@ -355,9 +345,7 @@ def _run_one_tool_call(
 def _persisted_text(run_dir: Path) -> str:
     """Return every byte persisted under ``run_dir`` (trace JSONL + sidecars)."""
     return "\n".join(
-        path.read_text(encoding="utf-8", errors="replace")
-        for path in sorted(run_dir.rglob("*"))
-        if path.is_file()
+        path.read_text(encoding="utf-8", errors="replace") for path in sorted(run_dir.rglob("*")) if path.is_file()
     )
 
 
@@ -369,9 +357,7 @@ def test_plaintext_result_secret_reaches_neither_trace_nor_preview(
     run_dir.mkdir()
     tc = SimpleNamespace(id="tc_plain", name="fetch_quote", arguments={"symbol": "AAPL"})
 
-    events, messages, react_trace = _run_one_tool_call(
-        _StubRegistry(_PLAINTEXT_RESULT), tc, run_dir
-    )
+    events, messages, react_trace = _run_one_tool_call(_StubRegistry(_PLAINTEXT_RESULT), tc, run_dir)
 
     persisted = _persisted_text(run_dir)
     assert _PLAINTEXT_KEY_SECRET not in persisted
@@ -407,9 +393,7 @@ def test_write_file_content_argument_never_lands_in_the_trace(tmp_path: Path) ->
         arguments={"path": "notes.md", "content": _WRITE_FILE_DOC_SECRET},
     )
 
-    events, _, _ = _run_one_tool_call(
-        _StubRegistry(json.dumps({"status": "ok", "bytes_written": 42})), tc, run_dir
-    )
+    events, _, _ = _run_one_tool_call(_StubRegistry(json.dumps({"status": "ok", "bytes_written": 42})), tc, run_dir)
 
     assert _WRITE_FILE_DOC_SECRET not in _persisted_text(run_dir)
 

@@ -264,9 +264,7 @@ def test_stubbed_config_cannot_enable_cache_or_redirect_root_into_cwd(monkeypatc
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     stub = MagicMock()
-    monkeypatch.setattr(
-        "src.config.accessor.get_env_config", lambda: stub, raising=False
-    )
+    monkeypatch.setattr("src.config.accessor.get_env_config", lambda: stub, raising=False)
 
     assert base.loader_cache_enabled() is False
 
@@ -283,9 +281,7 @@ def test_loader_cache_root_honors_real_string_override(monkeypatch, tmp_path):
             vibe_trading_data_cache_root=str(tmp_path / "custom"),
         )
     )
-    monkeypatch.setattr(
-        "src.config.accessor.get_env_config", lambda: stub, raising=False
-    )
+    monkeypatch.setattr("src.config.accessor.get_env_config", lambda: stub, raising=False)
 
     assert base.loader_cache_enabled() is True
     assert base.loader_cache_root() == tmp_path / "custom"

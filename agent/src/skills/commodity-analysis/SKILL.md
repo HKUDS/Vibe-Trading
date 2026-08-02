@@ -117,10 +117,10 @@ Active restocking (price↑ volume↑) -> Passive restocking (price↓ volume↑
 # Spread ratio = (front month - second month) / front month
 spread_ratio = (front_month - second_month) / front_month
 
-if spread_ratio > 0.02:    # backwardation > 2%
+if spread_ratio > 0.02:  # backwardation > 2%
     signal = "strongly bullish"  # spot shortage
-elif spread_ratio < -0.03: # contango > 3%
-    signal = "bearish"           # oversupply
+elif spread_ratio < -0.03:  # contango > 3%
+    signal = "bearish"  # oversupply
 else:
     signal = "neutral"
 ```
@@ -156,11 +156,11 @@ else:
 
 ```python
 commodity_score = {
-    "supply_demand": +1,    # supply-demand is tight
+    "supply_demand": +1,  # supply-demand is tight
     "inventory_cycle": +2,  # passive destocking (best stage)
-    "term_structure": +1,   # mild backwardation
-    "seasonality": 0,       # neutral seasonality
-    "macro_env": -1,        # stronger dollar is a headwind
+    "term_structure": +1,  # mild backwardation
+    "seasonality": 0,  # neutral seasonality
+    "macro_env": -1,  # stronger dollar is a headwind
 }
 # Total score = +3/5 = +0.6 -> bullish bias, but not a strong signal
 ```

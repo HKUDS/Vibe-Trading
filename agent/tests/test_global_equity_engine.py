@@ -124,10 +124,10 @@ class TestCommission:
         comm = engine.calc_commission(size, price, 1, is_open=True)
         # Expected components:
         expected = (
-            notional * engine.hk_commission      # broker ~¥52.5
-            + notional * engine.hk_stamp_tax     # stamp ~¥350
-            + notional * engine.hk_levy          # SFC+FRC ~¥19.8
-            + notional * engine.hk_settlement    # CCASS ~¥7
+            notional * engine.hk_commission  # broker ~¥52.5
+            + notional * engine.hk_stamp_tax  # stamp ~¥350
+            + notional * engine.hk_levy  # SFC+FRC ~¥19.8
+            + notional * engine.hk_settlement  # CCASS ~¥7
         )
         assert comm == pytest.approx(expected, abs=0.01)
 
@@ -155,7 +155,8 @@ class TestSlippage:
 
     def test_custom_slippage(self) -> None:
         engine = GlobalEquityEngine(
-            {"initial_cash": 500_000, "slippage_us": 0.002}, market="us",
+            {"initial_cash": 500_000, "slippage_us": 0.002},
+            market="us",
         )
         assert engine.apply_slippage(100.0, 1) == pytest.approx(100.2)
 

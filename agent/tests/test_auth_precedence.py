@@ -58,9 +58,7 @@ def test_loopback_with_valid_bearer_allowed_when_key_configured(
 ) -> None:
     _set_key(monkeypatch)
 
-    response = _loopback_client().get(
-        "/runs", headers={"Authorization": "Bearer secret"}
-    )
+    response = _loopback_client().get("/runs", headers={"Authorization": "Bearer secret"})
 
     assert response.status_code == 200
 
@@ -71,9 +69,7 @@ def test_loopback_with_invalid_bearer_rejected_when_key_configured(
 ) -> None:
     _set_key(monkeypatch)
 
-    response = _loopback_client().get(
-        "/runs", headers={"Authorization": "Bearer wrong"}
-    )
+    response = _loopback_client().get("/runs", headers={"Authorization": "Bearer wrong"})
 
     assert response.status_code == 401
 
@@ -105,9 +101,7 @@ def test_event_stream_accepts_valid_bearer_when_key_configured(
 ) -> None:
     _set_key(monkeypatch)
 
-    response = _loopback_client().get(
-        "/sessions/missing/events", headers={"Authorization": "Bearer secret"}
-    )
+    response = _loopback_client().get("/sessions/missing/events", headers={"Authorization": "Bearer secret"})
 
     assert response.status_code in {404, 501}
 

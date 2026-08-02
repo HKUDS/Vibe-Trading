@@ -243,8 +243,7 @@ def get_lockup_expiry(code: str | None, horizon_days: int) -> str:
                 {
                     "ok": False,
                     "error": (
-                        f"unrecognized A-share code {code!r}; expected a 6-digit "
-                        "code such as '600519' or '600519.SH'"
+                        f"unrecognized A-share code {code!r}; expected a 6-digit code such as '600519' or '600519.SH'"
                     ),
                 },
                 ensure_ascii=False,

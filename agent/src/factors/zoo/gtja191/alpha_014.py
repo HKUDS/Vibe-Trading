@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #14 - 上涨动能
 # 简要说明: ((-1*rank(delta(returns, 3))) * rank(covariance(rank(close), rank(volume), 5)))，收益变化与量价协方差的组合。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_014",
-    "theme": ['momentum'],
-    "formula_latex": 'CLOSE - DELAY(CLOSE,5)',
-    "columns_required": ['close'],
+    "theme": ["momentum"],
+    "formula_latex": "CLOSE - DELAY(CLOSE,5)",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
     "min_warmup_bars": 6,
-    "notes": 'Simple 5d momentum = delta(close, 5).',
+    "notes": "Simple 5d momentum = delta(close, 5).",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     return delta(panel["close"], 5)

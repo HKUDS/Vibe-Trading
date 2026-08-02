@@ -57,9 +57,7 @@ def test_health_is_backward_compatible_alias(local_client: TestClient):
     assert resp.json()["status"] == "healthy"
 
 
-def test_ready_returns_200_when_provider_ready(
-    local_client: TestClient, monkeypatch: pytest.MonkeyPatch
-):
+def test_ready_returns_200_when_provider_ready(local_client: TestClient, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(system_routes, "_provider_readiness", lambda: (True, "ready"))
     resp = local_client.get("/ready")
     assert resp.status_code == 200
@@ -68,9 +66,7 @@ def test_ready_returns_200_when_provider_ready(
     assert body["service"] == "Vibe-Trading API"
 
 
-def test_ready_returns_503_when_provider_not_ready(
-    local_client: TestClient, monkeypatch: pytest.MonkeyPatch
-):
+def test_ready_returns_503_when_provider_not_ready(local_client: TestClient, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         system_routes,
         "_provider_readiness",
@@ -138,9 +134,7 @@ def test_correlation_requires_auth_for_remote_client(monkeypatch: pytest.MonkeyP
     assert resp.status_code == 401
 
 
-def test_correlation_allows_local_and_masks_generic_error(
-    local_client: TestClient, monkeypatch: pytest.MonkeyPatch
-):
+def test_correlation_allows_local_and_masks_generic_error(local_client: TestClient, monkeypatch: pytest.MonkeyPatch):
     """A generic backend failure must not leak its exception text to the client."""
     import backtest.correlation as corr
 
@@ -155,9 +149,7 @@ def test_correlation_allows_local_and_masks_generic_error(
     assert "sensitive internal detail" not in detail
 
 
-def test_correlation_value_error_still_surfaces_message(
-    local_client: TestClient, monkeypatch: pytest.MonkeyPatch
-):
+def test_correlation_value_error_still_surfaces_message(local_client: TestClient, monkeypatch: pytest.MonkeyPatch):
     """Hand-raised validation errors remain user-facing (unchanged behavior)."""
     import backtest.correlation as corr
 
@@ -170,9 +162,7 @@ def test_correlation_value_error_still_surfaces_message(
     assert resp.json()["detail"] == "Not enough overlapping history"
 
 
-def test_correlation_rate_limit_returns_429(
-    local_client: TestClient, monkeypatch: pytest.MonkeyPatch
-):
+def test_correlation_rate_limit_returns_429(local_client: TestClient, monkeypatch: pytest.MonkeyPatch):
     """Exceeding the per-client window yields 429 with a generic message."""
     import backtest.correlation as corr
 

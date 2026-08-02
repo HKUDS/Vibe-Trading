@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #50 - 开盘日内动量
 # 简要说明: (-1*RANK(CORR(RANK(HIGH),RANK(VOLUME),6))*RANK(CORR(RANK(LOW),RANK(VOLUME),6)))，类似Alpha#48。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_050",
-    "theme": ['reversal'],
-    "formula_latex": 'SUM(up_move,12)/(SUM(up_move,12)+SUM(dn_move,12)) - SUM(dn_move,12)/(SUM(up_move,12)+SUM(dn_move,12))',
-    "columns_required": ['high', 'low'],
+    "theme": ["reversal"],
+    "formula_latex": "SUM(up_move,12)/(SUM(up_move,12)+SUM(dn_move,12)) - SUM(dn_move,12)/(SUM(up_move,12)+SUM(dn_move,12))",
+    "columns_required": ["high", "low"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 12,
     "min_warmup_bars": 13,
-    "notes": 'Signed version of #49.',
+    "notes": "Signed version of #49.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     h = panel["high"]
@@ -51,9 +51,9 @@ def compute(panel: dict) -> pd.DataFrame:
     hl = h + l
     phl = h.shift(1) + l.shift(1)
     move = pd.DataFrame(
-        np.maximum(np.abs(h.to_numpy() - h.shift(1).to_numpy()),
-                   np.abs(l.to_numpy() - l.shift(1).to_numpy())),
-        index=h.index, columns=h.columns,
+        np.maximum(np.abs(h.to_numpy() - h.shift(1).to_numpy()), np.abs(l.to_numpy() - l.shift(1).to_numpy())),
+        index=h.index,
+        columns=h.columns,
     )
     dn = move.where(hl < phl, 0.0)
     up = move.where(hl > phl, 0.0)

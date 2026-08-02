@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import mimetypes
 import os
 import re
@@ -31,7 +32,6 @@ from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import unquote, urlparse
 
 import aiohttp
-import logging; logger = logging.getLogger(__name__)
 from pydantic import Field
 
 from src.channels.bus.events import OutboundMessage
@@ -40,6 +40,8 @@ from src.channels.base import BaseChannel
 from pydantic import BaseModel
 from src.channels.utils import validate_url_target
 # logging_bridge not needed (using stdlib logging)
+
+logger = logging.getLogger(__name__)
 
 try:
     from src.channels.utils import get_media_dir
@@ -259,11 +261,7 @@ class QQChannel(BaseChannel):
                     is_group=is_group,
                 )
                 if not ok:
-                    filename = (
-                        os.path.basename(urlparse(media_ref).path)
-                        or os.path.basename(media_ref)
-                        or "file"
-                    )
+                    filename = os.path.basename(urlparse(media_ref).path) or os.path.basename(media_ref) or "file"
                     await self._send_text_only(
                         chat_id=msg.chat_id,
                         is_group=is_group,
@@ -494,10 +492,7 @@ class QQChannel(BaseChannel):
                 user_id = data.author.member_openid
                 chat_type = "group"
             else:
-                chat_id = str(
-                    getattr(data.author, "id", None)
-                    or getattr(data.author, "user_openid", "unknown")
-                )
+                chat_id = str(getattr(data.author, "id", None) or getattr(data.author, "user_openid", "unknown"))
                 user_id = chat_id
                 chat_type = "c2c"
 
@@ -528,15 +523,9 @@ class QQChannel(BaseChannel):
 
             # Compose content that always contains actionable saved paths
             if recv_lines:
-                tag = (
-                    "[Image]"
-                    if any(_is_image_name(Path(p).name) for p in media_paths)
-                    else "[File]"
-                )
+                tag = "[Image]" if any(_is_image_name(Path(p).name) for p in media_paths) else "[File]"
                 file_block = "Received files:\n" + "\n".join(recv_lines)
-                content = (
-                    f"{content}\n\n{file_block}".strip() if content else f"{tag}\n{file_block}"
-                )
+                content = f"{content}\n\n{file_block}".strip() if content else f"{tag}\n{file_block}"
 
             if not content and not media_paths:
                 return
@@ -673,9 +662,7 @@ class QQChannel(BaseChannel):
                 # Stream write
                 downloaded = 0
                 chunk_size = max(1024, int(self.config.download_chunk_size or 262144))
-                max_bytes = max(
-                    1024 * 1024, int(self.config.download_max_bytes or (200 * 1024 * 1024))
-                )
+                max_bytes = max(1024 * 1024, int(self.config.download_max_bytes or (200 * 1024 * 1024)))
 
                 def _open_tmp():
                     tmp_path.parent.mkdir(parents=True, exist_ok=True)

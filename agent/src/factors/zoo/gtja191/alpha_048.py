@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #48 - 量价极值
 # 简要说明: (-1*RANK(CORR(RANK(HIGH),RANK(VOLUME),6))*RANK(CORR(RANK(LOW),RANK(VOLUME),6)))，高低价与成交量的双相关性排名。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_048",
-    "theme": ['volume', 'momentum'],
-    "formula_latex": '-1*((RANK((SIGN((CLOSE-DELAY(CLOSE,1)))+SIGN((DELAY(CLOSE,1)-DELAY(CLOSE,2)))+SIGN((DELAY(CLOSE,2)-DELAY(CLOSE,3))))))*SUM(VOLUME,5))/SUM(VOLUME,20)',
-    "columns_required": ['close', 'volume'],
+    "theme": ["volume", "momentum"],
+    "formula_latex": "-1*((RANK((SIGN((CLOSE-DELAY(CLOSE,1)))+SIGN((DELAY(CLOSE,1)-DELAY(CLOSE,2)))+SIGN((DELAY(CLOSE,2)-DELAY(CLOSE,3))))))*SUM(VOLUME,5))/SUM(VOLUME,20)",
+    "columns_required": ["close", "volume"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
     "min_warmup_bars": 21,
-    "notes": 'Rank of 3d signed momentum sum times 5d/20d volume ratio, negated.',
+    "notes": "Rank of 3d signed momentum sum times 5d/20d volume ratio, negated.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

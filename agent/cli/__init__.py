@@ -79,6 +79,7 @@ def cmd_init() -> int:
 # tmp); cli.cmd_list()`` would silently read the unpatched ``_legacy.RUNS_DIR``.
 import functools as _functools  # noqa: E402
 
+
 def _make_synced_legacy_wrapper(legacy_fn):  # noqa: ANN001
     """Wrap ``legacy_fn`` so the package-level monkeypatch sync fires first."""
 
@@ -100,7 +101,4 @@ for _cmd_name in [n for n in globals() if n.startswith("cmd_") and n != "cmd_ini
 del _cmd_name, _cmd_obj
 
 
-__all__ = ["main", *sorted(
-    name for name in globals()
-    if not name.startswith("_") and name != "main"
-)]
+__all__ = ["main", *sorted(name for name in globals() if not name.startswith("_") and name != "main")]

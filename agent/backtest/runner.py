@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator, field_valida
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -35,6 +36,7 @@ from backtest.loaders.registry import (
     resolve_loader,
 )
 from backtest.loaders.base import NoAvailableSourceError, validate_ohlc
+
 # Symbol classification lives in ``_market_hooks`` so runner.py and
 # composite.py share a single source of truth (audit-2026-05-18 B1+C1+C2).
 # ``_detect_market`` is also re-exported here for back-compat with
@@ -144,9 +146,7 @@ class BacktestConfigSchema(BaseModel):
             return v
         for entry in v:
             if not isinstance(entry, dict):
-                raise ValueError(
-                    "each event_feeds entry must be an object with name/route_template/event_type"
-                )
+                raise ValueError("each event_feeds entry must be an object with name/route_template/event_type")
             for key in ("name", "route_template", "event_type"):
                 if not str(entry.get(key, "")).strip():
                     raise ValueError(f"event_feeds entry missing required field: {key}")
@@ -155,9 +155,7 @@ class BacktestConfigSchema(BaseModel):
     @model_validator(mode="after")
     def start_before_end(self) -> "BacktestConfigSchema":
         if pd.Timestamp(self.start_date) > pd.Timestamp(self.end_date):
-            raise ValueError(
-                f"start_date ({self.start_date}) must be <= end_date ({self.end_date})"
-            )
+            raise ValueError(f"start_date ({self.start_date}) must be <= end_date ({self.end_date})")
         return self
 
 
@@ -254,9 +252,7 @@ def _validate_class_body(node: ast.ClassDef) -> None:
             continue
         if isinstance(child, ast.Pass):
             continue
-        raise ValueError(
-            f"Executable class-level statement {type(child).__name__} is not allowed"
-        )
+        raise ValueError(f"Executable class-level statement {type(child).__name__} is not allowed")
 
 
 # --- Runtime-reachable operation scrubber (VT-001 defense-in-depth) ---
@@ -318,9 +314,7 @@ _FORBIDDEN_OS_ATTRS = frozenset(
         "startfile",
     }
 )
-_FORBIDDEN_BUILTINS = frozenset(
-    {"eval", "exec", "compile", "__import__", "globals", "locals", "vars", "breakpoint"}
-)
+_FORBIDDEN_BUILTINS = frozenset({"eval", "exec", "compile", "__import__", "globals", "locals", "vars", "breakpoint"})
 # getattr/setattr/delattr can indirect around the attribute scanner
 # (``getattr(os, "system")("id")``). We reject them ONLY when the target object
 # is ``os`` or a forbidden module — keyed off the target, not the attribute
@@ -445,14 +439,8 @@ def _scan_runtime_reachable(tree: ast.Module) -> None:
     if engine_cls is None:
         return
 
-    module_funcs = {
-        n.name: n
-        for n in tree.body
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
-    worklist: list[ast.AST] = [
-        m for m in engine_cls.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
-    ]
+    module_funcs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    worklist: list[ast.AST] = [m for m in engine_cls.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))]
     visited: set[int] = set()
     while worklist:
         fn = worklist.pop()
@@ -492,9 +480,7 @@ def _validate_signal_engine_source(file_path: Path) -> None:
             continue
         if _is_safe_constant_assignment(node):
             continue
-        raise ValueError(
-            f"Executable top-level statement {type(node).__name__} is not allowed"
-        )
+        raise ValueError(f"Executable top-level statement {type(node).__name__} is not allowed")
 
     # Deep pass: the structural loop above only guards import-time execution;
     # this walks the code that runs on SignalEngine().generate() (VT-001).
@@ -505,8 +491,10 @@ def _validate_signal_engine_class(engine_cls) -> None:
     """Pre-flight check: SignalEngine can be instantiated with no args and has generate()."""
     sig = inspect.signature(engine_cls.__init__)
     required = [
-        p.name for p in sig.parameters.values()
-        if p.name != "self" and p.default is inspect.Parameter.empty
+        p.name
+        for p in sig.parameters.values()
+        if p.name != "self"
+        and p.default is inspect.Parameter.empty
         and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
     ]
     if required:
@@ -729,11 +717,7 @@ def _build_price_panel(data_map: dict[str, pd.DataFrame]) -> dict[str, pd.DataFr
     """
     panel: dict[str, pd.DataFrame] = {}
     for column in _PRICE_PANEL_COLUMNS:
-        series_by_symbol = {
-            symbol: frame[column]
-            for symbol, frame in data_map.items()
-            if column in frame.columns
-        }
+        series_by_symbol = {symbol: frame[column] for symbol, frame in data_map.items() if column in frame.columns}
         if series_by_symbol:
             panel[column] = pd.DataFrame(series_by_symbol)
     return panel
@@ -775,7 +759,7 @@ def _inject_fundamental_panel(
     Returns:
         The same panel dictionary with ``fund:<field>`` frames added.
     """
-    fields = [column[len(_FUND_PREFIX):] for column in fund_columns if column.startswith(_FUND_PREFIX)]
+    fields = [column[len(_FUND_PREFIX) :] for column in fund_columns if column.startswith(_FUND_PREFIX)]
     fields = list(dict.fromkeys(fields))
     if not fields:
         return panel
@@ -867,6 +851,7 @@ def _maybe_inject_fundamentals_for_factor_panel(
 
 # --- Main entry ---
 
+
 def main(run_dir: Path) -> None:
     """Load config, fetch data, run the selected backtest engine.
 
@@ -886,6 +871,7 @@ def main(run_dir: Path) -> None:
     # below blocks executable top-level statements but a method body still
     # runs on instantiation. See ``safe_run_dir`` for the policy.
     from src.tools.path_utils import safe_run_dir
+
     try:
         run_dir = safe_run_dir(str(run_dir))
     except ValueError as exc:
@@ -918,12 +904,16 @@ def main(run_dir: Path) -> None:
 
         if is_short_horizon_config(config):
             config = enforce_risk_first_config(config, inject=True)
-            print(json.dumps({
-                "risk_first_enforced": True,
-                "interval": config.get("interval"),
-                "has_risk_overlay": bool(config.get("risk_overlay")),
-                "has_hft_costs": bool(config.get("hft_costs")),
-            }))
+            print(
+                json.dumps(
+                    {
+                        "risk_first_enforced": True,
+                        "interval": config.get("interval"),
+                        "has_risk_overlay": bool(config.get("risk_overlay")),
+                        "has_hft_costs": bool(config.get("hft_costs")),
+                    }
+                )
+            )
     except ValueError as exc:
         print(json.dumps({"error": f"risk-first config rejected: {exc}"}))
         sys.exit(1)
@@ -977,6 +967,7 @@ def main(run_dir: Path) -> None:
     # Annualization bars
     effective_source = _detect_primary_source(codes, source)
     from backtest.metrics import calc_bars_per_year
+
     # Cross-market: use calendar-day annualization (bars_per_year=None)
     market_types = {_detect_market(c) for c in codes}
     if len(market_types) > 1:
@@ -991,6 +982,7 @@ def main(run_dir: Path) -> None:
 
     if engine_type == "options":
         from backtest.engines.options_portfolio import run_options_backtest
+
         run_options_backtest(config, loader, signal_engine, run_dir, bars_per_year=bars_per_year)
     else:
         market_engine = _create_market_engine(effective_source, config, codes)
@@ -1018,6 +1010,7 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
     # Cross-market -> CompositeEngine
     if len(markets) > 1:
         from backtest.engines.composite import CompositeEngine
+
         return CompositeEngine(config, codes)
 
     # Futures routing (Wave 2)
@@ -1025,13 +1018,16 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
         # Distinguish China vs global futures by exchange suffix
         if any(_is_china_futures(c) for c in codes):
             from backtest.engines.china_futures import ChinaFuturesEngine
+
             return ChinaFuturesEngine(config)
         from backtest.engines.global_futures import GlobalFuturesEngine
+
         return GlobalFuturesEngine(config)
 
     # Forex routing (Wave 2)
     if "forex" in markets:
         from backtest.engines.forex import ForexEngine
+
         return ForexEngine(config)
 
     # India equity routing — must precede source-based routing because India's
@@ -1039,27 +1035,33 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
     # otherwise fall through to the crypto default.
     if "india_equity" in markets:
         from backtest.engines.india_equity import IndiaEquityEngine
+
         return IndiaEquityEngine(config)
 
     # Korea equity routing — same reason as India: its effective source
     # (``pykrx``) has no Wave-1 branch and would fall through to the default.
     if "kr_equity" in markets:
         from backtest.engines.korea_equity import KoreaEquityEngine
+
         return KoreaEquityEngine(config)
 
     # Original routing (Wave 1)
     if source in ("okx", "ccxt"):
         from backtest.engines.crypto import CryptoEngine
+
         return CryptoEngine(config)
     elif source in ("tushare", "akshare"):
         if markets & {"us_equity", "hk_equity"}:
             from backtest.engines.global_equity import GlobalEquityEngine
+
             market = _detect_submarket(codes)
             return GlobalEquityEngine(config, market=market)
         from backtest.engines.china_a import ChinaAEngine
+
         return ChinaAEngine(config)
     elif source == "yfinance":
         from backtest.engines.global_equity import GlobalEquityEngine
+
         market = _detect_submarket(codes)
         return GlobalEquityEngine(config, market=market)
     else:
@@ -1068,9 +1070,11 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
         # AAPL.US dataset gets US-equity execution rules instead of crypto.
         if markets & {"us_equity", "hk_equity"}:
             from backtest.engines.global_equity import GlobalEquityEngine
+
             market = _detect_submarket(codes)
             return GlobalEquityEngine(config, market=market)
         from backtest.engines.crypto import CryptoEngine
+
         return CryptoEngine(config)
 
 
@@ -1135,9 +1139,7 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
             fields=fields,
             interval=interval,
         )
-        market_result = _restore_original_codes(
-            result, market_codes, normalized_codes
-        )
+        market_result = _restore_original_codes(result, market_codes, normalized_codes)
         if market_result:
             served_by.add(src_name)
         missing = [code for code in market_codes if code not in market_result]
@@ -1153,22 +1155,16 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
             if not fb_loader.is_available():
                 continue
             fb_codes = _normalize_codes(missing, fb_name)
-            fallback_result = fb_loader.fetch(
-                fb_codes, start_date, end_date, interval=interval
-            )
+            fallback_result = fb_loader.fetch(fb_codes, start_date, end_date, interval=interval)
             mapped = _restore_original_codes(fallback_result, missing, fb_codes)
             if mapped:
                 market_result.update(mapped)
                 missing = [code for code in missing if code not in mapped]
                 served_by.add(str(getattr(fb_loader, "name", fb_name) or fb_name))
-                logger.info(
-                    "Runtime fallback: %s -> %s for %s", src_name, fb_name, market
-                )
+                logger.info("Runtime fallback: %s -> %s for %s", src_name, fb_name, market)
 
         if missing:
-            raise NoAvailableSourceError(
-                f"incomplete data for {market}; missing symbols: {missing}"
-            )
+            raise NoAvailableSourceError(f"incomplete data for {market}; missing symbols: {missing}")
         merged.update(market_result)
 
     config["_actual_sources"] = sorted(served_by)
@@ -1198,9 +1194,9 @@ def fetch_data_map(config: dict) -> DataFetchResult:
         # Prefer the loaders that actually served rows; the symbol-pattern guess
         # is only a fallback for a stubbed/patched fetcher that recorded nothing.
         recorded = config.pop("_actual_sources", None)
-        used_sources: list[str] = [
-            str(name) for name in recorded or [] if str(name).strip()
-        ] or sorted(_group_codes_by_source(codes))
+        used_sources: list[str] = [str(name) for name in recorded or [] if str(name).strip()] or sorted(
+            _group_codes_by_source(codes)
+        )
     else:
         codes = _normalize_codes(codes, source)
         primary_source = source
@@ -1239,10 +1235,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
             for fallback_source in FALLBACK_CHAINS.get(market, []):
                 if not missing:
                     break
-                if (
-                    fallback_source == primary_source
-                    or fallback_source not in LOADER_REGISTRY
-                ):
+                if fallback_source == primary_source or fallback_source not in LOADER_REGISTRY:
                     continue
                 fallback_loader = LOADER_REGISTRY[fallback_source]()
                 if not fallback_loader.is_available():
@@ -1254,28 +1247,19 @@ def fetch_data_map(config: dict) -> DataFetchResult:
                     config.get("end_date", ""),
                     interval=interval,
                 )
-                mapped = _restore_original_codes(
-                    fallback_result, missing, fallback_codes
-                )
+                mapped = _restore_original_codes(fallback_result, missing, fallback_codes)
                 if mapped:
                     data_map.update(mapped)
                     missing = [code for code in missing if code not in mapped]
-                    fb_served_by = str(
-                        getattr(fallback_loader, "name", fallback_source)
-                        or fallback_source
-                    )
+                    fb_served_by = str(getattr(fallback_loader, "name", fallback_source) or fallback_source)
                     if not used_sources:
                         source = fb_served_by
                         loader = fallback_loader
                     used_sources.append(fb_served_by)
-                    logger.info(
-                        "Runtime fallback: %s -> %s", primary_source, fb_served_by
-                    )
+                    logger.info("Runtime fallback: %s -> %s", primary_source, fb_served_by)
 
         if missing:
-            raise NoAvailableSourceError(
-                f"incomplete data for source={primary_source}; missing symbols: {missing}"
-            )
+            raise NoAvailableSourceError(f"incomplete data for source={primary_source}; missing symbols: {missing}")
 
     data_map = _sanitize_data_map(data_map)
     return DataFetchResult(

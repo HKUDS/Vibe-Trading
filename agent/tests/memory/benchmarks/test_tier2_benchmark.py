@@ -77,9 +77,7 @@ def compression_result(
     tier2_tmp_path: Path,
 ) -> CompressionResult:
     """Run compression evaluation once and share across tests."""
-    return run_compression_evaluation(
-        memories_corpus, queries_dataset, tier2_tmp_path
-    )
+    return run_compression_evaluation(memories_corpus, queries_dataset, tier2_tmp_path)
 
 
 @pytest.fixture(scope="session")
@@ -89,9 +87,7 @@ def hierarchy_result(
     tier2_tmp_path: Path,
 ) -> HierarchyResult:
     """Run hierarchy evaluation once and share across tests."""
-    return run_hierarchy_evaluation(
-        memories_corpus, queries_dataset, tier2_tmp_path
-    )
+    return run_hierarchy_evaluation(memories_corpus, queries_dataset, tier2_tmp_path)
 
 
 @pytest.fixture(scope="session")
@@ -127,12 +123,8 @@ def tier2_report(
             "raw_p5": round(compression_result.raw_p5, 4),
             "daily_p5": round(compression_result.daily_p5, 4),
             "digest_p5": round(compression_result.digest_p5, 4),
-            "daily_quality_retention": round(
-                compression_result.daily_quality_retention, 4
-            ),
-            "digest_quality_retention": round(
-                compression_result.digest_quality_retention, 4
-            ),
+            "daily_quality_retention": round(compression_result.daily_quality_retention, 4),
+            "digest_quality_retention": round(compression_result.digest_quality_retention, 4),
         },
         "hierarchy": {
             "full_scan_count": hierarchy_result.full_scan_count,
@@ -176,9 +168,7 @@ class TestFTS5Gate:
 
     def test_fts5_returns_results(self, fts5_result: FTS5Result) -> None:
         """FTS5 should return non-zero P@5 (proves indexing works)."""
-        assert fts5_result.fts5_p5 > 0, (
-            "FTS5 returned zero precision — indexing or search may be broken"
-        )
+        assert fts5_result.fts5_p5 > 0, "FTS5 returned zero precision — indexing or search may be broken"
 
 
 # ---------------------------------------------------------------------------
@@ -203,15 +193,11 @@ class TestLinksGate:
             f"< 75% of direct P@5={links_result.direct_p5:.4f}"
         )
 
-    def test_links_provide_additional_hits(
-        self, links_result: LinksResult
-    ) -> None:
+    def test_links_provide_additional_hits(self, links_result: LinksResult) -> None:
         """Link expansion should find at least some extra ground-truth items."""
         # This is informational — link expansion may not always help
         # but should produce at least 1 extra hit across all queries
-        assert links_result.link_hits >= 0, (
-            "link_hits should be non-negative"
-        )
+        assert links_result.link_hits >= 0, "link_hits should be non-negative"
 
 
 # ---------------------------------------------------------------------------
@@ -245,28 +231,22 @@ class TestCompressionGate:
             f"Digest retention {compression_result.digest_avg_retention:.4f} < 0.05"
         )
 
-    def test_daily_quality_retention(
-        self, compression_result: CompressionResult
-    ) -> None:
+    def test_daily_quality_retention(self, compression_result: CompressionResult) -> None:
         """Daily-compressed corpus P@5 should be >= 60% of raw P@5."""
         if compression_result.raw_p5 == 0:
             pytest.skip("Raw P@5 is 0; quality retention undefined")
 
         assert compression_result.daily_quality_retention >= 0.60, (
-            f"Daily quality retention "
-            f"{compression_result.daily_quality_retention:.4f} < 0.60"
+            f"Daily quality retention {compression_result.daily_quality_retention:.4f} < 0.60"
         )
 
-    def test_digest_quality_retention(
-        self, compression_result: CompressionResult
-    ) -> None:
+    def test_digest_quality_retention(self, compression_result: CompressionResult) -> None:
         """Digest-compressed corpus P@5 should be >= 20% of raw P@5."""
         if compression_result.raw_p5 == 0:
             pytest.skip("Raw P@5 is 0; quality retention undefined")
 
         assert compression_result.digest_quality_retention >= 0.20, (
-            f"Digest quality retention "
-            f"{compression_result.digest_quality_retention:.4f} < 0.20"
+            f"Digest quality retention {compression_result.digest_quality_retention:.4f} < 0.20"
         )
 
 
@@ -278,9 +258,7 @@ class TestCompressionGate:
 class TestHierarchyGate:
     """Quality gate: hierarchy routing must reduce search space."""
 
-    def test_hierarchy_p5_no_regression(
-        self, hierarchy_result: HierarchyResult
-    ) -> None:
+    def test_hierarchy_p5_no_regression(self, hierarchy_result: HierarchyResult) -> None:
         """Pruned P@5 should be at least 90% of full-scan P@5.
 
         Category routing trades completeness for speed; a small P@5
@@ -295,9 +273,7 @@ class TestHierarchyGate:
             f"10% vs full-scan ({hierarchy_result.full_scan_p5:.4f}), ratio={ratio:.4f}"
         )
 
-    def test_hierarchy_reduces_search_space(
-        self, hierarchy_result: HierarchyResult
-    ) -> None:
+    def test_hierarchy_reduces_search_space(self, hierarchy_result: HierarchyResult) -> None:
         """Category pruning should reduce scan count by at least 5%."""
         assert hierarchy_result.reduction_ratio >= 0.05, (
             f"Search-space reduction {hierarchy_result.reduction_ratio:.4f} < 5%"

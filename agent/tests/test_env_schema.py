@@ -218,9 +218,7 @@ class TestEnvConfigTypeCoercion:
 class TestEnvConfigOverride:
     """Verify env vars override defaults and reset restores them."""
 
-    def test_longbridge_credentials_read_from_environment(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_longbridge_credentials_read_from_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LONGBRIDGE_APP_KEY", "app-key")
         monkeypatch.setenv("LONGBRIDGE_APP_SECRET", "app-secret")
         monkeypatch.setenv("LONGBRIDGE_ACCESS_TOKEN", "access-token")
@@ -231,9 +229,7 @@ class TestEnvConfigOverride:
         assert data.longbridge_app_secret == "app-secret"
         assert data.longbridge_access_token == "access-token"
 
-    def test_env_override_and_reset(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_override_and_reset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LANGCHAIN_PROVIDER", "deepseek")
         monkeypatch.setenv("TIMEOUT_SECONDS", "60")
         monkeypatch.setenv("TUSHARE_TOKEN", "test_token_123")
@@ -253,9 +249,7 @@ class TestEnvConfigOverride:
         assert c2.llm.timeout_seconds == 120
         assert c2.data.tushare_token == ""
 
-    def test_multiple_overrides_simultaneously(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_multiple_overrides_simultaneously(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SWARM_MAX_WORKERS", "8")
         monkeypatch.setenv("CCXT_EXCHANGE", "okx")
         monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000")
@@ -316,9 +310,7 @@ class TestSingletonBehavior:
         c3 = get_env_config()
         assert c3 is not c1
 
-    def test_reset_picks_up_new_env(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_reset_picks_up_new_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         c1 = get_env_config()
         assert c1.llm.timeout_seconds == 120
 
@@ -391,10 +383,20 @@ class TestParseBool:
     @pytest.mark.parametrize(
         "value",
         [
-            "0", "false", "False", "FALSE",
-            "no", "No", "NO",
-            "off", "Off", "OFF",
-            "", "random", "2", "maybe",
+            "0",
+            "false",
+            "False",
+            "FALSE",
+            "no",
+            "No",
+            "NO",
+            "off",
+            "Off",
+            "OFF",
+            "",
+            "random",
+            "2",
+            "maybe",
         ],
     )
     def test_falsy(self, value: str) -> None:

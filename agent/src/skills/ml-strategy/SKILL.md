@@ -146,11 +146,15 @@ def walk_forward_predict(
             # Build the model
             if model_type == "random_forest":
                 model = RandomForestClassifier(
-                    n_estimators=100, max_depth=5, random_state=42,
+                    n_estimators=100,
+                    max_depth=5,
+                    random_state=42,
                 )
             elif model_type == "gradient_boosting":
                 model = GradientBoostingClassifier(
-                    n_estimators=100, max_depth=3, learning_rate=0.05,
+                    n_estimators=100,
+                    max_depth=3,
+                    learning_rate=0.05,
                     random_state=42,
                 )
             elif model_type == "ridge":

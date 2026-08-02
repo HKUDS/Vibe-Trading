@@ -45,10 +45,8 @@ buy_sm_amount_rate | float | Y | 今日小单净流入 净占比%
 **接口示例**
 
 ```python
-
-#获取当日所有板块资金流向
-df = pro.moneyflow_mkt_dc(start_date='20240901', end_date='20240930')
-
+# 获取当日所有板块资金流向
+df = pro.moneyflow_mkt_dc(start_date="20240901", end_date="20240930")
 ```
 
 <br>

@@ -99,9 +99,7 @@ class DataLoader:
                     start_date=start_date,
                     end_date=end_date,
                     fields=None,
-                    fetch=lambda code=code: self._fetch_one(
-                        code, start_date, end_date, interval
-                    ),
+                    fetch=lambda code=code: self._fetch_one(code, start_date, end_date, interval),
                 )
                 if df is not None and not df.empty:
                     result[code] = df
@@ -110,7 +108,11 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self, code: str, start_date: str, end_date: str, interval: str,
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
+        interval: str,
     ) -> Optional[pd.DataFrame]:
         """Resolve one symbol and build its OHLCV frame, or ``None`` on a miss.
 

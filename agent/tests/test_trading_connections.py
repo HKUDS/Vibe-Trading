@@ -67,9 +67,7 @@ def test_connector_profile_id_for_broker_prefers_live_remote_mcp() -> None:
     assert service.connector_profile_id_for_broker("futurebroker") == "futurebroker-live-mcp"
 
 
-def test_select_connection_tool_returns_canonical_profile_id(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
+def test_select_connection_tool_returns_canonical_profile_id(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """Selecting a profile should persist and return the canonical id."""
     monkeypatch.setattr(profiles, "get_runtime_root", lambda: tmp_path)
 

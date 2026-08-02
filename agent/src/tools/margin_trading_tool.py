@@ -66,7 +66,7 @@ def _extract_code(symbol: str) -> str | None:
     for part in parts:
         for prefix in ("SH", "SZ", "BJ"):
             if part.startswith(prefix):
-                part = part[len(prefix):]
+                part = part[len(prefix) :]
         if len(part) == 6 and part.isdigit():
             return part
     return None
@@ -151,8 +151,7 @@ class MarginTradingTool(BaseTool):
             "days": {
                 "type": "integer",
                 "description": (
-                    "Number of most-recent trading days to return. "
-                    f"Default {_DEFAULT_DAYS}, capped at {_MAX_DAYS}."
+                    f"Number of most-recent trading days to return. Default {_DEFAULT_DAYS}, capped at {_MAX_DAYS}."
                 ),
                 "default": _DEFAULT_DAYS,
             },
@@ -174,10 +173,7 @@ class MarginTradingTool(BaseTool):
         """
         code = _extract_code(kwargs.get("code", ""))
         if code is None:
-            return _err(
-                "Unsupported symbol: margin trading covers A-shares only "
-                "(e.g. 600519.SH or 000001.SZ)."
-            )
+            return _err("Unsupported symbol: margin trading covers A-shares only (e.g. 600519.SH or 000001.SZ).")
         days = _clamp_days(kwargs.get("days", _DEFAULT_DAYS))
 
         try:
@@ -199,10 +195,7 @@ class MarginTradingTool(BaseTool):
             try:
                 fallback_data = tushare_fallbacks.fetch_margin_trading(code, days=days)
             except Exception as fallback_exc:  # noqa: BLE001 - return both provider failures
-                return _err(
-                    f"Eastmoney margin request failed: {exc}; "
-                    f"tushare fallback failed: {fallback_exc}"
-                )
+                return _err(f"Eastmoney margin request failed: {exc}; tushare fallback failed: {fallback_exc}")
             return json.dumps(
                 {
                     "ok": True,
@@ -220,10 +213,7 @@ class MarginTradingTool(BaseTool):
             try:
                 fallback_data = tushare_fallbacks.fetch_margin_trading(code, days=days)
             except Exception as fallback_exc:  # noqa: BLE001 - preserve the original empty-data error
-                return _err(
-                    f"No margin-trading data returned for {code}. "
-                    f"Tushare fallback failed: {fallback_exc}"
-                )
+                return _err(f"No margin-trading data returned for {code}. Tushare fallback failed: {fallback_exc}")
             return json.dumps(
                 {
                     "ok": True,

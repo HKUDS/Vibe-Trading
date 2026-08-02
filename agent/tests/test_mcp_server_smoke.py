@@ -116,11 +116,7 @@ def _extract_tool_result(resp: dict) -> dict:
     assert content, f"tools/call response has no content: {resp}"
     text = content[0].get("text", "")
     data = json.loads(text)
-    if (
-        isinstance(data, dict)
-        and set(data.keys()) == {"result"}
-        and isinstance(data["result"], str)
-    ):
+    if isinstance(data, dict) and set(data.keys()) == {"result"} and isinstance(data["result"], str):
         try:
             data = json.loads(data["result"])
         except (json.JSONDecodeError, ValueError):
@@ -160,20 +156,21 @@ def test_mcp_server_happy_path() -> None:
 
     try:
         # 1. initialize — first call, includes cold imports + registry build.
-        _send(proc, {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "smoke-test", "version": "1"},
+        _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "smoke-test", "version": "1"},
+                },
             },
-        })
-        resp, info = _wait_for_id(q, 1, INIT_TIMEOUT)
-        assert resp is not None, (
-            f"initialize did not respond within {INIT_TIMEOUT}s (status={info})"
         )
+        resp, info = _wait_for_id(q, 1, INIT_TIMEOUT)
+        assert resp is not None, f"initialize did not respond within {INIT_TIMEOUT}s (status={info})"
         assert "result" in resp, f"initialize returned an error response: {resp}"
 
         # Required handshake step before any further request.
@@ -183,9 +180,7 @@ def test_mcp_server_happy_path() -> None:
         # drops package data or breaks tool registration shows up here.
         _send(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         resp, info = _wait_for_id(q, 2, INIT_TIMEOUT)
-        assert resp is not None, (
-            f"tools/list did not respond within {INIT_TIMEOUT}s (status={info})"
-        )
+        assert resp is not None, f"tools/list did not respond within {INIT_TIMEOUT}s (status={info})"
         tools = resp.get("result", {}).get("tools") or []
         assert len(tools) >= EXPECTED_MIN_TOOL_COUNT, (
             f"expected at least {EXPECTED_MIN_TOOL_COUNT} tools, got {len(tools)}"
@@ -197,15 +192,18 @@ def test_mcp_server_happy_path() -> None:
         # 3. tools/call analyze_options — pure CPU Black-Scholes; no network.
         # If this hangs, the cause is the registry build deadlock, not a
         # flaky data source.
-        _send(proc, {
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {
-                "name": "analyze_options",
-                "arguments": {"spot": 100.0, "strike": 105.0, "expiry_days": 30},
+        _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "analyze_options",
+                    "arguments": {"spot": 100.0, "strike": 105.0, "expiry_days": 30},
+                },
             },
-        })
+        )
         resp, info = _wait_for_id(q, 3, CALL_TIMEOUT)
         assert resp is not None, (
             f"tools/call analyze_options did not respond within {CALL_TIMEOUT}s "
@@ -220,9 +218,7 @@ def test_mcp_server_happy_path() -> None:
         data = _extract_tool_result(resp)
         price = data.get("price")
         delta = data.get("delta")
-        assert isinstance(price, (int, float)) and price > 0, (
-            f"expected positive price, got {price!r} from {data!r}"
-        )
+        assert isinstance(price, (int, float)) and price > 0, f"expected positive price, got {price!r} from {data!r}"
         assert isinstance(delta, (int, float)) and 0.0 <= delta <= 1.0, (
             f"expected call delta in [0, 1], got {delta!r} from {data!r}"
         )

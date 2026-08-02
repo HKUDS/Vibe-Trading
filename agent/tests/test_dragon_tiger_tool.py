@@ -93,9 +93,7 @@ class TestToolContract:
 class TestExecuteSuccess:
     def test_full_market_list_no_code(self) -> None:
         tool = DragonTigerTool()
-        with patch.object(
-            eastmoney_client, "throttled_get_json", return_value=_appearance_payload()
-        ) as http:
+        with patch.object(eastmoney_client, "throttled_get_json", return_value=_appearance_payload()) as http:
             out = json.loads(tool.execute(date="2024-01-02"))
 
         # Only the appearance report is queried when no code is supplied.
@@ -116,9 +114,7 @@ class TestExecuteSuccess:
     def test_with_code_adds_seats(self) -> None:
         tool = DragonTigerTool()
         payloads = [_appearance_payload(), _seat_payload()]
-        with patch.object(
-            eastmoney_client, "throttled_get_json", side_effect=payloads
-        ) as http:
+        with patch.object(eastmoney_client, "throttled_get_json", side_effect=payloads) as http:
             out = json.loads(tool.execute(date="2024-01-02", code="600519.SH"))
 
         assert http.call_count == 2
@@ -142,13 +138,16 @@ class TestExecuteError:
 
     def test_http_failure_returns_error_envelope(self) -> None:
         tool = DragonTigerTool()
-        with patch.object(
-            eastmoney_client,
-            "throttled_get_json",
-            side_effect=RuntimeError("eastmoney banned"),
-        ), patch(
-            "src.tools.dragon_tiger_tool.tushare_fallbacks.fetch_dragon_tiger",
-            side_effect=RuntimeError("no fallback"),
+        with (
+            patch.object(
+                eastmoney_client,
+                "throttled_get_json",
+                side_effect=RuntimeError("eastmoney banned"),
+            ),
+            patch(
+                "src.tools.dragon_tiger_tool.tushare_fallbacks.fetch_dragon_tiger",
+                side_effect=RuntimeError("no fallback"),
+            ),
         ):
             out = json.loads(tool.execute(date="2024-01-02"))
 
@@ -162,14 +161,17 @@ class TestExecuteError:
             "appearances": [{"code": "600519", "net_buy": 1.0}],
         }
         tool = DragonTigerTool()
-        with patch.object(
-            eastmoney_client,
-            "throttled_get_json",
-            side_effect=RuntimeError("eastmoney banned"),
-        ), patch(
-            "src.tools.dragon_tiger_tool.tushare_fallbacks.fetch_dragon_tiger",
-            return_value=fallback,
-        ) as fallback_fetch:
+        with (
+            patch.object(
+                eastmoney_client,
+                "throttled_get_json",
+                side_effect=RuntimeError("eastmoney banned"),
+            ),
+            patch(
+                "src.tools.dragon_tiger_tool.tushare_fallbacks.fetch_dragon_tiger",
+                return_value=fallback,
+            ) as fallback_fetch,
+        ):
             out = json.loads(tool.execute(date="2024-01-02", code="600519.SH"))
 
         fallback_fetch.assert_called_once_with("2024-01-02", "600519")

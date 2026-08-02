@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #22
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第22号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_022"
 
 __alpha_meta__ = {
-    'id': 'alpha101_022',
-    'nickname': 'Kakushadze Alpha #22',
-    'theme': ['volume', 'volatility'],
-    'formula_latex': '-1 * (delta(correlation(high,volume,5),5) * rank(stddev(close,20)))',
-    'columns_required': ['high', 'close', 'volume'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 25,
-    'notes': '',
+    "id": "alpha101_022",
+    "nickname": "Kakushadze Alpha #22",
+    "theme": ["volume", "volatility"],
+    "formula_latex": "-1 * (delta(correlation(high,volume,5),5) * rank(stddev(close,20)))",
+    "columns_required": ["high", "close", "volume"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 25,
+    "notes": "",
 }
 
 
@@ -56,7 +55,6 @@ def compute(panel: dict) -> pd.DataFrame:
     close = panel["close"]
     high = panel["high"]
     volume = panel["volume"]
-
 
     # Helper aliases (local closures keep the file standalone & purity-safe).
     out = -1.0 * (delta(ts_corr(high, volume, 5), 5) * rank(ts_std(close, 20)))

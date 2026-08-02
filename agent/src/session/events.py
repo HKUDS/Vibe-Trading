@@ -11,10 +11,10 @@ import logging
 import threading
 import time
 import uuid
-
-logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -45,12 +45,14 @@ class SSEEvent:
         lines = []
         if self.event_id:
             lines.append(f"id: {self.event_id}")
-        lines.extend([
-            f"event: {self.event_type}",
-            f"data: {payload}",
-            "",
-            "",
-        ])
+        lines.extend(
+            [
+                f"event: {self.event_type}",
+                f"data: {payload}",
+                "",
+                "",
+            ]
+        )
         return "\n".join(lines)
 
 
@@ -97,7 +99,7 @@ class EventBus:
             buffer = self._buffers[session_id]
             buffer.append(event)
             if len(buffer) > self.max_buffer_size:
-                self._buffers[session_id] = buffer[-self.max_buffer_size:]
+                self._buffers[session_id] = buffer[-self.max_buffer_size :]
 
             queues = list(self._subscribers.get(session_id, []))
 

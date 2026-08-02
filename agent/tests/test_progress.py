@@ -80,6 +80,7 @@ def test_emit_progress_routes_to_active_emitter() -> None:
 
 def test_emit_progress_swallows_emitter_errors() -> None:
     """A failing emitter must not propagate out of a tool."""
+
     def _boom(_ev: ProgressEvent) -> None:
         raise RuntimeError("emitter is angry")
 
@@ -148,9 +149,7 @@ def test_heartbeat_timer_logs_warning_when_clamped(
     """Clamping a sub-0.5s interval emits exactly one warning record."""
     with caplog.at_level(logging.WARNING, logger="src.agent.progress"):
         HeartbeatTimer("x", interval=0.01, emit=lambda d: None)
-    clamp_records = [
-        r for r in caplog.records if "clamped" in r.getMessage()
-    ]
+    clamp_records = [r for r in caplog.records if "clamped" in r.getMessage()]
     assert len(clamp_records) == 1
     assert clamp_records[0].levelno == logging.WARNING
 

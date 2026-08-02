@@ -49,9 +49,7 @@ def settings_env_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def settings_client(
-    tmp_path: Path, settings_env_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> TestClient:
+def settings_client(tmp_path: Path, settings_env_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Serve the settings API against a throwaway .env pair in tmp_path."""
     env_example = tmp_path / ".env.example"
     env_example.write_text(
@@ -67,9 +65,7 @@ def settings_client(
         encoding="utf-8",
     )
     monkeypatch.setattr(api_server, "ENV_PATH", settings_env_path)
-    monkeypatch.setattr(
-        api_server, "LEGACY_ENV_PATH", tmp_path / "legacy" / ".env", raising=False
-    )
+    monkeypatch.setattr(api_server, "LEGACY_ENV_PATH", tmp_path / "legacy" / ".env", raising=False)
     monkeypatch.setattr(api_server, "ENV_EXAMPLE_PATH", env_example)
     monkeypatch.delenv("API_AUTH_KEY", raising=False)
     return TestClient(api_server.app, client=("127.0.0.1", 50000))
@@ -255,9 +251,7 @@ class TestRequestPayload:
             pytest.skip("langchain-openai is not installed")
         from langchain_core.messages import HumanMessage
 
-        instance = llm_mod.ChatOpenAIWithReasoning(
-            model="gpt-5.6-sol", api_key="sk-test", reasoning_effort=effort
-        )
+        instance = llm_mod.ChatOpenAIWithReasoning(model="gpt-5.6-sol", api_key="sk-test", reasoning_effort=effort)
         return instance._get_request_payload([HumanMessage(content="hi")])
 
     def test_explicit_none_reaches_the_request(self) -> None:
@@ -283,13 +277,9 @@ class TestSettingsAllowlist:
         response = settings_client.put("/settings/llm", json=_settings_payload("none"))
 
         assert response.status_code == 200
-        assert "LANGCHAIN_REASONING_EFFORT=none" in settings_env_path.read_text(
-            encoding="utf-8"
-        )
+        assert "LANGCHAIN_REASONING_EFFORT=none" in settings_env_path.read_text(encoding="utf-8")
 
-    def test_rejection_message_lists_every_accepted_value(
-        self, settings_client: TestClient
-    ) -> None:
+    def test_rejection_message_lists_every_accepted_value(self, settings_client: TestClient) -> None:
         """A rejected caller must not be told that only low..max are valid."""
         response = settings_client.put("/settings/llm", json=_settings_payload("bogus"))
 

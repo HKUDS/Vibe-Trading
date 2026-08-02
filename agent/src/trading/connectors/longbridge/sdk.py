@@ -77,9 +77,7 @@ class LongbridgeConfig:
     timeout: float = 15.0
     readonly: bool = True
     _credential_source: str | None = field(default=None, repr=False, compare=False)
-    _credential_error: LongbridgeCredentialError | None = field(
-        default=None, repr=False, compare=False
-    )
+    _credential_error: LongbridgeCredentialError | None = field(default=None, repr=False, compare=False)
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any] | None = None) -> "LongbridgeConfig":
@@ -140,7 +138,9 @@ class LongbridgeConfig:
 _OVERLAY_KEYS = ("profile", "region")
 
 
-def build_config(profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None) -> "LongbridgeConfig":
+def build_config(
+    profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None
+) -> "LongbridgeConfig":
     """Resolve credentials atomically, then apply profile and region overlays.
 
     The public return type and call signature are unchanged. Credential source
@@ -165,9 +165,7 @@ def build_config(profile_config: Mapping[str, Any] | None = None, overrides: Map
                 base[key] = value
 
     base["_credential_source"] = resolution.source if resolution is not None else None
-    base["_credential_error"] = (
-        _credential_error(resolution) if resolution is not None else resolution_error
-    )
+    base["_credential_error"] = _credential_error(resolution) if resolution is not None else resolution_error
     return LongbridgeConfig.from_mapping(base)
 
 
@@ -237,9 +235,7 @@ def check_status(config: LongbridgeConfig | None = None) -> dict[str, Any]:
     }
 
     if credential_error is None and not configured:
-        credential_error = LongbridgeCredentialError(
-            "credentials_missing", tuple(_missing_fields(cfg))
-        )
+        credential_error = LongbridgeCredentialError("credentials_missing", tuple(_missing_fields(cfg)))
     if credential_error is not None:
         return _status_error(
             report,
@@ -273,9 +269,7 @@ def _credential_error(resolution: Any) -> LongbridgeCredentialError | None:
     if resolution.credentials is not None:
         return None
     if resolution.conflict_fields:
-        return LongbridgeCredentialError(
-            "credentials_conflict", resolution.conflict_fields
-        )
+        return LongbridgeCredentialError("credentials_conflict", resolution.conflict_fields)
     code = "credentials_missing" if resolution.source is None else "credentials_partial"
     return LongbridgeCredentialError(code, resolution.missing_fields)
 
@@ -292,9 +286,7 @@ def _credential_error_message(error: LongbridgeCredentialError) -> str:
 def _status_error(report: dict[str, Any], code: str, message: str) -> dict[str, Any]:
     report.update(
         status="error",
-        connection_state=(
-            "not_configured" if code == "credentials_missing" else "error"
-        ),
+        connection_state=("not_configured" if code == "credentials_missing" else "error"),
         error_code=code,
         error=message,
     )
@@ -347,17 +339,15 @@ def get_positions(config: LongbridgeConfig | None = None) -> dict[str, Any]:
 #: connectors' meaning. Matching is normalized so it works whether the SDK
 #: stringifies a status as ``Filled``, ``FilledStatus`` or ``OrderStatus.Filled``.
 #: ``PartialFilled`` is deliberately NOT terminal (still open).
-_TERMINAL_ORDER_STATUSES = frozenset(
-    {"filled", "canceled", "cancelled", "rejected", "expired", "partialwithdrawal"}
-)
+_TERMINAL_ORDER_STATUSES = frozenset({"filled", "canceled", "cancelled", "rejected", "expired", "partialwithdrawal"})
 
 
 def _normalize_status(value: Any) -> str:
     """Normalize a status to a bare lower-case member name for comparison."""
     text = str(value or "").strip().lower()
-    text = text.rsplit(".", 1)[-1]          # drop an ``orderstatus.`` prefix
+    text = text.rsplit(".", 1)[-1]  # drop an ``orderstatus.`` prefix
     if text.endswith("status"):
-        text = text[: -len("status")]        # drop a ``...Status`` suffix
+        text = text[: -len("status")]  # drop a ``...Status`` suffix
     return text
 
 
@@ -437,8 +427,7 @@ def get_historical_bars(
 #: so we structurally refuse anything that is not the declared paper profile —
 #: this connector can never place a live order by design.
 _PAPER_ONLY_ERROR = (
-    "Longbridge order placement is paper-only (no runtime paper/live "
-    "discriminator); live orders are not supported."
+    "Longbridge order placement is paper-only (no runtime paper/live discriminator); live orders are not supported."
 )
 
 _SIDE_MAP = {"buy": "Buy", "sell": "Sell"}
@@ -632,9 +621,7 @@ def _require_openapi() -> ModuleType:
             return module
         except ModuleNotFoundError:
             continue
-    raise LongbridgeDependencyError(
-        "Longbridge SDK is not installed; run `pip install longbridge`."
-    )
+    raise LongbridgeDependencyError("Longbridge SDK is not installed; run `pip install longbridge`.")
 
 
 def _build_config(cfg: LongbridgeConfig):
@@ -659,9 +646,7 @@ def _require_resolved_config(cfg: LongbridgeConfig) -> None:
     missing = _missing_fields(cfg)
     if missing:
         raise LongbridgeConfigError(
-            _credential_error_message(
-                LongbridgeCredentialError("credentials_missing", tuple(missing))
-            )
+            _credential_error_message(LongbridgeCredentialError("credentials_missing", tuple(missing)))
         )
 
 

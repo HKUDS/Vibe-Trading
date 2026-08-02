@@ -62,14 +62,9 @@ def test_skill_sources_are_subset_of_valid_sources() -> None:
     # which also match the lowercase-id regex; restrict the drift check to rows that
     # look like data-source rows by excluding known tool-name prefixes.
     tool_prefixes = ("get_", "screen_", "search_", "iwencai")
-    candidate_sources = {
-        name for name in named if not name.startswith(tool_prefixes)
-    }
+    candidate_sources = {name for name in named if not name.startswith(tool_prefixes)}
     unknown = candidate_sources - VALID_SOURCES
-    assert not unknown, (
-        f"data-routing SKILL.md names sources absent from VALID_SOURCES: "
-        f"{sorted(unknown)}"
-    )
+    assert not unknown, f"data-routing SKILL.md names sources absent from VALID_SOURCES: {sorted(unknown)}"
 
 
 def test_new_sources_are_documented() -> None:
@@ -91,9 +86,7 @@ def test_new_sources_are_documented() -> None:
 
 # A Capability table row looks like ``| Stock news | `get_stock_news` | A-share, US, HK | — |``.
 # Capture the tool name (col 2, backtick-wrapped) and its market-coverage cell (col 3).
-_CAPABILITY_RE = re.compile(
-    r"^\|[^|]*\|\s*`([a-z_]+)`\s*\|\s*([^|]+?)\s*\|"
-)
+_CAPABILITY_RE = re.compile(r"^\|[^|]*\|\s*`([a-z_]+)`\s*\|\s*([^|]+?)\s*\|")
 
 # Market tokens we assert on, mapped to the substrings each tool's live ``description``
 # uses to name that market. The doc's coverage column must name every market the
@@ -139,17 +132,13 @@ def test_capability_market_coverage_matches_tool_descriptions() -> None:
         "get_financial_statements": FinancialStatementsTool.description,
     }
     for tool_name, tool_desc in tools.items():
-        assert tool_name in coverage, (
-            f"data-routing SKILL.md Capability table missing row for {tool_name}"
-        )
+        assert tool_name in coverage, f"data-routing SKILL.md Capability table missing row for {tool_name}"
         doc_cell = coverage[tool_name]
         for market, desc_aliases in _MARKET_TOKENS.items():
             covered_by_tool = any(alias in tool_desc for alias in desc_aliases)
             if not covered_by_tool:
                 continue
-            doc_aliases = (market,) + tuple(
-                a for a in desc_aliases if a != market
-            )
+            doc_aliases = (market,) + tuple(a for a in desc_aliases if a != market)
             assert any(alias in doc_cell for alias in doc_aliases), (
                 f"{tool_name} description covers {market} but the data-routing "
                 f"Capability column lists only {doc_cell!r}"

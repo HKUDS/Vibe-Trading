@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #13 - 开盘涨幅
 # 简要说明: (-1 * rank( covariance(rank(close), rank(volume), 5))) ，收盘价与成交量5日协方差排名取负。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_013",
-    "theme": ['microstructure'],
-    "formula_latex": '(((HIGH*LOW)^0.5) - VWAP)',
-    "columns_required": ['high', 'low', 'volume', 'amount'],
+    "theme": ["microstructure"],
+    "formula_latex": "(((HIGH*LOW)^0.5) - VWAP)",
+    "columns_required": ["high", "low", "volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 1,
     "min_warmup_bars": 1,
-    "notes": 'Geometric mean of high/low minus vwap.',
+    "notes": "Geometric mean of high/low minus vwap.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     h = panel["high"]

@@ -19,9 +19,7 @@ def _panel(n_dates: int = 30, n_codes: int = 10, seed: int = 0) -> tuple[pd.Data
     codes = [f"C{i:02d}" for i in range(n_codes)]
     rng = np.random.default_rng(seed)
     factor = pd.DataFrame(rng.normal(size=(n_dates, n_codes)), index=dates, columns=codes)
-    ret = pd.DataFrame(
-        rng.normal(scale=0.01, size=(n_dates, n_codes)), index=dates, columns=codes
-    )
+    ret = pd.DataFrame(rng.normal(scale=0.01, size=(n_dates, n_codes)), index=dates, columns=codes)
     return factor, ret
 
 
@@ -72,9 +70,7 @@ def test_run_factor_analysis_single_day_ic_std_is_finite_json() -> None:
         assert out["ic_count"] == 1
         assert out["ic_std"] == 0.0
         assert out["ir"] == 0.0
-        summary = json.loads(
-            (root / "out" / "ic_summary.json").read_text(encoding="utf-8")
-        )
+        summary = json.loads((root / "out" / "ic_summary.json").read_text(encoding="utf-8"))
         assert summary["ic_std"] == 0.0
         json.dumps(out, allow_nan=False)
         json.dumps(summary, allow_nan=False)

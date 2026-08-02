@@ -3,11 +3,11 @@
 Covers issue #231 — a single rate-limited engine (DuckDuckGo) should no longer
 fail the whole search. All tests mock ``ddgs.DDGS`` so no network calls are made.
 """
+
 import json
 import sys
 from contextlib import contextmanager
 from types import ModuleType
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -170,9 +170,7 @@ def test_network_failure_fast_fails_to_cn_fallback(monkeypatch):
 
     monkeypatch.setattr(
         "src.tools.web_search_tool._sogou_search",
-        lambda query, max_results=5: [
-            {"title": "fallback", "href": "https://example.test/f", "body": "ok"}
-        ],
+        lambda query, max_results=5: [{"title": "fallback", "href": "https://example.test/f", "body": "ok"}],
     )
     monkeypatch.setattr("src.tools.web_search_tool._bing_cn_search", lambda *_args, **_kwargs: [])
 

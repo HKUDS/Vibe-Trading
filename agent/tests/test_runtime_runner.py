@@ -435,7 +435,7 @@ def test_run_loop_synthesizes_jobs_from_triggers() -> None:
     runner = _build_runner(
         tracker,
         scheduler=sched,
-        triggers=[Trigger.market("us_equity"), Trigger.interval(30_000)],
+        triggers=[Trigger.for_market("us_equity"), Trigger.interval(30_000)],
         job_store=store,
     )
     runner.run_loop()  # no explicit jobs
@@ -465,7 +465,7 @@ def test_market_watch_cadence_is_operator_configurable() -> None:
     runner = _build_runner(
         tracker,
         scheduler=sched,
-        triggers=[Trigger.market("us_equity")],
+        triggers=[Trigger.for_market("us_equity")],
         job_store=_EmptyStore(),
         market_watch_ms=15_000,
     )
@@ -490,7 +490,7 @@ def test_market_watch_cadence_defaults_when_nonpositive() -> None:
     runner = _build_runner(
         tracker,
         scheduler=sched,
-        triggers=[Trigger.market("us_equity")],
+        triggers=[Trigger.for_market("us_equity")],
         job_store=_EmptyStore(),
         market_watch_ms=0,  # invalid → falls back to the 60s default
     )
@@ -516,9 +516,7 @@ def test_run_loop_resumes_persisted_jobs_over_triggers() -> None:
         def save(self, jobs):  # pragma: no cover - must not be called on resume
             raise AssertionError("save must not run when durable jobs exist")
 
-    runner = _build_runner(
-        tracker, scheduler=sched, triggers=[Trigger.market("us_equity")], job_store=_Store()
-    )
+    runner = _build_runner(tracker, scheduler=sched, triggers=[Trigger.for_market("us_equity")], job_store=_Store())
     runner.run_loop()
 
     assert [j.id for j in sched.jobs] == ["resumed-1"]
@@ -543,7 +541,7 @@ def test_real_audit_write_on_halt(monkeypatch, tmp_path) -> None:
     # Isolate the runtime root so the real ledger lands under tmp.
     monkeypatch.setattr("src.config.paths.Path.home", lambda: tmp_path)
     from src.live.audit import audit_ledger_path, write_live_action
-    from src.live.halt import halt_flag_set, trip_halt
+    from src.live.halt import trip_halt
 
     tracker = _OrderTracker()
     runner = LiveRunner(

@@ -20,30 +20,30 @@ from backtest.metrics import bar_returns, buy_and_hold_return
 # -------------------------------------------------------------------
 
 MARKET_BENCHMARKS: dict[str, Optional[str]] = {
-    "us_equity":  "SPY",
-    "hk_equity":  "HK.03100",   # Hang Seng China Enterprises ETF
-    "a_share":    "000300.SH",  # CSI 300 (China A-share core index)
-    "crypto":     "BTC-USDT",
-    "futures":    "ES.CME",      # E-mini S&P 500 futures
-    "forex":      None,         # no universal benchmark
+    "us_equity": "SPY",
+    "hk_equity": "HK.03100",  # Hang Seng China Enterprises ETF
+    "a_share": "000300.SH",  # CSI 300 (China A-share core index)
+    "crypto": "BTC-USDT",
+    "futures": "ES.CME",  # E-mini S&P 500 futures
+    "forex": None,  # no universal benchmark
 }
 
 
 @dataclass
 class BenchmarkResult:
-    ticker:     str
-    ret_series: pd.Series       # per-bar returns, index = timestamps
-    total_ret: float          # total return over the period
+    ticker: str
+    ret_series: pd.Series  # per-bar returns, index = timestamps
+    total_ret: float  # total return over the period
 
 
 def resolve_benchmark(
     strategy_codes: list[str],
-    source:       str,
-    start_date:   str,
-    end_date:     str,
-    interval:     str = "1D",
-    explicit:     Optional[str] = None,
-    loader:       Optional[Any] = None,
+    source: str,
+    start_date: str,
+    end_date: str,
+    interval: str = "1D",
+    explicit: Optional[str] = None,
+    loader: Optional[Any] = None,
 ) -> Optional[BenchmarkResult]:
     """Resolve the appropriate benchmark ticker and fetch its return series.
 
@@ -76,7 +76,10 @@ def resolve_benchmark(
 
     try:
         bench_df = _fetch_benchmark(
-            ticker, start_date, end_date, interval,
+            ticker,
+            start_date,
+            end_date,
+            interval,
             loader=loader,
             allow_fallback=not offline,
         )
@@ -105,10 +108,11 @@ def resolve_benchmark(
 # Internal helpers
 # -------------------------------------------------------------------
 
+
 def _resolve_ticker(
-    codes:     list[str],
-    source:    str,
-    explicit:  Optional[str],
+    codes: list[str],
+    source: str,
+    explicit: Optional[str],
 ) -> Optional[str]:
     """Pick the benchmark ticker to use."""
 
@@ -152,11 +156,11 @@ def _infer_market(codes: list[str], source: str) -> str:
 
 
 def _fetch_benchmark(
-    ticker:    str,
+    ticker: str,
     start_date: str,
-    end_date:   str,
-    interval:   str,
-    loader:    Optional[Any] = None,
+    end_date: str,
+    interval: str,
+    loader: Optional[Any] = None,
     allow_fallback: bool = True,
 ) -> pd.DataFrame:
     """Fetch benchmark OHLCV data.

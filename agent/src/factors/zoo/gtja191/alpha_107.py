@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #107
 # 简要说明: 国泰君安191短周期交易型alpha因子第107号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     (((-1 * RANK((OPEN - DELAY(HIGH, 1)))) * RANK((OPEN - DELAY(CLOSE, 1)))) * RANK((OPEN - DELAY(LOW, 1))))
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_107"
 
 __alpha_meta__ = {
-    'id': 'gtja191_107',
-    'theme': ['reversal'],
-    'formula_latex': '-1*rank(open-delay(high,1))*rank(open-delay(close,1))*rank(open-delay(low,1))',
-    'columns_required': ['open', 'high', 'low', 'close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 1,
-    'min_warmup_bars': 2,
-    'notes': '',
+    "id": "gtja191_107",
+    "theme": ["reversal"],
+    "formula_latex": "-1*rank(open-delay(high,1))*rank(open-delay(close,1))*rank(open-delay(low,1))",
+    "columns_required": ["open", "high", "low", "close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 1,
+    "min_warmup_bars": 2,
+    "notes": "",
 }
 
 

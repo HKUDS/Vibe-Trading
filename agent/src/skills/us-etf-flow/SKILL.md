@@ -173,9 +173,9 @@ def etf_flow_signal(ticker, lookback_days=20):
 
     # Signal
     if flow_pct > 0.02 and momentum > 0:
-        return "strong_inflow"   # Sustained and accelerating
+        return "strong_inflow"  # Sustained and accelerating
     elif flow_pct > 0.01:
-        return "mild_inflow"     # Positive but not accelerating
+        return "mild_inflow"  # Positive but not accelerating
     elif flow_pct < -0.02 and momentum < 0:
         return "strong_outflow"  # Sustained and accelerating outflows
     elif flow_pct < -0.01:

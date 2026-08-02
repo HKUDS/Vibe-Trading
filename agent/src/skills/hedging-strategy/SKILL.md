@@ -28,6 +28,7 @@ hedge_ratio = beta_portfolio * (portfolio_value / futures_value)
 
 # Beta estimation method
 import numpy as np
+
 # OLS regression: portfolio_returns = alpha + beta * index_returns + epsilon
 beta = np.cov(portfolio_returns, index_returns)[0][1] / np.var(index_returns)
 ```
@@ -162,8 +163,8 @@ hedge_ratio_mv = covariance / variance_hedge
 
 # Method 3: EWMA (exponentially weighted, more sensitive)
 lambda_param = 0.94  # RiskMetrics default
-ewma_cov = pd.Series(portfolio_returns * hedge_returns).ewm(alpha=1-lambda_param).mean()
-ewma_var = pd.Series(hedge_returns**2).ewm(alpha=1-lambda_param).mean()
+ewma_cov = pd.Series(portfolio_returns * hedge_returns).ewm(alpha=1 - lambda_param).mean()
+ewma_var = pd.Series(hedge_returns**2).ewm(alpha=1 - lambda_param).mean()
 hedge_ratio_ewma = ewma_cov / ewma_var
 
 # Selection guidance:
@@ -187,9 +188,9 @@ hedge_ratio_ewma = ewma_cov / ewma_var
 
 ```python
 # Is the hedge worth it?
-hedge_cost_annual = 0.04           # 4% annualized
-expected_loss_without_hedge = 0.15 # 15% expected max loss without hedge
-prob_of_loss = 0.25                # 25% probability
+hedge_cost_annual = 0.04  # 4% annualized
+expected_loss_without_hedge = 0.15  # 15% expected max loss without hedge
+prob_of_loss = 0.25  # 25% probability
 
 expected_loss = expected_loss_without_hedge * prob_of_loss  # = 3.75%
 

@@ -51,9 +51,7 @@ def _signal_engine(close_qty):
                     "date": "2025-01-01",
                     "action": "open",
                     "underlying": "SPY",
-                    "legs": [
-                        {"type": "call", "strike": 101.0, "expiry": "2025-03-21", "qty": 10}
-                    ],
+                    "legs": [{"type": "call", "strike": 101.0, "expiry": "2025-03-21", "qty": 10}],
                 },
                 {
                     "date": "2025-01-03",

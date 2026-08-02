@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #68
 # 简要说明: 国泰君安191短周期交易型alpha因子第68号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_068",
-    "theme": ['volume'],
-    "formula_latex": 'SMA(((HIGH+LOW)/2-(DELAY(HIGH,1)+DELAY(LOW,1))/2)*(HIGH-LOW)/VOLUME,15,2)',
-    "columns_required": ['high', 'low', 'volume'],
+    "theme": ["volume"],
+    "formula_latex": "SMA(((HIGH+LOW)/2-(DELAY(HIGH,1)+DELAY(LOW,1))/2)*(HIGH-LOW)/VOLUME,15,2)",
+    "columns_required": ["high", "low", "volume"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 15,
     "min_warmup_bars": 16,
-    "notes": 'Like alpha #9 but with SMA(15, m=2).',
+    "notes": "Like alpha #9 but with SMA(15, m=2).",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     h = panel["high"]

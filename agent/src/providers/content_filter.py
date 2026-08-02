@@ -10,7 +10,6 @@ worker stay in sync.
 
 from __future__ import annotations
 
-import os
 
 from src.config.accessor import get_env_config
 
@@ -35,16 +34,18 @@ CONTENT_FILTER_SKIP_MESSAGE = (
 # (SAFETY, RECITATION, BLOCKLIST, ...) instead of OpenAI's lowercase
 # "content_filter". Google's OpenAI-compatible endpoint passes these through
 # unmapped, so the detector must recognise both vocabularies. See issue #307.
-GEMINI_SAFETY_FINISH_REASONS = frozenset({
-    "SAFETY",
-    "RECITATION",
-    "BLOCKLIST",
-    "PROHIBITED_CONTENT",
-    "SPII",
-    "IMAGE_SAFETY",
-    "IMAGE_PROHIBITED_CONTENT",
-    "IMAGE_RECITATION",
-})
+GEMINI_SAFETY_FINISH_REASONS = frozenset(
+    {
+        "SAFETY",
+        "RECITATION",
+        "BLOCKLIST",
+        "PROHIBITED_CONTENT",
+        "SPII",
+        "IMAGE_SAFETY",
+        "IMAGE_PROHIBITED_CONTENT",
+        "IMAGE_RECITATION",
+    }
+)
 
 
 def is_content_filter_triggered(finish_reason: object) -> bool:

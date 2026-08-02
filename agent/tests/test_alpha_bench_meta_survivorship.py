@@ -129,7 +129,9 @@ def test_html_context_includes_universe_meta_when_present(capsys, monkeypatch, _
     assert _captured_html_context["meta"] == _UNIVERSE_META
 
 
-def test_meta_key_absent_from_envelope_and_context_when_loader_has_none(capsys, monkeypatch, _reg, _captured_html_context):
+def test_meta_key_absent_from_envelope_and_context_when_loader_has_none(
+    capsys, monkeypatch, _reg, _captured_html_context
+):
     """Loaders without _meta must not gain a stray downstream key."""
     rc, cap = _run(monkeypatch, capsys, _ns(universe="btc-usdt"), _result())
     assert rc == 0

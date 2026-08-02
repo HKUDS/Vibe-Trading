@@ -295,8 +295,8 @@ def _assert_profile(cfg: MT5Config, account: Any, mt5: Any) -> None:
     terminal_login = getattr(account, "login", None)
     if cfg.login and terminal_login is not None and int(terminal_login) != cfg.login:
         raise MT5ProfileMismatchError(
-            f"login pin mismatch: profile is configured for a different account than "
-            f"the terminal's — refusing (fail-closed)."
+            "login pin mismatch: profile is configured for a different account than "
+            "the terminal's — refusing (fail-closed)."
         )
 
 
@@ -322,9 +322,7 @@ def _resolve_symbol(mt5: Any, cfg: MT5Config, symbol: str) -> str:
         )
         matches = [m for m in matches if m]
         if not matches:
-            raise MT5ConfigError(
-                f"symbol {symbol!r} not offered by this broker (no match for {base}*)"
-            )
+            raise MT5ConfigError(f"symbol {symbol!r} not offered by this broker (no match for {base}*)")
         name = matches[0]
     if not mt5.symbol_select(name, True):
         raise MT5ConfigError(f"symbol {name!r} could not be selected in Market Watch")

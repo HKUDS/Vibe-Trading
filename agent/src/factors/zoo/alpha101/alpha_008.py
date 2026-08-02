@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Alpha #8 - 收益波动对冲
 # 简要说明: (-1 * rank(((sum(open, 5) * sum(returns, 5)) - delay((sum(open, 5) * sum(returns, 5)), 10))))，开盘累计与收益累计的滞后差。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_008"
 
 __alpha_meta__ = {
-    'id': 'alpha101_008',
-    'nickname': 'Kakushadze Alpha #8',
-    'theme': ['reversal'],
-    'formula_latex': '-1 * rank((sum(open,5)*sum(returns,5)) - delay(sum(open,5)*sum(returns,5),10))',
-    'columns_required': ['open', 'close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 15,
-    'notes': '',
+    "id": "alpha101_008",
+    "nickname": "Kakushadze Alpha #8",
+    "theme": ["reversal"],
+    "formula_latex": "-1 * rank((sum(open,5)*sum(returns,5)) - delay(sum(open,5)*sum(returns,5),10))",
+    "columns_required": ["open", "close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 15,
+    "notes": "",
 }
 
 

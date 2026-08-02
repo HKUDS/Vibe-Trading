@@ -159,11 +159,7 @@ def _json_object(value: Any) -> dict[str, Any] | None:
 
 def _is_number(value: Any) -> bool:
     """Return whether a value is a finite JSON-style number, excluding bool."""
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-    )
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
 
 
 def _infer_venue(symbol: str) -> str | None:
@@ -249,11 +245,7 @@ def _is_exchange_alias_conflict(left: str, right: str) -> bool:
         return False
     left_base, _, left_suffix = left_symbol.rpartition(".")
     right_base, _, right_suffix = right_symbol.rpartition(".")
-    return (
-        bool(left_base)
-        and left_base == right_base
-        and {left_suffix, right_suffix} == {"SH", "SS"}
-    )
+    return bool(left_base) and left_base == right_base and {left_suffix, right_suffix} == {"SH", "SS"}
 
 
 @dataclass(frozen=True)
@@ -361,11 +353,7 @@ class GroundingLedger:
     @property
     def authorized_symbols(self) -> set[str]:
         """Return exact symbols locked before the next tool batch."""
-        return {
-            record.symbol
-            for record in self._identities.values()
-            if record.status == "locked" and record.symbol
-        }
+        return {record.symbol for record in self._identities.values() if record.status == "locked" and record.symbol}
 
     @property
     def identity_status(self) -> str:
@@ -436,9 +424,7 @@ class GroundingLedger:
             return self._authorize_private_company_skill()
 
         if tool_name == "load_skill" and self._identity_required:
-            authorized = {
-                _normalize_symbol(item) for item in batch_authorized_symbols
-            }
+            authorized = {_normalize_symbol(item) for item in batch_authorized_symbols}
             frozen_status = batch_identity_status or self.identity_status
             if frozen_status != "locked" or not authorized:
                 return ToolAuthorization(
@@ -476,9 +462,7 @@ class GroundingLedger:
             )
 
         mismatched = tuple(
-            symbol
-            for symbol in symbols
-            if self._match_authorized_symbol(tool_name, symbol, authorized) is None
+            symbol for symbol in symbols if self._match_authorized_symbol(tool_name, symbol, authorized) is None
         )
         if mismatched:
             return ToolAuthorization(
@@ -519,11 +503,7 @@ class GroundingLedger:
             return requested
         if tool_name not in _BARE_US_TICKER_TOOLS or "." in requested:
             return None
-        matches = [
-            symbol
-            for symbol in authorized
-            if symbol.endswith(".US") and symbol.rsplit(".", 1)[0] == requested
-        ]
+        matches = [symbol for symbol in authorized if symbol.endswith(".US") and symbol.rsplit(".", 1)[0] == requested]
         return matches[0] if len(matches) == 1 else None
 
     def ingest_tool_result(
@@ -635,10 +615,7 @@ class GroundingLedger:
                 "I will not invent an entry price without a visible derivation or refreshed evidence."
             )
         if is_zh:
-            return (
-                "当前无法安全确认标的身份或价格证据，因此没有生成交易结论。"
-                "请确认候选证券代码和交易所后再继续。"
-            )
+            return "当前无法安全确认标的身份或价格证据，因此没有生成交易结论。请确认候选证券代码和交易所后再继续。"
         return (
             "I could not safely lock the instrument identity or price evidence, so I did not "
             "produce a trading conclusion. Please confirm the candidate symbol and venue."
@@ -742,14 +719,14 @@ class GroundingLedger:
             return
 
         raw_candidates = data.get("candidates")
-        candidates = [dict(item) for item in raw_candidates if isinstance(item, dict)] if isinstance(raw_candidates, list) else []
+        candidates = (
+            [dict(item) for item in raw_candidates if isinstance(item, dict)]
+            if isinstance(raw_candidates, list)
+            else []
+        )
         sources = data.get("sources") if isinstance(data.get("sources"), dict) else {}
         if not candidates:
-            clean_sources = [
-                str(name)
-                for name, value in sources.items()
-                if str(value).casefold() == "ok"
-            ]
+            clean_sources = [str(name) for name, value in sources.items() if str(value).casefold() == "ok"]
             self._identities[key] = IdentityRecord(
                 query=query,
                 status="not_found" if len(clean_sources) >= 2 else "invalidated",
@@ -785,16 +762,11 @@ class GroundingLedger:
         alias_conflicts = [
             record
             for record in self._identities.values()
-            if record.status == "locked"
-            and record.symbol
-            and _is_exchange_alias_conflict(record.symbol, symbol)
+            if record.status == "locked" and record.symbol and _is_exchange_alias_conflict(record.symbol, symbol)
         ]
         if alias_conflicts:
             conflicting = list(candidates)
-            conflicting.extend(
-                {"symbol": record.symbol, "source": record.source}
-                for record in alias_conflicts
-            )
+            conflicting.extend({"symbol": record.symbol, "source": record.source} for record in alias_conflicts)
             self._identities[key] = IdentityRecord(
                 query=query,
                 status="conflicting",
@@ -870,8 +842,7 @@ class GroundingLedger:
         locked_listings = [
             record
             for record in self._identities.values()
-            if record.status == "locked"
-            and record.instrument_type in {"listed_security", "fund"}
+            if record.status == "locked" and record.instrument_type in {"listed_security", "fund"}
         ]
         if locked_listings:
             return ToolAuthorization(
@@ -881,9 +852,7 @@ class GroundingLedger:
                     "A resolver has locked this entity to a listed security. Model memory "
                     "cannot replace that evidence with a private-company workflow."
                 ),
-                symbols=tuple(
-                    record.symbol for record in locked_listings if record.symbol
-                ),
+                symbols=tuple(record.symbol for record in locked_listings if record.symbol),
             )
         if self.identity_status == "not_found" or not self._identity_required:
             return ToolAuthorization(allowed=True)
@@ -905,9 +874,7 @@ class GroundingLedger:
         if tool_name != "load_skill":
             return False
         name = str(arguments.get("name") or "").strip().casefold()
-        return name in _PRIVATE_COMPANY_SKILL_NAMES or (
-            "private" in name and "company" in name
-        )
+        return name in _PRIVATE_COMPANY_SKILL_NAMES or ("private" in name and "company" in name)
 
     @staticmethod
     def _extract_symbol_arguments(arguments: Mapping[str, Any]) -> list[str]:
@@ -967,8 +934,7 @@ class GroundingLedger:
             )
             currency_conversion = (
                 str(symbol_provenance.get("currency_conversion"))
-                if isinstance(symbol_provenance, dict)
-                and symbol_provenance.get("currency_conversion")
+                if isinstance(symbol_provenance, dict) and symbol_provenance.get("currency_conversion")
                 else None
             )
             for row in rows:
@@ -1027,11 +993,14 @@ class GroundingLedger:
         symbols = self._extract_symbol_arguments(arguments)
         symbol = symbols[0] if len(symbols) == 1 else None
         if symbol:
-            symbol = self._match_authorized_symbol(
-                tool_name,
-                symbol,
-                self.authorized_symbols,
-            ) or symbol
+            symbol = (
+                self._match_authorized_symbol(
+                    tool_name,
+                    symbol,
+                    self.authorized_symbols,
+                )
+                or symbol
+            )
         source = str(payload.get("source") or tool_name)
         remaining = _MAX_GENERIC_EVIDENCE
 
@@ -1085,8 +1054,7 @@ class GroundingLedger:
         listed = [
             record
             for record in self._identities.values()
-            if record.status == "locked"
-            and record.instrument_type in {"listed_security", "fund"}
+            if record.status == "locked" and record.instrument_type in {"listed_security", "fund"}
         ]
         if listed and _PRIVATE_ASSERTION_RE.search(content):
             symbols = sorted(record.symbol for record in listed if record.symbol)
@@ -1169,17 +1137,11 @@ class GroundingLedger:
                 {
                     "code": "canonical_symbol_not_surfaced",
                     "symbols": symbols,
-                    "message": (
-                        "A price claim must surface its locked canonical symbol and venue suffix."
-                    ),
+                    "message": ("A price claim must surface its locked canonical symbol and venue suffix."),
                 }
             )
         target_symbols = set(mentioned or (symbols if len(symbols) == 1 else []))
-        target_records = [
-            record
-            for record in records
-            if not target_symbols or record.symbol in target_symbols
-        ]
+        target_records = [record for record in records if not target_symbols or record.symbol in target_symbols]
 
         sources = sorted(
             {
@@ -1194,32 +1156,18 @@ class GroundingLedger:
                 {
                     "code": "data_source_not_surfaced",
                     "sources": missing_sources,
-                    "message": (
-                        "Price claims must name the actual data source: "
-                        + ", ".join(missing_sources)
-                        + "."
-                    ),
+                    "message": ("Price claims must name the actual data source: " + ", ".join(missing_sources) + "."),
                 }
             )
 
-        currencies = sorted(
-            {record.currency for record in target_records if record.currency}
-        )
-        missing_currencies = [
-            currency
-            for currency in currencies
-            if not self._currency_is_surfaced(currency, content)
-        ]
+        currencies = sorted({record.currency for record in target_records if record.currency})
+        missing_currencies = [currency for currency in currencies if not self._currency_is_surfaced(currency, content)]
         if missing_currencies:
             issues.append(
                 {
                     "code": "currency_not_surfaced",
                     "currencies": missing_currencies,
-                    "message": (
-                        "Price claims must name their quote currency: "
-                        + ", ".join(missing_currencies)
-                        + "."
-                    ),
+                    "message": ("Price claims must name their quote currency: " + ", ".join(missing_currencies) + "."),
                 }
             )
         return issues
@@ -1344,9 +1292,7 @@ class GroundingLedger:
             candidates = [record for record in candidates if record.field == field_name]
         if date_value:
             candidates = [
-                record
-                for record in candidates
-                if record.timestamp and record.timestamp.startswith(date_value)
+                record for record in candidates if record.timestamp and record.timestamp.startswith(date_value)
             ]
         if not candidates:
             return {
@@ -1382,9 +1328,7 @@ class GroundingLedger:
         return [
             record
             for record in self._evidence
-            if record.status == "observed"
-            and record.field in _PRICE_FIELDS
-            and record.value is not None
+            if record.status == "observed" and record.field in _PRICE_FIELDS and record.value is not None
         ]
 
     @staticmethod
@@ -1417,9 +1361,7 @@ class GroundingLedger:
         candidate_symbols = {record.symbol for record in candidates if record.symbol}
         if not symbol and len(candidate_symbols) > 1:
             return False
-        observed = [
-            float(record.value) for record in candidates if record.value is not None
-        ]
+        observed = [float(record.value) for record in candidates if record.value is not None]
         if not observed:
             return False
 
@@ -1439,11 +1381,7 @@ class GroundingLedger:
                 claimed = float(right.group(1).replace(",", ""))
             except ValueError:
                 continue
-            if not any(
-                abs(item - value) <= max(abs(value) * 0.005, 1e-9)
-                for item in inputs
-                for value in observed
-            ):
+            if not any(abs(item - value) <= max(abs(value) * 0.005, 1e-9) for item in inputs for value in observed):
                 continue
             if abs(computed - claimed) <= max(abs(computed) * 0.005, 1e-9):
                 return True

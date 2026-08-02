@@ -61,10 +61,13 @@ import numpy as np
 import pandas as pd
 
 
-def compute_event_signal(event_df: pd.DataFrame, dates: pd.DatetimeIndex,
-                         decay_lambda: float = 0.1,
-                         min_score_threshold: float = 0.2,
-                         event_lookback: int = 30) -> pd.Series:
+def compute_event_signal(
+    event_df: pd.DataFrame,
+    dates: pd.DatetimeIndex,
+    decay_lambda: float = 0.1,
+    min_score_threshold: float = 0.2,
+    event_lookback: int = 30,
+) -> pd.Series:
     """Compute an event-driven signal with time decay.
 
     Args:
@@ -84,8 +87,7 @@ def compute_event_signal(event_df: pd.DataFrame, dates: pd.DatetimeIndex,
 
     for trade_date in dates:
         # Only consider events published on or before trade_date (avoid look-ahead)
-        mask = (event_df["date"] <= trade_date) & \
-               (event_df["date"] >= trade_date - pd.Timedelta(days=event_lookback))
+        mask = (event_df["date"] <= trade_date) & (event_df["date"] >= trade_date - pd.Timedelta(days=event_lookback))
         relevant = event_df[mask]
 
         if relevant.empty:
@@ -104,8 +106,7 @@ def compute_event_signal(event_df: pd.DataFrame, dates: pd.DatetimeIndex,
 ### Weighted Combination of Technical and Event Signals
 
 ```python
-def combine_signals(tech_signal: pd.Series, event_signal: pd.Series,
-                    alpha: float = 0.6) -> pd.Series:
+def combine_signals(tech_signal: pd.Series, event_signal: pd.Series, alpha: float = 0.6) -> pd.Series:
     """Combine technical and event signals with weights.
 
     Args:

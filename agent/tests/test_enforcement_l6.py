@@ -91,8 +91,13 @@ def test_extractor_ignores_unknown_extra_keys() -> None:
     intent = extract_order_intent(
         "place_equity_order",
         {
-            "symbol": "MSFT", "side": "buy", "instrument_type": "equity",
-            "quantity": 1, "time_in_force": "gtc", "client_tag": "x", "extended_hours": True,
+            "symbol": "MSFT",
+            "side": "buy",
+            "instrument_type": "equity",
+            "quantity": 1,
+            "time_in_force": "gtc",
+            "client_tag": "x",
+            "extended_hours": True,
         },
     )
     assert intent is not None
@@ -107,11 +112,22 @@ def test_extractor_rejects_non_order_tool() -> None:
 
 def test_extractor_rejects_missing_or_ambiguous_fields() -> None:
     # Missing side.
-    assert extract_order_intent("place_equity_order", {"symbol": "AAPL", "instrument_type": "equity", "notional_usd": 10}) is None
+    assert (
+        extract_order_intent("place_equity_order", {"symbol": "AAPL", "instrument_type": "equity", "notional_usd": 10})
+        is None
+    )
     # Unknown instrument.
-    assert extract_order_intent("place_equity_order", {"symbol": "AAPL", "side": "buy", "instrument_type": "warrant", "notional_usd": 10}) is None
+    assert (
+        extract_order_intent(
+            "place_equity_order", {"symbol": "AAPL", "side": "buy", "instrument_type": "warrant", "notional_usd": 10}
+        )
+        is None
+    )
     # No size at all.
-    assert extract_order_intent("place_equity_order", {"symbol": "AAPL", "side": "buy", "instrument_type": "equity"}) is None
+    assert (
+        extract_order_intent("place_equity_order", {"symbol": "AAPL", "side": "buy", "instrument_type": "equity"})
+        is None
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -213,9 +229,7 @@ def test_quantity_only_uses_broker_quote_and_enforces_notional(live_runtime: Pat
     _write_mandate(live_runtime, max_order_notional_usd=750.0)
     adapter = _BrokerQuoteAdapter(price=100.0)  # 10 * 100 = 1000 > 750
     guard = _guard(adapter)
-    out = json.loads(
-        guard.execute(symbol="AAPL", side="buy", instrument_type="equity", quantity=10.0)
-    )
+    out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="equity", quantity=10.0))
     assert adapter.quote_calls == 1
     assert out["status"] == "blocked"
     assert out["breach"]["limit"] == "max_order_notional_usd"
@@ -227,9 +241,7 @@ def test_quantity_only_in_mandate_forwards(live_runtime: Path) -> None:
     _write_mandate(live_runtime, max_order_notional_usd=2000.0)
     adapter = _BrokerQuoteAdapter(price=100.0)  # 10 * 100 = 1000 <= 2000
     guard = _guard(adapter)
-    out = json.loads(
-        guard.execute(symbol="AAPL", side="buy", instrument_type="equity", quantity=10.0)
-    )
+    out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="equity", quantity=10.0))
     assert out.get("status") == "ok"
     assert len(adapter.order_calls) == 1
 
@@ -241,9 +253,7 @@ def test_quantity_falls_back_to_data_loader(live_runtime: Path, monkeypatch: pyt
     monkeypatch.setattr(order_guard, "last_price_usd", lambda sym, ac: 100.0)
     adapter = _NoBrokerQuoteAdapter()
     guard = _guard(adapter)
-    out = json.loads(
-        guard.execute(symbol="AAPL", side="buy", instrument_type="equity", quantity=10.0)
-    )
+    out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="equity", quantity=10.0))
     assert out["status"] == "blocked"
     assert out["breach"]["limit"] == "max_order_notional_usd"
     assert adapter.order_calls == []
@@ -256,9 +266,7 @@ def test_quantity_no_quote_anywhere_denies_fail_closed(live_runtime: Path, monke
     monkeypatch.setattr(order_guard, "last_price_usd", lambda sym, ac: None)
     adapter = _NoBrokerQuoteAdapter()
     guard = _guard(adapter)
-    out = json.loads(
-        guard.execute(symbol="AAPL", side="buy", instrument_type="equity", quantity=10.0)
-    )
+    out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="equity", quantity=10.0))
     assert out["status"] == "blocked"
     assert out["decision"] == "deny"
     assert "priced" in out["reason"].lower()
@@ -268,6 +276,7 @@ def test_quantity_no_quote_anywhere_denies_fail_closed(live_runtime: Path, monke
 def test_last_price_usd_fail_closed_on_loader_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     """The loader-backed price helper denies (returns None) when no loader is
     available — never a network call in tests."""
+
     def _raise(_ac):
         raise enforcement.UniverseDataUnavailable("no loader")
 

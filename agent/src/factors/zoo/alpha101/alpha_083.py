@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #83
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第83号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_083"
 
 __alpha_meta__ = {
-    'id': 'alpha101_083',
-    'nickname': 'Kakushadze Alpha #83',
-    'theme': ['volume', 'volatility'],
-    'formula_latex': '(rank(delay((high-low)/(sum(close,5)/5), 2)) * rank(rank(volume))) / (((high-low)/(sum(close,5)/5)) / (vwap-close))',
-    'columns_required': ['high', 'low', 'close', 'volume', 'vwap'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 7,
-    'notes': '',
+    "id": "alpha101_083",
+    "nickname": "Kakushadze Alpha #83",
+    "theme": ["volume", "volatility"],
+    "formula_latex": "(rank(delay((high-low)/(sum(close,5)/5), 2)) * rank(rank(volume))) / (((high-low)/(sum(close,5)/5)) / (vwap-close))",
+    "columns_required": ["high", "low", "close", "volume", "vwap"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 7,
+    "notes": "",
 }
 
 
@@ -70,7 +69,6 @@ def compute(panel: dict) -> pd.DataFrame:
     low = panel["low"]
     volume = panel["volume"]
     vwap = panel["vwap"]
-
 
     # Helper aliases (local closures keep the file standalone & purity-safe).
     rolling_sum = _rolling_sum

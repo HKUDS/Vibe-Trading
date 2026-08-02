@@ -108,14 +108,13 @@ class DataLoader:
         # passthrough when the cache is disabled. Fundamentals are merged inside
         # the cached unit so a cached entry already carries its extra columns.
         for code in codes:
+
             def _fetch_one(code: str = code) -> Optional[pd.DataFrame]:
                 try:
                     df = self._fetch_daily_frame(code, sd, ed)
                     if df is None:
                         return None
-                    merged = self._merge_basic_fields(
-                        {code: df}, [code], start_date, end_date, cache_fields
-                    )
+                    merged = self._merge_basic_fields({code: df}, [code], start_date, end_date, cache_fields)
                     return merged.get(code)
                 except Exception as exc:
                     logger.warning("failed to fetch %s: %s", code, exc)
@@ -169,9 +168,7 @@ class DataLoader:
         for col in ["open", "high", "low", "close", "volume"]:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
-        ohlcv = df[["open", "high", "low", "close", "volume"]].dropna(
-            subset=["open", "high", "low", "close"]
-        )
+        ohlcv = df[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
         return ohlcv
 
     def _merge_basic_fields(
@@ -264,9 +261,12 @@ class DataLoader:
                 continue
             if _is_index(code) or _is_hk_equity(code) or _is_us_equity(code) or _is_crypto(code):
                 sym_type = (
-                    "index" if _is_index(code)
-                    else "HK" if _is_hk_equity(code)
-                    else "US" if _is_us_equity(code)
+                    "index"
+                    if _is_index(code)
+                    else "HK"
+                    if _is_hk_equity(code)
+                    else "US"
+                    if _is_us_equity(code)
                     else "crypto"
                 )
                 logger.warning("tushare does not support intraday data for %s (%s); skipping", code, sym_type)
@@ -283,9 +283,7 @@ class DataLoader:
                 for col in ["open", "high", "low", "close", "volume"]:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors="coerce")
-                ohlcv = df[["open", "high", "low", "close", "volume"]].dropna(
-                    subset=["open", "high", "low", "close"]
-                )
+                ohlcv = df[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
                 result[code] = ohlcv
             except Exception as exc:
                 logger.warning("failed to fetch minute data %s: %s", code, exc)

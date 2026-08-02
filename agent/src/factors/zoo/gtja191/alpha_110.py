@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #110
 # 简要说明: 国泰君安191短周期交易型alpha因子第110号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     SUM(MAX(0,HIGH-DELAY(CLOSE,1)),20) / SUM(MAX(0,DELAY(CLOSE,1)-LOW),20) * 100
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_110"
 
 __alpha_meta__ = {
-    'id': 'gtja191_110',
-    'theme': ['momentum'],
-    'formula_latex': 'sum(max(0,high-delay(close,1)),20)/sum(max(0,delay(close,1)-low),20)*100',
-    'columns_required': ['close', 'high', 'low'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 21,
-    'notes': '',
+    "id": "gtja191_110",
+    "theme": ["momentum"],
+    "formula_latex": "sum(max(0,high-delay(close,1)),20)/sum(max(0,delay(close,1)-low),20)*100",
+    "columns_required": ["close", "high", "low"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 21,
+    "notes": "",
 }
 
 

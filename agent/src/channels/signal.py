@@ -41,9 +41,7 @@ _SIG_BULLET_RE = re.compile(r"^[-*]\s+", re.MULTILINE)
 _SIG_OLIST_RE = re.compile(r"^(\d+)\.\s+", re.MULTILINE)
 _SIG_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 _SIG_BOLD_RE = re.compile(r"\*\*(.+?)\*\*|__(.+?)__", re.DOTALL)
-_SIG_ITALIC_RE = re.compile(
-    r"(?<!\*)\*([^*\n]+)\*(?!\*)|(?<![a-zA-Z0-9_])_([^_\n]+)_(?![a-zA-Z0-9_])"
-)
+_SIG_ITALIC_RE = re.compile(r"(?<!\*)\*([^*\n]+)\*(?!\*)|(?<![a-zA-Z0-9_])_([^_\n]+)_(?![a-zA-Z0-9_])")
 _SIG_STRIKE_RE = re.compile(r"~~(.+?)~~|(?<![~\w])~([^~\n]+)~(?![~\w])", re.DOTALL)
 _SIG_TOKEN_RE = re.compile(r"\x00C(\d+)\x00")
 
@@ -243,9 +241,7 @@ def _markdown_to_signal(text: str) -> tuple[str, list[str]]:
     return plain_text, text_styles
 
 
-def _partition_styles(
-    plain_text: str, chunks: list[str], text_styles: list[str]
-) -> list[list[str]]:
+def _partition_styles(plain_text: str, chunks: list[str], text_styles: list[str]) -> list[list[str]]:
     """Partition Signal textStyle ranges across message chunks.
 
     ``split_message`` slices ``plain_text`` into pieces and drops at most one
@@ -464,9 +460,7 @@ class SignalChannel(BaseChannel):
                 self.logger.info("Connecting to signal-cli daemon at {}...", base_url)
 
                 # Create HTTP client
-                self._http = httpx.AsyncClient(
-                    timeout=self._HTTP_TIMEOUT_SECONDS, base_url=base_url
-                )
+                self._http = httpx.AsyncClient(timeout=self._HTTP_TIMEOUT_SECONDS, base_url=base_url)
 
                 # Test connection
                 try:
@@ -474,9 +468,7 @@ class SignalChannel(BaseChannel):
                     if response.status_code == 200:
                         self.logger.info("Connected to signal-cli daemon")
                     else:
-                        raise ConnectionRefusedError(
-                            f"signal-cli daemon check returned status {response.status_code}"
-                        )
+                        raise ConnectionRefusedError(f"signal-cli daemon check returned status {response.status_code}")
                 except Exception as e:
                     raise ConnectionRefusedError(f"signal-cli daemon not responding: {e}")
 
@@ -497,8 +489,7 @@ class SignalChannel(BaseChannel):
                 break
             except ConnectionRefusedError as e:
                 self.logger.error(
-                    "{}. Make sure signal-cli daemon is running: "
-                    "signal-cli -a {} daemon --http {}:{}",
+                    "{}. Make sure signal-cli daemon is running: signal-cli -a {} daemon --http {}:{}",
                     e,
                     self.config.phone_number,
                     self.config.daemon_host,
@@ -522,9 +513,7 @@ class SignalChannel(BaseChannel):
                     self._http = None
 
             if self._running:
-                self.logger.info(
-                    "Reconnecting to signal-cli daemon in {:.0f} seconds...", reconnect_delay_s
-                )
+                self.logger.info("Reconnecting to signal-cli daemon in {:.0f} seconds...", reconnect_delay_s)
                 await asyncio.sleep(reconnect_delay_s)
                 reconnect_delay_s = min(reconnect_delay_s * 2, max_reconnect_delay_s)
 
@@ -571,12 +560,10 @@ class SignalChannel(BaseChannel):
                 response = await self._send_request("send", params)
 
                 if "error" in response:
-                    self.logger.error("Error sending Signal message: {}", response['error'])
+                    self.logger.error("Error sending Signal message: {}", response["error"])
                     raise RuntimeError(f"signal-cli send failed: {response['error']}")
                 else:
-                    self.logger.debug(
-                        f"Signal message sent, timestamp: {response.get('result', {}).get('timestamp')}"
-                    )
+                    self.logger.debug(f"Signal message sent, timestamp: {response.get('result', {}).get('timestamp')}")
 
         except Exception:
             self.logger.exception("Error sending Signal message")
@@ -598,9 +585,7 @@ class SignalChannel(BaseChannel):
         try:
             async with self._http.stream("GET", "/api/v1/events") as response:
                 if response.status_code != 200:
-                    raise ConnectionError(
-                        f"SSE connection failed with status {response.status_code}"
-                    )
+                    raise ConnectionError(f"SSE connection failed with status {response.status_code}")
 
                 self.logger.info("Subscribed to Signal messages via SSE")
 
@@ -720,9 +705,7 @@ class SignalChannel(BaseChannel):
                 sent_msg = sync_message["sentMessage"]
                 destination = sent_msg.get("destination") or sent_msg.get("destinationNumber")
                 if destination:
-                    self.logger.debug(
-                        "Sync message sent to {}: {}", destination, sent_msg.get("message", "")[:50]
-                    )
+                    self.logger.debug("Sync message sent to {}: {}", destination, sent_msg.get("message", "")[:50])
 
             # Handle typing indicators (silently ignore)
             elif typing_message:
@@ -750,9 +733,7 @@ class SignalChannel(BaseChannel):
         )
 
         if data_message.get("reaction"):
-            self.logger.debug(
-                "Ignoring reaction message from {}: {}", sender_number, data_message["reaction"]
-            )
+            self.logger.debug("Ignoring reaction message from {}: {}", sender_number, data_message["reaction"])
             return
         if not message_text and not attachments:
             self.logger.debug("Ignoring empty message from {}", sender_number)
@@ -841,10 +822,7 @@ class SignalChannel(BaseChannel):
             if not self.config.group.enabled:
                 self.logger.info("Ignoring group message from {} (groups disabled)", chat_id)
                 return False, chat_id
-            if (
-                self.config.group.policy == "allowlist"
-                and chat_id not in self.config.group.allow_from
-            ):
+            if self.config.group.policy == "allowlist" and chat_id not in self.config.group.allow_from:
                 self.logger.info(
                     "Ignoring group message from {} (policy: {})",
                     chat_id,
@@ -894,9 +872,7 @@ class SignalChannel(BaseChannel):
             return False, chat_id
         if self.config.dm.policy == "allowlist":
             if not self._sender_matches_allowlist(sender_id, self.config.dm.allow_from):
-                self.logger.debug(
-                    "Ignoring DM from {} (policy: {})", sender_id, self.config.dm.policy
-                )
+                self.logger.debug("Ignoring DM from {} (policy: {})", sender_id, self.config.dm.policy)
                 return False, chat_id
         return True, chat_id
 
@@ -1093,9 +1069,7 @@ class SignalChannel(BaseChannel):
             return False
         if not isinstance(value, str):
             return False
-        return any(
-            candidate in self._account_id_aliases for candidate in self._normalize_signal_id(value)
-        )
+        return any(candidate in self._account_id_aliases for candidate in self._normalize_signal_id(value))
 
     @staticmethod
     def _collect_sender_id_parts(envelope: dict[str, Any]) -> list[str]:
@@ -1350,9 +1324,7 @@ class SignalChannel(BaseChannel):
         except Exception as e:
             self.logger.debug("Typing indicator loop stopped for {}: {}", chat_id, e)
 
-    async def _send_typing(
-        self, chat_id: str, stop: bool = False, quiet_success: bool = False
-    ) -> None:
+    async def _send_typing(self, chat_id: str, stop: bool = False, quiet_success: bool = False) -> None:
         """Send a typing START/STOP message via signal-cli."""
         action = "stop" if stop else "start"
         if (
@@ -1388,23 +1360,17 @@ class SignalChannel(BaseChannel):
 
             last_error = response["error"]
 
-        self.logger.warning(
-            "Failed to send Signal typing {} for {}: {}", action, chat_id, last_error
-        )
+        self.logger.warning("Failed to send Signal typing {} for {}: {}", action, chat_id, last_error)
 
     async def _ensure_typing_indicators_enabled(self) -> None:
         """Enable typing indicators on the bot account."""
         response = await self._send_request("updateConfiguration", {"typingIndicators": True})
         if "error" in response:
-            self.logger.warning(
-                "Failed to enable Signal typing indicators: {}", response["error"]
-            )
+            self.logger.warning("Failed to enable Signal typing indicators: {}", response["error"])
         else:
             self.logger.info("Signal typing indicators enabled on account configuration")
 
-    async def _send_request(
-        self, method: str, params: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    async def _send_request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Send a JSON-RPC request via HTTP and wait for response."""
         # Generate request ID
         self._request_id += 1

@@ -183,11 +183,7 @@ def _fetch_membership(code: str) -> str:
         logger.warning("sector membership fetch failed for %s: %s", code, exc)
         return _error(f"membership request failed: {exc}")
 
-    boards = [
-        parsed
-        for parsed in (_parse_membership_row(r) for r in _diff_rows(payload))
-        if parsed is not None
-    ]
+    boards = [parsed for parsed in (_parse_membership_row(r) for r in _diff_rows(payload)) if parsed is not None]
     envelope = {
         "ok": True,
         "market": "stock",
@@ -225,11 +221,7 @@ def _fetch_ranking(limit: int) -> str:
         logger.warning("sector ranking fetch failed: %s", exc)
         return _error(f"ranking request failed: {exc}")
 
-    boards = [
-        parsed
-        for parsed in (_parse_ranking_row(r) for r in _diff_rows(payload))
-        if parsed is not None
-    ]
+    boards = [parsed for parsed in (_parse_ranking_row(r) for r in _diff_rows(payload)) if parsed is not None]
     if len(boards) > limit:
         boards = boards[:limit]
     envelope = {

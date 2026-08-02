@@ -99,9 +99,7 @@ class RememberTool(BaseTool):
         title = kwargs.get("title", "")
         content = kwargs.get("content", "")
         if not title or not content:
-            return json.dumps(
-                {"status": "error", "error": "title and content required"}
-            )
+            return json.dumps({"status": "error", "error": "title and content required"})
         memory_type = kwargs.get("memory_type", "project")
         try:
             path = self._memory.add(title, content, memory_type, description=title)
@@ -114,9 +112,7 @@ class RememberTool(BaseTool):
                     "message": f"Duplicate write blocked for: {title}",
                 }
             )
-        return json.dumps(
-            {"status": "ok", "message": f"Saved: {title}", "path": str(path)}
-        )
+        return json.dumps({"status": "ok", "message": f"Saved: {title}", "path": str(path)})
 
     def _recall(self, kwargs: dict) -> str:
         query = kwargs.get("query", "")
@@ -127,22 +123,19 @@ class RememberTool(BaseTool):
         # reflects actual usage patterns.
         for e in entries:
             self._lifecycle.track_access(e)
-        results = [
-            {"title": e.title, "type": e.memory_type, "content": e.body[:2000]}
-            for e in entries
-        ]
+        results = [{"title": e.title, "type": e.memory_type, "content": e.body[:2000]} for e in entries]
 
         from src.config.accessor import get_env_config
+
         if get_env_config().memory.links_enabled:
             try:
                 from src.memory.semantic_links import SemanticLinker
+
                 linker = SemanticLinker(self._memory._dir)
                 for i, e in enumerate(entries):
                     relations = linker.load_relations(e.path)
                     if relations:
-                        results[i]["related"] = [
-                            {"target": t, "score": round(s, 2)} for t, s in relations[:3]
-                        ]
+                        results[i]["related"] = [{"target": t, "score": round(s, 2)} for t, s in relations[:3]]
             except Exception:
                 pass
 
@@ -169,9 +162,5 @@ class RememberTool(BaseTool):
             source = "system"
         success = self._lifecycle.reinforce(title, event, source)
         if success:
-            return json.dumps(
-                {"status": "ok", "message": f"Reinforced: {title} ({event})"}
-            )
-        return json.dumps(
-            {"status": "skipped", "message": f"Reinforce skipped for: {title}"}
-        )
+            return json.dumps({"status": "ok", "message": f"Reinforced: {title} ({event})"})
+        return json.dumps({"status": "skipped", "message": f"Reinforce skipped for: {title}"})

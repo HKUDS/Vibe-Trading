@@ -100,17 +100,11 @@ def test_fastmcp_url_cache_keys_are_filesystem_safe(tmp_path: Path) -> None:
     asyncio.run(_roundtrip_url_keys())
 
     collection_names = {collection for collection, _ in entries}
-    payload_files = [
-        path.relative_to(cache)
-        for path in cache.rglob("*.json")
-        if path.parent.name in collection_names
-    ]
+    payload_files = [path.relative_to(cache) for path in cache.rglob("*.json") if path.parent.name in collection_names]
     assert len(payload_files) == len(entries)
     assert all(len(path.parts) == 2 for path in payload_files)
     assert not any(
-        part in {"https:", "agent.robinhood.com", "mcp", "trading"}
-        for path in payload_files
-        for part in path.parts
+        part in {"https:", "agent.robinhood.com", "mcp", "trading"} for path in payload_files for part in path.parts
     )
 
 
@@ -264,9 +258,7 @@ def test_cache_expiry_surfaces_reauth_no_silent_stale_call() -> None:
     from src.tools.mcp import MCPServerAdapter
 
     # 401 Unauthorized → an auth failure the provider could not silently refresh.
-    auth_error = McpError(
-        mcp_types.ErrorData(code=-32001, message="401 Unauthorized: token expired, re-auth required")
-    )
+    auth_error = McpError(mcp_types.ErrorData(code=-32001, message="401 Unauthorized: token expired, re-auth required"))
 
     call_count = {"n": 0}
 

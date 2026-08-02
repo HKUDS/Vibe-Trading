@@ -77,7 +77,7 @@ class CryptoEngine(BaseEngine):
         self._schedule_cache: dict[tuple[str, str], MaintenanceSchedule] = {}
         self._risk_frames: dict[str, MarketRiskFrame] = {}
         self._blocked_symbols: set[str] = set()
-        self._funding_applied: set = set()   # (symbol, date, hour) — per-slot dedup
+        self._funding_applied: set = set()  # (symbol, date, hour) — per-slot dedup
         self._funding_daily_done: set = set()  # (symbol, date) — daily fallback dedup
 
     def _validate_strict_resolution(self, config: dict[str, Any]) -> None:
@@ -170,9 +170,7 @@ class CryptoEngine(BaseEngine):
                 raise ValueError(f"missing funding rate for {symbol} at {timestamp}")
             if pd.isna(settlement):
                 if float(rate) != 0.0:
-                    raise ValueError(
-                        f"funding rate without settlement for {symbol} at {timestamp}"
-                    )
+                    raise ValueError(f"funding rate without settlement for {symbol} at {timestamp}")
                 funding_rate = funding_time = None
             else:
                 funding_rate = float(rate)
@@ -245,10 +243,7 @@ class CryptoEngine(BaseEngine):
             key = (symbol, settlement)
             if key in self._strict_funding_applied:
                 continue
-            payment = (
-                position.direction * position.size * frame.mark_open
-                * float(frame.funding_rate)
-            )
+            payment = position.direction * position.size * frame.mark_open * float(frame.funding_rate)
             self.capital -= payment
             if self.margin_mode == "isolated":
                 self._isolated_margins[symbol] -= payment
@@ -277,9 +272,7 @@ class CryptoEngine(BaseEngine):
             for symbol, position in self.positions.items()
         )
         locked_margin = sum(
-            self._calc_margin(
-                position.symbol, position.size, position.entry_price, position.leverage
-            )
+            self._calc_margin(position.symbol, position.size, position.entry_price, position.leverage)
             for position in self.positions.values()
         )
         return AccountState(
@@ -289,9 +282,7 @@ class CryptoEngine(BaseEngine):
             terminal_status=self.terminal_status,
         )
 
-    def _evaluate_and_liquidate(
-        self, timestamp: pd.Timestamp, price_field: str
-    ) -> bool:
+    def _evaluate_and_liquidate(self, timestamp: pd.Timestamp, price_field: str) -> bool:
         if not self.positions:
             return False
         account = self._account_state()
@@ -368,9 +359,7 @@ class CryptoEngine(BaseEngine):
     def _execute_bars(self, dates, data_map, close_df, target_pos, codes) -> None:
         if self.perpetual_strict:
             try:
-                close_df = pd.DataFrame(
-                    {symbol: data_map[symbol]["mark_close"] for symbol in codes}, index=dates
-                )
+                close_df = pd.DataFrame({symbol: data_map[symbol]["mark_close"] for symbol in codes}, index=dates)
             except KeyError as exc:
                 raise ValueError(f"missing strict mark-close data: {exc}") from exc
         super()._execute_bars(dates, data_map, close_df, target_pos, codes)
@@ -472,8 +461,13 @@ class CryptoEngine(BaseEngine):
     def on_bar(self, symbol: str, bar: pd.Series, timestamp: pd.Timestamp) -> None:
         """Crypto per-bar hooks: funding fee + liquidation check."""
         fee = calc_crypto_funding_fee(
-            symbol, bar, timestamp, self.positions,
-            self.funding_rate, self._funding_applied, self._funding_daily_done,
+            symbol,
+            bar,
+            timestamp,
+            self.positions,
+            self.funding_rate,
+            self._funding_applied,
+            self._funding_daily_done,
         )
         self.capital -= fee
 

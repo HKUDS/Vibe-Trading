@@ -66,9 +66,7 @@ def test_live_status_includes_longbridge_sdk_profile(tmp_path: Path, monkeypatch
     assert lb["auth"]["transport"] == "broker_sdk"
 
 
-def test_longbridge_missing_credentials_maps_not_configured(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_longbridge_missing_credentials_maps_not_configured(tmp_path: Path, monkeypatch) -> None:
     """When Longbridge SDK reports no credentials, status shows not_configured."""
     client = _client(tmp_path, monkeypatch)
 
@@ -136,9 +134,7 @@ def test_longbridge_valid_check_maps_connected(tmp_path: Path, monkeypatch) -> N
     assert lb["auth"]["readonly"] is True
 
 
-def test_live_status_propagates_only_sanitized_sdk_metadata(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_live_status_propagates_only_sanitized_sdk_metadata(tmp_path: Path, monkeypatch) -> None:
     """Live status exposes the explicit SDK metadata allowlist and no secrets."""
     client = _client(tmp_path, monkeypatch)
     sentinels = {
@@ -208,9 +204,7 @@ def test_live_status_propagates_only_sanitized_sdk_metadata(
     assert all(secret not in serialized for secret in sentinels.values())
 
 
-def test_live_status_suppresses_secrets_in_allowlisted_text_metadata(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_live_status_suppresses_secrets_in_allowlisted_text_metadata(tmp_path: Path, monkeypatch) -> None:
     """Report-controlled text/list fields cannot reflect secrets or raw errors."""
     client = _client(tmp_path, monkeypatch)
     sentinels = {
@@ -278,9 +272,7 @@ def test_live_status_uses_registry_profile_id(tmp_path: Path, monkeypatch) -> No
         capabilities=("account.read",),
         readonly=True,
     )
-    monkeypatch.setattr(
-        "src.trading.profiles.list_profiles", lambda: [registry_profile]
-    )
+    monkeypatch.setattr("src.trading.profiles.list_profiles", lambda: [registry_profile])
     checked_profiles: list[str] = []
 
     def _check_status(profile_id: str, force: bool = False):
@@ -299,9 +291,7 @@ def test_live_status_uses_registry_profile_id(tmp_path: Path, monkeypatch) -> No
     assert response.json()["brokers"][0]["auth"]["profile_id"] == registry_profile.id
 
 
-def test_live_status_accepts_known_metadata_values_and_canonicalizes_timestamp(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_live_status_accepts_known_metadata_values_and_canonicalizes_timestamp(tmp_path: Path, monkeypatch) -> None:
     """Closed-vocabulary Longbridge metadata and valid UTC timestamps pass."""
     client = _client(tmp_path, monkeypatch)
 
@@ -380,9 +370,7 @@ def test_live_status_accepts_known_longbridge_error_codes(
     assert auth["connection_state"] == connection_state
 
 
-def test_live_status_normalizes_same_profile_malformed_metadata(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_live_status_normalizes_same_profile_malformed_metadata(tmp_path: Path, monkeypatch) -> None:
     """Malformed same-profile values are suppressed without response failure."""
     client = _client(tmp_path, monkeypatch)
 
@@ -427,9 +415,7 @@ def test_live_status_normalizes_same_profile_malformed_metadata(
     assert auth["connection_state"] is None
 
 
-def test_live_status_suppresses_unrepresentable_timestamp_only(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_live_status_suppresses_unrepresentable_timestamp_only(tmp_path: Path, monkeypatch) -> None:
     """UTC conversion overflow cannot discard otherwise valid safe metadata."""
     client = _client(tmp_path, monkeypatch)
 
@@ -473,9 +459,7 @@ def test_live_status_normalizes_null_permission_metadata_from_safe_registry_prof
         capabilities=("account.read", "positions.read"),
         readonly=True,
     )
-    monkeypatch.setattr(
-        "src.trading.profiles.list_profiles", lambda: [registry_profile]
-    )
+    monkeypatch.setattr("src.trading.profiles.list_profiles", lambda: [registry_profile])
     monkeypatch.setattr(
         api_server,
         "_check_connector_status",
@@ -496,9 +480,7 @@ def test_live_status_normalizes_null_permission_metadata_from_safe_registry_prof
     assert auth["readonly"] is True
 
 
-def test_live_status_does_not_assert_readonly_without_complete_safe_capabilities(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_live_status_does_not_assert_readonly_without_complete_safe_capabilities(tmp_path: Path, monkeypatch) -> None:
     """Malformed report and registry capabilities keep the permission claim unknown."""
     client = _client(tmp_path, monkeypatch)
     registry_profile = SimpleNamespace(
@@ -509,9 +491,7 @@ def test_live_status_does_not_assert_readonly_without_complete_safe_capabilities
         capabilities=(),
         readonly=True,
     )
-    monkeypatch.setattr(
-        "src.trading.profiles.list_profiles", lambda: [registry_profile]
-    )
+    monkeypatch.setattr("src.trading.profiles.list_profiles", lambda: [registry_profile])
     monkeypatch.setattr(
         api_server,
         "_check_connector_status",
@@ -532,9 +512,7 @@ def test_live_status_does_not_assert_readonly_without_complete_safe_capabilities
     assert auth["readonly"] is None
 
 
-def test_live_status_metadata_fallbacks_require_matching_profile(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_live_status_metadata_fallbacks_require_matching_profile(tmp_path: Path, monkeypatch) -> None:
     """Registry metadata stays fail-closed when verify identifies another profile."""
     client = _client(tmp_path, monkeypatch)
 
@@ -587,8 +565,6 @@ def test_verify_endpoint_is_readonly_and_idempotent(tmp_path: Path, monkeypatch)
     client = _client(tmp_path, monkeypatch)
 
     # Two calls with the same profile return the same result
-    payload = {"profile_id": "longbridge-live-sdk-readonly"}
-
     monkeypatch.setattr(
         api_server,
         "_check_connector_status",
@@ -659,9 +635,7 @@ def test_verify_rejects_non_live_and_remote_mcp_profiles(tmp_path: Path, monkeyp
     assert "unknown" in r_unknown.json()["detail"].lower()
 
     # check_connection must NOT have been called for any rejected profile
-    assert check_calls == [], (
-        f"check_connection was called for rejected profiles: {check_calls}"
-    )
+    assert check_calls == [], f"check_connection was called for rejected profiles: {check_calls}"
 
 
 # ---------------------------------------------------------------------------
@@ -726,7 +700,7 @@ def test_verify_force_bypass_cache(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("src.trading.service.check_connection", _stub_check_connection)
 
     # First call
-    r1 = client.post("/live/connectors/longbridge-live-sdk-readonly/verify")
+    client.post("/live/connectors/longbridge-live-sdk-readonly/verify")
     assert call_count["n"] == 1
 
     # force=True bypasses cache
@@ -740,9 +714,7 @@ def test_verify_force_bypass_cache(tmp_path: Path, monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_live_status_selects_readonly_sdk_profile_independent_of_registry_order(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_live_status_selects_readonly_sdk_profile_independent_of_registry_order(tmp_path: Path, monkeypatch) -> None:
     """A live readonly SDK profile wins deterministically over a trading profile."""
     client = _client(tmp_path, monkeypatch)
     profiles = [
@@ -779,9 +751,7 @@ def test_live_status_selects_readonly_sdk_profile_independent_of_registry_order(
     assert response.json()["brokers"][0]["auth"]["readonly"] is True
 
 
-def test_live_status_prefers_unique_suffixed_declared_readonly_profile(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_live_status_prefers_unique_suffixed_declared_readonly_profile(tmp_path: Path, monkeypatch) -> None:
     """One canonical -readonly profile wins over another declared observer profile."""
     client = _client(tmp_path, monkeypatch)
     profiles = [
@@ -818,9 +788,7 @@ def test_live_status_prefers_unique_suffixed_declared_readonly_profile(
     assert response.json()["brokers"][0]["auth"]["capabilities"] == ["account.read"]
 
 
-def test_live_status_rejects_malformed_registry_profile_id(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_live_status_rejects_malformed_registry_profile_id(tmp_path: Path, monkeypatch) -> None:
     """A non-string trusted-registry profile ID fails closed without verification."""
     client = _client(tmp_path, monkeypatch)
     malformed_profile = SimpleNamespace(
@@ -831,9 +799,7 @@ def test_live_status_rejects_malformed_registry_profile_id(
         capabilities=("account.read",),
         readonly=True,
     )
-    monkeypatch.setattr(
-        "src.trading.profiles.list_profiles", lambda: [malformed_profile]
-    )
+    monkeypatch.setattr("src.trading.profiles.list_profiles", lambda: [malformed_profile])
     checked_profiles: list[object] = []
     monkeypatch.setattr(
         api_server,
@@ -852,9 +818,7 @@ def test_live_status_rejects_malformed_registry_profile_id(
     assert auth["readonly"] is None
 
 
-def test_live_status_rejects_ambiguous_readonly_sdk_profiles(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_live_status_rejects_ambiguous_readonly_sdk_profiles(tmp_path: Path, monkeypatch) -> None:
     """Multiple live SDK readonly profiles fail closed without verifying either."""
     client = _client(tmp_path, monkeypatch)
     profiles = [
@@ -904,9 +868,7 @@ def test_live_status_rejects_ambiguous_readonly_sdk_profiles(
         assert auth[field] is None
 
 
-def test_live_status_preserves_first_transport_for_multi_profile_non_sdk_broker(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_live_status_preserves_first_transport_for_multi_profile_non_sdk_broker(tmp_path: Path, monkeypatch) -> None:
     """IBKR keeps its first live transport while SDK selection scans independently."""
     client = _client(tmp_path, monkeypatch)
     profiles = [
@@ -935,9 +897,7 @@ def test_live_status_preserves_first_transport_for_multi_profile_non_sdk_broker(
     assert response.json()["brokers"][0]["auth"]["transport"] == "local_tws"
 
 
-def test_existing_robinhood_oauth_fields_remain_compatible(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_existing_robinhood_oauth_fields_remain_compatible(tmp_path: Path, monkeypatch) -> None:
     """Robinhood status still exposes oauth_token_present — no regression."""
     client = _client(tmp_path, monkeypatch)
 
@@ -959,9 +919,7 @@ def test_existing_robinhood_oauth_fields_remain_compatible(
 # ---------------------------------------------------------------------------
 
 
-def test_longbridge_verify_never_needs_mandate_and_runner_unavailable(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_longbridge_verify_never_needs_mandate_and_runner_unavailable(tmp_path: Path, monkeypatch) -> None:
     """Longbridge verify is read-only; no mandate required, runner is unavailable."""
     client = _client(tmp_path, monkeypatch)
 

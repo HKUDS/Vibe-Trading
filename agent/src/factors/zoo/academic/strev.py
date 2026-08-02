@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: 短期反转因子 (STREV)
 # 简要说明: 做多过去一个月输家、做空过去一个月赢家的收益。短期(月度)价格存在反转效应。
@@ -16,6 +15,7 @@ month. Computed directly from prices as the negative of the trailing 21-day
 return, then cross-sectional z-scored per date. Higher z-scores = larger
 recent losers (the long leg).
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -24,20 +24,20 @@ import pandas as pd
 from src.factors.base import delta, safe_div
 
 __alpha_meta__ = {
-    'id': 'academic_strev',
-    'nickname': 'Jegadeesh 1990 short-term reversal — inverse 21d return',
-    'theme': ['reversal'],
-    'formula_latex': r'\mathrm{zscore}_{x}\bigl(-(\mathrm{close}_t - \mathrm{close}_{t-21}) / \mathrm{close}_{t-21}\bigr)',
-    'columns_required': ['close'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk'],
-    'frequency': ['1d'],
-    'decay_horizon': 21,
-    'min_warmup_bars': 21,
-    'notes': (
-        'Jegadeesh (1990) one-month reversal. Negative trailing 21-day return, '
-        'cross-sectional z-score per date for long-short ranking. Top z-scores = '
-        'recent one-month losers, which tend to rebound. Constructed directly from '
-        'prices, matching the original definition modulo the z-score wrapper.'
+    "id": "academic_strev",
+    "nickname": "Jegadeesh 1990 short-term reversal — inverse 21d return",
+    "theme": ["reversal"],
+    "formula_latex": r"\mathrm{zscore}_{x}\bigl(-(\mathrm{close}_t - \mathrm{close}_{t-21}) / \mathrm{close}_{t-21}\bigr)",
+    "columns_required": ["close"],
+    "universe": ["equity_us", "equity_cn", "equity_hk"],
+    "frequency": ["1d"],
+    "decay_horizon": 21,
+    "min_warmup_bars": 21,
+    "notes": (
+        "Jegadeesh (1990) one-month reversal. Negative trailing 21-day return, "
+        "cross-sectional z-score per date for long-short ranking. Top z-scores = "
+        "recent one-month losers, which tend to rebound. Constructed directly from "
+        "prices, matching the original definition modulo the z-score wrapper."
     ),
 }
 
@@ -53,6 +53,6 @@ def _cross_sectional_zscore(df: pd.DataFrame) -> pd.DataFrame:
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return inverse 21-day return cross-sectional z-score per stock."""
-    close = panel['close']
+    close = panel["close"]
     ret = safe_div(delta(close, 21), close.shift(21))
     return _cross_sectional_zscore(-ret)

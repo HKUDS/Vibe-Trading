@@ -171,9 +171,7 @@ def validate_risk_first_config(
                     errors.append(f"risk_overlay.{key} is required")
             # Soft nudges for short-horizon realism.
             if overlay.get("inventory_mean_reversion") is None:
-                warnings.append(
-                    "risk_overlay.inventory_mean_reversion recommended for short-horizon books"
-                )
+                warnings.append("risk_overlay.inventory_mean_reversion recommended for short-horizon books")
             if overlay.get("max_turnover") is None:
                 warnings.append("risk_overlay.max_turnover recommended for high-turnover books")
 
@@ -187,30 +185,19 @@ def validate_risk_first_config(
             rk = grid.get("risk_ranking")
             if rk is not None and ranking is None:
                 ranking = rk
-                warnings.append(
-                    "using signal_parameter_grid.risk_ranking as risk_adjusted_ranking proxy"
-                )
+                warnings.append("using signal_parameter_grid.risk_ranking as risk_adjusted_ranking proxy")
 
     if require_ranking:
         if ranking in (None, {}, False):
-            errors.append(
-                "validation.risk_adjusted_ranking (or signal_parameter_grid.risk_ranking) "
-                "is required"
-            )
+            errors.append("validation.risk_adjusted_ranking (or signal_parameter_grid.risk_ranking) is required")
         elif not isinstance(ranking, Mapping):
             errors.append("risk_adjusted_ranking must be a mapping")
         else:
             obj = ranking.get("objective", "sharpe_dd_penalty")
             if is_return_only_objective(obj):
-                errors.append(
-                    f"objective={obj!r} is return-only; use one of "
-                    f"{sorted(ALLOWED_RISK_OBJECTIVES)}"
-                )
+                errors.append(f"objective={obj!r} is return-only; use one of {sorted(ALLOWED_RISK_OBJECTIVES)}")
             elif str(obj).strip().lower() not in ALLOWED_RISK_OBJECTIVES:
-                errors.append(
-                    f"objective={obj!r} not allowed; use one of "
-                    f"{sorted(ALLOWED_RISK_OBJECTIVES)}"
-                )
+                errors.append(f"objective={obj!r} not allowed; use one of {sorted(ALLOWED_RISK_OBJECTIVES)}")
             if ranking.get("max_dd_limit") is None:
                 errors.append("risk_adjusted_ranking.max_dd_limit is required")
 
@@ -230,8 +217,7 @@ def validate_risk_first_config(
         interval = str(config.get("interval") or "").lower()
         if interval in {"1m", "5m", "15m", "30m"}:
             warnings.append(
-                "hft_costs recommended for minute-bar high-turnover configs "
-                "(spread+impact+adverse selection)"
+                "hft_costs recommended for minute-bar high-turnover configs (spread+impact+adverse selection)"
             )
 
     return {
@@ -304,9 +290,7 @@ def inject_risk_first_defaults(
             "cvar_lookback": 40,
         }
         # Drop None keys for cleanliness.
-        out["risk_overlay"] = {
-            k: v for k, v in out["risk_overlay"].items() if v is not None
-        }
+        out["risk_overlay"] = {k: v for k, v in out["risk_overlay"].items() if v is not None}
 
     validation = dict(out.get("validation") or {}) if isinstance(out.get("validation"), Mapping) else {}
     if validation.get("risk_adjusted_ranking") in (None, {}, False):

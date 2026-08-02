@@ -115,7 +115,9 @@ def test_goal_start_persists_session_id_on_plain_context(tmp_path: Path, monkeyp
 
     store = GoalStore(tmp_path / "goals.db")
     monkeypatch.setattr(goal_cmd, "_goal_store", store)
-    monkeypatch.setattr(goal_cmd, "_create_cli_session", lambda ctx, title: setattr(ctx, "session_id", "session-1") or "session-1")
+    monkeypatch.setattr(
+        goal_cmd, "_create_cli_session", lambda ctx, title: setattr(ctx, "session_id", "session-1") or "session-1"
+    )
     ctx = SimpleNamespace()
 
     assert goal_cmd.run(ctx, "Evaluate", "NVDA", "momentum.") == 0

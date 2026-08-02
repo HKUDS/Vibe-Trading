@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #113
 # 简要说明: 国泰君安191短周期交易型alpha因子第113号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     (-1 * ((RANK((SUM(DELAY(CLOSE, 5), 20) / 20)) * CORR(CLOSE, VOLUME, 2)) * RANK(CORR(SUM(CLOSE, 5), SUM(CLOSE, 20), 2))))
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_113"
 
 __alpha_meta__ = {
-    'id': 'gtja191_113',
-    'theme': ['volume'],
-    'formula_latex': '-1*(rank(mean(delay(c,5),20))*corr(c,v,2))*rank(corr(sum(c,5),sum(c,20),2))',
-    'columns_required': ['close', 'volume'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 27,
-    'notes': '',
+    "id": "gtja191_113",
+    "theme": ["volume"],
+    "formula_latex": "-1*(rank(mean(delay(c,5),20))*corr(c,v,2))*rank(corr(sum(c,5),sum(c,20),2))",
+    "columns_required": ["close", "volume"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 27,
+    "notes": "",
 }
 
 

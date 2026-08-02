@@ -33,10 +33,7 @@ _CJK_RANGE_EXT_A = (0x3400, 0x4DBF)
 def _is_cjk_char(char: str) -> bool:
     """Check if character is a CJK ideograph."""
     cp = ord(char)
-    return (
-        _CJK_RANGE_MAIN[0] <= cp <= _CJK_RANGE_MAIN[1]
-        or _CJK_RANGE_EXT_A[0] <= cp <= _CJK_RANGE_EXT_A[1]
-    )
+    return _CJK_RANGE_MAIN[0] <= cp <= _CJK_RANGE_MAIN[1] or _CJK_RANGE_EXT_A[0] <= cp <= _CJK_RANGE_EXT_A[1]
 
 
 def _expand_cjk_buffer(chars: list[str]) -> str:
@@ -83,9 +80,7 @@ def _dedupe_cjk_runs(text: str) -> str:
             # Verify the prefix matches
             candidate = run[:n]
             # Rebuild what bigram expansion would produce concatenated
-            expected = candidate + "".join(
-                candidate[i] + candidate[i + 1] for i in range(n - 1)
-            )
+            expected = candidate + "".join(candidate[i] + candidate[i + 1] for i in range(n - 1))
             if expected == run:
                 return candidate
         return run
@@ -137,9 +132,7 @@ class MemorySearchIndex:
     def _get_conn(self) -> sqlite3.Connection:
         """Get or create SQLite connection with WAL mode."""
         if self._conn is None:
-            self._conn = sqlite3.connect(
-                str(self.db_path), check_same_thread=False
-            )
+            self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
         return self._conn
@@ -225,8 +218,7 @@ class MemorySearchIndex:
             conn = self._get_conn()
             try:
                 conn.execute(
-                    "INSERT OR REPLACE INTO memories (id, title, description, keywords, body) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    "INSERT OR REPLACE INTO memories (id, title, description, keywords, body) VALUES (?, ?, ?, ?, ?)",
                     (
                         entry_id,
                         self._prepare_cjk(title),
@@ -318,9 +310,7 @@ class MemorySearchIndex:
             try:
                 conn.execute("DELETE FROM memories")
                 if self._fts_available:
-                    conn.execute(
-                        "INSERT INTO memories_fts(memories_fts) VALUES ('rebuild')"
-                    )
+                    conn.execute("INSERT INTO memories_fts(memories_fts) VALUES ('rebuild')")
             except sqlite3.OperationalError as exc:
                 logger.debug("rebuild_all clear failed: %s", exc)
             conn.commit()
@@ -394,9 +384,7 @@ class MemorySearchIndex:
         """
         # First remove bigram-only tokens (two adjacent CJK chars surrounded by spaces)
         # by collapsing all CJK-adjacent spacing.
-        _cjk_space = re.compile(
-            r"([\u4e00-\u9fff\u3400-\u4dbf])\s+([\u4e00-\u9fff\u3400-\u4dbf])"
-        )
+        _cjk_space = re.compile(r"([\u4e00-\u9fff\u3400-\u4dbf])\s+([\u4e00-\u9fff\u3400-\u4dbf])")
         prev = None
         while prev != text:
             prev = text
@@ -409,24 +397,22 @@ class MemorySearchIndex:
     @staticmethod
     def _sanitize_fts_query(query: str) -> str:
         """Sanitize user query for FTS5 MATCH syntax.
-    
+
         Extracts alphanumeric tokens (2+ chars) and CJK characters,
         generates bigrams for consecutive CJK chars, quotes each token
         and joins with OR to prevent FTS5 operator injection.
-    
+
         Args:
             query: Raw user query string.
-    
+
         Returns:
             FTS5-safe MATCH expression, or empty-quoted string if no tokens.
         """
         tokens: list[str] = []
         cjk_buffer: list[str] = []
-    
+
         # Walk through pre-extracted raw tokens
-        raw_tokens = re.findall(
-            r"[a-zA-Z0-9_]{2,}|[\u4e00-\u9fff\u3400-\u4dbf]", query
-        )
+        raw_tokens = re.findall(r"[a-zA-Z0-9_]{2,}|[\u4e00-\u9fff\u3400-\u4dbf]", query)
         for tok in raw_tokens:
             if len(tok) == 1 and _is_cjk_char(tok):
                 cjk_buffer.append(tok)
@@ -435,10 +421,10 @@ class MemorySearchIndex:
                     tokens.extend(_cjk_query_tokens(cjk_buffer))
                     cjk_buffer = []
                 tokens.append(tok)
-    
+
         if cjk_buffer:
             tokens.extend(_cjk_query_tokens(cjk_buffer))
-    
+
         if not tokens:
             return '""'
         # Quote each token and join with OR for broader matching

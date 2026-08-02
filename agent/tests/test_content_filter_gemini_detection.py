@@ -39,9 +39,7 @@ def test_helper_case_insensitive() -> None:
     assert is_content_filter_triggered("Recitation") is True
 
 
-@pytest.mark.parametrize(
-    "reason", ["stop", "length", "tool_calls", "end_turn", "max_tokens", ""]
-)
+@pytest.mark.parametrize("reason", ["stop", "length", "tool_calls", "end_turn", "max_tokens", ""])
 def test_helper_rejects_non_filter_reasons(reason: str) -> None:
     assert is_content_filter_triggered(reason) is False
 
@@ -64,9 +62,7 @@ def test_parse_response_detects_gemini_recitation() -> None:
 
 
 def test_parse_response_openai_content_filter_regression() -> None:
-    ai_msg = AIMessage(
-        content="", response_metadata={"finish_reason": "content_filter"}
-    )
+    ai_msg = AIMessage(content="", response_metadata={"finish_reason": "content_filter"})
     resp = ChatLLM._parse_response(ai_msg)
     assert resp.content_filter_triggered is True
 

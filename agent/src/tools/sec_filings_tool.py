@@ -157,9 +157,7 @@ def _clamp_limit(value: Any) -> int:
     return max(1, min(n, _MAX_LIMIT))
 
 
-def _parse_filings(
-    submissions: Any, form_filter: Optional[str], cik: str
-) -> List[Dict[str, Any]]:
+def _parse_filings(submissions: Any, form_filter: Optional[str], cik: str) -> List[Dict[str, Any]]:
     """Extract recent filings from a submissions payload, newest first.
 
     The SEC submissions document stores the recent filing index as parallel

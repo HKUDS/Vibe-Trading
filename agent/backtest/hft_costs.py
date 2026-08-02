@@ -74,9 +74,7 @@ class HftCostModel:
         t = max(0.0, float(turnover_l1))
         if t <= _EPS or self.impact_coeff <= 0:
             return 0.0
-        return (float(self.impact_coeff) / 10_000.0) * (
-            t ** float(self.impact_power)
-        )
+        return (float(self.impact_coeff) / 10_000.0) * (t ** float(self.impact_power))
 
 
 def load_hft_cost_model(config: Mapping[str, Any]) -> Optional[HftCostModel]:
@@ -128,9 +126,7 @@ def load_hft_cost_model(config: Mapping[str, Any]) -> Optional[HftCostModel]:
         spread_bps=_pos("spread_bps", float(raw.get("spread_bps", 2.0))),
         impact_coeff=_pos("impact_coeff", float(raw.get("impact_coeff", 8.0))),
         impact_power=power,
-        adverse_selection_bps=_pos(
-            "adverse_selection_bps", float(raw.get("adverse_selection_bps", 1.5))
-        ),
+        adverse_selection_bps=_pos("adverse_selection_bps", float(raw.get("adverse_selection_bps", 1.5))),
         participation_cap=part_f,
         max_adv_participation=adv_part_f,
         adv_lookback=adv_lb,
@@ -217,11 +213,7 @@ def clip_adv_participation(
     pos = positions.astype(float).copy()
     dv = dollar_volume.reindex(index=pos.index, columns=pos.columns).astype(float)
     # Causal ADV: mean of dollar volume through t-1.
-    adv = (
-        dv.shift(1)
-        .rolling(int(adv_lookback), min_periods=max(2, int(adv_lookback) // 2))
-        .mean()
-    )
+    adv = dv.shift(1).rolling(int(adv_lookback), min_periods=max(2, int(adv_lookback) // 2)).mean()
     arr = pos.to_numpy(dtype=float)
     adv_arr = adv.to_numpy(dtype=float)
     n_bars, n_names = arr.shape
@@ -263,15 +255,9 @@ def prepare_positions_for_hft_costs(
     pos = positions.astype(float)
     diag: Dict[str, Any] = {"model": model.to_dict(), "fidelity": "bar_proxy — no LOB"}
     if model.participation_cap is not None:
-        pos, part_diag = clip_turnover_participation(
-            pos, participation_cap=model.participation_cap
-        )
+        pos, part_diag = clip_turnover_participation(pos, participation_cap=model.participation_cap)
         diag.update(part_diag)
-    if (
-        model.max_adv_participation is not None
-        and dollar_volume is not None
-        and not dollar_volume.empty
-    ):
+    if model.max_adv_participation is not None and dollar_volume is not None and not dollar_volume.empty:
         pos, adv_diag = clip_adv_participation(
             pos,
             dollar_volume=dollar_volume,
@@ -322,17 +308,13 @@ def apply_hft_costs_to_returns(
     equity: float = 1.0,
 ) -> Tuple[pd.Series, Dict[str, Any]]:
     """Subtract HFT cost stack from portfolio bar returns."""
-    costs = hft_cost_series(
-        positions, model=model, dollar_volume=dollar_volume, equity=equity
-    )
+    costs = hft_cost_series(positions, model=model, dollar_volume=dollar_volume, equity=equity)
     aligned = costs.reindex(port_returns.index).fillna(0.0)
     net = port_returns.astype(float) - aligned
     diag = {
         "model": model.to_dict(),
         "mean_cost": round(float(aligned.mean()), 8),
         "total_cost": round(float(aligned.sum()), 6),
-        "mean_turnover": round(
-            float(positions.diff().abs().sum(axis=1).fillna(0.0).mean()), 6
-        ),
+        "mean_turnover": round(float(positions.diff().abs().sum(axis=1).fillna(0.0).mean()), 6),
     }
     return net, diag

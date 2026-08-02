@@ -76,6 +76,7 @@ def _validate_optional_journal_path(raw: Any) -> str | None:
 
 # ---------------- Tool 1: extract ----------------
 
+
 class ExtractShadowStrategyTool(BaseTool):
     """Extract a Shadow Account profile from a user's trade journal."""
 
@@ -157,6 +158,7 @@ class ExtractShadowStrategyTool(BaseTool):
 
 
 # ---------------- Tool 2: backtest ----------------
+
 
 class RunShadowBacktestTool(BaseTool):
     """Run multi-market backtest for an extracted Shadow Account."""
@@ -241,6 +243,7 @@ class RunShadowBacktestTool(BaseTool):
 
 # ---------------- Tool 3: render ----------------
 
+
 class RenderShadowReportTool(BaseTool):
     """Render a Shadow Account PDF report from a completed backtest."""
 
@@ -292,19 +295,26 @@ class RenderShadowReportTool(BaseTool):
             except Exception as exc:  # pragma: no cover — defensive
                 logger.warning("backtest failed during report render: %s", exc)
                 from src.shadow_account.models import AttributionBreakdown, ShadowBacktestResult
+
                 result = ShadowBacktestResult(
                     shadow_id=profile.shadow_id,
-                    per_market={}, combined={"error": str(exc)}, equity_curves={},
+                    per_market={},
+                    combined={"error": str(exc)},
+                    equity_curves={},
                     attribution=AttributionBreakdown(
-                        missed_signals_pnl=0.0, noise_trades_pnl=0.0, early_exit_pnl=0.0,
-                        late_exit_pnl=0.0, overtrading_pnl=0.0, counterfactual_trades=(),
+                        missed_signals_pnl=0.0,
+                        noise_trades_pnl=0.0,
+                        early_exit_pnl=0.0,
+                        late_exit_pnl=0.0,
+                        overtrading_pnl=0.0,
+                        counterfactual_trades=(),
                     ),
-                    shadow_total_pnl=0.0, real_total_pnl=0.0, delta_pnl=0.0,
+                    shadow_total_pnl=0.0,
+                    real_total_pnl=0.0,
+                    delta_pnl=0.0,
                 )
 
-        today_signals = (
-            scan_today_signals(profile) if kwargs.get("include_today_signals", True) else []
-        )
+        today_signals = scan_today_signals(profile) if kwargs.get("include_today_signals", True) else []
         report = render_shadow_report(profile, result, today_signals=today_signals)
         payload = {
             "shadow_id": profile.shadow_id,
@@ -320,6 +330,7 @@ class RenderShadowReportTool(BaseTool):
 
 
 # ---------------- Tool 4: scan ----------------
+
 
 class ScanShadowSignalsTool(BaseTool):
     """Scan the market for symbols matching a Shadow Account's rules (research only)."""

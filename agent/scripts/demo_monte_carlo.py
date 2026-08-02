@@ -126,20 +126,25 @@ def main() -> int:
     elapsed = time.perf_counter() - t0
     outcomes = mc["outcomes"]
     print("\n=== Monte Carlo outcomes ===")
-    print(json.dumps({
-        "method": mc["method"],
-        "n_paths": mc["n_paths"],
-        "antithetic": mc.get("antithetic"),
-        "sampling": mc.get("sampling"),
-        "n_jobs": mc.get("n_jobs"),
-        "parallel_backend": mc.get("parallel_backend"),
-        "elapsed_s": round(elapsed, 3),
-        "paths_per_sec": int(args.n_paths / max(elapsed, 1e-9)),
-        "ruin_probability": outcomes["ruin_probability"],
-        "expected_shortfall_return": outcomes["expected_shortfall_return"],
-        "terminal_wealth_percentiles": outcomes["terminal_wealth"]["percentiles"],
-        "max_drawdown_percentiles": outcomes["max_drawdown"]["percentiles"],
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "method": mc["method"],
+                "n_paths": mc["n_paths"],
+                "antithetic": mc.get("antithetic"),
+                "sampling": mc.get("sampling"),
+                "n_jobs": mc.get("n_jobs"),
+                "parallel_backend": mc.get("parallel_backend"),
+                "elapsed_s": round(elapsed, 3),
+                "paths_per_sec": int(args.n_paths / max(elapsed, 1e-9)),
+                "ruin_probability": outcomes["ruin_probability"],
+                "expected_shortfall_return": outcomes["expected_shortfall_return"],
+                "terminal_wealth_percentiles": outcomes["terminal_wealth"]["percentiles"],
+                "max_drawdown_percentiles": outcomes["max_drawdown"]["percentiles"],
+            },
+            indent=2,
+        )
+    )
 
     print("\n=== Enhanced validation (stress / WF-OOS / sensitivity / regimes / signal grid) ===")
     # Multi-asset returns for correlation-regime axis
@@ -207,10 +212,7 @@ def main() -> int:
         columns=[f"S{i}" for i in range(n_names)],
     )
     ret_panel = pd.DataFrame(
-        {
-            c: 0.05 * factor_panel[c] + rng.normal(0, 0.02, len(equity))
-            for c in factor_panel.columns
-        },
+        {c: 0.05 * factor_panel[c] + rng.normal(0, 0.02, len(equity)) for c in factor_panel.columns},
         index=equity.index,
     )
     enhanced["regime_conditional_ic"] = regime_conditional_ic(
@@ -233,8 +235,7 @@ def main() -> int:
         "regime_sharpe_spread_vol": enhanced["regime_conditioned"].get("sharpe_spread_high_minus_low"),
         "regime_ic_overall": (enhanced["regime_conditional_ic"].get("overall") or {}).get("mean_ic"),
         "regime_ic_by_vol": {
-            k: v.get("mean_ic")
-            for k, v in (enhanced["regime_conditional_ic"].get("by_regime") or {}).items()
+            k: v.get("mean_ic") for k, v in (enhanced["regime_conditional_ic"].get("by_regime") or {}).items()
         },
         "psr": enhanced["risk_metrics"]["probabilistic_sharpe"]["psr"],
         "dsr": enhanced["risk_metrics"]["deflated_sharpe"]["dsr"],

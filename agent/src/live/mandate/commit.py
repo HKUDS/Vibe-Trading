@@ -385,9 +385,7 @@ def commit_mandate(
     # An explicit param wins; otherwise defer to the profile, which defaults to
     # cancel-only (the safe default) when it carries no flatten_on_halt field.
     do_flatten_on_halt = (
-        bool(flatten_on_halt)
-        if flatten_on_halt is not None
-        else bool(resolved.get("flatten_on_halt", False))
+        bool(flatten_on_halt) if flatten_on_halt is not None else bool(resolved.get("flatten_on_halt", False))
     )
 
     mandate_id = _new_id("mandate")

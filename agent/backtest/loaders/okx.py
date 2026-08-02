@@ -29,6 +29,16 @@ from typing import Dict, List, Optional
 import pandas as pd
 import requests
 
+from backtest.loaders.base import (
+    cached_loader_fetch,
+    check_budget,
+    positive_env_float,
+    positive_env_int,
+    retry_with_budget,
+    validate_date_range,
+)
+from backtest.loaders.registry import register
+
 logger = logging.getLogger(__name__)
 
 # Project / connector period tokens -> OKX candle ``bar`` strings.
@@ -46,16 +56,6 @@ _INTERVAL_MAP = {
     "1D": "1D",
 }
 
-from backtest.loaders.base import (
-    cached_loader_fetch,
-    check_budget,
-    positive_env_float,
-    positive_env_int,
-    retry_with_budget,
-    validate_date_range,
-)
-from backtest.loaders.registry import register
-
 BASE_URL = "https://www.okx.com/api/v5"
 CANDLES_PATH = f"{BASE_URL}/market/candles"
 HISTORY_CANDLES_PATH = f"{BASE_URL}/market/history-candles"
@@ -71,7 +71,7 @@ _OKX_PROBE_TIMEOUT = positive_env_int("OKX_PROBE_TIMEOUT_S", 8)
 
 def _first_proxy_env(*names: str) -> str:
     for name in names:
-        value = os.getenv(name, "").strip()  # noqa: env-gate — system proxy vars
+        value = os.getenv(name, "").strip()  # env-gate — system proxy vars
         if value:
             return value
     return ""
@@ -304,9 +304,7 @@ class DataLoader:
                 try:
                     data = resp.json()
                 except ValueError as exc:
-                    raise requests.RequestException(
-                        f"OKX non-JSON response HTTP {resp.status_code}"
-                    ) from exc
+                    raise requests.RequestException(f"OKX non-JSON response HTTP {resp.status_code}") from exc
                 code = str(data.get("code", ""))
                 if code != "0":
                     # Business errors are not always transient; still surface.
@@ -339,8 +337,15 @@ class DataLoader:
             return None
 
         columns = [
-            "ts", "open", "high", "low", "close",
-            "vol", "volCcy", "volCcyQuote", "confirm",
+            "ts",
+            "open",
+            "high",
+            "low",
+            "close",
+            "vol",
+            "volCcy",
+            "volCcyQuote",
+            "confirm",
         ]
         # Rows may be shorter if API schema changes — pad safely
         normalized = []
@@ -366,7 +371,5 @@ class DataLoader:
         end_dt = pd.Timestamp(end_ts, unit="ms")
         df = df[(df.index >= start_dt) & (df.index < end_dt)]
 
-        df = df[["open", "high", "low", "close", "volume"]].dropna(
-            subset=["open", "high", "low", "close"]
-        )
+        df = df[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
         return df if not df.empty else None

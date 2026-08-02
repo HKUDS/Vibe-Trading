@@ -99,7 +99,9 @@ class BrokerAuthState(BaseModel):
     oauth_token_present: bool = Field(..., description="Whether an OAuth token cache exists")
     is_live_broker: bool = Field(..., description="Whether this key is a recognized live broker")
     transport: Optional[str] = Field(None, description="Transport type (broker_sdk, remote_mcp, local_tws)")
-    connection_state: Optional[str] = Field(None, description="Broker_sdk connection state (connected, not_configured, error)")
+    connection_state: Optional[str] = Field(
+        None, description="Broker_sdk connection state (connected, not_configured, error)"
+    )
     profile_id: Optional[str] = Field(None, description="Verified broker_sdk profile id")
     configured: Optional[bool] = Field(None, description="Whether the selected SDK profile is configured")
     credential_source: Optional[str] = Field(None, description="Credential source label; never credential material")
@@ -129,9 +131,7 @@ class ActiveMandateState(BaseModel):
     account_ref: str
     created_at: str
     expires_at: str
-    expires_in_seconds: Optional[int] = Field(
-        None, description="Seconds until expiry; negative when already expired"
-    )
+    expires_in_seconds: Optional[int] = Field(None, description="Seconds until expiry; negative when already expired")
     expired: bool
     limits: MandateLimits
 
@@ -550,9 +550,7 @@ def _build_live_runner(broker: str) -> Any:
     def _tool(operation: str) -> str:
         remote_tool = runner_tool_name(broker, operation)
         if remote_tool is None:
-            raise LiveRunnerUnavailable(
-                f"live runner for {broker!r} does not define remote tool {operation!r}"
-            )
+            raise LiveRunnerUnavailable(f"live runner for {broker!r} does not define remote tool {operation!r}")
         return remote_tool
 
     positions_tool = _tool("positions")
@@ -604,7 +602,7 @@ def _build_live_runner(broker: str) -> Any:
         submit_fn=_submit,
         write_audit_fn=_audit_with_bus,
         scheduler=scheduler,
-        triggers=[Trigger.market("us_equity")],
+        triggers=[Trigger.for_market("us_equity")],
         session_id=session_id,
     )
     runner_holder["runner"] = runner
@@ -753,9 +751,7 @@ def register_live_routes(
                 from src.trading.profiles import list_profiles
 
                 live_profiles = [
-                    profile
-                    for profile in list_profiles()
-                    if profile.connector == key and profile.environment == "live"
+                    profile for profile in list_profiles() if profile.connector == key and profile.environment == "live"
                 ]
                 if live_profiles:
                     transport = live_profiles[0].transport
@@ -768,9 +764,7 @@ def register_live_routes(
                     and profile.readonly is True
                 ]
                 suffixed_readonly_profiles = [
-                    profile
-                    for profile in declared_readonly_sdk_profiles
-                    if profile.id.endswith("-readonly")
+                    profile for profile in declared_readonly_sdk_profiles if profile.id.endswith("-readonly")
                 ]
                 # Registry readonly=True is mandatory even when an id ends in
                 # ``-readonly``. Prefer one canonical suffixed profile; if none
@@ -790,33 +784,25 @@ def register_live_routes(
                 try:
                     verify_report = h._check_connector_status(selected_profile.id)
                     if verify_report.get("profile_id") == selected_profile.id:
+
                         def _normalize_capabilities(value: Any) -> Optional[tuple[str, ...]]:
                             if not isinstance(value, (list, tuple)) or not value:
                                 return None
-                            if not all(
-                                type(item) is str and bool(item.strip()) for item in value
-                            ):
+                            if not all(type(item) is str and bool(item.strip()) for item in value):
                                 return None
                             return tuple(value)
 
                         # Permissions are trusted registry declarations, never
                         # reflected from a connector report. The exact profile-id
                         # match above binds the report to this registry profile.
-                        registry_capabilities = _normalize_capabilities(
-                            selected_profile.capabilities
-                        )
+                        registry_capabilities = _normalize_capabilities(selected_profile.capabilities)
                         registry_readonly = (
-                            selected_profile.readonly
-                            if type(selected_profile.readonly) is bool
-                            else None
+                            selected_profile.readonly if type(selected_profile.readonly) is bool else None
                         )
                         if registry_readonly is True and (
                             registry_capabilities is None
                             or any(
-                                not (
-                                    capability.endswith(".read")
-                                    or ".read." in capability
-                                )
+                                not (capability.endswith(".read") or ".read." in capability)
                                 for capability in registry_capabilities
                             )
                         ):
@@ -836,9 +822,7 @@ def register_live_routes(
                                 verify_report.get("credential_source"),
                                 _CREDENTIAL_SOURCES,
                             ),
-                            "sdk_installed": sdk_installed
-                            if isinstance(sdk_installed, bool)
-                            else None,
+                            "sdk_installed": sdk_installed if isinstance(sdk_installed, bool) else None,
                             "environment_identity": next(
                                 (
                                     normalized
@@ -846,25 +830,14 @@ def register_live_routes(
                                         verify_report.get("environment_identity"),
                                         verify_report.get("paper_guard"),
                                     )
-                                    if (
-                                        normalized := _closed_vocabulary(
-                                            value, _ENVIRONMENT_IDENTITIES
-                                        )
-                                    )
-                                    is not None
+                                    if (normalized := _closed_vocabulary(value, _ENVIRONMENT_IDENTITIES)) is not None
                                 ),
                                 None,
                             ),
-                            "capabilities": list(registry_capabilities)
-                            if registry_capabilities is not None
-                            else None,
+                            "capabilities": list(registry_capabilities) if registry_capabilities is not None else None,
                             "readonly": registry_readonly,
-                            "last_checked_at": _canonical_utc_timestamp(
-                                verify_report.get("last_checked_at")
-                            ),
-                            "error_code": _closed_vocabulary(
-                                verify_report.get("error_code"), _ERROR_CODES
-                            ),
+                            "last_checked_at": _canonical_utc_timestamp(verify_report.get("last_checked_at")),
+                            "error_code": _closed_vocabulary(verify_report.get("error_code"), _ERROR_CODES),
                             "connection_state": _closed_vocabulary(
                                 verify_report.get("connection_state"),
                                 _CONNECTION_STATES,
@@ -935,6 +908,7 @@ def register_live_routes(
         # Validate the profile exists and is a live broker_sdk connector
         try:
             from src.trading.profiles import profile_by_id
+
             profile = profile_by_id(profile_id)
         except ValueError:
             raise HTTPException(status_code=404, detail=f"unknown connector profile: {profile_id}")
@@ -998,9 +972,7 @@ def register_live_routes(
 
         task = asyncio.ensure_future(h._drive_runner(runner))
         tasks[broker] = task
-        task.add_done_callback(
-            lambda t, b=broker: tasks.pop(b, None) if tasks.get(b) is t else None
-        )
+        task.add_done_callback(lambda t, b=broker: tasks.pop(b, None) if tasks.get(b) is t else None)
 
         h._emit_live_event(
             payload.session_id,

@@ -119,9 +119,7 @@ def _epoch_seconds(date_str: str) -> int:
     return int(moment.timestamp())
 
 
-def _rows_to_frame(
-    rows: List[dict], start_date: str, end_date: str, interval: str = "1D"
-) -> pd.DataFrame:
+def _rows_to_frame(rows: List[dict], start_date: str, end_date: str, interval: str = "1D") -> pd.DataFrame:
     """Build the OHLCV frame from chart rows, clipped to the inclusive window.
 
     For daily-and-coarser intervals the DatetimeIndex is normalized to midnight
@@ -221,9 +219,7 @@ class DataLoader:
                     start_date=start_date,
                     end_date=end_date,
                     fields=None,
-                    fetch=lambda code=code: self._fetch_one(
-                        code, start_date, end_date, interval
-                    ),
+                    fetch=lambda code=code: self._fetch_one(code, start_date, end_date, interval),
                 )
                 if df is not None and not df.empty:
                     result[code] = df
@@ -231,9 +227,7 @@ class DataLoader:
                 logger.warning("yahoo failed for %s: %s", code, exc)
         return result
 
-    def _fetch_one(
-        self, code: str, start_date: str, end_date: str, interval: str
-    ) -> Optional[pd.DataFrame]:
+    def _fetch_one(self, code: str, start_date: str, end_date: str, interval: str) -> Optional[pd.DataFrame]:
         """Fetch and normalize one symbol's chart, or ``None`` when unusable.
 
         Args:

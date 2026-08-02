@@ -64,11 +64,13 @@ def _client(fake_llm: _FakeStreamingLLM) -> ChatLLM:
 
 
 def test_reasoning_only_chunks_emit_progress_without_final_answer_text() -> None:
-    fake = _FakeStreamingLLM([
-        _FakeChunk(reasoning="thinking "),
-        _FakeChunk(reasoning="more"),
-        _FakeChunk(content="final"),
-    ])
+    fake = _FakeStreamingLLM(
+        [
+            _FakeChunk(reasoning="thinking "),
+            _FakeChunk(reasoning="more"),
+            _FakeChunk(content="final"),
+        ]
+    )
     text_chunks: list[str] = []
     reasoning_chunks: list[str] = []
 
@@ -87,7 +89,7 @@ def test_reasoning_only_chunks_emit_progress_without_final_answer_text() -> None
 def test_parse_dsml_tool_call_content_as_structured_tool_call() -> None:
     """DeepSeek-style DSML content must drive the ReAct tool path (#261)."""
     content = (
-        '<｜｜DSML｜｜tool_calls> '
+        "<｜｜DSML｜｜tool_calls> "
         '<｜｜DSML｜｜invoke name="bash"> '
         '<｜｜DSML｜｜parameter name="command" string="true">'
         "python -c \"print('vibe-dsml-ok')\""
@@ -102,9 +104,7 @@ def test_parse_dsml_tool_call_content_as_structured_tool_call() -> None:
     assert len(response.tool_calls) == 1
     assert response.tool_calls[0].id == "dsml_call_1"
     assert response.tool_calls[0].name == "bash"
-    assert response.tool_calls[0].arguments == {
-        "command": "python -c \"print('vibe-dsml-ok')\""
-    }
+    assert response.tool_calls[0].arguments == {"command": "python -c \"print('vibe-dsml-ok')\""}
     assert response.finish_reason == "tool_calls"
 
 
@@ -127,7 +127,7 @@ def test_parse_dsml_tool_call_requires_pure_tool_call_payload() -> None:
 def test_stream_dsml_tool_call_content_is_not_emitted_as_text() -> None:
     """DSML tool-call payloads should not flash as assistant text in CLI/UI."""
     content = (
-        '<｜｜DSML｜｜tool_calls>'
+        "<｜｜DSML｜｜tool_calls>"
         '<｜｜DSML｜｜invoke name="bash">'
         '<｜｜DSML｜｜parameter name="command">pwd</｜｜DSML｜｜parameter>'
         "</｜｜DSML｜｜invoke>"
@@ -172,11 +172,13 @@ def test_anthropic_content_blocks_stream_with_native_tool_call() -> None:
 
 def test_should_cancel_stops_stream_early() -> None:
     """A should_cancel predicate breaks the chunk loop; later chunks are dropped."""
-    fake = _FakeStreamingLLM([
-        _FakeChunk(content="a"),
-        _FakeChunk(content="b"),
-        _FakeChunk(content="c"),
-    ])
+    fake = _FakeStreamingLLM(
+        [
+            _FakeChunk(content="a"),
+            _FakeChunk(content="b"),
+            _FakeChunk(content="c"),
+        ]
+    )
     seen: list[str] = []
     calls = {"n": 0}
 
@@ -248,19 +250,17 @@ def test_stream_error_redacts_configured_secret_values() -> None:
 @pytest.mark.parametrize(
     ("status_code", "expected"),
     [
-        (None, True),   # transport error, no HTTP status — plausibly transient
-        (400, False),   # deterministic client error
+        (None, True),  # transport error, no HTTP status — plausibly transient
+        (400, False),  # deterministic client error
         (401, False),
         (404, False),
-        (408, True),    # request timeout — transient
-        (429, True),    # rate limit — transient
+        (408, True),  # request timeout — transient
+        (429, True),  # rate limit — transient
         (500, True),
         (503, True),
     ],
 )
-def test_provider_stream_error_retryable_classification(
-    status_code: int | None, expected: bool
-) -> None:
+def test_provider_stream_error_retryable_classification(status_code: int | None, expected: bool) -> None:
     original = Exception("boom")
     if status_code is not None:
         original.status_code = status_code  # type: ignore[attr-defined]
@@ -271,9 +271,7 @@ def test_provider_stream_error_retryable_classification(
 
 def test_content_filter_triggered_flag() -> None:
     """content_filter finish_reason sets content_filter_triggered=True."""
-    response = ChatLLM._parse_response(
-        _FakeChunk(content="", finish_reason="content_filter")
-    )
+    response = ChatLLM._parse_response(_FakeChunk(content="", finish_reason="content_filter"))
 
     assert response.content == ""
     assert response.finish_reason == "content_filter"
@@ -282,9 +280,7 @@ def test_content_filter_triggered_flag() -> None:
 
 def test_content_filter_triggered_flag_false_on_stop() -> None:
     """Normal stop reason leaves content_filter_triggered=False."""
-    response = ChatLLM._parse_response(
-        _FakeChunk(content="text", finish_reason="stop")
-    )
+    response = ChatLLM._parse_response(_FakeChunk(content="text", finish_reason="stop"))
 
     assert response.content == "text"
     assert response.finish_reason == "stop"
@@ -330,18 +326,14 @@ def test_generic_value_error_still_raises_provider_error() -> None:
 def test_cancelled_empty_stream_returns_empty_without_fallback() -> None:
     """A user cancel before any chunk returns empty — it must NOT invoke."""
     fake = _FakeStreamingLLM([_FakeChunk(content="ignored")])
-    response = _client(fake).stream_chat(
-        [{"role": "user", "content": "hi"}], should_cancel=lambda: True
-    )
+    response = _client(fake).stream_chat([{"role": "user", "content": "hi"}], should_cancel=lambda: True)
     assert fake.invoke_called is False
     assert response.content == ""
 
 
 def test_provider_stream_error_hints_at_base_url_on_html_body() -> None:
     """An HTML error page (site root, not API root) appends a base-URL hint."""
-    original = RuntimeError(
-        '<!DOCTYPE html><html id="__next_error__">404 Not Found</html>'
-    )
+    original = RuntimeError('<!DOCTYPE html><html id="__next_error__">404 Not Found</html>')
     err = ProviderStreamError(provider="zai", model="glm-5.1", original=original)
     message = str(err)
     assert "HTML page" in message

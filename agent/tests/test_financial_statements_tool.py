@@ -104,16 +104,17 @@ class TestSuccessEnvelope:
     """A resolvable symbol yields the ok envelope with parsed periods."""
 
     def test_a_share_uses_eastmoney_and_parses_periods(self):
-        with patch(
-            "src.tools.financial_statements_tool.resolve_secid",
-            return_value="1.600519",
-        ), patch(
-            "src.tools.financial_statements_tool.get_json",
-            return_value=_EM_A_PAYLOAD,
-        ) as mock_get:
-            text = FinancialStatementsTool().execute(
-                code="600519.SH", statement="balance", period="annual"
-            )
+        with (
+            patch(
+                "src.tools.financial_statements_tool.resolve_secid",
+                return_value="1.600519",
+            ),
+            patch(
+                "src.tools.financial_statements_tool.get_json",
+                return_value=_EM_A_PAYLOAD,
+            ) as mock_get,
+        ):
+            text = FinancialStatementsTool().execute(code="600519.SH", statement="balance", period="annual")
 
         payload = json.loads(text)
         assert payload["ok"] is True
@@ -135,20 +136,23 @@ class TestSuccessEnvelope:
         assert "SECURITY_CODE" not in sent_params["filter"]
 
     def test_us_uses_sec_companyfacts(self):
-        with patch(
-            "src.tools.financial_statements_tool.resolve_secid",
-        ) as mock_resolve, patch(
-            "src.tools.financial_statements_tool.get_json",
-        ) as mock_get, patch(
-            "src.tools.financial_statements_tool.cik_for",
-            return_value="0000320193",
-        ) as mock_cik, patch(
-            "src.tools.financial_statements_tool.get_company_facts",
-            return_value=_SEC_FACTS,
-        ) as mock_facts:
-            text = FinancialStatementsTool().execute(
-                code="AAPL.US", statement="income", period="annual"
-            )
+        with (
+            patch(
+                "src.tools.financial_statements_tool.resolve_secid",
+            ) as mock_resolve,
+            patch(
+                "src.tools.financial_statements_tool.get_json",
+            ) as mock_get,
+            patch(
+                "src.tools.financial_statements_tool.cik_for",
+                return_value="0000320193",
+            ) as mock_cik,
+            patch(
+                "src.tools.financial_statements_tool.get_company_facts",
+                return_value=_SEC_FACTS,
+            ) as mock_facts,
+        ):
+            text = FinancialStatementsTool().execute(code="AAPL.US", statement="income", period="annual")
 
         mock_cik.assert_called_once_with("AAPL")
         mock_facts.assert_called_once_with("0000320193")
@@ -171,16 +175,17 @@ class TestSuccessEnvelope:
         }
 
     def test_us_quarter_keeps_10q_points(self):
-        with patch(
-            "src.tools.financial_statements_tool.cik_for",
-            return_value="0000320193",
-        ), patch(
-            "src.tools.financial_statements_tool.get_company_facts",
-            return_value=_SEC_FACTS,
+        with (
+            patch(
+                "src.tools.financial_statements_tool.cik_for",
+                return_value="0000320193",
+            ),
+            patch(
+                "src.tools.financial_statements_tool.get_company_facts",
+                return_value=_SEC_FACTS,
+            ),
         ):
-            text = FinancialStatementsTool().execute(
-                code="AAPL.US", statement="income", period="quarter"
-            )
+            text = FinancialStatementsTool().execute(code="AAPL.US", statement="income", period="quarter")
 
         payload = json.loads(text)
         periods = payload["data"]["AAPL.US"]["periods"]
@@ -191,21 +196,19 @@ class TestSuccessEnvelope:
         assert q3["NetIncomeLoss"] == 21448000000.0
 
     def test_hk_indicators_use_hk_report_name(self):
-        with patch(
-            "src.tools.financial_statements_tool.resolve_secid",
-            return_value="116.00700",
-        ), patch(
-            "src.tools.financial_statements_tool.get_json",
-            return_value=_EM_PAYLOAD,
-        ) as mock_get:
-            FinancialStatementsTool().execute(
-                code="00700.HK", statement="indicators", period="annual"
-            )
+        with (
+            patch(
+                "src.tools.financial_statements_tool.resolve_secid",
+                return_value="116.00700",
+            ),
+            patch(
+                "src.tools.financial_statements_tool.get_json",
+                return_value=_EM_PAYLOAD,
+            ) as mock_get,
+        ):
+            FinancialStatementsTool().execute(code="00700.HK", statement="indicators", period="annual")
 
-        assert (
-            mock_get.call_args.kwargs["params"]["reportName"]
-            == "RPT_HKF10_FN_GMAININDICATOR"
-        )
+        assert mock_get.call_args.kwargs["params"]["reportName"] == "RPT_HKF10_FN_GMAININDICATOR"
 
 
 class TestAllFailedSurfacesError:
@@ -217,16 +220,17 @@ class TestAllFailedSurfacesError:
     """
 
     def test_http_failure_yields_top_level_ok_false(self):
-        with patch(
-            "src.tools.financial_statements_tool.resolve_secid",
-            return_value="1.600519",
-        ), patch(
-            "src.tools.financial_statements_tool.get_json",
-            side_effect=RuntimeError("HTTP 429"),
+        with (
+            patch(
+                "src.tools.financial_statements_tool.resolve_secid",
+                return_value="1.600519",
+            ),
+            patch(
+                "src.tools.financial_statements_tool.get_json",
+                side_effect=RuntimeError("HTTP 429"),
+            ),
         ):
-            text = FinancialStatementsTool().execute(
-                code="600519.SH", statement="income"
-            )
+            text = FinancialStatementsTool().execute(code="600519.SH", statement="income")
 
         payload = json.loads(text)
         assert payload["ok"] is False
@@ -248,12 +252,15 @@ class TestAllFailedSurfacesError:
     def test_empty_a_share_payload_yields_no_periods_but_ok_true(self):
         # An empty-but-well-formed payload is data (zero periods), not a fetch
         # failure, so the envelope stays ok=true.
-        with patch(
-            "src.tools.financial_statements_tool.resolve_secid",
-            return_value="0.000001",
-        ), patch(
-            "src.tools.financial_statements_tool.get_json",
-            return_value={"result": {}},
+        with (
+            patch(
+                "src.tools.financial_statements_tool.resolve_secid",
+                return_value="0.000001",
+            ),
+            patch(
+                "src.tools.financial_statements_tool.get_json",
+                return_value={"result": {}},
+            ),
         ):
             text = FinancialStatementsTool().execute(code="000001.SZ")
 
@@ -289,16 +296,18 @@ class TestPeriodSelection:
         }
     }
 
-    def _run(self, payload, *, period, statement="balance",
-             code="600519.SH", secid="1.600519"):
-        with patch(
-            "src.tools.financial_statements_tool.resolve_secid", return_value=secid,
-        ), patch(
-            "src.tools.financial_statements_tool.get_json", return_value=payload,
-        ) as mock_get:
-            text = FinancialStatementsTool().execute(
-                code=code, statement=statement, period=period
-            )
+    def _run(self, payload, *, period, statement="balance", code="600519.SH", secid="1.600519"):
+        with (
+            patch(
+                "src.tools.financial_statements_tool.resolve_secid",
+                return_value=secid,
+            ),
+            patch(
+                "src.tools.financial_statements_tool.get_json",
+                return_value=payload,
+            ) as mock_get,
+        ):
+            text = FinancialStatementsTool().execute(code=code, statement=statement, period=period)
         return json.loads(text), mock_get
 
     def test_no_report_type_clause_in_filter(self):
@@ -315,18 +324,13 @@ class TestPeriodSelection:
         assert len(payload["data"]["600519.SH"]["periods"]) == 4
 
     def test_annual_falls_back_when_no_december_year_end(self):
-        payload, _ = self._run(
-            self._NO_YEAR_END, period="annual", code="00700.HK", secid="116.00700"
-        )
+        payload, _ = self._run(self._NO_YEAR_END, period="annual", code="00700.HK", secid="116.00700")
         # No -12-31 row -> return the full series rather than drop all data.
         assert len(payload["data"]["00700.HK"]["periods"]) == 2
 
     def test_a_share_indicators_use_mainfinadata_report(self):
         _, mock_get = self._run(self._MIXED, period="annual", statement="indicators")
-        assert (
-            mock_get.call_args.kwargs["params"]["reportName"]
-            == "RPT_F10_FINANCE_MAINFINADATA"
-        )
+        assert mock_get.call_args.kwargs["params"]["reportName"] == "RPT_F10_FINANCE_MAINFINADATA"
 
 
 class TestErrorEnvelope:
@@ -347,15 +351,11 @@ class TestErrorEnvelope:
         assert "suffix" in payload["error"]
 
     def test_invalid_statement_rejected(self):
-        payload = json.loads(
-            FinancialStatementsTool().execute(code="600519.SH", statement="equity")
-        )
+        payload = json.loads(FinancialStatementsTool().execute(code="600519.SH", statement="equity"))
         assert payload["ok"] is False
         assert "statement" in payload["error"]
 
     def test_invalid_period_rejected(self):
-        payload = json.loads(
-            FinancialStatementsTool().execute(code="600519.SH", period="ttm")
-        )
+        payload = json.loads(FinancialStatementsTool().execute(code="600519.SH", period="ttm"))
         assert payload["ok"] is False
         assert "period" in payload["error"]

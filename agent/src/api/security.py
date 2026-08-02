@@ -48,13 +48,15 @@ _DEFAULT_CORS_ORIGINS: tuple[str, ...] = (
 # a value living only in that file would be read too late.
 _EXTRA_CORS_ORIGINS_ENV = "VIBE_TRADING_EXTRA_CORS_ORIGINS"
 
-_DEFAULT_LOOPBACK_HOSTS = frozenset({
-    "localhost",
-    "127.0.0.1",
-    "::1",
-    "[::1]",
-    "testserver",
-})
+_DEFAULT_LOOPBACK_HOSTS = frozenset(
+    {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "[::1]",
+        "testserver",
+    }
+)
 
 _SAFE_BROWSER_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -71,8 +73,7 @@ def _parse_cors_origins(raw: Optional[str]) -> List[str]:
     origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
     if "*" in origins:
         raise RuntimeError(
-            "CORS_ORIGINS='*' is not allowed while credentials are enabled; "
-            "configure explicit Web UI origins instead."
+            "CORS_ORIGINS='*' is not allowed while credentials are enabled; configure explicit Web UI origins instead."
         )
     return origins
 
@@ -110,6 +111,7 @@ def _parse_extra_loopback_hosts(raw: Optional[str]) -> set[str]:
 
 def _get_extra_loopback_hosts() -> set[str]:
     from src.config.accessor import get_env_config
+
     return _parse_extra_loopback_hosts(get_env_config().api.api_allowed_hosts or None)
 
 
@@ -148,9 +150,7 @@ def _get_cors_origins() -> List[str]:
 
     config = get_env_config().api
     origins = _parse_cors_origins(config.cors_origins or None)
-    for origin in _parse_extra_cors_origins(
-        config.vibe_trading_extra_cors_origins or None
-    ):
+    for origin in _parse_extra_cors_origins(config.vibe_trading_extra_cors_origins or None):
         if origin not in origins:
             origins.append(origin)
     return origins
@@ -177,8 +177,7 @@ async def _reject_untrusted_loopback_host(request: Request, call_next):
 
 # Deny powerful browser features the app never uses.
 _PERMISSIONS_POLICY = (
-    "geolocation=(), camera=(), microphone=(), payment=(), usb=(), "
-    "magnetometer=(), gyroscope=(), accelerometer=()"
+    "geolocation=(), camera=(), microphone=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
 )
 
 # Report-Only first: a later switch to enforcing mode can be validated against
@@ -238,10 +237,7 @@ class _AccessLogRedactionFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, tuple):
-            record.args = tuple(
-                _redact_query_secrets(a) if isinstance(a, str) else a
-                for a in record.args
-            )
+            record.args = tuple(_redact_query_secrets(a) if isinstance(a, str) else a for a in record.args)
         if isinstance(record.msg, str):
             record.msg = _redact_query_secrets(record.msg)
         return True
@@ -313,6 +309,7 @@ _security = HTTPBearer(auto_error=False)
 
 def _get_api_key() -> str:
     from src.config.accessor import get_env_config
+
     return get_env_config().api.api_auth_key
 
 
@@ -323,11 +320,7 @@ def _configured_api_key() -> str:
     :func:`get_env_config` so both ``API_AUTH_KEY`` and the legacy
     alias produce the same key.
     """
-    return (
-        get_env_config().api.api_auth_key
-        or _host_attr("_API_KEY", _get_api_key())
-        or ""
-    )
+    return get_env_config().api.api_auth_key or _host_attr("_API_KEY", _get_api_key()) or ""
 
 
 def _auth_credential_from_header_or_query(

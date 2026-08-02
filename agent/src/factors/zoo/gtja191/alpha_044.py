@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #44 - 条件量价积
 # 简要说明: (-1*RANK(CORR(HIGH,MEAN(VOLUME,20),5)) + RANK(CORR(RANK(LOW),RANK(MEAN(VOLUME,20)),6)))，两种量价关系的差值排名。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_044",
-    "theme": ['volume'],
-    "formula_latex": '(TSRANK(DECAYLINEAR(CORR(LOW,MEAN(VOLUME,10),7),6),4)+TSRANK(DECAYLINEAR(DELTA(VWAP,3),10),15))',
-    "columns_required": ['low', 'volume', 'amount'],
+    "theme": ["volume"],
+    "formula_latex": "(TSRANK(DECAYLINEAR(CORR(LOW,MEAN(VOLUME,10),7),6),4)+TSRANK(DECAYLINEAR(DELTA(VWAP,3),10),15))",
+    "columns_required": ["low", "volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 10,
     "min_warmup_bars": 27,
-    "notes": 'Sum of two TSRANK terms.',
+    "notes": "Sum of two TSRANK terms.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     l = panel["low"]

@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #153
 # 简要说明: 国泰君安191短周期交易型alpha因子第153号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     (MEAN(CLOSE,3)+MEAN(CLOSE,6)+MEAN(CLOSE,12)+MEAN(CLOSE,24))/4
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_153"
 
 __alpha_meta__ = {
-    'id': 'gtja191_153',
-    'theme': ['momentum'],
-    'formula_latex': '(mean(c,3)+mean(c,6)+mean(c,12)+mean(c,24))/4',
-    'columns_required': ['close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 24,
-    'min_warmup_bars': 24,
-    'notes': '',
+    "id": "gtja191_153",
+    "theme": ["momentum"],
+    "formula_latex": "(mean(c,3)+mean(c,6)+mean(c,12)+mean(c,24))/4",
+    "columns_required": ["close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 24,
+    "min_warmup_bars": 24,
+    "notes": "",
 }
 
 

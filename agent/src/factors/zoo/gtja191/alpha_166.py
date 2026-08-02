@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #166
 # 简要说明: 国泰君安191短周期交易型alpha因子第166号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: Skewness-style; constants from report.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_166"
 
 __alpha_meta__ = {
-    'id': 'gtja191_166',
-    'theme': ['volatility'],
-    'formula_latex': 'see body',
-    'columns_required': ['close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 40,
-    'notes': 'Skewness-style; constants from report.',
+    "id": "gtja191_166",
+    "theme": ["volatility"],
+    "formula_latex": "see body",
+    "columns_required": ["close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 40,
+    "notes": "Skewness-style; constants from report.",
 }
 
 
@@ -63,6 +63,6 @@ def compute(panel):
     ret = safe_div(c, c.shift(1)) - 1.0
     m = ts_mean(ret, 20)
     num = (ret - m).rolling(20).sum() * -20.0 * (20.0 - 1.0) ** 1.5
-    den = (20.0 - 1.0) * (20.0 - 2.0) * (ret ** 2).rolling(20).sum() ** 1.5
+    den = (20.0 - 1.0) * (20.0 - 2.0) * (ret**2).rolling(20).sum() ** 1.5
     out = safe_div(num, den)
     return out

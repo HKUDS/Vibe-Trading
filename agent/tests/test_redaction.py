@@ -185,9 +185,7 @@ def test_redact_text_leaves_benign_output_readable(raw: str) -> None:
 
 def test_redact_text_scrubs_every_line_of_multiline_output() -> None:
     raw = "line1 api_key=one\nline2 clean\nline3 password: two"
-    assert redact_text(raw) == (
-        "line1 api_key=[redacted]\nline2 clean\nline3 password: [redacted]"
-    )
+    assert redact_text(raw) == ("line1 api_key=[redacted]\nline2 clean\nline3 password: [redacted]")
 
 
 def test_redact_text_none_and_empty_and_nonstr_safe() -> None:

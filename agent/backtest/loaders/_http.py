@@ -33,8 +33,7 @@ logger = logging.getLogger(__name__)
 # Default User-Agent. Many free quote endpoints reject the bare urllib/requests
 # UA, so we present a normal desktop browser string. Loaders may override.
 DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
 # Upper bound on the random jitter (seconds) added on top of the configured

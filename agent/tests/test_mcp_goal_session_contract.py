@@ -69,9 +69,7 @@ def test_resolve_session_id_honours_an_explicit_client_id(mcp_server) -> None:
     assert mcp_server._resolve_session_id("  conv-42  ") == "conv-42"
 
 
-def test_start_research_goal_works_without_a_session_id(
-    mcp_server, tmp_path, monkeypatch
-) -> None:
+def test_start_research_goal_works_without_a_session_id(mcp_server, tmp_path, monkeypatch) -> None:
     """The end-to-end point: an omitted id must not become a validation error."""
     from src.goal import GoalStore
 

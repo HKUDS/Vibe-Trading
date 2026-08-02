@@ -26,10 +26,9 @@ class TestSuccessEnvelope:
     """A resolvable symbol yields the ok envelope with labelled buckets."""
 
     def test_daily_flow_parses_into_buckets(self):
-        with patch(
-            "src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"
-        ), patch(
-            "src.tools.fund_flow_tool.get_json", return_value=_DAILY_PAYLOAD
+        with (
+            patch("src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"),
+            patch("src.tools.fund_flow_tool.get_json", return_value=_DAILY_PAYLOAD),
         ):
             text = FundFlowTool().execute(codes=["600519.SH"], period="daily", days=30)
 
@@ -52,10 +51,9 @@ class TestSuccessEnvelope:
         }
 
     def test_days_cap_keeps_most_recent_rows(self):
-        with patch(
-            "src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"
-        ), patch(
-            "src.tools.fund_flow_tool.get_json", return_value=_DAILY_PAYLOAD
+        with (
+            patch("src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"),
+            patch("src.tools.fund_flow_tool.get_json", return_value=_DAILY_PAYLOAD),
         ):
             text = FundFlowTool().execute(codes=["600519.SH"], period="daily", days=1)
 
@@ -65,11 +63,10 @@ class TestSuccessEnvelope:
 
     def test_minute_period_uses_minute_url(self):
         minute_payload = {"data": {"klines": ["2024-01-02 09:31,1.0,2.0,3.0,4.0,5.0"]}}
-        with patch(
-            "src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"
-        ), patch(
-            "src.tools.fund_flow_tool.get_json", return_value=minute_payload
-        ) as mock_get:
+        with (
+            patch("src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"),
+            patch("src.tools.fund_flow_tool.get_json", return_value=minute_payload) as mock_get,
+        ):
             text = FundFlowTool().execute(codes=["600519.SH"], period="min")
 
         url = mock_get.call_args[0][0]
@@ -86,10 +83,9 @@ class TestPerSymbolIsolation:
         def fake_resolve(symbol):
             return None if symbol == "BAD" else "1.600519"
 
-        with patch(
-            "src.tools.fund_flow_tool.resolve_secid", side_effect=fake_resolve
-        ), patch(
-            "src.tools.fund_flow_tool.get_json", return_value=_DAILY_PAYLOAD
+        with (
+            patch("src.tools.fund_flow_tool.resolve_secid", side_effect=fake_resolve),
+            patch("src.tools.fund_flow_tool.get_json", return_value=_DAILY_PAYLOAD),
         ):
             text = FundFlowTool().execute(codes=["BAD", "600519.SH"])
 
@@ -99,13 +95,13 @@ class TestPerSymbolIsolation:
         assert len(payload["data"]["600519.SH"]["rows"]) == 2
 
     def test_http_failure_on_one_symbol_is_captured(self):
-        with patch(
-            "src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"
-        ), patch(
-            "src.tools.fund_flow_tool.get_json", side_effect=RuntimeError("HTTP 429")
-        ), patch(
-            "src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow",
-            side_effect=RuntimeError("no fallback"),
+        with (
+            patch("src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"),
+            patch("src.tools.fund_flow_tool.get_json", side_effect=RuntimeError("HTTP 429")),
+            patch(
+                "src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow",
+                side_effect=RuntimeError("no fallback"),
+            ),
         ):
             text = FundFlowTool().execute(codes=["600519.SH"])
 
@@ -120,14 +116,14 @@ class TestPerSymbolIsolation:
             "source": "tushare",
             "rows": [{"timestamp": "2024-01-03", "main": 100.0}],
         }
-        with patch(
-            "src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"
-        ), patch(
-            "src.tools.fund_flow_tool.get_json", side_effect=RuntimeError("HTTP 429")
-        ), patch(
-            "src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow",
-            return_value=fallback,
-        ) as fallback_fetch:
+        with (
+            patch("src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"),
+            patch("src.tools.fund_flow_tool.get_json", side_effect=RuntimeError("HTTP 429")),
+            patch(
+                "src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow",
+                return_value=fallback,
+            ) as fallback_fetch,
+        ):
             text = FundFlowTool().execute(codes=["600519.SH"], period="daily", days=5)
 
         fallback_fetch.assert_called_once_with("600519.SH", days=5)
@@ -139,9 +135,10 @@ class TestPerSymbolIsolation:
 
     def test_malformed_row_skipped(self):
         bad = {"data": {"klines": ["garbage", "2024-01-03,-50.0,20.0,-5.0,-30.0,-20.0"]}}
-        with patch(
-            "src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"
-        ), patch("src.tools.fund_flow_tool.get_json", return_value=bad):
+        with (
+            patch("src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"),
+            patch("src.tools.fund_flow_tool.get_json", return_value=bad),
+        ):
             text = FundFlowTool().execute(codes=["600519.SH"])
 
         rows = json.loads(text)["data"]["600519.SH"]["rows"]
@@ -165,23 +162,17 @@ class TestErrorEnvelope:
         assert payload["ok"] is False
 
     def test_invalid_period_rejected(self):
-        payload = json.loads(
-            FundFlowTool().execute(codes=["600519.SH"], period="hourly")
-        )
+        payload = json.loads(FundFlowTool().execute(codes=["600519.SH"], period="hourly"))
         assert payload["ok"] is False
         assert "period" in payload["error"]
 
     def test_non_positive_days_rejected(self):
-        payload = json.loads(
-            FundFlowTool().execute(codes=["600519.SH"], days=0)
-        )
+        payload = json.loads(FundFlowTool().execute(codes=["600519.SH"], days=0))
         assert payload["ok"] is False
         assert "days" in payload["error"]
 
     def test_bool_days_rejected(self):
-        payload = json.loads(
-            FundFlowTool().execute(codes=["600519.SH"], days=True)
-        )
+        payload = json.loads(FundFlowTool().execute(codes=["600519.SH"], days=True))
         assert payload["ok"] is False
 
 

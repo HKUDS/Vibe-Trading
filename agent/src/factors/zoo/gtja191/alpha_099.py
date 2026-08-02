@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #99
 # 简要说明: 国泰君安191短周期交易型alpha因子第99号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_099",
-    "theme": ['volume'],
-    "formula_latex": '(-1*RANK(COVIANCE(RANK(CLOSE),RANK(VOLUME),5)))',
-    "columns_required": ['close', 'volume'],
+    "theme": ["volume"],
+    "formula_latex": "(-1*RANK(COVIANCE(RANK(CLOSE),RANK(VOLUME),5)))",
+    "columns_required": ["close", "volume"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
     "min_warmup_bars": 6,
-    "notes": 'Negated rank of 5d cov(rank close, rank volume).',
+    "notes": "Negated rank of 5d cov(rank close, rank volume).",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     return -1.0 * rank(ts_cov(rank(panel["close"]), rank(panel["volume"]), 5))

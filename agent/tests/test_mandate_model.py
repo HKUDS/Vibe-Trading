@@ -160,9 +160,7 @@ def test_load_mandate_missing_field_returns_none(live_runtime: Path) -> None:
 
     bdir = broker_dir("robinhood")
     bdir.mkdir(parents=True, exist_ok=True)
-    (bdir / "mandate.json").write_text(
-        json.dumps({"schema_version": MANDATE_SCHEMA_VERSION}), encoding="utf-8"
-    )
+    (bdir / "mandate.json").write_text(json.dumps({"schema_version": MANDATE_SCHEMA_VERSION}), encoding="utf-8")
     assert load_mandate("robinhood") is None
 
 

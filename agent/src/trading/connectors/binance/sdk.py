@@ -154,7 +154,9 @@ class BinanceConfig:
 _OVERRIDE_KEYS = ("api_key", "api_secret", "profile", "testnet_host")
 
 
-def build_config(profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None) -> "BinanceConfig":
+def build_config(
+    profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None
+) -> "BinanceConfig":
     """Resolve the effective config: saved file ← profile defaults ← CLI overrides.
 
     Credentials (``api_key`` / ``api_secret``) come from the saved
@@ -376,9 +378,19 @@ def get_quote(symbol: str, *, config: BinanceConfig | None = None, **_: Any) -> 
 
 #: Project/canonical period token → ccxt unified timeframe (lowercase).
 _TIMEFRAME_MAP = {
-    "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",
-    "1h": "1h", "1H": "1h", "4h": "4h", "4H": "4h",
-    "1d": "1d", "1D": "1d", "1w": "1w", "1W": "1w", "1M": "1M",
+    "1m": "1m",
+    "5m": "5m",
+    "15m": "15m",
+    "30m": "30m",
+    "1h": "1h",
+    "1H": "1h",
+    "4h": "4h",
+    "4H": "4h",
+    "1d": "1d",
+    "1D": "1d",
+    "1w": "1w",
+    "1W": "1w",
+    "1M": "1M",
 }
 
 

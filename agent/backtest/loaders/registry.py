@@ -107,6 +107,7 @@ def _ensure_registered() -> None:
         "backtest.loaders.local_loader",
     ]
     import importlib
+
     for mod in _loader_modules:
         try:
             importlib.import_module(mod)
@@ -134,19 +135,32 @@ _NO_NETWORK_FALLBACK_SOURCES: frozenset[str] = frozenset({"local", "qveris"})  #
 # that must be politely throttled; Finnhub/AlphaVantage/Tiingo/FMP are key-gated
 # REST fallbacks placed deeper in the chain.
 FALLBACK_CHAINS: dict[str, list[str]] = {
-    "a_share":   ["tencent", "mootdx", "eastmoney", "baostock", "akshare", "tushare", "local"],
-    "us_equity": ["yahoo", "stooq", "sina", "eastmoney", "yfinance", "tiingo", "fmp", "finnhub", "alphavantage", "longbridge", "akshare", "local"],
+    "a_share": ["tencent", "mootdx", "eastmoney", "baostock", "akshare", "tushare", "local"],
+    "us_equity": [
+        "yahoo",
+        "stooq",
+        "sina",
+        "eastmoney",
+        "yfinance",
+        "tiingo",
+        "fmp",
+        "finnhub",
+        "alphavantage",
+        "longbridge",
+        "akshare",
+        "local",
+    ],
     "hk_equity": ["eastmoney", "yahoo", "futu", "yfinance", "akshare", "longbridge", "local"],
     "india_equity": ["yahoo", "yfinance", "india_broker", "local"],
-    "kr_equity":   ["pykrx", "yahoo", "yfinance", "local"],
+    "kr_equity": ["pykrx", "yahoo", "yfinance", "local"],
     # OKX first (native), then dedicated Binance, then generic CCXT / Yahoo.
-    "crypto":    ["okx", "binance", "ccxt", "yfinance", "local"],
-    "futures":   ["tushare", "akshare", "local"],
-    "fund":      ["tushare", "akshare", "local"],
-    "macro":     ["akshare", "tushare", "local"],
+    "crypto": ["okx", "binance", "ccxt", "yfinance", "local"],
+    "futures": ["tushare", "akshare", "local"],
+    "fund": ["tushare", "akshare", "local"],
+    "macro": ["akshare", "tushare", "local"],
     # mt5 leads when a local MetaTrader 5 terminal is attached (Windows-only,
     # broker feed); otherwise it reports unavailable and the chain proceeds.
-    "forex":     ["mt5", "akshare", "yfinance", "local"],
+    "forex": ["mt5", "akshare", "yfinance", "local"],
 }
 
 
@@ -183,8 +197,7 @@ def resolve_loader(market: str) -> Any:
         if loader.is_available():
             return loader
     raise NoAvailableSourceError(
-        f"No available data source for market '{market}'. "
-        f"Tried: {tried or chain}. Check network and API token config."
+        f"No available data source for market '{market}'. Tried: {tried or chain}. Check network and API token config."
     )
 
 
@@ -232,12 +245,12 @@ def get_loader_cls_with_fallback(source: str) -> Type[Any]:
             fallback = resolve_loader(market)
             logger.warning(
                 "%s is unavailable, falling back to %s for market %s",
-                source, fallback.name, market,
+                source,
+                fallback.name,
+                market,
             )
             return type(fallback)
         except NoAvailableSourceError:
             continue
 
-    raise NoAvailableSourceError(
-        f"Data source '{source}' is unavailable and no fallback found."
-    )
+    raise NoAvailableSourceError(f"Data source '{source}' is unavailable and no fallback found.")

@@ -5,8 +5,6 @@
 """
 
 import tushare as ts
-import pandas as pd
-import os
 
 # 读取环境变量中的token, 或者读取本地记录的token
 from src.config.accessor import get_env_config
@@ -22,7 +20,7 @@ def get_stock_list():
     获取股票列表
     """
     try:
-        data = pro.stock_basic(exchange='', list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
+        data = pro.stock_basic(exchange="", list_status="L", fields="ts_code,symbol,name,area,industry,list_date")
         print("股票列表获取成功：")
         print(data.head())
         return data
@@ -64,26 +62,27 @@ def main():
     主函数
     """
     print("===== tushare 股票数据获取示例 =====")
-    
+
     # 获取股票列表
     stock_list = get_stock_list()
-    
+
     if stock_list is not None:
         # 获取第一只股票的代码
-        ts_code = stock_list['ts_code'].iloc[0]
+        ts_code = stock_list["ts_code"].iloc[0]
         print(f"\n使用股票代码：{ts_code}")
-        
+
         # 获取日线数据（最近30天）
         import datetime
-        end_date = datetime.datetime.now().strftime('%Y%m%d')
-        start_date = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y%m%d')
+
+        end_date = datetime.datetime.now().strftime("%Y%m%d")
+        start_date = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime("%Y%m%d")
         print(f"\n获取日线数据：{start_date} 至 {end_date}")
         get_daily_data(ts_code, start_date, end_date)
-        
+
         # 获取财务数据（最近一年）
         current_year = datetime.datetime.now().year
-        print(f"\n获取财务数据：{current_year-1}年 第4季度")
-        get_financial_data(ts_code, current_year-1, 4)
+        print(f"\n获取财务数据：{current_year - 1}年 第4季度")
+        get_financial_data(ts_code, current_year - 1, 4)
 
 
 if __name__ == "__main__":

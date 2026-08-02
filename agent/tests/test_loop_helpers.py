@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
-import pytest
 
 from src.agent.loop import (
     KEEP_RECENT,
@@ -116,9 +114,7 @@ class TestMicrocompactThresholdGate:
     def test_no_op_at_or_below_threshold(self) -> None:
         messages = [{"role": "system", "content": "sys"}]
         for i in range(KEEP_RECENT + 5):
-            messages.append(
-                {"role": "tool", "content": f"{'x' * 200} result_{i}", "tool_call_id": f"tc_{i}"}
-            )
+            messages.append({"role": "tool", "content": f"{'x' * 200} result_{i}", "tool_call_id": f"tc_{i}"})
 
         assert estimate_tokens(messages) <= MICROCOMPACT_THRESHOLD
 
@@ -130,9 +126,7 @@ class TestMicrocompactThresholdGate:
         messages = [{"role": "system", "content": "sys"}]
         messages.append({"role": "user", "content": "x" * (MICROCOMPACT_THRESHOLD * 4 + 1000)})
         for i in range(KEEP_RECENT + 5):
-            messages.append(
-                {"role": "tool", "content": f"{'y' * 200} result_{i}", "tool_call_id": f"tc_{i}"}
-            )
+            messages.append({"role": "tool", "content": f"{'y' * 200} result_{i}", "tool_call_id": f"tc_{i}"})
 
         assert estimate_tokens(messages) > MICROCOMPACT_THRESHOLD
 
@@ -212,9 +206,13 @@ class TestContextCollapse:
 class TestFixToolPairs:
     def test_removes_orphan_result(self) -> None:
         messages = [
-            {"role": "assistant", "content": "thinking", "tool_calls": [
-                {"id": "tc_1", "function": {"name": "bash"}},
-            ]},
+            {
+                "role": "assistant",
+                "content": "thinking",
+                "tool_calls": [
+                    {"id": "tc_1", "function": {"name": "bash"}},
+                ],
+            },
             {"role": "tool", "tool_call_id": "tc_1", "name": "bash", "content": "ok"},
             # Orphan: no matching tool_call
             {"role": "tool", "tool_call_id": "tc_orphan", "name": "ghost", "content": "orphan"},
@@ -226,10 +224,14 @@ class TestFixToolPairs:
 
     def test_inserts_stub_for_orphan_call(self) -> None:
         messages = [
-            {"role": "assistant", "content": "thinking", "tool_calls": [
-                {"id": "tc_1", "function": {"name": "bash"}},
-                {"id": "tc_2", "function": {"name": "read_file"}},
-            ]},
+            {
+                "role": "assistant",
+                "content": "thinking",
+                "tool_calls": [
+                    {"id": "tc_1", "function": {"name": "bash"}},
+                    {"id": "tc_2", "function": {"name": "read_file"}},
+                ],
+            },
             # Only result for tc_1, tc_2 is missing
             {"role": "tool", "tool_call_id": "tc_1", "name": "bash", "content": "ok"},
         ]
@@ -242,9 +244,13 @@ class TestFixToolPairs:
 
     def test_no_op_when_balanced(self) -> None:
         messages = [
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "tc_1", "function": {"name": "bash"}},
-            ]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"id": "tc_1", "function": {"name": "bash"}},
+                ],
+            },
             {"role": "tool", "tool_call_id": "tc_1", "name": "bash", "content": "ok"},
         ]
         before = len(messages)
@@ -258,11 +264,15 @@ class TestFixToolPairs:
 
     def test_multiple_orphans(self) -> None:
         messages = [
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "tc_1", "function": {"name": "a"}},
-                {"id": "tc_2", "function": {"name": "b"}},
-                {"id": "tc_3", "function": {"name": "c"}},
-            ]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"id": "tc_1", "function": {"name": "a"}},
+                    {"id": "tc_2", "function": {"name": "b"}},
+                    {"id": "tc_3", "function": {"name": "c"}},
+                ],
+            },
             # No results at all
         ]
         _fix_tool_pairs(messages)

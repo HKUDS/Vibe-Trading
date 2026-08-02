@@ -73,9 +73,9 @@ def test_mcp_server_http_transport() -> None:
         cwd=str(AGENT_DIR),
     )
     try:
-        assert _wait_port(
-            "127.0.0.1", port, INIT_TIMEOUT
-        ), f"HTTP MCP server did not bind 127.0.0.1:{port} within {INIT_TIMEOUT}s"
+        assert _wait_port("127.0.0.1", port, INIT_TIMEOUT), (
+            f"HTTP MCP server did not bind 127.0.0.1:{port} within {INIT_TIMEOUT}s"
+        )
 
         ep = f"http://127.0.0.1:{port}/mcp"
         headers = {
@@ -97,12 +97,8 @@ def test_mcp_server_http_transport() -> None:
             },
             timeout=15.0,
         )
-        assert (
-            r.status_code == 200
-        ), f"POST /mcp initialize returned {r.status_code}: {r.text[:300]}"
-        assert (
-            "mcp-session-id" in r.headers
-        ), "server did not return an MCP-Session-Id header"
+        assert r.status_code == 200, f"POST /mcp initialize returned {r.status_code}: {r.text[:300]}"
+        assert "mcp-session-id" in r.headers, "server did not return an MCP-Session-Id header"
         assert r.headers.get("content-type", "") in (
             "application/json",
             "text/event-stream",
@@ -125,9 +121,9 @@ def test_mcp_server_http_transport() -> None:
             json={"jsonrpc": "2.0", "id": 9, "method": "initialize", "params": {}},
             timeout=5.0,
         )
-        assert (
-            legacy.status_code == 404
-        ), f"legacy /sse path should not be mounted by streamable-http, got {legacy.status_code}"
+        assert legacy.status_code == 404, (
+            f"legacy /sse path should not be mounted by streamable-http, got {legacy.status_code}"
+        )
     finally:
         try:
             proc.terminate()

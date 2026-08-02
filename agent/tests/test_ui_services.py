@@ -22,9 +22,7 @@ def test_reconstruct_price_series_uses_central_fetch_router(
 ) -> None:
     run_dir = tmp_path / "completed-run"
     (run_dir / "code").mkdir(parents=True)
-    (run_dir / "code" / "signal_engine.py").write_text(
-        "class SignalEngine:\n    pass\n", encoding="utf-8"
-    )
+    (run_dir / "code" / "signal_engine.py").write_text("class SignalEngine:\n    pass\n", encoding="utf-8")
     (run_dir / "req.json").write_text(
         json.dumps(
             {
@@ -183,9 +181,7 @@ def test_main_reuses_explicit_source_snapshot(
 ) -> None:
     run_dir = tmp_path / "run"
     (run_dir / "code").mkdir(parents=True)
-    (run_dir / "code" / "signal_engine.py").write_text(
-        "class SignalEngine:\n    pass\n", encoding="utf-8"
-    )
+    (run_dir / "code" / "signal_engine.py").write_text("class SignalEngine:\n    pass\n", encoding="utf-8")
     (run_dir / "config.json").write_text(
         json.dumps(
             {
@@ -220,9 +216,7 @@ def test_main_reuses_explicit_source_snapshot(
     class CapturingEngine:
         def run_backtest(self, config, loader, signal_engine, path, **kwargs):
             del signal_engine, path, kwargs
-            data = loader.fetch(
-                config["codes"], config["start_date"], config["end_date"]
-            )
+            data = loader.fetch(config["codes"], config["start_date"], config["end_date"])
             observed["close"] = float(data["AAPL.US"]["close"].iloc[0])
 
     monkeypatch.setattr(runner, "_get_loader", lambda source: CountingLoader)
@@ -232,9 +226,7 @@ def test_main_reuses_explicit_source_snapshot(
         lambda path, name: SimpleNamespace(SignalEngine=type("SignalEngine", (), {})),
     )
     monkeypatch.setattr(runner, "_validate_signal_engine_class", lambda cls: None)
-    monkeypatch.setattr(
-        runner, "_create_market_engine", lambda source, config, codes: CapturingEngine()
-    )
+    monkeypatch.setattr(runner, "_create_market_engine", lambda source, config, codes: CapturingEngine())
 
     runner.main(run_dir)
 

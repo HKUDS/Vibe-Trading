@@ -80,12 +80,10 @@ class TestSymbolSearchSuccess:
     """Happy-path fan-out, normalization, merge, and CIK enrichment."""
 
     def test_merges_and_normalizes_across_sources(self):
-        with patch.object(
-            ss.eastmoney_client, "get_json", return_value=_eastmoney_payload()
-        ), patch.object(
-            ss.yahoo_client, "search", return_value=_yahoo_quotes()
-        ), patch.object(
-            ss.sec_edgar_client, "cik_for", return_value="0000320193"
+        with (
+            patch.object(ss.eastmoney_client, "get_json", return_value=_eastmoney_payload()),
+            patch.object(ss.yahoo_client, "search", return_value=_yahoo_quotes()),
+            patch.object(ss.sec_edgar_client, "cik_for", return_value="0000320193"),
         ):
             out = ss.SymbolSearchTool().execute(query="apple", limit=10)
 
@@ -125,12 +123,10 @@ class TestSymbolSearchSuccess:
         assert data["count"] == len(data["candidates"])
 
     def test_limit_clamped_and_applied(self):
-        with patch.object(
-            ss.eastmoney_client, "get_json", return_value=_eastmoney_payload()
-        ), patch.object(
-            ss.yahoo_client, "search", return_value=_yahoo_quotes()
-        ), patch.object(
-            ss.sec_edgar_client, "cik_for", return_value=None
+        with (
+            patch.object(ss.eastmoney_client, "get_json", return_value=_eastmoney_payload()),
+            patch.object(ss.yahoo_client, "search", return_value=_yahoo_quotes()),
+            patch.object(ss.sec_edgar_client, "cik_for", return_value=None),
         ):
             out = ss.SymbolSearchTool().execute(query="x", limit=2)
         payload = json.loads(out)
@@ -149,13 +145,11 @@ class TestSymbolSearchSuccess:
                 ]
             }
         }
-        with patch.object(
-            ss.eastmoney_client, "get_json", return_value=em
-        ), patch.object(
-            ss.yahoo_client, "search", return_value=[]
-        ), patch.object(
-            ss.sec_edgar_client, "cik_for"
-        ) as mock_cik:
+        with (
+            patch.object(ss.eastmoney_client, "get_json", return_value=em),
+            patch.object(ss.yahoo_client, "search", return_value=[]),
+            patch.object(ss.sec_edgar_client, "cik_for") as mock_cik,
+        ):
             out = ss.SymbolSearchTool().execute(query="茅台")
         payload = json.loads(out)
         assert "sec_edgar" not in payload["data"]["sources"]
@@ -172,14 +166,14 @@ class TestSymbolSearchErrors:
         assert "required" in payload["error"]
 
     def test_one_source_failure_does_not_abort_others(self):
-        with patch.object(
-            ss.eastmoney_client,
-            "get_json",
-            side_effect=RuntimeError("HTTP 429 banned"),
-        ), patch.object(
-            ss.yahoo_client, "search", return_value=_yahoo_quotes()
-        ), patch.object(
-            ss.sec_edgar_client, "cik_for", return_value="0000320193"
+        with (
+            patch.object(
+                ss.eastmoney_client,
+                "get_json",
+                side_effect=RuntimeError("HTTP 429 banned"),
+            ),
+            patch.object(ss.yahoo_client, "search", return_value=_yahoo_quotes()),
+            patch.object(ss.sec_edgar_client, "cik_for", return_value="0000320193"),
         ):
             out = ss.SymbolSearchTool().execute(query="apple")
 
@@ -194,14 +188,14 @@ class TestSymbolSearchErrors:
         assert "AAPL.US" in symbols
 
     def test_sec_lookup_failure_recorded_not_fatal(self):
-        with patch.object(
-            ss.eastmoney_client, "get_json", return_value=_eastmoney_payload()
-        ), patch.object(
-            ss.yahoo_client, "search", return_value=[]
-        ), patch.object(
-            ss.sec_edgar_client,
-            "cik_for",
-            side_effect=RuntimeError("tickers fetch failed"),
+        with (
+            patch.object(ss.eastmoney_client, "get_json", return_value=_eastmoney_payload()),
+            patch.object(ss.yahoo_client, "search", return_value=[]),
+            patch.object(
+                ss.sec_edgar_client,
+                "cik_for",
+                side_effect=RuntimeError("tickers fetch failed"),
+            ),
         ):
             out = ss.SymbolSearchTool().execute(query="apple")
         payload = json.loads(out)

@@ -107,11 +107,9 @@ def test_repeatable_query_executes_again_with_different_arguments(
         )
     trace.close()
 
-    assert [
-        {key: value for key, value in call.items() if key != "run_dir"}
-        for call in calls
-    ] == [first_args, second_args]
+    assert [{key: value for key, value in call.items() if key != "run_dir"} for call in calls] == [
+        first_args,
+        second_args,
+    ]
     assert len(messages) == 2
-    assert not any(
-        event["type"] == "tool_skipped" for event in TraceWriter.read(run_dir)
-    )
+    assert not any(event["type"] == "tool_skipped" for event in TraceWriter.read(run_dir))

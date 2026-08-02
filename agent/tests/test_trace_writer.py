@@ -285,8 +285,9 @@ def test_sidecar_survives_a_partial_write(tmp_path, monkeypatch):
     writer = TraceWriter(tmp_path)
     body = "x" * 5000
     entry: dict = {}
-    writer._attach_text_field(entry, field="result", value=body, offload_kind="result",
-                              threshold=10, offload_dir_name="results")
+    writer._attach_text_field(
+        entry, field="result", value=body, offload_kind="result", threshold=10, offload_dir_name="results"
+    )
     writer.write(entry)
 
     sidecar = tmp_path / entry["result_path"]
@@ -302,8 +303,8 @@ def test_failed_sidecar_write_leaves_no_temp_file(tmp_path, monkeypatch):
     monkeypatch.setattr(trace_mod.os, "write", _boom)
     writer = TraceWriter(tmp_path)
     with pytest.raises(OSError):
-        writer._attach_text_field({}, field="result", value="y" * 5000,
-                                  offload_kind="result", threshold=10,
-                                  offload_dir_name="results")
+        writer._attach_text_field(
+            {}, field="result", value="y" * 5000, offload_kind="result", threshold=10, offload_dir_name="results"
+        )
     leftovers = list((tmp_path / "results").glob(".*tmp"))
     assert leftovers == []

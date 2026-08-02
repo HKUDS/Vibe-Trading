@@ -96,9 +96,7 @@ def test_live_status_blank_broker_rejected(tmp_path: Path, monkeypatch) -> None:
 
 def test_live_status_reflects_active_mandate(tmp_path: Path, monkeypatch) -> None:
     client = _client(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        api_server, "_active_mandate_state", lambda broker: _valid_mandate_state(broker)
-    )
+    monkeypatch.setattr(api_server, "_active_mandate_state", lambda broker: _valid_mandate_state(broker))
 
     response = client.get("/live/status", params={"broker": "robinhood"})
 
@@ -150,9 +148,7 @@ def test_runner_start_requires_committed_mandate(tmp_path: Path, monkeypatch) ->
     assert "mandate" in response.json()["detail"].lower()
 
 
-def test_runner_start_rejects_readonly_connector_without_runner(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_runner_start_rejects_readonly_connector_without_runner(tmp_path: Path, monkeypatch) -> None:
     client = _client(tmp_path, monkeypatch)
 
     response = client.post("/live/runner/start", json={"broker": "ibkr"})
@@ -165,9 +161,7 @@ def test_runner_start_rejects_readonly_connector_without_runner(
 
 def test_runner_start_blocked_by_kill_switch(tmp_path: Path, monkeypatch) -> None:
     client = _client(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        api_server, "_active_mandate_state", lambda broker: _valid_mandate_state(broker)
-    )
+    monkeypatch.setattr(api_server, "_active_mandate_state", lambda broker: _valid_mandate_state(broker))
     from src.live.halt import trip_halt
 
     trip_halt(by="test", reason="safety", broker="robinhood")
@@ -180,9 +174,7 @@ def test_runner_start_blocked_by_kill_switch(tmp_path: Path, monkeypatch) -> Non
 
 def test_runner_start_success_then_idempotent(tmp_path: Path, monkeypatch) -> None:
     client = _client(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        api_server, "_active_mandate_state", lambda broker: _valid_mandate_state(broker)
-    )
+    monkeypatch.setattr(api_server, "_active_mandate_state", lambda broker: _valid_mandate_state(broker))
     monkeypatch.setattr(api_server, "_runner_factory", lambda broker: SimpleNamespace(broker=broker))
 
     async def _noop_drive(runner) -> None:  # never spawns a real agent/broker loop
@@ -253,9 +245,7 @@ def _seed_proposal(tmp_path: Path, proposal_id: str, broker: str = "robinhood") 
     }
     proposals_dir = tmp_path / ".vibe-trading" / "live" / broker / "proposals"
     proposals_dir.mkdir(parents=True, exist_ok=True)
-    (proposals_dir / f"{proposal_id}.json").write_text(
-        json.dumps(proposal), encoding="utf-8"
-    )
+    (proposals_dir / f"{proposal_id}.json").write_text(json.dumps(proposal), encoding="utf-8")
     return proposal
 
 
@@ -361,9 +351,7 @@ def test_build_live_runner_wires_a_real_runner(tmp_path, monkeypatch) -> None:
 
 def test_runner_start_returns_503_when_broker_unavailable(tmp_path, monkeypatch) -> None:
     client = _client(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        api_server, "_active_mandate_state", lambda broker: _valid_mandate_state(broker)
-    )
+    monkeypatch.setattr(api_server, "_active_mandate_state", lambda broker: _valid_mandate_state(broker))
 
     def _boom(broker):
         raise api_server.LiveRunnerUnavailable("no MCP server configured for live broker 'robinhood'")
@@ -390,8 +378,10 @@ def _seed_ledger(tmp_path: Path, record: dict) -> None:
 def test_live_action_relay_builds_frame_from_guard_result(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
     audit_id = "la_01abcDEF"
-    _seed_ledger(tmp_path, {"audit_id": audit_id, "kind": "order_placed", "outcome": "accepted",
-                            "broker_request": {"symbol": "NVDA"}})
+    _seed_ledger(
+        tmp_path,
+        {"audit_id": audit_id, "kind": "order_placed", "outcome": "accepted", "broker_request": {"symbol": "NVDA"}},
+    )
 
     event = SimpleNamespace(
         event_type="tool_result",
@@ -413,7 +403,8 @@ def test_live_action_relay_ignores_non_live_results(tmp_path: Path, monkeypatch)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
     # A normal tool_result with no live_action marker → no relay.
     event = SimpleNamespace(
-        event_type="tool_result", session_id="s1",
+        event_type="tool_result",
+        session_id="s1",
         data={"tool": "run_backtest", "status": "ok", "preview": "{}"},
     )
     assert api_server._live_action_frame_from_tool_result(event) is None

@@ -275,9 +275,7 @@ def test_adjust_widening_rejected(live_runtime: Path) -> None:
 
 def test_reauth_seeded_proposal_round_trip(live_runtime: Path) -> None:
     """A breach-seeded proposal carries reauth_for and still clamps to ceiling."""
-    proposal = _propose(
-        reauth_for={"breach_id": "be_1", "limit": "max_order_notional_usd", "attempted_value": 1200.0}
-    )
+    proposal = _propose(reauth_for={"breach_id": "be_1", "limit": "max_order_notional_usd", "attempted_value": 1200.0})
     assert proposal["reauth_for"]["breach_id"] == "be_1"
     for profile in proposal["profiles"]:
         assert profile["max_order_usd"] <= _CEILINGS["max_order_usd"]
@@ -455,9 +453,7 @@ def test_propose_opt_in_flatten_on_halt_stamps_profiles(live_runtime: Path) -> N
 def test_commit_persists_flatten_on_halt_from_profile(live_runtime: Path) -> None:
     """An opted-in proposal commits a mandate.json carrying flatten_on_halt=True."""
     tool = ProposeMandateProfilesTool()
-    payload = json.loads(
-        tool.execute(broker="robinhood", ceilings=dict(_CEILINGS), flatten_on_halt=True)
-    )
+    payload = json.loads(tool.execute(broker="robinhood", ceilings=dict(_CEILINGS), flatten_on_halt=True))
     commit_mandate(
         proposal_id=payload["proposal_id"],
         ordinal=2,

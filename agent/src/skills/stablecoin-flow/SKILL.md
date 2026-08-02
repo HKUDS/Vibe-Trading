@@ -20,11 +20,11 @@ Track stablecoin supply changes, exchange reserve movements, and on-chain veloci
 # Historical correlation: BTC price and total stablecoin supply r > 0.85
 
 stablecoin_supply = {
-    "USDT": 140_000_000_000,    # ~$140B (dominant, ~65% share)
-    "USDC": 45_000_000_000,     # ~$45B (~20% share)
-    "DAI": 5_000_000_000,       # ~$5B (decentralized)
-    "FDUSD": 3_000_000_000,     # ~$3B (Binance ecosystem)
-    "USDS": 2_000_000_000,      # ~$2B (Sky/MakerDAO)
+    "USDT": 140_000_000_000,  # ~$140B (dominant, ~65% share)
+    "USDC": 45_000_000_000,  # ~$45B (~20% share)
+    "DAI": 5_000_000_000,  # ~$5B (decentralized)
+    "FDUSD": 3_000_000_000,  # ~$3B (Binance ecosystem)
+    "USDS": 2_000_000_000,  # ~$2B (Sky/MakerDAO)
 }
 total = sum(stablecoin_supply.values())
 ```
@@ -59,7 +59,7 @@ def mint_burn_signal(mint_events, burn_events, lookback_days=7):
     net_burn = sum(e.amount for e in burn_events if e.days_ago <= lookback_days)
     net_flow = net_mint - net_burn
 
-    if net_flow > 1_000_000_000:    # >$1B net mint in 7 days
+    if net_flow > 1_000_000_000:  # >$1B net mint in 7 days
         return "large_capital_inflow"
     elif net_flow > 500_000_000:
         return "moderate_inflow"
@@ -83,11 +83,11 @@ def exchange_reserve_signal(reserve_change_7d_pct, total_reserve_usd):
     Falling exchange stablecoin reserves = capital deployed or withdrawn
     """
     if reserve_change_7d_pct > 5:
-        return "buy_power_accumulating"     # Dry powder building up
+        return "buy_power_accumulating"  # Dry powder building up
     elif reserve_change_7d_pct > 2:
         return "mild_accumulation"
     elif reserve_change_7d_pct < -5:
-        return "deployed_or_withdrawn"       # Either bought crypto or left exchange
+        return "deployed_or_withdrawn"  # Either bought crypto or left exchange
     elif reserve_change_7d_pct < -2:
         return "mild_deployment"
     else:
@@ -112,14 +112,14 @@ def exchange_reserve_signal(reserve_change_7d_pct, total_reserve_usd):
 stablecoin_dominance = total_stablecoin_mcap / total_crypto_mcap * 100
 
 if stablecoin_dominance > 12:
-    signal = "high_cash_allocation"      # Market fearful, lots of cash on sidelines
-    contrarian = "bullish"               # Cash will eventually re-enter
+    signal = "high_cash_allocation"  # Market fearful, lots of cash on sidelines
+    contrarian = "bullish"  # Cash will eventually re-enter
 elif stablecoin_dominance > 8:
     signal = "moderate_cash"
     contrarian = "neutral"
 elif stablecoin_dominance < 5:
-    signal = "low_cash_allocation"       # Market fully invested, little dry powder
-    contrarian = "bearish"               # No marginal buyers left
+    signal = "low_cash_allocation"  # Market fully invested, little dry powder
+    contrarian = "bearish"  # No marginal buyers left
 ```
 
 ### 5. On-Chain Stablecoin Velocity
@@ -135,11 +135,11 @@ def velocity_signal(transfer_volume_7d, supply):
     velocity_annualized = velocity * 52  # Weekly to annual
 
     if velocity_annualized > 50:
-        return "high_activity"     # Very active usage, likely bull market
+        return "high_activity"  # Very active usage, likely bull market
     elif velocity_annualized > 20:
         return "moderate_activity"
     elif velocity_annualized < 10:
-        return "low_activity"      # Stablecoins idle, bear market / accumulation
+        return "low_activity"  # Stablecoins idle, bear market / accumulation
 ```
 
 ### 6. Chain-Level Stablecoin Distribution
@@ -164,11 +164,11 @@ Track where stablecoins are flowing across different blockchains:
 
 ```python
 stablecoin_score = {
-    "supply_growth": 0,           # -2 to +2: 30-day total supply change
-    "mint_burn_net": 0,           # -2 to +2: recent large mint/burn events
-    "exchange_reserves": 0,       # -2 to +2: exchange stablecoin reserve change
-    "dominance": 0,               # -2 to +2: stablecoin dominance level (contrarian)
-    "velocity": 0,                # -2 to +2: on-chain activity level
+    "supply_growth": 0,  # -2 to +2: 30-day total supply change
+    "mint_burn_net": 0,  # -2 to +2: recent large mint/burn events
+    "exchange_reserves": 0,  # -2 to +2: exchange stablecoin reserve change
+    "dominance": 0,  # -2 to +2: stablecoin dominance level (contrarian)
+    "velocity": 0,  # -2 to +2: on-chain activity level
 }
 # Total range: -10 to +10
 # > +5: strong liquidity expansion → bullish for crypto

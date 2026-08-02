@@ -95,9 +95,7 @@ class TestCtaTemplate:
     def test_strategy_class_defined(self):
         source = TEMPLATE_PY.read_text(encoding="utf-8")
         tree = ast.parse(source)
-        class_names = [
-            node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
-        ]
+        class_names = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
         assert any(name.endswith("Strategy") for name in class_names), (
             "No class ending in 'Strategy' found in cta_template.py"
         )

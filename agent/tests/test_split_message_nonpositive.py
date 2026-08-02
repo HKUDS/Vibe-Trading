@@ -38,6 +38,8 @@ def test_signal_partition_styles_keeps_indent_chunk_aligned() -> None:
     styles = [f"{_utf16_len(text[:idx])}:{_utf16_len('def')}:BOLD"]
     parts = _partition_styles(text, chunks, styles)
     assert any("BOLD" in entry for group in parts for entry in group)
+
+
 def test_signal_partition_styles_handles_space_separator_with_indented_next_chunk() -> None:
     # When split_message cuts at a space separator and the next chunk is also
     # indented with spaces, _partition_styles must still advance the cursor

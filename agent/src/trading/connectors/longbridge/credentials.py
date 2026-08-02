@@ -119,14 +119,8 @@ def require_longbridge_credentials(
     if resolution.credentials is not None:
         return resolution.credentials
     if resolution.conflict_fields:
-        raise LongbridgeCredentialError(
-            "credentials_conflict", resolution.conflict_fields
-        )
-    code = (
-        "credentials_missing"
-        if resolution.source is None
-        else "credentials_partial"
-    )
+        raise LongbridgeCredentialError("credentials_conflict", resolution.conflict_fields)
+    code = "credentials_missing" if resolution.source is None else "credentials_partial"
     raise LongbridgeCredentialError(code, resolution.missing_fields)
 
 

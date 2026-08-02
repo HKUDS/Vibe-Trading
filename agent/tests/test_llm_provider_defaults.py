@@ -166,11 +166,8 @@ def test_openai_base_url_env_overrides_catalog_default(monkeypatch) -> None:
 
 def test_credential_fallback_map_matches_provider_catalog() -> None:
     """The base-URL fallback map must stay in sync with llm_providers.json."""
-    providers_path = (
-        Path(__file__).resolve().parents[1] / "src" / "providers" / "llm_providers.json"
-    )
+    providers_path = Path(__file__).resolve().parents[1] / "src" / "providers" / "llm_providers.json"
     catalog = {
-        item["name"]: item["default_base_url"]
-        for item in json.loads(providers_path.read_text(encoding="utf-8"))
+        item["name"]: item["default_base_url"] for item in json.loads(providers_path.read_text(encoding="utf-8"))
     }
     assert _provider_default_base_urls() == catalog

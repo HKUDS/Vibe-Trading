@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import warnings
+
 warnings.filterwarnings("ignore", message=".*Importing verbose from langchain.*")
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="langchain")
 
@@ -125,6 +126,7 @@ def _parse_swarm_run_args(values: list[str]) -> tuple[str, Optional[str]] | None
             return None
     return preset, vars_json
 
+
 _HAS_PROMPT_TOOLKIT = False
 try:
     from prompt_toolkit import PromptSession
@@ -204,9 +206,7 @@ def _print_status_bar(stats: _SessionStats) -> None:
         stats: Session statistics.
     """
     parts = _build_status_parts(stats)
-    bar = "[dim] │ [/dim]".join(
-        f"[bold]{parts[0]}[/bold]" if i == 0 else p for i, p in enumerate(parts)
-    )
+    bar = "[dim] │ [/dim]".join(f"[bold]{parts[0]}[/bold]" if i == 0 else p for i, p in enumerate(parts))
     console.print(bar)
 
 
@@ -317,6 +317,7 @@ def _read_prompt_source(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _read_json(path: Path) -> dict:
     """Safely read JSON."""
@@ -703,11 +704,7 @@ class _RunDashboard:
         total_val = entry.get("total")
         message = str(entry.get("message") or "")
         elapsed_s = float(entry.get("elapsed_s") or 0.0)
-        has_count = (
-            isinstance(current_val, int)
-            and isinstance(total_val, int)
-            and total_val > 0
-        )
+        has_count = isinstance(current_val, int) and isinstance(total_val, int) and total_val > 0
         has_structured = bool(stage or has_count or message)
         if not has_structured and elapsed_s <= 0:
             return ""
@@ -742,12 +739,8 @@ class _RunDashboard:
         if has_count and not compact and current_val >= 3 and current_val >= total_val * 0.1:
             stage_started_at = entry.get("stage_started_at")
             prev_stage = entry.get("prev_stage")
-            stable_stage = (
-                prev_stage is None
-                or (
-                    stage_started_at is not None
-                    and (time.monotonic() - float(stage_started_at)) >= 1.0
-                )
+            stable_stage = prev_stage is None or (
+                stage_started_at is not None and (time.monotonic() - float(stage_started_at)) >= 1.0
             )
             if stable_stage and elapsed_s > 0:
                 try:
@@ -800,9 +793,7 @@ class _RunDashboard:
         # concurrently with heartbeat/worker threads mutating self.tool_active,
         # so a bare ``.items()`` would race and may raise "dictionary changed
         # size during iteration". list() materialization is GIL-atomic.
-        active_entries = sorted(
-            list(self.tool_active.items()), key=lambda kv: kv[1].get("start_ts", 0.0)
-        )
+        active_entries = sorted(list(self.tool_active.items()), key=lambda kv: kv[1].get("start_ts", 0.0))
         if len(active_entries) > 3:
             active_entries = active_entries[:3]
         # Advance the spinner once per render so all active rows step together.
@@ -811,9 +802,7 @@ class _RunDashboard:
         bar_width = 6 if compact else 8
         detail_width = max(20, content_width - 18)
         for tool, entry in active_entries:
-            row_text = self._render_progress_row(
-                tool, entry, spinner, bar_width, compact, detail_width
-            )
+            row_text = self._render_progress_row(tool, entry, spinner, bar_width, compact, detail_width)
             if row_text:
                 current.add_row("Progress", row_text)
 
@@ -862,18 +851,19 @@ from cli.ui.rail import RailRunDashboard as _RunDashboard  # noqa: E402,F811
 # Agent execution core
 # ---------------------------------------------------------------------------
 
+
 def _format_tool_call_args(tool: str, args: Dict[str, str]) -> str:
     """Smart-format tool argument summary."""
     if tool == "load_skill":
         return f'("{args.get("name", "")}")'
     if tool in ("write_file", "read_file", "edit_file"):
-        return f' {args.get("path", args.get("file_path", ""))}'
+        return f" {args.get('path', args.get('file_path', ''))}"
     if tool in ("bash", "background_run"):
         cmd = args.get("command", "")[:80]
-        return f' [yellow]{cmd}[/yellow]'
+        return f" [yellow]{cmd}[/yellow]"
     if tool == "check_background":
         tid = args.get("task_id", "")
-        return f' {tid}' if tid else ""
+        return f" {tid}" if tid else ""
     if tool in ("backtest", "compact"):
         return ""
     for v in args.values():
@@ -893,7 +883,7 @@ def _format_tool_result_preview(tool: str, status: str, preview: str) -> str:
         if sharpe:
             parts.append(f"sharpe={sharpe.group(1)}")
         if ret:
-            parts.append(f"return={float(ret.group(1))*100:.1f}%")
+            parts.append(f"return={float(ret.group(1)) * 100:.1f}%")
         return ", ".join(parts) if parts else ""
     if tool == "render_shadow_report":
         url = re.search(r'"report_url":\s*"([^"]+)"', preview)
@@ -1181,7 +1171,9 @@ def _run_agent(
             console.print(f"  {mark} [dim]{elapsed_s:.1f}s[/dim]{suffix}")
         elif event_type == "compact":
             tokens = data.get("tokens_before", "?")
-            console.print(f"\n  [yellow]\u27f3 context compressed[/yellow] [dim]({tokens} tokens \u2192 summary)[/dim]\n")
+            console.print(
+                f"\n  [yellow]\u27f3 context compressed[/yellow] [dim]({tokens} tokens \u2192 summary)[/dim]\n"
+            )
 
     from src.memory.persistent import PersistentMemory
 
@@ -1295,7 +1287,7 @@ def _build_benchmark_table(m: dict) -> Optional[Table]:
     Returns:
         Rich Table, or None if no benchmark data is present.
     """
-    bench_ticker  = m.get("benchmark_ticker")
+    bench_ticker = m.get("benchmark_ticker")
     bench_ret_str = m.get("benchmark_return")
     bench_ret_raw = m.get("_benchmark_return_raw")
 
@@ -1315,21 +1307,21 @@ def _build_benchmark_table(m: dict) -> Optional[Table]:
         bench_ret = None
 
     strategy_ret_str = m.get("total_return")
-    strategy_ret     = float(strategy_ret_str) if strategy_ret_str else None
+    strategy_ret = float(strategy_ret_str) if strategy_ret_str else None
 
     table = Table(show_header=False, padding=(0, 2))
     table.add_column("Label", style="dim", width=20)
     table.add_column("Value", style="white no_wrap")
 
-    table.add_row("[dim]Benchmark[/dim]",  bench_ticker)
+    table.add_row("[dim]Benchmark[/dim]", bench_ticker)
 
     if bench_ret is not None:
         table.add_row("[dim]Benchmark Return[/dim]", f"{bench_ret * 100:+.2f}%")
 
     if strategy_ret is not None and bench_ret is not None:
         excess = strategy_ret - bench_ret
-        sign   = "+" if excess >= 0 else ""
-        style  = "green" if excess >= 0 else "red"
+        sign = "+" if excess >= 0 else ""
+        style = "green" if excess >= 0 else "red"
         table.add_row(
             "[dim]vs Benchmark[/dim]",
             f"[{style}]{sign}{excess * 100:+.2f}%[/{style}]",
@@ -1366,12 +1358,16 @@ def _print_result(result: dict, elapsed: float, *, no_rich: bool = False) -> Non
             print(f"Run dir: {run_dir}")
         if result.get("reason"):
             print(f"Reason: {result['reason']}")
-        metric_parts = [f"{label}={m[key]}" for key, label in (
-            ("total_return", "return"),
-            ("sharpe", "sharpe"),
-            ("max_drawdown", "max_dd"),
-            ("trade_count", "trades"),
-        ) if key in m]
+        metric_parts = [
+            f"{label}={m[key]}"
+            for key, label in (
+                ("total_return", "return"),
+                ("sharpe", "sharpe"),
+                ("max_drawdown", "max_dd"),
+                ("trade_count", "trades"),
+            )
+            if key in m
+        ]
         if metric_parts:
             print(f"Metrics: {', '.join(metric_parts)}")
         content = result.get("content", "").strip()
@@ -1425,7 +1421,7 @@ def _print_result(result: dict, elapsed: float, *, no_rich: bool = False) -> Non
         actions.add_column(style="dim")
         actions.add_row(f"vibe-trading show {rid}", "details")
         actions.add_row(f"vibe-trading code {rid}", "generated Python")
-        actions.add_row(f"vibe-trading continue {rid} \"...\"", "refine this run")
+        actions.add_row(f'vibe-trading continue {rid} "..."', "refine this run")
         panels.append(Panel(actions, border_style="dim", title="Next", padding=(0, 1)))
 
     if _terminal_width() < 104:
@@ -1437,12 +1433,14 @@ def _print_result(result: dict, elapsed: float, *, no_rich: bool = False) -> Non
     # Benchmark comparison panel.
     bench_table = _build_benchmark_table(m)
     if bench_table:
-        console.print(Panel(
-            bench_table,
-            border_style="cyan",
-            title="Benchmark Comparison",
-            padding=(0, 1),
-        ))
+        console.print(
+            Panel(
+                bench_table,
+                border_style="cyan",
+                title="Benchmark Comparison",
+                padding=(0, 1),
+            )
+        )
     # End benchmark comparison panel.
 
     content = result.get("content", "").strip()
@@ -1454,10 +1452,12 @@ def _print_result(result: dict, elapsed: float, *, no_rich: bool = False) -> Non
 # Subcommands
 # ---------------------------------------------------------------------------
 
+
 def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: bool = False) -> int:
     """Single run."""
     if not json_mode:
         from src.preflight import run_preflight
+
         results = run_preflight(console)
         if any(r.critical and r.status != "ready" for r in results):
             return EXIT_RUN_FAILED
@@ -1484,9 +1484,7 @@ def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: boo
             dashboard = _RunDashboard(prompt, max_iter)
             with Live(dashboard.render(), console=console, refresh_per_second=6, transient=True) as live:
                 dashboard.live = live
-                result = _run_agent(
-                    prompt, max_iter=max_iter, dashboard=dashboard, session_id=session_id
-                )
+                result = _run_agent(prompt, max_iter=max_iter, dashboard=dashboard, session_id=session_id)
                 dashboard.finish(result, time.perf_counter() - start)
     except KeyboardInterrupt:
         if json_mode:
@@ -1502,7 +1500,7 @@ def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: boo
         return _result_exit_code(result)
     _print_result(result, time.perf_counter() - start, no_rich=no_rich)
     if result.get("run_id"):
-        tip = f"--show {result['run_id']}  |  --continue {result['run_id']} \"...\"  |  --code {result['run_id']}  |  --pine {result['run_id']}"
+        tip = f'--show {result["run_id"]}  |  --continue {result["run_id"]} "..."  |  --code {result["run_id"]}  |  --pine {result["run_id"]}'
         if no_rich:
             print(tip)
         else:
@@ -1549,9 +1547,7 @@ def cmd_continue(
             return EXIT_USAGE_ERROR
         console.print(f"[red]Run {run_id} not found[/red]")
         return EXIT_USAGE_ERROR
-    trace_dir = TraceWriter.find_trace_dir(
-        run_id, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR
-    )
+    trace_dir = TraceWriter.find_trace_dir(run_id, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR)
     if trace_dir is None:
         # Preserve support for an existing, empty run/session directory. Once a
         # trace exists, ``find_trace_dir`` is authoritative so every later
@@ -1626,6 +1622,7 @@ def cmd_continue(
 # Interactive mode (Welcome + Slash commands + Swarm streaming)
 # ---------------------------------------------------------------------------
 
+
 def _build_welcome_panel(term_width: Optional[int] = None) -> Panel:
     """Build the welcome screen for the given terminal width."""
     _ensure_cli_env()
@@ -1636,7 +1633,7 @@ def _build_welcome_panel(term_width: Optional[int] = None) -> Panel:
     provider = _cfg.llm.langchain_provider or "(not set)"
     model = _cfg.llm.langchain_model_name or "(not set)"
     key_env = _provider_key_env(provider)
-    key_value = os.getenv(key_env or "")  # noqa: env-gate — dynamic provider key display
+    key_value = os.getenv(key_env or "")  # env-gate — dynamic provider key display
     credential_ready = provider in {"ollama", "openai-codex"} or bool(key_value)
     key_state = "READY" if credential_ready else "MISSING"
     recent_runs = len([d for d in RUNS_DIR.iterdir() if d.is_dir()]) if RUNS_DIR.exists() else 0
@@ -1658,7 +1655,11 @@ def _build_welcome_panel(term_width: Optional[int] = None) -> Panel:
                 ]
             )
         )
-    header_lines.append(Text(_clip_inline("Research, backtest, inspect runs, and coordinate swarm presets.", content_width), style="dim"))
+    header_lines.append(
+        Text(
+            _clip_inline("Research, backtest, inspect runs, and coordinate swarm presets.", content_width), style="dim"
+        )
+    )
 
     config_lines: list[Text] = []
     if compact:
@@ -1684,7 +1685,14 @@ def _build_welcome_panel(term_width: Optional[int] = None) -> Panel:
     else:
         gap = " " * widths["gap"]
         rows = [
-            ("Provider", str(provider), "bold cyan", "Credential", key_state, "bold green" if credential_ready else "bold yellow"),
+            (
+                "Provider",
+                str(provider),
+                "bold cyan",
+                "Credential",
+                key_state,
+                "bold green" if credential_ready else "bold yellow",
+            ),
             ("Model", str(model), "white", "Runs", str(recent_runs), "cyan"),
             ("Workspace", str(get_runtime_root()), "dim", "Swarms", str(recent_swarms), "cyan"),
         ]
@@ -1826,8 +1834,13 @@ def _show_settings() -> None:
     model = _cfg.llm.langchain_model_name or "(not set)"
     provider_key_env = _provider_key_env(provider)
     provider_base_env = _provider_base_env(provider)
-    provider_key = os.getenv(provider_key_env or "")  # noqa: env-gate — dynamic provider key display
-    provider_base_url = os.getenv(provider_base_env or "") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE") or "(not set)"  # noqa: env-gate — dynamic provider URL display
+    provider_key = os.getenv(provider_key_env or "")  # env-gate — dynamic provider key display
+    provider_base_url = (
+        os.getenv(provider_base_env or "")  # env-gate — dynamic provider URL display
+        or os.getenv("OPENAI_BASE_URL")  # env-gate
+        or os.getenv("OPENAI_API_BASE")  # env-gate
+        or "(not set)"
+    )
 
     provider_table = Table.grid(expand=True)
     provider_table.add_column(width=12, style="dim")
@@ -1859,9 +1872,19 @@ def _show_settings() -> None:
     credential_table.add_row("TUSHARE_TOKEN", "***" if _cfg.data.tushare_token else "(optional)")
 
     panels = [
-        Panel(provider_table, title=f"Provider {_state_badge(provider if provider != '(not set)' else None)}", border_style="cyan", padding=(0, 1)),
+        Panel(
+            provider_table,
+            title=f"Provider {_state_badge(provider if provider != '(not set)' else None)}",
+            border_style="cyan",
+            padding=(0, 1),
+        ),
         Panel(runtime_table, title="Runtime", border_style="dim", padding=(0, 1)),
-        Panel(credential_table, title=f"Credentials {_state_badge('ok' if credential_ready else None)}", border_style="green" if credential_ready else "yellow", padding=(0, 1)),
+        Panel(
+            credential_table,
+            title=f"Credentials {_state_badge('ok' if credential_ready else None)}",
+            border_style="green" if credential_ready else "yellow",
+            padding=(0, 1),
+        ),
     ]
     if compact:
         for panel in panels:
@@ -1974,6 +1997,7 @@ def cmd_interactive(max_iter: int) -> None:
     _print_welcome()
 
     from src.preflight import run_preflight
+
     results = run_preflight(console)
     if any(r.critical and r.status != "ready" for r in results):
         return
@@ -2039,6 +2063,7 @@ def cmd_interactive(max_iter: int) -> None:
 # Swarm live streaming (Rich Live panel)
 # ---------------------------------------------------------------------------
 
+
 def _get_agent_style(agent_id: str) -> str:
     """Assign a consistent color to each agent."""
     if agent_id not in _agent_color_map:
@@ -2067,9 +2092,13 @@ class _SwarmDashboard:
         if agent_id in self.agents:
             return agent_id
         self.agents[agent_id] = {
-            "name": agent_id, "status": "waiting",
-            "tool": "\u2014", "elapsed": 0.0, "iters": 0,
-            "started_at": 0.0, "layer": self.current_layer,
+            "name": agent_id,
+            "status": "waiting",
+            "tool": "\u2014",
+            "elapsed": 0.0,
+            "iters": 0,
+            "started_at": 0.0,
+            "layer": self.current_layer,
             "last_text": "",
         }
         self.agent_order.append(agent_id)
@@ -2123,9 +2152,7 @@ class _SwarmDashboard:
         elif etype == "task_blocked":
             agent["status"] = "blocked"
             blocked_by = ", ".join(data.get("blocked_by", []))
-            self.completed_summaries.append(
-                (agent["name"], f"[yellow]BLOCKED by: {blocked_by}[/yellow]")
-            )
+            self.completed_summaries.append((agent["name"], f"[yellow]BLOCKED by: {blocked_by}[/yellow]"))
         elif etype == "task_retry":
             attempt = data.get("attempt", "?")
             agent["status"] = "retry"
@@ -2318,12 +2345,15 @@ def cmd_swarm_run_live(preset: str, vars_json: Optional[str] = None) -> Optional
         console.print("\n[bold]\u2500\u2500 Final Report \u2500\u2500[/bold]")
         console.print(current.final_report[:2000])
 
-    console.print(f"\n[{status_color}]{current.status.value.upper()}[/{status_color}]  Time: {mins}m {secs}s{token_str}")
+    console.print(
+        f"\n[{status_color}]{current.status.value.upper()}[/{status_color}]  Time: {mins}m {secs}s{token_str}"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Legacy subcommands (used by flags and slash commands)
 # ---------------------------------------------------------------------------
+
 
 def cmd_chat(max_iter: int) -> None:
     """Interactive mode (delegates to cmd_interactive)."""
@@ -2387,12 +2417,9 @@ def cmd_show(run_id: str) -> None:
         lines.extend(f"  {k}: {v}" for k, v in metrics.items())
 
     from src.agent.trace import TraceWriter
+
     trace_dir = TraceWriter.find_trace_dir(run_id, runs_dir=RUNS_DIR, sessions_dir=SESSIONS_DIR)
-    entries = (
-        TraceWriter.read(trace_dir, resolve_offloads=True, resolve_fields={"content"})
-        if trace_dir
-        else []
-    )
+    entries = TraceWriter.read(trace_dir, resolve_offloads=True, resolve_fields={"content"}) if trace_dir else []
     answers = [e["content"] for e in entries if e.get("type") == "answer" and e.get("content")]
     if answers:
         summary = answers[-1][:200]
@@ -2424,7 +2451,7 @@ def cmd_pine(run_id: str) -> None:
     pine_path = RUNS_DIR / run_id / "artifacts" / "strategy.pine"
     if not pine_path.exists():
         console.print(f"[red]{run_id}/artifacts/strategy.pine not found[/red]")
-        console.print("[dim]Ask the agent: \"export this strategy to Pine Script\"[/dim]")
+        console.print('[dim]Ask the agent: "export this strategy to Pine Script"[/dim]')
         return
     code = pine_path.read_text(encoding="utf-8")
     console.print(Syntax(code, "javascript", theme="monokai", line_numbers=True), width=120)
@@ -2435,6 +2462,7 @@ def cmd_pine(run_id: str) -> None:
 def cmd_skills() -> None:
     """List available skills."""
     from src.agent.skills import SkillsLoader
+
     loader = SkillsLoader()
 
     table = Table(title="Skills", show_lines=False)
@@ -2475,7 +2503,9 @@ def cmd_trace(run_id: str) -> None:
         iter_tag = f"[dim]#{it}[/dim] " if it else ""
 
         if etype == "start":
-            console.print(f"\n[bold cyan]{ts_str}[/bold cyan] {iter_tag}[bold]START[/bold]  {entry.get('prompt', '')[:120]}")
+            console.print(
+                f"\n[bold cyan]{ts_str}[/bold cyan] {iter_tag}[bold]START[/bold]  {entry.get('prompt', '')[:120]}"
+            )
         elif etype == "thinking":
             content = entry.get("content", "")
             console.print(f"[dim]{ts_str}[/dim] {iter_tag}[dim italic]{content[:200]}[/dim italic]")
@@ -2495,14 +2525,18 @@ def cmd_trace(run_id: str) -> None:
             size_hint = ""
             if entry.get("result_path"):
                 size_hint = f" [{int(entry.get('result_size') or 0) // 1024}K offloaded]"
-            console.print(f"[dim]{ts_str}[/dim] {iter_tag}[{color}]{mark} {tool}[/{color}] [dim]{elapsed}ms[/dim]  {preview}{size_hint}")
+            console.print(
+                f"[dim]{ts_str}[/dim] {iter_tag}[{color}]{mark} {tool}[/{color}] [dim]{elapsed}ms[/dim]  {preview}{size_hint}"
+            )
         elif etype == "tool_skipped":
             console.print(f"[dim]{ts_str}[/dim] {iter_tag}[yellow]\u2298 {entry.get('tool', '')} (skipped)[/yellow]")
         elif etype == "message":
             role = entry.get("role", "?")
             content = entry.get("content") or entry.get("content_preview") or ""
             role_color = "cyan" if role == "user" else "green"
-            console.print(f"\n[dim]{ts_str}[/dim] {iter_tag}[bold {role_color}]{role.upper()}[/bold {role_color}] {content[:120]}")
+            console.print(
+                f"\n[dim]{ts_str}[/dim] {iter_tag}[bold {role_color}]{role.upper()}[/bold {role_color}] {content[:120]}"
+            )
         elif etype == "answer":
             content = entry.get("content", "")
             console.print(f"\n[dim]{ts_str}[/dim] {iter_tag}[bold green]ANSWER[/bold green]\n{content}")
@@ -2518,6 +2552,7 @@ def cmd_trace(run_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Swarm subcommands
 # ---------------------------------------------------------------------------
+
 
 def cmd_swarm_presets() -> None:
     """List available swarm presets."""
@@ -2537,9 +2572,7 @@ def cmd_swarm_presets() -> None:
 
     for p in presets:
         raw_vars = p.get("variables", [])
-        var_names = [
-            v["name"] if isinstance(v, dict) else str(v) for v in raw_vars
-        ]
+        var_names = [v["name"] if isinstance(v, dict) else str(v) for v in raw_vars]
         vars_str = ", ".join(var_names)
         table.add_row(
             p["name"],
@@ -2734,6 +2767,7 @@ def cmd_swarm_cancel(run_id: str) -> None:
 # Session subcommands
 # ---------------------------------------------------------------------------
 
+
 def cmd_sessions() -> None:
     """List chat sessions."""
     from src.session.store import SessionStore
@@ -2783,11 +2817,13 @@ def cmd_session_chat(session_id: str, max_iter: int) -> None:
         if msg.role in ("user", "assistant") and msg.content.strip():
             history.append({"role": msg.role, "content": msg.content})
 
-    console.print(Panel(
-        f"[bold cyan]Session: {session.title or session_id}[/bold cyan]\n"
-        f"[dim]History: {len(messages)} messages | Type q to exit[/dim]",
-        border_style="cyan",
-    ))
+    console.print(
+        Panel(
+            f"[bold cyan]Session: {session.title or session_id}[/bold cyan]\n"
+            f"[dim]History: {len(messages)} messages | Type q to exit[/dim]",
+            border_style="cyan",
+        )
+    )
 
     stats = _SessionStats(session_start=time.monotonic())
     prompt_session = _create_prompt_session(stats)
@@ -2820,9 +2856,7 @@ def cmd_session_chat(session_id: str, max_iter: int) -> None:
             _timer = threading.Thread(target=_session_event_timer, args=(spinner,), daemon=True)
             _timer.start()
             try:
-                result = _run_agent(
-                    prompt, history=history[-6:], max_iter=max_iter, session_id=session_id
-                )
+                result = _run_agent(prompt, history=history[-6:], max_iter=max_iter, session_id=session_id)
             except KeyboardInterrupt:
                 console.print("\n[yellow]Interrupted[/yellow]")
                 continue
@@ -2842,6 +2876,7 @@ def cmd_session_chat(session_id: str, max_iter: int) -> None:
 # ---------------------------------------------------------------------------
 # Upload subcommand
 # ---------------------------------------------------------------------------
+
 
 def cmd_upload(file_path: str) -> None:
     """Upload a file to the server."""
@@ -2940,9 +2975,7 @@ def _api_auth_headers() -> Dict[str, str]:
     return {"Authorization": f"Bearer {key}"} if key else {}
 
 
-def _live_api_call(
-    method: str, path: str, *, body: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
+def _live_api_call(method: str, path: str, *, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Call an R6 live-runner endpoint and decode the JSON response.
 
     Args:
@@ -3030,7 +3063,9 @@ def _print_channels_status(payload: Dict[str, Any]) -> None:
     console.print(table)
     if payload.get("status") == "error":
         console.print(f"[yellow]API unavailable:[/yellow] {payload.get('error')}")
-        console.print("[dim]Start the backend with `vibe-trading serve --port 8000`, or inspect local config with this status output.[/dim]")
+        console.print(
+            "[dim]Start the backend with `vibe-trading serve --port 8000`, or inspect local config with this status output.[/dim]"
+        )
 
 
 def cmd_channels_status(*, json_mode: bool = False, local: bool = False) -> int:
@@ -3056,9 +3091,7 @@ def cmd_channels_start(*, json_mode: bool = False) -> int:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
     elif failed:
         console.print(f"[red]Failed to start IM channels:[/red] {payload.get('error')}")
-        console.print(
-            "[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]"
-        )
+        console.print("[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]")
     else:
         console.print("[green]IM channels started.[/green]")
         _print_channels_status(payload)
@@ -3073,9 +3106,7 @@ def cmd_channels_stop(*, json_mode: bool = False) -> int:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
     elif failed:
         console.print(f"[red]Failed to stop IM channels:[/red] {payload.get('error')}")
-        console.print(
-            "[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]"
-        )
+        console.print("[dim]Run `vibe-trading serve --port 8000` first, or set VIBE_TRADING_API_URL.[/dim]")
     else:
         console.print("[green]IM channels stopped.[/green]")
         _print_channels_status(payload)
@@ -3102,7 +3133,9 @@ def cmd_channels_login(channel_name: str, *, force: bool = False) -> int:
     section = dict(config.get(channel_name, {})) if isinstance(config.get(channel_name), dict) else {}
     if channel_name == "websocket":
         console.print("[green]WebSocket channel does not require interactive login.[/green]")
-        console.print("[dim]Configure channels.websocket in ~/.vibe-trading/agent.json, then run `vibe-trading channels start`.[/dim]")
+        console.print(
+            "[dim]Configure channels.websocket in ~/.vibe-trading/agent.json, then run `vibe-trading channels start`.[/dim]"
+        )
         return EXIT_SUCCESS
     if not section:
         console.print(f"[red]No config found for channel '{channel_name}'.[/red]")
@@ -3140,10 +3173,20 @@ def _dispatch_channels(args: argparse.Namespace) -> int:
         return cmd_channels_login(args.channel_name, force=args.force)
     console.print("[red]channels requires a subcommand.[/red] Try: vibe-trading channels status")
     return EXIT_USAGE_ERROR
+
+
 # QVERIS-INTEGRATION
 def _print_qveris_config(config) -> None:  # QVERIS-INTEGRATION
     """Render local QVeris config."""  # QVERIS-INTEGRATION
-    from src.tools.qveris_tool import SIGNUP_URL, INVITE_CODE, has_qveris_credentials, is_qveris_configured, mask_api_key, normalize_qveris_mode  # QVERIS-INTEGRATION
+    from src.tools.qveris_tool import (
+        SIGNUP_URL,
+        INVITE_CODE,
+        has_qveris_credentials,
+        is_qveris_configured,
+        mask_api_key,
+        normalize_qveris_mode,
+    )  # QVERIS-INTEGRATION
+
     table = Table(title="Data Routing", box=box.SIMPLE)  # QVERIS-INTEGRATION
     table.add_column("Field")  # QVERIS-INTEGRATION
     table.add_column("Value")  # QVERIS-INTEGRATION
@@ -3158,25 +3201,39 @@ def _print_qveris_config(config) -> None:  # QVERIS-INTEGRATION
     table.add_row("signup", SIGNUP_URL)  # QVERIS-INTEGRATION
     table.add_row("invite_code", INVITE_CODE)  # QVERIS-INTEGRATION
     console.print(table)  # QVERIS-INTEGRATION
+
+
 # QVERIS-INTEGRATION
 def cmd_qveris_status() -> int:  # QVERIS-INTEGRATION
     """Show QVeris local config and live status when configured."""  # QVERIS-INTEGRATION
     from src.tools.qveris_tool import QVerisClient, is_qveris_configured, load_qveris_config  # QVERIS-INTEGRATION
+
     config = load_qveris_config()  # QVERIS-INTEGRATION
     _print_qveris_config(config)  # QVERIS-INTEGRATION
     if not is_qveris_configured(config):  # QVERIS-INTEGRATION
         return EXIT_SUCCESS  # QVERIS-INTEGRATION
     try:  # QVERIS-INTEGRATION
         payload = QVerisClient(config).search("status", limit=1)  # QVERIS-INTEGRATION
-        console.print(f"[green]QVeris reachable.[/green] remaining_credits={payload.get('remaining_credits')}")  # QVERIS-INTEGRATION
+        console.print(
+            f"[green]QVeris reachable.[/green] remaining_credits={payload.get('remaining_credits')}"
+        )  # QVERIS-INTEGRATION
         return EXIT_SUCCESS  # QVERIS-INTEGRATION
     except Exception as exc:  # noqa: BLE001  # QVERIS-INTEGRATION
         console.print(f"[red]QVeris status failed:[/red] {exc}")  # QVERIS-INTEGRATION
         return EXIT_RUN_FAILED  # QVERIS-INTEGRATION
+
+
 # QVERIS-INTEGRATION
 def cmd_qveris_enable(*, key: str | None = None, url: str | None = None) -> int:  # QVERIS-INTEGRATION
     """Enable QVeris if an API key is present or supplied."""  # QVERIS-INTEGRATION
-    from src.tools.qveris_tool import SIGNUP_URL, INVITE_CODE, QVerisConfig, _read_config_file, save_qveris_config  # QVERIS-INTEGRATION
+    from src.tools.qveris_tool import (
+        SIGNUP_URL,
+        INVITE_CODE,
+        QVerisConfig,
+        _read_config_file,
+        save_qveris_config,
+    )  # QVERIS-INTEGRATION
+
     existing = _read_config_file()  # QVERIS-INTEGRATION
     api_key = (key or existing.api_key or "").strip()  # QVERIS-INTEGRATION
     if not api_key:  # QVERIS-INTEGRATION
@@ -3187,10 +3244,14 @@ def cmd_qveris_enable(*, key: str | None = None, url: str | None = None) -> int:
     if not base_url.startswith(("http://", "https://")):  # QVERIS-INTEGRATION
         console.print("[red]--url must start with http:// or https://[/red]")  # QVERIS-INTEGRATION
         return EXIT_USAGE_ERROR  # QVERIS-INTEGRATION
-    saved = save_qveris_config(QVerisConfig(True, base_url, api_key, "paid", existing.budget_credits_per_session))  # QVERIS-INTEGRATION
+    saved = save_qveris_config(
+        QVerisConfig(True, base_url, api_key, "paid", existing.budget_credits_per_session)
+    )  # QVERIS-INTEGRATION
     console.print("[green]QVeris paid route enabled.[/green]")  # QVERIS-INTEGRATION
     _print_qveris_config(saved)  # QVERIS-INTEGRATION
     return EXIT_SUCCESS  # QVERIS-INTEGRATION
+
+
 # QVERIS-INTEGRATION
 def cmd_qveris_mode(
     *,
@@ -3200,31 +3261,49 @@ def cmd_qveris_mode(
     url: str | None = None,
 ) -> int:  # QVERIS-INTEGRATION
     """Switch QVeris between free and paid modes."""  # QVERIS-INTEGRATION
-    from src.tools.qveris_tool import QVerisConfig, _read_config_file, normalize_qveris_mode, save_qveris_config  # QVERIS-INTEGRATION
+    from src.tools.qveris_tool import (
+        QVerisConfig,
+        _read_config_file,
+        normalize_qveris_mode,
+        save_qveris_config,
+    )  # QVERIS-INTEGRATION
+
     existing = _read_config_file()  # QVERIS-INTEGRATION
     next_mode = normalize_qveris_mode(mode)  # QVERIS-INTEGRATION
-    next_budget = existing.budget_credits_per_session if budget is None else max(float(budget), 0.0)  # QVERIS-INTEGRATION
+    next_budget = (
+        existing.budget_credits_per_session if budget is None else max(float(budget), 0.0)
+    )  # QVERIS-INTEGRATION
     base_url = (url or existing.base_url).strip().rstrip("/")  # QVERIS-INTEGRATION
     if not base_url.startswith(("http://", "https://")):  # QVERIS-INTEGRATION
         console.print("[red]--url must start with http:// or https://[/red]")  # QVERIS-INTEGRATION
         return EXIT_USAGE_ERROR  # QVERIS-INTEGRATION
     api_key = (key or existing.api_key or "").strip()  # QVERIS-INTEGRATION
-    saved = save_qveris_config(QVerisConfig(next_mode == "paid", base_url, api_key, next_mode, next_budget))  # QVERIS-INTEGRATION
+    saved = save_qveris_config(
+        QVerisConfig(next_mode == "paid", base_url, api_key, next_mode, next_budget)
+    )  # QVERIS-INTEGRATION
     console.print(f"[green]QVeris mode set to {next_mode}.[/green]")  # QVERIS-INTEGRATION
     _print_qveris_config(saved)  # QVERIS-INTEGRATION
     return EXIT_SUCCESS  # QVERIS-INTEGRATION
+
+
 # QVERIS-INTEGRATION
 def cmd_qveris_disable() -> int:  # QVERIS-INTEGRATION
     """Disable QVeris without deleting the stored key."""  # QVERIS-INTEGRATION
     from src.tools.qveris_tool import QVerisConfig, _read_config_file, save_qveris_config  # QVERIS-INTEGRATION
+
     existing = _read_config_file()  # QVERIS-INTEGRATION
-    save_qveris_config(QVerisConfig(False, existing.base_url, existing.api_key, "free", existing.budget_credits_per_session))  # QVERIS-INTEGRATION
+    save_qveris_config(
+        QVerisConfig(False, existing.base_url, existing.api_key, "free", existing.budget_credits_per_session)
+    )  # QVERIS-INTEGRATION
     console.print("[green]QVeris disabled.[/green]")  # QVERIS-INTEGRATION
     return EXIT_SUCCESS  # QVERIS-INTEGRATION
+
+
 # QVERIS-INTEGRATION
 def cmd_qveris_usage() -> int:  # QVERIS-INTEGRATION
     """Show recent QVeris usage events."""  # QVERIS-INTEGRATION
     from src.tools.qveris_tool import QVerisClient, is_qveris_configured, load_qveris_config  # QVERIS-INTEGRATION
+
     config = load_qveris_config()  # QVERIS-INTEGRATION
     if not is_qveris_configured(config):  # QVERIS-INTEGRATION
         console.print("[yellow]QVeris is not configured.[/yellow]")  # QVERIS-INTEGRATION
@@ -3236,6 +3315,8 @@ def cmd_qveris_usage() -> int:  # QVERIS-INTEGRATION
         return EXIT_RUN_FAILED  # QVERIS-INTEGRATION
     print(json.dumps(payload, indent=2, ensure_ascii=False))  # QVERIS-INTEGRATION
     return EXIT_SUCCESS  # QVERIS-INTEGRATION
+
+
 def _dispatch_data(args: argparse.Namespace) -> int:  # QVERIS-INTEGRATION
     """Dispatch user-facing data-routing commands."""  # QVERIS-INTEGRATION
     if args.data_command == "status":  # QVERIS-INTEGRATION
@@ -3246,6 +3327,8 @@ def _dispatch_data(args: argparse.Namespace) -> int:  # QVERIS-INTEGRATION
         return cmd_qveris_usage()  # QVERIS-INTEGRATION
     console.print("[red]data requires a subcommand.[/red] Try: vibe-trading data status")  # QVERIS-INTEGRATION
     return EXIT_USAGE_ERROR  # QVERIS-INTEGRATION
+
+
 # QVERIS-INTEGRATION
 def _live_server_config(broker: str):
     """Resolve the protected MCP server config for ``broker``.
@@ -3348,16 +3431,12 @@ def cmd_live_authorize(broker: str) -> int:
         _print_missing_live_channel_config(key)
         return EXIT_USAGE_ERROR
     if getattr(server_config, "auth", None) is None:
-        console.print(
-            f"[red]Live channel '{key}' has no OAuth auth configured[/red] — "
-            "cannot authorize."
-        )
+        console.print(f"[red]Live channel '{key}' has no OAuth auth configured[/red] — cannot authorize.")
         return EXIT_USAGE_ERROR
 
     console.print(f"[cyan]Opening browser to authorize {key}…[/cyan]")
     console.print(
-        "[dim]Complete the sign-in in your browser; this terminal will continue "
-        "once the broker redirects back.[/dim]"
+        "[dim]Complete the sign-in in your browser; this terminal will continue once the broker redirects back.[/dim]"
     )
     try:
         from src.tools.mcp import build_mcp_tool_wrappers
@@ -3372,16 +3451,10 @@ def cmd_live_authorize(broker: str) -> int:
         if hasattr(server_config, "model_copy"):
             updates: dict[str, float] = {}
             configured_init_timeout = getattr(server_config, "init_timeout", None)
-            if (
-                configured_init_timeout is None
-                or float(configured_init_timeout) < authorize_timeout
-            ):
+            if configured_init_timeout is None or float(configured_init_timeout) < authorize_timeout:
                 updates["init_timeout"] = authorize_timeout
             configured_tool_timeout = getattr(server_config, "tool_timeout", None)
-            if (
-                configured_tool_timeout is None
-                or float(configured_tool_timeout) < authorize_timeout
-            ):
+            if configured_tool_timeout is None or float(configured_tool_timeout) < authorize_timeout:
                 updates["tool_timeout"] = authorize_timeout
             if updates:
                 server_config = server_config.model_copy(update=updates)
@@ -3389,17 +3462,12 @@ def cmd_live_authorize(broker: str) -> int:
         # Single attempt: a transient-retry would open a fresh client context
         # that starts a SECOND OAuth callback server on a new port, orphaning
         # the sign-in the user just completed against the first one (see #259).
-        tools = build_mcp_tool_wrappers(
-            key, server_config, max_list_tools_attempts=1
-        )
+        tools = build_mcp_tool_wrappers(key, server_config, max_list_tools_attempts=1)
     except Exception as exc:  # noqa: BLE001 — surface any handshake failure
         console.print(f"[red]Authorization failed:[/red] {exc}")
         return EXIT_RUN_FAILED
 
-    console.print(
-        f"[green]Authorized {key}[/green] "
-        f"[dim]({len(tools)} read-only tool(s) available)[/dim]"
-    )
+    console.print(f"[green]Authorized {key}[/green] [dim]({len(tools)} read-only tool(s) available)[/dim]")
     console.print(
         "[dim]The channel is read-only until you commit a mandate and enable "
         "order tools. Use `vibe-trading connector status` to check state.[/dim]"
@@ -3730,14 +3798,10 @@ def cmd_live_start(broker: Optional[str] = None) -> int:
         Process exit code. ``EXIT_RUN_FAILED`` when the server is unreachable.
     """
     key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
-    result = _live_api_call(
-        "POST", "/live/runner/start", body={"broker": key, "foreground": False}
-    )
+    result = _live_api_call("POST", "/live/runner/start", body={"broker": key, "foreground": False})
     if result.get("status") == "error":
         console.print(f"[red]Could not start the live runner:[/red] {result.get('error')}")
-        console.print(
-            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
-        )
+        console.print("[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]")
         return EXIT_RUN_FAILED
 
     runner_id = result.get("runner_id") or _runner_id_for(key)
@@ -3763,9 +3827,7 @@ def cmd_live_stop(broker: Optional[str] = None) -> int:
     result = _live_api_call("POST", "/live/runner/stop", body={"broker": key})
     if result.get("status") == "error":
         console.print(f"[red]Could not stop the live runner:[/red] {result.get('error')}")
-        console.print(
-            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
-        )
+        console.print("[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]")
         return EXIT_RUN_FAILED
 
     console.print(f"[yellow]Live runner stopped[/yellow] for {key}.")
@@ -3790,20 +3852,13 @@ def cmd_live_run(broker: Optional[str] = None) -> int:
     key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
     runner_id = _runner_id_for(key)
 
-    result = _live_api_call(
-        "POST", "/live/runner/start", body={"broker": key, "foreground": True}
-    )
+    result = _live_api_call("POST", "/live/runner/start", body={"broker": key, "foreground": True})
     if result.get("status") == "error":
         console.print(f"[red]Could not start the live runner:[/red] {result.get('error')}")
-        console.print(
-            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
-        )
+        console.print("[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]")
         return EXIT_RUN_FAILED
 
-    console.print(
-        f"[green]Live runner running[/green] for {key} [dim]({runner_id})[/dim] — "
-        "press Ctrl+C to stop."
-    )
+    console.print(f"[green]Live runner running[/green] for {key} [dim]({runner_id})[/dim] — press Ctrl+C to stop.")
 
     try:
         from src.live.runtime.liveness import is_runner_alive, last_tick
@@ -3845,6 +3900,7 @@ def cmd_live_run(broker: Optional[str] = None) -> int:
 # ---------------------------------------------------------------------------
 # Trading connector commands
 # ---------------------------------------------------------------------------
+
 
 def _profile_id(value: Optional[str]) -> Optional[str]:
     """Normalize an optional connector profile id."""
@@ -4122,9 +4178,7 @@ def _print_connector_account(result: dict[str, Any]) -> int:
         if isinstance(raw_data, dict):
             currency = raw_data.get("currency", "")
             account_label = result.get("account_number") or accounts
-            table = Table(
-                title=f"Account Summary · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False
-            )
+            table = Table(title=f"Account Summary · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
             table.add_column("Field")
             table.add_column("Value", justify="right")
             for tag, value in _flatten_account_fields(raw_data):
@@ -4154,6 +4208,7 @@ def _print_connector_account(result: dict[str, Any]) -> int:
         )
     console.print(table)
     return EXIT_SUCCESS
+
 
 def cmd_connector_account(
     profile_id: Optional[str] = None,
@@ -4257,6 +4312,7 @@ def cmd_connector_positions(
         )
     console.print(table)
     return EXIT_SUCCESS
+
 
 def cmd_connector_orders(
     profile_id: Optional[str] = None,
@@ -4622,6 +4678,7 @@ def _dispatch_connector(args: argparse.Namespace) -> int:
 # CLI entrypoint
 # ---------------------------------------------------------------------------
 
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser with subcommands and compatibility flags."""
     parser = argparse.ArgumentParser(description="Vibe-Trading CLI")
@@ -4655,7 +4712,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Run a prompt")
     run_parser.add_argument("-p", "--prompt", dest="run_prompt", type=str, help="Prompt text")
-    run_parser.add_argument("-f", "--prompt-file", dest="run_prompt_file", type=Path, help="Read prompt text from a file")
+    run_parser.add_argument(
+        "-f", "--prompt-file", dest="run_prompt_file", type=Path, help="Read prompt text from a file"
+    )
     run_parser.add_argument("--json", dest="run_json", action="store_true", help="Print machine-readable JSON output")
     run_parser.add_argument("--no-rich", dest="run_no_rich", action="store_true", help="Disable Rich formatting")
     run_parser.add_argument("--max-iter", dest="run_max_iter", type=int, default=50, help="Maximum agent iterations")
@@ -4675,8 +4734,12 @@ def _build_parser() -> argparse.ArgumentParser:
     data_parser = subparsers.add_parser("data", help="Manage data routing mode")  # QVERIS-INTEGRATION
     data_subparsers = data_parser.add_subparsers(dest="data_command")  # QVERIS-INTEGRATION
     data_subparsers.add_parser("status", help="Show active data routing mode")  # QVERIS-INTEGRATION
-    data_mode = data_subparsers.add_parser("mode", help="Switch between free public data and paid data routing")  # QVERIS-INTEGRATION
-    data_mode.add_argument("mode", choices=["free", "paid"], help="free uses built-in public data; paid enables premium data execution")  # QVERIS-INTEGRATION
+    data_mode = data_subparsers.add_parser(
+        "mode", help="Switch between free public data and paid data routing"
+    )  # QVERIS-INTEGRATION
+    data_mode.add_argument(
+        "mode", choices=["free", "paid"], help="free uses built-in public data; paid enables premium data execution"
+    )  # QVERIS-INTEGRATION
     data_mode.add_argument("--budget", type=float, help="Paid-mode credit budget per session")  # QVERIS-INTEGRATION
     data_mode.add_argument("--key", help="Premium data API key")  # QVERIS-INTEGRATION
     data_mode.add_argument("--url", help="Premium data API base URL")  # QVERIS-INTEGRATION
@@ -4844,9 +4907,15 @@ def _build_parser() -> argparse.ArgumentParser:
     connector_history.add_argument("--duration", default="30 D", help="IBKR (local_tws) duration string")
     connector_history.add_argument("--bar-size", dest="bar_size", default="1 day", help="IBKR (local_tws) bar size")
     connector_history.add_argument("--what-to-show", dest="what_to_show", default="TRADES")
-    connector_history.add_argument("--no-rth", action="store_true", help="Include outside-regular-hours data when available")
-    connector_history.add_argument("--period", default="1d", help="Bar interval for SDK connectors: 1m/5m/15m/30m/1h/4h/1d/1w/1M")
-    connector_history.add_argument("--limit", dest="bar_limit", type=int, default=90, help="Number of bars for SDK connectors")
+    connector_history.add_argument(
+        "--no-rth", action="store_true", help="Include outside-regular-hours data when available"
+    )
+    connector_history.add_argument(
+        "--period", default="1d", help="Bar interval for SDK connectors: 1m/5m/15m/30m/1h/4h/1d/1w/1M"
+    )
+    connector_history.add_argument(
+        "--limit", dest="bar_limit", type=int, default=90, help="Number of bars for SDK connectors"
+    )
 
     for name, help_text in (
         ("start", "Start the selected live connector runner"),
@@ -4860,10 +4929,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # Alpha Zoo subcommands (registered via cli_handlers.add_subparser)
     from src.factors.cli_handlers import add_subparser as _add_alpha_subparser
+
     _add_alpha_subparser(subparsers)
 
     # Hypothesis Registry subcommands
     from src.hypotheses.cli_handlers import add_subparser as _add_hypothesis_subparser
+
     _add_hypothesis_subparser(subparsers)
 
     return parser
@@ -4888,7 +4959,9 @@ def _handle_prompt_command(
         return EXIT_USAGE_ERROR
     if not resolved_prompt:
         if json_mode:
-            _print_json_result({"status": "failed", "run_id": None, "run_dir": None, "reason": "Prompt cannot be empty"})
+            _print_json_result(
+                {"status": "failed", "run_id": None, "run_dir": None, "reason": "Prompt cannot be empty"}
+            )
         else:
             print("Prompt cannot be empty") if no_rich else console.print("[red]Prompt cannot be empty[/red]")
         return EXIT_USAGE_ERROR
@@ -5149,8 +5222,7 @@ _MEMORY_TYPE_STYLES = {
 # is added in src.memory.persistent.MEMORY_TYPES, this assert fails fast
 # instead of silently rendering it in fallback white.
 assert set(_MEMORY_TYPE_STYLES) == set(MEMORY_TYPES), (
-    f"MEMORY_TYPES vs _MEMORY_TYPE_STYLES drift: "
-    f"types={sorted(MEMORY_TYPES)}, styles={sorted(_MEMORY_TYPE_STYLES)}"
+    f"MEMORY_TYPES vs _MEMORY_TYPE_STYLES drift: types={sorted(MEMORY_TYPES)}, styles={sorted(_MEMORY_TYPE_STYLES)}"
 )
 
 
@@ -5275,7 +5347,12 @@ def cmd_memory_forget(name: str, *, yes: bool = False, memory_dir: Optional[Path
 
 def cmd_init() -> int:
     """Interactive setup: create ~/.vibe-trading/.env."""
-    console.print(Panel("[bold cyan]Vibe-Trading setup[/bold cyan]\n[dim]Configure the default LLM provider and data tokens.[/dim]", border_style="cyan"))
+    console.print(
+        Panel(
+            "[bold cyan]Vibe-Trading setup[/bold cyan]\n[dim]Configure the default LLM provider and data tokens.[/dim]",
+            border_style="cyan",
+        )
+    )
 
     if _INIT_ENV_PATH.exists():
         console.print(f"[yellow]Config already exists:[/yellow] {_INIT_ENV_PATH}")
@@ -5289,7 +5366,13 @@ def cmd_init() -> int:
     provider_table.add_column("Default model", style="dim")
     provider_table.add_column("Credential", style="dim")
     for idx, option in enumerate(_PROVIDER_CHOICES, start=1):
-        credential = "OAuth" if option["provider"] == "openai-codex" else "none" if option["key_env"] is None else str(option["key_env"])
+        credential = (
+            "OAuth"
+            if option["provider"] == "openai-codex"
+            else "none"
+            if option["key_env"] is None
+            else str(option["key_env"])
+        )
         provider_table.add_row(str(idx), str(option["label"]), str(option["model"]), credential)
     console.print(provider_table)
 
@@ -5480,8 +5563,7 @@ def cmd_setup(frontend_dir: Path) -> int:
     """
     console.print(
         Panel(
-            f"[bold cyan]Vibe-Trading frontend setup[/bold cyan]\n"
-            f"[dim]{frontend_dir}[/dim]",
+            f"[bold cyan]Vibe-Trading frontend setup[/bold cyan]\n[dim]{frontend_dir}[/dim]",
             border_style="cyan",
             padding=(0, 1),
         )
@@ -5510,8 +5592,7 @@ def cmd_setup(frontend_dir: Path) -> int:
     npm_path = npm
     if _is_windows():
         steps = [
-            [npm_path, *step[1:]] if step and step[0] == "npm" else step
-            for step in _build_frontend_cmd(frontend_dir)
+            [npm_path, *step[1:]] if step and step[0] == "npm" else step for step in _build_frontend_cmd(frontend_dir)
         ]
     else:
         steps = _build_frontend_cmd(frontend_dir)
@@ -5697,9 +5778,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "init":
         return cmd_init()
     if args.command == "setup":
-        return _coerce_exit_code(
-            cmd_setup(frontend_dir=Path(args.frontend_dir))
-        )
+        return _coerce_exit_code(cmd_setup(frontend_dir=Path(args.frontend_dir)))
     if args.command == "dev":
         return _coerce_exit_code(
             cmd_dev(
@@ -5737,9 +5816,11 @@ def main(argv: list[str] | None = None) -> int:
         return _coerce_exit_code(cmd_interactive(args.chat_max_iter))
     if args.command == "alpha":
         from src.factors.cli_handlers import dispatch as _alpha_dispatch
+
         return _coerce_exit_code(_alpha_dispatch(args))
     if args.command == "hypothesis":
         from src.hypotheses.cli_handlers import dispatch as _hyp_dispatch
+
         return _coerce_exit_code(_hyp_dispatch(args))
     if args.command == "connector":
         return _coerce_exit_code(_dispatch_connector(args))
@@ -5794,7 +5875,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.chat:
         return _coerce_exit_code(cmd_interactive(args.max_iter))
     if args.cont:
-        return _coerce_exit_code(cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich))
+        return _coerce_exit_code(
+            cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich)
+        )
 
     # No flags and no subcommand: check for a prompt, otherwise enter interactive mode.
     if args.prompt or args.prompt_file or not sys.stdin.isatty():

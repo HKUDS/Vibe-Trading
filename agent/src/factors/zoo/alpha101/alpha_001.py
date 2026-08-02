@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Alpha #1 - 收益条件动量
 # 简要说明: rank(ts_argmax(SignedPower((returns<0)?stddev(returns,20):close, 2.), 5)) - 0.5，基于收益与波动的时间序列动量。
@@ -36,25 +35,24 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_001"
 
 __alpha_meta__ = {
-    'id': 'alpha101_001',
-    'nickname': 'Kakushadze Alpha #1',
-    'theme': ['reversal', 'volatility'],
-    'formula_latex': 'rank(ts_argmax(SignedPower((returns<0)?stddev(returns,20):close, 2.), 5)) - 0.5',
-    'columns_required': ['close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 25,
-    'notes': '',
+    "id": "alpha101_001",
+    "nickname": "Kakushadze Alpha #1",
+    "theme": ["reversal", "volatility"],
+    "formula_latex": "rank(ts_argmax(SignedPower((returns<0)?stddev(returns,20):close, 2.), 5)) - 0.5",
+    "columns_required": ["close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 25,
+    "notes": "",
 }
 
 
 def compute(panel: dict) -> pd.DataFrame:
     """Compute the alpha on the OHLCV+ panel and return a wide DataFrame."""
     close = panel["close"]
-
 
     returns = close.pct_change()
     # Helper aliases (local closures keep the file standalone & purity-safe).

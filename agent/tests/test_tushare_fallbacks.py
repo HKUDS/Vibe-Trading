@@ -29,8 +29,9 @@ def test_fund_flow_maps_moneyflow_buckets_to_existing_schema() -> None:
             }
         ]
     )
-    with patch.object(tf, "_pro_api", return_value=pro), patch.object(
-        tf, "_date_window", return_value=("20240101", "20240103")
+    with (
+        patch.object(tf, "_pro_api", return_value=pro),
+        patch.object(tf, "_date_window", return_value=("20240101", "20240103")),
     ):
         result = tf.fetch_fund_flow("600519.SH", days=5)
 
@@ -59,9 +60,7 @@ def test_dragon_tiger_maps_top_list_and_top_inst() -> None:
                 "reason": "daily move",
             }
         ],
-        top_inst=lambda **_: [
-            {"exalter": "Institution", "side": "0", "buy": 2.0e8, "sell": 0.0, "net_buy": 2.0e8}
-        ],
+        top_inst=lambda **_: [{"exalter": "Institution", "side": "0", "buy": 2.0e8, "sell": 0.0, "net_buy": 2.0e8}],
     )
     with patch.object(tf, "_pro_api", return_value=pro):
         data = tf.fetch_dragon_tiger("2024-01-02", "600519")
@@ -80,8 +79,9 @@ def test_northbound_converts_tushare_million_yuan_to_10k_cny() -> None:
             {"trade_date": "20240103", "hgt": 3.5, "sgt": 1.0, "north_money": 4.5},
         ]
     )
-    with patch.object(tf, "_pro_api", return_value=pro), patch.object(
-        tf, "_date_window", return_value=("20240101", "20240103")
+    with (
+        patch.object(tf, "_pro_api", return_value=pro),
+        patch.object(tf, "_date_window", return_value=("20240101", "20240103")),
     ):
         data = tf.fetch_northbound_flow(lookback_days=2)
 
@@ -94,12 +94,29 @@ def test_northbound_converts_tushare_million_yuan_to_10k_cny() -> None:
 def test_margin_trading_maps_and_sorts_most_recent_first() -> None:
     pro = SimpleNamespace(
         margin_detail=lambda **_: [
-            {"trade_date": "20240102", "rzye": 1.0, "rzmre": 2.0, "rzche": 3.0, "rqye": 4.0, "rqyl": 5.0, "rzrqye": 6.0},
-            {"trade_date": "20240103", "rzye": 7.0, "rzmre": 8.0, "rzche": 9.0, "rqye": 10.0, "rqyl": 11.0, "rzrqye": 12.0},
+            {
+                "trade_date": "20240102",
+                "rzye": 1.0,
+                "rzmre": 2.0,
+                "rzche": 3.0,
+                "rqye": 4.0,
+                "rqyl": 5.0,
+                "rzrqye": 6.0,
+            },
+            {
+                "trade_date": "20240103",
+                "rzye": 7.0,
+                "rzmre": 8.0,
+                "rzche": 9.0,
+                "rqye": 10.0,
+                "rqyl": 11.0,
+                "rzrqye": 12.0,
+            },
         ]
     )
-    with patch.object(tf, "_pro_api", return_value=pro), patch.object(
-        tf, "_date_window", return_value=("20240101", "20240103")
+    with (
+        patch.object(tf, "_pro_api", return_value=pro),
+        patch.object(tf, "_date_window", return_value=("20240101", "20240103")),
     ):
         data = tf.fetch_margin_trading("600519.SH", days=5)
 

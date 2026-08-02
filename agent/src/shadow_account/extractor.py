@@ -61,6 +61,7 @@ _MARKET_KEY_MAP = {
 
 # ---------------- Public API ----------------
 
+
 def extract_shadow_profile(
     journal_path: str | Path,
     *,
@@ -98,8 +99,7 @@ def extract_shadow_profile(
     profitable = [rt for rt in roundtrips if rt["pnl"] > 0]
     if len(profitable) < MIN_PROFITABLE_ROUNDTRIPS:
         raise ValueError(
-            f"Insufficient profitable roundtrips: {len(profitable)} "
-            f"(need ≥{MIN_PROFITABLE_ROUNDTRIPS}).",
+            f"Insufficient profitable roundtrips: {len(profitable)} (need ≥{MIN_PROFITABLE_ROUNDTRIPS}).",
         )
 
     features_df = _compute_features(profitable, trades_df)
@@ -145,6 +145,7 @@ def extract_shadow_profile(
 
 
 # ---------------- Feature engineering ----------------
+
 
 def _compute_rsi(close: pd.Series, period: int = _RSI_PERIOD) -> pd.Series:
     """Causal Wilder-EWM RSI.
@@ -307,29 +308,30 @@ def _compute_features(
     entry_weekday, buy_dt, sell_dt, plus price-context features (entry_rsi14,
     prior_5d_return) read as-of buy_dt — NaN when price data is unavailable.
     """
-    market_by_symbol = (
-        trades_df.drop_duplicates("symbol").set_index("symbol")["market"].to_dict()
-    )
+    market_by_symbol = trades_df.drop_duplicates("symbol").set_index("symbol")["market"].to_dict()
     rows: list[dict[str, Any]] = []
     for rt in roundtrips:
         buy_dt = pd.Timestamp(rt["buy_dt"])
         sell_dt = pd.Timestamp(rt["sell_dt"])
-        rows.append({
-            "symbol": rt["symbol"],
-            "market": market_by_symbol.get(rt["symbol"], "other"),
-            "holding_days": float(rt["hold_days"]),
-            "pnl": float(rt["pnl"]),
-            "pnl_pct": float(rt["pnl_pct"]),
-            "entry_hour": int(buy_dt.hour),
-            "entry_weekday": int(buy_dt.weekday()),
-            "buy_dt": buy_dt,
-            "sell_dt": sell_dt,
-        })
+        rows.append(
+            {
+                "symbol": rt["symbol"],
+                "market": market_by_symbol.get(rt["symbol"], "other"),
+                "holding_days": float(rt["hold_days"]),
+                "pnl": float(rt["pnl"]),
+                "pnl_pct": float(rt["pnl_pct"]),
+                "entry_hour": int(buy_dt.hour),
+                "entry_weekday": int(buy_dt.weekday()),
+                "buy_dt": buy_dt,
+                "sell_dt": sell_dt,
+            }
+        )
     _attach_price_features(rows)
     return pd.DataFrame(rows)
 
 
 # ---------------- Cluster + decision-tree rule extraction ----------------
+
 
 def _promoted_numeric_features(
     features_df: pd.DataFrame,
@@ -358,9 +360,7 @@ def _extract_rules(
     llm_translator: Any | None,
 ) -> list[ShadowRule]:
     """Cluster profitable roundtrips, derive one rule per dense cluster."""
-    available_price_features = tuple(
-        f for f in _PRICE_FEATURES if f in features_df.columns
-    )
+    available_price_features = tuple(f for f in _PRICE_FEATURES if f in features_df.columns)
     if len(features_df) < min_support:
         return [
             _heuristic_single_rule(
@@ -372,11 +372,11 @@ def _extract_rules(
         ]
 
     numeric_features = _promoted_numeric_features(features_df, min_support=min_support)
-    promoted_price_features = tuple(
-        f for f in numeric_features if f in _PRICE_FEATURES
-    )
+    promoted_price_features = tuple(f for f in numeric_features if f in _PRICE_FEATURES)
     cluster_labels = _auto_cluster(
-        features_df, max_k=min(max_rules, 5), numeric_features=numeric_features,
+        features_df,
+        max_k=min(max_rules, 5),
+        numeric_features=numeric_features,
     )
     rules: list[ShadowRule] = []
     total_profitable = len(features_df)
@@ -445,6 +445,7 @@ def _auto_cluster(
     best_k, best_score = 2, -1.0
     try:
         from sklearn.metrics import silhouette_score
+
         for k in range(2, min(max_k, len(numeric) - 1) + 1):
             labels = KMeans(n_clusters=k, n_init=5, random_state=42).fit_predict(scaled)
             if len(set(labels)) < 2:
@@ -569,11 +570,13 @@ def _translate_rule(
     """Turn a structured rule dict into a concise English sentence (<=80 chars)."""
     if translator is not None:
         try:
-            text = translator({
-                "entry_condition": entry_condition,
-                "exit_condition": exit_condition,
-                "holding_range": holding_range,
-            })
+            text = translator(
+                {
+                    "entry_condition": entry_condition,
+                    "exit_condition": exit_condition,
+                    "holding_range": holding_range,
+                }
+            )
             if isinstance(text, str) and text.strip():
                 return text.strip()[:RULE_TEXT_MAX]
         except Exception as exc:  # pragma: no cover — LLM failure, fallback
@@ -592,6 +595,7 @@ def _translate_rule(
 
 
 # ---------------- Utilities ----------------
+
 
 def _dominant(series: pd.Series) -> str:
     """Most frequent value in a series, or the first if tied."""

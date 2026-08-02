@@ -6,26 +6,27 @@
 # 典型用途: 衡量30日内成交量放大日的比例，反映买盘活跃程度。
 # ============================================================
 """qlib158 VSUMP30: formula = \\sum \\max(\\Delta v, 0) / \\sum |\\Delta v|."""
+
 from __future__ import annotations
 
 import pandas as pd
 from src.factors.base import safe_div
 
 __alpha_meta__ = {
-    'id': 'qlib158_vsump30',
-    'theme': ['volume', 'volatility'],
-    'formula_latex': '\\\\sum \\\\max(\\\\Delta v, 0) / \\\\sum |\\\\Delta v|',
-    'columns_required': ['volume'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
-    'frequency': ['1d'],
-    'decay_horizon': 30,
-    'min_warmup_bars': 30,
+    "id": "qlib158_vsump30",
+    "theme": ["volume", "volatility"],
+    "formula_latex": "\\\\sum \\\\max(\\\\Delta v, 0) / \\\\sum |\\\\Delta v|",
+    "columns_required": ["volume"],
+    "universe": ["equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr"],
+    "frequency": ["1d"],
+    "decay_horizon": 30,
+    "min_warmup_bars": 30,
 }
 
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 VSUMP30 on the supplied OHLCV panel."""
-    v = panel['volume']
+    v = panel["volume"]
     diff = v - v.shift(1)
     pos = diff.where(diff > 0, 0.0)
     absd = diff.abs()

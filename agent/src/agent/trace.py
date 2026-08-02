@@ -31,7 +31,7 @@ def _env_int(name: str, default: int) -> int:
     Returns:
         Parsed positive integer, or ``default`` when unset/invalid.
     """
-    raw = os.getenv(name)  # noqa: env-gate — generic env override reader
+    raw = os.getenv(name)  # env-gate — generic env override reader
     if raw is None:
         return default
     try:
@@ -51,14 +51,16 @@ TRACE_TEXT_OFFLOAD_THRESHOLD = _env_int(
 )
 OFFLOAD_PREVIEW_CHARS = _env_int("VIBE_TRADING_TRACE_PREVIEW_CHARS", 500)
 
-OPTIONAL_IRR_TRACE_FIELDS = frozenset({
-    "artifact_refs",
-    "data_audit_id",
-    "policy_decision_id",
-    "governance_overhead_ms",
-    "warning_codes",
-    "hard_failure_codes",
-})
+OPTIONAL_IRR_TRACE_FIELDS = frozenset(
+    {
+        "artifact_refs",
+        "data_audit_id",
+        "policy_decision_id",
+        "governance_overhead_ms",
+        "warning_codes",
+        "hard_failure_codes",
+    }
+)
 
 
 class TraceWriter:

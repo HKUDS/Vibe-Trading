@@ -91,9 +91,7 @@ class TestPBO:
         # C(20,10)=184756 ≫ max_combinations → random subsample path.
         rng = np.random.default_rng(5)
         mat = rng.normal(0.0003, 0.01, size=(400, 8))
-        out = cscv_probability_of_backtest_overfitting(
-            mat, n_groups=20, max_combinations=200, seed=11
-        )
+        out = cscv_probability_of_backtest_overfitting(mat, n_groups=20, max_combinations=200, seed=11)
         assert "error" not in out
         assert out["method"] == "cscv_random_subsample"
         assert out["subsampled"] is True
@@ -104,12 +102,8 @@ class TestPBO:
     def test_cscv_subsample_reproducible(self) -> None:
         rng = np.random.default_rng(6)
         mat = rng.normal(0.0002, 0.012, size=(320, 6))
-        a = cscv_probability_of_backtest_overfitting(
-            mat, n_groups=18, max_combinations=100, seed=99
-        )
-        b = cscv_probability_of_backtest_overfitting(
-            mat, n_groups=18, max_combinations=100, seed=99
-        )
+        a = cscv_probability_of_backtest_overfitting(mat, n_groups=18, max_combinations=100, seed=99)
+        b = cscv_probability_of_backtest_overfitting(mat, n_groups=18, max_combinations=100, seed=99)
         assert a["pbo"] == b["pbo"]
         assert a["n_combinations"] == b["n_combinations"]
 
@@ -117,9 +111,7 @@ class TestPBO:
         # Even with n_groups=8 (exact would be 70), a tiny cap triggers subsample.
         rng = np.random.default_rng(7)
         mat = rng.normal(0.0004, 0.01, size=(128, 5))
-        out = cscv_probability_of_backtest_overfitting(
-            mat, n_groups=8, max_combinations=12, seed=3
-        )
+        out = cscv_probability_of_backtest_overfitting(mat, n_groups=8, max_combinations=12, seed=3)
         assert out["method"] == "cscv_random_subsample"
         assert out["n_combinations"] == 12
         assert out["n_combinations_full"] == 70

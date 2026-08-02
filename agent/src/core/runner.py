@@ -71,7 +71,7 @@ def _resolve_sandbox_credentials() -> tuple[str, str] | None:
 
 def _rlimit_as_bytes() -> int:
     """Return the configured RLIMIT_AS ceiling in bytes."""
-    raw = os.environ.get(_SANDBOX_RLIMIT_AS_MB_ENV, "")  # noqa: env-gate — sandbox rlimit tuning, not app config
+    raw = os.environ.get(_SANDBOX_RLIMIT_AS_MB_ENV, "")  # env-gate — sandbox rlimit tuning, not app config
     try:
         mb = int(raw) if raw.strip() else _DEFAULT_RLIMIT_AS_MB
     except ValueError:

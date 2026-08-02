@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #140
 # 简要说明: 国泰君安191短周期交易型alpha因子第140号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: MIN(a,b) elementwise -> np.minimum.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_140"
 
 __alpha_meta__ = {
-    'id': 'gtja191_140',
-    'theme': ['volume'],
-    'formula_latex': 'see body',
-    'columns_required': ['open', 'high', 'low', 'close', 'volume'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 60,
-    'min_warmup_bars': 100,
-    'notes': 'MIN(a,b) elementwise -> np.minimum.',
+    "id": "gtja191_140",
+    "theme": ["volume"],
+    "formula_latex": "see body",
+    "columns_required": ["open", "high", "low", "close", "volume"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 60,
+    "min_warmup_bars": 100,
+    "notes": "MIN(a,b) elementwise -> np.minimum.",
 }
 
 
@@ -67,7 +67,8 @@ def compute(panel):
     left = rank(decay_linear((rank(o) + rank(l)) - (rank(h) + rank(c)), 8))
     inner = ts_corr(ts_rank(c, 8), ts_rank(ts_mean(v, 60), 20), 8)
     right = ts_rank(decay_linear(ts_rank(inner, 7), 7), 3)
-    arr = np.minimum(left.to_numpy(dtype=np.float64, na_value=np.nan),
-                     right.to_numpy(dtype=np.float64, na_value=np.nan))
+    arr = np.minimum(
+        left.to_numpy(dtype=np.float64, na_value=np.nan), right.to_numpy(dtype=np.float64, na_value=np.nan)
+    )
     out = pd.DataFrame(arr, index=left.index, columns=left.columns)
     return out

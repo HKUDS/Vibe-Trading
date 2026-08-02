@@ -1,7 +1,6 @@
 """Test suite for LockupExpiryTool non-string symbol code handling."""
 
 import json
-import pytest
 from src.tools.lockup_expiry_tool import LockupExpiryTool
 
 

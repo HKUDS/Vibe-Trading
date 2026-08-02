@@ -230,6 +230,11 @@ target-version = "py311"
 line-length = 120
 src = ["agent"]
 
+[tool.ruff.format]
+# api_server.py is a deliberate thin assembler (line-count guardrail test
+# enforces < 400 lines); ruff's blank-line insertion would inflate it.
+exclude = ["agent/api_server.py"]
+
 [tool.coverage.run]
 source = ["agent"]
 omit = [
@@ -254,6 +259,8 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 # Alpha zoo files import the full src.factors.base surface verbatim
-# to match research-paper formulas. F401 (unused-import) is noise here;
-# F841 (unused-local-variable) stays active to catch real formula bugs.
-"agent/src/factors/zoo/**/*.py" = ["F401"]
+# to match research-paper formulas. F401 (unused-import) and E741
+# (single-letter formula variables like `l` = low, `h` = high, `o` = open)
+# are noise here; F841 (unused-local-variable) stays active to catch real
+# formula bugs.
+"agent/src/factors/zoo/**/*.py" = ["F401", "E741"]

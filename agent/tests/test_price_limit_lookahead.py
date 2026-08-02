@@ -42,8 +42,9 @@ def _futures_cases():
 
 
 def _bar(open_: float, close: float, base_field: str = "pre_close") -> pd.Series:
-    return pd.Series({"open": open_, "high": max(open_, close), "low": min(open_, close),
-                      "close": close, base_field: _BASE})
+    return pd.Series(
+        {"open": open_, "high": max(open_, close), "low": min(open_, close), "close": close, base_field: _BASE}
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -97,7 +98,11 @@ def test_futures_closing_a_long_is_blocked_at_the_lower_band() -> None:
     """Closing a long is a sell, so the LOWER band blocks it."""
     engine = ChinaFuturesEngine({})
     engine.positions["IF2406.CFFEX"] = Position(
-        "IF2406.CFFEX", 1, _BASE, pd.Timestamp("2025-06-09"), 1.0,
+        "IF2406.CFFEX",
+        1,
+        _BASE,
+        pd.Timestamp("2025-06-09"),
+        1.0,
     )
     bar = _bar(open_=_BASE * 0.90, close=_BASE * 0.99, base_field="pre_settle")
     assert engine.can_execute("IF2406.CFFEX", 0, bar) is False
@@ -107,7 +112,11 @@ def test_futures_closing_a_short_is_blocked_at_the_upper_band() -> None:
     """Closing a short is a buy, so the UPPER band blocks it."""
     engine = ChinaFuturesEngine({})
     engine.positions["IF2406.CFFEX"] = Position(
-        "IF2406.CFFEX", -1, _BASE, pd.Timestamp("2025-06-09"), 1.0,
+        "IF2406.CFFEX",
+        -1,
+        _BASE,
+        pd.Timestamp("2025-06-09"),
+        1.0,
     )
     bar = _bar(open_=_BASE * 1.10, close=_BASE * 1.01, base_field="pre_settle")
     assert engine.can_execute("IF2406.CFFEX", 0, bar) is False
@@ -167,8 +176,8 @@ def test_close_is_judged_on_the_price_actually_booked(engine, symbol, band) -> N
     """
     engine.positions[symbol] = Position(symbol, 1, _BASE, pd.Timestamp("2025-06-09"), 100.0)
     lower = _BASE * (1 - band)
-    just_inside = lower * 1.0005          # inside the band before slippage...
-    booked = engine.apply_slippage(just_inside, -1)   # ...outside it after
+    just_inside = lower * 1.0005  # inside the band before slippage...
+    booked = engine.apply_slippage(just_inside, -1)  # ...outside it after
     assert booked < lower, "fixture no longer exercises the slippage gap"
     bar = _bar(open_=just_inside, close=_BASE * 0.99)
     bar["trade_date"] = pd.Timestamp("2025-06-10")
@@ -179,7 +188,11 @@ def test_closing_a_short_is_judged_as_a_buy_after_slippage() -> None:
     """Covering a short is booked as a buy, so slippage pushes it UP."""
     engine = ChinaFuturesEngine({})
     engine.positions["IF2406.CFFEX"] = Position(
-        "IF2406.CFFEX", -1, _BASE, pd.Timestamp("2025-06-09"), 1.0,
+        "IF2406.CFFEX",
+        -1,
+        _BASE,
+        pd.Timestamp("2025-06-09"),
+        1.0,
     )
     upper = _BASE * 1.10
     just_inside = upper * 0.9999

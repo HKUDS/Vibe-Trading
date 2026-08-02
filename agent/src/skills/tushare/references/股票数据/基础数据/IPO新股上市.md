@@ -34,11 +34,9 @@ ballot | float | Y | 中签率
 **接口示例**
 
 ```python
-
 pro = ts.pro_api()
 
-df = pro.new_share(start_date='20180901', end_date='20181018')
-
+df = pro.new_share(start_date="20180901", end_date="20181018")
 ```
 
 **数据示例**

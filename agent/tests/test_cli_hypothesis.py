@@ -73,34 +73,24 @@ class TestParserWiring:
         args = parser.parse_args(["hypothesis", "show", "hyp_xyz"])
         assert args.hypothesis_command == "show"
         assert args.hypothesis_id == "hyp_xyz"
-        args = parser.parse_args(
-            ["hypothesis", "invalidate", "hyp_xyz", "--note", "data leak"]
-        )
+        args = parser.parse_args(["hypothesis", "invalidate", "hyp_xyz", "--note", "data leak"])
         assert args.hypothesis_command == "invalidate"
         assert args.note == "data leak"
 
-    def test_dispatch_without_subcommand_returns_one(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_dispatch_without_subcommand_returns_one(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         args = _build_args(path=str(tmp_path / "h.json"), hypothesis_command=None)
         assert dispatch(args) == 1
 
 
 class TestList:
-    def test_empty_registry(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        args = _build_args(
-            path=str(tmp_path / "h.json"), hypothesis_command="list"
-        )
+    def test_empty_registry(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        args = _build_args(path=str(tmp_path / "h.json"), hypothesis_command="list")
         rc = dispatch(args)
         out = capsys.readouterr().out
         assert rc == 0
         assert "No hypotheses found" in out
 
-    def test_lists_all(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_lists_all(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         reg, storage = _make_registry(tmp_path)
         _seed(reg)
         args = _build_args(path=str(storage), hypothesis_command="list")
@@ -111,14 +101,10 @@ class TestList:
         assert "Earnings drift on US large caps" in out
         assert "BTC funding skew" in out
 
-    def test_status_filter(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_status_filter(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         reg, storage = _make_registry(tmp_path)
         _seed(reg)
-        args = _build_args(
-            path=str(storage), hypothesis_command="list", status="validated"
-        )
+        args = _build_args(path=str(storage), hypothesis_command="list", status="validated")
         rc = dispatch(args)
         out = capsys.readouterr().out
         assert rc == 0
@@ -126,14 +112,10 @@ class TestList:
         assert "Earnings drift" not in out
         assert "Mean-reversion" not in out
 
-    def test_status_filter_with_no_matches(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_status_filter_with_no_matches(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         reg, storage = _make_registry(tmp_path)
         _seed(reg)
-        args = _build_args(
-            path=str(storage), hypothesis_command="list", status="rejected"
-        )
+        args = _build_args(path=str(storage), hypothesis_command="list", status="rejected")
         rc = dispatch(args)
         out = capsys.readouterr().out
         assert rc == 0
@@ -157,14 +139,10 @@ class TestList:
         assert len(shown) == 1, f"expected exactly one row, got {shown}"
         assert "Hypotheses (1)" in out
 
-    def test_json_output(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_json_output(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         reg, storage = _make_registry(tmp_path)
         _seed(reg)
-        args = _build_args(
-            path=str(storage), hypothesis_command="list", json=True
-        )
+        args = _build_args(path=str(storage), hypothesis_command="list", json=True)
         rc = dispatch(args)
         out = capsys.readouterr().out
         assert rc == 0
@@ -176,9 +154,7 @@ class TestList:
 
 
 class TestShow:
-    def test_shows_existing(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_shows_existing(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         reg, storage = _make_registry(tmp_path)
         ids = _seed(reg)
         args = _build_args(
@@ -193,9 +169,7 @@ class TestShow:
         assert "Mean-reversion on CSI300" in out
         assert "Short-horizon dispersion" in out
 
-    def test_missing_returns_one(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_missing_returns_one(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         reg, storage = _make_registry(tmp_path)
         _seed(reg)
         args = _build_args(
@@ -208,9 +182,7 @@ class TestShow:
         assert rc == 1
         assert "hypothesis not found" in captured.err
 
-    def test_json_output(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_json_output(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         reg, storage = _make_registry(tmp_path)
         ids = _seed(reg)
         args = _build_args(
@@ -228,9 +200,7 @@ class TestShow:
 
 
 class TestInvalidate:
-    def test_invalidates_with_note(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_invalidates_with_note(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         reg, storage = _make_registry(tmp_path)
         ids = _seed(reg)
         args = _build_args(
@@ -250,9 +220,7 @@ class TestInvalidate:
         assert hyp.status == "rejected"
         assert hyp.invalidation_notes == "Data leakage in feature set."
 
-    def test_invalidates_without_note_leaves_existing_note(
-        self, tmp_path: Path
-    ) -> None:
+    def test_invalidates_without_note_leaves_existing_note(self, tmp_path: Path) -> None:
         reg, storage = _make_registry(tmp_path)
         hyp = reg.create(
             title="Old idea",
@@ -268,15 +236,11 @@ class TestInvalidate:
         rc = dispatch(args)
         assert rc == 0
         reg2 = HypothesisRegistry(path=storage)
-        loaded = next(
-            h for h in reg2.list() if h.hypothesis_id == hyp.hypothesis_id
-        )
+        loaded = next(h for h in reg2.list() if h.hypothesis_id == hyp.hypothesis_id)
         assert loaded.status == "rejected"
         assert loaded.invalidation_notes == "Original note."
 
-    def test_missing_returns_one(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_missing_returns_one(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         reg, storage = _make_registry(tmp_path)
         _seed(reg)
         args = _build_args(
@@ -290,9 +254,7 @@ class TestInvalidate:
         assert rc == 1
         assert "hypothesis not found" in captured.err
 
-    def test_json_output(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_json_output(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         reg, storage = _make_registry(tmp_path)
         ids = _seed(reg)
         args = _build_args(
@@ -308,6 +270,4 @@ class TestInvalidate:
         payload = json.loads(out)
         assert payload["hypothesis_id"] == ids[2]
         assert payload["status"] == "rejected"
-        assert payload["invalidation_notes"] == (
-            "Funding skew anomaly disappeared."
-        )
+        assert payload["invalidation_notes"] == ("Funding skew anomaly disappeared.")

@@ -22,9 +22,7 @@ def study_main_force(code: str, days: int = 30) -> dict | None:
     Returns:
         该 symbol 的资金流向结果 dict，失败返回 None。
     """
-    envelope = json.loads(
-        FundFlowTool().execute(codes=[code], period="daily", days=days)
-    )
+    envelope = json.loads(FundFlowTool().execute(codes=[code], period="daily", days=days))
     if not envelope.get("ok"):
         print(f"资金流向获取失败：{envelope.get('error')}")
         return None

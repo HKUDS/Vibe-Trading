@@ -62,6 +62,7 @@ class SessionSearchTool(BaseTool):
 
         try:
             from src.session.search import get_shared_index
+
             matches = get_shared_index().search(query, max_sessions=max_results)
 
             if not matches:

@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #108
 # 简要说明: 国泰君安191短周期交易型alpha因子第108号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: x^y interpreted as x ** y after rank; both terms in (0,1].
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -38,16 +38,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_108"
 
 __alpha_meta__ = {
-    'id': 'gtja191_108',
-    'theme': ['reversal', 'volume'],
-    'formula_latex': '(rank(high-min(high,2))^rank(corr(vwap,mean(volume,120),6)))*-1',
-    'columns_required': ['open', 'high', 'low', 'close', 'volume', 'amount'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 6,
-    'min_warmup_bars': 125,
-    'notes': 'x^y interpreted as x ** y after rank; both terms in (0,1].',
+    "id": "gtja191_108",
+    "theme": ["reversal", "volume"],
+    "formula_latex": "(rank(high-min(high,2))^rank(corr(vwap,mean(volume,120),6)))*-1",
+    "columns_required": ["open", "high", "low", "close", "volume", "amount"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 6,
+    "min_warmup_bars": 125,
+    "notes": "x^y interpreted as x ** y after rank; both terms in (0,1].",
 }
 
 

@@ -90,16 +90,30 @@ def execute_live_order(
         return _deny(broker, session_id, "no valid mandate on file", ["mandate"], mandate, intent=None)
 
     if _is_expired(mandate):
-        return _deny(broker, session_id, "mandate expired — re-authorize", ["mandate", "expiry"], mandate, intent=None, reauth=True)
+        return _deny(
+            broker,
+            session_id,
+            "mandate expired — re-authorize",
+            ["mandate", "expiry"],
+            mandate,
+            intent=None,
+            reauth=True,
+        )
 
     if halt_flag_set(broker):
-        return _deny(broker, session_id, "live trading halted", ["mandate", "expiry", "halt_flag"], mandate, intent=None)
+        return _deny(
+            broker, session_id, "live trading halted", ["mandate", "expiry", "halt_flag"], mandate, intent=None
+        )
 
     normalized = _normalize_notional(intent, connector_module, config)
     if normalized is None:
         return _deny(
-            broker, session_id, "quantity order notional could not be priced (fail-closed)",
-            ["mandate", "expiry", "halt_flag", "quote"], mandate, intent=intent,
+            broker,
+            session_id,
+            "quantity order notional could not be priced (fail-closed)",
+            ["mandate", "expiry", "halt_flag", "quote"],
+            mandate,
+            intent=intent,
         )
     intent = normalized
 
@@ -110,14 +124,24 @@ def execute_live_order(
         with daily_order_lock(broker):
             daily_count = read_daily_count(broker)
             breach = check_mandate(
-                mandate, intent, positions, balance,
-                broker=broker, remote_tool=_REMOTE_TOOL, daily_count=daily_count,
+                mandate,
+                intent,
+                positions,
+                balance,
+                broker=broker,
+                remote_tool=_REMOTE_TOOL,
+                daily_count=daily_count,
             )
 
             if breach is None:
                 return _allow(
-                    broker, session_id, connector_module, config,
-                    intent, place_kwargs, mandate,
+                    broker,
+                    session_id,
+                    connector_module,
+                    config,
+                    intent,
+                    place_kwargs,
+                    mandate,
                 )
     except DailyOrderLockUnavailable as exc:
         return _deny(
@@ -148,22 +172,43 @@ def _allow(broker, session_id, connector_module, config, intent, place_kwargs, m
 
     is_error = not isinstance(result, dict) or str(result.get("status", "")).lower() != "ok"
     checked = [
-        "mandate", "expiry", "halt_flag", "exclude_symbols", "allowed_instruments",
-        "asset_classes", "max_order_notional_usd", "max_total_exposure_usd",
-        "max_leverage", "max_trades_per_day", "account_funding_usd", "universe_floors",
+        "mandate",
+        "expiry",
+        "halt_flag",
+        "exclude_symbols",
+        "allowed_instruments",
+        "asset_classes",
+        "max_order_notional_usd",
+        "max_total_exposure_usd",
+        "max_leverage",
+        "max_trades_per_day",
+        "account_funding_usd",
+        "universe_floors",
     ]
     if is_error:
         record = _audit(
-            broker, session_id, kind="order_rejected", outcome="error", mandate=mandate, intent=intent,
-            broker_request=dict(place_kwargs), broker_response=result if isinstance(result, dict) else {"raw": result},
+            broker,
+            session_id,
+            kind="order_rejected",
+            outcome="error",
+            mandate=mandate,
+            intent=intent,
+            broker_request=dict(place_kwargs),
+            broker_response=result if isinstance(result, dict) else {"raw": result},
             gate_decision={"allowed": True, "decision": _DECISION_ALLOW, "checked_limits": checked},
             error=_error_message(result),
         )
     else:
         increment_daily_count(broker)
         record = _audit(
-            broker, session_id, kind="order_placed", outcome="accepted", mandate=mandate, intent=intent,
-            broker_request=dict(place_kwargs), broker_response=result,
+            broker,
+            session_id,
+            kind="order_placed",
+            outcome="accepted",
+            mandate=mandate,
+            intent=intent,
+            broker_request=dict(place_kwargs),
+            broker_response=result,
             gate_decision={"allowed": True, "decision": _DECISION_ALLOW, "checked_limits": checked},
         )
     if isinstance(result, dict) and record is not None:
@@ -174,8 +219,14 @@ def _allow(broker, session_id, connector_module, config, intent, place_kwargs, m
 def _deny(broker, session_id, reason, checked, mandate, *, intent, reauth=False) -> dict[str, Any]:
     """Audit + return a refusal for a pre-check / structural DENY."""
     record = _audit(
-        broker, session_id, kind="order_rejected", outcome="blocked", mandate=mandate, intent=intent,
-        broker_request=None, broker_response=None,
+        broker,
+        session_id,
+        kind="order_rejected",
+        outcome="blocked",
+        mandate=mandate,
+        intent=intent,
+        broker_request=None,
+        broker_response=None,
         gate_decision={"allowed": False, "decision": _DECISION_DENY, "checked_limits": checked},
         error=reason,
     )
@@ -186,17 +237,31 @@ def _deny_breach(broker, session_id, breach, mandate, intent, reauth) -> dict[st
     """Audit + return a refusal for a ``check_mandate`` breach."""
     decision = _DECISION_PAUSE if reauth else _DECISION_DENY
     record = _audit(
-        broker, session_id, kind="breach", outcome="blocked", mandate=mandate, intent=intent,
-        broker_request=None, broker_response=None,
+        broker,
+        session_id,
+        kind="breach",
+        outcome="blocked",
+        mandate=mandate,
+        intent=intent,
+        broker_request=None,
+        broker_response=None,
         gate_decision={
-            "allowed": False, "decision": decision, "limit": breach.limit, "kind": breach.kind,
-            "limit_value": breach.limit_value, "attempted_value": breach.attempted_value,
+            "allowed": False,
+            "decision": decision,
+            "limit": breach.limit,
+            "kind": breach.kind,
+            "limit_value": breach.limit_value,
+            "attempted_value": breach.attempted_value,
         },
         error=breach.detail or f"order breaches {breach.limit}",
     )
     return _refusal(
-        broker, decision=decision, reason=breach.detail or f"order breaches {breach.limit}",
-        reauth=reauth, breach=breach, record=record,
+        broker,
+        decision=decision,
+        reason=breach.detail or f"order breaches {breach.limit}",
+        reauth=reauth,
+        breach=breach,
+        record=record,
     )
 
 
@@ -212,12 +277,18 @@ def _refusal(broker, *, decision, reason, reauth, breach=None, record=None) -> d
         payload[LIVE_ACTION_RESULT_KEY] = record
     if breach is not None:
         payload["breach"] = {
-            "broker": breach.broker, "limit": breach.limit, "limit_value": breach.limit_value,
-            "attempted_value": breach.attempted_value, "overage": breach.overage,
-            "kind": breach.kind, "detail": breach.detail,
+            "broker": breach.broker,
+            "limit": breach.limit,
+            "limit_value": breach.limit_value,
+            "attempted_value": breach.attempted_value,
+            "overage": breach.overage,
+            "kind": breach.kind,
+            "detail": breach.detail,
             "proposed_action": {
-                "symbol": breach.proposed_action.symbol, "side": breach.proposed_action.side,
-                "notional_usd": breach.proposed_action.notional_usd, "quantity": breach.proposed_action.quantity,
+                "symbol": breach.proposed_action.symbol,
+                "side": breach.proposed_action.side,
+                "notional_usd": breach.proposed_action.notional_usd,
+                "quantity": breach.proposed_action.quantity,
                 "instrument_type": breach.proposed_action.instrument_type.value,
             },
         }
@@ -246,8 +317,12 @@ def _normalize_notional(intent: OrderIntent, connector_module: Any, config: Any)
     explicit = intent.notional_usd if intent.notional_usd is not None else 0.0
     enforced = max(float(explicit), implied)
     return OrderIntent(
-        symbol=intent.symbol, side=intent.side, notional_usd=enforced,
-        quantity=intent.quantity, instrument_type=intent.instrument_type, asset_class=intent.asset_class,
+        symbol=intent.symbol,
+        side=intent.side,
+        notional_usd=enforced,
+        quantity=intent.quantity,
+        instrument_type=intent.instrument_type,
+        asset_class=intent.asset_class,
     )
 
 
@@ -339,7 +414,9 @@ def _safe_read(connector_module: Any, fn_name: str, config: Any) -> object:
 # --------------------------------------------------------------------------- #
 
 
-def _audit(broker, session_id, *, kind, outcome, mandate, intent, broker_request, broker_response, gate_decision, error=None) -> dict | None:
+def _audit(
+    broker, session_id, *, kind, outcome, mandate, intent, broker_request, broker_response, gate_decision, error=None
+) -> dict | None:
     consent = mandate.consent if mandate is not None else None
     try:
         event = LiveActionEvent(
@@ -389,8 +466,10 @@ def _describe_intent(intent: OrderIntent | None) -> str | None:
     if intent is None:
         return None
     size = (
-        f"${intent.notional_usd:g}" if intent.notional_usd is not None
-        else f"{intent.quantity:g} units" if intent.quantity is not None
+        f"${intent.notional_usd:g}"
+        if intent.notional_usd is not None
+        else f"{intent.quantity:g} units"
+        if intent.quantity is not None
         else "?"
     )
     return f"{intent.side} {size} {intent.symbol} ({intent.instrument_type.value})"

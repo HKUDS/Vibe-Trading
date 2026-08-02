@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -18,12 +17,6 @@ import src.live.paths as paths
 from src.live.halt import trip_halt
 from src.live.mandate.model import (
     MANDATE_SCHEMA_VERSION,
-    AssetClass,
-    ConsentMeta,
-    HardCaps,
-    InstrumentType,
-    Mandate,
-    UniverseConstraint,
 )
 from src.live.order_guard import LiveOrderGuardTool
 from src.tools.mcp import MCPRemoteTool, MCPRemoteToolSpec
@@ -106,9 +99,7 @@ def test_halt_blocks_order_no_remote_call(live_runtime: Path) -> None:
     adapter = _MockAdapter()
     guard = LiveOrderGuardTool(adapter, _order_spec(), broker="robinhood", session_id="s1")
 
-    out = json.loads(
-        guard.execute(symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0)
-    )
+    out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0))
 
     assert out["status"] == "blocked"
     assert out["decision"] == "deny"
@@ -123,9 +114,7 @@ def test_per_broker_halt_blocks_order(live_runtime: Path) -> None:
     adapter = _MockAdapter()
     guard = LiveOrderGuardTool(adapter, _order_spec(), broker="robinhood", session_id="s1")
 
-    out = json.loads(
-        guard.execute(symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0)
-    )
+    out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0))
     assert out["status"] == "blocked"
     assert adapter.calls == []
 

@@ -270,6 +270,7 @@ from scipy.stats import norm
 from scipy.optimize import brentq
 from typing import Literal
 
+
 def bs_price(
     S: float,
     K: float,
@@ -412,10 +413,15 @@ def implied_volatility(
         if abs(vega) < 1e-10:
             # Vega is near zero, fall back to bisection.
             try:
-                return float(brentq(
-                    lambda v: bs_price(S, K, T, r, v, option_type, q) - market_price,
-                    1e-4, 10.0, xtol=tol, maxiter=200
-                ))
+                return float(
+                    brentq(
+                        lambda v: bs_price(S, K, T, r, v, option_type, q) - market_price,
+                        1e-4,
+                        10.0,
+                        xtol=tol,
+                        maxiter=200,
+                    )
+                )
             except ValueError:
                 return np.nan
 
@@ -431,6 +437,7 @@ def implied_volatility(
 from dataclasses import dataclass
 import numpy as np
 
+
 @dataclass
 class OptionLeg:
     """Single option leg definition.
@@ -444,6 +451,7 @@ class OptionLeg:
         T: Time to expiration in years, used for theoretical Black-Scholes pricing
         sigma: Volatility used in pricing
     """
+
     option_type: Literal["call", "put"]
     K: float
     direction: int  # +1 or -1
@@ -500,10 +508,7 @@ def compute_theo_value(
     net_premium = sum(leg.direction * leg.quantity * leg.premium for leg in legs)
 
     for leg in legs:
-        prices = np.array([
-            bs_price(S, leg.K, leg.T, r, leg.sigma, leg.option_type, q)
-            for S in S_range
-        ])
+        prices = np.array([bs_price(S, leg.K, leg.T, r, leg.sigma, leg.option_type, q) for S in S_range])
         total_value += leg.direction * leg.quantity * prices
 
     return total_value - net_premium
@@ -521,11 +526,7 @@ def find_breakeven_points(
     beps = []
     for i in range(len(S_range) - 1):
         if payoff[i] * payoff[i + 1] < 0:
-            bep = brentq(
-                lambda s: np.interp(s, S_range, payoff),
-                S_range[i], S_range[i + 1],
-                xtol=0.01
-            )
+            bep = brentq(lambda s: np.interp(s, S_range, payoff), S_range[i], S_range[i + 1], xtol=0.01)
             beps.append(round(bep, 2))
     return beps
 ```
@@ -535,6 +536,7 @@ def find_breakeven_points(
 ```python
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+
 
 def plot_payoff_diagram(
     legs: list[OptionLeg],
@@ -569,38 +571,38 @@ def plot_payoff_diagram(
     fig, ax = plt.subplots(figsize=figsize)
 
     # Shade profit and loss regions.
-    ax.fill_between(S_range, expiry_pnl, 0,
-                    where=(expiry_pnl >= 0), alpha=0.15, color="green", label="_nolegend_")
-    ax.fill_between(S_range, expiry_pnl, 0,
-                    where=(expiry_pnl < 0), alpha=0.15, color="red", label="_nolegend_")
+    ax.fill_between(S_range, expiry_pnl, 0, where=(expiry_pnl >= 0), alpha=0.15, color="green", label="_nolegend_")
+    ax.fill_between(S_range, expiry_pnl, 0, where=(expiry_pnl < 0), alpha=0.15, color="red", label="_nolegend_")
 
     # Expiry payoff curve.
     ax.plot(S_range, expiry_pnl, color="steelblue", linewidth=2.0, label="Expiry P&L")
 
     # Theoretical value curve.
-    ax.plot(S_range, theo_pnl, color="darkorange", linewidth=1.5,
-            linestyle="--", label="Current theoretical value")
+    ax.plot(S_range, theo_pnl, color="darkorange", linewidth=1.5, linestyle="--", label="Current theoretical value")
 
     # Zero axis.
     ax.axhline(0, color="black", linewidth=0.8, linestyle="-")
 
     # Current price line.
-    ax.axvline(S_current, color="gray", linewidth=1.0, linestyle=":",
-               label=f"Spot {S_current:.2f}")
+    ax.axvline(S_current, color="gray", linewidth=1.0, linestyle=":", label=f"Spot {S_current:.2f}")
 
     # Strike annotations.
     for K in K_values:
         ax.axvline(K, color="purple", linewidth=0.6, linestyle="--", alpha=0.5)
-        ax.text(K, ax.get_ylim()[0], f"K={K}", fontsize=8,
-                rotation=90, va="bottom", color="purple")
+        ax.text(K, ax.get_ylim()[0], f"K={K}", fontsize=8, rotation=90, va="bottom", color="purple")
 
     # Break-even points.
     for bep in beps:
         ax.scatter([bep], [0], color="red", zorder=5, s=50)
-        ax.annotate(f"BEP\n{bep:.2f}", xy=(bep, 0),
-                    xytext=(bep, max(expiry_pnl) * 0.15),
-                    fontsize=8, ha="center", color="red",
-                    arrowprops=dict(arrowstyle="->", color="red", lw=0.8))
+        ax.annotate(
+            f"BEP\n{bep:.2f}",
+            xy=(bep, 0),
+            xytext=(bep, max(expiry_pnl) * 0.15),
+            fontsize=8,
+            ha="center",
+            color="red",
+            arrowprops=dict(arrowstyle="->", color="red", lw=0.8),
+        )
 
     # Max profit / max loss summary.
     max_p = max(expiry_pnl)
@@ -610,8 +612,15 @@ def plot_payoff_diagram(
         f"Max loss: {'Unlimited' if max_l < -1e6 else f'{max_l:.2f}'}\n"
         f"Break-even: {', '.join([str(b) for b in beps]) if beps else 'None'}"
     )
-    ax.text(0.02, 0.97, stats_text, transform=ax.transAxes,
-            fontsize=9, va="top", bbox=dict(boxstyle="round", fc="white", alpha=0.8))
+    ax.text(
+        0.02,
+        0.97,
+        stats_text,
+        transform=ax.transAxes,
+        fontsize=9,
+        va="top",
+        bbox=dict(boxstyle="round", fc="white", alpha=0.8),
+    )
 
     ax.set_xlabel("Underlying price")
     ax.set_ylabel("P&L")
@@ -628,6 +637,7 @@ def plot_payoff_diagram(
 
 ```python
 import plotly.graph_objects as go
+
 
 def plot_payoff_plotly(
     legs: list[OptionLeg],
@@ -650,12 +660,16 @@ def plot_payoff_plotly(
     fig = go.Figure()
 
     # Expiry payoff.
-    fig.add_trace(go.Scatter(
-        x=S_range, y=expiry_pnl,
-        name="Expiry P&L", line=dict(color="steelblue", width=2),
-        fill="tozeroy",
-        fillcolor="rgba(70,130,180,0.1)",
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=S_range,
+            y=expiry_pnl,
+            name="Expiry P&L",
+            line=dict(color="steelblue", width=2),
+            fill="tozeroy",
+            fillcolor="rgba(70,130,180,0.1)",
+        )
+    )
 
     # Theoretical value under multiple volatility scenarios.
     if sigma_scenarios:
@@ -663,35 +677,49 @@ def plot_payoff_plotly(
         for i, sigma in enumerate(sigma_scenarios):
             scenario_legs = [
                 OptionLeg(
-                    option_type=leg.option_type, K=leg.K,
-                    direction=leg.direction, quantity=leg.quantity,
-                    premium=leg.premium, T=leg.T, sigma=sigma
+                    option_type=leg.option_type,
+                    K=leg.K,
+                    direction=leg.direction,
+                    quantity=leg.quantity,
+                    premium=leg.premium,
+                    T=leg.T,
+                    sigma=sigma,
                 )
                 for leg in legs
             ]
             theo = compute_theo_value(scenario_legs, S_range, r, q)
-            fig.add_trace(go.Scatter(
-                x=S_range, y=theo,
-                name=f"IV={sigma*100:.0f}%",
-                line=dict(color=colors[i % len(colors)], width=1.5, dash="dash"),
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=S_range,
+                    y=theo,
+                    name=f"IV={sigma * 100:.0f}%",
+                    line=dict(color=colors[i % len(colors)], width=1.5, dash="dash"),
+                )
+            )
     else:
         theo_pnl = compute_theo_value(legs, S_range, r, q)
-        fig.add_trace(go.Scatter(
-            x=S_range, y=theo_pnl,
-            name="Current theoretical value",
-            line=dict(color="darkorange", width=1.5, dash="dash"),
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=S_range,
+                y=theo_pnl,
+                name="Current theoretical value",
+                line=dict(color="darkorange", width=1.5, dash="dash"),
+            )
+        )
 
     # Zero line and current price line.
     fig.add_hline(y=0, line_dash="solid", line_color="black", line_width=0.8)
-    fig.add_vline(x=S_current, line_dash="dot", line_color="gray",
-                  annotation_text=f"Spot {S_current:.2f}", annotation_position="top right")
+    fig.add_vline(
+        x=S_current,
+        line_dash="dot",
+        line_color="gray",
+        annotation_text=f"Spot {S_current:.2f}",
+        annotation_position="top right",
+    )
 
     # Strikes.
     for K in set(K_values):
-        fig.add_vline(x=K, line_dash="dash", line_color="purple",
-                      line_width=0.8, opacity=0.5)
+        fig.add_vline(x=K, line_dash="dash", line_color="purple", line_width=0.8, opacity=0.5)
 
     fig.update_layout(
         title=title,
@@ -736,24 +764,25 @@ def plot_greeks_profile(
 
     # Plot subplots.
     from plotly.subplots import make_subplots
-    n = len(greeks_to_plot)
-    fig = make_subplots(rows=n, cols=1, shared_xaxes=True,
-                        subplot_titles=[g.capitalize() for g in greeks_to_plot])
 
-    greek_colors = {"delta": "steelblue", "gamma": "green",
-                    "theta": "red", "vega": "darkorange", "rho": "purple"}
+    n = len(greeks_to_plot)
+    fig = make_subplots(rows=n, cols=1, shared_xaxes=True, subplot_titles=[g.capitalize() for g in greeks_to_plot])
+
+    greek_colors = {"delta": "steelblue", "gamma": "green", "theta": "red", "vega": "darkorange", "rho": "purple"}
 
     for i, name in enumerate(greeks_to_plot, start=1):
         fig.add_trace(
-            go.Scatter(x=S_range, y=greek_values[name],
-                       name=name.capitalize(),
-                       line=dict(color=greek_colors.get(name, "gray"), width=2)),
-            row=i, col=1
+            go.Scatter(
+                x=S_range,
+                y=greek_values[name],
+                name=name.capitalize(),
+                line=dict(color=greek_colors.get(name, "gray"), width=2),
+            ),
+            row=i,
+            col=1,
         )
-        fig.add_hline(y=0, line_dash="dot", line_color="black",
-                      line_width=0.5, row=i, col=1)
-        fig.add_vline(x=S_current, line_dash="dash", line_color="gray",
-                      line_width=0.8, row=i, col=1)
+        fig.add_hline(y=0, line_dash="dot", line_color="black", line_width=0.5, row=i, col=1)
+        fig.add_vline(x=S_current, line_dash="dash", line_color="gray", line_width=0.8, row=i, col=1)
 
     fig.update_layout(
         title="Greeks Profile",
@@ -848,23 +877,21 @@ Underlying approaches the call strike:
 ```python
 # Example: Iron Condor payoff diagram
 legs = [
-    OptionLeg("put",  K=90,  direction=-1, premium=1.5, T=0.083, sigma=0.20),
-    OptionLeg("put",  K=85,  direction=+1, premium=0.5, T=0.083, sigma=0.20),
+    OptionLeg("put", K=90, direction=-1, premium=1.5, T=0.083, sigma=0.20),
+    OptionLeg("put", K=85, direction=+1, premium=0.5, T=0.083, sigma=0.20),
     OptionLeg("call", K=110, direction=-1, premium=1.5, T=0.083, sigma=0.20),
     OptionLeg("call", K=115, direction=+1, premium=0.5, T=0.083, sigma=0.20),
 ]
 
 fig = plot_payoff_plotly(
-    legs, S_current=100.0,
+    legs,
+    S_current=100.0,
     title="Iron Condor (85/90/110/115, 1 month)",
     sigma_scenarios=[0.15, 0.20, 0.25, 0.30],
 )
 fig.show()
 
 # Implied volatility example
-iv = implied_volatility(
-    market_price=5.0, S=100, K=100,
-    T=0.25, r=0.03, option_type="call"
-)
+iv = implied_volatility(market_price=5.0, S=100, K=100, T=0.25, r=0.03, option_type="call")
 print(f"Implied volatility: {iv:.2%}")  # about 0.20
 ```

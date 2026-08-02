@@ -66,9 +66,13 @@ def _stub_panel(monkeypatch: pytest.MonkeyPatch, n_rows: int = 80, n_cols: int =
         columns=cols,
     )
     panel = {
-        "close": close, "high": close * 1.01, "low": close * 0.99,
-        "open": close, "volume": close * 0 + 1_000_000,
-        "vwap": close, "amount": close * 1_000_000,
+        "close": close,
+        "high": close * 1.01,
+        "low": close * 0.99,
+        "open": close,
+        "volume": close * 0 + 1_000_000,
+        "vwap": close,
+        "amount": close * 1_000_000,
     }
     monkeypatch.setattr(
         "src.factors.bench_runner._load_universe_panel",
@@ -83,8 +87,11 @@ def _stub_panel(monkeypatch: pytest.MonkeyPatch, n_rows: int = 80, n_cols: int =
 def test_run_bench_only_restricts_to_subset(monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_panel(monkeypatch)
     result = run_bench(
-        zoo="z", universe="csi300", period="2024-2024",
-        only=["a_two", "a_three"], registry=_ThreeAlphaRegistry(),
+        zoo="z",
+        universe="csi300",
+        period="2024-2024",
+        only=["a_two", "a_three"],
+        registry=_ThreeAlphaRegistry(),
     )
     assert result["status"] == "ok"
     benched = {r["id"] for r in result["rows"]}
@@ -95,8 +102,11 @@ def test_run_bench_only_restricts_to_subset(monkeypatch: pytest.MonkeyPatch) -> 
 def test_run_bench_only_none_benches_everything(monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_panel(monkeypatch)
     result = run_bench(
-        zoo="z", universe="csi300", period="2024-2024",
-        only=None, registry=_ThreeAlphaRegistry(),
+        zoo="z",
+        universe="csi300",
+        period="2024-2024",
+        only=None,
+        registry=_ThreeAlphaRegistry(),
     )
     assert {r["id"] for r in result["rows"]} == {"a_one", "a_two", "a_three"}
 
@@ -104,8 +114,11 @@ def test_run_bench_only_none_benches_everything(monkeypatch: pytest.MonkeyPatch)
 def test_run_bench_only_unknown_ids_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_panel(monkeypatch)
     result = run_bench(
-        zoo="z", universe="csi300", period="2024-2024",
-        only=["does_not_exist"], registry=_ThreeAlphaRegistry(),
+        zoo="z",
+        universe="csi300",
+        period="2024-2024",
+        only=["does_not_exist"],
+        registry=_ThreeAlphaRegistry(),
     )
     assert result["status"] == "error"
     assert "requested alphas" in result["error"]
@@ -137,7 +150,9 @@ class _FakeRegistry:
 def _fake_run_bench(metrics: dict[str, dict[str, Any]], *, status_by_zoo: dict[str, str] | None = None):
     """Build a ``run_bench`` double returning canned rows for the ``only`` ids."""
 
-    def _fake(*, zoo: str, universe: str, period: str, top: int, only: list[str], registry: Any, on_progress: Any = None) -> dict[str, Any]:  # noqa: ARG001
+    def _fake(
+        *, zoo: str, universe: str, period: str, top: int, only: list[str], registry: Any, on_progress: Any = None
+    ) -> dict[str, Any]:  # noqa: ARG001
         if status_by_zoo and zoo in status_by_zoo:
             return {"status": "error", "error": status_by_zoo[zoo]}
         rows, skipped = [], []
@@ -157,8 +172,13 @@ def _metrics(ic_mean: float, ic_std: float, ir: float, pos: float = 0.5, n: int 
 
 def _args(**kw: Any) -> argparse.Namespace:
     base = {
-        "alpha_ids": [], "compare_all": False, "zoo": None,
-        "universe": "csi300", "period": "2020-2025", "sort": "ir", "verbose": False,
+        "alpha_ids": [],
+        "compare_all": False,
+        "zoo": None,
+        "universe": "csi300",
+        "period": "2020-2025",
+        "sort": "ir",
+        "verbose": False,
     }
     base.update(kw)
     return argparse.Namespace(**base)
@@ -222,8 +242,13 @@ def test_compare_groups_across_zoos(monkeypatch, capsys) -> None:
     def _tracking(*, zoo, universe, period, top, only, registry, on_progress=None):  # noqa: ANN001, ARG001
         calls.append((zoo, tuple(only)))
         return fake(
-            zoo=zoo, universe=universe, period=period, top=top, only=only,
-            registry=registry, on_progress=on_progress,
+            zoo=zoo,
+            universe=universe,
+            period=period,
+            top=top,
+            only=only,
+            registry=registry,
+            on_progress=on_progress,
         )
 
     _wire(monkeypatch, id_to_zoo, _tracking)
@@ -322,7 +347,10 @@ def test_core_progress_counts_globally_across_zoos(monkeypatch) -> None:
     monkeypatch.setattr("src.factors.bench_runner.run_bench", _fake)
     seen: list[tuple[int, int, str]] = []
     env = compare_runner.compare_alphas(
-        ["a", "b", "c"], "csi300", "2020-2025", sort="ir",
+        ["a", "b", "c"],
+        "csi300",
+        "2020-2025",
+        sort="ir",
         registry=_FakeRegistry(id_to_zoo),
         on_progress=lambda nd, nt, aid: seen.append((nd, nt, aid)),
     )
@@ -334,7 +362,10 @@ def test_core_progress_counts_globally_across_zoos(monkeypatch) -> None:
 
 def test_core_below_two_returns_error(monkeypatch) -> None:
     env = compare_runner.compare_alphas(
-        ["solo"], "csi300", "2020-2025", registry=_FakeRegistry({"solo": "alpha101"}),
+        ["solo"],
+        "csi300",
+        "2020-2025",
+        registry=_FakeRegistry({"solo": "alpha101"}),
     )
     assert env["status"] == "error"
     assert "at least 2" in env["error"]
@@ -346,7 +377,11 @@ def test_core_invalid_sort_falls_back_to_ir(monkeypatch) -> None:
     metrics = {"a": _metrics(0.01, 0.05, 0.20), "b": _metrics(0.03, 0.05, 0.60)}
     monkeypatch.setattr("src.factors.bench_runner.run_bench", _fake_run_bench(metrics))
     env = compare_runner.compare_alphas(
-        ["a", "b"], "csi300", "2020-2025", sort="bogus", registry=_FakeRegistry(id_to_zoo),
+        ["a", "b"],
+        "csi300",
+        "2020-2025",
+        sort="bogus",
+        registry=_FakeRegistry(id_to_zoo),
     )
     assert env["sort"] == "ir"
     assert env["winner"] == "b"

@@ -73,10 +73,7 @@ class TestResolveSecidUS:
         Regression for B8-em-jsonp: the old first-``(`` / last-``)`` slice
         corrupted plain JSON like ``"Apple Inc. (AAPL)"`` and returned ``None``.
         """
-        body = (
-            '{"QuotationCodeTable":{"Data":'
-            '[{"QuoteID":"105.AAPL","Name":"Apple Inc. (AAPL) [NASDAQ]"}]}}'
-        )
+        body = '{"QuotationCodeTable":{"Data":[{"QuoteID":"105.AAPL","Name":"Apple Inc. (AAPL) [NASDAQ]"}]}}'
         with patch.object(ec, "throttled_get_json", return_value=body):
             assert ec.resolve_secid("AAPL.US") == "105.AAPL"
 
@@ -86,9 +83,7 @@ class TestResolveSecidUS:
             assert ec.resolve_secid("NOPE.US") is None
 
     def test_search_failure_returns_none_without_raising(self):
-        with patch.object(
-            ec, "throttled_get_json", side_effect=RuntimeError("banned")
-        ):
+        with patch.object(ec, "throttled_get_json", side_effect=RuntimeError("banned")):
             assert ec.resolve_secid("AAPL.US") is None
 
 
@@ -152,9 +147,7 @@ class TestFetchKline:
         assert rows[0]["trade_date"] == "2024-01-03"
 
     def test_http_error_propagates(self):
-        with patch.object(
-            ec, "throttled_get_json", side_effect=RuntimeError("HTTP 429")
-        ):
+        with patch.object(ec, "throttled_get_json", side_effect=RuntimeError("HTTP 429")):
             with pytest.raises(RuntimeError, match="429"):
                 ec.fetch_kline("1.600519", klt=101)
 

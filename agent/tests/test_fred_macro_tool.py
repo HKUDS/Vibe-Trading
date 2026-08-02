@@ -96,9 +96,7 @@ class TestExecuteSuccess:
 
     def test_limit_keeps_most_recent(self, monkeypatch):
         monkeypatch.setenv("FRED_API_KEY", "tok_123")
-        monkeypatch.setattr(
-            fred_macro_tool, "throttled_get_json", lambda url, **kw: _ok_payload()
-        )
+        monkeypatch.setattr(fred_macro_tool, "throttled_get_json", lambda url, **kw: _ok_payload())
 
         out = json.loads(FredMacroTool().execute(series_id="UNRATE", limit=1))
         assert out["data"]["count"] == 1
@@ -152,9 +150,7 @@ class TestExecuteErrors:
 
     def test_empty_observations_becomes_error_envelope(self, monkeypatch):
         monkeypatch.setenv("FRED_API_KEY", "tok_123")
-        monkeypatch.setattr(
-            fred_macro_tool, "throttled_get_json", lambda url, **kw: {"observations": []}
-        )
+        monkeypatch.setattr(fred_macro_tool, "throttled_get_json", lambda url, **kw: {"observations": []})
         out = json.loads(FredMacroTool().execute(series_id="CPIAUCSL"))
         assert out["ok"] is False
         assert "no observations found" in out["error"]

@@ -51,6 +51,7 @@ class DhanConfigError(RuntimeError):
 # NSE instrument constants for F&O
 # ---------------------------------------------------------------------------
 
+
 #: NSE exchange segment codes used by Dhan API.
 class DhanSegment:
     NSE_EQ = "NSE_EQ"
@@ -62,7 +63,7 @@ class DhanSegment:
 
 
 #: Common NIFTY/BANKNIFTY security IDs (Dhan uses numeric security IDs).
-NIFTY_SECURITY_ID = "13"      # NIFTY 50 index
+NIFTY_SECURITY_ID = "13"  # NIFTY 50 index
 BANKNIFTY_SECURITY_ID = "25"  # BANK NIFTY index
 
 
@@ -138,11 +139,7 @@ def build_config(
         if value is not None:
             base[key] = value
     cfg = DhanConfig.from_mapping(base)
-    clean = {
-        k: v
-        for k, v in dict(overrides or {}).items()
-        if k in _OVERRIDE_KEYS and v not in (None, "")
-    }
+    clean = {k: v for k, v in dict(overrides or {}).items() if k in _OVERRIDE_KEYS and v not in (None, "")}
     return cfg.with_overrides(**clean) if clean else cfg
 
 
@@ -251,18 +248,20 @@ def get_positions(config: DhanConfig | None = None) -> dict[str, Any]:
 
     rows = []
     for item in _as_list(positions.get("data")):
-        rows.append({
-            "symbol": item.get("tradingSymbol", ""),
-            "security_id": item.get("securityId", ""),
-            "exchange_segment": item.get("exchangeSegment", ""),
-            "product_type": item.get("productType", ""),
-            "quantity": item.get("netQty", 0),
-            "average_cost": item.get("costPrice", 0),
-            "current_price": item.get("currentPrice", 0),
-            "unrealized_pnl": item.get("realizedProfit", 0),
-            "day_buy_qty": item.get("dayBuyQty", 0),
-            "day_sell_qty": item.get("daySellQty", 0),
-        })
+        rows.append(
+            {
+                "symbol": item.get("tradingSymbol", ""),
+                "security_id": item.get("securityId", ""),
+                "exchange_segment": item.get("exchangeSegment", ""),
+                "product_type": item.get("productType", ""),
+                "quantity": item.get("netQty", 0),
+                "average_cost": item.get("costPrice", 0),
+                "current_price": item.get("currentPrice", 0),
+                "unrealized_pnl": item.get("realizedProfit", 0),
+                "day_buy_qty": item.get("dayBuyQty", 0),
+                "day_sell_qty": item.get("daySellQty", 0),
+            }
+        )
 
     return {
         "status": "ok",
@@ -373,10 +372,7 @@ def get_historical_bars(
     if token not in _SUPPORTED_PERIODS:
         return {
             "status": "error",
-            "error": (
-                f"unsupported period: {period!r}; "
-                f"supported: {sorted(_SUPPORTED_PERIODS)}"
-            ),
+            "error": (f"unsupported period: {period!r}; supported: {sorted(_SUPPORTED_PERIODS)}"),
             "symbol": symbol,
         }
     intraday = token in ("1m", "5m", "15m", "30m")
@@ -411,14 +407,16 @@ def get_historical_bars(
     bars = []
     for candle in _as_list(data.get("data", {}).get("candles")):
         if len(candle) >= 6:
-            bars.append({
-                "time": candle[0],
-                "open": candle[1],
-                "high": candle[2],
-                "low": candle[3],
-                "close": candle[4],
-                "volume": candle[5],
-            })
+            bars.append(
+                {
+                    "time": candle[0],
+                    "open": candle[1],
+                    "high": candle[2],
+                    "low": candle[3],
+                    "close": candle[4],
+                    "volume": candle[5],
+                }
+            )
 
     return {
         "status": "ok",
@@ -548,9 +546,7 @@ def _require_dhan() -> ModuleType:
     try:
         import dhanhq  # type: ignore
     except ModuleNotFoundError as exc:
-        raise DhanDependencyError(
-            "dhanhq is not installed; run `pip install dhanhq`."
-        ) from exc
+        raise DhanDependencyError("dhanhq is not installed; run `pip install dhanhq`.") from exc
     return dhanhq
 
 

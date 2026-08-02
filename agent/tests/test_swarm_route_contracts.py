@@ -40,9 +40,7 @@ def _create_run(
         preset_name="contract-test",
         status=status,
         created_at="2026-07-16T00:00:00+00:00",
-        completed_at=(
-            "2026-07-16T00:00:01+00:00" if status == RunStatus.completed else None
-        ),
+        completed_at=("2026-07-16T00:00:01+00:00" if status == RunStatus.completed else None),
         tasks=tasks or [],
     )
     store.create_run(run)
@@ -107,9 +105,7 @@ def test_swarm_events_keeps_last_index_query_compatibility(
 def test_swarm_detail_uses_redacted_public_task_projection(
     swarm_store: SwarmStore,
 ) -> None:
-    internal_path = str(
-        Path.cwd() / "agent" / ".swarm" / "runs" / "secret" / "task.log"
-    )
+    internal_path = str(Path.cwd() / "agent" / ".swarm" / "runs" / "secret" / "task.log")
     _create_run(
         swarm_store,
         tasks=[

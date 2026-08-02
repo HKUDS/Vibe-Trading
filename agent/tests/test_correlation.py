@@ -39,22 +39,22 @@ class TestInferMarket:
     def test_bare_hk_tickers_by_digit_length(self):
         # HK codes are <=5 digits; A-share codes are exactly 6 digits. A bare
         # short numeric code must classify as HK, not A-share / US.
-        assert infer_market("0700") == "hk_equity"   # 腾讯
-        assert infer_market("0005") == "hk_equity"   # 汇丰
-        assert infer_market("0001") == "hk_equity"   # 长和
-        assert infer_market("0388") == "hk_equity"   # 港交所
-        assert infer_market("3690") == "hk_equity"   # 美团
-        assert infer_market("9988") == "hk_equity"   # 阿里 (starts with 9)
-        assert infer_market("700") == "hk_equity"    # unpadded form
+        assert infer_market("0700") == "hk_equity"  # 腾讯
+        assert infer_market("0005") == "hk_equity"  # 汇丰
+        assert infer_market("0001") == "hk_equity"  # 长和
+        assert infer_market("0388") == "hk_equity"  # 港交所
+        assert infer_market("3690") == "hk_equity"  # 美团
+        assert infer_market("9988") == "hk_equity"  # 阿里 (starts with 9)
+        assert infer_market("700") == "hk_equity"  # unpadded form
 
     def test_bare_a_share_tickers_by_digit_length(self):
         # Exactly-6-digit bare codes are A-share regardless of prefix.
-        assert infer_market("600000") == "a_share"   # 浦发银行 沪
-        assert infer_market("000001") == "a_share"   # 平安银行 深
-        assert infer_market("300750") == "a_share"   # 宁德时代 创业板
-        assert infer_market("688981") == "a_share"   # 中芯国际 科创板
-        assert infer_market("830799") == "a_share"   # 北交所
-        assert infer_market("399001") == "a_share"   # 深证成指
+        assert infer_market("600000") == "a_share"  # 浦发银行 沪
+        assert infer_market("000001") == "a_share"  # 平安银行 深
+        assert infer_market("300750") == "a_share"  # 宁德时代 创业板
+        assert infer_market("688981") == "a_share"  # 中芯国际 科创板
+        assert infer_market("830799") == "a_share"  # 北交所
+        assert infer_market("399001") == "a_share"  # 深证成指
 
     def test_explicit_suffix_always_wins(self):
         assert infer_market("600519.SH") == "a_share"
@@ -138,11 +138,13 @@ class TestFetchFallsThroughChain:
 
         monkeypatch.setattr(registry, "_registered", True)
         monkeypatch.setattr(
-            registry, "LOADER_REGISTRY",
+            registry,
+            "LOADER_REGISTRY",
             {"fake_empty": EmptyLoader, "fake_good": GoodLoader},
         )
         monkeypatch.setattr(
-            registry, "FALLBACK_CHAINS",
+            registry,
+            "FALLBACK_CHAINS",
             {"us_equity": ["fake_empty", "fake_good"]},
         )
 

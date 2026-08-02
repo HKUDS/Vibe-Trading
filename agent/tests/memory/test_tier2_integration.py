@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 
 import pytest
 
 from src.config.accessor import reset_env_config
-from src.memory.persistent import PersistentMemory, MemoryEntry
+from src.memory.persistent import PersistentMemory
 from src.memory.lifecycle import MemoryLifecycle
 from src.tools.remember_tool import RememberTool
 
@@ -152,9 +151,7 @@ class TestLinksAddGeneratesRelationsJson:
 
         # Check that at least one .relations.json was created
         relation_files = list(tmp_path.rglob("*.relations.json"))
-        assert len(relation_files) >= 1, (
-            f"Expected at least one .relations.json, found: {relation_files}"
-        )
+        assert len(relation_files) >= 1, f"Expected at least one .relations.json, found: {relation_files}"
 
 
 # ---------------------------------------------------------------------------
@@ -195,8 +192,7 @@ class TestFtsRemoveCleansIndex:
         mem = PersistentMemory(tmp_path)
         mem.add(
             "ephemeral note",
-            "This ephemeral note about cryptocurrency volatility "
-            "should disappear after removal.",
+            "This ephemeral note about cryptocurrency volatility should disappear after removal.",
             "project",
         )
 
@@ -240,9 +236,7 @@ class TestCompressionGcTriggersDaily:
         assert path is not None
 
         # Manually set last_accessed to 10 days ago to trigger daily compression
-        ten_days_ago = time.strftime(
-            "%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - 10 * 86400)
-        )
+        ten_days_ago = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - 10 * 86400))
         text = path.read_text(encoding="utf-8")
         text = text.replace(
             f"last_accessed: {text.split('last_accessed: ')[1].split(chr(10))[0]}",
@@ -311,9 +305,7 @@ class TestRecallIncludesRelatedField:
         assert result["count"] >= 1
         # At least one memory should have a "related" field
         has_related = any("related" in m for m in result["memories"])
-        assert has_related, (
-            f"Expected at least one memory with 'related' field, got: {result['memories']}"
-        )
+        assert has_related, f"Expected at least one memory with 'related' field, got: {result['memories']}"
 
 
 # ---------------------------------------------------------------------------
@@ -358,7 +350,8 @@ class TestRemoveCleansRelationsSidecar:
 
         # The sidecar for the removed entry should be gone
         from src.memory.semantic_links import SemanticLinker
-        linker = SemanticLinker(tmp_path)
+
+        SemanticLinker(tmp_path)
         # Try to find the relations file for any file named like the target
         target_files = list(tmp_path.rglob("*target_entry*"))
         # The .md file itself should be deleted

@@ -123,11 +123,7 @@ def _backtest_summary(config: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _scalar_metrics(metrics: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in metrics.items()
-        if key != "validation" and _is_scalar(value)
-    }
+    return {key: value for key, value in metrics.items() if key != "validation" and _is_scalar(value)}
 
 
 def _json_safe(value: Any) -> Any:
@@ -206,7 +202,9 @@ def _render_markdown(card: Mapping[str, Any]) -> str:
 
     lines.extend(["", "## Metrics"])
     metric_values = card.get("metrics", {})
-    lines.extend(f"- {key}: {value}" for key, value in metric_values.items()) if metric_values else lines.append("- No scalar metrics recorded.")
+    lines.extend(f"- {key}: {value}" for key, value in metric_values.items()) if metric_values else lines.append(
+        "- No scalar metrics recorded."
+    )
 
     lines.extend(["", "## Validation"])
     if "validation" in card:

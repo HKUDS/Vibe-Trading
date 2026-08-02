@@ -11,7 +11,6 @@ Validates:
 
 from __future__ import annotations
 
-import datetime as dt
 
 import pandas as pd
 import pytest
@@ -52,7 +51,11 @@ class TestCanExecute:
         engine = _engine()
         ts = pd.Timestamp("2024-04-01")
         engine.positions["RELIANCE.NS"] = Position(
-            symbol="RELIANCE.NS", direction=1, size=10, entry_price=100.0, entry_time=ts,
+            symbol="RELIANCE.NS",
+            direction=1,
+            size=10,
+            entry_price=100.0,
+            entry_time=ts,
         )
         bar = _bar()
         bar.name = ts  # same date as entry -> T+1 blocks the sell
@@ -61,7 +64,10 @@ class TestCanExecute:
     def test_t1_allows_next_bar_sell(self) -> None:
         engine = _engine()
         engine.positions["RELIANCE.NS"] = Position(
-            symbol="RELIANCE.NS", direction=1, size=10, entry_price=100.0,
+            symbol="RELIANCE.NS",
+            direction=1,
+            size=10,
+            entry_price=100.0,
             entry_time=pd.Timestamp("2024-04-01"),
         )
         bar = _bar()
@@ -76,7 +82,10 @@ class TestCanExecute:
     def test_lower_circuit_blocks_sell(self) -> None:
         engine = _engine(price_limit=0.20)
         engine.positions["RELIANCE.NS"] = Position(
-            symbol="RELIANCE.NS", direction=1, size=10, entry_price=100.0,
+            symbol="RELIANCE.NS",
+            direction=1,
+            size=10,
+            entry_price=100.0,
             entry_time=pd.Timestamp("2024-04-01"),
         )
         bar = _bar(close=80.0, pre_close=100.0)  # -20% -> lower band
@@ -137,9 +146,7 @@ class TestCommission:
         sell = engine.calc_commission(100, 1000.0, 1, is_open=False)
         # Sell carries the flat DP charge; buy carries stamp duty instead.
         assert sell >= 13.5
-        assert buy == pytest.approx(
-            sell - 13.5 + 100 * 1000.0 * engine.in_stamp_duty, abs=1e-6
-        )
+        assert buy == pytest.approx(sell - 13.5 + 100 * 1000.0 * engine.in_stamp_duty, abs=1e-6)
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +178,5 @@ class TestRouting:
     def test_cross_market_with_india_builds_india_subengine(self) -> None:
         from backtest.engines.composite import _build_rule_engines
 
-        engines = _build_rule_engines(
-            {"initial_cash": 100_000}, ["RELIANCE.NS", "AAPL.US"]
-        )
+        engines = _build_rule_engines({"initial_cash": 100_000}, ["RELIANCE.NS", "AAPL.US"])
         assert isinstance(engines["india_equity"], IndiaEquityEngine)

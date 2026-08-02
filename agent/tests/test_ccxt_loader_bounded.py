@@ -97,10 +97,7 @@ def test_page_cap_rejects_incomplete_requested_history():
             del symbol, timeframe
             assert since is not None
             assert limit == 1000
-            return [
-                [since + i * minute_ms, 100.0, 101.0, 99.0, 100.0, 10.0]
-                for i in range(limit)
-            ]
+            return [[since + i * minute_ms, 100.0, 101.0, 99.0, 100.0, 10.0] for i in range(limit)]
 
     end = int((pd.Timestamp("2027-05-01") + pd.Timedelta(days=1)).timestamp() * 1000)
 

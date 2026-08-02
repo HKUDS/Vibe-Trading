@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from src.memory.semantic_links import (
     SemanticLinker,
@@ -64,9 +63,7 @@ class TestDiscoverLinks:
         # Create 15 entries all sharing some terms
         all_entries = [("source.md", source_tokens)]
         for i in range(15):
-            all_entries.append(
-                (f"entry_{i}.md", _make_tokens(f"common shared term variant {i} extra words here"))
-            )
+            all_entries.append((f"entry_{i}.md", _make_tokens(f"common shared term variant {i} extra words here")))
         links = linker.discover_links("source.md", source_tokens, all_entries, top_k=15)
         assert len(links) <= 10
 

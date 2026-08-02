@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #2 - 高低价差动量
 # 简要说明: (-1 * CORR(RANK(DELTA(LOG(VOLUME), 1)), RANK(((CLOSE - OPEN) / OPEN)), 4))，类似Alpha#1但窗口缩短为4日。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_002",
-    "theme": ['reversal', 'microstructure'],
-    "formula_latex": '(-1 * DELTA(((CLOSE - LOW) - (HIGH - CLOSE)) / (HIGH - LOW), 1))',
-    "columns_required": ['close', 'high', 'low'],
+    "theme": ["reversal", "microstructure"],
+    "formula_latex": "(-1 * DELTA(((CLOSE - LOW) - (HIGH - CLOSE)) / (HIGH - LOW), 1))",
+    "columns_required": ["close", "high", "low"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 1,
     "min_warmup_bars": 2,
-    "notes": 'Daily change in close-position-within-range.',
+    "notes": "Daily change in close-position-within-range.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

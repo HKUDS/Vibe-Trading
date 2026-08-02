@@ -31,9 +31,7 @@ _DAILY_ONLY_ALIASES = frozenset({"1d", "d", "day", "daily"})
 
 def _require_daily_interval(interval: str, market: str) -> None:
     if str(interval).strip().lower() not in _DAILY_ONLY_ALIASES:
-        raise ValueError(
-            f"Unsupported interval {interval!r}; akshare {market} supports daily bars only"
-        )
+        raise ValueError(f"Unsupported interval {interval!r}; akshare {market} supports daily bars only")
 
 
 def _is_a_share(code: str) -> bool:
@@ -50,9 +48,6 @@ def _is_us(code: str) -> bool:
 
 def _is_crypto(code: str) -> bool:
     return "-USDT" in code.upper() or "/USDT" in code.upper()
-
-
-
 
 
 def _is_forex(code: str) -> bool:
@@ -83,6 +78,7 @@ class DataLoader:
         """Available if akshare is installed."""
         try:
             import akshare  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -132,7 +128,11 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self, code: str, start_date: str, end_date: str, interval: str,
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
+        interval: str,
     ) -> Optional[pd.DataFrame]:
         """Fetch a single symbol."""
         import akshare as ak
@@ -156,15 +156,19 @@ class DataLoader:
         return self._fetch_a_share(ak, code, start_date, end_date, interval)
 
     def _fetch_a_share(
-        self, ak, code: str, start_date: str, end_date: str, interval: str,
+        self,
+        ak,
+        code: str,
+        start_date: str,
+        end_date: str,
+        interval: str,
     ) -> Optional[pd.DataFrame]:
         """Fetch A-share via stock_zh_a_hist."""
         symbol = code.split(".")[0]
         period = _INTERVAL_MAP_DAILY.get(interval)
         if period is None:
             raise ValueError(
-                f"Unsupported interval {interval!r}; akshare a-share supports "
-                f"{sorted(_INTERVAL_MAP_DAILY)}"
+                f"Unsupported interval {interval!r}; akshare a-share supports {sorted(_INTERVAL_MAP_DAILY)}"
             )
         sd = start_date.replace("-", "")
         ed = end_date.replace("-", "")
@@ -225,21 +229,21 @@ class DataLoader:
         df = ak.forex_hist_em(symbol=symbol)
         if df is None or df.empty:
             return None
-        df = df.rename(columns={
-            "日期": "trade_date",
-            "今开": "open",
-            "最新价": "close",
-            "最高": "high",
-            "最低": "low",
-        })
+        df = df.rename(
+            columns={
+                "日期": "trade_date",
+                "今开": "open",
+                "最新价": "close",
+                "最高": "high",
+                "最低": "low",
+            }
+        )
         df["trade_date"] = pd.to_datetime(df["trade_date"])
         df = df.set_index("trade_date").sort_index()
         df["volume"] = 0.0
         for col in ("open", "high", "low", "close"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        df = df[["open", "high", "low", "close", "volume"]].dropna(
-            subset=["open", "high", "low", "close"]
-        )
+        df = df[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
         return df.loc[start_date:end_date]
 
     def _fetch_hk(self, ak, code: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
@@ -264,7 +268,14 @@ class DataLoader:
         AKShare English column names: date, open, high, low, close, volume
         """
         col_map_cn = {"开盘": "open", "最高": "high", "最低": "low", "收盘": "close", "成交量": "volume"}
-        col_map_en = {"date": "trade_date", "open": "open", "high": "high", "low": "low", "close": "close", "volume": "volume"}
+        col_map_en = {
+            "date": "trade_date",
+            "open": "open",
+            "high": "high",
+            "low": "low",
+            "close": "close",
+            "volume": "volume",
+        }
 
         if date_col in df.columns:
             df = df.rename(columns={date_col: "trade_date"})

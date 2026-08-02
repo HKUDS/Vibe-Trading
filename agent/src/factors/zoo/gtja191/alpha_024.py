@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #24 - SMA价格差
 # 简要说明: SMA(CLOSE-DELAY(CLOSE,5),5,1)，收盘价5日变化的5日简单移动平均。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_024",
-    "theme": ['momentum'],
-    "formula_latex": 'SMA(CLOSE-DELAY(CLOSE,5),5,1)',
-    "columns_required": ['close'],
+    "theme": ["momentum"],
+    "formula_latex": "SMA(CLOSE-DELAY(CLOSE,5),5,1)",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
     "min_warmup_bars": 6,
-    "notes": 'SMA(5, m=1) of 5d delta(close).',
+    "notes": "SMA(5, m=1) of 5d delta(close).",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

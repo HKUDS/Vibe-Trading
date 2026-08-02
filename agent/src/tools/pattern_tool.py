@@ -21,6 +21,7 @@ from src.tools.path_utils import safe_run_dir
 # Pattern detection functions
 # ---------------------------------------------------------------------------
 
+
 def find_peaks_valleys(close: pd.Series, window: int = 5) -> dict:
     """Detect peaks and valleys in a price series.
 
@@ -82,12 +83,16 @@ def candlestick_patterns(open_: pd.Series, high: pd.Series, low: pd.Series, clos
 
     prev_bearish = close.shift(1) < open_.shift(1)
     curr_bullish = close > open_
-    engulf_bull = prev_bearish & curr_bullish & (open_ <= close.shift(1)) & (close >= open_.shift(1)) & (body > body.shift(1))
+    engulf_bull = (
+        prev_bearish & curr_bullish & (open_ <= close.shift(1)) & (close >= open_.shift(1)) & (body > body.shift(1))
+    )
     result = result.where(~engulf_bull, 1)
 
     prev_bullish = close.shift(1) > open_.shift(1)
     curr_bearish = close < open_
-    engulf_bear = prev_bullish & curr_bearish & (open_ >= close.shift(1)) & (close <= open_.shift(1)) & (body > body.shift(1))
+    engulf_bear = (
+        prev_bullish & curr_bearish & (open_ >= close.shift(1)) & (close <= open_.shift(1)) & (body > body.shift(1))
+    )
     result = result.where(~engulf_bear, -1)
 
     return result
@@ -292,6 +297,7 @@ def broadening(close: pd.Series, window: int = 20) -> pd.Series:
 # Available pattern registry
 # ---------------------------------------------------------------------------
 
+
 def _trend_slope_summary(df: pd.DataFrame, window: int) -> dict:
     """Mean rolling slope, or 0 when no finite window exists (e.g. halt gaps)."""
     if len(df) <= window:
@@ -306,12 +312,20 @@ def _trend_slope_summary(df: pd.DataFrame, window: int) -> dict:
 
 _PATTERN_FUNCS = {
     "peaks_valleys": lambda df, w: find_peaks_valleys(df["close"], window=w),
-    "candlestick": lambda df, w: candlestick_patterns(df["open"], df["high"], df["low"], df["close"]).value_counts().to_dict(),
+    "candlestick": lambda df, w: (
+        candlestick_patterns(df["open"], df["high"], df["low"], df["close"]).value_counts().to_dict()
+    ),
     "support_resistance": lambda df, w: support_resistance(df["close"], window=w),
     "trend_slope": _trend_slope_summary,
     "head_and_shoulders": lambda df, w: {"count": int(head_and_shoulders(df["close"], window=w).sum())},
-    "double_top_bottom": lambda df, w: {"double_top": int((double_top_bottom(df["close"], window=w) == 1).sum()), "double_bottom": int((double_top_bottom(df["close"], window=w) == -1).sum())},
-    "triangle": lambda df, w: {"ascending": int((triangle(df["close"], window=w) == 1).sum()), "descending": int((triangle(df["close"], window=w) == -1).sum())},
+    "double_top_bottom": lambda df, w: {
+        "double_top": int((double_top_bottom(df["close"], window=w) == 1).sum()),
+        "double_bottom": int((double_top_bottom(df["close"], window=w) == -1).sum()),
+    },
+    "triangle": lambda df, w: {
+        "ascending": int((triangle(df["close"], window=w) == 1).sum()),
+        "descending": int((triangle(df["close"], window=w) == -1).sum()),
+    },
     "broadening": lambda df, w: {"count": int(broadening(df["close"], window=w).sum())},
 }
 
@@ -319,6 +333,7 @@ _PATTERN_FUNCS = {
 # ---------------------------------------------------------------------------
 # Tool implementation
 # ---------------------------------------------------------------------------
+
 
 def run_pattern(run_dir: str, patterns: str = "all", window: int = 10) -> str:
     """Run chart pattern detection on OHLCV data in run_dir.
@@ -346,7 +361,10 @@ def run_pattern(run_dir: str, patterns: str = "all", window: int = 10) -> str:
     else:
         selected = [p.strip() for p in patterns.split(",") if p.strip() in _PATTERN_FUNCS]
         if not selected:
-            return json.dumps({"status": "error", "error": f"Invalid pattern name(s). Available: {', '.join(_PATTERN_FUNCS.keys())}"}, ensure_ascii=False)
+            return json.dumps(
+                {"status": "error", "error": f"Invalid pattern name(s). Available: {', '.join(_PATTERN_FUNCS.keys())}"},
+                ensure_ascii=False,
+            )
 
     if window < 1:
         return json.dumps(
@@ -394,7 +412,10 @@ class PatternTool(BaseTool):
         "type": "object",
         "properties": {
             "run_dir": {"type": "string", "description": "Path to the run directory"},
-            "patterns": {"type": "string", "description": "Comma-separated pattern names or 'all'. Options: peaks_valleys, candlestick, support_resistance, trend_slope, head_and_shoulders, double_top_bottom, triangle, broadening"},
+            "patterns": {
+                "type": "string",
+                "description": "Comma-separated pattern names or 'all'. Options: peaks_valleys, candlestick, support_resistance, trend_slope, head_and_shoulders, double_top_bottom, triangle, broadening",
+            },
             "window": {"type": "integer", "description": "Detection window size (default 10)"},
         },
         "required": ["run_dir"],

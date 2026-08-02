@@ -52,9 +52,7 @@ class _MockAdapter:
         self._balance = balance
         self.order_calls: list[dict[str, Any]] = []
 
-    def call_tool(
-        self, remote_name: str, arguments: dict, *, local_name: str | None = None
-    ) -> dict:
+    def call_tool(self, remote_name: str, arguments: dict, *, local_name: str | None = None) -> dict:
         if remote_name == "get_equity_positions":
             return {"positions": self._positions, "status": "ok"}
         if remote_name == "get_portfolio":
@@ -144,9 +142,7 @@ def _write_mandate(live_runtime: Path, mandate: Mandate) -> None:
 
 
 def _guard(adapter: _MockAdapter) -> LiveOrderGuardTool:
-    return LiveOrderGuardTool(
-        adapter, _spec(), broker="robinhood", session_id="s1"
-    )
+    return LiveOrderGuardTool(adapter, _spec(), broker="robinhood", session_id="s1")
 
 
 def _make_context(**overrides: Any) -> AdvisoryContext:
@@ -273,19 +269,13 @@ def test_orchestrator_catches_exception() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_gate_advisory_disabled_by_default(
-    live_runtime: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_gate_advisory_disabled_by_default(live_runtime: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("VIBE_TRADING_ENABLE_ADVISORY", raising=False)
     _write_mandate(live_runtime, _mandate())
     adapter = _MockAdapter()
     guard = _guard(adapter)
 
-    out = json.loads(
-        guard.execute(
-            symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0
-        )
-    )
+    out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0))
 
     assert out.get("status") == "ok"
     live_action = out.get("live_action")
@@ -300,9 +290,7 @@ def test_gate_advisory_disabled_by_default(
 # --------------------------------------------------------------------------- #
 
 
-def test_gate_advisory_enabled_with_mock_provider(
-    live_runtime: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_gate_advisory_enabled_with_mock_provider(live_runtime: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VIBE_TRADING_ENABLE_ADVISORY", "1")
 
     mock_provider = MockAdvisory(
@@ -318,11 +306,7 @@ def test_gate_advisory_enabled_with_mock_provider(
         adapter = _MockAdapter()
         guard = _guard(adapter)
 
-        out = json.loads(
-            guard.execute(
-                symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0
-            )
-        )
+        out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0))
 
         assert out.get("status") == "ok"
         assert len(adapter.order_calls) == 1
@@ -342,9 +326,7 @@ def test_gate_advisory_enabled_with_mock_provider(
         clear_advisory_providers()
 
 
-def test_gate_advisory_reject_is_observational(
-    live_runtime: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_gate_advisory_reject_is_observational(live_runtime: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VIBE_TRADING_ENABLE_ADVISORY", "1")
 
     register_advisory_provider(
@@ -359,11 +341,7 @@ def test_gate_advisory_reject_is_observational(
         adapter = _MockAdapter()
         guard = _guard(adapter)
 
-        out = json.loads(
-            guard.execute(
-                symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0
-            )
-        )
+        out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0))
 
         assert out.get("status") == "ok"
         assert len(adapter.order_calls) == 1
@@ -375,24 +353,16 @@ def test_gate_advisory_reject_is_observational(
         clear_advisory_providers()
 
 
-def test_gate_advisory_provider_failure_is_observational(
-    live_runtime: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_gate_advisory_provider_failure_is_observational(live_runtime: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VIBE_TRADING_ENABLE_ADVISORY", "1")
 
-    register_advisory_provider(
-        MockAdvisory(raise_on_review=True, provider_id="failing_mock")
-    )
+    register_advisory_provider(MockAdvisory(raise_on_review=True, provider_id="failing_mock"))
     try:
         _write_mandate(live_runtime, _mandate())
         adapter = _MockAdapter()
         guard = _guard(adapter)
 
-        out = json.loads(
-            guard.execute(
-                symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0
-            )
-        )
+        out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0))
 
         assert out.get("status") == "ok"
         assert len(adapter.order_calls) == 1

@@ -132,7 +132,18 @@ class TestProtocol:
 
 class TestFallbackChains:
     def test_all_expected_markets_present(self) -> None:
-        expected = {"a_share", "us_equity", "hk_equity", "india_equity", "kr_equity", "crypto", "futures", "fund", "macro", "forex"}
+        expected = {
+            "a_share",
+            "us_equity",
+            "hk_equity",
+            "india_equity",
+            "kr_equity",
+            "crypto",
+            "futures",
+            "fund",
+            "macro",
+            "forex",
+        }
         assert expected == set(FALLBACK_CHAINS.keys())
 
     def test_chains_are_non_empty(self) -> None:
@@ -149,14 +160,36 @@ class TestFallbackChains:
         """Equity chains lead with throttle-tolerant public sources and trail
         with key-gated REST fallbacks, in the exact reviewed order."""
         assert FALLBACK_CHAINS["a_share"] == [
-            "tencent", "mootdx", "eastmoney", "baostock", "akshare", "tushare", "local",
+            "tencent",
+            "mootdx",
+            "eastmoney",
+            "baostock",
+            "akshare",
+            "tushare",
+            "local",
         ]
         assert FALLBACK_CHAINS["us_equity"] == [
-            "yahoo", "stooq", "sina", "eastmoney", "yfinance", "tiingo", "fmp",
-            "finnhub", "alphavantage", "longbridge", "akshare", "local",
+            "yahoo",
+            "stooq",
+            "sina",
+            "eastmoney",
+            "yfinance",
+            "tiingo",
+            "fmp",
+            "finnhub",
+            "alphavantage",
+            "longbridge",
+            "akshare",
+            "local",
         ]
         assert FALLBACK_CHAINS["hk_equity"] == [
-            "eastmoney", "yahoo", "futu", "yfinance", "akshare", "longbridge", "local",
+            "eastmoney",
+            "yahoo",
+            "futu",
+            "yfinance",
+            "akshare",
+            "longbridge",
+            "local",
         ]
 
     def test_us_equity_includes_sina_fallback(self) -> None:
@@ -191,8 +224,14 @@ class TestValidSources:
     def test_includes_new_loaders(self) -> None:
         """Newly registered loaders must be accepted config sources."""
         new_sources = {
-            "eastmoney", "sina", "stooq", "yahoo",
-            "finnhub", "alphavantage", "tiingo", "fmp",
+            "eastmoney",
+            "sina",
+            "stooq",
+            "yahoo",
+            "finnhub",
+            "alphavantage",
+            "tiingo",
+            "fmp",
         }
         assert new_sources <= VALID_SOURCES
 
@@ -219,23 +258,37 @@ class TestValidSources:
 
 class TestResolveLoader:
     def test_returns_first_available(self) -> None:
-        with patch.dict(LOADER_REGISTRY, {
-            "fake_unavailable": _FakeUnavailableLoader,
-            "fake_available": _FakeAvailableLoader,
-        }, clear=True):
-            with patch.dict(FALLBACK_CHAINS, {
-                "a_share": ["fake_unavailable", "fake_available"],
-            }):
+        with patch.dict(
+            LOADER_REGISTRY,
+            {
+                "fake_unavailable": _FakeUnavailableLoader,
+                "fake_available": _FakeAvailableLoader,
+            },
+            clear=True,
+        ):
+            with patch.dict(
+                FALLBACK_CHAINS,
+                {
+                    "a_share": ["fake_unavailable", "fake_available"],
+                },
+            ):
                 loader = resolve_loader("a_share")
                 assert loader.name == "fake_available"
 
     def test_raises_when_none_available(self) -> None:
-        with patch.dict(LOADER_REGISTRY, {
-            "fake_unavailable": _FakeUnavailableLoader,
-        }, clear=True):
-            with patch.dict(FALLBACK_CHAINS, {
-                "a_share": ["fake_unavailable"],
-            }):
+        with patch.dict(
+            LOADER_REGISTRY,
+            {
+                "fake_unavailable": _FakeUnavailableLoader,
+            },
+            clear=True,
+        ):
+            with patch.dict(
+                FALLBACK_CHAINS,
+                {
+                    "a_share": ["fake_unavailable"],
+                },
+            ):
                 with pytest.raises(NoAvailableSourceError):
                     resolve_loader("a_share")
 
@@ -252,20 +305,31 @@ class TestResolveLoader:
 
 class TestGetLoaderWithFallback:
     def test_returns_requested_if_available(self) -> None:
-        with patch.dict(LOADER_REGISTRY, {
-            "fake_available": _FakeAvailableLoader,
-        }, clear=True):
+        with patch.dict(
+            LOADER_REGISTRY,
+            {
+                "fake_available": _FakeAvailableLoader,
+            },
+            clear=True,
+        ):
             cls = get_loader_cls_with_fallback("fake_available")
             assert cls is _FakeAvailableLoader
 
     def test_falls_back_when_unavailable(self) -> None:
-        with patch.dict(LOADER_REGISTRY, {
-            "fake_unavailable": _FakeUnavailableLoader,
-            "fake_available": _FakeAvailableLoader,
-        }, clear=True):
-            with patch.dict(FALLBACK_CHAINS, {
-                "a_share": ["fake_unavailable", "fake_available"],
-            }):
+        with patch.dict(
+            LOADER_REGISTRY,
+            {
+                "fake_unavailable": _FakeUnavailableLoader,
+                "fake_available": _FakeAvailableLoader,
+            },
+            clear=True,
+        ):
+            with patch.dict(
+                FALLBACK_CHAINS,
+                {
+                    "a_share": ["fake_unavailable", "fake_available"],
+                },
+            ):
                 cls = get_loader_cls_with_fallback("fake_unavailable")
                 assert cls is _FakeAvailableLoader
 
@@ -275,9 +339,13 @@ class TestGetLoaderWithFallback:
                 get_loader_cls_with_fallback("nonexistent")
 
     def test_no_fallback_raises(self) -> None:
-        with patch.dict(LOADER_REGISTRY, {
-            "fake_unavailable": _FakeUnavailableLoader,
-        }, clear=True):
+        with patch.dict(
+            LOADER_REGISTRY,
+            {
+                "fake_unavailable": _FakeUnavailableLoader,
+            },
+            clear=True,
+        ):
             with patch.dict(FALLBACK_CHAINS, {"a_share": ["fake_unavailable"]}):
                 with pytest.raises(NoAvailableSourceError):
                     get_loader_cls_with_fallback("fake_unavailable")
@@ -285,10 +353,14 @@ class TestGetLoaderWithFallback:
     def test_explicit_local_does_not_fall_through_to_network(self) -> None:
         """An explicit unavailable 'local' request must raise a clear error, never
         silently degrade to an unrelated network loader via its broad markets."""
-        with patch.dict(LOADER_REGISTRY, {
-            "local": _FakeLocalLoader,
-            "fake_available": _FakeAvailableLoader,  # available a_share network src
-        }, clear=True):
+        with patch.dict(
+            LOADER_REGISTRY,
+            {
+                "local": _FakeLocalLoader,
+                "fake_available": _FakeAvailableLoader,  # available a_share network src
+            },
+            clear=True,
+        ):
             # Even though a network loader is available for one of local's markets,
             # the explicit 'local' request must not borrow it.
             with patch.dict(FALLBACK_CHAINS, {"a_share": ["fake_available"]}):
@@ -308,23 +380,37 @@ class TestGetLoaderWithFallback:
 
 class TestInitErrorFallback:
     def test_resolve_loader_skips_init_error(self) -> None:
-        with patch.dict(LOADER_REGISTRY, {
-            "fake_init_error": _FakeInitErrorLoader,
-            "fake_available": _FakeAvailableLoader,
-        }, clear=True):
-            with patch.dict(FALLBACK_CHAINS, {
-                "a_share": ["fake_init_error", "fake_available"],
-            }):
+        with patch.dict(
+            LOADER_REGISTRY,
+            {
+                "fake_init_error": _FakeInitErrorLoader,
+                "fake_available": _FakeAvailableLoader,
+            },
+            clear=True,
+        ):
+            with patch.dict(
+                FALLBACK_CHAINS,
+                {
+                    "a_share": ["fake_init_error", "fake_available"],
+                },
+            ):
                 loader = resolve_loader("a_share")
                 assert loader.name == "fake_available"
 
     def test_get_loader_cls_falls_back_when_requested_init_errors(self) -> None:
-        with patch.dict(LOADER_REGISTRY, {
-            "fake_init_error": _FakeInitErrorLoader,
-            "fake_available": _FakeAvailableLoader,
-        }, clear=True):
-            with patch.dict(FALLBACK_CHAINS, {
-                "a_share": ["fake_init_error", "fake_available"],
-            }):
+        with patch.dict(
+            LOADER_REGISTRY,
+            {
+                "fake_init_error": _FakeInitErrorLoader,
+                "fake_available": _FakeAvailableLoader,
+            },
+            clear=True,
+        ):
+            with patch.dict(
+                FALLBACK_CHAINS,
+                {
+                    "a_share": ["fake_init_error", "fake_available"],
+                },
+            ):
                 cls = get_loader_cls_with_fallback("fake_init_error")
                 assert cls is _FakeAvailableLoader

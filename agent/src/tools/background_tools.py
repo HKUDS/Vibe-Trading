@@ -164,11 +164,7 @@ class BackgroundManager:
                 stdout, stderr = _terminate_process_tree(process)
                 partial_output = _combined_output(stdout, stderr)
                 timeout_message = f"Timeout ({_COMMAND_TIMEOUT_SECONDS:g}s)"
-                output = (
-                    f"{partial_output}\n{timeout_message}"
-                    if partial_output
-                    else timeout_message
-                )
+                output = f"{partial_output}\n{timeout_message}" if partial_output else timeout_message
                 output = output[:_MAX_OUTPUT_CHARS]
                 status = "timeout"
         except Exception as e:
@@ -181,11 +177,7 @@ class BackgroundManager:
             if task.get("cancel_requested"):
                 status = "cancelled"
                 cancel_message = "Cancelled by request"
-                output = (
-                    f"{output}\n{cancel_message}"
-                    if output
-                    else cancel_message
-                )
+                output = f"{output}\n{cancel_message}" if output else cancel_message
                 output = output[:_MAX_OUTPUT_CHARS]
             task["status"] = status
             task["result"] = output or "(no output)"
@@ -197,11 +189,15 @@ class BackgroundManager:
                     max(0.0, time.monotonic() - started_at),
                     3,
                 )
-            self._notifications.append({
-                "task_id": task_id, "status": status,
-                "command": command[:80], "result": (output or "")[:500],
-                "exit_code": exit_code,
-            })
+            self._notifications.append(
+                {
+                    "task_id": task_id,
+                    "status": status,
+                    "command": command[:80],
+                    "result": (output or "")[:500],
+                    "exit_code": exit_code,
+                }
+            )
 
     def cancel(self, task_id: str) -> str:
         """Cancel one task by its tracked process group.
@@ -215,45 +211,55 @@ class BackgroundManager:
         with self._lock:
             task = self.tasks.get(task_id)
             if task is None:
-                return json.dumps({
-                    "status": "error",
-                    "error": f"Unknown task {task_id}",
-                })
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": f"Unknown task {task_id}",
+                    }
+                )
 
             task_status = task["status"]
             if task_status == "cancelling":
-                return json.dumps({
-                    "status": "ok",
-                    "task_id": task_id,
-                    "task_status": "cancelling",
-                    "message": "Cancellation already requested",
-                })
+                return json.dumps(
+                    {
+                        "status": "ok",
+                        "task_id": task_id,
+                        "task_status": "cancelling",
+                        "message": "Cancellation already requested",
+                    }
+                )
             if task_status != "running":
-                return json.dumps({
-                    "status": "error",
-                    "error": f"Task {task_id} is already {task_status}",
-                    "task_status": task_status,
-                })
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": f"Task {task_id} is already {task_status}",
+                        "task_status": task_status,
+                    }
+                )
 
             process = task.get("process")
             if process is not None and process.poll() is not None:
-                return json.dumps({
-                    "status": "error",
-                    "error": f"Task {task_id} is already finishing",
-                    "task_status": task_status,
-                })
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": f"Task {task_id} is already finishing",
+                        "task_status": task_status,
+                    }
+                )
 
             task["cancel_requested"] = True
             task["status"] = "cancelling"
 
         if process is not None:
             _force_stop_process_tree(process)
-        return json.dumps({
-            "status": "ok",
-            "task_id": task_id,
-            "task_status": "cancelling",
-            "message": "Cancellation requested",
-        })
+        return json.dumps(
+            {
+                "status": "ok",
+                "task_id": task_id,
+                "task_status": "cancelling",
+                "message": "Cancellation requested",
+            }
+        )
 
     def check(self, task_id: Optional[str] = None) -> str:
         task: dict | None = None
@@ -263,10 +269,7 @@ class BackgroundManager:
                 t = self.tasks.get(task_id)
                 task = dict(t) if t is not None else None
             else:
-                task_summaries = [
-                    (tid, t["status"], t["command"])
-                    for tid, t in self.tasks.items()
-                ]
+                task_summaries = [(tid, t["status"], t["command"]) for tid, t in self.tasks.items()]
 
         if task_id:
             t = task
@@ -298,10 +301,7 @@ class BackgroundManager:
                             "cancel_background(task_id) to stop safely)"
                         )
             return json.dumps(payload, ensure_ascii=False)
-        lines = [
-            f"{tid}: [{status}] {command[:60]}"
-            for tid, status, command in task_summaries
-        ]
+        lines = [f"{tid}: [{status}] {command[:60]}" for tid, status, command in task_summaries]
         return "\n".join(lines) if lines else "No background tasks."
 
     def drain_notifications(self) -> List[dict]:
@@ -327,9 +327,13 @@ class BackgroundRunTool(BaseTool):
         "shell is cmd.exe, not PowerShell. Poll with check_background and stop "
         "only with cancel_background; never use taskkill/pkill/killall."
     )
-    parameters = {"type": "object", "properties": {
-        "command": {"type": "string", "description": "Shell command to run in background"},
-    }, "required": ["command"]}
+    parameters = {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string", "description": "Shell command to run in background"},
+        },
+        "required": ["command"],
+    }
     is_readonly = False
 
     def execute(self, **kw: Any) -> str:
@@ -343,9 +347,13 @@ class CheckBackgroundTool(BaseTool):
         "the 300-second automatic timeout. Omit task_id to list all. To stop "
         "a running task, pass its task_id to cancel_background."
     )
-    parameters = {"type": "object", "properties": {
-        "task_id": {"type": "string"},
-    }, "required": []}
+    parameters = {
+        "type": "object",
+        "properties": {
+            "task_id": {"type": "string"},
+        },
+        "required": [],
+    }
     repeatable = True
 
     def execute(self, **kw: Any) -> str:

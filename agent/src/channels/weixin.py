@@ -13,6 +13,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import os
 import random
 import re
@@ -25,7 +26,6 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-import logging; logger = logging.getLogger(__name__)
 from pydantic import Field
 
 from src.channels.bus.events import OutboundMessage
@@ -34,6 +34,8 @@ from src.channels.base import BaseChannel
 from src.channels.utils import get_media_dir, get_runtime_subdir
 from pydantic import BaseModel
 from src.channels.utils import split_message
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Protocol constants (from openclaw-weixin types.ts)
@@ -71,6 +73,7 @@ def _build_client_version(version: str) -> int:
     minor = _as_int(1)
     patch = _as_int(2)
     return ((major & 0xFF) << 16) | ((minor & 0xFF) << 8) | (patch & 0xFF)
+
 
 ILINK_APP_CLIENT_VERSION = _build_client_version(WEIXIN_CHANNEL_VERSION)
 BASE_INFO: dict[str, str] = {"channel_version": WEIXIN_CHANNEL_VERSION}
@@ -513,6 +516,7 @@ class WeixinChannel(BaseChannel):
             await self._client.aclose()
             self._client = None
         self._save_state()
+
     # ------------------------------------------------------------------
     # Polling  (matches monitor.ts monitorWeixinProvider)
     # ------------------------------------------------------------------
@@ -568,9 +572,7 @@ class WeixinChannel(BaseChannel):
                     max((remaining + 59) // 60, 1),
                 )
                 return
-            raise RuntimeError(
-                f"getUpdates failed: ret={ret} errcode={errcode} errmsg={data.get('errmsg', '')}"
-            )
+            raise RuntimeError(f"getUpdates failed: ret={ret} errcode={errcode} errmsg={data.get('errmsg', '')}")
 
         # Honour server-suggested poll timeout (monitor.ts:102-105)
         server_timeout_ms = data.get("longpolling_timeout_ms")
@@ -871,10 +873,7 @@ class WeixinChannel(BaseChannel):
             assert self._client is not None
             fallback_url = ""
             if encrypt_query_param:
-                fallback_url = (
-                    f"{self.config.cdn_base_url}/download"
-                    f"?encrypted_query_param={quote(encrypt_query_param)}"
-                )
+                fallback_url = f"{self.config.cdn_base_url}/download?encrypted_query_param={quote(encrypt_query_param)}"
 
             download_candidates: list[tuple[str, str]] = []
             if full_url:
@@ -954,7 +953,9 @@ class WeixinChannel(BaseChannel):
             }
             return ticket
 
-        prev_delay = float(entry.get("retry_delay_s", CONFIG_CACHE_INITIAL_RETRY_S)) if entry else CONFIG_CACHE_INITIAL_RETRY_S
+        prev_delay = (
+            float(entry.get("retry_delay_s", CONFIG_CACHE_INITIAL_RETRY_S)) if entry else CONFIG_CACHE_INITIAL_RETRY_S
+        )
         next_delay = min(prev_delay * 2, CONFIG_CACHE_MAX_RETRY_S)
         if entry:
             entry["next_fetch_at"] = now + next_delay
@@ -969,9 +970,7 @@ class WeixinChannel(BaseChannel):
         }
         return ""
 
-    async def _refresh_context_token_if_stale(
-        self, chat_id: str, context_token: str
-    ) -> str:
+    async def _refresh_context_token_if_stale(self, chat_id: str, context_token: str) -> str:
         """Return a fresh context_token if the cached one is too old.
 
         iLink context_token expires server-side after a short idle period
@@ -1058,9 +1057,7 @@ class WeixinChannel(BaseChannel):
         try:
             await self._send_text(chat_id, "\n\n".join(hints), ctx_token)
         except Exception:
-            self.logger.exception(
-                "Failed to flush buffered tool hints for {}", chat_id
-            )
+            self.logger.exception("Failed to flush buffered tool hints for {}", chat_id)
 
     async def _send_typing(self, user_id: str, typing_ticket: str, status: int) -> None:
         """Best-effort sendtyping wrapper."""
@@ -1108,9 +1105,7 @@ class WeixinChannel(BaseChannel):
         # Reasoning deltas are invisible in WeChat (there is no reasoning
         # UI).  Skip them entirely — do not send and do not flush buffer.
         if is_progress and (msg.metadata or {}).get("_reasoning_delta"):
-            self.logger.debug(
-                "Dropped invisible reasoning delta for {}", msg.chat_id
-            )
+            self.logger.debug("Dropped invisible reasoning delta for {}", msg.chat_id)
             return
 
         content = msg.content.strip()
@@ -1133,9 +1128,7 @@ class WeixinChannel(BaseChannel):
         ctx_token = self._context_tokens.get(msg.chat_id, "")
         ctx_token = await self._refresh_context_token_if_stale(msg.chat_id, ctx_token)
         if not ctx_token:
-            raise RuntimeError(
-                f"WeChat context_token missing for chat_id={msg.chat_id}, cannot send"
-            )
+            raise RuntimeError(f"WeChat context_token missing for chat_id={msg.chat_id}, cannot send")
 
         typing_ticket = ""
         with suppress(Exception):
@@ -1154,7 +1147,7 @@ class WeixinChannel(BaseChannel):
 
         try:
             # --- Send media files first (following Telegram channel pattern) ---
-            for media_path in (msg.media or []):
+            for media_path in msg.media or []:
                 try:
                     await self._send_media_file(msg.chat_id, media_path, ctx_token)
                 except (httpx.TimeoutException, httpx.TransportError):
@@ -1167,19 +1160,13 @@ class WeixinChannel(BaseChannel):
                     )
                     raise
                 except httpx.HTTPStatusError as http_err:
-                    status_code = (
-                        http_err.response.status_code
-                        if http_err.response is not None
-                        else 0
-                    )
+                    status_code = http_err.response.status_code if http_err.response is not None else 0
                     if status_code >= 500:
                         # Server-side / retryable HTTP error — same as network.
                         self.logger.exception(
                             "Server error ({} {}) sending media {}",
                             status_code,
-                            http_err.response.reason_phrase
-                            if http_err.response is not None
-                            else "",
+                            http_err.response.reason_phrase if http_err.response is not None else "",
                             media_path,
                         )
                         raise
@@ -1187,7 +1174,9 @@ class WeixinChannel(BaseChannel):
                     filename = Path(media_path).name
                     self.logger.exception("Failed to send media {}", media_path)
                     await self._send_text(
-                        msg.chat_id, f"[Failed to send: {filename}]", ctx_token,
+                        msg.chat_id,
+                        f"[Failed to send: {filename}]",
+                        ctx_token,
                     )
                 except Exception:
                     # Non-network errors (format, file-not-found, etc.):
@@ -1196,7 +1185,9 @@ class WeixinChannel(BaseChannel):
                     self.logger.exception("Failed to send media {}", media_path)
                     # Notify user about failure via text
                     await self._send_text(
-                        msg.chat_id, f"[Failed to send: {filename}]", ctx_token,
+                        msg.chat_id,
+                        f"[Failed to send: {filename}]",
+                        ctx_token,
                     )
 
             # --- Send text content ---
@@ -1220,9 +1211,7 @@ class WeixinChannel(BaseChannel):
                 with suppress(Exception):
                     await self._send_typing(msg.chat_id, typing_ticket, TYPING_STATUS_CANCEL)
 
-    async def send_delta(
-        self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None
-    ) -> None:
+    async def send_delta(self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None) -> None:
         """Weixin iLink does not support native streaming deltas.
 
         We only hook ``_stream_end`` so buffered tool hints are flushed even
@@ -1318,9 +1307,7 @@ class WeixinChannel(BaseChannel):
         ret = data.get("ret", 0)
         errcode = data.get("errcode", 0)
         if (ret is not None and ret != 0) or (errcode is not None and errcode != 0):
-            raise RuntimeError(
-                f"WeChat send text error (ret={ret}, errcode={errcode}): {data.get('errmsg', '')}"
-            )
+            raise RuntimeError(f"WeChat send text error (ret={ret}, errcode={errcode}): {data.get('errmsg', '')}")
 
     async def _send_media_file(
         self,
@@ -1392,8 +1379,7 @@ class WeixinChannel(BaseChannel):
         upload_param = str(upload_resp.get("upload_param", "") or "")
         if not upload_full_url and not upload_param:
             raise RuntimeError(
-                "getuploadurl returned no upload URL "
-                f"(need upload_full_url or upload_param): {upload_resp}"
+                f"getuploadurl returned no upload URL (need upload_full_url or upload_param): {upload_resp}"
             )
 
         # Step 2: AES-128-ECB encrypt and POST to CDN
@@ -1469,9 +1455,7 @@ class WeixinChannel(BaseChannel):
         ret = data.get("ret", 0)
         errcode = data.get("errcode", 0)
         if (ret is not None and ret != 0) or (errcode is not None and errcode != 0):
-            raise RuntimeError(
-                f"WeChat send media error (ret={ret}, errcode={errcode}): {data.get('errmsg', '')}"
-            )
+            raise RuntimeError(f"WeChat send media error (ret={ret}, errcode={errcode}): {data.get('errmsg', '')}")
 
 
 # ---------------------------------------------------------------------------
@@ -1496,9 +1480,7 @@ def _parse_aes_key(aes_key_b64: str) -> bytes:
     if len(decoded) == 32 and re.fullmatch(rb"[0-9a-fA-F]{32}", decoded):
         # hex-encoded key: base64 → hex string → raw bytes
         return bytes.fromhex(decoded.decode("ascii"))
-    raise ValueError(
-        f"aes_key must decode to 16 raw bytes or 32-char hex string, got {len(decoded)} bytes"
-    )
+    raise ValueError(f"aes_key must decode to 16 raw bytes or 32-char hex string, got {len(decoded)} bytes")
 
 
 def _encrypt_aes_ecb(data: bytes, aes_key_b64: str) -> bytes:

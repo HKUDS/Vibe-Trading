@@ -38,21 +38,23 @@ def _make_trades(pnls: list[float], start: str = "2025-01-01") -> list[TradeReco
     for i, pnl in enumerate(pnls):
         entry = base + pd.Timedelta(days=i * 2)
         exit_ = entry + pd.Timedelta(days=1)
-        trades.append(TradeRecord(
-            symbol="TEST",
-            direction=1,
-            entry_price=100.0,
-            exit_price=100.0 + pnl / 10,
-            entry_time=entry,
-            exit_time=exit_,
-            size=10.0,
-            leverage=1.0,
-            pnl=pnl,
-            pnl_pct=pnl / 1000 * 100,
-            exit_reason="signal",
-            holding_bars=1,
-            commission=0.0,
-        ))
+        trades.append(
+            TradeRecord(
+                symbol="TEST",
+                direction=1,
+                entry_price=100.0,
+                exit_price=100.0 + pnl / 10,
+                entry_time=entry,
+                exit_time=exit_,
+                size=10.0,
+                leverage=1.0,
+                pnl=pnl,
+                pnl_pct=pnl / 1000 * 100,
+                exit_reason="signal",
+                holding_bars=1,
+                commission=0.0,
+            )
+        )
     return trades
 
 
@@ -301,9 +303,7 @@ class TestRunValidation:
             ("walk_forward", "n_windows", "5"),
         ],
     )
-    def test_malformed_nested_config_returns_error(
-        self, section: str, field: str, value: object
-    ) -> None:
+    def test_malformed_nested_config_returns_error(self, section: str, field: str, value: object) -> None:
         """Raw nested config values fail visibly instead of raising."""
         result = run_validation(
             {"validation": {section: {field: value}}},
@@ -357,9 +357,7 @@ class TestWriteValidationJson:
         assert out.is_file()
         assert _strict_json_load(out.read_text(encoding="utf-8")) == {"ok": 1.0}
 
-    def test_numpy_scalars_from_public_validators_are_strict_json(
-        self, tmp_path: Path
-    ) -> None:
+    def test_numpy_scalars_from_public_validators_are_strict_json(self, tmp_path: Path) -> None:
         results = {
             "monte_carlo": monte_carlo_test(
                 _make_trades([100, -50, 200]),

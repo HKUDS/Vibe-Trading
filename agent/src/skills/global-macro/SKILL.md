@@ -57,7 +57,7 @@ risk_indicators = {
     "gold_oil_ratio": "Gold / oil > 25 = rising risk aversion",
     "usd_index": "DXY jump > 2% / week = capital flowing back to USD",
     "credit_spread": "IG spread > 150bp = credit tightening",
-    "em_spread": "EMBI spread widening > 50bp / month = emerging-market stress"
+    "em_spread": "EMBI spread widening > 50bp / month = emerging-market stress",
 }
 ```
 
@@ -110,11 +110,11 @@ Weak-dollar phase (DXY falling) → capital flows back into EM → EM currency a
 
 ```python
 macro_factors = {
-    "fed_policy": +1,      # Hiking pause, dovish tilt
-    "cny_pressure": -1,    # RMB depreciation pressure
-    "geopolitical": 0,     # Neutral geopolitical risk
-    "northbound_flow": +2, # Persistent net northbound buying
-    "usd_cycle": -1,       # Stronger USD
+    "fed_policy": +1,  # Hiking pause, dovish tilt
+    "cny_pressure": -1,  # RMB depreciation pressure
+    "geopolitical": 0,  # Neutral geopolitical risk
+    "northbound_flow": +2,  # Persistent net northbound buying
+    "usd_cycle": -1,  # Stronger USD
 }
 # Composite score = sum(values) / len(values) = +0.2 → neutral to mildly bullish
 ```

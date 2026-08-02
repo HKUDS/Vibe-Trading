@@ -192,9 +192,7 @@ def test_execute_falls_back_without_uid_drop_and_succeeds(tmp_path: Path) -> Non
     assert "ran-without-uid-drop" in result.stdout
 
 
-def test_execute_retries_without_uid_drop_when_drop_fails(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_execute_retries_without_uid_drop_when_drop_fails(monkeypatch, tmp_path: Path) -> None:
     # Simulate a host where vibe-sandbox exists but the drop is not permitted:
     # execute() must catch the failure, warn, and re-run without user=/group=.
     monkeypatch.setattr(
@@ -243,8 +241,7 @@ def test_execute_applies_address_space_rlimit(monkeypatch, tmp_path: Path) -> No
     run_dir.mkdir()
     entry = _probe_entry(
         tmp_path,
-        "import resource\n"
-        "print(resource.getrlimit(resource.RLIMIT_NOFILE)[0])\n",
+        "import resource\nprint(resource.getrlimit(resource.RLIMIT_NOFILE)[0])\n",
     )
 
     result = Runner(timeout=60).execute(entry, run_dir, cwd=tmp_path)

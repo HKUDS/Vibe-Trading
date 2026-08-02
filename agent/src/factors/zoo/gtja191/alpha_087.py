@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #87
 # 简要说明: 国泰君安191短周期交易型alpha因子第87号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_087",
-    "theme": ['microstructure'],
-    "formula_latex": '((RANK(DECAYLINEAR(DELTA(VWAP,4),7))+TSRANK(DECAYLINEAR((((LOW*0.9)+(LOW*0.1))-VWAP)/(OPEN-((HIGH+LOW)/2)),11),7))*-1)',
-    "columns_required": ['close', 'open', 'high', 'low', 'volume', 'amount'],
+    "theme": ["microstructure"],
+    "formula_latex": "((RANK(DECAYLINEAR(DELTA(VWAP,4),7))+TSRANK(DECAYLINEAR((((LOW*0.9)+(LOW*0.1))-VWAP)/(OPEN-((HIGH+LOW)/2)),11),7))*-1)",
+    "columns_required": ["close", "open", "high", "low", "volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 11,
     "min_warmup_bars": 22,
-    "notes": 'Sum of two decay-linear terms, negated.',
+    "notes": "Sum of two decay-linear terms, negated.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     o = panel["open"]

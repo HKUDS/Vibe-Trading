@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import sys
 import types
 
@@ -51,10 +50,7 @@ def test_convert_table_keeps_leading_empty_header_row_labels() -> None:
     match = SlackChannel._TABLE_RE.search(md)
     assert match is not None
     out = SlackChannel._convert_table(match)
-    assert out == (
-        "****: row1 · **Name**: a · **Qty**: 1\n"
-        "****: row2 · **Name**: b · **Qty**: 2"
-    )
+    assert out == ("****: row1 · **Name**: a · **Qty**: 1\n****: row2 · **Name**: b · **Qty**: 2")
 
 
 def test_convert_table_keeps_trailing_empty_header_slot() -> None:
@@ -62,7 +58,4 @@ def test_convert_table_keeps_trailing_empty_header_slot() -> None:
     match = SlackChannel._TABLE_RE.search(md)
     assert match is not None
     out = SlackChannel._convert_table(match)
-    assert out == (
-        "**Name**: a · **Qty**: 1 · ****: note\n"
-        "**Name**: b · **Qty**: 2 · ****: other"
-    )
+    assert out == ("**Name**: a · **Qty**: 1 · ****: note\n**Name**: b · **Qty**: 2 · ****: other")

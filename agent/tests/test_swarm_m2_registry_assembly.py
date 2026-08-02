@@ -37,9 +37,7 @@ from src.tools.mcp import MCPRemoteTool, resolve_mcp_server_tool_name_segments
 
 def _make_agent_config(servers: dict[str, dict[str, Any]]) -> AgentConfig:
     """Build an AgentConfig from a server-name → config-dict map."""
-    return AgentConfig.model_validate(
-        {"mcpServers": {name: cfg for name, cfg in servers.items()}}
-    )
+    return AgentConfig.model_validate({"mcpServers": {name: cfg for name, cfg in servers.items()}})
 
 
 def _make_fake_wrappers(server_name: str, tool_names: list[str]) -> list[MCPRemoteTool]:
@@ -125,10 +123,9 @@ def test_build_swarm_registry_drops_whitelisted_tool_when_server_excludes_it(
 
     assert "mcp_kb_search" not in registry.tool_names
     assert registry.tool_names == []
-    assert any(
-        "mcp_kb_search" in record.message and "unavailable" in record.message
-        for record in caplog.records
-    ), "Expected operator-facing 'unavailable' warning for dropped MCP tool"
+    assert any("mcp_kb_search" in record.message and "unavailable" in record.message for record in caplog.records), (
+        "Expected operator-facing 'unavailable' warning for dropped MCP tool"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -152,10 +149,7 @@ def test_build_swarm_registry_without_agent_config_drops_mcp_tools(caplog) -> No
 
     assert "mcp_kb_search" not in registry.tool_names
     assert registry.tool_names == []
-    assert any(
-        "mcp_kb_search" in record.message and "unavailable" in record.message
-        for record in caplog.records
-    )
+    assert any("mcp_kb_search" in record.message and "unavailable" in record.message for record in caplog.records)
 
 
 # --------------------------------------------------------------------------- #

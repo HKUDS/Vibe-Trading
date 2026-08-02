@@ -47,16 +47,13 @@ buy_sm_amount_rate | float | Y | 今日小单净流入占比（%）
 **接口示例**
 
 ```python
-
 pro = ts.pro_api()
 
-#获取单日全部股票数据
-df = pro.moneyflow_dc(trade_date='20241011')
+# 获取单日全部股票数据
+df = pro.moneyflow_dc(trade_date="20241011")
 
-#获取单个股票数据
-df = pro.moneyflow_dc(ts_code='002149.SZ', start_date='20240901', end_date='20240913')
-
-
+# 获取单个股票数据
+df = pro.moneyflow_dc(ts_code="002149.SZ", start_date="20240901", end_date="20240913")
 ```
 
 <br>

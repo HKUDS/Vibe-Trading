@@ -49,7 +49,7 @@ def render_hint_bar(left: str, right: str = "", *, width: int | None = None) -> 
     available_for_left = cols - len(right) - 1
     if available_for_left < 1:
         # Right segment alone is wider than the terminal — show right only.
-        return Text(right[: cols].rjust(cols), style="dim")
+        return Text(right[:cols].rjust(cols), style="dim")
 
     if len(left) > available_for_left:
         left = left[: max(1, available_for_left - 1)].rstrip() + "…"

@@ -86,8 +86,13 @@ _UNIVERSE_CHOICES = ["csi300", "sp500", "btc-usdt"]
 # ``src.factors.registry.Universe`` and the REST allowlist in
 # ``src.api.alpha_routes._VALID_UNIVERSES``.
 _LIST_UNIVERSE_CHOICES = [
-    "equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr",
-    "crypto", "futures",
+    "equity_us",
+    "equity_cn",
+    "equity_hk",
+    "equity_in",
+    "equity_kr",
+    "crypto",
+    "futures",
 ]
 # Benchmark universe -> the metadata universe its panel represents, so
 # ``alpha list --universe csi300`` keeps working (it used to filter on a name no
@@ -263,11 +268,7 @@ def _print_load_errors(reg: Registry) -> None:
     if not errors:
         _print("[green]no load errors[/green]" if _console else "no load errors")
         return
-    _print(
-        f"[yellow]{len(errors)} load error(s):[/yellow]"
-        if _console
-        else f"{len(errors)} load error(s):"
-    )
+    _print(f"[yellow]{len(errors)} load error(s):[/yellow]" if _console else f"{len(errors)} load error(s):")
     for entry in errors:
         _print(f"  - {entry.get('alpha_id')}: {entry.get('reason')}")
 
@@ -288,9 +289,7 @@ def cmd_alpha_show(args: argparse.Namespace) -> int:
         if not brief:
             _print(f"[bold]zoo[/bold]: {alpha.zoo}" if _console else f"zoo: {alpha.zoo}")
             _print(
-                f"[bold]module_path[/bold]: {alpha.module_path}"
-                if _console
-                else f"module_path: {alpha.module_path}"
+                f"[bold]module_path[/bold]: {alpha.module_path}" if _console else f"module_path: {alpha.module_path}"
             )
             _print(
                 f"[bold]nickname[/bold]: {meta.get('nickname') or '-'}"
@@ -328,10 +327,7 @@ def cmd_alpha_show(args: argparse.Namespace) -> int:
             _print(f"[bold]notes[/bold]: {notes}" if _console else f"notes: {notes}")
 
         if brief:
-            _hint(
-                f"Next: vibe-trading alpha bench --zoo {alpha.zoo} "
-                f"--universe csi300 --period 2020-2025 --top 20"
-            )
+            _hint(f"Next: vibe-trading alpha bench --zoo {alpha.zoo} --universe csi300 --period 2020-2025 --top 20")
             return 0
 
         # Source code — read via the registry's _py_paths cache (semi-private but
@@ -373,10 +369,7 @@ def cmd_alpha_show(args: argparse.Namespace) -> int:
             else:
                 print(source)
 
-        _hint(
-            f"Next: vibe-trading alpha bench --zoo {alpha.zoo} "
-            f"--universe csi300 --period 2020-2025 --top 20"
-        )
+        _hint(f"Next: vibe-trading alpha bench --zoo {alpha.zoo} --universe csi300 --period 2020-2025 --top 20")
         return 0
     except Exception as exc:  # noqa: BLE001
         return _handle_exception(args, "alpha show failed", exc)
@@ -470,8 +463,10 @@ def _run_all_zoos_with_progress(
     def _run_zoo(z: str, base: int, update: Callable[[int, str], None] | None) -> None:
         cb: Callable[[int, int, str], None] | None = None
         if update is not None:
+
             def cb(n_done: int, _n_total: int, aid: str) -> None:
                 update(base + n_done, f"{z}:{aid}")
+
         sub = run_bench(
             zoo=z,
             universe=universe,
@@ -536,7 +531,9 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
     from ``src.tools.alpha_bench_tool`` (we do NOT modify that module).
     """
     try:
-        if (getattr(args, "oos_split", None) or getattr(args, "random_seeds", 5) != 5) and not getattr(args, "strict", False):
+        if (getattr(args, "oos_split", None) or getattr(args, "random_seeds", 5) != 5) and not getattr(
+            args, "strict", False
+        ):
             _err("alpha bench: --oos-split/--random-seeds only take effect with --strict.")
             return 1
         try:
@@ -562,8 +559,7 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
             n_total = len(reg.list())
             if getattr(args, "yes", False):
                 _print(
-                    f"[yellow]No --zoo passed; benching ALL {n_total} alphas "
-                    f"(confirmed via --yes).[/yellow]"
+                    f"[yellow]No --zoo passed; benching ALL {n_total} alphas (confirmed via --yes).[/yellow]"
                     if _console
                     else f"No --zoo passed; benching ALL {n_total} alphas (--yes)."
                 )
@@ -590,9 +586,7 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
             return 1
 
         strict_banner = (
-            " [strict: random control"
-            + (f", oos {args.oos_split}" if getattr(args, "oos_split", None) else "")
-            + "]"
+            " [strict: random control" + (f", oos {args.oos_split}" if getattr(args, "oos_split", None) else "") + "]"
             if getattr(args, "strict", False)
             else ""
         )
@@ -765,8 +759,14 @@ def _render_compare_table(ranking: list[dict[str, Any]], sort_key: str) -> None:
     delta_key = f"delta_{sort_key}_vs_best"
     table = Table(title=f"alpha compare — ranked by {sort_key}")
     for col, justify in (
-        ("#", "right"), ("alpha", "left"), ("zoo", "left"), ("IC mean", "right"),
-        ("IC std", "right"), ("IR", "right"), ("IC>0", "right"), ("n", "right"),
+        ("#", "right"),
+        ("alpha", "left"),
+        ("zoo", "left"),
+        ("IC mean", "right"),
+        ("IC std", "right"),
+        ("IR", "right"),
+        ("IC>0", "right"),
+        ("n", "right"),
         (f"Δ {sort_key}", "right"),
     ):
         table.add_column(col, justify=justify)
@@ -808,22 +808,14 @@ def cmd_alpha_compare(args: argparse.Namespace) -> int:
         targets = [t for t in targets if not (t in seen or seen.add(t))]
 
         if not targets:
-            _err(
-                "alpha compare: no targets supplied "
-                "(pass alpha ids, or --all for every alpha, or --zoo X to filter)"
-            )
+            _err("alpha compare: no targets supplied (pass alpha ids, or --all for every alpha, or --zoo X to filter)")
             return 1
         if len(targets) < 2:
-            _err(
-                f"alpha compare: need at least 2 alphas to compare "
-                f"(got {len(targets)}: {', '.join(targets)})"
-            )
+            _err(f"alpha compare: need at least 2 alphas to compare (got {len(targets)}: {', '.join(targets)})")
             return 1
 
         sort_key = getattr(args, "sort", "ir") or "ir"
-        envelope = compare_alphas(
-            targets, args.universe, args.period, sort=sort_key, registry=reg
-        )
+        envelope = compare_alphas(targets, args.universe, args.period, sort=sort_key, registry=reg)
         print(json.dumps(envelope, indent=2, default=str))
 
         if envelope.get("status") != "ok":
@@ -916,12 +908,8 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
     """
     global _ALPHA_PARSER
 
-    alpha_parser = subparsers.add_parser(
-        "alpha", help="Alpha Zoo: list / show / bench / compare / export-manifest"
-    )
-    alpha_parser.add_argument(
-        "--verbose", action="store_true", help="Show full traceback on errors"
-    )
+    alpha_parser = subparsers.add_parser("alpha", help="Alpha Zoo: list / show / bench / compare / export-manifest")
+    alpha_parser.add_argument("--verbose", action="store_true", help="Show full traceback on errors")
     alpha_sub = alpha_parser.add_subparsers(dest="alpha_command")
 
     p_list = alpha_sub.add_parser("list", help="List registered alphas")

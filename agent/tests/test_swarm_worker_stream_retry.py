@@ -145,9 +145,7 @@ def test_single_stream_failure_is_retried_and_worker_succeeds(monkeypatch, tmp_p
 
 def test_double_stream_failure_fails_worker(monkeypatch, tmp_path):
     """Two consecutive ProviderStreamErrors → existing failure path (no 3rd try)."""
-    llm = _FlakyChatLLM(
-        [_stream_error(), _stream_error()], LLMResponse(content=FINAL_TEXT)
-    )
+    llm = _FlakyChatLLM([_stream_error(), _stream_error()], LLMResponse(content=FINAL_TEXT))
 
     result = _run(monkeypatch, tmp_path, llm)
 
@@ -175,9 +173,7 @@ def _bad_request_error() -> ProviderStreamError:
     """
     original = Exception("invalid temperature: only 1 is allowed for this model")
     original.status_code = 400  # type: ignore[attr-defined]
-    return ProviderStreamError(
-        provider="moonshot", model="kimi-k2.6", original=original
-    )
+    return ProviderStreamError(provider="moonshot", model="kimi-k2.6", original=original)
 
 
 def test_non_retryable_4xx_fails_without_retry(monkeypatch, tmp_path):

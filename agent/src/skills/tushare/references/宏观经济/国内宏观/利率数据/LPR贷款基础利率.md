@@ -43,11 +43,9 @@ date | str | Y | 日期
 **接口调用**
 
 ```python
-
 pro = ts.pro_api()
 
-df = pro.shibor_lpr(start_date='20180101', end_date='20181130', fields='date,1y')
-
+df = pro.shibor_lpr(start_date="20180101", end_date="20181130", fields="date,1y")
 ```
 
 <br>

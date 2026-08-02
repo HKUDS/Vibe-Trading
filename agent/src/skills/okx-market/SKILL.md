@@ -30,7 +30,7 @@ BASE_URL = "https://www.okx.com/api/v5"
 # Get the latest BTC-USDT market quote
 resp = requests.get(f"{BASE_URL}/market/ticker", params={"instId": "BTC-USDT"})
 data = resp.json()["data"][0]
-print(f"BTC last price: {data['last']}  24h change: {float(data['last'])/float(data['open24h'])*100-100:.2f}%")
+print(f"BTC last price: {data['last']}  24h change: {float(data['last']) / float(data['open24h']) * 100 - 100:.2f}%")
 ```
 
 ## Parameter Format Reference

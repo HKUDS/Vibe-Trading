@@ -56,12 +56,14 @@ class _FakeClient:
         raise_on_error: bool = False,
     ) -> CallToolResult:
         self._state["call_calls"] += 1
-        self._state["call_records"].append({
-            "name": name,
-            "arguments": arguments or {},
-            "timeout": timeout,
-            "raise_on_error": raise_on_error,
-        })
+        self._state["call_records"].append(
+            {
+                "name": name,
+                "arguments": arguments or {},
+                "timeout": timeout,
+                "raise_on_error": raise_on_error,
+            }
+        )
         outcome = self._state["call_outcomes"].pop(0)
         if isinstance(outcome, Exception):
             raise outcome
@@ -175,10 +177,12 @@ def test_build_mcp_tool_wrappers_filters_enabled_tools() -> None:
         "list_calls": 0,
         "call_calls": 0,
         "call_records": [],
-        "list_outcomes": [[
-            mcp_types.Tool(name="allowed", description="Allowed", inputSchema={"type": "object"}),
-            mcp_types.Tool(name="blocked", description="Blocked", inputSchema={"type": "object"}),
-        ]],
+        "list_outcomes": [
+            [
+                mcp_types.Tool(name="allowed", description="Allowed", inputSchema={"type": "object"}),
+                mcp_types.Tool(name="blocked", description="Blocked", inputSchema={"type": "object"}),
+            ]
+        ],
         "call_outcomes": [],
     }
 
@@ -197,9 +201,11 @@ def test_build_mcp_tool_wrappers_honors_local_server_name_override() -> None:
         "list_calls": 0,
         "call_calls": 0,
         "call_records": [],
-        "list_outcomes": [[
-            mcp_types.Tool(name="quote", description="Quote", inputSchema={"type": "object"}),
-        ]],
+        "list_outcomes": [
+            [
+                mcp_types.Tool(name="quote", description="Quote", inputSchema={"type": "object"}),
+            ]
+        ],
         "call_outcomes": [],
     }
 
@@ -218,17 +224,19 @@ def test_remote_tool_execute_does_not_retry_timeout_and_strips_run_dir() -> None
         "list_calls": 0,
         "call_calls": 0,
         "call_records": [],
-        "list_outcomes": [[
-            mcp_types.Tool(
-                name="quote",
-                description="Quote lookup",
-                inputSchema={
-                    "type": "object",
-                    "properties": {"symbol": {"type": "string"}},
-                    "required": ["symbol"],
-                },
-            )
-        ]],
+        "list_outcomes": [
+            [
+                mcp_types.Tool(
+                    name="quote",
+                    description="Quote lookup",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {"symbol": {"type": "string"}},
+                        "required": ["symbol"],
+                    },
+                )
+            ]
+        ],
         "call_outcomes": [TimeoutError("timed out")],
     }
 
@@ -252,26 +260,28 @@ def test_remote_tool_execute_forwards_arguments_for_composed_schema() -> None:
         "list_calls": 0,
         "call_calls": 0,
         "call_records": [],
-        "list_outcomes": [[
-            mcp_types.Tool(
-                name="lookup",
-                description="Lookup by symbol or cusip",
-                inputSchema={
-                    "oneOf": [
-                        {
-                            "type": "object",
-                            "properties": {"symbol": {"type": "string"}},
-                            "required": ["symbol"],
-                        },
-                        {
-                            "type": "object",
-                            "properties": {"cusip": {"type": "string"}},
-                            "required": ["cusip"],
-                        },
-                    ]
-                },
-            )
-        ]],
+        "list_outcomes": [
+            [
+                mcp_types.Tool(
+                    name="lookup",
+                    description="Lookup by symbol or cusip",
+                    inputSchema={
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "properties": {"symbol": {"type": "string"}},
+                                "required": ["symbol"],
+                            },
+                            {
+                                "type": "object",
+                                "properties": {"cusip": {"type": "string"}},
+                                "required": ["cusip"],
+                            },
+                        ]
+                    },
+                )
+            ]
+        ],
         "call_outcomes": [
             CallToolResult(content=[], structured_content={"ok": True}, meta=None, data={"ok": True}),
         ],
@@ -316,13 +326,15 @@ def _execute_data_result(
         "list_calls": 0,
         "call_calls": 0,
         "call_records": [],
-        "list_outcomes": [[
-            mcp_types.Tool(
-                name="get_data",
-                description="Return test data",
-                inputSchema={"type": "object", "properties": {}},
-            )
-        ]],
+        "list_outcomes": [
+            [
+                mcp_types.Tool(
+                    name="get_data",
+                    description="Return test data",
+                    inputSchema={"type": "object", "properties": {}},
+                )
+            ]
+        ],
         "call_outcomes": [
             CallToolResult(
                 content=[],
@@ -533,10 +545,12 @@ def test_build_mcp_tool_wrappers_disambiguates_colliding_local_names() -> None:
         "list_calls": 0,
         "call_calls": 0,
         "call_records": [],
-        "list_outcomes": [[
-            mcp_types.Tool(name="price-quote", description="Hyphen", inputSchema={"type": "object"}),
-            mcp_types.Tool(name="price quote", description="Space", inputSchema={"type": "object"}),
-        ]],
+        "list_outcomes": [
+            [
+                mcp_types.Tool(name="price-quote", description="Hyphen", inputSchema={"type": "object"}),
+                mcp_types.Tool(name="price quote", description="Space", inputSchema={"type": "object"}),
+            ]
+        ],
         "call_outcomes": [],
     }
 
@@ -574,9 +588,7 @@ def test_build_mcp_tool_wrappers_single_attempt_does_not_retry_discovery() -> No
     authorize path passes max_list_tools_attempts=1 so the first transient
     failure propagates immediately and exactly one client context is opened.
     """
-    transient = McpError(
-        mcp_types.ErrorData(code=mcp_types.CONNECTION_CLOSED, message="Connection closed")
-    )
+    transient = McpError(mcp_types.ErrorData(code=mcp_types.CONNECTION_CLOSED, message="Connection closed"))
     state = {
         "list_calls": 0,
         "call_calls": 0,
@@ -604,9 +616,7 @@ def test_remote_tool_execute_returns_normalized_error_payload_without_retry() ->
         "list_calls": 0,
         "call_calls": 0,
         "call_records": [],
-        "list_outcomes": [[
-            mcp_types.Tool(name="quote", description="Quote", inputSchema={"type": "object"})
-        ]],
+        "list_outcomes": [[mcp_types.Tool(name="quote", description="Quote", inputSchema={"type": "object"})]],
         "call_outcomes": [ToolError("validation failed")],
     }
 
@@ -630,11 +640,13 @@ def test_build_mcp_tool_wrappers_wildcard_enabled_tools_passes_all() -> None:
         "list_calls": 0,
         "call_calls": 0,
         "call_records": [],
-        "list_outcomes": [[
-            mcp_types.Tool(name="alpha", description="A", inputSchema={"type": "object"}),
-            mcp_types.Tool(name="beta", description="B", inputSchema={"type": "object"}),
-            mcp_types.Tool(name="gamma", description="C", inputSchema={"type": "object"}),
-        ]],
+        "list_outcomes": [
+            [
+                mcp_types.Tool(name="alpha", description="A", inputSchema={"type": "object"}),
+                mcp_types.Tool(name="beta", description="B", inputSchema={"type": "object"}),
+                mcp_types.Tool(name="gamma", description="C", inputSchema={"type": "object"}),
+            ]
+        ],
         "call_outcomes": [],
     }
 

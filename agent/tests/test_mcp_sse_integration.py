@@ -98,6 +98,4 @@ def test_enabled_tools_filter_limits_remote_sse_tools(tmp_path: Path) -> None:
 
         mcp_names = [name for name in registry.tool_names if name.startswith("mcp_fake_sse_")]
         assert "mcp_fake_sse_echo" in mcp_names, server.diagnostics()
-        assert "mcp_fake_sse_add" not in mcp_names, (
-            "mcp_fake_sse_add should be excluded by enabledTools filter"
-        )
+        assert "mcp_fake_sse_add" not in mcp_names, "mcp_fake_sse_add should be excluded by enabledTools filter"

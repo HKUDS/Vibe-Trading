@@ -245,6 +245,7 @@ GPR_country: country-level sub-index
 import pandas as pd
 import requests
 
+
 def load_gpr_index():
     """Load the official GPR Index data.
 
@@ -254,6 +255,7 @@ def load_gpr_index():
     url = "https://www.matteoiacoviello.com/gpr_files/data_gpr_export.xls"
     df = pd.read_excel(url, index_col=0, parse_dates=True)
     return df
+
 
 def gpr_signal(df, window=12, threshold=1.5):
     """Generate abnormal GPR signals.
@@ -279,8 +281,7 @@ def gpr_signal(df, window=12, threshold=1.5):
 
 **Oil war premium**
 ```python
-def oil_war_premium(spot_price, mean_5y_price, supply_disruption_prob,
-                    disruption_magnitude_pct):
+def oil_war_premium(spot_price, mean_5y_price, supply_disruption_prob, disruption_magnitude_pct):
     """Estimate the war-risk premium embedded in crude oil.
 
     Method:
@@ -295,9 +296,7 @@ def oil_war_premium(spot_price, mean_5y_price, supply_disruption_prob,
     Returns:
         float: Estimated war premium in USD/bbl
     """
-    expected_disruption_premium = (
-        mean_5y_price * disruption_magnitude_pct * supply_disruption_prob
-    )
+    expected_disruption_premium = mean_5y_price * disruption_magnitude_pct * supply_disruption_prob
     observed_premium = spot_price - mean_5y_price
     return max(0, min(observed_premium, expected_disruption_premium))
 ```
@@ -316,6 +315,7 @@ def gold_geopolitical_premium(gold_price, real_yield_10y, usd_index):
         float: Geopolitical premium as the residual component
     """
     import numpy as np
+
     # Gold fundamentals: real rates (negative) + USD (negative)
     # Linear approximation:
     # Gold ≈ α - β1*RealYield - β2*DXY + ε (geopolitical premium)
@@ -351,9 +351,7 @@ def update_disruption_probability(prior_prob, new_event_severity, base_rate=0.05
     # Likelihood ratio: how much more likely the event is before a real disruption
     # than in a non-disruption state
     likelihood_ratio = 1 + 9 * new_event_severity  # 1x ~ 10x
-    posterior = (prior_prob * likelihood_ratio) / (
-        prior_prob * likelihood_ratio + (1 - prior_prob)
-    )
+    posterior = (prior_prob * likelihood_ratio) / (prior_prob * likelihood_ratio + (1 - prior_prob))
     return posterior
 ```
 
@@ -482,23 +480,23 @@ SIGNAL_LEVELS = {
     "GREEN": {
         "desc": "Normal geopolitical risk level",
         "gpr_percentile": (0, 50),
-        "action": "Standard allocation, no special hedge required"
+        "action": "Standard allocation, no special hedge required",
     },
     "YELLOW": {
         "desc": "Risk rising, watch for escalation",
         "gpr_percentile": (50, 75),
-        "action": "Small long-gold position, reduce high-risk asset exposure by 10%"
+        "action": "Small long-gold position, reduce high-risk asset exposure by 10%",
     },
     "ORANGE": {
         "desc": "High-risk state, potential shock approaching",
         "gpr_percentile": (75, 90),
-        "action": "Add safe-haven assets, buy OTM protective options, bullish on oil"
+        "action": "Add safe-haven assets, buy OTM protective options, bullish on oil",
     },
     "RED": {
         "desc": "Extreme risk, crisis may break out",
         "gpr_percentile": (90, 100),
-        "action": "Maximize defensive positioning, hold cash / gold / Treasuries, short high-risk assets"
-    }
+        "action": "Maximize defensive positioning, hold cash / gold / Treasuries, short high-risk assets",
+    },
 }
 ```
 
@@ -549,18 +547,18 @@ def crisis_vol_strategy(underlying, option_chain):
             "instrument": "Front-month VX futures",
             "trigger": "VIX < 20 and GPR > 75th percentile",
             "target": "VIX spikes to 35-50",
-            "stop": "VIX falls 15% below entry"
+            "stop": "VIX falls 15% below entry",
         },
         "backspread": {
             "instrument": f"Buy OTM Put + sell ATM Put on {underlying}",
             "trigger": "Implied volatility is at a historical low",
-            "profit_zone": "Large drop > 10%"
+            "profit_zone": "Large drop > 10%",
         },
         "calendar_spread": {
             "instrument": "Sell near-month ATM + buy far-month ATM",
             "trigger": "Exit when term-structure inversion becomes excessive",
-            "profit_zone": "Volatility mean reversion"
-        }
+            "profit_zone": "Volatility mean reversion",
+        },
     }
     return strategies
 ```
@@ -605,7 +603,7 @@ REVERSION_SIGNALS = [
     "Target-country CDS spreads retrace >20% from the peak",
     "GPR Index falls >30% from the peak",
     "VIX drops below 20 after peaking",
-    "Safe-haven currencies such as JPY / CHF begin weakening"
+    "Safe-haven currencies such as JPY / CHF begin weakening",
 ]
 ```
 
@@ -633,6 +631,7 @@ GPR_DATA_URL = "https://www.matteoiacoviello.com/gpr_files/data_gpr_export.xls"
 # GDELT 2.0 provides global news-event data updated every 15 minutes
 # Includes the CAMEO event code system for military / diplomatic / conflict classification
 
+
 def query_gdelt_events(country_code, event_type, start_date, end_date):
     """Query GDELT geopolitical event data.
 
@@ -649,6 +648,7 @@ def query_gdelt_events(country_code, event_type, start_date, end_date):
         pd.DataFrame: Event records
     """
     from google.cloud import bigquery
+
     client = bigquery.Client()
 
     query = f"""
@@ -658,8 +658,8 @@ def query_gdelt_events(country_code, event_type, start_date, end_date):
     WHERE (Actor1CountryCode = '{country_code}'
            OR Actor2CountryCode = '{country_code}')
       AND EventRootCode = '{event_type}'
-      AND SQLDATE BETWEEN '{start_date.replace('-','')}'
-                      AND '{end_date.replace('-','')}'
+      AND SQLDATE BETWEEN '{start_date.replace("-", "")}'
+                      AND '{end_date.replace("-", "")}'
     ORDER BY SQLDATE DESC
     """
     return client.query(query).to_dataframe()
@@ -673,6 +673,7 @@ def query_gdelt_events(country_code, event_type, start_date, end_date):
 # Covers 100+ countries and is free for approved academic access
 
 ACLED_API_BASE = "https://api.acleddata.com/acled/read"
+
 
 def fetch_acled_events(country, start_date, end_date, api_key):
     """Fetch ACLED armed-conflict event data.
@@ -695,7 +696,7 @@ def fetch_acled_events(country, start_date, end_date, api_key):
         "country": country,
         "event_date": f"{start_date}|{end_date}",
         "event_date_where": "BETWEEN",
-        "export_type": "json"
+        "export_type": "json",
     }
     resp = requests.get(ACLED_API_BASE, params=params)
     return pd.DataFrame(resp.json()["data"])
@@ -721,9 +722,10 @@ def analyze_geopolitical_news(query: str) -> dict:
         "https://www.reuters.com/world/",
         "https://www.bloomberg.com/politics",
         "https://www.ft.com/world",
-        "https://www.foreignpolicy.com/"
+        "https://www.foreignpolicy.com/",
     ]
     # Use read_url to fetch content, then pass it to the LLM to extract risk events
+
 
 # Option B: Event Registry API (paid, structured news)
 # https://eventregistry.org/
@@ -740,28 +742,28 @@ DATA_SOURCES = {
     "oil_tanker_tracking": {
         "desc": "Crude oil / LNG vessel AIS tracking",
         "source": "MarineTraffic API (paid) / VesselFinder (limited free)",
-        "use_case": "Real-time monitoring of traffic through Hormuz / the Red Sea"
+        "use_case": "Real-time monitoring of traffic through Hormuz / the Red Sea",
     },
     "un_vote_data": {
         "desc": "UN General Assembly / Security Council voting records",
         "source": "UN Data API (free)",
-        "use_case": "Track changes in great-power alignment"
+        "use_case": "Track changes in great-power alignment",
     },
     "arms_transfer": {
         "desc": "Arms transfers and military aid data",
         "source": "SIPRI Arms Transfers Database (free)",
-        "use_case": "Estimate conflict-escalation probability"
+        "use_case": "Estimate conflict-escalation probability",
     },
     "nuclear_risk": {
         "desc": "Real-time nuclear-risk assessment",
         "source": "Bulletin of the Atomic Scientists Doomsday Clock",
-        "use_case": "Tail-risk monitoring"
+        "use_case": "Tail-risk monitoring",
     },
     "commodity_futures": {
         "desc": "Commodity futures prices, including geopolitical premium",
         "source": "Integrated in this project: Tushare commodity futures / OKX crypto",
-        "use_case": "Estimate war premium"
-    }
+        "use_case": "Estimate war premium",
+    },
 }
 ```
 
@@ -804,23 +806,24 @@ SCENARIOS = {
         "gold_shock": +8,
         "equity_shock": -12,
         "usd_shock": +3,
-        "description": "30-day Strait of Hormuz blockade scenario"
+        "description": "30-day Strait of Hormuz blockade scenario",
     },
     "taiwan_conflict_mild": {
         "semioconductor_shock": -25,
         "gold_shock": +5,
         "equity_shock": -15,
         "jpy_shock": +8,
-        "description": "Mild Taiwan Strait military conflict scenario"
+        "description": "Mild Taiwan Strait military conflict scenario",
     },
     "russia_gas_cutoff": {
         "eu_natgas_shock": +80,
         "eu_equity_shock": -20,
         "eur_shock": -8,
         "gold_shock": +6,
-        "description": "Russia fully cuts off gas to Europe"
-    }
+        "description": "Russia fully cuts off gas to Europe",
+    },
 }
+
 
 def portfolio_stress_test(portfolio_weights, scenarios=SCENARIOS):
     """Run geopolitical scenario stress tests on a portfolio.
@@ -835,14 +838,9 @@ def portfolio_stress_test(portfolio_weights, scenarios=SCENARIOS):
     results = {}
     for scenario_name, shocks in scenarios.items():
         portfolio_pnl = sum(
-            portfolio_weights.get(asset, 0) * shock / 100
-            for asset, shock in shocks.items()
-            if asset != "description"
+            portfolio_weights.get(asset, 0) * shock / 100 for asset, shock in shocks.items() if asset != "description"
         )
-        results[scenario_name] = {
-            "portfolio_return": portfolio_pnl,
-            "description": shocks["description"]
-        }
+        results[scenario_name] = {"portfolio_return": portfolio_pnl, "description": shocks["description"]}
     return results
 ```
 
@@ -855,9 +853,8 @@ def portfolio_stress_test(portfolio_weights, scenarios=SCENARIOS):
 # Historical backtests suggest a roughly 30-40% reduction in tail losses
 # across major crises from 2001-2023
 
-def gpr_dynamic_hedge_backtest(returns_data, gpr_data,
-                                hedge_assets=["GLD", "USO"],
-                                hedge_weight=0.05):
+
+def gpr_dynamic_hedge_backtest(returns_data, gpr_data, hedge_assets=["GLD", "USO"], hedge_weight=0.05):
     """Backtest a GPR-driven dynamic hedge strategy.
 
     Args:
@@ -882,15 +879,11 @@ def gpr_dynamic_hedge_backtest(returns_data, gpr_data,
 
     hedged_return = base_return.copy()
     hedged_return[hedge_signal] = (
-        base_return[hedge_signal] * (1 - len(hedge_assets) * hedge_weight) +
-        hedge_return[hedge_signal] * len(hedge_assets) * hedge_weight
+        base_return[hedge_signal] * (1 - len(hedge_assets) * hedge_weight)
+        + hedge_return[hedge_signal] * len(hedge_assets) * hedge_weight
     )
 
-    return pd.DataFrame({
-        "base": base_return,
-        "hedged": hedged_return,
-        "hedge_active": hedge_signal.astype(int)
-    })
+    return pd.DataFrame({"base": base_return, "hedged": hedged_return, "hedge_active": hedge_signal.astype(int)})
 ```
 
 ---

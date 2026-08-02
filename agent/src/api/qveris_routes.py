@@ -122,12 +122,7 @@ def _events_from_usage(payload: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         recent.append(
             {
-                "ts": str(
-                    event.get("ts")
-                    or event.get("created_at")
-                    or event.get("timestamp")
-                    or ""
-                ),
+                "ts": str(event.get("ts") or event.get("created_at") or event.get("timestamp") or ""),
                 "tool_id": str(event.get("tool_id") or ""),
                 "cost": float(event.get("cost") or event.get("amount_credits") or 0.0),
                 "charge_outcome": str(event.get("charge_outcome") or ""),

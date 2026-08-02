@@ -76,8 +76,7 @@ def test_loaded_dotenv_refreshes_cached_env_config(tmp_path, fresh, monkeypatch)
     """A config cached before dotenv loading must be refreshed afterwards."""
     env = tmp_path / ".env"
     env.write_text(
-        "LANGCHAIN_PROVIDER=deepseek\n"
-        "LANGCHAIN_MODEL_NAME=deepseek-chat\n",
+        "LANGCHAIN_PROVIDER=deepseek\nLANGCHAIN_MODEL_NAME=deepseek-chat\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(llm, "_ENV_CANDIDATES", [env])

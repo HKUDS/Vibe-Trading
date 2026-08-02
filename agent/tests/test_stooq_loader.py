@@ -7,7 +7,7 @@ we monkeypatch that name on the ``stooq_loader`` module.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pandas as pd
 import pytest
@@ -85,7 +85,9 @@ class TestFetch:
         monkeypatch.setattr(stooq_loader, "throttled_get", fake_get)
 
         out = stooq_loader.DataLoader().fetch(
-            ["AAPL.US"], "2024-01-01", "2024-01-31",
+            ["AAPL.US"],
+            "2024-01-01",
+            "2024-01-31",
         )
 
         assert captured["url"] == stooq_loader._BASE_URL
@@ -109,16 +111,12 @@ class TestFetch:
         assert df["volume"].dtype == float
 
     def test_nd_body_yields_no_data(self, monkeypatch):
-        monkeypatch.setattr(
-            stooq_loader, "throttled_get", lambda url, **kw: _FakeResponse(text="N/D\n")
-        )
+        monkeypatch.setattr(stooq_loader, "throttled_get", lambda url, **kw: _FakeResponse(text="N/D\n"))
         out = stooq_loader.DataLoader().fetch(["BOGUS.US"], "2024-01-01", "2024-01-31")
         assert out == {}
 
     def test_empty_body_yields_no_data(self, monkeypatch):
-        monkeypatch.setattr(
-            stooq_loader, "throttled_get", lambda url, **kw: _FakeResponse(text="   ")
-        )
+        monkeypatch.setattr(stooq_loader, "throttled_get", lambda url, **kw: _FakeResponse(text="   "))
         out = stooq_loader.DataLoader().fetch(["AAPL.US"], "2024-01-01", "2024-01-31")
         assert out == {}
 
@@ -132,7 +130,9 @@ class TestFetch:
         monkeypatch.setattr(stooq_loader, "throttled_get", fake_get)
 
         out = stooq_loader.DataLoader().fetch(
-            ["BOOM.US", "AAPL.US"], "2024-01-01", "2024-01-31",
+            ["BOOM.US", "AAPL.US"],
+            "2024-01-01",
+            "2024-01-31",
         )
         # The failing symbol is skipped; the good one still comes through.
         assert list(out) == ["AAPL.US"]
@@ -160,11 +160,7 @@ class TestParseCsv:
     """`_parse_csv` edge handling."""
 
     def test_rows_with_nan_ohlc_dropped(self):
-        body = (
-            "Date,Open,High,Low,Close,Volume\n"
-            "2024-01-02,,,,,\n"
-            "2024-01-03,1,2,0.5,1.5,100\n"
-        )
+        body = "Date,Open,High,Low,Close,Volume\n2024-01-02,,,,,\n2024-01-03,1,2,0.5,1.5,100\n"
         df = stooq_loader._parse_csv(body)
         assert list(df.index) == [pd.Timestamp("2024-01-03")]
 

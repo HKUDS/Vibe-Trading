@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #86
 # 简要说明: 国泰君安191短周期交易型alpha因子第86号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_086",
-    "theme": ['momentum'],
-    "formula_latex": '((0.25 < (((DELAY(CLOSE,20)-DELAY(CLOSE,10))/10) - ((DELAY(CLOSE,10)-CLOSE)/10))) ? -1 : (((((DELAY(CLOSE,20)-DELAY(CLOSE,10))/10) - ((DELAY(CLOSE,10)-CLOSE)/10)) < 0) ? 1 : (-1*(CLOSE-DELAY(CLOSE,1)))))',
-    "columns_required": ['close'],
+    "theme": ["momentum"],
+    "formula_latex": "((0.25 < (((DELAY(CLOSE,20)-DELAY(CLOSE,10))/10) - ((DELAY(CLOSE,10)-CLOSE)/10))) ? -1 : (((((DELAY(CLOSE,20)-DELAY(CLOSE,10))/10) - ((DELAY(CLOSE,10)-CLOSE)/10)) < 0) ? 1 : (-1*(CLOSE-DELAY(CLOSE,1)))))",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
     "min_warmup_bars": 22,
-    "notes": 'Returns -1 / +1 / -delta depending on second-derivative thresholds.',
+    "notes": "Returns -1 / +1 / -delta depending on second-derivative thresholds.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]
@@ -51,7 +51,7 @@ def compute(panel: dict) -> pd.DataFrame:
     b = (c.shift(10) - c) / 10.0
     diff = a - b
     last = -1.0 * (c - c.shift(1))
-    out = pd.DataFrame(np.where(0.25 < diff, -1.0,
-                                np.where(diff < 0, 1.0, last.to_numpy())),
-                       index=c.index, columns=c.columns)
+    out = pd.DataFrame(
+        np.where(0.25 < diff, -1.0, np.where(diff < 0, 1.0, last.to_numpy())), index=c.index, columns=c.columns
+    )
     return out

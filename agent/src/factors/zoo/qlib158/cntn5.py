@@ -6,24 +6,25 @@
 # 典型用途: 衡量5日内下跌频率，值高表示持续下跌行情。
 # ============================================================
 """qlib158 CNTN5: formula = \\mathrm{rolling\\_mean}(\\mathrm{1}[\\mathrm{close}<\\mathrm{close}_{{-1}}], 5)."""
+
 from __future__ import annotations
 
 import pandas as pd
 
 __alpha_meta__ = {
-    'id': 'qlib158_cntn5',
-    'theme': ['reversal'],
-    'formula_latex': '\\\\mathrm{rolling\\\\_mean}(\\\\mathrm{1}[\\\\mathrm{close}<\\\\mathrm{close}_{{-1}}], 5)',
-    'columns_required': ['close'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
-    'frequency': ['1d'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 5,
+    "id": "qlib158_cntn5",
+    "theme": ["reversal"],
+    "formula_latex": "\\\\mathrm{rolling\\\\_mean}(\\\\mathrm{1}[\\\\mathrm{close}<\\\\mathrm{close}_{{-1}}], 5)",
+    "columns_required": ["close"],
+    "universe": ["equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr"],
+    "frequency": ["1d"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 5,
 }
 
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 CNTN5 on the supplied OHLCV panel."""
-    c = panel['close']
-    dn = (c < c.shift(1)).astype('float64')
+    c = panel["close"]
+    dn = (c < c.shift(1)).astype("float64")
     return dn.rolling(window=5, min_periods=5).mean()

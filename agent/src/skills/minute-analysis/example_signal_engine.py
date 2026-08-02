@@ -6,7 +6,6 @@
 
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 import requests
 
@@ -14,9 +13,7 @@ import requests
 BASE_URL = "https://www.okx.com/api/v5"
 
 
-def fetch_minute_candles(
-    inst_id: str, bar: str = "5m", limit: int = 300
-) -> Optional[pd.DataFrame]:
+def fetch_minute_candles(inst_id: str, bar: str = "5m", limit: int = 300) -> Optional[pd.DataFrame]:
     """从 OKX 获取分钟级 K 线数据。
 
     Args:

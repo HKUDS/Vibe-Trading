@@ -35,11 +35,32 @@ _PREFIX_RE = re.compile(r"^(get|run|do|fetch|load|build|compute|calc(?:ulate)?)_
 
 # Canonical acronyms that should render UPPERCASE rather than Title-Case.
 # Whitelist (not "len <= 3" heuristic) so common words like "web" stay "Web".
-_ACRONYMS: frozenset[str] = frozenset({
-    "api", "url", "csv", "json", "yaml", "sql", "tsv", "pdf",
-    "ai", "ml", "dcf", "fcf", "roe", "roi", "pe", "pb", "iv",
-    "btc", "eth", "usd", "cny", "id",
-})
+_ACRONYMS: frozenset[str] = frozenset(
+    {
+        "api",
+        "url",
+        "csv",
+        "json",
+        "yaml",
+        "sql",
+        "tsv",
+        "pdf",
+        "ai",
+        "ml",
+        "dcf",
+        "fcf",
+        "roe",
+        "roi",
+        "pe",
+        "pb",
+        "iv",
+        "btc",
+        "eth",
+        "usd",
+        "cny",
+        "id",
+    }
+)
 
 
 def beautify_tool_name(raw: str) -> str:
@@ -71,8 +92,10 @@ def summarize_args(args: dict | str | None, *, max_len: int = 60) -> str:
     for k, v in args.items():
         token = f"{k}={_truncate(str(v), 20)}"
         if used + len(token) + 2 > max_len:
-            pieces.append("…"); break
-        pieces.append(token); used += len(token) + 2
+            pieces.append("…")
+            break
+        pieces.append(token)
+        used += len(token) + 2
     return ", ".join(pieces)
 
 
@@ -108,9 +131,7 @@ class ThinkingSpinner:
 
     def __init__(self, console: Console | None = None) -> None:
         self._console = console or get_console()
-        self._state = _SpinnerState(
-            verb=pick_thinking_verb(), started_at=time.monotonic()
-        )
+        self._state = _SpinnerState(verb=pick_thinking_verb(), started_at=time.monotonic())
         self._live: Optional[Live] = None
         self._lock = threading.Lock()
         self._tick_thread: Optional[threading.Thread] = None
@@ -124,8 +145,7 @@ class ThinkingSpinner:
             self._state.started_at = time.monotonic()
             self._state.paused = False
             self._state.stopped = False
-            self._live = Live(self._render(), console=self._console,
-                               refresh_per_second=10, transient=True)
+            self._live = Live(self._render(), console=self._console, refresh_per_second=10, transient=True)
             self._live.start(refresh=False)
             self._tick_thread = threading.Thread(target=self._tick, daemon=True)
             self._tick_thread.start()
@@ -164,8 +184,7 @@ class ThinkingSpinner:
             if was_running and not self._state.stopped:
                 with self._lock:
                     self._state.paused = False
-                    self._live = Live(self._render(), console=self._console,
-                                       refresh_per_second=10, transient=True)
+                    self._live = Live(self._render(), console=self._console, refresh_per_second=10, transient=True)
                     self._live.start(refresh=False)
 
     def _render(self) -> Text:
@@ -223,8 +242,7 @@ class StreamRenderer:
     — callers should detect it and route to ``_legacy`` swarm rendering.
     """
 
-    def __init__(self, *, mode: str = "single",
-                  console: Console | None = None) -> None:
+    def __init__(self, *, mode: str = "single", console: Console | None = None) -> None:
         if mode not in {"single", "swarm"}:
             raise ValueError(f"unknown StreamRenderer mode: {mode!r}")
         self._mode = mode
@@ -260,8 +278,7 @@ class StreamRenderer:
         """Mark a tool call finished and emit its static line."""
         call = self._active_calls.pop(name, None)
         if call is None:
-            call = ToolCall(name=name, args=None,
-                             finished_at=time.monotonic(), summary=summary)
+            call = ToolCall(name=name, args=None, finished_at=time.monotonic(), summary=summary)
         else:
             call.finished_at = time.monotonic()
             call.summary = summary
@@ -272,9 +289,7 @@ class StreamRenderer:
         line.append("●", style=Theme.success)
         line.append("  ")
         line.append(beautify_tool_name(call.name), style=Theme.label)
-        args_preview = summarize_args(
-            call.args if isinstance(call.args, (dict, str)) else None
-        )
+        args_preview = summarize_args(call.args if isinstance(call.args, (dict, str)) else None)
         if args_preview:
             line.append(" ")
             line.append(f"({args_preview})", style=Theme.muted)
@@ -311,9 +326,15 @@ class StreamRenderer:
             self._console.print(Text("  " + line))
         self._console.print()
 
-    def print_footer(self, *, run_id: str, tool_count: int,
-                      duration_ms: int | float | None,
-                      token_count: int | None, cost: float | None) -> None:
+    def print_footer(
+        self,
+        *,
+        run_id: str,
+        tool_count: int,
+        duration_ms: int | float | None,
+        token_count: int | None,
+        cost: float | None,
+    ) -> None:
         """``/show <id> · N tool calls · 4.1s · 1.2k tokens · $0.003``."""
         from cli.utils.format import abbreviate_num, format_tokens
 

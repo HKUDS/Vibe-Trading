@@ -111,8 +111,12 @@ def _patch_gate(monkeypatch, *, mandate, halted=False):
 
 def _intent(notional=500.0, qty=None, asset=AssetClass.US_EQUITY):
     return OrderIntent(
-        symbol="AAPL", side="buy", notional_usd=notional, quantity=qty,
-        instrument_type=InstrumentType.EQUITY, asset_class=asset,
+        symbol="AAPL",
+        side="buy",
+        notional_usd=notional,
+        quantity=qty,
+        instrument_type=InstrumentType.EQUITY,
+        asset_class=asset,
     )
 
 
@@ -125,8 +129,11 @@ def test_gate_denies_without_mandate(monkeypatch) -> None:
     _patch_gate(monkeypatch, mandate=None)
     conn = _FakeConnector()
     out = gate.execute_live_order(
-        broker="alpaca", connector_module=conn, config=object(),
-        intent=_intent(), place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
+        broker="alpaca",
+        connector_module=conn,
+        config=object(),
+        intent=_intent(),
+        place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
     )
     assert out["status"] == "blocked" and out["decision"] == "deny"
     assert "mandate" in out["reason"]
@@ -137,8 +144,11 @@ def test_gate_denies_on_halt(monkeypatch) -> None:
     _patch_gate(monkeypatch, mandate=_mandate(), halted=True)
     conn = _FakeConnector()
     out = gate.execute_live_order(
-        broker="alpaca", connector_module=conn, config=object(),
-        intent=_intent(), place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
+        broker="alpaca",
+        connector_module=conn,
+        config=object(),
+        intent=_intent(),
+        place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
     )
     assert out["status"] == "blocked"
     assert "halt" in out["reason"].lower()
@@ -149,8 +159,11 @@ def test_gate_allows_in_bounds_and_places(monkeypatch) -> None:
     _patch_gate(monkeypatch, mandate=_mandate())
     conn = _FakeConnector()
     out = gate.execute_live_order(
-        broker="alpaca", connector_module=conn, config=object(),
-        intent=_intent(notional=500.0), place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
+        broker="alpaca",
+        connector_module=conn,
+        config=object(),
+        intent=_intent(notional=500.0),
+        place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
     )
     assert out["status"] == "ok" and out["order_id"] == "OID-1"
     assert len(conn.placed) == 1  # forwarded to broker
@@ -161,8 +174,11 @@ def test_gate_blocks_oversized_order(monkeypatch) -> None:
     _patch_gate(monkeypatch, mandate=_mandate(max_order=100.0))
     conn = _FakeConnector()
     out = gate.execute_live_order(
-        broker="alpaca", connector_module=conn, config=object(),
-        intent=_intent(notional=5000.0), place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 5000.0},
+        broker="alpaca",
+        connector_module=conn,
+        config=object(),
+        intent=_intent(notional=5000.0),
+        place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 5000.0},
     )
     assert out["status"] == "blocked"
     assert out["decision"] in ("pause_for_reauth", "deny")
@@ -174,7 +190,9 @@ def test_gate_blocks_disallowed_asset_class(monkeypatch) -> None:
     _patch_gate(monkeypatch, mandate=_mandate(assets=(AssetClass.US_EQUITY,)))
     conn = _FakeConnector()
     out = gate.execute_live_order(
-        broker="tiger", connector_module=conn, config=object(),
+        broker="tiger",
+        connector_module=conn,
+        config=object(),
         intent=_intent(asset=AssetClass.HK_EQUITY),
         place_kwargs={"symbol": "700.HK", "side": "buy", "notional": 500.0},
     )
@@ -187,7 +205,9 @@ def test_gate_quantity_order_priced_and_enforced(monkeypatch) -> None:
     _patch_gate(monkeypatch, mandate=_mandate(max_order=500.0))
     conn = _FakeConnector(quote_last=100.0)
     out = gate.execute_live_order(
-        broker="alpaca", connector_module=conn, config=object(),
+        broker="alpaca",
+        connector_module=conn,
+        config=object(),
         intent=_intent(notional=None, qty=10.0),
         place_kwargs={"symbol": "AAPL", "side": "buy", "quantity": 10.0},
     )
@@ -252,10 +272,15 @@ def test_trade_profiles_have_place_capability() -> None:
 def _expired_mandate():
     m = _mandate()
     return Mandate(
-        schema_version=1, hard_caps=m.hard_caps, universe=m.universe,
+        schema_version=1,
+        hard_caps=m.hard_caps,
+        universe=m.universe,
         consent=ConsentMeta(
-            created_at="2020-01-01T00:00:00+00:00", consent_token_sha256="x",
-            broker="alpaca", account_ref="a", expires_at="2020-02-01T00:00:00+00:00",
+            created_at="2020-01-01T00:00:00+00:00",
+            consent_token_sha256="x",
+            broker="alpaca",
+            account_ref="a",
+            expires_at="2020-02-01T00:00:00+00:00",
         ),
     )
 
@@ -264,8 +289,11 @@ def test_gate_denies_expired_mandate(monkeypatch) -> None:
     _patch_gate(monkeypatch, mandate=_expired_mandate())
     conn = _FakeConnector()
     out = gate.execute_live_order(
-        broker="alpaca", connector_module=conn, config=object(),
-        intent=_intent(), place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
+        broker="alpaca",
+        connector_module=conn,
+        config=object(),
+        intent=_intent(),
+        place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
     )
     assert out["status"] == "blocked" and out["requires_reauthorization"] is True
     assert conn.placed == []
@@ -286,8 +314,11 @@ def test_gate_count_consumed_only_on_success(monkeypatch) -> None:
             return {"status": "error", "error": "broker rejected"}
 
     out = gate.execute_live_order(
-        broker="alpaca", connector_module=_ErrConn(), config=object(),
-        intent=_intent(), place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
+        broker="alpaca",
+        connector_module=_ErrConn(),
+        config=object(),
+        intent=_intent(),
+        place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
     )
     assert out["status"] == "error"
     assert increments == []  # failed placement must not consume a daily count
@@ -356,8 +387,11 @@ def test_gate_connector_raise_is_caught(monkeypatch) -> None:
             raise RuntimeError("sdk boom")
 
     out = gate.execute_live_order(
-        broker="alpaca", connector_module=_RaiseConn(), config=object(),
-        intent=_intent(), place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
+        broker="alpaca",
+        connector_module=_RaiseConn(),
+        config=object(),
+        intent=_intent(),
+        place_kwargs={"symbol": "AAPL", "side": "buy", "notional": 500.0},
     )
     assert out["status"] == "error"  # raise converted to error envelope, not propagated
 
@@ -372,7 +406,9 @@ def test_gate_quantity_unpriceable_denies(monkeypatch) -> None:
     # Force the loader fallback to also fail so pricing is impossible.
     monkeypatch.setattr("src.live.sdk_order_gate.last_price_usd", lambda *a, **k: None)
     out = gate.execute_live_order(
-        broker="alpaca", connector_module=_NoQuoteConn(), config=object(),
+        broker="alpaca",
+        connector_module=_NoQuoteConn(),
+        config=object(),
         intent=_intent(notional=None, qty=5.0),
         place_kwargs={"symbol": "AAPL", "side": "buy", "quantity": 5.0},
     )
@@ -419,7 +455,21 @@ def test_okx_order_result_rejects_failed_scode() -> None:
 
     cfg = ox.OKXConfig(api_key="k", api_secret="s", passphrase="p")
     # A 200 envelope (code 0) whose per-order sCode != 0 is a FAILED order.
-    failed = ox._order_result(cfg, {"code": "0", "data": [{"sCode": "51008", "sMsg": "insufficient"}]}, symbol="BTC-USDT", side="buy", order_type="market", time_in_force="day")
+    failed = ox._order_result(
+        cfg,
+        {"code": "0", "data": [{"sCode": "51008", "sMsg": "insufficient"}]},
+        symbol="BTC-USDT",
+        side="buy",
+        order_type="market",
+        time_in_force="day",
+    )
     assert failed["status"] == "error"
-    ok = ox._order_result(cfg, {"code": "0", "data": [{"ordId": "O1", "sCode": "0"}]}, symbol="BTC-USDT", side="buy", order_type="market", time_in_force="day")
+    ok = ox._order_result(
+        cfg,
+        {"code": "0", "data": [{"ordId": "O1", "sCode": "0"}]},
+        symbol="BTC-USDT",
+        side="buy",
+        order_type="market",
+        time_in_force="day",
+    )
     assert ok["status"] == "ok" and ok["order_id"] == "O1"

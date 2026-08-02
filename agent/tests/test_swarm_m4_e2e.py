@@ -71,9 +71,7 @@ class _FakeMCPClient:
         timeout: float | int | None = None,
         raise_on_error: bool = False,
     ) -> CallToolResult:
-        self._state["call_records"].append(
-            {"name": name, "arguments": arguments or {}, "timeout": timeout}
-        )
+        self._state["call_records"].append({"name": name, "arguments": arguments or {}, "timeout": timeout})
         outcome = self._state["call_outcomes"].pop(0)
         if isinstance(outcome, Exception):
             raise outcome
@@ -227,17 +225,19 @@ def test_run_worker_uses_remote_mcp_tool_and_report_cites_canned_data(
 
     canned_payload = {"answer": "Bullish per fake KB", "source": "fake_kb"}
     state = _make_state(
-        list_outcomes=[[
-            mcp_types.Tool(
-                name="search",
-                description="Knowledge-base search",
-                inputSchema={
-                    "type": "object",
-                    "properties": {"query": {"type": "string"}},
-                    "required": ["query"],
-                },
-            )
-        ]],
+        list_outcomes=[
+            [
+                mcp_types.Tool(
+                    name="search",
+                    description="Knowledge-base search",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {"query": {"type": "string"}},
+                        "required": ["query"],
+                    },
+                )
+            ]
+        ],
         call_outcomes=[_ok_call_result(canned_payload)],
     )
     remote_tools = build_mcp_tool_wrappers(
@@ -248,9 +248,7 @@ def test_run_worker_uses_remote_mcp_tool_and_report_cites_canned_data(
 
     # Simulate two LLM turns: first one calls the remote tool, second writes
     # report.md using the (real) write_file tool, third returns final text.
-    report_body = (
-        f"# Findings\n\nRemote KB says: {canned_payload['answer']}.\n"
-    )
+    report_body = f"# Findings\n\nRemote KB says: {canned_payload['answer']}.\n"
     responses = [
         _tool_call_response(
             call_id="tc-1",
@@ -302,9 +300,7 @@ def test_run_worker_uses_remote_mcp_tool_and_report_cites_canned_data(
 
     # The remote MCP server actually got the call — i.e. the registry
     # wired up a real adapter, not a stub that swallows the args.
-    assert state["call_records"] == [
-        {"name": "search", "arguments": {"query": "AAPL outlook"}, "timeout": 7}
-    ]
+    assert state["call_records"] == [{"name": "search", "arguments": {"query": "AAPL outlook"}, "timeout": 7}]
 
 
 # --------------------------------------------------------------------------- #
@@ -325,38 +321,44 @@ def test_two_agents_with_distinct_servers_only_see_their_own_remote_tools(
     Maps to T-13 / S-02.
     """
     alpha_state = _make_state(
-        list_outcomes=[[
-            mcp_types.Tool(name="search", description="Alpha", inputSchema={"type": "object"}),
-        ]],
+        list_outcomes=[
+            [
+                mcp_types.Tool(name="search", description="Alpha", inputSchema={"type": "object"}),
+            ]
+        ],
         call_outcomes=[_ok_call_result({"alpha": True})],
     )
     beta_state = _make_state(
-        list_outcomes=[[
-            mcp_types.Tool(name="query", description="Beta", inputSchema={"type": "object"}),
-        ]],
+        list_outcomes=[
+            [
+                mcp_types.Tool(name="query", description="Beta", inputSchema={"type": "object"}),
+            ]
+        ],
         call_outcomes=[_ok_call_result({"beta": True})],
     )
 
-    alpha_tools = build_mcp_tool_wrappers(
-        "alpha", _make_server_config(), client_factory=_make_factory(alpha_state)
-    )
-    beta_tools = build_mcp_tool_wrappers(
-        "beta", _make_server_config(), client_factory=_make_factory(beta_state)
-    )
+    alpha_tools = build_mcp_tool_wrappers("alpha", _make_server_config(), client_factory=_make_factory(alpha_state))
+    beta_tools = build_mcp_tool_wrappers("beta", _make_server_config(), client_factory=_make_factory(beta_state))
 
     def _run_agent(agent_id: str, whitelist: list[str], remote_tools, tool_call: str):
-        llm_factory = _stub_llm_factory([
-            _tool_call_response(
-                call_id="tc-1", tool=tool_call, arguments={"q": "x"},
-            ),
-            _final_response(),
-        ])
+        llm_factory = _stub_llm_factory(
+            [
+                _tool_call_response(
+                    call_id="tc-1",
+                    tool=tool_call,
+                    arguments={"q": "x"},
+                ),
+                _final_response(),
+            ]
+        )
 
         with (
             patch(
                 "src.swarm.worker.build_swarm_registry",
                 wraps=lambda tool_names, *, agent_config=None, include_shell_tools=False: _registry_with_remote(
-                    tool_names, remote_tools, include_shell_tools=include_shell_tools,
+                    tool_names,
+                    remote_tools,
+                    include_shell_tools=include_shell_tools,
                 ),
             ),
             patch("src.swarm.worker.ChatLLM", llm_factory),
@@ -398,21 +400,23 @@ def test_tool_call_events_carry_mcp_metadata_and_redact_sensitive_arguments(
     R-04 + R-10.
     """
     state = _make_state(
-        list_outcomes=[[
-            mcp_types.Tool(
-                name="search",
-                description="Knowledge base",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string"},
-                        "api_key": {"type": "string"},
-                        "token": {"type": "string"},
+        list_outcomes=[
+            [
+                mcp_types.Tool(
+                    name="search",
+                    description="Knowledge base",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"},
+                            "api_key": {"type": "string"},
+                            "token": {"type": "string"},
+                        },
+                        "required": ["query"],
                     },
-                    "required": ["query"],
-                },
-            )
-        ]],
+                )
+            ]
+        ],
         call_outcomes=[
             _ok_call_result(
                 {
@@ -423,9 +427,7 @@ def test_tool_call_events_carry_mcp_metadata_and_redact_sensitive_arguments(
             )
         ],
     )
-    remote_tools = build_mcp_tool_wrappers(
-        "kb", _make_server_config(), client_factory=_make_factory(state)
-    )
+    remote_tools = build_mcp_tool_wrappers("kb", _make_server_config(), client_factory=_make_factory(state))
 
     responses = [
         _tool_call_response(
@@ -451,14 +453,18 @@ def test_tool_call_events_carry_mcp_metadata_and_redact_sensitive_arguments(
         patch(
             "src.swarm.worker.build_swarm_registry",
             wraps=lambda tool_names, *, agent_config=None, include_shell_tools=False: _registry_with_remote(
-                tool_names, remote_tools, include_shell_tools=include_shell_tools,
+                tool_names,
+                remote_tools,
+                include_shell_tools=include_shell_tools,
             ),
         ),
         patch("src.swarm.worker.ChatLLM", llm_factory),
     ):
         run_worker(
             agent_spec=_agent_spec(
-                agent_id="kb_analyst", tools=["mcp_kb_search"], max_iterations=3,
+                agent_id="kb_analyst",
+                tools=["mcp_kb_search"],
+                max_iterations=3,
             ),
             task=_task(task_id="t1", agent_id="kb_analyst"),
             upstream_summaries={},
@@ -518,18 +524,20 @@ def test_remote_tool_transport_failure_does_not_crash_worker(tmp_path: Path) -> 
     and ends in a normal completion state.
     """
     state = _make_state(
-        list_outcomes=[[
-            mcp_types.Tool(name="search", description="KB", inputSchema={"type": "object"}),
-        ]],
+        list_outcomes=[
+            [
+                mcp_types.Tool(name="search", description="KB", inputSchema={"type": "object"}),
+            ]
+        ],
         call_outcomes=[TimeoutError("simulated remote stall")],
     )
-    remote_tools = build_mcp_tool_wrappers(
-        "kb", _make_server_config(), client_factory=_make_factory(state)
-    )
+    remote_tools = build_mcp_tool_wrappers("kb", _make_server_config(), client_factory=_make_factory(state))
 
     responses = [
         _tool_call_response(
-            call_id="tc-1", tool="mcp_kb_search", arguments={"query": "x"},
+            call_id="tc-1",
+            tool="mcp_kb_search",
+            arguments={"query": "x"},
         ),
         _final_response("Tool call failed; falling back to qualitative analysis."),
     ]
@@ -541,14 +549,18 @@ def test_remote_tool_transport_failure_does_not_crash_worker(tmp_path: Path) -> 
         patch(
             "src.swarm.worker.build_swarm_registry",
             wraps=lambda tool_names, *, agent_config=None, include_shell_tools=False: _registry_with_remote(
-                tool_names, remote_tools, include_shell_tools=include_shell_tools,
+                tool_names,
+                remote_tools,
+                include_shell_tools=include_shell_tools,
             ),
         ),
         patch("src.swarm.worker.ChatLLM", llm_factory),
     ):
         result = run_worker(
             agent_spec=_agent_spec(
-                agent_id="kb_analyst", tools=["mcp_kb_search"], max_iterations=3,
+                agent_id="kb_analyst",
+                tools=["mcp_kb_search"],
+                max_iterations=3,
             ),
             task=_task(task_id="t1", agent_id="kb_analyst"),
             upstream_summaries={},

@@ -66,9 +66,7 @@ def _bare_code(code: str) -> str:
     return code.strip().upper().split(".", 1)[0]
 
 
-def _fetch_report(
-    report_name: str, *, filter_expr: str, sort_columns: str, sort_types: str
-) -> list[dict[str, Any]]:
+def _fetch_report(report_name: str, *, filter_expr: str, sort_columns: str, sort_types: str) -> list[dict[str, Any]]:
     """Pull one page of datacenter rows for a report, tolerating empty results.
 
     Args:
@@ -213,8 +211,7 @@ class DragonTigerTool(BaseTool):
                 data = tushare_fallbacks.fetch_dragon_tiger(trade_date, code)
             except Exception as fallback_exc:  # noqa: BLE001 - return both provider failures
                 return self._error(
-                    "eastmoney dragon-tiger fetch failed: "
-                    f"{exc}; tushare fallback failed: {fallback_exc}"
+                    f"eastmoney dragon-tiger fetch failed: {exc}; tushare fallback failed: {fallback_exc}"
                 )
             return json.dumps(
                 {
@@ -245,7 +242,7 @@ class DragonTigerTool(BaseTool):
         """
         appear_filter = f"(TRADE_DATE='{trade_date}')"
         if code:
-            appear_filter += f"(SECURITY_CODE=\"{code}\")"
+            appear_filter += f'(SECURITY_CODE="{code}")'
         appearances_raw = _fetch_report(
             _APPEARANCE_REPORT,
             filter_expr=appear_filter,

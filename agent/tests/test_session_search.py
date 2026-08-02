@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import pytest
@@ -28,7 +27,7 @@ class TestIndexing:
     def test_index_session(self, index: SessionSearchIndex) -> None:
         index.index_session("s1", "My first session")
         # No crash, session stored
-        results = index.search("first session")
+        index.search("first session")
         # May or may not match depending on FTS5 availability
         # At minimum: no crash
 
@@ -119,31 +118,29 @@ class TestSearch:
         explicit_ts = 1_700_000_000.0  # 2023-11-14 22:13:20 UTC
         index.index_session("s1", "Backfilled", ts=explicit_ts)
         conn = index._get_conn()
-        row = conn.execute(
-            "SELECT started_at FROM sessions WHERE id = ?", ("s1",)
-        ).fetchone()
+        row = conn.execute("SELECT started_at FROM sessions WHERE id = ?", ("s1",)).fetchone()
         assert row is not None
         assert row[0] == pytest.approx(explicit_ts)
 
-    def test_index_session_preserves_started_at_on_reupsert(
-        self, index: SessionSearchIndex
-    ) -> None:
+    def test_index_session_preserves_started_at_on_reupsert(self, index: SessionSearchIndex) -> None:
         """Re-indexing without ts must keep the original started_at."""
         original_ts = 1_700_000_000.0
         index.index_session("s1", "First", ts=original_ts)
         # Simulate a later title-only update (no ts supplied).
         index.index_session("s1", "Renamed")
         conn = index._get_conn()
-        row = conn.execute(
-            "SELECT title, started_at FROM sessions WHERE id = ?", ("s1",)
-        ).fetchone()
+        row = conn.execute("SELECT title, started_at FROM sessions WHERE id = ?", ("s1",)).fetchone()
         assert row[0] == "Renamed"
         assert row[1] == pytest.approx(original_ts)
 
     def test_search_match_to_dict(self, index: SessionSearchIndex) -> None:
         match = SearchMatch(
-            session_id="s1", title="Test", started_at="2026-01-01 00:00",
-            message_count=5, snippet="hello", rank=-1.0,
+            session_id="s1",
+            title="Test",
+            started_at="2026-01-01 00:00",
+            message_count=5,
+            snippet="hello",
+            rank=-1.0,
         )
         d = match.to_dict()
         assert d["session_id"] == "s1"
@@ -197,20 +194,28 @@ class TestReindex:
 
     def test_reindex_from_file_store(self, index: SessionSearchIndex, tmp_path: Path) -> None:
         import json
+
         store_dir = tmp_path / "sessions"
         store_dir.mkdir()
 
         # Create a fake session directory
         s_dir = store_dir / "session-001"
         s_dir.mkdir()
-        (s_dir / "session.json").write_text(json.dumps({
-            "session_id": "session-001",
-            "title": "Reindex test",
-            "created_at": "2026-01-01T00:00:00",
-        }), encoding="utf-8")
+        (s_dir / "session.json").write_text(
+            json.dumps(
+                {
+                    "session_id": "session-001",
+                    "title": "Reindex test",
+                    "created_at": "2026-01-01T00:00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
         (s_dir / "messages.jsonl").write_text(
-            json.dumps({"role": "user", "content": "reindex probe message"}) + "\n"
-            + json.dumps({"role": "assistant", "content": "reindex probe reply"}) + "\n",
+            json.dumps({"role": "user", "content": "reindex probe message"})
+            + "\n"
+            + json.dumps({"role": "assistant", "content": "reindex probe reply"})
+            + "\n",
             encoding="utf-8",
         )
 

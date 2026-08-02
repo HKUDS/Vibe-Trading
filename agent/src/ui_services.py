@@ -378,12 +378,18 @@ def _load_ohlcv_artifacts(run_dir: Path) -> List[Dict[str, Any]]:
             ts = r.get("trade_date") or r.get("timestamp") or r.get("time") or r.get("")
             if not ts:
                 continue
-            rows.append({
-                "time": ts, "timestamp": ts, "code": code,
-                "open": r.get("open", 0), "high": r.get("high", 0),
-                "low": r.get("low", 0), "close": r.get("close", 0),
-                "volume": r.get("volume", 0),
-            })
+            rows.append(
+                {
+                    "time": ts,
+                    "timestamp": ts,
+                    "code": code,
+                    "open": r.get("open", 0),
+                    "high": r.get("high", 0),
+                    "low": r.get("low", 0),
+                    "close": r.get("close", 0),
+                    "volume": r.get("volume", 0),
+                }
+            )
     return _normalize_price_rows(rows)
 
 

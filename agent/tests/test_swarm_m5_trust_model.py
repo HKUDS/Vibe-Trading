@@ -68,9 +68,7 @@ _FORBIDDEN_RUN_SWARM_PARAMETERS = frozenset(
 # is the FastMCP-supplied progress channel — it is bound by the runtime,
 # never by the caller, but it does appear in the JSON-Schema signature on
 # some FastMCP versions, so we allow it as a known-safe inclusion.
-_ALLOWED_RUN_SWARM_PARAMETERS = frozenset(
-    {"preset_name", "variables", "wait_seconds", "start_only", "ctx"}
-)
+_ALLOWED_RUN_SWARM_PARAMETERS = frozenset({"preset_name", "variables", "wait_seconds", "start_only", "ctx"})
 
 
 def _get_run_swarm_tool_schema() -> dict[str, Any]:
@@ -128,9 +126,7 @@ def test_run_swarm_schema_only_exposes_known_safe_parameters() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_run_swarm_variables_are_template_data_only_never_config(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_run_swarm_variables_are_template_data_only_never_config(monkeypatch, tmp_path: Path) -> None:
     """A caller that stuffs ``variables`` with config-shaped keys cannot
     influence which MCP server the worker reaches.
 
@@ -154,15 +150,11 @@ def test_run_swarm_variables_are_template_data_only_never_config(
     def _loader_returns_sentinel() -> AgentConfig:
         return boot_cfg
 
-    monkeypatch.setattr(
-        "src.config.load_swarm_agent_config", _loader_returns_sentinel
-    )
+    monkeypatch.setattr("src.config.load_swarm_agent_config", _loader_returns_sentinel)
 
     # Step 2 — pin the SwarmStore base dir to a tmp path so the test
     # never touches the repo-level ``.swarm/runs`` directory.
-    monkeypatch.setattr(
-        "src.swarm.store.swarm_runs_root", lambda: tmp_path / "swarm_runs"
-    )
+    monkeypatch.setattr("src.swarm.store.swarm_runs_root", lambda: tmp_path / "swarm_runs")
 
     captured: dict[str, Any] = {}
 
@@ -239,9 +231,7 @@ def test_run_swarm_variables_are_template_data_only_never_config(
     # Trust check #1: the boot-time loader was the source of agent_config.
     # The runtime saw the exact sentinel object — no copy, no derivation
     # from the caller's variables.
-    assert "construct_agent_config" in captured, (
-        "run_swarm did not construct SwarmRuntime; trust path likely broken."
-    )
+    assert "construct_agent_config" in captured, "run_swarm did not construct SwarmRuntime; trust path likely broken."
     assert captured["construct_agent_config"] is boot_cfg, (
         "SwarmRuntime was constructed with a different AgentConfig than the "
         "boot-time loader returned. The caller's variables must NEVER reach "
@@ -405,15 +395,13 @@ def test_unknown_mcp_server_tool_drops_cleanly_with_attack_shaped_variables(
     # The worker reached a terminal state — variables didn't crash the
     # pipeline by being misinterpreted as config.
     assert result.status in {"completed", "incomplete"}, (
-        f"Worker did not reach a clean terminal state: status={result.status}, "
-        f"error={getattr(result, 'error', None)!r}"
+        f"Worker did not reach a clean terminal state: status={result.status}, error={getattr(result, 'error', None)!r}"
     )
 
     # Operator-facing drop warning fired for the unknown MCP tool —
     # standard M2 contract, re-checked here from the worker entry point.
     drop_warnings = [
-        rec for rec in caplog.records
-        if "mcp_attacker_evil_tool" in rec.message and "unavailable" in rec.message
+        rec for rec in caplog.records if "mcp_attacker_evil_tool" in rec.message and "unavailable" in rec.message
     ]
     assert drop_warnings, (
         "Expected an 'unavailable' drop warning for mcp_attacker_evil_tool. "
@@ -428,9 +416,7 @@ def test_unknown_mcp_server_tool_drops_cleanly_with_attack_shaped_variables(
         f"Dropped MCP tool leaked into LLM tools= argument: {sorted(seen_names)}"
     )
     # Local tool that the preset legitimately requested *was* exposed.
-    assert "write_file" in seen_names, (
-        f"Local write_file should remain available; LLM saw: {sorted(seen_names)}"
-    )
+    assert "write_file" in seen_names, f"Local write_file should remain available; LLM saw: {sorted(seen_names)}"
 
     # Trust check: even though the caller stuffed attacker-shaped keys
     # into variables, no MCP wrapper was ever built for an attacker

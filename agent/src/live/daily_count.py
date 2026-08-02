@@ -84,16 +84,12 @@ def daily_order_lock(broker: str) -> Iterator[None]:
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         handle = path.open("a+b")
     except OSError as exc:
-        raise DailyOrderLockUnavailable(
-            f"the {broker} order-submission lock is unavailable"
-        ) from exc
+        raise DailyOrderLockUnavailable(f"the {broker} order-submission lock is unavailable") from exc
     try:
         _try_lock(handle)
     except OSError as exc:
         handle.close()
-        raise DailyOrderLockUnavailable(
-            f"another {broker} order submission is already in progress"
-        ) from exc
+        raise DailyOrderLockUnavailable(f"another {broker} order submission is already in progress") from exc
     try:
         yield
     finally:
@@ -126,9 +122,7 @@ def increment_daily_count(broker: str) -> int:
     count = read_daily_count(broker) + 1
     path = _counter_path(broker)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tmp = path.with_name(
-        f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
-    )
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps({"date": today, "count": count}, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
     return count

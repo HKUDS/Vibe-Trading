@@ -56,9 +56,7 @@ def fixed_slippage(price: float, direction: int, bps: float = 5.0) -> float:
 ### 2. Linear Impact Model
 
 ```python
-def linear_impact(price: float, direction: int,
-                  volume_traded: float, adv: float,
-                  impact_coeff: float = 0.1) -> float:
+def linear_impact(price: float, direction: int, volume_traded: float, adv: float, impact_coeff: float = 0.1) -> float:
     """
     Linear market impact: impact ∝ traded volume / ADV
 
@@ -90,9 +88,10 @@ def linear_impact(price: float, direction: int,
 ```python
 import numpy as np
 
-def sqrt_impact(price: float, direction: int,
-                volume_traded: float, adv: float,
-                volatility: float, eta: float = 0.5) -> float:
+
+def sqrt_impact(
+    price: float, direction: int, volume_traded: float, adv: float, volatility: float, eta: float = 0.5
+) -> float:
     """
     Square-root market impact (more accepted in academia):
     impact = η × σ × sqrt(V/ADV)
@@ -249,8 +248,8 @@ Implicit cost:
 class SignalEngine:
     def __init__(self):
         # Execution assumption parameters
-        self.execution_delay = 1       # T+1 delay
-        self.slippage_bps = 5          # Fixed 5bps slippage
+        self.execution_delay = 1  # T+1 delay
+        self.slippage_bps = 5  # Fixed 5bps slippage
         self.max_participation = 0.05  # Maximum participation rate 5%
 
     def generate(self, data_map):
@@ -262,7 +261,7 @@ class SignalEngine:
             delayed_signal = raw_signal.shift(self.execution_delay)
 
             # 3. Apply volume filter (do not trade when liquidity is too low)
-            volume_ok = df['volume'] > df['volume'].rolling(20).mean() * 0.3
+            volume_ok = df["volume"] > df["volume"].rolling(20).mean() * 0.3
             delayed_signal[~volume_ok] = 0
 
             signals[code] = delayed_signal

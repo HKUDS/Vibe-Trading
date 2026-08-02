@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #161
 # 简要说明: 国泰君安191短周期交易型alpha因子第161号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: Average True Range (12).
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_161"
 
 __alpha_meta__ = {
-    'id': 'gtja191_161',
-    'theme': ['volatility'],
-    'formula_latex': 'mean(true_range,12)',
-    'columns_required': ['close', 'high', 'low'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 12,
-    'min_warmup_bars': 13,
-    'notes': 'Average True Range (12).',
+    "id": "gtja191_161",
+    "theme": ["volatility"],
+    "formula_latex": "mean(true_range,12)",
+    "columns_required": ["close", "high", "low"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 12,
+    "min_warmup_bars": 13,
+    "notes": "Average True Range (12).",
 }
 
 

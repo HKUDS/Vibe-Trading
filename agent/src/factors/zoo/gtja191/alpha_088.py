@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #88
 # 简要说明: 国泰君安191短周期交易型alpha因子第88号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_088",
-    "theme": ['momentum'],
-    "formula_latex": '(CLOSE-DELAY(CLOSE,20))/DELAY(CLOSE,20)*100',
-    "columns_required": ['close'],
+    "theme": ["momentum"],
+    "formula_latex": "(CLOSE-DELAY(CLOSE,20))/DELAY(CLOSE,20)*100",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
     "min_warmup_bars": 21,
-    "notes": '20d return pct.',
+    "notes": "20d return pct.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

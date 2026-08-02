@@ -31,12 +31,8 @@ _DETAIL = "#6b7280"
 _DONE = "bold #22c55e"
 _ERROR = "bold #ef4444"
 _WARNING = "bold #f59e0b"
-_PLAIN_TAG = re.compile(
-    r"\[/?(?:#[0-9a-fA-F]{3,6}|[a-zA-Z][a-zA-Z0-9_ -]*)(?:\s+[^\]]+)?\]"
-)
-_PATH_TOKEN = re.compile(
-    r'("[^"]*[\\/][^"]*"|[A-Za-z]:[\\/][^\s,)]+|(?:\.{1,2}[\\/])?[^\s"]*[\\/][^\s"]+)'
-)
+_PLAIN_TAG = re.compile(r"\[/?(?:#[0-9a-fA-F]{3,6}|[a-zA-Z][a-zA-Z0-9_ -]*)(?:\s+[^\]]+)?\]")
+_PATH_TOKEN = re.compile(r'("[^"]*[\\/][^"]*"|[A-Za-z]:[\\/][^\s,)]+|(?:\.{1,2}[\\/])?[^\s"]*[\\/][^\s"]+)')
 
 
 @dataclass

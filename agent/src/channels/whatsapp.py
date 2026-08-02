@@ -71,9 +71,7 @@ def _load_neonize() -> _NeonizeAPI:
         from neonize.aioze.events import ConnectedEv, DisconnectedEv, MessageEv, PairStatusEv
         from neonize.utils.jid import build_jid
     except ImportError as exc:
-        raise RuntimeError(
-            'WhatsApp dependencies not installed. Run: pip install "vibe-trading-ai[whatsapp]"'
-        ) from exc
+        raise RuntimeError('WhatsApp dependencies not installed. Run: pip install "vibe-trading-ai[whatsapp]"') from exc
 
     _NEONIZE_API = _NeonizeAPI(
         NewAClient=NewAClient,
@@ -247,11 +245,7 @@ def _media_message(message: Any) -> _MediaInfo | None:
             kind="file",
             message=document,
             mimetype=str(_safe_attr(document, "mimetype", "") or "application/octet-stream"),
-            filename=str(
-                _safe_attr(document, "fileName", "")
-                or _safe_attr(document, "title", "")
-                or ""
-            ),
+            filename=str(_safe_attr(document, "fileName", "") or _safe_attr(document, "title", "") or ""),
         )
 
     sticker = _message_field(message, "stickerMessage")
@@ -382,9 +376,7 @@ class WhatsAppChannel(BaseChannel):
             if exc is not None:
                 login_result.set_exception(exc)
             else:
-                login_result.set_exception(
-                    RuntimeError("WhatsApp connection ended before login completed")
-                )
+                login_result.set_exception(RuntimeError("WhatsApp connection ended before login completed"))
 
         connect_task.add_done_callback(_on_done)
 
@@ -462,9 +454,7 @@ class WhatsAppChannel(BaseChannel):
         async def _on_disconnected(_: Any, event: Any) -> None:
             self._connected = False
             if login_result is not None and not login_result.done():
-                login_result.set_exception(
-                    RuntimeError(f"WhatsApp disconnected before login completed: {event}")
-                )
+                login_result.set_exception(RuntimeError(f"WhatsApp disconnected before login completed: {event}"))
             self.logger.warning("WhatsApp disconnected: {}", event)
 
         @client.event(api.PairStatusEv)
@@ -558,8 +548,7 @@ class WhatsAppChannel(BaseChannel):
         }
         if not self.is_allowed(sender_id):
             self.logger.info(
-                "Passing unauthorized WhatsApp sender {} to pairing flow "
-                "(phone={}, lid={}, chat={})",
+                "Passing unauthorized WhatsApp sender {} to pairing flow (phone={}, lid={}, chat={})",
                 sender_id,
                 phone_id or "",
                 lid_id or "",
@@ -626,11 +615,7 @@ class WhatsAppChannel(BaseChannel):
         if not self._self_jids:
             return False
         for context in _context_infos(message):
-            participant = _normalize_jid(
-                _safe_attr(context, "participant")
-                or _safe_attr(context, "Participant")
-                or ""
-            )
+            participant = _normalize_jid(_safe_attr(context, "participant") or _safe_attr(context, "Participant") or "")
             if participant in self._self_jids or _bare_jid(participant) in self._self_jids:
                 return True
         return False

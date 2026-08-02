@@ -35,11 +35,7 @@ def test_infer_indicator_periods_drops_nonpositive(tmp_path: Path) -> None:
         json.dumps(
             {
                 "coding_contract": {
-                    "input_logic": {
-                        "parameters": {
-                            "signal_params": {"ma_window": 0, "ma_fast": 5, "ma_slow": -3}
-                        }
-                    }
+                    "input_logic": {"parameters": {"signal_params": {"ma_window": 0, "ma_fast": 5, "ma_slow": -3}}}
                 }
             }
         )

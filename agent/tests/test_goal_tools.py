@@ -48,10 +48,7 @@ def test_local_goal_tools_use_injected_session(tmp_path: Path) -> None:
 
     assert evidence["status"] == "ok"
     assert evidence["snapshot"]["evidence_count"] == 1
-    assert (
-        evidence["evidence"]["criterion_id"]
-        == created["snapshot"]["criteria"][1]["criterion_id"]
-    )
+    assert evidence["evidence"]["criterion_id"] == created["snapshot"]["criteria"][1]["criterion_id"]
 
 
 def test_goal_tool_without_session_returns_validation_error(tmp_path: Path) -> None:

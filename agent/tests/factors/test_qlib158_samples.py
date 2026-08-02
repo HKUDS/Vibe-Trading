@@ -11,6 +11,7 @@ Panel construction matches the spec in the task brief:
     same way as ``test_lookahead._baseline_panel`` (random walk close;
     open from shift; high/low bracketing; volume integer-cast).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -33,22 +34,32 @@ def _build_panel(seed: int = 42, n_rows: int = 30, n_cols: int = 5) -> dict[str,
     rs = np.random.RandomState(seed)
     idx = pd.date_range("2024-01-01", periods=n_rows, freq="D")
     cols = [f"S{i}" for i in range(n_cols)]
-    close = pd.DataFrame(
-        100.0 + np.cumsum(rs.normal(0.0, 1.0, size=(n_rows, n_cols)), axis=0),
-        index=idx, columns=cols,
-    ).abs() + 1.0
+    close = (
+        pd.DataFrame(
+            100.0 + np.cumsum(rs.normal(0.0, 1.0, size=(n_rows, n_cols)), axis=0),
+            index=idx,
+            columns=cols,
+        ).abs()
+        + 1.0
+    )
     open_ = close.shift(1).fillna(close.iloc[0])
     high = pd.DataFrame(
         np.maximum(close.to_numpy(), open_.to_numpy()) + rs.uniform(0.0, 1.0, size=(n_rows, n_cols)),
-        index=idx, columns=cols,
+        index=idx,
+        columns=cols,
     )
-    low = pd.DataFrame(
-        np.minimum(close.to_numpy(), open_.to_numpy()) - rs.uniform(0.0, 1.0, size=(n_rows, n_cols)),
-        index=idx, columns=cols,
-    ).abs() + 0.01
+    low = (
+        pd.DataFrame(
+            np.minimum(close.to_numpy(), open_.to_numpy()) - rs.uniform(0.0, 1.0, size=(n_rows, n_cols)),
+            index=idx,
+            columns=cols,
+        ).abs()
+        + 0.01
+    )
     volume = pd.DataFrame(
         rs.randint(1000, 100_000, size=(n_rows, n_cols)).astype(float),
-        index=idx, columns=cols,
+        index=idx,
+        columns=cols,
     )
     return {"open": open_, "high": high, "low": low, "close": close, "volume": volume}
 
@@ -67,11 +78,11 @@ def registry() -> Registry:
 
 
 SAMPLED_ALPHAS = [
-    "qlib158_kmid",      # K-bar microstructure
-    "qlib158_ma5",       # momentum / moving average
-    "qlib158_std20",     # momentum / volatility window
-    "qlib158_corr10",    # volume × close correlation
-    "qlib158_vsumd20",   # volume directional sum delta
+    "qlib158_kmid",  # K-bar microstructure
+    "qlib158_ma5",  # momentum / moving average
+    "qlib158_std20",  # momentum / volatility window
+    "qlib158_corr10",  # volume × close correlation
+    "qlib158_vsumd20",  # volume directional sum delta
 ]
 
 
@@ -87,12 +98,9 @@ def test_alpha_matches_golden(alpha_id: str, panel: dict[str, pd.DataFrame], reg
 
     # Column / shape match
     assert list(actual.columns) == list(expected.columns), (
-        f"{alpha_id}: column mismatch actual={list(actual.columns)} "
-        f"expected={list(expected.columns)}"
+        f"{alpha_id}: column mismatch actual={list(actual.columns)} expected={list(expected.columns)}"
     )
-    assert actual.shape == expected.shape, (
-        f"{alpha_id}: shape mismatch actual={actual.shape} expected={expected.shape}"
-    )
+    assert actual.shape == expected.shape, f"{alpha_id}: shape mismatch actual={actual.shape} expected={expected.shape}"
 
     # Value equality at 1e-6 relative tolerance, NaN-equal.
     np.testing.assert_allclose(

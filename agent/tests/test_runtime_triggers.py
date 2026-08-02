@@ -107,14 +107,14 @@ def test_unknown_market_fails_loud() -> None:
 
 
 def test_due_now_market_delegates_to_session() -> None:
-    trig = Trigger.market("us_equity")
+    trig = Trigger.for_market("us_equity")
     assert due_now(trig, _ms(*_FRI, 12, 0, "America/New_York")) is True
     assert due_now(trig, _ms(*_SAT, 12, 0, "America/New_York")) is False
 
 
 def test_market_trigger_rejects_unknown_market() -> None:
     with pytest.raises(ValueError):
-        Trigger.market("nope")
+        Trigger.for_market("nope")
 
 
 def test_market_trigger_without_market_raises() -> None:
@@ -214,7 +214,7 @@ def test_market_is_open_wrapper_delegates_to_pure_core(monkeypatch: pytest.Monke
 def test_due_now_at_wrapper_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
     fixed = _ms(*_FRI, 12, 0, "America/New_York")
     monkeypatch.setattr(triggers, "_now_ms", lambda: fixed)
-    trig = Trigger.market("us_equity")
+    trig = Trigger.for_market("us_equity")
     assert triggers.due_now_at(trig) is True
     assert triggers.due_now_at(trig) == due_now(trig, fixed)
 

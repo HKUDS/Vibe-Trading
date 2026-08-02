@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #20 - 量价协方差
 # 简要说明: (-1 * RANK(DELTA(VWAP,1)) * SIGN(DELTA(CLOSE,1)))，VWAP变化与价格变化方向的乘积取反。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_020",
-    "theme": ['momentum'],
-    "formula_latex": '((CLOSE-DELAY(CLOSE,6))/DELAY(CLOSE,6))*100',
-    "columns_required": ['close'],
+    "theme": ["momentum"],
+    "formula_latex": "((CLOSE-DELAY(CLOSE,6))/DELAY(CLOSE,6))*100",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 6,
     "min_warmup_bars": 7,
-    "notes": '6d return in pct.',
+    "notes": "6d return in pct.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

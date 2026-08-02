@@ -8,7 +8,6 @@
 
 from typing import Dict, List, Optional, Tuple
 
-import numpy as np
 import pandas as pd
 
 
@@ -19,26 +18,26 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 PATTERNS = {
     "Gartley": {
-        "b_retrace": (0.55, 0.68),   # AB / XA ≈ 0.618
-        "d_retrace": (0.72, 0.84),   # AD / XA ≈ 0.786
+        "b_retrace": (0.55, 0.68),  # AB / XA ≈ 0.618
+        "d_retrace": (0.72, 0.84),  # AD / XA ≈ 0.786
         "bc_ratio": (0.382, 0.886),  # BC / AB
-        "cd_ratio": (1.27, 1.618),   # CD / BC
+        "cd_ratio": (1.27, 1.618),  # CD / BC
     },
     "Bat": {
-        "b_retrace": (0.33, 0.55),   # AB / XA ≈ 0.382-0.5
-        "d_retrace": (0.82, 0.94),   # AD / XA ≈ 0.886
+        "b_retrace": (0.33, 0.55),  # AB / XA ≈ 0.382-0.5
+        "d_retrace": (0.82, 0.94),  # AD / XA ≈ 0.886
         "bc_ratio": (0.382, 0.886),
         "cd_ratio": (1.618, 2.618),
     },
     "Butterfly": {
-        "b_retrace": (0.72, 0.84),   # AB / XA ≈ 0.786
-        "d_retrace": (1.20, 1.38),   # AD / XA ≈ 1.27 (超出X)
+        "b_retrace": (0.72, 0.84),  # AB / XA ≈ 0.786
+        "d_retrace": (1.20, 1.38),  # AD / XA ≈ 1.27 (超出X)
         "bc_ratio": (0.382, 0.886),
         "cd_ratio": (1.618, 2.618),
     },
     "Crab": {
-        "b_retrace": (0.33, 0.68),   # AB / XA ≈ 0.382-0.618
-        "d_retrace": (1.52, 1.72),   # AD / XA ≈ 1.618 (最远延伸)
+        "b_retrace": (0.33, 0.68),  # AB / XA ≈ 0.382-0.618
+        "d_retrace": (1.52, 1.72),  # AD / XA ≈ 1.618 (最远延伸)
         "bc_ratio": (0.382, 0.886),
         "cd_ratio": (2.24, 3.618),
     },
@@ -161,15 +160,9 @@ def _classify_pattern(
     ad = abs(d_price - a_price)
     d_retrace = ad / xa
 
-    bc_ratio = bc / ab
-    cd_ratio = cd / bc if bc != 0 else 0.0
-
     for name, rules in PATTERNS.items():
         # Primary validation: B retrace and D retrace (most important)
-        if (
-            _in_range(b_retrace, *rules["b_retrace"], tol=tol)
-            and _in_range(d_retrace, *rules["d_retrace"], tol=tol)
-        ):
+        if _in_range(b_retrace, *rules["b_retrace"], tol=tol) and _in_range(d_retrace, *rules["d_retrace"], tol=tol):
             return name
     return None
 
@@ -213,9 +206,7 @@ def _detect_patterns_fallback(
         if not alternating:
             continue
 
-        pattern_name = _classify_pattern(
-            x_price, a_price, b_price, c_price, d_price, tol=tol
-        )
+        pattern_name = _classify_pattern(x_price, a_price, b_price, c_price, d_price, tol=tol)
         if pattern_name is None:
             continue
 
@@ -294,9 +285,7 @@ def _detect_patterns_pyharmonics(
 
                         found.append(
                             {
-                                "pattern": str(
-                                    getattr(p, "name", pattern_type)
-                                ),
+                                "pattern": str(getattr(p, "name", pattern_type)),
                                 "direction": direction_label,
                                 "d_index": d_ts,
                                 "d_price": float(d_price),
@@ -357,6 +346,7 @@ class SignalEngine:
         """
         try:
             from pyharmonics.technicals import OHLCTechnicals  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -374,18 +364,12 @@ class SignalEngine:
         """
         if self.use_pyharmonics:
             try:
-                return _detect_patterns_pyharmonics(
-                    df, is_stock=self.is_stock
-                )
+                return _detect_patterns_pyharmonics(df, is_stock=self.is_stock)
             except Exception:
                 pass
-        return _detect_patterns_fallback(
-            df, swing_window=self.swing_window, tol=self.tol
-        )
+        return _detect_patterns_fallback(df, swing_window=self.swing_window, tol=self.tol)
 
-    def generate(
-        self, data_map: Dict[str, pd.DataFrame]
-    ) -> Dict[str, pd.Series]:
+    def generate(self, data_map: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
         """根据谐波形态在 D 点生成交易信号。
 
         Args:
@@ -423,9 +407,7 @@ class SignalEngine:
 # ========================== OKX 数据获取 ====================================
 
 
-def _fetch_okx(
-    inst_id: str, bar: str = "1D", limit: int = 300
-) -> pd.DataFrame:
+def _fetch_okx(inst_id: str, bar: str = "1D", limit: int = 300) -> pd.DataFrame:
     """从 OKX API 获取K线数据。
 
     Args:
@@ -447,8 +429,15 @@ def _fetch_okx(
     )
     candles = resp.json()["data"]
     columns = [
-        "ts", "open", "high", "low", "close",
-        "vol", "volCcy", "volCcyQuote", "confirm",
+        "ts",
+        "open",
+        "high",
+        "low",
+        "close",
+        "vol",
+        "volCcy",
+        "volCcyQuote",
+        "confirm",
     ]
     df = pd.DataFrame(reversed(candles), columns=columns)
     df["ts"] = pd.to_datetime(df["ts"].astype("int64"), unit="ms")
@@ -470,11 +459,7 @@ if __name__ == "__main__":
     for sym in symbols:
         print(f"获取 {sym} 数据...")
         data_map[sym] = _fetch_okx(sym, bar="1D", limit=300)
-        print(
-            f"  {len(data_map[sym])} 根K线, "
-            f"{data_map[sym].index[0]:%Y-%m-%d} ~ "
-            f"{data_map[sym].index[-1]:%Y-%m-%d}"
-        )
+        print(f"  {len(data_map[sym])} 根K线, {data_map[sym].index[0]:%Y-%m-%d} ~ {data_map[sym].index[-1]:%Y-%m-%d}")
 
     engine = SignalEngine(is_stock=False)
     backend = "pyharmonics" if engine.use_pyharmonics else "内置检测器"
@@ -502,9 +487,6 @@ if __name__ == "__main__":
         if patterns:
             print(f"\n{sym}: 共 {len(patterns)} 个形态")
             for p in patterns[-5:]:  # 最近5个
-                print(
-                    f"  {p['pattern']} ({p['direction']}) "
-                    f"D点: {p['d_index']}"
-                )
+                print(f"  {p['pattern']} ({p['direction']}) D点: {p['d_index']}")
         else:
             print(f"\n{sym}: 无检测到形态")

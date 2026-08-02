@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #98
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第98号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_098"
 
 __alpha_meta__ = {
-    'id': 'alpha101_098',
-    'nickname': 'Kakushadze Alpha #98',
-    'theme': ['volume'],
-    'formula_latex': 'rank(decay_linear(correlation(vwap, sum(adv5,26), 5), 7)) - rank(decay_linear(Ts_Rank(Ts_ArgMin(correlation(rank(open), rank(adv15), 21), 9), 7), 8))',
-    'columns_required': ['open', 'volume', 'vwap', 'close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 56,
-    'notes': '',
+    "id": "alpha101_098",
+    "nickname": "Kakushadze Alpha #98",
+    "theme": ["volume"],
+    "formula_latex": "rank(decay_linear(correlation(vwap, sum(adv5,26), 5), 7)) - rank(decay_linear(Ts_Rank(Ts_ArgMin(correlation(rank(open), rank(adv15), 21), 9), 7), 8))",
+    "columns_required": ["open", "volume", "vwap", "close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 56,
+    "notes": "",
 }
 
 

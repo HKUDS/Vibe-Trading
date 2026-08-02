@@ -42,13 +42,12 @@ class TestBuildFrontendCmd:
         assert steps[0][1] == "install"
         # Subsequent steps must pin --package= so npx/npm exec cannot
         # accidentally fetch the abandoned `tsc` package.
-        assert any(
-            "--package=typescript" in step and "tsc" in step for step in steps[1:]
-        ), f"expected an explicit typescript pin, got: {steps[1:]}"
-        assert any(
-            "--package=vite" in step and "vite" in step and "build" in step
-            for step in steps[1:]
-        ), f"expected an explicit vite build pin, got: {steps[1:]}"
+        assert any("--package=typescript" in step and "tsc" in step for step in steps[1:]), (
+            f"expected an explicit typescript pin, got: {steps[1:]}"
+        )
+        assert any("--package=vite" in step and "vite" in step and "build" in step for step in steps[1:]), (
+            f"expected an explicit vite build pin, got: {steps[1:]}"
+        )
 
     def test_posix_uses_npm_run_build(self) -> None:
         with patch.object(cli._legacy.sys, "platform", "linux"):
@@ -128,9 +127,7 @@ class TestCmdSetupRunsSteps:
         with patch.object(cli._legacy, "_resolve_node_and_npm", return_value=("/usr/bin/node", "/usr/bin/npm")):
             with patch.object(cli._legacy, "_is_windows", return_value=False):
                 with patch("cli._legacy.subprocess.run") as mock_run:
-                    mock_run.return_value = MagicMock(
-                        returncode=1, stdout="", stderr="boom: failed"
-                    )
+                    mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="boom: failed")
                     rc = cli._legacy.cmd_setup(frontend_dir=frontend_dir)
 
         assert rc == cli._legacy.EXIT_RUN_FAILED
@@ -255,9 +252,7 @@ class TestCmdDev:
             return_value=("/usr/bin/node", "/usr/bin/npm"),
         ):
             with patch("cli._legacy.subprocess.Popen", side_effect=[backend, frontend]):
-                with patch.object(
-                    cli._legacy.time, "sleep", side_effect=KeyboardInterrupt
-                ):
+                with patch.object(cli._legacy.time, "sleep", side_effect=KeyboardInterrupt):
                     rc = cli._legacy.cmd_dev(frontend_dir=frontend_dir)
 
         assert rc == cli._legacy.EXIT_SUCCESS

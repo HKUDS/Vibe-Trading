@@ -36,10 +36,10 @@ def test_clean_num_handles_wide_comma() -> None:
 
 def test_is_valid_label_filters_noise() -> None:
     assert _is_valid_label("营业收入") is True
-    assert _is_valid_label("来源") is False     # skip-listed
-    assert _is_valid_label("a") is False        # too short
-    assert _is_valid_label("2024") is False     # year only
-    assert _is_valid_label("+56%") is False     # bare growth rate
+    assert _is_valid_label("来源") is False  # skip-listed
+    assert _is_valid_label("a") is False  # too short
+    assert _is_valid_label("2024") is False  # year only
+    assert _is_valid_label("+56%") is False  # bare growth rate
 
 
 # ── extract_data_points ───────────────────────────────────────────────────
@@ -59,9 +59,9 @@ _REPORT_MD = (
 def test_extract_finds_table_and_kv_points() -> None:
     points = extract_data_points(_REPORT_MD)
     labels = {p["label"] for p in points}
-    assert "收入" in labels              # KV line
-    assert "毛利率" in labels            # KV line
-    assert "营业收入 · 2024" in labels   # table cell
+    assert "收入" in labels  # KV line
+    assert "毛利率" in labels  # KV line
+    assert "营业收入 · 2024" in labels  # table cell
     assert "净利润 · 2024" in labels
     for p in points:
         assert {"id", "label", "reported_value", "unit", "line_number"} <= set(p)
@@ -77,8 +77,7 @@ def test_extract_assigns_unique_ids() -> None:
 
 def _pts(n: int) -> list[dict[str, Any]]:
     return [
-        {"id": i, "label": f"l{i}", "reported_value": float(i), "unit": "",
-         "line_number": i, "raw_text": ""}
+        {"id": i, "label": f"l{i}", "reported_value": float(i), "unit": "", "line_number": i, "raw_text": ""}
         for i in range(n)
     ]
 
@@ -111,52 +110,95 @@ def test_pct_diff() -> None:
 
 
 def test_verdict_single_source_pass() -> None:
-    out = render_verdict([{
-        "id": 1, "label": "rev", "reported_value": 100, "unit": "",
-        "fetched_value": 100.5, "fetched_source": "m",
-    }])
+    out = render_verdict(
+        [
+            {
+                "id": 1,
+                "label": "rev",
+                "reported_value": 100,
+                "unit": "",
+                "fetched_value": 100.5,
+                "fetched_source": "m",
+            }
+        ]
+    )
     assert out["verdict"] == "PASS"
     assert out["pass_count"] == 1 and out["fail_count"] == 0
 
 
 def test_verdict_single_source_fail_fails_report() -> None:
     # Regression: a single-source failure must FAIL, not silently WARN.
-    out = render_verdict([{
-        "id": 1, "label": "rev", "reported_value": 100, "unit": "",
-        "fetched_value": 150, "fetched_source": "m",
-    }])
+    out = render_verdict(
+        [
+            {
+                "id": 1,
+                "label": "rev",
+                "reported_value": 100,
+                "unit": "",
+                "fetched_value": 150,
+                "fetched_source": "m",
+            }
+        ]
+    )
     assert out["verdict"] == "FAIL"
     assert out["fail_count"] == 1
     assert out["fail_items"][0]["label"] == "rev"
 
 
 def test_verdict_two_sources_both_pass() -> None:
-    out = render_verdict([{
-        "id": 1, "label": "rev", "reported_value": 100, "unit": "",
-        "fetched_value": 100.5, "fetched_source": "m",
-        "fetched_value2": 99.8, "fetched_source2": "s",
-    }])
+    out = render_verdict(
+        [
+            {
+                "id": 1,
+                "label": "rev",
+                "reported_value": 100,
+                "unit": "",
+                "fetched_value": 100.5,
+                "fetched_source": "m",
+                "fetched_value2": 99.8,
+                "fetched_source2": "s",
+            }
+        ]
+    )
     assert out["verdict"] == "PASS"
     assert out["pass_count"] == 1
 
 
 def test_verdict_two_sources_both_fail() -> None:
-    out = render_verdict([{
-        "id": 1, "label": "rev", "reported_value": 100, "unit": "",
-        "fetched_value": 150, "fetched_source": "m",
-        "fetched_value2": 200, "fetched_source2": "s",
-    }])
+    out = render_verdict(
+        [
+            {
+                "id": 1,
+                "label": "rev",
+                "reported_value": 100,
+                "unit": "",
+                "fetched_value": 150,
+                "fetched_source": "m",
+                "fetched_value2": 200,
+                "fetched_source2": "s",
+            }
+        ]
+    )
     assert out["verdict"] == "FAIL"
     assert out["fail_count"] == 1
 
 
 def test_verdict_two_sources_split_is_warn_not_fail() -> None:
     # One source agrees, one misses -> caliber mismatch, not a hard fail.
-    out = render_verdict([{
-        "id": 1, "label": "rev", "reported_value": 100, "unit": "",
-        "fetched_value": 100.5, "fetched_source": "m",
-        "fetched_value2": 150, "fetched_source2": "s",
-    }])
+    out = render_verdict(
+        [
+            {
+                "id": 1,
+                "label": "rev",
+                "reported_value": 100,
+                "unit": "",
+                "fetched_value": 100.5,
+                "fetched_source": "m",
+                "fetched_value2": 150,
+                "fetched_source2": "s",
+            }
+        ]
+    )
     assert out["verdict"] == "PASS"
     assert out["warn_count"] == 1 and out["fail_count"] == 0
 
@@ -211,8 +253,7 @@ def test_execute_verdict_missing_reported_value_is_reported_not_certified() -> N
     """End-to-end through the tool envelope: unverifiable evidence fails."""
     raw = ReportAuditTool().execute(
         command="verdict",
-        results=[{"id": 1, "label": "rev", "reported_value": None,
-                  "fetched_value": 0.0, "fetched_source": "m"}],
+        results=[{"id": 1, "label": "rev", "reported_value": None, "fetched_value": 0.0, "fetched_source": "m"}],
     )
     assert "NaN" not in raw and "Infinity" not in raw
     env = json.loads(raw)
@@ -222,12 +263,13 @@ def test_execute_verdict_missing_reported_value_is_reported_not_certified() -> N
 
 
 def test_verdict_skips_points_without_fetched_value() -> None:
-    out = render_verdict([
-        {"id": 1, "label": "a", "reported_value": 100, "fetched_value": None},
-        {"id": 2, "label": "b", "reported_value": 100,
-         "fetched_value": 100, "fetched_source": "m"},
-    ])
-    assert out["total"] == 1   # only the verified point counts
+    out = render_verdict(
+        [
+            {"id": 1, "label": "a", "reported_value": 100, "fetched_value": None},
+            {"id": 2, "label": "b", "reported_value": 100, "fetched_value": 100, "fetched_source": "m"},
+        ]
+    )
+    assert out["total"] == 1  # only the verified point counts
     assert out["verdict"] == "PASS"
 
 
@@ -263,10 +305,18 @@ def test_execute_extract_happy() -> None:
 
 
 def test_execute_verdict_fail() -> None:
-    env = _run(command="verdict", results=[{
-        "id": 1, "label": "rev", "reported_value": 100,
-        "fetched_value": 150, "fetched_source": "m",
-    }])
+    env = _run(
+        command="verdict",
+        results=[
+            {
+                "id": 1,
+                "label": "rev",
+                "reported_value": 100,
+                "fetched_value": 150,
+                "fetched_source": "m",
+            }
+        ],
+    )
     assert env["status"] == "ok"
     assert env["verdict"] == "FAIL"
 
@@ -275,10 +325,15 @@ def test_execute_verdict_zero_reported_emits_strict_json() -> None:
     """reported=0 vs nonzero fetched must not emit bare Infinity tokens."""
     raw = ReportAuditTool().execute(
         command="verdict",
-        results=[{
-            "id": 1, "label": "zero", "reported_value": 0,
-            "fetched_value": 5, "fetched_source": "m",
-        }],
+        results=[
+            {
+                "id": 1,
+                "label": "zero",
+                "reported_value": 0,
+                "fetched_value": 5,
+                "fetched_source": "m",
+            }
+        ],
     )
     assert "Infinity" not in raw
     env = json.loads(raw)

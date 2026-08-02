@@ -237,8 +237,10 @@ class TestChatOpenAIWithReasoningNonStreaming:
 
         result = instance._create_chat_result(response)
 
-        assert result.generations[0].message.additional_kwargs["reasoning_content"] == \
-            "step-by-step reasoning from provider"
+        assert (
+            result.generations[0].message.additional_kwargs["reasoning_content"]
+            == "step-by-step reasoning from provider"
+        )
 
     def test_preserves_tool_call_thought_signatures_on_response(self) -> None:
         instance = self._instance(model="gemini-3-pro-preview")
@@ -328,9 +330,7 @@ class TestChatOpenAIWithReasoningStreaming:
         from langchain_core.messages import AIMessageChunk
 
         instance = self._instance()
-        chunk = self._delta_chunk(
-            {"role": "assistant", "content": "", "reasoning_content": "thinking step"}
-        )
+        chunk = self._delta_chunk({"role": "assistant", "content": "", "reasoning_content": "thinking step"})
 
         gen_chunk = instance._convert_chunk_to_generation_chunk(chunk, AIMessageChunk, None)
 
@@ -427,8 +427,7 @@ class TestChatOpenAIWithReasoningStreaming:
 
         assert gen_chunk is not None
         # Canonical key — not "reasoning"
-        assert gen_chunk.message.additional_kwargs["reasoning_content"] == \
-            "openrouter-style reasoning"
+        assert gen_chunk.message.additional_kwargs["reasoning_content"] == "openrouter-style reasoning"
         assert "reasoning" not in gen_chunk.message.additional_kwargs
 
     def test_reasoning_content_takes_priority_over_reasoning(self) -> None:
@@ -494,8 +493,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
                 additional_kwargs={
                     "reasoning_content": "I should call a tool",
                     "tool_calls": [
-                        {"id": "c1", "type": "function",
-                         "function": {"name": "t", "arguments": "{}"}},
+                        {"id": "c1", "type": "function", "function": {"name": "t", "arguments": "{}"}},
                     ],
                 },
             ),
@@ -518,8 +516,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
                 content="",
                 additional_kwargs={
                     "tool_calls": [
-                        {"id": "c1", "type": "function",
-                         "function": {"name": "t", "arguments": "{}"}},
+                        {"id": "c1", "type": "function", "function": {"name": "t", "arguments": "{}"}},
                     ],
                 },
             ),
@@ -545,8 +542,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
                         {"id": "c1", "index": 0, "thought_signature": "sig-a"},
                     ],
                     "tool_calls": [
-                        {"id": "c1", "type": "function",
-                         "function": {"name": "t", "arguments": "{}"}},
+                        {"id": "c1", "type": "function", "function": {"name": "t", "arguments": "{}"}},
                     ],
                 },
             ),
@@ -604,8 +600,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
 
         instance = self._instance(model="gemini-3-pro-preview")
         tool_calls = [
-            ToolCallRequest(id="c1", name="load_skill",
-                            arguments={"name": "momentum"}, thought_signature="sig-a"),
+            ToolCallRequest(id="c1", name="load_skill", arguments={"name": "momentum"}, thought_signature="sig-a"),
         ]
         assistant = ContextBuilder.format_assistant_tool_calls(tool_calls)
         _attach_tool_call_thought_signatures(assistant, tool_calls)
@@ -730,8 +725,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
                         {"id": "c1", "index": 0, "thought_signature": "sig-a"},
                     ],
                     "tool_calls": [
-                        {"id": "c1", "type": "function",
-                         "function": {"name": "t", "arguments": "{}"}},
+                        {"id": "c1", "type": "function", "function": {"name": "t", "arguments": "{}"}},
                     ],
                 },
             ),

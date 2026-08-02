@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #187
 # 简要说明: 国泰君安191短周期交易型alpha因子第187号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     SUM((OPEN<=DELAY(OPEN,1) ? 0 : MAX(HIGH-OPEN, OPEN-DELAY(OPEN,1))), 20)
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_187"
 
 __alpha_meta__ = {
-    'id': 'gtja191_187',
-    'theme': ['reversal'],
-    'formula_latex': 'see body',
-    'columns_required': ['open', 'high'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 21,
-    'notes': '',
+    "id": "gtja191_187",
+    "theme": ["reversal"],
+    "formula_latex": "see body",
+    "columns_required": ["open", "high"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 21,
+    "notes": "",
 }
 
 

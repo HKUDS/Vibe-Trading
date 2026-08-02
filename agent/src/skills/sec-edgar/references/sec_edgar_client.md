@@ -19,7 +19,7 @@ The ticker→CIK table is fetched once per process from `company_tickers.json` a
 ```python
 from backtest.loaders.sec_edgar_client import cik_for
 
-cik = cik_for("AAPL")   # "0000320193"
+cik = cik_for("AAPL")  # "0000320193"
 missing = cik_for("NOT_A_TICKER")  # None
 ```
 

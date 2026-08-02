@@ -72,9 +72,7 @@ def _hypothesis_payload(hyp: Hypothesis) -> dict[str, Any]:
 def _emit_table(rows: list[Hypothesis]) -> None:
     if Table is None:
         for hyp in rows:
-            print(
-                f"{hyp.hypothesis_id}\t{hyp.status}\t{hyp.title}\t{hyp.updated_at}"
-            )
+            print(f"{hyp.hypothesis_id}\t{hyp.status}\t{hyp.title}\t{hyp.updated_at}")
         return
     table = Table(title=f"Hypotheses ({len(rows)})", show_lines=False)
     table.add_column("ID", style="bold", overflow="fold")
@@ -122,9 +120,7 @@ def _emit_detail(hyp: Hypothesis) -> None:
     if hyp.signal_definition:
         body_lines.extend(["", "[bold]Signal[/bold]", hyp.signal_definition])
     if hyp.invalidation_notes:
-        body_lines.extend(
-            ["", "[bold red]Invalidation notes[/bold red]", hyp.invalidation_notes]
-        )
+        body_lines.extend(["", "[bold red]Invalidation notes[/bold red]", hyp.invalidation_notes])
     if hyp.run_cards:
         body_lines.append("")
         body_lines.append(f"[bold]Linked run cards ({len(hyp.run_cards)})[/bold]")
@@ -133,9 +129,7 @@ def _emit_detail(hyp: Hypothesis) -> None:
             run_dir = link.get("backtest_run_dir") or "-"
             note = link.get("notes") or ""
             linked_at = link.get("linked_at") or "-"
-            body_lines.append(
-                f"  {idx}. run_card={run_card_path} run_dir={run_dir} linked={linked_at}"
-            )
+            body_lines.append(f"  {idx}. run_card={run_card_path} run_dir={run_dir} linked={linked_at}")
             if note:
                 body_lines.append(f"     note: {note}")
     _console.print(Panel("\n".join(body_lines), title=hyp.title, expand=False))
@@ -203,10 +197,7 @@ def _cmd_invalidate(args: argparse.Namespace) -> int:
     if getattr(args, "json", False):
         print(json.dumps(hyp.to_dict(), ensure_ascii=False, indent=2))
     else:
-        _print(
-            f"[red]rejected[/red] {hyp.hypothesis_id} — {hyp.title}"
-            + (f"\n  note: {note}" if note else "")
-        )
+        _print(f"[red]rejected[/red] {hyp.hypothesis_id} — {hyp.title}" + (f"\n  note: {note}" if note else ""))
     return 0
 
 
@@ -236,16 +227,11 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
         "hypothesis",
         help="Hypothesis Registry: list / show / invalidate",
     )
-    hyp_parser.add_argument(
-        "--verbose", action="store_true", help="Show full traceback on errors"
-    )
+    hyp_parser.add_argument("--verbose", action="store_true", help="Show full traceback on errors")
     hyp_parser.add_argument(
         "--path",
         default=None,
-        help=(
-            "Override registry JSON path (also respects "
-            "VIBE_TRADING_HYPOTHESES_PATH env var)"
-        ),
+        help=("Override registry JSON path (also respects VIBE_TRADING_HYPOTHESES_PATH env var)"),
     )
     hyp_sub = hyp_parser.add_subparsers(dest="hypothesis_command")
 
@@ -276,12 +262,8 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
         help="Emit JSON object instead of a panel",
     )
 
-    p_invalidate = hyp_sub.add_parser(
-        "invalidate", help="Mark a hypothesis as rejected with optional notes"
-    )
-    p_invalidate.add_argument(
-        "hypothesis_id", help="Hypothesis id to invalidate"
-    )
+    p_invalidate = hyp_sub.add_parser("invalidate", help="Mark a hypothesis as rejected with optional notes")
+    p_invalidate.add_argument("hypothesis_id", help="Hypothesis id to invalidate")
     p_invalidate.add_argument(
         "--note",
         default="",

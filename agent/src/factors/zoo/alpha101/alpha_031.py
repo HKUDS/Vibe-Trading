@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #31
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第31号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_031"
 
 __alpha_meta__ = {
-    'id': 'alpha101_031',
-    'nickname': 'Kakushadze Alpha #31',
-    'theme': ['momentum'],
-    'formula_latex': 'rank(rank(rank(decay_linear(-1*rank(rank(delta(close,10))),10)))) + rank(-1*delta(close,3)) + sign(scale(correlation(adv20,low,12)))',
-    'columns_required': ['low', 'close', 'volume'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 25,
-    'notes': '',
+    "id": "alpha101_031",
+    "nickname": "Kakushadze Alpha #31",
+    "theme": ["momentum"],
+    "formula_latex": "rank(rank(rank(decay_linear(-1*rank(rank(delta(close,10))),10)))) + rank(-1*delta(close,3)) + sign(scale(correlation(adv20,low,12)))",
+    "columns_required": ["low", "close", "volume"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 25,
+    "notes": "",
 }
 
 
@@ -61,6 +60,10 @@ def compute(panel: dict) -> pd.DataFrame:
     # Helper aliases (local closures keep the file standalone & purity-safe).
     t1 = rank(rank(rank(decay_linear(-1.0 * rank(rank(delta(close, 10))), 10))))
     t2 = rank(-1.0 * delta(close, 3))
-    t3 = pd.DataFrame(np.sign(scale(ts_corr(adv20, low, 12)).to_numpy(dtype=np.float64, na_value=np.nan)), index=close.index, columns=close.columns)
+    t3 = pd.DataFrame(
+        np.sign(scale(ts_corr(adv20, low, 12)).to_numpy(dtype=np.float64, na_value=np.nan)),
+        index=close.index,
+        columns=close.columns,
+    )
     out = t1 + t2 + t3
     return out

@@ -302,15 +302,11 @@ class TestBacktestConfigSchema:
 
     def test_empty_codes_rejected(self) -> None:
         with pytest.raises(Exception, match="codes must be a non-empty list"):
-            BacktestConfigSchema(
-                codes=[], start_date="2025-01-01", end_date="2025-06-01"
-            )
+            BacktestConfigSchema(codes=[], start_date="2025-01-01", end_date="2025-06-01")
 
     def test_empty_string_code_rejected(self) -> None:
         with pytest.raises(Exception, match="codes must not contain empty strings"):
-            BacktestConfigSchema(
-                codes=["AAPL.US", ""], start_date="2025-01-01", end_date="2025-06-01"
-            )
+            BacktestConfigSchema(codes=["AAPL.US", ""], start_date="2025-01-01", end_date="2025-06-01")
 
     def test_reversed_dates_rejected(self) -> None:
         with pytest.raises(Exception, match="start_date.*must be <= end_date"):
@@ -355,12 +351,8 @@ class TestBacktestConfigSchema:
                 source="bloomberg",
             )
 
-    @pytest.mark.parametrize(
-        "initial_cash", [0, -1, -1_000_000, float("inf"), float("-inf"), float("nan"), "Infinity"]
-    )
-    def test_non_finite_or_non_positive_initial_cash_rejected(
-        self, initial_cash: object
-    ) -> None:
+    @pytest.mark.parametrize("initial_cash", [0, -1, -1_000_000, float("inf"), float("-inf"), float("nan"), "Infinity"])
+    def test_non_finite_or_non_positive_initial_cash_rejected(self, initial_cash: object) -> None:
         """A non-positive initial_cash makes returns divide by <= 0 and yields
         inf/NaN metrics; reject it at the config boundary."""
         with pytest.raises(Exception, match="initial_cash"):
@@ -372,9 +364,7 @@ class TestBacktestConfigSchema:
             )
 
     def test_initial_cash_defaults_and_accepts_positive(self) -> None:
-        default = BacktestConfigSchema(
-            codes=["AAPL.US"], start_date="2025-01-01", end_date="2025-06-01"
-        )
+        default = BacktestConfigSchema(codes=["AAPL.US"], start_date="2025-01-01", end_date="2025-06-01")
         assert default.initial_cash == 1_000_000
         explicit = BacktestConfigSchema(
             codes=["AAPL.US"],
@@ -489,6 +479,7 @@ class TestDateRangeValidation:
 
         # Tushare requires TUSHARE_TOKEN at init; skip if unavailable
         import os
+
         if not os.getenv("TUSHARE_TOKEN"):
             pytest.skip("TUSHARE_TOKEN not set")
         loader = DataLoader()
@@ -554,9 +545,7 @@ class TestFullBacktestRobustness:
 
 
 class TestValidationArtifactDir:
-    def test_validation_json_written_when_artifacts_dir_absent(
-        self, tmp_path: Path
-    ) -> None:
+    def test_validation_json_written_when_artifacts_dir_absent(self, tmp_path: Path) -> None:
         """Enabling validation must not crash when run_dir/artifacts is absent.
 
         The validation.json write (step 7) runs before _write_artifacts()
@@ -614,10 +603,6 @@ class TestValidationArtifactDir:
         validation_path = run_dir / "artifacts" / "validation.json"
         parsed = json.loads(
             validation_path.read_text(encoding="utf-8"),
-            parse_constant=lambda value: (_ for _ in ()).throw(
-                ValueError(f"non-strict JSON constant: {value}")
-            ),
+            parse_constant=lambda value: (_ for _ in ()).throw(ValueError(f"non-strict JSON constant: {value}")),
         )
-        assert parsed == {
-            "bootstrap": {"observed_sharpe": None, "median_sharpe": None}
-        }
+        assert parsed == {"bootstrap": {"observed_sharpe": None, "median_sharpe": None}}

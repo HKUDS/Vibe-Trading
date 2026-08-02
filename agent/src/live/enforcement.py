@@ -492,27 +492,39 @@ def check_mandate(
     symbol = (intent.symbol or "").strip().upper()
     if not symbol or intent.side not in ("buy", "sell"):
         return _breach(
-            broker=broker, remote_tool=remote_tool, intent=intent,
-            kind=BREACH_KIND_INSTRUMENT, limit="order_intent",
-            limit_value=0.0, attempted_value=0.0,
+            broker=broker,
+            remote_tool=remote_tool,
+            intent=intent,
+            kind=BREACH_KIND_INSTRUMENT,
+            limit="order_intent",
+            limit_value=0.0,
+            attempted_value=0.0,
             detail="order intent missing symbol or side",
         )
 
     # 1. Exclude-list — takes precedence over every other universe rule.
     if symbol in {s.strip().upper() for s in universe.exclude_symbols}:
         return _breach(
-            broker=broker, remote_tool=remote_tool, intent=intent,
-            kind=BREACH_KIND_UNIVERSE, limit="exclude_symbols",
-            limit_value=0.0, attempted_value=0.0,
+            broker=broker,
+            remote_tool=remote_tool,
+            intent=intent,
+            kind=BREACH_KIND_UNIVERSE,
+            limit="exclude_symbols",
+            limit_value=0.0,
+            attempted_value=0.0,
             detail=f"{symbol} is on the mandate exclude list",
         )
 
     # 2. Instrument-type allowance (empty == deny all, fail-closed).
     if intent.instrument_type not in caps.allowed_instruments:
         return _breach(
-            broker=broker, remote_tool=remote_tool, intent=intent,
-            kind=BREACH_KIND_INSTRUMENT, limit="allowed_instruments",
-            limit_value=0.0, attempted_value=0.0,
+            broker=broker,
+            remote_tool=remote_tool,
+            intent=intent,
+            kind=BREACH_KIND_INSTRUMENT,
+            limit="allowed_instruments",
+            limit_value=0.0,
+            attempted_value=0.0,
             detail=f"{intent.instrument_type.value} not in allowed_instruments",
         )
 
@@ -523,9 +535,13 @@ def check_mandate(
     asset_class = intent.asset_class or _INSTRUMENT_ASSET_CLASS.get(intent.instrument_type)
     if asset_class is not None and asset_class not in universe.asset_classes:
         return _breach(
-            broker=broker, remote_tool=remote_tool, intent=intent,
-            kind=BREACH_KIND_UNIVERSE, limit="asset_classes",
-            limit_value=0.0, attempted_value=0.0,
+            broker=broker,
+            remote_tool=remote_tool,
+            intent=intent,
+            kind=BREACH_KIND_UNIVERSE,
+            limit="asset_classes",
+            limit_value=0.0,
+            attempted_value=0.0,
             detail=f"{asset_class.value} not in permitted asset_classes",
         )
 
@@ -533,16 +549,24 @@ def check_mandate(
     notional = _resolve_order_notional(intent)
     if notional is None:
         return _breach(
-            broker=broker, remote_tool=remote_tool, intent=intent,
-            kind=BREACH_KIND_INSTRUMENT, limit="order_intent",
-            limit_value=0.0, attempted_value=0.0,
+            broker=broker,
+            remote_tool=remote_tool,
+            intent=intent,
+            kind=BREACH_KIND_INSTRUMENT,
+            limit="order_intent",
+            limit_value=0.0,
+            attempted_value=0.0,
             detail="order notional could not be resolved",
         )
     if notional > caps.max_order_notional_usd:
         return _breach(
-            broker=broker, remote_tool=remote_tool, intent=intent,
-            kind=BREACH_KIND_QUANTITATIVE, limit="max_order_notional_usd",
-            limit_value=caps.max_order_notional_usd, attempted_value=notional,
+            broker=broker,
+            remote_tool=remote_tool,
+            intent=intent,
+            kind=BREACH_KIND_QUANTITATIVE,
+            limit="max_order_notional_usd",
+            limit_value=caps.max_order_notional_usd,
+            attempted_value=notional,
         )
 
     # 5–6. Exposure + leverage need symbol-level signed positions so a sell
@@ -555,40 +579,59 @@ def check_mandate(
     )
     if post_exposure is None:
         return _breach(
-            broker=broker, remote_tool=remote_tool, intent=intent,
-            kind=BREACH_KIND_QUANTITATIVE, limit="max_total_exposure_usd",
-            limit_value=caps.max_total_exposure_usd, attempted_value=0.0,
+            broker=broker,
+            remote_tool=remote_tool,
+            intent=intent,
+            kind=BREACH_KIND_QUANTITATIVE,
+            limit="max_total_exposure_usd",
+            limit_value=caps.max_total_exposure_usd,
+            attempted_value=0.0,
             detail="current positions could not be read (fail-closed)",
         )
     if post_exposure > caps.max_total_exposure_usd:
         return _breach(
-            broker=broker, remote_tool=remote_tool, intent=intent,
-            kind=BREACH_KIND_QUANTITATIVE, limit="max_total_exposure_usd",
-            limit_value=caps.max_total_exposure_usd, attempted_value=post_exposure,
+            broker=broker,
+            remote_tool=remote_tool,
+            intent=intent,
+            kind=BREACH_KIND_QUANTITATIVE,
+            limit="max_total_exposure_usd",
+            limit_value=caps.max_total_exposure_usd,
+            attempted_value=post_exposure,
         )
 
     # 6. Gross leverage = post-trade gross exposure / account_funding_usd.
     if caps.account_funding_usd <= 0:
         return _breach(
-            broker=broker, remote_tool=remote_tool, intent=intent,
-            kind=BREACH_KIND_QUANTITATIVE, limit="max_leverage",
-            limit_value=caps.max_leverage, attempted_value=float("inf"),
+            broker=broker,
+            remote_tool=remote_tool,
+            intent=intent,
+            kind=BREACH_KIND_QUANTITATIVE,
+            limit="max_leverage",
+            limit_value=caps.max_leverage,
+            attempted_value=float("inf"),
             detail="account_funding_usd is non-positive (fail-closed)",
         )
     post_leverage = abs(post_exposure) / caps.account_funding_usd
     if post_leverage > caps.max_leverage:
         return _breach(
-            broker=broker, remote_tool=remote_tool, intent=intent,
-            kind=BREACH_KIND_QUANTITATIVE, limit="max_leverage",
-            limit_value=caps.max_leverage, attempted_value=post_leverage,
+            broker=broker,
+            remote_tool=remote_tool,
+            intent=intent,
+            kind=BREACH_KIND_QUANTITATIVE,
+            limit="max_leverage",
+            limit_value=caps.max_leverage,
+            attempted_value=post_leverage,
         )
 
     # 7. Daily order count (count over UTC calendar days).
     attempted_count = daily_count + 1
     if attempted_count > caps.max_trades_per_day:
         return _breach(
-            broker=broker, remote_tool=remote_tool, intent=intent,
-            kind=BREACH_KIND_QUANTITATIVE, limit="max_trades_per_day",
+            broker=broker,
+            remote_tool=remote_tool,
+            intent=intent,
+            kind=BREACH_KIND_QUANTITATIVE,
+            limit="max_trades_per_day",
             limit_value=float(caps.max_trades_per_day),
             attempted_value=float(attempted_count),
         )
@@ -597,9 +640,13 @@ def check_mandate(
     #    push us past funding — never block a sell on this.
     if intent.side == "buy" and post_exposure > caps.account_funding_usd:
         return _breach(
-            broker=broker, remote_tool=remote_tool, intent=intent,
-            kind=BREACH_KIND_QUANTITATIVE, limit="account_funding_usd",
-            limit_value=caps.account_funding_usd, attempted_value=post_exposure,
+            broker=broker,
+            remote_tool=remote_tool,
+            intent=intent,
+            kind=BREACH_KIND_QUANTITATIVE,
+            limit="account_funding_usd",
+            limit_value=caps.account_funding_usd,
+            attempted_value=post_exposure,
             detail="post-trade exposure exceeds mirrored funding ceiling",
         )
 
@@ -608,8 +655,12 @@ def check_mandate(
     #    universe bucket (e.g. options) where these floors do not apply.
     if asset_class is not None:
         universe_breach = _check_universe_floors(
-            universe, intent, symbol, asset_class,
-            broker=broker, remote_tool=remote_tool,
+            universe,
+            intent,
+            symbol,
+            asset_class,
+            broker=broker,
+            remote_tool=remote_tool,
         )
         if universe_breach is not None:
             return universe_breach
@@ -644,8 +695,11 @@ def _check_universe_floors(
             cap = None
         if cap is None or cap < universe.min_market_cap_usd:
             return _breach(
-                broker=broker, remote_tool=remote_tool, intent=intent,
-                kind=BREACH_KIND_UNIVERSE, limit="min_market_cap_usd",
+                broker=broker,
+                remote_tool=remote_tool,
+                intent=intent,
+                kind=BREACH_KIND_UNIVERSE,
+                limit="min_market_cap_usd",
                 limit_value=universe.min_market_cap_usd,
                 attempted_value=cap if cap is not None else 0.0,
                 detail=(
@@ -662,8 +716,11 @@ def _check_universe_floors(
             adv = None
         if adv is None or adv < universe.min_avg_daily_volume_usd:
             return _breach(
-                broker=broker, remote_tool=remote_tool, intent=intent,
-                kind=BREACH_KIND_UNIVERSE, limit="min_avg_daily_volume_usd",
+                broker=broker,
+                remote_tool=remote_tool,
+                intent=intent,
+                kind=BREACH_KIND_UNIVERSE,
+                limit="min_avg_daily_volume_usd",
                 limit_value=universe.min_avg_daily_volume_usd,
                 attempted_value=adv if adv is not None else 0.0,
                 detail=(

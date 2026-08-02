@@ -58,15 +58,13 @@ ppi_cg_dcg_accu | float | Y | PPI：生活资料：耐用消费品类：累计�
 **接口调用**
 
 ```python
-
 pro = ts.pro_api()
 
-df = pro.cn_ppi(start_m='201905', end_m='202005')
+df = pro.cn_ppi(start_m="201905", end_m="202005")
 
 
-#获取指定字段
-df = pro.cn_ppi(start_m='201905', end_m='202005', fields='month,ppi_yoy,ppi_mom,ppi_accu')
-
+# 获取指定字段
+df = pro.cn_ppi(start_m="201905", end_m="202005", fields="month,ppi_yoy,ppi_mom,ppi_accu")
 ```
 
 <br>

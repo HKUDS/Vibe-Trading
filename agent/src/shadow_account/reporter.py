@@ -53,6 +53,7 @@ _REASON_LABELS = {
 
 # ---------------- Public API ----------------
 
+
 def render_shadow_report(
     profile: ShadowProfile,
     backtest_result: ShadowBacktestResult,
@@ -82,12 +83,16 @@ def render_shadow_report(
     sections = _build_sections(profile, backtest_result, today_signals or [])
     css = _load_css()
 
-    html = _env().get_template(_HTML_TEMPLATE).render(
-        css=css,
-        charts=charts,
-        market_labels=_MARKET_LABELS,
-        reason_labels=_REASON_LABELS,
-        **sections,
+    html = (
+        _env()
+        .get_template(_HTML_TEMPLATE)
+        .render(
+            css=css,
+            charts=charts,
+            market_labels=_MARKET_LABELS,
+            reason_labels=_REASON_LABELS,
+            **sections,
+        )
     )
     html_path = output_dir / f"{profile.shadow_id}.html"
     html_path.write_text(html, encoding="utf-8")
@@ -104,6 +109,7 @@ def render_shadow_report(
 
 # ---------------- Section data ----------------
 
+
 def _build_sections(
     profile: ShadowProfile,
     result: ShadowBacktestResult,
@@ -119,8 +125,7 @@ def _build_sections(
     """
     combined_numeric, combined_error = _split_metrics(result.combined or {})
     per_market_numeric = {
-        market: _split_metrics(metrics or {})[0]
-        for market, metrics in (result.per_market or {}).items()
+        market: _split_metrics(metrics or {})[0] for market, metrics in (result.per_market or {}).items()
     }
     return {
         "profile": profile,
@@ -150,6 +155,7 @@ def _split_metrics(metrics: dict[str, Any]) -> tuple[dict[str, float], str]:
 
 
 # ---------------- Charts ----------------
+
 
 def _render_charts(
     profile: ShadowProfile,
@@ -280,6 +286,7 @@ def _render_attribution_waterfall(result: ShadowBacktestResult, path: Path) -> N
 
 # ---------------- Templating ----------------
 
+
 def _env() -> Environment:
     return Environment(
         loader=FileSystemLoader(str(_TEMPLATES_DIR)),
@@ -297,7 +304,9 @@ def _load_css() -> str:
 
 
 def _try_render_pdf(
-    html: str, output_dir: Path, shadow_id: str,
+    html: str,
+    output_dir: Path,
+    shadow_id: str,
 ) -> tuple[Path | None, str]:
     """Render PDF via weasyprint, returning (path|None, engine_name)."""
     try:
@@ -321,6 +330,7 @@ def _try_render_pdf(
 
 
 # ---------------- Convenience ----------------
+
 
 def embed_image_as_data_uri(path: Path) -> str:
     """Inline an image as a data URI (useful when file URIs are rejected)."""

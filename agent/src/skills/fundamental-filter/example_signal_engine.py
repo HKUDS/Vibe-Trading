@@ -65,12 +65,7 @@ class SignalEngine:
             return None
         if any(pd.isna(value) for value in statement_values):
             return False
-        return (
-            revenue >= self.revenue_min
-            and profit > 0
-            and net_assets > self.net_assets_min
-            and roe >= self.roe_min
-        )
+        return revenue >= self.revenue_min and profit > 0 and net_assets > self.net_assets_min and roe >= self.roe_min
 
     def generate(self, data_map: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
         """基于基本面条件过滤，对满足条件的股票等权做多。
@@ -142,21 +137,24 @@ if __name__ == "__main__":
 
     def _mock_stock(pe_range, pb_range, roe_range):
         n = len(dates)
-        return pd.DataFrame({
-            "open": np.random.uniform(10, 50, n),
-            "high": np.random.uniform(10, 50, n),
-            "low": np.random.uniform(10, 50, n),
-            "close": np.random.uniform(10, 50, n),
-            "volume": np.random.uniform(1e6, 1e7, n),
-            "pe": np.random.uniform(*pe_range, n),
-            "pb": np.random.uniform(*pb_range, n),
-            "roe": np.random.uniform(*roe_range, n),
-        }, index=dates)
+        return pd.DataFrame(
+            {
+                "open": np.random.uniform(10, 50, n),
+                "high": np.random.uniform(10, 50, n),
+                "low": np.random.uniform(10, 50, n),
+                "close": np.random.uniform(10, 50, n),
+                "volume": np.random.uniform(1e6, 1e7, n),
+                "pe": np.random.uniform(*pe_range, n),
+                "pb": np.random.uniform(*pb_range, n),
+                "roe": np.random.uniform(*roe_range, n),
+            },
+            index=dates,
+        )
 
     data_map = {
-        "000001.SZ": _mock_stock((5, 15), (0.5, 2.0), (8, 20)),    # 大概率入选
-        "600036.SH": _mock_stock((3, 10), (0.3, 1.5), (12, 25)),   # 高概率入选
-        "000858.SZ": _mock_stock((30, 80), (5, 15), (5, 10)),       # 大概率不入选
+        "000001.SZ": _mock_stock((5, 15), (0.5, 2.0), (8, 20)),  # 大概率入选
+        "600036.SH": _mock_stock((3, 10), (0.3, 1.5), (12, 25)),  # 高概率入选
+        "000858.SZ": _mock_stock((30, 80), (5, 15), (5, 10)),  # 大概率不入选
     }
 
     engine = SignalEngine(pe_max=20, pb_max=3, roe_min=8)

@@ -61,9 +61,7 @@ def test_wrapper_signature_matches_registered_tool() -> None:
     sig = inspect.signature(_fa)
 
     assert set(sig.parameters) == set(spec["properties"])
-    wrapper_required = {
-        name for name, p in sig.parameters.items() if p.default is inspect.Parameter.empty
-    }
+    wrapper_required = {name for name, p in sig.parameters.items() if p.default is inspect.Parameter.empty}
     assert wrapper_required == set(spec["required"])
 
 

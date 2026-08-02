@@ -102,12 +102,8 @@ def test_remote_tools_appear_in_registry_after_local_tools(tmp_path: Path) -> No
 
     # Remote tools must come after all local tools (no MCP name before local tools end).
     first_mcp = next(i for i, name in enumerate(all_names) if name.startswith("mcp_"))
-    local_after_first_mcp = [
-        name for name in all_names[first_mcp:] if not name.startswith("mcp_")
-    ]
-    assert local_after_first_mcp == [], (
-        "Local tools found after the first MCP tool — ordering guarantee violated"
-    )
+    local_after_first_mcp = [name for name in all_names[first_mcp:] if not name.startswith("mcp_")]
+    assert local_after_first_mcp == [], "Local tools found after the first MCP tool — ordering guarantee violated"
 
 
 def test_remote_tool_is_callable_and_returns_expected_result(tmp_path: Path) -> None:
@@ -160,8 +156,7 @@ def test_remote_tool_is_serial_only(tmp_path: Path) -> None:
     assert mcp_tools, "No MCP tools found in registry"
     for tool in mcp_tools:
         assert tool.is_readonly is False, (
-            f"Tool {tool.name!r} has is_readonly=True; "
-            "MCP tools must be serial-only in v1"
+            f"Tool {tool.name!r} has is_readonly=True; MCP tools must be serial-only in v1"
         )
 
 
@@ -176,9 +171,7 @@ def test_enabled_tools_filter_limits_remote_tools(tmp_path: Path) -> None:
 
     mcp_names = [n for n in registry.tool_names if n.startswith("mcp_fake_")]
     assert "mcp_fake_echo" in mcp_names
-    assert "mcp_fake_add" not in mcp_names, (
-        "mcp_fake_add should be excluded by enabledTools filter"
-    )
+    assert "mcp_fake_add" not in mcp_names, "mcp_fake_add should be excluded by enabledTools filter"
 
 
 def test_broken_server_command_does_not_block_local_tools(tmp_path: Path) -> None:
@@ -214,6 +207,4 @@ def test_broken_server_command_does_not_block_local_tools(tmp_path: Path) -> Non
     )
 
     # The operator must receive a warning about the skipped server.
-    assert any("bad-server" in w for w in warnings), (
-        f"Expected a warning mentioning 'bad-server', got: {warnings}"
-    )
+    assert any("bad-server" in w for w in warnings), f"Expected a warning mentioning 'bad-server', got: {warnings}"

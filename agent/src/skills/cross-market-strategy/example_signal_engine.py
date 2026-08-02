@@ -6,18 +6,17 @@ The CompositeEngine handles calendar alignment, market rules, and shared capital
 
 import re
 
-import numpy as np
 import pandas as pd
 
 
 # Per-market indicator parameters
 MARKET_PARAMS = {
-    "a_share":    {"ma_fast": 5,  "ma_slow": 20, "vol_lookback": 20},
-    "crypto":     {"ma_fast": 7,  "ma_slow": 25, "vol_lookback": 14},
-    "us_equity":  {"ma_fast": 10, "ma_slow": 50, "vol_lookback": 20},
-    "hk_equity":  {"ma_fast": 10, "ma_slow": 50, "vol_lookback": 20},
-    "forex":      {"ma_fast": 10, "ma_slow": 30, "vol_lookback": 20},
-    "futures":    {"ma_fast": 5,  "ma_slow": 20, "vol_lookback": 20},
+    "a_share": {"ma_fast": 5, "ma_slow": 20, "vol_lookback": 20},
+    "crypto": {"ma_fast": 7, "ma_slow": 25, "vol_lookback": 14},
+    "us_equity": {"ma_fast": 10, "ma_slow": 50, "vol_lookback": 20},
+    "hk_equity": {"ma_fast": 10, "ma_slow": 50, "vol_lookback": 20},
+    "forex": {"ma_fast": 10, "ma_slow": 30, "vol_lookback": 20},
+    "futures": {"ma_fast": 5, "ma_slow": 20, "vol_lookback": 20},
 }
 
 _MARKET_PATTERNS = [
@@ -63,11 +62,7 @@ class SignalEngine:
         vols = {}
         for code, df in data_map.items():
             ret = df["close"].pct_change().dropna()
-            vols[code] = (
-                ret.rolling(20).std().iloc[-1]
-                if len(ret) > 20
-                else ret.std()
-            )
+            vols[code] = ret.rolling(20).std().iloc[-1] if len(ret) > 20 else ret.std()
 
         inv_vols = {c: 1.0 / (v + 1e-10) for c, v in vols.items()}
         total_inv = sum(inv_vols.values())

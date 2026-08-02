@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #121
 # 简要说明: 国泰君安191短周期交易型alpha因子第121号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     ((RANK((VWAP-MIN(VWAP,12)))^TSRANK(CORR(TSRANK(VWAP,20),TSRANK(MEAN(VOLUME,60),2),18),3))*-1)
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -38,16 +38,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_121"
 
 __alpha_meta__ = {
-    'id': 'gtja191_121',
-    'theme': ['volume'],
-    'formula_latex': 'see body',
-    'columns_required': ['open', 'high', 'low', 'close', 'volume', 'amount'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 60,
-    'min_warmup_bars': 80,
-    'notes': '',
+    "id": "gtja191_121",
+    "theme": ["volume"],
+    "formula_latex": "see body",
+    "columns_required": ["open", "high", "low", "close", "volume", "amount"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 60,
+    "min_warmup_bars": 80,
+    "notes": "",
 }
 
 
@@ -66,7 +66,6 @@ def compute(panel):
     left = rank(vw - ts_min(vw, 12))
     inner = ts_corr(ts_rank(vw, 20), ts_rank(ts_mean(v, 60), 2), 18)
     right = ts_rank(inner, 3)
-    arr = np.power(left.to_numpy(dtype=np.float64, na_value=np.nan),
-                   right.to_numpy(dtype=np.float64, na_value=np.nan))
+    arr = np.power(left.to_numpy(dtype=np.float64, na_value=np.nan), right.to_numpy(dtype=np.float64, na_value=np.nan))
     out = pd.DataFrame(arr, index=left.index, columns=left.columns) * -1.0
     return out

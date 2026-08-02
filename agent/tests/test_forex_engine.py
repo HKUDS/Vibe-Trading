@@ -19,8 +19,6 @@ from backtest.engines.forex import (
     ForexEngine,
     _normalize_symbol,
     _pip_value,
-    _SPREAD_PIPS,
-    STANDARD_LOT,
 )
 from backtest.engines._market_hooks import _SWAP_LONG
 from backtest.models import Position
@@ -179,8 +177,11 @@ class TestSwap:
     def test_swap_applied_once_per_day(self) -> None:
         engine = _make_engine()
         engine.positions["EUR/USD"] = Position(
-            symbol="EUR/USD", direction=1, entry_price=1.1050,
-            entry_time=pd.Timestamp("2025-06-10"), size=100000,
+            symbol="EUR/USD",
+            direction=1,
+            entry_price=1.1050,
+            entry_time=pd.Timestamp("2025-06-10"),
+            size=100000,
         )
         initial_capital = engine.capital
         ts = pd.Timestamp("2025-06-10 17:00")
@@ -193,8 +194,11 @@ class TestSwap:
     def test_swap_not_applied_twice_same_day(self) -> None:
         engine = _make_engine()
         engine.positions["EUR/USD"] = Position(
-            symbol="EUR/USD", direction=1, entry_price=1.1050,
-            entry_time=pd.Timestamp("2025-06-10"), size=100000,
+            symbol="EUR/USD",
+            direction=1,
+            entry_price=1.1050,
+            entry_time=pd.Timestamp("2025-06-10"),
+            size=100000,
         )
         ts = pd.Timestamp("2025-06-10 17:00")
         engine.on_bar("EUR/USD", _make_bar(), ts)
@@ -206,14 +210,19 @@ class TestSwap:
         """Each symbol gets its own daily swap (not shared)."""
         engine = _make_engine()
         engine.positions["EUR/USD"] = Position(
-            symbol="EUR/USD", direction=1, entry_price=1.1050,
-            entry_time=pd.Timestamp("2025-06-10"), size=100000,
+            symbol="EUR/USD",
+            direction=1,
+            entry_price=1.1050,
+            entry_time=pd.Timestamp("2025-06-10"),
+            size=100000,
         )
         engine.positions["USD/JPY"] = Position(
-            symbol="USD/JPY", direction=1, entry_price=150.00,
-            entry_time=pd.Timestamp("2025-06-10"), size=100000,
+            symbol="USD/JPY",
+            direction=1,
+            entry_price=150.00,
+            entry_time=pd.Timestamp("2025-06-10"),
+            size=100000,
         )
-        initial = engine.capital
         ts = pd.Timestamp("2025-06-10 17:00")
         engine.on_bar("EUR/USD", _make_bar(), ts)
         after_eur = engine.capital
@@ -226,8 +235,11 @@ class TestSwap:
         """Wednesday gets 3x swap (covers weekend)."""
         engine = _make_engine()
         engine.positions["EUR/USD"] = Position(
-            symbol="EUR/USD", direction=1, entry_price=1.1050,
-            entry_time=pd.Timestamp("2025-06-10"), size=100000,
+            symbol="EUR/USD",
+            direction=1,
+            entry_price=1.1050,
+            entry_time=pd.Timestamp("2025-06-10"),
+            size=100000,
         )
         initial = engine.capital
         # 2025-06-11 is a Wednesday
@@ -240,8 +252,11 @@ class TestSwap:
     def test_swap_disabled(self) -> None:
         engine = _make_engine(swap_enabled=False)
         engine.positions["EUR/USD"] = Position(
-            symbol="EUR/USD", direction=1, entry_price=1.1050,
-            entry_time=pd.Timestamp("2025-06-10"), size=100000,
+            symbol="EUR/USD",
+            direction=1,
+            entry_price=1.1050,
+            entry_time=pd.Timestamp("2025-06-10"),
+            size=100000,
         )
         initial = engine.capital
         engine.on_bar("EUR/USD", _make_bar(), pd.Timestamp("2025-06-10 17:00"))

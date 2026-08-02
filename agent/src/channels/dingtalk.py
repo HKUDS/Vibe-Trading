@@ -134,10 +134,7 @@ class VibeTradingDingTalkHandler(CallbackHandler):
             sender_name = chatbot_msg.sender_nick or "Unknown"
 
             conversation_type = message.data.get("conversationType")
-            conversation_id = (
-                message.data.get("conversationId")
-                or message.data.get("openConversationId")
-            )
+            conversation_id = message.data.get("conversationId") or message.data.get("openConversationId")
 
             self.channel.logger.info("Received message from {} ({}): {}", sender_name, sender_id, content)
 
@@ -216,9 +213,7 @@ class DingTalkChannel(BaseChannel):
         """Start the DingTalk bot with Stream Mode."""
         try:
             if not DINGTALK_AVAILABLE:
-                self.logger.error(
-                    "Stream SDK not installed. Run: pip install dingtalk-stream"
-                )
+                self.logger.error("Stream SDK not installed. Run: pip install dingtalk-stream")
                 return
 
             if not self.config.client_id or not self.config.client_secret:
@@ -226,9 +221,7 @@ class DingTalkChannel(BaseChannel):
                 return
 
             self._running = True
-            self._http = httpx.AsyncClient(
-                timeout=httpx.Timeout(10.0, connect=10.0, read=30.0, write=30.0, pool=10.0)
-            )
+            self._http = httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=10.0, read=30.0, write=30.0, pool=10.0))
 
             self.logger.info(
                 "Initializing Stream Client with Client ID: {}...",
@@ -404,9 +397,7 @@ class DingTalkChannel(BaseChannel):
                             )
                             return None, None
                         if 300 <= resp.status_code < 400:
-                            next_url = self._next_remote_media_url(
-                                str(resp.url), resp.headers.get("location")
-                            )
+                            next_url = self._next_remote_media_url(str(resp.url), resp.headers.get("location"))
                             if not next_url:
                                 return None, None
                             current_url = next_url
@@ -528,7 +519,9 @@ class DingTalkChannel(BaseChannel):
             text = resp.text
             result = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
             if resp.status_code >= 400:
-                self.logger.error("media upload failed status={} type={} body={}", resp.status_code, media_type, text[:500])
+                self.logger.error(
+                    "media upload failed status={} type={} body={}", resp.status_code, media_type, text[:500]
+                )
                 return None
             errcode = result.get("errcode", 0)
             if errcode != 0:

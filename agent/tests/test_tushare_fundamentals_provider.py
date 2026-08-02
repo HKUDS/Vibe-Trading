@@ -258,9 +258,7 @@ def test_t1_query_fundamentals_deduplicates_restated_rows() -> None:
     # FY2023 must survive but carry the restated revenue=95
     fy2023 = result[result["end_date"] == "20231231"]
     assert len(fy2023) == 1, "FY2023 should appear exactly once after dedup"
-    assert fy2023.iloc[0]["revenue"] == 95.0, (
-        "FY2023 must keep the restatement value (rev=95, f_ann_date=20240515)"
-    )
+    assert fy2023.iloc[0]["revenue"] == 95.0, "FY2023 must keep the restatement value (rev=95, f_ann_date=20240515)"
     # Q1 must also be present
     q1 = result[result["end_date"] == "20240331"]
     assert len(q1) == 1

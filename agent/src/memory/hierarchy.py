@@ -84,9 +84,7 @@ class MemoryHierarchy:
             cat_dir = self._ensure_category_dir(memory_type)
             return cat_dir / filename
         # Unknown type falls back to base directory
-        logger.warning(
-            "Unknown memory_type '%s', routing to base dir", memory_type
-        )
+        logger.warning("Unknown memory_type '%s', routing to base dir", memory_type)
         return self._base_dir / filename
 
     def scan_all(self) -> List[Path]:
@@ -158,9 +156,7 @@ class MemoryHierarchy:
                      optionally 'keywords' (list of strings).
         """
         # Aggregate per-category statistics
-        cat_data: Dict[str, CategorySummary] = {
-            cat: CategorySummary() for cat in CATEGORIES
-        }
+        cat_data: Dict[str, CategorySummary] = {cat: CategorySummary() for cat in CATEGORIES}
 
         for entry in entries:
             mtype = entry.get("memory_type", "")
@@ -247,16 +243,12 @@ class MemoryHierarchy:
                 bracket_end = stripped.find("]")
                 if bracket_start != -1 and bracket_end != -1:
                     inner = stripped[bracket_start + 1 : bracket_end]
-                    keywords = [
-                        k.strip() for k in inner.split(",") if k.strip()
-                    ]
+                    keywords = [k.strip() for k in inner.split(",") if k.strip()]
                     result[current_cat] = keywords
 
         return result
 
-    def prune_search_scope(
-        self, query_tokens: Set[str], category_filter: str = ""
-    ) -> List[Path]:
+    def prune_search_scope(self, query_tokens: Set[str], category_filter: str = "") -> List[Path]:
         """Narrow search scope based on category filter or keyword overlap.
 
         If category_filter is set, only scan that category.
@@ -322,9 +314,7 @@ class MemoryHierarchy:
 
         return results
 
-    def migrate_flat_entry(
-        self, file_path: Path, memory_type: str
-    ) -> Optional[Path]:
+    def migrate_flat_entry(self, file_path: Path, memory_type: str) -> Optional[Path]:
         """Move a flat-stored entry to its category subdir.
 
         Only moves if the file currently resides in base_dir (not already
@@ -344,15 +334,11 @@ class MemoryHierarchy:
             return None
 
         if file_path.parent != self._base_dir:
-            logger.debug(
-                "File %s not in base dir, skip migration", file_path.name
-            )
+            logger.debug("File %s not in base dir, skip migration", file_path.name)
             return None
 
         if memory_type not in CATEGORIES:
-            logger.warning(
-                "Cannot migrate to unknown category '%s'", memory_type
-            )
+            logger.warning("Cannot migrate to unknown category '%s'", memory_type)
             return None
 
         # Determine destination
@@ -360,9 +346,7 @@ class MemoryHierarchy:
         dest_path = dest_dir / file_path.name
 
         if dest_path.exists():
-            logger.warning(
-                "Destination already exists, skip migration: %s", dest_path
-            )
+            logger.warning("Destination already exists, skip migration: %s", dest_path)
             return None
 
         try:

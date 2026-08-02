@@ -178,9 +178,7 @@ class TestMainRouting:
         for argv in (["chat", "extra"], ["chat", "foo", "bar"]):
             assert _is_interactive_invocation(argv) is False, argv
 
-    def test_onboarding_skips_when_project_env_exists(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_onboarding_skips_when_project_env_exists(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """Interactive startup must accept the provider loader's project-local `.env`."""
         cli_main = importlib.import_module("cli.main")
 
@@ -224,9 +222,7 @@ class TestMainRouting:
 
         assert cli_main._probe_model_name() == "openai-codex/gpt-5.4"
 
-    def test_resume_prompt_treats_plain_text_as_first_turn(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_resume_prompt_treats_plain_text_as_first_turn(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Typing a chat message at the resume prompt must not discard it."""
         cli_main = importlib.import_module("cli.main")
         session = SimpleNamespace(session_id="sess_1", title="hello")
@@ -266,9 +262,7 @@ class TestMainDispatch:
     ``_legacy.main`` and assert ``cli.main`` forwards the exact argv.
     """
 
-    def test_cmd_wrappers_propagate_package_monkeypatch(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_cmd_wrappers_propagate_package_monkeypatch(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Patching ``cli.RUNS_DIR`` must reach ``_legacy`` before any cmd_* runs.
 
         Regression for the partial-sync trap: before this wrapper, only
@@ -313,9 +307,7 @@ class TestMainDispatch:
             ["chat", "extra"],
         ],
     )
-    def test_non_interactive_argv_forwarded_to_legacy(
-        self, monkeypatch: pytest.MonkeyPatch, argv: list[str]
-    ) -> None:
+    def test_non_interactive_argv_forwarded_to_legacy(self, monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> None:
         """Every non-REPL argv shape must reach ``_legacy.main`` untouched."""
         from cli.main import main as cli_main_fn
 

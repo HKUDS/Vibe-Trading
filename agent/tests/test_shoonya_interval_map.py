@@ -21,7 +21,11 @@ class _FakeApi:
 
 def _cfg() -> sh.ShoonyaConfig:
     return sh.ShoonyaConfig(
-        user_id="u", password="p", vendor_code="v", api_secret="s", totp_secret="t",
+        user_id="u",
+        password="p",
+        vendor_code="v",
+        api_secret="s",
+        totp_secret="t",
     )
 
 

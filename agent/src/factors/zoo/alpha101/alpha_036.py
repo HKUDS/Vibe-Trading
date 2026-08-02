@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #36
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第36号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_036"
 
 __alpha_meta__ = {
-    'id': 'alpha101_036',
-    'nickname': 'Kakushadze Alpha #36',
-    'theme': ['momentum', 'volume'],
-    'formula_latex': 'weighted sum; see paper',
-    'columns_required': ['open', 'close', 'volume', 'vwap'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 200,
-    'notes': 'Very long lookback (>= ~100 bars); produces NaN warmup on short panels which may trigger the >95% NaN registry guard.',
+    "id": "alpha101_036",
+    "nickname": "Kakushadze Alpha #36",
+    "theme": ["momentum", "volume"],
+    "formula_latex": "weighted sum; see paper",
+    "columns_required": ["open", "close", "volume", "vwap"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 200,
+    "notes": "Very long lookback (>= ~100 bars); produces NaN warmup on short panels which may trigger the >95% NaN registry guard.",
 }
 
 

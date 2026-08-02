@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #75
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第75号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_075"
 
 __alpha_meta__ = {
-    'id': 'alpha101_075',
-    'nickname': 'Kakushadze Alpha #75',
-    'theme': ['volume'],
-    'formula_latex': 'rank(correlation(vwap, volume, 4)) < rank(correlation(rank(low), rank(adv50), 12))',
-    'columns_required': ['low', 'volume', 'vwap', 'close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 61,
-    'notes': '',
+    "id": "alpha101_075",
+    "nickname": "Kakushadze Alpha #75",
+    "theme": ["volume"],
+    "formula_latex": "rank(correlation(vwap, volume, 4)) < rank(correlation(rank(low), rank(adv50), 12))",
+    "columns_required": ["low", "volume", "vwap", "close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 61,
+    "notes": "",
 }
 
 
@@ -56,7 +55,6 @@ def compute(panel: dict) -> pd.DataFrame:
     low = panel["low"]
     volume = panel["volume"]
     vwap = panel["vwap"]
-    adv5 = ts_mean(volume, 5)
     adv50 = ts_mean(volume, 50)
 
     # Helper aliases (local closures keep the file standalone & purity-safe).

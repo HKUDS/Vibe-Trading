@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #27 - 加权前日收盘
 # 简要说明: (-1*RANK((DELTA(CORR(HIGH,MEAN(VOLUME,60),5),1))*RANK(CORR(CLOSE,MEAN(VOLUME,50),1))))，量价相关变化的组合排名。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_027",
-    "theme": ['momentum'],
-    "formula_latex": 'WMA((CLOSE-DELAY(CLOSE,3))/DELAY(CLOSE,3)*100 + (CLOSE-DELAY(CLOSE,6))/DELAY(CLOSE,6)*100, 12)',
-    "columns_required": ['close'],
+    "theme": ["momentum"],
+    "formula_latex": "WMA((CLOSE-DELAY(CLOSE,3))/DELAY(CLOSE,3)*100 + (CLOSE-DELAY(CLOSE,6))/DELAY(CLOSE,6)*100, 12)",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 12,
     "min_warmup_bars": 18,
-    "notes": 'WMA proxied by decay_linear.',
+    "notes": "WMA proxied by decay_linear.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

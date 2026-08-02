@@ -68,9 +68,7 @@ def test_artifact_listing_includes_expected_existing_files(tmp_path: Path) -> No
     card = write_run_card(run_dir, {"codes": ["000001.SZ"]}, {"sharpe": 1.0})
 
     artifacts = {artifact["path"]: artifact for artifact in card["artifacts"]}
-    assert card["reproducibility"]["config_hash"] == hashlib.sha256(
-        (run_dir / "config.json").read_bytes()
-    ).hexdigest()
+    assert card["reproducibility"]["config_hash"] == hashlib.sha256((run_dir / "config.json").read_bytes()).hexdigest()
     assert list(artifacts) == [
         "artifacts/equity.csv",
         "artifacts/nested/trades.csv",
@@ -158,15 +156,11 @@ def _write_chart_artifacts(run_dir: Path) -> None:
         encoding="utf-8",
     )
     (artifacts / "price_series.csv").write_text(
-        "timestamp,code,open,high,low,close,volume\n"
-        "2025-01-01,AAPL,1,2,1,2,100\n"
-        "2025-01-01,MSFT,3,4,3,4,200\n",
+        "timestamp,code,open,high,low,close,volume\n2025-01-01,AAPL,1,2,1,2,100\n2025-01-01,MSFT,3,4,3,4,200\n",
         encoding="utf-8",
     )
     (artifacts / "trades.csv").write_text(
-        "timestamp,code,side,price,qty,reason\n"
-        "2025-01-01,AAPL,BUY,2,10,entry\n"
-        "2025-01-01,MSFT,SELL,4,5,exit\n",
+        "timestamp,code,side,price,qty,reason\n2025-01-01,AAPL,BUY,2,10,entry\n2025-01-01,MSFT,SELL,4,5,exit\n",
         encoding="utf-8",
     )
 

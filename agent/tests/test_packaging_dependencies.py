@@ -21,8 +21,7 @@ def test_harmonic_backend_is_not_a_core_install_dependency() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
 
     core_dependencies = {
-        _normalized_requirement_name(requirement)
-        for requirement in pyproject["project"]["dependencies"]
+        _normalized_requirement_name(requirement) for requirement in pyproject["project"]["dependencies"]
     }
     requirements_txt = {
         _normalized_requirement_name(line)
@@ -51,8 +50,7 @@ def test_longbridge_sdk_is_optional_and_available_as_an_extra() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
 
     core_dependencies = {
-        _normalized_requirement_name(requirement)
-        for requirement in pyproject["project"]["dependencies"]
+        _normalized_requirement_name(requirement) for requirement in pyproject["project"]["dependencies"]
     }
     requirements_txt = {
         _normalized_requirement_name(line)
@@ -74,8 +72,7 @@ def test_channel_core_websocket_dependency_is_declared_for_baseline_installs() -
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
 
     core_dependencies = {
-        _normalized_requirement_name(requirement)
-        for requirement in pyproject["project"]["dependencies"]
+        _normalized_requirement_name(requirement) for requirement in pyproject["project"]["dependencies"]
     }
     requirements_txt = {
         _normalized_requirement_name(line)
@@ -110,10 +107,7 @@ def test_channel_optional_extras_cover_all_sdk_backed_adapters() -> None:
     }
     assert expected_extras.issubset(set(extras))
 
-    channel_extra = {
-        _normalized_requirement_name(requirement)
-        for requirement in extras["channels"]
-    }
+    channel_extra = {_normalized_requirement_name(requirement) for requirement in extras["channels"]}
     expected_packages = {
         "aiohttp",
         "cryptography",
@@ -136,6 +130,8 @@ def test_channel_optional_extras_cover_all_sdk_backed_adapters() -> None:
         "wecom-aibot-sdk",
     }
     assert expected_packages.issubset(channel_extra)
+
+
 def test_development_extra_includes_bounded_style_tools() -> None:
     """Contributor style commands should be installed by the dev extra."""
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())

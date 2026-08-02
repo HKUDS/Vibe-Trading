@@ -23,11 +23,7 @@ def _manifest_text() -> str:
 def _literal_assignment(path: Path, name: str) -> object:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for node in tree.body:
-        if (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.target.id == name
-        ):
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == name:
             return ast.literal_eval(node.value)
         if isinstance(node, ast.Assign) and any(
             isinstance(target, ast.Name) and target.id == name for target in node.targets
@@ -37,20 +33,13 @@ def _literal_assignment(path: Path, name: str) -> object:
 
 
 def _assert_all_counts(pattern: str, expected: int) -> None:
-    counts = [
-        int(value)
-        for value in re.findall(pattern, _manifest_text(), flags=re.IGNORECASE)
-    ]
+    counts = [int(value) for value in re.findall(pattern, _manifest_text(), flags=re.IGNORECASE)]
     assert counts, f"No manifest count matched {pattern!r}"
     assert set(counts) == {expected}, f"Manifest counts {counts} do not match source count {expected}"
 
 
 def test_finance_skill_count_matches_bundled_skill_directories() -> None:
-    expected = sum(
-        1
-        for path in SKILLS_DIR.iterdir()
-        if path.is_dir() and (path / "SKILL.md").is_file()
-    )
+    expected = sum(1 for path in SKILLS_DIR.iterdir() if path.is_dir() and (path / "SKILL.md").is_file())
     _assert_all_counts(r"\b(\d+)\s+(?:finance\s+|specialized\s+)?skills\b", expected)
 
 

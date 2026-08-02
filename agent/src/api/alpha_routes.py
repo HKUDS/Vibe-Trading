@@ -103,12 +103,26 @@ _JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # Filter enums — keep in sync with src.factors.registry.Theme / Universe.
 _VALID_ZOOS = {"alpha101", "gtja191", "qlib158", "academic", "fundamental"}
 _VALID_THEMES = {
-    "momentum", "reversal", "volume", "volatility", "quality", "value",
-    "liquidity", "microstructure", "sentiment", "growth", "leverage",
+    "momentum",
+    "reversal",
+    "volume",
+    "volatility",
+    "quality",
+    "value",
+    "liquidity",
+    "microstructure",
+    "sentiment",
+    "growth",
+    "leverage",
 }
 _VALID_UNIVERSES = {
-    "equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr",
-    "crypto", "futures",
+    "equity_us",
+    "equity_cn",
+    "equity_hk",
+    "equity_in",
+    "equity_kr",
+    "crypto",
+    "futures",
 }
 # Ranking metrics for /alpha/compare — keep in sync with
 # ``src.factors.compare_runner.SORT_KEYS`` (kept local to avoid a heavy import).
@@ -136,9 +150,9 @@ def _prune_old_jobs() -> None:
     with _JOBS_LOCK:
         for store in (ALPHA_BENCH_JOBS, ALPHA_COMPARE_JOBS):
             stale = [
-                jid for jid, job in store.items()
-                if job.get("status") in ("done", "error")
-                and job.get("_finished_at", 0) < cutoff
+                jid
+                for jid, job in store.items()
+                if job.get("status") in ("done", "error") and job.get("_finished_at", 0) < cutoff
             ]
             for jid in stale:
                 store.pop(jid, None)
@@ -161,18 +175,14 @@ class BenchRequest(BaseModel):
     @classmethod
     def _zoo_known(cls, v: str) -> str:
         if v not in _VALID_ZOOS:
-            raise ValueError(
-                f"unknown zoo {v!r}; expected one of {sorted(_VALID_ZOOS)}"
-            )
+            raise ValueError(f"unknown zoo {v!r}; expected one of {sorted(_VALID_ZOOS)}")
         return v
 
     @field_validator("universe")
     @classmethod
     def _universe_known(cls, v: str) -> str:
         if v not in _BENCH_UNIVERSES:
-            raise ValueError(
-                f"unknown universe {v!r}; expected one of {sorted(_BENCH_UNIVERSES)}"
-            )
+            raise ValueError(f"unknown universe {v!r}; expected one of {sorted(_BENCH_UNIVERSES)}")
         return v
 
 
@@ -204,9 +214,7 @@ class CompareRequest(BaseModel):
     @classmethod
     def _universe_known(cls, v: str) -> str:
         if v not in _BENCH_UNIVERSES:
-            raise ValueError(
-                f"unknown universe {v!r}; expected one of {sorted(_BENCH_UNIVERSES)}"
-            )
+            raise ValueError(f"unknown universe {v!r}; expected one of {sorted(_BENCH_UNIVERSES)}")
         return v
 
     @field_validator("sort")
@@ -283,17 +291,13 @@ def _run_bench_blocking(job_id: str, zoo: str, universe: str, period: str, top: 
             # Strip the bulky per-alpha lists — the API contract returns
             # summary-only on the result event. We keep ``n_skipped`` (the
             # count) which ``_result_for_wire`` reshapes into ``skipped``.
-            slim = {
-                k: v for k, v in result.items() if k not in ("rows", "skipped")
-            }
+            slim = {k: v for k, v in result.items() if k not in ("rows", "skipped")}
             job["status"] = "done"
             job["result"] = slim
         job["_finished_at"] = time.time()
 
 
-def _run_compare_blocking(
-    job_id: str, alpha_ids: list[str], universe: str, period: str, sort: str
-) -> None:
+def _run_compare_blocking(job_id: str, alpha_ids: list[str], universe: str, period: str, sort: str) -> None:
     """Synchronous compare worker (called via ``asyncio.to_thread``).
 
     Unlike bench, the comparison's product IS the per-alpha ranking, so the full

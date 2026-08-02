@@ -52,9 +52,7 @@ class _FakeIB:
         return ["DU12345"]
 
     def accountSummary(self, account=""):
-        return [
-            SimpleNamespace(account="DU12345", tag="NetLiquidation", value="100000", currency="USD", modelCode="")
-        ]
+        return [SimpleNamespace(account="DU12345", tag="NetLiquidation", value="100000", currency="USD", modelCode="")]
 
     def positions(self):
         contract = SimpleNamespace(
@@ -170,9 +168,7 @@ def test_positions_tool_returns_json(fake_ib_async) -> None:
     assert payload["positions"][0]["symbol"] == "AAPL"
 
 
-def test_service_uses_persisted_ibkr_local_config(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
+def test_service_uses_persisted_ibkr_local_config(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """Configured local endpoint values must survive later connector calls."""
     from src.trading import service
 
@@ -232,11 +228,12 @@ def test_cli_connector_check_passes_account_to_backend() -> None:
         account="DU12345",
     )
 
+
 # -- _wait_for_tick timing regression tests ------------------------------
+
 
 def test_quote_waits_for_delayed_tick_arrival(monkeypatch: pytest.MonkeyPatch) -> None:
     """get_quote polls with ib.sleep() until the ticker receives real data."""
-    import math
     from types import SimpleNamespace
 
     pump_count = [0]
@@ -279,14 +276,17 @@ def test_quote_waits_for_delayed_tick_arrival(monkeypatch: pytest.MonkeyPatch) -
 
 def test_quote_keeps_polling_when_ticker_is_nan(monkeypatch: pytest.MonkeyPatch) -> None:
     """get_quote rejects NaN fields and continues polling for real data."""
-    import math
     from types import SimpleNamespace
 
     pump_count = [0]
 
     ticker_ns = SimpleNamespace(
-        bid=float("nan"), ask=float("nan"), last=float("nan"),
-        close=None, volume=None, time="",
+        bid=float("nan"),
+        ask=float("nan"),
+        last=float("nan"),
+        close=None,
+        volume=None,
+        time="",
     )
 
     class _NanThenFillIB(_FakeIB):
@@ -313,6 +313,7 @@ def test_quote_keeps_polling_when_ticker_is_nan(monkeypatch: pytest.MonkeyPatch)
     assert result["status"] == "ok"
     assert result["quote"]["bid"] == 200.0
     assert pump_count[0] >= 8, f"Expected >=8 pumps (skipped NaN), got {pump_count[0]}"
+
 
 def test_pool_refcount_disconnects_on_last_release(fake_ib_async) -> None:
     """disconnect() is called only when refcount reaches zero."""

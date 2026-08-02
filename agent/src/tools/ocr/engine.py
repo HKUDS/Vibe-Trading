@@ -142,9 +142,10 @@ def get_ocr_engine() -> OcrEngine | None:
             else ""
         )
         logger.warning(
-            "OCR engine '%s' is deprecated; use '%s' instead. "
-            "Alias will be removed in a future release.%s",
-            choice, new_name, migration,
+            "OCR engine '%s' is deprecated; use '%s' instead. Alias will be removed in a future release.%s",
+            choice,
+            new_name,
+            migration,
         )
         choice = new_name
     engines = _all_engines()

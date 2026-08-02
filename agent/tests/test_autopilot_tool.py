@@ -35,9 +35,7 @@ def test_lookup_codes_matches_chinext_case_insensitively() -> None:
     assert _lookup_codes("Chi-Next") == ["399006.SZ"]
 
 
-def test_generate_backtest_config_writes_safe_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_generate_backtest_config_writes_safe_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The tool should write a config with mapped codes under the run root."""
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     hypothesis = _seed_hypothesis(tmp_path, monkeypatch, universe="chiNext")
@@ -81,9 +79,7 @@ def test_generate_backtest_config_rejects_invalid_date_before_write(
     assert not (tmp_path / ".vibe-trading" / "runs").exists()
 
 
-def test_run_research_autopilot_uses_host_injected_session_id(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_research_autopilot_uses_host_injected_session_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The tool must work through build_registry without the LLM passing a session_id.
 
     Regression for the dead-on-arrival defect: the tool only read session_id from
@@ -106,9 +102,7 @@ def test_run_research_autopilot_uses_host_injected_session_id(
     assert hypothesis.thesis in json.dumps(payload, ensure_ascii=False)
 
 
-def test_run_research_autopilot_unknown_hypothesis_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_research_autopilot_unknown_hypothesis_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A missing hypothesis id returns a clean not-found error, not a crash."""
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     monkeypatch.setenv("VIBE_TRADING_HYPOTHESES_PATH", str(tmp_path / "hypotheses.json"))
@@ -120,9 +114,7 @@ def test_run_research_autopilot_unknown_hypothesis_errors(
     assert "not found" in payload["error"].lower()
 
 
-def test_generate_backtest_config_run_dir_passes_safe_run_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_generate_backtest_config_run_dir_passes_safe_run_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The returned run_dir must be accepted by safe_run_dir.
 
     Regression for the high-severity defect: the tool wrote run_dir under
@@ -147,9 +139,7 @@ def test_generate_backtest_config_run_dir_passes_safe_run_dir(
     assert resolved == Path(payload["run_dir"]).resolve()
 
 
-def test_generate_backtest_config_falls_back_on_unknown_source(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_generate_backtest_config_falls_back_on_unknown_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A free-text data_source that is not a real loader degrades to 'auto'."""
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     monkeypatch.setenv("VIBE_TRADING_HYPOTHESES_PATH", str(tmp_path / "hypotheses.json"))

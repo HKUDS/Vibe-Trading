@@ -89,10 +89,14 @@ net_assets = row.get("balancesheet_total_hldr_eqy_exc_min_int")
 roe = row.get("fina_indicator_roe")
 
 passes = (
-    revenue is not None and revenue > 0
-    and profit is not None and profit > 0
-    and net_assets is not None and net_assets > 0
-    and roe is not None and roe >= 8.0
+    revenue is not None
+    and revenue > 0
+    and profit is not None
+    and profit > 0
+    and net_assets is not None
+    and net_assets > 0
+    and roe is not None
+    and roe >= 8.0
 )
 ```
 
@@ -102,6 +106,7 @@ For HK/US stocks, fundamental data is not available as daily time-series via the
 
 ```python
 import yfinance as yf
+
 
 def screen_us_stocks(tickers, criteria):
     """Screen US/HK stocks by fundamental criteria."""
@@ -116,19 +121,24 @@ def screen_us_stocks(tickers, criteria):
         if pe is None or pb is None or roe is None:
             continue  # Skip stocks with missing data
 
-        if (0 < pe < criteria["pe_max"]
+        if (
+            0 < pe < criteria["pe_max"]
             and pb < criteria["pb_max"]
             and roe > criteria["roe_min"]
-            and (mcap or 0) > criteria.get("mcap_min", 0)):
-            passed.append({
-                "symbol": symbol,
-                "pe": pe,
-                "pb": pb,
-                "roe": round(roe * 100, 1),  # Convert to percentage
-                "mcap": mcap,
-            })
+            and (mcap or 0) > criteria.get("mcap_min", 0)
+        ):
+            passed.append(
+                {
+                    "symbol": symbol,
+                    "pe": pe,
+                    "pb": pb,
+                    "roe": round(roe * 100, 1),  # Convert to percentage
+                    "mcap": mcap,
+                }
+            )
 
     return passed
+
 
 # Example: screen S&P 500 components
 criteria = {"pe_max": 20, "pb_max": 3.0, "roe_min": 0.08, "mcap_min": 10_000_000_000}

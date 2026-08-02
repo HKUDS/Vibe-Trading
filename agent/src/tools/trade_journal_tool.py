@@ -46,12 +46,14 @@ def pair_trades_fifo(df: pd.DataFrame) -> list[dict[str, Any]]:
 
     for row in df.itertuples(index=False):
         if row.side == "buy":
-            queues[row.symbol].append({
-                "dt": row.datetime,
-                "qty": row.quantity,
-                "price": row.price,
-                "fee": row.fee,
-            })
+            queues[row.symbol].append(
+                {
+                    "dt": row.datetime,
+                    "qty": row.quantity,
+                    "price": row.price,
+                    "fee": row.fee,
+                }
+            )
             continue
 
         # sell: match against oldest buys
@@ -70,17 +72,19 @@ def pair_trades_fifo(df: pd.DataFrame) -> list[dict[str, Any]]:
             pnl = gross - buy_fee - sell_fee
             cost = lot["price"] * take
             pnl_pct = pnl / cost if cost else 0.0
-            roundtrips.append({
-                "symbol": row.symbol,
-                "buy_dt": lot["dt"],
-                "sell_dt": row.datetime,
-                "qty": take,
-                "buy_price": lot["price"],
-                "sell_price": row.price,
-                "hold_days": round(hold, 2),
-                "pnl": round(pnl, 2),
-                "pnl_pct": round(pnl_pct, 4),
-            })
+            roundtrips.append(
+                {
+                    "symbol": row.symbol,
+                    "buy_dt": lot["dt"],
+                    "sell_dt": row.datetime,
+                    "qty": take,
+                    "buy_price": lot["price"],
+                    "sell_price": row.price,
+                    "hold_days": round(hold, 2),
+                    "pnl": round(pnl, 2),
+                    "pnl_pct": round(pnl_pct, 4),
+                }
+            )
             lot["fee"] -= buy_fee
             lot["qty"] -= take
             remaining -= take
@@ -206,9 +210,13 @@ def _disposition_effect(rts_df: pd.DataFrame) -> dict[str, Any]:
         "evidence": (
             f"Losing roundtrips held {loss_hold:.1f}d vs winning "
             f"{win_hold:.1f}d (ratio {ratio:.2f}). "
-            + ("Classic disposition pattern." if severity == "high"
-               else "Mild hold-losers-longer tendency." if severity == "medium"
-               else "Hold times roughly symmetric.")
+            + (
+                "Classic disposition pattern."
+                if severity == "high"
+                else "Mild hold-losers-longer tendency."
+                if severity == "medium"
+                else "Hold times roughly symmetric."
+            )
         ),
     }
 
@@ -255,9 +263,13 @@ def _overtrading(df: pd.DataFrame, rts_df: pd.DataFrame) -> dict[str, Any]:
         "evidence": (
             f"On busy days (≥{busy_cut:.0f} trades) avg PnL {busy_avg:+.0f}; "
             f"on quiet days (≤{quiet_cut:.0f}) avg PnL {quiet_avg:+.0f}. "
-            + ("High activity hurts returns." if severity == "high"
-               else "Some drag from busy-day trading." if severity == "medium"
-               else "Activity level does not materially hurt PnL.")
+            + (
+                "High activity hurts returns."
+                if severity == "high"
+                else "Some drag from busy-day trading."
+                if severity == "medium"
+                else "Activity level does not materially hurt PnL."
+            )
         ),
     }
 
@@ -290,9 +302,13 @@ def _chasing_momentum(df: pd.DataFrame) -> dict[str, Any]:
         "evidence": (
             f"{len(chased)}/{len(matured)} buys ({ratio:.0%}) came after a >3% "
             "price run-up in the same symbol. "
-            + ("Strong chasing pattern." if severity == "high"
-               else "Some chasing tendency." if severity == "medium"
-               else "No clear chasing bias.")
+            + (
+                "Strong chasing pattern."
+                if severity == "high"
+                else "Some chasing tendency."
+                if severity == "medium"
+                else "No clear chasing bias."
+            )
         ),
     }
 
@@ -330,9 +346,13 @@ def _anchoring(df: pd.DataFrame) -> dict[str, Any]:
         "evidence": (
             f"{len(anchored)}/{len(rows)} frequently-traded symbols stayed in a "
             "narrow price band (CV<5%). "
-            + ("Strong anchoring — repeated trades at the same price." if severity == "high"
-               else "Some anchoring on select symbols." if severity == "medium"
-               else "Prices vary naturally across repeat trades.")
+            + (
+                "Strong anchoring — repeated trades at the same price."
+                if severity == "high"
+                else "Some anchoring on select symbols."
+                if severity == "medium"
+                else "Prices vary naturally across repeat trades."
+            )
         ),
     }
 
@@ -386,11 +406,7 @@ def _apply_filter(df: pd.DataFrame, expr: str) -> pd.DataFrame:
             hi_format = "%Y-%m" if hi_month else "%Y-%m-%d"
             lo = pd.to_datetime(lo_raw, format=lo_format, errors="raise")
             hi_base = pd.to_datetime(hi_raw, format=hi_format, errors="raise")
-            hi = (
-                hi_base + pd.offsets.MonthBegin(1)
-                if hi_month
-                else hi_base + pd.Timedelta(days=1)
-            )
+            hi = hi_base + pd.offsets.MonthBegin(1) if hi_month else hi_base + pd.Timedelta(days=1)
         except ValueError:
             raise
         except Exception as exc:
@@ -441,9 +457,7 @@ def analyze_trade_journal(file_path: str, analysis_type: str = "full", filter_ex
         return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
 
     if not records:
-        return json.dumps(
-            {"status": "error", "error": "No trade records parsed"}, ensure_ascii=False
-        )
+        return json.dumps({"status": "error", "error": "No trade records parsed"}, ensure_ascii=False)
 
     df = records_to_dataframe(records)
     try:

@@ -103,8 +103,7 @@ def test_in_memory_ai_message_path_preserves_thought_signature() -> None:
     replay = ContextBuilder.format_assistant_tool_calls(response.tool_calls, content="")
 
     assert response.tool_calls[0].extra_content["thought_signature"] == "sig-from-ai-message"
-    assert replay["additional_kwargs"]["tool_calls"][0]["extra_content"]["thought_signature"] == \
-        "sig-from-ai-message"
+    assert replay["additional_kwargs"]["tool_calls"][0]["extra_content"]["thought_signature"] == "sig-from-ai-message"
 
 
 def test_loop_helper_attaches_thought_signature_to_dict_history() -> None:

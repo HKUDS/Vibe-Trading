@@ -129,7 +129,7 @@ def cmd_journal(ctx: Any = None, *args: str) -> int:
         body.append("Usage: ", style="dim")
         body.append("/journal <path-to-csv>\n", style="bold")
         body.append("Example: ", style="dim")
-        body.append('/journal ~/Downloads/journal.csv\n\n', style="bold")
+        body.append("/journal ~/Downloads/journal.csv\n\n", style="bold")
         body.append("Or type the prompt directly: ", style="dim")
         body.append('"analyze my trade journal at <path>"', style="bold")
         console.print(Panel(body, title="/journal", border_style="dim", padding=(1, 2)))

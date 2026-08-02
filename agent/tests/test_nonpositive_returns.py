@@ -34,11 +34,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "negative_close_bars.csv"
 def delu() -> pd.Series:
     """The four DE-LU non-positive closes from the #816 fixture."""
     df = pd.read_csv(FIXTURE, comment="#")
-    return (
-        df[df.code == "POWER-DA-DELU"]
-        .sort_values("trade_date")
-        .set_index("trade_date")["close"]
-    )
+    return df[df.code == "POWER-DA-DELU"].sort_values("trade_date").set_index("trade_date")["close"]
 
 
 # ---------------------------------------------------------------------------
@@ -51,19 +47,13 @@ def test_positive_series_are_bit_identical_to_pct_change(n: int) -> None:
     """Equities and crypto must be untouched — not close, identical."""
     prices = pd.Series(np.random.default_rng(7).uniform(1.0, 400.0, n))
 
-    assert (
-        bar_returns(prices).to_numpy() == prices.pct_change().fillna(0.0).to_numpy()
-    ).all()
+    assert (bar_returns(prices).to_numpy() == prices.pct_change().fillna(0.0).to_numpy()).all()
 
 
 def test_positive_frames_are_bit_identical_to_pct_change() -> None:
-    prices = pd.DataFrame(
-        np.random.default_rng(11).uniform(1.0, 400.0, (200, 4)), columns=list("ABCD")
-    )
+    prices = pd.DataFrame(np.random.default_rng(11).uniform(1.0, 400.0, (200, 4)), columns=list("ABCD"))
 
-    assert (
-        bar_returns(prices).to_numpy() == prices.pct_change().fillna(0.0).to_numpy()
-    ).all()
+    assert (bar_returns(prices).to_numpy() == prices.pct_change().fillna(0.0).to_numpy()).all()
 
 
 def test_buy_and_hold_equals_the_compounded_product_when_prices_are_positive() -> None:
@@ -89,9 +79,7 @@ def test_near_zero_prior_close_no_longer_explodes(delu: pd.Series) -> None:
 
 def test_compounded_aggregate_no_longer_explodes(delu: pd.Series) -> None:
     pre_zero = delu.iloc[:-1]
-    assert float((1 + pre_zero.pct_change().fillna(0.0)).prod() - 1) == pytest.approx(
-        10.444, rel=1e-3
-    )
+    assert float((1 + pre_zero.pct_change().fillna(0.0)).prod() - 1) == pytest.approx(10.444, rel=1e-3)
 
     assert (bar_returns(pre_zero) == 0.0).all()
 

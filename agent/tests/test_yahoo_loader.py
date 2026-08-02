@@ -3,6 +3,7 @@
 All network access is mocked at the loader's ``yahoo_client.get_chart`` import
 site, so no test ever reaches a live Yahoo endpoint.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -260,9 +261,7 @@ class TestFetch:
         assert mock_chart.call_args.args[0] == "RELIANCE.NS"
 
     def test_non_us_hk_india_symbol_skipped(self):
-        with patch(
-            "backtest.loaders.yahoo_loader.yahoo_client.get_chart"
-        ) as mock_chart:
+        with patch("backtest.loaders.yahoo_loader.yahoo_client.get_chart") as mock_chart:
             out = DataLoader().fetch(["601398.SH"], "2024-01-01", "2024-01-31")
         assert out == {}
         mock_chart.assert_not_called()
@@ -279,16 +278,12 @@ class TestFetch:
             "backtest.loaders.yahoo_loader.yahoo_client.get_chart",
             side_effect=fake_chart,
         ):
-            out = DataLoader().fetch(
-                ["BAD.US", "GOOD.US"], "2024-01-01", "2024-01-31"
-            )
+            out = DataLoader().fetch(["BAD.US", "GOOD.US"], "2024-01-01", "2024-01-31")
         assert "BAD.US" not in out
         assert "GOOD.US" in out
 
     def test_empty_codes_short_circuits(self):
-        with patch(
-            "backtest.loaders.yahoo_loader.yahoo_client.get_chart"
-        ) as mock_chart:
+        with patch("backtest.loaders.yahoo_loader.yahoo_client.get_chart") as mock_chart:
             assert DataLoader().fetch([], "2024-01-01", "2024-01-31") == {}
         mock_chart.assert_not_called()
 
@@ -308,7 +303,10 @@ class TestLoaderMetadata:
         loader = DataLoader()
         assert loader.name == "yahoo"
         assert loader.markets == {
-            "us_equity", "hk_equity", "india_equity", "kr_equity",
+            "us_equity",
+            "hk_equity",
+            "india_equity",
+            "kr_equity",
         }
         assert loader.requires_auth is False
         assert loader.is_available() is True

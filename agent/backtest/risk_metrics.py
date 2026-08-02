@@ -260,26 +260,12 @@ def cscv_probability_of_backtest_overfitting(
     t_obs, n_trials = mat.shape
     if n_trials < 2:
         return {"error": f"need at least 2 trials, got {n_trials}"}
-    if (
-        isinstance(n_groups, bool)
-        or not isinstance(n_groups, Integral)
-        or n_groups < 2
-        or int(n_groups) % 2 != 0
-    ):
+    if isinstance(n_groups, bool) or not isinstance(n_groups, Integral) or n_groups < 2 or int(n_groups) % 2 != 0:
         return {"error": f"n_groups must be an even integer >= 2, got {n_groups}"}
     n_groups = int(n_groups)
     if t_obs < n_groups * 2:
-        return {
-            "error": (
-                f"need at least {n_groups * 2} return rows for n_groups={n_groups}, "
-                f"got {t_obs}"
-            )
-        }
-    if (
-        isinstance(max_combinations, bool)
-        or not isinstance(max_combinations, Integral)
-        or max_combinations < 1
-    ):
+        return {"error": (f"need at least {n_groups * 2} return rows for n_groups={n_groups}, got {t_obs}")}
+    if isinstance(max_combinations, bool) or not isinstance(max_combinations, Integral) or max_combinations < 1:
         return {"error": f"max_combinations must be >= 1, got {max_combinations}"}
     if isinstance(seed, bool) or not isinstance(seed, Integral) or seed < 0:
         return {"error": f"seed must be >= 0, got {seed}"}
@@ -295,9 +281,7 @@ def cscv_probability_of_backtest_overfitting(
     subsampled = n_combos_full > int(max_combinations)
     if subsampled:
         rng = np.random.default_rng(int(seed))
-        is_group_list = _sample_cscv_is_groups(
-            n_groups, half, int(max_combinations), rng
-        )
+        is_group_list = _sample_cscv_is_groups(n_groups, half, int(max_combinations), rng)
         method = "cscv_random_subsample"
         note = (
             f"Random CSCV subsample of {len(is_group_list)} / {n_combos_full} "
@@ -319,13 +303,9 @@ def cscv_probability_of_backtest_overfitting(
 
     for is_groups in is_group_list:
         is_set = set(is_groups)
-        is_idx = np.concatenate(
-            [np.arange(group_slices[g].start, group_slices[g].stop) for g in is_groups]
-        )
+        is_idx = np.concatenate([np.arange(group_slices[g].start, group_slices[g].stop) for g in is_groups])
         oos_groups = [g for g in range(n_groups) if g not in is_set]
-        oos_idx = np.concatenate(
-            [np.arange(group_slices[g].start, group_slices[g].stop) for g in oos_groups]
-        )
+        oos_idx = np.concatenate([np.arange(group_slices[g].start, group_slices[g].stop) for g in oos_groups])
         is_sr = _per_column_sharpe(mat[is_idx], bars_per_year)
         oos_sr = _per_column_sharpe(mat[oos_idx], bars_per_year)
         best = int(np.argmax(is_sr))
@@ -412,9 +392,6 @@ def probability_of_backtest_overfitting(
             "(T×N matrix) for exact CSCV via cscv_probability_of_backtest_overfitting."
         ),
     }
-
-
-    return out
 
 
 def expected_shortfall(
@@ -752,15 +729,10 @@ def run_risk_metrics(
                 seed=int(seed),
             )
         elif trial_sharpes is not None:
-            out["pbo"] = probability_of_backtest_overfitting(
-                list(trial_sharpes), seed=int(seed)
-            )
+            out["pbo"] = probability_of_backtest_overfitting(list(trial_sharpes), seed=int(seed))
         else:
             out["pbo"] = {
-                "error": (
-                    "include_pbo=True requires trial_returns (T×N matrix) "
-                    "or trial_sharpes (list)"
-                ),
+                "error": ("include_pbo=True requires trial_returns (T×N matrix) or trial_sharpes (list)"),
             }
 
     return out

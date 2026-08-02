@@ -195,9 +195,7 @@ class DecayEvaluator:
 
         return None
 
-    def _check_active_to_monitoring(
-        self, signals: list[DecaySignal]
-    ) -> ArtifactStatus | None:
+    def _check_active_to_monitoring(self, signals: list[DecaySignal]) -> ArtifactStatus | None:
         """active → monitoring: WARNING+ for warnings_for_monitoring consecutive."""
         needed = self._t.warnings_for_monitoring
         tail = signals[-needed:] if len(signals) >= needed else signals
@@ -207,9 +205,7 @@ class DecayEvaluator:
             return ArtifactStatus.MONITORING
         return None
 
-    def _check_monitoring_transition(
-        self, signals: list[DecaySignal]
-    ) -> ArtifactStatus | None:
+    def _check_monitoring_transition(self, signals: list[DecaySignal]) -> ArtifactStatus | None:
         """monitoring → active (recovery) or monitoring → decayed."""
         latest = signals[-1]
 
@@ -226,9 +222,7 @@ class DecayEvaluator:
             return ArtifactStatus.DECAYED
         return None
 
-    def _check_decayed_to_disabled(
-        self, signals: list[DecaySignal]
-    ) -> ArtifactStatus | None:
+    def _check_decayed_to_disabled(self, signals: list[DecaySignal]) -> ArtifactStatus | None:
         """decayed → disabled: CRITICAL for critical_for_disabled consecutive."""
         needed = self._t.critical_for_disabled
         tail = signals[-needed:] if len(signals) >= needed else signals

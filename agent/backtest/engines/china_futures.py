@@ -24,59 +24,144 @@ from backtest.engines.futures_base import FuturesBaseEngine
 
 _MULTIPLIER: dict[str, int] = {
     # Stock index futures (CFFEX)
-    "IF": 300, "IC": 200, "IH": 300, "IM": 200,
+    "IF": 300,
+    "IC": 200,
+    "IH": 300,
+    "IM": 200,
     # Treasury bond futures (CFFEX)
-    "T": 10000, "TF": 10000, "TS": 20000, "TL": 10000,
+    "T": 10000,
+    "TF": 10000,
+    "TS": 20000,
+    "TL": 10000,
     # Metals (SHFE)
-    "au": 1000, "ag": 15, "cu": 5, "al": 5, "zn": 5,
-    "pb": 5, "ni": 1, "sn": 1, "ss": 5,
+    "au": 1000,
+    "ag": 15,
+    "cu": 5,
+    "al": 5,
+    "zn": 5,
+    "pb": 5,
+    "ni": 1,
+    "sn": 1,
+    "ss": 5,
     # Ferrous (SHFE / DCE)
-    "rb": 10, "hc": 10, "i": 100, "j": 100, "jm": 60,
+    "rb": 10,
+    "hc": 10,
+    "i": 100,
+    "j": 100,
+    "jm": 60,
     # Energy (SHFE / INE)
-    "sc": 1000, "fu": 10, "lu": 10, "bu": 10, "nr": 10,
+    "sc": 1000,
+    "fu": 10,
+    "lu": 10,
+    "bu": 10,
+    "nr": 10,
     # Agriculture (DCE)
-    "c": 10, "cs": 10, "m": 10, "y": 10, "a": 10,
-    "p": 10, "jd": 10, "lh": 16, "rr": 10, "pg": 20,
+    "c": 10,
+    "cs": 10,
+    "m": 10,
+    "y": 10,
+    "a": 10,
+    "p": 10,
+    "jd": 10,
+    "lh": 16,
+    "rr": 10,
+    "pg": 20,
     # Agriculture (ZCE)
-    "CF": 5, "SR": 10, "TA": 5, "MA": 10, "AP": 10,
-    "RM": 10, "OI": 10, "CJ": 5, "PK": 5, "CY": 5,
+    "CF": 5,
+    "SR": 10,
+    "TA": 5,
+    "MA": 10,
+    "AP": 10,
+    "RM": 10,
+    "OI": 10,
+    "CJ": 5,
+    "PK": 5,
+    "CY": 5,
     # Chemical (DCE / ZCE)
-    "pp": 5, "l": 5, "v": 5, "eg": 10, "eb": 5,
-    "PF": 5, "SA": 20, "FG": 20, "UR": 20,
+    "pp": 5,
+    "l": 5,
+    "v": 5,
+    "eg": 10,
+    "eb": 5,
+    "PF": 5,
+    "SA": 20,
+    "FG": 20,
+    "UR": 20,
     # GFEX
-    "si": 5, "lc": 1,
+    "si": 5,
+    "lc": 1,
 }
 
 # ── Margin rate (exchange minimum) ──
 
 _MARGIN_RATE: dict[str, float] = {
     # CFFEX stock index
-    "IF": 0.12, "IC": 0.12, "IH": 0.12, "IM": 0.12,
+    "IF": 0.12,
+    "IC": 0.12,
+    "IH": 0.12,
+    "IM": 0.12,
     # CFFEX bonds
-    "T": 0.03, "TF": 0.02, "TS": 0.015, "TL": 0.035,
+    "T": 0.03,
+    "TF": 0.02,
+    "TS": 0.015,
+    "TL": 0.035,
     # SHFE metals
-    "au": 0.08, "ag": 0.09, "cu": 0.08, "al": 0.07,
-    "zn": 0.08, "pb": 0.08, "ni": 0.12, "sn": 0.10, "ss": 0.08,
+    "au": 0.08,
+    "ag": 0.09,
+    "cu": 0.08,
+    "al": 0.07,
+    "zn": 0.08,
+    "pb": 0.08,
+    "ni": 0.12,
+    "sn": 0.10,
+    "ss": 0.08,
     # Ferrous
-    "rb": 0.10, "hc": 0.10, "i": 0.12, "j": 0.12, "jm": 0.12,
+    "rb": 0.10,
+    "hc": 0.10,
+    "i": 0.12,
+    "j": 0.12,
+    "jm": 0.12,
     # Energy
-    "sc": 0.10, "fu": 0.10, "lu": 0.10, "bu": 0.10,
+    "sc": 0.10,
+    "fu": 0.10,
+    "lu": 0.10,
+    "bu": 0.10,
     # Agriculture
-    "c": 0.07, "cs": 0.07, "m": 0.08, "y": 0.08, "a": 0.08,
-    "p": 0.08, "jd": 0.08, "lh": 0.12,
+    "c": 0.07,
+    "cs": 0.07,
+    "m": 0.08,
+    "y": 0.08,
+    "a": 0.08,
+    "p": 0.08,
+    "jd": 0.08,
+    "lh": 0.12,
     # Textiles / chemical
-    "CF": 0.07, "SR": 0.07, "TA": 0.07, "MA": 0.07,
-    "pp": 0.07, "l": 0.07, "v": 0.07, "eg": 0.08,
-    "SA": 0.08, "FG": 0.08, "UR": 0.08,
+    "CF": 0.07,
+    "SR": 0.07,
+    "TA": 0.07,
+    "MA": 0.07,
+    "pp": 0.07,
+    "l": 0.07,
+    "v": 0.07,
+    "eg": 0.08,
+    "SA": 0.08,
+    "FG": 0.08,
+    "UR": 0.08,
 }
 
 # ── Price limit (fraction, ± from settlement) ──
 
 _PRICE_LIMIT: dict[str, float] = {
     # CFFEX stock index ±10%
-    "IF": 0.10, "IC": 0.10, "IH": 0.10, "IM": 0.10,
+    "IF": 0.10,
+    "IC": 0.10,
+    "IH": 0.10,
+    "IM": 0.10,
     # CFFEX bonds ±2% (simplified)
-    "T": 0.02, "TF": 0.012, "TS": 0.005, "TL": 0.035,
+    "T": 0.02,
+    "TF": 0.012,
+    "TS": 0.005,
+    "TL": 0.035,
 }
 _DEFAULT_PRICE_LIMIT = 0.05  # most commodities ±4%~7%, use 5% as default
 
@@ -85,26 +170,49 @@ _DEFAULT_PRICE_LIMIT = 0.05  # most commodities ±4%~7%, use 5% as default
 
 _COMMISSION: dict[str, tuple[str, float]] = {
     # CFFEX stock index: ~0.0023% of notional
-    "IF": ("rate", 0.000023), "IC": ("rate", 0.000023),
-    "IH": ("rate", 0.000023), "IM": ("rate", 0.000023),
+    "IF": ("rate", 0.000023),
+    "IC": ("rate", 0.000023),
+    "IH": ("rate", 0.000023),
+    "IM": ("rate", 0.000023),
     # CFFEX bonds
-    "T": ("fixed", 3.0), "TF": ("fixed", 3.0), "TS": ("fixed", 3.0),
+    "T": ("fixed", 3.0),
+    "TF": ("fixed", 3.0),
+    "TS": ("fixed", 3.0),
     # Metals
-    "au": ("fixed", 10.0), "ag": ("fixed", 3.0), "cu": ("fixed", 5.0),
-    "al": ("fixed", 3.0), "zn": ("fixed", 3.0), "ni": ("fixed", 3.0),
+    "au": ("fixed", 10.0),
+    "ag": ("fixed", 3.0),
+    "cu": ("fixed", 5.0),
+    "al": ("fixed", 3.0),
+    "zn": ("fixed", 3.0),
+    "ni": ("fixed", 3.0),
     # Ferrous
-    "rb": ("rate", 0.0001), "hc": ("rate", 0.0001), "i": ("rate", 0.0001),
-    "j": ("rate", 0.0001), "jm": ("rate", 0.0001),
+    "rb": ("rate", 0.0001),
+    "hc": ("rate", 0.0001),
+    "i": ("rate", 0.0001),
+    "j": ("rate", 0.0001),
+    "jm": ("rate", 0.0001),
     # Energy
-    "sc": ("fixed", 20.0), "fu": ("rate", 0.00005),
+    "sc": ("fixed", 20.0),
+    "fu": ("rate", 0.00005),
     # Agriculture
-    "c": ("fixed", 1.2), "cs": ("fixed", 1.5), "m": ("fixed", 1.5),
-    "y": ("fixed", 2.5), "a": ("fixed", 2.0), "p": ("fixed", 2.5),
-    "jd": ("rate", 0.00015), "lh": ("rate", 0.0002),
+    "c": ("fixed", 1.2),
+    "cs": ("fixed", 1.5),
+    "m": ("fixed", 1.5),
+    "y": ("fixed", 2.5),
+    "a": ("fixed", 2.0),
+    "p": ("fixed", 2.5),
+    "jd": ("rate", 0.00015),
+    "lh": ("rate", 0.0002),
     # Textiles / chemical
-    "CF": ("fixed", 4.3), "SR": ("fixed", 3.0), "TA": ("fixed", 3.0),
-    "MA": ("fixed", 2.0), "pp": ("fixed", 1.0), "l": ("fixed", 1.0),
-    "v": ("fixed", 1.0), "SA": ("fixed", 3.5), "FG": ("fixed", 3.0),
+    "CF": ("fixed", 4.3),
+    "SR": ("fixed", 3.0),
+    "TA": ("fixed", 3.0),
+    "MA": ("fixed", 2.0),
+    "pp": ("fixed", 1.0),
+    "l": ("fixed", 1.0),
+    "v": ("fixed", 1.0),
+    "SA": ("fixed", 3.5),
+    "FG": ("fixed", 3.0),
 }
 _DEFAULT_COMMISSION: tuple[str, float] = ("fixed", 5.0)
 
@@ -202,7 +310,11 @@ class ChinaFuturesEngine(FuturesBaseEngine):
         return self.calc_commission_for_symbol(self._active_symbol, size, price, is_open)
 
     def calc_commission_for_symbol(
-        self, symbol: str, size: float, price: float, is_open: bool,
+        self,
+        symbol: str,
+        size: float,
+        price: float,
+        is_open: bool,
     ) -> float:
         """Symbol-aware commission calculation.
 
@@ -251,4 +363,3 @@ class ChinaFuturesEngine(FuturesBaseEngine):
 
 
 # ── Helpers ──
-

@@ -20,7 +20,9 @@ def test_rail_uses_codex_marker_and_output_branch() -> None:
         "tool_progress",
         {"tool": "get_market_data", "stage": "fetch", "current": 1, "total": 2, "message": "downloaded candles"},
     )
-    dash.handle_event("tool_result", {"tool": "get_market_data", "status": "ok", "elapsed_ms": 1200, "preview": "AAPL 195.00"})
+    dash.handle_event(
+        "tool_result", {"tool": "get_market_data", "status": "ok", "elapsed_ms": 1200, "preview": "AAPL 195.00"}
+    )
     dash.finish({"status": "success", "content": "AAPL is trading near 195.00."}, 1.2)
 
     out = _render(dash.render())
@@ -50,7 +52,7 @@ def test_rail_renders_codex_style_shell_transcript() -> None:
             "elapsed_ms": 200,
             "preview": (
                 '{"status":"ok","stdout":"M  CHANGELOG.md\\n M agent/.env.example\\n'
-                'M  agent/cli/main.py\\nA  docs/screenshots/boot.png\\n'
+                "M  agent/cli/main.py\\nA  docs/screenshots/boot.png\\n"
                 'A  docs/screenshots/agent-run.png\\n","stderr":""}'
             ),
         },

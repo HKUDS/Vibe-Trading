@@ -25,6 +25,7 @@ from src.swarm.worker import build_worker_prompt
 # extract_symbols_from_user_vars
 # --------------------------------------------------------------------------- #
 
+
 def test_extract_us_hk_a_share_and_crypto_symbols() -> None:
     user_vars = {
         "target": "NVDA.US",
@@ -35,7 +36,12 @@ def test_extract_us_hk_a_share_and_crypto_symbols() -> None:
     }
     found = grounding.extract_symbols_from_user_vars(user_vars)
     assert set(found) == {
-        "NVDA.US", "700.HK", "600519.SH", "BTC-USDT", "000001.SZ", "430090.BJ",
+        "NVDA.US",
+        "700.HK",
+        "600519.SH",
+        "BTC-USDT",
+        "000001.SZ",
+        "430090.BJ",
     }
 
 
@@ -58,7 +64,7 @@ def test_extract_returns_empty_when_no_symbol_present() -> None:
 
 def test_extract_skips_non_string_values() -> None:
     user_vars = {
-        "weight": 0.5,                  # type: ignore[dict-item]  — not a str
+        "weight": 0.5,  # type: ignore[dict-item]  — not a str
         "real_target": "TSLA.US",
     }
     assert grounding.extract_symbols_from_user_vars(user_vars) == ["TSLA.US"]
@@ -116,6 +122,7 @@ def test_extract_does_not_match_substrings_inside_words() -> None:
 # fetch_grounding_data — monkeypatched loader
 # --------------------------------------------------------------------------- #
 
+
 class _StubLoader:
     """Mimics enough of the loader contract for grounding.fetch."""
 
@@ -130,10 +137,10 @@ def _three_bar_frame() -> pd.DataFrame:
     idx = pd.to_datetime(["2026-05-06", "2026-05-07", "2026-05-08"])
     return pd.DataFrame(
         {
-            "open":   [200.0, 208.3, 213.0],
-            "high":   [208.3, 214.2, 217.8],
-            "low":    [198.6, 206.5, 212.9],
-            "close":  [207.8, 211.5, 215.2],
+            "open": [200.0, 208.3, 213.0],
+            "high": [208.3, 214.2, 217.8],
+            "low": [198.6, 206.5, 212.9],
+            "close": [207.8, 211.5, 215.2],
             "volume": [188e6, 168e6, 136e6],
         },
         index=idx,
@@ -147,6 +154,7 @@ def test_fetch_returns_normalized_bars(monkeypatch) -> None:
     """
     frame = _three_bar_frame()
     import backtest.loaders.registry as reg
+
     captured_markets: list[str] = []
 
     def _fake_resolve(market: str):
@@ -169,8 +177,10 @@ def test_fetch_returns_normalized_bars(monkeypatch) -> None:
 
 def test_fetch_skips_symbols_with_no_data(monkeypatch) -> None:
     import backtest.loaders.registry as reg
+
     monkeypatch.setattr(
-        reg, "resolve_loader",
+        reg,
+        "resolve_loader",
         lambda market: _StubLoader(pd.DataFrame()),  # empty frame
     )
 
@@ -196,6 +206,7 @@ def test_max_grounding_symbols_falls_back_on_invalid_env(monkeypatch) -> None:
 # format_grounding_block
 # --------------------------------------------------------------------------- #
 
+
 def test_format_returns_empty_for_empty_grounding() -> None:
     assert grounding.format_grounding_block({}) == ""
     assert grounding.format_grounding_block({"NVDA.US": []}) == ""
@@ -203,19 +214,37 @@ def test_format_returns_empty_for_empty_grounding() -> None:
 
 def test_format_renders_table_and_range() -> None:
     rows = [
-        {"trade_date": "2026-05-06T00:00:00", "open": 200.0, "high": 208.3,
-         "low": 198.6, "close": 207.8, "volume": 188_000_000.0},
-        {"trade_date": "2026-05-07T00:00:00", "open": 208.3, "high": 214.2,
-         "low": 206.5, "close": 211.5, "volume": 168_000_000.0},
-        {"trade_date": "2026-05-08T00:00:00", "open": 213.0, "high": 217.8,
-         "low": 212.9, "close": 215.2, "volume": 136_000_000.0},
+        {
+            "trade_date": "2026-05-06T00:00:00",
+            "open": 200.0,
+            "high": 208.3,
+            "low": 198.6,
+            "close": 207.8,
+            "volume": 188_000_000.0,
+        },
+        {
+            "trade_date": "2026-05-07T00:00:00",
+            "open": 208.3,
+            "high": 214.2,
+            "low": 206.5,
+            "close": 211.5,
+            "volume": 168_000_000.0,
+        },
+        {
+            "trade_date": "2026-05-08T00:00:00",
+            "open": 213.0,
+            "high": 217.8,
+            "low": 212.9,
+            "close": 215.2,
+            "volume": 136_000_000.0,
+        },
     ]
     block = grounding.format_grounding_block({"NVDA.US": rows})
 
     assert "Ground Truth" in block
     assert "NVDA.US" in block
-    assert "215.20" in block            # last close
-    assert "207.80 – 215.20" in block   # window range (min/max close)
+    assert "215.20" in block  # last close
+    assert "207.80 – 215.20" in block  # window range (min/max close)
     assert "2026-05-06 → 2026-05-08" in block
     # The instruction text must survive — it's the whole point.
     assert "Do NOT cite prices" in block
@@ -224,6 +253,7 @@ def test_format_renders_table_and_range() -> None:
 # --------------------------------------------------------------------------- #
 # Worker prompt integration
 # --------------------------------------------------------------------------- #
+
 
 def _spec() -> SwarmAgentSpec:
     return SwarmAgentSpec(
@@ -261,7 +291,9 @@ def test_worker_prompt_always_includes_data_citation_discipline() -> None:
     assert "may NOT cite numbers from memory or training data" in bare
 
     with_grounding = build_worker_prompt(
-        _spec(), {}, "(no matching skills)",
+        _spec(),
+        {},
+        "(no matching skills)",
         grounding_block="## Ground Truth — Recent Market Data\n\nNVDA.US ...",
     )
     assert with_grounding.count("Data Citation Discipline") == 1

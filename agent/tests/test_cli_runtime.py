@@ -146,9 +146,7 @@ class TestRunnerDispatch:
 
 
 class TestRunnerControlEndpoints:
-    def test_live_status_request_sends_configured_bearer_token(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_live_status_request_sends_configured_bearer_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from cli._legacy import _live_api_call
 
         captured: Dict[str, Any] = {}
@@ -186,9 +184,7 @@ class TestRunnerControlEndpoints:
         assert captured["body"]["broker"] == "robinhood"
         assert captured["body"]["foreground"] is False
 
-    def test_connector_start_message_uses_connector_status(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_connector_start_message_uses_connector_status(self, capsys: pytest.CaptureFixture[str]) -> None:
         from cli._legacy import EXIT_SUCCESS, cmd_connector_start
 
         def _post(
@@ -206,9 +202,7 @@ class TestRunnerControlEndpoints:
         assert "vibe-trading connector status" in out
         assert "vibe-trading live" not in out
 
-    def test_connector_start_rejects_readonly_ibkr_mcp(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_connector_start_rejects_readonly_ibkr_mcp(self, capsys: pytest.CaptureFixture[str]) -> None:
         from cli._legacy import EXIT_USAGE_ERROR, cmd_connector_start
 
         assert cmd_connector_start("ibkr-live-official-mcp-readonly") == EXIT_USAGE_ERROR
@@ -322,9 +316,7 @@ class TestStatusLiveness:
 
 
 class TestConnectorStatusReadiness:
-    def test_remote_live_status_fails_when_not_configured(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_remote_live_status_fails_when_not_configured(self, capsys: pytest.CaptureFixture[str]) -> None:
         from cli._legacy import EXIT_RUN_FAILED, cmd_connector_status
 
         with patch(
@@ -347,10 +339,13 @@ class TestConnectorStatusReadiness:
             auth=types.SimpleNamespace(cache_dir=str(tmp_path / "oauth")),
             enabled_tools=["*"],
         )
-        with patch(
-            "src.config.loader.load_agent_config",
-            return_value=types.SimpleNamespace(mcp_servers={"robinhood": server}),
-        ), patch("src.live.registry.has_cached_oauth_token", return_value=False):
+        with (
+            patch(
+                "src.config.loader.load_agent_config",
+                return_value=types.SimpleNamespace(mcp_servers={"robinhood": server}),
+            ),
+            patch("src.live.registry.has_cached_oauth_token", return_value=False),
+        ):
             assert cmd_connector_status("robinhood-live-mcp") == EXIT_RUN_FAILED
 
         out = capsys.readouterr().out
@@ -398,9 +393,7 @@ class TestSlashDiscoverability:
         from cli.completer import SlashCompleter
 
         comp = SlashCompleter()
-        completions = list(
-            comp.get_completions(Document("/", cursor_position=1), complete_event=None)
-        )
+        completions = list(comp.get_completions(Document("/", cursor_position=1), complete_event=None))
         texts = {c.text for c in completions}
         assert {"connector", "halt", "resume"} <= texts
 
@@ -443,9 +436,7 @@ class TestReplResumeIntercept:
         main._clear_halt_from_repl(console)
         assert halt_flag_set("robinhood") is False
 
-    def test_resume_when_not_halted_is_clean(
-        self, live_root: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_resume_when_not_halted_is_clean(self, live_root: Path, capsys: pytest.CaptureFixture[str]) -> None:
         console = main.get_console()
         main._clear_halt_from_repl(console)  # must not raise
         assert "No active global halt" in capsys.readouterr().out
@@ -474,9 +465,7 @@ class TestReplConnectorBridge:
             main._run_connector_command_from_repl(console, ["start"])
         start.assert_called_once_with(None)
 
-    def test_invalid_connector_subcommand_keeps_loop_alive(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_invalid_connector_subcommand_keeps_loop_alive(self, capsys: pytest.CaptureFixture[str]) -> None:
         console = main.get_console()
         # Unknown subcommand → argparse SystemExit, caught, usage printed.
         main._run_connector_command_from_repl(console, ["frobnicate"])

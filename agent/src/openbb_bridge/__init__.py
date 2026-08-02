@@ -39,8 +39,7 @@ def try_register_openbb_routes(app: Any) -> bool:
         from .routes import register_openbb_routes
     except ModuleNotFoundError as exc:
         logger.info(
-            'OpenBB Workspace bridge disabled (%s). Install with: '
-            'pip install "vibe-trading-ai[openbb]"',
+            'OpenBB Workspace bridge disabled (%s). Install with: pip install "vibe-trading-ai[openbb]"',
             exc,
         )
         return False

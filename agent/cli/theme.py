@@ -72,13 +72,13 @@ def _is_dark_terminal(console: Console) -> bool:
         # to ANSI later, but in practice nothing will be coloured.
         return True
 
-    colorfgbg = os.environ.get("COLORFGBG", "")  # noqa: env-gate — terminal capability detection
+    colorfgbg = os.environ.get("COLORFGBG", "")  # env-gate — terminal capability detection
     if ";" in colorfgbg:
         bg = colorfgbg.split(";")[-1].strip()
         if bg.isdigit():
             return int(bg) in {0, 1, 2, 3, 4, 5, 6, 7, 8}  # low ANSI ⇒ dark
 
-    if os.environ.get("TERM_PROGRAM", "").lower() == "apple_terminal":  # noqa: env-gate — terminal capability detection
+    if os.environ.get("TERM_PROGRAM", "").lower() == "apple_terminal":  # env-gate — terminal capability detection
         return True
 
     return True
@@ -126,7 +126,6 @@ def _build_styles(dark: bool, no_color: bool) -> _ThemeStyles:
     """Construct the style bundle for the current terminal mode."""
 
     if no_color:
-        plain = Style()
         return _ThemeStyles(
             primary=Style(bold=True),
             primary_dim=Style(),

@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #77
 # 简要说明: 国泰君安191短周期交易型alpha因子第77号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_077",
-    "theme": ['volume'],
-    "formula_latex": 'MIN(RANK(DECAYLINEAR(((HIGH+LOW)/2+HIGH-(VWAP+HIGH)),20)),RANK(DECAYLINEAR(CORR(((HIGH+LOW)/2),MEAN(VOLUME,40),3),6)))',
-    "columns_required": ['high', 'low', 'volume', 'amount'],
+    "theme": ["volume"],
+    "formula_latex": "MIN(RANK(DECAYLINEAR(((HIGH+LOW)/2+HIGH-(VWAP+HIGH)),20)),RANK(DECAYLINEAR(CORR(((HIGH+LOW)/2),MEAN(VOLUME,40),3),6)))",
+    "columns_required": ["high", "low", "volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
     "min_warmup_bars": 37,
-    "notes": '40d MA truncated to 30d.',
+    "notes": "40d MA truncated to 30d.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     h = panel["high"]
@@ -53,5 +53,4 @@ def compute(panel: dict) -> pd.DataFrame:
     mid = (h + l) / 2.0
     p1 = rank(decay_linear(mid + h - (vw + h), 20))
     p2 = rank(decay_linear(ts_corr(mid, ts_mean(v, 30), 3), 6))
-    return pd.DataFrame(np.minimum(p1.to_numpy(), p2.to_numpy()),
-                        index=h.index, columns=h.columns)
+    return pd.DataFrame(np.minimum(p1.to_numpy(), p2.to_numpy()), index=h.index, columns=h.columns)

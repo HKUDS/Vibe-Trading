@@ -94,10 +94,13 @@ def read_url(url: str, no_cache: bool = False) -> str:
         emit_progress("parsing", message="extracting markdown")
         if resp.status_code != 200:
             logger.warning("read_url upstream HTTP %s: %s", resp.status_code, resp.text[:500])
-            return json.dumps({
-                "status": "error",
-                "error": f"remote reader returned HTTP {resp.status_code}: {resp.text[:500]}",
-            }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"remote reader returned HTTP {resp.status_code}: {resp.text[:500]}",
+                },
+                ensure_ascii=False,
+            )
 
         text = resp.text
         title = ""

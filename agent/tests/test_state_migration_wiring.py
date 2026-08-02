@@ -10,15 +10,11 @@ from src.config import migrate
 @pytest.fixture()
 def record_migration(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     calls: list[int] = []
-    monkeypatch.setattr(
-        migrate, "migrate_legacy_state", lambda *a, **k: calls.append(1) or []
-    )
+    monkeypatch.setattr(migrate, "migrate_legacy_state", lambda *a, **k: calls.append(1) or [])
     return calls
 
 
-def test_cli_main_runs_migration(
-    monkeypatch: pytest.MonkeyPatch, record_migration: list[int]
-) -> None:
+def test_cli_main_runs_migration(monkeypatch: pytest.MonkeyPatch, record_migration: list[int]) -> None:
     import importlib
 
     import cli._legacy as legacy
@@ -32,23 +28,17 @@ def test_cli_main_runs_migration(
     assert record_migration
 
 
-def test_mcp_server_main_runs_migration(
-    monkeypatch: pytest.MonkeyPatch, record_migration: list[int]
-) -> None:
+def test_mcp_server_main_runs_migration(monkeypatch: pytest.MonkeyPatch, record_migration: list[int]) -> None:
     import mcp_server
 
-    monkeypatch.setattr(
-        "sys.argv", ["vibe-trading-mcp", "--transport", "stdio"]
-    )
+    monkeypatch.setattr("sys.argv", ["vibe-trading-mcp", "--transport", "stdio"])
     monkeypatch.setattr(mcp_server.mcp, "run", lambda **kwargs: None)
 
     mcp_server.main()
     assert record_migration
 
 
-def test_api_startup_runs_migration(
-    monkeypatch: pytest.MonkeyPatch, record_migration: list[int]
-) -> None:
+def test_api_startup_runs_migration(monkeypatch: pytest.MonkeyPatch, record_migration: list[int]) -> None:
     import asyncio
 
     import api_server
@@ -60,11 +50,7 @@ def test_api_startup_runs_migration(
         lambda: type(
             "Cfg",
             (),
-            {
-                "agent_tuning": type(
-                    "Tuning", (), {"vibe_trading_channels_auto_start": False}
-                )()
-            },
+            {"agent_tuning": type("Tuning", (), {"vibe_trading_channels_auto_start": False})()},
         )(),
     )
 
@@ -113,11 +99,7 @@ def test_api_lifespan_preserves_startup_and_shutdown_order(
         lambda: type(
             "Cfg",
             (),
-            {
-                "agent_tuning": type(
-                    "Tuning", (), {"vibe_trading_channels_auto_start": True}
-                )()
-            },
+            {"agent_tuning": type("Tuning", (), {"vibe_trading_channels_auto_start": True})()},
         )(),
     )
 

@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #137
 # 简要说明: 国泰君安191短周期交易型alpha因子第137号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: Transcribed from the standard 137 implementation; piecewise denominator.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_137"
 
 __alpha_meta__ = {
-    'id': 'gtja191_137',
-    'theme': ['volatility'],
-    'formula_latex': 'see body',
-    'columns_required': ['open', 'high', 'low', 'close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 1,
-    'min_warmup_bars': 2,
-    'notes': 'Transcribed from the standard 137 implementation; piecewise denominator.',
+    "id": "gtja191_137",
+    "theme": ["volatility"],
+    "formula_latex": "see body",
+    "columns_required": ["open", "high", "low", "close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 1,
+    "min_warmup_bars": 2,
+    "notes": "Transcribed from the standard 137 implementation; piecewise denominator.",
 }
 
 
@@ -66,7 +66,6 @@ def compute(panel):
     dc1 = c.shift(1)
     do1 = o.shift(1)
     dl1 = l.shift(1)
-    dh1 = h.shift(1)
     abs_hdc = (h - dc1).abs()
     abs_ldc = (l - dc1).abs()
     abs_hdl1 = (h - dl1).abs()
@@ -79,9 +78,11 @@ def compute(panel):
     den = den_c.where(~cond2, den_b).where(~cond1, den_a)
     num = c - dc1 + (c - o) / 2.0 + dc1 - do1
     mx = pd.DataFrame(
-        np.maximum(abs_hdc.to_numpy(dtype=np.float64, na_value=np.nan),
-                   abs_ldc.to_numpy(dtype=np.float64, na_value=np.nan)),
-        index=c.index, columns=c.columns,
+        np.maximum(
+            abs_hdc.to_numpy(dtype=np.float64, na_value=np.nan), abs_ldc.to_numpy(dtype=np.float64, na_value=np.nan)
+        ),
+        index=c.index,
+        columns=c.columns,
     )
     out = 16.0 * safe_div(num, den) * mx
     return out

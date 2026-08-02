@@ -54,10 +54,7 @@ class _StubLLM:
             if msg.get("role") in ("user", "system", "tool"):
                 break
             if msg.get("role") == "assistant":
-                raise AssertionError(
-                    f"Messages should not end with assistant role "
-                    f"(call #{self.call_count}): {msg}"
-                )
+                raise AssertionError(f"Messages should not end with assistant role (call #{self.call_count}): {msg}")
 
         return self._Response()
 

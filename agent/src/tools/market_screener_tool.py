@@ -200,9 +200,7 @@ class MarketScreenerTool(BaseTool):
             },
             "top_n": {
                 "type": "integer",
-                "description": (
-                    f"Number of top-ranked instruments to return (1-{_MAX_TOP_N})."
-                ),
+                "description": (f"Number of top-ranked instruments to return (1-{_MAX_TOP_N})."),
                 "default": _DEFAULT_TOP_N,
             },
         },

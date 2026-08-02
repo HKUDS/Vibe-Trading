@@ -79,9 +79,7 @@ def test_leading_nan_is_still_flat_not_forward_filled_backwards() -> None:
 
 
 def test_gapped_frame_isolates_symbols() -> None:
-    frame = pd.DataFrame(
-        {"HALTED": [10.0, np.nan, np.nan, 12.0], "NORMAL": [1.0, 2.0, 4.0, 8.0]}
-    )
+    frame = pd.DataFrame({"HALTED": [10.0, np.nan, np.nan, 12.0], "NORMAL": [1.0, 2.0, 4.0, 8.0]})
 
     ret = bar_returns(frame)
 
@@ -165,8 +163,7 @@ def test_align_keeps_move_across_halt_longer_than_ffill_limit() -> None:
 
     # HALTED prints days 0-1, goes dark for six sessions (> limit 5), resumes
     # day 8 at 121: a real +10% earned by anyone holding through the halt.
-    halted = pd.Series([100.0, 110.0, 121.0, 122.0],
-                       index=dates[[0, 1, 8, 9]])
+    halted = pd.Series([100.0, 110.0, 121.0, 122.0], index=dates[[0, 1, 8, 9]])
     normal = pd.Series(np.linspace(50.0, 59.0, 10), index=dates)
 
     data_map = {"HALTED": _frame(halted), "NORMAL": _frame(normal)}

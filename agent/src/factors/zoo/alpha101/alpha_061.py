@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #61
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第61号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_061"
 
 __alpha_meta__ = {
-    'id': 'alpha101_061',
-    'nickname': 'Kakushadze Alpha #61',
-    'theme': ['volume'],
-    'formula_latex': 'rank(vwap - ts_min(vwap,16)) < rank(correlation(vwap, adv180, 18))',
-    'columns_required': ['volume', 'vwap', 'close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 197,
-    'notes': '',
+    "id": "alpha101_061",
+    "nickname": "Kakushadze Alpha #61",
+    "theme": ["volume"],
+    "formula_latex": "rank(vwap - ts_min(vwap,16)) < rank(correlation(vwap, adv180, 18))",
+    "columns_required": ["volume", "vwap", "close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 197,
+    "notes": "",
 }
 
 

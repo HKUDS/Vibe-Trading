@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #156
 # 简要说明: 国泰君安191短周期交易型alpha因子第156号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: MAX elementwise -> np.maximum.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -38,16 +38,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_156"
 
 __alpha_meta__ = {
-    'id': 'gtja191_156',
-    'theme': ['volume'],
-    'formula_latex': 'see body',
-    'columns_required': ['open', 'high', 'low', 'close', 'volume', 'amount'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 10,
-    'notes': 'MAX elementwise -> np.maximum.',
+    "id": "gtja191_156",
+    "theme": ["volume"],
+    "formula_latex": "see body",
+    "columns_required": ["open", "high", "low", "close", "volume", "amount"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 10,
+    "notes": "MAX elementwise -> np.maximum.",
 }
 
 
@@ -68,7 +68,6 @@ def compute(panel):
     mix = o * 0.15 + l * 0.85
     b_inner = -1.0 * safe_div(delta(mix, 2), mix)
     b = rank(decay_linear(b_inner, 3))
-    arr = np.maximum(a.to_numpy(dtype=np.float64, na_value=np.nan),
-                     b.to_numpy(dtype=np.float64, na_value=np.nan))
+    arr = np.maximum(a.to_numpy(dtype=np.float64, na_value=np.nan), b.to_numpy(dtype=np.float64, na_value=np.nan))
     out = pd.DataFrame(arr, index=a.index, columns=a.columns) * -1.0
     return out

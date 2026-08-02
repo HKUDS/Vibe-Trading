@@ -59,9 +59,7 @@ def _synthetic_hft_book(
         rets[t] = -0.25 * rets[t - 1] + noise[t]
     rets[800:820] -= 0.012  # adverse-selection / inventory blow-up window
     rets[1500:1510] -= 0.015
-    returns = pd.DataFrame(
-        rets, index=idx, columns=[f"S{i}" for i in range(n_names)]
-    )
+    returns = pd.DataFrame(rets, index=idx, columns=[f"S{i}" for i in range(n_names)])
     # Aggressive book with a stronger mean-reversion tilt — unconstrained
     # overtrades; overlay + HFT costs should improve risk-adjusted score.
     signal = -np.sign(returns.shift(1).fillna(0.0).to_numpy())
@@ -73,9 +71,7 @@ def _synthetic_hft_book(
     positions = pd.DataFrame(raw, index=idx, columns=returns.columns)
     close = (1.0 + returns).cumprod() * 100.0
     # Open ≈ prior close with small gap noise (next-bar-open proxy).
-    open_ = close.shift(1).fillna(close.iloc[0]) * (
-        1.0 + rng.normal(0.0, 0.0005, size=close.shape)
-    )
+    open_ = close.shift(1).fillna(close.iloc[0]) * (1.0 + rng.normal(0.0, 0.0005, size=close.shape))
     open_ = pd.DataFrame(open_.to_numpy(), index=idx, columns=returns.columns)
     return positions, returns, close, open_
 
@@ -87,9 +83,7 @@ def main() -> int:
     parser.add_argument("--n-paths", type=int, default=5_000)
     args = parser.parse_args()
 
-    positions, returns, close, open_ = _synthetic_hft_book(
-        n_bars=args.n_bars, seed=args.seed
-    )
+    positions, returns, close, open_ = _synthetic_hft_book(n_bars=args.n_bars, seed=args.seed)
     overlay = RiskOverlayConfig(
         enabled=True,
         vol_target=0.15,
@@ -131,9 +125,7 @@ def main() -> int:
         initial_capital=1_000_000.0,
     )
 
-    base_eq = simulate_strategy_pnl(
-        positions, returns, hft_costs=costs, initial_capital=1_000_000.0
-    )
+    base_eq = simulate_strategy_pnl(positions, returns, hft_costs=costs, initial_capital=1_000_000.0)
     adj, overlay_diag = apply_risk_overlay(
         positions,
         returns,
@@ -143,9 +135,7 @@ def main() -> int:
         high=high,
         low=low,
     )
-    adj_eq = simulate_strategy_pnl(
-        adj, returns, hft_costs=costs, initial_capital=1_000_000.0
-    )
+    adj_eq = simulate_strategy_pnl(adj, returns, hft_costs=costs, initial_capital=1_000_000.0)
 
     mc_base = run_monte_carlo_paths(
         method="bootstrap",
@@ -220,18 +210,8 @@ def main() -> int:
             "overlay_ruin": mc_adj.get("outcomes", {}).get("ruin_probability"),
             "baseline_es": mc_base.get("outcomes", {}).get("expected_shortfall_return"),
             "overlay_es": mc_adj.get("outcomes", {}).get("expected_shortfall_return"),
-            "baseline_mdd_p5": (
-                mc_base.get("outcomes", {})
-                .get("max_drawdown", {})
-                .get("percentiles", {})
-                .get("p5")
-            ),
-            "overlay_mdd_p5": (
-                mc_adj.get("outcomes", {})
-                .get("max_drawdown", {})
-                .get("percentiles", {})
-                .get("p5")
-            ),
+            "baseline_mdd_p5": (mc_base.get("outcomes", {}).get("max_drawdown", {}).get("percentiles", {}).get("p5")),
+            "overlay_mdd_p5": (mc_adj.get("outcomes", {}).get("max_drawdown", {}).get("percentiles", {}).get("p5")),
         },
         "grid_ranking_summary": {
             "n_accepted": (ranking or {}).get("n_accepted"),
@@ -262,8 +242,7 @@ def main() -> int:
         )
     if float(imp.get("risk_adjusted_score_delta", 0.0)) < 0:
         print(
-            "[warn] risk_adjusted_score_delta < 0 on this seed "
-            f"(delta={imp.get('risk_adjusted_score_delta')})",
+            f"[warn] risk_adjusted_score_delta < 0 on this seed (delta={imp.get('risk_adjusted_score_delta')})",
             file=sys.stderr,
         )
     return 0

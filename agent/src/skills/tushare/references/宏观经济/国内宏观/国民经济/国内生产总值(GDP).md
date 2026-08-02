@@ -42,15 +42,13 @@ ti_yoy | float | Y | 第三产业同比增速（%）
 **接口调用**
 
 ```python
-
 pro = ts.pro_api()
 
-df = pro.cn_gdp(start_q='2018Q1', end_q='2019Q3')
+df = pro.cn_gdp(start_q="2018Q1", end_q="2019Q3")
 
 
-#获取指定字段
-df = pro.cn_gdp(start_q='2018Q1', end_q='2019Q3', fields='quarter,gdp,gdp_yoy')
-
+# 获取指定字段
+df = pro.cn_gdp(start_q="2018Q1", end_q="2019Q3", fields="quarter,gdp,gdp_yoy")
 ```
 
 <br>

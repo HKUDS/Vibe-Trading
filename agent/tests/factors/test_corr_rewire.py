@@ -82,9 +82,7 @@ def test_column_order_invariance() -> None:
     out = compute(panel)
     reversed_close = panel["close"].iloc[:, ::-1]
     out_reversed = compute({"close": reversed_close})
-    pd.testing.assert_frame_equal(
-        out_reversed[out.columns], out, check_exact=False, atol=1e-12
-    )
+    pd.testing.assert_frame_equal(out_reversed[out.columns], out, check_exact=False, atol=1e-12)
 
 
 def test_warmup_rows_are_nan_then_values_appear() -> None:

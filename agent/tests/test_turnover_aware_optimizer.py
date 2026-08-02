@@ -14,9 +14,7 @@ def _sample_data(n_days: int = 200, n_assets: int = 4, seed: int = 0):
     rng = np.random.default_rng(seed)
     dates = pd.bdate_range("2025-01-01", periods=n_days)
     codes = [f"A{i}" for i in range(n_assets)]
-    ret = pd.DataFrame(
-        rng.normal(0.001, 0.02, (n_days, n_assets)), index=dates, columns=codes
-    )
+    ret = pd.DataFrame(rng.normal(0.001, 0.02, (n_days, n_assets)), index=dates, columns=codes)
     pos = pd.DataFrame(1.0, index=dates, columns=codes)
     return ret, pos, dates
 
@@ -84,9 +82,7 @@ class TestTurnoverAwareOptimize:
         ret, pos, dates = _sample_data()
         totals = []
         for gamma in (0.0, 0.5, 1.0, 2.0, 5.0):
-            opt = TurnoverAwareOptimizer(
-                lookback=60, risk_aversion=5.0, turnover_penalty=gamma
-            )
+            opt = TurnoverAwareOptimizer(lookback=60, risk_aversion=5.0, turnover_penalty=gamma)
             opt.optimize(ret, pos, dates)
             totals.append(sum(opt.realized_turnover))
         assert all(totals[i] >= totals[i + 1] - 1e-9 for i in range(len(totals) - 1))
@@ -136,9 +132,7 @@ class TestTurnoverAwareOptimize:
 
     def test_single_asset_unchanged(self) -> None:
         dates = pd.bdate_range("2025-01-01", periods=100)
-        ret = pd.DataFrame(
-            np.random.default_rng(1).normal(0, 0.02, (100, 1)), index=dates, columns=["A"]
-        )
+        ret = pd.DataFrame(np.random.default_rng(1).normal(0, 0.02, (100, 1)), index=dates, columns=["A"])
         pos = pd.DataFrame(1.0, index=dates, columns=["A"])
         result = optimize(ret, pos, dates, lookback=60)
         pd.testing.assert_frame_equal(result, pos)
@@ -171,9 +165,7 @@ class TestExposureCaps:
         assert (w_capped <= 0.3 + 1e-6).all()
         assert (w_free <= 1.0 + 1e-6).all()
 
-    def test_uncapped_second_rebalance_starts_from_previous_weights(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_uncapped_second_rebalance_starts_from_previous_weights(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from scipy import optimize as scipy_optimize
 
         real_minimize = scipy_optimize.minimize
@@ -202,9 +194,7 @@ class TestExposureCaps:
     def test_per_group_cap_enforced(self) -> None:
         ctx = self._ctx()
         groups = {"A0": "tech", "A1": "tech", "A2": "finance", "A3": "finance", "A4": "other"}
-        opt = TurnoverAwareOptimizer(
-            groups=groups, max_per_group={"tech": 0.4, "finance": 0.35}
-        )
+        opt = TurnoverAwareOptimizer(groups=groups, max_per_group={"tech": 0.4, "finance": 0.35})
         w = opt._calc_weights(ctx)
         active = ctx["active"]
         tech_sum = sum(w[i] for i, c in enumerate(active) if groups.get(c) == "tech")
@@ -225,31 +215,23 @@ class TestExposureCaps:
     def test_empty_group_skipped_safely(self) -> None:
         ctx = self._ctx()
         groups = {"NOT_ACTIVE": "nonexistent"}
-        opt = TurnoverAwareOptimizer(
-            groups=groups, max_per_group={"nonexistent": 0.1}
-        )
+        opt = TurnoverAwareOptimizer(groups=groups, max_per_group={"nonexistent": 0.1})
         w = opt._calc_weights(ctx)  # should not raise
         assert w.sum() == pytest.approx(1.0)
 
-    @pytest.mark.parametrize(
-        "cap", [0, -0.1, 1.1, float("inf"), float("nan"), True, np.bool_(True)]
-    )
+    @pytest.mark.parametrize("cap", [0, -0.1, 1.1, float("inf"), float("nan"), True, np.bool_(True)])
     def test_invalid_per_name_cap_rejected(self, cap: object) -> None:
         with pytest.raises(ValueError, match="max_per_name"):
             TurnoverAwareOptimizer(max_per_name=cap)
 
     def test_unknown_group_cap_rejected(self) -> None:
         with pytest.raises(ValueError, match="no mapped assets"):
-            TurnoverAwareOptimizer(
-                groups={"A0": "tech"}, max_per_group={"finance": 0.5}
-            )
+            TurnoverAwareOptimizer(groups={"A0": "tech"}, max_per_group={"finance": 0.5})
 
     @pytest.mark.parametrize("cap", [True, np.bool_(False)])
     def test_boolean_group_cap_rejected(self, cap: object) -> None:
         with pytest.raises(ValueError, match="not boolean"):
-            TurnoverAwareOptimizer(
-                groups={"A0": "tech"}, max_per_group={"tech": cap}
-            )
+            TurnoverAwareOptimizer(groups={"A0": "tech"}, max_per_group={"tech": cap})
 
     def test_infeasible_per_name_cap_fails_closed(self) -> None:
         with pytest.raises(ValueError, match="infeasible"):
@@ -270,9 +252,7 @@ class TestExposureCaps:
         monkeypatch.setattr(
             scipy_optimize,
             "minimize",
-            lambda *args, **kwargs: type(
-                "FailedResult", (), {"success": False, "message": "forced failure"}
-            )(),
+            lambda *args, **kwargs: type("FailedResult", (), {"success": False, "message": "forced failure"})(),
         )
         with pytest.raises(RuntimeError, match="forced failure"):
             TurnoverAwareOptimizer(max_per_name=0.3)._calc_weights(self._ctx())
@@ -280,9 +260,7 @@ class TestExposureCaps:
     def test_no_caps_unchanged(self) -> None:
         ctx = self._ctx()
         w1 = TurnoverAwareOptimizer()._calc_weights(ctx)
-        w2 = TurnoverAwareOptimizer(
-            max_per_name=None, groups=None, max_per_group=None
-        )._calc_weights(ctx)
+        w2 = TurnoverAwareOptimizer(max_per_name=None, groups=None, max_per_group=None)._calc_weights(ctx)
         np.testing.assert_allclose(w1, w2, atol=1e-10)
 
     def test_caps_work_together(self) -> None:

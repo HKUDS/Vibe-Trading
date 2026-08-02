@@ -151,10 +151,7 @@ def main() -> None:
 
     print("\nRevenues (most recent points):")
     for point in metric_series(cik, concept="Revenues", limit=5):
-        print(
-            f"  {point['end']}  {point['val']}  "
-            f"FY{point['fiscal_year']} {point['fiscal_period']}"
-        )
+        print(f"  {point['end']}  {point['val']}  FY{point['fiscal_year']} {point['fiscal_period']}")
 
 
 if __name__ == "__main__":

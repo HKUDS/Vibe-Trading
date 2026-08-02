@@ -361,6 +361,7 @@ def test_get_data_dir_uses_explicit_config_parent(tmp_path: Path) -> None:
 # Robinhood live MCP seed + validation guidance
 # ---------------------------------------------------------------------------
 
+
 def test_robinhood_safe_seed_loads_and_discovers_enabled_tools_without_warnings(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -492,6 +493,7 @@ def test_mcp_robinhood_wildcard_zero_tools_warning_names_safe_allowlist(
 # sanitize_session_overrides – security gate for mcpServers
 # ---------------------------------------------------------------------------
 
+
 def test_sanitize_strips_mcp_servers_by_default() -> None:
     raw = {
         "mcpServers": {"evil": {"command": "/bin/sh", "args": ["-c", "id"]}},
@@ -559,6 +561,7 @@ def test_sanitize_non_mcp_keys_always_pass_through() -> None:
 # including any valid `mcpServers`. That regression would not show up in
 # any test that only exercises sanitize_session_overrides in isolation.
 # ---------------------------------------------------------------------------
+
 
 def test_runtime_load_drops_mcp_servers_when_mixed_with_unknown_keys(
     tmp_path: Path,

@@ -56,7 +56,7 @@ def assess_unlock_impact(unlock_amount, circulating_supply, daily_volume, recipi
 
     # Base impact score
     if supply_pct > 10:
-        base_impact = "critical"      # >10% of supply = very high impact
+        base_impact = "critical"  # >10% of supply = very high impact
     elif supply_pct > 5:
         base_impact = "high"
     elif supply_pct > 2:
@@ -68,19 +68,19 @@ def assess_unlock_impact(unlock_amount, circulating_supply, daily_volume, recipi
 
     # Adjust for recipient type (who receives the tokens)
     recipient_multiplier = {
-        "team": 0.7,         # Team sells ~70% within 6 months historically
-        "investor_seed": 0.8, # VCs must return capital, sell aggressively
+        "team": 0.7,  # Team sells ~70% within 6 months historically
+        "investor_seed": 0.8,  # VCs must return capital, sell aggressively
         "investor_later": 0.6,
-        "ecosystem": 0.3,    # Ecosystem tokens often re-staked or used
-        "treasury": 0.2,     # Treasury rarely dumps (governance constraints)
-        "community": 0.5,    # Mixed behavior
+        "ecosystem": 0.3,  # Ecosystem tokens often re-staked or used
+        "treasury": 0.2,  # Treasury rarely dumps (governance constraints)
+        "community": 0.5,  # Mixed behavior
     }
 
     effective_sell_pressure = supply_pct * recipient_multiplier.get(recipient_type, 0.5)
 
     # Volume absorption capacity
     if volume_multiple > 5:
-        absorption = "illiquid"       # Market cannot absorb easily
+        absorption = "illiquid"  # Market cannot absorb easily
     elif volume_multiple > 2:
         absorption = "difficult"
     elif volume_multiple > 0.5:
@@ -119,22 +119,23 @@ def assess_unlock_impact(unlock_amount, circulating_supply, daily_volume, recipi
 
 ```python
 treasury_health = {
-    "total_value_usd": 500_000_000,       # Total treasury value
-    "runway_months": 36,                   # Treasury / monthly burn
+    "total_value_usd": 500_000_000,  # Total treasury value
+    "runway_months": 36,  # Treasury / monthly burn
     "diversification": {
-        "native_token_pct": 60,            # % held in own token (risky)
-        "stablecoins_pct": 25,             # USDC/USDT/DAI (safe)
-        "eth_btc_pct": 10,                 # Blue-chip crypto
-        "other_pct": 5,                    # Other assets
+        "native_token_pct": 60,  # % held in own token (risky)
+        "stablecoins_pct": 25,  # USDC/USDT/DAI (safe)
+        "eth_btc_pct": 10,  # Blue-chip crypto
+        "other_pct": 5,  # Other assets
     },
-    "monthly_burn_usd": 5_000_000,         # Operating expenses per month
-    "revenue_coverage": 0.6,               # Revenue / burn ratio
+    "monthly_burn_usd": 5_000_000,  # Operating expenses per month
+    "revenue_coverage": 0.6,  # Revenue / burn ratio
 }
+
 
 def treasury_signal(health):
     # Runway assessment
     if health["runway_months"] < 12:
-        runway_signal = "critical"         # Less than 1 year of funding
+        runway_signal = "critical"  # Less than 1 year of funding
     elif health["runway_months"] < 24:
         runway_signal = "concerning"
     else:
@@ -147,15 +148,15 @@ def treasury_signal(health):
     elif native_pct > 50:
         diversity_signal = "moderate_risk"
     else:
-        diversity_signal = "diversified"        # Healthy treasury management
+        diversity_signal = "diversified"  # Healthy treasury management
 
     # Revenue sustainability
     if health["revenue_coverage"] > 1.0:
-        revenue_signal = "self_sustaining"      # Revenue covers all expenses
+        revenue_signal = "self_sustaining"  # Revenue covers all expenses
     elif health["revenue_coverage"] > 0.5:
         revenue_signal = "partially_funded"
     else:
-        revenue_signal = "treasury_dependent"   # Fully reliant on treasury
+        revenue_signal = "treasury_dependent"  # Fully reliant on treasury
 
     return runway_signal, diversity_signal, revenue_signal
 ```
@@ -183,13 +184,13 @@ def emission_analysis(token):
 
     # Assessment
     if monthly_emission_pct > 5:
-        emission_verdict = "hyperinflation"    # Unsustainable
+        emission_verdict = "hyperinflation"  # Unsustainable
     elif monthly_emission_pct > 2:
-        emission_verdict = "high_inflation"    # Significant dilution
+        emission_verdict = "high_inflation"  # Significant dilution
     elif monthly_emission_pct > 0.5:
-        emission_verdict = "moderate"          # Manageable
+        emission_verdict = "moderate"  # Manageable
     else:
-        emission_verdict = "low_emission"      # Minimal dilution
+        emission_verdict = "low_emission"  # Minimal dilution
 
     if real_yield < 0:
         yield_verdict = "negative_real_yield"  # Staking rewards < inflation = value destruction

@@ -232,9 +232,7 @@ class NorthboundFlowTool(BaseTool):
         except Exception as exc:  # noqa: BLE001 - surface as error envelope
             logger.warning("northbound flow fetch failed: %s", exc)
             try:
-                fallback_data = tushare_fallbacks.fetch_northbound_flow(
-                    lookback_days=lookback_days
-                )
+                fallback_data = tushare_fallbacks.fetch_northbound_flow(lookback_days=lookback_days)
             except Exception as fallback_exc:  # noqa: BLE001 - return both provider failures
                 return json.dumps(
                     {
@@ -248,10 +246,7 @@ class NorthboundFlowTool(BaseTool):
                     "ok": True,
                     "market": "China A",
                     "source": "tushare",
-                    "warnings": [
-                        "eastmoney failed "
-                        f"({exc}); used tushare fallback with latest daily data"
-                    ],
+                    "warnings": [f"eastmoney failed ({exc}); used tushare fallback with latest daily data"],
                     "data": fallback_data,
                 },
                 ensure_ascii=False,

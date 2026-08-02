@@ -40,9 +40,7 @@ def test_guide_referenced_paths_exist() -> None:
     assert referenced, "no repo paths parsed from AGENT_CONTRIBUTOR_GUIDE.md — regex broke?"
 
     missing = [
-        path
-        for path in sorted(referenced)
-        if not _is_intentionally_absent(path) and not (REPO_ROOT / path).exists()
+        path for path in sorted(referenced) if not _is_intentionally_absent(path) and not (REPO_ROOT / path).exists()
     ]
     assert not missing, (
         "AGENT_CONTRIBUTOR_GUIDE.md references repo paths that no longer exist: "

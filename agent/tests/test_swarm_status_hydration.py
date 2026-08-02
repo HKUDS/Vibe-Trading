@@ -109,9 +109,7 @@ def test_get_swarm_status_surfaces_live_progress(tmp_path, monkeypatch):
     run = _base_run()
     run.status = RunStatus.running
     store.create_run(run)
-    TaskStore(store.run_dir(run.id)).save_task(
-        run.tasks[0].model_copy(update={"status": TaskStatus.in_progress})
-    )
+    TaskStore(store.run_dir(run.id)).save_task(run.tasks[0].model_copy(update={"status": TaskStatus.in_progress}))
     store.append_event(
         run.id,
         SwarmEvent(type="task_started", data={}, timestamp=_iso(datetime.now(timezone.utc))),
@@ -151,9 +149,7 @@ def test_run_swarm_start_only_returns_immediately(tmp_path, monkeypatch):
 
     monkeypatch.setattr(rt.SwarmRuntime, "start_run", fake_start_run)
 
-    payload = json.loads(
-        asyncio.run(mcp_server.run_swarm("demo", {}, start_only=True))
-    )
+    payload = json.loads(asyncio.run(mcp_server.run_swarm("demo", {}, start_only=True)))
 
     assert payload["run_id"] == "r-start-only"
     assert payload["status"] == "running"
@@ -172,9 +168,7 @@ def test_run_swarm_wait_zero_returns_run_id_not_error(tmp_path, monkeypatch):
 
     monkeypatch.setattr(rt.SwarmRuntime, "start_run", fake_start_run)
 
-    payload = json.loads(
-        asyncio.run(mcp_server.run_swarm("demo", {}, wait_seconds=0))
-    )
+    payload = json.loads(asyncio.run(mcp_server.run_swarm("demo", {}, wait_seconds=0)))
 
     assert payload["status"] == "running"
     assert payload["run_id"] == "r-wait-zero"
@@ -220,9 +214,7 @@ def test_reaper_reaps_silent_run_and_writes_task_errors(tmp_path):
     run = _base_run("r-orphan", timeout=60, retries=0)
     run.status = RunStatus.running
     store.create_run(run)
-    TaskStore(store.run_dir(run.id)).save_task(
-        run.tasks[0].model_copy(update={"status": TaskStatus.in_progress})
-    )
+    TaskStore(store.run_dir(run.id)).save_task(run.tasks[0].model_copy(update={"status": TaskStatus.in_progress}))
     store.append_event(
         run.id,
         SwarmEvent(
@@ -315,6 +307,7 @@ def test_runtime_layer_boundary_sync_writes_run_json(tmp_path, monkeypatch):
 
     def fake_worker(*args, **kwargs):
         from src.swarm.models import WorkerResult
+
         return WorkerResult(status="completed", summary="ok")
 
     import threading
@@ -377,8 +370,7 @@ def test_swarm_tool_no_longer_cancels_on_budget_out():
 
     source = inspect.getsource(swarm_tool.SwarmTool.execute)
     assert "cancel_run" not in source, (
-        "SwarmTool.execute must not cancel the run on budget exhaustion; "
-        "return partial state and let the agent decide."
+        "SwarmTool.execute must not cancel the run on budget exhaustion; return partial state and let the agent decide."
     )
 
 
@@ -402,9 +394,7 @@ def test_run_swarm_first_progress_frame_carries_run_id(tmp_path, monkeypatch):
             progress_calls.append({"progress": progress, "total": total, "message": message})
 
     # Run with very short budget so we exit fast after first frame.
-    asyncio.run(
-        mcp_server.run_swarm("demo", {}, wait_seconds=1, ctx=FakeCtx())
-    )
+    asyncio.run(mcp_server.run_swarm("demo", {}, wait_seconds=1, ctx=FakeCtx()))
 
     assert progress_calls, "expected at least one progress notification"
     first = progress_calls[0]
@@ -420,9 +410,7 @@ def test_reconcile_run_completes_a_silently_finished_run(tmp_path):
     run.status = RunStatus.running
     store.create_run(run)
     TaskStore(store.run_dir(run.id)).save_task(
-        run.tasks[0].model_copy(
-            update={"status": TaskStatus.completed, "summary": "the answer is 42"}
-        )
+        run.tasks[0].model_copy(update={"status": TaskStatus.completed, "summary": "the answer is 42"})
     )
 
     reconciled = store.reconcile_run(store.load_run(run.id), write=True)
@@ -476,9 +464,7 @@ def test_get_swarm_status_auto_recovers_zombie(tmp_path, monkeypatch):
     run = _base_run("r-zombie", timeout=60, retries=0)
     run.status = RunStatus.running
     store.create_run(run)
-    TaskStore(store.run_dir(run.id)).save_task(
-        run.tasks[0].model_copy(update={"status": TaskStatus.in_progress})
-    )
+    TaskStore(store.run_dir(run.id)).save_task(run.tasks[0].model_copy(update={"status": TaskStatus.in_progress}))
     # Silent for an hour — past any reasonable threshold.
     store.append_event(
         run.id,
@@ -512,9 +498,7 @@ def test_mcp_run_result_rejects_path_shaped_run_id_without_outside_write(tmp_pat
     store = SwarmStore(base_dir=base_dir)
     run = _base_run(traversal_id)
     run.status = RunStatus.running
-    run.tasks[0] = run.tasks[0].model_copy(
-        update={"status": TaskStatus.completed, "summary": "SAFE_MCP_SWARM_MARKER"}
-    )
+    run.tasks[0] = run.tasks[0].model_copy(update={"status": TaskStatus.completed, "summary": "SAFE_MCP_SWARM_MARKER"})
     (outside_dir / "run.json").write_text(run.model_dump_json(indent=2), encoding="utf-8")
     monkeypatch.setattr(mcp_server, "_get_swarm_store", lambda: store)
 
@@ -582,10 +566,9 @@ def test_worker_source_wires_heartbeat_around_llm_streaming():
     reconcile_run would mark a healthy run failed mid-LLM-call."""
     import inspect
     import re
+
     source = inspect.getsource(worker_mod)
-    timer_match = re.search(
-        r'with HeartbeatTimer\(\s*\n\s*tool_name=f"llm:', source
-    )
+    timer_match = re.search(r'with HeartbeatTimer\(\s*\n\s*tool_name=f"llm:', source)
     timer_idx = timer_match.start() if timer_match else -1
     stream_idx = source.find("llm.stream_chat(", timer_idx)
     assert 0 < timer_idx < stream_idx, (
@@ -603,6 +586,7 @@ def test_heartbeat_interval_env_var_is_robust_to_garbage(monkeypatch):
     # Force re-evaluation by calling the resolver directly.
     import importlib
     import src.swarm.worker as w
+
     importlib.reload(w)
 
     assert w._HEARTBEAT_INTERVAL_S == 3.0
@@ -615,6 +599,7 @@ def test_worker_source_wires_heartbeat_around_tool_execute():
     refactors that re-expose the silent-tool-call symptom from #132.
     """
     import inspect
+
     source = inspect.getsource(worker_mod)
     assert "HeartbeatTimer(" in source
     assert "task_heartbeat" in source

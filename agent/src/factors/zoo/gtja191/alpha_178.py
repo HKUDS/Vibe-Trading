@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #178
 # 简要说明: 国泰君安191短周期交易型alpha因子第178号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     (CLOSE-DELAY(CLOSE,1))/DELAY(CLOSE,1)*VOLUME
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_178"
 
 __alpha_meta__ = {
-    'id': 'gtja191_178',
-    'theme': ['momentum', 'volume'],
-    'formula_latex': '(c-delay(c,1))/delay(c,1)*v',
-    'columns_required': ['close', 'volume'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 1,
-    'min_warmup_bars': 2,
-    'notes': '',
+    "id": "gtja191_178",
+    "theme": ["momentum", "volume"],
+    "formula_latex": "(c-delay(c,1))/delay(c,1)*v",
+    "columns_required": ["close", "volume"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 1,
+    "min_warmup_bars": 2,
+    "notes": "",
 }
 
 

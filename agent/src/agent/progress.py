@@ -150,9 +150,7 @@ class HeartbeatTimer:
         requested_interval = float(interval)
         self._interval = max(0.5, requested_interval)
         if requested_interval < 0.5:
-            logger.warning(
-                "HeartbeatTimer interval %s clamped to 0.5s", interval
-            )
+            logger.warning("HeartbeatTimer interval %s clamped to 0.5s", interval)
         self._emit = emit
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None

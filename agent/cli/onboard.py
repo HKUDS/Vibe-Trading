@@ -51,54 +51,116 @@ class Provider:
 
 
 PROVIDERS: Final[tuple[Provider, ...]] = (
-    Provider("openrouter", "OpenRouter", "recommended — 200+ models, one key",
-             "deepseek/deepseek-v4-pro",
-             "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL",
-             "https://openrouter.ai/api/v1", "sk-or-",
-             ("deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash",
-              "openai/gpt-5.5-pro", "google/gemini-3.5-flash")),
-    Provider("requesty", "Requesty", "OpenAI-compatible gateway — 600+ models, one key",
-             "openai/gpt-4o-mini",
-             "REQUESTY_API_KEY", "REQUESTY_BASE_URL",
-             "https://router.requesty.ai/v1", None,
-             ("openai/gpt-4o-mini", "openai/gpt-4o",
-              "anthropic/claude-sonnet-4-5", "deepseek/deepseek-chat")),
-    Provider("openai", "OpenAI", "GPT-5.5 direct",
-             "gpt-5.5", "OPENAI_API_KEY", "OPENAI_BASE_URL",
-             "https://api.openai.com/v1", "sk-",
-             ("gpt-5.5", "gpt-5.5-pro", "gpt-5.5-instant")),
-    Provider("anthropic", "Anthropic", "Anthropic Messages API or compatible proxy",
-             "claude-sonnet-4-6", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL",
-             "https://api.anthropic.com", None,
-             ("claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5")),
-    Provider("openai-codex", "OpenAI Codex", "ChatGPT OAuth for Codex",
-             "openai-codex/gpt-5.4", None, "OPENAI_CODEX_BASE_URL",
-             "https://chatgpt.com/backend-api/codex/responses", None,
-             ("openai-codex/gpt-5.4", "openai-codex/gpt-5.4-mini")),
-    Provider("deepseek", "DeepSeek",
-             "cheapest tier — good for batch backtest research",
-             "deepseek-v4-pro", "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL",
-             "https://api.deepseek.com/v1", "sk-",
-             ("deepseek-v4-pro", "deepseek-v4-flash")),
-    Provider("siliconflow-cn", "SiliconFlow (CN)", "OpenAI-compatible MaaS endpoint in China",
-             "deepseek-ai/DeepSeek-V3.1-Terminus",
-             "SILICONFLOW_API_KEY", "SILICONFLOW_BASE_URL",
-             "https://api.siliconflow.cn/v1", "sk-",
-             ("deepseek-ai/DeepSeek-V3.1-Terminus",)),
-    Provider("siliconflow-global", "SiliconFlow (Global)", "OpenAI-compatible global MaaS endpoint",
-             "deepseek-ai/DeepSeek-V3.1-Terminus",
-             "SILICONFLOW_GLOBAL_API_KEY", "SILICONFLOW_GLOBAL_BASE_URL",
-             "https://api.siliconflow.com/v1", "sk-",
-             ("deepseek-ai/DeepSeek-V3.1-Terminus",)),
-    Provider("nvidia", "NVIDIA NIM", "hosted NVIDIA API catalog",
-             "nvidia/nemotron-3-ultra-550b-a55b",
-             "NVIDIA_API_KEY", "NVIDIA_BASE_URL",
-             "https://integrate.api.nvidia.com/v1", "nvapi-",
-             ("nvidia/nemotron-3-ultra-550b-a55b",)),
-    Provider("ollama", "Ollama", "local, free, no API key",
-             "qwen2.5:32b", None, "OLLAMA_BASE_URL",
-             "http://localhost:11434", None,
-             ("qwen2.5:32b", "llama3.3:70b", "deepseek-r1:14b")),
+    Provider(
+        "openrouter",
+        "OpenRouter",
+        "recommended — 200+ models, one key",
+        "deepseek/deepseek-v4-pro",
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_BASE_URL",
+        "https://openrouter.ai/api/v1",
+        "sk-or-",
+        ("deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash", "openai/gpt-5.5-pro", "google/gemini-3.5-flash"),
+    ),
+    Provider(
+        "requesty",
+        "Requesty",
+        "OpenAI-compatible gateway — 600+ models, one key",
+        "openai/gpt-4o-mini",
+        "REQUESTY_API_KEY",
+        "REQUESTY_BASE_URL",
+        "https://router.requesty.ai/v1",
+        None,
+        ("openai/gpt-4o-mini", "openai/gpt-4o", "anthropic/claude-sonnet-4-5", "deepseek/deepseek-chat"),
+    ),
+    Provider(
+        "openai",
+        "OpenAI",
+        "GPT-5.5 direct",
+        "gpt-5.5",
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "https://api.openai.com/v1",
+        "sk-",
+        ("gpt-5.5", "gpt-5.5-pro", "gpt-5.5-instant"),
+    ),
+    Provider(
+        "anthropic",
+        "Anthropic",
+        "Anthropic Messages API or compatible proxy",
+        "claude-sonnet-4-6",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "https://api.anthropic.com",
+        None,
+        ("claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"),
+    ),
+    Provider(
+        "openai-codex",
+        "OpenAI Codex",
+        "ChatGPT OAuth for Codex",
+        "openai-codex/gpt-5.4",
+        None,
+        "OPENAI_CODEX_BASE_URL",
+        "https://chatgpt.com/backend-api/codex/responses",
+        None,
+        ("openai-codex/gpt-5.4", "openai-codex/gpt-5.4-mini"),
+    ),
+    Provider(
+        "deepseek",
+        "DeepSeek",
+        "cheapest tier — good for batch backtest research",
+        "deepseek-v4-pro",
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_BASE_URL",
+        "https://api.deepseek.com/v1",
+        "sk-",
+        ("deepseek-v4-pro", "deepseek-v4-flash"),
+    ),
+    Provider(
+        "siliconflow-cn",
+        "SiliconFlow (CN)",
+        "OpenAI-compatible MaaS endpoint in China",
+        "deepseek-ai/DeepSeek-V3.1-Terminus",
+        "SILICONFLOW_API_KEY",
+        "SILICONFLOW_BASE_URL",
+        "https://api.siliconflow.cn/v1",
+        "sk-",
+        ("deepseek-ai/DeepSeek-V3.1-Terminus",),
+    ),
+    Provider(
+        "siliconflow-global",
+        "SiliconFlow (Global)",
+        "OpenAI-compatible global MaaS endpoint",
+        "deepseek-ai/DeepSeek-V3.1-Terminus",
+        "SILICONFLOW_GLOBAL_API_KEY",
+        "SILICONFLOW_GLOBAL_BASE_URL",
+        "https://api.siliconflow.com/v1",
+        "sk-",
+        ("deepseek-ai/DeepSeek-V3.1-Terminus",),
+    ),
+    Provider(
+        "nvidia",
+        "NVIDIA NIM",
+        "hosted NVIDIA API catalog",
+        "nvidia/nemotron-3-ultra-550b-a55b",
+        "NVIDIA_API_KEY",
+        "NVIDIA_BASE_URL",
+        "https://integrate.api.nvidia.com/v1",
+        "nvapi-",
+        ("nvidia/nemotron-3-ultra-550b-a55b",),
+    ),
+    Provider(
+        "ollama",
+        "Ollama",
+        "local, free, no API key",
+        "qwen2.5:32b",
+        None,
+        "OLLAMA_BASE_URL",
+        "http://localhost:11434",
+        None,
+        ("qwen2.5:32b", "llama3.3:70b", "deepseek-r1:14b"),
+    ),
 )
 
 TIMEOUT_CHOICES: Final[tuple[tuple[str, str], ...]] = (
@@ -113,9 +175,16 @@ TIMEOUT_CHOICES: Final[tuple[tuple[str, str], ...]] = (
 # ---------------------------------------------------------------------------
 
 
-def _env_dir() -> Path: return Path.home() / ".vibe-trading"
-def _env_path() -> Path: return _env_dir() / ".env"
-def _partial_path() -> Path: return _env_dir() / ".env.partial"
+def _env_dir() -> Path:
+    return Path.home() / ".vibe-trading"
+
+
+def _env_path() -> Path:
+    return _env_dir() / ".env"
+
+
+def _partial_path() -> Path:
+    return _env_dir() / ".env.partial"
 
 
 def _render_env(values: dict[str, str]) -> str:
@@ -167,9 +236,9 @@ def _finalize(values: dict[str, str]) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def _select_with_back(prompt: str, choices: Sequence[tuple[str, str]], *,
-                       default_index: int = 0,
-                       console: Console | None = None) -> str | object:
+def _select_with_back(
+    prompt: str, choices: Sequence[tuple[str, str]], *, default_index: int = 0, console: Console | None = None
+) -> str | object:
     """Vertically-scrollable selector. Returns chosen value, BACK, or CANCEL.
 
     Keybindings: ↑/↓ navigate, Enter confirm, Esc/← back, Ctrl+C cancel.
@@ -201,8 +270,7 @@ def _select_with_back(prompt: str, choices: Sequence[tuple[str, str]], *,
             else:
                 out.append(("", "    "))
                 out.append(("class:option", f"{label}\n"))
-        out.append(("class:hint",
-                    "\n  ↑/↓ navigate · Enter select · Esc/← back · Ctrl+C cancel"))
+        out.append(("class:hint", "\n  ↑/↓ navigate · Enter select · Esc/← back · Ctrl+C cancel"))
         return FormattedText(out)
 
     kb = KeyBindings()
@@ -236,12 +304,14 @@ def _select_with_back(prompt: str, choices: Sequence[tuple[str, str]], *,
         state["result"] = CANCEL
         event.app.exit()
 
-    style = PTStyle.from_dict({
-        "cursor": f"{Theme.brand_hex} bold",
-        "selected": f"{Theme.brand_hex} bold",
-        "option": "",
-        "hint": "#808080",
-    })
+    style = PTStyle.from_dict(
+        {
+            "cursor": f"{Theme.brand_hex} bold",
+            "selected": f"{Theme.brand_hex} bold",
+            "option": "",
+            "hint": "#808080",
+        }
+    )
     layout = Layout(HSplit([Window(FormattedTextControl(_format), wrap_lines=False)]))
     app: Application = Application(layout=layout, key_bindings=kb, style=style, full_screen=False)
     try:
@@ -251,8 +321,7 @@ def _select_with_back(prompt: str, choices: Sequence[tuple[str, str]], *,
     return state["result"] if state["result"] is not None else CANCEL
 
 
-def _select_numeric(choices: Sequence[tuple[str, str]], default_index: int,
-                     console: Console) -> str | object:
+def _select_numeric(choices: Sequence[tuple[str, str]], default_index: int, console: Console) -> str | object:
     """Stdin-only fallback selector."""
     for i, (_, label) in enumerate(choices, start=1):
         marker = ">" if (i - 1) == default_index else " "
@@ -287,10 +356,12 @@ def _prompt_secret(prompt: str, *, console: Console) -> str | object:
     """Read a masked secret. Returns string, BACK, or CANCEL."""
     console.print()
     console.print(Text(f"? {prompt}", style=Theme.label))
-    console.print(Text(
-        "  (input hidden · Enter to submit · Esc to go back · Ctrl+C to cancel)",
-        style=Theme.muted,
-    ))
+    console.print(
+        Text(
+            "  (input hidden · Enter to submit · Esc to go back · Ctrl+C to cancel)",
+            style=Theme.muted,
+        )
+    )
     try:
         from prompt_toolkit import prompt as pt_prompt
         from prompt_toolkit.key_binding import KeyBindings
@@ -312,20 +383,19 @@ def _prompt_secret(prompt: str, *, console: Console) -> str | object:
         return value.strip()
     except ImportError:
         import getpass
+
         try:
             return getpass.getpass("> ").strip()
         except (EOFError, KeyboardInterrupt):
             return CANCEL
 
 
-def _prompt_text(prompt: str, *, default: str = "",
-                  console: Console) -> str | object:
+def _prompt_text(prompt: str, *, default: str = "", console: Console) -> str | object:
     """Read a plain string. Returns string, BACK, or CANCEL."""
     console.print()
     console.print(Text(f"? {prompt}", style=Theme.label))
     if default:
-        console.print(Text(f"  (Enter for default: {default} · Esc to go back)",
-                            style=Theme.muted))
+        console.print(Text(f"  (Enter for default: {default} · Esc to go back)", style=Theme.muted))
     else:
         console.print(Text("  (Enter to skip · Esc to go back)", style=Theme.muted))
 
@@ -376,11 +446,12 @@ def _validate_key(provider: Provider, key: str) -> str | None:
 def _intro_header(console: Console) -> None:
     console.print()
     console.print(Text("  Vibe-Trading setup", style=Theme.primary))
-    console.print(Text(
-        "  We didn't find a config at ~/.vibe-trading/.env.\n"
-        "  Let's set up in under a minute.",
-        style=Theme.muted,
-    ))
+    console.print(
+        Text(
+            "  We didn't find a config at ~/.vibe-trading/.env.\n  Let's set up in under a minute.",
+            style=Theme.muted,
+        )
+    )
 
 
 def run_onboarding(*, console: Console | None = None) -> Path | None:
@@ -397,8 +468,7 @@ def run_onboarding(*, console: Console | None = None) -> Path | None:
 
     def step_provider() -> object:
         choices = [(p.key, f"{p.label:<14}  {p.description}") for p in PROVIDERS]
-        result = _select_with_back("Pick a model provider", choices,
-                                    default_index=0, console=cons)
+        result = _select_with_back("Pick a model provider", choices, default_index=0, console=cons)
         if result is BACK or result is CANCEL:
             return result
         provider = next(p for p in PROVIDERS if p.key == result)
@@ -411,21 +481,18 @@ def run_onboarding(*, console: Console | None = None) -> Path | None:
     def step_model() -> object:
         provider: Provider = state["provider"]  # type: ignore[assignment]
         choices: list[tuple[str, str]] = [
-            (m, f"{m}{' (default)' if m == provider.default_model else ''}")
-            for m in provider.suggested_models
+            (m, f"{m}{' (default)' if m == provider.default_model else ''}") for m in provider.suggested_models
         ]
         choices.append(("__custom__", "other (type custom model id)"))
         default_idx = next(
             (i for i, (v, _) in enumerate(choices) if v == provider.default_model),
             0,
         )
-        choice = _select_with_back("Pick a model", choices,
-                                    default_index=default_idx, console=cons)
+        choice = _select_with_back("Pick a model", choices, default_index=default_idx, console=cons)
         if choice is BACK or choice is CANCEL:
             return choice
         if choice == "__custom__":
-            custom = _prompt_text("Type the model id",
-                                   default=provider.default_model, console=cons)
+            custom = _prompt_text("Type the model id", default=provider.default_model, console=cons)
             if custom is BACK or custom is CANCEL:
                 return custom
             model = str(custom) or provider.default_model
@@ -441,22 +508,24 @@ def run_onboarding(*, console: Console | None = None) -> Path | None:
         if provider.key_env is None:
             cons.print()
             if provider.key == "openai-codex":
-                cons.print(Text(
-                    "  OpenAI Codex uses ChatGPT OAuth — no API key needed here.",
-                    style=Theme.success,
-                ))
-                cons.print(Text(
-                    "  After setup, run: vibe-trading provider login openai-codex",
-                    style=Theme.muted,
-                ))
+                cons.print(
+                    Text(
+                        "  OpenAI Codex uses ChatGPT OAuth — no API key needed here.",
+                        style=Theme.success,
+                    )
+                )
+                cons.print(
+                    Text(
+                        "  After setup, run: vibe-trading provider login openai-codex",
+                        style=Theme.muted,
+                    )
+                )
             else:
-                cons.print(Text("  Ollama runs locally — no API key needed.",
-                                 style=Theme.success))
+                cons.print(Text("  Ollama runs locally — no API key needed.", style=Theme.success))
             return "ok"
         while True:
             key = _prompt_secret(
-                f"Paste your {provider.label} API key "
-                "(saved to ~/.vibe-trading/.env, never logged)",
+                f"Paste your {provider.label} API key (saved to ~/.vibe-trading/.env, never logged)",
                 console=cons,
             )
             if key is BACK or key is CANCEL:
@@ -467,13 +536,10 @@ def run_onboarding(*, console: Console | None = None) -> Path | None:
                 values[provider.key_env] = str(key)
                 _save_partial(values)
                 return "ok"
-            cons.print(Text(f"  {err}  Try again, or press Esc to go back.",
-                             style=Theme.danger))
+            cons.print(Text(f"  {err}  Try again, or press Esc to go back.", style=Theme.danger))
 
     def step_timeout() -> object:
-        choice = _select_with_back("Default request timeout",
-                                    list(TIMEOUT_CHOICES),
-                                    default_index=0, console=cons)
+        choice = _select_with_back("Default request timeout", list(TIMEOUT_CHOICES), default_index=0, console=cons)
         if choice is BACK or choice is CANCEL:
             return choice
         values["TIMEOUT_SECONDS"] = str(choice)
@@ -487,7 +553,9 @@ def run_onboarding(*, console: Console | None = None) -> Path | None:
         ]
         decision = _select_with_back(
             "Enable Tushare for China A-share data? (optional)",
-            choices, default_index=0, console=cons,
+            choices,
+            default_index=0,
+            console=cons,
         )
         if decision is BACK or decision is CANCEL:
             return decision
@@ -501,7 +569,11 @@ def run_onboarding(*, console: Console | None = None) -> Path | None:
         return "ok"
 
     steps: list[Callable[[], object]] = [
-        step_provider, step_model, step_key, step_timeout, step_tushare,
+        step_provider,
+        step_model,
+        step_key,
+        step_timeout,
+        step_tushare,
     ]
 
     i = 0
@@ -509,14 +581,12 @@ def run_onboarding(*, console: Console | None = None) -> Path | None:
         result = steps[i]()
         if result is CANCEL:
             cons.print()
-            cons.print(Text("  Setup cancelled. No config written.",
-                             style=Theme.warning))
+            cons.print(Text("  Setup cancelled. No config written.", style=Theme.warning))
             return None
         if result is BACK:
             if i == 0:
                 cons.print()
-                cons.print(Text("  Setup cancelled. No config written.",
-                                 style=Theme.warning))
+                cons.print(Text("  Setup cancelled. No config written.", style=Theme.warning))
                 return None
             i -= 1
             continue
@@ -530,17 +600,19 @@ def run_onboarding(*, console: Console | None = None) -> Path | None:
 
     tour = _select_with_back(
         "Want a quick tour? (or jump straight in)",
-        [("__skip__", "Skip — drop me in chat"),
-         ("__tour__", "Show me a 30-second sample run")],
-        default_index=0, console=cons,
+        [("__skip__", "Skip — drop me in chat"), ("__tour__", "Show me a 30-second sample run")],
+        default_index=0,
+        console=cons,
     )
     if tour == "__tour__":
         cons.print()
-        cons.print(Text(
-            "  Tip: try `analyze AAPL last 30 days` as your first prompt.\n"
-            "  Type /help any time to see all commands.",
-            style=Theme.muted,
-        ))
+        cons.print(
+            Text(
+                "  Tip: try `analyze AAPL last 30 days` as your first prompt.\n"
+                "  Type /help any time to see all commands.",
+                style=Theme.muted,
+            )
+        )
 
     return final_path
 

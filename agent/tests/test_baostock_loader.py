@@ -2,6 +2,7 @@
 
 Ensures both baostock native (sh.601398) and tushare-style (601398.SH) codes work.
 """
+
 from backtest.loaders.baostock_loader import _is_a_share
 
 

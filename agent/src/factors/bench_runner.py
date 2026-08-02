@@ -119,9 +119,7 @@ def theme_breakdown(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
         cat = row["_category"]
         themes = row.get("theme", []) or ["uncategorised"]
         for theme in themes:
-            bucket = by_theme.setdefault(
-                theme, {"alive": 0, "reversed": 0, "dead": 0, "count": 0}
-            )
+            bucket = by_theme.setdefault(theme, {"alive": 0, "reversed": 0, "dead": 0, "count": 0})
             bucket[cat] += 1
             bucket["count"] += 1
     return by_theme
@@ -262,9 +260,7 @@ def run_bench(
                 factor_df = reg.compute(aid, panel)
                 ic = compute_ic_series(factor_df, return_df)
                 if ic.empty:
-                    skipped.append(
-                        {"id": aid, "reason": "empty IC series", "kind": "typed"}
-                    )
+                    skipped.append({"id": aid, "reason": "empty IC series", "kind": "typed"})
                 else:
                     ic_mean = float(ic.mean())
                     ic_std = float(ic.std())
@@ -286,9 +282,7 @@ def run_bench(
                 skipped.append({"id": aid, "reason": str(exc), "kind": "typed"})
             except Exception as exc:  # noqa: BLE001
                 logger.exception("bench: unexpected failure on %s", aid)
-                skipped.append(
-                    {"id": aid, "reason": f"unexpected: {exc}", "kind": "unexpected"}
-                )
+                skipped.append({"id": aid, "reason": f"unexpected: {exc}", "kind": "unexpected"})
 
             if on_progress is not None:
                 try:

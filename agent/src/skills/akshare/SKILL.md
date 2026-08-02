@@ -17,16 +17,13 @@ AKShare is a completely free, open-source Python financial data library. No regi
 import akshare as ak
 
 # A-share daily OHLCV (前复权)
-df = ak.stock_zh_a_hist(symbol="000001", period="daily",
-                         start_date="20240101", end_date="20260101", adjust="qfq")
+df = ak.stock_zh_a_hist(symbol="000001", period="daily", start_date="20240101", end_date="20260101", adjust="qfq")
 
 # US stock daily
-df = ak.stock_us_hist(symbol="105.AAPL", period="daily",
-                       start_date="20240101", end_date="20260101", adjust="qfq")
+df = ak.stock_us_hist(symbol="105.AAPL", period="daily", start_date="20240101", end_date="20260101", adjust="qfq")
 
 # HK stock daily
-df = ak.stock_hk_hist(symbol="00700", period="daily",
-                       start_date="20240101", end_date="20260101", adjust="qfq")
+df = ak.stock_hk_hist(symbol="00700", period="daily", start_date="20240101", end_date="20260101", adjust="qfq")
 ```
 
 ## Top 10 High-Frequency Interfaces

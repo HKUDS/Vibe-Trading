@@ -94,13 +94,7 @@ def validate_ohlc(
         return frame
 
     open_, high, low, close = (frame[c] for c in required)
-    structural = (
-        (high < low)
-        | (high < open_)
-        | (high < close)
-        | (low > open_)
-        | (low > close)
-    )
+    structural = (high < low) | (high < open_) | (high < close) | (low > open_) | (low > close)
     if allow_nonpositive_prices:
         nonpositive = (open_ == 0) | (high == 0) | (low == 0) | (close == 0)
     else:
@@ -130,7 +124,7 @@ DEFAULT_MAX_RETRIES = 3
 
 def positive_env_int(name: str, default: int) -> int:
     """Read a positive integer env var, warning and falling back on invalid values."""
-    raw = os.getenv(name)  # noqa: env-gate — generic env var helper
+    raw = os.getenv(name)  # env-gate — generic env var helper
     if raw is None or not raw.strip():
         return default
     try:
@@ -146,7 +140,7 @@ def positive_env_int(name: str, default: int) -> int:
 
 def positive_env_float(name: str, default: float) -> float:
     """Read a positive float env var, warning and falling back on invalid values."""
-    raw = os.getenv(name)  # noqa: env-gate — generic env var helper
+    raw = os.getenv(name)  # env-gate — generic env var helper
     if raw is None or not raw.strip():
         return default
     try:
@@ -220,18 +214,14 @@ def retry_with_budget(
         Any non-transient exception: Propagated unchanged from ``fn``.
     """
     if len(backoff) < max_retries:
-        raise ValueError(
-            f"backoff has {len(backoff)} entries; need >= max_retries ({max_retries})"
-        )
+        raise ValueError(f"backoff has {len(backoff)} entries; need >= max_retries ({max_retries})")
     for attempt in range(max_retries + 1):
         try:
             return fn()
         except transient as exc:
             remaining = deadline - time.monotonic()
             if attempt == max_retries or remaining <= 0:
-                raise TimeoutError(
-                    f"{label} failed after {attempt + 1} attempt(s): {exc}"
-                ) from exc
+                raise TimeoutError(f"{label} failed after {attempt + 1} attempt(s): {exc}") from exc
             time.sleep(min(backoff[attempt], max(0.0, remaining)))
     raise AssertionError("unreachable: retry loop must return or raise")  # pragma: no cover
 
@@ -488,9 +478,7 @@ def _read_loader_cache_frame(cache_path: Path) -> pd.DataFrame | None:
         import duckdb
 
         con = duckdb.connect(database=":memory:")
-        frame = con.execute(
-            f"SELECT * FROM read_parquet({_duckdb_sql_string(cache_path)})"
-        ).fetchdf()
+        frame = con.execute(f"SELECT * FROM read_parquet({_duckdb_sql_string(cache_path)})").fetchdf()
     except Exception as exc:  # noqa: BLE001 - corrupt cache falls back to provider
         logger.warning("loader cache read failed for %s: %s", cache_path.name, exc)
         return None
@@ -525,9 +513,7 @@ def _restore_cache_index_dtypes(frame: pd.DataFrame, index_dtypes: object) -> pd
             frame.index = frame.index.astype(index_dtypes[0])
         else:
             for level, dtype in enumerate(index_dtypes):
-                frame.index = frame.index.set_levels(
-                    frame.index.levels[level].astype(dtype), level=level
-                )
+                frame.index = frame.index.set_levels(frame.index.levels[level].astype(dtype), level=level)
     except Exception:  # noqa: BLE001 - index dtype restore is cosmetic
         logger.debug("loader cache index dtype restore skipped: %s", index_dtypes)
     return frame
@@ -575,10 +561,7 @@ def _frame_for_loader_cache(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str
     cache_frame = frame.copy()
     original_index_names = list(cache_frame.index.names)
     columns_name = cache_frame.columns.name
-    index_dtypes = [
-        str(cache_frame.index.get_level_values(level).dtype)
-        for level in range(cache_frame.index.nlevels)
-    ]
+    index_dtypes = [str(cache_frame.index.get_level_values(level).dtype) for level in range(cache_frame.index.nlevels)]
     index_columns = _cache_index_columns(cache_frame)
     cache_frame.index = cache_frame.index.set_names(index_columns)
     metadata: dict[str, object] = {

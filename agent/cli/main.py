@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import importlib
 import logging
-import os
 import sys
 import threading
 import time
@@ -57,15 +56,9 @@ def _register_live_slash_commands() -> None:
 
     existing = {cmd.name for cmd in slash_router.SLASH_COMMANDS}
     additions = (
-        slash_router.Command(
-            "connector", "Trading connector profiles (status / start / halt)", "cli.main"
-        ),
-        slash_router.Command(
-            "halt", "Kill switch — halt ALL live trading now", "cli.main"
-        ),
-        slash_router.Command(
-            "resume", "Clear the kill switch (re-enable live trading)", "cli.main"
-        ),
+        slash_router.Command("connector", "Trading connector profiles (status / start / halt)", "cli.main"),
+        slash_router.Command("halt", "Kill switch — halt ALL live trading now", "cli.main"),
+        slash_router.Command("resume", "Clear the kill switch (re-enable live trading)", "cli.main"),
     )
     new = tuple(cmd for cmd in additions if cmd.name not in existing)
     if not new:
@@ -73,9 +66,7 @@ def _register_live_slash_commands() -> None:
     # Insert the connector group just before ``quit`` (the conventional last row) so
     # the kill switch sits with the other safety-relevant commands.
     commands = list(slash_router.SLASH_COMMANDS)
-    quit_idx = next(
-        (i for i, c in enumerate(commands) if c.name == "quit"), len(commands)
-    )
+    quit_idx = next((i for i, c in enumerate(commands) if c.name == "quit"), len(commands))
     commands[quit_idx:quit_idx] = list(new)
     slash_router.SLASH_COMMANDS = tuple(commands)
     # ``/stop`` is the kill-switch alias of ``/halt`` (SPEC Consent §4) so the
@@ -85,16 +76,21 @@ def _register_live_slash_commands() -> None:
 
 
 _register_live_slash_commands()
+
+
 # QVERIS-INTEGRATION
 def _register_data_slash_commands() -> None:  # QVERIS-INTEGRATION
     """Surface data routing mode in the shared slash registry."""  # QVERIS-INTEGRATION
     from cli.commands import slash_router  # QVERIS-INTEGRATION
+
     if any(cmd.name == "data" for cmd in slash_router.SLASH_COMMANDS):  # QVERIS-INTEGRATION
         return  # QVERIS-INTEGRATION
     commands = list(slash_router.SLASH_COMMANDS)  # QVERIS-INTEGRATION
     quit_idx = next((i for i, c in enumerate(commands) if c.name == "quit"), len(commands))  # QVERIS-INTEGRATION
     commands.insert(quit_idx, slash_router.Command("data", "Data routing mode", "cli.main"))  # QVERIS-INTEGRATION
     slash_router.SLASH_COMMANDS = tuple(commands)  # QVERIS-INTEGRATION
+
+
 # QVERIS-INTEGRATION
 _register_data_slash_commands()  # QVERIS-INTEGRATION
 # QVERIS-INTEGRATION
@@ -454,9 +450,7 @@ def _append_message(session_id: str, role: str, content: str) -> None:
         from src.session.models import Message
 
         store = _session_store()
-        store.append_message(
-            Message(session_id=session_id, role=role, content=content)
-        )
+        store.append_message(Message(session_id=session_id, role=role, content=content))
     except Exception:  # noqa: BLE001 — persistence is best-effort
         pass
 
@@ -490,9 +484,7 @@ def _maybe_resume_last_session(console: Any) -> Optional[Dict[str, Any]]:
     last = sessions[0]
     title = last.title or "(untitled)"
     console.print()
-    console.print(
-        f"[dim]Resume last session ({title})? (r)esume / (n)ew (default: new)[/dim]"
-    )
+    console.print(f"[dim]Resume last session ({title})? (r)esume / (n)ew (default: new)[/dim]")
     try:
         raw_choice = input("> ").strip()
     except (EOFError, KeyboardInterrupt):
@@ -524,6 +516,7 @@ def _start_preflight_async() -> threading.Thread:
     legacy path runs preflight again before any agent invocation — this
     pre-warm is opportunistic. Audit item 11.
     """
+
     def _worker() -> None:
         try:
             from src.preflight import run_preflight
@@ -543,11 +536,13 @@ def _start_preflight_async() -> threading.Thread:
 
 
 # Module paths that fan out to multiple commands via ``run(ctx, name, *args)``.
-_MULTI_COMMAND_MODULES = frozenset({
-    "cli.commands.chat",
-    "cli.commands.show",
-    "cli.commands.session",
-})
+_MULTI_COMMAND_MODULES = frozenset(
+    {
+        "cli.commands.chat",
+        "cli.commands.show",
+        "cli.commands.session",
+    }
+)
 
 
 def _suggest_commands(unknown: str) -> List[str]:
@@ -619,9 +614,7 @@ def _dispatch_slash(line: str, ctx: InteractiveContext) -> int:
     try:
         module = importlib.import_module(cmd.handler_module)
     except ImportError as exc:
-        console.print(
-            f"[bold red]Failed to load /{cmd.name} handler ({exc})[/bold red]"
-        )
+        console.print(f"[bold red]Failed to load /{cmd.name} handler ({exc})[/bold red]")
         return 0
 
     try:
@@ -678,11 +671,7 @@ def _print_debug_summary(
     iterations = result.get("iterations", "?")
     trace = result.get("react_trace") or []
     if isinstance(trace, list):
-        tools = sum(
-            1
-            for entry in trace
-            if isinstance(entry, dict) and entry.get("type") == "tool_result"
-        )
+        tools = sum(1 for entry in trace if isinstance(entry, dict) and entry.get("type") == "tool_result")
     else:
         tools = "?"
     history_chars = sum(len(m.get("content", "")) for m in ctx.history)
@@ -891,9 +880,7 @@ def _clear_halt_from_repl(console: Any) -> None:
         console.print(f"[bold red]Failed to clear kill switch:[/bold red] {exc}")
         return
     if cleared:
-        console.print(
-            "[green]Live trading re-enabled[/green] — the global kill switch is cleared."
-        )
+        console.print("[green]Live trading re-enabled[/green] — the global kill switch is cleared.")
     else:
         console.print("[dim]No active global halt to clear.[/dim]")
 
@@ -927,10 +914,13 @@ def _run_connector_command_from_repl(console: Any, args: list[str]) -> None:
         _dispatch_connector(parsed)
     except Exception as exc:  # noqa: BLE001 — never let a connector command kill the loop
         console.print(f"[bold red]/connector failed:[/bold red] {exc}")
+
+
 # QVERIS-INTEGRATION
 def _run_data_command_from_repl(console: Any, args: list[str]) -> None:  # QVERIS-INTEGRATION
     """Run a ``/data ...`` subcommand from the REPL via the CLI dispatcher."""  # QVERIS-INTEGRATION
     from cli._legacy import _build_parser, _dispatch_data  # QVERIS-INTEGRATION
+
     argv = ["data", *(args or ["status"])]  # QVERIS-INTEGRATION
     try:  # QVERIS-INTEGRATION
         parsed = _build_parser().parse_args(argv)  # QVERIS-INTEGRATION
@@ -941,6 +931,8 @@ def _run_data_command_from_repl(console: Any, args: list[str]) -> None:  # QVERI
         _dispatch_data(parsed)  # QVERIS-INTEGRATION
     except Exception as exc:  # noqa: BLE001  # QVERIS-INTEGRATION
         console.print(f"[bold red]/data failed:[/bold red] {exc}")  # QVERIS-INTEGRATION
+
+
 def _is_numeric_pick(text: str) -> Optional[int]:
     """Return the chosen ordinal if ``text`` is a bare numeric pick, else None.
 
@@ -981,13 +973,9 @@ def _render_mandate_proposal(console: Any, proposal: Dict[str, Any]) -> None:
 
     console.print()
     if proposal.get("reauth_for"):
-        console.print(
-            f'[bold]AI proposes widening your mandate for "{intent}"{acct_suffix}:[/bold]'
-        )
+        console.print(f'[bold]AI proposes widening your mandate for "{intent}"{acct_suffix}:[/bold]')
     else:
-        console.print(
-            f'[bold]AI proposes {len(profiles)} mandate(s) for "{intent}"{acct_suffix}:[/bold]'
-        )
+        console.print(f'[bold]AI proposes {len(profiles)} mandate(s) for "{intent}"{acct_suffix}:[/bold]')
     console.print()
 
     for profile in profiles:
@@ -1015,15 +1003,11 @@ def _render_mandate_proposal(console: Any, proposal: Dict[str, Any]) -> None:
             console.print(f"      [dim]{notes}[/dim]")
 
     console.print()
-    funding_note = proposal.get("funding_note") or (
-        "Funding is set by YOU in the broker; the agent cannot move money."
-    )
+    funding_note = proposal.get("funding_note") or ("Funding is set by YOU in the broker; the agent cannot move money.")
     halt_note = proposal.get("halt_note") or '随时一句 "停" = kill switch, halts everything.'
     console.print(f"  [dim]{funding_note}[/dim]")
     console.print(f"  [dim]{halt_note}[/dim]")
-    console.print(
-        '  [bold]Pick a number to commit, or say "按 2 但每日笔数提到 10" to adjust.[/bold]'
-    )
+    console.print('  [bold]Pick a number to commit, or say "按 2 但每日笔数提到 10" to adjust.[/bold]')
     console.print()
 
 
@@ -1166,8 +1150,7 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
         ctx.session_id = resume_session_id
         ctx.history = _build_session_history(store, resume_session_id)
         console.print(
-            f"[dim]Resumed session: {session.title or session.session_id} "
-            f"({len(ctx.history)} prior turns)[/dim]"
+            f"[dim]Resumed session: {session.title or session.session_id} ({len(ctx.history)} prior turns)[/dim]"
         )
     else:
         # Offer to resume the most recent session. Audit item 8.
@@ -1178,9 +1161,7 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
             else:
                 ctx.session_id = resume["session_id"]
                 ctx.history = list(resume["history"])
-                console.print(
-                    f"[dim]Resumed session: {resume['title']} ({len(ctx.history)} prior turns)[/dim]"
-                )
+                console.print(f"[dim]Resumed session: {resume['title']} ({len(ctx.history)} prior turns)[/dim]")
 
     # Build the prompt session once so history + completer persist.
     try:
@@ -1220,9 +1201,7 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
                 # press inside the window → True → we break.
                 if ctrl_c_within_window(session, window_sec=2.0):
                     break
-                console.print(
-                    "[dim]Press Ctrl+C again within 2s, Ctrl+D, or type /quit to exit[/dim]"
-                )
+                console.print("[dim]Press Ctrl+C again within 2s, Ctrl+D, or type /quit to exit[/dim]")
                 continue
 
         text = user_input.strip()
@@ -1281,9 +1260,7 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
 
     console.print("[dim]Goodbye[/dim]")
     if ctx.session_id:
-        console.print(
-            f"[dim]To resume this session:[/dim] [bold]vibe-trading resume {ctx.session_id}[/bold]"
-        )
+        console.print(f"[dim]To resume this session:[/dim] [bold]vibe-trading resume {ctx.session_id}[/bold]")
     return 0
 
 
@@ -1320,9 +1297,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         _migrate.migrate_legacy_state()
     except Exception:  # pragma: no cover — best-effort
-        logging.getLogger(__name__).warning(
-            "Legacy state migration failed", exc_info=True
-        )
+        logging.getLogger(__name__).warning("Legacy state migration failed", exc_info=True)
 
     interactive = _is_interactive_invocation(raw_argv)
 

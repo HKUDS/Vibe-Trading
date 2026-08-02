@@ -52,8 +52,7 @@ def broad_python_kill_error(command: str) -> str | None:
         if _UNIX_PYTHON_KILL.search(normalized):
             return _BROAD_PYTHON_KILL_ERROR
         if _POWERSHELL_PREFIX.search(normalized) and (
-            _POWERSHELL_PYTHON_BY_NAME.search(normalized)
-            or _POWERSHELL_PYTHON_PIPE.search(normalized)
+            _POWERSHELL_PYTHON_BY_NAME.search(normalized) or _POWERSHELL_PYTHON_PIPE.search(normalized)
         ):
             return _BROAD_PYTHON_KILL_ERROR
     return None

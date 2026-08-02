@@ -56,13 +56,15 @@ def test_resolve_summary_handles_read_error(tmp_path: Path) -> None:
 
 def test_preview_tool_arguments_redacts_sensitive_values() -> None:
     """Event previews should not leak file bodies or credentials."""
-    preview = _preview_tool_arguments({
-        "path": "report.md",
-        "content": "# very long confidential report",
-        "headers": {"Authorization": "Bearer secret-token"},
-        "api_token": "secret-token",
-        "run_dir": "/tmp/hidden",
-    })
+    preview = _preview_tool_arguments(
+        {
+            "path": "report.md",
+            "content": "# very long confidential report",
+            "headers": {"Authorization": "Bearer secret-token"},
+            "api_token": "secret-token",
+            "run_dir": "/tmp/hidden",
+        }
+    )
 
     assert preview == {
         "path": "report.md",

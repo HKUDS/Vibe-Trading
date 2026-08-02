@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #115
 # 简要说明: 国泰君安191短周期交易型alpha因子第115号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: x^y -> np.power after rank.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_115"
 
 __alpha_meta__ = {
-    'id': 'gtja191_115',
-    'theme': ['volume'],
-    'formula_latex': 'rank(corr(0.9h+0.1c,mean(v,30),10))^rank(corr(tsrank((h+l)/2,4),tsrank(v,10),7))',
-    'columns_required': ['open', 'high', 'low', 'close', 'volume'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 30,
-    'min_warmup_bars': 40,
-    'notes': 'x^y -> np.power after rank.',
+    "id": "gtja191_115",
+    "theme": ["volume"],
+    "formula_latex": "rank(corr(0.9h+0.1c,mean(v,30),10))^rank(corr(tsrank((h+l)/2,4),tsrank(v,10),7))",
+    "columns_required": ["open", "high", "low", "close", "volume"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 30,
+    "min_warmup_bars": 40,
+    "notes": "x^y -> np.power after rank.",
 }
 
 
@@ -65,7 +65,6 @@ def compute(panel):
     v = panel["volume"]
     left = rank(ts_corr(h * 0.9 + c * 0.1, ts_mean(v, 30), 10))
     right = rank(ts_corr(ts_rank((h + l) / 2.0, 4), ts_rank(v, 10), 7))
-    arr = np.power(left.to_numpy(dtype=np.float64, na_value=np.nan),
-                   right.to_numpy(dtype=np.float64, na_value=np.nan))
+    arr = np.power(left.to_numpy(dtype=np.float64, na_value=np.nan), right.to_numpy(dtype=np.float64, na_value=np.nan))
     out = pd.DataFrame(arr, index=left.index, columns=left.columns)
     return out

@@ -85,9 +85,8 @@ pmi030000 | float | N | 中国综合PMI:产出指数
 ```python
 pro = ts.pro_api()
 
-#获取指定字段
-df = pro.cn_pmi(start_m='201901', end_m='202003', fields='month,pmi010000,pmi010400')
-
+# 获取指定字段
+df = pro.cn_pmi(start_m="201901", end_m="202003", fields="month,pmi010000,pmi010400")
 ```
 
 <br>

@@ -50,9 +50,7 @@ def test_build_registry_without_agent_config_loads_local_tools_only() -> None:
     assert names, "Registry must not be empty when no agent_config is supplied"
 
     mcp_names = [n for n in names if n.startswith("mcp_")]
-    assert mcp_names == [], (
-        f"Expected no MCP tools without agent_config, got: {mcp_names}"
-    )
+    assert mcp_names == [], f"Expected no MCP tools without agent_config, got: {mcp_names}"
 
 
 def test_build_registry_without_agent_config_does_not_raise() -> None:
@@ -76,9 +74,7 @@ def test_build_registry_without_agent_config_returns_well_known_local_tools() ->
 
     expected = {"load_skill", "backtest", "web_search", "read_file"}
     missing = expected - names
-    assert not missing, (
-        f"Expected well-known local tools in registry but these are missing: {missing}"
-    )
+    assert not missing, f"Expected well-known local tools in registry but these are missing: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -177,8 +173,7 @@ def test_mcp_server_exposes_well_known_tool_names() -> None:
     }
     missing = expected - registered
     assert not missing, (
-        f"MCP server is missing well-known tools: {missing}. "
-        "A tool may have been accidentally renamed or removed."
+        f"MCP server is missing well-known tools: {missing}. A tool may have been accidentally renamed or removed."
     )
 
 

@@ -50,23 +50,19 @@ def _build_panel() -> dict[str, pd.DataFrame]:
     )
     open_ = close.shift(1).fillna(close.iloc[0])
     high = pd.DataFrame(
-        np.maximum(close.to_numpy(), open_.to_numpy())
-        + rng.uniform(0, 1, (n_rows, n_syms)),
+        np.maximum(close.to_numpy(), open_.to_numpy()) + rng.uniform(0, 1, (n_rows, n_syms)),
         index=idx,
         columns=cols,
     )
     low = (
         pd.DataFrame(
-            np.minimum(close.to_numpy(), open_.to_numpy())
-            - rng.uniform(0, 1, (n_rows, n_syms)),
+            np.minimum(close.to_numpy(), open_.to_numpy()) - rng.uniform(0, 1, (n_rows, n_syms)),
             index=idx,
             columns=cols,
         ).abs()
         + 0.01
     )
-    volume = pd.DataFrame(
-        rng.uniform(1e5, 1e7, (n_rows, n_syms)), index=idx, columns=cols
-    )
+    volume = pd.DataFrame(rng.uniform(1e5, 1e7, (n_rows, n_syms)), index=idx, columns=cols)
     amount = volume * close
     benchmark_close = pd.DataFrame(
         np.tile(close.mean(axis=1).to_numpy().reshape(-1, 1), (1, n_syms)),
@@ -106,9 +102,7 @@ def test_gtja191_sample_matches_golden(
     assert golden_path.is_file(), f"golden fixture missing: {golden_path}"
     golden = pd.read_csv(golden_path, index_col=0, parse_dates=True)
     golden.columns = list(golden.columns)
-    assert out.shape == golden.shape, (
-        f"{alpha_id}: shape {out.shape} != golden {golden.shape}"
-    )
+    assert out.shape == golden.shape, f"{alpha_id}: shape {out.shape} != golden {golden.shape}"
     np.testing.assert_allclose(
         out.to_numpy(dtype=np.float64),
         golden.to_numpy(dtype=np.float64),

@@ -108,16 +108,14 @@ def aggregate_path_outcomes(
     ruin_prob = float(np.mean(tw <= ruin_threshold)) if len(tw) else float("nan")
 
     pct = {
-        f"p{int(p) if float(p).is_integer() else p}": round(float(np.percentile(tw, p)), 4)
-        for p in percentile_levels
+        f"p{int(p) if float(p).is_integer() else p}": round(float(np.percentile(tw, p)), 4) for p in percentile_levels
     }
     ret_pct = {
         f"p{int(p) if float(p).is_integer() else p}": round(float(np.percentile(returns, p)), 6)
         for p in percentile_levels
     }
     dd_pct = {
-        f"p{int(p) if float(p).is_integer() else p}": round(float(np.percentile(mdd, p)), 6)
-        for p in percentile_levels
+        f"p{int(p) if float(p).is_integer() else p}": round(float(np.percentile(mdd, p)), 6) for p in percentile_levels
     }
 
     return {
@@ -159,9 +157,7 @@ def _fan_chart_payload(
     """Downsample path matrix into confidence bands + sample paths."""
     n_paths, n_steps = equity_batch.shape
     step_idx = np.unique(np.linspace(0, n_steps - 1, min(n_steps, MAX_FAN_STEPS)).astype(int))
-    sample_rows = np.unique(
-        np.linspace(0, n_paths - 1, min(MAX_FAN_PATHS, n_paths)).astype(int)
-    )
+    sample_rows = np.unique(np.linspace(0, n_paths - 1, min(MAX_FAN_PATHS, n_paths)).astype(int))
     sliced = equity_batch[:, step_idx]
     return {
         "steps": (step_idx + 1).tolist(),
@@ -464,12 +460,7 @@ def run_monte_carlo_paths(
 
     method_norm = (method or "").strip().lower()
     if method_norm not in {"gbm", "bootstrap", "block_bootstrap", "correlated_gbm"}:
-        return {
-            "error": (
-                f"unknown method {method!r}; use "
-                "gbm|bootstrap|block_bootstrap|correlated_gbm"
-            )
-        }
+        return {"error": (f"unknown method {method!r}; use gbm|bootstrap|block_bootstrap|correlated_gbm")}
 
     hist: Optional[np.ndarray] = None
     if method_norm != "correlated_gbm":
@@ -531,9 +522,7 @@ def run_monte_carlo_paths(
             else:
                 w_vec = np.asarray(list(asset_weights), dtype=float)
             # Dry-run validation
-            _ = _draw_correlated_gbm_portfolio_returns(
-                mu_vec, cov_mat, w_vec, 2, 2, np.random.default_rng(0)
-            )
+            _ = _draw_correlated_gbm_portfolio_returns(mu_vec, cov_mat, w_vec, 2, 2, np.random.default_rng(0))
         except (TypeError, ValueError) as exc:
             return {"error": f"correlated_gbm inputs invalid: {exc}"}
     else:
@@ -541,9 +530,7 @@ def run_monte_carlo_paths(
         use_sigma = sample_sigma
 
     # QMC only applies to GBM family; ignore silently for bootstrap methods.
-    effective_sampling = (
-        sampling_norm if method_norm in {"gbm", "correlated_gbm"} else "iid"
-    )
+    effective_sampling = sampling_norm if method_norm in {"gbm", "correlated_gbm"} else "iid"
 
     def _batch_returns(batch_n: int, batch_seed: int) -> np.ndarray:
         local_rng = np.random.default_rng(int(batch_seed))
@@ -712,9 +699,7 @@ def run_monte_carlo_paths(
         ),
     }
     if keep_fan_chart and fan_source is not None:
-        result["equity_paths"] = _fan_chart_payload(
-            fan_source, initial_capital=float(initial_capital)
-        )
+        result["equity_paths"] = _fan_chart_payload(fan_source, initial_capital=float(initial_capital))
     _emit(progress, "done", n_paths, n_paths, "Monte Carlo complete")
     return result
 

@@ -42,11 +42,13 @@ def _aliyun_iqs_search(query: str, max_results: int = 5) -> list[dict] | None:
     import json as _json
     import urllib.request
 
-    body = _json.dumps({
-        "query": query,
-        "engineType": "Generic",
-        "contents": {"mainText": False, "summary": False, "rerankScore": True},
-    }).encode("utf-8")
+    body = _json.dumps(
+        {
+            "query": query,
+            "engineType": "Generic",
+            "contents": {"mainText": False, "summary": False, "rerankScore": True},
+        }
+    ).encode("utf-8")
     req = urllib.request.Request(
         "https://cloud-iqs.aliyuncs.com/search/unified",
         data=body,
@@ -56,11 +58,13 @@ def _aliyun_iqs_search(query: str, max_results: int = 5) -> list[dict] | None:
     data = _json.loads(resp.read().decode("utf-8"))
     out: list[dict] = []
     for item in data.get("pageItems", [])[:max_results]:
-        out.append({
-            "title": item.get("title", ""),
-            "href": item.get("link", ""),
-            "body": item.get("snippet", ""),
-        })
+        out.append(
+            {
+                "title": item.get("title", ""),
+                "href": item.get("link", ""),
+                "body": item.get("snippet", ""),
+            }
+        )
     return out
 
 
@@ -77,9 +81,7 @@ def _bing_cn_search(query: str, max_results: int = 5) -> list[dict]:
     import urllib.request
 
     url = "https://cn.bing.com/search?" + urllib.parse.urlencode({"q": query})
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    )
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
     html = urllib.request.urlopen(req, timeout=10).read().decode("utf-8", "ignore")
     blocks = _re.findall(r'<li class="b_algo"[^>]*>(.*?)</li>', html, _re.S)
     out: list[dict] = []
@@ -113,9 +115,7 @@ def _sogou_search(query: str, max_results: int = 5) -> list[dict]:
     import urllib.request
 
     url = "https://www.sogou.com/web?" + urllib.parse.urlencode({"query": query})
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    )
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
     html = urllib.request.urlopen(req, timeout=10).read().decode("utf-8", "ignore")
     blocks = _re.split(r'<div class="vrwrap"', html)[1:]
     out: list[dict] = []
@@ -147,6 +147,7 @@ class WebSearchTool(BaseTool):
             return True
         except ImportError:
             return False
+
     description = (
         "Search the web across free engines (DuckDuckGo, Google, Bing, Brave, "
         "Mojeek, Yahoo). Returns top results with title, URL, and snippet. Use "
@@ -221,9 +222,7 @@ class WebSearchTool(BaseTool):
                             for r in raw
                         ],
                     }
-                    payload = with_security_warnings(
-                        payload, fields=("results.*.title", "results.*.snippet")
-                    )
+                    payload = with_security_warnings(payload, fields=("results.*.title", "results.*.snippet"))
                     return json.dumps(payload, ensure_ascii=False)
                 logger.warning("aliyun_iqs returned no results, falling through to ddgs")
             except Exception as exc:  # noqa: BLE001
@@ -323,9 +322,7 @@ class WebSearchTool(BaseTool):
                                 for r in raw
                             ],
                         }
-                        payload = with_security_warnings(
-                            payload, fields=("results.*.title", "results.*.snippet")
-                        )
+                        payload = with_security_warnings(payload, fields=("results.*.title", "results.*.snippet"))
                         return json.dumps(payload, ensure_ascii=False)
                     fb_err = f"{fb_name} returned no results"
                 except Exception as exc:  # noqa: BLE001

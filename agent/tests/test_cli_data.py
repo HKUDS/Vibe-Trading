@@ -17,17 +17,19 @@ def test_data_parser_accepts_status_mode_and_usage() -> None:
     assert free.data_command == "mode"
     assert free.mode == "free"
 
-    paid = parser.parse_args([
-        "data",
-        "mode",
-        "paid",
-        "--budget",
-        "30",
-        "--key",
-        "sk-test",
-        "--url",
-        "https://qveris.test/api/v1",
-    ])
+    paid = parser.parse_args(
+        [
+            "data",
+            "mode",
+            "paid",
+            "--budget",
+            "30",
+            "--key",
+            "sk-test",
+            "--url",
+            "https://qveris.test/api/v1",
+        ]
+    )
     assert paid.mode == "paid"
     assert paid.budget == 30
     assert paid.key == "sk-test"

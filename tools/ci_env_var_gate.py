@@ -49,9 +49,7 @@ SCAN_TARGETS: list[str] = [
 ]
 
 # Directories always skipped (relative prefixes).
-SKIP_PREFIXES: tuple[str, ...] = (
-    "agent/tests/",
-)
+SKIP_PREFIXES: tuple[str, ...] = ("agent/tests/",)
 
 # The allowed zone — reads here are the *point* of the config layer.
 ALLOWED_PREFIX: str = "agent/src/config/"
@@ -90,10 +88,10 @@ class _EnvReadVisitor(ast.NodeVisitor):
         self._source_lines = source.splitlines()
 
     def _line_has_noqa(self, lineno: int) -> bool:
-        """Return True when the source line contains ``# noqa: env-gate``."""
+        """Return True when the source line contains ``# env-gate``."""
         if self._source_lines is None or lineno < 1 or lineno > len(self._source_lines):
             return False
-        return "# noqa: env-gate" in self._source_lines[lineno - 1]
+        return "# env-gate" in self._source_lines[lineno - 1]
 
     def _is_os_environ(self, node: ast.expr) -> bool:
         """Return True when *node* is ``os.environ``."""
@@ -123,17 +121,12 @@ class _EnvReadVisitor(ast.NodeVisitor):
             if self._line_has_noqa(node.lineno):
                 self.generic_visit(node)
                 return
-            self._violations.append(
-                (node.lineno, "os.getenv() — use src.config accessor")
-            )
+            self._violations.append((node.lineno, "os.getenv() — use src.config accessor"))
             self.generic_visit(node)
             return
 
         # os.environ.<method>(...)
-        if (
-            isinstance(func, ast.Attribute)
-            and self._is_os_environ(func.value)
-        ):
+        if isinstance(func, ast.Attribute) and self._is_os_environ(func.value):
             method = func.attr
 
             # Allowlisted methods
@@ -146,9 +139,7 @@ class _EnvReadVisitor(ast.NodeVisitor):
                 if self._line_has_noqa(node.lineno):
                     self.generic_visit(node)
                     return
-                self._violations.append(
-                    (node.lineno, "os.environ.get() — use src.config accessor")
-                )
+                self._violations.append((node.lineno, "os.environ.get() — use src.config accessor"))
                 self.generic_visit(node)
                 return
 
@@ -179,14 +170,9 @@ class _EnvReadVisitor(ast.NodeVisitor):
 
     def visit_Subscript(self, node: ast.Subscript) -> None:  # noqa: N802
         # os.environ["KEY"] in a Load (read) context
-        if (
-            self._is_os_environ(node.value)
-            and isinstance(node.ctx, ast.Load)
-        ):
+        if self._is_os_environ(node.value) and isinstance(node.ctx, ast.Load):
             if not self._line_has_noqa(node.lineno):
-                self._violations.append(
-                    (node.lineno, 'os.environ["..."] read — use src.config accessor')
-                )
+                self._violations.append((node.lineno, 'os.environ["..."] read — use src.config accessor'))
 
         self.generic_visit(node)
 

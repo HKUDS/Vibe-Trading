@@ -108,9 +108,7 @@ def test_buy_hold_counts_entry_and_terminal_exit() -> None:
         pd.DataFrame({"TEST": [1.0, 1.0, 1.0]}, index=dates),
         ["TEST"],
     )
-    equity = pd.Series(
-        [snapshot.equity for snapshot in engine.equity_snapshots], index=dates
-    )
+    equity = pd.Series([snapshot.equity for snapshot in engine.equity_snapshots], index=dates)
 
     turnover = calc_trade_turnover_series(engine.trades, equity)
 
@@ -121,10 +119,7 @@ def test_buy_hold_counts_entry_and_terminal_exit() -> None:
 
 def test_full_rotation_counts_both_executed_legs() -> None:
     dates = pd.bdate_range("2026-01-05", periods=3)
-    data_map = {
-        code: pd.DataFrame({"open": 100.0, "close": 100.0}, index=dates)
-        for code in ("A", "B")
-    }
+    data_map = {code: pd.DataFrame({"open": 100.0, "close": 100.0}, index=dates) for code in ("A", "B")}
     engine = _RoundedEngine({"initial_cash": 1_000.0})
     engine._execute_bars(
         dates,
@@ -133,9 +128,7 @@ def test_full_rotation_counts_both_executed_legs() -> None:
         pd.DataFrame({"A": [1.0, 0.0, 0.0], "B": [0.0, 1.0, 1.0]}, index=dates),
         ["A", "B"],
     )
-    equity = pd.Series(
-        [snapshot.equity for snapshot in engine.equity_snapshots], index=dates
-    )
+    equity = pd.Series([snapshot.equity for snapshot in engine.equity_snapshots], index=dates)
 
     turnover = calc_trade_turnover_series(engine.trades, equity)
 
@@ -145,9 +138,7 @@ def test_full_rotation_counts_both_executed_legs() -> None:
 def test_futures_turnover_uses_multiplier_adjusted_margin() -> None:
     dates = pd.bdate_range("2026-01-05", periods=2)
     symbol = "ESZ4"
-    bars = pd.DataFrame(
-        {"open": 100.0, "close": 100.0, "pre_close": 100.0}, index=dates
-    )
+    bars = pd.DataFrame({"open": 100.0, "close": 100.0, "pre_close": 100.0}, index=dates)
     engine = GlobalFuturesEngine(
         {
             "initial_cash": 1_000_000.0,
@@ -163,9 +154,7 @@ def test_futures_turnover_uses_multiplier_adjusted_margin() -> None:
         pd.DataFrame({symbol: [0.5, 0.5]}, index=dates),
         [symbol],
     )
-    equity = pd.Series(
-        [snapshot.equity for snapshot in engine.equity_snapshots], index=dates
-    )
+    equity = pd.Series([snapshot.equity for snapshot in engine.equity_snapshots], index=dates)
 
     turnover = calc_trade_turnover_series(engine.trades, equity)
 
@@ -175,12 +164,7 @@ def test_futures_turnover_uses_multiplier_adjusted_margin() -> None:
 def test_composite_turnover_uses_each_symbols_margin_contract() -> None:
     dates = pd.bdate_range("2026-01-05", periods=2)
     codes = ["AAPL.US", "ESZ4"]
-    data_map = {
-        code: pd.DataFrame(
-            {"open": 100.0, "close": 100.0, "pre_close": 100.0}, index=dates
-        )
-        for code in codes
-    }
+    data_map = {code: pd.DataFrame({"open": 100.0, "close": 100.0, "pre_close": 100.0}, index=dates) for code in codes}
     engine = CompositeEngine(
         {
             "initial_cash": 1_000_000.0,
@@ -198,9 +182,7 @@ def test_composite_turnover_uses_each_symbols_margin_contract() -> None:
         pd.DataFrame({"AAPL.US": [0.25, 0.25], "ESZ4": [0.25, 0.25]}, index=dates),
         codes,
     )
-    equity = pd.Series(
-        [snapshot.equity for snapshot in engine.equity_snapshots], index=dates
-    )
+    equity = pd.Series([snapshot.equity for snapshot in engine.equity_snapshots], index=dates)
 
     turnover = calc_trade_turnover_series(engine.trades, equity)
 

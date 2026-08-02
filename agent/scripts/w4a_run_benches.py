@@ -77,9 +77,7 @@ def _run_one(bench: dict) -> dict:
     # 1. HTML report (also exercises the universe loader so the panel is cached
     #    on disk for the run_bench call below).
     try:
-        envelope = run_alpha_bench(
-            zoo=zoo, universe=universe, period=period, top=20
-        )
+        envelope = run_alpha_bench(zoo=zoo, universe=universe, period=period, top=20)
     except Exception as exc:  # noqa: BLE001 — never let one bench abort the suite
         logger.exception("bench %s crashed (run_alpha_bench)", key)
         entry["status"] = "error"
@@ -120,8 +118,11 @@ def _run_one(bench: dict) -> dict:
     raw_path = REPORTS_DIR / f"bench_{key}.json"
     raw_path.write_text(
         json.dumps(
-            {"meta": {k: entry[k] for k in ("key", "zoo", "universe", "period", "status")},
-             "rows": rows, "skipped": skipped},
+            {
+                "meta": {k: entry[k] for k in ("key", "zoo", "universe", "period", "status")},
+                "rows": rows,
+                "skipped": skipped,
+            },
             indent=2,
             default=str,
         ),
@@ -130,8 +131,12 @@ def _run_one(bench: dict) -> dict:
 
     logger.info(
         "bench %s done: tested=%d skipped=%d alive=%d reversed=%d dead=%d (%.1fs)",
-        key, len(rows), len(skipped),
-        entry["alive"], entry["reversed"], entry["dead"],
+        key,
+        len(rows),
+        len(skipped),
+        entry["alive"],
+        entry["reversed"],
+        entry["dead"],
         entry["wall_seconds"],
     )
     return entry

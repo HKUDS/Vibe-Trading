@@ -65,9 +65,7 @@ class TestToolContract:
 class TestSuccess:
     def test_single_code_returns_history(self) -> None:
         rows = [_row("600519", "2024-06-01"), _row("600519", "2023-06-01")]
-        with patch.object(
-            eastmoney_client, "get_json", return_value=_payload(rows)
-        ) as get_json:
+        with patch.object(eastmoney_client, "get_json", return_value=_payload(rows)) as get_json:
             out = json.loads(LockupExpiryTool().execute(code="600519.SH"))
 
         # Single-code path keys on the bare numeric code, newest-first.
@@ -89,11 +87,10 @@ class TestSuccess:
 
     def test_market_calendar_uses_horizon_window(self) -> None:
         rows = [_row("000001", "2026-07-01")]
-        with patch.object(
-            lockup_expiry_tool, "_today", return_value=date(2026, 6, 19)
-        ), patch.object(
-            eastmoney_client, "get_json", return_value=_payload(rows)
-        ) as get_json:
+        with (
+            patch.object(lockup_expiry_tool, "_today", return_value=date(2026, 6, 19)),
+            patch.object(eastmoney_client, "get_json", return_value=_payload(rows)) as get_json,
+        ):
             out = json.loads(LockupExpiryTool().execute(horizon_days=30))
 
         _, kwargs = get_json.call_args
@@ -108,17 +105,13 @@ class TestSuccess:
         assert out["data"]["as_of"] == "2026-06-19"
 
     def test_horizon_clamped_to_max(self) -> None:
-        with patch.object(
-            eastmoney_client, "get_json", return_value=_payload([])
-        ):
+        with patch.object(eastmoney_client, "get_json", return_value=_payload([])):
             out = json.loads(LockupExpiryTool().execute(horizon_days=99999))
         assert out["data"]["horizon_days"] == 365
 
     def test_payload_capped(self) -> None:
         rows = [_row(f"6005{i:02d}", "2026-07-01") for i in range(250)]
-        with patch.object(
-            eastmoney_client, "get_json", return_value=_payload(rows)
-        ):
+        with patch.object(eastmoney_client, "get_json", return_value=_payload(rows)):
             out = json.loads(LockupExpiryTool().execute(horizon_days=90))
         assert out["data"]["count"] == 200
         assert out["data"]["truncated"] is True
@@ -136,9 +129,7 @@ class TestErrors:
         assert "unrecognized" in out["error"]
 
     def test_upstream_failure_returns_error_envelope(self) -> None:
-        with patch.object(
-            eastmoney_client, "get_json", side_effect=RuntimeError("eastmoney boom")
-        ):
+        with patch.object(eastmoney_client, "get_json", side_effect=RuntimeError("eastmoney boom")):
             out = json.loads(LockupExpiryTool().execute(code="600519"))
         assert out["ok"] is False
         assert "eastmoney boom" in out["error"]
@@ -152,9 +143,7 @@ class TestErrors:
 class TestEndToEndHttpMocked:
     def test_single_code_through_real_client(self) -> None:
         rows = [_row("600519", "2024-06-01")]
-        with patch.object(
-            eastmoney_client, "throttled_get_json", return_value=_payload(rows)
-        ) as http:
+        with patch.object(eastmoney_client, "throttled_get_json", return_value=_payload(rows)) as http:
             out = json.loads(LockupExpiryTool().execute(code="600519"))
 
         http.assert_called_once()

@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #25 - 条件成交量压力
 # 简要说明: RANK(((((-1*RANK(DELTA(CLOSE,7)))*SIGN(DELTA(CLOSE,7)))*VOLUME)+1))，价格方向与成交量的组合排名。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_025",
-    "theme": ['momentum', 'volume'],
-    "formula_latex": '((-1*RANK((DELTA(CLOSE,7)*(1-RANK(DECAYLINEAR((VOLUME/MEAN(VOLUME,20)),9))))))*(1+RANK(SUM(RET,250))))',
-    "columns_required": ['close', 'volume'],
+    "theme": ["momentum", "volume"],
+    "formula_latex": "((-1*RANK((DELTA(CLOSE,7)*(1-RANK(DECAYLINEAR((VOLUME/MEAN(VOLUME,20)),9))))))*(1+RANK(SUM(RET,250))))",
+    "columns_required": ["close", "volume"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 9,
     "min_warmup_bars": 61,
-    "notes": 'Long-window RET sum approximated with 60d cap (warmup feasibility); see notes.',
+    "notes": "Long-window RET sum approximated with 60d cap (warmup feasibility); see notes.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

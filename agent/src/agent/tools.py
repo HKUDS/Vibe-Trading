@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
-from typing import Any, Dict, List, Optional
 
 
 class BaseTool(ABC):
@@ -78,10 +78,14 @@ class ToolRegistry:
             return tool.execute(**params)
         except Exception as exc:
             logger.exception("Tool %s failed", name)
-            return json.dumps({
-                "status": "error", "tool": name,
-                "error": str(exc),
-            }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "tool": name,
+                    "error": str(exc),
+                },
+                ensure_ascii=False,
+            )
 
     @property
     def tool_names(self) -> List[str]:

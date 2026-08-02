@@ -3,6 +3,7 @@
 All HTTP is fully mocked by patching ``throttled_get_json`` in the client
 module — no test makes a real SEC request.
 """
+
 from unittest.mock import patch
 
 import pytest
@@ -50,9 +51,7 @@ class TestCikFor:
             mock_get.assert_not_called()
 
     def test_map_is_fetched_once_and_memoized(self):
-        with patch.object(
-            sec, "throttled_get_json", return_value=_TICKERS_PAYLOAD
-        ) as mock_get:
+        with patch.object(sec, "throttled_get_json", return_value=_TICKERS_PAYLOAD) as mock_get:
             assert sec.cik_for("AAPL") == "0000320193"
             assert sec.cik_for("MSFT") == "0000789019"
             assert mock_get.call_count == 1
@@ -60,9 +59,9 @@ class TestCikFor:
     def test_malformed_rows_skipped(self):
         payload = {
             "0": {"cik_str": 320193, "ticker": "AAPL"},
-            "1": {"ticker": "NOCIK"},          # missing cik
-            "2": {"cik_str": 5},               # missing ticker
-            "3": "garbage",                    # not a dict
+            "1": {"ticker": "NOCIK"},  # missing cik
+            "2": {"cik_str": 5},  # missing ticker
+            "3": "garbage",  # not a dict
         }
         with patch.object(sec, "throttled_get_json", return_value=payload):
             assert sec.cik_for("AAPL") == "0000320193"
@@ -91,9 +90,7 @@ class TestSubmissionsAndFacts:
 
     def test_get_submissions_builds_padded_url(self):
         payload = {"cik": "320193", "name": "Apple Inc.", "filings": {}}
-        with patch.object(
-            sec, "throttled_get_json", return_value=payload
-        ) as mock_get:
+        with patch.object(sec, "throttled_get_json", return_value=payload) as mock_get:
             out = sec.get_submissions(320193)
         assert out == payload
         called_url = mock_get.call_args[0][0]
@@ -104,33 +101,23 @@ class TestSubmissionsAndFacts:
 
     def test_get_company_facts_builds_padded_url(self):
         payload = {"cik": 320193, "facts": {"us-gaap": {}}}
-        with patch.object(
-            sec, "throttled_get_json", return_value=payload
-        ) as mock_get:
+        with patch.object(sec, "throttled_get_json", return_value=payload) as mock_get:
             out = sec.get_company_facts("CIK0000320193")
         assert out == payload
         called_url = mock_get.call_args[0][0]
-        assert called_url == (
-            "https://data.sec.gov/api/xbrl/companyfacts/CIK0000320193.json"
-        )
+        assert called_url == ("https://data.sec.gov/api/xbrl/companyfacts/CIK0000320193.json")
 
     def test_compliant_user_agent_sent(self):
-        with patch.object(
-            sec, "throttled_get_json", return_value={}
-        ) as mock_get:
+        with patch.object(sec, "throttled_get_json", return_value={}) as mock_get:
             sec.get_submissions(320193)
         ua = mock_get.call_args.kwargs["headers"]["User-Agent"]
         assert "Vibe-Trading" in ua and "contact" in ua.lower()
 
     def test_user_agent_env_override(self, monkeypatch):
         monkeypatch.setenv("VIBE_TRADING_SEC_UA", "MyApp/2.0 (me@example.com)")
-        with patch.object(
-            sec, "throttled_get_json", return_value={}
-        ) as mock_get:
+        with patch.object(sec, "throttled_get_json", return_value={}) as mock_get:
             sec.get_company_facts(320193)
-        assert mock_get.call_args.kwargs["headers"]["User-Agent"] == (
-            "MyApp/2.0 (me@example.com)"
-        )
+        assert mock_get.call_args.kwargs["headers"]["User-Agent"] == ("MyApp/2.0 (me@example.com)")
 
 
 class TestErrorPath:

@@ -31,7 +31,6 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from backtest.loaders._http import (
-    DEFAULT_USER_AGENT,
     resolve_min_interval,
     throttled_get,
     throttled_get_json,
@@ -271,9 +270,7 @@ def get_quote_summary(symbol: str, modules: List[str]) -> Dict[str, Any]:
     return _parse_quote_summary(payload, yahoo_symbol)
 
 
-def _quote_summary_request(
-    yahoo_symbol: str, modules_param: str, *, force_refresh: bool
-) -> Any:
+def _quote_summary_request(yahoo_symbol: str, modules_param: str, *, force_refresh: bool) -> Any:
     """Issue one crumb-gated quoteSummary GET, retrying once on a 401."""
     crumb, cookies = _CRUMB_STORE.get(force_refresh=force_refresh)
     headers = {"Cookie": _cookie_header(cookies)} if cookies else None
@@ -330,9 +327,7 @@ def get_options(symbol: str, *, expiration: Optional[int] = None) -> Dict[str, A
     return _parse_options(payload, yahoo_symbol)
 
 
-def _options_request(
-    yahoo_symbol: str, expiration: Optional[int], *, force_refresh: bool
-) -> Any:
+def _options_request(yahoo_symbol: str, expiration: Optional[int], *, force_refresh: bool) -> Any:
     """Issue one crumb-gated v7 options GET, retrying once on a 401."""
     crumb, cookies = _CRUMB_STORE.get(force_refresh=force_refresh)
     headers = {"Cookie": _cookie_header(cookies)} if cookies else None

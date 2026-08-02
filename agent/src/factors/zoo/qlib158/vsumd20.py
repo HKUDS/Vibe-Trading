@@ -6,26 +6,27 @@
 # 典型用途: 结合成交量判断20日内的趋势可信度，量价配合时信号更强。
 # ============================================================
 """qlib158 VSUMD20: formula = \\mathrm{VSUMP}_w - \\mathrm{VSUMN}_w."""
+
 from __future__ import annotations
 
 import pandas as pd
 from src.factors.base import safe_div
 
 __alpha_meta__ = {
-    'id': 'qlib158_vsumd20',
-    'theme': ['volume', 'volatility'],
-    'formula_latex': '\\\\mathrm{VSUMP}_w - \\\\mathrm{VSUMN}_w',
-    'columns_required': ['volume'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 20,
+    "id": "qlib158_vsumd20",
+    "theme": ["volume", "volatility"],
+    "formula_latex": "\\\\mathrm{VSUMP}_w - \\\\mathrm{VSUMN}_w",
+    "columns_required": ["volume"],
+    "universe": ["equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 20,
 }
 
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 VSUMD20 on the supplied OHLCV panel."""
-    v = panel['volume']
+    v = panel["volume"]
     diff = v - v.shift(1)
     pos = diff.where(diff > 0, 0.0)
     neg = (-diff).where(diff < 0, 0.0)

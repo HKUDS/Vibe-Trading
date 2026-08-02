@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #73
 # 简要说明: 国泰君安191短周期交易型alpha因子第73号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_073",
-    "theme": ['volume'],
-    "formula_latex": '((TSRANK(DECAYLINEAR(DECAYLINEAR(CORR((CLOSE),VOLUME,10),16),4),5) - RANK(DECAYLINEAR(CORR(VWAP,MEAN(VOLUME,30),4),3))) * -1)',
-    "columns_required": ['close', 'volume', 'amount'],
+    "theme": ["volume"],
+    "formula_latex": "((TSRANK(DECAYLINEAR(DECAYLINEAR(CORR((CLOSE),VOLUME,10),16),4),5) - RANK(DECAYLINEAR(CORR(VWAP,MEAN(VOLUME,30),4),3))) * -1)",
+    "columns_required": ["close", "volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 16,
     "min_warmup_bars": 35,
-    "notes": 'Composite of decay-linear of close-volume corr minus another decay term.',
+    "notes": "Composite of decay-linear of close-volume corr minus another decay term.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

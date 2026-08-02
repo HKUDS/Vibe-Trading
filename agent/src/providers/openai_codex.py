@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Optional
 from urllib.parse import urlparse
@@ -71,9 +70,8 @@ class CodexAIMessage:
             "finish_reason",
             self.response_metadata.get("finish_reason", "stop"),
         )
-        reasoning = (
-            self.additional_kwargs.get("reasoning_content", "")
-            + other.additional_kwargs.get("reasoning_content", "")
+        reasoning = self.additional_kwargs.get("reasoning_content", "") + other.additional_kwargs.get(
+            "reasoning_content", ""
         )
         return CodexAIMessage(
             content=(self.content or "") + (other.content or ""),
@@ -144,14 +142,8 @@ def validate_codex_base_url(url: str) -> str:
     """
     value = (url or DEFAULT_CODEX_URL).strip().rstrip("/")
     parsed = urlparse(value)
-    if (
-        parsed.scheme != "https"
-        or parsed.netloc != "chatgpt.com"
-        or parsed.path != "/backend-api/codex/responses"
-    ):
-        raise ValueError(
-            "OpenAI Codex OAuth only supports https://chatgpt.com/backend-api/codex/responses"
-        )
+    if parsed.scheme != "https" or parsed.netloc != "chatgpt.com" or parsed.path != "/backend-api/codex/responses":
+        raise ValueError("OpenAI Codex OAuth only supports https://chatgpt.com/backend-api/codex/responses")
     return value
 
 
@@ -218,23 +210,27 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[st
             input_items.append(_convert_user_message(content))
         elif role == "assistant":
             if isinstance(content, str) and content:
-                input_items.append({
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": content}],
-                    "status": "completed",
-                    "id": f"msg_{idx}",
-                })
+                input_items.append(
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": content}],
+                        "status": "completed",
+                        "id": f"msg_{idx}",
+                    }
+                )
             for tool_call in msg.get("tool_calls", []) or []:
                 fn = tool_call.get("function") or {}
                 call_id, item_id = _split_tool_call_id(tool_call.get("id"))
-                input_items.append({
-                    "type": "function_call",
-                    "id": item_id or f"fc_{idx}",
-                    "call_id": call_id or f"call_{idx}",
-                    "name": fn.get("name"),
-                    "arguments": fn.get("arguments") or "{}",
-                })
+                input_items.append(
+                    {
+                        "type": "function_call",
+                        "id": item_id or f"fc_{idx}",
+                        "call_id": call_id or f"call_{idx}",
+                        "name": fn.get("name"),
+                        "arguments": fn.get("arguments") or "{}",
+                    }
+                )
         elif role == "tool":
             call_id, _ = _split_tool_call_id(msg.get("tool_call_id"))
             output = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
@@ -250,12 +246,14 @@ def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
         if not name:
             continue
         params = fn.get("parameters") or {}
-        converted.append({
-            "type": "function",
-            "name": name,
-            "description": fn.get("description") or "",
-            "parameters": params if isinstance(params, dict) else {},
-        })
+        converted.append(
+            {
+                "type": "function",
+                "name": name,
+                "description": fn.get("description") or "",
+                "parameters": params if isinstance(params, dict) else {},
+            }
+        )
     return converted
 
 
@@ -375,9 +373,7 @@ class OpenAICodexLLM:
         self.timeout = timeout
         self.tools = tools or []
         self.reasoning_effort = reasoning_effort
-        self.codex_url = validate_codex_base_url(
-            codex_url or get_env_config().llm.openai_codex_base_url
-        )
+        self.codex_url = validate_codex_base_url(codex_url or get_env_config().llm.openai_codex_base_url)
 
     def bind_tools(self, tools: list[dict[str, Any]]) -> "OpenAICodexLLM":
         return OpenAICodexLLM(
@@ -414,10 +410,14 @@ class OpenAICodexLLM:
         token = _get_codex_token()
         return _build_headers(str(token.account_id), str(token.access))
 
-    def stream(self, messages: list[dict[str, Any]], config: Optional[dict[str, Any]] = None) -> Iterable[CodexAIMessage]:
+    def stream(
+        self, messages: list[dict[str, Any]], config: Optional[dict[str, Any]] = None
+    ) -> Iterable[CodexAIMessage]:
         timeout = (config or {}).get("timeout") or self.timeout
         with httpx.Client(timeout=timeout, follow_redirects=True, trust_env=True) as client:
-            with client.stream("POST", self.codex_url, headers=self._headers(), json=self._body(messages, stream=True)) as response:
+            with client.stream(
+                "POST", self.codex_url, headers=self._headers(), json=self._body(messages, stream=True)
+            ) as response:
                 if response.status_code != 200:
                     raw = response.read().decode("utf-8", "ignore")
                     # Raise the typed CodexStreamError (carries ``status_code``)

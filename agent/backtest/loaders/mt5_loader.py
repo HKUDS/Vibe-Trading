@@ -41,12 +41,18 @@ _MT5_CONFIG_PATH = Path.home() / ".vibe-trading" / "mt5.json"
 #: Lowercase ``1h``/``4h``/``1d``/``1w`` alias project-style tokens (connector parity).
 #: ``1m`` (minute) and ``1M`` (month) differ by case.
 _INTERVAL_MAP = {
-    "1m": "TIMEFRAME_M1", "5m": "TIMEFRAME_M5", "15m": "TIMEFRAME_M15",
+    "1m": "TIMEFRAME_M1",
+    "5m": "TIMEFRAME_M5",
+    "15m": "TIMEFRAME_M15",
     "30m": "TIMEFRAME_M30",
-    "1H": "TIMEFRAME_H1", "1h": "TIMEFRAME_H1",
-    "4H": "TIMEFRAME_H4", "4h": "TIMEFRAME_H4",
-    "1D": "TIMEFRAME_D1", "1d": "TIMEFRAME_D1",
-    "1W": "TIMEFRAME_W1", "1w": "TIMEFRAME_W1",
+    "1H": "TIMEFRAME_H1",
+    "1h": "TIMEFRAME_H1",
+    "4H": "TIMEFRAME_H4",
+    "4h": "TIMEFRAME_H4",
+    "1D": "TIMEFRAME_D1",
+    "1d": "TIMEFRAME_D1",
+    "1W": "TIMEFRAME_W1",
+    "1w": "TIMEFRAME_W1",
     "1M": "TIMEFRAME_MN1",
 }
 
@@ -226,9 +232,7 @@ class DataLoader:
                 result[code] = frame
         return result
 
-    def _fetch_one(
-        self, code: str, start_date: str, end_date: str, timeframe_name: str
-    ) -> pd.DataFrame | None:
+    def _fetch_one(self, code: str, start_date: str, end_date: str, timeframe_name: str) -> pd.DataFrame | None:
         """Fetch one symbol from the terminal (``None`` on any failure)."""
         mt5 = _import_mt5()
         if mt5 is None or not _ensure_initialized():

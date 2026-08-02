@@ -113,9 +113,7 @@ def _ts_code(code: str) -> str:
 def fetch_fund_flow(symbol: str, *, days: int) -> dict[str, Any]:
     ts_code = _ts_code(symbol)
     start_date, end_date = _date_window(days)
-    rows = _records(
-        _pro_api().moneyflow(ts_code=ts_code, start_date=start_date, end_date=end_date)
-    )
+    rows = _records(_pro_api().moneyflow(ts_code=ts_code, start_date=start_date, end_date=end_date))
     parsed: list[dict[str, Any]] = []
     for row in rows:
         parsed.append(
@@ -212,9 +210,7 @@ def fetch_northbound_flow(*, lookback_days: int) -> dict[str, Any]:
 def fetch_margin_trading(code: str, *, days: int) -> dict[str, Any]:
     ts_code = _ts_code(code)
     start_date, end_date = _date_window(days)
-    rows = _records(
-        _pro_api().margin_detail(ts_code=ts_code, start_date=start_date, end_date=end_date)
-    )
+    rows = _records(_pro_api().margin_detail(ts_code=ts_code, start_date=start_date, end_date=end_date))
     normalized = [
         {
             "trade_date": _dashed_date(row.get("trade_date")),

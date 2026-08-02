@@ -59,8 +59,7 @@ class ChannelRuntime:
         # fail-closed and pairing is managed via the authenticated CLI/REST plane.
         self._operators: set[str] = {str(o) for o in (operators or ())}
         self._channel_operators: dict[str, set[str]] = {
-            str(ch): {str(o) for o in ops}
-            for ch, ops in (channel_operators or {}).items()
+            str(ch): {str(o) for o in ops} for ch, ops in (channel_operators or {}).items()
         }
         self.session_map_path = session_map_path or (get_data_dir() / "channels" / "sessions.json")
         self._session_map: dict[str, str] = {}
@@ -132,10 +131,7 @@ class ChannelRuntime:
                         OutboundMessage(
                             channel=msg.channel,
                             chat_id=msg.chat_id,
-                            content=(
-                                "Not authorized: pairing management is restricted to "
-                                "configured operators."
-                            ),
+                            content=("Not authorized: pairing management is restricted to configured operators."),
                             metadata={PAIRING_COMMAND_META_KEY: True, "unauthorized": True},
                         )
                     )

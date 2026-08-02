@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #104
 # 简要说明: 国泰君安191短周期交易型alpha因子第104号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     (-1 * (DELTA(CORR(high, volume,5),5) * RANK(STD(close,20))))
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_104"
 
 __alpha_meta__ = {
-    'id': 'gtja191_104',
-    'theme': ['volume', 'volatility'],
-    'formula_latex': '-1*delta(corr(high,volume,5),5)*rank(std(close,20))',
-    'columns_required': ['open', 'high', 'low', 'close', 'volume'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 25,
-    'notes': '',
+    "id": "gtja191_104",
+    "theme": ["volume", "volatility"],
+    "formula_latex": "-1*delta(corr(high,volume,5),5)*rank(std(close,20))",
+    "columns_required": ["open", "high", "low", "close", "volume"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 25,
+    "notes": "",
 }
 
 

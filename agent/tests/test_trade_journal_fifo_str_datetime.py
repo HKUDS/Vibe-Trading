@@ -10,24 +10,26 @@ from src.tools.trade_journal_tool import pair_trades_fifo
 
 def test_pair_trades_fifo_supports_string_datetime_column():
     """Prove that pair_trades_fifo handles string datetime values without raising TypeError."""
-    df = pd.DataFrame([
-        {
-            "datetime": "2026-01-01 09:30:00",
-            "symbol": "AAPL",
-            "side": "buy",
-            "quantity": 10.0,
-            "price": 150.0,
-            "fee": 1.0,
-        },
-        {
-            "datetime": "2026-01-03 09:30:00",
-            "symbol": "AAPL",
-            "side": "sell",
-            "quantity": 10.0,
-            "price": 160.0,
-            "fee": 1.0,
-        },
-    ])
+    df = pd.DataFrame(
+        [
+            {
+                "datetime": "2026-01-01 09:30:00",
+                "symbol": "AAPL",
+                "side": "buy",
+                "quantity": 10.0,
+                "price": 150.0,
+                "fee": 1.0,
+            },
+            {
+                "datetime": "2026-01-03 09:30:00",
+                "symbol": "AAPL",
+                "side": "sell",
+                "quantity": 10.0,
+                "price": 160.0,
+                "fee": 1.0,
+            },
+        ]
+    )
 
     # On un-fixed code, subtracting string datetimes in pair_trades_fifo raised TypeError.
     # On fixed code, it correctly calculates roundtrip hold_days = 2.0 and pnl.

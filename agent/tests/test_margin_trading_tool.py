@@ -48,9 +48,7 @@ def _datacenter_payload() -> dict:
 class TestSuccess:
     def test_a_share_returns_envelope(self) -> None:
         tool = MarginTradingTool()
-        with patch.object(
-            eastmoney_client, "get_json", return_value=_datacenter_payload()
-        ) as get_json:
+        with patch.object(eastmoney_client, "get_json", return_value=_datacenter_payload()) as get_json:
             out = tool.execute(code="600519.SH", days=30)
 
         # Query went through the throttled client with the bare code filter.
@@ -76,9 +74,7 @@ class TestSuccess:
 
     def test_bare_code_and_days_clamped(self) -> None:
         tool = MarginTradingTool()
-        with patch.object(
-            eastmoney_client, "get_json", return_value=_datacenter_payload()
-        ) as get_json:
+        with patch.object(eastmoney_client, "get_json", return_value=_datacenter_payload()) as get_json:
             out = tool.execute(code="000001", days=99999)
 
         _, kwargs = get_json.call_args
@@ -101,11 +97,12 @@ class TestErrors:
 
     def test_provider_failure_becomes_error_envelope(self) -> None:
         tool = MarginTradingTool()
-        with patch.object(
-            eastmoney_client, "get_json", side_effect=RuntimeError("eastmoney boom")
-        ), patch(
-            "src.tools.margin_trading_tool.tushare_fallbacks.fetch_margin_trading",
-            side_effect=RuntimeError("no fallback"),
+        with (
+            patch.object(eastmoney_client, "get_json", side_effect=RuntimeError("eastmoney boom")),
+            patch(
+                "src.tools.margin_trading_tool.tushare_fallbacks.fetch_margin_trading",
+                side_effect=RuntimeError("no fallback"),
+            ),
         ):
             out = tool.execute(code="600519.SH", days=5)
 
@@ -120,12 +117,13 @@ class TestErrors:
             "rows": [{"trade_date": "2024-01-03", "financing_balance": 1.0}],
         }
         tool = MarginTradingTool()
-        with patch.object(
-            eastmoney_client, "get_json", side_effect=RuntimeError("eastmoney boom")
-        ), patch(
-            "src.tools.margin_trading_tool.tushare_fallbacks.fetch_margin_trading",
-            return_value=fallback,
-        ) as fallback_fetch:
+        with (
+            patch.object(eastmoney_client, "get_json", side_effect=RuntimeError("eastmoney boom")),
+            patch(
+                "src.tools.margin_trading_tool.tushare_fallbacks.fetch_margin_trading",
+                return_value=fallback,
+            ) as fallback_fetch,
+        ):
             out = tool.execute(code="600519.SH", days=5)
 
         fallback_fetch.assert_called_once_with("600519", days=5)
@@ -137,11 +135,12 @@ class TestErrors:
 
     def test_empty_data_becomes_error_envelope(self) -> None:
         tool = MarginTradingTool()
-        with patch.object(
-            eastmoney_client, "get_json", return_value={"result": {"data": []}}
-        ), patch(
-            "src.tools.margin_trading_tool.tushare_fallbacks.fetch_margin_trading",
-            side_effect=RuntimeError("no fallback"),
+        with (
+            patch.object(eastmoney_client, "get_json", return_value={"result": {"data": []}}),
+            patch(
+                "src.tools.margin_trading_tool.tushare_fallbacks.fetch_margin_trading",
+                side_effect=RuntimeError("no fallback"),
+            ),
         ):
             out = tool.execute(code="600519.SH")
 

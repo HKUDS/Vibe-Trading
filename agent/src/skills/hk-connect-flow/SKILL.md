@@ -35,7 +35,7 @@ Analyze capital flows through the Shanghai-Hong Kong and Shenzhen-Hong Kong Stoc
 # Daily Northbound net buy signals
 def northbound_signal(daily_net_buy_rmb_billion):
     if daily_net_buy_rmb_billion > 10:
-        return "strong_foreign_buying"    # Very large single-day inflow
+        return "strong_foreign_buying"  # Very large single-day inflow
     elif daily_net_buy_rmb_billion > 5:
         return "moderate_foreign_buying"
     elif daily_net_buy_rmb_billion > 0:
@@ -45,7 +45,8 @@ def northbound_signal(daily_net_buy_rmb_billion):
     elif daily_net_buy_rmb_billion > -10:
         return "moderate_foreign_selling"
     else:
-        return "strong_foreign_selling"   # Panic outflow
+        return "strong_foreign_selling"  # Panic outflow
+
 
 # Cumulative flow trend (more important than single-day)
 def northbound_trend(flows_20d, flows_5d):
@@ -53,13 +54,13 @@ def northbound_trend(flows_20d, flows_5d):
     cum_5d = sum(flows_5d)
 
     if cum_20d > 30 and cum_5d > 10:
-        return "sustained_accumulation"   # Strong bullish for A-shares
+        return "sustained_accumulation"  # Strong bullish for A-shares
     elif cum_20d < -30 and cum_5d < -10:
-        return "sustained_distribution"   # Bearish for A-shares
+        return "sustained_distribution"  # Bearish for A-shares
     elif cum_20d > 0 and cum_5d < 0:
-        return "accumulation_pausing"     # Watch for reversal
+        return "accumulation_pausing"  # Watch for reversal
     elif cum_20d < 0 and cum_5d > 0:
-        return "distribution_pausing"     # Possible bottom formation
+        return "distribution_pausing"  # Possible bottom formation
 ```
 
 **Northbound sector allocation patterns:**
@@ -93,6 +94,7 @@ southbound_targets = {
     "high_dividend": ["0939.HK", "1398.HK", "0883.HK", "2628.HK"],
     "ah_discount": [],  # Dynamically calculated based on AH premium index
 }
+
 
 def southbound_signal(daily_net_buy_hkd_billion):
     if daily_net_buy_hkd_billion > 5:
@@ -137,11 +139,11 @@ else:
 
 ```python
 connect_score = {
-    "northbound_flow": 0,       # -2 to +2: 20-day cumulative NB flow direction
-    "northbound_breadth": 0,    # -2 to +2: number of NB top-10 holdings being added to
-    "southbound_flow": 0,       # -2 to +2: 20-day cumulative SB flow direction
-    "ah_premium": 0,            # -2 to +2: AH premium level (high = favor HK)
-    "fx_direction": 0,          # -2 to +2: CNY strength (strong CNY = NB inflow support)
+    "northbound_flow": 0,  # -2 to +2: 20-day cumulative NB flow direction
+    "northbound_breadth": 0,  # -2 to +2: number of NB top-10 holdings being added to
+    "southbound_flow": 0,  # -2 to +2: 20-day cumulative SB flow direction
+    "ah_premium": 0,  # -2 to +2: AH premium level (high = favor HK)
+    "fx_direction": 0,  # -2 to +2: CNY strength (strong CNY = NB inflow support)
 }
 
 # Total range: -10 to +10
@@ -158,6 +160,7 @@ connect_score = {
 
 ```python
 import tushare as ts
+
 pro = ts.pro_api()
 
 # Daily Northbound/Southbound aggregate flows

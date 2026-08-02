@@ -63,9 +63,7 @@ async def _dispatch_scheduled_research_job(job) -> None:
         raise RuntimeError("Session runtime not enabled")
     # Pass a copy so the session runtime's internal config writes (e.g.
     # include_shell_tools) do not mutate the persisted scheduled-run config.
-    session = svc.create_session(
-        title=f"scheduled-research:{job.id}", config=dict(job.config)
-    )
+    session = svc.create_session(title=f"scheduled-research:{job.id}", config=dict(job.config))
     logger.info(
         "dispatching scheduled research job %s via session %s",
         job.id,
@@ -110,21 +108,11 @@ async def _stop_scheduled_research_executor() -> None:
 class CreateScheduledRunRequest(BaseModel):
     """Request body for POST /scheduled-runs."""
 
-    id: Optional[str] = Field(
-        None, description="Job id; auto-generated UUID when omitted"
-    )
-    prompt: str = Field(
-        ..., min_length=1, description="Research prompt or backtest description"
-    )
-    schedule: str = Field(
-        ..., min_length=1, description="Interval-ms or 5-field cron expression"
-    )
-    next_run_at: Optional[int] = Field(
-        None, description="Epoch-ms for next run; defaults to now"
-    )
-    config: Dict[str, Any] = Field(
-        default_factory=dict, description="Optional backtest parameters"
-    )
+    id: Optional[str] = Field(None, description="Job id; auto-generated UUID when omitted")
+    prompt: str = Field(..., min_length=1, description="Research prompt or backtest description")
+    schedule: str = Field(..., min_length=1, description="Interval-ms or 5-field cron expression")
+    next_run_at: Optional[int] = Field(None, description="Epoch-ms for next run; defaults to now")
+    config: Dict[str, Any] = Field(default_factory=dict, description="Optional backtest parameters")
 
 
 class ScheduledRunResponse(BaseModel):
@@ -223,9 +211,7 @@ def register_scheduled_routes(
         limit: int = Query(50, ge=1, le=200),
     ) -> List[ScheduledRunResponse]:
         """List scheduled research jobs, optionally filtered by status."""
-        jobs = _get_scheduled_research_store().list_jobs(
-            status=status_filter, limit=limit
-        )
+        jobs = _get_scheduled_research_store().list_jobs(status=status_filter, limit=limit)
         return [ScheduledRunResponse(**j.to_dict()) for j in jobs]
 
     @app.delete(
@@ -238,6 +224,4 @@ def register_scheduled_routes(
         _host_validate_path_param(job_id, "job_id")
         removed = _get_scheduled_research_store().delete(job_id)
         if not removed:
-            raise HTTPException(
-                status_code=404, detail=f"scheduled run {job_id} not found"
-            )
+            raise HTTPException(status_code=404, detail=f"scheduled run {job_id} not found")

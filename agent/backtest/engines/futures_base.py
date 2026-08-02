@@ -37,20 +37,31 @@ class FuturesBaseEngine(BaseEngine):
     # ── Override PnL / margin / sizing to include multiplier ──
 
     def _calc_pnl(
-        self, symbol: str, direction: int, size: float,
-        entry_price: float, exit_price: float,
+        self,
+        symbol: str,
+        direction: int,
+        size: float,
+        entry_price: float,
+        exit_price: float,
     ) -> float:
         cm = self.get_contract_multiplier(symbol)
         return direction * size * cm * (exit_price - entry_price)
 
     def _calc_margin(
-        self, symbol: str, size: float, price: float, leverage: float,
+        self,
+        symbol: str,
+        size: float,
+        price: float,
+        leverage: float,
     ) -> float:
         cm = self.get_contract_multiplier(symbol)
         return size * price * cm / leverage
 
     def _calc_raw_size(
-        self, symbol: str, target_notional: float, price: float,
+        self,
+        symbol: str,
+        target_notional: float,
+        price: float,
     ) -> float:
         cm = self.get_contract_multiplier(symbol)
         return target_notional / (price * cm)

@@ -242,8 +242,8 @@ def bond_price(face, coupon_rate, ytm, n_periods, freq=1):
     """
     c = face * coupon_rate / freq
     y = ytm / freq
-    pv_coupons = c * (1 - (1+y)**(-n_periods)) / y
-    pv_face = face / (1+y)**n_periods
+    pv_coupons = c * (1 - (1 + y) ** (-n_periods)) / y
+    pv_face = face / (1 + y) ** n_periods
     return pv_coupons + pv_face
 ```
 
@@ -522,8 +522,7 @@ import numpy as np
 from scipy.optimize import brentq
 
 
-def bond_price(face: float, coupon_rate: float, ytm: float,
-               n_periods: int, freq: int = 1) -> float:
+def bond_price(face: float, coupon_rate: float, ytm: float, n_periods: int, freq: int = 1) -> float:
     """附息债券净现值定价。
 
     Args:
@@ -549,8 +548,7 @@ def bond_price(face: float, coupon_rate: float, ytm: float,
     return pv_coupons + pv_face
 
 
-def ytm_solve(price: float, face: float, coupon_rate: float,
-              n_periods: int, freq: int = 1) -> float:
+def ytm_solve(price: float, face: float, coupon_rate: float, n_periods: int, freq: int = 1) -> float:
     """给定市场价格反求YTM（数值解法）。
 
     Args:
@@ -566,6 +564,7 @@ def ytm_solve(price: float, face: float, coupon_rate: float,
     Raises:
         ValueError: 无法在合理范围内找到解时
     """
+
     def pv_diff(y):
         return bond_price(face, coupon_rate, y, n_periods, freq) - price
 
@@ -575,8 +574,7 @@ def ytm_solve(price: float, face: float, coupon_rate: float,
         raise ValueError(f"无法求解YTM，检查输入参数: {e}")
 
 
-def macaulay_duration(face: float, coupon_rate: float, ytm: float,
-                      n_periods: int, freq: int = 1) -> float:
+def macaulay_duration(face: float, coupon_rate: float, ytm: float, n_periods: int, freq: int = 1) -> float:
     """Macaulay久期（单位：期数，除以freq得年数）。
 
     Args:
@@ -593,16 +591,14 @@ def macaulay_duration(face: float, coupon_rate: float, ytm: float,
     y = ytm / freq
     price = bond_price(face, coupon_rate, ytm, n_periods, freq)
 
-    weighted_sum = sum(
-        t * (c / (1 + y) ** t)
-        for t in range(1, n_periods)
-    ) + n_periods * ((c + face) / (1 + y) ** n_periods)
+    weighted_sum = sum(t * (c / (1 + y) ** t) for t in range(1, n_periods)) + n_periods * (
+        (c + face) / (1 + y) ** n_periods
+    )
 
     return (weighted_sum / price) / freq
 
 
-def modified_duration(face: float, coupon_rate: float, ytm: float,
-                      n_periods: int, freq: int = 1) -> float:
+def modified_duration(face: float, coupon_rate: float, ytm: float, n_periods: int, freq: int = 1) -> float:
     """修正久期。
 
     Returns:
@@ -612,8 +608,7 @@ def modified_duration(face: float, coupon_rate: float, ytm: float,
     return d_mac / (1 + ytm / freq)
 
 
-def convexity(face: float, coupon_rate: float, ytm: float,
-              n_periods: int, freq: int = 1) -> float:
+def convexity(face: float, coupon_rate: float, ytm: float, n_periods: int, freq: int = 1) -> float:
     """债券凸性。
 
     Returns:
@@ -623,16 +618,16 @@ def convexity(face: float, coupon_rate: float, ytm: float,
     y = ytm / freq
     price = bond_price(face, coupon_rate, ytm, n_periods, freq)
 
-    conv_sum = sum(
-        t * (t + 1) * (c / (1 + y) ** (t + 2))
-        for t in range(1, n_periods)
-    ) + n_periods * (n_periods + 1) * ((c + face) / (1 + y) ** (n_periods + 2))
+    conv_sum = sum(t * (t + 1) * (c / (1 + y) ** (t + 2)) for t in range(1, n_periods)) + n_periods * (
+        n_periods + 1
+    ) * ((c + face) / (1 + y) ** (n_periods + 2))
 
-    return (conv_sum / price) / (freq ** 2)
+    return (conv_sum / price) / (freq**2)
 
 
-def dv01(face: float, coupon_rate: float, ytm: float,
-         n_periods: int, freq: int = 1, par_amount: float = 1_000_000) -> float:
+def dv01(
+    face: float, coupon_rate: float, ytm: float, n_periods: int, freq: int = 1, par_amount: float = 1_000_000
+) -> float:
     """DV01（每百万面值的基点价值）。
 
     Args:
@@ -656,8 +651,7 @@ from scipy.optimize import minimize
 from typing import Tuple
 
 
-def nelson_siegel(tau: np.ndarray, beta0: float, beta1: float,
-                  beta2: float, lambda1: float) -> np.ndarray:
+def nelson_siegel(tau: np.ndarray, beta0: float, beta1: float, beta2: float, lambda1: float) -> np.ndarray:
     """Nelson-Siegel 即期利率模型。
 
     Args:
@@ -675,9 +669,9 @@ def nelson_siegel(tau: np.ndarray, beta0: float, beta1: float,
     return beta0 + beta1 * factor1 + beta2 * factor2
 
 
-def svensson(tau: np.ndarray, beta0: float, beta1: float,
-             beta2: float, beta3: float,
-             lambda1: float, lambda2: float) -> np.ndarray:
+def svensson(
+    tau: np.ndarray, beta0: float, beta1: float, beta2: float, beta3: float, lambda1: float, lambda2: float
+) -> np.ndarray:
     """Svensson 模型（NS扩展，双曲率因子）。
 
     Args:
@@ -694,8 +688,7 @@ def svensson(tau: np.ndarray, beta0: float, beta1: float,
     return beta0 + beta1 * f1 + beta2 * f2 + beta3 * f3
 
 
-def fit_yield_curve(maturities: np.ndarray, yields: np.ndarray,
-                    model: str = "svensson") -> Tuple[np.ndarray, callable]:
+def fit_yield_curve(maturities: np.ndarray, yields: np.ndarray, model: str = "svensson") -> Tuple[np.ndarray, callable]:
     """拟合收益率曲线并返回插值函数。
 
     Args:
@@ -710,21 +703,24 @@ def fit_yield_curve(maturities: np.ndarray, yields: np.ndarray,
         ValueError: 未知模型名称
     """
     if model == "nelson_siegel":
+
         def objective(params):
             fitted = nelson_siegel(maturities, *params)
             return np.sum((fitted - yields) ** 2)
+
         x0 = [0.04, -0.02, 0.01, 1.5]
         bounds = [(0, 0.2), (-0.2, 0.2), (-0.2, 0.2), (0.1, 10)]
         result = minimize(objective, x0, method="L-BFGS-B", bounds=bounds)
         return result.x, lambda t: nelson_siegel(np.array(t), *result.x)
 
     elif model == "svensson":
+
         def objective(params):
             fitted = svensson(maturities, *params)
             return np.sum((fitted - yields) ** 2)
+
         x0 = [0.04, -0.02, 0.01, 0.01, 1.5, 5.0]
-        bounds = [(0, 0.2), (-0.2, 0.2), (-0.2, 0.2), (-0.2, 0.2),
-                  (0.1, 10), (0.1, 20)]
+        bounds = [(0, 0.2), (-0.2, 0.2), (-0.2, 0.2), (-0.2, 0.2), (0.1, 10), (0.1, 20)]
         result = minimize(objective, x0, method="L-BFGS-B", bounds=bounds)
         return result.x, lambda t: svensson(np.array(t), *result.x)
 
@@ -740,10 +736,16 @@ def fit_yield_curve(maturities: np.ndarray, yields: np.ndarray,
 import pandas as pd
 
 
-def altman_z_score(working_capital: float, retained_earnings: float,
-                   ebit: float, market_cap: float, total_debt: float,
-                   revenue: float, total_assets: float,
-                   model: str = "original") -> dict:
+def altman_z_score(
+    working_capital: float,
+    retained_earnings: float,
+    ebit: float,
+    market_cap: float,
+    total_debt: float,
+    revenue: float,
+    total_assets: float,
+    model: str = "original",
+) -> dict:
     """Altman Z-Score 违约风险评估。
 
     Args:
@@ -766,16 +768,16 @@ def altman_z_score(working_capital: float, retained_earnings: float,
     x5 = revenue / total_assets
 
     if model == "original":
-        z = 1.2*x1 + 1.4*x2 + 3.3*x3 + 0.6*x4 + 1.0*x5
+        z = 1.2 * x1 + 1.4 * x2 + 3.3 * x3 + 0.6 * x4 + 1.0 * x5
         safe_zone = z > 2.99
         distress_zone = z < 1.81
     elif model == "prime":
-        z = 0.717*x1 + 0.847*x2 + 3.107*x3 + 0.420*x4 + 0.998*x5
+        z = 0.717 * x1 + 0.847 * x2 + 3.107 * x3 + 0.420 * x4 + 0.998 * x5
         safe_zone = z > 2.90
         distress_zone = z < 1.23
     elif model == "double_prime":
         # 去掉X5（非制造业资产周转率意义不同）
-        z = 6.56*x1 + 3.26*x2 + 6.72*x3 + 1.05*x4
+        z = 6.56 * x1 + 3.26 * x2 + 6.72 * x3 + 1.05 * x4
         safe_zone = z > 2.60
         distress_zone = z < 1.10
     else:
@@ -797,7 +799,7 @@ def altman_z_score(working_capital: float, retained_earnings: float,
             "X3_盈利能力": round(x3, 4),
             "X4_杠杆": round(x4, 4),
             "X5_效率": round(x5, 4) if model != "double_prime" else "N/A",
-        }
+        },
     }
 ```
 
@@ -812,10 +814,7 @@ from typing import Optional
 
 
 def credit_spread_analysis(
-    bond_yields: pd.Series,
-    risk_free_yields: pd.Series,
-    window: int = 252,
-    issuer_name: Optional[str] = None
+    bond_yields: pd.Series, risk_free_yields: pd.Series, window: int = 252, issuer_name: Optional[str] = None
 ) -> pd.DataFrame:
     """信用利差时序分析（Z-Score标准化 + 历史分位数）。
 
@@ -860,10 +859,7 @@ def credit_spread_analysis(
     return result
 
 
-def spread_term_structure(
-    issuers: dict,
-    risk_free_curve: pd.Series
-) -> pd.DataFrame:
+def spread_term_structure(issuers: dict, risk_free_curve: pd.Series) -> pd.DataFrame:
     """信用利差期限结构分析。
 
     Args:
@@ -895,13 +891,7 @@ from scipy.optimize import fsolve
 from typing import Tuple
 
 
-def merton_model(
-    equity_value: float,
-    equity_vol: float,
-    debt_face: float,
-    risk_free: float,
-    T: float
-) -> dict:
+def merton_model(equity_value: float, equity_vol: float, debt_face: float, risk_free: float, T: float) -> dict:
     """Merton结构化模型：估算违约概率和信用利差。
 
     Args:
@@ -914,6 +904,7 @@ def merton_model(
     Returns:
         含资产价值、距违约距离、违约概率、信用利差的字典
     """
+
     def equations(params):
         V, sigma_V = params
         d1 = (np.log(V / debt_face) + (risk_free + 0.5 * sigma_V**2) * T) / (sigma_V * np.sqrt(T))
@@ -952,7 +943,7 @@ def merton_model(
         "资产价值_亿": round(V_star, 2),
         "资产波动率": round(sigma_V_star, 4),
         "距违约距离_DD": round(dd, 3),
-        "违约概率_RN": f"{pd_rn*100:.2f}%",
+        "违约概率_RN": f"{pd_rn * 100:.2f}%",
         "信用利差_bp": round(credit_spread * 10000, 1) if not np.isnan(credit_spread) else "N/A",
     }
 ```

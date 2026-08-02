@@ -37,10 +37,16 @@ def run_backtest(run_dir: str) -> str:
         return json.dumps({"status": "error", "error": f"config.json parse error: {e}"}, ensure_ascii=False)
 
     if "source" not in config:
-        return json.dumps({"status": "error", "error": "config.json missing 'source' field (tushare/okx/yfinance)"}, ensure_ascii=False)
+        return json.dumps(
+            {"status": "error", "error": "config.json missing 'source' field (tushare/okx/yfinance)"},
+            ensure_ascii=False,
+        )
 
     if config["source"] not in VALID_SOURCES:
-        return json.dumps({"status": "error", "error": f"source must be one of {VALID_SOURCES}, got: {config['source']}"}, ensure_ascii=False)
+        return json.dumps(
+            {"status": "error", "error": f"source must be one of {VALID_SOURCES}, got: {config['source']}"},
+            ensure_ascii=False,
+        )
 
     signal_path = run_path / "code" / "signal_engine.py"
     if not signal_path.exists():
@@ -64,14 +70,17 @@ def run_backtest(run_dir: str) -> str:
 
     emit_progress("finalize", message="collecting artifacts")
     artifacts_found = {name: str(path) for name, path in result.artifacts.items()}
-    return json.dumps({
-        "status": "ok" if result.success else "error",
-        "exit_code": result.exit_code,
-        "stdout": result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout,
-        "stderr": result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr,
-        "artifacts": artifacts_found,
-        "run_dir": run_dir,
-    }, ensure_ascii=False)
+    return json.dumps(
+        {
+            "status": "ok" if result.success else "error",
+            "exit_code": result.exit_code,
+            "stdout": result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout,
+            "stderr": result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr,
+            "artifacts": artifacts_found,
+            "run_dir": run_dir,
+        },
+        ensure_ascii=False,
+    )
 
 
 class BacktestTool(BaseTool):

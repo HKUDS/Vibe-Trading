@@ -92,7 +92,7 @@ def compute_edge_density(
 
     density = pd.Series(np.nan, index=returns.index)
     for i in range(corr_window, len(returns) + 1):
-        corr = returns.iloc[i - corr_window:i].corr().abs().to_numpy()
+        corr = returns.iloc[i - corr_window : i].corr().abs().to_numpy()
         density.iloc[i - 1] = float((corr[upper_mask] >= edge_threshold).sum()) / n_pairs
     return density
 
@@ -284,9 +284,11 @@ def first_mover_attribution(
     # the score would silently stay NaN for 2x baseline_window bars.)
     # shift(1) keeps the bar being scored out of its own baseline.
     med = intensity.rolling(baseline_window).median().shift(1)
-    mad = intensity.rolling(baseline_window).apply(
-        lambda window: np.median(np.abs(window - np.median(window))), raw=True
-    ).shift(1)
+    mad = (
+        intensity.rolling(baseline_window)
+        .apply(lambda window: np.median(np.abs(window - np.median(window))), raw=True)
+        .shift(1)
+    )
     z = (intensity - med) / (1.4826 * mad.replace(0.0, np.nan))
 
     crossings: dict[str, pd.Timestamp] = {}
@@ -300,8 +302,12 @@ def first_mover_attribution(
 
     if not crossings:
         return {
-            "verdict": "ABSTAIN", "named": None, "candidates": [],
-            "crossings": {}, "watchlist": watchlist, "z": z,
+            "verdict": "ABSTAIN",
+            "named": None,
+            "candidates": [],
+            "crossings": {},
+            "watchlist": watchlist,
+            "z": z,
         }
 
     ordered = sorted(crossings.items(), key=lambda item: item[1])
@@ -309,30 +315,35 @@ def first_mover_attribution(
     positions = {ts: i for i, ts in enumerate(z.index)}
     first_pos = positions[first_time]
 
-    pack_size = sum(
-        1 for _, ts in ordered if positions[ts] - first_pos <= macro_span
-    )
+    pack_size = sum(1 for _, ts in ordered if positions[ts] - first_pos <= macro_span)
     if pack_size >= max(2, int(np.ceil(macro_fraction * returns.shape[1]))):
         return {
-            "verdict": "MACRO", "named": None,
+            "verdict": "MACRO",
+            "named": None,
             "candidates": [s for s, _ in ordered],
-            "crossings": crossings, "watchlist": watchlist, "z": z,
+            "crossings": crossings,
+            "watchlist": watchlist,
+            "z": z,
         }
 
-    leaders = [
-        symbol for symbol, ts in ordered if positions[ts] - first_pos < lead_gap
-    ]
-    if len(leaders) == 1 and (
-        len(ordered) == 1 or positions[ordered[1][1]] - first_pos >= lead_gap
-    ):
+    leaders = [symbol for symbol, ts in ordered if positions[ts] - first_pos < lead_gap]
+    if len(leaders) == 1 and (len(ordered) == 1 or positions[ordered[1][1]] - first_pos >= lead_gap):
         return {
-            "verdict": "NAME", "named": first_symbol, "candidates": leaders,
-            "crossings": crossings, "watchlist": watchlist, "z": z,
+            "verdict": "NAME",
+            "named": first_symbol,
+            "candidates": leaders,
+            "crossings": crossings,
+            "watchlist": watchlist,
+            "z": z,
         }
 
     return {
-        "verdict": "AMBIGUOUS", "named": None, "candidates": leaders,
-        "crossings": crossings, "watchlist": watchlist, "z": z,
+        "verdict": "AMBIGUOUS",
+        "named": None,
+        "candidates": leaders,
+        "crossings": crossings,
+        "watchlist": watchlist,
+        "z": z,
     }
 ```
 
@@ -393,10 +404,7 @@ def rewiring_leaderboard(
     calm = returns.loc[calm_mask.reindex(returns.index, fill_value=False)]
     event = returns.loc[event_mask.reindex(returns.index, fill_value=False)]
     if len(calm) < min_bars or len(event) < min_bars:
-        raise ValueError(
-            f"need >= {min_bars} bars in each window "
-            f"(calm={len(calm)}, event={len(event)})"
-        )
+        raise ValueError(f"need >= {min_bars} bars in each window (calm={len(calm)}, event={len(event)})")
 
     delta = (event.corr() - calm.corr()).abs()
     matrix = delta.to_numpy(copy=True)  # copy: DataFrame internals may be read-only

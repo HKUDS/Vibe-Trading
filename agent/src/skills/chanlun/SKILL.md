@@ -45,9 +45,18 @@ from datetime import datetime
 
 # 准备 RawBar 列表（需按时间正序排列）
 bars = [
-    RawBar(symbol="BTC-USDT", id=0, dt=datetime(2026,1,1),
-           freq=Freq.D, open=70000, close=71000,
-           high=72000, low=69000, vol=1000, amount=71000000),
+    RawBar(
+        symbol="BTC-USDT",
+        id=0,
+        dt=datetime(2026, 1, 1),
+        freq=Freq.D,
+        open=70000,
+        close=71000,
+        high=72000,
+        low=69000,
+        vol=1000,
+        amount=71000000,
+    ),
     # ... 更多K线
 ]
 
@@ -55,8 +64,8 @@ bars = [
 c = CZSC(bars)
 
 # 访问结果
-print(c.bi_list)    # 已完成的笔
-print(c.bars_ubi)   # 未完成笔中的K线
+print(c.bi_list)  # 已完成的笔
+print(c.bars_ubi)  # 未完成笔中的K线
 ```
 
 ## 可用信号函数（czsc.signals.cxt）

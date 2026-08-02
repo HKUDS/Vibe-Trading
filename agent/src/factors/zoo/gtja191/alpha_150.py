@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #150
 # 简要说明: 国泰君安191短周期交易型alpha因子第150号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     (CLOSE+HIGH+LOW)/3*VOLUME
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_150"
 
 __alpha_meta__ = {
-    'id': 'gtja191_150',
-    'theme': ['volume'],
-    'formula_latex': '(close+high+low)/3*volume',
-    'columns_required': ['close', 'high', 'low', 'volume'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 1,
-    'min_warmup_bars': 1,
-    'notes': '',
+    "id": "gtja191_150",
+    "theme": ["volume"],
+    "formula_latex": "(close+high+low)/3*volume",
+    "columns_required": ["close", "high", "low", "volume"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 1,
+    "min_warmup_bars": 1,
+    "notes": "",
 }
 
 

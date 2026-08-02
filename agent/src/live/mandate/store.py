@@ -90,9 +90,7 @@ def _parse_mandate(raw: object) -> Mandate:
         max_order_notional_usd=float(caps["max_order_notional_usd"]),
         max_total_exposure_usd=float(caps["max_total_exposure_usd"]),
         max_leverage=float(caps["max_leverage"]),
-        allowed_instruments=tuple(
-            InstrumentType(value) for value in caps["allowed_instruments"]
-        ),
+        allowed_instruments=tuple(InstrumentType(value) for value in caps["allowed_instruments"]),
         max_trades_per_day=int(caps["max_trades_per_day"]),
     )
     universe_constraint = UniverseConstraint(

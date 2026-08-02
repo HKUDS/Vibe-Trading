@@ -194,16 +194,28 @@ def test_in_mandate_order_passes() -> None:
         # Per-order notional (quantitative).
         (dict(notional_usd=1000.0), {}, [], 0, "max_order_notional_usd", BREACH_KIND_QUANTITATIVE),
         # Total exposure (quantitative): existing $4900 + $200 buy > $5000 cap.
-        (dict(notional_usd=200.0), {}, [{"market_value": 4900.0}], 0, "max_total_exposure_usd", BREACH_KIND_QUANTITATIVE),
+        (
+            dict(notional_usd=200.0),
+            {},
+            [{"market_value": 4900.0}],
+            0,
+            "max_total_exposure_usd",
+            BREACH_KIND_QUANTITATIVE,
+        ),
         # Leverage (quantitative): tiny funding makes 1x leverage breach.
-        (dict(notional_usd=600.0), dict(account_funding_usd=500.0, max_total_exposure_usd=1e9), [], 0, "max_leverage", BREACH_KIND_QUANTITATIVE),
+        (
+            dict(notional_usd=600.0),
+            dict(account_funding_usd=500.0, max_total_exposure_usd=1e9),
+            [],
+            0,
+            "max_leverage",
+            BREACH_KIND_QUANTITATIVE,
+        ),
         # Daily count (quantitative): already at the cap.
         (dict(notional_usd=100.0), {}, [], 5, "max_trades_per_day", BREACH_KIND_QUANTITATIVE),
     ],
 )
-def test_each_limit_breach(
-    intent_kwargs, mandate_kwargs, positions, daily_count, expect_limit, expect_kind
-) -> None:
+def test_each_limit_breach(intent_kwargs, mandate_kwargs, positions, daily_count, expect_limit, expect_kind) -> None:
     breach = _check(
         _intent(**intent_kwargs),
         _mandate(**mandate_kwargs),
@@ -497,9 +509,7 @@ def test_failed_forward_does_not_consume_count_or_audit_accepted(live_runtime: P
     adapter = _FailingForwardAdapter()
     guard = _guard(adapter)
 
-    out = json.loads(
-        guard.execute(symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0)
-    )
+    out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0))
 
     # The order WAS forwarded (it passed the gate) but the broker errored.
     assert len(adapter.order_calls) == 1
@@ -526,9 +536,7 @@ def test_successful_forward_consumes_count_and_audits_accepted(live_runtime: Pat
     adapter = _MockAdapter(positions=[], balance=5000.0)
     guard = _guard(adapter)
 
-    out = json.loads(
-        guard.execute(symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0)
-    )
+    out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="equity", notional_usd=100.0))
     assert out.get("status") == "ok"
     counter = json.loads((live_runtime / "live" / "robinhood" / "trade_counter.json").read_text())
     assert counter["count"] == 1
@@ -577,8 +585,11 @@ def test_notional_quantity_bypass_is_closed(live_runtime: Path) -> None:
 
     out = json.loads(
         guard.execute(
-            symbol="AAPL", side="buy", instrument_type="equity",
-            notional_usd=10.0, quantity=100000.0,
+            symbol="AAPL",
+            side="buy",
+            instrument_type="equity",
+            notional_usd=10.0,
+            quantity=100000.0,
         )
     )
     assert out["status"] == "blocked"

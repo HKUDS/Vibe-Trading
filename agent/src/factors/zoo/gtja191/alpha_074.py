@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #74
 # 简要说明: 国泰君安191短周期交易型alpha因子第74号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_074",
-    "theme": ['volume'],
-    "formula_latex": '(RANK(CORR(SUM(((LOW*0.35)+(VWAP*0.65)),20),SUM(MEAN(VOLUME,40),20),7)) + RANK(CORR(RANK(VWAP),RANK(VOLUME),6)))',
-    "columns_required": ['low', 'volume', 'amount'],
+    "theme": ["volume"],
+    "formula_latex": "(RANK(CORR(SUM(((LOW*0.35)+(VWAP*0.65)),20),SUM(MEAN(VOLUME,40),20),7)) + RANK(CORR(RANK(VWAP),RANK(VOLUME),6)))",
+    "columns_required": ["low", "volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
     "min_warmup_bars": 30,
-    "notes": '40d MA volume truncated to 10d; SUM windows kept at 20.',
+    "notes": "40d MA volume truncated to 10d; SUM windows kept at 20.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     l = panel["low"]

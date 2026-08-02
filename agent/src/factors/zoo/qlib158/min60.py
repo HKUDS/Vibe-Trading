@@ -6,25 +6,26 @@
 # 典型用途: 衡量当前价格相对于60日最低点的位置，接近1表示接近近期低点。
 # ============================================================
 """qlib158 MIN60: formula = \\mathrm{ts\\_min}(\\mathrm{low}, 60) / \\mathrm{close}."""
+
 from __future__ import annotations
 
 import pandas as pd
 from src.factors.base import safe_div, ts_min
 
 __alpha_meta__ = {
-    'id': 'qlib158_min60',
-    'theme': ['momentum'],
-    'formula_latex': '\\\\mathrm{ts\\\\_min}(\\\\mathrm{low}, 60) / \\\\mathrm{close}',
-    'columns_required': ['low', 'close'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
-    'frequency': ['1d'],
-    'decay_horizon': 60,
-    'min_warmup_bars': 60,
+    "id": "qlib158_min60",
+    "theme": ["momentum"],
+    "formula_latex": "\\\\mathrm{ts\\\\_min}(\\\\mathrm{low}, 60) / \\\\mathrm{close}",
+    "columns_required": ["low", "close"],
+    "universe": ["equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr"],
+    "frequency": ["1d"],
+    "decay_horizon": 60,
+    "min_warmup_bars": 60,
 }
 
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 MIN60 on the supplied OHLCV panel."""
-    lo = panel['low']
-    c = panel['close']
+    lo = panel["low"]
+    c = panel["close"]
     return safe_div(ts_min(lo, 60), c)

@@ -68,15 +68,12 @@ def _to_futu_ktype(interval: str):
     attr = _INTERVAL_MAP.get(token)
     if attr is None:
         raise NoAvailableSourceError(
-            f"unsupported Futu interval: {interval!r}; "
-            f"supported intervals: {sorted(_INTERVAL_MAP)}"
+            f"unsupported Futu interval: {interval!r}; supported intervals: {sorted(_INTERVAL_MAP)}"
         )
     try:
         return getattr(KLType, attr)
     except AttributeError as exc:
-        raise NoAvailableSourceError(
-            f"installed Futu SDK does not expose KLType.{attr}"
-        ) from exc
+        raise NoAvailableSourceError(f"installed Futu SDK does not expose KLType.{attr}") from exc
 
 
 def _normalize_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -131,6 +128,7 @@ class FutuLoader:
             return False
         try:
             import futu  # noqa: PLC0415
+
             ctx = futu.OpenQuoteContext(host=self._host, port=self._port)
             ctx.close()
             return True
@@ -167,8 +165,7 @@ class FutuLoader:
         validate_date_range(start_date, end_date)
         if interval.strip() not in _INTERVAL_MAP:
             raise NoAvailableSourceError(
-                f"unsupported Futu interval: {interval!r}; "
-                f"supported intervals: {sorted(_INTERVAL_MAP)}"
+                f"unsupported Futu interval: {interval!r}; supported intervals: {sorted(_INTERVAL_MAP)}"
             )
 
         results: Dict[str, pd.DataFrame] = {}
@@ -200,9 +197,7 @@ class FutuLoader:
             ktype = _to_futu_ktype(interval)
             ctx = futu.OpenQuoteContext(host=self._host, port=self._port)
         except Exception as exc:
-            raise NoAvailableSourceError(
-                f"Cannot connect to FutuOpenD at {self._host}:{self._port}: {exc}"
-            ) from exc
+            raise NoAvailableSourceError(f"Cannot connect to FutuOpenD at {self._host}:{self._port}: {exc}") from exc
 
         try:
             for code in pending:
@@ -220,9 +215,7 @@ class FutuLoader:
                         page_req_key=page_key,
                     )
                     if ret != futu.RET_OK:
-                        logger.warning(
-                            "Futu returned error for %s: %s", futu_code, data
-                        )
+                        logger.warning("Futu returned error for %s: %s", futu_code, data)
                         failed = True
                         break
                     if isinstance(data, pd.DataFrame) and not data.empty:

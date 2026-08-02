@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #82
 # 简要说明: 国泰君安191短周期交易型alpha因子第82号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_082",
-    "theme": ['reversal'],
-    "formula_latex": 'SMA((TSMAX(HIGH,6)-CLOSE)/(TSMAX(HIGH,6)-TSMIN(LOW,6))*100,20,1)',
-    "columns_required": ['close', 'high', 'low'],
+    "theme": ["reversal"],
+    "formula_latex": "SMA((TSMAX(HIGH,6)-CLOSE)/(TSMAX(HIGH,6)-TSMIN(LOW,6))*100,20,1)",
+    "columns_required": ["close", "high", "low"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
     "min_warmup_bars": 21,
-    "notes": 'Williams %R with SMA(20,1).',
+    "notes": "Williams %R with SMA(20,1).",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

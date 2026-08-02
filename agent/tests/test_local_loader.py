@@ -19,9 +19,7 @@ def _configure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sources: list[di
     monkeypatch.setattr(local_loader, "_CONFIG_PATH", config_path)
 
 
-def test_local_loader_fetches_csv_with_local_prefix(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_local_loader_fetches_csv_with_local_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Symbols prefixed with local: should resolve to the configured symbol."""
     csv_path = tmp_path / "aapl.csv"
     csv_path.write_text(
@@ -54,9 +52,7 @@ def test_local_loader_fetches_csv_with_local_prefix(
         ],
     )
 
-    frames = local_loader.DataLoader().fetch(
-        ["local:AAPL.US"], "2026-01-01", "2026-01-02"
-    )
+    frames = local_loader.DataLoader().fetch(["local:AAPL.US"], "2026-01-01", "2026-01-02")
 
     assert set(frames) == {"AAPL.US"}
     assert list(frames["AAPL.US"]["close"]) == [10.5, 12.5]
@@ -97,16 +93,12 @@ def _intraday_source(csv_path: Path) -> dict:
     }
 
 
-def test_local_loader_resamples_intraday_to_coarser_interval(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_local_loader_resamples_intraday_to_coarser_interval(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Requesting 4H against hourly bars must aggregate, not silently return hourly."""
     csv_path = _intraday_csv(tmp_path)
     _configure(monkeypatch, tmp_path, [_intraday_source(csv_path)])
 
-    frames = local_loader.DataLoader().fetch(
-        ["AAA.US"], "2026-01-01", "2026-01-01", interval="4H"
-    )
+    frames = local_loader.DataLoader().fetch(["AAA.US"], "2026-01-01", "2026-01-01", interval="4H")
 
     df = frames["AAA.US"]
     assert len(df) == 2  # 00:00-03:59 and 04:00-07:59 buckets
@@ -160,9 +152,7 @@ def test_local_loader_warns_and_keeps_source_when_upsampling(
     )
 
     with caplog.at_level(logging.WARNING, logger="backtest.loaders.local_loader"):
-        frames = local_loader.DataLoader().fetch(
-            ["AAA.US"], "2026-01-01", "2026-01-03", interval="4H"
-        )
+        frames = local_loader.DataLoader().fetch(["AAA.US"], "2026-01-01", "2026-01-03", interval="4H")
 
     df = frames["AAA.US"]
     assert len(df) == 3  # daily source bars returned unchanged
@@ -170,9 +160,7 @@ def test_local_loader_warns_and_keeps_source_when_upsampling(
     assert any("upsample" in rec.message.lower() for rec in caplog.records)
 
 
-def test_local_loader_fetches_duckdb_without_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_local_loader_fetches_duckdb_without_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """DuckDB sources use db_path/query and should not require a path field."""
     duckdb = pytest.importorskip("duckdb")
     db_path = tmp_path / "market.duckdb"
@@ -205,9 +193,7 @@ def test_local_loader_fetches_duckdb_without_path(
     assert list(frames["MYINDEX"]["close"]) == [10.5, 12.5]
 
 
-def test_local_loader_handles_timezone_aware_timestamps(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_local_loader_handles_timezone_aware_timestamps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """tz-aware timestamps must not crash the date filter into an empty result.
 
     Regression: the date-range filter compared a tz-naive Timestamp against a
@@ -244,17 +230,13 @@ def test_local_loader_handles_timezone_aware_timestamps(
         ],
     )
 
-    frames = local_loader.DataLoader().fetch(
-        ["local:AAPL.US"], "2026-01-01", "2026-01-02"
-    )
+    frames = local_loader.DataLoader().fetch(["local:AAPL.US"], "2026-01-01", "2026-01-02")
 
     assert set(frames) == {"AAPL.US"}
     assert list(frames["AAPL.US"]["close"]) == [10.5, 12.5]
 
 
-def test_local_loader_normalizes_dst_offsets_to_naive_utc(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_local_loader_normalizes_dst_offsets_to_naive_utc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     csv_path = tmp_path / "dst.csv"
     csv_path.write_text(
         "\n".join(
@@ -286,9 +268,7 @@ def test_local_loader_normalizes_dst_offsets_to_naive_utc(
         ],
     )
 
-    frame = local_loader.DataLoader().fetch(
-        ["local:DST.US"], "2026-01-01", "2026-07-31"
-    )["DST.US"]
+    frame = local_loader.DataLoader().fetch(["local:DST.US"], "2026-01-01", "2026-07-31")["DST.US"]
 
     assert frame.index.tz is None
     assert list(frame.index) == [

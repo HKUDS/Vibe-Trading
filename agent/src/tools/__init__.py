@@ -162,8 +162,7 @@ def build_registry(
             )
         else:
             local_server_names = {
-                server_name: _mcp_server_tool_name_segments[server_name]
-                for server_name in agent_config.mcp_servers
+                server_name: _mcp_server_tool_name_segments[server_name] for server_name in agent_config.mcp_servers
             }
 
         if interactive is None:
@@ -189,14 +188,8 @@ def build_registry(
                 # Headless / no-token: skip an unauthorized live channel rather
                 # than block on a browser that can't open (SPEC Transport §4).
                 if live:
-                    cache_dir = (
-                        server_config.auth.cache_dir
-                        if server_config.auth is not None
-                        else None
-                    )
-                    if not should_register_live_channel(
-                        interactive=interactive, url=server_url, cache_dir=cache_dir
-                    ):
+                    cache_dir = server_config.auth.cache_dir if server_config.auth is not None else None
+                    if not should_register_live_channel(interactive=interactive, url=server_url, cache_dir=cache_dir):
                         profile_hint = (
                             "ibkr-live-official-mcp-readonly"
                             if server_name.strip().lower() == "ibkr"
@@ -226,9 +219,7 @@ def build_registry(
                     local_server_name=local_server_names[server_name],
                 )
                 if live:
-                    wrappers = wrap_live_broker_tools(
-                        server_name, wrappers, url=server_url
-                    )
+                    wrappers = wrap_live_broker_tools(server_name, wrappers, url=server_url)
                 for tool in wrappers:
                     registry.register(tool)
                 logger.info(
@@ -328,14 +319,10 @@ def _prune_agent_config_for_swarm_tools(
         server_name: server_config
         for server_name, server_config in agent_config.mcp_servers.items()
         if any(
-            tool_name.startswith(f"mcp_{local_server_names[server_name]}_")
-            for tool_name in requested_mcp_tool_names
+            tool_name.startswith(f"mcp_{local_server_names[server_name]}_") for tool_name in requested_mcp_tool_names
         )
     }
-    selected_local_server_names = {
-        server_name: local_server_names[server_name]
-        for server_name in selected_servers
-    }
+    selected_local_server_names = {server_name: local_server_names[server_name] for server_name in selected_servers}
     return AgentConfig(mcp_servers=selected_servers), selected_local_server_names
 
 
@@ -356,7 +343,8 @@ def _filter_registry(
                 "Requested tool %r is unavailable and was dropped from the "
                 "filtered registry (include_shell_tools=%s); a preset that "
                 "depends on it cannot execute it.",
-                name, include_shell_tools,
+                name,
+                include_shell_tools,
             )
     return filtered
 

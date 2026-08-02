@@ -46,7 +46,10 @@ def test_tool_metadata() -> None:
     assert tool.repeatable is True
     assert tool.parameters["required"] == ["alpha_ids", "universe", "period"]
     assert tool.parameters["properties"]["sort"]["enum"] == [
-        "ir", "ic_mean", "ic_positive_ratio", "ic_count",
+        "ir",
+        "ic_mean",
+        "ic_positive_ratio",
+        "ic_count",
     ]
 
 
@@ -60,8 +63,13 @@ def test_tool_is_auto_discovered() -> None:
 
 def _ok_envelope() -> dict[str, Any]:
     return {
-        "status": "ok", "universe": "csi300", "period": "2020-2025", "sort": "ir",
-        "n_compared": 2, "n_skipped": 0, "winner": "alpha101_2",
+        "status": "ok",
+        "universe": "csi300",
+        "period": "2020-2025",
+        "sort": "ir",
+        "n_compared": 2,
+        "n_skipped": 0,
+        "winner": "alpha101_2",
         "ranking": [
             {"rank": 1, "id": "alpha101_2", "zoo": "alpha101", "ir": 0.6, "delta_ir_vs_best": 0.0},
             {"rank": 2, "id": "alpha101_1", "zoo": "alpha101", "ir": 0.2, "delta_ir_vs_best": -0.4},
@@ -80,7 +88,9 @@ def test_execute_happy_path(monkeypatch) -> None:
     monkeypatch.setattr("src.tools.alpha_compare_tool.compare_alphas", _fake)
     out = AlphaCompareTool().execute(
         alpha_ids=["alpha101_1", "alpha101_2", "alpha101_1"],  # dup collapses
-        universe="csi300", period="2020-2025", sort="ir",
+        universe="csi300",
+        period="2020-2025",
+        sort="ir",
     )
     env = json.loads(out)
     assert env["status"] == "ok"
@@ -93,12 +103,21 @@ def test_execute_happy_path(monkeypatch) -> None:
 def test_execute_accepts_inline_string_ids(monkeypatch) -> None:
     monkeypatch.setattr(
         "src.tools.alpha_compare_tool.compare_alphas",
-        lambda alpha_ids, *a, **k: {"status": "ok", "n_compared": len(alpha_ids),
-                                    "winner": alpha_ids[0], "ranking": [], "skipped": []},
+        lambda alpha_ids, *a, **k: {
+            "status": "ok",
+            "n_compared": len(alpha_ids),
+            "winner": alpha_ids[0],
+            "ranking": [],
+            "skipped": [],
+        },
     )
-    env = json.loads(AlphaCompareTool().execute(
-        alpha_ids="alpha101_1, alpha101_2", universe="csi300", period="2020-2025",
-    ))
+    env = json.loads(
+        AlphaCompareTool().execute(
+            alpha_ids="alpha101_1, alpha101_2",
+            universe="csi300",
+            period="2020-2025",
+        )
+    )
     assert env["status"] == "ok"
     assert env["n_compared"] == 2
 
@@ -109,9 +128,13 @@ def test_execute_missing_universe_is_error(monkeypatch) -> None:
         "src.tools.alpha_compare_tool.compare_alphas",
         lambda *a, **k: pytest.fail("compare_alphas should not run without universe"),
     )
-    env = json.loads(AlphaCompareTool().execute(
-        alpha_ids=["a", "b"], universe="", period="2020-2025",
-    ))
+    env = json.loads(
+        AlphaCompareTool().execute(
+            alpha_ids=["a", "b"],
+            universe="",
+            period="2020-2025",
+        )
+    )
     assert env["status"] == "error"
     assert "universe and period" in env["error"]
 
@@ -121,8 +144,12 @@ def test_execute_wraps_unexpected_exception(monkeypatch) -> None:
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr("src.tools.alpha_compare_tool.compare_alphas", _boom)
-    env = json.loads(AlphaCompareTool().execute(
-        alpha_ids=["a", "b"], universe="csi300", period="2020-2025",
-    ))
+    env = json.loads(
+        AlphaCompareTool().execute(
+            alpha_ids=["a", "b"],
+            universe="csi300",
+            period="2020-2025",
+        )
+    )
     assert env["status"] == "error"
     assert "alpha compare failed" in env["error"]

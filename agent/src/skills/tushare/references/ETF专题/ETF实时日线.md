@@ -47,14 +47,11 @@ trade_time | str | N | 交易时间
 **接口示例**
 
 ```python
+# 获取今日所有深市ETF实时日线和成交笔数
+df = pro.rt_etf_k(ts_code="1*.SZ")
 
-#获取今日所有深市ETF实时日线和成交笔数
-df = pro.rt_etf_k(ts_code='1*.SZ')
-
-#获取今日沪市所有ETF实时日线和成交笔数
-df = pro.rt_etf_k(ts_code='5*.SH', topic='HQ_FND_TICK')
-
-
+# 获取今日沪市所有ETF实时日线和成交笔数
+df = pro.rt_etf_k(ts_code="5*.SH", topic="HQ_FND_TICK")
 ```
 
 

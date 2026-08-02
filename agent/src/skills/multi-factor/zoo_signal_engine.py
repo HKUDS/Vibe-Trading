@@ -95,9 +95,7 @@ class ZooSignalEngine:
         if self.weights is not None:
             weights = tuple(self.weights)
             if len(weights) != len(self.alpha_ids):
-                raise ValueError(
-                    f"weights length {len(weights)} != alpha_ids length {len(self.alpha_ids)}"
-                )
+                raise ValueError(f"weights length {len(weights)} != alpha_ids length {len(self.alpha_ids)}")
             object.__setattr__(self, "weights", weights)
         if self.top_n is not None and self.top_n <= 0:
             raise ValueError(f"top_n must be positive, got {self.top_n}")
@@ -177,7 +175,9 @@ class ZooSignalEngine:
                 # SkipAlpha / RegistryError / KeyError(unknown id) all land here.
                 logger.warning(
                     "ZooSignalEngine: alpha %r skipped (%s: %s); redistributing weight",
-                    alpha_id, type(exc).__name__, exc,
+                    alpha_id,
+                    type(exc).__name__,
+                    exc,
                 )
                 continue
             per_alpha.append(_zscore_cross_section(raw) if self.standardize else raw)

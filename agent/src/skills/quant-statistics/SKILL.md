@@ -19,6 +19,7 @@ Common statistical methodology used in quantitative investing, covering time-ser
 ```python
 from statsmodels.tsa.stattools import adfuller
 
+
 def adf_test(series: pd.Series, significance: float = 0.05) -> dict:
     """
     ADF test: H0 = unit root exists (non-stationary), H1 = stationary
@@ -29,13 +30,13 @@ def adf_test(series: pd.Series, significance: float = 0.05) -> dict:
     Returns:
         Test result
     """
-    result = adfuller(series.dropna(), autolag='AIC')
+    result = adfuller(series.dropna(), autolag="AIC")
     return {
-        'adf_statistic': result[0],
-        'p_value': result[1],
-        'lags_used': result[2],
-        'is_stationary': result[1] < significance,
-        'critical_values': result[4],  # 1%, 5%, 10%
+        "adf_statistic": result[0],
+        "p_value": result[1],
+        "lags_used": result[2],
+        "is_stationary": result[1] < significance,
+        "critical_values": result[4],  # 1%, 5%, 10%
     }
 ```
 
@@ -65,6 +66,7 @@ def adf_test(series: pd.Series, significance: float = 0.05) -> dict:
 ```python
 from statsmodels.tsa.stattools import coint
 
+
 def cointegration_test(y: pd.Series, x: pd.Series) -> dict:
     """
     Engle-Granger two-step cointegration test
@@ -77,10 +79,10 @@ def cointegration_test(y: pd.Series, x: pd.Series) -> dict:
     """
     score, p_value, critical = coint(y, x)
     return {
-        'test_statistic': score,
-        'p_value': p_value,
-        'is_cointegrated': p_value < 0.05,
-        'critical_values': {'1%': critical[0], '5%': critical[1], '10%': critical[2]},
+        "test_statistic": score,
+        "p_value": p_value,
+        "is_cointegrated": p_value < 0.05,
+        "critical_values": {"1%": critical[0], "5%": critical[1], "10%": critical[2]},
     }
 ```
 
@@ -88,6 +90,7 @@ def cointegration_test(y: pd.Series, x: pd.Series) -> dict:
 
 ```python
 import statsmodels.api as sm
+
 
 def find_hedge_ratio(y: pd.Series, x: pd.Series) -> dict:
     """
@@ -100,12 +103,13 @@ def find_hedge_ratio(y: pd.Series, x: pd.Series) -> dict:
     spread = y - model.params[1] * x
 
     return {
-        'hedge_ratio': model.params[1],
-        'intercept': model.params[0],
-        'spread_mean': spread.mean(),
-        'spread_std': spread.std(),
-        'half_life': compute_half_life(spread),  # mean-reversion speed
+        "hedge_ratio": model.params[1],
+        "intercept": model.params[0],
+        "spread_mean": spread.mean(),
+        "spread_std": spread.std(),
+        "half_life": compute_half_life(spread),  # mean-reversion speed
     }
+
 
 def compute_half_life(spread: pd.Series) -> float:
     """Estimate half-life with OLS regression."""
@@ -135,13 +139,14 @@ z_score = (spread - mean) / std
 ```python
 from statsmodels.tsa.stattools import grangercausalitytests
 
+
 def granger_test(data: pd.DataFrame, x_col: str, y_col: str, max_lag: int = 5):
     """
     Test whether x Granger-causes y (whether historical x helps predict y).
     Note: Granger causality is not true causality, only predictive causality.
     """
     results = grangercausalitytests(data[[y_col, x_col]].dropna(), maxlag=max_lag)
-    return {lag: results[lag][0]['ssr_ftest'][1] for lag in range(1, max_lag+1)}
+    return {lag: results[lag][0]["ssr_ftest"][1] for lag in range(1, max_lag + 1)}
 ```
 
 ## GARCH Volatility Modeling
@@ -163,6 +168,7 @@ Parameter meanings:
 ```python
 from arch import arch_model
 
+
 def fit_garch(returns: pd.Series) -> dict:
     """
     Fit a GARCH(1,1) model.
@@ -172,24 +178,23 @@ def fit_garch(returns: pd.Series) -> dict:
     Returns:
         Model parameters and forecasts
     """
-    model = arch_model(returns * 100, vol='Garch', p=1, q=1,
-                       mean='Constant', dist='normal')
-    result = model.fit(disp='off')
+    model = arch_model(returns * 100, vol="Garch", p=1, q=1, mean="Constant", dist="normal")
+    result = model.fit(disp="off")
 
     # Forecast volatility for the next 5 days
     forecast = result.forecast(horizon=5)
 
     return {
-        'omega': result.params['omega'],
-        'alpha': result.params['alpha[1]'],
-        'beta': result.params['beta[1]'],
-        'persistence': result.params['alpha[1]'] + result.params['beta[1]'],
-        'long_run_vol': np.sqrt(result.params['omega'] /
-                        (1 - result.params['alpha[1]'] - result.params['beta[1]'])) / 100,
-        'current_vol': np.sqrt(result.conditional_volatility[-1]) / 100,
-        'forecast_vol_5d': np.sqrt(forecast.variance.values[-1, :]) / 100,
-        'aic': result.aic,
-        'bic': result.bic,
+        "omega": result.params["omega"],
+        "alpha": result.params["alpha[1]"],
+        "beta": result.params["beta[1]"],
+        "persistence": result.params["alpha[1]"] + result.params["beta[1]"],
+        "long_run_vol": np.sqrt(result.params["omega"] / (1 - result.params["alpha[1]"] - result.params["beta[1]"]))
+        / 100,
+        "current_vol": np.sqrt(result.conditional_volatility[-1]) / 100,
+        "forecast_vol_5d": np.sqrt(forecast.variance.values[-1, :]) / 100,
+        "aic": result.aic,
+        "bic": result.bic,
     }
 ```
 
@@ -225,6 +230,7 @@ BTC:
 ```python
 from statsmodels.stats.diagnostic import het_white, het_breuschpagan
 
+
 def heteroscedasticity_test(model_result) -> dict:
     """
     Test whether residuals are heteroskedastic.
@@ -237,10 +243,10 @@ def heteroscedasticity_test(model_result) -> dict:
     bp_stat, bp_p, _, _ = het_breuschpagan(model_result.resid, model_result.model.exog)
 
     return {
-        'white_p': white_p,
-        'bp_p': bp_p,
-        'has_heteroscedasticity': white_p < 0.05 or bp_p < 0.05,
-        'fix': 'Use HAC standard errors (Newey-West) or WLS' if white_p < 0.05 else 'No adjustment needed',
+        "white_p": white_p,
+        "bp_p": bp_p,
+        "has_heteroscedasticity": white_p < 0.05 or bp_p < 0.05,
+        "fix": "Use HAC standard errors (Newey-West) or WLS" if white_p < 0.05 else "No adjustment needed",
     }
 ```
 
@@ -255,6 +261,7 @@ def heteroscedasticity_test(model_result) -> dict:
 from statsmodels.stats.diagnostic import acorr_ljungbox
 from statsmodels.stats.stattools import durbin_watson
 
+
 def autocorrelation_test(residuals: pd.Series, lags: int = 10) -> dict:
     """
     Test whether residuals are autocorrelated.
@@ -267,11 +274,15 @@ def autocorrelation_test(residuals: pd.Series, lags: int = 10) -> dict:
     lb_result = acorr_ljungbox(residuals, lags=lags)
 
     return {
-        'durbin_watson': dw,
-        'dw_interpretation': 'positive autocorrelation' if dw < 1.5 else 'no autocorrelation' if dw < 2.5 else 'negative autocorrelation',
-        'ljung_box_p': lb_result['lb_pvalue'].values,
-        'has_autocorrelation': any(lb_result['lb_pvalue'] < 0.05),
-        'fix': 'Use Newey-West standard errors or include lag terms',
+        "durbin_watson": dw,
+        "dw_interpretation": "positive autocorrelation"
+        if dw < 1.5
+        else "no autocorrelation"
+        if dw < 2.5
+        else "negative autocorrelation",
+        "ljung_box_p": lb_result["lb_pvalue"].values,
+        "has_autocorrelation": any(lb_result["lb_pvalue"] < 0.05),
+        "fix": "Use Newey-West standard errors or include lag terms",
     }
 ```
 
@@ -280,6 +291,7 @@ def autocorrelation_test(residuals: pd.Series, lags: int = 10) -> dict:
 ```python
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
+
 def vif_test(X: pd.DataFrame) -> pd.DataFrame:
     """
     VIF test for multicollinearity
@@ -287,11 +299,9 @@ def vif_test(X: pd.DataFrame) -> pd.DataFrame:
     VIF > 5 -> needs attention
     """
     vif_data = pd.DataFrame()
-    vif_data['feature'] = X.columns
-    vif_data['VIF'] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
-    vif_data['concern'] = vif_data['VIF'].apply(
-        lambda x: 'severe' if x > 10 else 'watch' if x > 5 else 'normal'
-    )
+    vif_data["feature"] = X.columns
+    vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
+    vif_data["concern"] = vif_data["VIF"].apply(lambda x: "severe" if x > 10 else "watch" if x > 5 else "normal")
     return vif_data
 ```
 
@@ -311,9 +321,7 @@ def vif_test(X: pd.DataFrame) -> pd.DataFrame:
 ### Nonparametric Bootstrap
 
 ```python
-def bootstrap_statistic(data: np.ndarray, statistic_func,
-                        n_bootstrap: int = 10000,
-                        confidence: float = 0.95) -> dict:
+def bootstrap_statistic(data: np.ndarray, statistic_func, n_bootstrap: int = 10000, confidence: float = 0.95) -> dict:
     """
     Estimate a confidence interval for a statistic with Bootstrap.
 
@@ -326,22 +334,21 @@ def bootstrap_statistic(data: np.ndarray, statistic_func,
         Point estimate and confidence interval
     """
     n = len(data)
-    bootstrap_stats = np.array([
-        statistic_func(np.random.choice(data, size=n, replace=True))
-        for _ in range(n_bootstrap)
-    ])
+    bootstrap_stats = np.array(
+        [statistic_func(np.random.choice(data, size=n, replace=True)) for _ in range(n_bootstrap)]
+    )
 
     alpha = 1 - confidence
-    lower = np.percentile(bootstrap_stats, alpha/2 * 100)
-    upper = np.percentile(bootstrap_stats, (1 - alpha/2) * 100)
+    lower = np.percentile(bootstrap_stats, alpha / 2 * 100)
+    upper = np.percentile(bootstrap_stats, (1 - alpha / 2) * 100)
 
     return {
-        'point_estimate': statistic_func(data),
-        'bootstrap_mean': np.mean(bootstrap_stats),
-        'bootstrap_std': np.std(bootstrap_stats),
-        'ci_lower': lower,
-        'ci_upper': upper,
-        'confidence': confidence,
+        "point_estimate": statistic_func(data),
+        "bootstrap_mean": np.mean(bootstrap_stats),
+        "bootstrap_std": np.std(bootstrap_stats),
+        "ci_lower": lower,
+        "ci_upper": upper,
+        "confidence": confidence,
     }
 ```
 
@@ -357,11 +364,12 @@ def bootstrap_statistic(data: np.ndarray, statistic_func,
 ```python
 def bootstrap_sharpe(returns: pd.Series, n_bootstrap: int = 10000) -> dict:
     """Bootstrap confidence interval for the Sharpe ratio."""
+
     def sharpe(r):
         return r.mean() / r.std() * np.sqrt(252) if r.std() > 0 else 0
 
     result = bootstrap_statistic(returns.values, sharpe, n_bootstrap)
-    result['is_significant'] = result['ci_lower'] > 0  # 95% CI excludes 0
+    result["is_significant"] = result["ci_lower"] > 0  # 95% CI excludes 0
     return result
 ```
 

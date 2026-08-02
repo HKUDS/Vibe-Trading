@@ -71,9 +71,7 @@ def _ai(text):
 
 
 def _request(messages):
-    return SimpleNamespace(
-        messages=messages, widgets=None, workspace_state=None, context=None
-    )
+    return SimpleNamespace(messages=messages, widgets=None, workspace_state=None, context=None)
 
 
 async def _collect(agen):
@@ -103,9 +101,7 @@ def test_no_execution_when_last_message_not_human():
     service = _FakeSessionService([])
     adapter = OpenBBQueryAdapter(session_service=service)
 
-    out = asyncio.run(
-        _collect(adapter.handle_query(_request([_human("hi"), _ai("answer")])))
-    )
+    out = asyncio.run(_collect(adapter.handle_query(_request([_human("hi"), _ai("answer")]))))
 
     assert service.sent == []  # nothing dispatched
     assert len(out) == 1  # only the "waiting for input" reasoning step

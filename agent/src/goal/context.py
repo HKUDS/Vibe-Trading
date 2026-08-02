@@ -45,8 +45,7 @@ def format_goal_context(snapshot: dict[str, Any]) -> str:
         criterion_id = criterion["criterion_id"]
         count = sum(1 for item in evidence if item.get("criterion_id") == criterion_id)
         lines.append(
-            f"- {index}. [{criterion.get('status', 'pending')}] "
-            f"{criterion_id}: {criterion['text']} (evidence={count})"
+            f"- {index}. [{criterion.get('status', 'pending')}] {criterion_id}: {criterion['text']} (evidence={count})"
         )
     lines.extend(
         [
@@ -102,7 +101,9 @@ def format_goal_continuation_prompt(snapshot: dict[str, Any], previous_answer: s
         if item.get("required", True) and not criterion_is_covered(snapshot, item)
     ]
     if not open_items:
-        open_items = ["- All criteria appear covered; audit evidence and update goal status if completion is justified."]
+        open_items = [
+            "- All criteria appear covered; audit evidence and update goal status if completion is justified."
+        ]
 
     prior = previous_answer.strip()
     prior_block = f"\nPrevious assistant text:\n{prior[:1200]}\n" if prior else ""

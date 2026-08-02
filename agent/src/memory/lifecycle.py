@@ -147,9 +147,7 @@ class MemoryLifecycle:
                 return False
             try:
                 new_qs = max(0.0, min(1.0, entry.quality_score + delta))
-                self._update_frontmatter_field(
-                    entry.path, "quality_score", f"{new_qs:.2f}"
-                )
+                self._update_frontmatter_field(entry.path, "quality_score", f"{new_qs:.2f}")
                 self._update_frontmatter_field(entry.path, "updated_at", _now_iso())
                 self._session_deltas[name] = current + delta
                 return True
@@ -169,9 +167,7 @@ class MemoryLifecycle:
             if not acquired:
                 return
             try:
-                self._update_frontmatter_field(
-                    entry.path, "access_count", str(entry.access_count + 1)
-                )
+                self._update_frontmatter_field(entry.path, "access_count", str(entry.access_count + 1))
                 self._update_frontmatter_field(entry.path, "last_accessed", _now_iso())
             except (FileNotFoundError, IOError) as exc:
                 logger.warning("track_access(%s) skipped: %s", entry.title, exc)
@@ -212,9 +208,7 @@ class MemoryLifecycle:
                 continue
 
             days_since_access = (now - entry.last_accessed) / 86400.0
-            imp = compute_importance(
-                entry.quality_score, entry.access_count, days_since_access
-            )
+            imp = compute_importance(entry.quality_score, entry.access_count, days_since_access)
 
             action = None
             reason = ""
@@ -242,9 +236,11 @@ class MemoryLifecycle:
 
         # Tier 2: Trigger compression for aged entries
         from src.config.accessor import get_env_config
+
         if get_env_config().memory.compression_enabled:
             try:
                 from src.memory.compression import CompressionPipeline
+
                 pipeline = CompressionPipeline(self._memory._dir)
                 now_ts = time.time()
                 for entry in entries:
@@ -284,9 +280,7 @@ class MemoryLifecycle:
                     entry.path.rename(dest)
                 elif action == "delete":
                     dest = archive_dir / entry.path.name
-                    dest.write_text(
-                        entry.path.read_text(encoding="utf-8"), encoding="utf-8"
-                    )
+                    dest.write_text(entry.path.read_text(encoding="utf-8"), encoding="utf-8")
                     entry.path.unlink()
             except (OSError, IOError) as exc:
                 logger.warning("GC action(%s, %s) failed: %s", entry.title, action, exc)
@@ -302,10 +296,7 @@ class MemoryLifecycle:
         mode = "dry_run" if dry_run else "execute"
         lines = [f"[{timestamp}] mode={mode} actions={len(actions)}"]
         for a in actions:
-            lines.append(
-                f"  {a['action']}: {a['name']} "
-                f"(importance={a['importance']}, {a['reason']})"
-            )
+            lines.append(f"  {a['action']}: {a['name']} (importance={a['importance']}, {a['reason']})")
         lines.append("")
 
         try:
@@ -318,18 +309,14 @@ class MemoryLifecycle:
     # Frontmatter manipulation
     # ------------------------------------------------------------------
 
-    def _write_compressed(
-        self, entry: MemoryEntry, compressed_body: str, target_level: str
-    ) -> None:
+    def _write_compressed(self, entry: MemoryEntry, compressed_body: str, target_level: str) -> None:
         """Write compressed content back to the memory file atomically.
 
         Updates frontmatter compression_level and updated_at, replaces body.
         """
         with memory_lock(self.memory_dir) as acquired:
             if not acquired:
-                logger.warning(
-                    "_write_compressed(%s): lock timeout", entry.title
-                )
+                logger.warning("_write_compressed(%s): lock timeout", entry.title)
                 return
             try:
                 text = entry.path.read_text(encoding="utf-8")
@@ -371,9 +358,7 @@ class MemoryLifecycle:
                 tmp_path.write_text("\n".join(new_lines), encoding="utf-8")
                 os.replace(tmp_path, entry.path)
             except (FileNotFoundError, IOError) as exc:
-                logger.warning(
-                    "_write_compressed(%s) failed: %s", entry.title, exc
-                )
+                logger.warning("_write_compressed(%s) failed: %s", entry.title, exc)
 
     def _update_frontmatter_field(self, path: Path, field: str, value: str) -> None:
         """Update a single frontmatter field in a memory file.

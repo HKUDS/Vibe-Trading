@@ -120,7 +120,7 @@ def _normalize_mode(mode: str) -> str:
 
 def _min_interval() -> float:
     """Resolve the minimum interval between QVeris requests."""
-    raw = os.getenv(_MIN_INTERVAL_ENV)  # noqa: env-gate — loader-specific rate limit
+    raw = os.getenv(_MIN_INTERVAL_ENV)  # env-gate — loader-specific rate limit
     if raw is None or not raw.strip():
         return _DEFAULT_MIN_INTERVAL_S
     try:
@@ -352,8 +352,7 @@ class DataLoader:
             if (
                 not math.isfinite(quoted_cost)
                 or quoted_cost < 0.0
-                or budget_state["spent"] + quoted_cost
-                > self._config.budget_credits_per_session
+                or budget_state["spent"] + quoted_cost > self._config.budget_credits_per_session
             ):
                 logger.warning(
                     "QVeris paid capability skipped for %s: credit budget exceeded",
@@ -408,9 +407,7 @@ def _select_capabilities(results: Any, interval: str) -> list[dict[str, Any]]:
 
 
 def _capability_text(item: dict[str, Any]) -> str:
-    return " ".join(
-        str(item.get(key) or "").lower() for key in ("tool_id", "name", "description")
-    )
+    return " ".join(str(item.get(key) or "").lower() for key in ("tool_id", "name", "description"))
 
 
 def _granularity_tokens(interval: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -560,9 +557,7 @@ def _result_to_frame(result: Any, start_date: str, end_date: str) -> Optional[pd
         return None
 
     df = pd.DataFrame(cleaned)
-    df["trade_date"] = pd.to_datetime(df["trade_date"], errors="coerce").astype(
-        "datetime64[ns]"
-    )
+    df["trade_date"] = pd.to_datetime(df["trade_date"], errors="coerce").astype("datetime64[ns]")
     for field in _OHLCV_COLUMNS:
         if field not in df.columns:
             df[field] = None
@@ -649,12 +644,15 @@ def _looks_like_date(value: Any) -> bool:
 
 def _record_has_ohlc(record: dict[str, Any]) -> bool:
     lowered = {str(key).lower() for key in record}
-    return all(any(alias in lowered for alias in aliases) for aliases in (
-        _FIELD_ALIASES["open"],
-        _FIELD_ALIASES["high"],
-        _FIELD_ALIASES["low"],
-        _FIELD_ALIASES["close"],
-    ))
+    return all(
+        any(alias in lowered for alias in aliases)
+        for aliases in (
+            _FIELD_ALIASES["open"],
+            _FIELD_ALIASES["high"],
+            _FIELD_ALIASES["low"],
+            _FIELD_ALIASES["close"],
+        )
+    )
 
 
 def _normalize_record(record: dict[str, Any]) -> dict[str, Any] | None:

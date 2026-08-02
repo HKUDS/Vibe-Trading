@@ -17,6 +17,7 @@ if str(AGENT_DIR) not in sys.path:
 def _reset_env_config():
     """Clear the cached EnvConfig before each test so monkeypatch.setenv works."""
     from src.config.accessor import reset_env_config
+
     reset_env_config()
     yield
     reset_env_config()

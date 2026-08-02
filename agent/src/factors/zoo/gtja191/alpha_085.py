@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #85
 # 简要说明: 国泰君安191短周期交易型alpha因子第85号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_085",
-    "theme": ['volume', 'momentum'],
-    "formula_latex": '(TSRANK((VOLUME/MEAN(VOLUME,20)),20)*TSRANK((-1*DELTA(CLOSE,7)),8))',
-    "columns_required": ['close', 'volume'],
+    "theme": ["volume", "momentum"],
+    "formula_latex": "(TSRANK((VOLUME/MEAN(VOLUME,20)),20)*TSRANK((-1*DELTA(CLOSE,7)),8))",
+    "columns_required": ["close", "volume"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
     "min_warmup_bars": 39,
-    "notes": 'Vol-adjusted contrarian momentum.',
+    "notes": "Vol-adjusted contrarian momentum.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     v = panel["volume"]

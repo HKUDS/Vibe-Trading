@@ -47,9 +47,7 @@ class _ScriptedChatLLM:
     def __call__(self, *args, **kwargs) -> "_ScriptedChatLLM":
         return self
 
-    def stream_chat(
-        self, messages, tools=None, on_text_chunk=None, timeout=None
-    ) -> LLMResponse:
+    def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None) -> LLMResponse:
         self.calls += 1
         self.received_messages.append(list(messages))
         if self._responses:
@@ -76,9 +74,7 @@ def _run(
     )
     task = SwarmTask(id="t1", agent_id="analyst", prompt_template="Summarize.")
     with (
-        patch.object(
-            worker_mod, "build_swarm_registry", lambda *a, **k: _EmptyRegistry()
-        ),
+        patch.object(worker_mod, "build_swarm_registry", lambda *a, **k: _EmptyRegistry()),
         patch.object(worker_mod, "ChatLLM", llm),
     ):
         return run_worker(
@@ -94,10 +90,12 @@ def _run(
 def test_content_filter_skipped_and_worker_continues(monkeypatch, tmp_path):
     """Content-filtered response is skipped; worker completes on next iteration."""
     events: list[SwarmEvent] = []
-    llm = _ScriptedChatLLM([
-        LLMResponse(content="", content_filter_triggered=True),
-        LLMResponse(content=FINAL_TEXT),
-    ])
+    llm = _ScriptedChatLLM(
+        [
+            LLMResponse(content="", content_filter_triggered=True),
+            LLMResponse(content=FINAL_TEXT),
+        ]
+    )
 
     result = _run(monkeypatch, tmp_path, llm, event_callback=events.append)
 
@@ -109,10 +107,12 @@ def test_content_filter_skipped_and_worker_continues(monkeypatch, tmp_path):
 def test_content_filter_event_emitted(monkeypatch, tmp_path):
     """A content_filter_skipped event is emitted with iteration and count."""
     events: list[SwarmEvent] = []
-    llm = _ScriptedChatLLM([
-        LLMResponse(content="", content_filter_triggered=True),
-        LLMResponse(content=FINAL_TEXT),
-    ])
+    llm = _ScriptedChatLLM(
+        [
+            LLMResponse(content="", content_filter_triggered=True),
+            LLMResponse(content=FINAL_TEXT),
+        ]
+    )
 
     _run(monkeypatch, tmp_path, llm, event_callback=events.append)
 
@@ -126,18 +126,19 @@ def test_content_filter_event_emitted(monkeypatch, tmp_path):
 
 def test_content_filter_system_message_injected(monkeypatch, tmp_path):
     """A system message is injected after content-filter skip."""
-    llm = _ScriptedChatLLM([
-        LLMResponse(content="", content_filter_triggered=True),
-        LLMResponse(content=FINAL_TEXT),
-    ])
+    llm = _ScriptedChatLLM(
+        [
+            LLMResponse(content="", content_filter_triggered=True),
+            LLMResponse(content=FINAL_TEXT),
+        ]
+    )
 
     _run(monkeypatch, tmp_path, llm)
 
     assert llm.calls == 2
     second_call_messages = llm.received_messages[1]
     system_msgs = [
-        m for m in second_call_messages
-        if m.get("role") == "system" and "content moderation" in m.get("content", "")
+        m for m in second_call_messages if m.get("role") == "system" and "content moderation" in m.get("content", "")
     ]
     assert len(system_msgs) == 1
 
@@ -145,11 +146,13 @@ def test_content_filter_system_message_injected(monkeypatch, tmp_path):
 def test_multiple_content_filters_increment_counter(monkeypatch, tmp_path):
     """Multiple consecutive content filters each increment the counter."""
     events: list[SwarmEvent] = []
-    llm = _ScriptedChatLLM([
-        LLMResponse(content="", content_filter_triggered=True),
-        LLMResponse(content="", content_filter_triggered=True),
-        LLMResponse(content=FINAL_TEXT),
-    ])
+    llm = _ScriptedChatLLM(
+        [
+            LLMResponse(content="", content_filter_triggered=True),
+            LLMResponse(content="", content_filter_triggered=True),
+            LLMResponse(content=FINAL_TEXT),
+        ]
+    )
 
     result = _run(monkeypatch, tmp_path, llm, event_callback=events.append)
 
@@ -164,9 +167,11 @@ def test_multiple_content_filters_increment_counter(monkeypatch, tmp_path):
 def test_no_content_filter_uses_existing_finalization(monkeypatch, tmp_path):
     """When content_filter_triggered=False with no tool calls, normal finalization runs."""
     events: list[SwarmEvent] = []
-    llm = _ScriptedChatLLM([
-        LLMResponse(content=FINAL_TEXT, content_filter_triggered=False),
-    ])
+    llm = _ScriptedChatLLM(
+        [
+            LLMResponse(content=FINAL_TEXT, content_filter_triggered=False),
+        ]
+    )
 
     result = _run(monkeypatch, tmp_path, llm, event_callback=events.append)
 
@@ -186,8 +191,7 @@ def _tool_response(idx: int) -> LLMResponse:
 def test_content_filter_warning_in_result(monkeypatch, tmp_path):
     """4/10 iterations content-filtered (40%) -> WorkerResult.content_filter_warnings contains warning."""
     responses = [
-        LLMResponse(content="", content_filter_triggered=True) if i < 4 else _tool_response(i)
-        for i in range(10)
+        LLMResponse(content="", content_filter_triggered=True) if i < 4 else _tool_response(i) for i in range(10)
     ]
     llm = _ScriptedChatLLM(responses)
 

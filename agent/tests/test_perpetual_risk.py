@@ -28,7 +28,9 @@ def _brackets(coefficient: float | None = None) -> tuple[MaintenanceBracket, ...
     )
 
 
-def _schedule(symbol: str = "BTC-USDT-PERP", version: str = "abc123", coefficient: float | None = None) -> MaintenanceSchedule:
+def _schedule(
+    symbol: str = "BTC-USDT-PERP", version: str = "abc123", coefficient: float | None = None
+) -> MaintenanceSchedule:
     return MaintenanceSchedule(symbol, version, _brackets(coefficient))
 
 
@@ -117,18 +119,20 @@ def test_schedule_rejects_empty_symbol_version_or_brackets() -> None:
 def test_schedule_from_loader_columns_parses_validated_json() -> None:
     records = [
         {
-            "bracket_tier": 1, "notional_cap": 50_000.0,
-            "maintenance_rate": 0.004, "cumulative_maintenance_amount": 0.0,
+            "bracket_tier": 1,
+            "notional_cap": 50_000.0,
+            "maintenance_rate": 0.004,
+            "cumulative_maintenance_amount": 0.0,
         },
         {
-            "bracket_tier": 2, "notional_cap": 250_000.0,
-            "maintenance_rate": 0.005, "cumulative_maintenance_amount": 50.0,
+            "bracket_tier": 2,
+            "notional_cap": 250_000.0,
+            "maintenance_rate": 0.005,
+            "cumulative_maintenance_amount": 50.0,
             "notional_coefficient": 1.2,
         },
     ]
-    schedule = MaintenanceSchedule.from_loader_columns(
-        "BTC/USDT:USDT", json.dumps(records), "abc123"
-    )
+    schedule = MaintenanceSchedule.from_loader_columns("BTC/USDT:USDT", json.dumps(records), "abc123")
     assert schedule.symbol == "BTC/USDT:USDT"
     assert schedule.version == "abc123"
     assert schedule.brackets[1].notional_coefficient == 1.2
@@ -248,9 +252,7 @@ def test_maintenance_margin_uses_boundaries_without_reapplying_coefficient(
     position = PositionState("BTC-USDT-PERP", 1.0, 40_000.0, 10.0, 0.0, 4_000.0)
     schedule = _schedule(coefficient=coefficient)
     assert maintenance_margin(position, 50_000.0, schedule) == pytest.approx(200.0)
-    assert maintenance_margin(position, 50_001.0, schedule) == pytest.approx(
-        50_001.0 * 0.005 - 50.0
-    )
+    assert maintenance_margin(position, 50_001.0, schedule) == pytest.approx(50_001.0 * 0.005 - 50.0)
 
 
 @pytest.mark.parametrize(
@@ -331,23 +333,28 @@ def test_isolated_liquidates_only_the_breached_position() -> None:
             ("BTC-USDT-PERP",),
         ),
         (
-            AccountState(759.5, (
-                PositionState("BTC-USDT-PERP", 1.0, 60_000.0, 10.0, 0.0, None),
-                PositionState("ETH-USDT-PERP", 1.0, 3_000.0, 10.0, 0.0, None),
-            ), "cross"),
+            AccountState(
+                759.5,
+                (
+                    PositionState("BTC-USDT-PERP", 1.0, 60_000.0, 10.0, 0.0, None),
+                    PositionState("ETH-USDT-PERP", 1.0, 3_000.0, 10.0, 0.0, None),
+                ),
+                "cross",
+            ),
             {
                 "BTC-USDT-PERP": _risk_frame(),
-                "ETH-USDT-PERP": _risk_frame("ETH-USDT-PERP", mark_open=3_000.0,
-                                               mark_high=3_000.0, mark_low=3_000.0, mark_close=3_000.0),
+                "ETH-USDT-PERP": _risk_frame(
+                    "ETH-USDT-PERP", mark_open=3_000.0, mark_high=3_000.0, mark_low=3_000.0, mark_close=3_000.0
+                ),
             },
             "account_liquidation",
             ("BTC-USDT-PERP", "ETH-USDT-PERP"),
         ),
     ],
 )
-def test_risk_models_liquidate_at_exact_maintenance_threshold(account: AccountState,
-                                                               frames: dict[str, MarketRiskFrame], status: str,
-                                                               targets: tuple[str, ...]) -> None:
+def test_risk_models_liquidate_at_exact_maintenance_threshold(
+    account: AccountState, frames: dict[str, MarketRiskFrame], status: str, targets: tuple[str, ...]
+) -> None:
     evaluate = evaluate_isolated if account.margin_mode == "isolated" else CrossMarginRiskModel().evaluate
     snapshot = evaluate(account, frames)
     if account.margin_mode == "isolated":
@@ -404,7 +411,9 @@ def test_empty_accounts_are_healthy(margin_mode: str) -> None:
     ],
 )
 def test_risk_models_reject_wrong_modes_and_margin_assignments(
-    evaluate: object, account: AccountState, match: str,
+    evaluate: object,
+    account: AccountState,
+    match: str,
 ) -> None:
     with pytest.raises(ValueError, match=match):
         evaluate(account, {"BTC-USDT-PERP": _risk_frame()})  # type: ignore[operator]
@@ -483,9 +492,7 @@ def test_cross_remains_healthy_just_above_maintenance_threshold() -> None:
         "cross",
     )
 
-    snapshot = CrossMarginRiskModel().evaluate(
-        account, {"BTC-USDT-PERP": _risk_frame()}
-    )
+    snapshot = CrossMarginRiskModel().evaluate(account, {"BTC-USDT-PERP": _risk_frame()})
 
     assert snapshot.margin_balance > snapshot.maintenance_margin
     assert snapshot.status == "healthy"

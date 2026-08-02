@@ -25,13 +25,40 @@ _UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 _BLOCKED_UPLOAD_EXT = {
     # binaries / executables we should never accept
-    ".exe", ".msi", ".bat", ".cmd", ".com", ".scr", ".app", ".dmg",
-    ".so", ".dll", ".dylib",
+    ".exe",
+    ".msi",
+    ".bat",
+    ".cmd",
+    ".com",
+    ".scr",
+    ".app",
+    ".dmg",
+    ".so",
+    ".dll",
+    ".dylib",
     # executable-adjacent source, shell, config, and template files
-    ".py", ".pyw", ".sh", ".bash", ".zsh", ".fish", ".ps1",
-    ".yaml", ".yml", ".j2", ".jinja", ".jinja2", ".template",
+    ".py",
+    ".pyw",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",
+    ".ps1",
+    ".yaml",
+    ".yml",
+    ".j2",
+    ".jinja",
+    ".jinja2",
+    ".template",
     # archives — don't auto-extract; user can unpack locally
-    ".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz",
+    ".zip",
+    ".rar",
+    ".7z",
+    ".tar",
+    ".gz",
+    ".tgz",
+    ".bz2",
+    ".xz",
 }
 
 _BLOCKED_UPLOAD_NAMES = {
@@ -68,8 +95,7 @@ def register_uploads_routes(
         host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
         if host is None:  # pragma: no cover - only triggers on unusual import setups
             raise RuntimeError(
-                "register_uploads_routes: api_server module not in sys.modules; "
-                "pass require_auth explicitly"
+                "register_uploads_routes: api_server module not in sys.modules; pass require_auth explicitly"
             )
         require_auth = host.require_auth
 

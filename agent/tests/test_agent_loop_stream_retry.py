@@ -12,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-import pytest
 
 import src.agent.loop as loop_mod
 from src.providers.chat import LLMResponse, ProviderStreamError
@@ -99,9 +98,7 @@ def _bad_request_error() -> ProviderStreamError:
     """
     original = Exception("invalid temperature: only 1 is allowed for this model")
     original.status_code = 400  # type: ignore[attr-defined]
-    return ProviderStreamError(
-        provider="moonshot", model="kimi-k2.6", original=original
-    )
+    return ProviderStreamError(provider="moonshot", model="kimi-k2.6", original=original)
 
 
 def _run(
@@ -130,11 +127,7 @@ def _run(
     agent = AgentLoop(
         registry=build_registry(persistent_memory=pm, include_shell_tools=False),
         llm=llm,
-        event_callback=(
-            (lambda event_type, data: events.append((event_type, data)))
-            if events is not None
-            else None
-        ),
+        event_callback=((lambda event_type, data: events.append((event_type, data))) if events is not None else None),
         max_iterations=3,
         persistent_memory=pm,
     )
@@ -144,9 +137,7 @@ def _run(
     return agent.run(user_message="hello")
 
 
-def test_transient_stream_failure_is_retried_and_run_succeeds(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_transient_stream_failure_is_retried_and_run_succeeds(monkeypatch, tmp_path: Path) -> None:
     """One transient ProviderStreamError then success → run completes (2 calls)."""
     llm = _FlakyLoopLLM([_transient_error()], "Final answer.")
     events: list[tuple[str, dict[str, Any]]] = []
@@ -159,9 +150,7 @@ def test_transient_stream_failure_is_retried_and_run_succeeds(
 
     event_types = [event_type for event_type, _ in events]
     assert "stream_reset" in event_types
-    text_positions = [
-        index for index, event_type in enumerate(event_types) if event_type == "text_delta"
-    ]
+    text_positions = [index for index, event_type in enumerate(event_types) if event_type == "text_delta"]
     reset_position = event_types.index("stream_reset")
     assert text_positions[0] < reset_position < text_positions[-1]
     reset = next(data for event_type, data in events if event_type == "stream_reset")

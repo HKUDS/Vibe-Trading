@@ -24,9 +24,7 @@ def test_inspect_preset_returns_dry_run_layers() -> None:
         {"task_id": "task-bull", "agent_id": "bull_advocate"},
         {"task_id": "task-bear", "agent_id": "bear_advocate"},
     ]
-    assert report["layers"][-1] == [
-        {"task_id": "task-decision", "agent_id": "portfolio_manager"}
-    ]
+    assert report["layers"][-1] == [{"task_id": "task-decision", "agent_id": "portfolio_manager"}]
 
 
 def test_inspect_preset_reports_invalid_references(

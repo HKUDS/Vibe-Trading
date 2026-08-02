@@ -170,9 +170,7 @@ def test_upload_exactly_at_limit_succeeds(client: TestClient) -> None:
     assert response.status_code == 200
 
 
-def test_upload_over_limit_returns_413_and_cleans_partial_file(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_upload_over_limit_returns_413_and_cleans_partial_file(client: TestClient, tmp_path: Path) -> None:
     payload = b"z" * (4 * 1024 + 1)  # one byte over
     response = client.post(
         "/upload",

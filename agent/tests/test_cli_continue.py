@@ -8,9 +8,7 @@ from cli import _legacy
 from src.agent.trace import TraceWriter
 
 
-def test_repeated_continue_reads_and_appends_one_canonical_trace(
-    tmp_path, monkeypatch
-) -> None:
+def test_repeated_continue_reads_and_appends_one_canonical_trace(tmp_path, monkeypatch) -> None:
     """A session continuation must remain visible to the next continuation."""
     runs_dir = tmp_path / "runs"
     sessions_dir = tmp_path / "sessions"
@@ -36,14 +34,8 @@ def test_repeated_continue_reads_and_appends_one_canonical_trace(
     monkeypatch.setattr(_legacy, "_run_agent", fake_run_agent)
     monkeypatch.setattr(_legacy, "_print_json_result", lambda result: None)
 
-    assert (
-        _legacy.cmd_continue("session-1", "first follow-up", 5, json_mode=True)
-        == _legacy.EXIT_SUCCESS
-    )
-    assert (
-        _legacy.cmd_continue("session-1", "second follow-up", 5, json_mode=True)
-        == _legacy.EXIT_SUCCESS
-    )
+    assert _legacy.cmd_continue("session-1", "first follow-up", 5, json_mode=True) == _legacy.EXIT_SUCCESS
+    assert _legacy.cmd_continue("session-1", "second follow-up", 5, json_mode=True) == _legacy.EXIT_SUCCESS
 
     assert histories[0] == [
         {"role": "user", "content": "initial question"},

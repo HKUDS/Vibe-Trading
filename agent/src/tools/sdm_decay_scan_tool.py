@@ -95,30 +95,32 @@ class SdmDecayScanTool(BaseTool):
 
             for artifact in targets:
                 counts["total_scanned"] += 1
-                bench_history = list(
-                    store.get_bench_history(artifact.id, limit=20)
-                )
+                bench_history = list(store.get_bench_history(artifact.id, limit=20))
 
                 if len(bench_history) < 3:
                     counts["insufficient_data"] += 1
-                    per_artifact.append({
-                        "artifact_id": artifact.id,
-                        "name": artifact.name,
-                        "signal": "insufficient_data",
-                        "bench_count": len(bench_history),
-                    })
+                    per_artifact.append(
+                        {
+                            "artifact_id": artifact.id,
+                            "name": artifact.name,
+                            "signal": "insufficient_data",
+                            "bench_count": len(bench_history),
+                        }
+                    )
                     continue
 
                 metrics = compute_decay_metrics(bench_history)
 
                 if not has_decay_inputs(metrics):
                     counts["insufficient_data"] += 1
-                    per_artifact.append({
-                        "artifact_id": artifact.id,
-                        "name": artifact.name,
-                        "signal": "insufficient_data",
-                        "bench_count": len(bench_history),
-                    })
+                    per_artifact.append(
+                        {
+                            "artifact_id": artifact.id,
+                            "name": artifact.name,
+                            "signal": "insufficient_data",
+                            "bench_count": len(bench_history),
+                        }
+                    )
                     continue
 
                 signal = evaluator.evaluate_decay(
@@ -134,16 +136,9 @@ class SdmDecayScanTool(BaseTool):
                     counts[signal_key] += 1
 
                 # Determine transition
-                decay_history = list(
-                    store.get_decay_history(artifact.id, limit=10)
-                )
-                prior_signals = [
-                    s.decay_signal for s in reversed(decay_history)
-                    if s.decay_signal is not None
-                ]
-                recommended = evaluator.should_transition(
-                    artifact.status, prior_signals + [signal]
-                )
+                decay_history = list(store.get_decay_history(artifact.id, limit=10))
+                prior_signals = [s.decay_signal for s in reversed(decay_history) if s.decay_signal is not None]
+                recommended = evaluator.should_transition(artifact.status, prior_signals + [signal])
 
                 # Count consecutive non-healthy signals for snapshot
                 consecutive_warnings = 0
@@ -166,11 +161,13 @@ class SdmDecayScanTool(BaseTool):
                             "from": artifact.status.value,
                             "to": recommended.value,
                         }
-                        transitions_applied.append({
-                            "artifact_id": artifact.id,
-                            "name": artifact.name,
-                            **transition_info,
-                        })
+                        transitions_applied.append(
+                            {
+                                "artifact_id": artifact.id,
+                                "name": artifact.name,
+                                **transition_info,
+                            }
+                        )
 
                 # Record decay snapshot
                 if not dry_run:
@@ -200,11 +197,13 @@ class SdmDecayScanTool(BaseTool):
 
                 per_artifact.append(entry)
 
-            return _ok({
-                "summary": counts,
-                "transitions_applied": len(transitions_applied),
-                "dry_run": dry_run,
-                "artifacts": per_artifact,
-            })
+            return _ok(
+                {
+                    "summary": counts,
+                    "transitions_applied": len(transitions_applied),
+                    "dry_run": dry_run,
+                    "artifacts": per_artifact,
+                }
+            )
         except Exception as exc:
             return _error(exc)

@@ -21,7 +21,6 @@ judge, as the ``event-driven`` skill describes) to override it.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
@@ -129,8 +128,7 @@ class FeedSpec:
     def __post_init__(self) -> None:
         if self.code_style not in CODE_STYLES:
             raise ValueError(
-                f"FeedSpec {self.name!r}: unknown code_style {self.code_style!r}; "
-                f"expected one of {sorted(CODE_STYLES)}"
+                f"FeedSpec {self.name!r}: unknown code_style {self.code_style!r}; expected one of {sorted(CODE_STYLES)}"
             )
 
     @property
@@ -430,8 +428,7 @@ class RSSHubEventProvider:
             )
         except TimeoutError:
             logger.warning(
-                "RSSHub feed %r for %s unreachable within %.0fs budget (%s); "
-                "no items contributed from this feed",
+                "RSSHub feed %r for %s unreachable within %.0fs budget (%s); no items contributed from this feed",
                 spec.name,
                 code,
                 budget,

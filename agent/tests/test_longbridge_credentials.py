@@ -196,9 +196,7 @@ def _assert_invalid_runtime_file_is_redaction_safe(tmp_path, secret_value: str) 
 def test_malformed_runtime_file_uses_safe_structured_error(monkeypatch, tmp_path):
     _clear_environment(monkeypatch)
     secret_value = "malformed-runtime-secret"
-    (tmp_path / "longbridge.json").write_text(
-        '{"app_secret": "' + secret_value + '",', encoding="utf-8"
-    )
+    (tmp_path / "longbridge.json").write_text('{"app_secret": "' + secret_value + '",', encoding="utf-8")
 
     _assert_invalid_runtime_file_is_redaction_safe(tmp_path, secret_value)
 
@@ -210,14 +208,10 @@ def test_unreadable_runtime_file_uses_safe_structured_error(monkeypatch, tmp_pat
     _assert_invalid_runtime_file_is_redaction_safe(tmp_path, "longbridge.json")
 
 
-def test_invalid_encoding_runtime_file_uses_safe_structured_error(
-    monkeypatch, tmp_path
-):
+def test_invalid_encoding_runtime_file_uses_safe_structured_error(monkeypatch, tmp_path):
     _clear_environment(monkeypatch)
     secret_value = "invalid-encoding-runtime-secret"
-    (tmp_path / "longbridge.json").write_bytes(
-        b'{"app_secret": "' + secret_value.encode() + b'\xff"}'
-    )
+    (tmp_path / "longbridge.json").write_bytes(b'{"app_secret": "' + secret_value.encode() + b'\xff"}')
 
     _assert_invalid_runtime_file_is_redaction_safe(tmp_path, secret_value)
 

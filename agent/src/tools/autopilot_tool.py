@@ -115,9 +115,7 @@ class RunResearchAutopilotTool(BaseTool):
                     ensure_ascii=False,
                 )
 
-            session_id = str(
-                kwargs.get("session_id") or self._default_session_id or ""
-            ).strip()
+            session_id = str(kwargs.get("session_id") or self._default_session_id or "").strip()
             if not session_id:
                 return json.dumps(
                     {
@@ -227,10 +225,7 @@ def _resolve_source(data_sources: list[str] | None) -> tuple[str, str | None]:
         return candidate, None
     if candidate in VALID_SOURCES:
         return candidate, None
-    return "auto", (
-        f"hypothesis data_source {candidate!r} is not a known loader source; "
-        "fell back to 'auto'"
-    )
+    return "auto", (f"hypothesis data_source {candidate!r} is not a known loader source; fell back to 'auto'")
 
 
 def _validate_backtest_dates(start_date: str, end_date: str) -> None:
@@ -476,9 +471,7 @@ class ScaffoldSignalEngineTool(BaseTool):
             try:
                 run_path = safe_run_dir(run_dir_raw)
             except ValueError as exc:
-                return json.dumps(
-                    {"status": "error", "error": str(exc)}, ensure_ascii=False
-                )
+                return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
 
             hypothesis = _get_hypothesis(hypothesis_id)
             if hypothesis is None:
@@ -505,10 +498,7 @@ class ScaffoldSignalEngineTool(BaseTool):
                     ensure_ascii=False,
                 )
 
-            signal_definition = (
-                hypothesis.signal_definition.strip()
-                or "(no signal_definition set on the hypothesis)"
-            )
+            signal_definition = hypothesis.signal_definition.strip() or "(no signal_definition set on the hypothesis)"
             source = _SIGNAL_ENGINE_TEMPLATE.format(
                 hypothesis_id=hypothesis.hypothesis_id,
                 title=hypothesis.title,
@@ -595,9 +585,7 @@ class LinkAutopilotBacktestTool(BaseTool):
             try:
                 run_path = safe_run_dir(run_dir_raw)
             except ValueError as exc:
-                return json.dumps(
-                    {"status": "error", "error": str(exc)}, ensure_ascii=False
-                )
+                return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
 
             card_path = run_path / "run_card.json"
             if not card_path.exists():

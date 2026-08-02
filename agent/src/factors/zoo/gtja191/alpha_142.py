@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #142
 # 简要说明: 国泰君安191短周期交易型alpha因子第142号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     (((-1*RANK(TSRANK(CLOSE,10)))*RANK(DELTA(DELTA(CLOSE,1),1)))*RANK(TSRANK((VOLUME/MEAN(VOLUME,20)),5)))
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_142"
 
 __alpha_meta__ = {
-    'id': 'gtja191_142',
-    'theme': ['volume', 'reversal'],
-    'formula_latex': 'see body',
-    'columns_required': ['close', 'volume'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 26,
-    'notes': '',
+    "id": "gtja191_142",
+    "theme": ["volume", "reversal"],
+    "formula_latex": "see body",
+    "columns_required": ["close", "volume"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 26,
+    "notes": "",
 }
 
 

@@ -31,19 +31,20 @@ Analyze and compare yields across DeFi protocols — lending, liquidity provisio
 # High borrow rates = high leverage demand = bullish sentiment
 # Low borrow rates = low leverage demand = bearish / waiting
 
+
 def lending_rate_signal(borrow_rate_stable, borrow_rate_eth):
     """Analyze DeFi lending rates for market sentiment."""
     if borrow_rate_stable > 15:
-        stable_signal = "extreme_demand"    # Leveraged long via stablecoin borrowing
+        stable_signal = "extreme_demand"  # Leveraged long via stablecoin borrowing
     elif borrow_rate_stable > 8:
         stable_signal = "elevated_demand"
     elif borrow_rate_stable > 3:
         stable_signal = "normal"
     else:
-        stable_signal = "low_demand"        # Bear market, no one borrowing
+        stable_signal = "low_demand"  # Bear market, no one borrowing
 
     if borrow_rate_eth > 10:
-        eth_signal = "extreme_demand"       # Shorting or leveraged strategies
+        eth_signal = "extreme_demand"  # Shorting or leveraged strategies
     elif borrow_rate_eth > 5:
         eth_signal = "elevated"
     else:
@@ -74,8 +75,9 @@ def impermanent_loss(price_ratio_change):
     price_ratio_change: new_price / old_price of the volatile asset.
     """
     r = price_ratio_change
-    il = 2 * (r ** 0.5) / (1 + r) - 1
+    il = 2 * (r**0.5) / (1 + r) - 1
     return il * 100  # Return as percentage
+
 
 # Examples:
 # Price +25% → IL = -0.6%
@@ -94,6 +96,7 @@ def net_lp_yield(fee_apy, incentive_apy, estimated_il_annualized):
     gross_yield = fee_apy + incentive_apy
     net_yield = gross_yield - abs(estimated_il_annualized)
     return net_yield
+
 
 # Example: ETH/USDC pool
 # Fee APY: 15%, Incentive APY: 20%, Estimated IL: 8%
@@ -131,11 +134,11 @@ def net_lp_yield(fee_apy, incentive_apy, estimated_il_annualized):
 # Restaking yield premium
 restaking_premium = eigenlayer_yield - native_staking_yield
 if restaking_premium > 3:
-    signal = "high_restaking_demand"     # AVS demand strong
+    signal = "high_restaking_demand"  # AVS demand strong
 elif restaking_premium > 1:
     signal = "moderate_premium"
 else:
-    signal = "low_premium"               # Restaking risk not compensated
+    signal = "low_premium"  # Restaking risk not compensated
 ```
 
 ### 5. Yield Sustainability Assessment
@@ -156,13 +159,13 @@ def yield_sustainability(protocol):
     token_yield_pct = token_emission_usd / total_yield_usd * 100
 
     if real_yield_pct > 80:
-        sustainability = "highly_sustainable"   # Revenue-funded
+        sustainability = "highly_sustainable"  # Revenue-funded
     elif real_yield_pct > 50:
         sustainability = "partially_sustainable"
     elif real_yield_pct > 20:
-        sustainability = "emission_dependent"    # Mostly token incentives
+        sustainability = "emission_dependent"  # Mostly token incentives
     else:
-        sustainability = "ponzi_risk"            # Almost entirely token-funded
+        sustainability = "ponzi_risk"  # Almost entirely token-funded
 
     return sustainability, real_yield_pct
 ```
@@ -194,12 +197,14 @@ def risk_adjusted_yield(opportunities):
         # Adjusted yield
         adjusted = base + smart_contract_risk + il_risk + protocol_risk + chain_risk + sustainability_risk
 
-        scored.append({
-            "protocol": opp.name,
-            "base_apy": base,
-            "adjusted_apy": adjusted,
-            "risk_level": opp.risk_level,
-        })
+        scored.append(
+            {
+                "protocol": opp.name,
+                "base_apy": base,
+                "adjusted_apy": adjusted,
+                "risk_level": opp.risk_level,
+            }
+        )
 
     return sorted(scored, key=lambda x: x["adjusted_apy"], reverse=True)
 ```

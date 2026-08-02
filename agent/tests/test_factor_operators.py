@@ -262,9 +262,7 @@ class TestDecayLinear:
         result_orig = base.decay_linear(random_df, n)
         result_mod = base.decay_linear(df_mod, n)
         # Output at row 49 (index 49) should be identical
-        pd.testing.assert_series_equal(
-            result_orig.iloc[49], result_mod.iloc[49], atol=1e-10
-        )
+        pd.testing.assert_series_equal(result_orig.iloc[49], result_mod.iloc[49], atol=1e-10)
 
     def test_fallback_path(self, random_df):
         base = _reload_base_with_bottleneck(False)

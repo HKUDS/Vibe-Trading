@@ -50,7 +50,7 @@ class PortfolioRiskXrayTool(BaseTool):
             "symbols": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Symbols in the basket, e.g. [\"AAPL\", \"MSFT\", \"SPY\"].",
+                "description": 'Symbols in the basket, e.g. ["AAPL", "MSFT", "SPY"].',
             },
             "weights": {
                 "type": "object",
@@ -86,16 +86,12 @@ class PortfolioRiskXrayTool(BaseTool):
             return self._run(**kwargs)
         except Exception as exc:  # noqa: BLE001 — tool must always return JSON
             logger.warning("portfolio_risk_xray failed: %s", exc)
-            return json.dumps(
-                {"status": "error", "error": str(exc)}, ensure_ascii=False, allow_nan=False
-            )
+            return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, allow_nan=False)
 
     # ------------------------------------------------------------------
     def _run(self, **kwargs: Any) -> str:
         symbols = kwargs.get("symbols")
-        if not isinstance(symbols, list) or not symbols or not all(
-            isinstance(s, str) and s.strip() for s in symbols
-        ):
+        if not isinstance(symbols, list) or not symbols or not all(isinstance(s, str) and s.strip() for s in symbols):
             raise ValueError("symbols must be a non-empty list of strings")
         symbols = [s.strip() for s in symbols]
         if len(symbols) > _MAX_SYMBOLS:

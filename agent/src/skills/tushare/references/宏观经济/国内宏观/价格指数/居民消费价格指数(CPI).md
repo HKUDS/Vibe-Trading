@@ -44,15 +44,13 @@ cnt_accu | float | Y | 农村累计值
 **接口调用**
 
 ```python
-
 pro = ts.pro_api()
 
-df = pro.cn_cpi(start_m='201801', end_m='201903')
+df = pro.cn_cpi(start_m="201801", end_m="201903")
 
 
-#获取指定字段
-df = pro.cn_cpi(start_q='201801', end_q='201903', fields='month,nt_val,nt_yoy')
-
+# 获取指定字段
+df = pro.cn_cpi(start_q="201801", end_q="201903", fields="month,nt_val,nt_yoy")
 ```
 
 <br>

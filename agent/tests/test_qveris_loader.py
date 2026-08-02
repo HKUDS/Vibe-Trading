@@ -165,9 +165,7 @@ class TestFetch:
             [_FakeResponse({"search_id": "s_1", "results": [_capability()]})],
         )
 
-        result = qv.DataLoader().fetch(
-            ["AAPL.US"], "2024-01-01", "2024-01-31"
-        )
+        result = qv.DataLoader().fetch(["AAPL.US"], "2024-01-01", "2024-01-31")
 
         assert result == {}
         assert len(session.calls) == 1
@@ -196,9 +194,7 @@ class TestFetch:
             ],
         )
 
-        result = qv.DataLoader().fetch(
-            ["AAPL.US", "MSFT.US"], "2024-01-01", "2024-01-31"
-        )
+        result = qv.DataLoader().fetch(["AAPL.US", "MSFT.US"], "2024-01-01", "2024-01-31")
 
         assert list(result) == ["AAPL.US"]
         execute_calls = [call for call in session.calls if "/tools/execute" in call["url"]]
@@ -390,9 +386,7 @@ class TestCapabilitySelection:
         session = _install_session(
             monkeypatch,
             [
-                _FakeResponse(
-                    {"search_id": "s_1", "results": [monthly, intraday, daily]}
-                ),
+                _FakeResponse({"search_id": "s_1", "results": [monthly, intraday, daily]}),
                 _FakeResponse(
                     {
                         "success": True,

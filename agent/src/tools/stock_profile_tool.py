@@ -202,9 +202,7 @@ def _resolve_sections(sections: Optional[List[str]]) -> List[str]:
     for name in sections:
         key = str(name).strip().lower()
         if key not in _SECTION_MODULES:
-            raise ValueError(
-                f"unknown section '{name}'; valid: {', '.join(_ALL_SECTIONS)}"
-            )
+            raise ValueError(f"unknown section '{name}'; valid: {', '.join(_ALL_SECTIONS)}")
         if key not in resolved:
             resolved.append(key)
     return resolved

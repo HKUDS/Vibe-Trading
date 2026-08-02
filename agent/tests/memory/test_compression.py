@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-import pytest
 
 from src.memory.compression import (
     DAILY_THRESHOLD_DAYS,
@@ -15,7 +14,6 @@ from src.memory.compression import (
     LEVEL_RAW,
     CompressionPipeline,
     compute_tfidf,
-    _tokenize_for_tfidf,
 )
 
 
@@ -179,9 +177,7 @@ class TestApplyCompression:
         pipeline = CompressionPipeline(tmp_path)
         entry_path = _make_entry_file(tmp_path / "note.md", content=_LONG_CONTENT)
 
-        result = pipeline.apply_compression(
-            entry_path, _LONG_CONTENT, ("bitcoin",), LEVEL_DAILY
-        )
+        result = pipeline.apply_compression(entry_path, _LONG_CONTENT, ("bitcoin",), LEVEL_DAILY)
         assert result is not None
         # Archive should exist
         archive_path = tmp_path / "archive" / "note.md"
@@ -194,9 +190,7 @@ class TestApplyCompression:
         pipeline = CompressionPipeline(tmp_path)
         entry_path = _make_entry_file(tmp_path / "note2.md", content=_LONG_CONTENT)
 
-        result = pipeline.apply_compression(
-            entry_path, _LONG_CONTENT, ("market",), LEVEL_DAILY
-        )
+        result = pipeline.apply_compression(entry_path, _LONG_CONTENT, ("market",), LEVEL_DAILY)
         assert result is not None
         assert len(result) < len(_LONG_CONTENT)
 

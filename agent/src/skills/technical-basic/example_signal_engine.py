@@ -29,9 +29,7 @@ def compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
     return 100 - 100 / (1 + rs)
 
 
-def compute_adx(
-    high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
-) -> pd.DataFrame:
+def compute_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.DataFrame:
     """计算 ADX 及 +DI/-DI（Wilder EWM 平滑全链路）。
 
     链路：+DM/-DM → TR → Wilder 平滑 → +DI/-DI → DX → ADX。
@@ -83,9 +81,7 @@ def compute_adx(
     return pd.DataFrame({"plus_di": plus_di, "minus_di": minus_di, "adx": adx})
 
 
-def compute_bollinger(
-    close: pd.Series, window: int = 20, num_std: float = 2.0
-) -> pd.DataFrame:
+def compute_bollinger(close: pd.Series, window: int = 20, num_std: float = 2.0) -> pd.DataFrame:
     """计算布林带。
 
     Args:
@@ -98,11 +94,13 @@ def compute_bollinger(
     """
     mid = close.rolling(window).mean()
     std = close.rolling(window).std()
-    return pd.DataFrame({
-        "bb_mid": mid,
-        "bb_upper": mid + num_std * std,
-        "bb_lower": mid - num_std * std,
-    })
+    return pd.DataFrame(
+        {
+            "bb_mid": mid,
+            "bb_upper": mid + num_std * std,
+            "bb_lower": mid - num_std * std,
+        }
+    )
 
 
 def compute_obv(close: pd.Series, volume: pd.Series) -> pd.Series:
@@ -265,8 +263,15 @@ def _fetch_okx(inst_id: str, bar: str = "1D", limit: int = 300) -> pd.DataFrame:
     )
     candles = resp.json()["data"]
     columns = [
-        "ts", "open", "high", "low", "close",
-        "vol", "volCcy", "volCcyQuote", "confirm",
+        "ts",
+        "open",
+        "high",
+        "low",
+        "close",
+        "vol",
+        "volCcy",
+        "volCcyQuote",
+        "confirm",
     ]
     df = pd.DataFrame(reversed(candles), columns=columns)
     df["ts"] = pd.to_datetime(df["ts"].astype("int64"), unit="ms")

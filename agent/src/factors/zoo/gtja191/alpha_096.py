@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #96
 # 简要说明: 国泰君安191短周期交易型alpha因子第96号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_096",
-    "theme": ['momentum'],
-    "formula_latex": 'SMA(SMA((CLOSE-TSMIN(LOW,9))/(TSMAX(HIGH,9)-TSMIN(LOW,9))*100,3,1),3,1)',
-    "columns_required": ['close', 'high', 'low'],
+    "theme": ["momentum"],
+    "formula_latex": "SMA(SMA((CLOSE-TSMIN(LOW,9))/(TSMAX(HIGH,9)-TSMIN(LOW,9))*100,3,1),3,1)",
+    "columns_required": ["close", "high", "low"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 9,
     "min_warmup_bars": 12,
-    "notes": 'KDJ %D-style double smoothed.',
+    "notes": "KDJ %D-style double smoothed.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

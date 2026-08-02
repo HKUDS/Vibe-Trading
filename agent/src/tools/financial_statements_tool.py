@@ -213,9 +213,7 @@ def _eastmoney_filter(group: str, code: str, secid: str) -> str:
     return f'(SECURITY_CODE="{bare_code}")'
 
 
-def _filter_by_period(
-    periods: list[dict[str, Any]], period: str
-) -> list[dict[str, Any]]:
+def _filter_by_period(periods: list[dict[str, Any]], period: str) -> list[dict[str, Any]]:
     """Best-effort client-side period selection by report date.
 
     Eastmoney returns a mixed newest-first series (annual + interim reports).
@@ -233,17 +231,11 @@ def _filter_by_period(
     """
     if period != "annual":
         return periods
-    annual = [
-        row
-        for row in periods
-        if str(row.get("REPORT_DATE", ""))[:10].endswith("-12-31")
-    ]
+    annual = [row for row in periods if str(row.get("REPORT_DATE", ""))[:10].endswith("-12-31")]
     return annual or periods
 
 
-def _fetch_eastmoney_statement(
-    code: str, *, statement: str, period: str
-) -> dict[str, Any]:
+def _fetch_eastmoney_statement(code: str, *, statement: str, period: str) -> dict[str, Any]:
     """Fetch one A-share/HK statement from Eastmoney, shaped into a result dict.
 
     Args:
@@ -409,7 +401,7 @@ class FinancialStatementsTool(BaseTool):
         "ROE, EPS, etc.). Markets: A-share (.SH/.SZ/.BJ), US (.US) and "
         "Hong Kong (.HK). US uses SEC EDGAR companyfacts; A-share and HK use "
         "Eastmoney. Reports come back newest-first as flat per-period rows. Use "
-        'this to read fundamentals before building a valuation or screen. Example: '
+        "this to read fundamentals before building a valuation or screen. Example: "
         '{"code": "600519.SH", "statement": "income", "period": "annual"}.'
     )
     parameters = {
@@ -418,8 +410,7 @@ class FinancialStatementsTool(BaseTool):
             "code": {
                 "type": "string",
                 "description": (
-                    "Single symbol with a market suffix, e.g. '600519.SH', "
-                    "'000001.SZ', 'AAPL.US', or '00700.HK'."
+                    "Single symbol with a market suffix, e.g. '600519.SH', '000001.SZ', 'AAPL.US', or '00700.HK'."
                 ),
             },
             "statement": {
@@ -435,10 +426,7 @@ class FinancialStatementsTool(BaseTool):
             "period": {
                 "type": "string",
                 "enum": list(_VALID_PERIODS),
-                "description": (
-                    "Reporting cadence: 'annual' (annual reports) or 'quarter' "
-                    "(quarterly reports)."
-                ),
+                "description": ("Reporting cadence: 'annual' (annual reports) or 'quarter' (quarterly reports)."),
                 "default": "annual",
             },
         },
@@ -476,17 +464,13 @@ class FinancialStatementsTool(BaseTool):
 
         market = _classify_market(code)
         if market is None:
-            return _error(
-                "code must carry a supported suffix: .SH/.SZ/.BJ, .US, or .HK"
-            )
+            return _error("code must carry a supported suffix: .SH/.SZ/.BJ, .US, or .HK")
 
         if market == "us":
             result = _fetch_sec_statement(code, statement=statement, period=period)
             source = "sec_edgar"
         else:
-            result = _fetch_eastmoney_statement(
-                code, statement=statement, period=period
-            )
+            result = _fetch_eastmoney_statement(code, statement=statement, period=period)
             source = "eastmoney"
 
         # The fetch failed for every requested code (here, the single ``code``)

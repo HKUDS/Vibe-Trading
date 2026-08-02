@@ -37,11 +37,7 @@ import pandas as pd
 BASE_URL = "https://www.okx.com/api/v5"
 
 # 获取 BTC 指数日K
-resp = requests.get(f"{BASE_URL}/market/index-candles", params={
-    "instId": "BTC-USD",
-    "bar": "1D",
-    "limit": "30"
-})
+resp = requests.get(f"{BASE_URL}/market/index-candles", params={"instId": "BTC-USD", "bar": "1D", "limit": "30"})
 candles = resp.json()["data"]
 
 columns = ["ts", "open", "high", "low", "close", "confirm"]

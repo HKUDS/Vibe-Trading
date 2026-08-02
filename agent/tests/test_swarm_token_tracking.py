@@ -42,9 +42,7 @@ def _fake_ai_message(usage_metadata=None, content="hello", finish="stop", respon
 
 
 def test_parse_response_propagates_usage_metadata_dict() -> None:
-    msg = _fake_ai_message(
-        usage_metadata={"input_tokens": 1234, "output_tokens": 56, "total_tokens": 1290}
-    )
+    msg = _fake_ai_message(usage_metadata={"input_tokens": 1234, "output_tokens": 56, "total_tokens": 1290})
     parsed = ChatLLM._parse_response(msg)
     assert parsed.usage_metadata == {
         "input_tokens": 1234,
@@ -153,11 +151,14 @@ def test_estimate_tokens_handles_non_llmresponse_object_safely() -> None:
     assert out_tok == 0
 
 
-@pytest.mark.parametrize("metadata_keys_extra", [
-    {},
-    {"total_tokens": 12345},
-    {"input_token_details": {"cached": 100}, "output_token_details": {"reasoning": 50}},
-])
+@pytest.mark.parametrize(
+    "metadata_keys_extra",
+    [
+        {},
+        {"total_tokens": 12345},
+        {"input_token_details": {"cached": 100}, "output_token_details": {"reasoning": 50}},
+    ],
+)
 def test_estimate_tokens_ignores_extra_metadata_fields(metadata_keys_extra: dict) -> None:
     """LangChain occasionally returns extra fields (cache hits, reasoning
     sub-counts). They should not interfere with the bare input/output read."""

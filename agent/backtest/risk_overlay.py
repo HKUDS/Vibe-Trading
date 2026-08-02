@@ -193,25 +193,15 @@ def load_risk_overlay(config: Mapping[str, Any]) -> Optional[RiskOverlayConfig]:
         max_turnover=_finite_positive("max_turnover", raw.get("max_turnover")),
         max_drawdown_kill=_finite_positive("max_drawdown_kill", raw.get("max_drawdown_kill")),
         kill_cooldown_bars=cooldown,
-        kill_reset_drawdown=_finite_positive(
-            "kill_reset_drawdown", raw.get("kill_reset_drawdown")
-        ),
+        kill_reset_drawdown=_finite_positive("kill_reset_drawdown", raw.get("kill_reset_drawdown")),
         stop_loss=_finite_positive("stop_loss", raw.get("stop_loss")),
         ohlc_stop=bool(raw.get("ohlc_stop", False)),
-        inventory_mean_reversion=_finite_nonneg(
-            "inventory_mean_reversion", raw.get("inventory_mean_reversion")
-        ),
-        partial_fill_rate=_finite_unit_interval(
-            "partial_fill_rate", raw.get("partial_fill_rate")
-        ),
-        next_bar_open_slippage_bps=_finite_nonneg(
-            "next_bar_open_slippage_bps", raw.get("next_bar_open_slippage_bps")
-        ),
+        inventory_mean_reversion=_finite_nonneg("inventory_mean_reversion", raw.get("inventory_mean_reversion")),
+        partial_fill_rate=_finite_unit_interval("partial_fill_rate", raw.get("partial_fill_rate")),
+        next_bar_open_slippage_bps=_finite_nonneg("next_bar_open_slippage_bps", raw.get("next_bar_open_slippage_bps")),
         max_name_vol=_finite_positive("max_name_vol", raw.get("max_name_vol")),
         name_vol_lookback=name_lb,
-        max_portfolio_cvar=_finite_positive(
-            "max_portfolio_cvar", raw.get("max_portfolio_cvar")
-        ),
+        max_portfolio_cvar=_finite_positive("max_portfolio_cvar", raw.get("max_portfolio_cvar")),
         cvar_lookback=cvar_lb,
         cvar_alpha=cvar_alpha,
         bars_per_year=bpy,
@@ -350,25 +340,11 @@ def apply_risk_overlay(
     port_cvar: Optional[pd.Series] = None
     if config.max_portfolio_cvar is not None:
         port_rets_for_cvar = (pos.shift(1).fillna(0.0) * rets).sum(axis=1)
-        port_cvar = _rolling_cvar(
-            port_rets_for_cvar, config.cvar_lookback, config.cvar_alpha
-        )
+        port_cvar = _rolling_cvar(port_rets_for_cvar, config.cvar_lookback, config.cvar_alpha)
 
-    fill_rate = (
-        float(config.partial_fill_rate)
-        if config.partial_fill_rate is not None
-        else 1.0
-    )
-    slip_bps = (
-        float(config.next_bar_open_slippage_bps)
-        if config.next_bar_open_slippage_bps is not None
-        else 0.0
-    )
-    reset_dd = (
-        float(config.kill_reset_drawdown)
-        if config.kill_reset_drawdown is not None
-        else None
-    )
+    fill_rate = float(config.partial_fill_rate) if config.partial_fill_rate is not None else 1.0
+    slip_bps = float(config.next_bar_open_slippage_bps) if config.next_bar_open_slippage_bps is not None else 0.0
+    reset_dd = float(config.kill_reset_drawdown) if config.kill_reset_drawdown is not None else None
 
     for t in range(n_bars):
         target = out[t].copy()  # desired from signal/optimizer (pre-stateful clips)
@@ -400,9 +376,7 @@ def apply_risk_overlay(
             if abs(net) > _EPS:
                 gross = float(np.sum(np.abs(w)))
                 if gross > _EPS:
-                    intensity = float(config.inventory_mean_reversion) * (
-                        1.0 + min(2.0, abs(net))
-                    )
+                    intensity = float(config.inventory_mean_reversion) * (1.0 + min(2.0, abs(net)))
                     intensity = min(1.0, intensity)
                     w = w - intensity * net * (np.abs(w) / gross)
 
@@ -494,11 +468,7 @@ def apply_risk_overlay(
                 if not np.isfinite(px[j]) or px[j] <= 0:
                     continue
                 # New / flipped position → reset entry.
-                if (
-                    not np.isfinite(entry_price[j])
-                    or entry_dir[j] == 0.0
-                    or np.sign(w[j]) != np.sign(entry_dir[j])
-                ):
+                if not np.isfinite(entry_price[j]) or entry_dir[j] == 0.0 or np.sign(w[j]) != np.sign(entry_dir[j]):
                     entry_price[j] = px[j]
                     entry_dir[j] = float(np.sign(w[j]))
                     continue
@@ -556,11 +526,7 @@ def apply_risk_overlay(
                 kill_armed = True
                 diagnostics["kill_rearms"] += 1
 
-        if (
-            kill_armed
-            and config.max_drawdown_kill is not None
-            and dd <= -float(config.max_drawdown_kill)
-        ):
+        if kill_armed and config.max_drawdown_kill is not None and dd <= -float(config.max_drawdown_kill):
             w[:] = 0.0
             diagnostics["kill_events"] += 1
             cooldown_left = int(config.kill_cooldown_bars)
@@ -577,9 +543,7 @@ def apply_risk_overlay(
     result = pd.DataFrame(out, index=pos.index, columns=pos.columns)
     diagnostics["final_gross_mean"] = round(float(result.abs().sum(axis=1).mean()), 6)
     diagnostics["final_net_mean"] = round(float(result.sum(axis=1).mean()), 6)
-    diagnostics["final_turnover_mean"] = round(
-        float(result.diff().abs().sum(axis=1).fillna(0.0).mean()), 6
-    )
+    diagnostics["final_turnover_mean"] = round(float(result.diff().abs().sum(axis=1).fillna(0.0).mean()), 6)
     return result, diagnostics
 
 
@@ -705,9 +669,7 @@ def overlay_ab_comparison(
         "improvement": {
             # Positive ⇒ overlay |max_dd| is smaller (less severe).
             "drawdown_reduction": round(abs(base_mdd) - abs(adj_mdd), 6),
-            "sharpe_delta": round(
-                _sharpe(adj_rets, bpy) - _sharpe(base_rets, bpy), 4
-            ),
+            "sharpe_delta": round(_sharpe(adj_rets, bpy) - _sharpe(base_rets, bpy), 4),
             "risk_adjusted_score_delta": round(adj_score - base_score, 4),
             "ruin_reduction": round(_ruin(base_eq) - _ruin(adj_eq), 6),
         },

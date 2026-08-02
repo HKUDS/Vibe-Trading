@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #95
 # 简要说明: 国泰君安191短周期交易型alpha因子第95号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_095",
-    "theme": ['volatility', 'volume'],
-    "formula_latex": 'STD(AMOUNT,20)',
-    "columns_required": ['amount'],
+    "theme": ["volatility", "volume"],
+    "formula_latex": "STD(AMOUNT,20)",
+    "columns_required": ["amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
     "min_warmup_bars": 21,
-    "notes": '20d std of amount.',
+    "notes": "20d std of amount.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     return ts_std(panel["amount"], 20)

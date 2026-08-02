@@ -9,7 +9,7 @@
 
 import os
 import sys
-from typing import Dict, Optional
+from typing import Dict
 
 # smartmoneyconcepts prints emoji on import — force UTF-8 on Windows
 if sys.platform == "win32":
@@ -17,7 +17,6 @@ if sys.platform == "win32":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
-import numpy as np
 import pandas as pd
 from smartmoneyconcepts import smc
 
@@ -41,8 +40,15 @@ def _fetch_okx(inst_id: str, bar: str = "1D", limit: int = 300) -> pd.DataFrame:
     )
     candles = resp.json()["data"]
     columns = [
-        "ts", "open", "high", "low", "close",
-        "vol", "volCcy", "volCcyQuote", "confirm",
+        "ts",
+        "open",
+        "high",
+        "low",
+        "close",
+        "vol",
+        "volCcy",
+        "volCcyQuote",
+        "confirm",
     ]
     df = pd.DataFrame(reversed(candles), columns=columns)
     df["ts"] = pd.to_datetime(df["ts"].astype("int64"), unit="ms")
@@ -109,9 +115,7 @@ class SignalEngine:
             result[code] = signal
         return result
 
-    def _compute_signal(
-        self, ohlc: pd.DataFrame, original_index: pd.Index
-    ) -> pd.Series:
+    def _compute_signal(self, ohlc: pd.DataFrame, original_index: pd.Index) -> pd.Series:
         """对单个标的计算 SMC 信号。
 
         Args:
@@ -127,9 +131,7 @@ class SignalEngine:
         swing_hl = smc.swing_highs_lows(ohlc, swing_length=self.swing_length)
 
         # 2) BOS / ChoCH 结构突破检测
-        bos_choch = smc.bos_choch(
-            ohlc, swing_highs_lows=swing_hl, close_break=self.close_break
-        )
+        bos_choch = smc.bos_choch(ohlc, swing_highs_lows=swing_hl, close_break=self.close_break)
 
         # 3) FVG 公允价值缺口检测
         fvg = smc.fvg(ohlc)

@@ -109,13 +109,17 @@ class TestLoadConstraints:
 
     def test_group_caps_must_reference_mapped_groups(self) -> None:
         with pytest.raises(ValueError, match="no mapped assets"):
-            load_constraints({
-                "constraints": [{
-                    "type": "group_exposure",
-                    "groups": {"A": "tech"},
-                    "caps": {"energy": 0.5},
-                }]
-            })
+            load_constraints(
+                {
+                    "constraints": [
+                        {
+                            "type": "group_exposure",
+                            "groups": {"A": "tech"},
+                            "caps": {"energy": 0.5},
+                        }
+                    ]
+                }
+            )
 
     def test_constraints_not_a_list_rejected(self) -> None:
         with pytest.raises(ValueError, match="must be a list"):
@@ -125,9 +129,7 @@ class TestLoadConstraints:
 class TestApplyFrame:
     def test_signs_preserved(self) -> None:
         frame = _frame({"2025-01-01": [0.7, -0.2, 0.1, 0.0]})
-        out = apply_constraints_frame(frame, load_constraints({
-            "constraints": [{"type": "max_weight", "cap": 0.4}]
-        }))
+        out = apply_constraints_frame(frame, load_constraints({"constraints": [{"type": "max_weight", "cap": 0.4}]}))
         assert out.iloc[0]["A"] == pytest.approx(0.4)
         assert out.iloc[0]["B"] < 0
         assert out.iloc[0]["C"] > 0
@@ -137,12 +139,14 @@ class TestApplyFrame:
 
     def test_config_order_applies(self) -> None:
         frame = _frame({"2025-01-01": [0.5, 0.4, 0.1, 0.0]})
-        cons = load_constraints({
-            "constraints": [
-                {"type": "max_weight", "cap": 0.45},
-                {"type": "group_exposure", "groups": {"A": "x", "B": "x"}, "caps": {"x": 0.7}},
-            ]
-        })
+        cons = load_constraints(
+            {
+                "constraints": [
+                    {"type": "max_weight", "cap": 0.45},
+                    {"type": "group_exposure", "groups": {"A": "x", "B": "x"}, "caps": {"x": 0.7}},
+                ]
+            }
+        )
         out = apply_constraints_frame(frame, cons)
         assert out.iloc[0]["A"] <= 0.45 + 1e-12
         assert out.iloc[0]["A"] + out.iloc[0]["B"] == pytest.approx(0.7)
@@ -153,24 +157,26 @@ class TestApplyFrame:
         pd.testing.assert_frame_equal(out, frame)
 
     def test_per_date_independence(self) -> None:
-        frame = _frame({
-            "2025-01-01": [0.9, 0.1, 0.0, 0.0],
-            "2025-01-02": [0.2, 0.2, 0.6, 0.0],
-        })
-        out = apply_constraints_frame(frame, load_constraints({
-            "constraints": [{"type": "max_weight", "cap": 0.5}]
-        }))
+        frame = _frame(
+            {
+                "2025-01-01": [0.9, 0.1, 0.0, 0.0],
+                "2025-01-02": [0.2, 0.2, 0.6, 0.0],
+            }
+        )
+        out = apply_constraints_frame(frame, load_constraints({"constraints": [{"type": "max_weight", "cap": 0.5}]}))
         assert out.iloc[0]["A"] == pytest.approx(0.5)
         assert out.iloc[1]["C"] == pytest.approx(0.5)
 
     def test_idempotent(self) -> None:
         frame = _frame({"2025-01-01": [0.7, 0.2, 0.1, 0.0]})
-        cons = load_constraints({
-            "constraints": [
-                {"type": "max_weight", "cap": 0.4},
-                {"type": "min_weight", "floor": 0.1},
-            ]
-        })
+        cons = load_constraints(
+            {
+                "constraints": [
+                    {"type": "max_weight", "cap": 0.4},
+                    {"type": "min_weight", "floor": 0.1},
+                ]
+            }
+        )
         once = apply_constraints_frame(frame, cons)
         twice = apply_constraints_frame(once, cons)
         pd.testing.assert_frame_equal(once, twice)
@@ -186,9 +192,7 @@ class TestEngineWiring:
         rng = np.random.default_rng(0)
         dates = pd.bdate_range("2025-01-01", periods=n_days)
         codes = [f"A{i}" for i in range(n_assets)]
-        ret = pd.DataFrame(
-            rng.normal(0.001, 0.02, (n_days, n_assets)), index=dates, columns=codes
-        )
+        ret = pd.DataFrame(rng.normal(0.001, 0.02, (n_days, n_assets)), index=dates, columns=codes)
         pos = pd.DataFrame(1.0, index=dates, columns=codes)
 
         config = {

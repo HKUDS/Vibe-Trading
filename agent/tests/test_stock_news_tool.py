@@ -12,7 +12,6 @@ import json
 from typing import Any
 from unittest.mock import patch
 
-import pytest
 
 from backtest.loaders import eastmoney_client, yahoo_client
 from src.tools.stock_news_tool import (
@@ -123,9 +122,7 @@ class TestToolContract:
 class TestExecuteSuccess:
     def test_a_share_stock_news(self) -> None:
         tool = StockNewsTool()
-        with patch.object(
-            eastmoney_client, "throttled_get_json", return_value=_em_news_payload()
-        ) as http:
+        with patch.object(eastmoney_client, "throttled_get_json", return_value=_em_news_payload()) as http:
             out = json.loads(tool.execute(code="600519.SH", scope="stock", limit=10))
 
         http.assert_called_once()
@@ -144,9 +141,7 @@ class TestExecuteSuccess:
 
     def test_global_scope_needs_no_code(self) -> None:
         tool = StockNewsTool()
-        with patch.object(
-            eastmoney_client, "throttled_get_json", return_value=_em_news_payload()
-        ):
+        with patch.object(eastmoney_client, "throttled_get_json", return_value=_em_news_payload()):
             out = json.loads(tool.execute(scope="global"))
 
         assert out["ok"] is True
@@ -157,9 +152,7 @@ class TestExecuteSuccess:
 
     def test_us_stock_via_yahoo_returns_articles(self) -> None:
         tool = StockNewsTool()
-        with patch.object(
-            yahoo_client, "search_news", return_value=_yahoo_news()
-        ) as srch:
+        with patch.object(yahoo_client, "search_news", return_value=_yahoo_news()) as srch:
             out = json.loads(tool.execute(code="AAPL.US", limit=1))
 
         srch.assert_called_once_with("AAPL", 1)
@@ -173,15 +166,12 @@ class TestExecuteSuccess:
             "url": "https://example.com/apple-products",
             "source": "Reuters",
             "published": "2024-01-01 00:00:00",
-            "snippet": ("Apple announced a new product lineup. " * 30)[:280].rstrip()
-            + "…",
+            "snippet": ("Apple announced a new product lineup. " * 30)[:280].rstrip() + "…",
         }
 
     def test_hk_stock_via_yahoo_returns_articles(self) -> None:
         tool = StockNewsTool()
-        with patch.object(
-            yahoo_client, "search_news", return_value=_yahoo_news()[:1]
-        ) as srch:
+        with patch.object(yahoo_client, "search_news", return_value=_yahoo_news()[:1]) as srch:
             out = json.loads(tool.execute(code="00700.HK"))
 
         srch.assert_called_once_with("00700", 20)
@@ -235,9 +225,7 @@ class TestExecuteError:
 
     def test_yahoo_failure_envelope(self) -> None:
         tool = StockNewsTool()
-        with patch.object(
-            yahoo_client, "search_news", side_effect=RuntimeError("yahoo 429")
-        ):
+        with patch.object(yahoo_client, "search_news", side_effect=RuntimeError("yahoo 429")):
             out = json.loads(tool.execute(code="AAPL.US"))
 
         assert out["ok"] is False

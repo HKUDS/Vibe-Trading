@@ -219,10 +219,7 @@ def _wait_for_task_status(
         if task["status"] in expected:
             return task
         time.sleep(0.02)
-    pytest.fail(
-        f"task {task_id} did not reach {sorted(expected)}: "
-        f"{manager.check(task_id)}"
-    )
+    pytest.fail(f"task {task_id} did not reach {sorted(expected)}: {manager.check(task_id)}")
 
 
 def _wait_for_registered_process(

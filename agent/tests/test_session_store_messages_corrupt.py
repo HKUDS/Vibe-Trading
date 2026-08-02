@@ -11,9 +11,7 @@ from src.session.store import SessionStore
 
 def _seed(store: SessionStore, session_id: str) -> Path:
     store.create_session(Session(session_id=session_id, title="t"))
-    store.append_message(
-        Message(session_id=session_id, role="user", content="keep-before")
-    )
+    store.append_message(Message(session_id=session_id, role="user", content="keep-before"))
     return store._messages_file(session_id)
 
 

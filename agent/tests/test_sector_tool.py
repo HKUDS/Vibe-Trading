@@ -51,11 +51,10 @@ class TestMembershipEnvelope:
     """A resolvable stock yields the ok envelope with parsed boards."""
 
     def test_membership_parses_boards(self):
-        with patch(
-            "src.tools.sector_tool.resolve_secid", return_value="1.600519"
-        ), patch(
-            "src.tools.sector_tool.get_json", return_value=_MEMBERSHIP_PAYLOAD
-        ) as mock_get:
+        with (
+            patch("src.tools.sector_tool.resolve_secid", return_value="1.600519"),
+            patch("src.tools.sector_tool.get_json", return_value=_MEMBERSHIP_PAYLOAD) as mock_get,
+        ):
             text = SectorInfoTool().execute(code="600519.SH")
 
         url = mock_get.call_args[0][0]
@@ -82,9 +81,10 @@ class TestMembershipEnvelope:
         assert boards[1]["price"] is None
 
     def test_membership_default_mode_when_only_code(self):
-        with patch(
-            "src.tools.sector_tool.resolve_secid", return_value="0.000001"
-        ), patch("src.tools.sector_tool.get_json", return_value={"data": {"diff": []}}):
+        with (
+            patch("src.tools.sector_tool.resolve_secid", return_value="0.000001"),
+            patch("src.tools.sector_tool.get_json", return_value={"data": {"diff": []}}),
+        ):
             payload = json.loads(SectorInfoTool().execute(code="000001.SZ"))
 
         assert payload["mode"] == "membership"
@@ -95,9 +95,7 @@ class TestRankingEnvelope:
     """mode='ranking' enumerates the industry-board universe."""
 
     def test_ranking_parses_boards(self):
-        with patch(
-            "src.tools.sector_tool.get_json", return_value=_RANKING_PAYLOAD
-        ) as mock_get:
+        with patch("src.tools.sector_tool.get_json", return_value=_RANKING_PAYLOAD) as mock_get:
             text = SectorInfoTool().execute(mode="ranking", limit=20)
 
         url = mock_get.call_args[0][0]
@@ -116,20 +114,17 @@ class TestRankingEnvelope:
         assert boards[1]["leader"] is None
 
     def test_ranking_ignores_code_and_skips_resolve(self):
-        with patch("src.tools.sector_tool.resolve_secid") as resolve, patch(
-            "src.tools.sector_tool.get_json", return_value=_RANKING_PAYLOAD
+        with (
+            patch("src.tools.sector_tool.resolve_secid") as resolve,
+            patch("src.tools.sector_tool.get_json", return_value=_RANKING_PAYLOAD),
         ):
-            payload = json.loads(
-                SectorInfoTool().execute(mode="ranking", code="600519.SH")
-            )
+            payload = json.loads(SectorInfoTool().execute(mode="ranking", code="600519.SH"))
 
         assert payload["ok"] is True
         resolve.assert_not_called()
 
     def test_ranking_caps_limit(self):
-        with patch(
-            "src.tools.sector_tool.get_json", return_value=_RANKING_PAYLOAD
-        ) as mock_get:
+        with patch("src.tools.sector_tool.get_json", return_value=_RANKING_PAYLOAD) as mock_get:
             SectorInfoTool().execute(mode="ranking", limit=10_000)
 
         # Request pz is capped at the defensive maximum.
@@ -176,19 +171,16 @@ class TestErrorEnvelope:
         assert "unresolvable" in payload["error"]
 
     def test_http_failure_membership_error_envelope(self):
-        with patch(
-            "src.tools.sector_tool.resolve_secid", return_value="1.600519"
-        ), patch(
-            "src.tools.sector_tool.get_json", side_effect=RuntimeError("HTTP 429")
+        with (
+            patch("src.tools.sector_tool.resolve_secid", return_value="1.600519"),
+            patch("src.tools.sector_tool.get_json", side_effect=RuntimeError("HTTP 429")),
         ):
             payload = json.loads(SectorInfoTool().execute(code="600519.SH"))
         assert payload["ok"] is False
         assert "429" in payload["error"]
 
     def test_http_failure_ranking_error_envelope(self):
-        with patch(
-            "src.tools.sector_tool.get_json", side_effect=RuntimeError("HTTP 503")
-        ):
+        with patch("src.tools.sector_tool.get_json", side_effect=RuntimeError("HTTP 503")):
             payload = json.loads(SectorInfoTool().execute(mode="ranking"))
         assert payload["ok"] is False
         assert "503" in payload["error"]

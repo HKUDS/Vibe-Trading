@@ -107,8 +107,8 @@ class SignalEngine:
         pct = compute_hv_percentile(hv, self.lookback)
 
         signal = pd.Series(0, index=df.index)
-        signal[pct < self.low_pct] = 1     # 低波做多
-        signal[pct > self.high_pct] = -1   # 高波做空
+        signal[pct < self.low_pct] = 1  # 低波做多
+        signal[pct > self.high_pct] = -1  # 高波做空
         return signal.fillna(0).astype(int)
 
 

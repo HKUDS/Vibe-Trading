@@ -107,11 +107,7 @@ def render_answer(content: str) -> Group:
 
 
 def _is_table_start(lines: list[str], index: int) -> bool:
-    return (
-        index + 1 < len(lines)
-        and _is_pipe_row(lines[index])
-        and bool(_PIPE_SEPARATOR.match(lines[index + 1]))
-    )
+    return index + 1 < len(lines) and _is_pipe_row(lines[index]) and bool(_PIPE_SEPARATOR.match(lines[index + 1]))
 
 
 def _is_pipe_row(line: str) -> bool:

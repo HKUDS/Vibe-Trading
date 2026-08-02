@@ -44,10 +44,8 @@ net_amount | float | Y | 净额(亿元)
 **接口示例**
 
 ```python
-
-#获取当日同花顺板块资金流向
-df = pro.moneyflow_cnt_ths(trade_date='20250320')
-
+# 获取当日同花顺板块资金流向
+df = pro.moneyflow_cnt_ths(trade_date="20250320")
 ```
 
 <br>

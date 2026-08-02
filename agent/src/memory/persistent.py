@@ -77,9 +77,7 @@ _DECAY_LAMBDA = math.log(2) / HALF_LIFE_DAYS
 _ACCESS_BOOST = 0.1
 
 
-def compute_importance(
-    quality_score: float, access_count: int, days_since_last_access: float
-) -> float:
+def compute_importance(quality_score: float, access_count: int, days_since_last_access: float) -> float:
     """Compute importance via Ebbinghaus-inspired decay formula."""
     from src.config.accessor import get_env_config
 
@@ -138,7 +136,7 @@ class MemoryEntry:
     last_accessed: float = 0.0
     importance: float = 0.5
     related_memories: tuple[str, ...] = ()
-    category: str = ""              # H-MEM directory classification
+    category: str = ""  # H-MEM directory classification
     compression_level: str = "raw"  # raw/daily/digest
 
 
@@ -222,10 +220,12 @@ class PersistentMemory:
     def _scan_entries(self) -> List[MemoryEntry]:
         """Scan all .md files (except MEMORY.md) and parse frontmatter."""
         from src.config.accessor import get_env_config
+
         cfg = get_env_config().memory
 
         if cfg.hierarchy_enabled:
             from src.memory.hierarchy import MemoryHierarchy
+
             hierarchy = MemoryHierarchy(self._dir)
             md_files = hierarchy.scan_all()
         else:
@@ -242,16 +242,12 @@ class PersistentMemory:
             meta, body = _parse_frontmatter(text)
             mtime = path.stat().st_mtime
             raw_kw = meta.get("keywords", [])
-            keywords = tuple(
-                str(k)[:30] for k in (raw_kw if isinstance(raw_kw, list) else [])
-            )[:5]
+            keywords = tuple(str(k)[:30] for k in (raw_kw if isinstance(raw_kw, list) else []))[:5]
             raw_related = meta.get("related_memories", [])
             related = tuple(
                 str(r)
                 for r in (raw_related if isinstance(raw_related, list) else [])
-                if isinstance(r, str)
-                and len(r) == 6
-                and all(c in "0123456789abcdef" for c in r.lower())
+                if isinstance(r, str) and len(r) == 6 and all(c in "0123456789abcdef" for c in r.lower())
             )
 
             category = _coerce_str(meta.get("category"), default="")
@@ -271,9 +267,7 @@ class PersistentMemory:
             # Generate id if missing
             entry_id = str(meta.get("id", ""))
             if not entry_id or len(entry_id) != 6:
-                entry_id = hashlib.sha256(
-                    f"{meta.get('name', path.stem)}{mtime}".encode()
-                ).hexdigest()[:6]
+                entry_id = hashlib.sha256(f"{meta.get('name', path.stem)}{mtime}".encode()).hexdigest()[:6]
 
             # Timestamps and importance
             created = _parse_timestamp(meta.get("created_at"), mtime)
@@ -342,6 +336,7 @@ class PersistentMemory:
         if get_env_config().memory.fts_index_enabled:
             try:
                 from src.memory.search_index import get_shared_index
+
                 get_shared_index().remove_entry(entry.id)
             except Exception:
                 logger.debug("FTS5 remove_entry failed", exc_info=True)
@@ -349,22 +344,23 @@ class PersistentMemory:
         if get_env_config().memory.links_enabled:
             try:
                 from src.memory.semantic_links import SemanticLinker
+
                 SemanticLinker(self._dir).remove_relations(entry.path)
             except Exception:
                 logger.debug("Failed to remove relations for %s", entry.path, exc_info=True)
 
         return True
 
-    def find_relevant(
-        self, query: str, max_results: int = MAX_RESULTS
-    ) -> List[MemoryEntry]:
+    def find_relevant(self, query: str, max_results: int = MAX_RESULTS) -> List[MemoryEntry]:
         """Keyword search across all entries, weighted by importance."""
         from src.config.accessor import get_env_config
+
         cfg = get_env_config().memory
 
         if cfg.fts_index_enabled:
             try:
                 from src.memory.search_index import get_shared_index
+
                 index = get_shared_index()
                 matches = index.search(query, max_results=max_results)
 
@@ -374,8 +370,7 @@ class PersistentMemory:
                     all_entries = self._scan_entries()
                     if all_entries:
                         entries_data = [
-                            (e.id, e.title, e.description, " ".join(e.keywords), e.body)
-                            for e in all_entries
+                            (e.id, e.title, e.description, " ".join(e.keywords), e.body) for e in all_entries
                         ]
                         index.rebuild_all(entries_data)
                         index._auto_rebuilt = True
@@ -418,6 +413,7 @@ class PersistentMemory:
         if cfg.links_enabled and results:
             try:
                 from src.memory.semantic_links import SemanticLinker
+
                 linker = SemanticLinker(self._dir)
                 all_entries = self._scan_entries()
                 linked_ids: set[str] = set()
@@ -487,8 +483,10 @@ class PersistentMemory:
             slug = f"{slug}_{digest}" if slug else digest
 
         from src.config.accessor import get_env_config
+
         if get_env_config().memory.hierarchy_enabled:
             from src.memory.hierarchy import MemoryHierarchy
+
             hierarchy = MemoryHierarchy(self._dir)
             path = hierarchy.route_entry(memory_type, slug)
         else:
@@ -498,9 +496,7 @@ class PersistentMemory:
         safe_desc = (description or stripped_name).replace("\n", " ").replace("\r", " ")
         clean_content = _truncate_body(_sanitize_body(content))
 
-        entry_id = hashlib.sha256(
-            f"{stripped_name}{_time.time()}".encode()
-        ).hexdigest()[:6]
+        entry_id = hashlib.sha256(f"{stripped_name}{_time.time()}".encode()).hexdigest()[:6]
         now_iso = _time.strftime("%Y-%m-%dT%H:%M:%S", _time.gmtime())
 
         frontmatter = (
@@ -523,27 +519,23 @@ class PersistentMemory:
         )
         with memory_lock(self._dir) as acquired:
             if not acquired:
-                logger.warning(
-                    "add(%s): lock timeout, best-effort write", stripped_name
-                )
+                logger.warning("add(%s): lock timeout, best-effort write", stripped_name)
             path.write_text(frontmatter, encoding="utf-8")
             self._update_index(stripped_name, path.name, description or stripped_name)
 
             if get_env_config().memory.links_enabled:
                 try:
                     from src.memory.semantic_links import SemanticLinker, _tokenize_for_bm25
+
                     linker = SemanticLinker(self._dir)
                     all_entries = self._scan_entries()
                     new_entry = next((e for e in all_entries if e.path == path), None)
                     if new_entry:
-                        entry_tokens = _tokenize_for_bm25(
-                            f"{new_entry.title} {new_entry.description} {new_entry.body}"
-                        )
+                        entry_tokens = _tokenize_for_bm25(f"{new_entry.title} {new_entry.description} {new_entry.body}")
                         all_entries_data = [
-                            (e.path.name, _tokenize_for_bm25(
-                                f"{e.title} {e.description} {e.body}"
-                            ))
-                            for e in all_entries if e.path != path
+                            (e.path.name, _tokenize_for_bm25(f"{e.title} {e.description} {e.body}"))
+                            for e in all_entries
+                            if e.path != path
                         ]
                         links = linker.discover_links(
                             entry_title=new_entry.path.name,
@@ -558,6 +550,7 @@ class PersistentMemory:
             if get_env_config().memory.fts_index_enabled:
                 try:
                     from src.memory.search_index import get_shared_index
+
                     index = get_shared_index()
                     index.index_entry(
                         entry_id=entry_id,
@@ -585,6 +578,7 @@ class PersistentMemory:
                 if get_env_config().memory.fts_index_enabled:
                     try:
                         from src.memory.search_index import get_shared_index
+
                         get_shared_index().remove_entry(entry.id)
                     except Exception:
                         logger.debug("FTS5 remove_entry failed", exc_info=True)
@@ -592,6 +586,7 @@ class PersistentMemory:
                 if get_env_config().memory.links_enabled:
                     try:
                         from src.memory.semantic_links import SemanticLinker
+
                         SemanticLinker(self._dir).remove_relations(entry.path)
                     except Exception:
                         logger.debug("Failed to remove relations for %s", entry.path, exc_info=True)
@@ -623,6 +618,4 @@ class PersistentMemory:
         """Rebuild MEMORY.md from all existing entry files."""
         entries = self._scan_entries()
         lines = [f"- [{e.title}]({e.path.name}) — {e.description}" for e in entries]
-        self._index_path.write_text(
-            "\n".join(lines[:MAX_INDEX_LINES]), encoding="utf-8"
-        )
+        self._index_path.write_text("\n".join(lines[:MAX_INDEX_LINES]), encoding="utf-8")

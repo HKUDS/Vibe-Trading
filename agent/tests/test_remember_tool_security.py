@@ -16,12 +16,14 @@ def test_remember_rejects_memory_type_path_traversal(tmp_path: Path) -> None:
     outside_dir.mkdir()
     tool = RememberTool(PersistentMemory(memory_dir=memory_dir))
 
-    result = json.loads(tool.execute(
-        action="save",
-        title="Traversal Proof",
-        content="SAFE_MARKER",
-        memory_type="../outside/proof",
-    ))
+    result = json.loads(
+        tool.execute(
+            action="save",
+            title="Traversal Proof",
+            content="SAFE_MARKER",
+            memory_type="../outside/proof",
+        )
+    )
 
     assert result["status"] == "error"
     assert "memory_type" in result["error"]

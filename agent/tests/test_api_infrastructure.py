@@ -54,6 +54,7 @@ def test_api_key_monkeypatch(monkeypatch):
 
 def test_no_circular_imports():
     import importlib
+
     for mod_name in [
         "src.api._compat",
         "src.api.security",
@@ -66,6 +67,7 @@ def test_no_circular_imports():
 
 def test_api_server_is_thin_assembler():
     import inspect
+
     source = inspect.getsource(api_server)
     total_lines = len(source.splitlines())
     assert total_lines < 400, f"api_server.py has {total_lines} lines, expected < 400"
@@ -160,6 +162,7 @@ def test_validate_path_param_valid():
 
 def test_validate_path_param_path_traversal():
     from fastapi import HTTPException
+
     with pytest.raises(HTTPException):
         helpers._validate_path_param("..", "run_id")
     with pytest.raises(HTTPException):
@@ -170,12 +173,14 @@ def test_validate_path_param_path_traversal():
 
 def test_validate_path_param_empty():
     from fastapi import HTTPException
+
     with pytest.raises(HTTPException):
         helpers._validate_path_param("", "run_id")
 
 
 def test_validate_path_param_special_chars():
     from fastapi import HTTPException
+
     with pytest.raises(HTTPException):
         helpers._validate_path_param("foo bar", "run_id")
     with pytest.raises(HTTPException):
@@ -307,7 +312,7 @@ def test_read_write_env_quoted_hash_roundtrip(tmp_path):
     assert helpers._read_env_values(env_file)["K"] == secret
     # Re-read the formatted line directly through strip
     raw = env_file.read_text(encoding="utf-8")
-    assert ' #' in raw
+    assert " #" in raw
     line = [ln for ln in raw.splitlines() if ln.startswith("K=")][0]
     assert helpers._strip_env_value(line.split("=", 1)[1]) == secret
 
@@ -348,6 +353,7 @@ def test_session_service_writeback_to_host(monkeypatch):
     """_get_session_service should write back to api_server for monkeypatch compat."""
     monkeypatch.setenv("ENABLE_SESSION_RUNTIME", "false")
     import src.api.state as state_mod
+
     state_mod._session_service = None
     _compat.set_host_attr("_session_service", None)
 

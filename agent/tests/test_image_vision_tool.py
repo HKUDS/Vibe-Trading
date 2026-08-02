@@ -54,9 +54,7 @@ def test_happy_path_sends_data_url_and_returns_answer(tool, png_in_allowed_root)
 
     with patch("src.providers.chat.ChatLLM") as chat_cls:
         chat_cls.return_value.chat.return_value = response
-        result = json.loads(
-            tool.execute(path=str(png_in_allowed_root), question="What is this?")
-        )
+        result = json.loads(tool.execute(path=str(png_in_allowed_root), question="What is this?"))
 
     assert result["ok"] is True
     assert result["data"]["answer"] == "A tiny transparent pixel."

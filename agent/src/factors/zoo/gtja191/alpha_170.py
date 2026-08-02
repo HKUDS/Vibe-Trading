@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #170
 # 简要说明: 国泰君安191短周期交易型alpha因子第170号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     ((((RANK((1/CLOSE))*VOLUME)/MEAN(VOLUME,20)) * ((HIGH * RANK((HIGH-CLOSE))) / (SUM(HIGH,5)/5))) - RANK((VWAP - DELAY(VWAP,5))))
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -38,16 +38,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_170"
 
 __alpha_meta__ = {
-    'id': 'gtja191_170',
-    'theme': ['volume'],
-    'formula_latex': 'see body',
-    'columns_required': ['open', 'high', 'low', 'close', 'volume', 'amount'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 21,
-    'notes': '',
+    "id": "gtja191_170",
+    "theme": ["volume"],
+    "formula_latex": "see body",
+    "columns_required": ["open", "high", "low", "close", "volume", "amount"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 21,
+    "notes": "",
 }
 
 

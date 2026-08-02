@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #124
 # 简要说明: 国泰君安191短周期交易型alpha因子第124号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     (CLOSE-VWAP)/DECAYLINEAR(RANK(TSMAX(CLOSE,30)),2)
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -38,16 +38,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_124"
 
 __alpha_meta__ = {
-    'id': 'gtja191_124',
-    'theme': ['reversal'],
-    'formula_latex': '(close-vwap)/decay_linear(rank(tsmax(close,30)),2)',
-    'columns_required': ['open', 'high', 'low', 'close', 'volume', 'amount'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 30,
-    'min_warmup_bars': 32,
-    'notes': '',
+    "id": "gtja191_124",
+    "theme": ["reversal"],
+    "formula_latex": "(close-vwap)/decay_linear(rank(tsmax(close,30)),2)",
+    "columns_required": ["open", "high", "low", "close", "volume", "amount"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 30,
+    "min_warmup_bars": 32,
+    "notes": "",
 }
 
 

@@ -279,9 +279,7 @@ def test_usage_metadata_is_persisted_to_run_artifact(tmp_path: Path, monkeypatch
         "total_tokens": 15,
         "calls": 1,
     }
-    assert payload["per_iteration"] == [
-        {"iter": 1, "input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
-    ]
+    assert payload["per_iteration"] == [{"iter": 1, "input_tokens": 10, "output_tokens": 5, "total_tokens": 15}]
     assert payload["updated_at"].endswith("Z")
 
 
@@ -303,9 +301,7 @@ class _StubLLMAlwaysToolCalls:
         if tools is not None:
             self._counter += 1
             resp.has_tool_calls = True
-            resp.tool_calls = [
-                type("TC", (), {"id": f"tc_{self._counter}", "name": "compact", "arguments": {}})()
-            ]
+            resp.tool_calls = [type("TC", (), {"id": f"tc_{self._counter}", "name": "compact", "arguments": {}})()]
         else:
             resp.content = "Final answer from forced text-only."
             resp.has_tool_calls = False
@@ -328,9 +324,7 @@ class _StubLLMIgnoresForcedTextOnly:
     ) -> _StubLLMResponse:
         resp = _StubLLMResponse()
         resp.has_tool_calls = True
-        resp.tool_calls = [
-            type("TC", (), {"id": "tc_1", "name": "compact", "arguments": {}})()
-        ]
+        resp.tool_calls = [type("TC", (), {"id": "tc_1", "name": "compact", "arguments": {}})()]
         return resp
 
     def chat(self, messages: list[dict[str, Any]], **_: Any) -> _StubLLMResponse:
@@ -371,9 +365,7 @@ def test_provider_stream_error_returns_structured_failure(tmp_path: Path) -> Non
 
 def test_true_max_iterations_still_returns_max_iteration_reason(tmp_path: Path) -> None:
     """A provider that ignores the forced text-only last turn is still max-iter."""
-    agent = _build_agent(
-        _StubLLMIgnoresForcedTextOnly(), max_iter=1, tmp_run_dir=tmp_path / "run"
-    )
+    agent = _build_agent(_StubLLMIgnoresForcedTextOnly(), max_iter=1, tmp_run_dir=tmp_path / "run")
 
     result = agent.run(user_message="do something")
 
@@ -385,9 +377,7 @@ def test_true_max_iterations_still_returns_max_iteration_reason(tmp_path: Path) 
 def test_force_text_only_on_last_iteration(tmp_path: Path) -> None:
     """When the LLM keeps calling tools, the last iteration forces text-only
     output by passing tools=None, producing a final answer instead of failure."""
-    agent = _build_agent(
-        _StubLLMAlwaysToolCalls(), max_iter=5, tmp_run_dir=tmp_path / "run"
-    )
+    agent = _build_agent(_StubLLMAlwaysToolCalls(), max_iter=5, tmp_run_dir=tmp_path / "run")
     result = agent.run(user_message="do something")
 
     assert result["status"] == "success"

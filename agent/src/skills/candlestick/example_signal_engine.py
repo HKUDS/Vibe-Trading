@@ -32,17 +32,17 @@ def _body(o: pd.Series, c: pd.Series) -> pd.Series:
     return (c - o).abs()
 
 
-def _range(h: pd.Series, l: pd.Series) -> pd.Series:
+def _range(h: pd.Series, low: pd.Series) -> pd.Series:
     """K线振幅（最高 - 最低）。
 
     Args:
         h: 最高价序列。
-        l: 最低价序列。
+        low: 最低价序列。
 
     Returns:
         每根K线的振幅。
     """
-    return h - l
+    return h - low
 
 
 def _upper_shadow(o: pd.Series, c: pd.Series, h: pd.Series) -> pd.Series:
@@ -59,18 +59,18 @@ def _upper_shadow(o: pd.Series, c: pd.Series, h: pd.Series) -> pd.Series:
     return h - pd.concat([o, c], axis=1).max(axis=1)
 
 
-def _lower_shadow(o: pd.Series, c: pd.Series, l: pd.Series) -> pd.Series:
+def _lower_shadow(o: pd.Series, c: pd.Series, low: pd.Series) -> pd.Series:
     """下影线长度。
 
     Args:
         o: 开盘价序列。
         c: 收盘价序列。
-        l: 最低价序列。
+        low: 最低价序列。
 
     Returns:
         每根K线的下影线长度。
     """
-    return pd.concat([o, c], axis=1).min(axis=1) - l
+    return pd.concat([o, c], axis=1).min(axis=1) - low
 
 
 # ---------------------------------------------------------------------------
@@ -102,8 +102,7 @@ class SignalEngine:
     # 单根形态
     # -----------------------------------------------------------------------
 
-    def _detect_hammer(self, o: pd.Series, h: pd.Series,
-                       l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_hammer(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测锤子线（Hammer）—— 看涨。
 
         条件：下影线 >= shadow_ratio * 实体，上影线 < 实体，实体 > 0，振幅 > 0。
@@ -111,21 +110,20 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
             信号序列：1=检测到锤子线，0=未检测到。
         """
         bd = _body(o, c)
-        rng = _range(h, l)
-        ls = _lower_shadow(o, c, l)
+        rng = _range(h, low)
+        ls = _lower_shadow(o, c, low)
         us = _upper_shadow(o, c, h)
         cond = (ls >= self.shadow_ratio * bd) & (us < bd) & (bd > 0) & (rng > 0)
         return cond.astype(int)
 
-    def _detect_inverted_hammer(self, o: pd.Series, h: pd.Series,
-                                l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_inverted_hammer(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测倒锤子（Inverted Hammer）—— 看涨。
 
         条件：上影线 >= shadow_ratio * 实体，下影线 < 实体。
@@ -133,7 +131,7 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
@@ -141,12 +139,11 @@ class SignalEngine:
         """
         bd = _body(o, c)
         us = _upper_shadow(o, c, h)
-        ls = _lower_shadow(o, c, l)
+        ls = _lower_shadow(o, c, low)
         cond = (us >= self.shadow_ratio * bd) & (ls < bd) & (bd > 0)
         return cond.astype(int)
 
-    def _detect_shooting_star(self, o: pd.Series, h: pd.Series,
-                              l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_shooting_star(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测射击之星（Shooting Star）—— 看跌。
 
         形态与倒锤子相同，但需出现在上涨趋势之后（前一根收盘 > 前两根收盘）。
@@ -154,7 +151,7 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
@@ -162,13 +159,12 @@ class SignalEngine:
         """
         bd = _body(o, c)
         us = _upper_shadow(o, c, h)
-        ls = _lower_shadow(o, c, l)
+        ls = _lower_shadow(o, c, low)
         uptrend = c.shift(1) > c.shift(2)
         cond = (us >= self.shadow_ratio * bd) & (ls < bd) & (bd > 0) & uptrend
         return -(cond.astype(int))
 
-    def _detect_doji(self, o: pd.Series, h: pd.Series,
-                     l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_doji(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测十字星（Doji）—— 中性（信号为0）。
 
         条件：实体/振幅 < body_pct 且振幅 > 0。
@@ -176,21 +172,16 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
             信号序列：始终为0（中性形态，不产生方向信号）。
         """
-        bd = _body(o, c)
-        rng = _range(h, l)
-        safe_rng = rng.replace(0, np.nan)
-        cond = (bd / safe_rng < self.body_pct) & (rng > 0)
         # 十字星为中性，不贡献方向分数
         return pd.Series(0, index=o.index)
 
-    def _detect_spinning_top(self, o: pd.Series, h: pd.Series,
-                             l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_spinning_top(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测纺锤线（Spinning Top）—— 中性（信号为0）。
 
         条件：实体/振幅 < 0.3，上影线 > 实体，下影线 > 实体，且不是十字星。
@@ -198,20 +189,12 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
             信号序列：始终为0（中性形态，不产生方向信号）。
         """
-        bd = _body(o, c)
-        rng = _range(h, l)
-        safe_rng = rng.replace(0, np.nan)
-        us = _upper_shadow(o, c, h)
-        ls = _lower_shadow(o, c, l)
-        is_doji = (bd / safe_rng < self.body_pct) & (rng > 0)
-        cond = ((bd / safe_rng < 0.3) & (us > bd) & (ls > bd)
-                & (rng > 0) & ~is_doji)
         # 纺锤线为中性，不贡献方向分数
         return pd.Series(0, index=o.index)
 
@@ -219,8 +202,7 @@ class SignalEngine:
     # 双根形态
     # -----------------------------------------------------------------------
 
-    def _detect_engulfing(self, o: pd.Series, h: pd.Series,
-                          l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_engulfing(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测吞没形态（Engulfing）。
 
         看涨吞没：前一根看跌，当前看涨，当前实体包含前一根实体。+1
@@ -229,7 +211,7 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
@@ -249,8 +231,7 @@ class SignalEngine:
         sig[bearish] = -1
         return sig
 
-    def _detect_harami(self, o: pd.Series, h: pd.Series,
-                       l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_harami(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测孕线形态（Harami）。
 
         看涨孕线：前一根看跌大实体，当前小实体被包含在前一根实体内。+1
@@ -259,7 +240,7 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
@@ -288,8 +269,7 @@ class SignalEngine:
         sig[bearish] = -1
         return sig
 
-    def _detect_piercing_line(self, o: pd.Series, h: pd.Series,
-                              l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_piercing_line(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测刺穿线（Piercing Line）—— 看涨。
 
         条件：前一根看跌，当前开盘低于前一根最低价，当前收盘高于前一根实体中点。
@@ -297,13 +277,13 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
             信号序列：1=检测到刺穿线，0=无。
         """
-        o1, c1, l1 = o.shift(1), c.shift(1), l.shift(1)
+        o1, c1, l1 = o.shift(1), c.shift(1), low.shift(1)
         prev_bear = c1 < o1
         curr_bull = c > o
         opens_below = o < l1
@@ -313,8 +293,7 @@ class SignalEngine:
         cond = prev_bear & curr_bull & opens_below & closes_above_mid
         return cond.astype(int)
 
-    def _detect_dark_cloud(self, o: pd.Series, h: pd.Series,
-                           l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_dark_cloud(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测乌云盖顶（Dark Cloud Cover）—— 看跌。
 
         条件：前一根看涨，当前开盘高于前一根最高价，当前收盘低于前一根实体中点。
@@ -322,7 +301,7 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
@@ -342,8 +321,7 @@ class SignalEngine:
     # 三根形态
     # -----------------------------------------------------------------------
 
-    def _detect_morning_star(self, o: pd.Series, h: pd.Series,
-                             l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_morning_star(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测晨星（Morning Star）—— 看涨。
 
         条件：
@@ -354,7 +332,7 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
@@ -363,12 +341,12 @@ class SignalEngine:
         o1, c1 = o.shift(2), c.shift(2)  # Day1
         o2, c2, h2 = o.shift(1), c.shift(1), h.shift(1)  # Day2
         bd2 = _body(o2, c2)
-        rng2 = _range(h.shift(1), l.shift(1))
+        rng2 = _range(h.shift(1), low.shift(1))
         safe_rng2 = rng2.replace(0, np.nan)
 
         day1_bear = c1 < o1
         day2_small = bd2 / safe_rng2 < 0.3
-        day2_gap = h2 < l.shift(2)  # Day2 high < Day1 low (gap down)
+        day2_gap = h2 < low.shift(2)  # Day2 high < Day1 low (gap down)
         day3_bull = c > o
         mid1 = (o1 + c1) / 2
         day3_above_mid = c > mid1
@@ -376,8 +354,7 @@ class SignalEngine:
         cond = day1_bear & day2_small & day2_gap & day3_bull & day3_above_mid
         return cond.astype(int).fillna(0).astype(int)
 
-    def _detect_evening_star(self, o: pd.Series, h: pd.Series,
-                             l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_evening_star(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测暮星（Evening Star）—— 看跌。
 
         条件：
@@ -388,16 +365,16 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
             信号序列：-1=检测到暮星，0=无。
         """
         o1, c1 = o.shift(2), c.shift(2)  # Day1
-        o2, c2, l2 = o.shift(1), c.shift(1), l.shift(1)  # Day2
+        o2, c2, l2 = o.shift(1), c.shift(1), low.shift(1)  # Day2
         bd2 = _body(o2, c2)
-        rng2 = _range(h.shift(1), l.shift(1))
+        rng2 = _range(h.shift(1), low.shift(1))
         safe_rng2 = rng2.replace(0, np.nan)
 
         day1_bull = c1 > o1
@@ -410,8 +387,7 @@ class SignalEngine:
         cond = day1_bull & day2_small & day2_gap & day3_bear & day3_below_mid
         return -(cond.astype(int).fillna(0).astype(int))
 
-    def _detect_three_white_soldiers(self, o: pd.Series, h: pd.Series,
-                                     l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_three_white_soldiers(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测三白兵（Three White Soldiers）—— 看涨。
 
         条件：连续3根阳线，每根收盘递增，每根开盘在前一根实体内。
@@ -419,7 +395,7 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
@@ -441,8 +417,7 @@ class SignalEngine:
         cond = bull1 & bull2 & bull3 & close_up & open2_in & open3_in
         return cond.astype(int).fillna(0).astype(int)
 
-    def _detect_three_black_crows(self, o: pd.Series, h: pd.Series,
-                                  l: pd.Series, c: pd.Series) -> pd.Series:
+    def _detect_three_black_crows(self, o: pd.Series, h: pd.Series, low: pd.Series, c: pd.Series) -> pd.Series:
         """检测三乌鸦（Three Black Crows）—— 看跌。
 
         条件：连续3根阴线，每根收盘递减，每根开盘在前一根实体内。
@@ -450,7 +425,7 @@ class SignalEngine:
         Args:
             o: 开盘价。
             h: 最高价。
-            l: 最低价。
+            low: 最低价。
             c: 收盘价。
 
         Returns:
@@ -495,35 +470,33 @@ class SignalEngine:
         for code, df in data_map.items():
             o = df["open"]
             h = df["high"]
-            l = df["low"]
+            low = df["low"]
             c = df["close"]
 
             # 收集所有形态的信号分数
             scores = pd.DataFrame(index=df.index)
 
             # 单根形态
-            scores["hammer"] = self._detect_hammer(o, h, l, c)
-            scores["inv_hammer"] = self._detect_inverted_hammer(o, h, l, c)
-            scores["shooting_star"] = self._detect_shooting_star(o, h, l, c)
-            scores["doji"] = self._detect_doji(o, h, l, c)
-            scores["spinning_top"] = self._detect_spinning_top(o, h, l, c)
+            scores["hammer"] = self._detect_hammer(o, h, low, c)
+            scores["inv_hammer"] = self._detect_inverted_hammer(o, h, low, c)
+            scores["shooting_star"] = self._detect_shooting_star(o, h, low, c)
+            scores["doji"] = self._detect_doji(o, h, low, c)
+            scores["spinning_top"] = self._detect_spinning_top(o, h, low, c)
 
             # 双根形态
-            scores["engulfing"] = self._detect_engulfing(o, h, l, c)
-            scores["harami"] = self._detect_harami(o, h, l, c)
-            scores["piercing"] = self._detect_piercing_line(o, h, l, c)
-            scores["dark_cloud"] = self._detect_dark_cloud(o, h, l, c)
+            scores["engulfing"] = self._detect_engulfing(o, h, low, c)
+            scores["harami"] = self._detect_harami(o, h, low, c)
+            scores["piercing"] = self._detect_piercing_line(o, h, low, c)
+            scores["dark_cloud"] = self._detect_dark_cloud(o, h, low, c)
 
             # 三根形态
-            scores["morning_star"] = self._detect_morning_star(o, h, l, c)
-            scores["evening_star"] = self._detect_evening_star(o, h, l, c)
-            scores["three_white"] = self._detect_three_white_soldiers(o, h, l, c)
-            scores["three_black"] = self._detect_three_black_crows(o, h, l, c)
+            scores["morning_star"] = self._detect_morning_star(o, h, low, c)
+            scores["evening_star"] = self._detect_evening_star(o, h, low, c)
+            scores["three_white"] = self._detect_three_white_soldiers(o, h, low, c)
+            scores["three_black"] = self._detect_three_black_crows(o, h, low, c)
 
             total = scores.sum(axis=1)
-            result[code] = pd.Series(
-                np.sign(total).astype(int), index=df.index, name="signal"
-            )
+            result[code] = pd.Series(np.sign(total).astype(int), index=df.index, name="signal")
         return result
 
 
@@ -548,12 +521,11 @@ def _fetch_okx(inst_id: str, bar: str = "1D", limit: int = 300) -> pd.DataFrame:
     """
     import requests
 
-    resp = requests.get("https://www.okx.com/api/v5/market/candles", params={
-        "instId": inst_id, "bar": bar, "limit": str(limit)
-    })
+    resp = requests.get(
+        "https://www.okx.com/api/v5/market/candles", params={"instId": inst_id, "bar": bar, "limit": str(limit)}
+    )
     candles = resp.json()["data"]
-    columns = ["ts", "open", "high", "low", "close",
-               "vol", "volCcy", "volCcyQuote", "confirm"]
+    columns = ["ts", "open", "high", "low", "close", "vol", "volCcy", "volCcyQuote", "confirm"]
     df = pd.DataFrame(reversed(candles), columns=columns)
     df["ts"] = pd.to_datetime(df["ts"].astype("int64"), unit="ms")
     df = df.set_index("ts")

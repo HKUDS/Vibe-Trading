@@ -47,9 +47,7 @@ def compute_ic_series(factor_df: pd.DataFrame, return_df: pd.DataFrame) -> pd.Se
     return ic.astype(float)
 
 
-def compute_group_equity(
-    factor_df: pd.DataFrame, return_df: pd.DataFrame, n_groups: int
-) -> pd.DataFrame:
+def compute_group_equity(factor_df: pd.DataFrame, return_df: pd.DataFrame, n_groups: int) -> pd.DataFrame:
     """Layered backtest: rank by factor value daily, hold equal-weight, compute cumulative NAV.
 
     Args:
@@ -72,7 +70,7 @@ def compute_group_equity(
     factor_df = factor_df.loc[common_dates, common_codes]
     return_df = return_df.loc[common_dates, common_codes]
 
-    group_returns: dict[str, list[float]] = {f"Group_{i+1}": [] for i in range(n_groups)}
+    group_returns: dict[str, list[float]] = {f"Group_{i + 1}": [] for i in range(n_groups)}
     valid_dates = []
 
     for date in common_dates:
@@ -90,9 +88,9 @@ def compute_group_equity(
         for g in range(n_groups):
             members = bins[bins == g].index
             if len(members) > 0:
-                group_returns[f"Group_{g+1}"].append(r[members].mean())
+                group_returns[f"Group_{g + 1}"].append(r[members].mean())
             else:
-                group_returns[f"Group_{g+1}"].append(0.0)
+                group_returns[f"Group_{g + 1}"].append(0.0)
 
     if not valid_dates:
         return pd.DataFrame()

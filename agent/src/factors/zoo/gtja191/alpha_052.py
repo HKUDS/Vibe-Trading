@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #52 - 均值回复信号
 # 简要说明: ((-1*RANK(TSMIN(LOW,12)))*RANK(CORR(RANK(LOW),RANK(MEAN(VOLUME,60)),8)))，最低价位置与量价相关的组合。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_052",
-    "theme": ['microstructure'],
-    "formula_latex": 'SUM(MAX(0,HIGH-DELAY((HIGH+LOW+CLOSE)/3,1)),26) / SUM(MAX(0,DELAY((HIGH+LOW+CLOSE)/3,1)-LOW),26) * 100',
-    "columns_required": ['high', 'low', 'close'],
+    "theme": ["microstructure"],
+    "formula_latex": "SUM(MAX(0,HIGH-DELAY((HIGH+LOW+CLOSE)/3,1)),26) / SUM(MAX(0,DELAY((HIGH+LOW+CLOSE)/3,1)-LOW),26) * 100",
+    "columns_required": ["high", "low", "close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 26,
     "min_warmup_bars": 27,
-    "notes": 'Bull power / bear power ratio over 26 days.',
+    "notes": "Bull power / bear power ratio over 26 days.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     h = panel["high"]
@@ -53,5 +53,4 @@ def compute(panel: dict) -> pd.DataFrame:
     p_typ = typ.shift(1)
     bull = (h - p_typ).clip(lower=0)
     bear = (p_typ - l).clip(lower=0)
-    return safe_div(bull.rolling(26, min_periods=26).sum(),
-                    bear.rolling(26, min_periods=26).sum()) * 100.0
+    return safe_div(bull.rolling(26, min_periods=26).sum(), bear.rolling(26, min_periods=26).sum()) * 100.0

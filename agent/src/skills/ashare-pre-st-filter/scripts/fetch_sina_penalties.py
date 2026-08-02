@@ -30,12 +30,9 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 ALLOWED_HOST = "vip.stock.finance.sina.com.cn"
-URL_TEMPLATE = (
-    "https://vip.stock.finance.sina.com.cn/corp/go.php/vGP_GetOutOfLine/stockid/{code6}.phtml"
-)
+URL_TEMPLATE = "https://vip.stock.finance.sina.com.cn/corp/go.php/vGP_GetOutOfLine/stockid/{code6}.phtml"
 USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36"
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36"
 )
 DEFAULT_TIMEOUT = 15
 MAX_RETRIES = 3
@@ -68,19 +65,52 @@ ISSUER_KEYWORDS = [
 # 优先级决策依据（CR P1-2）：身份叠加（如"董事长 X 兼控股股东"）时，
 # 监管语境取最重责任主体——shareholder 责任高于 officer，故先扫 shareholder。
 SUBJECT_KEYWORDS = [
-    ("shareholder", [
-        "控股股东", "实际控制人", "实控人", "原实际控制人", "原实控人",
-        "持股5%以上", "持股 5%以上", "5%以上股东", "5%以上的股东",
-        "第一大股东", "二股东", "大股东", "股东减持",
-        "股东收到", "股东因", "原股东", "前股东", "一致行动人",
-    ]),
-    ("officer", [
-        "董事长", "副董事长", "总经理", "副总经理", "总裁",
-        "财务总监", "董事会秘书", "董秘", "证券事务代表",
-        "监事会主席", "独立董事",
-        "时任董事", "时任监事", "时任高管", "时任董秘",
-        "高级管理人员", "高管人员", "聘任的高级管理人员",
-    ]),
+    (
+        "shareholder",
+        [
+            "控股股东",
+            "实际控制人",
+            "实控人",
+            "原实际控制人",
+            "原实控人",
+            "持股5%以上",
+            "持股 5%以上",
+            "5%以上股东",
+            "5%以上的股东",
+            "第一大股东",
+            "二股东",
+            "大股东",
+            "股东减持",
+            "股东收到",
+            "股东因",
+            "原股东",
+            "前股东",
+            "一致行动人",
+        ],
+    ),
+    (
+        "officer",
+        [
+            "董事长",
+            "副董事长",
+            "总经理",
+            "副总经理",
+            "总裁",
+            "财务总监",
+            "董事会秘书",
+            "董秘",
+            "证券事务代表",
+            "监事会主席",
+            "独立董事",
+            "时任董事",
+            "时任监事",
+            "时任高管",
+            "时任董秘",
+            "高级管理人员",
+            "高管人员",
+            "聘任的高级管理人员",
+        ],
+    ),
 ]
 
 DATE_RE = re.compile(r"公告日期[:：]\s*(\d{4}-\d{1,2}-\d{1,2})")
@@ -215,8 +245,7 @@ def _classify_target_relevance(
     title_hits_target = _contains_any_alias(title, target_aliases)
     subject = str(record.get("subject_normalized") or "company")
     looks_like_security_mention = any(
-        _norm_text(keyword) in _norm_text(combined)
-        for keyword in SECURITY_MENTION_ONLY_KEYWORDS
+        _norm_text(keyword) in _norm_text(combined) for keyword in SECURITY_MENTION_ONLY_KEYWORDS
     )
 
     if not title_hits_target and looks_like_security_mention:
@@ -325,9 +354,18 @@ class _TableExtractor(HTMLParser):
 # 说明该 thead 没有显式标注事件类型，应回退到"未分类"。
 # （CR P0-3：避免把"公告日期"误识别为 event_type，导致 E2 频次规则漏命中。）
 _EVENT_TYPE_BLOCKLIST = {
-    "公告日期", "日期", "批复", "批复内容", "批复原因",
-    "处罚日期", "处罚原因", "处罚内容", "处罚机关",
-    "标题", "处理人", "类型",
+    "公告日期",
+    "日期",
+    "批复",
+    "批复内容",
+    "批复原因",
+    "处罚日期",
+    "处罚原因",
+    "处罚内容",
+    "处罚机关",
+    "标题",
+    "处理人",
+    "类型",
 }
 
 

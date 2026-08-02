@@ -7,7 +7,7 @@ namespace, so we monkeypatch that name on the ``finnhub_loader`` module.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pandas as pd
 
@@ -145,9 +145,7 @@ class TestFetch:
         """
         monkeypatch.setenv("FINNHUB_API_KEY", "tok_123")
         monkeypatch.setenv("VIBE_TRADING_DATA_CACHE", "0")
-        monkeypatch.setattr(
-            finnhub_loader, "throttled_get_json", lambda url, **kwargs: _ok_payload()
-        )
+        monkeypatch.setattr(finnhub_loader, "throttled_get_json", lambda url, **kwargs: _ok_payload())
 
         df = DataLoader().fetch(["AAPL.US"], "2024-01-01", "2024-01-31")["AAPL.US"]
         assert df.index.dtype == "datetime64[ns]"
@@ -187,9 +185,7 @@ class TestFetch:
         payload = _ok_payload()
         payload["c"] = [None, 12.5]  # first bar's close is a gap
 
-        monkeypatch.setattr(
-            finnhub_loader, "throttled_get_json", lambda url, **kwargs: payload
-        )
+        monkeypatch.setattr(finnhub_loader, "throttled_get_json", lambda url, **kwargs: payload)
         df = DataLoader().fetch(["AAPL.US"], "2024-01-01", "2024-01-31")["AAPL.US"]
         assert len(df) == 1
         assert df["close"].iloc[0] == 12.5

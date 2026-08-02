@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #133
 # 简要说明: 国泰君安191短周期交易型alpha因子第133号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     ((20-HIGHDAY(HIGH,20))/20)*100 - ((20-LOWDAY(LOW,20))/20)*100
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_133"
 
 __alpha_meta__ = {
-    'id': 'gtja191_133',
-    'theme': ['momentum'],
-    'formula_latex': '((20-highday(high,20))/20)*100-((20-lowday(low,20))/20)*100',
-    'columns_required': ['close', 'high', 'low'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 20,
-    'notes': '',
+    "id": "gtja191_133",
+    "theme": ["momentum"],
+    "formula_latex": "((20-highday(high,20))/20)*100-((20-lowday(low,20))/20)*100",
+    "columns_required": ["close", "high", "low"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 20,
+    "notes": "",
 }
 
 

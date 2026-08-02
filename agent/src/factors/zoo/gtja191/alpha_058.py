@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #58 - 均线偏离度
 # 简要说明: (-1*RANK(DELTA(MEAN(CLOSE,6),3))*RANK((CLOSE-MEAN(CLOSE,6))/MEAN(CLOSE,6)))，类似Alpha#53/#55。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_058",
-    "theme": ['momentum'],
-    "formula_latex": 'COUNT(CLOSE>DELAY(CLOSE,1),20)/20*100',
-    "columns_required": ['close'],
+    "theme": ["momentum"],
+    "formula_latex": "COUNT(CLOSE>DELAY(CLOSE,1),20)/20*100",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
     "min_warmup_bars": 21,
-    "notes": 'Pct of up-days in 20d window.',
+    "notes": "Pct of up-days in 20d window.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

@@ -147,9 +147,7 @@ class TestRiskOverlay:
             partial_fill_rate=0.7,
             bars_per_year=252,
         )
-        ab = overlay_ab_comparison(
-            pos, rets, overlay=cfg, close=close, cost_bps=5.0
-        )
+        ab = overlay_ab_comparison(pos, rets, overlay=cfg, close=close, cost_bps=5.0)
         assert abs(ab["overlay"]["max_drawdown"]) <= abs(ab["baseline"]["max_drawdown"]) + 1e-9
         assert ab["improvement"]["drawdown_reduction"] >= -1e-12
 
@@ -181,9 +179,7 @@ class TestRiskAdjustedRanking:
     def test_cvar_gate(self) -> None:
         rng = np.random.default_rng(1)
         mild = rng.normal(0.0005, 0.008, 400)
-        scored = score_trial_risk_adjusted(
-            mild, max_dd_limit=0.5, min_psr=0.0, max_cvar=0.001
-        )
+        scored = score_trial_risk_adjusted(mild, max_dd_limit=0.5, min_psr=0.0, max_cvar=0.001)
         # Tight CVaR should typically reject noisy series.
         assert "accepted" in scored
 
@@ -345,9 +341,7 @@ class TestHftCosts:
 
     def test_load_hft_cost_model(self) -> None:
         assert load_hft_cost_model({}) is None
-        m = load_hft_cost_model(
-            {"hft_costs": {"spread_bps": 3.0, "adverse_selection_bps": 2.0}}
-        )
+        m = load_hft_cost_model({"hft_costs": {"spread_bps": 3.0, "adverse_selection_bps": 2.0}})
         assert m is not None
         assert m.spread_bps == 3.0
 
@@ -423,9 +417,7 @@ class TestOhlcStopAndRiskImprovement:
         rets = close.pct_change().fillna(0.0)
         pos = pd.DataFrame({"A": 1.0}, index=idx)
         cfg = RiskOverlayConfig(stop_loss=0.05, ohlc_stop=True, bars_per_year=252)
-        out, diag = apply_risk_overlay(
-            pos, rets, config=cfg, close=close, high=high, low=low
-        )
+        out, diag = apply_risk_overlay(pos, rets, config=cfg, close=close, high=high, low=low)
         assert diag["ohlc_stop_events"] >= 1
         assert diag["stop_events"] >= 1
         assert float(out.iloc[10]["A"]) == 0.0

@@ -59,9 +59,7 @@ class MaintenanceBracket:
             raise ValueError("bracket_tier must be non-negative")
         _require_finite("notional_cap", self.notional_cap, positive=True)
         _require_finite("maintenance_rate", self.maintenance_rate)
-        _require_finite(
-            "cumulative_maintenance_amount", self.cumulative_maintenance_amount
-        )
+        _require_finite("cumulative_maintenance_amount", self.cumulative_maintenance_amount)
         if self.maintenance_rate < 0:
             raise ValueError("maintenance_rate must be non-negative")
         if self.cumulative_maintenance_amount < 0:
@@ -101,7 +99,10 @@ class MaintenanceSchedule:
 
     @classmethod
     def from_loader_columns(
-        cls, symbol: str, maintenance_brackets: str, maintenance_bracket_version: str,
+        cls,
+        symbol: str,
+        maintenance_brackets: str,
+        maintenance_bracket_version: str,
     ) -> MaintenanceSchedule:
         """Build a schedule from the loader's ``maintenance_brackets`` /
         ``maintenance_bracket_version`` DataFrame columns.
@@ -178,9 +179,7 @@ class RiskSnapshot:
     fidelity_flags: tuple[str, ...]
 
 
-def maintenance_margin(
-    position: PositionState, mark_price: float, schedule: MaintenanceSchedule
-) -> float:
+def maintenance_margin(position: PositionState, mark_price: float, schedule: MaintenanceSchedule) -> float:
     if position.symbol != schedule.symbol:
         raise ValueError("position and schedule symbols must match")
     _require_finite("mark_price", mark_price, positive=True)
@@ -259,9 +258,7 @@ class MarketRiskFrame:
             raise ValueError("funding rate and settlement timestamp must be paired")
         if self.funding_rate is not None:
             _require_finite("funding_rate", self.funding_rate)
-            settlement = _timestamp(
-                self.funding_settlement_time, "funding_settlement_time"
-            )
+            settlement = _timestamp(self.funding_settlement_time, "funding_settlement_time")
             if settlement != timestamp:
                 raise ValueError("funding settlement timestamp must match frame timestamp")
             object.__setattr__(self, "funding_settlement_time", settlement)
@@ -271,9 +268,7 @@ class MarketRiskFrame:
             raise ValueError("fidelity_flags must not contain duplicates")
 
 
-def _mark_price(
-    position: PositionState, frame: MarketRiskFrame, price_field: str
-) -> float:
+def _mark_price(position: PositionState, frame: MarketRiskFrame, price_field: str) -> float:
     if price_field == "adverse":
         return frame.mark_low if position.quantity > 0 else frame.mark_high
     if price_field not in {"mark_open", "mark_high", "mark_low", "mark_close"}:
@@ -310,9 +305,7 @@ def _position_risks(
         mark_price = _mark_price(position, frame, price_field)
         unrealized_pnl = position.quantity * (mark_price - position.entry_price)
         initial_margin = abs(position.quantity) * mark_price / position.leverage
-        margin_balance = (
-            position.isolated_margin + unrealized_pnl if isolated else None
-        )
+        margin_balance = position.isolated_margin + unrealized_pnl if isolated else None
         risks.append(
             PositionRisk(
                 symbol=position.symbol,
@@ -365,8 +358,7 @@ def evaluate_isolated(
     liquidation_targets = tuple(
         risk.symbol
         for risk in risks
-        if risk.margin_balance is not None
-        and risk.margin_balance <= risk.maintenance_margin
+        if risk.margin_balance is not None and risk.margin_balance <= risk.maintenance_margin
     )
     return _risk_snapshot(
         account,
@@ -388,17 +380,11 @@ class CrossMarginRiskModel:
             raise ValueError("account margin_mode must be 'cross'")
         if any(position.isolated_margin is not None for position in account.positions):
             raise ValueError("cross positions must not have isolated_margin")
-        risks, fidelity_flags = _position_risks(
-            account, frames, price_field, isolated=False
-        )
-        margin_balance = account.wallet_balance + sum(
-            risk.unrealized_pnl for risk in risks
-        )
+        risks, fidelity_flags = _position_risks(account, frames, price_field, isolated=False)
+        margin_balance = account.wallet_balance + sum(risk.unrealized_pnl for risk in risks)
         maintenance = sum(risk.maintenance_margin for risk in risks)
         liquidation_targets = (
-            tuple(position.symbol for position in account.positions)
-            if risks and margin_balance <= maintenance
-            else ()
+            tuple(position.symbol for position in account.positions) if risks and margin_balance <= maintenance else ()
         )
         return _risk_snapshot(
             account,

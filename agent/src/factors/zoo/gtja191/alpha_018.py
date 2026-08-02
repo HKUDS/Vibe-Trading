@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #18 - 条件量价强度
 # 简要说明: RANK(DELTA(VWAP, 1))^3 / RANK(CORR(LOW, MEAN(VOLUME,50), 12))，VWAP一阶变化与量价相关性的比率。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_018",
-    "theme": ['momentum'],
-    "formula_latex": 'CLOSE/DELAY(CLOSE,5)',
-    "columns_required": ['close'],
+    "theme": ["momentum"],
+    "formula_latex": "CLOSE/DELAY(CLOSE,5)",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
     "min_warmup_bars": 6,
-    "notes": '5d price ratio.',
+    "notes": "5d price ratio.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

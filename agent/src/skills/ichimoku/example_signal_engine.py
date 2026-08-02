@@ -4,7 +4,7 @@
 纯 pandas 实现，无外部技术分析库依赖。
 """
 
-from typing import Dict, Optional
+from typing import Dict
 
 import pandas as pd
 
@@ -49,9 +49,7 @@ class SignalEngine:
         self.senkou_b_period = senkou_b_period
         self.displacement = displacement
 
-    def _donchian_mid(
-        self, high: pd.Series, low: pd.Series, period: int
-    ) -> pd.Series:
+    def _donchian_mid(self, high: pd.Series, low: pd.Series, period: int) -> pd.Series:
         """计算 Donchian 通道中线。
 
         公式: (highest_high(period) + lowest_low(period)) / 2
@@ -66,9 +64,7 @@ class SignalEngine:
         """
         return (high.rolling(period).max() + low.rolling(period).min()) / 2
 
-    def generate(
-        self, data_map: Dict[str, pd.DataFrame]
-    ) -> Dict[str, pd.Series]:
+    def generate(self, data_map: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
         """根据一目均衡表五线系统生成交易信号。
 
         Args:
@@ -96,18 +92,12 @@ class SignalEngine:
             tenkan = self._donchian_mid(high, low, self.tenkan_period)
             kijun = self._donchian_mid(high, low, self.kijun_period)
             span_a = ((tenkan + kijun) / 2).shift(self.displacement)
-            span_b = self._donchian_mid(
-                high, low, self.senkou_b_period
-            ).shift(self.displacement)
+            span_b = self._donchian_mid(high, low, self.senkou_b_period).shift(self.displacement)
             # chikou = close.shift(-self.displacement)  # 不参与信号计算
 
             # --- TK 交叉检测 ---
-            tk_cross_up = (tenkan > kijun) & (
-                tenkan.shift(1) <= kijun.shift(1)
-            )
-            tk_cross_down = (tenkan < kijun) & (
-                tenkan.shift(1) >= kijun.shift(1)
-            )
+            tk_cross_up = (tenkan > kijun) & (tenkan.shift(1) <= kijun.shift(1))
+            tk_cross_down = (tenkan < kijun) & (tenkan.shift(1) >= kijun.shift(1))
 
             # --- 云带位置 ---
             cloud_top = pd.concat([span_a, span_b], axis=1).max(axis=1)
@@ -129,9 +119,7 @@ class SignalEngine:
         return result
 
 
-def _fetch_okx(
-    inst_id: str, bar: str = "1D", limit: int = 300
-) -> pd.DataFrame:
+def _fetch_okx(inst_id: str, bar: str = "1D", limit: int = 300) -> pd.DataFrame:
     """从 OKX API 获取K线数据。
 
     Args:
@@ -153,8 +141,15 @@ def _fetch_okx(
     )
     candles = resp.json()["data"]
     columns = [
-        "ts", "open", "high", "low", "close",
-        "vol", "volCcy", "volCcyQuote", "confirm",
+        "ts",
+        "open",
+        "high",
+        "low",
+        "close",
+        "vol",
+        "volCcy",
+        "volCcyQuote",
+        "confirm",
     ]
     df = pd.DataFrame(reversed(candles), columns=columns)
     df["ts"] = pd.to_datetime(df["ts"].astype("int64"), unit="ms")
@@ -174,9 +169,7 @@ if __name__ == "__main__":
     for sym in symbols:
         print(f"获取 {sym} 数据...")
         data_map[sym] = _fetch_okx(sym, bar="1D", limit=300)
-        print(f"  {len(data_map[sym])} 根K线, "
-              f"{data_map[sym].index[0]:%Y-%m-%d} ~ "
-              f"{data_map[sym].index[-1]:%Y-%m-%d}")
+        print(f"  {len(data_map[sym])} 根K线, {data_map[sym].index[0]:%Y-%m-%d} ~ {data_map[sym].index[-1]:%Y-%m-%d}")
 
     engine = SignalEngine()
     signals = engine.generate(data_map)

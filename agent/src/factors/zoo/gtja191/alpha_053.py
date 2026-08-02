@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #53 - 高低价差比
 # 简要说明: (-1*RANK(DELTA(MEAN(CLOSE,6),3))*RANK((CLOSE-MEAN(CLOSE,6))/MEAN(CLOSE,6)))，均值变化与偏离度的组合。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_053",
-    "theme": ['momentum'],
-    "formula_latex": 'COUNT(CLOSE>DELAY(CLOSE,1),12)/12*100',
-    "columns_required": ['close'],
+    "theme": ["momentum"],
+    "formula_latex": "COUNT(CLOSE>DELAY(CLOSE,1),12)/12*100",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 12,
     "min_warmup_bars": 13,
-    "notes": 'Pct of up-days in 12d window.',
+    "notes": "Pct of up-days in 12d window.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

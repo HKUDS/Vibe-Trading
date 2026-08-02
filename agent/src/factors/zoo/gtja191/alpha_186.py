@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #186
 # 简要说明: 国泰君安191短周期交易型alpha因子第186号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: alpha172 averaged with its 6-day lag.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_186"
 
 __alpha_meta__ = {
-    'id': 'gtja191_186',
-    'theme': ['momentum'],
-    'formula_latex': 'see body (alpha172 averaged with its 6-day lag)',
-    'columns_required': ['close', 'high', 'low'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 14,
-    'min_warmup_bars': 27,
-    'notes': 'alpha172 averaged with its 6-day lag.',
+    "id": "gtja191_186",
+    "theme": ["momentum"],
+    "formula_latex": "see body (alpha172 averaged with its 6-day lag)",
+    "columns_required": ["close", "high", "low"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 14,
+    "min_warmup_bars": 27,
+    "notes": "alpha172 averaged with its 6-day lag.",
 }
 
 

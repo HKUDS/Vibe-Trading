@@ -12,7 +12,6 @@ backends.
 
 from __future__ import annotations
 
-import copy
 import threading
 import uuid
 from dataclasses import replace
@@ -27,7 +26,6 @@ from src.strategy_store.models import (
     ArtifactType,
     BenchResult,
     DecaySnapshot,
-    DecaySignal,
 )
 
 
@@ -114,9 +112,7 @@ class StrategyStoreProtocol(Protocol):
         """Record a bench result. Returns the result ID."""
         ...
 
-    def get_bench_history(
-        self, artifact_id: str, *, limit: int = 50
-    ) -> Sequence[BenchResult]:
+    def get_bench_history(self, artifact_id: str, *, limit: int = 50) -> Sequence[BenchResult]:
         """Get bench history for an artifact, newest first."""
         ...
 
@@ -126,9 +122,7 @@ class StrategyStoreProtocol(Protocol):
         """Record a decay monitoring snapshot. Returns the snapshot ID."""
         ...
 
-    def get_decay_history(
-        self, artifact_id: str, *, limit: int = 20
-    ) -> Sequence[DecaySnapshot]:
+    def get_decay_history(self, artifact_id: str, *, limit: int = 20) -> Sequence[DecaySnapshot]:
         """Get decay snapshots for an artifact, newest first."""
         ...
 
@@ -164,10 +158,7 @@ class InMemoryStrategyStore:
         """
         for existing in self._artifacts.values():
             if existing.name == artifact.name and existing.universe == artifact.universe:
-                raise ValueError(
-                    f"artifact '{artifact.name}' already exists in "
-                    f"universe '{artifact.universe}'"
-                )
+                raise ValueError(f"artifact '{artifact.name}' already exists in universe '{artifact.universe}'")
         now = _now_iso()
         artifact_id = artifact.id or _new_artifact_id()
         stored = replace(
@@ -279,9 +270,7 @@ class InMemoryStrategyStore:
         return stored.id
 
     @_synchronized
-    def get_bench_history(
-        self, artifact_id: str, *, limit: int = 50
-    ) -> Sequence[BenchResult]:
+    def get_bench_history(self, artifact_id: str, *, limit: int = 50) -> Sequence[BenchResult]:
         """Return bench results for an artifact, newest first."""
         matched = [r for r in self._bench_results if r.artifact_id == artifact_id]
         matched.sort(key=lambda r: r.created_at or "", reverse=True)
@@ -307,9 +296,7 @@ class InMemoryStrategyStore:
         return stored.id
 
     @_synchronized
-    def get_decay_history(
-        self, artifact_id: str, *, limit: int = 20
-    ) -> Sequence[DecaySnapshot]:
+    def get_decay_history(self, artifact_id: str, *, limit: int = 20) -> Sequence[DecaySnapshot]:
         """Return decay snapshots for an artifact, newest first."""
         matched = [s for s in self._decay_snapshots if s.artifact_id == artifact_id]
         matched.sort(key=lambda s: s.created_at or "", reverse=True)

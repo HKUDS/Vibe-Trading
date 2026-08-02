@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Alpha #4 - 条件收益指示
 # 简要说明: (-1 * Ts_Rank(rank(low), 9))，对最低价的9日时间序列排名取负。
@@ -36,25 +35,24 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_004"
 
 __alpha_meta__ = {
-    'id': 'alpha101_004',
-    'nickname': 'Kakushadze Alpha #4',
-    'theme': ['reversal'],
-    'formula_latex': '-1 * Ts_Rank(rank(low), 9)',
-    'columns_required': ['low', 'close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 9,
-    'notes': '',
+    "id": "alpha101_004",
+    "nickname": "Kakushadze Alpha #4",
+    "theme": ["reversal"],
+    "formula_latex": "-1 * Ts_Rank(rank(low), 9)",
+    "columns_required": ["low", "close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 9,
+    "notes": "",
 }
 
 
 def compute(panel: dict) -> pd.DataFrame:
     """Compute the alpha on the OHLCV+ panel and return a wide DataFrame."""
     low = panel["low"]
-
 
     # Helper aliases (local closures keep the file standalone & purity-safe).
     out = -1.0 * ts_rank(rank(low), 9)

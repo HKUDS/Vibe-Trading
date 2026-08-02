@@ -146,8 +146,7 @@ def _quarterly_flow_frames(df: pd.DataFrame, duration: pd.Series) -> pd.DataFram
         if annual["period_end"] in quarter_ends:
             continue
         inside = quarters[
-            (quarters["period_start"] >= annual["period_start"])
-            & (quarters["period_end"] < annual["period_end"])
+            (quarters["period_start"] >= annual["period_start"]) & (quarters["period_end"] < annual["period_end"])
         ]
         if len(inside) != 3:
             continue
@@ -292,10 +291,7 @@ def _to_ttm_flow_series(df: pd.DataFrame) -> pd.DataFrame:
     ttm = df.sort_values("period_end").copy()
     ttm["value"] = ttm["value"].rolling(window=4, min_periods=4).sum()
     filed_values = list(ttm["filed"])
-    ttm["filed"] = [
-        pd.NaT if pos < 3 else max(filed_values[pos - 3 : pos + 1])
-        for pos in range(len(filed_values))
-    ]
+    ttm["filed"] = [pd.NaT if pos < 3 else max(filed_values[pos - 3 : pos + 1]) for pos in range(len(filed_values))]
     return ttm.dropna(subset=["filed", "value"])
 
 
@@ -313,9 +309,7 @@ def _load_schema() -> Any:
     try:
         return importlib.import_module("backtest.loaders._fundamental_schema")
     except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            "backtest.loaders._fundamental_schema is required for fundamentals loading"
-        ) from exc
+        raise RuntimeError("backtest.loaders._fundamental_schema is required for fundamentals loading") from exc
 
 
 def _resolve_field_name(schema: Any, field: str) -> str:

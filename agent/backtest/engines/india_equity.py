@@ -87,9 +87,7 @@ class IndiaEquityEngine(BaseEngine):
                     return False
 
         # 3. Circuit bands, tested at execution time (see _blocked_by_limit).
-        if self.price_limit and _blocked_by_limit(
-            self, symbol, direction, bar, float(self.price_limit)
-        ):
+        if self.price_limit and _blocked_by_limit(self, symbol, direction, bar, float(self.price_limit)):
             return False
 
         return True
@@ -106,15 +104,15 @@ class IndiaEquityEngine(BaseEngine):
         """
         notional = size * price
         brokerage = notional * self.in_brokerage
-        exchange_txn = notional * self.in_exchange_txn        # bilateral
-        sebi_fee = notional * self.in_sebi_fee                # bilateral
+        exchange_txn = notional * self.in_exchange_txn  # bilateral
+        sebi_fee = notional * self.in_sebi_fee  # bilateral
         gst = (brokerage + exchange_txn + sebi_fee) * self.in_gst
-        stt = notional * self.in_stt                          # bilateral (delivery)
+        stt = notional * self.in_stt  # bilateral (delivery)
         comm = brokerage + exchange_txn + sebi_fee + gst + stt
         if is_open:
-            comm += notional * self.in_stamp_duty             # stamp duty: buy-only
+            comm += notional * self.in_stamp_duty  # stamp duty: buy-only
         else:
-            comm += self.in_dp_charge                         # DP charge: sell-only, flat
+            comm += self.in_dp_charge  # DP charge: sell-only, flat
         return comm
 
     def apply_slippage(self, price: float, direction: int) -> float:

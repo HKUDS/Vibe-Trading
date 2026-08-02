@@ -102,9 +102,7 @@ def save_qveris_config(config: QVerisConfig) -> QVerisConfig:
         budget_credits_per_session=max(float(config.budget_credits_per_session), 0.0),
     )
     QVERIS_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=".qveris.", suffix=".tmp", dir=str(QVERIS_CONFIG_PATH.parent)
-    )
+    fd, tmp_name = tempfile.mkstemp(prefix=".qveris.", suffix=".tmp", dir=str(QVERIS_CONFIG_PATH.parent))
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -266,9 +264,7 @@ class QVerisClient:
             result["full_content_download_error"] = str(exc)
         return payload
 
-    def search(
-        self, query: str, *, limit: int = 20, session_id: str | None = None
-    ) -> dict[str, Any]:
+    def search(self, query: str, *, limit: int = 20, session_id: str | None = None) -> dict[str, Any]:
         """Call ``POST /search``."""
         body: dict[str, Any] = {"query": query, "limit": min(max(int(limit), 1), 100)}
         if session_id:
@@ -400,9 +396,7 @@ class QVerisSearchTool(_QVerisBaseTool):
             return _json_response({"ok": False, "error": "QVeris is not configured"})
         query = kwargs.get("query")
         if not isinstance(query, str) or not query.strip():
-            return _json_response(
-                {"ok": False, "error": "query is required (non-empty string)"}
-            )
+            return _json_response({"ok": False, "error": "query is required (non-empty string)"})
         try:
             limit = _positive_int(kwargs.get("limit"), "limit", 20)
         except ValueError as exc:
@@ -471,9 +465,7 @@ class QVerisExecuteTool(_QVerisBaseTool):
         "required": ["tool_id", "parameters"],
     }
 
-    def _quote(
-        self, client: QVerisClient, tool_id: str, kwargs: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _quote(self, client: QVerisClient, tool_id: str, kwargs: dict[str, Any]) -> dict[str, Any]:
         quote = {
             "tool_id": tool_id,
             "expected_cost": kwargs.get("expected_cost"),
@@ -504,9 +496,7 @@ class QVerisExecuteTool(_QVerisBaseTool):
             return _json_response({"ok": False, "error": "QVeris is not configured"})
         raw_tool_id = kwargs.get("tool_id")
         if not isinstance(raw_tool_id, str) or not raw_tool_id.strip():
-            return _json_response(
-                {"ok": False, "error": "tool_id is required (non-empty string)"}
-            )
+            return _json_response({"ok": False, "error": "tool_id is required (non-empty string)"})
         if "parameters" not in kwargs or not isinstance(kwargs["parameters"], Mapping):
             return _json_response(
                 {
@@ -515,9 +505,7 @@ class QVerisExecuteTool(_QVerisBaseTool):
                 }
             )
         try:
-            max_response_size = _positive_int(
-                kwargs.get("max_response_size"), "max_response_size", 20480
-            )
+            max_response_size = _positive_int(kwargs.get("max_response_size"), "max_response_size", 20480)
         except ValueError as exc:
             return _json_response({"ok": False, "error": str(exc)})
         parameters = dict(kwargs["parameters"])
@@ -530,14 +518,8 @@ class QVerisExecuteTool(_QVerisBaseTool):
         with _SESSION_BUDGET_LOCK:
             spent = _SESSION_SPEND.get(session_id, 0.0)
             reserved = _SESSION_RESERVED.get(session_id, 0.0)
-            valid_quote = (
-                expected is not None and math.isfinite(expected) and expected >= 0.0
-            )
-            if (
-                not valid_quote
-                or spent >= budget
-                or spent + reserved + expected > budget
-            ):
+            valid_quote = expected is not None and math.isfinite(expected) and expected >= 0.0
+            if not valid_quote or spent >= budget or spent + reserved + expected > budget:
                 return _json_response(
                     {
                         "ok": False,

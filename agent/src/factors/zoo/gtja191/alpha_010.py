@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #10 - 条件收益平方极值
 # 简要说明: RANK(MAX(((RET<0)?STD(RET,20):CLOSE)^2,5))，条件收益平方的5日最大值。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_010",
-    "theme": ['volatility', 'reversal'],
-    "formula_latex": 'RANK(MAX(((RET<0)?STD(RET,20):CLOSE)^2,5))',
-    "columns_required": ['close'],
+    "theme": ["volatility", "reversal"],
+    "formula_latex": "RANK(MAX(((RET<0)?STD(RET,20):CLOSE)^2,5))",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
     "min_warmup_bars": 21,
-    "notes": 'Per-day return = pct_change(1) via (close - delay(close,1))/delay(close,1).',
+    "notes": "Per-day return = pct_change(1) via (close - delay(close,1))/delay(close,1).",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

@@ -25,8 +25,7 @@ def _dedupe_finish_reason(raw: str) -> str:
     canonical suffix so ReAct equality checks survive.
     """
     return next(
-        (m for m in ("tool_calls", "function_call", "content_filter", "length", "stop")
-         if raw.endswith(m)),
+        (m for m in ("tool_calls", "function_call", "content_filter", "length", "stop") if raw.endswith(m)),
         raw,
     )
 
@@ -142,8 +141,7 @@ class ProviderStreamError(RuntimeError):
                 "root (e.g. the OpenAI-compatible '/v1' path), not the site root"
             )
         super().__init__(
-            f"provider_stream_error provider={provider} model={model}: "
-            f"{type(original).__name__}: {safe_message}{hint}"
+            f"provider_stream_error provider={provider} model={model}: {type(original).__name__}: {safe_message}{hint}"
         )
 
     @property
@@ -286,9 +284,7 @@ class ChatLLM:
         """
         self._llm = build_llm(model_name=model_name)
         runtime_cfg = get_env_config().llm
-        configured_model = (
-            model_name or runtime_cfg.langchain_model_name
-        ).strip()
+        configured_model = (model_name or runtime_cfg.langchain_model_name).strip()
         self.model_name = configured_model
         self.runtime_snapshot = LLMRuntimeSnapshot(
             provider=runtime_cfg.langchain_provider.strip().lower() or "openai",
@@ -296,7 +292,12 @@ class ChatLLM:
             reasoning_effort=runtime_cfg.langchain_reasoning_effort.strip().lower(),
         )
 
-    def chat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> LLMResponse:
+    def chat(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        timeout: Optional[int] = None,
+    ) -> LLMResponse:
         """Call the LLM synchronously.
 
         Args:
@@ -372,10 +373,7 @@ class ChatLLM:
                     return LLMResponse(content="", tool_calls=[], finish_reason="stop")
                 # Endpoint streamed nothing (no SSE support); a non-streaming
                 # invoke still works — fall back rather than return empty.
-                logger.warning(
-                    "Provider stream returned no chunks; falling back to "
-                    "non-streaming invoke."
-                )
+                logger.warning("Provider stream returned no chunks; falling back to non-streaming invoke.")
                 return self.chat(messages, tools=tools, timeout=timeout)
             response = self._parse_response(accumulated)
             if pending_text and not (response.has_tool_calls and response.content == ""):
@@ -386,8 +384,7 @@ class ChatLLM:
                 # Provider streamed zero chunks (endpoint lacks real SSE); a
                 # non-streaming invoke still returns a valid response.
                 logger.warning(
-                    "Provider stream produced no chunks (%s); falling back to "
-                    "non-streaming invoke.",
+                    "Provider stream produced no chunks (%s); falling back to non-streaming invoke.",
                     type(exc).__name__,
                 )
                 return self.chat(messages, tools=tools, timeout=timeout)
@@ -451,15 +448,9 @@ class ChatLLM:
         response_model = response_metadata.get("model_name") or response_metadata.get("model")
         if response_model is not None:
             response_model = str(response_model).strip() or None
-        thought_signatures_by_id, thought_signatures_by_index = (
-            ChatLLM._tool_call_thought_signature_maps(ai_message)
-        )
+        thought_signatures_by_id, thought_signatures_by_index = ChatLLM._tool_call_thought_signature_maps(ai_message)
         raw_tool_calls = additional_kwargs.get("tool_calls") or []
-        raw_by_id = {
-            raw.get("id"): raw
-            for raw in raw_tool_calls
-            if isinstance(raw, dict) and raw.get("id")
-        }
+        raw_by_id = {raw.get("id"): raw for raw in raw_tool_calls if isinstance(raw, dict) and raw.get("id")}
 
         native_tool_calls: list[ToolCallRequest] = []
         for index, tc in enumerate(ai_message.tool_calls):
@@ -495,13 +486,9 @@ class ChatLLM:
             if dsml_tool_calls
             else "tool_calls"
             if raw_finish_reason == "tool_use"
-            else _dedupe_finish_reason(
-                raw_finish_reason
-            )
+            else _dedupe_finish_reason(raw_finish_reason)
         )
-        content_filter_triggered = is_content_filter_triggered(
-            raw_finish_reason
-        )
+        content_filter_triggered = is_content_filter_triggered(raw_finish_reason)
 
         return LLMResponse(
             content="" if dsml_tool_calls else content,
@@ -525,9 +512,7 @@ def _extract_tool_call_extra_content(raw_tool_call: Any) -> Dict[str, Any]:
         extra_content.update(raw_extra)
         google_extra = raw_extra.get("google")
         if isinstance(google_extra, dict):
-            signature = google_extra.get("thought_signature") or google_extra.get(
-                "thoughtSignature"
-            )
+            signature = google_extra.get("thought_signature") or google_extra.get("thoughtSignature")
             if signature:
                 extra_content["thought_signature"] = signature
 

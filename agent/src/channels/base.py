@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Any
 
 from src.channels.bus.events import InboundMessage, OutboundMessage
@@ -82,9 +81,7 @@ class BaseChannel(ABC):
 
     # --- Streaming hooks (override in subclasses) ---
 
-    async def send_delta(
-        self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None
-    ) -> None:
+    async def send_delta(self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None) -> None:
         """Deliver a streaming text chunk.
 
         Override in subclasses to enable streaming. Implementations should
@@ -95,9 +92,7 @@ class BaseChannel(ABC):
         ``_stream_id`` rather than only by ``chat_id``.
         """
 
-    async def send_reasoning_delta(
-        self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None
-    ) -> None:
+    async def send_reasoning_delta(self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None) -> None:
         """Stream a chunk of model reasoning/thinking content.
 
         Default implementation emits no extra event. Channels with a native low-emphasis primitive
@@ -111,9 +106,7 @@ class BaseChannel(ABC):
         rather than only by ``chat_id``.
         """
 
-    async def send_reasoning_end(
-        self, chat_id: str, metadata: dict[str, Any] | None = None
-    ) -> None:
+    async def send_reasoning_end(self, chat_id: str, metadata: dict[str, Any] | None = None) -> None:
         """Mark the end of a reasoning stream segment.
 
         Default implementation emits no extra event. Channels that buffer ``send_reasoning_delta``
@@ -155,11 +148,7 @@ class BaseChannel(ABC):
     def supports_streaming(self) -> bool:
         """True when config enables streaming AND this subclass implements send_delta."""
         cfg = self.config
-        streaming = (
-            cfg.get("streaming", False)
-            if isinstance(cfg, dict)
-            else getattr(cfg, "streaming", False)
-        )
+        streaming = cfg.get("streaming", False) if isinstance(cfg, dict) else getattr(cfg, "streaming", False)
         return bool(streaming) and type(self).send_delta is not BaseChannel.send_delta
 
     def is_allowed(self, sender_id: str) -> bool:
@@ -200,12 +189,13 @@ class BaseChannel(ABC):
                 )
                 logger.info(
                     "Sent pairing code %s to sender %s in chat %s",
-                    code, sender_id, chat_id,
+                    code,
+                    sender_id,
+                    chat_id,
                 )
             else:
                 logger.warning(
-                    "Access denied for sender %s. "
-                    "Add them to allow_from list in config to grant access.",
+                    "Access denied for sender %s. Add them to allow_from list in config to grant access.",
                     sender_id,
                 )
             return

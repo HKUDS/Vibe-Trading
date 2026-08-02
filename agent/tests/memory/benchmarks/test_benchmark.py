@@ -27,7 +27,7 @@ from .runner import (
     run_ab_comparison,
     tokenize,
 )
-from .metrics import mean_reciprocal_rank, ndcg_at_k, precision_at_k
+from .metrics import precision_at_k
 
 # Project root for report output
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -40,9 +40,7 @@ REPORT_PATH = PROJECT_ROOT / "bench_report.json"
 
 
 @pytest.fixture(scope="session")
-def ab_result(
-    memories_corpus: list[dict[str, Any]], queries_dataset: list[dict[str, Any]]
-) -> ABResult:
+def ab_result(memories_corpus: list[dict[str, Any]], queries_dataset: list[dict[str, Any]]) -> ABResult:
     """Run A/B comparison once and share across all tests."""
     return run_ab_comparison(memories_corpus, queries_dataset)
 
@@ -66,9 +64,7 @@ class TestP5Gate:
         if ab_result.baseline_p5 == 0:
             pytest.skip("Baseline P@5 is 0; relative improvement undefined")
 
-        improvement = (
-            (ab_result.treatment_p5 - ab_result.baseline_p5) / ab_result.baseline_p5
-        )
+        improvement = (ab_result.treatment_p5 - ab_result.baseline_p5) / ab_result.baseline_p5
         assert improvement >= 0.10, (
             f"P@5 improvement {improvement:.2%} < 10% threshold. "
             f"Baseline={ab_result.baseline_p5:.4f}, "
@@ -78,8 +74,7 @@ class TestP5Gate:
     def test_mrr_no_regression(self, ab_result: ABResult) -> None:
         """Verify Treatment MRR does not regress vs Baseline."""
         assert ab_result.treatment_mrr >= ab_result.baseline_mrr * 0.95, (
-            f"MRR regression: Treatment={ab_result.treatment_mrr:.4f} < "
-            f"95% of Baseline={ab_result.baseline_mrr:.4f}"
+            f"MRR regression: Treatment={ab_result.treatment_mrr:.4f} < 95% of Baseline={ab_result.baseline_mrr:.4f}"
         )
 
     def test_ndcg5_no_regression(self, ab_result: ABResult) -> None:
@@ -117,23 +112,16 @@ class TestDifficultyStratified:
         for q in hard_queries:
             qt = tokenize(q.query)
             b_results = retrieve_top_k(qt, corpus, treatment=False)
-            t_results = retrieve_top_k(
-                qt, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len
-            )
-            baseline_scores.append(
-                precision_at_k(b_results, q.ground_truth_top5, k=5)
-            )
-            treatment_scores.append(
-                precision_at_k(t_results, q.ground_truth_top5, k=5)
-            )
+            t_results = retrieve_top_k(qt, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len)
+            baseline_scores.append(precision_at_k(b_results, q.ground_truth_top5, k=5))
+            treatment_scores.append(precision_at_k(t_results, q.ground_truth_top5, k=5))
 
         baseline_mean = sum(baseline_scores) / len(baseline_scores)
         treatment_mean = sum(treatment_scores) / len(treatment_scores)
 
         # Hard queries should benefit from BM25 + importance weighting
         assert treatment_mean >= baseline_mean, (
-            f"Hard queries did not benefit: "
-            f"Treatment P@5={treatment_mean:.4f} < Baseline={baseline_mean:.4f}"
+            f"Hard queries did not benefit: Treatment P@5={treatment_mean:.4f} < Baseline={baseline_mean:.4f}"
         )
 
     def test_no_regression_easy_queries(
@@ -155,15 +143,9 @@ class TestDifficultyStratified:
         for q in easy_queries:
             qt = tokenize(q.query)
             b_results = retrieve_top_k(qt, corpus, treatment=False)
-            t_results = retrieve_top_k(
-                qt, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len
-            )
-            baseline_scores.append(
-                precision_at_k(b_results, q.ground_truth_top5, k=5)
-            )
-            treatment_scores.append(
-                precision_at_k(t_results, q.ground_truth_top5, k=5)
-            )
+            t_results = retrieve_top_k(qt, corpus, treatment=True, idf=idf, avg_doc_len=avg_doc_len)
+            baseline_scores.append(precision_at_k(b_results, q.ground_truth_top5, k=5))
+            treatment_scores.append(precision_at_k(t_results, q.ground_truth_top5, k=5))
 
         baseline_mean = sum(baseline_scores) / len(baseline_scores)
         treatment_mean = sum(treatment_scores) / len(treatment_scores)
@@ -171,8 +153,7 @@ class TestDifficultyStratified:
         # Allow at most 5% relative degradation on easy queries
         threshold = baseline_mean * 0.95
         assert treatment_mean >= threshold, (
-            f"Easy queries regressed: "
-            f"Treatment P@5={treatment_mean:.4f} < 95% of Baseline={baseline_mean:.4f}"
+            f"Easy queries regressed: Treatment P@5={treatment_mean:.4f} < 95% of Baseline={baseline_mean:.4f}"
         )
 
 

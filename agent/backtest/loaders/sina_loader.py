@@ -27,10 +27,7 @@ from backtest.loaders.registry import register
 
 logger = logging.getLogger(__name__)
 
-_BASE_URL = (
-    "https://stock.finance.sina.com.cn/usstock/api/jsonp_v2.php/"
-    "var%20x=/US_MinKService.getDailyK"
-)
+_BASE_URL = "https://stock.finance.sina.com.cn/usstock/api/jsonp_v2.php/var%20x=/US_MinKService.getDailyK"
 _HOST_KEY = "sina"
 _MIN_INTERVAL_ENV = "VIBE_TRADING_SINA_MIN_INTERVAL"
 _DEFAULT_MIN_INTERVAL = 0.5
@@ -109,13 +106,8 @@ def _bars_to_frame(bars: list, start_date: str, end_date: str) -> Optional[pd.Da
     frame = pd.DataFrame(rows)
     frame["trade_date"] = pd.to_datetime(frame["trade_date"])
     frame = frame.set_index("trade_date").sort_index()
-    frame = frame[["open", "high", "low", "close", "volume"]].dropna(
-        subset=["open", "high", "low", "close"]
-    )
-    window = frame.loc[
-        (frame.index >= pd.Timestamp(start_date))
-        & (frame.index <= pd.Timestamp(end_date))
-    ]
+    frame = frame[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
+    window = frame.loc[(frame.index >= pd.Timestamp(start_date)) & (frame.index <= pd.Timestamp(end_date))]
     return window if not window.empty else None
 
 
@@ -181,7 +173,10 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self, code: str, start_date: str, end_date: str,
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
     ) -> Optional[pd.DataFrame]:
         """Fetch and parse one symbol's daily bars, or ``None`` if non-US/empty."""
         if not _is_us_equity(code):

@@ -145,7 +145,10 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self, code: str, start_date: str, end_date: str,
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
     ) -> Optional[pd.DataFrame]:
         """Fetch and parse one symbol's daily bars; ``None`` on no data.
 

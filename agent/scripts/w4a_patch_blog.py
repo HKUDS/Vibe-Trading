@@ -65,9 +65,7 @@ def _patch_stats(text: str, entry: dict[str, Any]) -> str:
         value = entry.get(key)
         if value is None:
             continue
-        pattern = re.compile(
-            rf'(<span class="{span_class}">)\[TBD\](</span>)'
-        )
+        pattern = re.compile(rf'(<span class="{span_class}">)\[TBD\](</span>)')
         text = pattern.sub(rf"\g<1>{int(value)}\g<2>", text)
     return text
 
@@ -115,9 +113,10 @@ def _theme_survival_rows(entry: dict[str, Any]) -> str:
 def _patch_theme_table(text: str, entry: dict[str, Any]) -> str:
     new_rows = _theme_survival_rows(entry)
     pattern = re.compile(
-        r'(<tbody>)(.*?)(</tbody>)',
+        r"(<tbody>)(.*?)(</tbody>)",
         re.DOTALL,
     )
+
     # The HTML has exactly one <tbody> inside the theme-table; surgical replace.
     def _swap(match: re.Match[str]) -> str:
         body = match.group(2)
@@ -141,13 +140,13 @@ def _build_top5_cards(entry: dict[str, Any]) -> str:
         ic = row.get("ic_mean", 0.0)
         ir = row.get("ir", 0.0)
         cards.append(
-            "        <article class=\"alpha-card\">\n"
-            f"          <span class=\"alpha-id\">{html.escape(aid)}</span>\n"
-            f"          <pre class=\"formula-block\"><code>{formula}</code></pre>\n"
-            "          <p class=\"alpha-note\">"
+            '        <article class="alpha-card">\n'
+            f'          <span class="alpha-id">{html.escape(aid)}</span>\n'
+            f'          <pre class="formula-block"><code>{formula}</code></pre>\n'
+            '          <p class="alpha-note">'
             f"Mean IC = {ic:.4f}, IR = {ir:.4f} over the CSI 300 / 2018&ndash;2025 window. "
             "Formula reproduced verbatim from the registry "
-            f"(<code>__alpha_meta__[\"formula_latex\"]</code> of <code>{html.escape(aid)}</code>)."
+            f'(<code>__alpha_meta__["formula_latex"]</code> of <code>{html.escape(aid)}</code>).'
             "</p>\n"
             "        </article>"
         )
@@ -164,10 +163,10 @@ def _build_dead_cards(entry: dict[str, Any]) -> str:
         cat = row.get("category", "dead")
         ir = row.get("ir", 0.0)
         cards.append(
-            "        <article class=\"alpha-card\">\n"
-            f"          <span class=\"alpha-id\">{html.escape(aid)} ({html.escape(cat)})</span>\n"
-            f"          <pre class=\"formula-block\"><code>{formula}</code></pre>\n"
-            "          <p class=\"alpha-note\">"
+            '        <article class="alpha-card">\n'
+            f'          <span class="alpha-id">{html.escape(aid)} ({html.escape(cat)})</span>\n'
+            f'          <pre class="formula-block"><code>{formula}</code></pre>\n'
+            '          <p class="alpha-note">'
             f"Mean IC = {ic:.4f}, IR = {ir:.4f}. Worst-performing slice of the gtja191 "
             "zoo on CSI 300 / 2018&ndash;2025 by raw IC."
             "</p>\n"
@@ -179,7 +178,7 @@ def _build_dead_cards(entry: dict[str, Any]) -> str:
 def _patch_top5(text: str, entry: dict[str, Any]) -> str:
     cards = _build_top5_cards(entry)
     pattern = re.compile(
-        r'(<h3>Top 5 surviving alphas</h3>.*?</p>\s*)'  # heading + lead paragraph
+        r"(<h3>Top 5 surviving alphas</h3>.*?</p>\s*)"  # heading + lead paragraph
         r'(?:<article class="alpha-card">.*?</article>\s*){5}',
         re.DOTALL,
     )
@@ -189,7 +188,7 @@ def _patch_top5(text: str, entry: dict[str, Any]) -> str:
 def _patch_dead(text: str, entry: dict[str, Any]) -> str:
     cards = _build_dead_cards(entry)
     pattern = re.compile(
-        r'(<h3>Three famously dead alphas</h3>.*?</p>\s*)'
+        r"(<h3>Three famously dead alphas</h3>.*?</p>\s*)"
         r'(?:<article class="alpha-card">.*?</article>\s*){3}',
         re.DOTALL,
     )
@@ -222,13 +221,9 @@ def main() -> int:
             f"failed during W4.a (reason: {html.escape(str(reason))}). All TBD numbers below "
             "remain to be filled in 0.1.9 once the bench is re-run.</p>"
         )
-        text = text.replace(
-            'roadmap W4.a). This post',
-            f'roadmap W4.a). {note} This post'
-        )
+        text = text.replace("roadmap W4.a). This post", f"roadmap W4.a). {note} This post")
         HTML_PATH.write_text(text, encoding="utf-8")
-        print(f"bench failed; left TBDs intact and added note. tbd count = "
-              f"{text.count('[TBD]')}", file=sys.stderr)
+        print(f"bench failed; left TBDs intact and added note. tbd count = {text.count('[TBD]')}", file=sys.stderr)
         return 0
 
     text = _patch_stats(text, entry)

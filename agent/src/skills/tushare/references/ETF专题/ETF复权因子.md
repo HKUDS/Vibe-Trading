@@ -43,11 +43,9 @@ adj_factor | float | Y | 复权因子
 **接口使用**
 
 ```python
-
 pro = ts.pro_api()
 
-df = pro.fund_adj(ts_code='513100.SH', start_date='20190101', end_date='20190926')
-
+df = pro.fund_adj(ts_code="513100.SH", start_date="20190101", end_date="20190926")
 ```
 
 <br>

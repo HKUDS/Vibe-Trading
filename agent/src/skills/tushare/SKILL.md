@@ -31,13 +31,13 @@ import os
 import tushare as ts
 
 # 读取环境变量中的token, 或者读取本地记录的token
-token = os.getenv('TUSHARE_TOKEN') or ts.get_token()
+token = os.getenv("TUSHARE_TOKEN") or ts.get_token()
 
 # 初始化pro接口实例
 pro = ts.pro_api(token)
 
 # 查询数据接口（*股票列表*），获取上市交易的股票列表
-df = pro.stock_basic(list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
+df = pro.stock_basic(list_status="L", fields="ts_code,symbol,name,area,industry,list_date")
 print(df)
 ```
 

@@ -43,15 +43,15 @@ class MaCrossStrategy(CtaTemplate):
     # ── Parameters (editable in the vnpy UI) ─────────────────────────────
     fast_window: int = 10
     slow_window: int = 30
-    trade_long_only: bool = False   # True for A-share stocks (no short selling)
+    trade_long_only: bool = False  # True for A-share stocks (no short selling)
 
     parameters = ["fast_window", "slow_window", "trade_long_only"]
 
     # ── Variables (live state displayed in the vnpy UI) ───────────────────
-    fast_ma0: float = 0.0    # fast MA, current bar
-    fast_ma1: float = 0.0    # fast MA, previous bar
-    slow_ma0: float = 0.0    # slow MA, current bar
-    slow_ma1: float = 0.0    # slow MA, previous bar
+    fast_ma0: float = 0.0  # fast MA, current bar
+    fast_ma1: float = 0.0  # fast MA, previous bar
+    slow_ma0: float = 0.0  # slow MA, current bar
+    slow_ma1: float = 0.0  # slow MA, previous bar
 
     variables = ["fast_ma0", "fast_ma1", "slow_ma0", "slow_ma1"]
 

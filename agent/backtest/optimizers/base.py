@@ -88,9 +88,7 @@ class BaseOptimizer(ABC):
     # Hooks
     # ------------------------------------------------------------------
 
-    def _build_context(
-        self, window: pd.DataFrame, active: List[str]
-    ) -> "Dict[str, Any] | None":
+    def _build_context(self, window: pd.DataFrame, active: List[str]) -> "Dict[str, Any] | None":
         """Build context dict for ``_calc_weights``.
 
         Default: covariance only. Override to add means, vols, etc.

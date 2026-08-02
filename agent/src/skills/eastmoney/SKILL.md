@@ -27,9 +27,9 @@ print(FundFlowTool().execute(codes=["600519.SH", "00700.HK"], period="daily", da
 ```python
 from backtest.loaders.eastmoney_client import resolve_secid, get_json
 
-resolve_secid("600519.SH")   # -> "1.600519"
-resolve_secid("00700.HK")    # -> "116.00700"
-resolve_secid("AAPL.US")     # -> "105.AAPL"（经 suggest 端点解析并进程内缓存）
+resolve_secid("600519.SH")  # -> "1.600519"
+resolve_secid("00700.HK")  # -> "116.00700"
+resolve_secid("AAPL.US")  # -> "105.AAPL"（经 suggest 端点解析并进程内缓存）
 ```
 
 ## 参数格式说明

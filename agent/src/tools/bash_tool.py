@@ -65,19 +65,28 @@ class BashTool(BaseTool):
             )
             stdout = result.stdout[:_OUTPUT_LIMIT] if len(result.stdout) > _OUTPUT_LIMIT else result.stdout
             stderr = result.stderr[:_OUTPUT_LIMIT] if len(result.stderr) > _OUTPUT_LIMIT else result.stderr
-            return json.dumps({
-                "status": "ok" if result.returncode == 0 else "error",
-                "exit_code": result.returncode,
-                "stdout": stdout,
-                "stderr": stderr,
-            }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "status": "ok" if result.returncode == 0 else "error",
+                    "exit_code": result.returncode,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                },
+                ensure_ascii=False,
+            )
         except subprocess.TimeoutExpired:
-            return json.dumps({
-                "status": "error",
-                "error": f"Command timed out after {_DEFAULT_TIMEOUT}s",
-            }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"Command timed out after {_DEFAULT_TIMEOUT}s",
+                },
+                ensure_ascii=False,
+            )
         except Exception as exc:
-            return json.dumps({
-                "status": "error",
-                "error": str(exc),
-            }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": str(exc),
+                },
+                ensure_ascii=False,
+            )

@@ -167,8 +167,7 @@ def test_scan_today_signals_honors_prior_return_dict_band() -> None:
     frames = {"AAPL": _bars(closes)}
 
     inside = _profile({"market": "us", "prior_5d_return": {"min": 0.10, "max": 0.20}})
-    assert [m["symbol"] for m in scan_today_signals(
-        inside, target_date="2026-04-06", price_frames=frames)] == ["AAPL"]
+    assert [m["symbol"] for m in scan_today_signals(inside, target_date="2026-04-06", price_frames=frames)] == ["AAPL"]
 
     outside = _profile({"market": "us", "prior_5d_return": {"min": 0.50, "max": 1.0}})
     assert scan_today_signals(outside, target_date="2026-04-06", price_frames=frames) == []
@@ -181,4 +180,3 @@ def test_scan_today_signals_no_match_when_rsi_history_insufficient() -> None:
     frames = {"AAPL": _bars(_ramp(6, 10.0, 0.2))}  # < 14 bars, RSI undefined
 
     assert scan_today_signals(profile, target_date="2026-04-06", price_frames=frames) == []
-

@@ -18,9 +18,7 @@ def test_unsupported_interval_does_not_hit_api() -> None:
             c.data.vibe_trading_data_cache = False
             c.data.vibe_trading_data_cache_root = ""
             cfg.return_value = c
-            out = fh.DataLoader().fetch(
-                ["AAPL"], "2024-01-01", "2024-01-31", interval="1H"
-            )
+            out = fh.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31", interval="1H")
     assert out == {}
     mock_get.assert_not_called()
 
@@ -35,9 +33,7 @@ def test_four_hour_interval_also_rejected() -> None:
             c.data.vibe_trading_data_cache = False
             c.data.vibe_trading_data_cache_root = ""
             cfg.return_value = c
-            out = fh.DataLoader().fetch(
-                ["AAPL"], "2024-01-01", "2024-01-31", interval="4H"
-            )
+            out = fh.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31", interval="4H")
     assert out == {}
     mock_get.assert_not_called()
 
@@ -61,8 +57,6 @@ def test_daily_interval_still_fetches() -> None:
             c.data.vibe_trading_data_cache = False
             c.data.vibe_trading_data_cache_root = ""
             cfg.return_value = c
-            out = fh.DataLoader().fetch(
-                ["AAPL"], "2024-01-01", "2024-01-31", interval="1D"
-            )
+            out = fh.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31", interval="1D")
     assert "AAPL" in out
     mock_get.assert_called_once()

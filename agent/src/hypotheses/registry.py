@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -308,13 +307,15 @@ class HypothesisRegistry:
             raise ValueError("run_card_path or backtest_run_dir is required")
         records = self.list()
         hyp = self._find_required(records, hypothesis_id)
-        hyp.run_cards.append({
-            "run_card_path": run_card_path,
-            "backtest_run_dir": backtest_run_dir,
-            "metrics": metrics or {},
-            "notes": notes,
-            "linked_at": _utc_now(),
-        })
+        hyp.run_cards.append(
+            {
+                "run_card_path": run_card_path,
+                "backtest_run_dir": backtest_run_dir,
+                "metrics": metrics or {},
+                "notes": notes,
+                "linked_at": _utc_now(),
+            }
+        )
         hyp.updated_at = _utc_now()
         self._save(records)
         return hyp

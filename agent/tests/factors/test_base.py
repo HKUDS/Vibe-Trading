@@ -210,7 +210,7 @@ def test_vwap_cn_uses_amount_volume() -> None:
     # (100 shares). True VWAP = (amount * 1000 CNY) / (volume * 100 shares).
     panel = {
         "amount": _frame([[10000.0]]),  # 10000 千元 = 10,000,000 CNY
-        "volume": _frame([[10.0]]),     # 10 手 = 1000 股
+        "volume": _frame([[10.0]]),  # 10 手 = 1000 股
     }
     out = vwap(panel, Market.EQUITY_CN)
     expected = (10000.0 * 1000.0) / (10.0 * 100.0 + 1.0)

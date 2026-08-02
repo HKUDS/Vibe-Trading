@@ -6,26 +6,27 @@
 # 典型用途: 衡量20日下跌日的比例强度，值接近1表示连续下跌。
 # ============================================================
 """qlib158 SUMN20: formula = \\sum \\max(-\\Delta\\mathrm{close}, 0) / \\sum |\\Delta\\mathrm{close}|."""
+
 from __future__ import annotations
 
 import pandas as pd
 from src.factors.base import safe_div
 
 __alpha_meta__ = {
-    'id': 'qlib158_sumn20',
-    'theme': ['reversal'],
-    'formula_latex': '\\\\sum \\\\max(-\\\\Delta\\\\mathrm{close}, 0) / \\\\sum |\\\\Delta\\\\mathrm{close}|',
-    'columns_required': ['close'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 20,
+    "id": "qlib158_sumn20",
+    "theme": ["reversal"],
+    "formula_latex": "\\\\sum \\\\max(-\\\\Delta\\\\mathrm{close}, 0) / \\\\sum |\\\\Delta\\\\mathrm{close}|",
+    "columns_required": ["close"],
+    "universe": ["equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 20,
 }
 
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 SUMN20 on the supplied OHLCV panel."""
-    c = panel['close']
+    c = panel["close"]
     diff = c - c.shift(1)
     neg = (-diff).where(diff < 0, 0.0)
     absd = diff.abs()

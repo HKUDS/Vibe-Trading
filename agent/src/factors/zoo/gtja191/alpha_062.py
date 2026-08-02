@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #62
 # 简要说明: 国泰君安191短周期交易型alpha因子第62号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_062",
-    "theme": ['volume'],
-    "formula_latex": '((-1*CORR(HIGH,RANK(VOLUME),5)))',
-    "columns_required": ['high', 'volume'],
+    "theme": ["volume"],
+    "formula_latex": "((-1*CORR(HIGH,RANK(VOLUME),5)))",
+    "columns_required": ["high", "volume"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
     "min_warmup_bars": 6,
-    "notes": 'Negated 5d corr(high, rank(volume)).',
+    "notes": "Negated 5d corr(high, rank(volume)).",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     return -1.0 * ts_corr(panel["high"], rank(panel["volume"]), 5)

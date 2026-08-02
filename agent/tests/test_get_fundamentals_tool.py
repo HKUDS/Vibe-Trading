@@ -106,9 +106,7 @@ def test_fund_roe_compute_cross_sectional_zscore() -> None:
 def test_fund_gross_profitability_compute_cross_sectional_zscore() -> None:
     from src.factors.zoo.fundamental.gross_profitability import compute
 
-    result = compute(
-        {"fund:gross_profitability": _panel([[3.0, 6.0, 9.0], [4.0, 8.0, 12.0]])}
-    )
+    result = compute({"fund:gross_profitability": _panel([[3.0, 6.0, 9.0], [4.0, 8.0, 12.0]])})
 
     _assert_row_zscore_properties(result)
     assert result.iloc[1].tolist() == [-1.0, 0.0, 1.0]
@@ -117,9 +115,7 @@ def test_fund_gross_profitability_compute_cross_sectional_zscore() -> None:
 def test_fund_asset_growth_compute_is_inverted_zscore() -> None:
     from src.factors.zoo.fundamental.asset_growth import compute
 
-    result = compute(
-        {"fund:asset_growth": _panel([[0.01, 0.02, 0.03], [0.10, 0.20, 0.30]])}
-    )
+    result = compute({"fund:asset_growth": _panel([[0.01, 0.02, 0.03], [0.10, 0.20, 0.30]])})
 
     _assert_row_zscore_properties(result)
     assert np.allclose(result.iloc[0], [1.0, 0.0, -1.0], atol=1e-12)

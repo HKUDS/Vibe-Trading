@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #71
 # 简要说明: 国泰君安191短周期交易型alpha因子第71号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_071",
-    "theme": ['reversal'],
-    "formula_latex": '(CLOSE-MEAN(CLOSE,24))/MEAN(CLOSE,24)*100',
-    "columns_required": ['close'],
+    "theme": ["reversal"],
+    "formula_latex": "(CLOSE-MEAN(CLOSE,24))/MEAN(CLOSE,24)*100",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 24,
     "min_warmup_bars": 25,
-    "notes": 'Bias-24.',
+    "notes": "Bias-24.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

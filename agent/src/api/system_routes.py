@@ -34,8 +34,10 @@ logger = logging.getLogger(__name__)
 # Pydantic models (defined locally -- NO shared modules, per maintainer rule)
 # ---------------------------------------------------------------------------
 
+
 class HealthResponse(BaseModel):
     """Health check payload."""
+
     status: str = Field(..., description="Service status")
     service: str = Field(..., description="Service name")
     timestamp: str = Field(..., description="Server timestamp")
@@ -151,7 +153,8 @@ def _provider_readiness() -> Tuple[bool, str]:
     key_env, _base_env = provider_env_names(provider, model)
     # key_env is None for keyless local providers (e.g. Ollama).
     if key_env is not None:
-        has_key = bool(os.getenv(key_env, "") or os.getenv("OPENAI_API_KEY", ""))  # noqa: env-gate — readiness credential probe
+        key_env_val = os.getenv(key_env, "")  # env-gate — readiness credential probe
+        has_key = bool(key_env_val or os.getenv("OPENAI_API_KEY", ""))  # env-gate
         if not has_key:
             return False, "LLM provider credential not configured"
     return True, "ready"
@@ -160,6 +163,7 @@ def _provider_readiness() -> Tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
+
 
 def register_system_routes(
     app: FastAPI,
@@ -280,10 +284,17 @@ def register_system_routes(
         codes: str = Query(..., description="Comma-separated asset codes, e.g. BTC-USDT,ETH-USDT,SPY"),
         days: int = Query(90, description="Timeline length in daily bars", ge=30, le=365),
         corr_window: int = Query(60, description="Rolling correlation window in bars", ge=5, le=250),
-        edge_threshold: float = Query(0.5, description="|corr| level at which a pair counts as an edge", gt=0.0, lt=1.0),
+        edge_threshold: float = Query(
+            0.5, description="|corr| level at which a pair counts as an edge", gt=0.0, lt=1.0
+        ),
         smooth_window: int = Query(5, description="Trailing smoothing window in bars", ge=1, le=60),
         enter_threshold: float = Query(0.65, description="Smoothed density that opens a FUSED regime", gt=0.0, lt=1.0),
-        exit_threshold: float = Query(0.45, description="Smoothed density that closes a FUSED regime (must be below enter_threshold)", gt=0.0, lt=1.0),
+        exit_threshold: float = Query(
+            0.45,
+            description="Smoothed density that closes a FUSED regime (must be below enter_threshold)",
+            gt=0.0,
+            lt=1.0,
+        ),
     ):
         """Correlation-regime timeline: edge density + hysteresis over time.
 

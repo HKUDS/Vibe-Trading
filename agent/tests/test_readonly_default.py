@@ -67,8 +67,7 @@ class _FakeClient:
 
     async def list_tools(self) -> list[mcp_types.Tool]:
         return [
-            mcp_types.Tool(name=name, description=f"remote {name}", inputSchema={"type": "object"})
-            for name in _CATALOG
+            mcp_types.Tool(name=name, description=f"remote {name}", inputSchema={"type": "object"}) for name in _CATALOG
         ]
 
     async def call_tool(self, name: str, arguments=None, *, timeout=None, raise_on_error=False) -> CallToolResult:  # noqa: D401
@@ -135,9 +134,7 @@ def _commit_mandate(live_runtime: Path) -> None:
 
 
 def test_seed_enabled_tools_are_exactly_curated_read_names() -> None:
-    curated_reads = {
-        name for name, cls in ROBINHOOD_TOOL_CLASS.items() if cls is ToolClass.READ
-    }
+    curated_reads = {name for name, cls in ROBINHOOD_TOOL_CLASS.items() if cls is ToolClass.READ}
     seed = set(ROBINHOOD_MCP_SERVER_SEED["enabled_tools"])
     assert seed == curated_reads, (
         "seeded enabled_tools must equal the curated READ names exactly; a "

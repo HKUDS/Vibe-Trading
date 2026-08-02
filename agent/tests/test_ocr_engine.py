@@ -46,9 +46,7 @@ class TestEngineSelection:
 
         engine = ocr_engine.get_ocr_engine()
         if engine is not None:
-            assert engine.is_cloud is False, (
-                f"auto mode selected cloud engine '{engine.name}'"
-            )
+            assert engine.is_cloud is False, f"auto mode selected cloud engine '{engine.name}'"
 
     def test_unknown_choice_falls_back_to_local(self, monkeypatch):
         """An unknown engine name degrades to auto, which stays local."""
@@ -330,15 +328,15 @@ class TestRecognizeNoAdvisory:
 
         engine = LlmVisionOcrEngine()
         monkeypatch.setattr(
-            engine, "_get_client", lambda config: _FakeNoOpClient(),
+            engine,
+            "_get_client",
+            lambda config: _FakeNoOpClient(),
         )
 
         with caplog.at_level("WARNING", logger="src.tools.ocr.llm_vision_ocr"):
             engine.recognize(np.zeros((10, 10, 3), dtype=np.uint8))
 
-        assert not any(
-            "may not support vision" in rec.message for rec in caplog.records
-        )
+        assert not any("may not support vision" in rec.message for rec in caplog.records)
 
 
 class _FakeNoOpClient:
@@ -348,12 +346,24 @@ class _FakeNoOpClient:
         class _Chat:
             class _Completions:
                 def create(self, **kwargs):
-                    return type("Resp", (), {
-                        "choices": [type("Ch", (), {
-                            "message": type("Msg", (), {"content": ""}),
-                        })],
-                    })()
+                    return type(
+                        "Resp",
+                        (),
+                        {
+                            "choices": [
+                                type(
+                                    "Ch",
+                                    (),
+                                    {
+                                        "message": type("Msg", (), {"content": ""}),
+                                    },
+                                )
+                            ],
+                        },
+                    )()
+
             completions = _Completions()
+
         self.chat = _Chat()
 
 
@@ -381,10 +391,7 @@ class TestBackwardCompatAliases:
         assert engine.name == "llm-vision"
 
         # Should emit deprecation warning
-        assert any(
-            "deprecated" in rec.message and "qwen-vl" in rec.message
-            for rec in caplog.records
-        )
+        assert any("deprecated" in rec.message and "qwen-vl" in rec.message for rec in caplog.records)
 
     def test_qwen_vl_alias_not_in_engines_dict(self):
         """Confirm 'qwen-vl' is not a registered engine name (only an alias)."""

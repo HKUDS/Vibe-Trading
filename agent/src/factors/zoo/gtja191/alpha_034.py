@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #34 - 量价波动偏度
 # 简要说明: RANK(CORR(HIGH,MEAN(VOLUME,60),5)) * (-1)，最高价与60日均量的5日相关性取负排名。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_034",
-    "theme": ['reversal'],
-    "formula_latex": 'MEAN(CLOSE,12)/CLOSE',
-    "columns_required": ['close'],
+    "theme": ["reversal"],
+    "formula_latex": "MEAN(CLOSE,12)/CLOSE",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 12,
     "min_warmup_bars": 13,
-    "notes": 'MA12 over close.',
+    "notes": "MA12 over close.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

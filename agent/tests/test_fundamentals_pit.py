@@ -24,14 +24,7 @@ def _install_schema_stub(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _facts(concept_rows: dict[str, list[dict[str, object]]]) -> dict[str, object]:
-    return {
-        "facts": {
-            "us-gaap": {
-                concept: {"units": {"USD": rows}}
-                for concept, rows in concept_rows.items()
-            }
-        }
-    }
+    return {"facts": {"us-gaap": {concept: {"units": {"USD": rows}} for concept, rows in concept_rows.items()}}}
 
 
 def _fact_row(

@@ -24,8 +24,7 @@ def test_empty_text_delta_is_swallowed():
 
 def test_silent_events_produce_nothing():
     mapper = SSEEventMapper()
-    for event_type in ("reasoning_delta", "thinking_done", "tool_progress",
-                       "tool_heartbeat", "llm_usage"):
+    for event_type in ("reasoning_delta", "thinking_done", "tool_progress", "tool_heartbeat", "llm_usage"):
         assert mapper.map(event_type, {"attempt_id": "a1"}) == []
 
 

@@ -39,6 +39,7 @@ def fsp():
 # _validate_stockid
 # ---------------------------------------------------------------------------
 
+
 class TestValidateStockid:
     def test_with_sh_suffix(self, fsp):
         assert fsp._validate_stockid("600000.SH") == "600000"
@@ -64,6 +65,7 @@ class TestValidateStockid:
 # ---------------------------------------------------------------------------
 # _normalize_subject —— 主体识别 + 优先级
 # ---------------------------------------------------------------------------
+
 
 class TestNormalizeSubject:
     @pytest.mark.parametrize(
@@ -94,6 +96,7 @@ class TestNormalizeSubject:
 # ---------------------------------------------------------------------------
 # _extract_event_type / _build_record —— event_type 不会误识别"公告日期"
 # ---------------------------------------------------------------------------
+
 
 class TestExtractEventType:
     def test_normal_warning(self, fsp):
@@ -148,9 +151,15 @@ class TestParsePenaltyList:
     def test_record_schema(self, fsp):
         rec = fsp._parse_penalty_list(_FIXTURE_HTML)[0]
         expected_keys = {
-            "ann_date", "event_type", "title", "reason",
-            "reason_normalized", "content", "issuer",
-            "issuer_normalized", "subject_normalized",
+            "ann_date",
+            "event_type",
+            "title",
+            "reason",
+            "reason_normalized",
+            "content",
+            "issuer",
+            "issuer_normalized",
+            "subject_normalized",
         }
         assert expected_keys.issubset(rec.keys())
 
@@ -195,6 +204,7 @@ class TestParsePenaltyList:
 # _apply_date_filter —— 日期过滤边界
 # ---------------------------------------------------------------------------
 
+
 class TestApplyDateFilter:
     def _records(self):
         return [
@@ -231,6 +241,7 @@ class TestApplyDateFilter:
 # ---------------------------------------------------------------------------
 # fetch_penalty_list —— HTTP 失败 / host 校验失败时的 fallback
 # ---------------------------------------------------------------------------
+
 
 class TestFetchPenaltyListFallback:
     def test_invalid_ts_code_raises(self, fsp):
@@ -283,6 +294,7 @@ class TestFetchPenaltyListFallback:
 # target_relevance —— 防止“交易股票列表提到目标股”误计入 E2
 # ---------------------------------------------------------------------------
 
+
 class TestTargetRelevance:
     def test_build_target_aliases_normalizes_and_dedupes(self, fsp):
         aliases = fsp._build_target_aliases("闻 泰 科 技", ["闻泰科技", "WINGTECH"])
@@ -314,10 +326,7 @@ class TestTargetRelevance:
     def test_security_trade_list_mention_is_not_countable(self, fsp):
         rec = {
             "title": "中国证券监督管理委员会湖南监管局行政处罚决定书〔2024〕7号(郭雪)",
-            "reason": (
-                "郭雪作为证券从业人员控制使用他人证券账户，"
-                "持有并交易“紫光国微、闻泰科技、音飞储存”等股票。"
-            ),
+            "reason": ("郭雪作为证券从业人员控制使用他人证券账户，持有并交易“紫光国微、闻泰科技、音飞储存”等股票。"),
             "content": "对郭雪处以2万元罚款",
             "subject_normalized": "company",
         }
@@ -359,6 +368,7 @@ class TestTargetRelevance:
 # 抗灾难性回溯：脏 HTML 不应卡死
 # ---------------------------------------------------------------------------
 
+
 class TestNoCatastrophicBacktracking:
     def test_unclosed_tr_does_not_hang(self, fsp):
         """未闭合 <tr> 的脏 HTML，旧灾难性正则在此会指数级回溯。
@@ -369,8 +379,8 @@ class TestNoCatastrophicBacktracking:
 
         dirty = (
             '<table id="collectFund_1">'
-            + '<thead><tr><th>警示函 公告日期: 2024-05-12</th></tr></thead>'
-            + ('<tr><td><strong>标题</strong></td><td>x</td>' * 200)  # 故意不闭合 </tr>
+            + "<thead><tr><th>警示函 公告日期: 2024-05-12</th></tr></thead>"
+            + ("<tr><td><strong>标题</strong></td><td>x</td>" * 200)  # 故意不闭合 </tr>
             + "</table>"
         )
         t0 = time.perf_counter()
@@ -385,14 +395,15 @@ class TestNoCatastrophicBacktracking:
 # P2: 全半角 / 大小写归一
 # ---------------------------------------------------------------------------
 
+
 class TestNormalizeFullwidth:
     @pytest.mark.parametrize(
         ("text", "expected"),
         [
             ("５％以上股东减持未预披露", "shareholder"),  # 全角数字+全角百分号
-            ("控股 股东 张三", "shareholder"),            # 含全角空格
-            ("董\u3000秘违规交易", "officer"),            # 全角空格在词中
-            ("ＤＤ公司未及时披露", "company"),            # 全角字母不影响
+            ("控股 股东 张三", "shareholder"),  # 含全角空格
+            ("董\u3000秘违规交易", "officer"),  # 全角空格在词中
+            ("ＤＤ公司未及时披露", "company"),  # 全角字母不影响
         ],
     )
     def test_subject_with_fullwidth(self, fsp, text, expected):
@@ -409,15 +420,16 @@ class TestNormalizeFullwidth:
 # P2: _RecordParser 边界 / thead 嵌套 / 多空白
 # ---------------------------------------------------------------------------
 
+
 class TestRecordParserEdgeCases:
     def test_nested_strong_in_value(self, fsp):
         """value td 内包含 <strong> 嵌套时，不应被误当作下一行 key。"""
         html = (
             '<table id="collectFund_1">'
-            '<thead><tr><th>警示函 公告日期: 2024-01-01</th></tr></thead>'
-            '<tr><td><strong>标题:</strong></td><td>关于 <strong>重要</strong> 事项的警示函</td></tr>'
-            '<tr><td><strong>批复原因:</strong></td><td>违规减持</td></tr>'
-            '</table>'
+            "<thead><tr><th>警示函 公告日期: 2024-01-01</th></tr></thead>"
+            "<tr><td><strong>标题:</strong></td><td>关于 <strong>重要</strong> 事项的警示函</td></tr>"
+            "<tr><td><strong>批复原因:</strong></td><td>违规减持</td></tr>"
+            "</table>"
         )
         recs = fsp._parse_penalty_list(html)
         assert len(recs) == 1
@@ -427,10 +439,10 @@ class TestRecordParserEdgeCases:
     def test_extra_whitespace_in_thead(self, fsp):
         html = (
             '<table id="collectFund_1">'
-            '<thead><tr><th>  \n\t 监管关注\n  公告日期:  2024-08-20  </th></tr></thead>'
-            '<tr><td><strong>标题:</strong></td><td>x</td></tr>'
-            '<tr><td><strong>批复原因:</strong></td><td>y</td></tr>'
-            '</table>'
+            "<thead><tr><th>  \n\t 监管关注\n  公告日期:  2024-08-20  </th></tr></thead>"
+            "<tr><td><strong>标题:</strong></td><td>x</td></tr>"
+            "<tr><td><strong>批复原因:</strong></td><td>y</td></tr>"
+            "</table>"
         )
         recs = fsp._parse_penalty_list(html)
         assert len(recs) == 1
@@ -441,9 +453,9 @@ class TestRecordParserEdgeCases:
         """完全没有 strong key 的 thead 段（无任何字段），_build_record 返回 None。"""
         html = (
             '<table id="collectFund_1">'
-            '<thead><tr><th>警示函 公告日期: 2024-05-12</th></tr></thead>'
-            '<tr><td>noise</td><td>noise</td></tr>'
-            '</table>'
+            "<thead><tr><th>警示函 公告日期: 2024-05-12</th></tr></thead>"
+            "<tr><td>noise</td><td>noise</td></tr>"
+            "</table>"
         )
         assert fsp._parse_penalty_list(html) == []
 
@@ -451,18 +463,14 @@ class TestRecordParserEdgeCases:
         """key 后出现多个 td 时，只取第一个作为 value。"""
         html = (
             '<table id="collectFund_1">'
-            '<thead><tr><th>警示函 公告日期: 2024-05-12</th></tr></thead>'
-            '<tr><td><strong>标题:</strong></td><td>真实标题</td><td>多余的td</td></tr>'
-            '<tr><td><strong>批复原因:</strong></td><td>r</td></tr>'
-            '</table>'
+            "<thead><tr><th>警示函 公告日期: 2024-05-12</th></tr></thead>"
+            "<tr><td><strong>标题:</strong></td><td>真实标题</td><td>多余的td</td></tr>"
+            "<tr><td><strong>批复原因:</strong></td><td>r</td></tr>"
+            "</table>"
         )
         recs = fsp._parse_penalty_list(html)
         assert recs[0]["title"] == "真实标题"
 
     def test_no_thead_returns_empty(self, fsp):
-        html = (
-            '<table id="collectFund_1">'
-            '<tr><td><strong>标题:</strong></td><td>x</td></tr>'
-            '</table>'
-        )
+        html = '<table id="collectFund_1"><tr><td><strong>标题:</strong></td><td>x</td></tr></table>'
         assert fsp._parse_penalty_list(html) == []

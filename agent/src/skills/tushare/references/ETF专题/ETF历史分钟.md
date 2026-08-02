@@ -54,12 +54,10 @@ amount | float | Y |  成交金额（元）
 **接口用法**
 
 ```python
-
 pro = ts.pro_api()
 
-#获取沪深300ETF华夏510330.SH的历史分钟数据
-df = pro.stk_mins(ts_code='510330.SH', freq='1min', start_date='2025-06-20 09:00:00', end_date='2025-06-20 19:00:00')
-
+# 获取沪深300ETF华夏510330.SH的历史分钟数据
+df = pro.stk_mins(ts_code="510330.SH", freq="1min", start_date="2025-06-20 09:00:00", end_date="2025-06-20 19:00:00")
 ```
 
 <br>

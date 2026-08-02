@@ -75,9 +75,7 @@ def test_serve_honors_explicit_host() -> None:
 
 
 @pytest.mark.unit
-def test_non_loopback_without_key_warns(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_non_loopback_without_key_warns(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("API_AUTH_KEY", raising=False)
     monkeypatch.setattr(api_server, "_API_KEY", None, raising=False)
 
@@ -88,9 +86,7 @@ def test_non_loopback_without_key_warns(
 
 
 @pytest.mark.unit
-def test_loopback_does_not_warn(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_loopback_does_not_warn(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("API_AUTH_KEY", raising=False)
     monkeypatch.setattr(api_server, "_API_KEY", None, raising=False)
 

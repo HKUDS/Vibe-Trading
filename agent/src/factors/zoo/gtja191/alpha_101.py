@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #101
 # 简要说明: 国泰君安191短周期交易型alpha因子第101号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: Inequality cast to float via .astype('float64').
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_101"
 
 __alpha_meta__ = {
-    'id': 'gtja191_101',
-    'theme': ['volume', 'momentum'],
-    'formula_latex': '((rank(ts\\_corr(close, sum(ts\\_mean(volume,30),37), 15)) < rank(ts\\_corr(rank(high), rank(ts\\_mean(volume,10)), 11))) * -1)',
-    'columns_required': ['open', 'high', 'low', 'close', 'volume', 'amount'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 15,
-    'min_warmup_bars': 80,
-    'notes': "Inequality cast to float via .astype('float64').",
+    "id": "gtja191_101",
+    "theme": ["volume", "momentum"],
+    "formula_latex": "((rank(ts\\_corr(close, sum(ts\\_mean(volume,30),37), 15)) < rank(ts\\_corr(rank(high), rank(ts\\_mean(volume,10)), 11))) * -1)",
+    "columns_required": ["open", "high", "low", "close", "volume", "amount"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 15,
+    "min_warmup_bars": 80,
+    "notes": "Inequality cast to float via .astype('float64').",
 }
 
 

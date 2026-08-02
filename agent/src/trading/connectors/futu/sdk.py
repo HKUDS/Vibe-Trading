@@ -27,7 +27,6 @@ DataFrame which we convert with ``to_dict("records")`` before field mapping.
 from __future__ import annotations
 
 import json
-import os
 import socket
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -160,7 +159,9 @@ class FutuConfig:
 _OVERRIDE_KEYS = ("host", "port", "profile", "security_firm", "filter_trdmarket", "acc_id")
 
 
-def build_config(profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None) -> "FutuConfig":
+def build_config(
+    profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None
+) -> "FutuConfig":
     """Resolve the effective config: saved file ← profile defaults ← CLI overrides.
 
     Gateway endpoint and account settings come from the saved
@@ -452,9 +453,7 @@ def place_order(
 
     if quantity is None:
         if notional is not None:
-            return _order_error(
-                cfg, "Futu requires an explicit quantity; notional-based orders are not supported"
-            )
+            return _order_error(cfg, "Futu requires an explicit quantity; notional-based orders are not supported")
         return _order_error(cfg, "quantity is required")
 
     try:
@@ -498,9 +497,7 @@ def place_order(
             return _order_error(cfg, unlock_error)
 
         trd_side = getattr(futu.TrdSide, _SIDE_TO_TRD_SIDE[side_key])
-        ftu_order_type = (
-            futu.OrderType.MARKET if order_kind == "market" else futu.OrderType.NORMAL
-        )
+        ftu_order_type = futu.OrderType.MARKET if order_kind == "market" else futu.OrderType.NORMAL
         ret, data = trade_ctx.place_order(
             price=price,
             qty=qty_int,
@@ -734,9 +731,7 @@ def _resolve_acc_id(cfg: FutuConfig, trade_ctx: Any) -> int:
     if cfg.acc_id:
         target = next((row for row in rows if _acc_id_of(row) == cfg.acc_id), None)
         if target is None:
-            raise FutuProfileMismatchError(
-                f"Configured acc_id {cfg.acc_id} was not found in the OpenD account list."
-            )
+            raise FutuProfileMismatchError(f"Configured acc_id {cfg.acc_id} was not found in the OpenD account list.")
         if _trd_env_of(target) != want:
             raise FutuProfileMismatchError(
                 f"Configured acc_id {cfg.acc_id} has trd_env {_trd_env_of(target)!r}, "

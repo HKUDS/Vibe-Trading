@@ -5,10 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from src.memory.persistent import (
-    DEDUP_WINDOW_SECONDS,
     PersistentMemory,
     content_hash,
 )

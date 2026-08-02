@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #106
 # 简要说明: 国泰君安191短周期交易型alpha因子第106号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     CLOSE - DELAY(CLOSE,20)
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_106"
 
 __alpha_meta__ = {
-    'id': 'gtja191_106',
-    'theme': ['momentum'],
-    'formula_latex': 'close-delay(close,20)',
-    'columns_required': ['close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 21,
-    'notes': '',
+    "id": "gtja191_106",
+    "theme": ["momentum"],
+    "formula_latex": "close-delay(close,20)",
+    "columns_required": ["close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 21,
+    "notes": "",
 }
 
 

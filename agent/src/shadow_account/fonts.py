@@ -16,10 +16,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_NOTO_URL = (
-    "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/"
-    "NotoSansCJKsc-Regular.otf"
-)
+_NOTO_URL = "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf"
 _FONT_NAME = "NotoSansCJKsc-Regular.otf"
 _FALLBACK_FAMILY = "DejaVu Sans"
 
@@ -39,8 +36,12 @@ def _system_cjk_candidates() -> list[Path]:
     if windir:
         win_fonts = Path(windir) / "Fonts"
         for name in (
-            "msyh.ttc", "msyh.ttf", "msyhbd.ttc",
-            "simhei.ttf", "simsun.ttc", "simkai.ttf",
+            "msyh.ttc",
+            "msyh.ttf",
+            "msyhbd.ttc",
+            "simhei.ttf",
+            "simsun.ttc",
+            "simkai.ttf",
             "NotoSansCJK-Regular.ttc",
         ):
             candidates.append(win_fonts / name)
@@ -82,6 +83,7 @@ def cjk_font_path(*, allow_download: bool = True, timeout: float = 10.0) -> Opti
 
     try:
         import urllib.request
+
         req = urllib.request.Request(_NOTO_URL, headers={"User-Agent": "vibe-trading"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             cached.write_bytes(resp.read())
@@ -101,6 +103,7 @@ def apply_matplotlib_cjk_font() -> str:
     """
     try:
         import matplotlib
+
         matplotlib.use("Agg")  # safe for headless rendering
         from matplotlib import font_manager as fm
         import matplotlib.pyplot as plt
@@ -135,9 +138,4 @@ def cjk_css_font_face() -> str:
     if path is None:
         return ""
     uri = path.resolve().as_uri()
-    return (
-        "@font-face {\n"
-        "  font-family: 'Shadow CJK';\n"
-        f"  src: url('{uri}');\n"
-        "}\n"
-    )
+    return f"@font-face {{\n  font-family: 'Shadow CJK';\n  src: url('{uri}');\n}}\n"

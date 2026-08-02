@@ -29,3 +29,23 @@ if (typeof window !== "undefined") {
     }),
   });
 }
+
+// jsdom doesn't expose a working localStorage under this vitest environment;
+// provide a simple in-memory Storage so auth-key / ticket flows are testable.
+const storage = new Map<string, string>();
+const localStorageMock: Storage = {
+  get length() {
+    return storage.size;
+  },
+  clear: () => storage.clear(),
+  getItem: (key: string) => storage.get(key) ?? null,
+  key: (index: number) => Array.from(storage.keys())[index] ?? null,
+  removeItem: (key: string) => storage.delete(key),
+  setItem: (key: string, value: string) => storage.set(key, String(value)),
+};
+if (typeof window !== "undefined" && window.localStorage === undefined) {
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: localStorageMock,
+  });
+}

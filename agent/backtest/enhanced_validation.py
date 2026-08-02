@@ -67,9 +67,7 @@ _SIGNAL_ENGINE_FORBIDDEN_IMPORTS = frozenset(
         "codeop",
     }
 )
-_SIGNAL_ENGINE_FORBIDDEN_CALLS = frozenset(
-    {"eval", "exec", "compile", "__import__", "open", "input", "breakpoint"}
-)
+_SIGNAL_ENGINE_FORBIDDEN_CALLS = frozenset({"eval", "exec", "compile", "__import__", "open", "input", "breakpoint"})
 
 
 def _sharpe(returns: np.ndarray, bars_per_year: int = 252) -> float:
@@ -203,12 +201,8 @@ def stress_scenarios(
         "baseline": base,
         "n_scenarios": len(results),
         "scenarios": results,
-        "worst_return_scenario": min(results, key=lambda r: r["metrics"]["return"])["name"]
-        if results
-        else None,
-        "worst_dd_scenario": min(results, key=lambda r: r["metrics"]["max_dd"])["name"]
-        if results
-        else None,
+        "worst_return_scenario": min(results, key=lambda r: r["metrics"]["return"])["name"] if results else None,
+        "worst_dd_scenario": min(results, key=lambda r: r["metrics"]["max_dd"])["name"] if results else None,
     }
 
 
@@ -231,11 +225,7 @@ def walk_forward_oos(
     trades = trades or []
     if isinstance(n_windows, bool) or not isinstance(n_windows, Integral) or n_windows < 1:
         return {"error": f"n_windows must be >= 1, got {n_windows}"}
-    if (
-        isinstance(train_ratio, bool)
-        or not isinstance(train_ratio, Real)
-        or not 0.1 <= float(train_ratio) <= 0.9
-    ):
+    if isinstance(train_ratio, bool) or not isinstance(train_ratio, Real) or not 0.1 <= float(train_ratio) <= 0.9:
         return {"error": f"train_ratio must be in [0.1, 0.9], got {train_ratio}"}
     mode_norm = (mode or "rolling").strip().lower()
     if mode_norm not in {"rolling", "expanding"}:
@@ -274,12 +264,8 @@ def walk_forward_oos(
         def _ts(x: Any) -> str:
             return str(x.date()) if hasattr(x, "date") else str(x)
 
-        is_trades = [
-            t for t in trades if is_start_ts <= t.entry_time <= is_end_ts
-        ]
-        oos_trades = [
-            t for t in trades if oos_start_ts <= t.entry_time <= oos_end_ts
-        ]
+        is_trades = [t for t in trades if is_start_ts <= t.entry_time <= is_end_ts]
+        oos_trades = [t for t in trades if oos_start_ts <= t.entry_time <= oos_end_ts]
 
         folds.append(
             {
@@ -320,9 +306,7 @@ def walk_forward_oos(
         "oos_return_mean": round(float(np.mean(oos_returns)), 6),
         "oos_profitable_folds": int(sum(1 for r in oos_returns if r > 0)),
         "mean_sharpe_degradation": round(float(np.mean(degradations)), 4),
-        "consistency_rate": round(
-            float(sum(1 for r in oos_returns if r > 0) / len(folds)), 4
-        ),
+        "consistency_rate": round(float(sum(1 for r in oos_returns if r > 0) / len(folds)), 4),
     }
 
 
@@ -570,11 +554,7 @@ def regime_conditioned_backtest(
         or not 50.0 <= float(high_vol_percentile) <= 95.0
     ):
         return {"error": f"high_vol_percentile must be in [50, 95], got {high_vol_percentile}"}
-    if include_trend and (
-        isinstance(trend_window, bool)
-        or not isinstance(trend_window, Integral)
-        or trend_window < 2
-    ):
+    if include_trend and (isinstance(trend_window, bool) or not isinstance(trend_window, Integral) or trend_window < 2):
         return {"error": f"trend_window must be >= 2, got {trend_window}"}
 
     rets = equity_curve.pct_change()
@@ -610,9 +590,7 @@ def regime_conditioned_backtest(
         "vol_threshold": round(threshold, 8),
         "overall": overall,
         "regimes": regimes,
-        "sharpe_spread_high_minus_low": round(
-            float(high.get("sharpe", 0.0)) - float(low.get("sharpe", 0.0)), 4
-        ),
+        "sharpe_spread_high_minus_low": round(float(high.get("sharpe", 0.0)) - float(low.get("sharpe", 0.0)), 4),
         "axes": ["vol"],
     }
 
@@ -625,15 +603,9 @@ def regime_conditioned_backtest(
 
     if include_trend:
         up, down, flat = _trend_masks(equity_curve, trend_window=int(trend_window))
-        regimes["uptrend"] = _regime_slice_metrics(
-            equity_curve, rets, up, "uptrend", trades, bars_per_year
-        )
-        regimes["downtrend"] = _regime_slice_metrics(
-            equity_curve, rets, down, "downtrend", trades, bars_per_year
-        )
-        regimes["sideways"] = _regime_slice_metrics(
-            equity_curve, rets, flat, "sideways", trades, bars_per_year
-        )
+        regimes["uptrend"] = _regime_slice_metrics(equity_curve, rets, up, "uptrend", trades, bars_per_year)
+        regimes["downtrend"] = _regime_slice_metrics(equity_curve, rets, down, "downtrend", trades, bars_per_year)
+        regimes["sideways"] = _regime_slice_metrics(equity_curve, rets, flat, "sideways", trades, bars_per_year)
         # Vol × trend cross (4 cells that usually have enough bars).
         cross = {}
         for v_label, v_mask in (("high_vol", high_mask.fillna(False)), ("low_vol", low_mask.fillna(False))):
@@ -651,8 +623,7 @@ def regime_conditioned_backtest(
         result["trend_window"] = int(trend_window)
         result["axes"] = list(result["axes"]) + ["trend"]
         result["sharpe_spread_up_minus_down"] = round(
-            float(regimes["uptrend"].get("sharpe", 0.0))
-            - float(regimes["downtrend"].get("sharpe", 0.0)),
+            float(regimes["uptrend"].get("sharpe", 0.0)) - float(regimes["downtrend"].get("sharpe", 0.0)),
             4,
         )
         if export_regime_labels:
@@ -674,12 +645,8 @@ def regime_conditioned_backtest(
         if fused_mask is None:
             result["correlation_regime"] = corr_meta
         else:
-            fused = _regime_slice_metrics(
-                equity_curve, rets, fused_mask, "fused", trades, bars_per_year
-            )
-            defused = _regime_slice_metrics(
-                equity_curve, rets, ~fused_mask, "defused", trades, bars_per_year
-            )
+            fused = _regime_slice_metrics(equity_curve, rets, fused_mask, "fused", trades, bars_per_year)
+            defused = _regime_slice_metrics(equity_curve, rets, ~fused_mask, "defused", trades, bars_per_year)
             regimes["fused"] = fused
             regimes["defused"] = defused
             result["correlation_regime"] = {
@@ -696,9 +663,7 @@ def regime_conditioned_backtest(
 
     if export_regime_labels and label_cols:
         # Compact JSON-friendly payload + note for factor_analysis merge.
-        result["regime_labels"] = {
-            axis: {str(k): str(v) for k, v in ser.items()} for axis, ser in label_cols.items()
-        }
+        result["regime_labels"] = {axis: {str(k): str(v) for k, v in ser.items()} for axis, ser in label_cols.items()}
         result["regime_labels_note"] = (
             "Date→label maps for vol/trend/correlation axes; merge onto a "
             "factor panel (as columns) before calling factor_analysis, or write "
@@ -778,33 +743,19 @@ def regime_conditional_ic(
         return {"error": "factor_df must be a non-empty DataFrame"}
     if not isinstance(return_df, pd.DataFrame) or return_df.empty:
         return {"error": "return_df must be a non-empty DataFrame"}
-    if (
-        isinstance(min_obs, bool)
-        or not isinstance(min_obs, Integral)
-        or min_obs < 1
-    ):
+    if isinstance(min_obs, bool) or not isinstance(min_obs, Integral) or min_obs < 1:
         return {"error": f"min_obs must be >= 1, got {min_obs}"}
 
     if regime_labels is None:
         if not isinstance(regime_result, dict):
-            return {
-                "error": (
-                    "provide regime_result (export_regime_labels=True) "
-                    "or regime_labels DataFrame"
-                )
-            }
+            return {"error": ("provide regime_result (export_regime_labels=True) or regime_labels DataFrame")}
         regime_labels = regime_labels_to_frame(regime_result)
     if not isinstance(regime_labels, pd.DataFrame) or regime_labels.empty:
         return {"error": "regime_labels is empty; enable export_regime_labels"}
 
     axis_key = str(axis)
     if axis_key not in regime_labels.columns:
-        return {
-            "error": (
-                f"axis {axis_key!r} not in regime_labels columns "
-                f"{list(regime_labels.columns)}"
-            )
-        }
+        return {"error": (f"axis {axis_key!r} not in regime_labels columns {list(regime_labels.columns)}")}
 
     try:
         from src.factors.factor_analysis_core import compute_ic_series
@@ -842,11 +793,7 @@ def regime_conditional_ic(
     spread = None
     if len(by_regime) >= 2:
         ranked = sorted(
-            (
-                (k, v)
-                for k, v in by_regime.items()
-                if not v.get("insufficient_obs") and v.get("mean_ic") is not None
-            ),
+            ((k, v) for k, v in by_regime.items() if not v.get("insufficient_obs") and v.get("mean_ic") is not None),
             key=lambda kv: kv[1]["n_obs"],
             reverse=True,
         )
@@ -855,9 +802,7 @@ def regime_conditional_ic(
             spread = {
                 "a": a[0],
                 "b": b[0],
-                "mean_ic_a_minus_b": round(
-                    float(a[1]["mean_ic"]) - float(b[1]["mean_ic"]), 6
-                ),
+                "mean_ic_a_minus_b": round(float(a[1]["mean_ic"]) - float(b[1]["mean_ic"]), 6),
             }
 
     return {
@@ -904,9 +849,7 @@ def _breakout_signal(prices: pd.Series, lookback: int = 20, exit_lookback: int =
     return pos
 
 
-def _threshold_momentum_signal(
-    prices: pd.Series, lookback: int = 21, entry_z: float = 0.5
-) -> pd.Series:
+def _threshold_momentum_signal(prices: pd.Series, lookback: int = 21, entry_z: float = 0.5) -> pd.Series:
     lb = max(2, int(lookback))
     rets = prices.pct_change(lb)
     mu = rets.rolling(lb * 2, min_periods=lb).mean()
@@ -1109,9 +1052,7 @@ def _score_grid_cells(
                 groups //= 2
             if groups % 2 == 1:
                 groups = max(2, groups - 1)
-            pbo = cscv_probability_of_backtest_overfitting(
-                mat, n_groups=groups, bars_per_year=252
-            )
+            pbo = cscv_probability_of_backtest_overfitting(mat, n_groups=groups, bars_per_year=252)
             out["cscv_pbo"] = pbo
         except Exception as exc:  # pragma: no cover — defensive
             out["cscv_pbo"] = {"error": str(exc)}
@@ -1128,11 +1069,7 @@ def _score_grid_cells(
                 objective=str(rk_cfg.get("objective", "sharpe_dd_penalty")),
                 max_dd_limit=float(rk_cfg.get("max_dd_limit", 0.20)),
                 min_psr=float(rk_cfg.get("min_psr", 0.5)),
-                max_cvar=(
-                    float(rk_cfg["max_cvar"])
-                    if rk_cfg.get("max_cvar") is not None
-                    else None
-                ),
+                max_cvar=(float(rk_cfg["max_cvar"]) if rk_cfg.get("max_cvar") is not None else None),
                 cvar_alpha=float(rk_cfg.get("cvar_alpha", 0.95)),
                 dd_penalty=float(rk_cfg.get("dd_penalty", 2.0)),
                 labels=labels,
@@ -1196,22 +1133,13 @@ def signal_parameter_grid(
         return {"error": "need a price Series with at least 10 observations"}
     if isinstance(cost_bps, bool) or not isinstance(cost_bps, Real) or cost_bps < 0:
         return {"error": f"cost_bps must be >= 0, got {cost_bps}"}
-    if (
-        isinstance(max_combinations, bool)
-        or not isinstance(max_combinations, Integral)
-        or max_combinations < 1
-    ):
+    if isinstance(max_combinations, bool) or not isinstance(max_combinations, Integral) or max_combinations < 1:
         return {"error": f"max_combinations must be >= 1, got {max_combinations}"}
 
     strategy_norm = (strategy or "ma_crossover").strip().lower()
     fn = signal_fn or _BUILTIN_SIGNALS.get(strategy_norm)
     if fn is None:
-        return {
-            "error": (
-                f"unknown strategy {strategy!r}; use "
-                f"{sorted(_BUILTIN_SIGNALS)} or pass signal_fn"
-            )
-        }
+        return {"error": (f"unknown strategy {strategy!r}; use {sorted(_BUILTIN_SIGNALS)} or pass signal_fn")}
 
     grid_spec = param_grid or _DEFAULT_PARAM_GRIDS.get(strategy_norm, {})
     if not isinstance(grid_spec, dict):
@@ -1219,18 +1147,9 @@ def signal_parameter_grid(
     combos = _expand_param_grid(grid_spec)
     # Drop structurally invalid MA / MACD cells (fast >= slow) before the cap check.
     if strategy_norm in {"ma_crossover", "macd_crossover"} and signal_fn is None:
-        combos = [
-            p
-            for p in combos
-            if int(p.get("fast", 0)) < int(p.get("slow", 10**9))
-        ]
+        combos = [p for p in combos if int(p.get("fast", 0)) < int(p.get("slow", 10**9))]
     if len(combos) > int(max_combinations):
-        return {
-            "error": (
-                f"param_grid expands to {len(combos)} combinations; "
-                f"cap is {int(max_combinations)}"
-            )
-        }
+        return {"error": (f"param_grid expands to {len(combos)} combinations; cap is {int(max_combinations)}")}
     if not combos:
         return {"error": "param_grid produced no valid combinations"}
 
@@ -1259,9 +1178,7 @@ def signal_parameter_grid(
             }
         )
         if collect_trial_returns:
-            strat_rets = _positions_to_strategy_returns(
-                prices, positions, cost_bps=float(cost_bps)
-            )
+            strat_rets = _positions_to_strategy_returns(prices, positions, cost_bps=float(cost_bps))
             trial_cols.append(strat_rets.to_numpy(dtype=float))
 
     return _score_grid_cells(
@@ -1352,8 +1269,7 @@ def _resolve_safe_signal_engine_path(
 
     if not any(_is_under_root(path, root) for root in roots):
         raise PermissionError(
-            f"signal engine path {path} is outside allow_roots "
-            f"{[str(r) for r in roots]} (pass run_dir / allow_roots)"
+            f"signal engine path {path} is outside allow_roots {[str(r) for r in roots]} (pass run_dir / allow_roots)"
         )
     return path
 
@@ -1364,9 +1280,7 @@ def _load_signal_engine_class(
     allow_roots: Optional[Sequence[Union[str, Path]]] = None,
     run_dir: Optional[Union[str, Path]] = None,
 ) -> type:
-    path = _resolve_safe_signal_engine_path(
-        module_path, allow_roots=allow_roots, run_dir=run_dir
-    )
+    path = _resolve_safe_signal_engine_path(module_path, allow_roots=allow_roots, run_dir=run_dir)
     source = path.read_text(encoding="utf-8")
     scan_err = _ast_scan_signal_engine_source(source)
     if scan_err:
@@ -1439,11 +1353,7 @@ def signal_engine_param_grid(
         return {"error": "need a price Series with at least 10 observations"}
     if not isinstance(param_grid, dict) or not param_grid:
         return {"error": "param_grid must be a non-empty dict"}
-    if (
-        isinstance(max_combinations, bool)
-        or not isinstance(max_combinations, Integral)
-        or max_combinations < 1
-    ):
+    if isinstance(max_combinations, bool) or not isinstance(max_combinations, Integral) or max_combinations < 1:
         return {"error": f"max_combinations must be >= 1, got {max_combinations}"}
 
     sources = sum(x is not None for x in (engine_factory, module_path, strategy))
@@ -1455,9 +1365,7 @@ def signal_engine_param_grid(
     engine_cls: Optional[type] = None
     if module_path is not None:
         try:
-            engine_cls = _load_signal_engine_class(
-                module_path, allow_roots=allow_roots, run_dir=run_dir
-            )
+            engine_cls = _load_signal_engine_class(module_path, allow_roots=allow_roots, run_dir=run_dir)
         except (OSError, ImportError, AttributeError, PermissionError, ValueError) as exc:
             return {"error": f"failed to load SignalEngine: {exc}"}
 
@@ -1467,16 +1375,9 @@ def signal_engine_param_grid(
 
     combos = _expand_param_grid(param_grid)
     if strategy_norm in {"ma_crossover", "macd_crossover"}:
-        combos = [
-            p for p in combos if int(p.get("fast", 0)) < int(p.get("slow", 10**9))
-        ]
+        combos = [p for p in combos if int(p.get("fast", 0)) < int(p.get("slow", 10**9))]
     if len(combos) > int(max_combinations):
-        return {
-            "error": (
-                f"param_grid expands to {len(combos)} combinations; "
-                f"cap is {int(max_combinations)}"
-            )
-        }
+        return {"error": (f"param_grid expands to {len(combos)} combinations; cap is {int(max_combinations)}")}
     if not combos:
         return {"error": "param_grid produced no valid combinations"}
 
@@ -1521,9 +1422,7 @@ def signal_engine_param_grid(
         )
         if collect_trial_returns:
             trial_cols.append(
-                _positions_to_strategy_returns(
-                    prices, positions, cost_bps=float(cost_bps)
-                ).to_numpy(dtype=float)
+                _positions_to_strategy_returns(prices, positions, cost_bps=float(cost_bps)).to_numpy(dtype=float)
             )
 
     if strategy_norm:
@@ -1579,11 +1478,7 @@ def run_enhanced_validation(
         )
 
     if "parameter_sensitivity" in config:
-        p_cfg = (
-            config["parameter_sensitivity"]
-            if isinstance(config["parameter_sensitivity"], dict)
-            else {}
-        )
+        p_cfg = config["parameter_sensitivity"] if isinstance(config["parameter_sensitivity"], dict) else {}
         results["parameter_sensitivity"] = parameter_sensitivity(
             equity_curve,
             return_scales=p_cfg.get("return_scales", (0.5, 0.75, 1.0, 1.25, 1.5)),
@@ -1593,11 +1488,7 @@ def run_enhanced_validation(
         )
 
     if "regime_conditioned" in config:
-        r_cfg = (
-            config["regime_conditioned"]
-            if isinstance(config["regime_conditioned"], dict)
-            else {}
-        )
+        r_cfg = config["regime_conditioned"] if isinstance(config["regime_conditioned"], dict) else {}
         returns_matrix = r_cfg.get("returns_matrix")
         if isinstance(returns_matrix, dict):
             returns_matrix = pd.DataFrame(returns_matrix)
@@ -1619,11 +1510,7 @@ def run_enhanced_validation(
         )
 
     if "signal_parameter_grid" in config:
-        g_cfg = (
-            config["signal_parameter_grid"]
-            if isinstance(config["signal_parameter_grid"], dict)
-            else {}
-        )
+        g_cfg = config["signal_parameter_grid"] if isinstance(config["signal_parameter_grid"], dict) else {}
         prices = g_cfg.get("prices")
         if prices is None:
             # Fall back to equity curve as a proxy price series for demos.
@@ -1640,11 +1527,7 @@ def run_enhanced_validation(
                 param_grid=g_cfg.get("param_grid")
                 or _DEFAULT_PARAM_GRIDS.get(str(g_cfg.get("strategy", "ma_crossover")), {}),
                 module_path=g_cfg.get("module_path"),
-                strategy=(
-                    None
-                    if g_cfg.get("module_path")
-                    else str(g_cfg.get("strategy", "ma_crossover"))
-                ),
+                strategy=(None if g_cfg.get("module_path") else str(g_cfg.get("strategy", "ma_crossover"))),
                 symbol=str(g_cfg.get("symbol", "ASSET")),
                 bars_per_year=bars_per_year,
                 cost_bps=float(g_cfg.get("cost_bps", 0.0)),
@@ -1669,11 +1552,7 @@ def run_enhanced_validation(
             )
 
     if "regime_conditional_ic" in config:
-        ic_cfg = (
-            config["regime_conditional_ic"]
-            if isinstance(config["regime_conditional_ic"], dict)
-            else {}
-        )
+        ic_cfg = config["regime_conditional_ic"] if isinstance(config["regime_conditional_ic"], dict) else {}
         factor_df = ic_cfg.get("factor_df")
         return_df = ic_cfg.get("return_df")
         if isinstance(factor_df, dict):

@@ -42,11 +42,9 @@ on | float | Y | 隔夜
 **接口调用**
 
 ```python
-
 pro = ts.pro_api()
 
-df = pro.hibor(start_date='20180101', end_date='20181130')
-
+df = pro.hibor(start_date="20180101", end_date="20181130")
 ```
 
 <br>

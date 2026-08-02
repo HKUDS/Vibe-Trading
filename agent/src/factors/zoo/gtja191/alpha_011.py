@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #11 - 条件高低价差
 # 简要说明: ((RANK(MAX((VWAP-CLOSE), 3)) + RANK(MIN((VWAP-CLOSE), 3))) * RANK(DELTA(VOLUME, 3)))，VWAP偏离极值与成交量变化的乘积。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_011",
-    "theme": ['volume', 'microstructure'],
-    "formula_latex": 'SUM(((CLOSE-LOW)-(HIGH-CLOSE))/(HIGH-LOW)*VOLUME,6)',
-    "columns_required": ['close', 'high', 'low', 'volume'],
+    "theme": ["volume", "microstructure"],
+    "formula_latex": "SUM(((CLOSE-LOW)-(HIGH-CLOSE))/(HIGH-LOW)*VOLUME,6)",
+    "columns_required": ["close", "high", "low", "volume"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 6,
     "min_warmup_bars": 7,
-    "notes": 'Accumulated money-flow-multiplier × volume over 6 days.',
+    "notes": "Accumulated money-flow-multiplier × volume over 6 days.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

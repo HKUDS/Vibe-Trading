@@ -36,13 +36,11 @@ exchange | str | Y | 交易所（SSE上交所 SZSE深交所 BSE北交所）
 
 ### 代码示例
 ```python
+# 获取”沪深300ETF华夏”ETF2025年以来每个交易日的份额和规模情况
+df = pro.etf_share_size(ts_code="510330.SH", start_date="20250101", end_date="20251224")
 
-#获取”沪深300ETF华夏”ETF2025年以来每个交易日的份额和规模情况
-df = pro.etf_share_size(ts_code='510330.SH', start_date='20250101', end_date='20251224')
-
-#获取2025年12月24日上交所的所有ETF份额和规模情况
-df = pro.etf_share_size(trade_date='20251224', exchange='SSE')
-
+# 获取2025年12月24日上交所的所有ETF份额和规模情况
+df = pro.etf_share_size(trade_date="20251224", exchange="SSE")
 ```
 
 ### 数据结果

@@ -23,10 +23,7 @@ logger = logging.getLogger(__name__)
 def _is_a_share(code: str) -> bool:
     # Support both baostock native format (sh.601398) and tushare-style suffix (601398.SH)
     code_lower = code.lower()
-    return (
-        code_lower.startswith(("sh.", "sz."))
-        or code.upper().endswith((".SZ", ".SH"))
-    )
+    return code_lower.startswith(("sh.", "sz.")) or code.upper().endswith((".SZ", ".SH"))
 
 
 @register
@@ -41,6 +38,7 @@ class DataLoader:
         """Available if baostock is installed."""
         try:
             import baostock  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -80,6 +78,7 @@ class DataLoader:
             return {}
 
         import baostock as bs
+
         lg = bs.login()
         if lg.error_code != "0":
             logger.error("baostock login failed: %s", lg.error_msg)
@@ -108,7 +107,11 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self, bs, code: str, start_date: str, end_date: str,
+        self,
+        bs,
+        code: str,
+        start_date: str,
+        end_date: str,
     ) -> Optional[pd.DataFrame]:
         """Fetch a single A-share symbol."""
         if not _is_a_share(code):
@@ -157,7 +160,5 @@ class DataLoader:
 
         df = df.rename(columns={"date": "trade_date"})
         df = df.set_index("trade_date").sort_index()
-        df = df[["open", "high", "low", "close", "volume"]].dropna(
-            subset=["open", "high", "low", "close"]
-        )
+        df = df[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
         return df

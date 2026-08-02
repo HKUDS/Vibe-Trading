@@ -89,9 +89,7 @@ class ShareholderCountTool(BaseTool):
 
         suffix = code.rpartition(".")[2]
         if suffix not in _A_SHARE_SUFFIXES:
-            return _error(
-                f"shareholder count is China A-share only (.SH/.SZ/.BJ); got '{code}'"
-            )
+            return _error(f"shareholder count is China A-share only (.SH/.SZ/.BJ); got '{code}'")
         if resolve_secid(code) is None:
             return _error(f"could not resolve A-share symbol '{code}'")
 

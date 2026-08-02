@@ -45,8 +45,9 @@ A股可转债是具有"债底保护+股票期权"特征的混合品种。本skil
 ### 1. 纯债价值（债底）
 
 ```python
-def bond_floor(coupon_rates: list, years_remaining: float,
-               redemption_price: float = 110, yield_rate: float = 0.03) -> float:
+def bond_floor(
+    coupon_rates: list, years_remaining: float, redemption_price: float = 110, yield_rate: float = 0.03
+) -> float:
     """
     Args:
         coupon_rates: 剩余各年票面利率列表，如 [0.8, 1.0, 1.5, 2.0]
@@ -56,8 +57,8 @@ def bond_floor(coupon_rates: list, years_remaining: float,
     Returns:
         纯债价值
     """
-    pv = sum(c * 100 / (1 + yield_rate)**i for i, c in enumerate(coupon_rates, 1))
-    pv += redemption_price / (1 + yield_rate)**len(coupon_rates)
+    pv = sum(c * 100 / (1 + yield_rate) ** i for i, c in enumerate(coupon_rates, 1))
+    pv += redemption_price / (1 + yield_rate) ** len(coupon_rates)
     return pv
 ```
 
@@ -182,6 +183,7 @@ def bond_floor(coupon_rates: list, years_remaining: float,
 ```python
 class ConvertibleBondEngine:
     """双低策略信号引擎"""
+
     def generate(self, data_map):
         # 每月末计算双低值
         # 选 Top N 等权配置

@@ -79,11 +79,7 @@ def compute_decay_metrics(
         result["ic_positive_ratio"] = round(positive_count / len(ic_values), 4)
 
     if has_sharpe:
-        result["baseline_sharpe"] = round(
-            sum(sharpe_values[:5]) / len(sharpe_values[:5]), 6
-        )
-        result["rolling_sharpe"] = round(
-            sum(sharpe_values[-5:]) / len(sharpe_values[-5:]), 6
-        )
+        result["baseline_sharpe"] = round(sum(sharpe_values[:5]) / len(sharpe_values[:5]), 6)
+        result["rolling_sharpe"] = round(sum(sharpe_values[-5:]) / len(sharpe_values[-5:]), 6)
 
     return result

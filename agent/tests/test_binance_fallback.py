@@ -20,9 +20,7 @@ def test_market_data_falls_back_from_okx_to_binance() -> None:
 
         class BinanceLoader:
             def fetch(self, codes, *_args, **_kwargs):
-                frame = pd.DataFrame(
-                    {"close": [1.0]}, index=pd.to_datetime(["2026-01-01"])
-                )
+                frame = pd.DataFrame({"close": [1.0]}, index=pd.to_datetime(["2026-01-01"]))
                 frame.index.name = "trade_date"
                 return {codes[0]: frame}
 

@@ -47,8 +47,8 @@ from src.live.mandate.store import load_mandate
 from src.live.runtime.flatten import flatten_and_cancel
 from src.live.runtime.jobstore import JobStore
 from src.live.runtime.liveness import write_heartbeat
-from src.live.runtime.scheduler import Job, Scheduler
-from src.live.runtime.triggers import Trigger, due_now
+from src.live.runtime.scheduler import Job
+from src.live.runtime.triggers import Trigger
 
 logger = logging.getLogger(__name__)
 
@@ -713,9 +713,7 @@ class LiveRunner:
         for job in resolved_jobs:
             self._scheduler.add_job(job)
         self._scheduler.start()
-        logger.info(
-            "live runner started for %s with %d job(s)", self.broker, len(resolved_jobs)
-        )
+        logger.info("live runner started for %s with %d job(s)", self.broker, len(resolved_jobs))
 
     def _resolve_jobs(self, jobs: list[_Job] | None, now: datetime) -> list[Job]:
         """Recompute the watch-cadence jobs on (re)start (resume-via-recompute).
@@ -777,9 +775,7 @@ class LiveRunner:
             elif kind_value == "market":
                 interval_ms = self._market_watch_ms
             else:  # event triggers fire out-of-band, not via the wall clock
-                logger.info(
-                    "skipping non-wall-clock trigger %s for %s", kind_value, self.broker
-                )
+                logger.info("skipping non-wall-clock trigger %s for %s", kind_value, self.broker)
                 continue
             built.append(
                 Job(

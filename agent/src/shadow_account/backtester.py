@@ -39,13 +39,14 @@ SUPPORTED_MARKETS: tuple[str, ...] = ("china_a", "hk", "us", "crypto")
 
 _LIQUID_BASKETS: dict[str, list[str]] = {
     "china_a": ["600519.SH", "000858.SZ", "300750.SZ", "600036.SH", "000001.SZ"],
-    "hk":      ["00700.HK", "09988.HK", "03690.HK", "00388.HK", "01810.HK"],
-    "us":      ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"],
-    "crypto":  ["BTC-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT", "XRP-USDT"],
+    "hk": ["00700.HK", "09988.HK", "03690.HK", "00388.HK", "01810.HK"],
+    "us": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"],
+    "crypto": ["BTC-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT", "XRP-USDT"],
 }
 
 
 # ---------------- Code selection ----------------
+
 
 def select_multi_market_codes(
     profile: ShadowProfile,
@@ -92,6 +93,7 @@ def flatten_codes(selection: dict[str, list[str]]) -> list[str]:
 
 # ---------------- Backtest execution ----------------
 
+
 def run_shadow_backtest(
     profile: ShadowProfile,
     *,
@@ -126,7 +128,9 @@ def run_shadow_backtest(
         curves (when emitted), and attribution (zeros when unavailable).
     """
     selection = select_multi_market_codes(
-        profile, per_market_count=per_market_count, markets=markets,
+        profile,
+        per_market_count=per_market_count,
+        markets=markets,
     )
     codes = flatten_codes(selection)
     if not codes:
@@ -147,7 +151,9 @@ def run_shadow_backtest(
     payload = json.loads(backtest_fn(str(run_dir)))
 
     per_market, combined, equity_curves = _summarize_artifacts(
-        payload=payload, run_dir=run_dir, selection=selection,
+        payload=payload,
+        run_dir=run_dir,
+        selection=selection,
     )
 
     attribution, shadow_pnl, real_pnl = _attribution_or_zero(
@@ -185,8 +191,7 @@ def load_cached_result(shadow_id: str) -> ShadowBacktestResult | None:
         per_market=data.get("per_market") or {},
         combined=data.get("combined") or {},
         equity_curves={
-            k: [(str(pt[0]), float(pt[1])) for pt in v]
-            for k, v in (data.get("equity_curves") or {}).items()
+            k: [(str(pt[0]), float(pt[1])) for pt in v] for k, v in (data.get("equity_curves") or {}).items()
         },
         attribution=AttributionBreakdown(
             missed_signals_pnl=float(attr.get("missed_signals_pnl", 0.0)),
@@ -218,10 +223,12 @@ def _cache_result(run_dir: Path, result: ShadowBacktestResult) -> None:
 
 def _default_run_backtest_fn():
     from src.tools.backtest_tool import run_backtest
+
     return run_backtest
 
 
 # ---------------- Artifact parsing ----------------
+
 
 def _summarize_artifacts(
     *,
@@ -351,6 +358,7 @@ def _per_market_breakdown(
 
 # ---------------- Attribution ----------------
 
+
 def _attribution_or_zero(
     *,
     profile: ShadowProfile,
@@ -443,15 +451,17 @@ def _compute_attribution(
             impact += excess
             reason = reason or "late_exit"
         if impact != 0.0:
-            counterfactuals.append({
-                "symbol": rt["symbol"],
-                "buy_dt": str(rt["buy_dt"]),
-                "sell_dt": str(rt["sell_dt"]),
-                "hold_days": hold,
-                "pnl": round(pnl, 2),
-                "impact": round(impact, 2),
-                "reason": reason,
-            })
+            counterfactuals.append(
+                {
+                    "symbol": rt["symbol"],
+                    "buy_dt": str(rt["buy_dt"]),
+                    "sell_dt": str(rt["sell_dt"]),
+                    "hold_days": hold,
+                    "pnl": round(pnl, 2),
+                    "impact": round(impact, 2),
+                    "reason": reason,
+                }
+            )
 
     overtrading = _overtrading_pnl(profile=profile, roundtrips=roundtrips)
     explained = noise + early + late + overtrading
@@ -521,4 +531,3 @@ __all__ = [
     "run_shadow_backtest",
     "select_multi_market_codes",
 ]
-

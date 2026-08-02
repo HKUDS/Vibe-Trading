@@ -485,9 +485,17 @@ class TestReads:
 
         fake_mt5.positions = [
             SimpleNamespace(
-                ticket=777, symbol="EURUSDm", type=FakeMT5.POSITION_TYPE_BUY,
-                volume=0.1, price_open=1.0750, price_current=1.0800,
-                sl=1.0700, tp=1.0900, swap=-0.5, profit=50.0, time=1_750_000_000,
+                ticket=777,
+                symbol="EURUSDm",
+                type=FakeMT5.POSITION_TYPE_BUY,
+                volume=0.1,
+                price_open=1.0750,
+                price_current=1.0800,
+                sl=1.0700,
+                tp=1.0900,
+                swap=-0.5,
+                profit=50.0,
+                time=1_750_000_000,
             )
         ]
         result = sdk.get_positions(_paper_config())
@@ -502,9 +510,17 @@ class TestReads:
 
         fake_mt5.positions = [
             SimpleNamespace(
-                ticket=778, symbol="EURUSDm", type=FakeMT5.POSITION_TYPE_SELL,
-                volume=0.1, price_open=1.0750, price_current=1.0800,
-                sl=0.0, tp=0.0, swap=0.0, profit=-10.0, time=1_750_000_000,
+                ticket=778,
+                symbol="EURUSDm",
+                type=FakeMT5.POSITION_TYPE_SELL,
+                volume=0.1,
+                price_open=1.0750,
+                price_current=1.0800,
+                sl=0.0,
+                tp=0.0,
+                swap=0.0,
+                profit=-10.0,
+                time=1_750_000_000,
             )
         ]
         del fake_mt5.ticks["EURUSDm"]
@@ -527,8 +543,16 @@ class TestReads:
         from src.trading.connectors.mt5 import sdk
 
         fake_mt5.rates["EURUSDm"] = [
-            {"time": 1_750_000_000, "open": 1.07, "high": 1.09, "low": 1.06,
-             "close": 1.08, "tick_volume": 1200, "spread": 6, "real_volume": 0},
+            {
+                "time": 1_750_000_000,
+                "open": 1.07,
+                "high": 1.09,
+                "low": 1.06,
+                "close": 1.08,
+                "tick_volume": 1200,
+                "spread": 6,
+                "real_volume": 0,
+            },
         ]
         result = sdk.get_historical_bars("EURUSD", config=_paper_config(), period="1h", limit=10)
         assert result["status"] == "ok"
@@ -551,9 +575,16 @@ class TestReads:
 
         fake_mt5.pending_orders = [
             SimpleNamespace(
-                ticket=888, symbol="EURUSDm", type=FakeMT5.ORDER_TYPE_BUY_LIMIT,
-                volume_initial=0.05, volume_current=0.05, price_open=1.0500,
-                sl=0.0, tp=0.0, time_setup=1_750_000_000, state=1,
+                ticket=888,
+                symbol="EURUSDm",
+                type=FakeMT5.ORDER_TYPE_BUY_LIMIT,
+                volume_initial=0.05,
+                volume_current=0.05,
+                price_open=1.0500,
+                sl=0.0,
+                tp=0.0,
+                time_setup=1_750_000_000,
+                state=1,
             )
         ]
         result = sdk.get_open_orders(_paper_config())
@@ -571,9 +602,13 @@ class TestPlaceOrder:
         from src.trading.connectors.mt5 import sdk
 
         defaults: dict[str, Any] = {
-            "symbol": "EURUSD", "side": "buy", "quantity": 0.05,
-            "notional": None, "order_type": "market",
-            "limit_price": None, "time_in_force": "day",
+            "symbol": "EURUSD",
+            "side": "buy",
+            "quantity": 0.05,
+            "notional": None,
+            "order_type": "market",
+            "limit_price": None,
+            "time_in_force": "day",
         }
         defaults.update(kwargs)
         return sdk.place_order(_paper_config(), **defaults)
@@ -652,8 +687,13 @@ class TestPlaceOrder:
 
         result = sdk.place_order(
             sdk.build_config({"profile": "paper"}),
-            symbol="EURUSD", side="buy", quantity=0.05, notional=None,
-            order_type="market", limit_price=None, time_in_force="day",
+            symbol="EURUSD",
+            side="buy",
+            quantity=0.05,
+            notional=None,
+            order_type="market",
+            limit_price=None,
+            time_in_force="day",
         )
         assert result["status"] == "error"
         assert "not configured" in result["error"]
@@ -676,9 +716,16 @@ class TestCancelOrder:
 
         fake_mt5.pending_orders = [
             SimpleNamespace(
-                ticket=888, symbol="EURUSDm", type=FakeMT5.ORDER_TYPE_BUY_LIMIT,
-                volume_initial=0.05, volume_current=0.05, price_open=1.05,
-                sl=0.0, tp=0.0, time_setup=0, state=1,
+                ticket=888,
+                symbol="EURUSDm",
+                type=FakeMT5.ORDER_TYPE_BUY_LIMIT,
+                volume_initial=0.05,
+                volume_current=0.05,
+                price_open=1.05,
+                sl=0.0,
+                tp=0.0,
+                time_setup=0,
+                state=1,
             )
         ]
         result = sdk.cancel_order(_paper_config(), "888")
@@ -693,9 +740,17 @@ class TestCancelOrder:
 
         fake_mt5.positions = [
             SimpleNamespace(
-                ticket=777, symbol="EURUSDm", type=FakeMT5.POSITION_TYPE_BUY,
-                volume=0.1, price_open=1.0750, price_current=1.0800,
-                sl=0.0, tp=0.0, swap=0.0, profit=0.0, time=0,
+                ticket=777,
+                symbol="EURUSDm",
+                type=FakeMT5.POSITION_TYPE_BUY,
+                volume=0.1,
+                price_open=1.0750,
+                price_current=1.0800,
+                sl=0.0,
+                tp=0.0,
+                swap=0.0,
+                profit=0.0,
+                time=0,
             )
         ]
         result = sdk.cancel_order(_paper_config(), "777")
@@ -712,9 +767,17 @@ class TestCancelOrder:
 
         fake_mt5.positions = [
             SimpleNamespace(
-                ticket=777, symbol="EURUSDm", type=FakeMT5.POSITION_TYPE_SELL,
-                volume=0.1, price_open=1.08, price_current=1.07,
-                sl=0.0, tp=0.0, swap=0.0, profit=0.0, time=0,
+                ticket=777,
+                symbol="EURUSDm",
+                type=FakeMT5.POSITION_TYPE_SELL,
+                volume=0.1,
+                price_open=1.08,
+                price_current=1.07,
+                sl=0.0,
+                tp=0.0,
+                swap=0.0,
+                profit=0.0,
+                time=0,
             )
         ]
         result = sdk.close_position(_paper_config(), 777, volume=5.0)
@@ -753,11 +816,18 @@ class TestRateToDictSerialization:
         from src.trading.connectors.mt5.reads import _rate_to_dict
 
         # Simulate a numpy structured array row as returned by MT5 SDK.
-        dt = np.dtype([
-            ("time", "<i8"), ("open", "<f8"), ("high", "<f8"),
-            ("low", "<f8"), ("close", "<f8"), ("tick_volume", "<i8"),
-            ("spread", "<i4"), ("real_volume", "<i8"),
-        ])
+        dt = np.dtype(
+            [
+                ("time", "<i8"),
+                ("open", "<f8"),
+                ("high", "<f8"),
+                ("low", "<f8"),
+                ("close", "<f8"),
+                ("tick_volume", "<i8"),
+                ("spread", "<i4"),
+                ("real_volume", "<i8"),
+            ]
+        )
         row = np.array(
             [(1_750_000_000, 1.0700, 1.0900, 1.0600, 1.0800, 1200, 6, 0)],
             dtype=dt,

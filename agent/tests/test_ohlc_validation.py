@@ -15,20 +15,18 @@ from backtest.loaders.base import validate_ohlc
 def _frame(rows: list[tuple[float, float, float, float, float]]) -> pd.DataFrame:
     """Build an OHLCV frame from (open, high, low, close, volume) rows."""
     index = pd.date_range("2026-01-01", periods=len(rows), freq="D", name="trade_date")
-    return pd.DataFrame(
-        rows, columns=["open", "high", "low", "close", "volume"], index=index
-    )
+    return pd.DataFrame(rows, columns=["open", "high", "low", "close", "volume"], index=index)
 
 
 def test_validate_ohlc_drops_invariant_violations() -> None:
     """high<low, prices<=0, and high/low not bracketing open/close are dropped."""
     frame = _frame(
         [
-            (10.0, 11.0, 9.0, 10.5, 1000.0),   # valid
-            (10.0, 8.0, 9.0, 10.5, 1000.0),    # high < low -> invalid
-            (-1.0, 11.0, 9.0, 10.5, 1000.0),   # non-positive open -> invalid
-            (10.0, 10.5, 9.0, 12.0, 1000.0),   # close > high -> invalid
-            (10.0, 10.0, 10.0, 10.0, 0.0),     # flat doji, zero volume -> valid
+            (10.0, 11.0, 9.0, 10.5, 1000.0),  # valid
+            (10.0, 8.0, 9.0, 10.5, 1000.0),  # high < low -> invalid
+            (-1.0, 11.0, 9.0, 10.5, 1000.0),  # non-positive open -> invalid
+            (10.0, 10.5, 9.0, 12.0, 1000.0),  # close > high -> invalid
+            (10.0, 10.0, 10.0, 10.0, 0.0),  # flat doji, zero volume -> valid
         ]
     )
 
@@ -64,9 +62,7 @@ def test_validate_ohlc_passthrough_when_no_ohlc_columns() -> None:
     assert validate_ohlc(other).equals(other)
 
 
-def test_local_loader_drops_dirty_bar(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_local_loader_drops_dirty_bar(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A structurally invalid bar in a local file must not reach the backtest."""
     csv_path = tmp_path / "dirty.csv"
     csv_path.write_text(
@@ -126,7 +122,7 @@ def test_sanitize_data_map_guards_every_source() -> None:
         "AAA.US": _frame(
             [
                 (10.0, 11.0, 9.0, 10.5, 1000.0),  # valid
-                (10.0, 8.0, 9.0, 10.5, 1500.0),   # high < low -> dropped
+                (10.0, 8.0, 9.0, 10.5, 1500.0),  # high < low -> dropped
             ]
         ),
         "BBB.US": _frame([(12.0, 13.0, 11.0, 12.5, 1200.0)]),  # all valid

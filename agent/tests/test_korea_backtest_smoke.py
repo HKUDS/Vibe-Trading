@@ -68,9 +68,7 @@ def _run(engine, code: str, run_dir: Path, **config_overrides) -> dict:
         "initial_cash": 1_000_000,
     }
     config.update(config_overrides)
-    return engine.run_backtest(
-        config, _FakeLoader(code, _krx_bars()), _LongSignal(code), run_dir
-    )
+    return engine.run_backtest(config, _FakeLoader(code, _krx_bars()), _LongSignal(code), run_dir)
 
 
 def test_korea_backtest_completes_and_emits_run_card(tmp_path: Path) -> None:
@@ -96,26 +94,25 @@ def test_korea_costs_are_exact(tmp_path: Path) -> None:
     assert trade.exit_price == krx_round_down(trade.exit_price)
 
     entry_comm = trade.size * trade.entry_price * engine.kr_brokerage
-    exit_comm = trade.size * trade.exit_price * (
-        engine.kr_brokerage + engine.kr_tax_sell
-    )
+    exit_comm = trade.size * trade.exit_price * (engine.kr_brokerage + engine.kr_tax_sell)
     # Buy pays brokerage only; sell pays brokerage + the sell-side tax.
     assert trade.commission == pytest.approx(entry_comm + exit_comm, abs=1e-6)
     assert metrics["final_value"] == pytest.approx(
-        1_000_000 + trade.size * (trade.exit_price - trade.entry_price)
-        - entry_comm - exit_comm,
+        1_000_000 + trade.size * (trade.exit_price - trade.entry_price) - entry_comm - exit_comm,
         abs=1e-6,
     )
 
 
 def test_zero_rates_leave_a_costless_run(tmp_path: Path) -> None:
     """With both rates zeroed the same run must record no cost at all."""
-    engine = KoreaEquityEngine(
-        {"initial_cash": 1_000_000, "slippage": 0, "kr_brokerage": 0, "kr_tax_sell": 0}
-    )
+    engine = KoreaEquityEngine({"initial_cash": 1_000_000, "slippage": 0, "kr_brokerage": 0, "kr_tax_sell": 0})
     metrics = _run(
-        engine, "005930.KS", tmp_path,
-        slippage=0, kr_brokerage=0, kr_tax_sell=0,
+        engine,
+        "005930.KS",
+        tmp_path,
+        slippage=0,
+        kr_brokerage=0,
+        kr_tax_sell=0,
     )
 
     trade = engine.trades[0]
@@ -128,20 +125,14 @@ def test_zero_rates_leave_a_costless_run(tmp_path: Path) -> None:
 def test_korea_costs_are_applied_vs_zero_commission_us(tmp_path: Path) -> None:
     """Identical data, signal AND slippage: only Korea's cost stack differs."""
     kr_engine = KoreaEquityEngine({"initial_cash": 1_000_000, "slippage": 0})
-    us_engine = GlobalEquityEngine(
-        {"initial_cash": 1_000_000, "slippage_us": 0}, market="us"
-    )
+    us_engine = GlobalEquityEngine({"initial_cash": 1_000_000, "slippage_us": 0}, market="us")
 
     kr_metrics = _run(kr_engine, "005930.KS", tmp_path / "kr", slippage=0)
     us_metrics = _run(us_engine, "AAPL.US", tmp_path / "us", slippage_us=0)
 
     # Same fills on both sides, so the gap can only come from Korea's costs.
-    assert kr_engine.trades[0].entry_price == pytest.approx(
-        us_engine.trades[0].entry_price
-    )
-    assert kr_engine.trades[0].exit_price == pytest.approx(
-        us_engine.trades[0].exit_price
-    )
+    assert kr_engine.trades[0].entry_price == pytest.approx(us_engine.trades[0].entry_price)
+    assert kr_engine.trades[0].exit_price == pytest.approx(us_engine.trades[0].exit_price)
     assert us_engine.trades[0].commission == pytest.approx(0.0, abs=1e-9)
     assert kr_engine.trades[0].commission > 0
     assert kr_metrics["final_value"] < us_metrics["final_value"]

@@ -423,80 +423,101 @@ python agent/src/skills/ashare-pre-st-filter/scripts/fetch_sina_penalties.py \
 import os, json, subprocess
 import tushare as ts
 
-ts_code = '000729.SZ'
-pro = ts.pro_api(os.environ['TUSHARE_TOKEN'])
+ts_code = "000729.SZ"
+pro = ts.pro_api(os.environ["TUSHARE_TOKEN"])
 
 # === Step 0: M0 当前状态 ===
-basic = pro.stock_basic(ts_code=ts_code, fields='ts_code,name,market').to_dict('records')[0]
+basic = pro.stock_basic(ts_code=ts_code, fields="ts_code,name,market").to_dict("records")[0]
 st_hit = pro.stock_st()  # 失败则回退 namechange
-name_chg = pro.namechange(ts_code=ts_code).sort_values('start_date', ascending=False)
+name_chg = pro.namechange(ts_code=ts_code).sort_values("start_date", ascending=False)
 
 # === Step 1: 板块判断 ===
-board = '科创板' if ts_code.startswith('688') else '创业板' if ts_code.startswith('30') else '主板'
-threshold_revenue = 1e8 if board != '主板' else 3e8
-threshold_mv = 3e8 if board != '主板' else 5e8
+board = "科创板" if ts_code.startswith("688") else "创业板" if ts_code.startswith("30") else "主板"
+threshold_revenue = 1e8 if board != "主板" else 3e8
+threshold_mv = 3e8 if board != "主板" else 5e8
 
 # === Step 2: 拉财务（最新 5 期 + 过去 4 年年报） ===
-income = pro.income(ts_code=ts_code).sort_values('end_date', ascending=False).drop_duplicates('end_date')
-balance = pro.balancesheet(ts_code=ts_code).sort_values('end_date', ascending=False).drop_duplicates('end_date')
-fina_ind = pro.fina_indicator(ts_code=ts_code).sort_values('end_date', ascending=False).drop_duplicates('end_date')
-forecast = pro.forecast(ts_code=ts_code).sort_values('ann_date', ascending=False)
-express = pro.express(ts_code=ts_code).sort_values('ann_date', ascending=False)
+income = pro.income(ts_code=ts_code).sort_values("end_date", ascending=False).drop_duplicates("end_date")
+balance = pro.balancesheet(ts_code=ts_code).sort_values("end_date", ascending=False).drop_duplicates("end_date")
+fina_ind = pro.fina_indicator(ts_code=ts_code).sort_values("end_date", ascending=False).drop_duplicates("end_date")
+forecast = pro.forecast(ts_code=ts_code).sort_values("ann_date", ascending=False)
+express = pro.express(ts_code=ts_code).sort_values("ann_date", ascending=False)
 
 # === Step 3: R1-R4 计算（按各章节口径，注意 min(n_income, profit_dedt)） ===
 # ... 略
 
 # === Step 4: E1 审计 ===
-audit = pro.fina_audit(ts_code=ts_code).sort_values('end_date', ascending=False).head(2)
+audit = pro.fina_audit(ts_code=ts_code).sort_values("end_date", ascending=False).head(2)
 
 # === Step 5: E2 监管处罚（双窗口 + 主体加权）===
 from datetime import date, timedelta
-result = subprocess.run([
-    'python', 'agent/src/skills/ashare-pre-st-filter/scripts/fetch_sina_penalties.py',
-    '--ts-code', ts_code, '--stock-name', basic['name'], '--no-filter',
-], capture_output=True, text=True)
-penalties = json.loads(result.stdout).get('records', [])
+
+result = subprocess.run(
+    [
+        "python",
+        "agent/src/skills/ashare-pre-st-filter/scripts/fetch_sina_penalties.py",
+        "--ts-code",
+        ts_code,
+        "--stock-name",
+        basic["name"],
+        "--no-filter",
+    ],
+    capture_output=True,
+    text=True,
+)
+penalties = json.loads(result.stdout).get("records", [])
 
 # 在内存中切双窗口（避免两次 HTTP）
 this_year = date.today().year
-win_a_start, win_a_end = f'{this_year-1}-01-01', f'{this_year-1}-12-31'
+win_a_start, win_a_end = f"{this_year - 1}-01-01", f"{this_year - 1}-12-31"
 win_b_start = (date.today() - timedelta(days=365)).isoformat()
-win_b_end   = date.today().isoformat()
+win_b_end = date.today().isoformat()
+
 
 def _in(rec, s, e):
-    d = rec.get('ann_date') or ''
+    d = rec.get("ann_date") or ""
     return bool(d) and s <= d <= e
+
 
 win_a = [r for r in penalties if _in(r, win_a_start, win_a_end)]
 win_b = [r for r in penalties if _in(r, win_b_start, win_b_end)]
 
 # 窗口 A：单条等级取最高
 REASON_LEVEL = {
-    '财务造假': 3, '虚假陈述': 3, '信息披露违规': 3,
-    '违规担保': 3, '占用资金': 3,
-    '内幕交易': 2, '市场操纵': 2, '违规减持': 2,
+    "财务造假": 3,
+    "虚假陈述": 3,
+    "信息披露违规": 3,
+    "违规担保": 3,
+    "占用资金": 3,
+    "内幕交易": 2,
+    "市场操纵": 2,
+    "违规减持": 2,
 }
-levels_a = [REASON_LEVEL.get(r['reason_normalized'], 1) for r in win_a]
+levels_a = [REASON_LEVEL.get(r["reason_normalized"], 1) for r in win_a]
 e2_single = max(levels_a) if levels_a else 0
 
 # 窗口 B：原始条数 + 主体加权条数
-FREQ_EVENT_TYPES = {'警示', '问讯', '监管关注', '监管函', '警示函'}
-FREQ_ISSUERS = {'上交所', '深交所', '北交所', '证监会', '地方证监局'}
-SUBJECT_WEIGHT = {'company': 1.0, 'shareholder': 0.5, 'officer': 0.5}
+FREQ_EVENT_TYPES = {"警示", "问讯", "监管关注", "监管函", "警示函"}
+FREQ_ISSUERS = {"上交所", "深交所", "北交所", "证监会", "地方证监局"}
+SUBJECT_WEIGHT = {"company": 1.0, "shareholder": 0.5, "officer": 0.5}
 
-freq_pool = [r for r in win_b
-             if r.get('e2_countable', True)
-             and (r['event_type'] in FREQ_EVENT_TYPES
-                  or r['issuer_normalized'] in FREQ_ISSUERS)]
+freq_pool = [
+    r
+    for r in win_b
+    if r.get("e2_countable", True) and (r["event_type"] in FREQ_EVENT_TYPES or r["issuer_normalized"] in FREQ_ISSUERS)
+]
 nb_raw = len(freq_pool)
-nb_weighted = round(sum(SUBJECT_WEIGHT.get(r['subject_normalized'], 1.0)
-                        for r in freq_pool), 1)
+nb_weighted = round(sum(SUBJECT_WEIGHT.get(r["subject_normalized"], 1.0) for r in freq_pool), 1)
 
 # 频次等级（基于加权条数）
-if nb_weighted >= 5.0:    e2_freq = 4   # 极高
-elif nb_weighted >= 3.0:  e2_freq = 3   # 高
-elif nb_weighted >= 2.0:  e2_freq = 2   # 中
-else:                     e2_freq = 1   # 低
+if nb_weighted >= 5.0:
+    e2_freq = 4  # 极高
+elif nb_weighted >= 3.0:
+    e2_freq = 3  # 高
+elif nb_weighted >= 2.0:
+    e2_freq = 2  # 中
+else:
+    e2_freq = 1  # 低
 
 e2_overall = max(e2_single, e2_freq)
 # 叠加加成：频次高 + 单条高同时命中 → 直升极高
@@ -504,9 +525,9 @@ if e2_freq >= 3 and e2_single >= 3:
     e2_overall = 4
 
 # === Step 6: E3 交易临界 ===
-daily = pro.daily(ts_code=ts_code).sort_values('trade_date', ascending=False).head(30)
-daily_basic = pro.daily_basic(ts_code=ts_code).sort_values('trade_date', ascending=False).head(1).iloc[0]
-total_mv_yi = daily_basic['total_mv'] * 1e4 / 1e8  # 万元 → 亿元
+daily = pro.daily(ts_code=ts_code).sort_values("trade_date", ascending=False).head(30)
+daily_basic = pro.daily_basic(ts_code=ts_code).sort_values("trade_date", ascending=False).head(1).iloc[0]
+total_mv_yi = daily_basic["total_mv"] * 1e4 / 1e8  # 万元 → 亿元
 
 # === Step 7: 双轴合成输出 ===
 # 风险等级 = max(R1, R2, R3, R4, E1, E2_综合, E3)

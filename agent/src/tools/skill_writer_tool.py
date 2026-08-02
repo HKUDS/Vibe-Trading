@@ -45,6 +45,7 @@ def _sanitize_skill_name(name: str) -> str:
         return hashlib.sha256(name.strip().encode("utf-8")).hexdigest()[:8]
     return slug
 
+
 class SaveSkillTool(BaseTool):
     """Save a successful workflow as a reusable skill."""
 
@@ -97,18 +98,16 @@ class SaveSkillTool(BaseTool):
 
         # Ensure frontmatter exists
         if not content.strip().startswith("---"):
-            content = (
-                f"---\nname: {slug}\n"
-                f"description: User-created skill\n"
-                f"category: {category}\n---\n\n{content}"
-            )
+            content = f"---\nname: {slug}\ndescription: User-created skill\ncategory: {category}\n---\n\n{content}"
 
         skill_path.write_text(content, encoding="utf-8")
-        return json.dumps({
-            "status": "ok",
-            "message": f"Skill '{slug}' saved. Available via load_skill(\"{slug}\") in future sessions.",
-            "path": str(skill_path),
-        })
+        return json.dumps(
+            {
+                "status": "ok",
+                "message": f"Skill '{slug}' saved. Available via load_skill(\"{slug}\") in future sessions.",
+                "path": str(skill_path),
+            }
+        )
 
 
 class PatchSkillTool(BaseTool):
@@ -179,11 +178,13 @@ class PatchSkillTool(BaseTool):
 
         patched = content.replace(find_text, replace_text, 1)
         skill_path.write_text(patched, encoding="utf-8")
-        return json.dumps({
-            "status": "ok",
-            "message": f"Patched skill '{name}': replaced 1 occurrence.",
-            "path": str(skill_path),
-        })
+        return json.dumps(
+            {
+                "status": "ok",
+                "message": f"Patched skill '{name}': replaced 1 occurrence.",
+                "path": str(skill_path),
+            }
+        )
 
 
 class DeleteSkillTool(BaseTool):
@@ -226,10 +227,12 @@ class DeleteSkillTool(BaseTool):
             return json.dumps({"status": "error", "error": f"User skill '{slug}' not found"})
 
         shutil.rmtree(skill_dir)
-        return json.dumps({
-            "status": "ok",
-            "message": f"Deleted skill '{name}' and all its files.",
-        })
+        return json.dumps(
+            {
+                "status": "ok",
+                "message": f"Deleted skill '{name}' and all its files.",
+            }
+        )
 
 
 class SkillFileTool(BaseTool):
@@ -284,7 +287,9 @@ class SkillFileTool(BaseTool):
 
         skill_dir = USER_SKILLS_DIR / _sanitize_skill_name(skill_name)
         if not skill_dir.exists():
-            return json.dumps({"status": "error", "error": f"User skill '{skill_name}' not found. Create it with save_skill first."})
+            return json.dumps(
+                {"status": "error", "error": f"User skill '{skill_name}' not found. Create it with save_skill first."}
+            )
 
         if action == "list":
             return self._list_files(skill_dir, skill_name)
@@ -303,11 +308,14 @@ class SkillFileTool(BaseTool):
             if path.is_file():
                 rel = path.relative_to(skill_dir)
                 files.append({"path": str(rel), "size": path.stat().st_size})
-        return json.dumps({
-            "status": "ok",
-            "skill": skill_name,
-            "files": files,
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "status": "ok",
+                "skill": skill_name,
+                "files": files,
+            },
+            ensure_ascii=False,
+        )
 
     @staticmethod
     def _write_file(skill_dir: Path, skill_name: str, kwargs: dict) -> str:
@@ -322,10 +330,12 @@ class SkillFileTool(BaseTool):
         # Validate subdirectory
         parts = Path(rel_path).parts
         if len(parts) < 2 or parts[0] not in _ALLOWED_SUBDIRS:
-            return json.dumps({
-                "status": "error",
-                "error": f"Path must start with one of: {', '.join(sorted(_ALLOWED_SUBDIRS))}. Got: '{parts[0] if parts else ''}'",
-            })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"Path must start with one of: {', '.join(sorted(_ALLOWED_SUBDIRS))}. Got: '{parts[0] if parts else ''}'",
+                }
+            )
 
         target = skill_dir / rel_path
         # Safety: prevent path traversal
@@ -336,11 +346,13 @@ class SkillFileTool(BaseTool):
 
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        return json.dumps({
-            "status": "ok",
-            "message": f"Written {rel_path} to skill '{skill_name}'.",
-            "path": str(target),
-        })
+        return json.dumps(
+            {
+                "status": "ok",
+                "message": f"Written {rel_path} to skill '{skill_name}'.",
+                "path": str(target),
+            }
+        )
 
     @staticmethod
     def _remove_file(skill_dir: Path, skill_name: str, kwargs: dict) -> str:
@@ -351,7 +363,9 @@ class SkillFileTool(BaseTool):
 
         # Prevent deleting SKILL.md (use delete_skill for that)
         if Path(rel_path).name == "SKILL.md":
-            return json.dumps({"status": "error", "error": "Cannot remove SKILL.md. Use delete_skill to remove the entire skill."})
+            return json.dumps(
+                {"status": "error", "error": "Cannot remove SKILL.md. Use delete_skill to remove the entire skill."}
+            )
 
         target = skill_dir / rel_path
         try:
@@ -363,7 +377,9 @@ class SkillFileTool(BaseTool):
             return json.dumps({"status": "error", "error": f"File not found: {rel_path}"})
 
         target.unlink()
-        return json.dumps({
-            "status": "ok",
-            "message": f"Removed {rel_path} from skill '{skill_name}'.",
-        })
+        return json.dumps(
+            {
+                "status": "ok",
+                "message": f"Removed {rel_path} from skill '{skill_name}'.",
+            }
+        )

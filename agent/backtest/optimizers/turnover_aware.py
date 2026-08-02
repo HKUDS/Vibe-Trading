@@ -67,17 +67,14 @@ class TurnoverAwareOptimizer(BaseOptimizer):
         self.max_per_name = float(max_per_name) if max_per_name is not None else None
         self.groups: Dict[str, str] = dict(groups) if groups else {}
         self.max_per_group: Dict[str, float] = dict(max_per_group) if max_per_group else {}
-        if self.max_per_name is not None and (
-            not np.isfinite(self.max_per_name) or not 0.0 < self.max_per_name <= 1.0
-        ):
+        if self.max_per_name is not None and (not np.isfinite(self.max_per_name) or not 0.0 < self.max_per_name <= 1.0):
             raise ValueError("max_per_name must be finite and in (0, 1]")
         if any(not isinstance(code, str) or not isinstance(group, str) for code, group in self.groups.items()):
             raise ValueError("groups must map string asset codes to string group names")
         unknown_groups = set(self.max_per_group) - set(self.groups.values())
         if unknown_groups:
             raise ValueError(
-                "max_per_group references groups with no mapped assets: "
-                + ", ".join(sorted(unknown_groups))
+                "max_per_group references groups with no mapped assets: " + ", ".join(sorted(unknown_groups))
             )
         for group, cap in self.max_per_group.items():
             if isinstance(cap, (bool, np.bool_)):
@@ -92,9 +89,7 @@ class TurnoverAwareOptimizer(BaseOptimizer):
         self._prev: Dict[str, float] = {}
         self.realized_turnover: List[float] = []
 
-    def _build_context(
-        self, window: pd.DataFrame, active: List[str]
-    ) -> "Dict[str, Any] | None":
+    def _build_context(self, window: pd.DataFrame, active: List[str]) -> "Dict[str, Any] | None":
         """Mean vector, covariance, and active codes for the current window."""
         mu = window.mean().values
         cov = window.cov().values
@@ -153,10 +148,12 @@ class TurnoverAwareOptimizer(BaseOptimizer):
                 group_rows.append(row)
                 group_caps.append(cap)
                 group_constraint_indices.append(indices)
-                constraints.append({
-                    "type": "ineq",
-                    "fun": lambda w, idx=indices, c=cap: c - w[np.array(idx)].sum(),
-                })
+                constraints.append(
+                    {
+                        "type": "ineq",
+                        "fun": lambda w, idx=indices, c=cap: c - w[np.array(idx)].sum(),
+                    }
+                )
 
         has_effective_caps = upper < 1.0 or any(cap < 1.0 for cap in group_caps)
         if not has_effective_caps:
@@ -166,10 +163,7 @@ class TurnoverAwareOptimizer(BaseOptimizer):
             and (w_prev >= 0.0).all()
             and abs(w_prev.sum() - 1.0) <= 1e-12
             and (w_prev <= upper + 1e-12).all()
-            and all(
-                row @ w_prev <= cap + 1e-12
-                for row, cap in zip(group_rows, group_caps)
-            )
+            and all(row @ w_prev <= cap + 1e-12 for row, cap in zip(group_rows, group_caps))
         ):
             x0 = w_prev
         else:
@@ -187,8 +181,7 @@ class TurnoverAwareOptimizer(BaseOptimizer):
             total_capacity = sum(capacity for _, capacity in buckets)
             if total_capacity < 1.0 - 1e-12:
                 raise ValueError(
-                    "exposure caps are infeasible for active assets "
-                    f"{active}: total capacity is {total_capacity:.6g}"
+                    f"exposure caps are infeasible for active assets {active}: total capacity is {total_capacity:.6g}"
                 )
             x0 = np.zeros(n)
             for indices, capacity in buckets:
@@ -221,9 +214,7 @@ class TurnoverAwareOptimizer(BaseOptimizer):
         """Accumulate realized turnover and roll prior weights forward."""
         codes = set(active) | set(self._prev)
         new_map = {code: float(weights[i]) for i, code in enumerate(active)}
-        turnover = 0.5 * sum(
-            abs(new_map.get(code, 0.0) - self._prev.get(code, 0.0)) for code in codes
-        )
+        turnover = 0.5 * sum(abs(new_map.get(code, 0.0) - self._prev.get(code, 0.0)) for code in codes)
         self.realized_turnover.append(turnover)
         self._prev = new_map
 

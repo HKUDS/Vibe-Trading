@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Alpha #3 - 量价滞后相关
 # 简要说明: (-1 * correlation(rank(open), rank(volume), 10))，开盘价与成交量的秩相关系数取负。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_003"
 
 __alpha_meta__ = {
-    'id': 'alpha101_003',
-    'nickname': 'Kakushadze Alpha #3',
-    'theme': ['volume', 'reversal'],
-    'formula_latex': '-1 * correlation(rank(open), rank(volume), 10)',
-    'columns_required': ['open', 'volume', 'close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 10,
-    'notes': '',
+    "id": "alpha101_003",
+    "nickname": "Kakushadze Alpha #3",
+    "theme": ["volume", "reversal"],
+    "formula_latex": "-1 * correlation(rank(open), rank(volume), 10)",
+    "columns_required": ["open", "volume", "close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 10,
+    "notes": "",
 }
 
 
@@ -55,7 +54,6 @@ def compute(panel: dict) -> pd.DataFrame:
     """Compute the alpha on the OHLCV+ panel and return a wide DataFrame."""
     open_ = panel["open"]
     volume = panel["volume"]
-
 
     # Helper aliases (local closures keep the file standalone & purity-safe).
     out = -1.0 * ts_corr(rank(open_), rank(volume), 10)

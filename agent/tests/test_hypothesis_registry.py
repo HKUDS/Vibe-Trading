@@ -152,25 +152,31 @@ def test_search_by_text_and_status(storage_path: Path) -> None:
 
 
 def test_tool_wrappers_use_env_isolated_storage(storage_path: Path) -> None:
-    created = json.loads(CreateHypothesisTool().execute(
-        title="Tool-created carry",
-        thesis="Carry works when trend agrees.",
-        data_sources=["yfinance"],
-    ))
+    created = json.loads(
+        CreateHypothesisTool().execute(
+            title="Tool-created carry",
+            thesis="Carry works when trend agrees.",
+            data_sources=["yfinance"],
+        )
+    )
     assert created["status"] == "ok"
     hypothesis_id = created["hypothesis"]["hypothesis_id"]
 
-    updated = json.loads(UpdateHypothesisTool().execute(
-        hypothesis_id=hypothesis_id,
-        status="validated",
-        invalidation_notes="Monitor decay after costs.",
-    ))
+    updated = json.loads(
+        UpdateHypothesisTool().execute(
+            hypothesis_id=hypothesis_id,
+            status="validated",
+            invalidation_notes="Monitor decay after costs.",
+        )
+    )
     assert updated["hypothesis"]["status"] == "validated"
 
-    linked = json.loads(LinkBacktestTool().execute(
-        hypothesis_id=hypothesis_id,
-        run_card_path="/tmp/tool_run_card.json",
-    ))
+    linked = json.loads(
+        LinkBacktestTool().execute(
+            hypothesis_id=hypothesis_id,
+            run_card_path="/tmp/tool_run_card.json",
+        )
+    )
     assert linked["status"] == "ok"
     assert linked["hypothesis"]["run_cards"][0]["run_card_path"] == "/tmp/tool_run_card.json"
 

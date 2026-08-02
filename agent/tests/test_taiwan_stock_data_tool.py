@@ -292,9 +292,7 @@ def _create_bulk_database(
         )
 
         for step in range(rows):
-            bar_date = (
-                newest - timedelta(days=step)
-            ).isoformat()
+            bar_date = (newest - timedelta(days=step)).isoformat()
 
             prices.append(
                 (
@@ -476,19 +474,11 @@ def test_status_returns_snapshot_summary(
     db_path = _create_test_database(tmp_path)
     tool = TaiwanStockDataTool(db_path)
 
-    payload = json.loads(
-        tool.execute(action="status")
-    )
+    payload = json.loads(tool.execute(action="status"))
 
     assert payload["status"] == "success"
-    assert (
-        payload["data"]["latest_market_date"]
-        == "2026-07-24"
-    )
-    assert (
-        payload["data"]["active_analysis_stocks"]
-        == 1
-    )
+    assert payload["data"]["latest_market_date"] == "2026-07-24"
+    assert payload["data"]["active_analysis_stocks"] == 1
     assert payload["data"]["integrity"] == "ok"
 
 
@@ -552,9 +542,7 @@ def test_universe_defaults_to_active_only(
 
     records = payload["data"]["records"]
 
-    assert [row["stock_id"] for row in records] == [
-        "2330"
-    ]
+    assert [row["stock_id"] for row in records] == ["2330"]
 
 
 def test_lookup_reports_unknown_stock_ids(
@@ -640,9 +628,7 @@ def test_default_history_response_stays_parseable_after_agent_truncation(
     assert data["hint"]
 
     # Oldest rows go first, so the newest bar must still be there.
-    assert NEWEST_DATE in {
-        record["date"] for record in data["records"]
-    }
+    assert NEWEST_DATE in {record["date"] for record in data["records"]}
 
 
 def test_max_boundary_history_response_stays_parseable_after_agent_truncation(
@@ -658,10 +644,7 @@ def test_max_boundary_history_response_stays_parseable_after_agent_truncation(
 
     raw = tool.execute(
         action="history",
-        stock_ids=[
-            f"{2330 + offset:04d}"
-            for offset in range(MAX_QUERY_STOCKS)
-        ],
+        stock_ids=[f"{2330 + offset:04d}" for offset in range(MAX_QUERY_STOCKS)],
         limit=MAX_RESULT_ROWS,
     )
 
@@ -674,17 +657,12 @@ def test_max_boundary_history_response_stays_parseable_after_agent_truncation(
     data = payload["data"]
 
     assert data["truncated"] is True
-    assert (
-        data["total_rows"]
-        == MAX_QUERY_STOCKS * MAX_RESULT_ROWS
-    )
+    assert data["total_rows"] == MAX_QUERY_STOCKS * MAX_RESULT_ROWS
     assert 0 < data["returned_rows"] < data["total_rows"]
     assert len(data["records"]) == data["returned_rows"]
     assert data["hint"]
 
-    assert NEWEST_DATE in {
-        record["date"] for record in data["records"]
-    }
+    assert NEWEST_DATE in {record["date"] for record in data["records"]}
 
 
 def test_universe_response_stays_within_budget(
@@ -708,10 +686,7 @@ def test_universe_response_stays_within_budget(
 
     assert data["truncated"] is True
     assert data["total_rows"] == MAX_QUERY_STOCKS
-    assert NEWEST_DATE in {
-        record["price_date"]
-        for record in data["records"]
-    }
+    assert NEWEST_DATE in {record["price_date"] for record in data["records"]}
 
 
 def test_latest_separates_price_and_feature_dates(
@@ -765,9 +740,7 @@ def test_wrong_schema_database_is_refused(
     db_path = tmp_path / "unrelated.db"
 
     with sqlite3.connect(db_path) as connection:
-        connection.execute(
-            "CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)"
-        )
+        connection.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)")
 
     monkeypatch.setenv(
         "VIBE_TW_STOCK_DB",
@@ -780,9 +753,7 @@ def test_wrong_schema_database_is_refused(
         ValueError,
         match="missing table 'stock_master'",
     ):
-        TaiwanStockDataTool(db_path).execute(
-            action="status"
-        )
+        TaiwanStockDataTool(db_path).execute(action="status")
 
 
 def test_missing_column_is_named_in_the_error(
@@ -802,9 +773,7 @@ def test_missing_column_is_named_in_the_error(
         ValueError,
         match="'stock_feature' is missing columns 'rsi14'",
     ):
-        TaiwanStockDataTool(db_path).execute(
-            action="status"
-        )
+        TaiwanStockDataTool(db_path).execute(action="status")
 
 
 def test_non_sqlite_file_is_refused(
@@ -825,6 +794,4 @@ def test_non_sqlite_file_is_refused(
         ValueError,
         match="not a readable SQLite database",
     ):
-        TaiwanStockDataTool(db_path).execute(
-            action="status"
-        )
+        TaiwanStockDataTool(db_path).execute(action="status")

@@ -145,19 +145,19 @@ def etf_score(etf_data: dict) -> float:
     """
     score = 0.0
     # 规模得分（30分）
-    scale = etf_data['scale_billion']
+    scale = etf_data["scale_billion"]
     score += min(30, scale / 10 * 30)
 
     # 费率得分（25分）：费率越低越高分
-    fee = etf_data['total_fee_pct']  # 年费率百分比
+    fee = etf_data["total_fee_pct"]  # 年费率百分比
     score += max(0, 25 - fee * 50)
 
     # 跟踪误差得分（30分）：误差越小越高分
-    te = etf_data['tracking_error_annual_pct']
+    te = etf_data["tracking_error_annual_pct"]
     score += max(0, 30 - te * 60)
 
     # 流动性得分（15分）
-    vol = etf_data['avg_daily_volume_million']
+    vol = etf_data["avg_daily_volume_million"]
     score += min(15, vol / 10 * 15)
 
     return round(score, 2)
@@ -167,6 +167,7 @@ def etf_score(etf_data: dict) -> float:
 
 ```python
 import numpy as np
+
 
 def fee_drag_analysis(annual_return: float, years: int, fee_rates: list[float]) -> dict:
     """
@@ -186,11 +187,9 @@ def fee_drag_analysis(annual_return: float, years: int, fee_rates: list[float]) 
         net_return = annual_return - fee
         end_value = (1 + net_return) ** years
         drag = (base_value - end_value) / base_value * 100
-        results[f'{fee*100:.2f}%'] = {
-            'end_value_multiple': round(end_value, 4),
-            'drag_pct': round(drag, 2)
-        }
+        results[f"{fee * 100:.2f}%"] = {"end_value_multiple": round(end_value, 4), "drag_pct": round(drag, 2)}
     return results
+
 
 # 示例：8% 指数收益，20年期
 # fee_drag_analysis(0.08, 20, [0.002, 0.005, 0.015])
@@ -294,6 +293,7 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 
+
 def factor_exposure_analysis(etf_returns: pd.Series, factor_returns: dict[str, pd.Series]) -> pd.DataFrame:
     """
     分析ETF对各因子的暴露程度（单因子回归）。
@@ -311,14 +311,16 @@ def factor_exposure_analysis(etf_returns: pd.Series, factor_returns: dict[str, p
         x = aligned.iloc[:, 1].values
         y = aligned.iloc[:, 0].values
         slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
-        results.append({
-            'factor': factor_name,
-            'beta': round(slope, 4),
-            't_stat': round(slope / std_err, 2),
-            'r_squared': round(r_value ** 2, 4),
-            'p_value': round(p_value, 4)
-        })
-    return pd.DataFrame(results).set_index('factor')
+        results.append(
+            {
+                "factor": factor_name,
+                "beta": round(slope, 4),
+                "t_stat": round(slope / std_err, 2),
+                "r_squared": round(r_value**2, 4),
+                "p_value": round(p_value, 4),
+            }
+        )
+    return pd.DataFrame(results).set_index("factor")
 ```
 
 ### 4.4 杠杆/反向 ETF 的衰减效应
@@ -374,8 +376,8 @@ IF（沪深300股指期货）基差 = 期货价格 - 沪深300指数
 spread = etf_a_price / etf_b_price
 z_score = (spread - spread.rolling(60).mean()) / spread.rolling(60).std()
 signal = pd.Series(0, index=z_score.index)
-signal[z_score > 2] = -1   # ETF_A 相对贵，卖A买B
-signal[z_score < -2] = 1   # ETF_A 相对便宜，买A卖B
+signal[z_score > 2] = -1  # ETF_A 相对贵，卖A买B
+signal[z_score < -2] = 1  # ETF_A 相对便宜，买A卖B
 ```
 
 ---
@@ -528,6 +530,7 @@ A股：沪深300ETF 510300 / 中证500ETF 510500
 import tushare as ts
 import pandas as pd
 
+
 def get_etf_list(pro: ts.pro_api) -> pd.DataFrame:
     """
     获取全市场ETF列表。
@@ -538,8 +541,8 @@ def get_etf_list(pro: ts.pro_api) -> pd.DataFrame:
     Returns:
         ETF基本信息 DataFrame
     """
-    df = pro.fund_basic(market='E', status='L')  # E=ETF, L=上市中
-    return df[['ts_code', 'name', 'management', 'found_date', 'issue_date']]
+    df = pro.fund_basic(market="E", status="L")  # E=ETF, L=上市中
+    return df[["ts_code", "name", "management", "found_date", "issue_date"]]
 
 
 def get_etf_nav(pro: ts.pro_api, ts_code: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -556,7 +559,7 @@ def get_etf_nav(pro: ts.pro_api, ts_code: str, start_date: str, end_date: str) -
         包含 trade_date, nav, accum_nav 的 DataFrame
     """
     df = pro.fund_nav(ts_code=ts_code, start_date=start_date, end_date=end_date)
-    return df.sort_values('end_date').reset_index(drop=True)
+    return df.sort_values("end_date").reset_index(drop=True)
 
 
 def get_etf_daily(pro: ts.pro_api, ts_code: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -573,7 +576,7 @@ def get_etf_daily(pro: ts.pro_api, ts_code: str, start_date: str, end_date: str)
         包含 trade_date, open, high, low, close, vol, amount 的 DataFrame
     """
     df = pro.fund_daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
-    return df.sort_values('trade_date').reset_index(drop=True)
+    return df.sort_values("trade_date").reset_index(drop=True)
 
 
 def get_index_daily(pro: ts.pro_api, index_code: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -590,7 +593,7 @@ def get_index_daily(pro: ts.pro_api, index_code: str, start_date: str, end_date:
         包含 trade_date, close 的 DataFrame
     """
     df = pro.index_daily(ts_code=index_code, start_date=start_date, end_date=end_date)
-    return df[['trade_date', 'close', 'pct_chg']].sort_values('trade_date').reset_index(drop=True)
+    return df[["trade_date", "close", "pct_chg"]].sort_values("trade_date").reset_index(drop=True)
 ```
 
 ### 7.2 跟踪误差计算代码模板
@@ -600,11 +603,7 @@ import numpy as np
 import pandas as pd
 
 
-def calc_tracking_error(
-    etf_prices: pd.Series,
-    index_prices: pd.Series,
-    annualize: bool = True
-) -> dict:
+def calc_tracking_error(etf_prices: pd.Series, index_prices: pd.Series, annualize: bool = True) -> dict:
     """
     计算ETF对标的指数的跟踪误差。
 
@@ -618,11 +617,11 @@ def calc_tracking_error(
     """
     # 对齐数据
     aligned = pd.concat([etf_prices, index_prices], axis=1).dropna()
-    aligned.columns = ['etf', 'index']
+    aligned.columns = ["etf", "index"]
 
     # 计算日收益率差值
-    etf_ret = aligned['etf'].pct_change().dropna()
-    idx_ret = aligned['index'].pct_change().dropna()
+    etf_ret = aligned["etf"].pct_change().dropna()
+    idx_ret = aligned["index"].pct_change().dropna()
     daily_diff = etf_ret - idx_ret
 
     # 跟踪误差 = 差值的标准差
@@ -630,20 +629,14 @@ def calc_tracking_error(
     te = te_daily * np.sqrt(252) if annualize else te_daily
 
     return {
-        'tracking_error': round(te * 100, 4),       # 百分比
-        'avg_daily_diff': round(daily_diff.mean() * 100, 4),  # 平均日偏差 %
-        'max_daily_diff': round(daily_diff.abs().max() * 100, 4),  # 最大单日偏差 %
-        'annualized': annualize
+        "tracking_error": round(te * 100, 4),  # 百分比
+        "avg_daily_diff": round(daily_diff.mean() * 100, 4),  # 平均日偏差 %
+        "max_daily_diff": round(daily_diff.abs().max() * 100, 4),  # 最大单日偏差 %
+        "annualized": annualize,
     }
 
 
-def compare_etfs_same_index(
-    etf_codes: list[str],
-    index_code: str,
-    pro,
-    start_date: str,
-    end_date: str
-) -> pd.DataFrame:
+def compare_etfs_same_index(etf_codes: list[str], index_code: str, pro, start_date: str, end_date: str) -> pd.DataFrame:
     """
     比较追踪同一指数的多只ETF的跟踪表现。
 
@@ -658,26 +651,23 @@ def compare_etfs_same_index(
         各ETF的跟踪误差比较 DataFrame
     """
     index_df = get_index_daily(pro, index_code, start_date, end_date)
-    index_prices = index_df.set_index('trade_date')['close']
+    index_prices = index_df.set_index("trade_date")["close"]
 
     results = []
     for code in etf_codes:
         nav_df = get_etf_nav(pro, code, start_date, end_date)
-        etf_prices = nav_df.set_index('end_date')['nav']
+        etf_prices = nav_df.set_index("end_date")["nav"]
         te_result = calc_tracking_error(etf_prices, index_prices)
-        te_result['ts_code'] = code
+        te_result["ts_code"] = code
         results.append(te_result)
 
-    return pd.DataFrame(results).set_index('ts_code').sort_values('tracking_error')
+    return pd.DataFrame(results).set_index("ts_code").sort_values("tracking_error")
 ```
 
 ### 7.3 折溢价率监控
 
 ```python
-def calc_premium_discount(
-    market_price: float,
-    iopv: float
-) -> dict:
+def calc_premium_discount(market_price: float, iopv: float) -> dict:
     """
     计算ETF折溢价率及套利信号。
 
@@ -691,20 +681,16 @@ def calc_premium_discount(
     premium_pct = (market_price - iopv) / iopv * 100
 
     if premium_pct > 0.3:
-        signal = 'PREMIUM_HIGH'   # 溢价：卖出ETF或申购套利
+        signal = "PREMIUM_HIGH"  # 溢价：卖出ETF或申购套利
         feasible = premium_pct > 0.5  # 扣除成本后是否可套利
     elif premium_pct < -0.3:
-        signal = 'DISCOUNT_HIGH'  # 折价：买入ETF或赎回套利
+        signal = "DISCOUNT_HIGH"  # 折价：买入ETF或赎回套利
         feasible = premium_pct < -0.5
     else:
-        signal = 'NORMAL'
+        signal = "NORMAL"
         feasible = False
 
-    return {
-        'premium_pct': round(premium_pct, 4),
-        'signal': signal,
-        'arbitrage_feasible': feasible
-    }
+    return {"premium_pct": round(premium_pct, 4), "signal": signal, "arbitrage_feasible": feasible}
 
 
 def monitor_qdii_premium(pro, qdii_codes: list[str], date: str) -> pd.DataFrame:
@@ -727,34 +713,27 @@ def monitor_qdii_premium(pro, qdii_codes: list[str], date: str) -> pd.DataFrame:
         nav_df = pro.fund_nav(ts_code=code, end_date=date)
 
         if not price_df.empty and not nav_df.empty:
-            market_price = price_df.iloc[0]['close']
-            nav = nav_df.iloc[0]['nav']
+            market_price = price_df.iloc[0]["close"]
+            nav = nav_df.iloc[0]["nav"]
             premium_pct = (market_price - nav) / nav * 100
-            risk_level = (
-                'HIGH' if premium_pct > 5
-                else 'MEDIUM' if premium_pct > 2
-                else 'LOW'
+            risk_level = "HIGH" if premium_pct > 5 else "MEDIUM" if premium_pct > 2 else "LOW"
+            results.append(
+                {
+                    "ts_code": code,
+                    "market_price": market_price,
+                    "nav": nav,
+                    "premium_pct": round(premium_pct, 2),
+                    "risk_level": risk_level,
+                }
             )
-            results.append({
-                'ts_code': code,
-                'market_price': market_price,
-                'nav': nav,
-                'premium_pct': round(premium_pct, 2),
-                'risk_level': risk_level
-            })
 
-    return pd.DataFrame(results).sort_values('premium_pct', ascending=False)
+    return pd.DataFrame(results).sort_values("premium_pct", ascending=False)
 ```
 
 ### 7.4 资金流入流出分析
 
 ```python
-def etf_fund_flow_analysis(
-    pro,
-    ts_code: str,
-    start_date: str,
-    end_date: str
-) -> pd.DataFrame:
+def etf_fund_flow_analysis(pro, ts_code: str, start_date: str, end_date: str) -> pd.DataFrame:
     """
     分析ETF规模变化与资金净流入/流出。
 
@@ -768,37 +747,32 @@ def etf_fund_flow_analysis(
         包含规模变化和资金流向估算的 DataFrame
     """
     nav_df = get_etf_nav(pro, ts_code, start_date, end_date)
-    nav_df['end_date'] = pd.to_datetime(nav_df['end_date'])
-    nav_df = nav_df.sort_values('end_date')
+    nav_df["end_date"] = pd.to_datetime(nav_df["end_date"])
+    nav_df = nav_df.sort_values("end_date")
 
     # 规模（单位亿元）
-    nav_df['scale'] = nav_df['unit_nav'] * nav_df['fund_share'] / 1e8
+    nav_df["scale"] = nav_df["unit_nav"] * nav_df["fund_share"] / 1e8
 
     # 净值变动引起的规模变化（被动）
-    nav_df['nav_return'] = nav_df['unit_nav'].pct_change()
-    nav_df['passive_change'] = nav_df['scale'].shift(1) * nav_df['nav_return']
+    nav_df["nav_return"] = nav_df["unit_nav"].pct_change()
+    nav_df["passive_change"] = nav_df["scale"].shift(1) * nav_df["nav_return"]
 
     # 资金净流入 ≈ 规模变化 - 净值带来的被动变化
-    nav_df['net_flow'] = nav_df['scale'].diff() - nav_df['passive_change']
+    nav_df["net_flow"] = nav_df["scale"].diff() - nav_df["passive_change"]
 
     # 统计区间
     summary = {
-        'total_net_flow': nav_df['net_flow'].sum(),       # 区间总净流入（亿元）
-        'avg_daily_flow': nav_df['net_flow'].mean(),      # 日均净流入
-        'inflow_days': (nav_df['net_flow'] > 0).sum(),    # 净流入天数
-        'outflow_days': (nav_df['net_flow'] < 0).sum(),   # 净流出天数
-        'current_scale': nav_df['scale'].iloc[-1]          # 最新规模
+        "total_net_flow": nav_df["net_flow"].sum(),  # 区间总净流入（亿元）
+        "avg_daily_flow": nav_df["net_flow"].mean(),  # 日均净流入
+        "inflow_days": (nav_df["net_flow"] > 0).sum(),  # 净流入天数
+        "outflow_days": (nav_df["net_flow"] < 0).sum(),  # 净流出天数
+        "current_scale": nav_df["scale"].iloc[-1],  # 最新规模
     }
 
-    return nav_df[['end_date', 'unit_nav', 'scale', 'net_flow']], summary
+    return nav_df[["end_date", "unit_nav", "scale", "net_flow"]], summary
 
 
-def cross_etf_flow_comparison(
-    pro,
-    etf_codes: list[str],
-    start_date: str,
-    end_date: str
-) -> pd.DataFrame:
+def cross_etf_flow_comparison(pro, etf_codes: list[str], start_date: str, end_date: str) -> pd.DataFrame:
     """
     比较同类ETF的资金流向，判断资金偏好。
 
@@ -814,9 +788,9 @@ def cross_etf_flow_comparison(
     rows = []
     for code in etf_codes:
         _, summary = etf_fund_flow_analysis(pro, code, start_date, end_date)
-        summary['ts_code'] = code
+        summary["ts_code"] = code
         rows.append(summary)
-    return pd.DataFrame(rows).set_index('ts_code').sort_values('total_net_flow', ascending=False)
+    return pd.DataFrame(rows).set_index("ts_code").sort_values("total_net_flow", ascending=False)
 ```
 
 ---

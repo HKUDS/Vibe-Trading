@@ -67,10 +67,10 @@ class GlobalEquityEngine(BaseEngine):
         """
         if self.market == "hk":
             notional = size * price
-            comm = notional * self.hk_commission       # broker commission
-            comm += notional * self.hk_stamp_tax       # stamp tax bilateral
-            comm += notional * self.hk_levy            # SFC + FRC levies
-            comm += notional * self.hk_settlement      # CCASS settlement
+            comm = notional * self.hk_commission  # broker commission
+            comm += notional * self.hk_stamp_tax  # stamp tax bilateral
+            comm += notional * self.hk_levy  # SFC + FRC levies
+            comm += notional * self.hk_settlement  # CCASS settlement
             return comm
         # US: zero commission (SEC fee negligible)
         return 0.0

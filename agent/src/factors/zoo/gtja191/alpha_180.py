@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #180
 # 简要说明: 国泰君安191短周期交易型alpha因子第180号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     ((MEAN(VOLUME,20) < VOLUME) ? ((-1*TSRANK(ABS(DELTA(CLOSE,7)),60)) * SIGN(DELTA(CLOSE,7))) : (-1*VOLUME))
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_180"
 
 __alpha_meta__ = {
-    'id': 'gtja191_180',
-    'theme': ['volume', 'reversal'],
-    'formula_latex': 'see body',
-    'columns_required': ['close', 'volume'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 60,
-    'min_warmup_bars': 67,
-    'notes': '',
+    "id": "gtja191_180",
+    "theme": ["volume", "reversal"],
+    "formula_latex": "see body",
+    "columns_required": ["close", "volume"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 60,
+    "min_warmup_bars": 67,
+    "notes": "",
 }
 
 

@@ -105,9 +105,7 @@ def test_server_config_round_trips_init_timeout_snake_and_camel() -> None:
 
 
 def test_override_carries_auth() -> None:
-    override = MCPServerConfigOverride.model_validate(
-        {"auth": {"type": "oauth", "scopes": ["trading.read"]}}
-    )
+    override = MCPServerConfigOverride.model_validate({"auth": {"type": "oauth", "scopes": ["trading.read"]}})
     assert isinstance(override.auth, MCPOAuthConfig)
 
 
@@ -303,9 +301,7 @@ def test_static_header_http_path_unchanged() -> None:
 
 
 def test_sse_path_unchanged() -> None:
-    cfg = MCPServerConfig.model_validate(
-        {"type": "sse", "url": "https://kb/sse", "headers": {"X-Api-Key": "k"}}
-    )
+    cfg = MCPServerConfig.model_validate({"type": "sse", "url": "https://kb/sse", "headers": {"X-Api-Key": "k"}})
     transport = _build_transport(cfg)
     assert isinstance(transport, SSETransport)
 

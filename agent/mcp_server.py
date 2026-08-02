@@ -241,9 +241,7 @@ class _HostGuardMiddleware:
             if not any(_host_matches(normalized, pattern) for pattern in self.allowed_hosts):
                 from starlette.responses import PlainTextResponse
 
-                await PlainTextResponse("Invalid host header", status_code=400)(
-                    scope, receive, send
-                )
+                await PlainTextResponse("Invalid host header", status_code=400)(scope, receive, send)
                 return
         await self.app(scope, receive, send)
 
@@ -270,9 +268,7 @@ class _OriginGuardMiddleware:
             if not _origin_allowed(origin, self.allowed_hosts):
                 from starlette.responses import PlainTextResponse
 
-                await PlainTextResponse("Origin not allowed", status_code=403)(
-                    scope, receive, send
-                )
+                await PlainTextResponse("Origin not allowed", status_code=403)(scope, receive, send)
                 return
         await self.app(scope, receive, send)
 
@@ -1248,9 +1244,7 @@ async def run_swarm(
     runtime = SwarmRuntime(store=store, agent_config=agent_config)
 
     try:
-        run = runtime.start_run(
-            preset_name, variables, include_shell_tools=_include_shell_tools
-        )
+        run = runtime.start_run(preset_name, variables, include_shell_tools=_include_shell_tools)
     except FileNotFoundError as exc:
         return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
     except ValueError as exc:
@@ -1317,6 +1311,7 @@ async def run_swarm(
 # ---------------------------------------------------------------------------
 # Market data tool
 # ---------------------------------------------------------------------------
+
 
 def _detect_source(code: str) -> str:
     return detect_source(code)
@@ -2213,9 +2208,7 @@ def main():
         default="127.0.0.1",
         help="Network bind host for --transport sse / http (default: 127.0.0.1)",
     )
-    parser.add_argument(
-        "--port", type=int, default=8900, help="SSE/HTTP port (default: 8900)"
-    )
+    parser.add_argument("--port", type=int, default=8900, help="SSE/HTTP port (default: 8900)")
     parser.add_argument(
         "--enable-shell-tools",
         action="store_true",
@@ -2232,9 +2225,7 @@ def main():
 
         _migrate.migrate_legacy_state()
     except Exception:  # pragma: no cover — best-effort
-        logging.getLogger(__name__).warning(
-            "Legacy state migration failed", exc_info=True
-        )
+        logging.getLogger(__name__).warning("Legacy state migration failed", exc_info=True)
 
     _include_shell_tools = _resolve_include_shell_tools(args.enable_shell_tools)
     _registry = None
@@ -2251,9 +2242,7 @@ def main():
 
         from src.config.accessor import get_env_config
 
-        allowed_hosts = _parse_allowed_hosts(
-            get_env_config().api.vibe_trading_mcp_allowed_hosts
-        )
+        allowed_hosts = _parse_allowed_hosts(get_env_config().api.vibe_trading_mcp_allowed_hosts)
         transport = "streamable-http" if args.transport == "http" else "sse"
         app = _build_network_app(transport, allowed_hosts)
         uvicorn.run(app, host=args.host, port=args.port)

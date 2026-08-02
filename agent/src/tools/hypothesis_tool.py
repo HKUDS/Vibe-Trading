@@ -114,11 +114,7 @@ class UpdateHypothesisTool(BaseTool):
                 "skills",
                 "invalidation_notes",
             }
-            updates = {
-                key: value
-                for key, value in kwargs.items()
-                if key in allowed_fields and value is not None
-            }
+            updates = {key: value for key, value in kwargs.items() if key in allowed_fields and value is not None}
 
             hyp = HypothesisRegistry().update(hypothesis_id, **updates)
             return _ok({"hypothesis": hyp.to_dict()})

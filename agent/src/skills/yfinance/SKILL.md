@@ -195,7 +195,7 @@ insider = ticker.insider_transactions
 # Major indices
 sp500 = yf.download("^GSPC", start="2025-01-01", end="2026-01-01", progress=False)  # S&P 500
 nasdaq = yf.download("^IXIC", start="2025-01-01", end="2026-01-01", progress=False)  # NASDAQ
-hsi = yf.download("^HSI", start="2025-01-01", end="2026-01-01", progress=False)      # Hang Seng Index
+hsi = yf.download("^HSI", start="2025-01-01", end="2026-01-01", progress=False)  # Hang Seng Index
 
 # ETFs
 spy = yf.download("SPY", start="2025-01-01", end="2026-01-01", progress=False)

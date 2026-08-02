@@ -157,9 +157,7 @@ class DataLoader:
                     start_date=start_date,
                     end_date=end_date,
                     fields=None,
-                    fetch=lambda code=code: self._fetch_one(
-                        code, start_date, end_date, api_key
-                    ),
+                    fetch=lambda code=code: self._fetch_one(code, start_date, end_date, api_key),
                 )
                 if df is not None and not df.empty:
                     result[code] = df
@@ -168,7 +166,11 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self, code: str, start_date: str, end_date: str, api_key: str,
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
+        api_key: str,
     ) -> Optional[pd.DataFrame]:
         """Fetch and slice one symbol's daily bars into an OHLCV DataFrame.
 
@@ -214,11 +216,7 @@ class DataLoader:
                 raise ValueError(f"alphavantage rejected {symbol}: {message}")
             return None
 
-        rows = [
-            row
-            for date, bar in series.items()
-            if (row := _parse_bar(date, bar)) is not None
-        ]
+        rows = [row for date, bar in series.items() if (row := _parse_bar(date, bar)) is not None]
         if not rows:
             return None
 

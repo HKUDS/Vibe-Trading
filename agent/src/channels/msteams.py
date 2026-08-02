@@ -40,10 +40,7 @@ from src.channels.base import BaseChannel
 from src.config.paths import get_workspace_path
 from pydantic import BaseModel
 
-MSTEAMS_AVAILABLE = (
-    importlib.util.find_spec("jwt") is not None
-    and importlib.util.find_spec("cryptography") is not None
-)
+MSTEAMS_AVAILABLE = importlib.util.find_spec("jwt") is not None and importlib.util.find_spec("cryptography") is not None
 
 if TYPE_CHECKING:
     import jwt
@@ -122,9 +119,7 @@ class MSTeamsChannel(BaseChannel):
         self._http: httpx.AsyncClient | None = None
         self._token: str | None = None
         self._token_expires_at: float = 0.0
-        self._botframework_openid_config_url = (
-            "https://login.botframework.com/v1/.well-known/openidconfiguration"
-        )
+        self._botframework_openid_config_url = "https://login.botframework.com/v1/.well-known/openidconfiguration"
         self._botframework_openid_config: dict[str, Any] | None = None
         self._botframework_openid_config_expires_at: float = 0.0
         self._botframework_jwks: dict[str, Any] | None = None
@@ -253,9 +248,7 @@ class MSTeamsChannel(BaseChannel):
             raise RuntimeError(f"MSTeams conversation ref not found for chat_id={msg.chat_id}")
 
         if not self._is_trusted_service_url(ref.service_url):
-            raise RuntimeError(
-                f"MSTeams conversation ref has untrusted service_url for chat_id={msg.chat_id}"
-            )
+            raise RuntimeError(f"MSTeams conversation ref has untrusted service_url for chat_id={msg.chat_id}")
 
         token = await self._get_access_token()
         base_url = f"{ref.service_url.rstrip('/')}/v3/conversations/{ref.conversation_id}/activities"
@@ -323,9 +316,9 @@ class MSTeamsChannel(BaseChannel):
 
         if not self.is_allowed(sender_id):
             self.logger.warning(
-                "Access denied for sender {} on channel {}. "
-                "Add them to allowFrom list in config to grant access.",
-                sender_id, self.name,
+                "Access denied for sender {} on channel {}. Add them to allowFrom list in config to grant access.",
+                sender_id,
+                self.name,
             )
             return
 
@@ -370,7 +363,9 @@ class MSTeamsChannel(BaseChannel):
         while preview_lines and not preview_lines[0]:
             preview_lines.pop(0)
         first_line = preview_lines[0] if preview_lines else ""
-        looks_like_quote_wrapper = first_line.lower().startswith("replying to ") or first_line.startswith("Reply wrapper")
+        looks_like_quote_wrapper = first_line.lower().startswith("replying to ") or first_line.startswith(
+            "Reply wrapper"
+        )
 
         if reply_to_id or channel_data.get("messageType") == "reply" or looks_like_quote_wrapper:
             text = self._normalize_teams_reply_quote(text)

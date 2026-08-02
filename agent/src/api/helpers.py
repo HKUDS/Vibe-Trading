@@ -39,9 +39,7 @@ ENV_EXAMPLE_PATH = AGENT_DIR / ".env.example"
 
 _FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist"
 _SPA_HTML_EXACT_PATHS: frozenset[str] = frozenset({"/correlation"})
-_SPA_HTML_PATH_REGEX: tuple[re.Pattern[str], ...] = (
-    re.compile(r"^/runs/[^/]+/?$"),
-)
+_SPA_HTML_PATH_REGEX: tuple[re.Pattern[str], ...] = (re.compile(r"^/runs/[^/]+/?$"),)
 
 
 def _is_spa_html_route(path: str) -> bool:

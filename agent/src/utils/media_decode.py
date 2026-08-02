@@ -12,6 +12,7 @@ from pathlib import Path
 class FileSizeExceeded(ValueError):
     """Raised when a file exceeds the max size limit."""
 
+
 _DATA_URL_RE = re.compile(r"^data:([^;,]+)((?:;[^,]*)*);base64,(.*)$", re.IGNORECASE | re.DOTALL)
 _EXT_BY_MIME = {
     "image/png": ".png",

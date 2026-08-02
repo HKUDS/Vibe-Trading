@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #103
 # 简要说明: 国泰君安191短周期交易型alpha因子第103号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: LOWDAY -> ts_argmin (0-based); (20 - argmin)/20 * 100.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_103"
 
 __alpha_meta__ = {
-    'id': 'gtja191_103',
-    'theme': ['reversal'],
-    'formula_latex': '((20-lowday(low,20))/20)*100',
-    'columns_required': ['close', 'low'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 20,
-    'notes': 'LOWDAY -> ts_argmin (0-based); (20 - argmin)/20 * 100.',
+    "id": "gtja191_103",
+    "theme": ["reversal"],
+    "formula_latex": "((20-lowday(low,20))/20)*100",
+    "columns_required": ["close", "low"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 20,
+    "notes": "LOWDAY -> ts_argmin (0-based); (20 - argmin)/20 * 100.",
 }
 
 

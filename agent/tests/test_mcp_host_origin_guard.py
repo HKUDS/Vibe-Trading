@@ -147,9 +147,7 @@ def _guarded_probe_app(allowed_hosts):
 def test_loopback_host_and_origin_accepted():
     client = TestClient(_guarded_probe_app(["127.0.0.1", "localhost"]))
     # Good host, matching origin.
-    resp = client.post(
-        "/mcp", headers={"host": "127.0.0.1:8900", "origin": "http://127.0.0.1:8900"}
-    )
+    resp = client.post("/mcp", headers={"host": "127.0.0.1:8900", "origin": "http://127.0.0.1:8900"})
     assert resp.status_code == 200
     assert resp.text == "ok"
     # Good host, no origin header (non-browser client).

@@ -49,22 +49,16 @@ def _load_lark_runtime() -> tuple[Any, str, str]:
     import lark_oapi.ws.client as lark_ws_client
     from lark_oapi.core.const import FEISHU_DOMAIN, LARK_DOMAIN
 
-    if (
-        not ws_client_already_imported
-        and threading.current_thread() is not threading.main_thread()
-    ):
+    if not ws_client_already_imported and threading.current_thread() is not threading.main_thread():
         import_loop = getattr(lark_ws_client, "loop", None)
-        if (
-            import_loop is not None
-            and not import_loop.is_running()
-            and not import_loop.is_closed()
-        ):
+        if import_loop is not None and not import_loop.is_running() and not import_loop.is_closed():
             import_loop.close()
         lark_ws_client.loop = None
         with suppress(Exception):
             asyncio.set_event_loop(None)
 
     return lark, FEISHU_DOMAIN, LARK_DOMAIN
+
 
 # Message type display mapping
 MSG_TYPE_MAP = {
@@ -404,21 +398,21 @@ def _init_registration(domain: str = "feishu") -> None:
     res = _post_registration(base_url, {"action": "init"})
     methods = res.get("supported_auth_methods") or []
     if "client_secret" not in methods:
-        raise RuntimeError(
-            f"Feishu / Lark registration does not support client_secret auth. "
-            f"Supported: {methods}"
-        )
+        raise RuntimeError(f"Feishu / Lark registration does not support client_secret auth. Supported: {methods}")
 
 
 def _begin_registration(domain: str = "feishu") -> dict:
     """Start the device-code flow. Returns device_code, qr_url, interval, expire_in."""
     base_url = _accounts_base_url(domain)
-    res = _post_registration(base_url, {
-        "action": "begin",
-        "archetype": "PersonalAgent",
-        "auth_method": "client_secret",
-        "request_user_info": "open_id",
-    })
+    res = _post_registration(
+        base_url,
+        {
+            "action": "begin",
+            "archetype": "PersonalAgent",
+            "auth_method": "client_secret",
+            "request_user_info": "open_id",
+        },
+    )
     device_code = res.get("device_code")
     if not device_code:
         raise RuntimeError("Feishu / Lark registration did not return a device_code")
@@ -451,11 +445,14 @@ def _poll_registration(
     while time.monotonic() < deadline:
         base_url = _accounts_base_url(current_domain)
         try:
-            res = _post_registration(base_url, {
-                "action": "poll",
-                "device_code": device_code,
-                "tp": "ob_app",
-            })
+            res = _post_registration(
+                base_url,
+                {
+                    "action": "poll",
+                    "device_code": device_code,
+                    "tp": "ob_app",
+                },
+            )
         except Exception:
             time.sleep(interval)
             continue
@@ -510,9 +507,7 @@ def qr_register(
     try:
         return _qr_register_inner(initial_domain=initial_domain)
     except (RuntimeError, OSError, json.JSONDecodeError, httpx.HTTPError) as exc:
-        _LOGIN_CONSOLE.print(
-            f"[yellow]Unable to start Feishu/Lark login:[/yellow] {escape(str(exc))}"
-        )
+        _LOGIN_CONSOLE.print(f"[yellow]Unable to start Feishu/Lark login:[/yellow] {escape(str(exc))}")
         return None
 
 
@@ -635,8 +630,7 @@ class FeishuChannel(BaseChannel):
         result = qr_register(initial_domain=self.config.domain or "feishu")
         if not result:
             _LOGIN_CONSOLE.print(
-                "[yellow]Login was not completed.[/yellow] "
-                "Run 'vibe-trading channels login feishu --force' to retry."
+                "[yellow]Login was not completed.[/yellow] Run 'vibe-trading channels login feishu --force' to retry."
             )
             return False
 
@@ -647,7 +641,7 @@ class FeishuChannel(BaseChannel):
         # Write credentials back to config
         # VT-TODO: persist feishu credentials via VT config system
         try:
-            from src.config.loader import load_agent_config
+            pass
             # Credentials stored in-memory on self.config; persist via VT config
             # when channel config persistence is wired up.
         except Exception:
@@ -672,8 +666,7 @@ class FeishuChannel(BaseChannel):
 
         if not self.config.app_id or not self.config.app_secret:
             self.logger.error(
-                "app_id and app_secret not configured. "
-                "Run 'vibe-trading channels login feishu' to set up via QR code."
+                "app_id and app_secret not configured. Run 'vibe-trading channels login feishu' to set up via QR code."
             )
             return
 
@@ -769,9 +762,7 @@ class FeishuChannel(BaseChannel):
         self._ws_thread.start()
 
         # Fetch bot's own open_id for accurate @mention matching
-        self._bot_open_id = await asyncio.get_running_loop().run_in_executor(
-            None, self._fetch_bot_open_id
-        )
+        self._bot_open_id = await asyncio.get_running_loop().run_in_executor(None, self._fetch_bot_open_id)
         if self._bot_open_id:
             self.logger.info("bot open_id: {}", self._bot_open_id)
         else:
@@ -877,9 +868,7 @@ class FeishuChannel(BaseChannel):
         # Fallback heuristic when bot open_id is unavailable.
         return not getattr(mid, "user_id", None) and mention_open_id.startswith("ou_")
 
-    def _strip_leading_bot_mention(
-        self, text: str, mentions: list[MentionEvent] | None
-    ) -> str:
+    def _strip_leading_bot_mention(self, text: str, mentions: list[MentionEvent] | None) -> str:
         """Remove a required leading bot mention before slash command routing."""
         if not mentions or not text:
             return text
@@ -937,9 +926,7 @@ class FeishuChannel(BaseChannel):
             response = self._client.im.v1.message_reaction.create(request)
 
             if not response.success():
-                self.logger.warning(
-                    "Failed to add reaction: code={}, msg={}", response.code, response.msg
-                )
+                self.logger.warning("Failed to add reaction: code={}, msg={}", response.code, response.msg)
                 return None
             else:
                 self.logger.debug("Added {} reaction to message {}", emoji_type, message_id)
@@ -968,20 +955,13 @@ class FeishuChannel(BaseChannel):
         from lark_oapi.api.im.v1 import DeleteMessageReactionRequest
 
         try:
-            request = (
-                DeleteMessageReactionRequest.builder()
-                .message_id(message_id)
-                .reaction_id(reaction_id)
-                .build()
-            )
+            request = DeleteMessageReactionRequest.builder().message_id(message_id).reaction_id(reaction_id).build()
 
             response = self._client.im.v1.message_reaction.delete(request)
             if response.success():
                 self.logger.debug("Removed reaction {} from message {}", reaction_id, message_id)
             else:
-                self.logger.debug(
-                    "Failed to remove reaction: code={}, msg={}", response.code, response.msg
-                )
+                self.logger.debug("Failed to remove reaction: code={}, msg={}", response.code, response.msg)
         except Exception as e:
             self.logger.debug("Error removing reaction: {}", e)
 
@@ -1079,16 +1059,13 @@ class FeishuChannel(BaseChannel):
         headers = [cls._strip_md_formatting(h) for h in split(lines[0])]
         rows = [[cls._strip_md_formatting(c) for c in split(_line)] for _line in lines[2:]]
         columns = [
-            {"tag": "column", "name": f"c{i}", "display_name": h, "width": "auto"}
-            for i, h in enumerate(headers)
+            {"tag": "column", "name": f"c{i}", "display_name": h, "width": "auto"} for i, h in enumerate(headers)
         ]
         return {
             "tag": "table",
             "page_size": len(rows) + 1,
             "columns": columns,
-            "rows": [
-                {f"c{i}": r[i] if i < len(r) else "" for i in range(len(headers))} for r in rows
-            ],
+            "rows": [{f"c{i}": r[i] if i < len(r) else "" for i in range(len(headers))} for r in rows],
         }
 
     def _build_card_elements(self, content: str) -> list[dict]:
@@ -1098,9 +1075,7 @@ class FeishuChannel(BaseChannel):
             before = content[last_end : m.start()]
             if before.strip():
                 elements.extend(self._split_headings(before))
-            elements.append(
-                self._parse_md_table(m.group(1)) or {"tag": "markdown", "content": m.group(1)}
-            )
+            elements.append(self._parse_md_table(m.group(1)) or {"tag": "markdown", "content": m.group(1)})
             last_end = m.end()
         remaining = content[last_end:]
         if remaining.strip():
@@ -1108,9 +1083,7 @@ class FeishuChannel(BaseChannel):
         return elements or [{"tag": "markdown", "content": content}]
 
     @staticmethod
-    def _split_elements_by_table_limit(
-        elements: list[dict], max_tables: int = 1
-    ) -> list[list[dict]]:
+    def _split_elements_by_table_limit(elements: list[dict], max_tables: int = 1) -> list[list[dict]]:
         """Split card elements into groups with at most *max_tables* table elements each.
 
         Feishu cards have a hard limit of one table per card (API error 11310).
@@ -1314,9 +1287,7 @@ class FeishuChannel(BaseChannel):
             with open(file_path, "rb") as f:
                 request = (
                     CreateImageRequest.builder()
-                    .request_body(
-                        CreateImageRequestBody.builder().image_type("message").image(f).build()
-                    )
+                    .request_body(CreateImageRequestBody.builder().image_type("message").image(f).build())
                     .build()
                 )
                 response = self._client.im.v1.image.create(request)
@@ -1325,9 +1296,7 @@ class FeishuChannel(BaseChannel):
                     self.logger.debug("Uploaded image {}: {}", os.path.basename(file_path), image_key)
                     return image_key
                 else:
-                    self.logger.error(
-                        "Failed to upload image: code={}, msg={}", response.code, response.msg
-                    )
+                    self.logger.error("Failed to upload image: code={}, msg={}", response.code, response.msg)
                     return None
         except Exception:
             self.logger.exception("Error uploading image {}", file_path)
@@ -1345,11 +1314,7 @@ class FeishuChannel(BaseChannel):
                 request = (
                     CreateFileRequest.builder()
                     .request_body(
-                        CreateFileRequestBody.builder()
-                        .file_type(file_type)
-                        .file_name(file_name)
-                        .file(f)
-                        .build()
+                        CreateFileRequestBody.builder().file_type(file_type).file_name(file_name).file(f).build()
                     )
                     .build()
                 )
@@ -1359,27 +1324,19 @@ class FeishuChannel(BaseChannel):
                     self.logger.debug("Uploaded file {}: {}", file_name, file_key)
                     return file_key
                 else:
-                    self.logger.error(
-                        "Failed to upload file: code={}, msg={}", response.code, response.msg
-                    )
+                    self.logger.error("Failed to upload file: code={}, msg={}", response.code, response.msg)
                     return None
         except Exception:
             self.logger.exception("Error uploading file {}", file_path)
             return None
 
-    def _download_image_sync(
-        self, message_id: str, image_key: str
-    ) -> tuple[bytes | None, str | None]:
+    def _download_image_sync(self, message_id: str, image_key: str) -> tuple[bytes | None, str | None]:
         """Download an image from Feishu message by message_id and image_key."""
         from lark_oapi.api.im.v1 import GetMessageResourceRequest
 
         try:
             request = (
-                GetMessageResourceRequest.builder()
-                .message_id(message_id)
-                .file_key(image_key)
-                .type("image")
-                .build()
+                GetMessageResourceRequest.builder().message_id(message_id).file_key(image_key).type("image").build()
             )
             response = self._client.im.v1.message_resource.get(request)
             if response.success():
@@ -1389,9 +1346,7 @@ class FeishuChannel(BaseChannel):
                     file_data = file_data.read()
                 return file_data, response.file_name
             else:
-                self.logger.error(
-                    "Failed to download image: code={}, msg={}", response.code, response.msg
-                )
+                self.logger.error("Failed to download image: code={}, msg={}", response.code, response.msg)
                 return None, None
         except Exception:
             self.logger.exception("Error downloading image {}", image_key)
@@ -1466,9 +1421,7 @@ class FeishuChannel(BaseChannel):
             image_key = content_json.get("image_key")
             if image_key and message_id:
                 fallback_filename = f"{image_key[:16]}.jpg"
-                data, filename = await loop.run_in_executor(
-                    None, self._download_image_sync, message_id, image_key
-                )
+                data, filename = await loop.run_in_executor(None, self._download_image_sync, message_id, image_key)
                 if not filename:
                     filename = fallback_filename
 
@@ -1482,9 +1435,7 @@ class FeishuChannel(BaseChannel):
                 return None, f"[{msg_type}: missing message_id]"
 
             fallback_filename = file_key[:16]
-            data, filename = await loop.run_in_executor(
-                None, self._download_file_sync, message_id, file_key, msg_type
-            )
+            data, filename = await loop.run_in_executor(None, self._download_file_sync, message_id, file_key, msg_type)
 
             if not data:
                 self.logger.warning("{} download failed: file_key={}", msg_type, file_key)
@@ -1558,7 +1509,9 @@ class FeishuChannel(BaseChannel):
             self.logger.debug("error fetching parent message {}: {}", message_id, e)
             return None
 
-    def _reply_message_sync(self, parent_message_id: str, msg_type: str, content: str, *, reply_in_thread: bool = False) -> bool:
+    def _reply_message_sync(
+        self, parent_message_id: str, msg_type: str, content: str, *, reply_in_thread: bool = False
+    ) -> bool:
         """Reply to an existing Feishu message using the Reply API (synchronous).
 
         Args:
@@ -1572,10 +1525,7 @@ class FeishuChannel(BaseChannel):
             if reply_in_thread:
                 body_builder = body_builder.reply_in_thread(True)
             request = (
-                ReplyMessageRequest.builder()
-                .message_id(parent_message_id)
-                .request_body(body_builder.build())
-                .build()
+                ReplyMessageRequest.builder().message_id(parent_message_id).request_body(body_builder.build()).build()
             )
             response = self._client.im.v1.message.reply(request)
             if not response.success():
@@ -1608,9 +1558,7 @@ class FeishuChannel(BaseChannel):
             return message_id
         return None
 
-    def _send_message_sync(
-        self, receive_id_type: str, receive_id: str, msg_type: str, content: str
-    ) -> str | None:
+    def _send_message_sync(self, receive_id_type: str, receive_id: str, msg_type: str, content: str) -> str | None:
         """Send a single message and return the message_id on success."""
         from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
 
@@ -1664,9 +1612,7 @@ class FeishuChannel(BaseChannel):
         card_json = {
             "schema": "2.0",
             "config": {"wide_screen_mode": True, "update_multi": True, "streaming_mode": True},
-            "body": {
-                "elements": [{"tag": "markdown", "content": "", "element_id": _STREAM_ELEMENT_ID}]
-            },
+            "body": {"elements": [{"tag": "markdown", "content": "", "element_id": _STREAM_ELEMENT_ID}]},
         }
         try:
             request = (
@@ -1681,29 +1627,31 @@ class FeishuChannel(BaseChannel):
             )
             response = self._client.cardkit.v1.card.create(request)
             if not response.success():
-                self.logger.warning(
-                    "Failed to create streaming card: code={}, msg={}", response.code, response.msg
-                )
+                self.logger.warning("Failed to create streaming card: code={}, msg={}", response.code, response.msg)
                 return None
             card_id = getattr(response.data, "card_id", None)
             if card_id:
-                card_content = json.dumps(
-                    {"type": "card", "data": {"card_id": card_id}}, ensure_ascii=False
-                )
+                card_content = json.dumps({"type": "card", "data": {"card_id": card_id}}, ensure_ascii=False)
                 if reply_message_id:
                     sent = self._reply_message_sync(
-                        reply_message_id, "interactive", card_content,
+                        reply_message_id,
+                        "interactive",
+                        card_content,
                         reply_in_thread=reply_in_thread,
                     )
                 else:
-                    sent = self._send_message_sync(
-                        receive_id_type, chat_id, "interactive", card_content,
-                    ) is not None
+                    sent = (
+                        self._send_message_sync(
+                            receive_id_type,
+                            chat_id,
+                            "interactive",
+                            card_content,
+                        )
+                        is not None
+                    )
                 if sent:
                     return card_id
-                self.logger.warning(
-                    "Created streaming card {} but failed to send it to {}", card_id, chat_id
-                )
+                self.logger.warning("Created streaming card {} but failed to send it to {}", card_id, chat_id)
             return None
         except Exception as e:
             self.logger.warning("Error creating streaming card: {}", e)
@@ -1721,12 +1669,7 @@ class FeishuChannel(BaseChannel):
                 ContentCardElementRequest.builder()
                 .card_id(card_id)
                 .element_id(_STREAM_ELEMENT_ID)
-                .request_body(
-                    ContentCardElementRequestBody.builder()
-                    .content(content)
-                    .sequence(sequence)
-                    .build()
-                )
+                .request_body(ContentCardElementRequestBody.builder().content(content).sequence(sequence).build())
                 .build()
             )
             response = self._client.cardkit.v1.card_element.content(request)
@@ -1799,9 +1742,7 @@ class FeishuChannel(BaseChannel):
         sequence += 1
         return self._stream_update_text_sync(card_id, content, sequence), sequence
 
-    async def send_delta(
-        self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None
-    ) -> None:
+    async def send_delta(self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None) -> None:
         """Progressive streaming via CardKit: create card on first delta, stream-update on subsequent.
 
         Supported metadata keys:
@@ -1876,9 +1817,7 @@ class FeishuChannel(BaseChannel):
                     "Streaming card {} final update failed, falling back to regular card",
                     buf.card_id,
                 )
-            for chunk in self._split_elements_by_table_limit(
-                self._build_card_elements(buf.text)
-            ):
+            for chunk in self._split_elements_by_table_limit(self._build_card_elements(buf.text)):
                 card = json.dumps(
                     {"config": {"wide_screen_mode": True}, "elements": chunk},
                     ensure_ascii=False,
@@ -1888,15 +1827,16 @@ class FeishuChannel(BaseChannel):
                 fallback_msg_id = self._thread_reply_target(meta)
                 if fallback_msg_id:
                     await loop.run_in_executor(
-                        None, lambda: self._reply_message_sync(
-                            fallback_msg_id, "interactive", card,
+                        None,
+                        lambda: self._reply_message_sync(
+                            fallback_msg_id,
+                            "interactive",
+                            card,
                             reply_in_thread=self._should_use_reply_in_thread(meta),
                         ),
                     )
                 else:
-                    await loop.run_in_executor(
-                        None, self._send_message_sync, rid_type, chat_id, "interactive", card
-                    )
+                    await loop.run_in_executor(None, self._send_message_sync, rid_type, chat_id, "interactive", card)
             return
 
         # --- accumulate delta ---
@@ -1932,9 +1872,7 @@ class FeishuChannel(BaseChannel):
                     buf.sequence = sequence
                     buf.last_edit = now
                 else:
-                    await loop.run_in_executor(
-                        None, self._close_streaming_mode_sync, card_id, sequence + 1
-                    )
+                    await loop.run_in_executor(None, self._close_streaming_mode_sync, card_id, sequence + 1)
         elif (now - buf.last_edit) >= self._STREAM_EDIT_INTERVAL:
             ok, buf.sequence = await loop.run_in_executor(
                 None,
@@ -1985,16 +1923,22 @@ class FeishuChannel(BaseChannel):
                 # with the same 🔧 prefix style. Existing topics stay threaded;
                 # new topics are created only when reply-to-message is enabled.
                 card = json.dumps(
-                    {"config": {"wide_screen_mode": True}, "elements": [
-                        {"tag": "markdown", "content": self._format_tool_hint_delta(hint)},
-                    ]},
+                    {
+                        "config": {"wide_screen_mode": True},
+                        "elements": [
+                            {"tag": "markdown", "content": self._format_tool_hint_delta(hint)},
+                        ],
+                    },
                     ensure_ascii=False,
                 )
                 _th_msg_id = self._thread_reply_target(msg.metadata)
                 if _th_msg_id:
                     await loop.run_in_executor(
-                        None, lambda: self._reply_message_sync(
-                            _th_msg_id, "interactive", card,
+                        None,
+                        lambda: self._reply_message_sync(
+                            _th_msg_id,
+                            "interactive",
+                            card,
                             reply_in_thread=self._should_use_reply_in_thread(msg.metadata),
                         ),
                     )
@@ -2032,7 +1976,9 @@ class FeishuChannel(BaseChannel):
                     # If we're in a topic, always use reply to stay in the topic
                     if has_thread_id:
                         ok = self._reply_message_sync(
-                            reply_message_id, m_type, content,
+                            reply_message_id,
+                            m_type,
+                            content,
                             reply_in_thread=self._should_use_reply_in_thread(msg.metadata),
                         )
                         if ok:
@@ -2041,7 +1987,9 @@ class FeishuChannel(BaseChannel):
                         # If we're not in a topic but replying to message, only first uses reply
                         first_send = False
                         ok = self._reply_message_sync(
-                            reply_message_id, m_type, content,
+                            reply_message_id,
+                            m_type,
+                            content,
                             reply_in_thread=self._should_use_reply_in_thread(msg.metadata),
                         )
                         if ok:
@@ -2168,9 +2116,7 @@ class FeishuChannel(BaseChannel):
                 return
 
             # Add reaction (non-blocking — tracked background task)
-            task = asyncio.create_task(
-                self._add_reaction(message_id, self.config.react_emoji)
-            )
+            task = asyncio.create_task(self._add_reaction(message_id, self.config.react_emoji))
             self._background_tasks.add(task)
             task.add_done_callback(self._on_background_task_done)
             task.add_done_callback(lambda t: self._on_reaction_added(message_id, t))
@@ -2206,9 +2152,7 @@ class FeishuChannel(BaseChannel):
                     content_parts.append(content_text)
 
             elif msg_type in ("image", "audio", "file", "media"):
-                file_path, content_text = await self._download_and_save_media(
-                    msg_type, content_json, message_id
-                )
+                file_path, content_text = await self._download_and_save_media(msg_type, content_json, message_id)
                 if file_path:
                     media_paths.append(file_path)
 
@@ -2243,9 +2187,7 @@ class FeishuChannel(BaseChannel):
             # Prepend quoted message text when the user replied to another message
             if parent_id and self._client:
                 loop = asyncio.get_running_loop()
-                reply_ctx = await loop.run_in_executor(
-                    None, self._get_message_content_sync, parent_id
-                )
+                reply_ctx = await loop.run_in_executor(None, self._get_message_content_sync, parent_id)
                 if reply_ctx:
                     content_parts.insert(0, reply_ctx)
 
@@ -2354,6 +2296,4 @@ class FeishuChannel(BaseChannel):
     def _format_tool_hint_delta(self, tool_hint: str) -> str:
         """Format a tool hint string with the 🔧 prefix for each line."""
         lines = self.__class__._format_tool_hint_lines(tool_hint).split("\n")
-        return "\n".join(
-            f"{self.config.tool_hint_prefix} {ln}" for ln in lines if ln.strip()
-        )
+        return "\n".join(f"{self.config.tool_hint_prefix} {ln}" for ln in lines if ln.strip())

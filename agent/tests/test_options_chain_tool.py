@@ -56,9 +56,7 @@ class TestOptionsChainSuccess:
     """Happy-path envelope shape and field normalization."""
 
     def test_success_envelope_normalizes_contracts(self):
-        with patch.object(
-            oc.yahoo_client, "get_options", return_value=_sample_result()
-        ) as mock_get:
+        with patch.object(oc.yahoo_client, "get_options", return_value=_sample_result()) as mock_get:
             out = oc.OptionsChainTool().execute(ticker="AAPL.US")
 
         payload = json.loads(out)
@@ -89,9 +87,7 @@ class TestOptionsChainSuccess:
         assert kwargs["expiration"] is None
 
     def test_explicit_expiration_passed_through(self):
-        with patch.object(
-            oc.yahoo_client, "get_options", return_value=_sample_result()
-        ) as mock_get:
+        with patch.object(oc.yahoo_client, "get_options", return_value=_sample_result()) as mock_get:
             oc.OptionsChainTool().execute(ticker="AAPL", expiration="1750000000")
         _, kwargs = mock_get.call_args
         assert kwargs["expiration"] == 1750000000
@@ -107,9 +103,7 @@ class TestOptionsChainSuccess:
 
     def test_contracts_capped(self):
         bloated = _sample_result()
-        bloated["options"][0]["calls"] = [
-            {"strike": float(i)} for i in range(500)
-        ]
+        bloated["options"][0]["calls"] = [{"strike": float(i)} for i in range(500)]
         with patch.object(oc.yahoo_client, "get_options", return_value=bloated):
             out = oc.OptionsChainTool().execute(ticker="AAPL")
         payload = json.loads(out)

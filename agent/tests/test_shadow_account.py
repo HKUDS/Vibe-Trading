@@ -11,10 +11,6 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore:Number of distinct clusters.*:UserWarning",
-)
-
 from src.shadow_account import (
     AttributionBreakdown,
     ShadowBacktestResult,
@@ -32,11 +28,15 @@ from src.shadow_account import (
     validate_generated,
     write_run_dir,
 )
-from src.shadow_account.models import AttributionBreakdown as _AttrCls
 from src.shadow_account.extractor import MIN_PROFITABLE_ROUNDTRIPS
+
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:Number of distinct clusters.*:UserWarning",
+)
 
 
 # ---------------- Helpers ----------------
+
 
 @pytest.fixture(autouse=True)
 def _offline_prices(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,7 +57,8 @@ def _offline_prices(monkeypatch: pytest.MonkeyPatch) -> None:
     # Patch at the source module: `_fetch_price_history` imports `resolve_loader`
     # locally at call time, so the binding to override lives in the registry.
     monkeypatch.setattr(
-        "backtest.loaders.registry.resolve_loader", _no_source,
+        "backtest.loaders.registry.resolve_loader",
+        _no_source,
     )
 
 
@@ -77,22 +78,25 @@ def _make_tonghuashun_rows(trades: list[tuple[str, str, str, float, float]]) -> 
     out: list[dict] = []
     for dt_str, symbol, side, qty, price in trades:
         amount = qty * price
-        out.append({
-            "成交时间": dt_str,
-            "证券代码": symbol,
-            "证券名称": f"标的{symbol}",
-            "操作": "买入" if side == "buy" else "卖出",
-            "成交数量": qty,
-            "成交价格": price,
-            "成交金额": round(amount, 2),
-            "手续费": round(amount * 0.00025, 2),
-            "印花税": round(amount * 0.001, 2) if side == "sell" else 0.0,
-            "过户费": 0.0,
-        })
+        out.append(
+            {
+                "成交时间": dt_str,
+                "证券代码": symbol,
+                "证券名称": f"标的{symbol}",
+                "操作": "买入" if side == "buy" else "卖出",
+                "成交数量": qty,
+                "成交价格": price,
+                "成交金额": round(amount, 2),
+                "手续费": round(amount * 0.00025, 2),
+                "印花税": round(amount * 0.001, 2) if side == "sell" else 0.0,
+                "过户费": 0.0,
+            }
+        )
     return out
 
 
 # ---------------- Fixtures ----------------
+
 
 @pytest.fixture
 def profitable_journal(tmp_path: Path) -> Path:
@@ -132,6 +136,7 @@ def no_roundtrips_journal(tmp_path: Path) -> Path:
 
 
 # ---------------- extract_shadow_profile ----------------
+
 
 @pytest.mark.unit
 def test_extract_profile_happy_path(profitable_journal: Path) -> None:
@@ -197,9 +202,12 @@ def test_custom_llm_translator_is_used(profitable_journal: Path) -> None:
 
 # ---------------- Storage round-trip ----------------
 
+
 @pytest.mark.unit
 def test_profile_roundtrip_persistence(
-    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    profitable_journal: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows
@@ -218,7 +226,9 @@ def test_profile_roundtrip_persistence(
 
 @pytest.mark.unit
 def test_find_by_journal_hash_returns_latest(
-    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    profitable_journal: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
@@ -232,6 +242,7 @@ def test_find_by_journal_hash_returns_latest(
 
 
 # ---------------- M2: Codegen ----------------
+
 
 @pytest.mark.unit
 def test_render_signal_engine_produces_valid_python(profitable_journal: Path) -> None:
@@ -267,7 +278,6 @@ def test_generated_engine_runs_on_mock_data_map(profitable_journal: Path) -> Non
     profile = extract_shadow_profile(profitable_journal)
     source = render_signal_engine(profile)
 
-    module_path = Path("./_shadow_test_engine.py").resolve()
     # Use tmp via test's temp dir proxy — write + exec.
     import tempfile
 
@@ -310,7 +320,8 @@ def test_render_config_shape(profitable_journal: Path) -> None:
 
 @pytest.mark.unit
 def test_write_run_dir_materializes_files(
-    profitable_journal: Path, tmp_path: Path,
+    profitable_journal: Path,
+    tmp_path: Path,
 ) -> None:
     profile = extract_shadow_profile(profitable_journal)
     run_dir = write_run_dir(
@@ -328,6 +339,7 @@ def test_write_run_dir_materializes_files(
 
 # ---------------- M3: Backtester + Attribution ----------------
 
+
 @pytest.mark.unit
 def test_select_multi_market_codes_covers_all_markets(profitable_journal: Path) -> None:
     profile = extract_shadow_profile(profitable_journal)
@@ -340,7 +352,9 @@ def test_select_multi_market_codes_covers_all_markets(profitable_journal: Path) 
 
 @pytest.mark.unit
 def test_run_shadow_backtest_with_mocked_runner(
-    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    profitable_journal: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Inject a stub run_backtest_fn that writes artifacts the parser can read."""
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -352,25 +366,32 @@ def test_run_shadow_backtest_with_mocked_runner(
         artifacts_dir = run_path / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         metrics_path = artifacts_dir / "metrics.json"
-        metrics_path.write_text(json.dumps({
-            "total_return_abs": 12_345.0,
-            "sharpe": 1.5,
-            "max_drawdown": -0.12,
-            "win_rate": 0.55,
-        }), encoding="utf-8")
+        metrics_path.write_text(
+            json.dumps(
+                {
+                    "total_return_abs": 12_345.0,
+                    "sharpe": 1.5,
+                    "max_drawdown": -0.12,
+                    "win_rate": 0.55,
+                }
+            ),
+            encoding="utf-8",
+        )
         equity_path = artifacts_dir / "equity.csv"
         equity_path.write_text(
             "date,equity\n2026-01-02,1000000\n2026-06-30,1012345\n",
             encoding="utf-8",
         )
-        return json.dumps({
-            "status": "ok",
-            "exit_code": 0,
-            "artifacts": {
-                "metrics.json": str(metrics_path),
-                "equity.csv": str(equity_path),
-            },
-        })
+        return json.dumps(
+            {
+                "status": "ok",
+                "exit_code": 0,
+                "artifacts": {
+                    "metrics.json": str(metrics_path),
+                    "equity.csv": str(equity_path),
+                },
+            }
+        )
 
     result = run_shadow_backtest(
         profile,
@@ -393,19 +414,23 @@ def test_run_shadow_backtest_with_mocked_runner(
 
 @pytest.mark.unit
 def test_run_shadow_backtest_handles_runner_failure(
-    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    profitable_journal: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     profile = extract_shadow_profile(profitable_journal)
 
     def failing_runner(run_dir_str: str) -> str:
-        return json.dumps({
-            "status": "error",
-            "exit_code": 1,
-            "stderr": "No data fetched",
-            "artifacts": {},
-        })
+        return json.dumps(
+            {
+                "status": "error",
+                "exit_code": 1,
+                "stderr": "No data fetched",
+                "artifacts": {},
+            }
+        )
 
     result = run_shadow_backtest(
         profile,
@@ -419,6 +444,7 @@ def test_run_shadow_backtest_handles_runner_failure(
 
 
 # ---------------- M4: Reporter ----------------
+
 
 def _stub_backtest_result(profile: ShadowProfile) -> ShadowBacktestResult:
     return ShadowBacktestResult(
@@ -437,8 +463,13 @@ def _stub_backtest_result(profile: ShadowProfile) -> ShadowBacktestResult:
             overtrading_pnl=10.0,
             counterfactual_trades=(
                 {
-                    "symbol": "600519.SH", "buy_dt": "2026-02-01", "sell_dt": "2026-02-02",
-                    "hold_days": 1.0, "pnl": 100.0, "impact": 50.0, "reason": "early_exit",
+                    "symbol": "600519.SH",
+                    "buy_dt": "2026-02-01",
+                    "sell_dt": "2026-02-02",
+                    "hold_days": 1.0,
+                    "pnl": 100.0,
+                    "impact": 50.0,
+                    "reason": "early_exit",
                 },
             ),
         ),
@@ -460,13 +491,14 @@ def test_render_shadow_report_emits_html(profitable_journal: Path, tmp_path: Pat
     assert "Shadow Account" in content
     assert profile.shadow_id in content
     assert "Delta Attribution" in content  # Section 5
-    assert "Counterfactual" in content      # Section 6
+    assert "Counterfactual" in content  # Section 6
     assert out["engine"] in ("weasyprint", "html-only")
 
 
 @pytest.mark.unit
 def test_render_shadow_report_includes_today_signals(
-    profitable_journal: Path, tmp_path: Path,
+    profitable_journal: Path,
+    tmp_path: Path,
 ) -> None:
     profile = extract_shadow_profile(profitable_journal)
     result = _stub_backtest_result(profile)
@@ -481,17 +513,26 @@ def test_render_shadow_report_includes_today_signals(
 
 @pytest.mark.unit
 def test_render_shadow_report_handles_empty_equity(
-    profitable_journal: Path, tmp_path: Path,
+    profitable_journal: Path,
+    tmp_path: Path,
 ) -> None:
     profile = extract_shadow_profile(profitable_journal)
     result = ShadowBacktestResult(
         shadow_id=profile.shadow_id,
-        per_market={}, combined={}, equity_curves={},
+        per_market={},
+        combined={},
+        equity_curves={},
         attribution=AttributionBreakdown(
-            missed_signals_pnl=0.0, noise_trades_pnl=0.0, early_exit_pnl=0.0,
-            late_exit_pnl=0.0, overtrading_pnl=0.0, counterfactual_trades=(),
+            missed_signals_pnl=0.0,
+            noise_trades_pnl=0.0,
+            early_exit_pnl=0.0,
+            late_exit_pnl=0.0,
+            overtrading_pnl=0.0,
+            counterfactual_trades=(),
         ),
-        shadow_total_pnl=0.0, real_total_pnl=0.0, delta_pnl=0.0,
+        shadow_total_pnl=0.0,
+        real_total_pnl=0.0,
+        delta_pnl=0.0,
     )
     out = render_shadow_report(profile, result, output_dir=tmp_path)
     assert Path(out["html_path"]).exists()
@@ -500,6 +541,7 @@ def test_render_shadow_report_handles_empty_equity(
 
 
 # ---------------- M5/M6: Tool wrappers + scanner ----------------
+
 
 @pytest.mark.unit
 def test_shadow_tools_are_auto_discovered() -> None:
@@ -517,7 +559,9 @@ def test_shadow_tools_are_auto_discovered() -> None:
 
 @pytest.mark.unit
 def test_extract_shadow_strategy_tool(
-    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    profitable_journal: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.tools.shadow_account_tool import ExtractShadowStrategyTool
 
@@ -530,6 +574,7 @@ def test_extract_shadow_strategy_tool(
     assert out["shadow_id"].startswith("shadow_")
     assert len(out["rules"]) >= 1
     from src.shadow_account.extractor import RULE_TEXT_MAX
+
     assert 1 <= len(out["rules"][0]["human_text"]) <= RULE_TEXT_MAX
 
     # Persistence happened — we can load it back.
@@ -550,7 +595,9 @@ def test_extract_shadow_strategy_tool_reports_errors(tmp_path: Path, monkeypatch
 
 @pytest.mark.unit
 def test_scan_shadow_signals_tool(
-    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    profitable_journal: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.tools.shadow_account_tool import ScanShadowSignalsTool
 
@@ -578,7 +625,13 @@ def test_shadow_account_skill_shipped() -> None:
     skill = Path(__file__).resolve().parents[1] / "src" / "skills" / "shadow-account" / "SKILL.md"
     assert skill.exists()
     body = skill.read_text(encoding="utf-8")
-    for needle in ("shadow-account", "extract_shadow_strategy", "run_shadow_backtest", "render_shadow_report", "scan_shadow_signals"):
+    for needle in (
+        "shadow-account",
+        "extract_shadow_strategy",
+        "run_shadow_backtest",
+        "render_shadow_report",
+        "scan_shadow_signals",
+    ):
         assert needle in body, f"skill missing reference to {needle}"
 
 
@@ -593,7 +646,9 @@ def test_context_prompt_references_shadow_account() -> None:
 
 @pytest.mark.unit
 def test_attribution_is_zero_without_journal(
-    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    profitable_journal: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
@@ -602,11 +657,13 @@ def test_attribution_is_zero_without_journal(
     def stub_runner(run_dir_str: str) -> str:
         metrics_path = Path(run_dir_str) / "metrics.json"
         metrics_path.write_text(json.dumps({"total_return_abs": 0.0}), encoding="utf-8")
-        return json.dumps({
-            "status": "ok",
-            "exit_code": 0,
-            "artifacts": {"metrics.json": str(metrics_path)},
-        })
+        return json.dumps(
+            {
+                "status": "ok",
+                "exit_code": 0,
+                "artifacts": {"metrics.json": str(metrics_path)},
+            }
+        )
 
     result = run_shadow_backtest(
         profile,
@@ -666,7 +723,8 @@ def with_price_loader(monkeypatch: pytest.MonkeyPatch):
     def _install(frame: pd.DataFrame) -> None:
         loader = _FixtureLoader(frame)
         monkeypatch.setattr(
-            "backtest.loaders.registry.resolve_loader", lambda market: loader,
+            "backtest.loaders.registry.resolve_loader",
+            lambda market: loader,
         )
 
     return _install
@@ -739,7 +797,8 @@ def test_price_features_tz_aware_buy_dt_does_not_raise() -> None:
 
     naive = _price_features_as_of(frame, pd.Timestamp("2026-02-20 10:30:00"))
     aware = _price_features_as_of(
-        frame, pd.Timestamp("2026-02-20 10:30:00", tz="Asia/Shanghai"),
+        frame,
+        pd.Timestamp("2026-02-20 10:30:00", tz="Asia/Shanghai"),
     )
     assert aware["entry_rsi14"] == pytest.approx(naive["entry_rsi14"])
     assert aware["prior_5d_return"] == pytest.approx(naive["prior_5d_return"])
@@ -763,7 +822,9 @@ def test_attach_price_features_unmapped_market_is_nan() -> None:
 
 @pytest.mark.unit
 def test_extract_with_price_features_promotes_into_clustering(
-    profitable_journal: Path, with_price_loader, monkeypatch: pytest.MonkeyPatch,
+    profitable_journal: Path,
+    with_price_loader,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # 60 daily bars so RSI(14) + prior-5d are well-defined as-of every buy_dt.
     dates = pd.bdate_range("2025-12-01", periods=60).strftime("%Y-%m-%d").tolist()
@@ -786,7 +847,9 @@ def test_extract_with_price_features_promotes_into_clustering(
     def spy_cluster(features_df, *, max_k, numeric_features=extractor._NUMERIC_FEATURES):
         captured["numeric_features"] = numeric_features
         return orig_cluster(
-            features_df, max_k=max_k, numeric_features=numeric_features,
+            features_df,
+            max_k=max_k,
+            numeric_features=numeric_features,
         )
 
     monkeypatch.setattr(extractor, "_compute_features", spy_features)
@@ -809,7 +872,8 @@ def test_extract_with_price_features_promotes_into_clustering(
 
 @pytest.mark.unit
 def test_sparse_price_features_fall_back_to_journal_only(
-    profitable_journal: Path, monkeypatch: pytest.MonkeyPatch,
+    profitable_journal: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """With prices offline (autouse), promotion is skipped and rules still form."""
     import src.shadow_account.extractor as extractor
@@ -820,7 +884,9 @@ def test_sparse_price_features_fall_back_to_journal_only(
     def spy_cluster(features_df, *, max_k, numeric_features=extractor._NUMERIC_FEATURES):
         captured["numeric_features"] = numeric_features
         return orig_cluster(
-            features_df, max_k=max_k, numeric_features=numeric_features,
+            features_df,
+            max_k=max_k,
+            numeric_features=numeric_features,
         )
 
     monkeypatch.setattr(extractor, "_auto_cluster", spy_cluster)
@@ -833,14 +899,16 @@ def test_sparse_price_features_fall_back_to_journal_only(
 
 @pytest.mark.unit
 def test_promoted_features_threshold() -> None:
-    df = pd.DataFrame({
-        "holding_days": [1.0, 2.0, 3.0, 4.0],
-        "pnl_pct": [0.1, 0.2, 0.1, 0.2],
-        "entry_hour": [10, 11, 10, 11],
-        "entry_weekday": [1, 2, 3, 4],
-        "entry_rsi14": [55.0, 60.0, float("nan"), float("nan")],  # 2 present
-        "prior_5d_return": [0.01, 0.02, 0.03, 0.04],  # 4 present
-    })
+    df = pd.DataFrame(
+        {
+            "holding_days": [1.0, 2.0, 3.0, 4.0],
+            "pnl_pct": [0.1, 0.2, 0.1, 0.2],
+            "entry_hour": [10, 11, 10, 11],
+            "entry_weekday": [1, 2, 3, 4],
+            "entry_rsi14": [55.0, 60.0, float("nan"), float("nan")],  # 2 present
+            "prior_5d_return": [0.01, 0.02, 0.03, 0.04],  # 4 present
+        }
+    )
     promoted = _promoted_numeric_features(df, min_support=3)
     assert "prior_5d_return" in promoted  # 4 >= 3
     assert "entry_rsi14" not in promoted  # 2 < 3
@@ -858,15 +926,17 @@ def test_single_cluster_fallback_carries_price_bounds() -> None:
     """
     from src.shadow_account.extractor import _extract_rules
 
-    df = pd.DataFrame({
-        "market": ["us", "us", "us"],
-        "holding_days": [3.0, 4.0, 5.0],
-        "entry_hour": [10, 11, 10],
-        "symbol": ["AAPL", "MSFT", "NVDA"],
-        "buy_dt": pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03"]),
-        "entry_rsi14": [55.0, 60.0, 65.0],
-        "prior_5d_return": [0.01, 0.02, 0.03],
-    })
+    df = pd.DataFrame(
+        {
+            "market": ["us", "us", "us"],
+            "holding_days": [3.0, 4.0, 5.0],
+            "entry_hour": [10, 11, 10],
+            "symbol": ["AAPL", "MSFT", "NVDA"],
+            "buy_dt": pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03"]),
+            "entry_rsi14": [55.0, 60.0, 65.0],
+            "prior_5d_return": [0.01, 0.02, 0.03],
+        }
+    )
 
     # min_support above len(df) forces the len < min_support fallback branch.
     rules = _extract_rules(df, min_support=10, max_rules=3, llm_translator=None)
@@ -919,16 +989,16 @@ def test_price_bounds_keep_four_decimal_precision() -> None:
     """
     from src.shadow_account.extractor import _extract_rules
 
-    df = pd.DataFrame({
-        "market": ["us"] * 4,
-        "holding_days": [3.0, 4.0, 5.0, 6.0],
-        "entry_hour": [10, 11, 10, 11],
-        "symbol": ["AAPL", "MSFT", "NVDA", "AMZN"],
-        "buy_dt": pd.to_datetime(
-            ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"]
-        ),
-        "prior_5d_return": [0.0123, 0.0156, 0.0188, 0.0211],
-    })
+    df = pd.DataFrame(
+        {
+            "market": ["us"] * 4,
+            "holding_days": [3.0, 4.0, 5.0, 6.0],
+            "entry_hour": [10, 11, 10, 11],
+            "symbol": ["AAPL", "MSFT", "NVDA", "AMZN"],
+            "buy_dt": pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"]),
+            "prior_5d_return": [0.0123, 0.0156, 0.0188, 0.0211],
+        }
+    )
 
     rules = _extract_rules(df, min_support=10, max_rules=1, llm_translator=None)
     bounds = rules[0].entry_condition["prior_5d_return"]
@@ -955,11 +1025,14 @@ def test_fetch_price_history_symbol_absent_from_map(monkeypatch: pytest.MonkeyPa
             return {}  # symbol not present
 
     monkeypatch.setattr(
-        "backtest.loaders.registry.resolve_loader", lambda market: _EmptyMapLoader(),
+        "backtest.loaders.registry.resolve_loader",
+        lambda market: _EmptyMapLoader(),
     )
     out = _fetch_price_history(
-        "600519", "china_a",
-        start=pd.Timestamp("2026-01-01"), end=pd.Timestamp("2026-02-01"),
+        "600519",
+        "china_a",
+        start=pd.Timestamp("2026-01-01"),
+        end=pd.Timestamp("2026-02-01"),
     )
     assert out is None
 
@@ -970,15 +1043,17 @@ def test_fetch_price_history_empty_frame(monkeypatch: pytest.MonkeyPatch) -> Non
 
     class _EmptyFrameLoader:
         def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
-            return {c: pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
-                    for c in codes}
+            return {c: pd.DataFrame(columns=["open", "high", "low", "close", "volume"]) for c in codes}
 
     monkeypatch.setattr(
-        "backtest.loaders.registry.resolve_loader", lambda market: _EmptyFrameLoader(),
+        "backtest.loaders.registry.resolve_loader",
+        lambda market: _EmptyFrameLoader(),
     )
     out = _fetch_price_history(
-        "600519", "china_a",
-        start=pd.Timestamp("2026-01-01"), end=pd.Timestamp("2026-02-01"),
+        "600519",
+        "china_a",
+        start=pd.Timestamp("2026-01-01"),
+        end=pd.Timestamp("2026-02-01"),
     )
     assert out is None
 
@@ -992,11 +1067,14 @@ def test_fetch_price_history_loader_raises(monkeypatch: pytest.MonkeyPatch) -> N
             raise RuntimeError("network down")
 
     monkeypatch.setattr(
-        "backtest.loaders.registry.resolve_loader", lambda market: _BoomLoader(),
+        "backtest.loaders.registry.resolve_loader",
+        lambda market: _BoomLoader(),
     )
     out = _fetch_price_history(
-        "600519", "china_a",
-        start=pd.Timestamp("2026-01-01"), end=pd.Timestamp("2026-02-01"),
+        "600519",
+        "china_a",
+        start=pd.Timestamp("2026-01-01"),
+        end=pd.Timestamp("2026-02-01"),
     )
     assert out is None
 
@@ -1018,7 +1096,8 @@ def test_attach_price_features_batches_one_fetch_per_symbol(
             return {c: frame.loc[lo:hi].copy() for c in codes}
 
     monkeypatch.setattr(
-        "backtest.loaders.registry.resolve_loader", lambda market: _CountingLoader(),
+        "backtest.loaders.registry.resolve_loader",
+        lambda market: _CountingLoader(),
     )
     rows = [
         {"symbol": "600519", "market": "china_a", "buy_dt": pd.Timestamp("2026-02-10")},
@@ -1032,17 +1111,19 @@ def test_attach_price_features_batches_one_fetch_per_symbol(
 @pytest.mark.unit
 def test_auto_cluster_median_imputes_partial_nan() -> None:
     """A promoted feature with some NaN rows is median-imputed, not crashed."""
-    df = pd.DataFrame({
-        "holding_days": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        "pnl_pct": [0.1, 0.2, 0.1, 0.2, 0.1, 0.2],
-        "entry_hour": [10, 11, 10, 11, 10, 11],
-        "entry_weekday": [1, 2, 3, 4, 0, 1],
-        "prior_5d_return": [0.01, 0.02, float("nan"), 0.04, 0.05, float("nan")],
-    })
+    df = pd.DataFrame(
+        {
+            "holding_days": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "pnl_pct": [0.1, 0.2, 0.1, 0.2, 0.1, 0.2],
+            "entry_hour": [10, 11, 10, 11, 10, 11],
+            "entry_weekday": [1, 2, 3, 4, 0, 1],
+            "prior_5d_return": [0.01, 0.02, float("nan"), 0.04, 0.05, float("nan")],
+        }
+    )
     labels = _auto_cluster(
-        df, max_k=3,
-        numeric_features=("holding_days", "pnl_pct", "entry_hour",
-                          "entry_weekday", "prior_5d_return"),
+        df,
+        max_k=3,
+        numeric_features=("holding_days", "pnl_pct", "entry_hour", "entry_weekday", "prior_5d_return"),
     )
     # No exception (NaN would crash StandardScaler/KMeans); one label per row.
     assert len(labels) == len(df)
@@ -1051,17 +1132,19 @@ def test_auto_cluster_median_imputes_partial_nan() -> None:
 @pytest.mark.unit
 def test_auto_cluster_all_nan_feature_is_dropped() -> None:
     """An all-NaN promoted column is dropped, leaving journal features to cluster."""
-    df = pd.DataFrame({
-        "holding_days": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        "pnl_pct": [0.1, 0.2, 0.1, 0.2, 0.1, 0.2],
-        "entry_hour": [10, 11, 10, 11, 10, 11],
-        "entry_weekday": [1, 2, 3, 4, 0, 1],
-        "entry_rsi14": [float("nan")] * 6,  # all NaN
-    })
+    df = pd.DataFrame(
+        {
+            "holding_days": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "pnl_pct": [0.1, 0.2, 0.1, 0.2, 0.1, 0.2],
+            "entry_hour": [10, 11, 10, 11, 10, 11],
+            "entry_weekday": [1, 2, 3, 4, 0, 1],
+            "entry_rsi14": [float("nan")] * 6,  # all NaN
+        }
+    )
     labels = _auto_cluster(
-        df, max_k=3,
-        numeric_features=("holding_days", "pnl_pct", "entry_hour",
-                          "entry_weekday", "entry_rsi14"),
+        df,
+        max_k=3,
+        numeric_features=("holding_days", "pnl_pct", "entry_hour", "entry_weekday", "entry_rsi14"),
     )
     assert len(labels) == len(df)
 
@@ -1071,7 +1154,8 @@ def test_auto_cluster_all_nan_feature_is_dropped() -> None:
 
 @pytest.mark.unit
 def test_extracted_rules_carry_price_condition_bounds(
-    profitable_journal: Path, with_price_loader,
+    profitable_journal: Path,
+    with_price_loader,
 ) -> None:
     """When price features are promoted, each rule's entry_condition carries bounds."""
     dates = pd.bdate_range("2025-12-01", periods=60).strftime("%Y-%m-%d").tolist()
@@ -1114,17 +1198,19 @@ def test_price_condition_bounds_are_p10_p90() -> None:
     """The p10/p90 values are the actual quantiles of the cluster."""
     from src.shadow_account.extractor import _cluster_to_rule
 
-    cluster_df = pd.DataFrame({
-        "symbol": ["A"] * 4,
-        "market": ["china_a"] * 4,
-        "holding_days": [3.0, 4.0, 3.0, 4.0],
-        "pnl_pct": [0.1, 0.2, 0.1, 0.2],
-        "entry_hour": [10, 10, 10, 10],
-        "entry_weekday": [1, 1, 1, 1],
-        "entry_rsi14": [25.0, 30.0, 35.0, 45.0],
-        "buy_dt": [pd.Timestamp("2026-01-10")] * 4,
-        "sell_dt": [pd.Timestamp("2026-01-14")] * 4,
-    })
+    cluster_df = pd.DataFrame(
+        {
+            "symbol": ["A"] * 4,
+            "market": ["china_a"] * 4,
+            "holding_days": [3.0, 4.0, 3.0, 4.0],
+            "pnl_pct": [0.1, 0.2, 0.1, 0.2],
+            "entry_hour": [10, 10, 10, 10],
+            "entry_weekday": [1, 1, 1, 1],
+            "entry_rsi14": [25.0, 30.0, 35.0, 45.0],
+            "buy_dt": [pd.Timestamp("2026-01-10")] * 4,
+            "sell_dt": [pd.Timestamp("2026-01-14")] * 4,
+        }
+    )
     rule = _cluster_to_rule(
         cluster_df=cluster_df,
         rule_index=1,
@@ -1147,17 +1233,19 @@ def test_price_condition_nan_rows_excluded_from_bounds() -> None:
     """NaN rows in the cluster do not shift p10/p90 quantiles."""
     from src.shadow_account.extractor import _cluster_to_rule
 
-    cluster_df = pd.DataFrame({
-        "symbol": ["A"] * 4,
-        "market": ["china_a"] * 4,
-        "holding_days": [3.0, 4.0, 3.0, 4.0],
-        "pnl_pct": [0.1, 0.2, 0.1, 0.2],
-        "entry_hour": [10, 10, 10, 10],
-        "entry_weekday": [1, 1, 1, 1],
-        "entry_rsi14": [30.0, float("nan"), 40.0, float("nan")],
-        "buy_dt": [pd.Timestamp("2026-01-10")] * 4,
-        "sell_dt": [pd.Timestamp("2026-01-14")] * 4,
-    })
+    cluster_df = pd.DataFrame(
+        {
+            "symbol": ["A"] * 4,
+            "market": ["china_a"] * 4,
+            "holding_days": [3.0, 4.0, 3.0, 4.0],
+            "pnl_pct": [0.1, 0.2, 0.1, 0.2],
+            "entry_hour": [10, 10, 10, 10],
+            "entry_weekday": [1, 1, 1, 1],
+            "entry_rsi14": [30.0, float("nan"), 40.0, float("nan")],
+            "buy_dt": [pd.Timestamp("2026-01-10")] * 4,
+            "sell_dt": [pd.Timestamp("2026-01-14")] * 4,
+        }
+    )
     rule = _cluster_to_rule(
         cluster_df=cluster_df,
         rule_index=1,
@@ -1299,6 +1387,7 @@ def test_render_signal_engine_without_price_conditions_still_valid() -> None:
     assert "_conditional_entry" in source
     # Rule dict in RULES literal has only behavioral keys, no price keys.
     import ast
+
     tree = ast.parse(source)
     rules_found = False
     for node in ast.walk(tree):
@@ -1336,7 +1425,10 @@ def _generate_signals(profile: ShadowProfile, data_map: dict) -> dict:
 
 
 def _rule_with_rsi(
-    rsi_min: float, rsi_max: float, hour_min: int = 0, hour_max: int = 23,
+    rsi_min: float,
+    rsi_max: float,
+    hour_min: int = 0,
+    hour_max: int = 23,
 ) -> ShadowRule:
     return ShadowRule(
         rule_id="R1",
@@ -1446,7 +1538,9 @@ def test_conditional_entry_emits_signal_when_rsi_in_range() -> None:
     rule = _rule_with_rsi(25.0, 45.0)
     idx = _hourly_index(periods=40)
     sideways = pd.Series(
-        [10.0 + (i % 6) * 0.5 for i in range(40)], index=idx, dtype=float,
+        [10.0 + (i % 6) * 0.5 for i in range(40)],
+        index=idx,
+        dtype=float,
     )
     s2 = _generate_signals(
         _profile(rule),
@@ -1464,7 +1558,9 @@ def test_conditional_entry_skips_when_rsi_out_of_range() -> None:
     idx = _hourly_index(periods=40)
     # Steep uptrend → RSI very high (well above 15)
     close = pd.Series(
-        [10.0 + 0.5 * i for i in range(40)], index=idx, dtype=float,
+        [10.0 + 0.5 * i for i in range(40)],
+        index=idx,
+        dtype=float,
     )
     signals = _generate_signals(
         _profile(rule),
@@ -1481,7 +1577,9 @@ def test_conditional_entry_respects_hour_window() -> None:
     rule = _rule_with_rsi(0.0, 100.0, hour_min=9, hour_max=11)
     idx = _hourly_index(periods=48)  # 2 full days of hours
     close = pd.Series(
-        [10.0 + (i % 6) * 0.5 for i in range(48)], index=idx, dtype=float,
+        [10.0 + (i % 6) * 0.5 for i in range(48)],
+        index=idx,
+        dtype=float,
     )
     signals = _generate_signals(
         _profile(rule),
@@ -1500,7 +1598,9 @@ def test_conditional_entry_holds_for_full_duration() -> None:
     rule = _rule_with_rsi(0.0, 100.0)  # always passes RSI check
     idx = _hourly_index(periods=24)
     close = pd.Series(
-        [10.0 + (i % 6) * 0.5 for i in range(24)], index=idx, dtype=float,
+        [10.0 + (i % 6) * 0.5 for i in range(24)],
+        index=idx,
+        dtype=float,
     )
     signals = _generate_signals(
         _profile(rule),
@@ -1528,7 +1628,9 @@ def test_conditional_entry_no_reentry_while_holding() -> None:
     idx = _daily_index(periods=30)
     # A price series that yields a moderate RSI value (not extreme).
     close = pd.Series(
-        [10.0 + (i % 6) * 0.5 for i in range(30)], index=idx, dtype=float,
+        [10.0 + (i % 6) * 0.5 for i in range(30)],
+        index=idx,
+        dtype=float,
     )
     signals = _generate_signals(
         _profile(rule),
@@ -1554,7 +1656,9 @@ def test_conditional_entry_falls_back_to_time_only_when_no_price_keys() -> None:
     rule = _rule_without_price()
     idx = _hourly_index(periods=24)
     close = pd.Series(
-        [10.0 + (i % 6) * 0.5 for i in range(24)], index=idx, dtype=float,
+        [10.0 + (i % 6) * 0.5 for i in range(24)],
+        index=idx,
+        dtype=float,
     )
     signals = _generate_signals(
         _profile(rule),
@@ -1587,7 +1691,9 @@ def test_conditional_entry_prior_return_gates_entry() -> None:
     idx = _daily_index(periods=40)
     # Very large returns (+50% over 5 bars) → well outside [-0.03, 0.03]
     close = pd.Series(
-        [10.0 + 0.5 * i for i in range(40)], index=idx, dtype=float,
+        [10.0 + 0.5 * i for i in range(40)],
+        index=idx,
+        dtype=float,
     )
     signals = _generate_signals(
         _profile(rule),
@@ -1619,7 +1725,9 @@ def test_conditional_entry_both_rsi_and_return_must_pass() -> None:
     idx = _daily_index(periods=40)
     # Strong uptrend → prior_5d_return >> 2%.
     close = pd.Series(
-        [10.0 + 1.0 * i for i in range(40)], index=idx, dtype=float,
+        [10.0 + 1.0 * i for i in range(40)],
+        index=idx,
+        dtype=float,
     )
     signals = _generate_signals(
         _profile(rule),
@@ -1650,7 +1758,9 @@ def test_conditional_entry_only_prior_return_condition() -> None:
     idx = _daily_index(periods=40)
     # Sideways prices → prior_5d_return ~0, within [-0.02, 0.02].
     close = pd.Series(
-        [10.0 + (i % 3) * 0.005 for i in range(40)], index=idx, dtype=float,
+        [10.0 + (i % 3) * 0.005 for i in range(40)],
+        index=idx,
+        dtype=float,
     )
     signals = _generate_signals(
         _profile(rule),
@@ -1666,17 +1776,19 @@ def test_cluster_to_rule_skips_all_nan_price_feature() -> None:
     """When a promoted price feature is all-NaN in the cluster, it is skipped."""
     from src.shadow_account.extractor import _cluster_to_rule
 
-    cluster_df = pd.DataFrame({
-        "symbol": ["A"] * 4,
-        "market": ["china_a"] * 4,
-        "holding_days": [3.0, 4.0, 3.0, 4.0],
-        "pnl_pct": [0.1, 0.2, 0.1, 0.2],
-        "entry_hour": [10, 10, 10, 10],
-        "entry_weekday": [1, 1, 1, 1],
-        "entry_rsi14": [float("nan")] * 4,  # all NaN
-        "buy_dt": [pd.Timestamp("2026-01-10")] * 4,
-        "sell_dt": [pd.Timestamp("2026-01-14")] * 4,
-    })
+    cluster_df = pd.DataFrame(
+        {
+            "symbol": ["A"] * 4,
+            "market": ["china_a"] * 4,
+            "holding_days": [3.0, 4.0, 3.0, 4.0],
+            "pnl_pct": [0.1, 0.2, 0.1, 0.2],
+            "entry_hour": [10, 10, 10, 10],
+            "entry_weekday": [1, 1, 1, 1],
+            "entry_rsi14": [float("nan")] * 4,  # all NaN
+            "buy_dt": [pd.Timestamp("2026-01-10")] * 4,
+            "sell_dt": [pd.Timestamp("2026-01-14")] * 4,
+        }
+    )
     rule = _cluster_to_rule(
         cluster_df=cluster_df,
         rule_index=1,
@@ -1696,7 +1808,9 @@ def test_conditional_entry_rsi_nan_bars_are_skipped() -> None:
     rule = _rule_with_rsi(0.0, 100.0)
     idx = _daily_index(periods=30)
     close = pd.Series(
-        [10.0 + (i % 6) * 0.5 for i in range(30)], index=idx, dtype=float,
+        [10.0 + (i % 6) * 0.5 for i in range(30)],
+        index=idx,
+        dtype=float,
     )
     signals = _generate_signals(
         _profile(rule),
@@ -1725,7 +1839,9 @@ def test_daily_bars_ignore_mined_hour_window() -> None:
     idx = _daily_index(periods=30)
     assert {pd.Timestamp(ts).hour for ts in idx} == {0}  # midnight daily bars
     close = pd.Series(
-        [10.0 + (i % 6) * 0.5 for i in range(30)], index=idx, dtype=float,
+        [10.0 + (i % 6) * 0.5 for i in range(30)],
+        index=idx,
+        dtype=float,
     )
     signals = _generate_signals(
         _profile(rule),
@@ -1741,7 +1857,9 @@ def test_intraday_bars_still_enforce_hour_window() -> None:
     rule = _rule_with_rsi(0.0, 100.0, hour_min=9, hour_max=11)
     idx = _hourly_index(periods=48)  # 2 full days of hours
     close = pd.Series(
-        [10.0 + (i % 6) * 0.5 for i in range(48)], index=idx, dtype=float,
+        [10.0 + (i % 6) * 0.5 for i in range(48)],
+        index=idx,
+        dtype=float,
     )
     signals = _generate_signals(
         _profile(rule),
@@ -1759,7 +1877,9 @@ def test_daily_bars_date_only_journal_window_still_enters() -> None:
     rule = _rule_with_rsi(0.0, 100.0, hour_min=0, hour_max=0)
     idx = _daily_index(periods=30)
     close = pd.Series(
-        [10.0 + (i % 6) * 0.5 for i in range(30)], index=idx, dtype=float,
+        [10.0 + (i % 6) * 0.5 for i in range(30)],
+        index=idx,
+        dtype=float,
     )
     signals = _generate_signals(
         _profile(rule),

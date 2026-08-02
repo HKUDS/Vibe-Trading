@@ -101,9 +101,7 @@ def _read_trace(run_dir: str) -> list[dict[str, Any]]:
     return TraceWriter.read(Path(run_dir))
 
 
-def test_content_filter_skip_and_continue(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_content_filter_skip_and_continue(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Content filter on first call, then normal response -> loop continues and succeeds."""
     llm = _ContentFilterLoopLLM(filter_count=1, final_content="Final answer.")
 
@@ -114,9 +112,7 @@ def test_content_filter_skip_and_continue(
     assert llm.calls == 2
 
 
-def test_content_filter_trace_entry(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_content_filter_trace_entry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Trace contains content_filter_skipped entry when filter is triggered."""
     llm = _ContentFilterLoopLLM(filter_count=1, final_content="Done.")
 
@@ -128,9 +124,7 @@ def test_content_filter_trace_entry(
     assert "iter" in filter_entries[0]
 
 
-def test_content_filter_injects_system_message(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_content_filter_injects_system_message(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """System message is injected into messages after content filter hit."""
     llm = _ContentFilterLoopLLM(filter_count=1, final_content="Done.")
 
@@ -138,17 +132,12 @@ def test_content_filter_injects_system_message(
 
     assert llm.calls == 2
     messages_on_second_call = llm.messages_history[1]
-    system_messages = [
-        m for m in messages_on_second_call
-        if "content moderation" in str(m.get("content", ""))
-    ]
+    system_messages = [m for m in messages_on_second_call if "content moderation" in str(m.get("content", ""))]
     assert len(system_messages) == 1
     assert "[SYSTEM]" in system_messages[0]["content"]
 
 
-def test_multiple_content_filter_hits(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_multiple_content_filter_hits(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Multiple content filter hits are all traced and counted."""
     llm = _ContentFilterLoopLLM(filter_count=3, final_content="Finally.")
 
@@ -163,9 +152,7 @@ def test_multiple_content_filter_hits(
     assert len(filter_entries) == 3
 
 
-def test_empty_content_no_filter_still_breaks(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_empty_content_no_filter_still_breaks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Empty content with content_filter_triggered=False triggers existing break."""
     llm = _EmptyResponseLoopLLM()
 
@@ -217,11 +204,7 @@ class _RatioFilterLoopLLM:
         if self.calls < self._total:
             return LLMResponse(
                 content="",
-                tool_calls=[
-                    ToolCallRequest(
-                        id=f"call_{self.calls}", name="_noop", arguments={}
-                    )
-                ],
+                tool_calls=[ToolCallRequest(id=f"call_{self.calls}", name="_noop", arguments={})],
             )
         if on_text_chunk:
             on_text_chunk(self._final_content)
@@ -231,9 +214,7 @@ class _RatioFilterLoopLLM:
         return LLMResponse(content="")
 
 
-def test_content_filter_warning_in_result(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_content_filter_warning_in_result(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """5/10 iterations hit content_filter (50%) → warning surfaced in result."""
     llm = _RatioFilterLoopLLM(filter_count=5, total_iterations=10)
 
@@ -246,9 +227,7 @@ def test_content_filter_warning_in_result(
     assert "provider" in warnings[0].lower()
 
 
-def test_content_filter_no_warning_below_threshold(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_content_filter_no_warning_below_threshold(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """0/10 iterations hit content_filter → no warning key in result."""
     llm = _ContentFilterLoopLLM(filter_count=0, final_content="Clean run.")
 
@@ -257,9 +236,7 @@ def test_content_filter_no_warning_below_threshold(
     assert "content_filter_warnings" not in result
 
 
-def test_content_filter_circuit_breaker(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_content_filter_circuit_breaker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """10 consecutive content filters trip the circuit breaker → run fails early."""
     llm = _ContentFilterLoopLLM(filter_count=15, final_content="Never reached.")
 

@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #38
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第38号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_038"
 
 __alpha_meta__ = {
-    'id': 'alpha101_038',
-    'nickname': 'Kakushadze Alpha #38',
-    'theme': ['reversal'],
-    'formula_latex': '(-1*rank(ts_rank(close,10))) * rank(close/open)',
-    'columns_required': ['open', 'close'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 10,
-    'notes': '',
+    "id": "alpha101_038",
+    "nickname": "Kakushadze Alpha #38",
+    "theme": ["reversal"],
+    "formula_latex": "(-1*rank(ts_rank(close,10))) * rank(close/open)",
+    "columns_required": ["open", "close"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 10,
+    "notes": "",
 }
 
 
@@ -55,7 +54,6 @@ def compute(panel: dict) -> pd.DataFrame:
     """Compute the alpha on the OHLCV+ panel and return a wide DataFrame."""
     close = panel["close"]
     open_ = panel["open"]
-
 
     # Helper aliases (local closures keep the file standalone & purity-safe).
     out = (-1.0 * rank(ts_rank(close, 10))) * rank(safe_div(close, open_))

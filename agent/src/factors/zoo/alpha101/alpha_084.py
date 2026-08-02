@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #84
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第84号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_084"
 
 __alpha_meta__ = {
-    'id': 'alpha101_084',
-    'nickname': 'Kakushadze Alpha #84',
-    'theme': ['momentum'],
-    'formula_latex': 'SignedPower(Ts_Rank(vwap-ts_max(vwap,15), 21), delta(close,5))',
-    'columns_required': ['close', 'vwap'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 35,
-    'notes': "SignedPower with a delta(close,5) exponent can produce non-finite values when the exponent is large; non-finite outputs are clipped to NaN to satisfy the registry's no-inf invariant.",
+    "id": "alpha101_084",
+    "nickname": "Kakushadze Alpha #84",
+    "theme": ["momentum"],
+    "formula_latex": "SignedPower(Ts_Rank(vwap-ts_max(vwap,15), 21), delta(close,5))",
+    "columns_required": ["close", "vwap"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 35,
+    "notes": "SignedPower with a delta(close,5) exponent can produce non-finite values when the exponent is large; non-finite outputs are clipped to NaN to satisfy the registry's no-inf invariant.",
 }
 
 
@@ -55,7 +54,6 @@ def compute(panel: dict) -> pd.DataFrame:
     """Compute the alpha on the OHLCV+ panel and return a wide DataFrame."""
     close = panel["close"]
     vwap = panel["vwap"]
-
 
     # Helper aliases (local closures keep the file standalone & purity-safe).
     base = ts_rank(vwap - ts_max(vwap, 15), 21)

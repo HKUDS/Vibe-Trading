@@ -48,9 +48,9 @@ def test_connector_positions_renders_longbridge_schema(capsys) -> None:
     assert rc == _legacy.EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "AAPL.US" in out
-    assert "20" in out       # quantity → Qty
-    assert "321.5" in out    # cost_price → Avg Cost
-    assert "US" in out       # market → Type
+    assert "20" in out  # quantity → Qty
+    assert "321.5" in out  # cost_price → Avg Cost
+    assert "US" in out  # market → Type
 
 
 def test_connector_account_renders_balances_table(capsys) -> None:

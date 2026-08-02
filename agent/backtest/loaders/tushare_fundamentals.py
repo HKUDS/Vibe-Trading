@@ -349,11 +349,7 @@ def enrich_price_frames_with_fundamentals(
 
             timeline = pd.DataFrame(timeline_rows).drop(columns=["_end_date_parsed"])
 
-            value_columns = [
-                column
-                for column in timeline.columns
-                if column not in {"ts_code", "_pit_date"}
-            ]
+            value_columns = [column for column in timeline.columns if column not in {"ts_code", "_pit_date"}]
             right = timeline[["_pit_date", *value_columns]].rename(
                 columns={column: f"{table}_{column}" for column in value_columns}
             )
@@ -370,9 +366,7 @@ def enrich_price_frames_with_fundamentals(
                 right_on="_pit_date",
                 direction="backward",
             )
-            merged = merged.sort_values("_original_order").drop(
-                columns=["_trade_date", "_original_order", "_pit_date"]
-            )
+            merged = merged.sort_values("_original_order").drop(columns=["_trade_date", "_original_order", "_pit_date"])
             merged.index = original_index
             enriched[code] = merged
 

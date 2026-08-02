@@ -17,9 +17,7 @@ def _fetch_with_interval(interval: str) -> list[str]:
     with patch.object(okx_mod.DataLoader, "_fetch_candles", fake_fetch):
         with patch.object(okx_mod.DataLoader, "_should_use_history", return_value=False):
             with patch.object(okx_mod, "_okx_session", return_value=MagicMock()):
-                okx_mod.DataLoader().fetch(
-                    ["BTC-USDT"], "2024-01-01", "2024-01-02", interval=interval
-                )
+                okx_mod.DataLoader().fetch(["BTC-USDT"], "2024-01-01", "2024-01-02", interval=interval)
     return seen
 
 

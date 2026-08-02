@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #60 - 量价占比排名
 # 简要说明: (-1*RANK(DELTA(MEAN(CLOSE,6),3))*RANK((CLOSE-MEAN(CLOSE,6))/MEAN(CLOSE,6)))，同Alpha#53/#55/#58/#59。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_060",
-    "theme": ['volume', 'microstructure'],
-    "formula_latex": 'SUM(((CLOSE-LOW)-(HIGH-CLOSE))/(HIGH-LOW)*VOLUME, 20)',
-    "columns_required": ['close', 'high', 'low', 'volume'],
+    "theme": ["volume", "microstructure"],
+    "formula_latex": "SUM(((CLOSE-LOW)-(HIGH-CLOSE))/(HIGH-LOW)*VOLUME, 20)",
+    "columns_required": ["close", "high", "low", "volume"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
     "min_warmup_bars": 21,
-    "notes": '20-day version of alpha #11.',
+    "notes": "20-day version of alpha #11.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

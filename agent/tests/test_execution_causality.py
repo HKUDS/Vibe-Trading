@@ -128,10 +128,7 @@ class _FeeEngine(_FrictionlessEngine):
 
 def test_capital_constrained_open_basket_is_proportional_and_order_independent() -> None:
     dates = pd.DatetimeIndex(["2026-01-05"])
-    data_map = {
-        code: pd.DataFrame({"open": [100.0], "close": [100.0]}, index=dates)
-        for code in ("A", "B")
-    }
+    data_map = {code: pd.DataFrame({"open": [100.0], "close": [100.0]}, index=dates) for code in ("A", "B")}
     close_df = pd.DataFrame({code: frame["close"] for code, frame in data_map.items()})
     targets = pd.DataFrame({"A": [0.6], "B": [0.6]}, index=dates)
 
@@ -185,9 +182,7 @@ def _engine_case(name: str, codes: list[str], reverse: bool) -> tuple[BaseEngine
         ("composite", ["AAPL.US", "BTC-USDT"]),
     ],
 )
-def test_engine_family_execution_is_code_order_independent(
-    name: str, codes: list[str]
-) -> None:
+def test_engine_family_execution_is_code_order_independent(name: str, codes: list[str]) -> None:
     dates = pd.DatetimeIndex(["2026-01-05"])
     data_map = {
         code: pd.DataFrame(

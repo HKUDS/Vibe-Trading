@@ -6,6 +6,7 @@
 # 典型用途: 衡量10日价格变动与成交量变动的相关性，反映量价配合程度。
 # ============================================================
 """qlib158 CORD10: formula = \\mathrm{ts\\_corr}(\\mathrm{close}/\\mathrm{close}_{{-1}}, \\log((\\mathrm{volume}+1)/(\\mathrm{volume}_{{-1}}+1)), 10)."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -13,21 +14,21 @@ import pandas as pd
 from src.factors.base import safe_div, ts_corr
 
 __alpha_meta__ = {
-    'id': 'qlib158_cord10',
-    'theme': ['volume', 'microstructure'],
-    'formula_latex': '\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}/\\\\mathrm{close}_{{-1}}, \\\\log((\\\\mathrm{volume}+1)/(\\\\mathrm{volume}_{{-1}}+1)), 10)',
-    'columns_required': ['close', 'volume'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
-    'frequency': ['1d'],
-    'decay_horizon': 10,
-    'min_warmup_bars': 10,
+    "id": "qlib158_cord10",
+    "theme": ["volume", "microstructure"],
+    "formula_latex": "\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}/\\\\mathrm{close}_{{-1}}, \\\\log((\\\\mathrm{volume}+1)/(\\\\mathrm{volume}_{{-1}}+1)), 10)",
+    "columns_required": ["close", "volume"],
+    "universe": ["equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr"],
+    "frequency": ["1d"],
+    "decay_horizon": 10,
+    "min_warmup_bars": 10,
 }
 
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 CORD10 on the supplied OHLCV panel."""
-    c = panel['close']
-    v = panel['volume']
+    c = panel["close"]
+    v = panel["volume"]
     c_ret = safe_div(c, c.shift(1))
     v_ret = safe_div(v + 1.0, v.shift(1) + 1.0)
     logvr = np.log(v_ret)

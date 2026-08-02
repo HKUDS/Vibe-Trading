@@ -13,6 +13,7 @@ from src.tools.path_utils import safe_document_path, safe_path, safe_run_dir, sa
 # safe_path — tool-controlled sandbox under a fixed workdir
 # ---------------------------------------------------------------------------
 
+
 class TestSafePath:
     def test_relative_path_resolves_under_workdir(self, tmp_path: Path):
         result = safe_path("notes.md", tmp_path)
@@ -48,6 +49,7 @@ class TestSafePath:
 # ---------------------------------------------------------------------------
 # safe_user_path — user-supplied broker files under explicit import roots
 # ---------------------------------------------------------------------------
+
 
 class TestSafeUserPath:
     def test_configured_import_root_file_accepted(self, tmp_path: Path, monkeypatch):
@@ -120,6 +122,7 @@ class TestSafeDocumentPath:
 # ---------------------------------------------------------------------------
 # safe_run_dir — tool/backtest run roots
 # ---------------------------------------------------------------------------
+
 
 class TestSafeRunDir:
     def test_configured_run_root_accepted(self, tmp_path: Path, monkeypatch):

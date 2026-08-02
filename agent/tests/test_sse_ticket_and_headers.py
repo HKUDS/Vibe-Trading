@@ -172,7 +172,7 @@ def test_security_headers_present_on_error_response(
 
 
 def test_redact_query_secrets_masks_ticket_and_api_key_values() -> None:
-    line = 'GET /sessions/x/events?ticket=abc123&foo=bar HTTP/1.1'
+    line = "GET /sessions/x/events?ticket=abc123&foo=bar HTTP/1.1"
     red = security._redact_query_secrets(line)
     assert "abc123" not in red
     assert "ticket=***REDACTED***" in red

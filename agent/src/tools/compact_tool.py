@@ -16,7 +16,10 @@ class CompactTool(BaseTool):
     parameters = {
         "type": "object",
         "properties": {
-            "focus_topic": {"type": "string", "description": "Topic to preserve in detail during compression (e.g. 'BTC-USDT backtest')"},
+            "focus_topic": {
+                "type": "string",
+                "description": "Topic to preserve in detail during compression (e.g. 'BTC-USDT backtest')",
+            },
         },
         "required": [],
     }

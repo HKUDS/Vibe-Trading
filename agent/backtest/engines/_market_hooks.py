@@ -56,14 +56,59 @@ _CHINA_EXCHANGES = {"CFFEX", "SHFE", "DCE", "ZCE", "INE", "GFEX"}
 # before lookup so callers can pass any case (``RB2410`` and ``rb2410``
 # both resolve correctly).
 _CN_FUTURES_PRODUCTS = {
-    "if", "ic", "ih", "im", "t", "tf", "ts", "tl",
-    "au", "ag", "cu", "al", "zn", "pb", "ni", "sn", "ss",
-    "rb", "hc", "i", "j", "jm",
-    "sc", "fu", "lu", "bu", "nr",
-    "c", "cs", "m", "y", "a", "p", "jd", "lh",
-    "cf", "sr", "ta", "ma", "ap", "rm", "oi",
-    "pp", "l", "v", "eg", "eb", "pf", "sa", "fg", "ur",
-    "si", "lc",
+    "if",
+    "ic",
+    "ih",
+    "im",
+    "t",
+    "tf",
+    "ts",
+    "tl",
+    "au",
+    "ag",
+    "cu",
+    "al",
+    "zn",
+    "pb",
+    "ni",
+    "sn",
+    "ss",
+    "rb",
+    "hc",
+    "i",
+    "j",
+    "jm",
+    "sc",
+    "fu",
+    "lu",
+    "bu",
+    "nr",
+    "c",
+    "cs",
+    "m",
+    "y",
+    "a",
+    "p",
+    "jd",
+    "lh",
+    "cf",
+    "sr",
+    "ta",
+    "ma",
+    "ap",
+    "rm",
+    "oi",
+    "pp",
+    "l",
+    "v",
+    "eg",
+    "eb",
+    "pf",
+    "sa",
+    "fg",
+    "ur",
+    "si",
+    "lc",
 }
 
 
@@ -127,6 +172,7 @@ def _detect_submarket(codes: List[str]) -> str:
         if code.upper().endswith(".HK"):
             return "hk"
     return "us"
+
 
 # ── Crypto: OKX tiered maintenance margin table (simplified) ──
 
@@ -240,12 +286,22 @@ def check_crypto_liquidation(
 # ── Forex: swap tables ──
 
 _SWAP_LONG: dict[str, float] = {
-    "EUR/USD": -6.5, "GBP/USD": -3.0, "USD/JPY": 8.0, "USD/CHF": 4.0,
-    "AUD/USD": -2.0, "USD/CAD": 2.0, "NZD/USD": -1.5,
+    "EUR/USD": -6.5,
+    "GBP/USD": -3.0,
+    "USD/JPY": 8.0,
+    "USD/CHF": 4.0,
+    "AUD/USD": -2.0,
+    "USD/CAD": 2.0,
+    "NZD/USD": -1.5,
 }
 _SWAP_SHORT: dict[str, float] = {
-    "EUR/USD": 3.5, "GBP/USD": -1.0, "USD/JPY": -12.0, "USD/CHF": -8.0,
-    "AUD/USD": -1.0, "USD/CAD": -5.0, "NZD/USD": -2.0,
+    "EUR/USD": 3.5,
+    "GBP/USD": -1.0,
+    "USD/JPY": -12.0,
+    "USD/CHF": -8.0,
+    "AUD/USD": -1.0,
+    "USD/CAD": -5.0,
+    "NZD/USD": -2.0,
 }
 
 

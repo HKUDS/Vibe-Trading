@@ -32,32 +32,32 @@ class Command:
 # Order here = order shown in bare ``/`` typeahead. Group by frequency so the
 # most-used commands surface first (help/model/memory/history are top).
 SLASH_COMMANDS: tuple[Command, ...] = (
-    Command("help",    "Show keyboard shortcuts and command list",   "cli.commands.help"),
-    Command("model",   "Switch LLM provider and model",              "cli.commands.chat"),
-    Command("memory",  "Show / manage persistent memory",            "cli.commands.memory"),
-    Command("history", "Browse and resume prior sessions",           "cli.commands.session"),
-    Command("goal",    "Start / inspect a finance research goal",    "cli.commands.goal"),
-    Command("search",  "Full-text search across all sessions",       "cli.commands.session"),
-    Command("swarm",   "Multi-agent presets (committee / quant / risk)", "cli.commands.chat"),
-    Command("skill",   "List / load / unload skills",                "cli.commands.show"),
-    Command("show",    "Show prior run by id",                       "cli.commands.show"),
-    Command("clear",   "Clear current conversation",                 "cli.commands.chat"),
-    Command("pine",    "Export current strategy as Pine Script",     "cli.commands.show"),
-    Command("journal", "Analyze trade journal CSV",                  "cli.commands.chat"),
-    Command("shadow",  "Train / view shadow account",                "cli.commands.chat"),
-    Command("export",  "Export current session (md / json)",         "cli.commands.session"),
-    Command("debug",   "Toggle debug panel (token usage / latency)", "cli.commands.chat"),
-    Command("quit",    "Exit (also: q, exit, :q)",                   "cli.commands.chat"),
+    Command("help", "Show keyboard shortcuts and command list", "cli.commands.help"),
+    Command("model", "Switch LLM provider and model", "cli.commands.chat"),
+    Command("memory", "Show / manage persistent memory", "cli.commands.memory"),
+    Command("history", "Browse and resume prior sessions", "cli.commands.session"),
+    Command("goal", "Start / inspect a finance research goal", "cli.commands.goal"),
+    Command("search", "Full-text search across all sessions", "cli.commands.session"),
+    Command("swarm", "Multi-agent presets (committee / quant / risk)", "cli.commands.chat"),
+    Command("skill", "List / load / unload skills", "cli.commands.show"),
+    Command("show", "Show prior run by id", "cli.commands.show"),
+    Command("clear", "Clear current conversation", "cli.commands.chat"),
+    Command("pine", "Export current strategy as Pine Script", "cli.commands.show"),
+    Command("journal", "Analyze trade journal CSV", "cli.commands.chat"),
+    Command("shadow", "Train / view shadow account", "cli.commands.chat"),
+    Command("export", "Export current session (md / json)", "cli.commands.session"),
+    Command("debug", "Toggle debug panel (token usage / latency)", "cli.commands.chat"),
+    Command("quit", "Exit (also: q, exit, :q)", "cli.commands.chat"),
 )
 
 
 # Aliases — same handler, different surface keyword. Keep separate from the
 # main registry so typeahead does not duplicate rows.
 _ALIASES: dict[str, str] = {
-    "q":    "quit",
+    "q": "quit",
     "exit": "quit",
-    ":q":   "quit",
-    "?":    "help",
+    ":q": "quit",
+    "?": "help",
 }
 
 

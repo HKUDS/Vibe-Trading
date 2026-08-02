@@ -100,9 +100,7 @@ class SessionService:
         """
         with self._inflight_lock:
             if session_id in self._inflight:
-                raise SessionBusyError(
-                    f"Session {session_id} already has a run in progress"
-                )
+                raise SessionBusyError(f"Session {session_id} already has a run in progress")
             self._inflight.add(session_id)
 
     def _release_session(self, session_id: str) -> None:
@@ -184,7 +182,9 @@ class SessionService:
             message = Message(session_id=session_id, role=role, content=content)
             self.store.append_message(message)
             self._search_index.index_message(session_id, role, content)
-            self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": role, "content": content})
+            self.event_bus.emit(
+                session_id, "message.received", {"message_id": message.message_id, "role": role, "content": content}
+            )
 
             if role != "user":
                 return {"message_id": message.message_id}
@@ -197,9 +197,7 @@ class SessionService:
             self.store.update_session(session)
             self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
 
-            task = asyncio.create_task(
-                self._run_attempt(session, attempt, include_shell_tools=include_shell_tools)
-            )
+            task = asyncio.create_task(self._run_attempt(session, attempt, include_shell_tools=include_shell_tools))
             self._active_tasks[session_id] = task
             # _run_attempt now owns the claim and releases it in its finally.
             handed_off = True
@@ -290,24 +288,26 @@ class SessionService:
                     reply_metadata[key] = value
 
             reply = Message(
-                session_id=session.session_id, role="assistant",
+                session_id=session.session_id,
+                role="assistant",
                 content=self._format_result_message(attempt),
                 linked_attempt_id=attempt.attempt_id,
                 metadata=reply_metadata,
-                tool_trail=(
-                    result.get("tool_trail", [])
-                    if attempt.status == AttemptStatus.COMPLETED
-                    else []
-                ),
+                tool_trail=(result.get("tool_trail", []) if attempt.status == AttemptStatus.COMPLETED else []),
             )
             self.store.append_message(reply)
             self._search_index.index_message(session.session_id, "assistant", reply.content)
             self.event_bus.emit(
                 session.session_id,
                 _TERMINAL_EVENTS.get(attempt.status.value, "attempt.failed"),
-                {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
-                 "summary": attempt.summary, "error": attempt.error, "run_dir": attempt.run_dir,
-                 **{key: reply_metadata[key] for key in ("elapsed_ms", *runtime_keys) if key in reply_metadata}},
+                {
+                    "attempt_id": attempt.attempt_id,
+                    "status": attempt.status.value,
+                    "summary": attempt.summary,
+                    "error": attempt.error,
+                    "run_dir": attempt.run_dir,
+                    **{key: reply_metadata[key] for key in ("elapsed_ms", *runtime_keys) if key in reply_metadata},
+                },
             )
 
         except asyncio.CancelledError:
@@ -325,7 +325,9 @@ class SessionService:
         except Exception as exc:
             attempt.mark_failed(error=str(exc))
             self.store.update_attempt(attempt)
-            self.event_bus.emit(session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)})
+            self.event_bus.emit(
+                session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)}
+            )
         finally:
             # The only release path for the claim taken in send_message.
             self._active_tasks.pop(session.session_id, None)
@@ -451,11 +453,7 @@ class SessionService:
             entry: Dict[str, Any] = {
                 "tool": tool,
                 "status": "running",
-                "arguments": (
-                    dict(data["arguments"])
-                    if isinstance(data.get("arguments"), dict)
-                    else {}
-                ),
+                "arguments": (dict(data["arguments"]) if isinstance(data.get("arguments"), dict) else {}),
                 "timestamp": int(time.time() * 1000),
             }
             if call_id:
@@ -466,22 +464,12 @@ class SessionService:
         match = None
         if call_id:
             match = next(
-                (
-                    entry
-                    for entry in tool_trail
-                    if entry.get("call_id") == call_id
-                    and entry.get("status") == "running"
-                ),
+                (entry for entry in tool_trail if entry.get("call_id") == call_id and entry.get("status") == "running"),
                 None,
             )
         if match is None:
             match = next(
-                (
-                    entry
-                    for entry in tool_trail
-                    if entry.get("tool") == tool
-                    and entry.get("status") == "running"
-                ),
+                (entry for entry in tool_trail if entry.get("tool") == tool and entry.get("status") == "running"),
                 None,
             )
         if match is None:
@@ -556,6 +544,7 @@ class SessionService:
     def _load_metrics(run_dir: Path) -> Optional[Dict[str, Any]]:
         """Load metrics.csv from a run directory."""
         import csv
+
         metrics_path = run_dir / "artifacts" / "metrics.csv"
         if not metrics_path.exists():
             return None

@@ -115,12 +115,7 @@ class WorkspaceContextInjector:
                 return user_message
 
             context = "\n\n".join(blocks)
-            return (
-                "[OpenBB Workspace context]\n"
-                f"{context}\n"
-                "[End of context]\n\n"
-                f"{user_message}"
-            )
+            return f"[OpenBB Workspace context]\n{context}\n[End of context]\n\n{user_message}"
         except Exception as exc:  # never break a query because of context
             logger.warning("Failed to inject workspace context: %s", exc)
             return user_message

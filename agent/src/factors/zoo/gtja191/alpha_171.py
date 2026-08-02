@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #171
 # 简要说明: 国泰君安191短周期交易型alpha因子第171号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     ((-1*((LOW-CLOSE)*(OPEN^5)))/((CLOSE-HIGH)*(CLOSE^5)))
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_171"
 
 __alpha_meta__ = {
-    'id': 'gtja191_171',
-    'theme': ['microstructure'],
-    'formula_latex': '-1*((l-c)*(o^5))/((c-h)*(c^5))',
-    'columns_required': ['open', 'high', 'low', 'close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 1,
-    'min_warmup_bars': 1,
-    'notes': '',
+    "id": "gtja191_171",
+    "theme": ["microstructure"],
+    "formula_latex": "-1*((l-c)*(o^5))/((c-h)*(c^5))",
+    "columns_required": ["open", "high", "low", "close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 1,
+    "min_warmup_bars": 1,
+    "notes": "",
 }
 
 
@@ -63,5 +63,5 @@ def compute(panel):
     o = panel["open"]
     h = panel["high"]
     l = panel["low"]
-    out = safe_div(-1.0 * ((l - c) * (o ** 5)), (c - h) * (c ** 5))
+    out = safe_div(-1.0 * ((l - c) * (o**5)), (c - h) * (c**5))
     return out

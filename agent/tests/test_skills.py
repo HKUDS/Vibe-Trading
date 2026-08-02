@@ -68,6 +68,7 @@ class TestParseFrontmatter:
         meta, body = _parse_frontmatter(text)
         assert meta == {}
         assert body == "Body only."
+
     def test_rejects_inline_fence_tail_false_positive(self) -> None:
         # Fence must stand alone on its line; a trailing --- on a value line
         # is not a fence.

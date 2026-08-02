@@ -6,24 +6,25 @@
 # 典型用途: 衡量20日内上涨频率，值高表示持续上涨行情。
 # ============================================================
 """qlib158 CNTP20: formula = \\mathrm{rolling\\_mean}(\\mathrm{1}[\\mathrm{close}>\\mathrm{close}_{{-1}}], 20)."""
+
 from __future__ import annotations
 
 import pandas as pd
 
 __alpha_meta__ = {
-    'id': 'qlib158_cntp20',
-    'theme': ['reversal'],
-    'formula_latex': '\\\\mathrm{rolling\\\\_mean}(\\\\mathrm{1}[\\\\mathrm{close}>\\\\mathrm{close}_{{-1}}], 20)',
-    'columns_required': ['close'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 20,
+    "id": "qlib158_cntp20",
+    "theme": ["reversal"],
+    "formula_latex": "\\\\mathrm{rolling\\\\_mean}(\\\\mathrm{1}[\\\\mathrm{close}>\\\\mathrm{close}_{{-1}}], 20)",
+    "columns_required": ["close"],
+    "universe": ["equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 20,
 }
 
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 CNTP20 on the supplied OHLCV panel."""
-    c = panel['close']
-    up = (c > c.shift(1)).astype('float64')
+    c = panel["close"]
+    up = (c > c.shift(1)).astype("float64")
     return up.rolling(window=20, min_periods=20).mean()

@@ -50,11 +50,10 @@ def test_ambiguous_continuation_does_not_fallback_to_equity_team() -> None:
 
 def test_hft_short_horizon_keywords_route() -> None:
     assert (
-        swarm_tool._match_preset(
-            "Design an HFT inventory mean-reversion desk with latency-aware risk budgets"
-        )
+        swarm_tool._match_preset("Design an HFT inventory mean-reversion desk with latency-aware risk budgets")
         == "hft_short_horizon_desk"
     )
+
 
 def test_swarm_tool_rejects_ambiguous_continuation_before_starting_run() -> None:
     payload = json.loads(

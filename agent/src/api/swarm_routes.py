@@ -120,9 +120,7 @@ def register_swarm_routes(
                     "created_at": reconciled.created_at,
                     "completed_at": reconciled.completed_at,
                     "task_count": len(reconciled.tasks),
-                    "completed_count": sum(
-                        1 for t in reconciled.tasks if t.status.value == "completed"
-                    ),
+                    "completed_count": sum(1 for t in reconciled.tasks if t.status.value == "completed"),
                 }
             )
         return items
@@ -233,9 +231,7 @@ def register_swarm_routes(
 
         reconciled = runtime._store.reconcile_run(loaded, write=True)
         if reconciled.status == RunStatus.running:
-            raise HTTPException(
-                status_code=409, detail="Cannot retry a running run. Cancel it first."
-            )
+            raise HTTPException(status_code=409, detail="Cannot retry a running run. Cancel it first.")
 
         try:
             new_run = runtime.start_run(

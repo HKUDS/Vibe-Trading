@@ -124,9 +124,7 @@ class TestFusedEpisodes:
         assert _fused_episodes(self.DATES, [0] * 6) == []
 
     def test_always_fused_is_one_open_episode(self):
-        assert _fused_episodes(self.DATES, [1] * 6) == [
-            {"start": "2024-01-01", "end": None}
-        ]
+        assert _fused_episodes(self.DATES, [1] * 6) == [{"start": "2024-01-01", "end": None}]
 
 
 class TestAlignedReturns:
@@ -169,9 +167,7 @@ def _install_panel(monkeypatch: pytest.MonkeyPatch, closes: dict[str, np.ndarray
 
     dates = pd.date_range("2024-01-01", periods=len(next(iter(closes.values()))), freq="D")
     _ServesPanelLoader.frames = {
-        f"{code}.US": pd.DataFrame(
-            {"close": values}, index=pd.Index(dates, name="trade_date")
-        )
+        f"{code}.US": pd.DataFrame({"close": values}, index=pd.Index(dates, name="trade_date"))
         for code, values in closes.items()
     }
     monkeypatch.setattr(registry, "_registered", True)
@@ -182,18 +178,12 @@ def _install_panel(monkeypatch: pytest.MonkeyPatch, closes: dict[str, np.ndarray
 class TestComputeRegimeTimeline:
     def test_two_phase_panel_ends_fused_with_open_episode(self, monkeypatch):
         rng = np.random.default_rng(17)
-        rets = np.vstack(
-            [_calm_block(rng, 140, 4), _fused_block(rng, 80, 4)]
-        )
+        rets = np.vstack([_calm_block(rng, 140, 4), _fused_block(rng, 80, 4)])
         prices = 100.0 * np.cumprod(1.0 + rets, axis=0)
         codes = ["AAA", "BBB", "CCC", "DDD"]
-        _install_panel(
-            monkeypatch, {c: prices[:, k] for k, c in enumerate(codes)}
-        )
+        _install_panel(monkeypatch, {c: prices[:, k] for k, c in enumerate(codes)})
 
-        result = compute_regime_timeline(
-            codes=codes, days=150, corr_window=20, smooth_window=3
-        )
+        result = compute_regime_timeline(codes=codes, days=150, corr_window=20, smooth_window=3)
 
         assert result["labels"] == codes
         n = len(result["dates"])
@@ -213,9 +203,7 @@ class TestComputeRegimeTimeline:
 
     def test_invalid_thresholds_fail_before_any_fetch(self):
         with pytest.raises(ValueError, match="exit_threshold"):
-            compute_regime_timeline(
-                codes=["AAA", "BBB"], enter_threshold=0.5, exit_threshold=0.6
-            )
+            compute_regime_timeline(codes=["AAA", "BBB"], enter_threshold=0.5, exit_threshold=0.6)
 
     def test_fewer_than_two_fetched_assets_raises(self, monkeypatch):
         from backtest.loaders import registry
@@ -284,9 +272,7 @@ def test_regime_route_requires_auth_for_remote_client(monkeypatch):
 def test_regime_route_validates_code_count(local_client):
     too_few = local_client.get("/correlation/regime", params={"codes": "AAPL"})
     assert too_few.status_code == 400
-    too_many = local_client.get(
-        "/correlation/regime", params={"codes": ",".join(f"S{i}" for i in range(21))}
-    )
+    too_many = local_client.get("/correlation/regime", params={"codes": ",".join(f"S{i}" for i in range(21))})
     assert too_many.status_code == 400
 
 
@@ -302,15 +288,11 @@ def test_regime_route_rejects_inverted_thresholds(local_client):
 def test_regime_route_rejects_days_below_floor(local_client):
     # days < 30 with a 60-bar correlation window yields an empty timeline, so
     # the route floors days at 30 (FastAPI validation → 422).
-    resp = local_client.get(
-        "/correlation/regime", params={"codes": "AAPL,SPY", "days": 20}
-    )
+    resp = local_client.get("/correlation/regime", params={"codes": "AAPL,SPY", "days": 20})
     assert resp.status_code == 422
 
 
-def test_regime_route_value_error_surfaces_and_generic_is_masked(
-    local_client, monkeypatch
-):
+def test_regime_route_value_error_surfaces_and_generic_is_masked(local_client, monkeypatch):
     import backtest.regime as regime
 
     def _bad(**_kwargs):

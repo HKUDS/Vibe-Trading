@@ -228,11 +228,7 @@ def redact_internal_paths(text: object) -> str:
             # ``.``/``-`` that is itself followed by one (``/Users/me.bak/x``
             # is a different directory, while a trailing ``/Users/me.`` at the
             # end of a sentence is still the root and must be redacted).
-            if nxt and (
-                nxt.isalnum()
-                or nxt == "_"
-                or (nxt in "-." and (after.isalnum() or after == "_"))
-            ):
+            if nxt and (nxt.isalnum() or nxt == "_" or (nxt in "-." and (after.isalnum() or after == "_"))):
                 out.append(s[idx:end])
             else:
                 out.append(s[idx:pos])
@@ -276,16 +272,12 @@ def is_sensitive_arg(name: str, *, sink: str = ARGUMENTS_SINK) -> bool:
     folded = _fold_key(name)
     if sink == RESULT_SINK and folded in _RESULT_SAFE_KEYS_FOLDED:
         return False
-    if normalized in _SENSITIVE_ARG_KEYS or any(
-        marker in normalized for marker in _SENSITIVE_ARG_MARKERS
-    ):
+    if normalized in _SENSITIVE_ARG_KEYS or any(marker in normalized for marker in _SENSITIVE_ARG_MARKERS):
         return True
     # Separator-folded match catches camelCase / kebab / spaced variants
     # (accountNumber, account-number, socialSecurityNumber) that the exact
     # snake_case set would miss, without a broad substring over-redaction.
-    return folded in _SENSITIVE_ARG_KEYS_FOLDED or any(
-        marker in folded for marker in _SENSITIVE_ARG_MARKERS_FOLDED
-    )
+    return folded in _SENSITIVE_ARG_KEYS_FOLDED or any(marker in folded for marker in _SENSITIVE_ARG_MARKERS_FOLDED)
 
 
 def redact_payload(obj: Any, *, sink: str = ARGUMENTS_SINK) -> Any:
@@ -318,9 +310,7 @@ def redact_payload(obj: Any, *, sink: str = ARGUMENTS_SINK) -> Any:
     """
     if isinstance(obj, dict):
         return {
-            key: _REDACTED
-            if is_sensitive_arg(str(key), sink=sink)
-            else redact_payload(item, sink=sink)
+            key: _REDACTED if is_sensitive_arg(str(key), sink=sink) else redact_payload(item, sink=sink)
             for key, item in obj.items()
         }
     if isinstance(obj, list):
@@ -397,10 +387,7 @@ def _sub_credential_pair(match: re.Match[str]) -> str:
     value = match.group("value")
     quote = value[0] if value[:1] in ("'", '"') else ""
     key_quote = match.group("q")
-    return (
-        f"{key_quote}{match.group('name')}{key_quote}{match.group('sep')}"
-        f"{quote}{_REDACTED}{quote}"
-    )
+    return f"{key_quote}{match.group('name')}{key_quote}{match.group('sep')}{quote}{_REDACTED}{quote}"
 
 
 #: Credential formats recognised WITHOUT a key label. Key-based and
@@ -409,11 +396,11 @@ def _sub_credential_pair(match: re.Match[str]) -> str:
 #: alternative is anchored and length-bounded so ordinary prose cannot match.
 _TEXT_TOKEN_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_-])("
-    r"sk-[A-Za-z0-9_-]{20,}"                 # OpenAI / Anthropic style
-    r"|gh[pousr]_[A-Za-z0-9]{30,}"           # GitHub PAT family
-    r"|xox[baprs]-[A-Za-z0-9-]{10,}"         # Slack
-    r"|AKIA[0-9A-Z]{16}"                     # AWS access key id
-    r"|pypi-[A-Za-z0-9_-]{16,}"              # PyPI upload token
+    r"sk-[A-Za-z0-9_-]{20,}"  # OpenAI / Anthropic style
+    r"|gh[pousr]_[A-Za-z0-9]{30,}"  # GitHub PAT family
+    r"|xox[baprs]-[A-Za-z0-9-]{10,}"  # Slack
+    r"|AKIA[0-9A-Z]{16}"  # AWS access key id
+    r"|pypi-[A-Za-z0-9_-]{16,}"  # PyPI upload token
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}"  # JWT
     r")(?![A-Za-z0-9_-])"
 )

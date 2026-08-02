@@ -32,9 +32,9 @@ Status = Literal["running", "ok", "error"]
 _STATUS_STYLE: dict[Status, str] = {
     # ``blink`` is gracefully ignored by Rich when the terminal does not
     # advertise the capability, so we always include it.
-    "running": "bold blink #f59e0b",   # amber, F-002 warning
-    "ok":      "bold #16a34a",          # green, F-002 success
-    "error":   "bold #dc2626",          # red, F-002 danger
+    "running": "bold blink #f59e0b",  # amber, F-002 warning
+    "ok": "bold #16a34a",  # green, F-002 success
+    "error": "bold #dc2626",  # red, F-002 danger
 }
 
 _ARG_VALUE_MAX = 40

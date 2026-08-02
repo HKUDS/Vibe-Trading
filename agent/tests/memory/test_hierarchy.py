@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from src.memory.hierarchy import CATEGORIES, MemoryHierarchy
 
@@ -17,10 +16,7 @@ from src.memory.hierarchy import CATEGORIES, MemoryHierarchy
 def _write_md(path: Path, title: str = "test", memory_type: str = "project") -> Path:
     """Write a dummy .md file with basic frontmatter."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    content = (
-        f"---\nname: {title}\ntype: {memory_type}\n"
-        f"keywords: [{title}]\n---\n\nBody of {title}\n"
-    )
+    content = f"---\nname: {title}\ntype: {memory_type}\nkeywords: [{title}]\n---\n\nBody of {title}\n"
     path.write_text(content, encoding="utf-8")
     return path
 

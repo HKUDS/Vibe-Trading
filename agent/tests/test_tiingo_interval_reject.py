@@ -11,9 +11,7 @@ def test_unsupported_interval_does_not_hit_api() -> None:
     """Runner ``1H`` must not fall through to Tiingo daily EOD."""
     with patch.object(tg, "throttled_get_json") as mock_get:
         with patch.object(tg, "_resolve_key", return_value="KEY"):
-            out = tg.DataLoader().fetch(
-                ["AAPL"], "2024-01-01", "2024-01-31", interval="1H"
-            )
+            out = tg.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31", interval="1H")
     assert out == {}
     mock_get.assert_not_called()
 
@@ -21,9 +19,7 @@ def test_unsupported_interval_does_not_hit_api() -> None:
 def test_four_hour_interval_also_rejected() -> None:
     with patch.object(tg, "throttled_get_json") as mock_get:
         with patch.object(tg, "_resolve_key", return_value="KEY"):
-            out = tg.DataLoader().fetch(
-                ["AAPL"], "2024-01-01", "2024-01-31", interval="4H"
-            )
+            out = tg.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31", interval="4H")
     assert out == {}
     mock_get.assert_not_called()
 
@@ -41,8 +37,6 @@ def test_daily_interval_still_fetches() -> None:
     ]
     with patch.object(tg, "throttled_get_json", return_value=payload) as mock_get:
         with patch.object(tg, "_resolve_key", return_value="KEY"):
-            out = tg.DataLoader().fetch(
-                ["AAPL"], "2024-01-01", "2024-01-31", interval="1D"
-            )
+            out = tg.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31", interval="1D")
     assert "AAPL" in out
     mock_get.assert_called_once()

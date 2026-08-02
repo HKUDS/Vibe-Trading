@@ -16,9 +16,7 @@ _compute_ic_series = compute_ic_series
 _compute_group_equity = compute_group_equity
 
 
-def run_factor_analysis(
-    factor_csv: str, return_csv: str, output_dir: str, n_groups: int = 5
-) -> str:
+def run_factor_analysis(factor_csv: str, return_csv: str, output_dir: str, n_groups: int = 5) -> str:
     """Run the full factor analysis pipeline: IC/IR + layered backtest.
 
     Args:
@@ -51,7 +49,10 @@ def run_factor_analysis(
     ic_series = compute_ic_series(factor_df, return_df)
     if ic_series.empty:
         return json.dumps(
-            {"status": "error", "error": "IC computation failed: insufficient shared dates/assets (need at least 5 per day)"},
+            {
+                "status": "error",
+                "error": "IC computation failed: insufficient shared dates/assets (need at least 5 per day)",
+            },
             ensure_ascii=False,
         )
 
@@ -96,9 +97,7 @@ def run_factor_analysis(
         "ic_count": summary["ic_count"],
         "n_groups": n_groups,
         "long_short_spread": round(long_short_ret, 4),
-        "group_final_equity": {
-            col: round(float(equity_df[col].iloc[-1]), 4) for col in equity_df.columns
-        },
+        "group_final_equity": {col: round(float(equity_df[col].iloc[-1]), 4) for col in equity_df.columns},
         "output_dir": str(out_path),
         "files": ["ic_series.csv", "ic_summary.json", "group_equity.csv"],
     }

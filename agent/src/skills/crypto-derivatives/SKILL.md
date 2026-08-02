@@ -96,9 +96,9 @@ def term_structure_spread(spot_price, futures_prices: dict) -> dict:
         basis = (price - spot_price) / spot_price
         annualized = basis / days_to_expiry * 365
         results[expiry] = {
-            'basis': basis,
-            'annualized_basis': annualized,
-            'days': days_to_expiry,
+            "basis": basis,
+            "annualized_basis": annualized,
+            "days": days_to_expiry,
         }
     return results
 ```

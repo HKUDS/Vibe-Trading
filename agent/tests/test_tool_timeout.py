@@ -51,9 +51,7 @@ def test_tool_timeout_returns_error_and_stops_heartbeats(monkeypatch) -> None:
         max_iterations=1,
     )
 
-    result, elapsed_ms = agent._invoke_tool(
-        "slow_tool", {}, call_id="slow-call"
-    )
+    result, elapsed_ms = agent._invoke_tool("slow_tool", {}, call_id="slow-call")
     event_count_at_return = len(events)
     time.sleep(0.08)
 
@@ -64,9 +62,7 @@ def test_tool_timeout_returns_error_and_stops_heartbeats(monkeypatch) -> None:
     assert elapsed_ms >= 40
     assert len(events) == event_count_at_return
     timeout_event = next(
-        data
-        for event_type, data in events
-        if event_type == "tool_progress" and data.get("stage") == "timeout"
+        data for event_type, data in events if event_type == "tool_progress" and data.get("stage") == "timeout"
     )
     assert timeout_event["call_id"] == "slow-call"
 
@@ -84,16 +80,12 @@ def test_write_tool_timeout_warns_but_does_not_return_before_completion(monkeypa
         max_iterations=1,
     )
 
-    result, elapsed_ms = agent._invoke_tool(
-        "place_order", {}, call_id="write-call"
-    )
+    result, elapsed_ms = agent._invoke_tool("place_order", {}, call_id="write-call")
 
     assert json.loads(result) == {"status": "ok"}
     assert registry.completed is True
     assert elapsed_ms >= 70
     assert any(
-        event_type == "tool_progress"
-        and data.get("stage") == "timeout_warning"
-        and data.get("call_id") == "write-call"
+        event_type == "tool_progress" and data.get("stage") == "timeout_warning" and data.get("call_id") == "write-call"
         for event_type, data in events
     )

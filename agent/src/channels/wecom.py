@@ -51,6 +51,7 @@ def _guess_wecom_media_type(filename: str) -> str:
         return "voice"
     return "file"
 
+
 class WecomConfig(BaseModel):
     """WeCom (Enterprise WeChat) AI Bot channel configuration."""
 
@@ -116,13 +117,15 @@ class WecomChannel(BaseChannel):
         self._generate_req_id = generate_req_id
 
         # Create WebSocket client
-        self._client = WSClient({
-            "bot_id": self.config.bot_id,
-            "secret": self.config.secret,
-            "reconnect_interval": 1000,
-            "max_reconnect_attempts": -1,  # Infinite reconnect
-            "heartbeat_interval": 30000,
-        })
+        self._client = WSClient(
+            {
+                "bot_id": self.config.bot_id,
+                "secret": self.config.secret,
+                "reconnect_interval": 1000,
+                "max_reconnect_attempts": -1,  # Infinite reconnect
+                "heartbeat_interval": 30000,
+            }
+        )
 
         # Register event handlers
         self._client.on("connected", self._on_connected)
@@ -163,7 +166,7 @@ class WecomChannel(BaseChannel):
 
     async def _on_disconnected(self, frame: Any) -> None:
         """Handle WebSocket disconnected event."""
-        reason = frame.body if hasattr(frame, 'body') else str(frame)
+        reason = frame.body if hasattr(frame, "body") else str(frame)
         self.logger.warning("WebSocket disconnected: {}", reason)
 
     async def _on_error(self, frame: Any) -> None:
@@ -194,7 +197,7 @@ class WecomChannel(BaseChannel):
         """Handle enter_chat event (user opens chat with bot)."""
         try:
             # Extract body from WsFrame dataclass or dict
-            if hasattr(frame, 'body'):
+            if hasattr(frame, "body"):
                 body = frame.body or {}
             elif isinstance(frame, dict):
                 body = frame.get("body", frame)
@@ -207,10 +210,13 @@ class WecomChannel(BaseChannel):
                 return
 
             if chat_id and self.config.welcome_message:
-                await self._client.reply_welcome(frame, {
-                    "msgtype": "text",
-                    "text": {"content": self.config.welcome_message},
-                })
+                await self._client.reply_welcome(
+                    frame,
+                    {
+                        "msgtype": "text",
+                        "text": {"content": self.config.welcome_message},
+                    },
+                )
         except Exception:
             self.logger.exception("Error handling enter_chat")
 
@@ -218,7 +224,7 @@ class WecomChannel(BaseChannel):
         """Process incoming message and forward to bus."""
         try:
             # Extract body from WsFrame dataclass or dict
-            if hasattr(frame, 'body'):
+            if hasattr(frame, "body"):
                 body = frame.body or {}
             elif isinstance(frame, dict):
                 body = frame.get("body", frame)
@@ -347,7 +353,7 @@ class WecomChannel(BaseChannel):
                     "message_id": msg_id,
                     "msg_type": msg_type,
                     "chat_type": chat_type,
-                }
+                },
             )
 
         except Exception:
@@ -396,7 +402,9 @@ class WecomChannel(BaseChannel):
             return None
 
     async def _upload_media_ws(
-        self, client: Any, file_path: str,
+        self,
+        client: Any,
+        file_path: str,
     ) -> "tuple[str, str] | tuple[None, None]":
         """Upload a local file to WeCom via WebSocket 3-step protocol (base64).
 
@@ -419,9 +427,7 @@ class WecomChannel(BaseChannel):
             def _read_file():
                 file_size = os.path.getsize(file_path)
                 if file_size > WECOM_UPLOAD_MAX_BYTES:
-                    raise ValueError(
-                        f"File too large: {file_size} bytes (max {WECOM_UPLOAD_MAX_BYTES})"
-                    )
+                    raise ValueError(f"File too large: {file_size} bytes (max {WECOM_UPLOAD_MAX_BYTES})")
                 with open(file_path, "rb") as f:
                     return file_size, f.read()
 
@@ -437,13 +443,17 @@ class WecomChannel(BaseChannel):
 
             # Step 1: init
             req_id = _gen_req_id("upload_init")
-            resp = await client._ws_manager.send_reply(req_id, {
-                "type": media_type,
-                "filename": fname,
-                "total_size": file_size,
-                "total_chunks": n_chunks,
-                "md5": md5_hash,
-            }, "aibot_upload_media_init")
+            resp = await client._ws_manager.send_reply(
+                req_id,
+                {
+                    "type": media_type,
+                    "filename": fname,
+                    "total_size": file_size,
+                    "total_chunks": n_chunks,
+                    "md5": md5_hash,
+                },
+                "aibot_upload_media_init",
+            )
             if resp.errcode != 0:
                 self.logger.warning("upload init failed ({}): {}", resp.errcode, resp.errmsg)
                 return None, None
@@ -455,20 +465,28 @@ class WecomChannel(BaseChannel):
             # Step 2: send chunks
             for i, chunk in enumerate(chunk_list):
                 req_id = _gen_req_id("upload_chunk")
-                resp = await client._ws_manager.send_reply(req_id, {
-                    "upload_id": upload_id,
-                    "chunk_index": i,
-                    "base64_data": base64.b64encode(chunk).decode(),
-                }, "aibot_upload_media_chunk")
+                resp = await client._ws_manager.send_reply(
+                    req_id,
+                    {
+                        "upload_id": upload_id,
+                        "chunk_index": i,
+                        "base64_data": base64.b64encode(chunk).decode(),
+                    },
+                    "aibot_upload_media_chunk",
+                )
                 if resp.errcode != 0:
                     self.logger.warning("upload chunk {} failed ({}): {}", i, resp.errcode, resp.errmsg)
                     return None, None
 
             # Step 3: finish
             req_id = _gen_req_id("upload_finish")
-            resp = await client._ws_manager.send_reply(req_id, {
-                "upload_id": upload_id,
-            }, "aibot_upload_media_finish")
+            resp = await client._ws_manager.send_reply(
+                req_id,
+                {
+                    "upload_id": upload_id,
+                },
+                "aibot_upload_media_finish",
+            )
             if resp.errcode != 0:
                 self.logger.warning("upload finish failed ({}): {}", resp.errcode, resp.errmsg)
                 return None, None
@@ -510,15 +528,21 @@ class WecomChannel(BaseChannel):
                 media_id, media_type = await self._upload_media_ws(self._client, file_path)
                 if media_id:
                     if frame:
-                        await self._client.reply(frame, {
-                            "msgtype": media_type,
-                            media_type: {"media_id": media_id},
-                        })
+                        await self._client.reply(
+                            frame,
+                            {
+                                "msgtype": media_type,
+                                media_type: {"media_id": media_id},
+                            },
+                        )
                     else:
-                        await self._client.send_message(msg.chat_id, {
-                            "msgtype": media_type,
-                            media_type: {"media_id": media_id},
-                        })
+                        await self._client.send_message(
+                            msg.chat_id,
+                            {
+                                "msgtype": media_type,
+                                media_type: {"media_id": media_id},
+                            },
+                        )
                     self.logger.debug("sent {} → {}", media_type, msg.chat_id)
                 else:
                     content += f"\n[file upload failed: {os.path.basename(file_path)}]"
@@ -544,10 +568,13 @@ class WecomChannel(BaseChannel):
                 )
             else:
                 # No frame (e.g. cron push): proactive send only supports markdown
-                await self._client.send_message(msg.chat_id, {
-                    "msgtype": "markdown",
-                    "markdown": {"content": content},
-                })
+                await self._client.send_message(
+                    msg.chat_id,
+                    {
+                        "msgtype": "markdown",
+                        "markdown": {"content": content},
+                    },
+                )
                 self.logger.info("proactive send to {}", msg.chat_id)
 
         except Exception:

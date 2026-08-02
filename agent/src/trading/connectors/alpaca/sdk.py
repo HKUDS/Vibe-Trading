@@ -140,7 +140,9 @@ class AlpacaConfig:
 _OVERRIDE_KEYS = ("api_key", "secret_key", "profile", "feed")
 
 
-def build_config(profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None) -> "AlpacaConfig":
+def build_config(
+    profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None
+) -> "AlpacaConfig":
     """Resolve config: saved file ← profile defaults ← CLI overrides."""
     base = asdict(load_config())
     for key, value in dict(profile_config or {}).items():
@@ -198,7 +200,9 @@ def _tap_cred_headers() -> dict[str, str]:
     backs both the order write and every read; the name is overridable via
     ``TAP_ALPACA_CREDENTIAL``.
     """
-    credential = os.environ.get(TAP_ALPACA_CREDENTIAL_ENV, DEFAULT_TAP_ALPACA_CREDENTIAL)  # noqa: env-gate — mirrors tap_forward.py, bootstrap-order independent
+    credential = os.environ.get(  # env-gate — mirrors tap_forward.py, bootstrap-order independent
+        TAP_ALPACA_CREDENTIAL_ENV, DEFAULT_TAP_ALPACA_CREDENTIAL
+    )
     return {
         "APCA-API-KEY-ID": f"<CREDENTIAL:{credential}.key_id>",
         "APCA-API-SECRET-KEY": f"<CREDENTIAL:{credential}.secret_key>",
@@ -243,9 +247,17 @@ def _rest_timeframe(period: str) -> str:
     """Canonical period token -> Alpaca REST timeframe string (mirrors
     :func:`_timeframe`). Case-sensitive: ``1m`` is one minute, ``1M`` one month."""
     return {
-        "1m": "1Min", "5m": "5Min", "15m": "15Min", "30m": "30Min",
-        "1h": "1Hour", "1H": "1Hour", "4h": "4Hour", "4H": "4Hour",
-        "1w": "1Week", "1W": "1Week", "1M": "1Month",
+        "1m": "1Min",
+        "5m": "5Min",
+        "15m": "15Min",
+        "30m": "30Min",
+        "1h": "1Hour",
+        "1H": "1Hour",
+        "4h": "4Hour",
+        "4H": "4Hour",
+        "1w": "1Week",
+        "1W": "1Week",
+        "1M": "1Month",
     }.get(period.strip(), "1Day")
 
 
@@ -347,9 +359,7 @@ def get_open_orders(config: AlpacaConfig | None = None, *, include_executions: b
 
         open_orders = client.get_orders(filter=GetOrdersRequest(status=QueryOrderStatus.OPEN))
         closed = (
-            client.get_orders(filter=GetOrdersRequest(status=QueryOrderStatus.CLOSED))
-            if include_executions
-            else []
+            client.get_orders(filter=GetOrdersRequest(status=QueryOrderStatus.CLOSED)) if include_executions else []
         )
     result: dict[str, Any] = {
         "status": "ok",
@@ -358,9 +368,7 @@ def get_open_orders(config: AlpacaConfig | None = None, *, include_executions: b
         "open_orders": [_order_to_dict(item) for item in _as_iter(open_orders)],
     }
     if include_executions:
-        result["executions"] = [
-            _order_to_dict(item) for item in _as_iter(closed) if _obj_get(item, "filled_qty")
-        ]
+        result["executions"] = [_order_to_dict(item) for item in _as_iter(closed) if _obj_get(item, "filled_qty")]
     return result
 
 
@@ -404,8 +412,7 @@ def get_historical_bars(
     clean = symbol.strip().upper()
     if tap_forward.tap_enabled():
         url = (
-            f"{DATA_HOST}/v2/stocks/{clean}/bars"
-            f"?timeframe={_rest_timeframe(period)}&limit={int(limit)}&feed={cfg.feed}"
+            f"{DATA_HOST}/v2/stocks/{clean}/bars?timeframe={_rest_timeframe(period)}&limit={int(limit)}&feed={cfg.feed}"
         )
         payload = _read_via_tap(url)
         rows: Any = [_rename_keys(item, _BAR_KEY_ALIASES) for item in _as_iter(_obj_get(payload, "bars") or [])]
@@ -617,12 +624,14 @@ def _submit_via_tap(
     # forwarded the order but the agent saw a timeout) is deduplicated by Alpaca
     # — a duplicate id is rejected, never double-placed. Trade-off: two
     # intentionally-identical orders collide; vary any field for a real duplicate.
-    order["client_order_id"] = "tap-" + hashlib.sha256(
-        "|".join(
-            str(x)
-            for x in (cfg.profile, symbol, side, quantity, notional, order_type, limit_price, time_in_force)
-        ).encode()
-    ).hexdigest()[:24]
+    order["client_order_id"] = (
+        "tap-"
+        + hashlib.sha256(
+            "|".join(
+                str(x) for x in (cfg.profile, symbol, side, quantity, notional, order_type, limit_price, time_in_force)
+            ).encode()
+        ).hexdigest()[:24]
+    )
 
     cred_headers = _tap_cred_headers()
     target = f"{cfg.host}/v2/orders"

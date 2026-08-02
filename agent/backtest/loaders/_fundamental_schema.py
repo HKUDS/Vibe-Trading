@@ -171,9 +171,9 @@ DERIVED_FIELDS: dict[str, DerivedFieldSpec] = {
     # Quarterly or TTM callers must pre-aggregate before applying this formula.
     "asset_growth": {
         "dependencies": ["total_assets"],
-        "compute": lambda data: data["total_assets"].astype("float64")
-        / data["total_assets"].astype("float64").shift(1)
-        - 1,
+        "compute": lambda data: (
+            data["total_assets"].astype("float64") / data["total_assets"].astype("float64").shift(1) - 1
+        ),
     },
     "accruals": {
         "dependencies": ["net_income", "cfo", "total_assets"],

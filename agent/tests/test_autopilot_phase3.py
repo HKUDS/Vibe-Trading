@@ -26,9 +26,7 @@ from src.tools.autopilot_tool import (
 @pytest.fixture()
 def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Isolate the hypothesis registry and allow tmp_path as a run root."""
-    monkeypatch.setenv(
-        "VIBE_TRADING_HYPOTHESES_PATH", str(tmp_path / "hypotheses.json")
-    )
+    monkeypatch.setenv("VIBE_TRADING_HYPOTHESES_PATH", str(tmp_path / "hypotheses.json"))
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
     return tmp_path
 
@@ -58,40 +56,28 @@ def _run_dir(base: Path) -> Path:
 
 
 def test_scaffold_requires_hypothesis_id(isolated_env: Path) -> None:
-    result = json.loads(
-        ScaffoldSignalEngineTool().execute(
-            hypothesis_id="", run_dir=str(_run_dir(isolated_env))
-        )
-    )
+    result = json.loads(ScaffoldSignalEngineTool().execute(hypothesis_id="", run_dir=str(_run_dir(isolated_env))))
     assert result["status"] == "error"
     assert "hypothesis_id is required" in result["error"]
 
 
 def test_scaffold_requires_run_dir(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
-    result = json.loads(
-        ScaffoldSignalEngineTool().execute(hypothesis_id=hyp_id, run_dir="")
-    )
+    result = json.loads(ScaffoldSignalEngineTool().execute(hypothesis_id=hyp_id, run_dir=""))
     assert result["status"] == "error"
     assert "run_dir is required" in result["error"]
 
 
 def test_scaffold_rejects_path_outside_run_roots(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
-    result = json.loads(
-        ScaffoldSignalEngineTool().execute(
-            hypothesis_id=hyp_id, run_dir="/etc/evil_run"
-        )
-    )
+    result = json.loads(ScaffoldSignalEngineTool().execute(hypothesis_id=hyp_id, run_dir="/etc/evil_run"))
     assert result["status"] == "error"
     assert "run roots" in result["error"]
 
 
 def test_scaffold_unknown_hypothesis(isolated_env: Path) -> None:
     result = json.loads(
-        ScaffoldSignalEngineTool().execute(
-            hypothesis_id="hyp_missing", run_dir=str(_run_dir(isolated_env))
-        )
+        ScaffoldSignalEngineTool().execute(hypothesis_id="hyp_missing", run_dir=str(_run_dir(isolated_env)))
     )
     assert result["status"] == "error"
     assert "not found" in result["error"]
@@ -100,11 +86,7 @@ def test_scaffold_unknown_hypothesis(isolated_env: Path) -> None:
 def test_scaffold_writes_contract_correct_stub(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
     run_dir = _run_dir(isolated_env)
-    result = json.loads(
-        ScaffoldSignalEngineTool().execute(
-            hypothesis_id=hyp_id, run_dir=str(run_dir)
-        )
-    )
+    result = json.loads(ScaffoldSignalEngineTool().execute(hypothesis_id=hyp_id, run_dir=str(run_dir)))
 
     assert result["status"] == "ok"
     signal_path = Path(result["signal_engine_path"])
@@ -126,7 +108,8 @@ def test_scaffold_writes_contract_correct_stub(isolated_env: Path) -> None:
     required = [
         p.name
         for p in init_sig.parameters.values()
-        if p.name != "self" and p.default is inspect.Parameter.empty
+        if p.name != "self"
+        and p.default is inspect.Parameter.empty
         and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
     ]
     assert required == []  # runner can call SignalEngine()
@@ -158,9 +141,7 @@ def test_scaffold_refuses_overwrite_by_default(isolated_env: Path) -> None:
     assert "already exists" in second["error"]
     assert signal_path.read_text(encoding="utf-8") == "# user edits\n"
 
-    third = json.loads(
-        tool.execute(hypothesis_id=hyp_id, run_dir=str(run_dir), overwrite=True)
-    )
+    third = json.loads(tool.execute(hypothesis_id=hyp_id, run_dir=str(run_dir), overwrite=True))
     assert third["status"] == "ok"
     assert "SignalEngine" in signal_path.read_text(encoding="utf-8")
 
@@ -174,16 +155,12 @@ def _write_run_card(run_dir: Path, metrics: dict | None) -> None:
     card: dict = {"schema_version": 1, "run_dir": str(run_dir)}
     if metrics is not None:
         card["metrics"] = metrics
-    (run_dir / "run_card.json").write_text(
-        json.dumps(card, ensure_ascii=False), encoding="utf-8"
-    )
+    (run_dir / "run_card.json").write_text(json.dumps(card, ensure_ascii=False), encoding="utf-8")
 
 
 def test_link_requires_run_dir(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
-    result = json.loads(
-        LinkAutopilotBacktestTool().execute(hypothesis_id=hyp_id, run_dir="")
-    )
+    result = json.loads(LinkAutopilotBacktestTool().execute(hypothesis_id=hyp_id, run_dir=""))
     assert result["status"] == "error"
     assert "run_dir is required" in result["error"]
 
@@ -191,11 +168,7 @@ def test_link_requires_run_dir(isolated_env: Path) -> None:
 def test_link_missing_run_card(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
     run_dir = _run_dir(isolated_env)
-    result = json.loads(
-        LinkAutopilotBacktestTool().execute(
-            hypothesis_id=hyp_id, run_dir=str(run_dir)
-        )
-    )
+    result = json.loads(LinkAutopilotBacktestTool().execute(hypothesis_id=hyp_id, run_dir=str(run_dir)))
     assert result["status"] == "error"
     assert "run_card.json not found" in result["error"]
 
@@ -204,11 +177,7 @@ def test_link_corrupt_run_card(isolated_env: Path) -> None:
     hyp_id = _make_hypothesis()
     run_dir = _run_dir(isolated_env)
     (run_dir / "run_card.json").write_text("{not json", encoding="utf-8")
-    result = json.loads(
-        LinkAutopilotBacktestTool().execute(
-            hypothesis_id=hyp_id, run_dir=str(run_dir)
-        )
-    )
+    result = json.loads(LinkAutopilotBacktestTool().execute(hypothesis_id=hyp_id, run_dir=str(run_dir)))
     assert result["status"] == "error"
     assert "parse error" in result["error"]
 
@@ -216,11 +185,7 @@ def test_link_corrupt_run_card(isolated_env: Path) -> None:
 def test_link_unknown_hypothesis(isolated_env: Path) -> None:
     run_dir = _run_dir(isolated_env)
     _write_run_card(run_dir, {"sharpe": 1.2})
-    result = json.loads(
-        LinkAutopilotBacktestTool().execute(
-            hypothesis_id="hyp_missing", run_dir=str(run_dir)
-        )
-    )
+    result = json.loads(LinkAutopilotBacktestTool().execute(hypothesis_id="hyp_missing", run_dir=str(run_dir)))
     assert result["status"] == "error"
     assert "not found" in result["error"]
 
@@ -231,9 +196,7 @@ def test_link_extracts_metrics_and_links(isolated_env: Path) -> None:
     _write_run_card(run_dir, {"sharpe": 1.42, "total_return": 0.31})
 
     result = json.loads(
-        LinkAutopilotBacktestTool().execute(
-            hypothesis_id=hyp_id, run_dir=str(run_dir), notes="phase3 link"
-        )
+        LinkAutopilotBacktestTool().execute(hypothesis_id=hyp_id, run_dir=str(run_dir), notes="phase3 link")
     )
 
     assert result["status"] == "ok"
@@ -253,11 +216,7 @@ def test_link_absent_metrics_degrades_with_warning(isolated_env: Path) -> None:
     run_dir = _run_dir(isolated_env)
     _write_run_card(run_dir, None)  # no metrics key
 
-    result = json.loads(
-        LinkAutopilotBacktestTool().execute(
-            hypothesis_id=hyp_id, run_dir=str(run_dir)
-        )
-    )
+    result = json.loads(LinkAutopilotBacktestTool().execute(hypothesis_id=hyp_id, run_dir=str(run_dir)))
     assert result["status"] == "ok"
     assert result["metrics"] == {}
     assert "warning" in result

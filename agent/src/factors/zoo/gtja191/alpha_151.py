@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #151
 # 简要说明: 国泰君安191短周期交易型alpha因子第151号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     SMA(CLOSE-DELAY(CLOSE,20),20,1)
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_151"
 
 __alpha_meta__ = {
-    'id': 'gtja191_151',
-    'theme': ['momentum'],
-    'formula_latex': 'sma(close-delay(close,20),20,1)',
-    'columns_required': ['close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 21,
-    'notes': '',
+    "id": "gtja191_151",
+    "theme": ["momentum"],
+    "formula_latex": "sma(close-delay(close,20),20,1)",
+    "columns_required": ["close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 21,
+    "notes": "",
 }
 
 
@@ -59,9 +59,11 @@ def compute(panel):
     Returns:
         pd.DataFrame with index = panel["close"].index, columns = panel["close"].columns.
     """
+
     def _sma(x, n, m):
         """SMA(x, n, m) per GTJA convention -> ewm with alpha = m/n."""
         return x.ewm(alpha=m / n, adjust=False).mean()
+
     c = panel["close"]
     out = _sma(c - c.shift(20), 20, 1)
     return out

@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from src.agent.frontmatter import parse_frontmatter as _parse_frontmatter  # shared util
+
 
 @dataclass
 class Skill:
@@ -50,9 +52,6 @@ class Skill:
             return path.read_text(encoding="utf-8")
         except Exception:
             return None
-
-
-from src.agent.frontmatter import parse_frontmatter as _parse_frontmatter  # shared util
 
 
 def _load_skill_dir(dir_path: Path) -> Optional[Skill]:
@@ -97,8 +96,7 @@ class SkillsLoader:
         skills: Loaded skill list (bundled + user-created).
     """
 
-    def __init__(self, skills_dir: Optional[Path] = None,
-                 user_skills_dir: Optional[Path] = None) -> None:
+    def __init__(self, skills_dir: Optional[Path] = None, user_skills_dir: Optional[Path] = None) -> None:
         """Initialize SkillsLoader.
 
         Args:
@@ -129,8 +127,14 @@ class SkillsLoader:
 
     # Display order for categories (unlisted categories appear at the end).
     _CATEGORY_ORDER = [
-        "data-source", "strategy", "analysis", "asset-class",
-        "crypto", "flow", "tool", "other",
+        "data-source",
+        "strategy",
+        "analysis",
+        "asset-class",
+        "crypto",
+        "flow",
+        "tool",
+        "other",
     ]
 
     def get_descriptions(self) -> str:

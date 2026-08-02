@@ -182,8 +182,7 @@ class IWenCaiSearchTool(BaseTool):
             "limit": {
                 "type": "integer",
                 "description": (
-                    "Maximum securities to return. Default 20, max 100; values "
-                    "outside the range are clamped."
+                    "Maximum securities to return. Default 20, max 100; values outside the range are clamped."
                 ),
                 "default": _DEFAULT_LIMIT,
             },
@@ -206,9 +205,7 @@ class IWenCaiSearchTool(BaseTool):
         """
         key = get_env_config().data.vibe_trading_iwencai_key or None
         if not key:
-            return self._error(
-                f"iWenCai access key not configured; set {_KEY_ENV} to enable this tool"
-            )
+            return self._error(f"iWenCai access key not configured; set {_KEY_ENV} to enable this tool")
 
         query_arg = kwargs.get("query")
         if not isinstance(query_arg, str) or not query_arg.strip():

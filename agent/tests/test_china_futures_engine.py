@@ -19,11 +19,6 @@ import pytest
 from backtest.engines.china_futures import (
     ChinaFuturesEngine,
     _extract_product,
-    _MULTIPLIER,
-    _MARGIN_RATE,
-    _COMMISSION,
-    _PRICE_LIMIT,
-    _DEFAULT_PRICE_LIMIT,
 )
 from backtest.models import Position
 
@@ -149,7 +144,11 @@ class TestPriceLimits:
         """At limit-down, can't sell (close long position)."""
         engine = _make_engine()
         engine.positions["IF2406.CFFEX"] = Position(
-            "IF2406.CFFEX", 1, 5000.0, pd.Timestamp("2025-06-09"), 2.0,
+            "IF2406.CFFEX",
+            1,
+            5000.0,
+            pd.Timestamp("2025-06-09"),
+            2.0,
         )
         bar = _make_bar(close=4500.0, pre_close=5000.0)  # -10%
         assert engine.can_execute("IF2406.CFFEX", 0, bar) is False
@@ -293,12 +292,8 @@ class TestLeverageFromMargin:
         first = _make_engine(codes=["IF2406.CFFEX", "T2406.CFFEX"])
         second = _make_engine(codes=["T2406.CFFEX", "IF2406.CFFEX"])
 
-        first_order = first._plan_open_order(
-            "IF2406.CFFEX", 0.5, frame, timestamp, 1_000_000.0
-        )
-        second_order = second._plan_open_order(
-            "IF2406.CFFEX", 0.5, frame, timestamp, 1_000_000.0
-        )
+        first_order = first._plan_open_order("IF2406.CFFEX", 0.5, frame, timestamp, 1_000_000.0)
+        second_order = second._plan_open_order("IF2406.CFFEX", 0.5, frame, timestamp, 1_000_000.0)
 
         assert first_order is not None
         assert second_order is not None

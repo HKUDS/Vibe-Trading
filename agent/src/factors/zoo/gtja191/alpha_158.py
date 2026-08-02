@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #158
 # 简要说明: 国泰君安191短周期交易型alpha因子第158号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     ((HIGH-SMA(CLOSE,15,2))-(LOW-SMA(CLOSE,15,2)))/CLOSE
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_158"
 
 __alpha_meta__ = {
-    'id': 'gtja191_158',
-    'theme': ['volatility'],
-    'formula_latex': '((h-sma(c,15,2))-(l-sma(c,15,2)))/c',
-    'columns_required': ['close', 'high', 'low'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 15,
-    'min_warmup_bars': 16,
-    'notes': '',
+    "id": "gtja191_158",
+    "theme": ["volatility"],
+    "formula_latex": "((h-sma(c,15,2))-(l-sma(c,15,2)))/c",
+    "columns_required": ["close", "high", "low"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 15,
+    "min_warmup_bars": 16,
+    "notes": "",
 }
 
 
@@ -59,9 +59,11 @@ def compute(panel):
     Returns:
         pd.DataFrame with index = panel["close"].index, columns = panel["close"].columns.
     """
+
     def _sma(x, n, m):
         """SMA(x, n, m) per GTJA convention -> ewm with alpha = m/n."""
         return x.ewm(alpha=m / n, adjust=False).mean()
+
     c = panel["close"]
     h = panel["high"]
     l = panel["low"]

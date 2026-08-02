@@ -51,9 +51,7 @@ def test_normalize_frame_converts_intraday_timestamps_to_naive_utc() -> None:
     assert frame.index[0] == pd.Timestamp("2026-07-14 01:30:00")
 
 
-def test_is_available_does_not_make_a_market_data_request(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
+def test_is_available_does_not_make_a_market_data_request(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setenv("LONGBRIDGE_APP_KEY", "key")
     monkeypatch.setenv("LONGBRIDGE_APP_SECRET", "secret")
     monkeypatch.setenv("LONGBRIDGE_ACCESS_TOKEN", "token")
@@ -64,9 +62,7 @@ def test_is_available_does_not_make_a_market_data_request(
     assert loader_mod.LongbridgeLoader().is_available() is True
 
 
-def test_is_available_contains_secret_bearing_sdk_exception(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
+def test_is_available_contains_secret_bearing_sdk_exception(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setenv("LONGBRIDGE_APP_KEY", "availability-key")
     monkeypatch.setenv("LONGBRIDGE_APP_SECRET", "availability-secret")
     monkeypatch.setenv("LONGBRIDGE_ACCESS_TOKEN", "availability-token")
@@ -74,17 +70,13 @@ def test_is_available_contains_secret_bearing_sdk_exception(
     monkeypatch.setattr(
         loader_mod,
         "_require_longbridge",
-        lambda: (_ for _ in ()).throw(
-            RuntimeError("SDK failure with access_token=availability-token")
-        ),
+        lambda: (_ for _ in ()).throw(RuntimeError("SDK failure with access_token=availability-token")),
     )
 
     assert loader_mod.LongbridgeLoader().is_available() is False
 
 
-def test_fetch_rejects_missing_credentials_before_sdk_initialization(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
+def test_fetch_rejects_missing_credentials_before_sdk_initialization(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.delenv("LONGBRIDGE_APP_KEY", raising=False)
     monkeypatch.delenv("LONGBRIDGE_APP_SECRET", raising=False)
     monkeypatch.delenv("LONGBRIDGE_ACCESS_TOKEN", raising=False)
@@ -96,9 +88,7 @@ def test_fetch_rejects_missing_credentials_before_sdk_initialization(
     )
 
     with pytest.raises(NoAvailableSourceError, match="credentials are not configured"):
-        loader_mod.LongbridgeLoader().fetch(
-            ["AAPL"], "2026-01-01", "2026-01-02"
-        )
+        loader_mod.LongbridgeLoader().fetch(["AAPL"], "2026-01-01", "2026-01-02")
 
 
 def test_loader_partial_environment_with_complete_file_fails_before_sdk(
@@ -143,9 +133,7 @@ def test_loader_partial_environment_with_complete_file_fails_before_sdk(
     assert exc_info.value.__context__ is None
 
 
-def test_loader_differing_complete_sources_fail_before_sdk(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
+def test_loader_differing_complete_sources_fail_before_sdk(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     environment = {
         "app_key": "loader-conflict-environment-key-65e0",
         "app_secret": "loader-conflict-environment-secret-76f1",
@@ -175,10 +163,7 @@ def test_loader_differing_complete_sources_fail_before_sdk(
     diagnostic = str(exc_info.value)
     assert "credentials_conflict" in diagnostic
     assert all(field in diagnostic for field in ("app_key", "app_secret", "access_token"))
-    assert all(
-        value not in diagnostic
-        for value in (*environment.values(), *runtime_file.values())
-    )
+    assert all(value not in diagnostic for value in (*environment.values(), *runtime_file.values()))
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None
 
@@ -239,9 +224,7 @@ def test_fetch_combines_all_windows_and_caches_complete_frame(
         lambda **kwargs: cached.append(kwargs["frame"].copy()),
     )
 
-    result = _configured_loader().fetch(
-        ["AAPL"], "2026-01-01", "2026-07-01", interval="1D"
-    )
+    result = _configured_loader().fetch(["AAPL"], "2026-01-01", "2026-07-01", interval="1D")
 
     assert calls == [
         (dt.date(2026, 1, 1), dt.date(2026, 6, 29)),
@@ -294,9 +277,7 @@ def test_fetch_rejects_partial_history_when_a_window_fails(
     )
 
     with pytest.raises(NoAvailableSourceError) as exc_info:
-        _configured_loader().fetch(
-            ["AAPL"], "2026-01-01", "2026-07-01", interval="1D"
-        )
+        _configured_loader().fetch(["AAPL"], "2026-01-01", "2026-07-01", interval="1D")
 
     assert str(exc_info.value) == "Longbridge history request failed."
     assert secret not in str(exc_info.value)
@@ -313,9 +294,7 @@ def test_fetch_redacts_sdk_initialization_exception_and_drops_cause(
         pass
 
     fake_openapi = SimpleNamespace(
-        Config=lambda *args: (_ for _ in ()).throw(
-            SecretBearingSdkError(f"invalid access_token={secret}")
-        ),
+        Config=lambda *args: (_ for _ in ()).throw(SecretBearingSdkError(f"invalid access_token={secret}")),
         QuoteContext=lambda config: config,
     )
     monkeypatch.setattr(loader_mod, "_require_longbridge", lambda: fake_openapi)
@@ -336,9 +315,7 @@ def test_fetch_redacts_sdk_initialization_exception_and_drops_cause(
 # --------------------------------------------------------------------------- #
 
 
-def test_partial_credentials_never_call_require_longbridge(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
+def test_partial_credentials_never_call_require_longbridge(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """is_available and fetch both exit before calling _require_longbridge."""
     call_count = 0
 
@@ -374,9 +351,7 @@ def test_partial_credentials_never_call_require_longbridge(
     assert call_count == 0
 
 
-def test_conflict_credentials_never_call_require_longbridge(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
+def test_conflict_credentials_never_call_require_longbridge(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """is_available and fetch both exit before calling _require_longbridge."""
     call_count = 0
 

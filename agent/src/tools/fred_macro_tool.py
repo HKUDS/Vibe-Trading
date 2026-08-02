@@ -72,8 +72,7 @@ class FredMacroTool(BaseTool):
             "start_date": {
                 "type": "string",
                 "description": (
-                    "Inclusive start of the observation window, YYYY-MM-DD. "
-                    "Omit for the full available history."
+                    "Inclusive start of the observation window, YYYY-MM-DD. Omit for the full available history."
                 ),
             },
             "end_date": {
@@ -144,9 +143,7 @@ class FredMacroTool(BaseTool):
             payload = throttled_get_json(
                 _OBSERVATIONS_URL,
                 host_key=_FRED_HOST_KEY,
-                min_interval=resolve_min_interval(
-                    _FRED_MIN_INTERVAL_ENV, _FRED_DEFAULT_MIN_INTERVAL
-                ),
+                min_interval=resolve_min_interval(_FRED_MIN_INTERVAL_ENV, _FRED_DEFAULT_MIN_INTERVAL),
                 params=params,
                 timeout=_FRED_TIMEOUT_S,
             )

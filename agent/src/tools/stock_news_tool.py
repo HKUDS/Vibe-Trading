@@ -209,9 +209,7 @@ def _yahoo_article(raw: dict[str, Any]) -> dict[str, Any]:
     published = None
     try:
         timestamp = float(raw.get("providerPublishTime"))
-        published = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        published = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     except (TypeError, ValueError, OSError, OverflowError):
         pass
     return {
@@ -237,9 +235,7 @@ def _fetch_yahoo_news(query: str, limit: int) -> list[dict[str, Any]]:
         requests.RequestException: Network/HTTP failure, propagated to caller.
     """
     articles = yahoo_client.search_news(query, limit)
-    return [
-        _yahoo_article(article) for article in articles if isinstance(article, dict)
-    ][:limit]
+    return [_yahoo_article(article) for article in articles if isinstance(article, dict)][:limit]
 
 
 class StockNewsTool(BaseTool):
@@ -278,9 +274,7 @@ class StockNewsTool(BaseTool):
             },
             "limit": {
                 "type": "integer",
-                "description": (
-                    "Maximum number of headlines to return (1-50). Default 20."
-                ),
+                "description": ("Maximum number of headlines to return (1-50). Default 20."),
                 "default": _DEFAULT_LIMIT,
             },
         },
@@ -301,9 +295,7 @@ class StockNewsTool(BaseTool):
         """
         scope = kwargs.get("scope", "stock")
         if scope not in ("stock", "global"):
-            return self._error(
-                f"invalid scope: {scope!r}; expected 'stock' or 'global'"
-            )
+            return self._error(f"invalid scope: {scope!r}; expected 'stock' or 'global'")
 
         limit = _clamp_limit(kwargs.get("limit"))
 
@@ -325,9 +317,7 @@ class StockNewsTool(BaseTool):
         except Exception as exc:  # noqa: BLE001 - surface any fetch failure as envelope
             logger.warning("global news fetch failed: %s", exc)
             return self._error(f"eastmoney news fetch failed: {exc}")
-        return self._ok(
-            "global", "eastmoney", {"scope": "global", "articles": articles}
-        )
+        return self._ok("global", "eastmoney", {"scope": "global", "articles": articles})
 
     def _run_stock(self, code_arg: Any, limit: int) -> str:
         """Fetch single-security headlines, routing by exchange suffix.
@@ -340,9 +330,7 @@ class StockNewsTool(BaseTool):
             A success or error JSON envelope.
         """
         if not isinstance(code_arg, str) or not code_arg.strip():
-            return self._error(
-                "missing required parameter: code (required when scope='stock')"
-            )
+            return self._error("missing required parameter: code (required when scope='stock')")
 
         code = code_arg.strip()
         suffix = _suffix_of(code)
@@ -354,10 +342,7 @@ class StockNewsTool(BaseTool):
             return self._stock_via_eastmoney(code, query, limit)
         if suffix in _YAHOO_SUFFIXES:
             return self._stock_via_yahoo(code, query, limit)
-        return self._error(
-            f"unsupported market for code {code!r}; expected suffix in "
-            f"{_EM_SUFFIXES + _YAHOO_SUFFIXES}"
-        )
+        return self._error(f"unsupported market for code {code!r}; expected suffix in {_EM_SUFFIXES + _YAHOO_SUFFIXES}")
 
     def _stock_via_eastmoney(self, code: str, query: str, limit: int) -> str:
         """Fetch A-share headlines from Eastmoney for one code."""

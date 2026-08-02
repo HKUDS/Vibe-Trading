@@ -183,9 +183,7 @@ class GetFundamentalsTool(BaseTool):
             data: dict[str, list[dict[str, Any]]] = {}
             for field, frame in panel.items():
                 if not isinstance(frame, pd.DataFrame):
-                    raise TypeError(
-                        f"loader returned {type(frame).__name__} for field {field!r}, expected DataFrame"
-                    )
+                    raise TypeError(f"loader returned {type(frame).__name__} for field {field!r}, expected DataFrame")
                 data[str(field)] = _frame_records(frame)
         except Exception as exc:  # noqa: BLE001 - tool facade must envelope failures
             logger.warning("get_fundamentals failed: %s", exc)

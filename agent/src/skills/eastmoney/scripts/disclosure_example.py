@@ -34,10 +34,7 @@ def recent_block_trades(code: str, days: int = 30) -> None:
     records = envelope["data"].get("records", [])
     print(f"{code} 近 {days} 日大宗交易 {len(records)} 笔：")
     for rec in records[:3]:
-        print(
-            f"  {rec['trade_date']} 价={rec['deal_price']} "
-            f"折溢价={rec['premium_ratio']} 买方={rec['buyer_seat']}"
-        )
+        print(f"  {rec['trade_date']} 价={rec['deal_price']} 折溢价={rec['premium_ratio']} 买方={rec['buyer_seat']}")
 
 
 def margin_balance_trend(code: str, days: int = 30) -> None:
@@ -50,8 +47,7 @@ def margin_balance_trend(code: str, days: int = 30) -> None:
     if rows:
         latest = rows[0]
         print(
-            f"{code} {latest['trade_date']} 融资余额={latest['financing_balance']} "
-            f"融券余额={latest['short_balance']}"
+            f"{code} {latest['trade_date']} 融资余额={latest['financing_balance']} 融券余额={latest['short_balance']}"
         )
 
 

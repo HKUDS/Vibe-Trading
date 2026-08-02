@@ -23,7 +23,7 @@ come back short. For deep history prefer Yahoo.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -176,9 +176,7 @@ class DataLoader:
             except TypeError:
                 # Dhan uses ``exchange_segment``; retry without the ``exchange`` kw.
                 try:
-                    envelope = sdk.get_historical_bars(
-                        _base_symbol(code), period=period, limit=limit
-                    )
+                    envelope = sdk.get_historical_bars(_base_symbol(code), period=period, limit=limit)
                 except Exception as exc:  # noqa: BLE001 — one bad symbol never aborts
                     logger.warning("%s bridge failed for %s: %s", broker, code, exc)
                     continue

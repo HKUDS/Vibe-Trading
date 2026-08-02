@@ -115,9 +115,7 @@ def test_ensure_session_id_is_idempotent_for_a_known_id(sessions_dir) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_cmd_continue_reuses_one_session_across_continuations(
-    sessions_dir, monkeypatch
-) -> None:
+def test_cmd_continue_reuses_one_session_across_continuations(sessions_dir, monkeypatch) -> None:
     """Goals must accumulate across continuations, so the id has to be stable."""
     trace_dir = sessions_dir / "session-1"
     writer = TraceWriter(trace_dir)
@@ -150,9 +148,7 @@ def test_cmd_continue_derives_an_id_for_a_plain_run(sessions_dir, tmp_path, monk
     assert seen == ["run-run-x"]
 
 
-def test_cmd_session_chat_passes_the_session_it_was_given(
-    sessions_dir, monkeypatch
-) -> None:
+def test_cmd_session_chat_passes_the_session_it_was_given(sessions_dir, monkeypatch) -> None:
     """The id was already in scope as a parameter and simply was not forwarded."""
     from src.session.models import Session
     from src.session.store import SessionStore

@@ -24,9 +24,7 @@ def test_completed_reply_persists_runtime_identity_and_elapsed_time(
     monkeypatch.setattr("src.session.service.get_shared_index", lambda: _DummyIndex())
     store = SessionStore(tmp_path / "sessions")
     event_bus = EventBus()
-    service = SessionService(
-        store=store, event_bus=event_bus, runs_dir=tmp_path / "runs"
-    )
+    service = SessionService(store=store, event_bus=event_bus, runs_dir=tmp_path / "runs")
     session = Session(title="runtime metadata")
     store.create_session(session)
     attempt = Attempt(session_id=session.session_id, prompt="hello")

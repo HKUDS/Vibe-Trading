@@ -79,8 +79,12 @@ class TestRunGC:
         monkeypatch.setenv("VT_MEMORY_DECAY", "1")
         # Create old, low-quality entry that should be flagged
         _create_memory_file(
-            tmp_path, "old-bad", quality_score=0.05, access_count=0,
-            created_at="2024-01-01T00:00:00", last_accessed="2024-01-01T00:00:00",
+            tmp_path,
+            "old-bad",
+            quality_score=0.05,
+            access_count=0,
+            created_at="2024-01-01T00:00:00",
+            last_accessed="2024-01-01T00:00:00",
         )
         pm = PersistentMemory(memory_dir=tmp_path)
         lc = MemoryLifecycle(pm)
@@ -96,8 +100,12 @@ class TestRunGC:
         monkeypatch.setenv("VT_MEMORY_GC", "1")
         monkeypatch.setenv("VT_MEMORY_DECAY", "1")
         _create_memory_file(
-            tmp_path, "garbage", quality_score=0.01, access_count=0,
-            created_at="2024-01-01T00:00:00", last_accessed="2024-01-01T00:00:00",
+            tmp_path,
+            "garbage",
+            quality_score=0.01,
+            access_count=0,
+            created_at="2024-01-01T00:00:00",
+            last_accessed="2024-01-01T00:00:00",
         )
         pm = PersistentMemory(memory_dir=tmp_path)
         lc = MemoryLifecycle(pm)
@@ -115,8 +123,12 @@ class TestRunGC:
         # Recent entry (created_at = now)
         now_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
         _create_memory_file(
-            tmp_path, "young", quality_score=0.01, access_count=0,
-            created_at=now_iso, last_accessed=now_iso,
+            tmp_path,
+            "young",
+            quality_score=0.01,
+            access_count=0,
+            created_at=now_iso,
+            last_accessed=now_iso,
         )
         pm = PersistentMemory(memory_dir=tmp_path)
         lc = MemoryLifecycle(pm)
@@ -129,8 +141,11 @@ class TestRunGC:
         """run_gc() returns [] when VT_MEMORY_GC=0."""
         monkeypatch.setenv("VT_MEMORY_GC", "0")
         _create_memory_file(
-            tmp_path, "should-stay", quality_score=0.01,
-            created_at="2024-01-01T00:00:00", last_accessed="2024-01-01T00:00:00",
+            tmp_path,
+            "should-stay",
+            quality_score=0.01,
+            created_at="2024-01-01T00:00:00",
+            last_accessed="2024-01-01T00:00:00",
         )
         pm = PersistentMemory(memory_dir=tmp_path)
         lc = MemoryLifecycle(pm)
@@ -141,8 +156,12 @@ class TestRunGC:
         monkeypatch.setenv("VT_MEMORY_GC", "1")
         monkeypatch.setenv("VT_MEMORY_DECAY", "1")
         _create_memory_file(
-            tmp_path, "log-test", quality_score=0.01, access_count=0,
-            created_at="2024-01-01T00:00:00", last_accessed="2024-01-01T00:00:00",
+            tmp_path,
+            "log-test",
+            quality_score=0.01,
+            access_count=0,
+            created_at="2024-01-01T00:00:00",
+            last_accessed="2024-01-01T00:00:00",
         )
         pm = PersistentMemory(memory_dir=tmp_path)
         lc = MemoryLifecycle(pm)
@@ -160,8 +179,12 @@ class TestRunGC:
         monkeypatch.setenv("VT_MEMORY_GC", "1")
         monkeypatch.setenv("VT_MEMORY_DECAY", "1")
         _create_memory_file(
-            tmp_path, "very-low", quality_score=0.001, access_count=0,
-            created_at="2024-01-01T00:00:00", last_accessed="2024-01-01T00:00:00",
+            tmp_path,
+            "very-low",
+            quality_score=0.001,
+            access_count=0,
+            created_at="2024-01-01T00:00:00",
+            last_accessed="2024-01-01T00:00:00",
         )
         pm = PersistentMemory(memory_dir=tmp_path)
         lc = MemoryLifecycle(pm)
@@ -184,13 +207,21 @@ class TestFindRelevantImportanceWeighting:
         monkeypatch.setenv("VT_MEMORY_DECAY", "1")
         # "trading strategy" appears in title/description (metadata, 2x weight)
         _create_memory_file(
-            tmp_path, "trading strategy notes", content="general notes",
-            quality_score=0.9, importance=0.9, entry_id="hi1234",
+            tmp_path,
+            "trading strategy notes",
+            content="general notes",
+            quality_score=0.9,
+            importance=0.9,
+            entry_id="hi1234",
         )
         # "trading strategy" only in body (1x weight)
         _create_memory_file(
-            tmp_path, "random notes", content="trading strategy details here",
-            quality_score=0.1, importance=0.1, entry_id="lo5678",
+            tmp_path,
+            "random notes",
+            content="trading strategy details here",
+            quality_score=0.1,
+            importance=0.1,
+            entry_id="lo5678",
         )
         pm = PersistentMemory(memory_dir=tmp_path)
         results = pm.find_relevant("trading strategy")
@@ -202,11 +233,16 @@ class TestFindRelevantImportanceWeighting:
         """Keywords in frontmatter should contribute to retrieval score."""
         monkeypatch.setenv("VT_MEMORY_DECAY", "1")
         _create_memory_file(
-            tmp_path, "kw-entry", content="unrelated body",
-            keywords=["momentum", "alpha"], entry_id="kw1234",
+            tmp_path,
+            "kw-entry",
+            content="unrelated body",
+            keywords=["momentum", "alpha"],
+            entry_id="kw1234",
         )
         _create_memory_file(
-            tmp_path, "no-kw", content="unrelated body two",
+            tmp_path,
+            "no-kw",
+            content="unrelated body two",
             entry_id="nk5678",
         )
         pm = PersistentMemory(memory_dir=tmp_path)

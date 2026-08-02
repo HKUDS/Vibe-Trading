@@ -39,9 +39,7 @@ def test_zero_final_equity_has_real_annual_return() -> None:
 
 
 def test_negative_final_equity_does_not_create_complex_annual_return() -> None:
-    metrics = _calc_options_metrics(
-        pd.Series([100.0, 100.0, 100.0, 100.0, -10.0]), 100.0, []
-    )
+    metrics = _calc_options_metrics(pd.Series([100.0, 100.0, 100.0, 100.0, -10.0]), 100.0, [])
 
     assert metrics["final_value"] == -10.0
     assert metrics["total_return"] == -1.1
@@ -109,6 +107,8 @@ def test_daily_bar_annualization_still_finite() -> None:
     assert metrics["annual_return"] is not None
     assert np.isfinite(metrics["annual_return"])
     json.dumps(metrics, allow_nan=False)
+
+
 def test_null_and_non_numeric_trade_pnl_handled_safely() -> None:
     """Trades containing pnl: None or non-numeric strings must not raise TypeError."""
     trades = [

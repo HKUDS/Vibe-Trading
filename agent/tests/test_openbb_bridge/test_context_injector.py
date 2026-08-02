@@ -72,9 +72,7 @@ def _widget(name: str, description: str = "", origin: str = "openbb", params=Non
 
 
 def _param(name: str, current_value=None) -> WidgetParam:
-    return WidgetParam(
-        name=name, type="ticker", description="", current_value=current_value
-    )
+    return WidgetParam(name=name, type="ticker", description="", current_value=current_value)
 
 
 def _request(**kwargs) -> QueryRequest:
@@ -92,9 +90,7 @@ def test_widget_names_and_params_are_injected():
     injector = WorkspaceContextInjector()
     request = _request(
         widgets=WidgetCollection(
-            primary=[
-                _widget("Price Chart", "AAPL price", params=[_param("symbol", "AAPL")])
-            ],
+            primary=[_widget("Price Chart", "AAPL price", params=[_param("symbol", "AAPL")])],
             secondary=[],
             extra=[],
         )
@@ -110,9 +106,7 @@ def test_widget_names_and_params_are_injected():
 def test_widget_block_states_that_values_are_not_attached():
     """Guards against the model inventing widget values it never received."""
     injector = WorkspaceContextInjector()
-    request = _request(
-        widgets=WidgetCollection(primary=[_widget("Price Chart")], secondary=[], extra=[])
-    )
+    request = _request(widgets=WidgetCollection(primary=[_widget("Price Chart")], secondary=[], extra=[]))
     result = injector.inject(request, "q")
 
     assert "NOT attached" in result
@@ -122,9 +116,7 @@ def test_dashboard_name_and_tab_are_injected():
     injector = WorkspaceContextInjector()
     request = _request(
         workspace_state=WorkspaceState(
-            current_dashboard_info=DashboardInfo(
-                id="dash-1", name="My Portfolio", current_tab_id="tab-1"
-            )
+            current_dashboard_info=DashboardInfo(id="dash-1", name="My Portfolio", current_tab_id="tab-1")
         )
     )
     result = injector.inject(request, "summarize")
@@ -135,11 +127,7 @@ def test_dashboard_name_and_tab_are_injected():
 
 def test_widget_list_is_truncated():
     injector = WorkspaceContextInjector()
-    request = _request(
-        widgets=WidgetCollection(
-            primary=[_widget(f"W{i}") for i in range(25)], secondary=[], extra=[]
-        )
-    )
+    request = _request(widgets=WidgetCollection(primary=[_widget(f"W{i}") for i in range(25)], secondary=[], extra=[]))
     result = injector.inject(request, "q")
 
     assert "more widget(s)" in result
@@ -148,9 +136,7 @@ def test_widget_list_is_truncated():
 def test_attached_context_data_is_ingested_verbatim():
     """``QueryRequest.context`` is the only place real values arrive."""
     injector = WorkspaceContextInjector()
-    request = _request(
-        context=[_raw_context("Prices", "AAPL,190.5\nMSFT,410.2", description="table")]
-    )
+    request = _request(context=[_raw_context("Prices", "AAPL,190.5\nMSFT,410.2", description="table")])
     result = injector.inject(request, "which is cheaper?")
 
     assert "Prices" in result

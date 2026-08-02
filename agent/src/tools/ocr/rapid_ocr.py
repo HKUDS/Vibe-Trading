@@ -21,6 +21,7 @@ class RapidOcrEngine:
     def is_available(self) -> bool:
         try:
             from rapidocr_onnxruntime import RapidOCR  # type: ignore
+
             if self._engine is None:
                 self._engine = RapidOCR()
             return True

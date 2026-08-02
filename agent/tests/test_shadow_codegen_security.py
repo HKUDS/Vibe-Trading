@@ -61,9 +61,7 @@ def test_render_signal_engine_escapes_python_literals_for_dynamic_values() -> No
     assert ok, f"generated source failed validation: {err}"
 
     stored_names = {
-        node.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+        node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
     }
     assert not any(name.startswith("INJECTED_") for name in stored_names)
 

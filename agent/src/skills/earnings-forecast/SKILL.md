@@ -88,9 +88,9 @@ SUE = (actual_EPS - consensus_EPS) / std(actual_EPS - consensus_EPS)
 # 4. SUE < -1.5 的股票卖出/做空（如果可以）
 
 # 关键参数
-holding_period = 40      # 持有交易日数
-sue_threshold = 1.5      # SUE阈值
-max_positions = 10       # 最大持仓数
+holding_period = 40  # 持有交易日数
+sue_threshold = 1.5  # SUE阈值
+max_positions = 10  # 最大持仓数
 rebalance_on = "earnings_date"  # 在业绩公告日调仓
 ```
 
@@ -148,13 +148,13 @@ dispersion = std(all_analyst_EPS) / mean(all_analyst_EPS)
 ```python
 # 组合构建参数
 config = {
-    "universe": "沪深300成分股",          # 流动性保障
-    "signal": "SUE > +1.5 或 ERM > +0.3", # 超预期信号
-    "max_positions": 20,                  # 最大持仓
-    "position_weight": "equal",           # 等权
-    "holding_period": 40,                 # 交易日
-    "rebalance": "earnings_calendar",     # 按财报日历调仓
-    "stop_loss": -0.08,                   # 8%止损
+    "universe": "沪深300成分股",  # 流动性保障
+    "signal": "SUE > +1.5 或 ERM > +0.3",  # 超预期信号
+    "max_positions": 20,  # 最大持仓
+    "position_weight": "equal",  # 等权
+    "holding_period": 40,  # 交易日
+    "rebalance": "earnings_calendar",  # 按财报日历调仓
+    "stop_loss": -0.08,  # 8%止损
 }
 ```
 

@@ -9,8 +9,6 @@ from typing import Dict, List, Optional, Union
 import pandas as pd
 import yfinance as yf
 
-logger = logging.getLogger(__name__)
-
 from backtest.loaders.base import (
     loader_cache_get,
     loader_cache_put,
@@ -18,6 +16,8 @@ from backtest.loaders.base import (
     validate_ohlc,
 )
 from backtest.loaders.registry import register
+
+logger = logging.getLogger(__name__)
 
 _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
 _COLUMN_RENAMES = {

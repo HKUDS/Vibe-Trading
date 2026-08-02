@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -167,8 +168,7 @@ class SessionSearchIndex:
         )
         conn.commit()
 
-    def index_message(self, session_id: str, role: str, content: str,
-                      tool_name: Optional[str] = None) -> None:
+    def index_message(self, session_id: str, role: str, content: str, tool_name: Optional[str] = None) -> None:
         """Index a single message.
 
         Args:
@@ -181,8 +181,7 @@ class SessionSearchIndex:
             return
         conn = self._get_conn()
         conn.execute(
-            "INSERT INTO messages (session_id, role, content, tool_name, timestamp) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO messages (session_id, role, content, tool_name, timestamp) VALUES (?, ?, ?, ?, ?)",
             (session_id, role, content[:50_000], tool_name, time.time()),
         )
         conn.execute(
@@ -206,6 +205,7 @@ class SessionSearchIndex:
             FTS5-safe MATCH expression.
         """
         import re as _re
+
         # Extract alphanumeric tokens (3+ chars) and CJK characters
         tokens = _re.findall(r"[a-zA-Z0-9_]{2,}|[\u4e00-\u9fff\u3400-\u4dbf]", query)
         if not tokens:
@@ -343,10 +343,8 @@ class SessionSearchIndex:
             self._conn = None
 
 
-import threading as _threading
-
 _shared_index: Optional[SessionSearchIndex] = None
-_shared_lock = _threading.Lock()
+_shared_lock = threading.Lock()
 
 
 def get_shared_index() -> SessionSearchIndex:

@@ -126,7 +126,7 @@ def _resolve_provider_config() -> dict[str, str]:
     key_env, base_env = provider_env_names(provider, model_name)
 
     if key_env is not None:
-        api_key = os.getenv(key_env, "") or os.getenv("OPENAI_API_KEY", "")  # noqa: env-gate
+        api_key = os.getenv(key_env, "") or os.getenv("OPENAI_API_KEY", "")  # env-gate
     else:
         # Provider unknown to provider_env_names() — fall back to OPENAI_API_KEY.
         # Ollama (a local no-auth provider) uses "ollama" as a placeholder key
@@ -134,14 +134,14 @@ def _resolve_provider_config() -> dict[str, str]:
         # endpoints. For any other provider, empty string is correct (the user
         # must configure it explicitly via OPENAI_API_KEY).
         if provider == "ollama":
-            api_key = os.getenv("OPENAI_API_KEY", "") or "ollama"  # noqa: env-gate
+            api_key = os.getenv("OPENAI_API_KEY", "") or "ollama"  # env-gate
         else:
-            api_key = os.getenv("OPENAI_API_KEY", "")  # noqa: env-gate
+            api_key = os.getenv("OPENAI_API_KEY", "")  # env-gate
 
     base_url = (
-        (os.getenv(base_env, "") if base_env else "")  # noqa: env-gate
-        or os.getenv("OPENAI_BASE_URL", "")  # noqa: env-gate
-        or os.getenv("OPENAI_API_BASE", "")  # noqa: env-gate
+        (os.getenv(base_env, "") if base_env else "")  # env-gate
+        or os.getenv("OPENAI_BASE_URL", "")  # env-gate
+        or os.getenv("OPENAI_API_BASE", "")  # env-gate
     )
 
     model = model_override or model_name or ""

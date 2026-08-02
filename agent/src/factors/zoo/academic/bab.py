@@ -20,6 +20,7 @@ volatility estimation windows (5y correlation, 1y volatility). We use a
 single rolling window for both covariance and market variance, which is a
 simplification.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -28,23 +29,23 @@ import pandas as pd
 from src.factors.base import ts_cov, ts_std
 
 __alpha_meta__ = {
-    'id': 'academic_bab',
-    'nickname': 'Frazzini-Pedersen 2014 betting-against-beta',
-    'theme': ['volatility'],
-    'formula_latex': r'\mathrm{zscore}_{x}\bigl(-\,\mathrm{ts\_cov}(r_i, r_m, 252) / \mathrm{ts\_std}(r_m, 252)^2\bigr)',
-    'columns_required': ['close'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk'],
-    'frequency': ['1d'],
-    'decay_horizon': 252,
-    'min_warmup_bars': 253,
-    'notes': (
-        'Frazzini & Pedersen (2014) BAB. Price-only proxy: market return is the '
-        'cross-sectional mean of daily per-stock returns (equal-weighted, not '
-        'value-weighted as in the original). Beta is Cov(r_i, r_m) / Var(r_m) '
-        'over a single 252-day window (paper uses separate 1y vol / 5y '
-        'correlation windows). Factor score is negative beta, cross-sectional '
-        'z-scored so low-beta names rank highest, matching the long leg of the '
-        'original long-short construction.'
+    "id": "academic_bab",
+    "nickname": "Frazzini-Pedersen 2014 betting-against-beta",
+    "theme": ["volatility"],
+    "formula_latex": r"\mathrm{zscore}_{x}\bigl(-\,\mathrm{ts\_cov}(r_i, r_m, 252) / \mathrm{ts\_std}(r_m, 252)^2\bigr)",
+    "columns_required": ["close"],
+    "universe": ["equity_us", "equity_cn", "equity_hk"],
+    "frequency": ["1d"],
+    "decay_horizon": 252,
+    "min_warmup_bars": 253,
+    "notes": (
+        "Frazzini & Pedersen (2014) BAB. Price-only proxy: market return is the "
+        "cross-sectional mean of daily per-stock returns (equal-weighted, not "
+        "value-weighted as in the original). Beta is Cov(r_i, r_m) / Var(r_m) "
+        "over a single 252-day window (paper uses separate 1y vol / 5y "
+        "correlation windows). Factor score is negative beta, cross-sectional "
+        "z-scored so low-beta names rank highest, matching the long leg of the "
+        "original long-short construction."
     ),
 }
 
@@ -65,7 +66,7 @@ def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     daily returns, broadcast back to every column so ts_cov/ts_std (which
     operate per-column) see the same market series against each stock.
     """
-    close = panel['close']
+    close = panel["close"]
     returns = close.pct_change()
 
     market_ret = returns.mean(axis=1, skipna=True)

@@ -274,11 +274,7 @@ class GatewayServices:
 
 def build_gateway_services(**kwargs: Any) -> GatewayServices:
     """Build a gateway service bundle from optional overrides."""
-    allowed = {
-        key: value
-        for key, value in kwargs.items()
-        if key in GatewayServices.__dataclass_fields__
-    }
+    allowed = {key: value for key, value in kwargs.items() if key in GatewayServices.__dataclass_fields__}
     session_manager = allowed.get("session_manager")
     if session_manager is not None and not hasattr(session_manager, "read_session_file"):
         allowed["session_manager"] = GatewaySessionManagerAdapter(session_manager)
@@ -286,9 +282,7 @@ def build_gateway_services(**kwargs: Any) -> GatewayServices:
     if workspace_path is not None and "workspaces" not in allowed:
         allowed["workspaces"] = WorkspaceService(
             workspace_path=Path(workspace_path),
-            default_restrict_to_workspace=bool(
-                allowed.get("default_restrict_to_workspace", True)
-            ),
+            default_restrict_to_workspace=bool(allowed.get("default_restrict_to_workspace", True)),
         )
     return GatewayServices(**allowed)
 

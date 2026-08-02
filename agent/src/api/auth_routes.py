@@ -36,8 +36,7 @@ def register_auth_routes(
         host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
         if host is None:  # pragma: no cover — only triggers on weird import setups
             raise RuntimeError(
-                "register_auth_routes: api_server module not in sys.modules; "
-                "pass require_auth explicitly"
+                "register_auth_routes: api_server module not in sys.modules; pass require_auth explicitly"
             )
         require_auth = host.require_auth
 

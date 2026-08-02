@@ -33,18 +33,20 @@ def _df_to_bars(df: pd.DataFrame, symbol: str, freq: Freq = Freq.D) -> list:
     for i, (dt, row) in enumerate(df.iterrows()):
         if not isinstance(dt, datetime):
             dt = pd.Timestamp(dt).to_pydatetime()
-        bars.append(RawBar(
-            symbol=symbol,
-            id=i,
-            dt=dt,
-            freq=freq,
-            open=float(row["open"]),
-            close=float(row["close"]),
-            high=float(row["high"]),
-            low=float(row["low"]),
-            vol=float(row.get("volume", row.get("vol", 0))),
-            amount=float(row.get("amount", 0)),
-        ))
+        bars.append(
+            RawBar(
+                symbol=symbol,
+                id=i,
+                dt=dt,
+                freq=freq,
+                open=float(row["open"]),
+                close=float(row["close"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                vol=float(row.get("volume", row.get("vol", 0))),
+                amount=float(row.get("amount", 0)),
+            )
+        )
     return bars
 
 
@@ -78,7 +80,7 @@ def _check_zhongshu(bi_list: list) -> Optional[ZS]:
     if len(bi_list) < 3:
         return None
     for i in range(len(bi_list) - 3, max(len(bi_list) - 10, -1), -1):
-        zs = ZS(bis=bi_list[i:i + 3])
+        zs = ZS(bis=bi_list[i : i + 3])
         if zs.is_valid:
             return zs
     return None
@@ -193,9 +195,7 @@ if __name__ == "__main__":
     BASE_URL = "https://www.okx.com/api/v5"
 
     # 获取 BTC 日线数据
-    resp = requests.get(f"{BASE_URL}/market/candles", params={
-        "instId": "BTC-USDT", "bar": "1D", "limit": "300"
-    })
+    resp = requests.get(f"{BASE_URL}/market/candles", params={"instId": "BTC-USDT", "bar": "1D", "limit": "300"})
     candles = resp.json()["data"]
 
     # 转为 DataFrame

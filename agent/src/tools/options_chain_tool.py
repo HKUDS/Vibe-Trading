@@ -51,8 +51,7 @@ class OptionsChainTool(BaseTool):
             "ticker": {
                 "type": "string",
                 "description": (
-                    "US underlying symbol, e.g. 'AAPL' or 'AAPL.US' (the .US "
-                    "suffix is stripped). Required."
+                    "US underlying symbol, e.g. 'AAPL' or 'AAPL.US' (the .US suffix is stripped). Required."
                 ),
             },
             "expiration": {
@@ -91,9 +90,7 @@ class OptionsChainTool(BaseTool):
             return _error("expiration must be Unix epoch seconds (integer)")
 
         try:
-            result = yahoo_client.get_options(
-                ticker, expiration=normalized_expiration
-            )
+            result = yahoo_client.get_options(ticker, expiration=normalized_expiration)
         except Exception as exc:  # noqa: BLE001 - surface as error envelope
             return _error(f"yahoo options request failed: {exc}")
 
@@ -112,9 +109,7 @@ def _coerce_expiration(value: Any) -> Optional[int]:
 
 def _success(ticker: str, result: Dict[str, Any]) -> str:
     """Build the success envelope from a quote-chain ``result[0]`` mapping."""
-    expirations = [
-        epoch for epoch in (result.get("expirationDates") or []) if epoch is not None
-    ]
+    expirations = [epoch for epoch in (result.get("expirationDates") or []) if epoch is not None]
     options = result.get("options") or []
     block = options[0] if options else {}
 
@@ -144,9 +139,7 @@ def _contracts(raw: Any) -> List[Dict[str, Any]]:
     for entry in raw[:_MAX_CONTRACTS_PER_SIDE]:
         if not isinstance(entry, dict):
             continue
-        rows.append(
-            {our_key: entry.get(yahoo_key) for yahoo_key, our_key in _CONTRACT_FIELDS}
-        )
+        rows.append({our_key: entry.get(yahoo_key) for yahoo_key, our_key in _CONTRACT_FIELDS})
     return rows
 
 

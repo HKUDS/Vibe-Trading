@@ -91,7 +91,7 @@ class TestParallelBench:
     def test_parallel_matches_sequential(self, monkeypatch):
         from src.factors.bench_runner import run_bench
 
-        mock_reg = self._setup_mocks(monkeypatch)
+        self._setup_mocks(monkeypatch)
 
         monkeypatch.setenv("VIBE_TRADING_BENCH_WORKERS", "1")
         seq = run_bench("test_zoo", "mock", "2020-2021")
@@ -111,7 +111,9 @@ class TestParallelBench:
 
         calls = []
         result = run_bench(
-            "test_zoo", "mock", "2020-2021",
+            "test_zoo",
+            "mock",
+            "2020-2021",
             registry=mock_reg,
             on_progress=lambda n, t, a: calls.append((n, t, a)),
         )
@@ -125,7 +127,9 @@ class TestParallelBench:
         monkeypatch.setenv("VIBE_TRADING_BENCH_WORKERS", "2")
 
         result = run_bench(
-            "test_zoo", "mock", "2020-2021",
+            "test_zoo",
+            "mock",
+            "2020-2021",
             registry=mock_reg,
             only=["alpha_0", "alpha_2"],
         )

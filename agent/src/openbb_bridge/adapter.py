@@ -127,9 +127,7 @@ class OpenBBQueryAdapter:
     # ------------------------------------------------------------------
     # Event consumption
     # ------------------------------------------------------------------
-    async def _consume_events(
-        self, session_id: str, attempt_id: Optional[str]
-    ) -> AsyncGenerator[Any, None]:
+    async def _consume_events(self, session_id: str, attempt_id: Optional[str]) -> AsyncGenerator[Any, None]:
         """Translate session-bus events into OpenBB SSE objects until terminal.
 
         Args:
@@ -158,16 +156,12 @@ class OpenBBQueryAdapter:
             for sse in self.event_mapper.map(event_type, data):
                 yield sse
 
-            if event_type in _TERMINAL_EVENTS and (
-                not attempt_id or ev_attempt == attempt_id
-            ):
+            if event_type in _TERMINAL_EVENTS and (not attempt_id or ev_attempt == attempt_id):
                 async for sse in self._finalize(event_type, data, saw_text):
                     yield sse
                 break
 
-    async def _finalize(
-        self, event_type: str, data: dict, saw_text: bool
-    ) -> AsyncGenerator[Any, None]:
+    async def _finalize(self, event_type: str, data: dict, saw_text: bool) -> AsyncGenerator[Any, None]:
         """Emit any closing summary / error after the attempt terminates.
 
         Args:
@@ -258,9 +252,7 @@ class OpenBBQueryAdapter:
                 logger.warning("Failed to replay history message: %s", exc)
 
         if replayed:
-            logger.info(
-                "Replayed %d supplied message(s) into session %s", replayed, session_id
-            )
+            logger.info("Replayed %d supplied message(s) into session %s", replayed, session_id)
 
     # ------------------------------------------------------------------
     # Request parsing helpers

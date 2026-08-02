@@ -236,8 +236,7 @@ class FundFlowTool(BaseTool):
         days = min(days, _MAX_DAYS)
 
         results = {
-            symbol: _fetch_symbol_flow(symbol, period=period, days=days)
-            for symbol in (c.strip() for c in codes)
+            symbol: _fetch_symbol_flow(symbol, period=period, days=days) for symbol in (c.strip() for c in codes)
         }
         envelope = {
             "ok": True,

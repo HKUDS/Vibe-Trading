@@ -169,9 +169,7 @@ def test_run_with_agent_consolidates_tool_events_by_call_id(
     service = _service(tmp_path, monkeypatch)
     attempt = Attempt(session_id="abcdef012345", prompt="compare")
 
-    result = asyncio.run(
-        service._run_with_agent(attempt, messages=[], session_config={})
-    )
+    result = asyncio.run(service._run_with_agent(attempt, messages=[], session_config={}))
 
     assert [
         {

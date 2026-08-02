@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #35
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第35号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_035"
 
 __alpha_meta__ = {
-    'id': 'alpha101_035',
-    'nickname': 'Kakushadze Alpha #35',
-    'theme': ['volume', 'momentum'],
-    'formula_latex': 'ts_rank(volume,32) * (1 - ts_rank((close+high-low),16)) * (1 - ts_rank(returns,32))',
-    'columns_required': ['high', 'low', 'close', 'volume'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 33,
-    'notes': '',
+    "id": "alpha101_035",
+    "nickname": "Kakushadze Alpha #35",
+    "theme": ["volume", "momentum"],
+    "formula_latex": "ts_rank(volume,32) * (1 - ts_rank((close+high-low),16)) * (1 - ts_rank(returns,32))",
+    "columns_required": ["high", "low", "close", "volume"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 33,
+    "notes": "",
 }
 
 

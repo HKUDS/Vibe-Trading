@@ -23,10 +23,7 @@ from backtest.engines._market_hooks import (
 )
 from backtest.models import Position
 
-_BRACKETS = (
-    '[{"bracket_tier":1,"notional_cap":1000000.0,'
-    '"maintenance_rate":0.004,"cumulative_maintenance_amount":0.0}]'
-)
+_BRACKETS = '[{"bracket_tier":1,"notional_cap":1000000.0,"maintenance_rate":0.004,"cumulative_maintenance_amount":0.0}]'
 
 
 # ---------------------------------------------------------------------------
@@ -142,14 +139,9 @@ def _write_strict_artifacts(
 def _read_strict_evidence(run_dir) -> tuple[list[dict], dict]:
     artifacts = run_dir / "artifacts"
     events = [
-        json.loads(line)
-        for line in (artifacts / "perpetual_events.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        json.loads(line) for line in (artifacts / "perpetual_events.jsonl").read_text(encoding="utf-8").splitlines()
     ]
-    summary = json.loads(
-        (artifacts / "perpetual_summary.json").read_text(encoding="utf-8")
-    )
+    summary = json.loads((artifacts / "perpetual_summary.json").read_text(encoding="utf-8"))
     return events, summary
 
 
@@ -262,7 +254,12 @@ class TestFundingFee:
     def test_funding_deducted_at_settlement_hour(self) -> None:
         engine = _make_engine(funding_rate=0.0001)
         engine.positions["BTC-USDT"] = Position(
-            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+            "BTC-USDT",
+            1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=10.0,
         )
         initial_capital = engine.capital
         bar = _make_bar(close=60000.0)
@@ -275,7 +272,12 @@ class TestFundingFee:
         """Non-settlement hour still applies funding once per day (daily bar support)."""
         engine = _make_engine(funding_rate=0.0001)
         engine.positions["BTC-USDT"] = Position(
-            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+            "BTC-USDT",
+            1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=10.0,
         )
         initial_capital = engine.capital
         bar = _make_bar(close=60000.0)
@@ -287,7 +289,12 @@ class TestFundingFee:
     def test_short_receives_funding(self) -> None:
         engine = _make_engine(funding_rate=0.0001)
         engine.positions["BTC-USDT"] = Position(
-            "BTC-USDT", -1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+            "BTC-USDT",
+            -1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=10.0,
         )
         initial_capital = engine.capital
         bar = _make_bar(close=60000.0)
@@ -299,7 +306,12 @@ class TestFundingFee:
     def test_no_double_settlement(self) -> None:
         engine = _make_engine(funding_rate=0.0001)
         engine.positions["BTC-USDT"] = Position(
-            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+            "BTC-USDT",
+            1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=10.0,
         )
         bar = _make_bar(close=60000.0)
         ts = pd.Timestamp("2025-01-01 08:00:00")
@@ -321,7 +333,12 @@ class TestFundingFee:
         """Regression: daily bars (all hour=0) must apply funding every day, not just day 1."""
         engine = _make_engine(funding_rate=0.0001)
         engine.positions["BTC-USDT"] = Position(
-            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+            "BTC-USDT",
+            1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=10.0,
         )
         bar = _make_bar(close=60000.0)
         initial = engine.capital
@@ -348,10 +365,20 @@ class TestFundingFee:
         """Each symbol gets independent funding settlement."""
         engine = _make_engine(funding_rate=0.0001)
         engine.positions["BTC-USDT"] = Position(
-            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+            "BTC-USDT",
+            1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=10.0,
         )
         engine.positions["ETH-USDT"] = Position(
-            "ETH-USDT", 1, 3000.0, pd.Timestamp("2025-01-01"), 10.0, leverage=10.0,
+            "ETH-USDT",
+            1,
+            3000.0,
+            pd.Timestamp("2025-01-01"),
+            10.0,
+            leverage=10.0,
         )
         initial = engine.capital
         bar_btc = _make_bar(close=60000.0)
@@ -382,7 +409,12 @@ class TestLiquidation:
         """Position wiped when equity drops below maintenance margin."""
         engine = _make_engine(leverage=10.0)
         engine.positions["BTC-USDT"] = Position(
-            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+            "BTC-USDT",
+            1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=10.0,
         )
         # Margin = 1.0 × 60000 / 10 = $6000
         # If price drops to 54500: unrealized = 1 × (54500 - 60000) = -$5500
@@ -403,7 +435,12 @@ class TestLiquidation:
     def test_no_liquidation_when_profitable(self) -> None:
         engine = _make_engine(leverage=10.0)
         engine.positions["BTC-USDT"] = Position(
-            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+            "BTC-USDT",
+            1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=10.0,
         )
         bar = _make_bar(close=65000.0)
         ts = pd.Timestamp("2025-01-02")
@@ -414,7 +451,12 @@ class TestLiquidation:
         """Spot (leverage=1) should never get liquidated."""
         engine = _make_engine(leverage=1.0)
         engine.positions["BTC-USDT"] = Position(
-            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=1.0,
+            "BTC-USDT",
+            1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=1.0,
         )
         bar = _make_bar(close=30000.0)  # 50% drop
         ts = pd.Timestamp("2025-01-02")
@@ -425,7 +467,12 @@ class TestLiquidation:
         """Short position liquidated when price rises sharply."""
         engine = _make_engine(leverage=10.0)
         engine.positions["BTC-USDT"] = Position(
-            "BTC-USDT", -1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+            "BTC-USDT",
+            -1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=10.0,
         )
         # Margin = $6000, unrealized = -1 × 1 × (66500 - 60000) = -$6500
         # equity_in_pos = 6000 - 6500 = -$500 < 0 → liquidated
@@ -464,7 +511,12 @@ class TestHistoricalFundingRate:
         data) must be charged at that rate, not the fixed config rate."""
         engine = _make_engine(funding_rate=0.0001)
         engine.positions["BTC-USDT-PERP"] = Position(
-            "BTC-USDT-PERP", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+            "BTC-USDT-PERP",
+            1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=10.0,
         )
         initial_capital = engine.capital
         bar = pd.Series({"close": 60000.0, "open": 60000.0, "funding_rate": 0.0005})
@@ -476,7 +528,12 @@ class TestHistoricalFundingRate:
     def test_negative_historical_funding_pays_longs(self) -> None:
         engine = _make_engine(funding_rate=0.0001)
         engine.positions["BTC-USDT-PERP"] = Position(
-            "BTC-USDT-PERP", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+            "BTC-USDT-PERP",
+            1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=10.0,
         )
         initial_capital = engine.capital
         bar = pd.Series({"close": 60000.0, "open": 60000.0, "funding_rate": -0.0002})
@@ -490,7 +547,12 @@ class TestHistoricalFundingRate:
         the fixed config rate (daily-fallback path), not charge NaN."""
         engine = _make_engine(funding_rate=0.0001)
         engine.positions["BTC-USDT-PERP"] = Position(
-            "BTC-USDT-PERP", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+            "BTC-USDT-PERP",
+            1,
+            60000.0,
+            pd.Timestamp("2025-01-01"),
+            1.0,
+            leverage=10.0,
         )
         initial_capital = engine.capital
         bar = pd.Series({"close": 60000.0, "open": 60000.0, "funding_rate": float("nan")})
@@ -501,9 +563,7 @@ class TestHistoricalFundingRate:
 
 class TestStrictPerpetualLifecycle:
     @pytest.mark.parametrize("interval", ["3m", "60m", "4H", "1D"])
-    def test_strict_100x_rejects_unsupported_or_coarse_intervals(
-        self, interval: str
-    ) -> None:
+    def test_strict_100x_rejects_unsupported_or_coarse_intervals(self, interval: str) -> None:
         with pytest.raises(ValueError, match="resolution boundary"):
             _strict_engine(leverage=100.0, interval=interval)
 
@@ -512,9 +572,7 @@ class TestStrictPerpetualLifecycle:
         engine = _strict_engine(leverage=100.0, interval=interval)
         assert engine.default_leverage == 100.0
 
-    def test_strict_100x_revalidates_run_config_before_loading(
-        self, tmp_path
-    ) -> None:
+    def test_strict_100x_revalidates_run_config_before_loading(self, tmp_path) -> None:
         class LoaderThatMustNotRun:
             def fetch(self, *args, **kwargs):
                 raise AssertionError("loader ran before strict interval validation")
@@ -603,9 +661,7 @@ class TestStrictPerpetualLifecycle:
 
         _run_strict(engine, {"BTC-USDT-PERP": frame}, {"BTC-USDT-PERP": [1.0, 1.0]})
 
-        assert [trade.exit_reason for trade in engine.trades] == [
-            "position_liquidation"
-        ]
+        assert [trade.exit_reason for trade in engine.trades] == ["position_liquidation"]
         assert not engine.positions
 
     def test_cross_liquidation_closes_account_and_stops_later_bars(self) -> None:
@@ -633,16 +689,12 @@ class TestStrictPerpetualLifecycle:
             {symbol: [0.5] * 3 for symbol in frames},
         )
 
-        assert {trade.exit_reason for trade in engine.trades} == {
-            "account_liquidation"
-        }
+        assert {trade.exit_reason for trade in engine.trades} == {"account_liquidation"}
         assert engine.terminal_status == "account_liquidation"
         assert len(engine.equity_snapshots) == 2
         assert engine.equity_snapshots[-1].timestamp == dates[1]
 
-    def test_evidence_records_funding_before_fill_and_separate_fee_totals(
-        self, tmp_path
-    ) -> None:
+    def test_evidence_records_funding_before_fill_and_separate_fee_totals(self, tmp_path) -> None:
         dates = pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
         frame = _strict_frame(
             dates,
@@ -657,18 +709,12 @@ class TestStrictPerpetualLifecycle:
         targets = {"BTC-USDT-PERP": [0.5, 0.0, 0.0]}
 
         _run_strict(engine, {"BTC-USDT-PERP": frame}, targets)
-        metrics = _write_strict_artifacts(
-            engine, {"BTC-USDT-PERP": frame}, targets, tmp_path
-        )
+        metrics = _write_strict_artifacts(engine, {"BTC-USDT-PERP": frame}, targets, tmp_path)
 
         events, summary = _read_strict_evidence(tmp_path)
-        settlement = next(
-            event for event in events if event["event_type"] == "funding_settlement"
-        )
+        settlement = next(event for event in events if event["event_type"] == "funding_settlement")
         close_fill = next(
-            event
-            for event in events
-            if event["event_type"] == "market_fill" and event["action"] == "close"
+            event for event in events if event["event_type"] == "market_fill" and event["action"] == "close"
         )
         assert settlement["timestamp"] == dates[1].isoformat()
         assert settlement["funding_pnl"] == pytest.approx(-5.0)
@@ -691,16 +737,12 @@ class TestStrictPerpetualLifecycle:
         assert metrics["perpetual_funding_pnl"] == pytest.approx(-5.0)
         assert metrics["perpetual_trading_fees"] == pytest.approx(10.0)
 
-    def test_evidence_records_cross_liquidation_and_intrabar_limitation(
-        self, tmp_path
-    ) -> None:
+    def test_evidence_records_cross_liquidation_and_intrabar_limitation(self, tmp_path) -> None:
         engine, frames, targets = _run_liquidation_case("cross")
         metrics = _write_strict_artifacts(engine, frames, targets, tmp_path)
 
         events, summary = _read_strict_evidence(tmp_path)
-        liquidation = next(
-            event for event in events if event["event_type"] == "account_liquidation"
-        )
+        liquidation = next(event for event in events if event["event_type"] == "account_liquidation")
         assert liquidation["symbols"] == ["BTC-USDT-PERP", "ETH-USDT-PERP"]
         assert liquidation["price_source"] == "adverse_mark_extrema"
         assert liquidation["liquidation_fee"] == pytest.approx(180.0)
@@ -718,9 +760,7 @@ class TestStrictPerpetualLifecycle:
         assert metrics["perpetual_liquidation_events"] == 1
         assert metrics["perpetual_liquidation_fees"] == pytest.approx(180.0)
 
-    def test_evidence_keeps_isolated_liquidation_position_scoped(
-        self, tmp_path
-    ) -> None:
+    def test_evidence_keeps_isolated_liquidation_position_scoped(self, tmp_path) -> None:
         engine, frames, targets = _run_liquidation_case("isolated")
         _write_strict_artifacts(engine, frames, targets, tmp_path)
 
@@ -734,9 +774,7 @@ class TestStrictPerpetualLifecycle:
                 "account_liquidation",
             }
         ]
-        assert [event["event_type"] for event in liquidations] == [
-            "position_liquidation"
-        ]
+        assert [event["event_type"] for event in liquidations] == ["position_liquidation"]
         assert liquidations[0]["symbol"] == "BTC-USDT-PERP"
         assert liquidations[0]["liquidation_fee"] == pytest.approx(80.0)
         assert engine.terminal_status == "completed"

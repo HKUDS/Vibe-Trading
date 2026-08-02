@@ -35,20 +35,14 @@ def test_dispatch_connector_loads_dotenv_before_running_the_subcommand(
         calls.append("list")
         return 0
 
-    monkeypatch.setattr(
-        "src.providers.llm._ensure_dotenv", lambda: calls.append("dotenv")
-    )
+    monkeypatch.setattr("src.providers.llm._ensure_dotenv", lambda: calls.append("dotenv"))
     monkeypatch.setattr(_legacy, "cmd_connector_list", _record_list)
 
-    assert (
-        _legacy._dispatch_connector(argparse.Namespace(connector_command="list")) == 0
-    )
+    assert _legacy._dispatch_connector(argparse.Namespace(connector_command="list")) == 0
     assert calls == ["dotenv", "list"]
 
 
-def test_connector_path_resolves_longbridge_credentials_from_dotenv(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
+def test_connector_path_resolves_longbridge_credentials_from_dotenv(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """Credentials living only in the ``.env`` file resolve after a dispatch."""
     from src.trading.connectors.longbridge.credentials import (
         resolve_longbridge_credentials,

@@ -15,6 +15,7 @@ from __future__ import annotations
 import pandas as pd
 
 from backtest.engines.base import BaseEngine
+
 # ``_normalize_symbol`` lives in ``_market_hooks`` (single source of truth);
 # re-imported here so external callers (tests) keep their existing import path.
 from backtest.engines._market_hooks import _normalize_symbol, calc_forex_swap
@@ -24,15 +25,33 @@ from backtest.engines._market_hooks import _normalize_symbol, calc_forex_swap
 
 _SPREAD_PIPS: dict[str, float] = {
     # Majors
-    "EUR/USD": 1.0, "GBP/USD": 1.2, "USD/JPY": 1.0, "USD/CHF": 1.3,
-    "AUD/USD": 1.2, "USD/CAD": 1.5, "NZD/USD": 1.5,
+    "EUR/USD": 1.0,
+    "GBP/USD": 1.2,
+    "USD/JPY": 1.0,
+    "USD/CHF": 1.3,
+    "AUD/USD": 1.2,
+    "USD/CAD": 1.5,
+    "NZD/USD": 1.5,
     # Crosses
-    "EUR/GBP": 1.5, "EUR/JPY": 1.5, "GBP/JPY": 2.5, "EUR/CHF": 1.8,
-    "AUD/JPY": 2.0, "CHF/JPY": 2.5, "EUR/AUD": 2.0, "GBP/AUD": 3.0,
-    "EUR/CAD": 2.5, "GBP/CAD": 3.5, "AUD/CAD": 2.5, "NZD/JPY": 2.5,
+    "EUR/GBP": 1.5,
+    "EUR/JPY": 1.5,
+    "GBP/JPY": 2.5,
+    "EUR/CHF": 1.8,
+    "AUD/JPY": 2.0,
+    "CHF/JPY": 2.5,
+    "EUR/AUD": 2.0,
+    "GBP/AUD": 3.0,
+    "EUR/CAD": 2.5,
+    "GBP/CAD": 3.5,
+    "AUD/CAD": 2.5,
+    "NZD/JPY": 2.5,
     # Exotics (wider spreads)
-    "USD/TRY": 15.0, "USD/ZAR": 10.0, "USD/MXN": 8.0,
-    "USD/SGD": 3.0, "USD/HKD": 3.0, "USD/CNH": 5.0,
+    "USD/TRY": 15.0,
+    "USD/ZAR": 10.0,
+    "USD/MXN": 8.0,
+    "USD/SGD": 3.0,
+    "USD/HKD": 3.0,
+    "USD/CNH": 5.0,
 }
 _DEFAULT_SPREAD_PIPS = 2.0
 
@@ -126,8 +145,11 @@ class ForexEngine(BaseEngine):
         if not self.swap_enabled:
             return
         swap = calc_forex_swap(
-            symbol, timestamp, self.positions,
-            self.lot_size, self._last_swap_dates,
+            symbol,
+            timestamp,
+            self.positions,
+            self.lot_size,
+            self._last_swap_dates,
         )
         self.capital += swap
 

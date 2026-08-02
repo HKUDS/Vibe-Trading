@@ -80,8 +80,7 @@ def _require_longbridge():
         from longbridge import openapi  # noqa: PLC0415
     except ImportError as exc:
         raise LongbridgeDependencyError(
-            "The 'longbridge' SDK is not installed. "
-            "Run: pip install 'vibe-trading-ai[longbridge]'"
+            "The 'longbridge' SDK is not installed. Run: pip install 'vibe-trading-ai[longbridge]'"
         ) from exc
     return openapi
 
@@ -121,15 +120,12 @@ def _to_longport_period(interval: str):
     attr = _INTERVAL_MAP.get(token)
     if attr is None:
         raise NoAvailableSourceError(
-            f"unsupported Longbridge interval: {interval!r}; "
-            f"supported intervals: {sorted(_INTERVAL_MAP)}"
+            f"unsupported Longbridge interval: {interval!r}; supported intervals: {sorted(_INTERVAL_MAP)}"
         )
     try:
         return getattr(period_cls, attr)
     except AttributeError as exc:
-        raise NoAvailableSourceError(
-            f"installed Longbridge SDK does not expose Period.{attr}"
-        ) from exc
+        raise NoAvailableSourceError(f"installed Longbridge SDK does not expose Period.{attr}") from exc
 
 
 def _date_windows(start: dt.date, end: dt.date) -> list[tuple[dt.date, dt.date]]:
@@ -143,8 +139,7 @@ def _date_windows(start: dt.date, end: dt.date) -> list[tuple[dt.date, dt.date]]
     maximum_days = _MAX_WINDOW_DAYS * _MAX_WINDOWS
     if requested_days > maximum_days:
         raise NoAvailableSourceError(
-            f"Longbridge date range spans {requested_days} days and exceeds "
-            f"the {maximum_days}-day window limit"
+            f"Longbridge date range spans {requested_days} days and exceeds the {maximum_days}-day window limit"
         )
 
     windows: list[tuple[dt.date, dt.date]] = []
@@ -172,14 +167,16 @@ def _normalize_frame(bars: list[Any]) -> pd.DataFrame:
     rows = []
     for bar in bars:
         ts = getattr(bar, "timestamp", None)
-        rows.append({
-            "open": float(getattr(bar, "open", 0) or 0),
-            "high": float(getattr(bar, "high", 0) or 0),
-            "low": float(getattr(bar, "low", 0) or 0),
-            "close": float(getattr(bar, "close", 0) or 0),
-            "volume": float(getattr(bar, "volume", 0) or 0),
-            "trade_date": pd.to_datetime(ts) if ts is not None else pd.NaT,
-        })
+        rows.append(
+            {
+                "open": float(getattr(bar, "open", 0) or 0),
+                "high": float(getattr(bar, "high", 0) or 0),
+                "low": float(getattr(bar, "low", 0) or 0),
+                "close": float(getattr(bar, "close", 0) or 0),
+                "volume": float(getattr(bar, "volume", 0) or 0),
+                "trade_date": pd.to_datetime(ts) if ts is not None else pd.NaT,
+            }
+        )
 
     result = pd.DataFrame(rows)
     result.index = result["trade_date"]
@@ -223,11 +220,7 @@ class LongbridgeLoader:
                 code = "credentials_conflict"
                 fields = resolution.conflict_fields
             else:
-                code = (
-                    "credentials_missing"
-                    if resolution.source is None
-                    else "credentials_partial"
-                )
+                code = "credentials_missing" if resolution.source is None else "credentials_partial"
                 fields = resolution.missing_fields
             self._credential_error = LongbridgeCredentialError(code, fields)
             self._app_key = self._app_secret = self._access_token = ""
@@ -309,20 +302,13 @@ class LongbridgeLoader:
         credential_error = getattr(self, "_credential_error", None)
         if credential_error is not None:
             if credential_error.code == "credentials_missing":
-                message = (
-                    "Longbridge credentials are not configured; missing fields: "
-                    + ", ".join(credential_error.fields)
+                message = "Longbridge credentials are not configured; missing fields: " + ", ".join(
+                    credential_error.fields
                 )
             elif credential_error.code == "credentials_partial":
-                message = (
-                    "Longbridge credentials_partial; missing fields: "
-                    + ", ".join(credential_error.fields)
-                )
+                message = "Longbridge credentials_partial; missing fields: " + ", ".join(credential_error.fields)
             else:
-                message = (
-                    "Longbridge credentials_conflict; differing fields: "
-                    + ", ".join(credential_error.fields)
-                )
+                message = "Longbridge credentials_conflict; differing fields: " + ", ".join(credential_error.fields)
             raise NoAvailableSourceError(message) from None
         if not (self._app_key and self._app_secret and self._access_token):
             raise NoAvailableSourceError(
@@ -335,7 +321,9 @@ class LongbridgeLoader:
         _init_error: str | None = None
         try:
             cfg = openapi.Config(
-                self._app_key, self._app_secret, self._access_token,
+                self._app_key,
+                self._app_secret,
+                self._access_token,
             )
             ctx = openapi.QuoteContext(cfg)
         except LongbridgeDependencyError:
@@ -355,9 +343,7 @@ class LongbridgeLoader:
             start = dt.date.fromisoformat(start_date)
             end = dt.date.fromisoformat(end_date)
         except (TypeError, ValueError):
-            raise NoAvailableSourceError(
-                "Invalid Longbridge date range."
-            ) from None
+            raise NoAvailableSourceError("Invalid Longbridge date range.") from None
 
         windows = _date_windows(start, end)
 
@@ -369,8 +355,11 @@ class LongbridgeLoader:
                 for w_start, w_end in windows:
                     try:
                         bars = ctx.history_candlesticks_by_date(
-                            lp_symbol, period, adjust_type,
-                            start=w_start, end=w_end,
+                            lp_symbol,
+                            period,
+                            adjust_type,
+                            start=w_start,
+                            end=w_end,
                         )
                         if isinstance(bars, (list, tuple)):
                             all_bars.extend(bars)
@@ -388,7 +377,9 @@ class LongbridgeLoader:
                 if not all_bars:
                     logger.warning(
                         "LongPort returned no data for %s in [%s, %s]",
-                        lp_symbol, start_date, end_date,
+                        lp_symbol,
+                        start_date,
+                        end_date,
                     )
                     continue
 

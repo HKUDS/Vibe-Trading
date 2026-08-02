@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Alpha #7 - VWAP动量
 # 简要说明: ((adv20 < volume) ? ((-1 * ts_rank(abs(delta(close, 7)), 60)) * sign(delta(close, 7))) : (-1 * volume))，条件量价动量。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_007"
 
 __alpha_meta__ = {
-    'id': 'alpha101_007',
-    'nickname': 'Kakushadze Alpha #7',
-    'theme': ['momentum', 'volume'],
-    'formula_latex': '(adv20<volume)?((-1*ts_rank(abs(delta(close,7)),60))*sign(delta(close,7))):(-1)',
-    'columns_required': ['close', 'volume'],
-    'extras_required': [],
-    'requires_sector': False,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 67,
-    'notes': '',
+    "id": "alpha101_007",
+    "nickname": "Kakushadze Alpha #7",
+    "theme": ["momentum", "volume"],
+    "formula_latex": "(adv20<volume)?((-1*ts_rank(abs(delta(close,7)),60))*sign(delta(close,7))):(-1)",
+    "columns_required": ["close", "volume"],
+    "extras_required": [],
+    "requires_sector": False,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 67,
+    "notes": "",
 }
 
 

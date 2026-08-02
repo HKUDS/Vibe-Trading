@@ -14,9 +14,7 @@ from backtest.optimizers.base import BaseOptimizer
 class EqualVolatilityOptimizer(BaseOptimizer):
     """Inverse-volatility weights without a full covariance model."""
 
-    def _build_context(
-        self, window: pd.DataFrame, active: List[str]
-    ) -> "Dict[str, Any] | None":
+    def _build_context(self, window: pd.DataFrame, active: List[str]) -> "Dict[str, Any] | None":
         """Rolling per-asset volatilities.
 
         Args:

@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #16 - VWAP位置
 # 简要说明: (-1*rank(covariance(rank(high), rank(volume), 5)))，最高价与成交量5日协方差排名取负。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_016",
-    "theme": ['volume', 'microstructure'],
-    "formula_latex": '(-1 * TSMAX(RANK(CORR(RANK(VOLUME), RANK(VWAP), 5)), 5))',
-    "columns_required": ['volume', 'amount'],
+    "theme": ["volume", "microstructure"],
+    "formula_latex": "(-1 * TSMAX(RANK(CORR(RANK(VOLUME), RANK(VWAP), 5)), 5))",
+    "columns_required": ["volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
     "min_warmup_bars": 11,
-    "notes": 'Max over 5d of rank of rolling rank-volume vs rank-vwap correlation.',
+    "notes": "Max over 5d of rank of rolling rank-volume vs rank-vwap correlation.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     v = panel["volume"]

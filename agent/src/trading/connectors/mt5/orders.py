@@ -129,9 +129,15 @@ def place_order(
                 return _order_error(cfg, guard_error, symbol=clean_symbol, side=clean_side)
 
             request = _build_request(
-                mt5, cfg, name, info,
-                side=clean_side, order_type=clean_type,
-                volume=volume, limit_price=limit_price, time_in_force=time_in_force,
+                mt5,
+                cfg,
+                name,
+                info,
+                side=clean_side,
+                order_type=clean_type,
+                volume=volume,
+                limit_price=limit_price,
+                time_in_force=time_in_force,
             )
             if isinstance(request, str):
                 return _order_error(cfg, request, symbol=clean_symbol, side=clean_side)
@@ -144,14 +150,20 @@ def place_order(
                 return _order_error(
                     cfg,
                     f"MT5 order_check rejected the order (retcode={check_code}): {comment}",
-                    symbol=clean_symbol, side=clean_side,
+                    symbol=clean_symbol,
+                    side=clean_side,
                 )
 
             result = mt5.order_send(request)
             return _order_result(
-                cfg, mt5, result,
-                symbol=clean_symbol, resolved_symbol=name, side=clean_side,
-                order_type=clean_type, volume=volume,
+                cfg,
+                mt5,
+                result,
+                symbol=clean_symbol,
+                resolved_symbol=name,
+                side=clean_side,
+                order_type=clean_type,
+                volume=volume,
             )
     except _MT5_ERRORS as exc:
         return _order_error(cfg, str(exc), symbol=clean_symbol, side=clean_side)
@@ -226,8 +238,12 @@ def close_position(
 
 
 def _sized_volume(
-    mt5: Any, cfg: MT5Config, name: str, info: Any,
-    quantity: float | str | None, notional: float | str | None,
+    mt5: Any,
+    cfg: MT5Config,
+    name: str,
+    info: Any,
+    quantity: float | str | None,
+    notional: float | str | None,
 ) -> float | str:
     """Resolve the order volume in lots, or return an error message string."""
     volume_min = float(getattr(info, "volume_min", 0.01) or 0.01)
@@ -247,10 +263,7 @@ def _sized_volume(
     if volume > volume_max:
         volume = volume_max
     if volume < volume_min:
-        return (
-            f"order volume {volume} lots is below the symbol minimum {volume_min} "
-            f"for {name!r}"
-        )
+        return f"order volume {volume} lots is below the symbol minimum {volume_min} for {name!r}"
     return volume
 
 
@@ -276,9 +289,16 @@ def _size_guards(mt5: Any, cfg: MT5Config, name: str, volume: float) -> str | No
 
 
 def _build_request(
-    mt5: Any, cfg: MT5Config, name: str, info: Any,
-    *, side: str, order_type: str, volume: float,
-    limit_price: float | str | None, time_in_force: str,
+    mt5: Any,
+    cfg: MT5Config,
+    name: str,
+    info: Any,
+    *,
+    side: str,
+    order_type: str,
+    volume: float,
+    limit_price: float | str | None,
+    time_in_force: str,
 ) -> dict[str, Any] | str:
     """Build the ``order_send`` request dict, or return an error message string."""
     request: dict[str, Any] = {

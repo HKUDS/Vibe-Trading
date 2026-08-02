@@ -46,19 +46,13 @@ class SignalEngine:
         for symbol, df in data_map.items():
             # TODO: Replace with actual factor formula from paper
             # Example: 12-month momentum (Jegadeesh & Titman 1993)
-            factor_values[symbol] = (
-                df["close"].pct_change(self.lookback)
-            )
+            factor_values[symbol] = df["close"].pct_change(self.lookback)
 
         # Step 2: Cross-sectional ranking
-        all_dates = sorted(
-            {date for fv in factor_values.values() for date in fv.index}
-        )
+        all_dates = sorted({date for fv in factor_values.values() for date in fv.index})
         for date in all_dates:
             cross_section = {
-                sym: fv.loc[date]
-                for sym, fv in factor_values.items()
-                if date in fv.index and pd.notna(fv.loc[date])
+                sym: fv.loc[date] for sym, fv in factor_values.items() if date in fv.index and pd.notna(fv.loc[date])
             }
             if len(cross_section) < 5:
                 continue
@@ -70,10 +64,12 @@ class SignalEngine:
                     signals[symbol] = pd.Series(dtype=float)
                 # Linear mapping: rank 0 -> -1, rank 1 -> +1
                 signal_val = 2.0 * rank - 1.0
-                signals[symbol] = pd.concat([
-                    signals[symbol],
-                    pd.Series([signal_val], index=[date]),
-                ])
+                signals[symbol] = pd.concat(
+                    [
+                        signals[symbol],
+                        pd.Series([signal_val], index=[date]),
+                    ]
+                )
 
         # Step 3: Clip signals to [-1, 1]
         for symbol in signals:

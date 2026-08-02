@@ -227,9 +227,15 @@ def _stub_panel(monkeypatch: pytest.MonkeyPatch, n_rows: int = 80, n_cols: int =
         index=idx,
         columns=cols,
     )
-    panel = {"close": close, "high": close * 1.01, "low": close * 0.99,
-             "open": close, "volume": close * 0 + 1_000_000,
-             "vwap": close, "amount": close * 1_000_000}
+    panel = {
+        "close": close,
+        "high": close * 1.01,
+        "low": close * 0.99,
+        "open": close,
+        "volume": close * 0 + 1_000_000,
+        "vwap": close,
+        "amount": close * 1_000_000,
+    }
     monkeypatch.setattr(
         "src.factors.bench_runner_strict._load_universe_panel",
         lambda universe, period: panel,  # noqa: ARG005
@@ -393,8 +399,11 @@ def test_run_bench_strict_legacy_alive_equals_confirmed_alive(
     _stub_panel(monkeypatch)
     reg = _StubRegistry(panel={})
     result = run_bench_strict(
-        zoo="alpha101", universe="csi300", period="2024-2024",
-        random_control=True, registry=reg,
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        registry=reg,
     )
     assert result["alive"] == result["confirmed_alive"]
     assert result["reversed"] == result["reversed_strict"]
@@ -410,8 +419,11 @@ def test_run_bench_strict_top_lists_include_formula_latex(
     _stub_panel(monkeypatch)
     reg = _StubRegistry(panel={})
     result = run_bench_strict(
-        zoo="alpha101", universe="csi300", period="2024-2024",
-        random_control=True, registry=reg,
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        registry=reg,
     )
     for bucket in ("top5_by_ir", "top5_by_alpha_t", "dead_examples"):
         for entry in result[bucket]:
@@ -426,8 +438,12 @@ def test_run_bench_strict_n_random_seeds_zero_is_clamped(
     _stub_panel(monkeypatch)
     reg = _StubRegistry(panel={})
     result = run_bench_strict(
-        zoo="alpha101", universe="csi300", period="2024-2024",
-        random_control=True, n_random_seeds=0, registry=reg,
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        n_random_seeds=0,
+        registry=reg,
     )
     assert result["n_random_seeds"] == 1
 
@@ -436,6 +452,7 @@ def test_run_bench_strict_empty_zoo_returns_schema_with_counters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Regression for C5: error envelope must carry every counter key."""
+
     class EmptyReg:
         def list(self, *, zoo: str) -> list[str]:  # noqa: ARG002
             return []
@@ -447,15 +464,28 @@ def test_run_bench_strict_empty_zoo_returns_schema_with_counters(
             raise AssertionError("should not be called")
 
     result = run_bench_strict(
-        zoo="alpha101", universe="csi300", period="2024-2024",
-        random_control=True, registry=EmptyReg(),
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        registry=EmptyReg(),
     )
     assert result["status"] == "error"
     for k in (
-        "n_alphas_tested", "n_skipped",
-        "confirmed_alive", "train_only", "reversed_strict", "noise",
-        "alive", "reversed", "dead", "by_theme",
-        "rows", "skipped", "top5_by_ir", "top5_by_alpha_t",
+        "n_alphas_tested",
+        "n_skipped",
+        "confirmed_alive",
+        "train_only",
+        "reversed_strict",
+        "noise",
+        "alive",
+        "reversed",
+        "dead",
+        "by_theme",
+        "rows",
+        "skipped",
+        "top5_by_ir",
+        "top5_by_alpha_t",
     ):
         assert k in result, f"error envelope missing {k!r}"
     assert result["n_alphas_tested"] == 0
@@ -477,8 +507,12 @@ def test_run_bench_strict_on_progress_exception_is_caught(
             raise RuntimeError("simulated SSE writer closed")
 
     result = run_bench_strict(
-        zoo="alpha101", universe="csi300", period="2024-2024",
-        random_control=True, registry=reg, on_progress=bad_cb,
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        registry=reg,
+        on_progress=bad_cb,
     )
     assert result["status"] == "ok"
     # All two stub alphas should still complete despite the first cb
@@ -495,14 +529,15 @@ def test_run_bench_strict_rows_drop_underscore_prefixed_sort_keys(
     _stub_panel(monkeypatch)
     reg = _StubRegistry(panel={})
     result = run_bench_strict(
-        zoo="alpha101", universe="csi300", period="2024-2024",
-        random_control=True, registry=reg,
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        registry=reg,
     )
     for row in result["rows"]:
         for k in row:
-            assert not k.startswith("_") or k == "_category", (
-                f"underscore-prefixed key leaked into wire row: {k!r}"
-            )
+            assert not k.startswith("_") or k == "_category", f"underscore-prefixed key leaked into wire row: {k!r}"
 
 
 def test_compute_random_ic_series_inner_joins_seed_dates() -> None:
@@ -534,11 +569,13 @@ def _planted_signal_panel(
     returns = drifts + idio * 0.7
     close = (1 + pd.DataFrame(returns, index=idx, columns=cols)).cumprod() * 100.0
     panel = {
-        "close": close, "open": close.shift(1).fillna(close),
-        "high": close * 1.005, "low": close * 0.995,
-        "volume": pd.DataFrame(
-            rng.lognormal(14, 0.5, size=close.shape), index=idx, columns=cols),
-        "vwap": close, "amount": close * 1_000_000,
+        "close": close,
+        "open": close.shift(1).fillna(close),
+        "high": close * 1.005,
+        "low": close * 0.995,
+        "volume": pd.DataFrame(rng.lognormal(14, 0.5, size=close.shape), index=idx, columns=cols),
+        "vwap": close,
+        "amount": close * 1_000_000,
     }
     return panel
 
@@ -566,6 +603,7 @@ def test_run_bench_strict_catches_planted_alive_signal(
         def get(self, aid: str) -> Any:
             class _Handle:
                 meta = {"theme": ["momentum"], "formula_latex": "close.pct_change(5)"}
+
             return _Handle()
 
         def compute(self, aid: str, panel: dict) -> pd.DataFrame:  # noqa: ARG002
@@ -573,14 +611,15 @@ def test_run_bench_strict_catches_planted_alive_signal(
             return panel["close"].pct_change(5)
 
     result = run_bench_strict(
-        zoo="alpha101", universe="csi300", period="2024-2024",
-        random_control=True, n_random_seeds=5, registry=PlantedReg(),
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        n_random_seeds=5,
+        registry=PlantedReg(),
     )
     assert result["status"] == "ok"
-    assert result["confirmed_alive"] == 1, (
-        f"planted momentum signal should be confirmed_alive, "
-        f"got result={result}"
-    )
+    assert result["confirmed_alive"] == 1, f"planted momentum signal should be confirmed_alive, got result={result}"
     assert result["alive"] == 1  # legacy alias must agree
 
 
@@ -604,6 +643,7 @@ def test_run_bench_strict_catches_planted_reversed_signal(
         def get(self, aid: str) -> Any:
             class _Handle:
                 meta = {"theme": ["reversal"], "formula_latex": "-close.pct_change(5)"}
+
             return _Handle()
 
         def compute(self, aid: str, panel: dict) -> pd.DataFrame:  # noqa: ARG002
@@ -611,11 +651,13 @@ def test_run_bench_strict_catches_planted_reversed_signal(
             return -panel["close"].pct_change(5)
 
     result = run_bench_strict(
-        zoo="alpha101", universe="csi300", period="2024-2024",
-        random_control=True, n_random_seeds=5, registry=ReversedReg(),
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        n_random_seeds=5,
+        registry=ReversedReg(),
     )
     assert result["status"] == "ok"
-    assert result["reversed_strict"] == 1, (
-        f"inverted momentum should be reversed_strict, got result={result}"
-    )
+    assert result["reversed_strict"] == 1, f"inverted momentum should be reversed_strict, got result={result}"
     assert result["reversed"] == 1  # legacy alias

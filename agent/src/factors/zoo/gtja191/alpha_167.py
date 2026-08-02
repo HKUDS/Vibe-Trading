@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #167
 # 简要说明: 国泰君安191短周期交易型alpha因子第167号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     SUM((CLOSE-DELAY(CLOSE,1)>0?CLOSE-DELAY(CLOSE,1):0),12)
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_167"
 
 __alpha_meta__ = {
-    'id': 'gtja191_167',
-    'theme': ['momentum'],
-    'formula_latex': 'sum(max(0,c-delay(c,1)),12)',
-    'columns_required': ['close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 12,
-    'min_warmup_bars': 13,
-    'notes': '',
+    "id": "gtja191_167",
+    "theme": ["momentum"],
+    "formula_latex": "sum(max(0,c-delay(c,1)),12)",
+    "columns_required": ["close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 12,
+    "min_warmup_bars": 13,
+    "notes": "",
 }
 
 

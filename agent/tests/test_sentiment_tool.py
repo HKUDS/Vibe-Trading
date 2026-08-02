@@ -110,10 +110,13 @@ class TestSentimentTool:
 
     def test_fear_greed_success(self):
         tool = SentimentTool()
-        mock_data = json.dumps({
-            "data": [{"value": "28", "value_classification": "Fear"}]
-        }).encode()
-        with patch("urllib.request.urlopen", return_value=type("m", (), {"read": lambda s: mock_data, "__enter__": lambda s: s, "__exit__": lambda s,*a: None})()):
+        mock_data = json.dumps({"data": [{"value": "28", "value_classification": "Fear"}]}).encode()
+        with patch(
+            "urllib.request.urlopen",
+            return_value=type(
+                "m", (), {"read": lambda s: mock_data, "__enter__": lambda s: s, "__exit__": lambda s, *a: None}
+            )(),
+        ):
             result = json.loads(tool.execute(mode="fear_greed_index"))
         assert result["ok"] is True
         assert result["value"] == 28
@@ -129,21 +132,36 @@ class TestSentimentTool:
     def test_fear_greed_empty_data(self):
         tool = SentimentTool()
         mock_data = json.dumps({"data": []}).encode()
-        with patch("urllib.request.urlopen", return_value=type("m", (), {"read": lambda s: mock_data, "__enter__": lambda s: s, "__exit__": lambda s,*a: None})()):
+        with patch(
+            "urllib.request.urlopen",
+            return_value=type(
+                "m", (), {"read": lambda s: mock_data, "__enter__": lambda s: s, "__exit__": lambda s, *a: None}
+            )(),
+        ):
             result = json.loads(tool.execute(mode="fear_greed_index"))
         assert result["ok"] is False
 
     def test_fear_greed_malformed_json(self):
         tool = SentimentTool()
         mock_data = b"not json"
-        with patch("urllib.request.urlopen", return_value=type("m", (), {"read": lambda s: mock_data, "__enter__": lambda s: s, "__exit__": lambda s,*a: None})()):
+        with patch(
+            "urllib.request.urlopen",
+            return_value=type(
+                "m", (), {"read": lambda s: mock_data, "__enter__": lambda s: s, "__exit__": lambda s, *a: None}
+            )(),
+        ):
             result = json.loads(tool.execute(mode="fear_greed_index"))
         assert result["ok"] is False
 
     def test_fear_greed_missing_value(self):
         tool = SentimentTool()
         mock_data = json.dumps({"data": [{"value_classification": "Neutral"}]}).encode()
-        with patch("urllib.request.urlopen", return_value=type("m", (), {"read": lambda s: mock_data, "__enter__": lambda s: s, "__exit__": lambda s,*a: None})()):
+        with patch(
+            "urllib.request.urlopen",
+            return_value=type(
+                "m", (), {"read": lambda s: mock_data, "__enter__": lambda s: s, "__exit__": lambda s, *a: None}
+            )(),
+        ):
             result = json.loads(tool.execute(mode="fear_greed_index"))
         assert result["ok"] is True
         assert result["value"] == 0  # default int

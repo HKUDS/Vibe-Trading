@@ -181,9 +181,7 @@ class TestBarsPerYear:
         covered = trading_covered & bars_covered
 
         unregistered = (VALID_SOURCES - {"auto"}) - covered
-        assert not unregistered, (
-            f"sources missing annualisation entries: {sorted(unregistered)}"
-        )
+        assert not unregistered, f"sources missing annualisation entries: {sorted(unregistered)}"
 
         for src in sorted(VALID_SOURCES - {"auto"}):
             bp = calc_bars_per_year("1D", src)
@@ -397,8 +395,7 @@ class TestCalcMetrics:
         eq = pd.Series([1_000_000.0], index=pd.bdate_range("2025-01-01", periods=1))
         bench_ret = pd.Series([0.0], index=eq.index)
         m = calc_metrics(eq, [], 1_000_000, 252, bench_ret=bench_ret)
-        for key in ("sharpe", "sortino", "information_ratio",
-                    "annual_return", "max_drawdown", "calmar"):
+        for key in ("sharpe", "sortino", "information_ratio", "annual_return", "max_drawdown", "calmar"):
             assert math.isfinite(m[key]), f"{key} is not finite: {m[key]!r}"
         assert m["sharpe"] == 0.0
         assert m["information_ratio"] == 0.0
@@ -416,10 +413,12 @@ class TestCalcMetrics:
     def test_calmar_positive_for_drawdown(self) -> None:
         """Growing equity with a dip should have positive Calmar."""
         dates = pd.bdate_range("2025-01-01", periods=100)
-        values = np.concatenate([
-            np.linspace(1_000_000, 900_000, 30),  # dip
-            np.linspace(900_000, 1_200_000, 70),   # recovery
-        ])
+        values = np.concatenate(
+            [
+                np.linspace(1_000_000, 900_000, 30),  # dip
+                np.linspace(900_000, 1_200_000, 70),  # recovery
+            ]
+        )
         eq = pd.Series(values, index=dates)
         m = calc_metrics(eq, [], 1_000_000, 252)
         assert m["max_drawdown"] < 0
@@ -521,9 +520,7 @@ class TestTurnoverMetrics:
 
     def _positions(self) -> pd.DataFrame:
         dates = pd.bdate_range("2025-01-01", periods=4)
-        return pd.DataFrame(
-            {"A": [1.0, 0.0, 1.0, 0.0], "B": [0.0, 1.0, 0.0, 1.0]}, index=dates
-        )
+        return pd.DataFrame({"A": [1.0, 0.0, 1.0, 0.0], "B": [0.0, 1.0, 0.0, 1.0]}, index=dates)
 
     def test_turnover_keys_present(self) -> None:
         m = calc_metrics(self._equity(), [], 1_000_000, 252, positions=self._positions())

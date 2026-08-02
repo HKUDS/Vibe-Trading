@@ -7,6 +7,7 @@ NaNs treated as equal). Three representative factors are exercised here;
 the remaining academic factors are covered by the AST purity gate plus
 the registry health check.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,15 +29,11 @@ def _build_panel() -> dict[str, pd.DataFrame]:
     dates = pd.date_range("2024-01-01", periods=n_rows, freq="B")
 
     log_rets = rng.normal(0, 0.02, size=(n_rows, n_cols))
-    close = pd.DataFrame(
-        100 * np.exp(np.cumsum(log_rets, axis=0)), index=dates, columns=codes
-    )
+    close = pd.DataFrame(100 * np.exp(np.cumsum(log_rets, axis=0)), index=dates, columns=codes)
     high = close * (1 + np.abs(rng.normal(0, 0.005, size=(n_rows, n_cols))))
     low = close * (1 - np.abs(rng.normal(0, 0.005, size=(n_rows, n_cols))))
     open_ = close.shift(1).fillna(close.iloc[0])
-    volume = pd.DataFrame(
-        rng.uniform(1e5, 1e7, size=(n_rows, n_cols)), index=dates, columns=codes
-    )
+    volume = pd.DataFrame(rng.uniform(1e5, 1e7, size=(n_rows, n_cols)), index=dates, columns=codes)
     return {
         "open": open_,
         "high": high,
@@ -62,9 +59,7 @@ def test_academic_factor_matches_golden(alpha_id: str) -> None:
     result = registry.compute(alpha_id, panel)
     golden = _load_golden(alpha_id)
 
-    assert list(result.columns) == list(golden.columns), (
-        f"{alpha_id}: column mismatch"
-    )
+    assert list(result.columns) == list(golden.columns), f"{alpha_id}: column mismatch"
     assert result.shape == golden.shape, f"{alpha_id}: shape mismatch"
 
     np.testing.assert_allclose(

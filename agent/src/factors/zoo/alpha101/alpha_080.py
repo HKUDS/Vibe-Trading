@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: Kakushadze Alpha #80
 # 简要说明: Kakushadze (2015) 101 Formulaic Alphas 中的第80号因子，详见公式定义。
@@ -36,18 +35,18 @@ from src.factors.base import (
 ALPHA_ID = "alpha101_080"
 
 __alpha_meta__ = {
-    'id': 'alpha101_080',
-    'nickname': 'Kakushadze Alpha #80',
-    'theme': ['momentum', 'volume'],
-    'formula_latex': '(rank(Sign(delta(IndNeutralize(0.868*open+0.132*high, subindustry),4)))^Ts_Rank(correlation(high,adv10,5),6)) * -1',
-    'columns_required': ['open', 'high', 'volume', 'close'],
-    'extras_required': [],
-    'requires_sector': True,
-    'universe': ['equity_us', 'equity_in', 'equity_kr'],
-    'frequency': ['1D'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 19,
-    'notes': "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+    "id": "alpha101_080",
+    "nickname": "Kakushadze Alpha #80",
+    "theme": ["momentum", "volume"],
+    "formula_latex": "(rank(Sign(delta(IndNeutralize(0.868*open+0.132*high, subindustry),4)))^Ts_Rank(correlation(high,adv10,5),6)) * -1",
+    "columns_required": ["open", "high", "volume", "close"],
+    "extras_required": [],
+    "requires_sector": True,
+    "universe": ["equity_us", "equity_in", "equity_kr"],
+    "frequency": ["1D"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 19,
+    "notes": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
 }
 
 
@@ -94,7 +93,11 @@ def compute(panel: dict) -> pd.DataFrame:
     ind_neutralize = _ind_neutralize
     mix = open_ * 0.868128 + high * (1.0 - 0.868128)
     lhs_inner = delta(ind_neutralize(mix, panel), 4)
-    lhs = rank(pd.DataFrame(np.sign(lhs_inner.to_numpy(dtype=np.float64, na_value=np.nan)), index=close.index, columns=close.columns))
+    lhs = rank(
+        pd.DataFrame(
+            np.sign(lhs_inner.to_numpy(dtype=np.float64, na_value=np.nan)), index=close.index, columns=close.columns
+        )
+    )
     rhs = ts_rank(ts_corr(high, adv10, 5), 6)
     out = (lhs * rhs) * -1.0
     return out

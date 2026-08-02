@@ -263,9 +263,7 @@ class TestLiveStatusMandate:
         cmd_live_status("robinhood")
         assert "HALTED" in capsys.readouterr().out
 
-    def test_status_flags_unknown_schema_version(
-        self, live_root: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_status_flags_unknown_schema_version(self, live_root: Path, capsys: pytest.CaptureFixture[str]) -> None:
         from cli._legacy import cmd_live_status
 
         _write_mandate(live_root, schema_version=999)
@@ -277,9 +275,7 @@ class TestLiveStatusMandate:
 
         assert cmd_live_mandate("robinhood") == EXIT_RUN_FAILED
 
-    def test_mandate_print_renders_json(
-        self, live_root: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_mandate_print_renders_json(self, live_root: Path, capsys: pytest.CaptureFixture[str]) -> None:
         from cli._legacy import cmd_live_mandate
 
         _write_mandate(live_root)
@@ -337,9 +333,10 @@ class TestLiveAuthorize:
         from cli._legacy import cmd_live_authorize
 
         fake_cfg = type("Cfg", (), {"auth": object()})()
-        with patch("cli._legacy._live_server_config", return_value=fake_cfg), patch(
-            "src.tools.mcp.build_mcp_tool_wrappers", return_value=[1, 2]
-        ) as build:
+        with (
+            patch("cli._legacy._live_server_config", return_value=fake_cfg),
+            patch("src.tools.mcp.build_mcp_tool_wrappers", return_value=[1, 2]) as build,
+        ):
             assert cmd_live_authorize("robinhood") == 0
         build.assert_called_once()
         assert build.call_args.args[0] == "robinhood"
@@ -362,9 +359,10 @@ class TestLiveAuthorize:
                 "enabledTools": ["get_portfolio"],
             }
         )
-        with patch("cli._legacy._live_server_config", return_value=cfg), patch(
-            "src.tools.mcp.build_mcp_tool_wrappers", return_value=[1]
-        ) as build:
+        with (
+            patch("cli._legacy._live_server_config", return_value=cfg),
+            patch("src.tools.mcp.build_mcp_tool_wrappers", return_value=[1]) as build,
+        ):
             assert cmd_live_authorize("robinhood") == 0
 
         passed_cfg = build.call_args.args[1]
@@ -389,18 +387,17 @@ class TestLiveAuthorize:
                 "initTimeout": 600,
             }
         )
-        with patch("cli._legacy._live_server_config", return_value=cfg), patch(
-            "src.tools.mcp.build_mcp_tool_wrappers", return_value=[1]
-        ) as build:
+        with (
+            patch("cli._legacy._live_server_config", return_value=cfg),
+            patch("src.tools.mcp.build_mcp_tool_wrappers", return_value=[1]) as build,
+        ):
             assert cmd_live_authorize("robinhood") == 0
 
         passed_cfg = build.call_args.args[1]
         assert passed_cfg.tool_timeout == 600
         assert passed_cfg.init_timeout == 600
 
-    def test_authorize_honors_timeout_env_override(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_authorize_honors_timeout_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """VIBE_LIVE_AUTHORIZE_TIMEOUT_SECONDS overrides the 300 s default."""
         from cli._legacy import cmd_live_authorize
         from src.config.schema import MCPServerConfig
@@ -414,9 +411,10 @@ class TestLiveAuthorize:
                 "enabledTools": ["get_portfolio"],
             }
         )
-        with patch("cli._legacy._live_server_config", return_value=cfg), patch(
-            "src.tools.mcp.build_mcp_tool_wrappers", return_value=[1]
-        ) as build:
+        with (
+            patch("cli._legacy._live_server_config", return_value=cfg),
+            patch("src.tools.mcp.build_mcp_tool_wrappers", return_value=[1]) as build,
+        ):
             assert cmd_live_authorize("robinhood") == 0
 
         passed_cfg = build.call_args.args[1]
@@ -531,9 +529,7 @@ class TestProposalPickIntercept:
         assert handled is True
         assert ctx.pending_proposal is not None
 
-    def test_commit_posts_to_endpoint_with_consent_ack(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_commit_posts_to_endpoint_with_consent_ack(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """_commit_mandate POSTs to /mandate/commit — the surface, not the model."""
         captured: Dict[str, Any] = {}
 
@@ -647,13 +643,15 @@ def _capture_on_event(captured: Dict[str, Any]):
 
     # ``_run_agent`` does local ``from ... import`` for these, so patch the
     # SOURCE modules, not the ``cli._legacy`` namespace.
-    with patch("src.agent.loop.AgentLoop", _StubLoop), patch(
-        "src.tools.build_registry", return_value=object()
-    ), patch("src.providers.chat.ChatLLM", lambda *a, **k: object()), patch(
-        "src.memory.persistent.PersistentMemory",
-        lambda *a, **k: _types.SimpleNamespace(run_dir=None),
-    ), patch(
-        "src.config.loader.load_agent_config", return_value=object()
+    with (
+        patch("src.agent.loop.AgentLoop", _StubLoop),
+        patch("src.tools.build_registry", return_value=object()),
+        patch("src.providers.chat.ChatLLM", lambda *a, **k: object()),
+        patch(
+            "src.memory.persistent.PersistentMemory",
+            lambda *a, **k: _types.SimpleNamespace(run_dir=None),
+        ),
+        patch("src.config.loader.load_agent_config", return_value=object()),
     ):
         _legacy._run_agent(
             "let AI trade tech aggressively with $5000",
@@ -680,9 +678,7 @@ class TestProposalArmingRelay:
 
         # The agent loop emits ONLY a generic tool_result; preview = result[:200]
         # of the JSON body, which carries the proposal_id near the front.
-        preview = json.dumps(
-            {"type": "mandate.proposal", "proposal_id": proposal_id, "session_id": "sess_1"}
-        )[:200]
+        preview = json.dumps({"type": "mandate.proposal", "proposal_id": proposal_id, "session_id": "sess_1"})[:200]
         on_event("tool_result", {"tool": "propose_mandate_profiles", "status": "ok", "preview": preview})
 
         armed = captured["sink_result"]
@@ -726,9 +722,11 @@ class TestProposalArmingRelay:
         def _fake_run_turn(*_a, **_k) -> None:
             routed_to_model["called"] = True
 
-        with patch.object(main, "_run_one_turn", _fake_run_turn), patch.object(
-            main, "_commit_mandate", return_value={"status": "ok", "mandate_id": "m99"}
-        ) as commit, patch.object(main, "_is_halt_turn", return_value=False):
+        with (
+            patch.object(main, "_run_one_turn", _fake_run_turn),
+            patch.object(main, "_commit_mandate", return_value={"status": "ok", "mandate_id": "m99"}) as commit,
+            patch.object(main, "_is_halt_turn", return_value=False),
+        ):
             handled = False
             if main._is_halt_turn(text):
                 pass
@@ -760,9 +758,11 @@ class TestProposalArmingRelay:
             routed_to_model["called"] = True
             assert arg_text == "2"
 
-        with patch.object(main, "_run_one_turn", _fake_run_turn), patch.object(
-            main, "_handle_proposal_reply"
-        ) as handle, patch.object(main, "_is_halt_turn", return_value=False):
+        with (
+            patch.object(main, "_run_one_turn", _fake_run_turn),
+            patch.object(main, "_handle_proposal_reply") as handle,
+            patch.object(main, "_is_halt_turn", return_value=False),
+        ):
             handled = False
             if main._is_halt_turn(text):
                 pass

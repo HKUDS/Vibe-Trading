@@ -30,6 +30,7 @@ Systematic risk-measurement methodology covering VaR/CVaR calculation, Monte Car
 import numpy as np
 import pandas as pd
 
+
 def historical_var(returns: pd.Series, confidence: float = 0.95, horizon: int = 1) -> float:
     """
     Args:
@@ -49,6 +50,7 @@ def historical_var(returns: pd.Series, confidence: float = 0.95, horizon: int = 
 
 ```python
 from scipy.stats import norm
+
 
 def parametric_var(returns: pd.Series, confidence: float = 0.95, horizon: int = 1) -> float:
     mu = returns.mean()
@@ -99,12 +101,12 @@ def max_drawdown_analysis(equity: pd.Series) -> dict:
     recovery_date = recovery.index[0] if len(recovery) > 0 else None
 
     return {
-        'max_drawdown': max_dd,
-        'peak_date': peak_idx,
-        'trough_date': trough_idx,
-        'recovery_date': recovery_date,
-        'underwater_days': (trough_idx - peak_idx).days,
-        'recovery_days': (recovery_date - trough_idx).days if recovery_date else None
+        "max_drawdown": max_dd,
+        "peak_date": peak_idx,
+        "trough_date": trough_idx,
+        "recovery_date": recovery_date,
+        "underwater_days": (trough_idx - peak_idx).days,
+        "recovery_days": (recovery_date - trough_idx).days if recovery_date else None,
     }
 ```
 
@@ -113,8 +115,7 @@ def max_drawdown_analysis(equity: pd.Series) -> dict:
 #### Geometric Brownian Motion (GBM)
 
 ```python
-def monte_carlo_gbm(S0: float, mu: float, sigma: float,
-                     T: int = 252, n_paths: int = 10000) -> np.ndarray:
+def monte_carlo_gbm(S0: float, mu: float, sigma: float, T: int = 252, n_paths: int = 10000) -> np.ndarray:
     """
     Args:
         S0: Initial price
@@ -140,14 +141,14 @@ def analyze_mc_results(paths: np.ndarray, confidence: float = 0.95) -> dict:
     returns = final_prices / paths[:, 0] - 1
 
     return {
-        'mean_return': np.mean(returns),
-        'median_return': np.median(returns),
-        'std_return': np.std(returns),
-        'var': -np.percentile(returns, (1 - confidence) * 100),
-        'cvar': -np.mean(returns[returns < -np.percentile(returns, (1-confidence)*100)]),
-        'prob_loss': np.mean(returns < 0),
-        'worst_5pct': np.percentile(returns, 5),
-        'best_5pct': np.percentile(returns, 95),
+        "mean_return": np.mean(returns),
+        "median_return": np.median(returns),
+        "std_return": np.std(returns),
+        "var": -np.percentile(returns, (1 - confidence) * 100),
+        "cvar": -np.mean(returns[returns < -np.percentile(returns, (1 - confidence) * 100)]),
+        "prob_loss": np.mean(returns < 0),
+        "worst_5pct": np.percentile(returns, 5),
+        "best_5pct": np.percentile(returns, 95),
     }
 ```
 
@@ -167,33 +168,33 @@ def analyze_mc_results(paths: np.ndarray, confidence: float = 0.95) -> dict:
 
 ```python
 STRESS_SCENARIOS = {
-    'rate_shock_up_100bp': {
-        'equity': -0.10,    # equities down 10%
-        'bond_10y': -0.08,  # 10-year bonds down 8%
-        'bond_2y': -0.02,   # short bonds down 2%
-        'gold': +0.05,      # gold up 5%
-        'btc': -0.15,       # BTC down 15%
+    "rate_shock_up_100bp": {
+        "equity": -0.10,  # equities down 10%
+        "bond_10y": -0.08,  # 10-year bonds down 8%
+        "bond_2y": -0.02,  # short bonds down 2%
+        "gold": +0.05,  # gold up 5%
+        "btc": -0.15,  # BTC down 15%
     },
-    'credit_crisis': {
-        'equity': -0.25,
-        'bond_10y': +0.05,  # government bonds act as a safe haven
-        'credit_bond': -0.15,
-        'gold': +0.10,
-        'btc': -0.30,
+    "credit_crisis": {
+        "equity": -0.25,
+        "bond_10y": +0.05,  # government bonds act as a safe haven
+        "credit_bond": -0.15,
+        "gold": +0.10,
+        "btc": -0.30,
     },
-    'liquidity_dry_up': {
-        'equity': -0.20,
-        'bond_10y': -0.05,  # when liquidity is poor, everything falls
-        'gold': -0.05,
-        'btc': -0.40,
-        'cash': 0.0,
+    "liquidity_dry_up": {
+        "equity": -0.20,
+        "bond_10y": -0.05,  # when liquidity is poor, everything falls
+        "gold": -0.05,
+        "btc": -0.40,
+        "cash": 0.0,
     },
-    'geopolitical_conflict': {
-        'equity': -0.15,
-        'bond_10y': +0.03,
-        'gold': +0.15,
-        'oil': +0.30,
-        'btc': -0.20,
+    "geopolitical_conflict": {
+        "equity": -0.15,
+        "bond_10y": +0.03,
+        "gold": +0.15,
+        "oil": +0.30,
+        "btc": -0.20,
     },
 }
 ```
@@ -212,6 +213,7 @@ STRESS_SCENARIOS = {
 ```python
 from scipy.stats import genpareto
 
+
 def fit_gpd_tail(returns: pd.Series, threshold_pct: float = 5.0) -> dict:
     """
     Fit the tail with a generalized Pareto distribution.
@@ -226,11 +228,11 @@ def fit_gpd_tail(returns: pd.Series, threshold_pct: float = 5.0) -> dict:
     shape, loc, scale = genpareto.fit(exceedances)
 
     return {
-        'threshold': threshold,
-        'n_exceedances': len(exceedances),
-        'shape_xi': shape,      # ξ>0 fat tail, ξ=0 exponential tail, ξ<0 bounded tail
-        'scale_sigma': scale,
-        'tail_type': 'fat tail (dangerous)' if shape > 0 else 'thin tail (safer)',
+        "threshold": threshold,
+        "n_exceedances": len(exceedances),
+        "shape_xi": shape,  # ξ>0 fat tail, ξ=0 exponential tail, ξ<0 bounded tail
+        "scale_sigma": scale,
+        "tail_type": "fat tail (dangerous)" if shape > 0 else "thin tail (safer)",
     }
 ```
 

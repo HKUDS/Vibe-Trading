@@ -15,6 +15,7 @@ from pydantic import BaseModel
 # Pydantic models (defined locally -- NO shared modules, per maintainer rule)
 # ---------------------------------------------------------------------------
 
+
 class ChannelPairingCommandRequest(BaseModel):
     """Pairing command payload for IM channel sender pairing."""
 

@@ -55,18 +55,20 @@ class TestCliInit:
     def test_cmd_init_writes_agent_env_for_openrouter(self, tmp_path: Path) -> None:
         env_path = tmp_path / ".env"
 
-        with patch.object(cli, "_INIT_ENV_PATH", env_path), \
-             patch.object(cli.IntPrompt, "ask", return_value=1), \
-             patch.object(
-                 cli.Prompt,
-                 "ask",
-                 side_effect=[
-                     "sk-or-test-key",
-                     "https://openrouter.ai/api/v1",
-                     "deepseek/deepseek-v4-pro",
-                     "ts-token",
-                 ],
-             ):
+        with (
+            patch.object(cli, "_INIT_ENV_PATH", env_path),
+            patch.object(cli.IntPrompt, "ask", return_value=1),
+            patch.object(
+                cli.Prompt,
+                "ask",
+                side_effect=[
+                    "sk-or-test-key",
+                    "https://openrouter.ai/api/v1",
+                    "deepseek/deepseek-v4-pro",
+                    "ts-token",
+                ],
+            ),
+        ):
             result = cli.cmd_init()
 
         assert result == 0
@@ -80,18 +82,20 @@ class TestCliInit:
     def test_cmd_init_ollama_skips_api_key(self, tmp_path: Path) -> None:
         env_path = tmp_path / ".env"
 
-        with patch.object(cli, "_INIT_ENV_PATH", env_path), \
-             patch.object(cli.IntPrompt, "ask", return_value=17), \
-             patch.object(
-                 cli.Prompt,
-                 "ask",
-                 side_effect=[
-                     "http://localhost:11434",
-                     "qwen2.5:32b",
-                     "",
-                     "",
-                 ],
-             ):
+        with (
+            patch.object(cli, "_INIT_ENV_PATH", env_path),
+            patch.object(cli.IntPrompt, "ask", return_value=17),
+            patch.object(
+                cli.Prompt,
+                "ask",
+                side_effect=[
+                    "http://localhost:11434",
+                    "qwen2.5:32b",
+                    "",
+                    "",
+                ],
+            ),
+        ):
             result = cli.cmd_init()
 
         assert result == 0
@@ -105,17 +109,19 @@ class TestCliInit:
     def test_cmd_init_openai_codex_uses_supported_default_and_oauth(self, tmp_path: Path) -> None:
         env_path = tmp_path / ".env"
 
-        with patch.object(cli, "_INIT_ENV_PATH", env_path), \
-             patch.object(cli.IntPrompt, "ask", return_value=18), \
-             patch.object(
-                 cli.Prompt,
-                 "ask",
-                 side_effect=[
-                     "https://chatgpt.com/backend-api/codex/responses",
-                     "openai-codex/gpt-5.4",
-                     "",
-                 ],
-             ):
+        with (
+            patch.object(cli, "_INIT_ENV_PATH", env_path),
+            patch.object(cli.IntPrompt, "ask", return_value=18),
+            patch.object(
+                cli.Prompt,
+                "ask",
+                side_effect=[
+                    "https://chatgpt.com/backend-api/codex/responses",
+                    "openai-codex/gpt-5.4",
+                    "",
+                ],
+            ),
+        ):
             result = cli.cmd_init()
 
         assert result == 0

@@ -12,7 +12,7 @@ def test_classify_market_supports_yahoo_ss_suffix():
     assert _classify_market("600519.SH") == "a_share"
     assert _classify_market("000001.SZ") == "a_share"
     assert _classify_market("430139.BJ") == "a_share"
-    
+
     # Yahoo Shanghai suffix .SS (previously returned None on un-fixed code)
     assert _classify_market("600519.SS") == "a_share"
     assert _classify_market("600000.SS") == "a_share"

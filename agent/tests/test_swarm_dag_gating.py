@@ -83,16 +83,12 @@ def test_failed_upstream_blocks_downstream(tmp_path, risk_fails):
     assert reloaded is not None
 
     by_id = {t.id: t for t in reloaded.tasks}
-    assert by_id["task-risk"].status == TaskStatus.failed, (
-        f"risk should be failed, got {by_id['task-risk'].status}"
-    )
+    assert by_id["task-risk"].status == TaskStatus.failed, f"risk should be failed, got {by_id['task-risk'].status}"
     assert by_id["task-pm"].status == TaskStatus.blocked, (
-        f"PM must be blocked when risk fails, got {by_id['task-pm'].status} — "
-        "this is the 5/27 incident pattern"
+        f"PM must be blocked when risk fails, got {by_id['task-pm'].status} — this is the 5/27 incident pattern"
     )
     assert by_id["task-pm"].started_at is None, (
-        f"PM must NOT have a start timestamp when blocked, got "
-        f"{by_id['task-pm'].started_at}"
+        f"PM must NOT have a start timestamp when blocked, got {by_id['task-pm'].started_at}"
     )
 
 
@@ -106,12 +102,8 @@ def test_blocked_downstream_emits_task_blocked_event(tmp_path, risk_fails):
 
     pm_events = [e for e in events if e.get("task_id") == "task-pm"]
     types = [e["type"] for e in pm_events]
-    assert "task_started" not in types, (
-        f"PM must never emit task_started when upstream failed; events: {types}"
-    )
-    assert "task_blocked" in types, (
-        f"PM must emit task_blocked when upstream failed; events: {types}"
-    )
+    assert "task_started" not in types, f"PM must never emit task_started when upstream failed; events: {types}"
+    assert "task_blocked" in types, f"PM must emit task_blocked when upstream failed; events: {types}"
 
     blocked_evt = next(e for e in pm_events if e["type"] == "task_blocked")
     assert "task-risk" in blocked_evt.get("data", {}).get("blocked_by", []), (
@@ -120,8 +112,7 @@ def test_blocked_downstream_emits_task_blocked_event(tmp_path, risk_fails):
     # CLI live panel (cli/_legacy.py) keys events off agent_id to update the
     # per-agent row — task_blocked without agent_id silently noops the UI.
     assert blocked_evt.get("agent_id") == "pm", (
-        f"task_blocked must carry agent_id for CLI live-panel routing; got "
-        f"{blocked_evt.get('agent_id')!r}"
+        f"task_blocked must carry agent_id for CLI live-panel routing; got {blocked_evt.get('agent_id')!r}"
     )
 
 
@@ -133,6 +124,4 @@ def test_run_marked_failed_when_downstream_blocked(tmp_path, risk_fails):
     runtime._execute_run(run, threading.Event())
 
     reloaded = store.load_run(run.id)
-    assert reloaded.status == RunStatus.failed, (
-        f"run must be failed when downstream blocked, got {reloaded.status}"
-    )
+    assert reloaded.status == RunStatus.failed, f"run must be failed when downstream blocked, got {reloaded.status}"

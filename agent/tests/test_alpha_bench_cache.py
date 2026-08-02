@@ -56,9 +56,7 @@ def test_tampered_pickle_with_unkeyed_sha256_is_rejected(tmp_path, no_api_key):
     # payload and recomputes only a *bare* sha256 sidecar (the pre-VT-010 tag).
     evil = pickle.dumps({"close": pd.DataFrame({"X": [9.0]}), "pwned": True})
     cache_path.write_bytes(evil)
-    abt._sha256_path(cache_path).write_text(
-        hashlib.sha256(evil).hexdigest(), encoding="utf-8"
-    )
+    abt._sha256_path(cache_path).write_text(hashlib.sha256(evil).hexdigest(), encoding="utf-8")
 
     assert abt._read_pickle_cache(cache_path) is None
 

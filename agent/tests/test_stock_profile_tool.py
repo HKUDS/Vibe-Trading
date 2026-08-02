@@ -84,9 +84,7 @@ class TestStockProfileSuccess:
     """Happy-path envelope shape and section shaping."""
 
     def test_default_returns_all_sections(self):
-        with patch.object(
-            sp, "get_quote_summary", return_value=_sample_summary()
-        ) as mock_get:
+        with patch.object(sp, "get_quote_summary", return_value=_sample_summary()) as mock_get:
             out = sp.StockProfileTool().execute(ticker="AAPL.US")
 
         payload = json.loads(out)
@@ -126,12 +124,8 @@ class TestStockProfileSuccess:
         assert len(requested_modules) == len(sp._ALL_SECTIONS)
 
     def test_section_subset_only_requests_those_modules(self):
-        with patch.object(
-            sp, "get_quote_summary", return_value=_sample_summary()
-        ) as mock_get:
-            out = sp.StockProfileTool().execute(
-                ticker="00700.HK", sections=["financials", "financials"]
-            )
+        with patch.object(sp, "get_quote_summary", return_value=_sample_summary()) as mock_get:
+            out = sp.StockProfileTool().execute(ticker="00700.HK", sections=["financials", "financials"])
 
         payload = json.loads(out)
         assert payload["ok"] is True
@@ -145,9 +139,7 @@ class TestStockProfileSuccess:
     def test_missing_module_yields_empty_shaped_section(self):
         # Yahoo can omit a module for a symbol; shaper must not crash.
         with patch.object(sp, "get_quote_summary", return_value={}):
-            out = sp.StockProfileTool().execute(
-                ticker="AAPL.US", sections=["key_stats", "insider_holders"]
-            )
+            out = sp.StockProfileTool().execute(ticker="AAPL.US", sections=["key_stats", "insider_holders"])
         data = json.loads(out)["data"]["sections"]
         assert data["key_stats"]["forwardPE"] is None
         assert data["insider_holders"] == []
@@ -169,9 +161,7 @@ class TestStockProfileErrors:
         assert "unknown section" in payload["error"]
 
     def test_upstream_failure_becomes_error_envelope(self):
-        with patch.object(
-            sp, "get_quote_summary", side_effect=RuntimeError("HTTP 429 banned")
-        ):
+        with patch.object(sp, "get_quote_summary", side_effect=RuntimeError("HTTP 429 banned")):
             out = sp.StockProfileTool().execute(ticker="AAPL.US")
         payload = json.loads(out)
         assert payload["ok"] is False

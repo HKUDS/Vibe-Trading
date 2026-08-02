@@ -67,11 +67,10 @@ bars = yahoo_client.get_chart("AAPL.US", interval="1d", range_="1mo")
 
 # Explicit epoch window
 import time
+
 end = int(time.time())
 start = end - 7 * 24 * 3600
-intraday = yahoo_client.get_chart(
-    "AAPL.US", interval="5m", period1=start, period2=end
-)
+intraday = yahoo_client.get_chart("AAPL.US", interval="5m", period1=start, period2=end)
 for row in bars[:3]:
     print(row)
 ```

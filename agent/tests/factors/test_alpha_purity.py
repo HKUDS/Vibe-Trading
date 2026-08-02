@@ -134,37 +134,27 @@ class _PurityVisitor(ast.NodeVisitor):
     def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
         for alias in node.names:
             if not _is_allowed_import(alias.name):
-                self.violations.append(
-                    f"L{node.lineno}: disallowed import {alias.name!r}"
-                )
+                self.violations.append(f"L{node.lineno}: disallowed import {alias.name!r}")
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
         if node.level and node.level > 0:
-            self.violations.append(
-                f"L{node.lineno}: relative imports are forbidden in zoo modules"
-            )
+            self.violations.append(f"L{node.lineno}: relative imports are forbidden in zoo modules")
             return
         module = node.module or ""
         if not _is_allowed_import(module):
-            self.violations.append(
-                f"L{node.lineno}: disallowed import-from {module!r}"
-            )
+            self.violations.append(f"L{node.lineno}: disallowed import-from {module!r}")
 
     # ---- name references ------------------------------------------
 
     def visit_Name(self, node: ast.Name) -> None:  # noqa: N802
         if node.id in _FORBIDDEN_NAMES:
-            self.violations.append(
-                f"L{node.lineno}: forbidden name reference {node.id!r}"
-            )
+            self.violations.append(f"L{node.lineno}: forbidden name reference {node.id!r}")
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:  # noqa: N802
         # Catch ``os.path``, ``pathlib.Path``, ``__class__.__bases__`` etc.
         if node.attr in _FORBIDDEN_NAMES:
-            self.violations.append(
-                f"L{node.lineno}: forbidden attribute access .{node.attr!r}"
-            )
+            self.violations.append(f"L{node.lineno}: forbidden attribute access .{node.attr!r}")
         self.generic_visit(node)
 
     # ---- getattr(x, "...") trapdoor -------------------------------
@@ -188,8 +178,7 @@ class _PurityVisitor(ast.NodeVisitor):
                     value = second.value
                     if isinstance(value, str) and value.startswith("__"):
                         self.violations.append(
-                            f"L{node.lineno}: getattr(..., {value!r}) "
-                            f"— dunder string args are forbidden"
+                            f"L{node.lineno}: getattr(..., {value!r}) — dunder string args are forbidden"
                         )
         self.generic_visit(node)
 
@@ -213,11 +202,7 @@ def _check_module_body(tree: ast.Module) -> list[str]:
 
     for stmt in tree.body:
         # Module docstring (first ``ast.Expr`` of a string constant).
-        if (
-            isinstance(stmt, ast.Expr)
-            and isinstance(stmt.value, ast.Constant)
-            and isinstance(stmt.value.value, str)
-        ):
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str):
             continue
         if isinstance(stmt, (ast.Import, ast.ImportFrom)):
             continue
@@ -227,13 +212,9 @@ def _check_module_body(tree: ast.Module) -> list[str]:
             if len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
                 target_id = stmt.targets[0].id
                 if target_id == "ALPHA_ID":
-                    if not (
-                        isinstance(stmt.value, ast.Constant)
-                        and isinstance(stmt.value.value, str)
-                    ):
+                    if not (isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str)):
                         violations.append(
-                            f"L{stmt.lineno}: ALPHA_ID RHS must be a string "
-                            f"literal (got {type(stmt.value).__name__})"
+                            f"L{stmt.lineno}: ALPHA_ID RHS must be a string literal (got {type(stmt.value).__name__})"
                         )
                     continue
                 if target_id == "__alpha_meta__":
@@ -246,14 +227,10 @@ def _check_module_body(tree: ast.Module) -> list[str]:
                 if target_id in allowed_assign_targets:
                     continue
             violations.append(
-                f"L{stmt.lineno}: only `ALPHA_ID = ...` / `__alpha_meta__ = ...` "
-                f"assignments allowed at module level"
+                f"L{stmt.lineno}: only `ALPHA_ID = ...` / `__alpha_meta__ = ...` assignments allowed at module level"
             )
             continue
-        violations.append(
-            f"L{stmt.lineno}: disallowed top-level statement "
-            f"{type(stmt).__name__}"
-        )
+        violations.append(f"L{stmt.lineno}: disallowed top-level statement {type(stmt).__name__}")
     return violations
 
 

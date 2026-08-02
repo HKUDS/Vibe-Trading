@@ -15,10 +15,7 @@ from backtest.loaders.ccxt_loader import _parse_ccxt_symbol, _validate_bracket_a
 def _hourly_rows(opens: list[float]) -> list[list[float]]:
     start = int(pd.Timestamp("2024-01-01 00:00:00").timestamp() * 1000)
     hour = 3_600_000
-    return [
-        [start + i * hour, value, value + 2, value - 2, value + 1, 10 + i]
-        for i, value in enumerate(opens)
-    ]
+    return [[start + i * hour, value, value + 2, value - 2, value + 1, 10 + i] for i, value in enumerate(opens)]
 
 
 class _PerpetualExchange:
@@ -37,29 +34,29 @@ class _PerpetualExchange:
         self.trade_rows = _hourly_rows([100.0, 101.0])
         self.mark_rows = mark_rows if mark_rows is not None else _hourly_rows([99.0, 100.0])
         start = int(pd.Timestamp("2024-01-01 00:00:00").timestamp() * 1000)
-        self.funding_rows = (
-            funding_rows
-            if funding_rows is not None
-            else [{"timestamp": start, "fundingRate": 0.0}]
-        )
+        self.funding_rows = funding_rows if funding_rows is not None else [{"timestamp": start, "fundingRate": 0.0}]
         self.calls: list[dict[str, object]] = []
 
     def fetch_ohlcv(self, symbol, timeframe, since=None, limit=None, params=None):
-        self.calls.append({
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "since": since,
-            "limit": limit,
-            "params": params,
-        })
+        self.calls.append(
+            {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "since": since,
+                "limit": limit,
+                "params": params,
+            }
+        )
         return self.mark_rows if params == {"price": "mark"} else self.trade_rows
 
     def fetch_funding_rate_history(self, symbol, since=None, limit=None):
-        self.calls.append({
-            "funding_symbol": symbol,
-            "since": since,
-            "limit": limit,
-        })
+        self.calls.append(
+            {
+                "funding_symbol": symbol,
+                "since": since,
+                "limit": limit,
+            }
+        )
         return self.funding_rows
 
 
@@ -86,7 +83,10 @@ def _bracket_content_hash(records: list[dict]) -> str:
 
 
 def _make_bracket_artifact(
-    *, symbol: str = "BTC/USDT:USDT", brackets: list[dict] | None = None, **overrides,
+    *,
+    symbol: str = "BTC/USDT:USDT",
+    brackets: list[dict] | None = None,
+    **overrides,
 ) -> dict:
     records = _DEFAULT_BRACKET_RECORDS if brackets is None else brackets
     artifact = {
@@ -136,9 +136,7 @@ def test_perpetual_fetch_separates_execution_and_mark_prices(monkeypatch) -> Non
 
     from backtest.loaders.ccxt_loader import DataLoader
 
-    frame = DataLoader().fetch(
-        ["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H"
-    )["BTC-USDT-PERP"]
+    frame = DataLoader().fetch(["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H")["BTC-USDT-PERP"]
 
     assert frame["execution_open"].tolist() == [100.0, 101.0]
     assert frame["mark_open"].tolist() == [99.0, 100.0]
@@ -162,9 +160,7 @@ def test_perpetual_fetch_rejects_unsynchronized_mark_rows(monkeypatch) -> None:
     from backtest.loaders.ccxt_loader import DataLoader
 
     with pytest.raises(ValueError, match="mark-price timestamps"):
-        DataLoader().fetch(
-            ["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H"
-        )
+        DataLoader().fetch(["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H")
 
 
 def test_perpetual_fetch_aligns_explicit_zero_funding_settlement(monkeypatch) -> None:
@@ -176,9 +172,7 @@ def test_perpetual_fetch_aligns_explicit_zero_funding_settlement(monkeypatch) ->
 
     from backtest.loaders.ccxt_loader import DataLoader
 
-    frame = DataLoader().fetch(
-        ["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H"
-    )["BTC-USDT-PERP"]
+    frame = DataLoader().fetch(["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H")["BTC-USDT-PERP"]
 
     assert frame["funding_rate"].tolist() == [0.0, 0.0]
     assert frame["funding_settlement_time"].iloc[0] == pd.Timestamp("2024-01-01")
@@ -195,17 +189,17 @@ def test_perpetual_fetch_rejects_missing_required_funding_settlement(monkeypatch
     from backtest.loaders.ccxt_loader import DataLoader
 
     with pytest.raises(ValueError, match="funding settlement"):
-        DataLoader().fetch(
-            ["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H"
-        )
+        DataLoader().fetch(["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H")
 
 
 def test_perpetual_fetch_rejects_duplicate_funding_settlement(monkeypatch) -> None:
     start = int(pd.Timestamp("2024-01-01 00:00:00").timestamp() * 1000)
-    exchange = _PerpetualExchange(funding_rows=[
-        {"timestamp": start, "fundingRate": 0.0001},
-        {"timestamp": start, "fundingRate": 0.0002},
-    ])
+    exchange = _PerpetualExchange(
+        funding_rows=[
+            {"timestamp": start, "fundingRate": 0.0001},
+            {"timestamp": start, "fundingRate": 0.0002},
+        ]
+    )
     monkeypatch.setattr(
         "backtest.loaders.ccxt_loader.DataLoader._get_exchange",
         lambda _self, instrument_type="spot": exchange,
@@ -214,9 +208,7 @@ def test_perpetual_fetch_rejects_duplicate_funding_settlement(monkeypatch) -> No
     from backtest.loaders.ccxt_loader import DataLoader
 
     with pytest.raises(ValueError, match="duplicate funding settlement"):
-        DataLoader().fetch(
-            ["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H"
-        )
+        DataLoader().fetch(["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H")
 
 
 def test_perpetual_fetch_has_no_bracket_columns_without_artifact(monkeypatch) -> None:
@@ -231,9 +223,7 @@ def test_perpetual_fetch_has_no_bracket_columns_without_artifact(monkeypatch) ->
 
     from backtest.loaders.ccxt_loader import DataLoader
 
-    frame = DataLoader().fetch(
-        ["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H"
-    )["BTC-USDT-PERP"]
+    frame = DataLoader().fetch(["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H")["BTC-USDT-PERP"]
 
     assert "maintenance_brackets" not in frame.columns
     assert "maintenance_bracket_version" not in frame.columns
@@ -251,7 +241,10 @@ def test_perpetual_fetch_attaches_valid_bracket_artifact(monkeypatch) -> None:
 
     artifact = _make_bracket_artifact()
     frame = DataLoader().fetch(
-        ["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H",
+        ["BTC-USDT-PERP"],
+        "2024-01-01",
+        "2024-01-01",
+        interval="1H",
         bracket_artifacts={"BTC-USDT-PERP": artifact},
     )["BTC-USDT-PERP"]
 
@@ -272,7 +265,10 @@ def test_strict_perpetual_fetch_without_artifact_fails_closed_before_any_call(mo
 
     with pytest.raises(ValueError, match="requires a maintenance-bracket artifact"):
         DataLoader().fetch(
-            ["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H",
+            ["BTC-USDT-PERP"],
+            "2024-01-01",
+            "2024-01-01",
+            interval="1H",
             require_brackets=True,
         )
     assert exchange.calls == []
@@ -289,8 +285,12 @@ def test_strict_perpetual_fetch_with_valid_artifact_succeeds(monkeypatch) -> Non
 
     artifact = _make_bracket_artifact()
     frame = DataLoader().fetch(
-        ["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H",
-        bracket_artifacts={"BTC-USDT-PERP": artifact}, require_brackets=True,
+        ["BTC-USDT-PERP"],
+        "2024-01-01",
+        "2024-01-01",
+        interval="1H",
+        bracket_artifacts={"BTC-USDT-PERP": artifact},
+        require_brackets=True,
     )["BTC-USDT-PERP"]
 
     assert frame["maintenance_bracket_version"].iloc[0] == artifact["content_hash"]
@@ -326,9 +326,11 @@ def test_bracket_artifact_rejects_invalid_fields(overrides: dict, match: str) ->
 
 
 def test_bracket_artifact_rejects_tier_missing_required_field() -> None:
-    artifact = _make_bracket_artifact(brackets=[
-        {"bracket_tier": 1, "notional_cap": 50_000.0, "maintenance_rate": 0.004},
-    ])
+    artifact = _make_bracket_artifact(
+        brackets=[
+            {"bracket_tier": 1, "notional_cap": 50_000.0, "maintenance_rate": 0.004},
+        ]
+    )
     with pytest.raises(ValueError, match="missing a required field"):
         _validate_bracket_artifact(artifact, expected_symbol="BTC/USDT:USDT")
 
@@ -341,16 +343,22 @@ def test_bracket_artifact_rejects_non_numeric_notional_coefficient() -> None:
 
 
 def test_bracket_artifact_rejects_non_monotonic_brackets() -> None:
-    artifact = _make_bracket_artifact(brackets=[
-        {
-            "bracket_tier": 1, "notional_cap": 250_000.0,
-            "maintenance_rate": 0.004, "cumulative_maintenance_amount": 0.0,
-        },
-        {
-            "bracket_tier": 2, "notional_cap": 50_000.0,
-            "maintenance_rate": 0.005, "cumulative_maintenance_amount": 50.0,
-        },
-    ])
+    artifact = _make_bracket_artifact(
+        brackets=[
+            {
+                "bracket_tier": 1,
+                "notional_cap": 250_000.0,
+                "maintenance_rate": 0.004,
+                "cumulative_maintenance_amount": 0.0,
+            },
+            {
+                "bracket_tier": 2,
+                "notional_cap": 50_000.0,
+                "maintenance_rate": 0.005,
+                "cumulative_maintenance_amount": 50.0,
+            },
+        ]
+    )
     with pytest.raises(ValueError, match="not strictly increasing"):
         _validate_bracket_artifact(artifact, expected_symbol="BTC/USDT:USDT")
 
@@ -361,9 +369,7 @@ def test_perpetual_fetch_rounds_funding_settlement_jitter(monkeypatch) -> None:
     they align with bar timestamps instead of raising the
     missing-settlement error."""
     start = int(pd.Timestamp("2024-01-01 00:00:00").timestamp() * 1000)
-    exchange = _PerpetualExchange(
-        funding_rows=[{"timestamp": start + 11, "fundingRate": 0.0003}]
-    )
+    exchange = _PerpetualExchange(funding_rows=[{"timestamp": start + 11, "fundingRate": 0.0003}])
     monkeypatch.setattr(
         "backtest.loaders.ccxt_loader.DataLoader._get_exchange",
         lambda _self, instrument_type="spot": exchange,
@@ -371,9 +377,7 @@ def test_perpetual_fetch_rounds_funding_settlement_jitter(monkeypatch) -> None:
 
     from backtest.loaders.ccxt_loader import DataLoader
 
-    frame = DataLoader().fetch(
-        ["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H"
-    )["BTC-USDT-PERP"]
+    frame = DataLoader().fetch(["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H")["BTC-USDT-PERP"]
 
     assert frame["funding_rate"].tolist() == [0.0003, 0.0]
     assert frame["funding_settlement_time"].iloc[0] == pd.Timestamp("2024-01-01")

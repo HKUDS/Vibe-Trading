@@ -31,12 +31,18 @@ _MT5_ERRORS = (MT5DependencyError, MT5ConfigError, MT5ConnectionError, MT5Profil
 #: (minute) and ``1M`` (month) differ by case, matching the other connectors.
 #: ``1H``/``4H``/``1D``/``1W`` alias the lowercase forms (project-style tokens).
 _TIMEFRAME_MAP = {
-    "1m": "TIMEFRAME_M1", "5m": "TIMEFRAME_M5", "15m": "TIMEFRAME_M15",
+    "1m": "TIMEFRAME_M1",
+    "5m": "TIMEFRAME_M5",
+    "15m": "TIMEFRAME_M15",
     "30m": "TIMEFRAME_M30",
-    "1h": "TIMEFRAME_H1", "1H": "TIMEFRAME_H1",
-    "4h": "TIMEFRAME_H4", "4H": "TIMEFRAME_H4",
-    "1d": "TIMEFRAME_D1", "1D": "TIMEFRAME_D1",
-    "1w": "TIMEFRAME_W1", "1W": "TIMEFRAME_W1",
+    "1h": "TIMEFRAME_H1",
+    "1H": "TIMEFRAME_H1",
+    "4h": "TIMEFRAME_H4",
+    "4H": "TIMEFRAME_H4",
+    "1d": "TIMEFRAME_D1",
+    "1D": "TIMEFRAME_D1",
+    "1w": "TIMEFRAME_W1",
+    "1W": "TIMEFRAME_W1",
     "1M": "TIMEFRAME_MN1",
 }
 
@@ -78,7 +84,7 @@ def check_status(config: MT5Config | None = None) -> dict[str, Any]:
     if not report["sdk"]["installed"]:
         report["status"] = "error"
         report["error"] = (
-            "Optional dependency missing: install with `pip install \"vibe-trading-ai[mt5]\"` "
+            'Optional dependency missing: install with `pip install "vibe-trading-ai[mt5]"` '
             "(Windows-only; requires a local MT5 terminal)."
         )
         return report
@@ -259,8 +265,12 @@ def get_historical_bars(
     except _MT5_ERRORS as exc:
         return _error(cfg, str(exc), symbol=clean)
     return _envelope(
-        cfg, symbol=clean, resolved_symbol=name, period=period,
-        timeframe=timeframe_name, bars=bars,
+        cfg,
+        symbol=clean,
+        resolved_symbol=name,
+        period=period,
+        timeframe=timeframe_name,
+        bars=bars,
     )
 
 

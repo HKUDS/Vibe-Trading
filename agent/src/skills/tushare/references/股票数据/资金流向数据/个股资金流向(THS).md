@@ -45,16 +45,13 @@ buy_sm_amount_rate | float | Y | 今日小单净流入占比(%)
 **接口示例**
 
 ```python
-
 pro = ts.pro_api()
 
-#获取单日全部股票数据
-df = pro.moneyflow_ths(trade_date='20241011')
+# 获取单日全部股票数据
+df = pro.moneyflow_ths(trade_date="20241011")
 
-#获取单个股票数据
-df = pro.moneyflow_ths(ts_code='002149.SZ', start_date='20241001', end_date='20241011')
-
-
+# 获取单个股票数据
+df = pro.moneyflow_ths(ts_code="002149.SZ", start_date="20241001", end_date="20241011")
 ```
 
 		trade_date ts_code  name  pct_change  ...  buy_md_amount  buy_md_amount_rate  buy_sm_amount  buy_sm_amount_rate

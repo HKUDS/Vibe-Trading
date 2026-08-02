@@ -43,11 +43,14 @@ For minute-level backtests, simply add the `interval` field in `config.json`:
 import requests
 import pandas as pd
 
-resp = requests.get("https://www.okx.com/api/v5/market/candles", params={
-    "instId": "BTC-USDT",
-    "bar": "1m",       # 1m/5m/15m/30m/1H/4H
-    "limit": "300",    # At most 300 rows per request
-})
+resp = requests.get(
+    "https://www.okx.com/api/v5/market/candles",
+    params={
+        "instId": "BTC-USDT",
+        "bar": "1m",  # 1m/5m/15m/30m/1H/4H
+        "limit": "300",  # At most 300 rows per request
+    },
+)
 data = resp.json()["data"]
 columns = ["ts", "open", "high", "low", "close", "vol", "volCcy", "volCcyQuote", "confirm"]
 df = pd.DataFrame(reversed(data), columns=columns)

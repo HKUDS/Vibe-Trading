@@ -228,9 +228,7 @@ def test_load_dataframe_accepts_utf16_bom_csv(tmp_path: Path) -> None:
         ("datetime,symbol,side,quantity,price", "2026-01-02,AAPL,hold,10,180", "Unsupported trade side"),
     ],
 )
-def test_parse_file_rejects_missing_or_unknown_side(
-    tmp_path: Path, header: str, value: str, error: str
-) -> None:
+def test_parse_file_rejects_missing_or_unknown_side(tmp_path: Path, header: str, value: str, error: str) -> None:
     csv = tmp_path / "invalid_side.csv"
     csv.write_text(f"{header}\n{value}\n", encoding="utf-8")
 
@@ -324,9 +322,7 @@ def test_fifo_partial_exits_conserve_entry_fee(exit_quantities: list[int]) -> No
 
 
 def test_fifo_unmatched_sell_ignored() -> None:
-    rts = pair_trades_fifo(
-        _df([_rec("2026-01-01 10:00:00", "X.SH", "sell", 100, 12)])
-    )
+    rts = pair_trades_fifo(_df([_rec("2026-01-01 10:00:00", "X.SH", "sell", 100, 12)]))
     assert rts == []
 
 
@@ -496,9 +492,7 @@ def test_analyze_full_includes_profile_and_behavior(allow_tmp: Path) -> None:
 
 
 def test_analyze_strategy_is_pending_placeholder(allow_tmp: Path) -> None:
-    result = json.loads(
-        analyze_trade_journal(str(_write_full_journal(allow_tmp)), analysis_type="strategy")
-    )
+    result = json.loads(analyze_trade_journal(str(_write_full_journal(allow_tmp)), analysis_type="strategy"))
     assert result["status"] == "ok"
     assert result["strategy_features"]["status"] == "pending"
     # profile/behavior should not be attached for a strategy-only request.
@@ -507,9 +501,7 @@ def test_analyze_strategy_is_pending_placeholder(allow_tmp: Path) -> None:
 
 
 def test_analyze_profile_only(allow_tmp: Path) -> None:
-    result = json.loads(
-        analyze_trade_journal(str(_write_full_journal(allow_tmp)), analysis_type="profile")
-    )
+    result = json.loads(analyze_trade_journal(str(_write_full_journal(allow_tmp)), analysis_type="profile"))
     assert result["status"] == "ok"
     assert "profile" in result
     assert "behavior" not in result
@@ -523,9 +515,7 @@ def test_analyze_with_filter(allow_tmp: Path) -> None:
         "2026-02-09 14:00:00,AAPL,buy,10,180\n",
         encoding="utf-8",
     )
-    result = json.loads(
-        analyze_trade_journal(str(csv), filter_expr="symbol=AAPL")
-    )
+    result = json.loads(analyze_trade_journal(str(csv), filter_expr="symbol=AAPL"))
     assert result["status"] == "ok"
     assert result["total_records"] == 1
     assert result["filter_applied"] == "symbol=AAPL"
@@ -533,11 +523,7 @@ def test_analyze_with_filter(allow_tmp: Path) -> None:
 
 def test_analyze_with_inverted_date_filter_returns_error_envelope(allow_tmp: Path) -> None:
     """An inverted date range must surface as an error envelope, not a raw raise."""
-    result = json.loads(
-        analyze_trade_journal(
-            str(_write_full_journal(allow_tmp)), filter_expr="2026-03 to 2026-01"
-        )
-    )
+    result = json.loads(analyze_trade_journal(str(_write_full_journal(allow_tmp)), filter_expr="2026-03 to 2026-01"))
     assert result["status"] == "error"
     assert "inverted date filter" in result["error"]
 
@@ -550,15 +536,34 @@ def test_qualify_a_share_rejects_empty() -> None:
 
 
 def test_parse_tonghuashun_skips_blank_code_rows() -> None:
-    df = pd.DataFrame([{
-        "成交时间": "2024-01-01 10:00:00", "证券代码": "", "证券名称": "",
-        "操作": "买入", "成交数量": 100, "成交价格": 10.0, "成交金额": 1000,
-        "手续费": 0, "印花税": 0, "过户费": 0,
-    }, {
-        "成交时间": "2024-01-01 10:01:00", "证券代码": "600519", "证券名称": "茅台",
-        "操作": "买入", "成交数量": 100, "成交价格": 10.0, "成交金额": 1000,
-        "手续费": 0, "印花税": 0, "过户费": 0,
-    }])
+    df = pd.DataFrame(
+        [
+            {
+                "成交时间": "2024-01-01 10:00:00",
+                "证券代码": "",
+                "证券名称": "",
+                "操作": "买入",
+                "成交数量": 100,
+                "成交价格": 10.0,
+                "成交金额": 1000,
+                "手续费": 0,
+                "印花税": 0,
+                "过户费": 0,
+            },
+            {
+                "成交时间": "2024-01-01 10:01:00",
+                "证券代码": "600519",
+                "证券名称": "茅台",
+                "操作": "买入",
+                "成交数量": 100,
+                "成交价格": 10.0,
+                "成交金额": 1000,
+                "手续费": 0,
+                "印花税": 0,
+                "过户费": 0,
+            },
+        ]
+    )
     rec = parse_tonghuashun(df)
     assert len(rec) == 1
     assert rec[0].symbol == "600519.SH"
@@ -570,30 +575,68 @@ def test_qualify_a_share_rejects_nan() -> None:
 
 
 def test_parse_tonghuashun_skips_nan_code_rows() -> None:
-    df = pd.DataFrame([{
-        "成交时间": "2024-01-01 10:00:00", "证券代码": float("nan"), "证券名称": "",
-        "操作": "买入", "成交数量": 100, "成交价格": 10.0, "成交金额": 1000,
-        "手续费": 0, "印花税": 0, "过户费": 0,
-    }, {
-        "成交时间": "2024-01-01 10:01:00", "证券代码": "600519", "证券名称": "茅台",
-        "操作": "买入", "成交数量": 100, "成交价格": 10.0, "成交金额": 1000,
-        "手续费": 0, "印花税": 0, "过户费": 0,
-    }])
+    df = pd.DataFrame(
+        [
+            {
+                "成交时间": "2024-01-01 10:00:00",
+                "证券代码": float("nan"),
+                "证券名称": "",
+                "操作": "买入",
+                "成交数量": 100,
+                "成交价格": 10.0,
+                "成交金额": 1000,
+                "手续费": 0,
+                "印花税": 0,
+                "过户费": 0,
+            },
+            {
+                "成交时间": "2024-01-01 10:01:00",
+                "证券代码": "600519",
+                "证券名称": "茅台",
+                "操作": "买入",
+                "成交数量": 100,
+                "成交价格": 10.0,
+                "成交金额": 1000,
+                "手续费": 0,
+                "印花税": 0,
+                "过户费": 0,
+            },
+        ]
+    )
     rec = parse_tonghuashun(df)
     assert len(rec) == 1
     assert rec[0].symbol == "600519.SH"
 
 
 def test_parse_eastmoney_skips_nan_code_rows() -> None:
-    df = pd.DataFrame([{
-        "成交日期": "20240101", "成交时间": "10:00:00", "股票代码": float("nan"),
-        "股票名称": "", "买卖标志": "B", "成交数量": 100, "成交均价": 10.0,
-        "成交金额": 1000, "佣金": 0, "印花税": 0,
-    }, {
-        "成交日期": "20240101", "成交时间": "10:01:00", "股票代码": "000001",
-        "股票名称": "平安", "买卖标志": "B", "成交数量": 100, "成交均价": 10.0,
-        "成交金额": 1000, "佣金": 0, "印花税": 0,
-    }])
+    df = pd.DataFrame(
+        [
+            {
+                "成交日期": "20240101",
+                "成交时间": "10:00:00",
+                "股票代码": float("nan"),
+                "股票名称": "",
+                "买卖标志": "B",
+                "成交数量": 100,
+                "成交均价": 10.0,
+                "成交金额": 1000,
+                "佣金": 0,
+                "印花税": 0,
+            },
+            {
+                "成交日期": "20240101",
+                "成交时间": "10:01:00",
+                "股票代码": "000001",
+                "股票名称": "平安",
+                "买卖标志": "B",
+                "成交数量": 100,
+                "成交均价": 10.0,
+                "成交金额": 1000,
+                "佣金": 0,
+                "印花税": 0,
+            },
+        ]
+    )
     rec = parse_eastmoney(df)
     assert len(rec) == 1
     assert rec[0].symbol == "000001.SZ"
@@ -601,15 +644,34 @@ def test_parse_eastmoney_skips_nan_code_rows() -> None:
 
 def test_parse_futu_skips_nan_symbol_rows() -> None:
     """NaN Symbol cells must not become literal "NAN" US trades."""
-    df = pd.DataFrame([{
-        "Date": "2024-01-01", "Time": "10:00:00", "Symbol": float("nan"),
-        "Name": "", "Side": "Buy", "Quantity": 100, "Price": 10.0,
-        "Amount": 1000, "Commission": 0, "Platform Fee": 0,
-    }, {
-        "Date": "2024-01-01", "Time": "10:01:00", "Symbol": "AAPL",
-        "Name": "Apple", "Side": "Buy", "Quantity": 100, "Price": 10.0,
-        "Amount": 1000, "Commission": 0, "Platform Fee": 0,
-    }])
+    df = pd.DataFrame(
+        [
+            {
+                "Date": "2024-01-01",
+                "Time": "10:00:00",
+                "Symbol": float("nan"),
+                "Name": "",
+                "Side": "Buy",
+                "Quantity": 100,
+                "Price": 10.0,
+                "Amount": 1000,
+                "Commission": 0,
+                "Platform Fee": 0,
+            },
+            {
+                "Date": "2024-01-01",
+                "Time": "10:01:00",
+                "Symbol": "AAPL",
+                "Name": "Apple",
+                "Side": "Buy",
+                "Quantity": 100,
+                "Price": 10.0,
+                "Amount": 1000,
+                "Commission": 0,
+                "Platform Fee": 0,
+            },
+        ]
+    )
     rec = parse_futu(df)
     assert len(rec) == 1
     assert rec[0].symbol == "AAPL"
@@ -618,13 +680,24 @@ def test_parse_futu_skips_nan_symbol_rows() -> None:
 
 def test_parse_generic_skips_nan_symbol_rows() -> None:
     """Blank/NaN symbol cells are dropped instead of stringified to "nan"."""
-    df = pd.DataFrame([{
-        "datetime": "2024-01-01 10:00:00", "symbol": float("nan"),
-        "side": "buy", "quantity": 100, "price": 10.0,
-    }, {
-        "datetime": "2024-01-01 10:01:00", "symbol": "AAPL",
-        "side": "buy", "quantity": 100, "price": 10.0,
-    }])
+    df = pd.DataFrame(
+        [
+            {
+                "datetime": "2024-01-01 10:00:00",
+                "symbol": float("nan"),
+                "side": "buy",
+                "quantity": 100,
+                "price": 10.0,
+            },
+            {
+                "datetime": "2024-01-01 10:01:00",
+                "symbol": "AAPL",
+                "side": "buy",
+                "quantity": 100,
+                "price": 10.0,
+            },
+        ]
+    )
     rec = parse_generic(df)
     assert len(rec) == 1
     assert rec[0].symbol == "AAPL"
@@ -641,19 +714,28 @@ def test_parse_generic_skips_nan_symbol_rows() -> None:
         ("600519.SH", "600519.SH"),  # still passthrough
     ],
 )
-def test_qualify_a_share_normalizes_float_stringified_codes(
-    code: object, expected: str
-) -> None:
+def test_qualify_a_share_normalizes_float_stringified_codes(code: object, expected: str) -> None:
     """Excel/CSV float forms must not be treated as exchange-qualified."""
     assert _qualify_a_share(code) == expected  # type: ignore[arg-type]
 
 
 def test_parse_tonghuashun_float_code_cell() -> None:
-    df = pd.DataFrame([{
-        "成交时间": "2024-01-01 10:00:00", "证券代码": 600519.0, "证券名称": "茅台",
-        "操作": "买入", "成交数量": 100, "成交价格": 10.0, "成交金额": 1000,
-        "手续费": 0, "印花税": 0, "过户费": 0,
-    }])
+    df = pd.DataFrame(
+        [
+            {
+                "成交时间": "2024-01-01 10:00:00",
+                "证券代码": 600519.0,
+                "证券名称": "茅台",
+                "操作": "买入",
+                "成交数量": 100,
+                "成交价格": 10.0,
+                "成交金额": 1000,
+                "手续费": 0,
+                "印花税": 0,
+                "过户费": 0,
+            }
+        ]
+    )
     rec = parse_tonghuashun(df)
     assert len(rec) == 1
     assert rec[0].symbol == "600519.SH"
@@ -676,14 +758,18 @@ def test_to_float_strips_currency_and_unicode_minus(raw: str, expected: float) -
 
 
 def test_parse_generic_currency_price_not_zero() -> None:
-    df = pd.DataFrame([{
-        "datetime": "2024-01-02 10:00:00",
-        "symbol": "AAPL",
-        "side": "buy",
-        "quantity": "10",
-        "price": "$150.25",
-        "fee": "$1.00",
-    }])
+    df = pd.DataFrame(
+        [
+            {
+                "datetime": "2024-01-02 10:00:00",
+                "symbol": "AAPL",
+                "side": "buy",
+                "quantity": "10",
+                "price": "$150.25",
+                "fee": "$1.00",
+            }
+        ]
+    )
     rec = parse_generic(df)
     assert len(rec) == 1
     assert rec[0].price == 150.25

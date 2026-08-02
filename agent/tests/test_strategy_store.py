@@ -267,9 +267,7 @@ class TestInMemoryStore:
         store = InMemoryStrategyStore()
         aid = store.register_artifact(_make_artifact())
         for i in range(3):
-            store.record_decay_snapshot(
-                DecaySnapshot(artifact_id=aid, ic_ratio=0.9 - i * 0.1)
-            )
+            store.record_decay_snapshot(DecaySnapshot(artifact_id=aid, ic_ratio=0.9 - i * 0.1))
         history = store.get_decay_history(aid)
         assert len(history) == 3
         assert history[0].id == 3  # newest first
@@ -406,9 +404,7 @@ class TestSdmTools:
         from src.tools.sdm_register_tool import SdmRegisterTool
         from src.tools.sdm_status_tool import SdmStatusTool
 
-        SdmRegisterTool().execute(
-            artifact_type="factor", name="f1", universe="CSI300"
-        )
+        SdmRegisterTool().execute(artifact_type="factor", name="f1", universe="CSI300")
         result = json.loads(SdmStatusTool().execute(action="list"))
         assert result["status"] == "ok"
         assert result["count"] == 1
@@ -417,11 +413,7 @@ class TestSdmTools:
         from src.tools.sdm_register_tool import SdmRegisterTool
         from src.tools.sdm_status_tool import SdmStatusTool
 
-        reg_result = json.loads(
-            SdmRegisterTool().execute(
-                artifact_type="factor", name="f1", universe="CSI300"
-            )
-        )
+        reg_result = json.loads(SdmRegisterTool().execute(artifact_type="factor", name="f1", universe="CSI300"))
         aid = reg_result["artifact"]["id"]
         result = json.loads(SdmStatusTool().execute(action="detail", artifact_id=aid))
         assert result["status"] == "ok"
@@ -433,26 +425,16 @@ class TestSdmTools:
         from src.tools.sdm_register_tool import SdmRegisterTool
         from src.tools.sdm_status_tool import SdmStatusTool
 
-        reg = json.loads(
-            SdmRegisterTool().execute(
-                artifact_type="factor", name="f1", universe="CSI300"
-            )
-        )
+        reg = json.loads(SdmRegisterTool().execute(artifact_type="factor", name="f1", universe="CSI300"))
         aid = reg["artifact"]["id"]
 
         # Disable
-        dis = json.loads(
-            SdmStatusTool().execute(
-                action="disable", artifact_id=aid, reason="testing"
-            )
-        )
+        dis = json.loads(SdmStatusTool().execute(action="disable", artifact_id=aid, reason="testing"))
         assert dis["status"] == "ok"
         assert dis["artifact"]["status"] == "disabled"
 
         # Enable
-        en = json.loads(
-            SdmStatusTool().execute(action="enable", artifact_id=aid)
-        )
+        en = json.loads(SdmStatusTool().execute(action="enable", artifact_id=aid))
         assert en["status"] == "ok"
         assert en["artifact"]["status"] == "active"
 
@@ -460,15 +442,9 @@ class TestSdmTools:
         from src.tools.sdm_register_tool import SdmRegisterTool
         from src.tools.sdm_status_tool import SdmStatusTool
 
-        reg = json.loads(
-            SdmRegisterTool().execute(
-                artifact_type="factor", name="f1", universe="CSI300"
-            )
-        )
+        reg = json.loads(SdmRegisterTool().execute(artifact_type="factor", name="f1", universe="CSI300"))
         aid = reg["artifact"]["id"]
-        result = json.loads(
-            SdmStatusTool().execute(action="decay_check", artifact_id=aid)
-        )
+        result = json.loads(SdmStatusTool().execute(action="decay_check", artifact_id=aid))
         assert result["status"] == "ok"
         assert result["signal"] == "insufficient_data"
 
@@ -484,11 +460,7 @@ class TestSdmTools:
         from src.tools.sdm_decay_scan_tool import SdmDecayScanTool
 
         # Register an ACTIVE factor with bench history
-        reg = json.loads(
-            SdmRegisterTool().execute(
-                artifact_type="factor", name="f1", universe="CSI300"
-            )
-        )
+        reg = json.loads(SdmRegisterTool().execute(artifact_type="factor", name="f1", universe="CSI300"))
         aid = reg["artifact"]["id"]
 
         import src.strategy_store._shared as shared
@@ -499,9 +471,7 @@ class TestSdmTools:
 
         # Add 3+ bench results so it's not insufficient_data
         for i in range(5):
-            store.record_bench(
-                BenchResult(artifact_id=aid, ic_mean=0.05 - i * 0.01)
-            )
+            store.record_bench(BenchResult(artifact_id=aid, ic_mean=0.05 - i * 0.01))
 
         result = json.loads(SdmDecayScanTool().execute(dry_run=True))
         assert result["status"] == "ok"
@@ -513,17 +483,9 @@ class TestSdmTools:
         """Registering the same (name, universe) twice returns an error."""
         from src.tools.sdm_register_tool import SdmRegisterTool
 
-        first = json.loads(
-            SdmRegisterTool().execute(
-                artifact_type="factor", name="dup_tool", universe="CSI300"
-            )
-        )
+        first = json.loads(SdmRegisterTool().execute(artifact_type="factor", name="dup_tool", universe="CSI300"))
         assert first["status"] == "ok"
-        second = json.loads(
-            SdmRegisterTool().execute(
-                artifact_type="factor", name="dup_tool", universe="CSI300"
-            )
-        )
+        second = json.loads(SdmRegisterTool().execute(artifact_type="factor", name="dup_tool", universe="CSI300"))
         assert second["status"] == "error"
         assert "already exists" in second["error"]
 
@@ -532,11 +494,7 @@ class TestSdmTools:
         from src.tools.sdm_register_tool import SdmRegisterTool
         from src.tools.sdm_decay_scan_tool import SdmDecayScanTool
 
-        reg = json.loads(
-            SdmRegisterTool().execute(
-                artifact_type="factor", name="metricless", universe="CSI300"
-            )
-        )
+        reg = json.loads(SdmRegisterTool().execute(artifact_type="factor", name="metricless", universe="CSI300"))
         aid = reg["artifact"]["id"]
 
         import src.strategy_store._shared as shared
@@ -557,11 +515,7 @@ class TestSdmTools:
         from src.tools.sdm_register_tool import SdmRegisterTool
         from src.tools.sdm_status_tool import SdmStatusTool
 
-        reg = json.loads(
-            SdmRegisterTool().execute(
-                artifact_type="factor", name="metricless2", universe="CSI300"
-            )
-        )
+        reg = json.loads(SdmRegisterTool().execute(artifact_type="factor", name="metricless2", universe="CSI300"))
         aid = reg["artifact"]["id"]
 
         import src.strategy_store._shared as shared
@@ -571,9 +525,7 @@ class TestSdmTools:
         for _ in range(4):
             store.record_bench(BenchResult(artifact_id=aid))
 
-        result = json.loads(
-            SdmStatusTool().execute(action="decay_check", artifact_id=aid)
-        )
+        result = json.loads(SdmStatusTool().execute(action="decay_check", artifact_id=aid))
         assert result["status"] == "ok"
         assert result["signal"] == "insufficient_data"
 
@@ -582,11 +534,7 @@ class TestSdmTools:
         from src.tools.sdm_register_tool import SdmRegisterTool
         from src.tools.sdm_decay_scan_tool import SdmDecayScanTool
 
-        reg = json.loads(
-            SdmRegisterTool().execute(
-                artifact_type="factor", name="decay_factor", universe="CSI300"
-            )
-        )
+        reg = json.loads(SdmRegisterTool().execute(artifact_type="factor", name="decay_factor", universe="CSI300"))
         aid = reg["artifact"]["id"]
 
         import src.strategy_store._shared as shared
@@ -602,12 +550,8 @@ class TestSdmTools:
             store.record_bench(BenchResult(artifact_id=aid, ic_mean=0.04))
 
         # Pre-populate 2 prior WARNING snapshots so the 3rd scan triggers transition
-        store.record_decay_snapshot(
-            DecaySnapshot(artifact_id=aid, ic_ratio=0.5, decay_signal=DecaySignal.WARNING)
-        )
-        store.record_decay_snapshot(
-            DecaySnapshot(artifact_id=aid, ic_ratio=0.5, decay_signal=DecaySignal.WARNING)
-        )
+        store.record_decay_snapshot(DecaySnapshot(artifact_id=aid, ic_ratio=0.5, decay_signal=DecaySignal.WARNING))
+        store.record_decay_snapshot(DecaySnapshot(artifact_id=aid, ic_ratio=0.5, decay_signal=DecaySignal.WARNING))
 
         # Third scan: now has 3 consecutive WARNING → active→monitoring
         result = json.loads(SdmDecayScanTool().execute(dry_run=False))
@@ -677,21 +621,13 @@ class TestSqliteStore:
         with pytest.raises(ValueError, match="already exists"):
             self.store.register_artifact(_make_artifact(name="dup_factor"))
         # Same name in a different universe is allowed
-        self.store.register_artifact(
-            _make_artifact(name="dup_factor", universe="SP500")
-        )
+        self.store.register_artifact(_make_artifact(name="dup_factor", universe="SP500"))
 
     def test_list_with_filters(self):
         """List with type/status/universe filters."""
-        self.store.register_artifact(
-            _make_artifact(name="f1", artifact_type=ArtifactType.FACTOR, universe="CSI300")
-        )
-        self.store.register_artifact(
-            _make_artifact(name="s1", artifact_type=ArtifactType.STRATEGY, universe="SP500")
-        )
-        self.store.register_artifact(
-            _make_artifact(name="f2", artifact_type=ArtifactType.FACTOR, universe="SP500")
-        )
+        self.store.register_artifact(_make_artifact(name="f1", artifact_type=ArtifactType.FACTOR, universe="CSI300"))
+        self.store.register_artifact(_make_artifact(name="s1", artifact_type=ArtifactType.STRATEGY, universe="SP500"))
+        self.store.register_artifact(_make_artifact(name="f2", artifact_type=ArtifactType.FACTOR, universe="SP500"))
 
         # Filter by type
         factors = self.store.list_artifacts(type=ArtifactType.FACTOR)
@@ -727,9 +663,7 @@ class TestSqliteStore:
         self.store.update_status(aid, ArtifactStatus.ACTIVE)
 
         # Disable
-        disabled = self.store.update_status(
-            aid, ArtifactStatus.DISABLED, reason="testing"
-        )
+        disabled = self.store.update_status(aid, ArtifactStatus.DISABLED, reason="testing")
         assert disabled is not None
         assert disabled.status == ArtifactStatus.DISABLED
         assert disabled.disabled_at is not None
@@ -776,9 +710,7 @@ class TestSqliteStore:
         """Bench history returned newest-first."""
         aid = self.store.register_artifact(_make_artifact(name="bench_factor"))
         for i in range(3):
-            self.store.record_bench(
-                BenchResult(artifact_id=aid, ic_mean=0.01 * (i + 1))
-            )
+            self.store.record_bench(BenchResult(artifact_id=aid, ic_mean=0.01 * (i + 1)))
         history = self.store.get_bench_history(aid)
         assert len(history) == 3
         # Newest first — last inserted has highest id
@@ -788,16 +720,14 @@ class TestSqliteStore:
         """Bench history respects limit."""
         aid = self.store.register_artifact(_make_artifact(name="bench_limit"))
         for i in range(5):
-            self.store.record_bench(
-                BenchResult(artifact_id=aid, ic_mean=0.01 * (i + 1))
-            )
+            self.store.record_bench(BenchResult(artifact_id=aid, ic_mean=0.01 * (i + 1)))
         history = self.store.get_bench_history(aid, limit=2)
         assert len(history) == 2
 
     def test_bench_result_with_category(self):
         """Bench result with BenchCategory enum round-trips."""
         aid = self.store.register_artifact(_make_artifact(name="cat_factor"))
-        bid = self.store.record_bench(
+        self.store.record_bench(
             BenchResult(
                 artifact_id=aid,
                 ic_mean=0.05,
@@ -831,9 +761,7 @@ class TestSqliteStore:
         """Decay history respects limit."""
         aid = self.store.register_artifact(_make_artifact(name="decay_limit"))
         for i in range(5):
-            self.store.record_decay_snapshot(
-                DecaySnapshot(artifact_id=aid, ic_ratio=0.9 - i * 0.1)
-            )
+            self.store.record_decay_snapshot(DecaySnapshot(artifact_id=aid, ic_ratio=0.9 - i * 0.1))
         history = self.store.get_decay_history(aid, limit=2)
         assert len(history) == 2
 
@@ -876,9 +804,7 @@ class TestSqliteStore:
         """Deleting an artifact cascades to bench_history."""
         aid = self.store.register_artifact(_make_artifact(name="cascade_factor"))
         self.store.record_bench(BenchResult(artifact_id=aid, ic_mean=0.05))
-        self.store.record_decay_snapshot(
-            DecaySnapshot(artifact_id=aid, ic_ratio=0.8)
-        )
+        self.store.record_decay_snapshot(DecaySnapshot(artifact_id=aid, ic_ratio=0.8))
 
         # Delete the artifact directly via SQL
         with self.store._write_transaction():

@@ -55,9 +55,7 @@ def _seed(store: ScheduledResearchJobStore, **overrides: object) -> ScheduledRes
     return job
 
 
-def test_create_persists_job_and_returns_201(
-    client: TestClient, store: ScheduledResearchJobStore
-):
+def test_create_persists_job_and_returns_201(client: TestClient, store: ScheduledResearchJobStore):
     response = client.post(
         "/scheduled-runs",
         json={
@@ -84,9 +82,7 @@ def test_create_persists_job_and_returns_201(
     assert stored.schedule == "0 9 * * *"
 
 
-def test_create_generates_id_and_defaults_next_run_when_omitted(
-    client: TestClient, store: ScheduledResearchJobStore
-):
+def test_create_generates_id_and_defaults_next_run_when_omitted(client: TestClient, store: ScheduledResearchJobStore):
     response = client.post(
         "/scheduled-runs",
         json={"prompt": "rebalance check", "schedule": "300000"},
@@ -99,9 +95,7 @@ def test_create_generates_id_and_defaults_next_run_when_omitted(
     assert store.get(body["id"]) is not None
 
 
-def test_create_rejects_malformed_schedule_with_422(
-    client: TestClient, store: ScheduledResearchJobStore
-):
+def test_create_rejects_malformed_schedule_with_422(client: TestClient, store: ScheduledResearchJobStore):
     response = client.post(
         "/scheduled-runs",
         json={"prompt": "bad cron", "schedule": "0 99 * * *"},
@@ -111,9 +105,7 @@ def test_create_rejects_malformed_schedule_with_422(
     assert store.list_jobs() == []
 
 
-def test_list_returns_jobs_newest_first(
-    client: TestClient, store: ScheduledResearchJobStore
-):
+def test_list_returns_jobs_newest_first(client: TestClient, store: ScheduledResearchJobStore):
     _seed(store, id="older", created_at=1_700_000_000_000)
     _seed(store, id="newer", created_at=1_700_000_500_000)
 
@@ -124,9 +116,7 @@ def test_list_returns_jobs_newest_first(
     assert ids == ["newer", "older"]
 
 
-def test_list_filters_by_status(
-    client: TestClient, store: ScheduledResearchJobStore
-):
+def test_list_filters_by_status(client: TestClient, store: ScheduledResearchJobStore):
     _seed(store, id="pending-one", status=JobStatus.PENDING)
     _seed(store, id="done-one", status=JobStatus.COMPLETED)
 
@@ -137,9 +127,7 @@ def test_list_filters_by_status(
     assert [job["id"] for job in body] == ["done-one"]
 
 
-def test_list_surfaces_retry_diagnostics(
-    client: TestClient, store: ScheduledResearchJobStore
-):
+def test_list_surfaces_retry_diagnostics(client: TestClient, store: ScheduledResearchJobStore):
     _seed(
         store,
         id="retrying",
@@ -165,9 +153,7 @@ def test_list_rejects_out_of_range_limit(client: TestClient):
     assert client.get("/scheduled-runs", params={"limit": 500}).status_code == 422
 
 
-def test_delete_removes_job_and_returns_204(
-    client: TestClient, store: ScheduledResearchJobStore
-):
+def test_delete_removes_job_and_returns_204(client: TestClient, store: ScheduledResearchJobStore):
     _seed(store, id="cancel-me")
 
     response = client.delete("/scheduled-runs/cancel-me")
@@ -177,17 +163,13 @@ def test_delete_removes_job_and_returns_204(
     assert store.get("cancel-me") is None
 
 
-def test_delete_unknown_job_returns_404(
-    client: TestClient, store: ScheduledResearchJobStore
-):
+def test_delete_unknown_job_returns_404(client: TestClient, store: ScheduledResearchJobStore):
     response = client.delete("/scheduled-runs/never-existed")
 
     assert response.status_code == 404
 
 
-def test_delete_rejects_unsafe_job_id(
-    client: TestClient, store: ScheduledResearchJobStore
-):
+def test_delete_rejects_unsafe_job_id(client: TestClient, store: ScheduledResearchJobStore):
     # A single path segment that still fails the safe-id pattern (the dot is
     # outside ``[A-Za-z0-9_-]``) is rejected by the handler before any store
     # lookup, so it returns 400 rather than the 404 used for unknown ids.

@@ -13,13 +13,13 @@ from backtest.loaders import alphavantage_loader as av
 
 
 def _payload(*dates_rows) -> dict:
-    """Build a TIME_SERIES_DAILY-shaped payload from (date, o, h, l, c, v) tuples."""
+    """Build a TIME_SERIES_DAILY-shaped payload from (date, o, h, low, c, v) tuples."""
     series = {}
-    for date, o, h, l, c, vol in dates_rows:
+    for date, o, h, low, c, vol in dates_rows:
         series[date] = {
             "1. open": str(o),
             "2. high": str(h),
-            "3. low": str(l),
+            "3. low": str(low),
             "4. close": str(c),
             "5. volume": str(vol),
         }
@@ -118,16 +118,12 @@ class TestErrorPaths:
 
     def test_rate_limit_note_skips_symbol(self, monkeypatch):
         monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "ABC123")
-        with patch.object(
-            av, "throttled_get_json", return_value={"Note": "call frequency limit"}
-        ):
+        with patch.object(av, "throttled_get_json", return_value={"Note": "call frequency limit"}):
             assert av.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31") == {}
 
     def test_error_message_skips_symbol(self, monkeypatch):
         monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "ABC123")
-        with patch.object(
-            av, "throttled_get_json", return_value={"Error Message": "invalid symbol"}
-        ):
+        with patch.object(av, "throttled_get_json", return_value={"Error Message": "invalid symbol"}):
             assert av.DataLoader().fetch(["NOPE"], "2024-01-01", "2024-01-31") == {}
 
     def test_one_failure_does_not_abort_batch(self, monkeypatch):
@@ -147,9 +143,7 @@ class TestErrorPaths:
         """A payload carrying BOTH a usable series and a note keeps the data."""
         monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "ABC123")
         payload = _payload(("2024-01-02", 1, 2, 0.5, 1.5, 10))
-        payload["Information"] = (
-            "Thank you for using Alpha Vantage! Premium plans unlock higher limits."
-        )
+        payload["Information"] = "Thank you for using Alpha Vantage! Premium plans unlock higher limits."
         with patch.object(av, "throttled_get_json", return_value=payload):
             out = av.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31")
         assert set(out) == {"AAPL"}
@@ -166,9 +160,7 @@ class TestErrorPaths:
 
     def test_empty_series_omits_symbol(self, monkeypatch):
         monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "ABC123")
-        with patch.object(
-            av, "throttled_get_json", return_value={"Time Series (Daily)": {}}
-        ):
+        with patch.object(av, "throttled_get_json", return_value={"Time Series (Daily)": {}}):
             assert av.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31") == {}
 
     def test_malformed_bar_is_skipped(self, monkeypatch):
@@ -177,8 +169,11 @@ class TestErrorPaths:
             "Time Series (Daily)": {
                 "2024-01-02": {"1. open": "oops"},
                 "2024-01-03": {
-                    "1. open": "1", "2. high": "1", "3. low": "1",
-                    "4. close": "1", "5. volume": "1",
+                    "1. open": "1",
+                    "2. high": "1",
+                    "3. low": "1",
+                    "4. close": "1",
+                    "5. volume": "1",
                 },
             }
         }

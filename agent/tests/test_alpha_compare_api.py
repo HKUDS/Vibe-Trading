@@ -45,12 +45,28 @@ _OK_ENVELOPE: dict[str, Any] = {
     "n_skipped": 0,
     "winner": "alpha101_2",
     "ranking": [
-        {"rank": 1, "id": "alpha101_2", "zoo": "alpha101", "ic_mean": 0.03,
-         "ic_std": 0.05, "ir": 0.6, "ic_positive_ratio": 0.55, "ic_count": 200,
-         "delta_ir_vs_best": 0.0},
-        {"rank": 2, "id": "alpha101_1", "zoo": "alpha101", "ic_mean": 0.01,
-         "ic_std": 0.05, "ir": 0.2, "ic_positive_ratio": 0.5, "ic_count": 200,
-         "delta_ir_vs_best": -0.4},
+        {
+            "rank": 1,
+            "id": "alpha101_2",
+            "zoo": "alpha101",
+            "ic_mean": 0.03,
+            "ic_std": 0.05,
+            "ir": 0.6,
+            "ic_positive_ratio": 0.55,
+            "ic_count": 200,
+            "delta_ir_vs_best": 0.0,
+        },
+        {
+            "rank": 2,
+            "id": "alpha101_1",
+            "zoo": "alpha101",
+            "ic_mean": 0.01,
+            "ic_std": 0.05,
+            "ir": 0.2,
+            "ic_positive_ratio": 0.5,
+            "ic_count": 200,
+            "delta_ir_vs_best": -0.4,
+        },
     ],
     "skipped": [],
 }
@@ -69,9 +85,11 @@ def _valid_body(**kw: Any) -> dict[str, Any]:
 
 def _seed_job(job_id: str, **over: Any) -> dict[str, Any]:
     job = {
-        "job_id": job_id, "status": "queued",
+        "job_id": job_id,
+        "status": "queued",
         "progress": {"n_done": 0, "n_total": 2, "current_alpha_id": None},
-        "result": None, "error": None,
+        "result": None,
+        "error": None,
     }
     job.update(over)
     alpha_routes.ALPHA_COMPARE_JOBS[job_id] = job
@@ -132,8 +150,12 @@ def test_worker_stores_ok_envelope(monkeypatch) -> None:
 
 
 def test_worker_marks_error_envelope(monkeypatch) -> None:
-    err = {"status": "error", "error": "no requested alphas could be evaluated",
-           "ranking": [], "skipped": [{"id": "x", "reason": "unknown"}]}
+    err = {
+        "status": "error",
+        "error": "no requested alphas could be evaluated",
+        "ranking": [],
+        "skipped": [{"id": "x", "reason": "unknown"}],
+    }
     monkeypatch.setattr("src.factors.compare_runner.compare_alphas", lambda *a, **k: err)
     _seed_job("bbbb2222")
     alpha_routes._run_compare_blocking("bbbb2222", ["x", "y"], "csi300", "2020-2025", "ir")

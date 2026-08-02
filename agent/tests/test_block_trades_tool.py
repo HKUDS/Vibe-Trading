@@ -49,9 +49,7 @@ class TestBlockTradesSuccess:
     """Happy-path envelope shape and field normalization."""
 
     def test_success_envelope_normalizes_records(self):
-        with patch.object(
-            bt, "get_json", return_value=_sample_payload()
-        ) as mock_get:
+        with patch.object(bt, "get_json", return_value=_sample_payload()) as mock_get:
             out = bt.BlockTradesTool().execute(code="600519.SH", days=30)
 
         payload = json.loads(out)
@@ -78,7 +76,7 @@ class TestBlockTradesSuccess:
         # The bare 6-digit code (no market prefix) flows into the filter.
         _, kwargs = mock_get.call_args
         assert kwargs["params"]["reportName"] == "RPT_DATA_BLOCKTRADE"
-        assert '600519' in kwargs["params"]["filter"]
+        assert "600519" in kwargs["params"]["filter"]
 
     def test_empty_window_is_ok_with_zero_records(self):
         with patch.object(bt, "get_json", return_value={"result": {"data": None}}):
@@ -113,9 +111,7 @@ class TestBlockTradesErrors:
         assert "A-share" in payload["error"]
 
     def test_upstream_failure_becomes_error_envelope(self):
-        with patch.object(
-            bt, "get_json", side_effect=RuntimeError("HTTP 429 banned")
-        ):
+        with patch.object(bt, "get_json", side_effect=RuntimeError("HTTP 429 banned")):
             out = bt.BlockTradesTool().execute(code="600519.SH", days=10)
         payload = json.loads(out)
         assert payload["ok"] is False

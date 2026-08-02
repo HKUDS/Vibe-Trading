@@ -17,7 +17,6 @@ All helpers raise ``ValueError`` on rejection — callers already expect this.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from src.config.accessor import get_env_config
@@ -291,8 +290,7 @@ def _safe_import_path(p: str, *, purpose: str) -> Path:
             return resolved
 
     raise ValueError(
-        f"Path {p!r} is outside allowed {purpose} roots. "
-        f"Set {_ALLOWED_FILE_ROOTS_ENV} to add an import directory."
+        f"Path {p!r} is outside allowed {purpose} roots. Set {_ALLOWED_FILE_ROOTS_ENV} to add an import directory."
     )
 
 
@@ -349,8 +347,7 @@ def safe_run_dir(p: str) -> Path:
             return resolved
 
     raise ValueError(
-        f"run_dir {p!r} is outside allowed run roots. "
-        f"Set {_ALLOWED_RUN_ROOTS_ENV} to add a run directory."
+        f"run_dir {p!r} is outside allowed run roots. Set {_ALLOWED_RUN_ROOTS_ENV} to add a run directory."
     )
 
 

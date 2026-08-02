@@ -225,11 +225,7 @@ def test_resolver_and_consumer_in_same_batch_cannot_race(
     trace.close()
 
     assert market.calls == 1
-    artifact = json.loads(
-        (tmp_path / "run" / "artifacts" / "grounding_evidence.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    artifact = json.loads((tmp_path / "run" / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8"))
     assert artifact["identity"]["status"] == "locked"
     assert any(
         record["field"] == "close"
@@ -473,9 +469,7 @@ def test_listed_identity_blocks_private_company_workflow(
 
     assert private_skill.calls == 0
     assert json.loads(messages[-1]["content"])["error_code"] == "identity_conflict"
-    validation = agent._grounding.validate_final_answer(
-        "SpaceX is a private company and is not publicly traded."
-    )
+    validation = agent._grounding.validate_final_answer("SpaceX is a private company and is not publicly traded.")
     assert validation.valid is False
     assert any(issue["code"] == "listed_identity_relabelled_private" for issue in validation.issues)
 
@@ -573,9 +567,7 @@ def test_final_numeric_gate_rejects_known_trace_contradiction(tmp_path: Path) ->
 
 建议重仓买入价为 0.881。"""
     )
-    good = ledger.validate_final_answer(
-        "562500.SS（Yahoo，CNY）在 2026-06-23 的已观测开盘价为 1.141，收盘价为 1.137。"
-    )
+    good = ledger.validate_final_answer("562500.SS（Yahoo，CNY）在 2026-06-23 的已观测开盘价为 1.141，收盘价为 1.137。")
 
     assert bad.valid is False
     assert any(issue["code"] == "numeric_claim_conflict" for issue in bad.issues)
@@ -596,26 +588,16 @@ def test_numeric_gate_validates_derived_formula_and_provenance(tmp_path: Path) -
         success=True,
     )
 
-    bad_math = ledger.validate_final_answer(
-        "562500.SS（Yahoo，CNY）的推导买入价：(1.141 + 1.137) / 2 = 0.881。"
-    )
-    no_observed_input = ledger.validate_final_answer(
-        "562500.SS（Yahoo，CNY）的推导买入价：(0.88 + 0.90) / 2 = 0.89。"
-    )
-    good = ledger.validate_final_answer(
-        "562500.SS（Yahoo，CNY）的推导买入价：(1.141 + 1.137) / 2 = 1.139。"
-    )
-    missing_provenance = ledger.validate_final_answer(
-        "2026-06-23 的已观测收盘价为 1.137。"
-    )
+    bad_math = ledger.validate_final_answer("562500.SS（Yahoo，CNY）的推导买入价：(1.141 + 1.137) / 2 = 0.881。")
+    no_observed_input = ledger.validate_final_answer("562500.SS（Yahoo，CNY）的推导买入价：(0.88 + 0.90) / 2 = 0.89。")
+    good = ledger.validate_final_answer("562500.SS（Yahoo，CNY）的推导买入价：(1.141 + 1.137) / 2 = 1.139。")
+    missing_provenance = ledger.validate_final_answer("2026-06-23 的已观测收盘价为 1.137。")
 
     assert bad_math.valid is False
     assert no_observed_input.valid is False
     assert good.valid is True
     assert missing_provenance.valid is False
-    assert {
-        issue["code"] for issue in missing_provenance.issues
-    } >= {
+    assert {issue["code"] for issue in missing_provenance.issues} >= {
         "canonical_symbol_not_surfaced",
         "data_source_not_surfaced",
         "currency_not_surfaced",
@@ -665,11 +647,7 @@ class _CorrectingLLM:
                 ]
             ),
             _Response(content="建议买入价为 0.881。"),
-            _Response(
-                content=(
-                    "562500.SS（Yahoo，CNY）在 2026-06-23 的已观测收盘价为 1.137。"
-                )
-            ),
+            _Response(content=("562500.SS（Yahoo，CNY）在 2026-06-23 的已观测收盘价为 1.137。")),
         ]
 
     def stream_chat(
@@ -715,19 +693,11 @@ def test_agent_loop_rejects_then_corrects_ungrounded_final_answer(
     assert "1.137" in result["content"]
     assert "0.881" not in result["content"]
     assert market.calls == 1
-    streamed = "".join(
-        data.get("delta", "") for event, data in events if event == "text_delta"
-    )
+    streamed = "".join(data.get("delta", "") for event, data in events if event == "text_delta")
     assert "0.881" not in streamed
     assert "1.137" in streamed
-    completed_thinking = "".join(
-        data.get("content", "")
-        for event, data in events
-        if event == "thinking_done"
-    )
+    completed_thinking = "".join(data.get("content", "") for event, data in events if event == "thinking_done")
     assert "0.881" not in completed_thinking
-    artifact = json.loads(
-        (run_dir / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8")
-    )
+    artifact = json.loads((run_dir / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8"))
     assert artifact["validations"][0]["valid"] is False
     assert artifact["validations"][-1]["valid"] is True

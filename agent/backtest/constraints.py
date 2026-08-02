@@ -155,16 +155,12 @@ def _build_constraint(spec: Mapping[str, Any]) -> Any:
             raise ValueError("group_exposure constraint requires a non-empty 'caps' mapping")
         unknown = set(caps) - set(groups.values())
         if unknown:
-            raise ValueError(
-                "caps reference groups with no mapped assets: " + ", ".join(sorted(unknown))
-            )
+            raise ValueError("caps reference groups with no mapped assets: " + ", ".join(sorted(unknown)))
         return GroupExposure(
             groups,
             {g: _bounded_fraction(c, f"cap for group {g!r}") for g, c in caps.items()},
         )
-    raise ValueError(
-        f"unknown constraint type {kind!r}; expected one of {', '.join(_TYPES)}"
-    )
+    raise ValueError(f"unknown constraint type {kind!r}; expected one of {', '.join(_TYPES)}")
 
 
 def load_constraints(config: Mapping[str, Any]) -> List[Any]:
@@ -177,9 +173,7 @@ def load_constraints(config: Mapping[str, Any]) -> List[Any]:
     return [_build_constraint(spec) for spec in raw]
 
 
-def apply_constraints_frame(
-    frame: pd.DataFrame, constraints: Sequence[Any]
-) -> pd.DataFrame:
+def apply_constraints_frame(frame: pd.DataFrame, constraints: Sequence[Any]) -> pd.DataFrame:
     """Apply constraints row by row to a signed weight frame.
 
     Args:

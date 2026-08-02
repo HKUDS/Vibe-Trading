@@ -83,9 +83,7 @@ class _FakeStock:
         self.calls: list[dict] = []
 
     def get_market_ohlcv_by_date(self, fromdate, todate, ticker, **kwargs):
-        self.calls.append(
-            {"fromdate": fromdate, "todate": todate, "ticker": ticker, **kwargs}
-        )
+        self.calls.append({"fromdate": fromdate, "todate": todate, "ticker": ticker, **kwargs})
         return _pykrx_frame()
 
 
@@ -102,13 +100,15 @@ def fake_pykrx(monkeypatch: pytest.MonkeyPatch) -> _FakeStock:
 
 
 class TestFetchContract:
-    def test_daily_fetch_passes_bare_ticker_and_adjusted_flag(
-        self, fake_pykrx: _FakeStock
-    ) -> None:
+    def test_daily_fetch_passes_bare_ticker_and_adjusted_flag(self, fake_pykrx: _FakeStock) -> None:
         out = DataLoader().fetch(["005930.KS"], "2024-04-01", "2024-04-30")
         assert list(out) == ["005930.KS"]
         assert list(out["005930.KS"].columns) == [
-            "open", "high", "low", "close", "volume",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
         ]
         call = fake_pykrx.calls[0]
         assert call["ticker"] == "005930"
@@ -117,22 +117,14 @@ class TestFetchContract:
         assert call["adjusted"] is True
 
     @pytest.mark.parametrize("interval", ["1D", "1d", "d", "day", "daily"])
-    def test_daily_aliases_accepted(
-        self, fake_pykrx: _FakeStock, interval: str
-    ) -> None:
-        out = DataLoader().fetch(
-            ["005930.KS"], "2024-04-01", "2024-04-30", interval=interval
-        )
+    def test_daily_aliases_accepted(self, fake_pykrx: _FakeStock, interval: str) -> None:
+        out = DataLoader().fetch(["005930.KS"], "2024-04-01", "2024-04-30", interval=interval)
         assert list(out) == ["005930.KS"]
 
     @pytest.mark.parametrize("interval", ["1m", "5m", "30m", "1H", "4h", "1W"])
-    def test_unsupported_interval_does_not_silently_fetch_daily(
-        self, fake_pykrx: _FakeStock, interval: str
-    ) -> None:
+    def test_unsupported_interval_does_not_silently_fetch_daily(self, fake_pykrx: _FakeStock, interval: str) -> None:
         """A 1m/1H/4H request must fall through to another source, not day bars."""
-        assert DataLoader().fetch(
-            ["005930.KS"], "2024-04-01", "2024-04-30", interval=interval
-        ) == {}
+        assert DataLoader().fetch(["005930.KS"], "2024-04-01", "2024-04-30", interval=interval) == {}
         assert fake_pykrx.calls == []
 
     def test_one_bad_symbol_does_not_abort_the_batch(
@@ -144,9 +136,7 @@ class TestFetchContract:
             return _pykrx_frame()
 
         monkeypatch.setattr(fake_pykrx, "get_market_ohlcv_by_date", _boom)
-        out = DataLoader().fetch(
-            ["000000.KQ", "005930.KS"], "2024-04-01", "2024-04-30"
-        )
+        out = DataLoader().fetch(["000000.KQ", "005930.KS"], "2024-04-01", "2024-04-30")
         assert list(out) == ["005930.KS"]
 
 
@@ -156,9 +146,7 @@ class TestThrottle:
     ) -> None:
         """Spacing must go through the lock-protected HostThrottle, not a global."""
         waits: list[tuple[str, float]] = []
-        monkeypatch.setattr(
-            mod._THROTTLE, "wait", lambda bucket, interval: waits.append((bucket, interval))
-        )
+        monkeypatch.setattr(mod._THROTTLE, "wait", lambda bucket, interval: waits.append((bucket, interval)))
         monkeypatch.setattr(mod, "_min_interval", lambda: 1.0)
         DataLoader().fetch(["005930.KS", "247540.KQ"], "2024-04-01", "2024-04-30")
         assert waits == [("pykrx", 1.0), ("pykrx", 1.0)]
@@ -170,9 +158,7 @@ class TestThrottle:
 
 
 class TestProvenance:
-    def test_unavailable_pykrx_is_not_reported_as_the_source(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_unavailable_pykrx_is_not_reported_as_the_source(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A run card must name the loader that served, never the one requested.
 
         With the optional package missing, the kr_equity chain resolves to
@@ -182,8 +168,7 @@ class TestProvenance:
         from backtest.loaders import yahoo_loader
 
         frame = pd.DataFrame(
-            {"open": [100.0], "high": [101.0], "low": [99.0],
-             "close": [100.5], "volume": [1_000.0]},
+            {"open": [100.0], "high": [101.0], "low": [99.0], "close": [100.5], "volume": [1_000.0]},
             index=pd.DatetimeIndex([pd.Timestamp("2024-04-01")], name="trade_date"),
         )
         monkeypatch.setattr(DataLoader, "is_available", lambda self: False)
@@ -204,16 +189,13 @@ class TestProvenance:
         assert list(result.data_map) == ["005930.KS"]
         assert result.effective_sources == ["yahoo"]
 
-    def test_auto_routing_reports_the_loader_that_served(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_auto_routing_reports_the_loader_that_served(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Same guarantee on the ``source="auto"`` path (symbol-pattern head)."""
         from backtest import runner
         from backtest.loaders import yahoo_loader
 
         frame = pd.DataFrame(
-            {"open": [100.0], "high": [101.0], "low": [99.0],
-             "close": [100.5], "volume": [1_000.0]},
+            {"open": [100.0], "high": [101.0], "low": [99.0], "close": [100.5], "volume": [1_000.0]},
             index=pd.DatetimeIndex([pd.Timestamp("2024-04-01")], name="trade_date"),
         )
         monkeypatch.setattr(DataLoader, "is_available", lambda self: False)

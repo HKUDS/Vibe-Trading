@@ -287,7 +287,9 @@ def test_channel_runtime_routes_inbound_to_session_and_outbound(tmp_path: Path) 
     asyncio.run(scenario())
 
 
-def test_channel_runtime_handles_pairing_commands_without_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_channel_runtime_handles_pairing_commands_without_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     async def scenario() -> None:
         from src.channels.pairing import store as pairing_store
         from src.channels.runtime import ChannelRuntime
@@ -327,9 +329,7 @@ def test_channel_runtime_handles_pairing_commands_without_agent(tmp_path: Path, 
     asyncio.run(scenario())
 
 
-def test_channel_runtime_rejects_pairing_from_non_operator(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_channel_runtime_rejects_pairing_from_non_operator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A non-operator /pairing command is refused without touching the store (GHSA-fwpw)."""
 
     async def scenario() -> None:
@@ -377,9 +377,7 @@ def test_channel_runtime_rejects_pairing_from_non_operator(
     asyncio.run(scenario())
 
 
-def test_channel_runtime_operator_can_pair(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_channel_runtime_operator_can_pair(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A configured operator can approve a pending pairing code end to end."""
 
     async def scenario() -> None:
@@ -544,9 +542,7 @@ def test_channel_runtime_pairing_fail_closed_when_no_operators_configured(
     asyncio.run(scenario())
 
 
-def test_channel_runtime_non_operator_list_does_not_leak_codes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_channel_runtime_non_operator_list_does_not_leak_codes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A non-operator's rejected /pairing list must not disclose codes or sender ids."""
 
     async def scenario() -> None:
@@ -606,15 +602,11 @@ def test_channel_runtime_new_command_resets_session_and_creates_fresh_one(tmp_pa
         )
         await runtime.start(start_manager=False)
         try:
-            await bus.publish_inbound(
-                InboundMessage(channel="feishu", sender_id="u1", chat_id="c1", content="hello")
-            )
+            await bus.publish_inbound(InboundMessage(channel="feishu", sender_id="u1", chat_id="c1", content="hello"))
             reply1 = await asyncio.wait_for(bus.consume_outbound(), timeout=1)
             assert reply1.metadata["session_id"] == "session-1"
 
-            await bus.publish_inbound(
-                InboundMessage(channel="feishu", sender_id="u1", chat_id="c1", content="/new")
-            )
+            await bus.publish_inbound(InboundMessage(channel="feishu", sender_id="u1", chat_id="c1", content="/new"))
             reset_reply = await asyncio.wait_for(bus.consume_outbound(), timeout=1)
             assert "Session reset" in reset_reply.content
             assert reset_reply.metadata.get("session_reset") is True
@@ -648,9 +640,7 @@ def test_channel_runtime_new_command_with_no_existing_session(tmp_path: Path) ->
         )
         await runtime.start(start_manager=False)
         try:
-            await bus.publish_inbound(
-                InboundMessage(channel="telegram", sender_id="u1", chat_id="c1", content="/new")
-            )
+            await bus.publish_inbound(InboundMessage(channel="telegram", sender_id="u1", chat_id="c1", content="/new"))
             reply = await asyncio.wait_for(bus.consume_outbound(), timeout=1)
         finally:
             await runtime.stop()
@@ -679,14 +669,10 @@ def test_channel_runtime_reset_and_newsession_aliases_work(tmp_path: Path) -> No
         )
         await runtime.start(start_manager=False)
         try:
-            await bus.publish_inbound(
-                InboundMessage(channel="discord", sender_id="u1", chat_id="c1", content="hi")
-            )
+            await bus.publish_inbound(InboundMessage(channel="discord", sender_id="u1", chat_id="c1", content="hi"))
             await asyncio.wait_for(bus.consume_outbound(), timeout=1)
 
-            await bus.publish_inbound(
-                InboundMessage(channel="discord", sender_id="u1", chat_id="c1", content="/reset")
-            )
+            await bus.publish_inbound(InboundMessage(channel="discord", sender_id="u1", chat_id="c1", content="/reset"))
             reply = await asyncio.wait_for(bus.consume_outbound(), timeout=1)
             assert "Session reset" in reply.content
 
@@ -723,9 +709,7 @@ def test_channel_runtime_regular_messages_not_intercepted_as_new_session(tmp_pat
         await runtime.start(start_manager=False)
         try:
             for text in ["hello /new world", "/new stuff", "/NEW YORK", "type /new to reset"]:
-                await bus.publish_inbound(
-                    InboundMessage(channel="slack", sender_id="u1", chat_id="c1", content=text)
-                )
+                await bus.publish_inbound(InboundMessage(channel="slack", sender_id="u1", chat_id="c1", content=text))
                 reply = await asyncio.wait_for(bus.consume_outbound(), timeout=1)
                 assert reply.metadata.get("session_reset") is not True
                 assert "agent reply:" in reply.content
@@ -756,17 +740,13 @@ def test_channel_runtime_session_map_persisted_after_reset(tmp_path: Path) -> No
         )
         await runtime.start(start_manager=False)
         try:
-            await bus.publish_inbound(
-                InboundMessage(channel="feishu", sender_id="u1", chat_id="c1", content="hi")
-            )
+            await bus.publish_inbound(InboundMessage(channel="feishu", sender_id="u1", chat_id="c1", content="hi"))
             await asyncio.wait_for(bus.consume_outbound(), timeout=1)
 
             data = json.loads(map_path.read_text(encoding="utf-8"))
             assert data["feishu:c1"] == "session-1"
 
-            await bus.publish_inbound(
-                InboundMessage(channel="feishu", sender_id="u1", chat_id="c1", content="/new")
-            )
+            await bus.publish_inbound(InboundMessage(channel="feishu", sender_id="u1", chat_id="c1", content="/new"))
             await asyncio.wait_for(bus.consume_outbound(), timeout=1)
 
             data = json.loads(map_path.read_text(encoding="utf-8"))

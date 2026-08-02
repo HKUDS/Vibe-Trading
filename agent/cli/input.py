@@ -66,9 +66,7 @@ class SafeFileHistory(FileHistory):
 def _strip_surrogates(text: str) -> str:
     """Drop unpaired surrogate code points from ``text``."""
     try:
-        round_tripped = text.encode("utf-16-le", "surrogatepass").decode(
-            "utf-16-le", "replace"
-        )
+        round_tripped = text.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace")
     except UnicodeError:
         return "".join(ch for ch in text if not 0xD800 <= ord(ch) <= 0xDFFF)
     cleaned = round_tripped.encode("utf-8", "ignore").decode("utf-8", "ignore")
@@ -95,9 +93,7 @@ class _VibePromptSession(PromptSession):
 
 def _prompt_divider_window() -> Window:
     return Window(
-        FormattedTextControl(
-            lambda: FormattedText([("class:prompt-border", _prompt_rule())])
-        ),
+        FormattedTextControl(lambda: FormattedText([("class:prompt-border", _prompt_rule())])),
         height=1,
         style="class:prompt-border",
         dont_extend_height=True,

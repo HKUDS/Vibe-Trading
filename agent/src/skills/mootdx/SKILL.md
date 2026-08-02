@@ -75,6 +75,7 @@ df_15m = client.bars(symbol="600519", frequency=1, offset=800)
 
 ```python
 from backtest.runner import run
+
 result = run(strategy=..., source="mootdx")  # explicit override
 ```
 

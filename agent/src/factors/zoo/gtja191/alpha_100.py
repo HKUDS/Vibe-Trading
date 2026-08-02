@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #100
 # 简要说明: 国泰君安191短周期交易型alpha因子第100号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_100",
-    "theme": ['volatility', 'volume'],
-    "formula_latex": 'STD(VOLUME,20)',
-    "columns_required": ['volume'],
+    "theme": ["volatility", "volume"],
+    "formula_latex": "STD(VOLUME,20)",
+    "columns_required": ["volume"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
     "min_warmup_bars": 21,
-    "notes": '20d std of volume.',
+    "notes": "20d std of volume.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     return ts_std(panel["volume"], 20)

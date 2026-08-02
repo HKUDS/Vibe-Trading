@@ -6,24 +6,25 @@
 # 典型用途: 衡量30日价格波动幅度相对于价格水平的比率，用于波动率排序。
 # ============================================================
 """qlib158 STD30: formula = \\mathrm{ts\\_std}(\\mathrm{close}, 30) / \\mathrm{close}."""
+
 from __future__ import annotations
 
 import pandas as pd
 from src.factors.base import safe_div, ts_std
 
 __alpha_meta__ = {
-    'id': 'qlib158_std30',
-    'theme': ['momentum'],
-    'formula_latex': '\\\\mathrm{ts\\\\_std}(\\\\mathrm{close}, 30) / \\\\mathrm{close}',
-    'columns_required': ['close'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
-    'frequency': ['1d'],
-    'decay_horizon': 30,
-    'min_warmup_bars': 30,
+    "id": "qlib158_std30",
+    "theme": ["momentum"],
+    "formula_latex": "\\\\mathrm{ts\\\\_std}(\\\\mathrm{close}, 30) / \\\\mathrm{close}",
+    "columns_required": ["close"],
+    "universe": ["equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr"],
+    "frequency": ["1d"],
+    "decay_horizon": 30,
+    "min_warmup_bars": 30,
 }
 
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 STD30 on the supplied OHLCV panel."""
-    c = panel['close']
+    c = panel["close"]
     return safe_div(ts_std(c, 30), c)

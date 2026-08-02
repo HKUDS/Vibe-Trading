@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #112
 # 简要说明: 国泰君安191短周期交易型alpha因子第112号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     (SUM(CLOSE-DELAY(CLOSE,1) if up else 0,12) - SUM(ABS if down else 0,12)) / (SUM up + SUM down) * 100
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_112"
 
 __alpha_meta__ = {
-    'id': 'gtja191_112',
-    'theme': ['momentum'],
-    'formula_latex': '(sum_up(12)-sum_down(12))/(sum_up(12)+sum_down(12))*100',
-    'columns_required': ['close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 12,
-    'min_warmup_bars': 13,
-    'notes': '',
+    "id": "gtja191_112",
+    "theme": ["momentum"],
+    "formula_latex": "(sum_up(12)-sum_down(12))/(sum_up(12)+sum_down(12))*100",
+    "columns_required": ["close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 12,
+    "min_warmup_bars": 13,
+    "notes": "",
 }
 
 

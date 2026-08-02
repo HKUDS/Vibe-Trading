@@ -58,9 +58,10 @@ def _fake_response(payload: dict, status_ok: bool = True):
 
 
 def test_success_envelope_merges_reports_and_consensus():
-    with patch.object(rrt, "get_json", return_value=_REPORT_PAYLOAD) as mock_em, patch.object(
-        rrt, "throttled_get", return_value=_fake_response(_THS_PAYLOAD)
-    ) as mock_ths:
+    with (
+        patch.object(rrt, "get_json", return_value=_REPORT_PAYLOAD) as mock_em,
+        patch.object(rrt, "throttled_get", return_value=_fake_response(_THS_PAYLOAD)) as mock_ths,
+    ):
         out = ResearchReportsTool().execute(code="600519.SH", limit=10)
 
     payload = json.loads(out)
@@ -94,8 +95,9 @@ def test_success_envelope_merges_reports_and_consensus():
 
 
 def test_limit_caps_returned_reports():
-    with patch.object(rrt, "get_json", return_value=_REPORT_PAYLOAD), patch.object(
-        rrt, "throttled_get", return_value=_fake_response(_THS_PAYLOAD)
+    with (
+        patch.object(rrt, "get_json", return_value=_REPORT_PAYLOAD),
+        patch.object(rrt, "throttled_get", return_value=_fake_response(_THS_PAYLOAD)),
     ):
         out = ResearchReportsTool().execute(code="600519.SH", limit=1)
     payload = json.loads(out)
@@ -103,8 +105,9 @@ def test_limit_caps_returned_reports():
 
 
 def test_ths_failure_degrades_consensus_but_keeps_reports():
-    with patch.object(rrt, "get_json", return_value=_REPORT_PAYLOAD), patch.object(
-        rrt, "throttled_get", side_effect=RuntimeError("ths 503")
+    with (
+        patch.object(rrt, "get_json", return_value=_REPORT_PAYLOAD),
+        patch.object(rrt, "throttled_get", side_effect=RuntimeError("ths 503")),
     ):
         out = ResearchReportsTool().execute(code="600519.SH")
     payload = json.loads(out)
@@ -114,8 +117,9 @@ def test_ths_failure_degrades_consensus_but_keeps_reports():
 
 
 def test_ths_non_2xx_degrades_consensus():
-    with patch.object(rrt, "get_json", return_value=_REPORT_PAYLOAD), patch.object(
-        rrt, "throttled_get", return_value=_fake_response(_THS_PAYLOAD, status_ok=False)
+    with (
+        patch.object(rrt, "get_json", return_value=_REPORT_PAYLOAD),
+        patch.object(rrt, "throttled_get", return_value=_fake_response(_THS_PAYLOAD, status_ok=False)),
     ):
         out = ResearchReportsTool().execute(code="600519.SH")
     payload = json.loads(out)
@@ -141,8 +145,9 @@ def test_missing_code_returns_error_envelope():
 
 
 def test_report_request_failure_is_caught_as_error_envelope():
-    with patch.object(rrt, "get_json", side_effect=RuntimeError("HTTP 429")), patch.object(
-        rrt, "throttled_get", return_value=_fake_response(_THS_PAYLOAD)
+    with (
+        patch.object(rrt, "get_json", side_effect=RuntimeError("HTTP 429")),
+        patch.object(rrt, "throttled_get", return_value=_fake_response(_THS_PAYLOAD)),
     ):
         out = ResearchReportsTool().execute(code="600519.SH")
     payload = json.loads(out)
@@ -151,8 +156,9 @@ def test_report_request_failure_is_caught_as_error_envelope():
 
 
 def test_empty_coverage_returns_error_envelope():
-    with patch.object(rrt, "get_json", return_value={"data": []}), patch.object(
-        rrt, "throttled_get", return_value=_fake_response({"data": []})
+    with (
+        patch.object(rrt, "get_json", return_value={"data": []}),
+        patch.object(rrt, "throttled_get", return_value=_fake_response({"data": []})),
     ):
         out = ResearchReportsTool().execute(code="600519.SH")
     payload = json.loads(out)

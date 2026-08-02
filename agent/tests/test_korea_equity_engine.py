@@ -34,16 +34,14 @@ def _engine(**overrides) -> KoreaEquityEngine:
     return KoreaEquityEngine(config)
 
 
-def _bar(close: float = 100.0, pre_close: float | None = None,
-         open_: float | None = None) -> pd.Series:
+def _bar(close: float = 100.0, pre_close: float | None = None, open_: float | None = None) -> pd.Series:
     data = {"close": close, "open": close if open_ is None else open_}
     if pre_close is not None:
         data["pre_close"] = pre_close
     return pd.Series(data)
 
 
-def _with_close_panel(engine: KoreaEquityEngine, symbol: str,
-                      closes: list[float], bar_idx: int) -> None:
+def _with_close_panel(engine: KoreaEquityEngine, symbol: str, closes: list[float], bar_idx: int) -> None:
     """Attach the close panel BaseEngine pre-extracts for a run."""
     engine._close_arr = np.array([[c] for c in closes], dtype=float)
     engine._code_to_col = {symbol: 0}
@@ -61,7 +59,7 @@ class TestTickGrid:
         [
             (500.0, 1.0),
             (1_999.0, 1.0),
-            (2_000.0, 5.0),      # bands are lower-bound inclusive (이상)
+            (2_000.0, 5.0),  # bands are lower-bound inclusive (이상)
             (4_999.0, 5.0),
             (5_000.0, 10.0),
             (19_999.0, 10.0),
@@ -79,9 +77,9 @@ class TestTickGrid:
         assert krx_tick_size(price) == tick
 
     def test_round_down_and_up(self) -> None:
-        assert krx_round_down(12_345.0) == 12_340.0   # tick 10
+        assert krx_round_down(12_345.0) == 12_340.0  # tick 10
         assert krx_round_up(12_341.0) == 12_350.0
-        assert krx_round_up(300_100.0) == 300_500.0   # tick 500
+        assert krx_round_up(300_100.0) == 300_500.0  # tick 500
         assert krx_round_down(300_100.0) == 300_000.0
 
     def test_already_on_grid_is_unchanged(self) -> None:
@@ -99,9 +97,7 @@ class TestTickGrid:
             (9_940.0, 12_920.0, 6_960.0),
         ],
     )
-    def test_limit_prices_match_krx_worked_examples(
-        self, base: float, upper: float, lower: float
-    ) -> None:
+    def test_limit_prices_match_krx_worked_examples(self, base: float, upper: float, lower: float) -> None:
         assert krx_price_limits(base, 0.30) == (upper, lower)
 
     def test_limit_prices_stay_inside_the_band(self) -> None:
@@ -136,7 +132,11 @@ class TestCanExecute:
         engine = _engine()
         ts = pd.Timestamp("2024-04-01")
         engine.positions["005930.KS"] = Position(
-            symbol="005930.KS", direction=1, size=10, entry_price=100.0, entry_time=ts,
+            symbol="005930.KS",
+            direction=1,
+            size=10,
+            entry_price=100.0,
+            entry_time=ts,
         )
         bar = _bar()
         bar.name = ts  # same date as entry -> still sellable on KRX
@@ -250,9 +250,7 @@ class TestCommission:
         notional = 10 * 100_000.0
         short_open = engine.calc_commission(10, 100_000.0, -1, is_open=True)
         cover = engine.calc_commission(10, 100_000.0, -1, is_open=False)
-        assert short_open == pytest.approx(
-            notional * (engine.kr_brokerage + engine.kr_tax_sell), abs=1e-9
-        )
+        assert short_open == pytest.approx(notional * (engine.kr_brokerage + engine.kr_tax_sell), abs=1e-9)
         assert cover == pytest.approx(notional * engine.kr_brokerage, abs=1e-9)
 
     def test_rates_are_config_overridable(self) -> None:
@@ -307,9 +305,7 @@ class TestRouting:
     def test_cross_market_with_korea_builds_korea_subengine(self) -> None:
         from backtest.engines.composite import _build_rule_engines
 
-        engines = _build_rule_engines(
-            {"initial_cash": 100_000}, ["005930.KS", "AAPL.US"]
-        )
+        engines = _build_rule_engines({"initial_cash": 100_000}, ["005930.KS", "AAPL.US"])
         assert isinstance(engines["kr_equity"], KoreaEquityEngine)
 
     def test_cross_market_short_config_fails_loudly(self) -> None:

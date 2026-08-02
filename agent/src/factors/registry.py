@@ -301,9 +301,7 @@ class Registry:
         except OSError as exc:
             raise RegistryError(f"{alpha_id}: cannot stat source: {exc}") from exc
         if size > _MAX_PY_BYTES:
-            raise RegistryError(
-                f"{alpha_id}: source {size}B exceeds {_MAX_PY_BYTES}B cap"
-            )
+            raise RegistryError(f"{alpha_id}: source {size}B exceeds {_MAX_PY_BYTES}B cap")
         try:
             return py_path.read_text(encoding="utf-8")
         except OSError as exc:
@@ -313,9 +311,7 @@ class Registry:
         return {
             "loaded": len(self._alphas),
             "failed": len(self._load_errors),
-            "errors": [
-                {"alpha_id": e.alpha_id, "reason": e.reason} for e in self._load_errors
-            ],
+            "errors": [{"alpha_id": e.alpha_id, "reason": e.reason} for e in self._load_errors],
         }
 
     def compute(self, alpha_id: str, panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -380,14 +376,10 @@ class Registry:
         panel: dict[str, pd.DataFrame],
     ) -> pd.DataFrame:
         if not isinstance(result, pd.DataFrame):
-            raise RegistryError(
-                f"{alpha_id}: compute() returned {type(result).__name__}, expected DataFrame"
-            )
+            raise RegistryError(f"{alpha_id}: compute() returned {type(result).__name__}, expected DataFrame")
         ref = panel.get("close")
         if ref is not None and result.shape != ref.shape:
-            raise RegistryError(
-                f"{alpha_id}: output shape {result.shape} != close shape {ref.shape}"
-            )
+            raise RegistryError(f"{alpha_id}: output shape {result.shape} != close shape {ref.shape}")
         arr = result.to_numpy(dtype=np.float64, na_value=np.nan)
         if np.isinf(arr).any():
             raise RegistryError(f"{alpha_id}: output contains +/- inf")

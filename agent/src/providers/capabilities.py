@@ -113,9 +113,7 @@ _SPARK_CAPABILITIES = ProviderCapabilities(
     "SPARK_BASE_URL",
 )
 
-_OPENAI_CODEX_CAPABILITIES = ProviderCapabilities(
-    "openai-codex", None, "OPENAI_CODEX_BASE_URL"
-)
+_OPENAI_CODEX_CAPABILITIES = ProviderCapabilities("openai-codex", None, "OPENAI_CODEX_BASE_URL")
 
 
 _PROVIDERS: dict[str, ProviderCapabilities] = {
@@ -169,9 +167,7 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
         gemini_thought_signatures=True,
     ),
     "groq": ProviderCapabilities("groq", "GROQ_API_KEY", "GROQ_BASE_URL"),
-    "dashscope": ProviderCapabilities(
-        "dashscope", "DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"
-    ),
+    "dashscope": ProviderCapabilities("dashscope", "DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"),
     "qwen": ProviderCapabilities("qwen", "DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"),
     "zhipu": _ZHIPU_CAPABILITIES,
     "glm": _ZHIPU_CAPABILITIES,
@@ -186,12 +182,8 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
     "ollama": ProviderCapabilities("ollama", None, "OLLAMA_BASE_URL"),
     "openai-codex": _OPENAI_CODEX_CAPABILITIES,
     "openai_codex": _OPENAI_CODEX_CAPABILITIES,
-    "opencode-zen": ProviderCapabilities(
-        "opencode-zen", "OPENAI_API_KEY", "OPENAI_BASE_URL"
-    ),
-    "opencode-go": ProviderCapabilities(
-        "opencode-go", "OPENAI_API_KEY", "OPENAI_BASE_URL"
-    ),
+    "opencode-zen": ProviderCapabilities("opencode-zen", "OPENAI_API_KEY", "OPENAI_BASE_URL"),
+    "opencode-go": ProviderCapabilities("opencode-go", "OPENAI_API_KEY", "OPENAI_BASE_URL"),
 }
 
 
@@ -242,9 +234,7 @@ def get_provider_capabilities(
     return _PROVIDERS.get(normalized, _PROVIDERS["openai"])
 
 
-def provider_env_names(
-    provider: str | None, model: str | None = None
-) -> tuple[str | None, str]:
+def provider_env_names(provider: str | None, model: str | None = None) -> tuple[str | None, str]:
     """Return the API-key and base-URL env names for a provider/model pair."""
     caps = get_provider_capabilities(provider, model)
     return caps.api_key_env, caps.base_url_env
@@ -313,27 +303,27 @@ def get_llm_credentials(
     key_env, base_env = caps.api_key_env, caps.base_url_env
 
     if key_env is not None:
-        api_key = os.getenv(  # noqa: env-gate
+        api_key = os.getenv(  # env-gate
             key_env, ""
-        ) or os.getenv(  # noqa: env-gate — dynamic provider key fallback
+        ) or os.getenv(  # env-gate — dynamic provider key fallback
             "OPENAI_API_KEY", ""
         )
     else:
         api_key = (
-            os.getenv("OPENAI_API_KEY", "")  # noqa: env-gate — ollama default key
+            os.getenv("OPENAI_API_KEY", "")  # env-gate — ollama default key
             or "ollama"
         )
 
     base_url = (
         (
-            os.getenv(base_env, "")  # noqa: env-gate — dynamic provider URL chain
+            os.getenv(base_env, "")  # env-gate — dynamic provider URL chain
             if base_env
             else ""
         )
-        or os.getenv(  # noqa: env-gate — dynamic provider URL chain
+        or os.getenv(  # env-gate — dynamic provider URL chain
             "OPENAI_BASE_URL", ""
         )
-        or os.getenv(  # noqa: env-gate — dynamic provider URL chain
+        or os.getenv(  # env-gate — dynamic provider URL chain
             "OPENAI_API_BASE", ""
         )
         or _provider_default_base_url(caps.name)

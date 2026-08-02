@@ -55,8 +55,7 @@ class CorruptJobStoreError(RuntimeError):
             cause: Short description of why parsing failed.
         """
         super().__init__(
-            f"job store {original} is corrupt ({cause}); "
-            f"quarantined to {quarantined} — refusing empty start"
+            f"job store {original} is corrupt ({cause}); quarantined to {quarantined} — refusing empty start"
         )
         self.original = original
         self.quarantined = quarantined

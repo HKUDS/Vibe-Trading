@@ -32,9 +32,7 @@ def _load_equity(run_path: Path) -> pd.Series:
     for col in ("equity", "nav", "value"):
         if col in df.columns:
             return df[col]
-    raise ValueError(
-        f"equity.csv must contain equity/nav/value column; got {list(df.columns)}"
-    )
+    raise ValueError(f"equity.csv must contain equity/nav/value column; got {list(df.columns)}")
 
 
 def _progress_bridge(stage: str, current: Optional[int], total: Optional[int], message: str) -> None:
@@ -159,10 +157,7 @@ class MonteCarloTool(BaseTool):
             },
             "method": {
                 "type": "string",
-                "description": (
-                    "gbm | bootstrap | block_bootstrap | correlated_gbm "
-                    "(default bootstrap)"
-                ),
+                "description": ("gbm | bootstrap | block_bootstrap | correlated_gbm (default bootstrap)"),
             },
             "n_paths": {
                 "type": "integer",

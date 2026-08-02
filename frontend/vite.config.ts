@@ -50,11 +50,17 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
+      chunkSizeWarningLimit: 750,
       rollupOptions: {
         output: {
           manualChunks: {
             "vendor-react": ["react", "react-dom", "react-router"],
-            "vendor-charts": ["echarts"],
+            // echarts is already tree-shaken via echarts/core + explicit
+            // charts/components imports in src/lib/echarts.ts; keep the large
+            // extension modules out of the shared vendor chunk so app routes
+            // don't pay for charts they never mount.
+            "vendor-charts-core": ["echarts/core", "echarts/renderers"],
+            "vendor-charts-ext": ["echarts/charts", "echarts/components"],
           },
         },
       },

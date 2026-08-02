@@ -48,25 +48,31 @@ def test_fmt_suffixes() -> None:
 # ── _safe_arith ───────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("expr,expected", [
-    ("510 * 9.11e9", 4_646_100_000_000.0),
-    ("1 + 2 * 3", 7.0),
-    ("(1 + 2) * 3", 9.0),
-    ("10 / 4", 2.5),
-    ("-5 + 3", -2.0),
-])
+@pytest.mark.parametrize(
+    "expr,expected",
+    [
+        ("510 * 9.11e9", 4_646_100_000_000.0),
+        ("1 + 2 * 3", 7.0),
+        ("(1 + 2) * 3", 9.0),
+        ("10 / 4", 2.5),
+        ("-5 + 3", -2.0),
+    ],
+)
 def test_safe_arith_evaluates(expr: str, expected: float) -> None:
     assert float(_safe_arith(expr)) == expected
 
 
-@pytest.mark.parametrize("evil", [
-    "abc",                  # bare name
-    "__import__('os')",     # function call
-    "os.system('x')",       # attribute + call
-    "1 + 2; print(3)",      # statements (not a single expression)
-    "'abc'",                # string constant, not numeric
-    "1.2.3",                # malformed
-])
+@pytest.mark.parametrize(
+    "evil",
+    [
+        "abc",  # bare name
+        "__import__('os')",  # function call
+        "os.system('x')",  # attribute + call
+        "1 + 2; print(3)",  # statements (not a single expression)
+        "'abc'",  # string constant, not numeric
+        "1.2.3",  # malformed
+    ],
+)
 def test_safe_arith_rejects_disallowed(evil: str) -> None:
     with pytest.raises(ValueError):
         _safe_arith(evil)
@@ -77,9 +83,9 @@ def test_safe_arith_rejects_disallowed(evil: str) -> None:
 
 def test_market_cap_verdict_thresholds() -> None:
     # calculated = 510 * 9.11e9 = 4.6461e12
-    assert verify_market_cap(510, 9.11e9, 4.65e12)["verdict"] == "pass"   # ~0.08%
-    assert verify_market_cap(510, 9.11e9, 4.50e12)["verdict"] == "warn"   # ~3.2%
-    assert verify_market_cap(510, 9.11e9, 4.00e12)["verdict"] == "fail"   # ~14%
+    assert verify_market_cap(510, 9.11e9, 4.65e12)["verdict"] == "pass"  # ~0.08%
+    assert verify_market_cap(510, 9.11e9, 4.50e12)["verdict"] == "warn"  # ~3.2%
+    assert verify_market_cap(510, 9.11e9, 4.00e12)["verdict"] == "fail"  # ~14%
 
 
 def test_market_cap_fields() -> None:
@@ -175,13 +181,20 @@ def test_exact_calc_raises_on_disallowed() -> None:
 
 def test_three_scenario_future_eps_compounding() -> None:
     out = three_scenario_valuation(
-        current_price=510, current_eps=23.5, shares_billion=9.11,
-        growth_optimistic=0.15, growth_neutral=0.08, growth_pessimistic=0.0,
-        pe_optimistic=25, pe_neutral=20, pe_pessimistic=15, years=3,
+        current_price=510,
+        current_eps=23.5,
+        shares_billion=9.11,
+        growth_optimistic=0.15,
+        growth_neutral=0.08,
+        growth_pessimistic=0.0,
+        pe_optimistic=25,
+        pe_neutral=20,
+        pe_pessimistic=15,
+        years=3,
     )
     bull = next(s for s in out["scenarios"] if s["scenario"] == "bull")
-    assert bull["future_eps"] == pytest.approx(23.5 * 1.15 ** 3)
-    assert bull["target_price"] == pytest.approx(23.5 * 1.15 ** 3 * 25)
+    assert bull["future_eps"] == pytest.approx(23.5 * 1.15**3)
+    assert bull["target_price"] == pytest.approx(23.5 * 1.15**3 * 25)
     bear = next(s for s in out["scenarios"] if s["scenario"] == "bear")
     assert bear["future_eps"] == 23.5  # 0% growth leaves EPS unchanged
     assert bear["upside_pct"] < 0  # bear case is below current price
@@ -190,12 +203,19 @@ def test_three_scenario_future_eps_compounding() -> None:
 def test_three_scenario_normalizes_percent_growth() -> None:
     # LLMs often pass 15 instead of 0.15; |g| > 1 is treated as a percent.
     out = three_scenario_valuation(
-        current_price=510, current_eps=23.5, shares_billion=9.11,
-        growth_optimistic=15, growth_neutral=8, growth_pessimistic=0,
-        pe_optimistic=25, pe_neutral=20, pe_pessimistic=15, years=3,
+        current_price=510,
+        current_eps=23.5,
+        shares_billion=9.11,
+        growth_optimistic=15,
+        growth_neutral=8,
+        growth_pessimistic=0,
+        pe_optimistic=25,
+        pe_neutral=20,
+        pe_pessimistic=15,
+        years=3,
     )
     bull = next(s for s in out["scenarios"] if s["scenario"] == "bull")
-    assert bull["future_eps"] == pytest.approx(23.5 * 1.15 ** 3)  # 15 -> 0.15
+    assert bull["future_eps"] == pytest.approx(23.5 * 1.15**3)  # 15 -> 0.15
     assert bull["annual_growth"] == pytest.approx(0.15)
     assert "bull" in out["growth_normalized_from_percent"]
     # bear g=0 is not normalized (|0| is not > 1).
@@ -214,8 +234,7 @@ def test_tool_metadata() -> None:
     assert tool.repeatable is True
     assert tool.parameters["required"] == ["command"]
     cmds = set(tool.parameters["properties"]["command"]["enum"])
-    assert cmds == {"verify_market_cap", "verify_valuation", "cross_validate",
-                    "benford", "calc", "three_scenario"}
+    assert cmds == {"verify_market_cap", "verify_valuation", "cross_validate", "benford", "calc", "three_scenario"}
 
 
 def test_tool_is_auto_discovered() -> None:
@@ -261,7 +280,11 @@ def test_execute_benford_small_sample_is_not_reliable() -> None:
 
 def test_execute_three_scenario_validates_growth_shape() -> None:
     env = _run(
-        command="three_scenario", price=510, eps=23.5, shares=9.11,
-        growth=[0.1, 0.2], pe=[25, 20, 15],  # growth has only 2 entries
+        command="three_scenario",
+        price=510,
+        eps=23.5,
+        shares=9.11,
+        growth=[0.1, 0.2],
+        pe=[25, 20, 15],  # growth has only 2 entries
     )
     assert env["status"] == "error"

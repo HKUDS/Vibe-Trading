@@ -285,9 +285,7 @@ class TestImpliedNotionalHook:
             quantity_notional_usd=lambda config, symbol, quantity: 10_800.0,
             get_quote=lambda symbol, config=None: {"quote": {"last": 1.08}},
         )
-        intent = sdk_order_gate._normalize_notional(
-            _intent_with_quantity(0.1), connector, config=None
-        )
+        intent = sdk_order_gate._normalize_notional(_intent_with_quantity(0.1), connector, config=None)
         assert intent is not None
         assert intent.notional_usd == pytest.approx(10_800.0)
 
@@ -296,12 +294,7 @@ class TestImpliedNotionalHook:
             quantity_notional_usd=lambda config, symbol, quantity: None,
             get_quote=lambda symbol, config=None: {"quote": {"last": 1.08}},
         )
-        assert (
-            sdk_order_gate._normalize_notional(
-                _intent_with_quantity(0.1), connector, config=None
-            )
-            is None
-        )
+        assert sdk_order_gate._normalize_notional(_intent_with_quantity(0.1), connector, config=None) is None
 
     def test_hook_exception_fails_closed(self) -> None:
         def _boom(config: Any, symbol: str, quantity: float) -> float:
@@ -311,32 +304,20 @@ class TestImpliedNotionalHook:
             quantity_notional_usd=_boom,
             get_quote=lambda symbol, config=None: {"quote": {"last": 1.08}},
         )
-        assert (
-            sdk_order_gate._normalize_notional(
-                _intent_with_quantity(0.1), connector, config=None
-            )
-            is None
-        )
+        assert sdk_order_gate._normalize_notional(_intent_with_quantity(0.1), connector, config=None) is None
 
     def test_hook_nonpositive_fails_closed(self) -> None:
         connector = SimpleNamespace(
             quantity_notional_usd=lambda config, symbol, quantity: 0.0,
         )
-        assert (
-            sdk_order_gate._normalize_notional(
-                _intent_with_quantity(0.1), connector, config=None
-            )
-            is None
-        )
+        assert sdk_order_gate._normalize_notional(_intent_with_quantity(0.1), connector, config=None) is None
 
     def test_legacy_path_unchanged_without_hook(self) -> None:
         # Hook absent → exact legacy behavior: quantity x connector quote.
         connector = SimpleNamespace(
             get_quote=lambda symbol, config=None: {"quote": {"last": 50_000.0}},
         )
-        intent = sdk_order_gate._normalize_notional(
-            _intent_with_quantity(0.5), connector, config=None
-        )
+        intent = sdk_order_gate._normalize_notional(_intent_with_quantity(0.5), connector, config=None)
         assert intent is not None
         assert intent.notional_usd == pytest.approx(25_000.0)
 

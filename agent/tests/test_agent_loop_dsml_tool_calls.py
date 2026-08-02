@@ -70,6 +70,7 @@ def test_agent_loop_executes_dsml_textual_tool_call(
     monkeypatch,
 ) -> None:
     """A pure DSML response must execute as a tool call instead of final text."""
+
     class _ImmediateHeartbeatTimer:
         def __init__(self, tool_name: str, interval: float, emit) -> None:
             del interval
@@ -83,11 +84,9 @@ def test_agent_loop_executes_dsml_textual_tool_call(
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-    monkeypatch.setattr(
-        "src.agent.loop.HeartbeatTimer", _ImmediateHeartbeatTimer
-    )
+    monkeypatch.setattr("src.agent.loop.HeartbeatTimer", _ImmediateHeartbeatTimer)
     dsml = (
-        '<｜｜DSML｜｜tool_calls>'
+        "<｜｜DSML｜｜tool_calls>"
         '<｜｜DSML｜｜invoke name="echo_probe">'
         '<｜｜DSML｜｜parameter name="marker" string="true">ran-dsml</｜｜DSML｜｜parameter>'
         "</｜｜DSML｜｜invoke>"
@@ -113,8 +112,7 @@ def test_agent_loop_executes_dsml_textual_tool_call(
     tool_events = {
         event_type: payload
         for event_type, payload in events
-        if event_type
-        in {"tool_call", "tool_progress", "tool_heartbeat", "tool_result"}
+        if event_type in {"tool_call", "tool_progress", "tool_heartbeat", "tool_result"}
     }
     assert set(tool_events) == {
         "tool_call",
@@ -122,9 +120,5 @@ def test_agent_loop_executes_dsml_textual_tool_call(
         "tool_heartbeat",
         "tool_result",
     }
-    assert {
-        payload["call_id"] for payload in tool_events.values()
-    } == {"dsml_call_1"}
-    assert {
-        payload["tool"] for payload in tool_events.values()
-    } == {"echo_probe"}
+    assert {payload["call_id"] for payload in tool_events.values()} == {"dsml_call_1"}
+    assert {payload["tool"] for payload in tool_events.values()} == {"echo_probe"}

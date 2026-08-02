@@ -42,7 +42,10 @@ class LoadSkillTool(BaseTool):
         """
         name = kwargs["name"]
         content = self._loader.get_content(name)
-        return json.dumps({
-            "status": "ok" if not content.startswith("Error:") else "error",
-            "content": content,
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "status": "ok" if not content.startswith("Error:") else "error",
+                "content": content,
+            },
+            ensure_ascii=False,
+        )

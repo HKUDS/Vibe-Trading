@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #191
 # 简要说明: 国泰君安191短周期交易型alpha因子第191号，详见公式定义。
@@ -9,8 +8,9 @@
 Formula (verbatim from the report):
     ((CORR(MEAN(VOLUME,20), LOW, 5) + ((HIGH + LOW) / 2)) - CLOSE)
 
-Notes: 
+Notes:
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_191"
 
 __alpha_meta__ = {
-    'id': 'gtja191_191',
-    'theme': ['volume'],
-    'formula_latex': 'see body',
-    'columns_required': ['open', 'high', 'low', 'close', 'volume'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 25,
-    'notes': '',
+    "id": "gtja191_191",
+    "theme": ["volume"],
+    "formula_latex": "see body",
+    "columns_required": ["open", "high", "low", "close", "volume"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 25,
+    "notes": "",
 }
 
 

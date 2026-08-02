@@ -102,9 +102,7 @@ def test_enabled_tools_filter_limits_remote_streamable_http_tools(tmp_path: Path
 
         mcp_names = [name for name in registry.tool_names if name.startswith("mcp_fake_http_")]
         assert "mcp_fake_http_echo" in mcp_names, server.diagnostics()
-        assert "mcp_fake_http_add" not in mcp_names, (
-            "mcp_fake_http_add should be excluded by enabledTools filter"
-        )
+        assert "mcp_fake_http_add" not in mcp_names, "mcp_fake_http_add should be excluded by enabledTools filter"
 
 
 def test_unreachable_streamable_http_server_does_not_block_local_tools(tmp_path: Path) -> None:

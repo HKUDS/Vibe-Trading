@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #116
 # 简要说明: 国泰君安191短周期交易型alpha因子第116号，详见公式定义。
@@ -11,6 +10,7 @@ Formula (verbatim from the report):
 
 Notes: Rolling OLS slope vs. linear index; cov(c,t,20)/var(t,20).
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -37,16 +37,16 @@ from src.factors.base import (
 ALPHA_ID = "gtja191_116"
 
 __alpha_meta__ = {
-    'id': 'gtja191_116',
-    'theme': ['momentum'],
-    'formula_latex': 'regbeta(close,sequence(20),20)',
-    'columns_required': ['close'],
-    'extras_required': [],
-    'universe': ['equity_cn'],
-    'frequency': ['1d'],
-    'decay_horizon': 20,
-    'min_warmup_bars': 20,
-    'notes': 'Rolling OLS slope vs. linear index; cov(c,t,20)/var(t,20).',
+    "id": "gtja191_116",
+    "theme": ["momentum"],
+    "formula_latex": "regbeta(close,sequence(20),20)",
+    "columns_required": ["close"],
+    "extras_required": [],
+    "universe": ["equity_cn"],
+    "frequency": ["1d"],
+    "decay_horizon": 20,
+    "min_warmup_bars": 20,
+    "notes": "Rolling OLS slope vs. linear index; cov(c,t,20)/var(t,20).",
 }
 
 
@@ -63,7 +63,8 @@ def compute(panel):
     n = 20
     t = pd.DataFrame(
         np.tile(np.arange(c.shape[0], dtype=np.float64).reshape(-1, 1), (1, c.shape[1])),
-        index=c.index, columns=c.columns,
+        index=c.index,
+        columns=c.columns,
     )
     beta = safe_div(ts_cov(c, t, n), ts_std(t, n) ** 2)
     return beta

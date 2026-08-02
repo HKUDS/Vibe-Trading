@@ -146,7 +146,7 @@ class Trigger:
             ``True`` when the awaited condition (price crossing, fill, etc.) is
             met. The trigger carries the predicate; the runner carries the data.
 
-    Construct via the classmethod helpers (:meth:`interval`, :meth:`market`,
+    Construct via the classmethod helpers (:meth:`interval`, :meth:`for_market`,
     :meth:`event`) rather than the raw constructor where convenient.
     """
 
@@ -175,7 +175,7 @@ class Trigger:
         return cls(kind=TriggerKind.INTERVAL, interval_ms=interval_ms, epoch_ms=epoch_ms)
 
     @classmethod
-    def market(cls, market: str) -> "Trigger":
+    def for_market(cls, market: str) -> "Trigger":
         """Build a market-session trigger for a known market key.
 
         Args:

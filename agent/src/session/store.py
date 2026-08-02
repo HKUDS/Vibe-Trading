@@ -112,6 +112,7 @@ class SessionStore:
         if not session_dir.exists():
             return False
         import shutil
+
         shutil.rmtree(session_dir, ignore_errors=True)
         return True
 
@@ -180,9 +181,7 @@ class SessionStore:
                 try:
                     payload = json.loads(line)
                     if not isinstance(payload, dict):
-                        raise TypeError(
-                            f"message line must be a JSON object, got {type(payload).__name__}"
-                        )
+                        raise TypeError(f"message line must be a JSON object, got {type(payload).__name__}")
                     messages.append(Message.from_dict(payload))
                 except (json.JSONDecodeError, TypeError, ValueError, KeyError):
                     logger.warning(

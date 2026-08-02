@@ -27,8 +27,7 @@ from scipy.stats import norm
 # --- Black-Scholes pricing ---
 
 
-def bs_price(S: float, K: float, T: float, r: float, sigma: float,
-             option_type: str = "call") -> float:
+def bs_price(S: float, K: float, T: float, r: float, sigma: float, option_type: str = "call") -> float:
     """Black-Scholes European option pricing.
 
     Args:
@@ -53,7 +52,7 @@ def bs_price(S: float, K: float, T: float, r: float, sigma: float,
             return max(S - K, 0.0)
         return max(K - S, 0.0)
 
-    d1 = (np.log(S / K) + (r + sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
+    d1 = (np.log(S / K) + (r + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
     d2 = d1 - sigma * np.sqrt(T)
 
     if option_type == "call":
@@ -64,8 +63,7 @@ def bs_price(S: float, K: float, T: float, r: float, sigma: float,
 # --- Greeks ---
 
 
-def bs_greeks(S: float, K: float, T: float, r: float, sigma: float,
-              option_type: str = "call") -> Dict[str, float]:
+def bs_greeks(S: float, K: float, T: float, r: float, sigma: float, option_type: str = "call") -> Dict[str, float]:
     """Calculate Black-Scholes Greeks.
 
     Args:
@@ -85,7 +83,7 @@ def bs_greeks(S: float, K: float, T: float, r: float, sigma: float,
         return {"delta": delta, "gamma": 0.0, "theta": 0.0, "vega": 0.0}
 
     sqrt_T = np.sqrt(T)
-    d1 = (np.log(S / K) + (r + sigma ** 2 / 2) * T) / (sigma * sqrt_T)
+    d1 = (np.log(S / K) + (r + sigma**2 / 2) * T) / (sigma * sqrt_T)
     d2 = d1 - sigma * sqrt_T
     nd1_pdf = float(norm.pdf(d1))
 
@@ -133,8 +131,7 @@ def historical_volatility(close: pd.Series, window: int = 30) -> pd.Series:
 # --- IV Smile model (v2) ---
 
 
-def iv_smile_adjustment(S: float, K: float, base_iv: float,
-                        skew: float = -0.15, curvature: float = 0.05) -> float:
+def iv_smile_adjustment(S: float, K: float, base_iv: float, skew: float = -0.15, curvature: float = 0.05) -> float:
     """Adjust IV for moneyness using a quadratic smile model.
 
     IV(K) = base_iv + skew * log(K/S) + curvature * log(K/S)^2
@@ -152,7 +149,7 @@ def iv_smile_adjustment(S: float, K: float, base_iv: float,
     if S <= 0 or K <= 0:
         return max(base_iv, 0.01)
     log_moneyness = np.log(K / S)
-    adj = base_iv + skew * log_moneyness + curvature * log_moneyness ** 2
+    adj = base_iv + skew * log_moneyness + curvature * log_moneyness**2
     return max(adj, 0.01)
 
 
@@ -172,9 +169,16 @@ class OptionPosition:
         underlying_code: Underlying instrument code.
     """
 
-    def __init__(self, option_type: str, strike: float, expiry: str,
-                 qty: int, entry_price: float, entry_date: str,
-                 underlying_code: str):
+    def __init__(
+        self,
+        option_type: str,
+        strike: float,
+        expiry: str,
+        qty: int,
+        entry_price: float,
+        entry_date: str,
+        underlying_code: str,
+    ):
         self.option_type = option_type
         self.strike = strike
         self.expiry = pd.Timestamp(expiry)
@@ -262,7 +266,7 @@ def run_options_backtest(
     risk_free_rate = options_cfg.get("risk_free_rate", 0.05)
     contract_multiplier = options_cfg.get("contract_multiplier", 1.0)
     exercise_style = options_cfg.get("exercise_style", "european")  # v2: "european" or "american"
-    iv_skew = options_cfg.get("iv_skew", 0.0)         # v2: smile skew param (0 = flat)
+    iv_skew = options_cfg.get("iv_skew", 0.0)  # v2: smile skew param (0 = flat)
     iv_curvature = options_cfg.get("iv_curvature", 0.0)  # v2: smile curvature
 
     # Load underlying data
@@ -334,18 +338,20 @@ def run_options_backtest(
                     settlement = intrinsic * pos.qty * contract_multiplier
                     cash += settlement
                     pnl = (intrinsic - pos.entry_price) * pos.qty * contract_multiplier
-                    trade_records.append({
-                        "timestamp": date_str,
-                        "code": pos.underlying_code,
-                        "option_type": pos.option_type,
-                        "strike": pos.strike,
-                        "expiry": str(pos.expiry.date()),
-                        "side": "early_exercise",
-                        "price": round(intrinsic, 4),
-                        "qty": pos.qty,
-                        "pnl": round(pnl, 4),
-                        "entry_date": pos.entry_date,
-                    })
+                    trade_records.append(
+                        {
+                            "timestamp": date_str,
+                            "code": pos.underlying_code,
+                            "option_type": pos.option_type,
+                            "strike": pos.strike,
+                            "expiry": str(pos.expiry.date()),
+                            "side": "early_exercise",
+                            "price": round(intrinsic, 4),
+                            "qty": pos.qty,
+                            "pnl": round(pnl, 4),
+                            "entry_date": pos.entry_date,
+                        }
+                    )
                     positions.remove(pos)
 
         # 2b. Handle expiry
@@ -360,18 +366,20 @@ def run_options_backtest(
             pnl = (intrinsic - pos.entry_price) * pos.qty * contract_multiplier
 
             side = "exercise" if intrinsic > 0 else "expire"
-            trade_records.append({
-                "timestamp": date_str,
-                "code": pos.underlying_code,
-                "option_type": pos.option_type,
-                "strike": pos.strike,
-                "expiry": str(pos.expiry.date()),
-                "side": side,
-                "price": round(intrinsic, 4),
-                "qty": pos.qty,
-                "pnl": round(pnl, 4),
-                "entry_date": pos.entry_date,
-            })
+            trade_records.append(
+                {
+                    "timestamp": date_str,
+                    "code": pos.underlying_code,
+                    "option_type": pos.option_type,
+                    "strike": pos.strike,
+                    "expiry": str(pos.expiry.date()),
+                    "side": side,
+                    "price": round(intrinsic, 4),
+                    "qty": pos.qty,
+                    "pnl": round(pnl, 4),
+                    "entry_date": pos.entry_date,
+                }
+            )
             positions.remove(pos)
 
         # 3. Execute today's signals
@@ -409,33 +417,36 @@ def run_options_backtest(
                     else:
                         cash += abs_cost * (1 - commission)
 
-                    positions.append(OptionPosition(
-                        option_type=leg_type,
-                        strike=strike,
-                        expiry=expiry,
-                        qty=qty,
-                        entry_price=opt_price,
-                        entry_date=date_str,
-                        underlying_code=underlying,
-                    ))
+                    positions.append(
+                        OptionPosition(
+                            option_type=leg_type,
+                            strike=strike,
+                            expiry=expiry,
+                            qty=qty,
+                            entry_price=opt_price,
+                            entry_date=date_str,
+                            underlying_code=underlying,
+                        )
+                    )
 
-                    trade_records.append({
-                        "timestamp": date_str,
-                        "code": underlying,
-                        "option_type": leg_type,
-                        "strike": strike,
-                        "expiry": expiry,
-                        "side": "buy" if qty > 0 else "sell",
-                        "price": round(opt_price, 4),
-                        "qty": qty,
-                        "pnl": 0.0,
-                        "entry_date": date_str,
-                    })
+                    trade_records.append(
+                        {
+                            "timestamp": date_str,
+                            "code": underlying,
+                            "option_type": leg_type,
+                            "strike": strike,
+                            "expiry": expiry,
+                            "side": "buy" if qty > 0 else "sell",
+                            "price": round(opt_price, 4),
+                            "qty": qty,
+                            "pnl": 0.0,
+                            "entry_date": date_str,
+                        }
+                    )
 
                 elif action == "close":
                     # Close: find matching position, honoring a partial-close qty.
-                    matched = _find_matching_position(
-                        positions, underlying, leg_type, strike, expiry)
+                    matched = _find_matching_position(positions, underlying, leg_type, strike, expiry)
                     if matched:
                         # An explicit leg ``qty`` closes only that many contracts
                         # (clamped to the open size); a close leg with no ``qty``
@@ -460,18 +471,20 @@ def run_options_backtest(
                             # Short close: buy back
                             cash -= abs_close * (1 + commission)
 
-                        trade_records.append({
-                            "timestamp": date_str,
-                            "code": underlying,
-                            "option_type": leg_type,
-                            "strike": strike,
-                            "expiry": expiry,
-                            "side": "close",
-                            "price": round(opt_price, 4),
-                            "qty": closed_qty,
-                            "pnl": round(pnl, 4),
-                            "entry_date": matched.entry_date,
-                        })
+                        trade_records.append(
+                            {
+                                "timestamp": date_str,
+                                "code": underlying,
+                                "option_type": leg_type,
+                                "strike": strike,
+                                "expiry": expiry,
+                                "side": "close",
+                                "price": round(opt_price, 4),
+                                "qty": closed_qty,
+                                "pnl": round(pnl, 4),
+                                "entry_date": matched.entry_date,
+                            }
+                        )
                         if abs(remaining_qty) < 1e-9:
                             positions.remove(matched)
                         else:
@@ -508,21 +521,25 @@ def run_options_backtest(
             total_theta += greeks["theta"] * pos.qty * contract_multiplier
             total_vega += greeks["vega"] * pos.qty * contract_multiplier
 
-        equity_records.append({
-            "timestamp": date_str,
-            "equity": round(portfolio_value, 4),
-            "cash": round(cash, 4),
-            "positions_value": round(portfolio_value - cash, 4),
-        })
+        equity_records.append(
+            {
+                "timestamp": date_str,
+                "equity": round(portfolio_value, 4),
+                "cash": round(cash, 4),
+                "positions_value": round(portfolio_value - cash, 4),
+            }
+        )
 
-        greeks_records.append({
-            "timestamp": date_str,
-            "delta": round(total_delta, 6),
-            "gamma": round(total_gamma, 6),
-            "theta": round(total_theta, 6),
-            "vega": round(total_vega, 6),
-            "num_positions": len(positions),
-        })
+        greeks_records.append(
+            {
+                "timestamp": date_str,
+                "delta": round(total_delta, 6),
+                "gamma": round(total_gamma, 6),
+                "theta": round(total_theta, 6),
+                "vega": round(total_vega, 6),
+                "num_positions": len(positions),
+            }
+        )
 
     # Compute metrics
     equity_df = pd.DataFrame(equity_records)
@@ -542,15 +559,14 @@ def run_options_backtest(
 
     equity_df.to_csv(out / "equity.csv", index=False)
 
-    trade_cols = ["timestamp", "code", "option_type", "strike", "expiry",
-                  "side", "price", "qty", "pnl", "entry_date"]
-    pd.DataFrame(trade_records or [], columns=trade_cols).to_csv(
-        out / "trades.csv", index=False)
+    trade_cols = ["timestamp", "code", "option_type", "strike", "expiry", "side", "price", "qty", "pnl", "entry_date"]
+    pd.DataFrame(trade_records or [], columns=trade_cols).to_csv(out / "trades.csv", index=False)
 
     pd.DataFrame(greeks_records).to_csv(out / "greeks.csv", index=False)
     pd.DataFrame([metrics]).to_csv(out / "metrics.csv", index=False)
 
     from backtest.run_card import write_run_card
+
     write_run_card(
         run_dir,
         config,
@@ -588,10 +604,12 @@ def _find_matching_position(
     """
     expiry_ts = pd.Timestamp(expiry)
     for pos in positions:
-        if (pos.underlying_code == underlying
-                and pos.option_type == option_type
-                and abs(pos.strike - strike) < 1e-6
-                and pos.expiry == expiry_ts):
+        if (
+            pos.underlying_code == underlying
+            and pos.option_type == option_type
+            and abs(pos.strike - strike) < 1e-6
+            and pos.expiry == expiry_ts
+        ):
             return pos
     return None
 
@@ -626,36 +644,26 @@ def _calc_options_metrics(
             final_raw = terminal
             final_value = round(terminal, 2)
         else:
-            warnings.append(
-                "Final equity is non-finite; final and return metrics are undefined."
-            )
+            warnings.append("Final equity is non-finite; final and return metrics are undefined.")
     else:
-        warnings.append(
-            "No equity observations were produced; equity metrics are undefined."
-        )
+        warnings.append("No equity observations were produced; equity metrics are undefined.")
 
     valid_initial_cash = np.isfinite(initial_cash) and initial_cash > 0
     total_ret: float | None = None
     if final_raw is not None and valid_initial_cash:
         total_ret = final_raw / float(initial_cash) - 1
     elif final_raw is not None:
-        warnings.append(
-            "Total return is undefined because initial cash is not positive and finite."
-        )
+        warnings.append("Total return is undefined because initial cash is not positive and finite.")
 
     ann_ret: float | None = None
     if n < 2:
         warnings.append("Annual return requires at least two equity observations.")
     elif total_ret is None:
-        warnings.append(
-            "Annual return is undefined because total return is unavailable."
-        )
+        warnings.append("Annual return is undefined because total return is unavailable.")
     elif final_raw is not None and final_raw < 0:
         warnings.append("Annual return is undefined when final equity is negative.")
     elif bars_per_year <= 0:
-        warnings.append(
-            "Annual return is undefined because bars_per_year is not positive."
-        )
+        warnings.append("Annual return is undefined because bars_per_year is not positive.")
     else:
         growth = final_raw / float(initial_cash)
         # Explosive paths (e.g. 1m bars) can OverflowError before isfinite.
@@ -674,13 +682,9 @@ def _calc_options_metrics(
         if np.isfinite(candidate_returns.to_numpy()).all():
             returns = candidate_returns
         else:
-            warnings.append(
-                "Risk ratios are undefined because equity returns are non-finite."
-            )
+            warnings.append("Risk ratios are undefined because equity returns are non-finite.")
     elif n >= 2:
-        warnings.append(
-            "Path-dependent metrics are undefined because equity contains non-finite values."
-        )
+        warnings.append("Path-dependent metrics are undefined because equity contains non-finite values.")
 
     max_dd: float | None = None
     if path_is_finite:
@@ -689,9 +693,7 @@ def _calc_options_metrics(
             dd = (equity_vals - peak) / peak
             max_dd = float(dd.min())
         else:
-            warnings.append(
-                "Maximum drawdown is undefined because peak equity is not positive."
-            )
+            warnings.append("Maximum drawdown is undefined because peak equity is not positive.")
 
     sharpe: float | None = None
     if returns is not None and len(returns) > 1 and bars_per_year > 0:
@@ -699,9 +701,7 @@ def _calc_options_metrics(
         if np.isfinite(vol) and vol > 1e-12:
             sharpe = float(returns.mean() / vol * np.sqrt(bars_per_year))
         else:
-            warnings.append(
-                "Sharpe ratio is undefined because return volatility is zero."
-            )
+            warnings.append("Sharpe ratio is undefined because return volatility is zero.")
     elif bars_per_year <= 0:
         warnings.append("Sharpe ratio requires a positive bars_per_year value.")
     else:
@@ -711,9 +711,7 @@ def _calc_options_metrics(
     if ann_ret is not None and max_dd is not None and abs(max_dd) > 1e-12:
         calmar = ann_ret / abs(max_dd)
     else:
-        warnings.append(
-            "Calmar ratio requires a defined annual return and a nonzero drawdown."
-        )
+        warnings.append("Calmar ratio requires a defined annual return and a nonzero drawdown.")
 
     sortino: float | None = None
     if returns is not None and bars_per_year > 0:
@@ -723,9 +721,7 @@ def _calc_options_metrics(
             if np.isfinite(downside_std) and downside_std > 1e-12:
                 sortino = float(returns.mean() / downside_std * np.sqrt(bars_per_year))
         if sortino is None:
-            warnings.append(
-                "Sortino ratio requires at least two varying downside returns."
-            )
+            warnings.append("Sortino ratio requires at least two varying downside returns.")
     elif bars_per_year <= 0:
         warnings.append("Sortino ratio requires a positive bars_per_year value.")
     else:

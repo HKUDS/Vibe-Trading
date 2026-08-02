@@ -112,7 +112,7 @@ Use `min_text_per_page` to control when OCR is triggered (default: 50 characters
 
 ```python
 read_document("scanned_report.pdf", min_text_per_page=10)  # More aggressive OCR
-read_document("mixed_pdf.pdf", min_text_per_page=100)       # Less aggressive OCR
+read_document("mixed_pdf.pdf", min_text_per_page=100)  # Less aggressive OCR
 ```
 
 ### OCR Engine Configuration

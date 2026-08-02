@@ -88,6 +88,7 @@ from tweepy import Client
 
 client = Client(bearer_token=os.getenv("TWITTER_BEARER_TOKEN"))
 
+
 # Search tweets discussing a cashtag over the last 7 days
 def fetch_cashtag_tweets(ticker: str, max_results: int = 100) -> list[dict]:
     """Collect Twitter discussion data for a given ticker.
@@ -168,6 +169,7 @@ from telethon import functions
 API_ID = int(os.getenv("TELEGRAM_API_ID"))
 API_HASH = os.getenv("TELEGRAM_API_HASH")
 
+
 async def fetch_channel_messages(
     channel_username: str,
     limit: int = 200,
@@ -185,17 +187,17 @@ async def fetch_channel_messages(
     """
     async with TelegramClient("session", API_ID, API_HASH) as client:
         messages = []
-        async for msg in client.iter_messages(
-            channel_username, limit=limit, offset_date=offset_date
-        ):
+        async for msg in client.iter_messages(channel_username, limit=limit, offset_date=offset_date):
             if msg.text:
-                messages.append({
-                    "id": msg.id,
-                    "text": msg.text,
-                    "date": msg.date.isoformat(),
-                    "views": getattr(msg, "views", 0),
-                    "forwards": getattr(msg, "forwards", 0),
-                })
+                messages.append(
+                    {
+                        "id": msg.id,
+                        "text": msg.text,
+                        "date": msg.date.isoformat(),
+                        "views": getattr(msg, "views", 0),
+                        "forwards": getattr(msg, "forwards", 0),
+                    }
+                )
         return messages
 ```
 
@@ -238,6 +240,7 @@ async def fetch_channel_messages(
 import discord
 from discord.ext import commands
 
+
 async def fetch_channel_history(
     channel_id: int,
     limit: int = 500,
@@ -260,18 +263,20 @@ async def fetch_channel_history(
     async def on_ready():
         channel = bot.get_channel(channel_id)
         async for msg in channel.history(limit=limit, after=after):
-            messages.append({
-                "id": str(msg.id),
-                "content": msg.content,
-                "timestamp": msg.created_at.isoformat(),
-                "author": {
-                    "id": str(msg.author.id),
-                    "name": msg.author.name,
-                    "bot": msg.author.bot,
-                },
-                "reaction_count": sum(r.count for r in msg.reactions),
-                "attachments": len(msg.attachments),
-            })
+            messages.append(
+                {
+                    "id": str(msg.id),
+                    "content": msg.content,
+                    "timestamp": msg.created_at.isoformat(),
+                    "author": {
+                        "id": str(msg.author.id),
+                        "name": msg.author.name,
+                        "bot": msg.author.bot,
+                    },
+                    "reaction_count": sum(r.count for r in msg.reactions),
+                    "attachments": len(msg.attachments),
+                }
+            )
         await bot.close()
 
     await bot.start(os.getenv("DISCORD_BOT_TOKEN"))
@@ -322,6 +327,7 @@ async def fetch_channel_history(
 # pip install praw
 import praw
 
+
 def fetch_subreddit_posts(
     subreddit_name: str,
     mode: str = "hot",
@@ -355,17 +361,19 @@ def fetch_subreddit_posts(
     }[mode]
 
     for post in fetch_fn(limit=limit):
-        posts.append({
-            "id": post.id,
-            "title": post.title,
-            "selftext": post.selftext[:500],  # truncated body
-            "score": post.score,
-            "upvote_ratio": post.upvote_ratio,
-            "num_comments": post.num_comments,
-            "created_utc": post.created_utc,
-            "url": post.url,
-            "flair": post.link_flair_text,
-        })
+        posts.append(
+            {
+                "id": post.id,
+                "title": post.title,
+                "selftext": post.selftext[:500],  # truncated body
+                "score": post.score,
+                "upvote_ratio": post.upvote_ratio,
+                "num_comments": post.num_comments,
+                "created_utc": post.created_utc,
+                "url": post.url,
+                "flair": post.link_flair_text,
+            }
+        )
     return posts
 ```
 
@@ -425,6 +433,7 @@ def fetch_subreddit_posts(
 # pip install vaderSentiment
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+
 def vader_score(text: str) -> dict:
     """Score the sentiment of social-media text using VADER.
 
@@ -449,6 +458,7 @@ from transformers import pipeline
 
 _finbert = None
 
+
 def get_finbert():
     """Lazily load the FinBERT model. First call takes roughly 1-2 seconds."""
     global _finbert
@@ -459,6 +469,7 @@ def get_finbert():
             tokenizer="ProsusAI/finbert",
         )
     return _finbert
+
 
 def finbert_score(text: str) -> dict:
     """Classify sentiment in finance text using FinBERT.
@@ -503,8 +514,10 @@ def llm_sentiment(text: str, ticker: str | None = None) -> dict:
 Text: {text[:1000]}"""
     # Call the current agent's LLM interface
     from src.providers.base import get_llm
+
     response = get_llm().invoke(prompt)
     import json
+
     return json.loads(response.content)
 ```
 
@@ -524,6 +537,7 @@ Text: {text[:1000]}"""
 ```python
 import pandas as pd
 import numpy as np
+
 
 def compute_buzz_metrics(df: pd.DataFrame, window: str = "1H") -> pd.DataFrame:
     """Compute time-series discussion-buzz metrics.
@@ -699,6 +713,7 @@ import pandas as pd
 import numpy as np
 from scipy.stats import spearmanr
 
+
 def compute_ic(
     factor_series: pd.Series,
     forward_return: pd.Series,
@@ -752,10 +767,7 @@ def build_sentiment_factor(
         {'factor': DataFrame, 'ic_series': Series, 'icir': float}
     """
     # 1. Cross-sectional standardization
-    factor = (
-        raw_data.groupby("date")["sentiment_score"]
-        .transform(lambda x: (x - x.mean()) / (x.std() + 1e-8))
-    )
+    factor = raw_data.groupby("date")["sentiment_score"].transform(lambda x: (x - x.mean()) / (x.std() + 1e-8))
 
     # 2. Compute period-by-period IC
     ic_list = []
@@ -832,6 +844,7 @@ PLATFORM_WEIGHTS = {
     "discord_community": 0.10,
     "reddit_wsb": 0.05,
 }
+
 
 def aggregate_platform_sentiment(platform_scores: dict[str, float]) -> float:
     """Aggregate sentiment scores from multiple platforms using weights.
@@ -933,10 +946,7 @@ def compute_kol_influence_score(author: dict, recent_tweets: list[dict]) -> floa
     follower_score = min(np.log10(max(author["followers_count"], 1)) / 7, 1.0) * 40
 
     # Engagement rate = recent average engagement / follower count
-    avg_engagement = np.mean([
-        t["metrics"]["like_count"] + t["metrics"]["retweet_count"] * 2
-        for t in recent_tweets
-    ])
+    avg_engagement = np.mean([t["metrics"]["like_count"] + t["metrics"]["retweet_count"] * 2 for t in recent_tweets])
     engagement_rate = avg_engagement / max(author["followers_count"], 1)
     engagement_score = min(engagement_rate * 1000, 1.0) * 30
 
@@ -975,14 +985,12 @@ def analyze_earnings_sentiment_shift(
         }
     """
     ed = pd.Timestamp(earnings_date)
-    pre = sentiment_df[
-        (sentiment_df.index >= ed - pd.Timedelta(days=window_days)) &
-        (sentiment_df.index < ed)
-    ]["sentiment_score"].mean()
-    post = sentiment_df[
-        (sentiment_df.index > ed) &
-        (sentiment_df.index <= ed + pd.Timedelta(days=window_days))
-    ]["sentiment_score"].mean()
+    pre = sentiment_df[(sentiment_df.index >= ed - pd.Timedelta(days=window_days)) & (sentiment_df.index < ed)][
+        "sentiment_score"
+    ].mean()
+    post = sentiment_df[(sentiment_df.index > ed) & (sentiment_df.index <= ed + pd.Timedelta(days=window_days))][
+        "sentiment_score"
+    ].mean()
 
     shift = post - pre
     signal = "neutral"
@@ -1022,6 +1030,7 @@ ALPHA_QUALITY_RULES = {
     ],
 }
 
+
 def score_telegram_alpha(message: str) -> dict:
     """Score the quality of alpha in Telegram crypto-channel messages.
 
@@ -1032,6 +1041,7 @@ def score_telegram_alpha(message: str) -> dict:
         {'quality_score': int[0-10], 'is_spam': bool, 'alpha_type': str}
     """
     import re
+
     text_lower = message.lower()
 
     # Spam detection
@@ -1105,8 +1115,9 @@ def compute_project_health_index(
     if users[-3:].mean() < users[-30:].mean() * 0.3:
         flags.append("Active users have plunged: possible project-abandonment warning")
 
-    trend = "growing" if msg_trend > 0 and user_trend > 0 else \
-            "declining" if msg_trend < 0 and user_trend < 0 else "stable"
+    trend = (
+        "growing" if msg_trend > 0 and user_trend > 0 else "declining" if msg_trend < 0 and user_trend < 0 else "stable"
+    )
 
     return {"health_score": health_score, "trend": trend, "flags": flags}
 ```
@@ -1168,12 +1179,14 @@ def detect_meme_stock_momentum(
 
     rows = []
     for ticker, stats in ticker_stats.items():
-        rows.append({
-            "ticker": ticker,
-            "mention_count": stats["count"],
-            "avg_score": np.mean(stats["scores"]),
-            "option_buzz": stats["option_buzz"],
-        })
+        rows.append(
+            {
+                "ticker": ticker,
+                "mention_count": stats["count"],
+                "avg_score": np.mean(stats["scores"]),
+                "option_buzz": stats["option_buzz"],
+            }
+        )
 
     df = pd.DataFrame(rows).sort_values("mention_count", ascending=False)
     return df.head(top_n)
@@ -1201,20 +1214,24 @@ def detect_meme_stock_momentum(
 from dataclasses import dataclass
 from enum import Enum
 
+
 class Platform(str, Enum):
     TWITTER = "twitter"
     TELEGRAM = "telegram"
     DISCORD = "discord"
     REDDIT = "reddit"
 
+
 @dataclass
 class SocialMediaQuery:
     """Social-media query parameters."""
+
     platform: Platform
     query: str
     limit: int = 100
     start_time: str | None = None
     include_sentiment: bool = True
+
 
 def collect_social_signals(query: SocialMediaQuery) -> dict:
     """Unified entrypoint for collecting social-media data.

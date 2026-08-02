@@ -80,7 +80,10 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self, code: str, start_date: str, end_date: str,
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
     ) -> Optional[pd.DataFrame]:
         if not _is_a_share(code):
             return None
@@ -96,16 +99,17 @@ class DataLoader:
         else:
             return None
 
-        url = (
-            f"{_BASE_URL}?param={tencent_code},day,"
-            f"{start_date},{end_date},500,qfq"
-        )
+        url = f"{_BASE_URL}?param={tencent_code},day,{start_date},{end_date},500,qfq"
 
         import urllib.request
-        req = urllib.request.Request(url, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": "https://web.ifzq.gtimg.cn/",
-        })
+
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": "https://web.ifzq.gtimg.cn/",
+            },
+        )
         with urllib.request.urlopen(req, timeout=15) as resp:
             raw = resp.read().decode("utf-8")
 
@@ -129,14 +133,16 @@ class DataLoader:
         rows = []
         for k in klines:
             if len(k) >= 6:
-                rows.append({
-                    "trade_date": k[0],
-                    "open": float(k[1]),
-                    "close": float(k[2]),
-                    "high": float(k[3]),
-                    "low": float(k[4]),
-                    "volume": float(k[5]),
-                })
+                rows.append(
+                    {
+                        "trade_date": k[0],
+                        "open": float(k[1]),
+                        "close": float(k[2]),
+                        "high": float(k[3]),
+                        "low": float(k[4]),
+                        "volume": float(k[5]),
+                    }
+                )
 
         if not rows:
             return None
@@ -144,7 +150,5 @@ class DataLoader:
         df = pd.DataFrame(rows)
         df["trade_date"] = pd.to_datetime(df["trade_date"])
         df = df.set_index("trade_date").sort_index()
-        df = df[["open", "high", "low", "close", "volume"]].dropna(
-            subset=["open", "high", "low", "close"]
-        )
+        df = df[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
         return df

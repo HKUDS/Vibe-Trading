@@ -30,9 +30,7 @@ def resolve_symbol(query: str, limit: int = 5) -> str | None:
 
 def top_movers(market: str, top_n: int = 10) -> None:
     """打印某市场今日涨幅榜前 N。"""
-    envelope = json.loads(
-        MarketScreenerTool().execute(market=market, sort_by="change_pct", top_n=top_n)
-    )
+    envelope = json.loads(MarketScreenerTool().execute(market=market, sort_by="change_pct", top_n=top_n))
     if not envelope.get("ok"):
         print(f"选股失败：{envelope.get('error')}")
         return

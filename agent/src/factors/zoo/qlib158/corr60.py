@@ -6,6 +6,7 @@
 # 典型用途: 衡量60日价格与成交量的同步性，正相关表示价涨量增的健康走势。
 # ============================================================
 """qlib158 CORR60: formula = \\mathrm{ts\\_corr}(\\mathrm{close}, \\log(\\mathrm{volume}+1), 60)."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -13,20 +14,20 @@ import pandas as pd
 from src.factors.base import ts_corr
 
 __alpha_meta__ = {
-    'id': 'qlib158_corr60',
-    'theme': ['volume', 'microstructure'],
-    'formula_latex': '\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}, \\\\log(\\\\mathrm{volume}+1), 60)',
-    'columns_required': ['close', 'volume'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
-    'frequency': ['1d'],
-    'decay_horizon': 60,
-    'min_warmup_bars': 60,
+    "id": "qlib158_corr60",
+    "theme": ["volume", "microstructure"],
+    "formula_latex": "\\\\mathrm{ts\\\\_corr}(\\\\mathrm{close}, \\\\log(\\\\mathrm{volume}+1), 60)",
+    "columns_required": ["close", "volume"],
+    "universe": ["equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr"],
+    "frequency": ["1d"],
+    "decay_horizon": 60,
+    "min_warmup_bars": 60,
 }
 
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 CORR60 on the supplied OHLCV panel."""
-    c = panel['close']
-    v = panel['volume']
+    c = panel["close"]
+    v = panel["volume"]
     logv = np.log1p(v)
     return ts_corr(c, logv, 60)

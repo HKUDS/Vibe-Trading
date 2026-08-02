@@ -6,26 +6,27 @@
 # 典型用途: 判断5日内的整体涨跌倾向，正值表示上涨动量占优。
 # ============================================================
 """qlib158 SUMD5: formula = \\mathrm{SUMP}_w - \\mathrm{SUMN}_w."""
+
 from __future__ import annotations
 
 import pandas as pd
 from src.factors.base import safe_div
 
 __alpha_meta__ = {
-    'id': 'qlib158_sumd5',
-    'theme': ['reversal'],
-    'formula_latex': '\\\\mathrm{SUMP}_w - \\\\mathrm{SUMN}_w',
-    'columns_required': ['close'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
-    'frequency': ['1d'],
-    'decay_horizon': 5,
-    'min_warmup_bars': 5,
+    "id": "qlib158_sumd5",
+    "theme": ["reversal"],
+    "formula_latex": "\\\\mathrm{SUMP}_w - \\\\mathrm{SUMN}_w",
+    "columns_required": ["close"],
+    "universe": ["equity_us", "equity_cn", "equity_hk", "equity_in", "equity_kr"],
+    "frequency": ["1d"],
+    "decay_horizon": 5,
+    "min_warmup_bars": 5,
 }
 
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 SUMD5 on the supplied OHLCV panel."""
-    c = panel['close']
+    c = panel["close"]
     diff = c - c.shift(1)
     pos = diff.where(diff > 0, 0.0)
     neg = (-diff).where(diff < 0, 0.0)

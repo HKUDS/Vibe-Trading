@@ -17,6 +17,7 @@ from typing import Any, Awaitable, Callable, Coroutine, Iterable, Protocol, Type
 from fastmcp.client import Client
 from fastmcp.client.auth import OAuth
 from fastmcp.client.client import CallToolResult
+
 try:
     from fastmcp.client.transports.http import StreamableHttpTransport
     from fastmcp.client.transports.sse import SSETransport
@@ -456,11 +457,13 @@ class MCPServerAdapter:
         try:
             result = _run_sync(lambda: self._call_tool(remote_name, arguments))
             payload = _normalize_call_tool_result(result)
-            payload.update({
-                "server": self.server_name,
-                "remote_tool": remote_name,
-                "tool": local_name or remote_name,
-            })
+            payload.update(
+                {
+                    "server": self.server_name,
+                    "remote_tool": remote_name,
+                    "tool": local_name or remote_name,
+                }
+            )
             return payload
         except Exception as exc:
             return {
@@ -574,6 +577,7 @@ class MCPServerAdapter:
         Raises:
             Exception: Propagates non-transient or exhausted failures.
         """
+
         async def _invoke() -> CallToolResult:
             async with self._client_factory() as client:
                 return await client.call_tool(
@@ -684,11 +688,7 @@ class MCPRemoteTool(BaseTool):
             }
 
         if allow_additional:
-            return {
-                key: value
-                for key, value in arguments.items()
-                if key not in _LOCAL_ONLY_ARGUMENTS
-            }
+            return {key: value for key, value in arguments.items() if key not in _LOCAL_ONLY_ARGUMENTS}
 
         return {}
 
@@ -756,9 +756,7 @@ def _dedupe_server_name_segment(base_segment: str, server_name: str, used_segmen
     unique_segment = f"{base_segment}_{hashlib.sha1(suffix_source).hexdigest()[:8]}"
     salt = 1
     while unique_segment in used_segments:
-        unique_segment = (
-            f"{base_segment}_{hashlib.sha1(suffix_source + f':{salt}'.encode('utf-8')).hexdigest()[:8]}"
-        )
+        unique_segment = f"{base_segment}_{hashlib.sha1(suffix_source + f':{salt}'.encode('utf-8')).hexdigest()[:8]}"
         salt += 1
     return unique_segment
 
@@ -839,10 +837,7 @@ def _normalize_schema_node(value: Any) -> Any:
                 # normalization strips the "type" key from {"type": "null"} → {}.
                 # This preserves Copilot's requirement: {} means "accept anything"
                 # in JSON Schema and must NOT be treated as null-only.
-                normalized[key] = [
-                    nb for nb, ob in zip(norm_branches, orig_branches)
-                    if not _is_null_schema(ob)
-                ]
+                normalized[key] = [nb for nb, ob in zip(norm_branches, orig_branches) if not _is_null_schema(ob)]
 
         return normalized
 
@@ -882,7 +877,9 @@ def _schema_looks_object_like(schema: dict[str, Any]) -> bool:
 
     for key in _SCHEMA_COMPOSITION_KEYS:
         branches = schema.get(key)
-        if isinstance(branches, list) and any(isinstance(branch, dict) and _schema_looks_object_like(branch) for branch in branches):
+        if isinstance(branches, list) and any(
+            isinstance(branch, dict) and _schema_looks_object_like(branch) for branch in branches
+        ):
             return True
 
     return False
@@ -1153,8 +1150,7 @@ def _make_jsonable(value: Any) -> Any:
         return to_jsonable_python(value, by_alias=True, exclude_none=True)
     except (PydanticSerializationError, TypeError, ValueError, UnicodeDecodeError) as exc:
         raise TypeError(
-            f"Unable to serialize MCP result type {_qualified_type_name(value)}: "
-            f"{type(exc).__name__}"
+            f"Unable to serialize MCP result type {_qualified_type_name(value)}: {type(exc).__name__}"
         ) from None
 
 

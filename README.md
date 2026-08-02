@@ -52,7 +52,8 @@
 
 > ⚠️ **Security warning:** The X account `VibeTrading_HKU`, Virtuals project `101845`, and token contract `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` are not official Vibe-Trading assets. We have never launched or endorsed any token or memecoin. Do not buy, connect a wallet, or sign anything. [Details](SECURITY.md#official-channels--impersonation).
 
-- **2026-08-02** 🧠 **Live model discovery, truthful runtime identity, and a verified dependency refresh**: Settings now discovers configured-provider models on demand with stable warning codes and five-locale controls, while each reply records and reloads the immutable provider/model/reasoning identity that actually served it—cleared safely when sessions change ([#924](https://github.com/HKUDS/Vibe-Trading/pull/924), thanks [@QCYTSN](https://github.com/QCYTSN)). Nine hash-locked Python updates plus `jsdom`/`postcss` also landed with exact-version imports, 330 focused tests, the production build, 373 frontend tests, full `main` CI, and Dependency Graph green ([#949](https://github.com/HKUDS/Vibe-Trading/pull/949), [#948](https://github.com/HKUDS/Vibe-Trading/pull/948)); the breaking MCP 2.0 bump remains unmerged pending a complete lock/runtime migration ([#950](https://github.com/HKUDS/Vibe-Trading/pull/950)).
+- **2026-08-02** 🧠 **Live model discovery, truthful runtime identity, and a verified dependency refresh**: Settings now discovers configured-provider models on demand with stable warning codes and five-locale controls, while each reply records and reloads the immutable provider/model/reasoning identity that actually served it—cleared safely when sessions change ([#924](https://github.com/HKUDS/Vibe-Trading/pull/924), thanks [@QCYTSN](https://github.com/QCYTSN)).
+- **2026-08-02** 🛡️ **Risk-first research agents: causal `risk_overlay`, HFT-proxy costs, and Monte Carlo validation labs**: Strategy configs can now attach a causal, bar-proxy risk overlay (vol targeting, gross/net/name caps, turnover throttle, drawdown kill-switch with cooldown + hysteresis, stop-loss, inventory mean-reversion, partial fills, CVaR budgets) applied before fills, plus an `HftCostModel` (spread + impact + adverse-selection) for short-horizon styles — both with honest limits: no LOB / co-lo / queue-priority simulation. A `hft-risk-alpha` skill, `hft_short_horizon_desk` + `monte_carlo_validation_lab` swarm presets, risk-gated config validation (`hft_config_gate`), risk-adjusted trial ranking (PSR·DSR·CVaR gates) in `risk_metrics`, and HFT-proxy stress scenarios (`adverse_selection_burst`, `latency_slippage_tax`) round out the stack. Run `vibe-trading --swarm-run hft_short_horizon_desk '{"market": "US"}'` or `cd agent && python scripts/demo_risk_overlay_hft.py`. Nine hash-locked Python updates plus `jsdom`/`postcss` also landed with exact-version imports, 330 focused tests, the production build, 373 frontend tests, full `main` CI, and Dependency Graph green ([#949](https://github.com/HKUDS/Vibe-Trading/pull/949), [#948](https://github.com/HKUDS/Vibe-Trading/pull/948)); the breaking MCP 2.0 bump remains unmerged pending a complete lock/runtime migration ([#950](https://github.com/HKUDS/Vibe-Trading/pull/950)).
 - **2026-08-01** 🧮 **Options strategy analytics + market sentiment + auditable USD-M research**: A new options payoff workflow analytically calculates expiry P&L extrema, exact breakevens—including continuous zero-P&L intervals—engine-aligned entry commissions, and spot × IV scenarios through Agent and MCP ([#946](https://github.com/HKUDS/Vibe-Trading/pull/946), rebuilt from [#883](https://github.com/HKUDS/Vibe-Trading/pull/883), thanks @he-yufeng). The read-only `sentiment` tool scores arbitrary text locally and retrieves the crypto Fear & Greed Index without an API key ([#939](https://github.com/HKUDS/Vibe-Trading/pull/939), thanks @Robin1987China). Strict USD-M backtests now persist ordered fill, funding, risk, and liquidation events plus a fidelity summary, while rejecting unsupported 100× intervals ([#936](https://github.com/HKUDS/Vibe-Trading/pull/936), thanks @honginp). Reliability improvements also ensure symbol and venue resolution precedes market-data calls, final quoted prices are checked against recorded OHLC evidence, scheduled research retries transient failures, and nested MCP results serialize cleanly.
 - **2026-07-31** 🔧 **USD-M liquidation lifecycle + technical indicators + user-level state dirs**: Opt-in `perpetual_strict` mode settles historical funding before fills and executes isolated/cross margin breaches as real liquidations ([#903](https://github.com/HKUDS/Vibe-Trading/pull/903), thanks @honginp). A read-only `technical_indicators` tool computes RSI/MACD/Bollinger/SMA/EMA through the existing loaders ([#921](https://github.com/HKUDS/Vibe-Trading/pull/921), refs [#920](https://github.com/HKUDS/Vibe-Trading/issues/920), thanks @Robin1987China). Sessions, runs, swarm runs, and uploads now live under `~/.vibe-trading` (relocatable via `VIBE_TRADING_HOME`) with a one-time automatic migration ([#925](https://github.com/HKUDS/Vibe-Trading/pull/925), closes [#904](https://github.com/HKUDS/Vibe-Trading/issues/904), thanks @MuggleJinx). Plus ten correctness fixes — Yahoo `.SS` classified as A-share, bare/prefix-style A-share codes, slash-delimited crypto pairs, `nan`/`inf` guards ([#919](https://github.com/HKUDS/Vibe-Trading/pull/919), [#926](https://github.com/HKUDS/Vibe-Trading/pull/926)–[#935](https://github.com/HKUDS/Vibe-Trading/pull/935), thanks @santhreal).
 <details>
@@ -408,9 +409,9 @@ Beyond OHLCV, **18 read-only data tools** reach into fundamentals & flow — fun
 Detailed inventories are folded below to keep the main README scannable. Open them when you want to inspect the available building blocks.
 
 <details>
-<summary><b>Finance Skill Library</b> <sub>88 skills across 9 categories</sub></summary>
+<summary><b>Finance Skill Library</b> <sub>91 skills across 9 categories</sub></summary>
 
-- 📊 88 specialized finance skills organized into 9 categories
+- 📊 91 specialized finance skills organized into 9 categories
 - 🌐 Complete coverage from traditional markets to crypto & DeFi
 - 🔬 Comprehensive capabilities spanning data sourcing to quantitative research
 
@@ -773,8 +774,8 @@ vibe-trading provider doctor  # print redacted provider/proxy/package diagnostic
 | Command | Description |
 |---------|-------------|
 | `/help` | Show all commands |
-| `/skills` | List all 88 finance skills |
-| `/swarm` | List 30 swarm team presets |
+| `/skills` | List all 91 finance skills |
+| `/swarm` | List 36 swarm team presets |
 | `/swarm run <preset> [vars_json]` | Run a swarm team with live streaming |
 | `/swarm list` | Swarm run history |
 | `/swarm show <run_id>` | Swarm run details |
@@ -1181,7 +1182,7 @@ Browse on ClawHub: [clawhub.ai/skills/vibe-trading](https://clawhub.ai/skills/vi
 <details>
 <summary><b>OpenSpace — self-evolving skills</b></summary>
 
-All 88 finance skills are published on [open-space.cloud](https://open-space.cloud) and evolve autonomously through OpenSpace's self-evolution engine.
+All 91 finance skills are published on [open-space.cloud](https://open-space.cloud) and evolve autonomously through OpenSpace's self-evolution engine.
 
 To use with OpenSpace, add both MCP servers to your agent config:
 
@@ -1203,7 +1204,7 @@ To use with OpenSpace, add both MCP servers to your agent config:
 }
 ```
 
-OpenSpace will auto-discover all 88 skills, enabling auto-fix, auto-improve, and community sharing. Search for Vibe-Trading skills via `search_skills("finance backtest")` in any OpenSpace-connected agent.
+OpenSpace will auto-discover all 91 skills, enabling auto-fix, auto-improve, and community sharing. Search for Vibe-Trading skills via `search_skills("finance backtest")` in any OpenSpace-connected agent.
 
 </details>
 
@@ -1481,9 +1482,9 @@ Vibe-Trading/
 │   │   ├── api/                    # FastAPI route modules
 │   │   │   └── alpha_routes.py     #   /alpha/list, /alpha/{id}, /alpha/bench, SSE stream
 │   │   │
-│   │   ├── skills/                 # 88 finance skills in 9 categories (SKILL.md each)
+│   │   ├── skills/                 # 91 finance skills in 9 categories (SKILL.md each)
 │   │   ├── swarm/                  # Swarm DAG execution engine
-│   │   │   └── presets/            #   30 swarm preset YAML definitions
+│   │   │   └── presets/            #   36 swarm preset YAML definitions
 │   │   ├── session/                # Multi-turn chat + FTS5 session search
 │   │   └── providers/              # LLM provider abstraction
 │   │

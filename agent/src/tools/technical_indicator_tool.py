@@ -119,8 +119,7 @@ class TechnicalIndicatorTool(BaseTool):
             "symbol": {
                 "type": "string",
                 "description": (
-                    "Trading symbol, e.g. AAPL for US stocks, "
-                    "600519.SH for A-shares, BTC-USDT for crypto."
+                    "Trading symbol, e.g. AAPL for US stocks, 600519.SH for A-shares, BTC-USDT for crypto."
                 ),
             },
             "interval": {

@@ -25,14 +25,17 @@ logger = logging.getLogger(__name__)
 # Pydantic Models
 # ============================================================================
 
+
 class CreateSessionRequest(BaseModel):
     """Create session request body."""
+
     title: str = Field("", description="Session title")
     config: Optional[Dict[str, Any]] = Field(None, description="Session config")
 
 
 class SessionResponse(BaseModel):
     """Session record."""
+
     session_id: str
     title: str
     status: str
@@ -43,11 +46,13 @@ class SessionResponse(BaseModel):
 
 class SendMessageRequest(BaseModel):
     """Send chat message: natural-language strategy description."""
+
     content: str = Field(..., description="Natural language strategy description", min_length=1, max_length=5000)
 
 
 class MessageResponse(BaseModel):
     """Stored chat message."""
+
     message_id: str
     session_id: str
     role: str
@@ -159,6 +164,7 @@ class UpdateGoalResponse(BaseModel):
 
 class UpdateSessionRequest(BaseModel):
     """Session update fields."""
+
     title: Optional[str] = None
 
 
@@ -173,6 +179,7 @@ _goal_store = None
 # Helper Functions
 # ============================================================================
 
+
 def _get_goal_store():
     """Return the shared finance goal store."""
     global _goal_store
@@ -181,6 +188,7 @@ def _get_goal_store():
 
         _goal_store = GoalStore()
     return _goal_store
+
 
 # ============================================================================
 # SSE frame helpers for session events (module-level for re-export)
@@ -281,10 +289,10 @@ def _live_action_frame_from_tool_result(event: Any) -> Optional[str]:
     return frame.to_sse()
 
 
-
 # ============================================================================
 # Registration
 # ============================================================================
+
 
 def register_sessions_routes(app: FastAPI) -> None:
     """Mount the session/goal routes onto ``app``.
@@ -332,7 +340,12 @@ def register_sessions_routes(app: FastAPI) -> None:
     # Session CRUD routes
     # -----------------------------------------------------------------------
 
-    @app.post("/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_auth)])
+    @app.post(
+        "/sessions",
+        response_model=SessionResponse,
+        status_code=status.HTTP_201_CREATED,
+        dependencies=[Depends(require_auth)],
+    )
     async def create_session(request: CreateSessionRequest):
         """Create a chat session."""
         svc = _host_get_session_service()
@@ -634,9 +647,7 @@ def register_sessions_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
         messages = svc.get_messages(session_id, limit=6)
-        first_user = next(
-            (m for m in messages if m.role == "user" and (m.content or "").strip()), None
-        )
+        first_user = next((m for m in messages if m.role == "user" and (m.content or "").strip()), None)
         if first_user is None:
             raise HTTPException(status_code=409, detail="Session has no user message to summarize")
 
@@ -645,17 +656,14 @@ def register_sessions_routes(app: FastAPI) -> None:
         if current and current != auto_prefix:
             return {"status": "kept", "session_id": session_id, "title": current}
 
-        first_assistant = next(
-            (m for m in messages if m.role == "assistant" and (m.content or "").strip()), None
-        )
+        first_assistant = next((m for m in messages if m.role == "assistant" and (m.content or "").strip()), None)
         excerpt = f"User: {first_user.content.strip()[:600]}"
         if first_assistant:
             excerpt += f"\nAssistant: {first_assistant.content.strip()[:600]}"
         prompt = (
             "Write a session title for the conversation below: at most 8 words "
             "(or 16 CJK characters), in the same language as the user's message, "
-            "no quotes, no trailing punctuation. Reply with the title only.\n\n"
-            + excerpt
+            "no quotes, no trailing punctuation. Reply with the title only.\n\n" + excerpt
         )
 
         def _generate() -> str:
@@ -714,7 +722,9 @@ def register_sessions_routes(app: FastAPI) -> None:
             return {"status": "no_active_loop"}
         return {"status": "cancelled"}
 
-    @app.get("/sessions/{session_id}/messages", response_model=List[MessageResponse], dependencies=[Depends(require_auth)])
+    @app.get(
+        "/sessions/{session_id}/messages", response_model=List[MessageResponse], dependencies=[Depends(require_auth)]
+    )
     async def get_messages(session_id: str, limit: int = Query(100, ge=1, le=1000)):
         """List messages for a session."""
         _host_validate_path_param(session_id, "session_id")

@@ -63,7 +63,9 @@ def _full_id(zoo_id: str, short_id: str) -> str:
     return f"{zoo_id}_{suffix}"
 
 
-def _write_alpha(zoo_dir: Path, short_id: str, zoo_id: str, *, body: str = GOOD_COMPUTE, meta: str | None = None) -> None:
+def _write_alpha(
+    zoo_dir: Path, short_id: str, zoo_id: str, *, body: str = GOOD_COMPUTE, meta: str | None = None
+) -> None:
     meta_block = (meta or GOOD_META).replace("__FULL_ID__", _full_id(zoo_id, short_id))
     text = textwrap.dedent(meta_block).strip() + "\n\n" + textwrap.dedent(body).strip() + "\n"
     (zoo_dir / f"{short_id}.py").write_text(text, encoding="utf-8")
@@ -189,7 +191,9 @@ def test_registry_duplicate_id_rejected(tmp_path: Path) -> None:
     z.mkdir(parents=True)
     _write_alpha(z, "alpha_001", "fakezoo")
     # second file with same alpha id (different filename, same __alpha_meta__["id"])
-    text = textwrap.dedent(GOOD_META.replace("__FULL_ID__", "fakezoo_001")) + "\n" + textwrap.dedent(GOOD_COMPUTE) + "\n"
+    text = (
+        textwrap.dedent(GOOD_META.replace("__FULL_ID__", "fakezoo_001")) + "\n" + textwrap.dedent(GOOD_COMPUTE) + "\n"
+    )
     (z / "alpha_dup.py").write_text(text, encoding="utf-8")
     reg = Registry(zoo_root=zoo_root)
     assert any("duplicate" in e["reason"] for e in reg.health()["errors"])

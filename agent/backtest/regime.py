@@ -48,7 +48,7 @@ def compute_edge_density(
 
     density = pd.Series(np.nan, index=returns.index)
     for i in range(corr_window, len(returns) + 1):
-        corr = returns.iloc[i - corr_window:i].corr().abs().to_numpy()
+        corr = returns.iloc[i - corr_window : i].corr().abs().to_numpy()
         density.iloc[i - 1] = float((corr[upper_mask] >= edge_threshold).sum()) / n_pairs
     return density
 
@@ -181,22 +181,15 @@ def compute_regime_timeline(
     # calendar-day fetch buffer by the correlation window (and a margin for
     # non-trading days).
     end_date = datetime.now().strftime("%Y-%m-%d")
-    start_date = (
-        datetime.now() - timedelta(days=days + corr_window + 90)
-    ).strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=days + corr_window + 90)).strftime("%Y-%m-%d")
 
     price_series = _fetch_price_series(codes, start_date, end_date)
 
     if len(price_series) < 2:
-        raise ValueError(
-            f"Could not fetch price data for at least 2 assets. "
-            f"Fetched: {list(price_series.keys())}"
-        )
+        raise ValueError(f"Could not fetch price data for at least 2 assets. Fetched: {list(price_series.keys())}")
 
     returns = _aligned_returns(price_series)
-    density = compute_edge_density(
-        returns, corr_window=corr_window, edge_threshold=edge_threshold
-    )
+    density = compute_edge_density(returns, corr_window=corr_window, edge_threshold=edge_threshold)
     regimes = detect_regimes(
         density,
         smooth_window=smooth_window,
@@ -209,12 +202,8 @@ def compute_regime_timeline(
         regimes = regimes.iloc[-days:]
 
     dates = [d.strftime("%Y-%m-%d") for d in regimes.index]
-    density_out = [
-        None if np.isnan(v) else round(float(v), 4) for v in regimes["density"]
-    ]
-    smoothed_out = [
-        None if np.isnan(v) else round(float(v), 4) for v in regimes["smoothed"]
-    ]
+    density_out = [None if np.isnan(v) else round(float(v), 4) for v in regimes["density"]]
+    smoothed_out = [None if np.isnan(v) else round(float(v), 4) for v in regimes["smoothed"]]
     fused_out = [int(v) for v in regimes["fused"]]
 
     return {

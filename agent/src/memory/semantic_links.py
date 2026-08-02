@@ -242,13 +242,8 @@ class SemanticLinker:
         rel_path = self.get_relation_path(entry_path)
         data = {
             "version": _RELATIONS_VERSION,
-            "links": [
-                {"target": target, "score": round(score, 4)}
-                for target, score in links
-            ],
-            "updated_at": datetime.now(timezone.utc)
-            .replace(microsecond=0)
-            .isoformat(),
+            "links": [{"target": target, "score": round(score, 4)} for target, score in links],
+            "updated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         }
 
         content = json.dumps(data, indent=2, ensure_ascii=False)
@@ -260,9 +255,7 @@ class SemanticLinker:
         fd = None
         tmp_path = None
         try:
-            fd, tmp_path = tempfile.mkstemp(
-                suffix=".tmp", prefix=".relations_", dir=str(dir_path)
-            )
+            fd, tmp_path = tempfile.mkstemp(suffix=".tmp", prefix=".relations_", dir=str(dir_path))
             os.write(fd, content.encode("utf-8"))
             os.fsync(fd)
             os.close(fd)

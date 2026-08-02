@@ -27,14 +27,10 @@ Structured extraction:
 factor_def = {
     "name": "momentum_12_1",
     "formula_latex": "R_{mom} = \\prod_{i=t-12}^{t-1}(1 + r_i) - 1",
-    "variables": {
-        "formation_period": 12,
-        "skip_period": 1,
-        "return_type": "cumulative"
-    },
+    "variables": {"formation_period": 12, "skip_period": 1, "return_type": "cumulative"},
     "columns_required": ["close"],
     "universe": "equity_us",
-    "decay_horizon": 21
+    "decay_horizon": 21,
 }
 ```
 
@@ -161,18 +157,18 @@ strategy_def = {
     "name": "order_flow_mean_reversion",
     "entry_rules": [
         "normalized_order_flow < -2.0 (heavy selling, buy signal)",
-        "normalized_order_flow > 2.0 (heavy buying, sell signal)"
+        "normalized_order_flow > 2.0 (heavy buying, sell signal)",
     ],
     "exit_rules": [
         "hold_days >= 5 (time-based exit)",
         "abs(normalized_order_flow) < 0.5 (flow normalized, exit)",
-        "position_pnl < -0.05 (stop-loss)"
+        "position_pnl < -0.05 (stop-loss)",
     ],
     "position_sizing": "equal_weight, max_positions=10",
     "risk_management": {"stop_loss_pct": 0.05, "max_positions": 10},
     "universe": "equity_us",
     "columns_required": ["close", "volume"],
-    "source_paper": "Avramov & Chordia (2006)"
+    "source_paper": "Avramov & Chordia (2006)",
 }
 ```
 

@@ -11,7 +11,7 @@ def test_benford_check_handles_infinite_values():
     """Prove that benford_check safely skips inf/-inf values without raising OverflowError."""
     # Values containing infinity
     values = [10.0, 20.0, 30.0, float("inf"), float("-inf")]
-    
+
     # On un-fixed code, math.floor(math.log10(inf)) raised OverflowError.
     # On fixed code, non-finite values are safely skipped.
     res = benford_check(values)

@@ -5,9 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from collections.abc import Callable
 from contextlib import suppress
-from pathlib import Path
 from typing import Any
 
 from src.channels.base import BaseChannel
@@ -64,11 +62,7 @@ class ChannelManager:
     def _init_channels(self) -> None:
         """Initialize channels discovered via pkgutil scan + entry_points plugins."""
         self._status = inspect_channels(self.config)
-        enabled_names = {
-            name
-            for name, status in self._status.items()
-            if status.get("enabled") is True
-        }
+        enabled_names = {name for name, status in self._status.items() if status.get("enabled") is True}
         plugin_classes = discover_plugins(enabled_names)
         builtins = set(discover_channel_names())
 
@@ -103,13 +97,19 @@ class ChannelManager:
                 channel = cls(section, self.bus, **kwargs)
                 # Resolve global → per-channel boolean overrides
                 channel.send_progress = self._resolve_bool_override(
-                    section, "send_progress", self._global_bool("send_progress", True),
+                    section,
+                    "send_progress",
+                    self._global_bool("send_progress", True),
                 )
                 channel.send_tool_hints = self._resolve_bool_override(
-                    section, "send_tool_hints", self._global_bool("send_tool_hints", False),
+                    section,
+                    "send_tool_hints",
+                    self._global_bool("send_tool_hints", False),
                 )
                 channel.show_reasoning = self._resolve_bool_override(
-                    section, "show_reasoning", self._global_bool("show_reasoning", True),
+                    section,
+                    "show_reasoning",
+                    self._global_bool("show_reasoning", True),
                 )
                 self.channels[name] = channel
                 self._status.setdefault(name, {})
@@ -292,7 +292,8 @@ class ChannelManager:
                     msg = pending.pop(0)
                 else:
                     msg = await asyncio.wait_for(
-                        self.bus.consume_outbound(), timeout=1.0,
+                        self.bus.consume_outbound(),
+                        timeout=1.0,
                     )
 
                 # Reasoning routing
@@ -309,11 +310,13 @@ class ChannelManager:
                 # Progress / tool-hint filtering
                 if msg.metadata.get("_progress"):
                     if msg.metadata.get("_tool_hint") and not self._should_send_progress(
-                        msg.channel, tool_hint=True,
+                        msg.channel,
+                        tool_hint=True,
                     ):
                         continue
                     if not msg.metadata.get("_tool_hint") and not self._should_send_progress(
-                        msg.channel, tool_hint=False,
+                        msg.channel,
+                        tool_hint=False,
                     ):
                         continue
 
@@ -335,7 +338,8 @@ class ChannelManager:
                         if self._should_suppress_outbound(msg):
                             logger.info(
                                 "Suppressing duplicate outbound message to %s:%s",
-                                msg.channel, msg.chat_id,
+                                msg.channel,
+                                msg.chat_id,
                             )
                             continue
                     await self._send_with_retry(channel, msg)
@@ -369,7 +373,8 @@ class ChannelManager:
             await channel.send(msg)
 
     def _coalesce_stream_deltas(
-        self, first_msg: OutboundMessage,
+        self,
+        first_msg: OutboundMessage,
     ) -> tuple[OutboundMessage, list[OutboundMessage]]:
         """Merge consecutive _stream_delta messages for the same target.
 
@@ -419,7 +424,9 @@ class ChannelManager:
         return merged, non_matching
 
     async def _send_with_retry(
-        self, channel: BaseChannel, msg: OutboundMessage,
+        self,
+        channel: BaseChannel,
+        msg: OutboundMessage,
     ) -> None:
         """Send a message with retry on failure using exponential backoff."""
         max_attempts = 2  # conservative default
@@ -438,13 +445,18 @@ class ChannelManager:
                 if attempt == max_attempts - 1:
                     logger.exception(
                         "Failed to send to %s after %d attempts",
-                        msg.channel, max_attempts,
+                        msg.channel,
+                        max_attempts,
                     )
                     return
                 delay = _SEND_RETRY_DELAYS[min(attempt, len(_SEND_RETRY_DELAYS) - 1)]
                 logger.warning(
                     "Send to %s failed (attempt %d/%d): %s, retrying in %ds",
-                    msg.channel, attempt + 1, max_attempts, type(e).__name__, delay,
+                    msg.channel,
+                    attempt + 1,
+                    max_attempts,
+                    type(e).__name__,
+                    delay,
                 )
                 try:
                     await asyncio.sleep(delay)

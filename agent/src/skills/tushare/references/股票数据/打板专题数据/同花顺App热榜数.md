@@ -44,10 +44,8 @@ rank_time | str | Y | 排行榜获取时间
 **接口示例**
 
 ```python
-
-#获取查询月份券商金股
-df = pro.ths_hot(trade_date='20240315', market='热股', fields='ts_code,ts_name,hot,concept')
-
+# 获取查询月份券商金股
+df = pro.ths_hot(trade_date="20240315", market="热股", fields="ts_code,ts_name,hot,concept")
 ```
 
 <br>

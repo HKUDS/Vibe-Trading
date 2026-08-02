@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: 市场超额收益因子 (Mkt-RF)
 # 简要说明: Fama-French三因子模型中的市场因子，代表市场组合相对于无风险利率的超额收益。
@@ -15,6 +14,7 @@ value-weighted excess return of the market portfolio. We approximate the
 per-stock market-factor exposure as the 21-day total return cross-sectionally
 z-scored, suitable for ranking long-short portfolios.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -23,20 +23,20 @@ import pandas as pd
 from src.factors.base import delta, safe_div
 
 __alpha_meta__ = {
-    'id': 'academic_mkt_rf',
-    'nickname': '[PRICE PROXY] Market factor (Sharpe 1964) — 21d demeaned return',
-    'theme': ['momentum'],
-    'formula_latex': r'\mathrm{zscore}_{x}\bigl((\mathrm{close}_t - \mathrm{close}_{t-21}) / \mathrm{close}_{t-21}\bigr)',
-    'columns_required': ['close'],
-    'universe': ['equity_us', 'equity_cn', 'equity_hk'],
-    'frequency': ['1d'],
-    'decay_horizon': 21,
-    'min_warmup_bars': 21,
-    'notes': (
-        '[PRICE PROXY] for the Sharpe (1964) / Fama-French market factor (MKT-RF). '
-        'The original definition uses value-weighted market excess returns; here we '
-        'use a 21-day per-stock total return and cross-sectional z-score per date '
-        'for long-short ranking. Top z-scores = strong recent winners; bottom = losers.'
+    "id": "academic_mkt_rf",
+    "nickname": "[PRICE PROXY] Market factor (Sharpe 1964) — 21d demeaned return",
+    "theme": ["momentum"],
+    "formula_latex": r"\mathrm{zscore}_{x}\bigl((\mathrm{close}_t - \mathrm{close}_{t-21}) / \mathrm{close}_{t-21}\bigr)",
+    "columns_required": ["close"],
+    "universe": ["equity_us", "equity_cn", "equity_hk"],
+    "frequency": ["1d"],
+    "decay_horizon": 21,
+    "min_warmup_bars": 21,
+    "notes": (
+        "[PRICE PROXY] for the Sharpe (1964) / Fama-French market factor (MKT-RF). "
+        "The original definition uses value-weighted market excess returns; here we "
+        "use a 21-day per-stock total return and cross-sectional z-score per date "
+        "for long-short ranking. Top z-scores = strong recent winners; bottom = losers."
     ),
 }
 
@@ -54,6 +54,6 @@ def _cross_sectional_zscore(df: pd.DataFrame) -> pd.DataFrame:
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return 21-day return cross-sectional z-score per stock."""
-    close = panel['close']
+    close = panel["close"]
     ret = safe_div(delta(close, 21), close.shift(21))
     return _cross_sectional_zscore(ret)

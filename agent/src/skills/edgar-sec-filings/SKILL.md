@@ -42,13 +42,14 @@ url = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=AAPL&type=
 
 ```python
 import yfinance as yf
+
 ticker = yf.Ticker("AAPL")
 
 # Financial statements (derived from 10-K/10-Q)
-income = ticker.financials           # Annual income statement
+income = ticker.financials  # Annual income statement
 income_q = ticker.quarterly_financials  # Quarterly
-balance = ticker.balance_sheet       # Balance sheet
-cashflow = ticker.cashflow           # Cash flow statement
+balance = ticker.balance_sheet  # Balance sheet
+cashflow = ticker.cashflow  # Cash flow statement
 
 # Insider transactions (derived from Form 4)
 insider = ticker.insider_transactions
@@ -232,12 +233,12 @@ def analyze_13f_changes(current_holders, prior_holders):
 
 ```python
 filing_score = {
-    "financial_health": 0,       # -2 to +2: based on 10-K/10-Q financials
-    "management_tone": 0,        # -2 to +2: MD&A sentiment shift
-    "risk_factor_change": 0,     # -2 to +2: new risks vs resolved risks
-    "insider_activity": 0,       # -2 to +2: net insider buying/selling
-    "institutional_flow": 0,     # -2 to +2: 13F position changes
-    "event_catalyst": 0,         # -2 to +2: recent 8-K impact
+    "financial_health": 0,  # -2 to +2: based on 10-K/10-Q financials
+    "management_tone": 0,  # -2 to +2: MD&A sentiment shift
+    "risk_factor_change": 0,  # -2 to +2: new risks vs resolved risks
+    "insider_activity": 0,  # -2 to +2: net insider buying/selling
+    "institutional_flow": 0,  # -2 to +2: 13F position changes
+    "event_catalyst": 0,  # -2 to +2: recent 8-K impact
 }
 # Total range: -12 to +12
 # > +6: strong fundamental bullish

@@ -215,9 +215,7 @@ from typing import Callable  # noqa: E402 — additive import kept local to the 
 _HALT_ACTIONS: dict[str | None, Callable[[str], object]] = {}
 
 
-def register_halt_action(
-    action: Callable[[str], object], broker: str | None = None
-) -> None:
+def register_halt_action(action: Callable[[str], object], broker: str | None = None) -> None:
     """Register the preemptive action a runner runs when a halt is observed.
 
     The action is invoked by :func:`on_halt_action` with the tripped broker key.

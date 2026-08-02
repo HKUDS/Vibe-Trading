@@ -73,9 +73,9 @@ ProgressCb = Callable[[int, int, str], None]
 
 StrictCategory = Literal[
     "confirmed_alive",  # signal beats random in full sample AND in OOS (when provided)
-    "train_only",        # signal beats random in train, fails in test
-    "reversed_strict",   # signal IC < random IC with negative alpha_t < -2
-    "noise",             # alpha_t in [-2, 2]; indistinguishable from random
+    "train_only",  # signal beats random in train, fails in test
+    "reversed_strict",  # signal IC < random IC with negative alpha_t < -2
+    "noise",  # alpha_t in [-2, 2]; indistinguishable from random
 ]
 
 
@@ -96,9 +96,7 @@ class StrictThresholds:
 # ── Random control helpers ─────────────────────────────────────────────────
 
 
-def _shuffle_within_rows(
-    df: pd.DataFrame, *, seed: int
-) -> pd.DataFrame:
+def _shuffle_within_rows(df: pd.DataFrame, *, seed: int) -> pd.DataFrame:
     """Cross-sectionally permute finite values within each row.
 
     This preserves the per-date cross-sectional distribution of the factor
@@ -174,9 +172,7 @@ def compute_random_ic_series(
     return combined.mean(axis=1)
 
 
-def alpha_series_paired(
-    signal_ic: pd.Series, random_ic: pd.Series
-) -> pd.Series:
+def alpha_series_paired(signal_ic: pd.Series, random_ic: pd.Series) -> pd.Series:
     """Per-date paired alpha = signal_IC - random_IC, on the common index."""
     common = signal_ic.index.intersection(random_ic.index)
     if common.empty:
@@ -462,9 +458,7 @@ def run_bench_strict(
             factor_df = reg.compute(aid, panel)
             signal_ic = compute_ic_series(factor_df, return_df)
             if signal_ic.empty:
-                skipped.append(
-                    {"id": aid, "reason": "empty IC series", "kind": "typed"}
-                )
+                skipped.append({"id": aid, "reason": "empty IC series", "kind": "typed"})
                 _fire_progress(idx, aid)
                 continue
 
@@ -518,12 +512,8 @@ def run_bench_strict(
                     "ic_count_test": ic_count_test,
                     "random_ic_mean": round(float(random_ic.mean()), 6),
                     "alpha_t_full": round(alpha_t_full, 4),
-                    "alpha_t_train": (
-                        round(alpha_t_train, 4) if alpha_t_train is not None else None
-                    ),
-                    "alpha_t_test": (
-                        round(alpha_t_test, 4) if alpha_t_test is not None else None
-                    ),
+                    "alpha_t_train": (round(alpha_t_train, 4) if alpha_t_train is not None else None),
+                    "alpha_t_test": (round(alpha_t_test, 4) if alpha_t_test is not None else None),
                     "theme": meta.get("theme", []),
                     "formula_latex": meta.get("formula_latex", ""),
                 }
@@ -532,9 +522,7 @@ def run_bench_strict(
             skipped.append({"id": aid, "reason": str(exc), "kind": "typed"})
         except Exception as exc:  # noqa: BLE001
             logger.exception("strict bench: unexpected failure on %s", aid)
-            skipped.append(
-                {"id": aid, "reason": f"unexpected: {exc}", "kind": "unexpected"}
-            )
+            skipped.append({"id": aid, "reason": f"unexpected: {exc}", "kind": "unexpected"})
 
         _fire_progress(idx, aid)
 
@@ -588,10 +576,7 @@ def run_bench_strict(
     # both the strict and legacy fields.
     public_rows: list[dict[str, Any]] = []
     for r in rows:
-        public_rows.append(
-            {k: v for k, v in r.items() if not k.startswith("_")
-             or k == "_category"}
-        )
+        public_rows.append({k: v for k, v in r.items() if not k.startswith("_") or k == "_category"})
 
     # Legacy bucket aliasing for backward compat (see C1 in code review):
     #   alive    ← confirmed_alive  (positive, OOS-confirmed)

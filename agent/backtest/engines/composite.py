@@ -30,32 +30,41 @@ def _build_rule_engines(config: dict, codes: List[str]) -> Dict[str, BaseEngine]
     for market in markets:
         if market == "a_share":
             from backtest.engines.china_a import ChinaAEngine
+
             engines["a_share"] = ChinaAEngine(config)
         elif market == "us_equity":
             from backtest.engines.global_equity import GlobalEquityEngine
+
             engines["us_equity"] = GlobalEquityEngine(config, market="us")
         elif market == "hk_equity":
             from backtest.engines.global_equity import GlobalEquityEngine
+
             engines["hk_equity"] = GlobalEquityEngine(config, market="hk")
         elif market == "india_equity":
             from backtest.engines.india_equity import IndiaEquityEngine
+
             engines["india_equity"] = IndiaEquityEngine(config)
         elif market == "kr_equity":
             from backtest.engines.korea_equity import KoreaEquityEngine
+
             engines["kr_equity"] = KoreaEquityEngine(config)
         elif market == "crypto":
             from backtest.engines.crypto import CryptoEngine
+
             engines["crypto"] = CryptoEngine(config)
         elif market == "forex":
             from backtest.engines.forex import ForexEngine
+
             engines["forex"] = ForexEngine(config)
         elif market == "futures":
             futures_codes = [c for c in codes if _detect_market(c) == "futures"]
             if any(_is_china_futures(c) for c in futures_codes):
                 from backtest.engines.china_futures import ChinaFuturesEngine
+
                 engines["china_futures"] = ChinaFuturesEngine(config)
             if any(not _is_china_futures(c) for c in futures_codes):
                 from backtest.engines.global_futures import GlobalFuturesEngine
+
                 engines["global_futures"] = GlobalFuturesEngine(config)
 
     return engines
@@ -113,11 +122,7 @@ class CompositeEngine(BaseEngine):
                 bar_date = None
                 if hasattr(bar, "name") and hasattr(bar.name, "date"):
                     bar_date = bar.name.date()
-                entry_date = (
-                    pos.entry_time.date()
-                    if hasattr(pos.entry_time, "date")
-                    else None
-                )
+                entry_date = pos.entry_time.date() if hasattr(pos.entry_time, "date") else None
                 if bar_date and entry_date and bar_date == entry_date:
                     return False
 
@@ -129,11 +134,18 @@ class CompositeEngine(BaseEngine):
         return self._rule_for(self._active_symbol).round_size(raw_size, price)
 
     def calc_commission(
-        self, size: float, price: float, direction: int, is_open: bool,
+        self,
+        size: float,
+        price: float,
+        direction: int,
+        is_open: bool,
     ) -> float:
         """Delegate to active symbol's sub-engine."""
         return self._rule_for(self._active_symbol).calc_commission(
-            size, price, direction, is_open,
+            size,
+            price,
+            direction,
+            is_open,
         )
 
     def apply_slippage(self, price: float, direction: int) -> float:
@@ -146,20 +158,35 @@ class CompositeEngine(BaseEngine):
     # ── PnL / margin dispatch (route by symbol, not _active_symbol) ──
 
     def _calc_pnl(
-        self, symbol: str, direction: int, size: float,
-        entry_price: float, exit_price: float,
+        self,
+        symbol: str,
+        direction: int,
+        size: float,
+        entry_price: float,
+        exit_price: float,
     ) -> float:
         return self._rule_for(symbol)._calc_pnl(
-            symbol, direction, size, entry_price, exit_price,
+            symbol,
+            direction,
+            size,
+            entry_price,
+            exit_price,
         )
 
     def _calc_margin(
-        self, symbol: str, size: float, price: float, leverage: float,
+        self,
+        symbol: str,
+        size: float,
+        price: float,
+        leverage: float,
     ) -> float:
         return self._rule_for(symbol)._calc_margin(symbol, size, price, leverage)
 
     def _calc_raw_size(
-        self, symbol: str, target_notional: float, price: float,
+        self,
+        symbol: str,
+        target_notional: float,
+        price: float,
     ) -> float:
         return self._rule_for(symbol)._calc_raw_size(symbol, target_notional, price)
 
@@ -175,9 +202,13 @@ class CompositeEngine(BaseEngine):
         if market == "crypto":
             crypto_sub = self._rule_engines["crypto"]
             fee = calc_crypto_funding_fee(
-                symbol, bar, timestamp, self.positions,
+                symbol,
+                bar,
+                timestamp,
+                self.positions,
                 crypto_sub.funding_rate,
-                self._funding_applied, self._funding_daily_done,
+                self._funding_applied,
+                self._funding_daily_done,
             )
             self.capital -= fee
 
@@ -192,7 +223,10 @@ class CompositeEngine(BaseEngine):
             forex_sub = self._rule_engines["forex"]
             if forex_sub.swap_enabled:
                 swap = calc_forex_swap(
-                    symbol, timestamp, self.positions,
-                    forex_sub.lot_size, self._last_swap_dates,
+                    symbol,
+                    timestamp,
+                    self.positions,
+                    forex_sub.lot_size,
+                    self._last_swap_dates,
                 )
                 self.capital += swap

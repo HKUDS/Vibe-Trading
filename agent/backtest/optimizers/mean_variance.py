@@ -15,9 +15,7 @@ class MeanVarianceOptimizer(BaseOptimizer):
         super().__init__(lookback=lookback, **kwargs)
         self.risk_free = risk_free
 
-    def _build_context(
-        self, window: pd.DataFrame, active: List[str]
-    ) -> "Dict[str, Any] | None":
+    def _build_context(self, window: pd.DataFrame, active: List[str]) -> "Dict[str, Any] | None":
         """Mean vector and covariance."""
         mu = window.mean().values
         cov = window.cov().values
@@ -64,6 +62,4 @@ def optimize(
     risk_free: float = 0.0,
 ) -> pd.DataFrame:
     """Module-level entry: max-Sharpe-adjusted positions."""
-    return MeanVarianceOptimizer(
-        lookback=lookback, risk_free=risk_free
-    ).optimize(ret, pos, dates)
+    return MeanVarianceOptimizer(lookback=lookback, risk_free=risk_free).optimize(ret, pos, dates)

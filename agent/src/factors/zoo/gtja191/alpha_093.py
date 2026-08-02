@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #93
 # 简要说明: 国泰君安191短周期交易型alpha因子第93号，详见公式定义。
@@ -33,23 +32,23 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_093",
-    "theme": ['microstructure'],
-    "formula_latex": 'SUM((OPEN>=DELAY(OPEN,1)?0:MAX(OPEN-LOW,OPEN-DELAY(OPEN,1))),20)',
-    "columns_required": ['open', 'low'],
+    "theme": ["microstructure"],
+    "formula_latex": "SUM((OPEN>=DELAY(OPEN,1)?0:MAX(OPEN-LOW,OPEN-DELAY(OPEN,1))),20)",
+    "columns_required": ["open", "low"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
     "min_warmup_bars": 22,
-    "notes": 'Sum of downside range moves over 20 days.',
+    "notes": "Sum of downside range moves over 20 days.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     o = panel["open"]
     l = panel["low"]
     po = o.shift(1)
-    move = pd.DataFrame(np.maximum((o - l).to_numpy(), (o - po).to_numpy()),
-                        index=o.index, columns=o.columns)
+    move = pd.DataFrame(np.maximum((o - l).to_numpy(), (o - po).to_numpy()), index=o.index, columns=o.columns)
     keep = move.where(o < po, 0.0)
     return keep.rolling(20, min_periods=20).sum()

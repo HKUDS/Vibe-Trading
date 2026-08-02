@@ -31,15 +31,9 @@ def _artifact_to_dict(artifact: Any) -> dict[str, Any]:
     if "type" in d:
         d["type"] = d["type"].value if hasattr(d["type"], "value") else d["type"]
     if "status" in d:
-        d["status"] = (
-            d["status"].value if hasattr(d["status"], "value") else d["status"]
-        )
+        d["status"] = d["status"].value if hasattr(d["status"], "value") else d["status"]
     if "category" in d and d["category"] is not None:
-        d["category"] = (
-            d["category"].value
-            if hasattr(d["category"], "value")
-            else d["category"]
-        )
+        d["category"] = d["category"].value if hasattr(d["category"], "value") else d["category"]
     return d
 
 
@@ -107,9 +101,7 @@ class SdmStatusTool(BaseTool):
         except Exception as exc:
             return _error(exc)
 
-    def _handle_list(
-        self, store: Any, kwargs: dict[str, Any]
-    ) -> str:
+    def _handle_list(self, store: Any, kwargs: dict[str, Any]) -> str:
         """List artifacts with optional filters."""
         type_filter = None
         if kwargs.get("artifact_type"):
@@ -124,14 +116,14 @@ class SdmStatusTool(BaseTool):
             status=status_filter,
             universe=kwargs.get("universe_filter"),
         )
-        return _ok({
-            "count": len(artifacts),
-            "artifacts": [_artifact_to_dict(a) for a in artifacts],
-        })
+        return _ok(
+            {
+                "count": len(artifacts),
+                "artifacts": [_artifact_to_dict(a) for a in artifacts],
+            }
+        )
 
-    def _handle_detail(
-        self, store: Any, kwargs: dict[str, Any]
-    ) -> str:
+    def _handle_detail(self, store: Any, kwargs: dict[str, Any]) -> str:
         """Get full detail for a single artifact."""
         artifact_id = str(kwargs.get("artifact_id", ""))
         if not artifact_id:
@@ -144,15 +136,15 @@ class SdmStatusTool(BaseTool):
         bench_history = store.get_bench_history(artifact_id, limit=50)
         decay_history = store.get_decay_history(artifact_id, limit=20)
 
-        return _ok({
-            "artifact": _artifact_to_dict(artifact),
-            "bench_history": [asdict(r) for r in bench_history],
-            "decay_history": [asdict(s) for s in decay_history],
-        })
+        return _ok(
+            {
+                "artifact": _artifact_to_dict(artifact),
+                "bench_history": [asdict(r) for r in bench_history],
+                "decay_history": [asdict(s) for s in decay_history],
+            }
+        )
 
-    def _handle_disable(
-        self, store: Any, kwargs: dict[str, Any]
-    ) -> str:
+    def _handle_disable(self, store: Any, kwargs: dict[str, Any]) -> str:
         """Disable an artifact."""
         artifact_id = str(kwargs.get("artifact_id", ""))
         if not artifact_id:
@@ -168,9 +160,7 @@ class SdmStatusTool(BaseTool):
 
         return _ok({"artifact": _artifact_to_dict(updated)})
 
-    def _handle_enable(
-        self, store: Any, kwargs: dict[str, Any]
-    ) -> str:
+    def _handle_enable(self, store: Any, kwargs: dict[str, Any]) -> str:
         """Re-enable a disabled artifact."""
         artifact_id = str(kwargs.get("artifact_id", ""))
         if not artifact_id:
@@ -182,9 +172,7 @@ class SdmStatusTool(BaseTool):
 
         return _ok({"artifact": _artifact_to_dict(updated)})
 
-    def _handle_decay_check(
-        self, store: Any, kwargs: dict[str, Any]
-    ) -> str:
+    def _handle_decay_check(self, store: Any, kwargs: dict[str, Any]) -> str:
         """Evaluate decay state for an artifact."""
         artifact_id = str(kwargs.get("artifact_id", ""))
         if not artifact_id:
@@ -196,22 +184,25 @@ class SdmStatusTool(BaseTool):
 
         bench_history = list(store.get_bench_history(artifact_id, limit=10))
         if len(bench_history) < 3:
-            return _ok({
-                "artifact_id": artifact_id,
-                "signal": "insufficient_data",
-                "message": f"Need at least 3 bench results, have {len(bench_history)}",
-            })
+            return _ok(
+                {
+                    "artifact_id": artifact_id,
+                    "signal": "insufficient_data",
+                    "message": f"Need at least 3 bench results, have {len(bench_history)}",
+                }
+            )
 
         metrics = compute_decay_metrics(bench_history)
         if not has_decay_inputs(metrics):
-            return _ok({
-                "artifact_id": artifact_id,
-                "signal": "insufficient_data",
-                "message": (
-                    f"{len(bench_history)} bench results but no evaluable "
-                    "metric (need ic_mean or sharpe values)"
-                ),
-            })
+            return _ok(
+                {
+                    "artifact_id": artifact_id,
+                    "signal": "insufficient_data",
+                    "message": (
+                        f"{len(bench_history)} bench results but no evaluable metric (need ic_mean or sharpe values)"
+                    ),
+                }
+            )
         evaluator = DecayEvaluator()
 
         signal = evaluator.evaluate_decay(
@@ -223,21 +214,16 @@ class SdmStatusTool(BaseTool):
 
         # Get prior decay signals from history
         decay_history = list(store.get_decay_history(artifact_id, limit=10))
-        prior_signals = [
-            s.decay_signal for s in reversed(decay_history)
-            if s.decay_signal is not None
-        ]
+        prior_signals = [s.decay_signal for s in reversed(decay_history) if s.decay_signal is not None]
 
-        recommended_transition = evaluator.should_transition(
-            artifact.status, prior_signals + [signal]
+        recommended_transition = evaluator.should_transition(artifact.status, prior_signals + [signal])
+
+        return _ok(
+            {
+                "artifact_id": artifact_id,
+                "current_status": artifact.status.value,
+                "signal": signal.value,
+                "recommended_transition": (recommended_transition.value if recommended_transition else None),
+                "metrics": metrics,
+            }
         )
-
-        return _ok({
-            "artifact_id": artifact_id,
-            "current_status": artifact.status.value,
-            "signal": signal.value,
-            "recommended_transition": (
-                recommended_transition.value if recommended_transition else None
-            ),
-            "metrics": metrics,
-        })

@@ -59,11 +59,7 @@ class _InterleavedFilterLLM:
         if self.calls in (2, 4):
             return LLMResponse(
                 content="",
-                tool_calls=[
-                    ToolCallRequest(
-                        id=f"call_{self.calls}", name="_noop", arguments={}
-                    )
-                ],
+                tool_calls=[ToolCallRequest(id=f"call_{self.calls}", name="_noop", arguments={})],
             )
         # Call 5+: final answer
         if on_text_chunk:
@@ -98,11 +94,7 @@ class _CleanRunLLM:
         if self.calls < 5:
             return LLMResponse(
                 content="",
-                tool_calls=[
-                    ToolCallRequest(
-                        id=f"call_{self.calls}", name="_noop", arguments={}
-                    )
-                ],
+                tool_calls=[ToolCallRequest(id=f"call_{self.calls}", name="_noop", arguments={})],
             )
         if on_text_chunk:
             on_text_chunk(self._final_content)
@@ -153,9 +145,7 @@ def _read_trace(run_dir: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def test_e2e_content_filter_pipeline(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_e2e_content_filter_pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """2/5 iterations hit content_filter (40 %) -> full pipeline verified.
 
     Asserts:
@@ -192,9 +182,7 @@ def test_e2e_content_filter_pipeline(
     assert "provider" in warning.lower()
 
 
-def test_e2e_no_content_filter_clean_run(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_e2e_no_content_filter_clean_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """0/5 iterations hit content_filter -> no warnings, no trace entries.
 
     Asserts:

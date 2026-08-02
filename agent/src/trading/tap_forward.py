@@ -87,12 +87,12 @@ def _resolve_config() -> tuple[str, str]:
     # Deliberately independent of EnvConfig: this module must keep working
     # when invoked outside the app's normal startup/config bootstrap (see
     # module docstring + _load_env_into_environ above).
-    base = os.environ.get("TAP_PROXY_URL")  # noqa: env-gate — bootstrap-order independent, see docstring
-    key = os.environ.get("TAP_AGENT_KEY")  # noqa: env-gate — bootstrap-order independent, see docstring
+    base = os.environ.get("TAP_PROXY_URL")  # env-gate — bootstrap-order independent, see docstring
+    key = os.environ.get("TAP_AGENT_KEY")  # env-gate — bootstrap-order independent, see docstring
     if not (base and key):
         _load_env_into_environ()
-        base = os.environ.get("TAP_PROXY_URL")  # noqa: env-gate — bootstrap-order independent, see docstring
-        key = os.environ.get("TAP_AGENT_KEY")  # noqa: env-gate — bootstrap-order independent, see docstring
+        base = os.environ.get("TAP_PROXY_URL")  # env-gate — bootstrap-order independent, see docstring
+        key = os.environ.get("TAP_AGENT_KEY")  # env-gate — bootstrap-order independent, see docstring
     return (base or "").rstrip("/"), (key or "")
 
 
@@ -146,8 +146,7 @@ def forward(
     # Immediate result (auto-approved read) or an error from TAP itself.
     if code != 202:
         ok = 200 <= code < 300
-        return _result(ok, decision="immediate", status=code, body=parsed,
-                       error=None if ok else _err(parsed))
+        return _result(ok, decision="immediate", status=code, body=parsed, error=None if ok else _err(parsed))
 
     # Write path: approval required -> poll until a terminal decision.
     # Build the poll URL against the CONFIGURED base only. We never send the
@@ -163,8 +162,13 @@ def forward(
         # would resolve to the attacker's host under URL joining.
         poll_url = f"{base}{poll}"
     else:
-        return _result(False, decision="pending", status=code, body=parsed,
-                       error="approval response missing a usable txn_id / relative poll path")
+        return _result(
+            False,
+            decision="pending",
+            status=code,
+            body=parsed,
+            error="approval response missing a usable txn_id / relative poll path",
+        )
 
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -176,16 +180,20 @@ def forward(
             inner = (pr.get("response") if isinstance(pr, dict) else None) or {}
             up_status = inner.get("status")
             ok = isinstance(up_status, int) and 200 <= up_status < 300
-            return _result(ok, decision="forwarded", status=up_status,
-                           body=inner.get("body"), error=None if ok else "upstream error")
+            return _result(
+                ok,
+                decision="forwarded",
+                status=up_status,
+                body=inner.get("body"),
+                error=None if ok else "upstream error",
+            )
         if state in ("denied", "timed_out", "error"):
             return _result(False, decision=state, body=pr, error=_err(pr) or state)
     # Known race: an approval landing right at this deadline may have been
     # forwarded upstream even though we report an error here (so any caller-side
     # counter, e.g. max_trades_per_day, can under-count by one). Callers dedup
     # retries via a deterministic client_order_id; see README "TAP Mode".
-    return _result(False, decision="timeout",
-                   error=f"no approval decision within {int(timeout)}s")
+    return _result(False, decision="timeout", error=f"no approval decision within {int(timeout)}s")
 
 
 # --------------------------------------------------------------------------- #
@@ -211,13 +219,14 @@ def _json(text: str) -> Any:
         return text
 
 
-def _result(ok: bool, *, decision: str | None = None, status: int | None = None,
-            body: Any = None, error: str | None = None) -> dict[str, Any]:
+def _result(
+    ok: bool, *, decision: str | None = None, status: int | None = None, body: Any = None, error: str | None = None
+) -> dict[str, Any]:
     return {"ok": ok, "decision": decision, "status": status, "body": body, "error": error}
 
 
 def _env_timeout() -> float:
-    raw = os.environ.get("TAP_APPROVAL_TIMEOUT", "")  # noqa: env-gate — bootstrap-order independent, see module docstring
+    raw = os.environ.get("TAP_APPROVAL_TIMEOUT", "")  # env-gate — bootstrap-order independent, see module docstring
     try:
         return float(raw) if raw else float(_DEFAULT_APPROVAL_TIMEOUT)
     except ValueError:

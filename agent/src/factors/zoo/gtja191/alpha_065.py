@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA Alpha #65
 # 简要说明: 国泰君安191短周期交易型alpha因子第65号，详见公式定义。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_065",
-    "theme": ['reversal'],
-    "formula_latex": 'MEAN(CLOSE,6)/CLOSE',
-    "columns_required": ['close'],
+    "theme": ["reversal"],
+    "formula_latex": "MEAN(CLOSE,6)/CLOSE",
+    "columns_required": ["close"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 6,
     "min_warmup_bars": 7,
-    "notes": 'MA6 over close.',
+    "notes": "MA6 over close.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]

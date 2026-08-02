@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #1 - 量价秩相关
 # 简要说明: (-1 * CORR(RANK(DELTA(LOG(VOLUME), 1)), RANK(((CLOSE - OPEN) / OPEN)), 6))，成交量变化排名与日内收益排名的6日负相关。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_001",
-    "theme": ['volume', 'reversal'],
-    "formula_latex": '(-1 * CORR(RANK(DELTA(LOG(VOLUME), 1)), RANK(((CLOSE - OPEN) / OPEN)), 6))',
-    "columns_required": ['volume', 'close', 'open'],
+    "theme": ["volume", "reversal"],
+    "formula_latex": "(-1 * CORR(RANK(DELTA(LOG(VOLUME), 1)), RANK(((CLOSE - OPEN) / OPEN)), 6))",
+    "columns_required": ["volume", "close", "open"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 6,
     "min_warmup_bars": 7,
-    "notes": 'Standard GTJA #1: lag-1 log-volume change rank vs intraday return rank, 6d corr.',
+    "notes": "Standard GTJA #1: lag-1 log-volume change rank vs intraday return rank, 6d corr.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     v = panel["volume"]

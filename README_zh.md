@@ -408,9 +408,9 @@ LONGBRIDGE_ACCESS_TOKEN=...
 为保持主 README 易读，详细清单折叠在下方。需要检查可用构件时可展开查看。
 
 <details>
-<summary><b>Finance Skill Library</b> <sub>9 个类别中的 88 个 skills</sub></summary>
+<summary><b>Finance Skill Library</b> <sub>9 个类别中的 91 个 skills</sub></summary>
 
-- 📊 88 个专业金融 skills，分布在 9 个类别中
+- 📊 91 个专业金融 skills，分布在 9 个类别中
 - 🌐 覆盖传统市场、加密与 DeFi
 - 🔬 从数据源到量化研究的完整能力链路
 
@@ -492,7 +492,7 @@ LONGBRIDGE_ACCESS_TOKEN=...
 </details>
 
 <details>
-<summary><b>Preset Trading Teams</b> <sub>30 个 swarm presets</sub></summary>
+<summary><b>Preset Trading Teams</b> <sub>36 个 swarm presets</sub></summary>
 
 - 🏢 30 个开箱即用的智能体团队
 - ⚡ 预配置金融工作流

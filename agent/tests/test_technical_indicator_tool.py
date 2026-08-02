@@ -138,8 +138,10 @@ class TestTechnicalIndicatorToolIntegration:
 
     def test_execute_success(self, monkeypatch, sample_df):
         """Full pipeline: fetch → compute → JSON output."""
+
         def _mock_fetch(**kwargs):
             return {"AAPL": sample_df}
+
         monkeypatch.setattr(
             "src.tools.technical_indicator_tool.fetch_market_data",
             _mock_fetch,
@@ -205,8 +207,9 @@ class TestTechnicalIndicatorToolIntegration:
 
     def test_execute_short_data_returns_nulls(self, monkeypatch):
         """Too few bars → indicators return null, but not error."""
-        short_close = pd.Series([float(100 + i) for i in range(10)],
-                                index=pd.date_range("2026-06-01", periods=10, freq="B"))
+        short_close = pd.Series(
+            [float(100 + i) for i in range(10)], index=pd.date_range("2026-06-01", periods=10, freq="B")
+        )
         monkeypatch.setattr(
             "src.tools.technical_indicator_tool.fetch_market_data",
             lambda **kw: {"AAPL": pd.DataFrame({"close": short_close})},

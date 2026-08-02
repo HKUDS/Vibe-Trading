@@ -49,9 +49,7 @@ if ChatOpenAI is not None:
 
         _vibe_provider: Optional[str] = PrivateAttr(default=None)
 
-        def __init__(
-            self, *args: Any, vibe_provider: str | None = None, **kwargs: Any
-        ) -> None:
+        def __init__(self, *args: Any, vibe_provider: str | None = None, **kwargs: Any) -> None:
             """Initialize while retaining the resolved provider name."""
             super().__init__(*args, **kwargs)
             self._vibe_provider = vibe_provider
@@ -74,9 +72,7 @@ if ChatOpenAI is not None:
             if isinstance(extra_content, dict):
                 google = extra_content.get("google")
                 if isinstance(google, dict):
-                    value = google.get("thought_signature") or google.get(
-                        "thoughtSignature"
-                    )
+                    value = google.get("thought_signature") or google.get("thoughtSignature")
                     if value:
                         return value
 
@@ -85,17 +81,13 @@ if ChatOpenAI is not None:
             if isinstance(function, dict):
                 containers.append(function)
             for container in containers:
-                value = container.get("thought_signature") or container.get(
-                    "thoughtSignature"
-                )
+                value = container.get("thought_signature") or container.get("thoughtSignature")
                 if value:
                     return value
             return None
 
         @classmethod
-        def _collect_tool_call_thought_signatures(
-            cls, tool_calls: Any
-        ) -> list[dict[str, Any]]:
+        def _collect_tool_call_thought_signatures(cls, tool_calls: Any) -> list[dict[str, Any]]:
             if not isinstance(tool_calls, list):
                 return []
 
@@ -119,14 +111,10 @@ if ChatOpenAI is not None:
             if not isinstance(src, dict):
                 return
             caps = self._capabilities()
-            if caps.capture_reasoning and (
-                value := src.get("reasoning_content") or src.get("reasoning")
-            ):
+            if caps.capture_reasoning and (value := src.get("reasoning_content") or src.get("reasoning")):
                 msg.additional_kwargs["reasoning_content"] = value
             if caps.gemini_thought_signatures and (
-                signatures := self._collect_tool_call_thought_signatures(
-                    src.get("tool_calls")
-                )
+                signatures := self._collect_tool_call_thought_signatures(src.get("tool_calls"))
             ):
                 msg.additional_kwargs["tool_call_thought_signatures"] = signatures
 
@@ -159,17 +147,11 @@ if ChatOpenAI is not None:
                         if (
                             isinstance(raw, dict)
                             and getattr(msg, "type", None) == "ai"
-                            and not getattr(msg, "additional_kwargs", {}).get(
-                                "tool_call_thought_signatures"
-                            )
+                            and not getattr(msg, "additional_kwargs", {}).get("tool_call_thought_signatures")
                         ):
-                            sigs = self._collect_tool_call_thought_signatures(
-                                raw.get("tool_calls")
-                            )
+                            sigs = self._collect_tool_call_thought_signatures(raw.get("tool_calls"))
                             if sigs:
-                                msg.additional_kwargs[
-                                    "tool_call_thought_signatures"
-                                ] = sigs
+                                msg.additional_kwargs["tool_call_thought_signatures"] = sigs
             return prompt_value
 
         @classmethod
@@ -221,9 +203,7 @@ if ChatOpenAI is not None:
             google["thought_signature"] = signature
 
         @classmethod
-        def _inject_tool_call_thought_signatures(
-            cls, outbound: Any, source_message: Any
-        ) -> None:
+        def _inject_tool_call_thought_signatures(cls, outbound: Any, source_message: Any) -> None:
             if not isinstance(outbound, list):
                 return
 
@@ -260,9 +240,7 @@ if ChatOpenAI is not None:
             default_chunk_class: type,
             base_generation_info: Optional[dict],
         ):
-            gen = super()._convert_chunk_to_generation_chunk(
-                chunk, default_chunk_class, base_generation_info
-            )
+            gen = super()._convert_chunk_to_generation_chunk(chunk, default_chunk_class, base_generation_info)
             if gen is None:
                 return None
             choices = chunk.get("choices") or chunk.get("chunk", {}).get("choices")
@@ -294,15 +272,11 @@ if ChatOpenAI is not None:
                 if caps.normalize_assistant_content and m.get("content") is None:
                     m["content"] = ""
                 if caps.send_reasoning_content:
-                    m["reasoning_content"] = source_message.additional_kwargs.get(
-                        "reasoning_content", ""
-                    )
+                    m["reasoning_content"] = source_message.additional_kwargs.get("reasoning_content", "")
                 else:
                     m.pop("reasoning_content", None)
                 if caps.gemini_thought_signatures:
-                    self._inject_tool_call_thought_signatures(
-                        m.get("tool_calls"), source_message
-                    )
+                    self._inject_tool_call_thought_signatures(m.get("tool_calls"), source_message)
                 else:
                     self._strip_tool_call_extra_content(m.get("tool_calls"))
             return payload
@@ -389,7 +363,7 @@ def _package_version(package: str) -> str:
 
 def _redact_env_flag(name: str) -> str:
     """Report whether an env var is set without exposing its value."""
-    value = os.getenv(name, "")  # noqa: env-gate — diagnostic redaction helper
+    value = os.getenv(name, "")  # env-gate — diagnostic redaction helper
     return "set" if value else "unset"
 
 
@@ -430,9 +404,7 @@ def _build_native_deepseek(
         module = import_module("langchain_deepseek")
         chat_deepseek = getattr(module, "ChatDeepSeek")
     except Exception as exc:  # noqa: BLE001 - optional adapter fallback
-        logger.info(
-            "DeepSeek native adapter unavailable; using OpenAI-compatible path: %s", exc
-        )
+        logger.info("DeepSeek native adapter unavailable; using OpenAI-compatible path: %s", exc)
         return None
 
     creds = get_llm_credentials("deepseek", model)
@@ -472,12 +444,7 @@ def _is_anthropic_temperature_unsupported_error(exc: BaseException) -> bool:
     message = str(getattr(exc, "message", "") or exc).lower()
     if "temperature" not in message:
         return False
-    return (
-        "deprecated" in message
-        or "not supported" in message
-        or "unsupported" in message
-        or "not allowed" in message
-    )
+    return "deprecated" in message or "not supported" in message or "unsupported" in message or "not allowed" in message
 
 
 def _make_temperature_safe_anthropic(base_cls: type) -> type:
@@ -598,10 +565,10 @@ def _build_anthropic(
         timeout=get_env_config().llm.timeout_seconds,
         max_retries=get_env_config().llm.max_retries,
         callbacks=callbacks,
-        api_key=os.getenv("ANTHROPIC_API_KEY") or None,  # noqa: env-gate — native provider credential
+        api_key=os.getenv("ANTHROPIC_API_KEY") or None,  # env-gate — native provider credential
         base_url=(
-            os.getenv("ANTHROPIC_BASE_URL")  # noqa: env-gate — native provider endpoint
-            or os.getenv("ANTHROPIC_API_URL")  # noqa: env-gate — SDK-compatible alias
+            os.getenv("ANTHROPIC_BASE_URL")  # env-gate — native provider endpoint
+            or os.getenv("ANTHROPIC_API_URL")  # env-gate — SDK-compatible alias
             or None
         ),
     )
@@ -645,8 +612,8 @@ def _ensure_dotenv() -> None:
         get_env_config().llm.langchain_provider,
         get_env_config().llm.langchain_model_name or "(unset)",
         _redact_base_url_for_log(
-            os.getenv("OPENAI_BASE_URL")  # noqa: env-gate — diagnostic display
-            or os.getenv("OPENAI_API_BASE")  # noqa: env-gate — diagnostic display
+            os.getenv("OPENAI_BASE_URL")  # env-gate — diagnostic display
+            or os.getenv("OPENAI_API_BASE")  # env-gate — diagnostic display
         ),
     )
 
@@ -726,9 +693,7 @@ def _supports_top_level_reasoning_effort(provider: str, caps_name: str) -> bool:
     # but need not accept this field, so the label alone is not enough.
     try:
         base_url = (
-            get_llm_credentials("openai", get_env_config().llm.langchain_model_name)
-            .get("base_url")
-            or ""
+            get_llm_credentials("openai", get_env_config().llm.langchain_model_name).get("base_url") or ""
         ).strip()
     except Exception:  # noqa: BLE001 - a credential lookup must not break the check
         return False
@@ -769,11 +734,7 @@ def provider_diagnostics() -> dict[str, Any]:
         "openai",
         "langchain-deepseek",
     ]
-    native_package_version = (
-        _package_version(caps.native_adapter_package)
-        if caps.native_adapter_package
-        else None
-    )
+    native_package_version = _package_version(caps.native_adapter_package) if caps.native_adapter_package else None
     adapter_mode = (
         _deepseek_adapter_mode()
         if caps.name == "deepseek"
@@ -803,25 +764,24 @@ def provider_diagnostics() -> dict[str, Any]:
             "LANGCHAIN_MODEL_NAME": _redact_env_flag("LANGCHAIN_MODEL_NAME"),
             "OPENAI_API_KEY": _redact_env_flag("OPENAI_API_KEY"),
             "OPENAI_BASE_URL": _redact_base_url_for_log(
-                os.getenv("OPENAI_BASE_URL")  # noqa: env-gate — diagnostic snapshot
+                os.getenv("OPENAI_BASE_URL")  # env-gate — diagnostic snapshot
             ),
             "OPENAI_API_BASE": _redact_base_url_for_log(
-                os.getenv("OPENAI_API_BASE")  # noqa: env-gate — diagnostic snapshot
+                os.getenv("OPENAI_API_BASE")  # env-gate — diagnostic snapshot
             ),
         },
         "proxy": {
             name: _redact_proxy_url(
-                name, os.getenv(name)  # noqa: env-gate — proxy env iteration
+                name,
+                os.getenv(name),  # env-gate — proxy env iteration
             )
             for name in proxy_names
-            if os.getenv(name)  # noqa: env-gate — proxy env filter
+            if os.getenv(name)  # env-gate — proxy env filter
         },
         "packages": {name: _package_version(name) for name in package_names},
         "timeout_seconds": get_env_config().llm.timeout_seconds,
         "max_retries": get_env_config().llm.max_retries,
-        "reasoning_effort": get_env_config()
-        .llm.langchain_reasoning_effort.strip()
-        .lower(),
+        "reasoning_effort": get_env_config().llm.langchain_reasoning_effort.strip().lower(),
         "adapter": {
             "type": adapter_type,
             "mode": adapter_mode,
@@ -833,9 +793,7 @@ def provider_diagnostics() -> dict[str, Any]:
             "send_reasoning_content": caps.send_reasoning_content,
             "gemini_thought_signatures": caps.gemini_thought_signatures,
             "openrouter_reasoning_body": caps.openrouter_reasoning_body,
-            "top_level_reasoning_effort": _supports_top_level_reasoning_effort(
-                provider, caps.name
-            ),
+            "top_level_reasoning_effort": _supports_top_level_reasoning_effort(provider, caps.name),
         },
     }
 
@@ -889,9 +847,7 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
             if native_llm is not None:
                 return native_llm
             if adapter_mode == "native":
-                raise RuntimeError(
-                    "VIBE_TRADING_DEEPSEEK_ADAPTER=native requires langchain-deepseek"
-                )
+                raise RuntimeError("VIBE_TRADING_DEEPSEEK_ADAPTER=native requires langchain-deepseek")
 
     if ChatOpenAI is None:
         raise RuntimeError("langchain-openai is not installed")
@@ -901,11 +857,7 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         temperature = 0.01
     # Kimi reasoning models reject any temperature other than 1
     # ("invalid temperature: only 1 is allowed for this model").
-    if (
-        caps.name in {"moonshot", "kimi-coding"}
-        and _KIMI_FORCED_TEMPERATURE_RE.match(name)
-        and temperature != 1.0
-    ):
+    if caps.name in {"moonshot", "kimi-coding"} and _KIMI_FORCED_TEMPERATURE_RE.match(name) and temperature != 1.0:
         logger.info("Forcing temperature=1.0 for %s (provider requirement)", name)
         temperature = 1.0
     # Optional reasoning activation for relays requiring opt-in (e.g. OpenRouter).
@@ -917,20 +869,12 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         "timeout": get_env_config().llm.timeout_seconds,
         "max_retries": get_env_config().llm.max_retries,
         "callbacks": callbacks,
-        "extra_body": (
-            {"reasoning": {"effort": effort}}
-            if effort and caps.openrouter_reasoning_body
-            else None
-        ),
+        "extra_body": ({"reasoning": {"effort": effort}} if effort and caps.openrouter_reasoning_body else None),
         # Direct OpenAI takes the effort as a top-level request field instead
         # (gpt-5.6-* require it, even "none", to accept function tools).
         # None is dropped by langchain-openai, so unsupported providers keep a
         # payload without the field.
-        "reasoning_effort": (
-            effort
-            if effort and _supports_top_level_reasoning_effort(provider, caps.name)
-            else None
-        ),
+        "reasoning_effort": (effort if effort and _supports_top_level_reasoning_effort(provider, caps.name) else None),
         "vibe_provider": provider,
     }
     if caps.default_headers:

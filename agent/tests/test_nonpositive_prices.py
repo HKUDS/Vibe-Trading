@@ -83,10 +83,10 @@ def test_why_loader_drops_exact_zero_inf_downstream() -> None:
     # If the loader had KEPT the 0.00 close, the raw return series blows up.
     kept = pd.Series([42.0, -1.03, 0.00, 42.0], index=idx)
     ret_if_kept = kept.pct_change().fillna(0.0)  # the exact downstream expression
-    assert np.isinf(ret_if_kept.iloc[-1])                       # 0.00 -> inf next bar
+    assert np.isinf(ret_if_kept.iloc[-1])  # 0.00 -> inf next bar
     with np.errstate(invalid="ignore"):  # the nan-from-inf is the point, not a bug
         bench_total = float((1 + ret_if_kept).prod())
-    assert not np.isfinite(bench_total)                         # benchmark total -> nan
+    assert not np.isfinite(bench_total)  # benchmark total -> nan
 
     # The loader drops the exact-zero bar, so the surviving series is inf-free.
     frame = pd.DataFrame(
@@ -99,9 +99,9 @@ def test_why_loader_drops_exact_zero_inf_downstream() -> None:
         index=idx,
     )
     cleaned = validate_ohlc(frame, allow_nonpositive_prices=True)
-    assert 0.0 not in list(cleaned["close"])                    # zero bar removed
+    assert 0.0 not in list(cleaned["close"])  # zero bar removed
     safe_ret = cleaned["close"].pct_change().fillna(0.0)
-    assert np.isfinite(safe_ret.to_numpy()).all()               # negatives stay finite
+    assert np.isfinite(safe_ret.to_numpy()).all()  # negatives stay finite
 
 
 def test_allow_still_enforces_structural_invariants() -> None:

@@ -31,6 +31,7 @@ import pandas as pd
 import numpy as np
 from scipy.stats import pearsonr, spearmanr
 
+
 def scan_correlated_assets(
     target_returns: pd.Series,
     universe_returns: pd.DataFrame,
@@ -87,6 +88,7 @@ def scan_correlated_assets(
 ```python
 import statsmodels.api as sm
 from scipy.stats import pearsonr, spearmanr, kendalltau
+
 
 def bivariate_correlation_analysis(
     y: pd.Series,
@@ -166,6 +168,7 @@ from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
 from scipy.spatial.distance import squareform
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 
 def sector_clustering(
     returns: pd.DataFrame,
@@ -274,8 +277,7 @@ def realized_correlation(
     Returns:
         Rolling correlation series and conditional-correlation summary
     """
-    df = pd.concat([y.rename("y"), x.rename("x"),
-                    benchmark.rename("bm")], axis=1).dropna()
+    df = pd.concat([y.rename("y"), x.rename("x"), benchmark.rename("bm")], axis=1).dropna()
 
     # Rolling correlation time series.
     rolling_corrs = {}
@@ -351,6 +353,7 @@ from statsmodels.tsa.stattools import coint, adfuller
 import statsmodels.api as sm
 import numpy as np
 
+
 def engle_granger_coint(
     y: pd.Series,
     x: pd.Series,
@@ -404,6 +407,7 @@ Suitable for three or more assets and for estimating the number of cointegrating
 ```python
 from statsmodels.tsa.vector_ar.vecm import coint_johansen
 
+
 def johansen_coint(
     prices: pd.DataFrame,
     det_order: int = 0,
@@ -426,30 +430,34 @@ def johansen_coint(
     # Trace test.
     trace_results = []
     for i in range(n):
-        trace_results.append({
-            "H0_rank_leq": i,
-            "trace_stat": round(result.lr1[i], 4),
-            "crit_10pct": result.cvt[i, 0],
-            "crit_5pct": result.cvt[i, 1],
-            "crit_1pct": result.cvt[i, 2],
-            "reject_5pct": result.lr1[i] > result.cvt[i, 1],
-        })
+        trace_results.append(
+            {
+                "H0_rank_leq": i,
+                "trace_stat": round(result.lr1[i], 4),
+                "crit_10pct": result.cvt[i, 0],
+                "crit_5pct": result.cvt[i, 1],
+                "crit_1pct": result.cvt[i, 2],
+                "reject_5pct": result.lr1[i] > result.cvt[i, 1],
+            }
+        )
 
     # Max-eigenvalue test.
     maxeig_results = []
     for i in range(n):
-        maxeig_results.append({
-            "H0_rank_eq": i,
-            "maxeig_stat": round(result.lr2[i], 4),
-            "crit_10pct": result.cvm[i, 0],
-            "crit_5pct": result.cvm[i, 1],
-            "crit_1pct": result.cvm[i, 2],
-            "reject_5pct": result.lr2[i] > result.cvm[i, 1],
-        })
+        maxeig_results.append(
+            {
+                "H0_rank_eq": i,
+                "maxeig_stat": round(result.lr2[i], 4),
+                "crit_10pct": result.cvm[i, 0],
+                "crit_5pct": result.cvm[i, 1],
+                "crit_1pct": result.cvm[i, 2],
+                "reject_5pct": result.lr2[i] > result.cvm[i, 1],
+            }
+        )
 
     # Cointegrating vectors, normalized.
     coint_vectors = pd.DataFrame(
-        result.evec[:, :sum(r["reject_5pct"] for r in trace_results)],
+        result.evec[:, : sum(r["reject_5pct"] for r in trace_results)],
         index=prices.columns,
     )
 
@@ -526,6 +534,7 @@ Static OLS hedge ratios cannot capture gradual drift in the cointegration relati
 ```python
 import numpy as np
 
+
 def kalman_hedge_ratio(
     y: pd.Series,
     x: pd.Series,
@@ -581,11 +590,14 @@ def kalman_hedge_ratio(
 
         spread[t] = y.iloc[t] - theta[t, 0] * x.iloc[t] - theta[t, 1]
 
-    return pd.DataFrame({
-        "hedge_ratio": theta[:, 0],
-        "intercept": theta[:, 1],
-        "spread": spread,
-    }, index=y.index)
+    return pd.DataFrame(
+        {
+            "hedge_ratio": theta[:, 0],
+            "intercept": theta[:, 1],
+            "spread": spread,
+        },
+        index=y.index,
+    )
 ```
 
 **Static vs dynamic hedge-ratio comparison**:
@@ -651,7 +663,7 @@ def cross_market_correlation(
     lead_lag = {}
     mkt_names = list(markets.keys())
     for i, m1 in enumerate(mkt_names):
-        for m2 in mkt_names[i + 1:]:
+        for m2 in mkt_names[i + 1 :]:
             pair_key = f"{m1}_{m2}"
             lead_lag[pair_key] = {}
             for lag in lag_days:
@@ -664,7 +676,7 @@ def cross_market_correlation(
     # Rolling correlation
     rolling_corrs = {}
     for i, m1 in enumerate(mkt_names):
-        for m2 in mkt_names[i + 1:]:
+        for m2 in mkt_names[i + 1 :]:
             key = f"{m1}_{m2}"
             rolling_corrs[key] = df[m1].rolling(rolling_window).corr(df[m2])
 
@@ -692,9 +704,9 @@ Cross-market correlation analysis must distinguish between local-currency return
 
 ```python
 def fx_adjusted_correlation(
-    foreign_price: pd.Series,   # foreign-market price, denominated in foreign currency
+    foreign_price: pd.Series,  # foreign-market price, denominated in foreign currency
     domestic_price: pd.Series,  # domestic-market price
-    fx_rate: pd.Series,         # foreign currency / domestic currency, e.g. USD/CNY
+    fx_rate: pd.Series,  # foreign currency / domestic currency, e.g. USD/CNY
 ) -> dict:
     """Cross-market correlation adjusted for FX effects.
 
@@ -713,10 +725,15 @@ def fx_adjusted_correlation(
 
     domestic_ret = domestic_price.pct_change()
 
-    df = pd.concat([foreign_ret.rename("foreign_raw"),
-                    foreign_ret_cny.rename("foreign_domestic"),
-                    domestic_ret.rename("domestic"),
-                    fx_ret.rename("fx")], axis=1).dropna()
+    df = pd.concat(
+        [
+            foreign_ret.rename("foreign_raw"),
+            foreign_ret_cny.rename("foreign_domestic"),
+            domestic_ret.rename("domestic"),
+            fx_ret.rename("fx"),
+        ],
+        axis=1,
+    ).dropna()
 
     raw_corr, _ = pearsonr(df["foreign_raw"], df["domestic"])
     adj_corr, _ = pearsonr(df["foreign_domestic"], df["domestic"])
@@ -775,7 +792,7 @@ def correlation_breakdown_test(
     # Rolling average correlation to detect structural change
     rolling_avg_corr = pd.Series(dtype=float, index=returns.index)
     for i in range(window, len(returns)):
-        sub = returns.iloc[i - window:i]
+        sub = returns.iloc[i - window : i]
         rolling_avg_corr.iloc[i] = avg_corr(sub)
 
     return {
@@ -870,7 +887,7 @@ def generate_pair_signals(
 
         if position == 0:
             if z < -entry_z:
-                position = 1   # spread is too low: buy y, sell x
+                position = 1  # spread is too low: buy y, sell x
             elif z > entry_z:
                 position = -1  # spread is too high: sell y, buy x
         elif position == 1:
@@ -883,15 +900,17 @@ def generate_pair_signals(
         signal_y.iloc[i] = 0.5 * position
         signal_x.iloc[i] = -0.5 * position
 
-    return pd.DataFrame({
-        "spread": spread,
-        "z_score": z_score,
-        "spread_mean": spread_mean,
-        "spread_std": spread_std,
-        "signal_y": signal_y,
-        "signal_x": signal_x,
-        "position": signal_y * 2,  # 1=long spread, -1=short spread, 0=flat
-    })
+    return pd.DataFrame(
+        {
+            "spread": spread,
+            "z_score": z_score,
+            "spread_mean": spread_mean,
+            "spread_std": spread_std,
+            "signal_y": signal_y,
+            "signal_x": signal_x,
+            "position": signal_y * 2,  # 1=long spread, -1=short spread, 0=flat
+        }
+    )
 ```
 
 ### Z-Score Threshold Configuration Guide
@@ -942,9 +961,7 @@ def monitor_spread_health(
 
     if hl_ratio > warning_hl_multiple:
         health_score -= 30
-        warnings.append(
-            f"Half-life {current_hl:.1f}d is {hl_ratio:.1f}x the original {original_half_life:.1f}d"
-        )
+        warnings.append(f"Half-life {current_hl:.1f}d is {hl_ratio:.1f}x the original {original_half_life:.1f}d")
 
     if current_adf > 0.20:
         health_score -= 20
@@ -972,6 +989,7 @@ def monitor_spread_health(
 ```python
 import matplotlib.pyplot as plt
 
+
 def plot_rolling_correlation(
     rolling_corrs: pd.DataFrame,
     title: str = "Rolling Correlation",
@@ -981,8 +999,7 @@ def plot_rolling_correlation(
     fig, ax = plt.subplots(figsize=figsize)
     colors = ["#2196F3", "#FF9800", "#4CAF50"]
     for i, col in enumerate(rolling_corrs.columns):
-        ax.plot(rolling_corrs.index, rolling_corrs[col],
-                label=col, color=colors[i % len(colors)], alpha=0.8)
+        ax.plot(rolling_corrs.index, rolling_corrs[col], label=col, color=colors[i % len(colors)], alpha=0.8)
     ax.axhline(0, color="black", linestyle="--", linewidth=0.8)
     ax.axhline(0.6, color="green", linestyle=":", linewidth=0.8, label="high-correlation threshold (0.6)")
     ax.axhline(-0.6, color="red", linestyle=":", linewidth=0.8)
@@ -1009,10 +1026,14 @@ def plot_zscore_signals(
     # Top chart: spread
     axes[0].plot(signal_df["spread"], label="Spread", color="#1565C0")
     axes[0].plot(signal_df["spread_mean"], label="Mean", color="orange", linestyle="--")
-    axes[0].fill_between(signal_df.index,
-                         signal_df["spread_mean"] - signal_df["spread_std"],
-                         signal_df["spread_mean"] + signal_df["spread_std"],
-                         alpha=0.2, color="orange", label="±1σ")
+    axes[0].fill_between(
+        signal_df.index,
+        signal_df["spread_mean"] - signal_df["spread_std"],
+        signal_df["spread_mean"] + signal_df["spread_std"],
+        alpha=0.2,
+        color="orange",
+        label="±1σ",
+    )
     axes[0].set_title("Spread and Mean")
     axes[0].legend()
     axes[0].grid(True, alpha=0.3)
@@ -1030,12 +1051,33 @@ def plot_zscore_signals(
     short_entry = signal_df["position"].diff() < 0
     exit_pos = (signal_df["position"] == 0) & (signal_df["position"].shift(1) != 0)
 
-    axes[1].scatter(signal_df.index[long_entry], signal_df["z_score"][long_entry],
-                    color="green", marker="^", s=80, label="long spread", zorder=5)
-    axes[1].scatter(signal_df.index[short_entry], signal_df["z_score"][short_entry],
-                    color="red", marker="v", s=80, label="short spread", zorder=5)
-    axes[1].scatter(signal_df.index[exit_pos], signal_df["z_score"][exit_pos],
-                    color="gray", marker="o", s=40, label="exit", zorder=5)
+    axes[1].scatter(
+        signal_df.index[long_entry],
+        signal_df["z_score"][long_entry],
+        color="green",
+        marker="^",
+        s=80,
+        label="long spread",
+        zorder=5,
+    )
+    axes[1].scatter(
+        signal_df.index[short_entry],
+        signal_df["z_score"][short_entry],
+        color="red",
+        marker="v",
+        s=80,
+        label="short spread",
+        zorder=5,
+    )
+    axes[1].scatter(
+        signal_df.index[exit_pos],
+        signal_df["z_score"][exit_pos],
+        color="gray",
+        marker="o",
+        s=40,
+        label="exit",
+        zorder=5,
+    )
 
     axes[1].set_title("Z-Score and Trading Signals")
     axes[1].legend(loc="best")

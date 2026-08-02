@@ -30,9 +30,19 @@ from backtest.loaders.registry import register
 logger = logging.getLogger(__name__)
 
 _INTERVAL_MAP = {
-    "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",
-    "1H": "1h", "1h": "1h", "4H": "4h", "4h": "4h",
-    "1D": "1d", "1d": "1d", "1W": "1w", "1w": "1w", "1M": "1M",
+    "1m": "1m",
+    "5m": "5m",
+    "15m": "15m",
+    "30m": "30m",
+    "1H": "1h",
+    "1h": "1h",
+    "4H": "4h",
+    "4h": "4h",
+    "1D": "1d",
+    "1d": "1d",
+    "1W": "1w",
+    "1w": "1w",
+    "1M": "1M",
 }
 
 _TIMEFRAME_DELTA = {
@@ -63,16 +73,14 @@ def _parse_ccxt_symbol(code: str) -> tuple[str, str]:
     if normalized.endswith("-PERP"):
         match = re.fullmatch(r"([A-Z0-9]+)-USDT-PERP", normalized)
         if match is None:
-            raise ValueError(
-                "USD-M perpetual symbol must use BASE-USDT-PERP, e.g. BTC-USDT-PERP"
-            )
+            raise ValueError("USD-M perpetual symbol must use BASE-USDT-PERP, e.g. BTC-USDT-PERP")
         return f"{match.group(1)}/USDT:USDT", "swap"
     return normalized.replace("-", "/"), "spot"
 
 
 def _first_proxy_env(*names: str) -> str:
     for name in names:
-        value = os.getenv(name, "").strip()  # noqa: env-gate — system proxy vars
+        value = os.getenv(name, "").strip()  # env-gate — system proxy vars
         if value:
             return value
     return ""
@@ -111,16 +119,11 @@ def _validate_bracket_artifact(artifact: dict, *, expected_symbol: str) -> tuple
 
     schema_version = artifact.get("schema_version")
     if schema_version != _BRACKET_SCHEMA_VERSION:
-        raise ValueError(
-            f"bracket artifact schema_version must be {_BRACKET_SCHEMA_VERSION}, "
-            f"got {schema_version!r}"
-        )
+        raise ValueError(f"bracket artifact schema_version must be {_BRACKET_SCHEMA_VERSION}, got {schema_version!r}")
 
     symbol = artifact.get("symbol")
     if symbol != expected_symbol:
-        raise ValueError(
-            f"bracket artifact symbol mismatch: expected {expected_symbol!r}, got {symbol!r}"
-        )
+        raise ValueError(f"bracket artifact symbol mismatch: expected {expected_symbol!r}, got {symbol!r}")
 
     provenance_timestamp = artifact.get("provenance_timestamp")
     if not provenance_timestamp:
@@ -129,8 +132,7 @@ def _validate_bracket_artifact(artifact: dict, *, expected_symbol: str) -> tuple
         pd.Timestamp(provenance_timestamp)
     except (ValueError, TypeError) as exc:
         raise ValueError(
-            f"bracket artifact provenance_timestamp is not a valid timestamp: "
-            f"{provenance_timestamp!r}"
+            f"bracket artifact provenance_timestamp is not a valid timestamp: {provenance_timestamp!r}"
         ) from exc
 
     brackets = artifact.get("brackets")
@@ -147,9 +149,7 @@ def _validate_bracket_artifact(artifact: dict, *, expected_symbol: str) -> tuple
                 "cumulative_maintenance_amount": float(tier["cumulative_maintenance_amount"]),
             }
         except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError(
-                f"bracket artifact tier for {expected_symbol} is missing a required field: {exc}"
-            ) from exc
+            raise ValueError(f"bracket artifact tier for {expected_symbol} is missing a required field: {exc}") from exc
         # Optional: reserved for future risk-model calibration, not part of
         # Binance's own bracket schema. Validated only if present.
         coefficient = tier.get("notional_coefficient")
@@ -157,17 +157,13 @@ def _validate_bracket_artifact(artifact: dict, *, expected_symbol: str) -> tuple
             try:
                 record["notional_coefficient"] = float(coefficient)
             except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    f"bracket artifact notional_coefficient must be numeric: {coefficient!r}"
-                ) from exc
+                raise ValueError(f"bracket artifact notional_coefficient must be numeric: {coefficient!r}") from exc
         normalized.append(record)
 
     normalized.sort(key=lambda row: row["bracket_tier"])
     caps = [row["notional_cap"] for row in normalized]
     if caps != sorted(caps) or len(caps) != len(set(caps)):
-        raise ValueError(
-            f"bracket artifact notional caps for {expected_symbol} are not strictly increasing"
-        )
+        raise ValueError(f"bracket artifact notional caps for {expected_symbol} are not strictly increasing")
 
     blob = json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode("utf-8")
     computed_hash = hashlib.sha256(blob).hexdigest()[:16]
@@ -193,6 +189,7 @@ class DataLoader:
         """Available if ccxt is installed."""
         try:
             import ccxt  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -208,9 +205,7 @@ class DataLoader:
         exchange_id = get_env_config().data.ccxt_exchange.lower()
         if instrument_type == "swap":
             if exchange_id not in {"binance", "binanceusdm"}:
-                raise ValueError(
-                    "BASE-USDT-PERP currently requires CCXT_EXCHANGE=binance"
-                )
+                raise ValueError("BASE-USDT-PERP currently requires CCXT_EXCHANGE=binance")
             exchange_id = "binanceusdm"
         exchange_cls = getattr(ccxt, exchange_id, None)
         if exchange_cls is None:
@@ -283,12 +278,15 @@ class DataLoader:
                 def fetch_frame():
                     if instrument_type == "swap":
                         return self._fetch_perpetual(
-                            exchange, ccxt_symbol, timeframe, since_ms, end_ms,
-                            bracket_artifact=artifact, require_brackets=require_brackets,
+                            exchange,
+                            ccxt_symbol,
+                            timeframe,
+                            since_ms,
+                            end_ms,
+                            bracket_artifact=artifact,
+                            require_brackets=require_brackets,
                         )
-                    return self._fetch_one(
-                        exchange, ccxt_symbol, timeframe, since_ms, end_ms
-                    )
+                    return self._fetch_one(exchange, ccxt_symbol, timeframe, since_ms, end_ms)
 
                 df = cached_loader_fetch(
                     source=self.name,
@@ -309,8 +307,15 @@ class DataLoader:
 
     @classmethod
     def _fetch_perpetual(
-        cls, exchange, symbol: str, timeframe: str, since_ms: int, end_ms: int,
-        *, bracket_artifact: dict | None = None, require_brackets: bool = False,
+        cls,
+        exchange,
+        symbol: str,
+        timeframe: str,
+        since_ms: int,
+        end_ms: int,
+        *,
+        bracket_artifact: dict | None = None,
+        require_brackets: bool = False,
     ) -> pd.DataFrame:
         """Fetch aligned trade-price and mark-price candles for one USD-M swap.
 
@@ -351,10 +356,7 @@ class DataLoader:
         required = result.index[result.index.hour.isin(_FUNDING_HOURS)]
         missing = required.difference(funding.index)
         if not missing.empty:
-            raise ValueError(
-                f"funding settlement data is missing for {symbol}: "
-                f"{', '.join(str(ts) for ts in missing)}"
-            )
+            raise ValueError(f"funding settlement data is missing for {symbol}: {', '.join(str(ts) for ts in missing)}")
 
         result["funding_rate"] = 0.0
         result["funding_settlement_time"] = pd.NaT
@@ -364,16 +366,17 @@ class DataLoader:
             result.loc[aligned, "funding_settlement_time"] = aligned
 
         if bracket_artifact is not None:
-            brackets, version = _validate_bracket_artifact(
-                bracket_artifact, expected_symbol=symbol
-            )
+            brackets, version = _validate_bracket_artifact(bracket_artifact, expected_symbol=symbol)
             result["maintenance_brackets"] = json.dumps(brackets)
             result["maintenance_bracket_version"] = version
         return result
 
     @staticmethod
     def _fetch_funding_history(
-        exchange, symbol: str, since_ms: int, end_ms: int,
+        exchange,
+        symbol: str,
+        since_ms: int,
+        end_ms: int,
     ) -> pd.DataFrame:
         """Fetch bounded historical funding settlements for one USD-M swap."""
         import ccxt
@@ -387,9 +390,7 @@ class DataLoader:
         for _ in range(200):
             check_budget(deadline, label, budget_s=_CCXT_FETCH_BUDGET_S)
             page = retry_with_budget(
-                lambda: exchange.fetch_funding_rate_history(
-                    symbol, since=cursor, limit=limit
-                ),
+                lambda: exchange.fetch_funding_rate_history(symbol, since=cursor, limit=limit),
                 transient=ccxt.NetworkError,
                 deadline=deadline,
                 label=label,
@@ -408,17 +409,19 @@ class DataLoader:
                 index=pd.DatetimeIndex([], name="trade_date"),
             )
 
-        frame = pd.DataFrame({
-            # Binance settlement timestamps carry millisecond jitter
-            # (e.g. 08:00:00.011); round to the second so they align with
-            # bar timestamps instead of failing the missing-settlement check.
-            "trade_date": pd.to_datetime(
-                [row["timestamp"] for row in rows], unit="ms"
-            ).round("s"),
-            "funding_rate": pd.to_numeric(
-                [row["fundingRate"] for row in rows], errors="raise"
-            ),
-        }).set_index("trade_date").sort_index()
+        frame = (
+            pd.DataFrame(
+                {
+                    # Binance settlement timestamps carry millisecond jitter
+                    # (e.g. 08:00:00.011); round to the second so they align with
+                    # bar timestamps instead of failing the missing-settlement check.
+                    "trade_date": pd.to_datetime([row["timestamp"] for row in rows], unit="ms").round("s"),
+                    "funding_rate": pd.to_numeric([row["fundingRate"] for row in rows], errors="raise"),
+                }
+            )
+            .set_index("trade_date")
+            .sort_index()
+        )
         start_dt = pd.Timestamp(since_ms, unit="ms")
         end_dt = pd.Timestamp(end_ms, unit="ms")
         return frame[(frame.index >= start_dt) & (frame.index < end_dt)]
@@ -445,6 +448,7 @@ class DataLoader:
 
         for _ in range(200):
             check_budget(deadline, label, budget_s=_CCXT_FETCH_BUDGET_S)
+
             # ``ccxt.NetworkError`` covers RequestTimeout / DDoSProtection /
             # ExchangeNotAvailable — the transient family. Anything else
             # (e.g. ``ExchangeError`` for a bad symbol) is not retried.
@@ -484,9 +488,7 @@ class DataLoader:
         for col in ["open", "high", "low", "close", "volume"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        df = df[["open", "high", "low", "close", "volume"]].dropna(
-            subset=["open", "high", "low", "close"]
-        )
+        df = df[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
         if df.empty:
             return None
 

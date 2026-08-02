@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #38 - 夏普比信号
 # 简要说明: ((-1*RANK(TSRANK(CLOSE,10)))*RANK(CLOSE/OPEN))，10日排名与日内涨跌幅的组合。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_038",
-    "theme": ['reversal'],
-    "formula_latex": '(((SUM(HIGH,20)/20)<HIGH)?(-1*DELTA(HIGH,2)):0)',
-    "columns_required": ['high'],
+    "theme": ["reversal"],
+    "formula_latex": "(((SUM(HIGH,20)/20)<HIGH)?(-1*DELTA(HIGH,2)):0)",
+    "columns_required": ["high"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
     "min_warmup_bars": 21,
-    "notes": 'When current high > MA20(high), output -delta(high,2); else 0.',
+    "notes": "When current high > MA20(high), output -delta(high,2); else 0.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     h = panel["high"]

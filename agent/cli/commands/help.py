@@ -23,13 +23,13 @@ def _resolve_console() -> Console:
 
 
 _SHORTCUTS: tuple[tuple[str, str], ...] = (
-    ("⏎",            "Send"),
-    ("Shift+⏎",      "Newline"),
-    ("Tab",          "Accept completion"),
-    ("↑/↓",          "Browse history (or navigate completions)"),
-    ("Ctrl+C",       "Clear input · then exit hint"),
-    ("Ctrl+D",       "Exit (auto-saves session)"),
-    ("/",            "Open slash command typeahead"),
+    ("⏎", "Send"),
+    ("Shift+⏎", "Newline"),
+    ("Tab", "Accept completion"),
+    ("↑/↓", "Browse history (or navigate completions)"),
+    ("Ctrl+C", "Clear input · then exit hint"),
+    ("Ctrl+D", "Exit (auto-saves session)"),
+    ("/", "Open slash command typeahead"),
 )
 
 

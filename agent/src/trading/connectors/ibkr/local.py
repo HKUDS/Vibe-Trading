@@ -307,8 +307,6 @@ def get_open_orders(config: IBKRLocalConfig | None = None, *, include_executions
         _pool.release()
 
 
-
-
 def _tick_has_data(ticker: Any) -> bool:
     """Return True if the ticker has received at least one real price field.
 
@@ -424,7 +422,6 @@ def get_historical_bars(
     finally:
         _pool.release()
 
-import itertools
 
 class _TwsPool:
     """Thread-local IB connection pool with per-thread reference counting.
@@ -563,9 +560,7 @@ def _qualify_contract(ib: Any, contract: Any) -> None:
     try:
         ib.qualifyContracts(contract)
     except Exception as exc:
-        raise IBKRConnectionError(
-            f"Failed to qualify contract {contract}: {exc}"
-        ) from exc
+        raise IBKRConnectionError(f"Failed to qualify contract {contract}: {exc}") from exc
 
 
 def _sleep(ib: Any, seconds: float) -> None:

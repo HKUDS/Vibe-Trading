@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import time
 from typing import Any
@@ -22,11 +21,14 @@ _POLL_INTERVAL_SECONDS = 5
 
 def _max_wait_seconds() -> int:
     import sys as _sys
+
     _mod = _sys.modules.get(__name__)
     if _mod is not None and "_MAX_WAIT_SECONDS" in _mod.__dict__:
         return _mod.__dict__["_MAX_WAIT_SECONDS"]
     from src.config.accessor import get_env_config
+
     return get_env_config().swarm.swarm_timeout
+
 
 # Preset matching: (preset_name, keyword_patterns, weight_boost). Patterns match user intent (EN + ZH).
 _PRESET_KEYWORDS: list[tuple[str, list[str], float]] = [
@@ -846,6 +848,7 @@ class SwarmTool(BaseTool):
         run_id_holder: dict[str, str | None] = {"run_id": None}
 
         try:
+
             def _live_callback(event: Any) -> None:
                 payload = event.model_dump()
                 current_run_id = run_id_holder["run_id"]
@@ -923,9 +926,7 @@ class SwarmTool(BaseTool):
         # whenever a preset legitimately ran past the budget.
         loaded = store.load_run(run_id)
         if loaded is not None:
-            return _format_result(
-                store.reconcile_run(loaded, write=True), preset, variables, timed_out=True
-            )
+            return _format_result(store.reconcile_run(loaded, write=True), preset, variables, timed_out=True)
 
         return json.dumps(
             {"status": "timeout", "error": f"Swarm run {run_id} timed out after {max_wait}s"},

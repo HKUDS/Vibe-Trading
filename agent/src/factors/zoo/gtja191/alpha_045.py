@@ -1,4 +1,3 @@
-
 # ============================================================
 # 中文名称: GTJA #45 - 加权平均变化
 # 简要说明: (RANK(DELTA((((CLOSE*0.6)+(OPEN*0.4))),1)) * RANK(CORR(VWAP,MEAN(VOLUME,150),15)))，加权价格的1日变化与长期量价相关的乘积。
@@ -33,17 +32,18 @@ from src.factors.base import (
 
 __alpha_meta__ = {
     "id": "gtja191_045",
-    "theme": ['volume'],
-    "formula_latex": '(RANK(DELTA((((CLOSE*0.6)+(OPEN*0.4))),1)) * RANK(CORR(VWAP,MEAN(VOLUME,150),15)))',
-    "columns_required": ['close', 'open', 'volume', 'amount'],
+    "theme": ["volume"],
+    "formula_latex": "(RANK(DELTA((((CLOSE*0.6)+(OPEN*0.4))),1)) * RANK(CORR(VWAP,MEAN(VOLUME,150),15)))",
+    "columns_required": ["close", "open", "volume", "amount"],
     "extras_required": [],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 15,
     "min_warmup_bars": 44,
-    "notes": '150d MA volume approximated with 30d window.',
+    "notes": "150d MA volume approximated with 30d window.",
 }
+
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]
