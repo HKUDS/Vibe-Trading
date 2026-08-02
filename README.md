@@ -558,7 +558,7 @@ Run `vibe-trading alpha list` to browse, `vibe-trading alpha show <id>` for form
 | **Composite** | cross-market | one shared capital pool across markets (`source="auto"`) |
 | **options_portfolio** | options | multi-leg, Greeks, payoff/scenario |
 
-Intraday bars: 1m / 5m / 15m / 30m / 1H / 4H / 1D. 15 metrics + benchmark comparison, **5 portfolio optimizers** (equal-volatility / risk-parity / mean-variance / max-diversification / turnover-aware), and 3 validation tools (Monte Carlo / Bootstrap / Walk-Forward).
+Intraday bars: 1m / 5m / 15m / 30m / 1H / 4H / 1D. 15 metrics + benchmark comparison, **5 portfolio optimizers** (equal-volatility / risk-parity / mean-variance / max-diversification / turnover-aware), and validation tools (Monte Carlo permutation / Bootstrap / Walk-Forward + **large-batch Monte Carlo paths**, stress scenarios, walk-forward OOS, parameter sensitivity, regime-conditioned splits).
 
 </details>
 
@@ -936,7 +936,47 @@ vibe-trading --swarm-run crypto_trading_desk '{"asset": "ETH-USDT", "timeframe":
 
 # Global macro portfolio allocation
 vibe-trading --swarm-run macro_rates_fx_desk '{"focus": "Fed pivot impact on EM bonds"}'
+
+# Market structure / microstructure research
+vibe-trading --swarm-run market_structure_research_team '{"market": "US", "goal": "opening auction toxicity"}'
+
+# Macro + news + narrative risk desk
+vibe-trading --swarm-run macro_news_research_desk '{"market": "US", "goal": "Fed path and election risk"}'
+
+# Factor ideas conditioned on regimes + robustness hooks
+vibe-trading --swarm-run factor_regime_research_team '{"market": "A-shares", "goal": "momentum vs value regimes"}'
+
+# Strategy lab: design → backtest → stress / Monte Carlo robustness
+vibe-trading --swarm-run strategy_research_lab '{"market": "US", "goal": "RSI mean-reversion with 10% DD cap"}'
+
+# Dedicated Monte Carlo validation lab (large-batch path sims)
+vibe-trading --swarm-run monte_carlo_validation_lab '{"market": "US", "goal": "validate trend strategy path risk"}'
 ```
+
+### Monte Carlo & enhanced backtests
+
+Large-batch path simulation (default **10_000** paths, batched/vectorized, up to **5_000_000**) plus stress / walk-forward OOS / sensitivity / regime hooks:
+
+```bash
+# Runnable demo (synthetic equity; no broker keys required)
+cd agent && python scripts/demo_monte_carlo.py
+cd agent && python scripts/demo_monte_carlo.py --n-paths 100000 --method block_bootstrap
+
+# Enable in a strategy config.json (post-backtest validation)
+# "validation": {
+#   "monte_carlo": {"n_simulations": 1000},
+#   "monte_carlo_paths": {"method": "bootstrap", "n_paths": 100000, "batch_size": 10000},
+#   "walk_forward_oos": {"n_windows": 5, "mode": "rolling"},
+#   "stress": {},
+#   "parameter_sensitivity": {},
+#   "regime_conditioned": {"vol_window": 21}
+# }
+
+# Agent tool: monte_carlo(run_dir=..., n_paths=100000)
+# Skills: monte-carlo-sim, enhanced-backtest
+```
+
+Modules: `agent/backtest/monte_carlo.py`, `agent/backtest/enhanced_validation.py` (wired through `backtest.validation.run_validation`).
 
 ### Cross-Session Memory
 

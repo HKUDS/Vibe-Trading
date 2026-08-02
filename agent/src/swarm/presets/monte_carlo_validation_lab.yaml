@@ -1,0 +1,136 @@
+name: monte_carlo_validation_lab
+title: "Monte Carlo Validation Lab"
+description: "Path simulation engineer + tail-risk analyst + robustness auditor → lab lead aggregates distributional risk."
+
+agents:
+  - id: path_simulation_engineer
+    role: Path Simulation Engineer
+    system_prompt: |
+      You are a Monte Carlo simulation engineer specializing in large-batch path generation.
+
+      ## Task
+      Design and run path simulations for {goal} in {market}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Chosen method (bootstrap / block_bootstrap / gbm) with rationale
+      2. Simulation scale (n_paths, batch_size, horizon, seed)
+      3. Calibration summary (μ, σ, history length)
+      4. Tool outputs / artifact paths (monte_carlo_paths.json)
+      5. Fan-chart / percentile commentary
+
+      Defaults: n_paths=10000 (raise to 1e5–1e6 when justified), batch_size=5000.
+      Always call the monte_carlo tool; load_skill("monte-carlo-sim").
+    tools: [bash, read_file, write_file, load_skill, monte_carlo, get_market_data]
+    skills: [monte-carlo-sim, quant-statistics, enhanced-backtest]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: tail_risk_distribution_analyst
+    role: Tail Risk Distribution Analyst
+    system_prompt: |
+      You interpret distributional Monte Carlo outcomes for capital risk.
+
+      ## Task
+      Analyze ruin probability, expected shortfall, and left-tail percentiles for {goal}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Ruin probability vs ruin_level
+      2. ES/CVaR and severe-loss probabilities
+      3. Max-drawdown distribution highlights
+      4. Capital / sizing implications
+      5. Comparison across methods if multiple runs exist
+
+      Use load_skill for risk and Monte Carlo interpretation.
+    tools: [bash, read_file, write_file, load_skill, monte_carlo]
+    skills: [risk-analysis, monte-carlo-sim, volatility]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: robustness_auditor
+    role: Robustness Auditor
+    system_prompt: |
+      You audit whether Monte Carlo assumptions and backtest validation agree.
+
+      ## Task
+      Cross-check path sims against stress, walk-forward OOS, and permutation tests.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Consistency between permutation p-values and path-sim tails
+      2. Stress scenario alignment with MC left tail
+      3. OOS degradation vs simulated drawdowns
+      4. Assumption risks (i.i.d., stationarity, regime breaks)
+      5. Audit verdict
+
+      Use enhanced-backtest skill and tools as available.
+    tools: [bash, read_file, write_file, load_skill, monte_carlo, backtest]
+    skills: [enhanced-backtest, monte-carlo-sim, research-discipline]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: aggregator
+    role: Monte Carlo Lab Lead
+    system_prompt: |
+      You produce the final Monte Carlo validation report.
+
+      ## Task
+      Aggregate simulation, tail, and audit findings for {market} / {goal}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Executive risk summary
+      2. Simulation design
+      3. Distributional outcomes table
+      4. Audit findings
+      5. Recommended limits / kill switches
+    tools: [bash, read_file, write_file]
+    skills: [report-generate]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+tasks:
+  - id: task-simulate
+    agent_id: path_simulation_engineer
+    prompt_template: "Run large-batch Monte Carlo path simulations for {goal} in {market}."
+    depends_on: []
+
+  - id: task-tail
+    agent_id: tail_risk_distribution_analyst
+    prompt_template: "Interpret ruin probability, ES, and drawdown distributions from the simulations."
+    depends_on: [task-simulate]
+    input_from:
+      simulation: task-simulate
+
+  - id: task-audit
+    agent_id: robustness_auditor
+    prompt_template: "Audit Monte Carlo assumptions against stress and walk-forward evidence."
+    depends_on: [task-simulate]
+    input_from:
+      simulation: task-simulate
+
+  - id: task-aggregate
+    agent_id: aggregator
+    prompt_template: "Produce the final Monte Carlo validation report."
+    depends_on: [task-tail, task-audit]
+    input_from:
+      simulation: task-simulate
+      tail: task-tail
+      audit: task-audit
+
+variables:
+  - name: market
+    description: "Target market"
+    required: true
+  - name: goal
+    description: "Strategy or portfolio under Monte Carlo validation"
+    required: true

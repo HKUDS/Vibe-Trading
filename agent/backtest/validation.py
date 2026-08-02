@@ -1,9 +1,16 @@
 """Statistical validation for backtest results.
 
-Three independent tools:
+Core tools:
   - Monte Carlo permutation test: is the strategy significantly better than random?
   - Bootstrap Sharpe CI: how stable is the risk-adjusted return?
   - Walk-Forward analysis: is performance consistent across time windows?
+
+Extended tools (via ``backtest.monte_carlo`` / ``backtest.enhanced_validation``):
+  - ``monte_carlo_paths``: large-batch GBM / bootstrap / block-bootstrap path sims
+  - ``stress``: shock and volatility stress scenarios
+  - ``walk_forward_oos``: rolling/expanding IS vs OOS folds
+  - ``parameter_sensitivity``: return / vol / cost robustness grid
+  - ``regime_conditioned``: high-vol vs low-vol performance split
 
 Usage: called automatically by BaseEngine.run_backtest when config[\"validation\"]
 is present, or invoked directly on backtest outputs.
@@ -293,9 +300,11 @@ def run_validation(
     """Run configured validation checks.
 
     Reads from config["validation"]:
-      - monte_carlo: {n_simulations, seed}
+      - monte_carlo: {n_simulations, seed}  (trade-order permutation test)
+      - monte_carlo_paths: {method, n_paths, batch_size, seed, ...}
       - bootstrap: {n_bootstrap, confidence, seed}
       - walk_forward: {n_windows}
+      - stress / walk_forward_oos / parameter_sensitivity / regime_conditioned
 
     Args:
         config: Backtest config (must contain "validation" key).
@@ -319,6 +328,21 @@ def run_validation(
             seed=mc_cfg.get("seed", 42),
         )
 
+    if "monte_carlo_paths" in v_cfg:
+        from backtest.monte_carlo import run_monte_carlo_from_config
+
+        mc_paths_cfg = (
+            v_cfg["monte_carlo_paths"]
+            if isinstance(v_cfg["monte_carlo_paths"], dict)
+            else {}
+        )
+        results["monte_carlo_paths"] = run_monte_carlo_from_config(
+            mc_paths_cfg,
+            equity_curve,
+            trades=trades,
+            initial_capital=initial_capital,
+        )
+
     if "bootstrap" in v_cfg:
         bs_cfg = v_cfg["bootstrap"] if isinstance(v_cfg["bootstrap"], dict) else {}
         results["bootstrap"] = bootstrap_sharpe_ci(
@@ -336,6 +360,24 @@ def run_validation(
             trades,
             n_windows=wf_cfg.get("n_windows", 5),
             bars_per_year=bars_per_year,
+        )
+
+    enhanced_keys = {
+        "stress",
+        "walk_forward_oos",
+        "parameter_sensitivity",
+        "regime_conditioned",
+    }
+    if enhanced_keys & set(v_cfg):
+        from backtest.enhanced_validation import run_enhanced_validation
+
+        results.update(
+            run_enhanced_validation(
+                {k: v_cfg[k] for k in enhanced_keys if k in v_cfg},
+                equity_curve,
+                trades,
+                bars_per_year=bars_per_year,
+            )
         )
 
     return results

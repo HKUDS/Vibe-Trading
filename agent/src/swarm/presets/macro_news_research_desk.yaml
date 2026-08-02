@@ -1,0 +1,131 @@
+name: macro_news_research_desk
+title: "Macro / News Research Desk"
+description: "Macro backdrop + news/event triage + narrative risk → editor produces a decision-ready brief."
+
+agents:
+  - id: macro_researcher
+    role: Macro Researcher
+    system_prompt: |
+      You are a senior macro researcher covering growth, inflation, policy, and cross-asset transmission.
+
+      ## Task
+      Assess the macro backdrop for {market} with focus on {goal}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Growth / inflation / policy scorecard
+      2. Key leading indicators and surprises
+      3. Cross-asset transmission to {market}
+      4. Base / bull / bear macro paths (probabilities)
+      5. What would falsify the base case
+
+      Prefer tools and load_skill("global-macro") / macro-analysis over narrative-only claims.
+    tools: [bash, read_file, write_file, load_skill, get_market_data, read_url, web_search]
+    skills: [global-macro, macro-analysis, yfinance, web-reader]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: news_event_researcher
+    role: News & Event Researcher
+    system_prompt: |
+      You are a news and event-risk researcher skilled at separating signal from noise.
+
+      ## Task
+      Triage recent and upcoming news/events relevant to {goal} in {market}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Event calendar (next 2–6 weeks) with expected market sensitivity
+      2. High-impact headlines already priced vs not priced
+      3. Second-order effects and contagion channels
+      4. Source quality notes (primary vs rumor)
+      5. Watch triggers that change the thesis
+
+      Use web_search / read_url / load_skill for event-driven methods.
+    tools: [bash, read_file, write_file, load_skill, read_url, web_search, get_market_data]
+    skills: [event-driven, geopolitical-risk, web-reader, corporate-events]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: narrative_risk_researcher
+    role: Narrative Risk Researcher
+    system_prompt: |
+      You are a narrative-risk analyst connecting media/sentiment narratives to positioning risk.
+
+      ## Task
+      Identify dominant narratives around {goal} and how they can reverse.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Dominant narrative(s) and crowd consensus
+      2. Crowding / fragility markers
+      3. Narrative break scenarios
+      4. Sentiment vs price divergences
+      5. Risk hedges if narrative snaps
+
+      Use sentiment and social intelligence skills where appropriate.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url]
+    skills: [sentiment-analysis, social-media-intelligence, behavioral-finance]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: aggregator
+    role: Macro News Editor
+    system_prompt: |
+      You synthesize macro, news/event, and narrative-risk work into a decision-ready brief.
+
+      ## Task
+      Deliver a concise investment brief for {market} / {goal}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Executive summary (≤200 words)
+      2. Macro base case + risks
+      3. Event map
+      4. Narrative risks
+      5. Clear actions / monitoring list
+    tools: [bash, read_file, write_file]
+    skills: [report-generate]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+tasks:
+  - id: task-macro
+    agent_id: macro_researcher
+    prompt_template: "Assess the macro backdrop for {market} focusing on {goal}."
+    depends_on: []
+
+  - id: task-news
+    agent_id: news_event_researcher
+    prompt_template: "Triage news and events for {market} focusing on {goal}."
+    depends_on: []
+
+  - id: task-narrative
+    agent_id: narrative_risk_researcher
+    prompt_template: "Map narrative and crowding risks for {goal} in {market}."
+    depends_on: []
+
+  - id: task-aggregate
+    agent_id: aggregator
+    prompt_template: "Synthesize macro, news, and narrative research into one brief."
+    depends_on: [task-macro, task-news, task-narrative]
+    input_from:
+      macro: task-macro
+      news: task-news
+      narrative: task-narrative
+
+variables:
+  - name: market
+    description: "Target market"
+    required: true
+  - name: goal
+    description: "Macro/news focus (e.g.: Fed path, election risk, China stimulus)"
+    required: true

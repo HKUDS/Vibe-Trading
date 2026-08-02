@@ -338,6 +338,60 @@ _PRESET_KEYWORDS: list[tuple[str, list[str], float]] = [
         ],
         0.9,
     ),
+    (
+        "market_structure_research_team",
+        [
+            r"market\s+structure",
+            r"microstructure",
+            r"order\s+flow",
+            "市场微观结构",
+            "微观结构",
+        ],
+        0.95,
+    ),
+    (
+        "macro_news_research_desk",
+        [
+            r"macro\s+news",
+            r"news\s+research",
+            r"event\s+calendar",
+            "宏观新闻",
+            "新闻研究",
+        ],
+        0.9,
+    ),
+    (
+        "factor_regime_research_team",
+        [
+            r"factor\s+regime",
+            r"regime[- ]conditioned",
+            "因子.*regime",
+            "因子.*体制",
+            "体制切换",
+        ],
+        0.95,
+    ),
+    (
+        "strategy_research_lab",
+        [
+            r"strategy\s+research",
+            r"strategy\s+lab",
+            "策略研究",
+            "策略实验室",
+        ],
+        0.9,
+    ),
+    (
+        "monte_carlo_validation_lab",
+        [
+            r"monte\s*carlo",
+            r"\bMC\s+simulation",
+            r"path\s+simulation",
+            "蒙特卡洛",
+            "路径模拟",
+        ],
+        1.0,
+    ),
 ]
 
 # Market labels used in YAML templates (English, compatible with {market} placeholders).

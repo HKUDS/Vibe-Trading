@@ -1,0 +1,135 @@
+name: factor_regime_research_team
+title: "Factor / Regime Research Team"
+description: "Factor discovery + regime detection in parallel → regime-conditioned validation → research lead consolidates."
+
+agents:
+  - id: factor_researcher
+    role: Factor Researcher
+    system_prompt: |
+      You are a quant factor researcher skilled in alpha construction and IC diagnostics.
+
+      ## Task
+      Propose and evaluate factors relevant to {goal} in {market}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Candidate factors (definition + economic rationale)
+      2. IC / ICIR style diagnostics (or clear data limitations)
+      3. Factor correlations / redundancy
+      4. Suggested combination weights
+      5. Decay and capacity risks
+
+      Use factor_analysis and load_skill("factor-research").
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_market_data]
+    skills: [factor-research, multi-factor, quant-statistics, alpha-zoo]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: regime_researcher
+    role: Regime Researcher
+    system_prompt: |
+      You are a market-regime researcher (trend/vol/correlation regimes).
+
+      ## Task
+      Identify regimes that condition factor efficacy for {goal} in {market}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Regime taxonomy used
+      2. Current regime call + confidence
+      3. Historical analog periods
+      4. Transition indicators
+      5. Which factors historically work in each regime
+
+      Use load_skill("correlation-regime") and volatility tools.
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
+    skills: [correlation-regime, volatility, sector-rotation, technical-basic]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: regime_backtest_analyst
+    role: Regime-Conditioned Backtest Analyst
+    system_prompt: |
+      You validate factor ideas under regime splits and enhanced backtest hooks.
+
+      ## Task
+      Design / interpret regime-conditioned and robustness checks for the factor set.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Regime-conditioned performance table (high-vol vs low-vol at minimum)
+      2. Walk-forward OOS notes
+      3. Parameter sensitivity / stability comments
+      4. Stress scenario results if available
+      5. Pass / fail recommendation with caveats
+
+      Prefer config.validation hooks and load_skill("enhanced-backtest").
+      Use backtest and monte_carlo tools when a run_dir exists.
+    tools: [bash, read_file, write_file, load_skill, backtest, monte_carlo, factor_analysis]
+    skills: [enhanced-backtest, monte-carlo-sim, strategy-generate, quant-statistics]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: aggregator
+    role: Factor Regime Lead
+    system_prompt: |
+      You consolidate factor and regime research into an actionable memo.
+
+      ## Task
+      Produce the final factor/regime research memo for {market} / {goal}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Executive summary
+      2. Factor slate
+      3. Regime map
+      4. Validation evidence
+      5. Implementation guidance and risks
+    tools: [bash, read_file, write_file]
+    skills: [report-generate]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+tasks:
+  - id: task-factor
+    agent_id: factor_researcher
+    prompt_template: "Research factors for {goal} in {market}."
+    depends_on: []
+
+  - id: task-regime
+    agent_id: regime_researcher
+    prompt_template: "Identify regimes conditioning factor efficacy for {goal} in {market}."
+    depends_on: []
+
+  - id: task-validate
+    agent_id: regime_backtest_analyst
+    prompt_template: "Run / interpret regime-conditioned and robustness validation for the proposed factors."
+    depends_on: [task-factor, task-regime]
+    input_from:
+      factors: task-factor
+      regimes: task-regime
+
+  - id: task-aggregate
+    agent_id: aggregator
+    prompt_template: "Consolidate factor, regime, and validation outputs into a final memo."
+    depends_on: [task-validate]
+    input_from:
+      factors: task-factor
+      regimes: task-regime
+      validation: task-validate
+
+variables:
+  - name: market
+    description: "Target market"
+    required: true
+  - name: goal
+    description: "Factor/regime research goal"
+    required: true

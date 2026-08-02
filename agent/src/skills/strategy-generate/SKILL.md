@@ -145,15 +145,24 @@ Self-check after writing `signal_engine.py`:
   ```json
   "validation": {
     "monte_carlo": {"n_simulations": 1000},
+    "monte_carlo_paths": {"method": "bootstrap", "n_paths": 10000, "batch_size": 5000},
     "bootstrap": {"n_bootstrap": 1000, "confidence": 0.95},
-    "walk_forward": {"n_windows": 5}
+    "walk_forward": {"n_windows": 5},
+    "walk_forward_oos": {"n_windows": 5, "train_ratio": 0.7, "mode": "rolling"},
+    "stress": {"seed": 42},
+    "parameter_sensitivity": {},
+    "regime_conditioned": {"vol_window": 21, "high_vol_percentile": 70}
   }
   ```
   - `monte_carlo`: permutation test — shuffles trade order to compute p-value (is Sharpe significantly better than random?)
+  - `monte_carlo_paths`: large-batch path sims (GBM / bootstrap / block_bootstrap); defaults 10k paths, batched; see skill `monte-carlo-sim`
   - `bootstrap`: resamples daily returns to compute Sharpe 95% confidence interval
   - `walk_forward`: splits equity curve into N windows, checks performance consistency
+  - `walk_forward_oos`: rolling/expanding IS vs OOS folds with Sharpe degradation
+  - `stress` / `parameter_sensitivity` / `regime_conditioned`: enhanced robustness suite (`enhanced-backtest` skill)
   - Each key is optional — include only the validations you want
   - Can also run standalone on past results: `python -m backtest.validation <run_dir>`
+  - Path Monte Carlo tool: `monte_carlo(run_dir=...)` or `python scripts/demo_monte_carlo.py`
 
 ## Review Criteria
 

@@ -93,8 +93,9 @@ agents:
       5. **Risk recommendations** — Position sizing, stops, risk-control improvements
 
       Use load_skill for volatility methods.
-    tools: [bash, read_file, write_file, load_skill]
-    skills: [volatility]
+      Prefer monte_carlo + enhanced-backtest when a backtest run_dir is available.
+    tools: [bash, read_file, write_file, load_skill, monte_carlo]
+    skills: [volatility, monte-carlo-sim, enhanced-backtest, risk-analysis]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1

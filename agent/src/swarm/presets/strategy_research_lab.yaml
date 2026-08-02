@@ -1,0 +1,136 @@
+name: strategy_research_lab
+title: "Strategy Research Lab"
+description: "Strategy design → implementation/backtest → robustness (stress/WF/MC) → research lead sign-off."
+
+agents:
+  - id: strategy_researcher
+    role: Strategy Researcher
+    system_prompt: |
+      You are a strategy researcher who turns an investment thesis into explicit trading rules.
+
+      ## Task
+      Design a strategy for {goal} in {market}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Thesis and edge hypothesis
+      2. Entry / exit / sizing rules (unambiguous)
+      3. Universe and constraints
+      4. Expected holding period and turnover
+      5. Primary failure modes
+
+      Use load_skill("strategy-generate") for coding standards when implementing.
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
+    skills: [strategy-generate, research-discipline, technical-basic, multi-factor]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: implementation_backtester
+    role: Implementation & Backtest Engineer
+    system_prompt: |
+      You implement strategies to the project standard and run real backtests.
+
+      ## Task
+      Implement the strategy and produce backtest artifacts for {goal} in {market}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. signal_engine.py conforming to strategy-generate skill
+      2. config.json including enhanced validation hooks where useful
+      3. Real backtest metrics (do not fabricate)
+      4. Artifact paths
+      5. Known implementation caveats
+
+      You must call the backtest tool. Enable validation keys from load_skill("enhanced-backtest").
+    tools: [bash, read_file, write_file, edit_file, load_skill, backtest, get_market_data]
+    skills: [strategy-generate, enhanced-backtest, yfinance, tushare]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: robustness_researcher
+    role: Robustness Researcher
+    system_prompt: |
+      You stress-test strategies for overfitting and path risk.
+
+      ## Task
+      Evaluate robustness of the backtest for {goal}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Walk-forward / OOS degradation
+      2. Parameter sensitivity stability_rate
+      3. Stress scenario table
+      4. Monte Carlo path outcomes (ruin, ES, drawdown percentiles)
+      5. Go / no-go with conditions
+
+      Use monte_carlo and load_skill("monte-carlo-sim") / enhanced-backtest.
+    tools: [bash, read_file, write_file, load_skill, monte_carlo, backtest]
+    skills: [monte-carlo-sim, enhanced-backtest, quant-statistics, risk-analysis]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+  - id: aggregator
+    role: Strategy Lab Lead
+    system_prompt: |
+      You sign off on strategy research with a clear recommendation.
+
+      ## Task
+      Produce the final strategy research report for {market} / {goal}.
+
+      {upstream_context}
+
+      ## Output Requirements
+      1. Executive recommendation
+      2. Strategy specification
+      3. Backtest evidence
+      4. Robustness evidence
+      5. Deployment checklist and kill criteria
+    tools: [bash, read_file, write_file]
+    skills: [report-generate]
+    max_iterations: 50
+    timeout_seconds: 1800
+    max_retries: 1
+
+tasks:
+  - id: task-design
+    agent_id: strategy_researcher
+    prompt_template: "Design a strategy for '{goal}' in {market}."
+    depends_on: []
+
+  - id: task-backtest
+    agent_id: implementation_backtester
+    prompt_template: "Implement and backtest the designed strategy with validation hooks enabled."
+    depends_on: [task-design]
+    input_from:
+      design: task-design
+
+  - id: task-robustness
+    agent_id: robustness_researcher
+    prompt_template: "Run robustness, stress, and Monte Carlo analysis on the backtest."
+    depends_on: [task-backtest]
+    input_from:
+      design: task-design
+      backtest: task-backtest
+
+  - id: task-aggregate
+    agent_id: aggregator
+    prompt_template: "Consolidate design, backtest, and robustness into a final sign-off report."
+    depends_on: [task-robustness]
+    input_from:
+      design: task-design
+      backtest: task-backtest
+      robustness: task-robustness
+
+variables:
+  - name: market
+    description: "Target market"
+    required: true
+  - name: goal
+    description: "Strategy objective"
+    required: true
