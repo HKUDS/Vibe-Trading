@@ -125,6 +125,14 @@ class CreateScheduledRunRequest(BaseModel):
     config: Dict[str, Any] = Field(
         default_factory=dict, description="Optional backtest parameters"
     )
+    timezone: Optional[str] = Field(
+        None,
+        description=(
+            "IANA timezone key the cron schedule is evaluated in "
+            "(e.g. 'Pacific/Auckland'); null = UTC, the pre-existing "
+            "semantics. Ignored by interval schedules."
+        ),
+    )
 
 
 class ScheduledRunResponse(BaseModel):
@@ -141,6 +149,7 @@ class ScheduledRunResponse(BaseModel):
     last_error: Optional[str] = None
     failure_kind: Optional[str] = None
     config: Dict[str, Any] = Field(default_factory=dict)
+    timezone: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -193,10 +202,12 @@ def register_scheduled_routes(
             JobStatus,
             ScheduledResearchJob,
             validate_schedule,
+            validate_timezone,
         )
 
         try:
             validate_schedule(request.schedule)
+            validate_timezone(request.timezone)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -209,6 +220,7 @@ def register_scheduled_routes(
             status=JobStatus.PENDING,
             created_at=now_ms,
             config=request.config,
+            timezone=request.timezone,
         )
         _get_scheduled_research_store().upsert(job)
         return ScheduledRunResponse(**job.to_dict())

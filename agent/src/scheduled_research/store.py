@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from src.config.paths import get_runtime_root
-from src.scheduled_research.models import ScheduledResearchJob, validate_schedule
+from src.scheduled_research.models import ScheduledResearchJob, validate_schedule, validate_timezone_shape
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,8 @@ class ScheduledResearchJobStore:
 
         Args:
             path: Explicit path. Defaults to
-                ``agent/data/scheduled_research_jobs.json``.
+                ``<runtime root>/scheduled_research/scheduled_research_jobs.json``
+                (see :func:`_default_store_path`).
         """
         self.path: Path = path if path is not None else _default_store_path()
 
@@ -137,16 +138,21 @@ class ScheduledResearchJobStore:
     def upsert(self, job: ScheduledResearchJob) -> None:
         """Insert or replace a job by id.
 
-        Validates the schedule string before persisting.
+        Validates the schedule string and the timezone's shape before
+        persisting. The timezone key is deliberately not resolved here — see
+        :func:`~src.scheduled_research.models.validate_timezone_shape` — so
+        executor lifecycle writes keep working on a host whose timezone
+        database lacks a key that validated where the job was created.
 
         Args:
             job: The job to store.
 
         Raises:
-            ValueError: When ``job.schedule`` is malformed.
+            ValueError: When ``job.schedule`` or ``job.timezone`` is malformed.
             CorruptStoreError: When the existing store cannot be parsed.
         """
         validate_schedule(job.schedule)
+        validate_timezone_shape(job.timezone)
         jobs = self.load()
         jobs[job.id] = job
         self.save(jobs)

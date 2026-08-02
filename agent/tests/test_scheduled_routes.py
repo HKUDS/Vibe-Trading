@@ -194,3 +194,70 @@ def test_delete_rejects_unsafe_job_id(
     response = client.delete("/scheduled-runs/bad.id")
 
     assert response.status_code == 400
+
+
+def test_create_with_timezone_echoes_and_persists(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "auckland-scan",
+            "prompt": "pre-open scan of NZX names",
+            "schedule": "30 23 * * 1-5",
+            "timezone": "Pacific/Auckland",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["timezone"] == "Pacific/Auckland"
+
+    saved = store.get("auckland-scan")
+    assert saved is not None
+    assert saved.timezone == "Pacific/Auckland"
+    assert saved.schedule == "30 23 * * 1-5"
+
+
+def test_create_without_timezone_defaults_to_null(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={"id": "utc-scan", "prompt": "scan", "schedule": "0 9 * * *"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert "timezone" in body
+    assert body["timezone"] is None
+    saved = store.get("utc-scan")
+    assert saved is not None
+    assert saved.timezone is None
+
+
+def test_create_rejects_unknown_timezone(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "bad-tz",
+            "prompt": "scan",
+            "schedule": "0 9 * * *",
+            "timezone": "Not/AZone",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "IANA timezone" in response.json()["detail"]
+    assert store.get("bad-tz") is None
+
+
+def test_list_includes_timezone(client: TestClient, store: ScheduledResearchJobStore):
+    _seed(store, id="tz-listed", schedule="0 9 * * 1-5", timezone="Australia/Adelaide")
+
+    response = client.get("/scheduled-runs")
+
+    assert response.status_code == 200
+    rows = {row["id"]: row for row in response.json()}
+    assert rows["tz-listed"]["timezone"] == "Australia/Adelaide"

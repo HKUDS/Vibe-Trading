@@ -11,11 +11,19 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from typing import Awaitable, Callable
+from zoneinfo import ZoneInfo
 
 from src.config.accessor import get_env_config
-from src.scheduled_research.models import JobStatus, ScheduledResearchJob, validate_schedule
+from src.scheduled_research.models import (
+    CRON_BOUNDS,
+    JobStatus,
+    ScheduledResearchJob,
+    parse_cron_field,
+    validate_schedule,
+    validate_timezone,
+)
 from src.scheduled_research.store import ScheduledResearchJobStore
 from src.tools.redaction import redact_internal_paths, redact_text
 
@@ -33,7 +41,6 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 # instead of scanning years of minutes on the event loop. Four years covers any
 # real recurrence, including a Feb-29 leap day.
 _CRON_SEARCH_LIMIT_DAYS = 4 * 366 + 1
-_CRON_BOUNDS = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 6))
 
 
 def _now_ms() -> int:
@@ -75,52 +82,62 @@ def _persisted_error(exc: Exception) -> str:
     return f"{safe[: _MAX_PERSISTED_ERROR_CHARS - 3]}..."
 
 
-def next_due(schedule: str, after_ms: int) -> int:
+def next_due(schedule: str, after_ms: int, tz: str | None = None) -> int:
     """Return the first due epoch-ms strictly after ``after_ms``.
 
     Supports the scheduled-research schedule format: a bare positive integer
-    string for interval milliseconds, or a simplified 5-field cron expression
-    interpreted in UTC.
+    string for interval milliseconds, or a simplified 5-field cron expression.
+    Cron is evaluated on the wall clock of *tz* (an IANA timezone key) when
+    one is given, in UTC otherwise — the semantics every job had before the
+    field existed. Interval schedules ignore *tz* entirely.
     """
     validate_schedule(schedule)
+    validate_timezone(tz)
     spec = schedule.strip()
     if spec.isdigit():
         return after_ms + int(spec)
-    return _next_cron_due(spec, after_ms)
+    return _next_cron_due(spec, after_ms, tz)
 
 
-def _next_cron_due(schedule: str, after_ms: int) -> int:
+def _next_cron_due(schedule: str, after_ms: int, tz: str | None = None) -> int:
     minutes, hours, doms, months, dows = (
-        _parse_cron_field(part, low, high) for part, (low, high) in zip(schedule.split(), _CRON_BOUNDS)
+        parse_cron_field(part, low, high) for part, (low, high) in zip(schedule.split(), CRON_BOUNDS)
     )
-    start = datetime.fromtimestamp(after_ms / 1000.0, timezone.utc) + timedelta(milliseconds=1)
-    # Round up to the next whole minute; cron has minute resolution.
-    if start.second or start.microsecond:
-        start = (start + timedelta(minutes=1)).replace(second=0, microsecond=0)
-
-    day = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    zone = timezone.utc if tz is None else ZoneInfo(tz)
+    # Walk candidates on the *local* calendar of ``zone`` so field matching —
+    # the weekday in particular — follows the authoring wall clock. Ascending
+    # wall order maps to ascending UTC order under a fixed fold policy, so
+    # "strictly after" stays a plain epoch comparison.
+    day = datetime.fromtimestamp(after_ms / 1000.0, zone).date()
     for offset in range(_CRON_SEARCH_LIMIT_DAYS):
         candidate_day = day + timedelta(days=offset)
         if not _day_matches(candidate_day, doms, months, dows):
             continue
         for hour in sorted(hours) if hours is not None else range(24):
             for minute in sorted(minutes) if minutes is not None else range(60):
-                fire = candidate_day.replace(hour=hour, minute=minute)
-                if fire >= start:
-                    return int(fire.timestamp() * 1000)
+                fire_ms = _local_wall_time_to_epoch_ms(candidate_day, hour, minute, zone)
+                if fire_ms is not None and fire_ms > after_ms:
+                    return fire_ms
     raise ValueError(f"cron schedule has no matching time within search window: {schedule!r}")
 
 
-def _parse_cron_field(part: str, low: int, high: int) -> set[int] | None:
-    if part == "*":
-        return None
-    if part.startswith("*/"):
-        step = int(part[2:])
-        return set(range(low, high + 1, step))
-    return {int(part)}
+def _local_wall_time_to_epoch_ms(day: date, hour: int, minute: int, zone: tzinfo) -> int | None:
+    """Resolve one local wall time to a UTC epoch-ms instant.
+
+    DST policy (#953): a nonexistent wall time — the spring-forward gap —
+    returns ``None`` so the occurrence is skipped; ``ZoneInfo`` would
+    otherwise silently map it past the transition (PEP 495) and run it. An
+    ambiguous wall time — the fall-back fold — resolves with ``fold=0``, the
+    first occurrence, so it runs exactly once.
+    """
+    local = datetime(day.year, day.month, day.day, hour, minute, tzinfo=zone)
+    as_utc = local.astimezone(timezone.utc)
+    if as_utc.astimezone(zone).replace(tzinfo=None) != local.replace(tzinfo=None):
+        return None  # wall time does not exist in this zone (DST gap)
+    return int(as_utc.timestamp() * 1000)
 
 
-def _day_matches(dt: datetime, doms: set[int] | None, months: set[int] | None, dows: set[int] | None) -> bool:
+def _day_matches(dt: date, doms: set[int] | None, months: set[int] | None, dows: set[int] | None) -> bool:
     if months is not None and dt.month not in months:
         return False
 
@@ -336,7 +353,7 @@ class ScheduledResearchExecutor:
 
         job.last_run_at = now_ms
         try:
-            scheduled_next_run = next_due(job.schedule, now_ms)
+            scheduled_next_run = next_due(job.schedule, now_ms, job.timezone)
         except Exception as exc:
             logger.error("scheduled research schedule advancement failed for job %s", job.id, exc_info=True)
             job.status = JobStatus.FAILED
