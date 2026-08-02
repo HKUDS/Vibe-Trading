@@ -13,14 +13,13 @@ from backtest.engines.base import BaseEngine, _align, _load_optimizer
 from backtest.engines.china_a import ChinaAEngine
 from backtest.models import Position
 
+_ENTRY_TS = pd.Timestamp("2026-01-02")
+_ADJUST_TS = pd.Timestamp("2026-01-03")
+
 
 class _AdjustmentEngine(BaseEngine):
     def __init__(self, **overrides):
-        config = {
-            "initial_cash": 1_000.0,
-            "leverage": 1.0,
-            "position_adjustment": "rebalance",
-        }
+        config = {"initial_cash": 1_000.0, "leverage": 1.0, "position_adjustment": "rebalance"}
         config.update(overrides)
         super().__init__(config)
         self.bar_positions: list[dict[str, Position]] = []
@@ -50,18 +49,15 @@ class _AdjustmentEngine(BaseEngine):
 
 class _ChangingLeverageAdjustmentEngine(_AdjustmentEngine):
     def _leverage_for_symbol(self, symbol):
-        del symbol
         return 1.0 if self._bar_idx == 0 else 2.0
 
 
 class _SymbolRulesAdjustmentEngine(_AdjustmentEngine):
     def round_size(self, raw_size, price):
-        del price
         lot = {"A": 1.0, "B": 0.25}[self._active_symbol]
         return int(max(raw_size, 0.0) / lot) * lot
 
     def calc_commission(self, size, price, direction, is_open):
-        del direction, is_open
         return size * price * {"A": 0.01, "B": 0.02}[self._active_symbol]
 
 
@@ -79,20 +75,42 @@ def _run_adjustments(
     codes: list[str] | None = None,
 ) -> None:
     dates = pd.date_range("2026-01-02", periods=len(next(iter(weights.values()))))
-    codes = codes or list(weights)
-    data_map = {}
-    close_data = {}
-    for symbol in weights:
-        prices = (execution_prices or {}).get(symbol, [100.0] * len(dates))
-        data_map[symbol] = pd.DataFrame({"open": prices, "close": prices}, index=dates)
-        close_data[symbol] = prices
+    prices = {symbol: (execution_prices or {}).get(symbol, [100.0] * len(dates)) for symbol in weights}
+    data_map = {symbol: pd.DataFrame({"open": values, "close": values}, index=dates) for symbol, values in prices.items()}
     engine._execute_bars(
         dates,
         data_map,
-        pd.DataFrame(close_data, index=dates),
+        pd.DataFrame(prices, index=dates),
         pd.DataFrame(weights, index=dates),
-        codes,
+        codes or list(weights),
     )
+
+
+def _position(direction=1, size=5.0):
+    return Position("A", direction, 100.0, _ENTRY_TS, size)
+
+
+def _rebalance_once(engine, target_weight, raw_price=100.0):
+    frame = pd.DataFrame({"open": [raw_price], "close": [100.0]}, index=[_ADJUST_TS])
+    engine._execute_target_rebalance({"A": target_weight}, {"A": frame}, _ADJUST_TS, 1_000.0, ["A"])
+
+
+def _assert_unchanged(engine, positions=None):
+    assert engine.capital == 1_000.0
+    assert engine.positions == ({} if positions is None else positions)
+    assert engine.trades == []
+    assert engine.adjustment_events == []
+
+
+def _run_both_code_orders(engine_type, weights):
+    first, second = engine_type(), engine_type()
+    _run_adjustments(first, weights, codes=["A", "B"])
+    _run_adjustments(second, weights, codes=["B", "A"])
+    return first, second
+
+
+def _sizes(state):
+    return {symbol: position.size for symbol, position in state.items()}
 
 
 def test_position_adjustment_rejects_unknown_mode():
@@ -107,37 +125,18 @@ def test_hold_mode_keeps_same_direction_size():
 
 
 def test_hold_mode_preserves_legacy_negative_open_support():
-    engine = _AdjustmentEngine(
-        position_adjustment="hold", allow_nonpositive_prices=True
-    )
-    _run_adjustments(
-        engine, {"A": [0.50]}, execution_prices={"A": [-100.0]}
-    )
+    engine = _AdjustmentEngine(position_adjustment="hold", allow_nonpositive_prices=True)
+    _run_adjustments(engine, {"A": [0.50]}, execution_prices={"A": [-100.0]})
     assert engine.bar_positions[0]["A"].entry_price == -100.0
 
 
 @pytest.mark.parametrize(
-    ("existing", "target_weight"),
-    [
-        pytest.param(False, 0.50, id="initial-open"),
-        pytest.param(True, 0.0, id="full-close"),
-        pytest.param(True, -0.50, id="reversal"),
-        pytest.param(True, 0.80, id="increase"),
-        pytest.param(True, 0.20, id="reduction"),
-    ],
-)
+    ("existing", "target_weight"), [(False, 0.50), (True, 0.0), (True, -0.50), (True, 0.80), (True, 0.20)],
+    ids=("initial-open", "full-close", "reversal", "increase", "reduction"))
 @pytest.mark.parametrize(
     ("raw_price", "forced_fill"),
-    [
-        pytest.param(0.0, None, id="zero-raw"),
-        pytest.param(-1.0, None, id="negative-raw"),
-        pytest.param(np.nan, None, id="nan-raw"),
-        pytest.param(np.inf, None, id="infinite-raw"),
-        pytest.param(100.0, 0.0, id="zero-fill"),
-        pytest.param(100.0, -1.0, id="negative-fill"),
-        pytest.param(100.0, np.nan, id="nan-fill"),
-        pytest.param(100.0, np.inf, id="infinite-fill"),
-    ],
+    [(0.0, None), (-1.0, None), (np.nan, None), (np.inf, None), (100.0, 0.0), (100.0, -1.0), (100.0, np.nan), (100.0, np.inf)],
+    ids=("zero-raw", "negative-raw", "nan-raw", "infinite-raw", "zero-fill", "negative-fill", "nan-fill", "infinite-fill"),
 )
 def test_rebalance_rejects_invalid_execution_prices_before_mutation(
     existing, target_weight, raw_price, forced_fill
@@ -145,40 +144,21 @@ def test_rebalance_rejects_invalid_execution_prices_before_mutation(
     engine = _ForcedFillAdjustmentEngine(
         allow_nonpositive_prices=True, forced_fill_price=forced_fill
     )
-    ts = pd.Timestamp("2026-01-03")
-    frame = pd.DataFrame({"open": [raw_price], "close": [100.0]}, index=[ts])
     if existing:
-        engine.positions["A"] = Position(
-            "A", 1, 100.0, pd.Timestamp("2026-01-02"), 5.0
-        )
+        engine.positions["A"] = _position()
     positions = dict(engine.positions)
 
     with pytest.raises(ValueError, match="positive execution price"):
-        engine._execute_target_rebalance(
-            {"A": target_weight}, {"A": frame}, ts, 1_000.0, ["A"]
-        )
-
-    assert engine.capital == 1_000.0
-    assert engine.positions == positions
-    assert engine.trades == []
-    assert engine.adjustment_events == []
+        _rebalance_once(engine, target_weight, raw_price)
+    _assert_unchanged(engine, positions)
 
 
 def test_rebalance_empty_zero_target_ignores_invalid_price():
     engine = _ForcedFillAdjustmentEngine(
         allow_nonpositive_prices=True, forced_fill_price=0.0
     )
-    ts = pd.Timestamp("2026-01-03")
-    frame = pd.DataFrame({"open": [0.0], "close": [100.0]}, index=[ts])
-
-    engine._execute_target_rebalance(
-        {"A": 0.0}, {"A": frame}, ts, 1_000.0, ["A"]
-    )
-
-    assert engine.capital == 1_000.0
-    assert engine.positions == {}
-    assert engine.trades == []
-    assert engine.adjustment_events == []
+    _rebalance_once(engine, 0.0, raw_price=0.0)
+    _assert_unchanged(engine)
 
 
 def test_rebalance_increases_then_reduces_same_direction_position():
@@ -208,9 +188,7 @@ def test_rebalance_rejects_same_direction_adjustment_with_changed_leverage():
     with pytest.raises(ValueError, match="leverage"):
         _run_adjustments(engine, {"A": [0.25, 0.50]})
     assert engine.capital == 750.0
-    assert engine.bar_positions == [
-        {"A": Position("A", 1, 100.0, pd.Timestamp("2026-01-02"), 2.5)}
-    ]
+    assert engine.bar_positions == [{"A": _position(size=2.5)}]
 
 
 def test_rebalance_reduces_short_with_correct_signed_pnl():
@@ -228,26 +206,13 @@ def test_rebalance_reduces_short_with_correct_signed_pnl():
 
 @pytest.mark.parametrize(
     ("direction", "target_weight", "expected_size", "expected_price", "action"),
-    [
-        (1, 0.80, 7.272727, 110.0, "increase"),
-        (-1, -0.80, 8.888889, 90.0, "increase"),
-        (1, 0.20, 2.222222, 90.0, "partial_reduction"),
-        (-1, -0.20, 1.818182, 110.0, "partial_reduction"),
-    ],
-)
+    [(1, 0.80, 7.272727, 110.0, "increase"), (-1, -0.80, 8.888889, 90.0, "increase"), (1, 0.20, 2.222222, 90.0, "partial_reduction"), (-1, -0.20, 1.818182, 110.0, "partial_reduction")])
 def test_existing_rebalance_sizes_target_at_action_fill(
     direction, target_weight, expected_size, expected_price, action
 ):
     engine = _AdjustmentEngine(slippage=0.10)
-    ts = pd.Timestamp("2026-01-03")
-    frame = pd.DataFrame({"open": [100.0], "close": [100.0]}, index=[ts])
-    engine.positions["A"] = Position(
-        "A", direction, 100.0, pd.Timestamp("2026-01-02"), 5.0
-    )
-
-    engine._execute_target_rebalance(
-        {"A": target_weight}, {"A": frame}, ts, 1_000.0, ["A"]
-    )
+    engine.positions["A"] = _position(direction)
+    _rebalance_once(engine, target_weight)
 
     assert engine.positions["A"].size == expected_size
     assert engine.adjustment_events[-1]["action"] == action
@@ -257,28 +222,17 @@ def test_existing_rebalance_sizes_target_at_action_fill(
 @pytest.mark.parametrize("direction", [1, -1])
 def test_existing_rebalance_does_not_churn_inside_slippage_band(direction):
     engine = _AdjustmentEngine(slippage=0.10)
-    ts = pd.Timestamp("2026-01-03")
-    frame = pd.DataFrame({"open": [100.0], "close": [100.0]}, index=[ts])
-    before = Position("A", direction, 100.0, pd.Timestamp("2026-01-02"), 5.0)
+    before = _position(direction)
     engine.positions["A"] = before
-
-    engine._execute_target_rebalance(
-        {"A": direction * 0.50}, {"A": frame}, ts, 1_000.0, ["A"]
-    )
-
-    assert engine.positions == {"A": before}
-    assert engine.capital == 1_000.0
-    assert engine.trades == []
-    assert engine.adjustment_events == []
+    _rebalance_once(engine, direction * 0.50)
+    _assert_unchanged(engine, {"A": before})
 
 
 def test_rebalance_insufficient_capital_is_atomic():
     engine = _AdjustmentEngine(fee_rate=0.10)
     with pytest.raises(ValueError, match="insufficient capital"):
         _run_adjustments(engine, {"A": [1.0]})
-    assert engine.capital == 1_000.0
-    assert engine.positions == {}
-    assert engine.trades == []
+    _assert_unchanged(engine)
 
 
 def test_existing_multi_symbol_rebalance_failure_is_atomic():
@@ -296,11 +250,7 @@ def test_existing_multi_symbol_rebalance_failure_is_atomic():
 
 @pytest.mark.parametrize(
     ("target_weight", "expected_position", "bar_capital", "trade_fees"),
-    [
-        (0.0, None, 990.0, [10.0]),
-        (-0.50, (-1, 4.975, 4.975), 487.525, [10.0, 9.95]),
-    ],
-)
+    [(0.0, None, 990.0, [10.0]), (-0.50, (-1, 4.975, 4.975), 487.525, [10.0, 9.95])])
 def test_rebalance_full_zero_and_reversal_allocate_nonzero_fees(
     target_weight, expected_position, bar_capital, trade_fees
 ):
@@ -309,10 +259,8 @@ def test_rebalance_full_zero_and_reversal_allocate_nonzero_fees(
     _run_adjustments(engine, {"A": [0.50, target_weight]})
 
     position = engine.bar_positions[1].get("A")
-    if expected_position is None:
-        assert position is None
-    else:
-        assert (position.direction, position.size, position.entry_commission) == expected_position
+    actual_position = None if position is None else (position.direction, position.size, position.entry_commission)
+    assert actual_position == expected_position
     assert engine.bar_capitals[1] == pytest.approx(bar_capital)
     assert [trade.commission for trade in engine.trades] == pytest.approx(trade_fees)
     assert engine.trades[0].exit_reason == "signal"
@@ -320,13 +268,8 @@ def test_rebalance_full_zero_and_reversal_allocate_nonzero_fees(
 
 def test_rebalance_basket_is_independent_of_input_code_order():
     weights = {"A": [0.50], "B": [0.50]}
-    first = _AdjustmentEngine()
-    second = _AdjustmentEngine()
-    _run_adjustments(first, weights, codes=["A", "B"])
-    _run_adjustments(second, weights, codes=["B", "A"])
-    assert {
-        symbol: position.size for symbol, position in first.bar_positions[0].items()
-    } == {"A": 5.0, "B": 5.0}
+    first, second = _run_both_code_orders(_AdjustmentEngine, weights)
+    assert _sizes(first.bar_positions[0]) == {"A": 5.0, "B": 5.0}
     assert first.bar_positions == second.bar_positions
     assert [snapshot.capital for snapshot in first.equity_snapshots] == [
         snapshot.capital for snapshot in second.equity_snapshots
@@ -335,17 +278,9 @@ def test_rebalance_basket_is_independent_of_input_code_order():
 
 def test_existing_rebalance_uses_each_symbol_rules_independent_of_code_order():
     weights = {"A": [0.20, 0.35], "B": [0.20, 0.15]}
-    first = _SymbolRulesAdjustmentEngine()
-    second = _SymbolRulesAdjustmentEngine()
-
-    _run_adjustments(first, weights, codes=["A", "B"])
-    _run_adjustments(second, weights, codes=["B", "A"])
-
+    first, second = _run_both_code_orders(_SymbolRulesAdjustmentEngine, weights)
     expected = [{"A": 2.0, "B": 2.0}, {"A": 3.0, "B": 1.25}]
-    assert [
-        {symbol: position.size for symbol, position in state.items()}
-        for state in first.bar_positions
-    ] == expected
+    assert [_sizes(state) for state in first.bar_positions] == expected
     assert first.bar_positions == second.bar_positions
     assert first.bar_capitals == pytest.approx([594.0, 566.5])
     assert first.bar_capitals == second.bar_capitals

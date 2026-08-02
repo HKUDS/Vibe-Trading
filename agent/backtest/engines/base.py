@@ -16,7 +16,7 @@ import re as _re
 import sys
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -51,6 +51,7 @@ def _json_safe_scalar_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
         for k, v in metrics.items()
         if not isinstance(v, dict)
     }
+
 logger = logging.getLogger(__name__)
 
 
@@ -74,8 +75,6 @@ class _OpenOrder:
 
 @dataclass(frozen=True)
 class _ReductionOrder:
-    """A fully priced position reduction that can be committed atomically."""
-
     before: Position
     target_size: float
     price: float
@@ -85,7 +84,6 @@ class _ReductionOrder:
 
     @property
     def capital_credit(self) -> float:
-        """Cash returned by the fill."""
         return self.released_margin + self.realized_pnl - self.exit_commission
 
 
@@ -596,16 +594,7 @@ class BaseEngine(ABC):
         released_margin: float = 0.0,
     ) -> None:
         """Allow engines to update risk state/evidence after a committed delta fill."""
-        del (
-            action,
-            timestamp,
-            before,
-            after,
-            execution_price,
-            trading_fee,
-            realized_pnl,
-            released_margin,
-        )
+        return None
 
     def execution_open(self, bar: pd.Series) -> float:
         """Return the normal market-fill price for a bar."""
@@ -1172,8 +1161,7 @@ class BaseEngine(ABC):
         ts: pd.Timestamp,
         equity: float,
         *,
-        allow_existing: bool = False,
-        require_positive_price: bool = False,
+        allow_existing: bool = False, require_positive_price: bool = False,
     ) -> Optional[_OpenOrder]:
         """Price an opening order without mutating portfolio state."""
         self._active_symbol = symbol
@@ -1190,7 +1178,7 @@ class BaseEngine(ABC):
             return None
         open_price = self.execution_open(bar)
         if require_positive_price:
-            self._validate_positive_rebalance_prices(open_price)
+            self._validate_rebalance_values(open_price, positive=True)
         # Zero is always rejected (size = notional / price is undefined);
         # negatives are rejected unless this engine opted into non-positive
         # prices, in which case abs()-based sizing/margin below handle them.
@@ -1198,7 +1186,7 @@ class BaseEngine(ABC):
             return None
         price = self.apply_slippage(open_price, direction)
         if require_positive_price:
-            self._validate_positive_rebalance_prices(price)
+            self._validate_rebalance_values(price, positive=True)
         leverage = self._leverage_for_symbol(symbol)
         target_notional = abs(target_weight) * equity * leverage
         size = self.round_size(
@@ -1222,11 +1210,8 @@ class BaseEngine(ABC):
 
     def _execute_target_rebalance(
         self,
-        target_weights: Dict[str, Optional[float]],
-        data_map: Dict[str, pd.DataFrame],
-        ts: pd.Timestamp,
-        equity: float,
-        codes: List[str],
+        target_weights: Dict[str, Optional[float]], data_map: Dict[str, pd.DataFrame],
+        ts: pd.Timestamp, equity: float, codes: List[str],
     ) -> None:
         """Plan every target delta, preflight capital, then commit the basket."""
         reductions: list[_ReductionOrder] = []
@@ -1236,8 +1221,7 @@ class BaseEngine(ABC):
             target_weight = target_weights.get(symbol)
             if target_weight is None:
                 continue
-            if not math.isfinite(target_weight):
-                raise ValueError("non-finite position rebalance value")
+            self._validate_rebalance_values(target_weight)
 
             self._active_symbol = symbol
             before = self.positions.get(symbol)
@@ -1247,39 +1231,24 @@ class BaseEngine(ABC):
                 continue
             bar = frame.loc[ts]
 
-            if before is not None and (target_direction == 0 or target_direction != before.direction):
-                if not self.can_execute(symbol, 0, bar):
-                    continue
-                raw_price = self.execution_open(bar)
-                self._validate_positive_rebalance_prices(raw_price)
-                price = self.apply_slippage(raw_price, -before.direction)
-                self._validate_positive_rebalance_prices(price)
-                reductions.append(self._plan_reduction(before, 0.0, price))
-                if target_direction == 0:
-                    continue
+            if before is None or target_direction != before.direction:
+                if before is not None:
+                    if not self.can_execute(symbol, 0, bar):
+                        continue
+                    raw_price = self.execution_open(bar)
+                    self._validate_rebalance_values(raw_price, positive=True)
+                    price = self.apply_slippage(raw_price, -before.direction)
+                    self._validate_rebalance_values(price, positive=True)
+                    reductions.append(self._plan_reduction(before, 0.0, price))
+                    if target_direction == 0:
+                        continue
                 order = self._plan_open_order(
                     symbol,
                     target_weight,
                     frame,
                     ts,
                     equity,
-                    allow_existing=True,
-                    require_positive_price=True,
-                )
-                if order is not None:
-                    self._validate_rebalance_values(
-                        order.price, order.leverage, order.size, order.margin, order.commission
-                    )
-                    opens.append(order)
-                continue
-
-            if before is None:
-                order = self._plan_open_order(
-                    symbol,
-                    target_weight,
-                    frame,
-                    ts,
-                    equity,
+                    allow_existing=before is not None,
                     require_positive_price=True,
                 )
                 if order is not None:
@@ -1290,7 +1259,7 @@ class BaseEngine(ABC):
                 continue
 
             raw_price = self.execution_open(bar)
-            self._validate_positive_rebalance_prices(raw_price)
+            self._validate_rebalance_values(raw_price, positive=True)
             leverage = self._leverage_for_symbol(symbol)
             self._validate_rebalance_values(raw_price, before.leverage, leverage)
             target_notional = abs(target_weight) * equity * before.leverage
@@ -1298,7 +1267,7 @@ class BaseEngine(ABC):
                 self.apply_slippage(raw_price, before.direction),
                 self.apply_slippage(raw_price, -before.direction),
             )
-            self._validate_positive_rebalance_prices(*prices)
+            self._validate_rebalance_values(*prices, positive=True)
             sizes = tuple(
                 self.round_size(
                     self._calc_raw_size(symbol, target_notional, price), price
@@ -1336,11 +1305,12 @@ class BaseEngine(ABC):
             elif self.can_execute(symbol, 0, bar):
                 reductions.append(self._plan_reduction(before, target_size, price))
 
-        projected_capital = self.capital + sum(
-            order.capital_credit for order in reductions
-        ) - sum(order.cost for order in opens)
-        if not math.isfinite(projected_capital):
-            raise ValueError("non-finite position rebalance value")
+        projected_capital = (
+            self.capital
+            + sum(order.capital_credit for order in reductions)
+            - sum(order.cost for order in opens)
+        )
+        self._validate_rebalance_values(projected_capital)
         if projected_capital < -1e-9:
             raise ValueError("insufficient capital for position rebalance")
 
@@ -1356,18 +1326,19 @@ class BaseEngine(ABC):
                 self._execute_open_order(order, ts)
 
     @staticmethod
-    def _validate_positive_rebalance_prices(*prices: float) -> None:
-        if not all(math.isfinite(float(price)) and float(price) > 0 for price in prices):
-            raise ValueError("rebalance requires a finite positive execution price")
+    def _validate_rebalance_values(*values: float, positive: bool = False) -> None:
+        if all(
+            math.isfinite(float(value)) and (not positive or float(value) > 0)
+            for value in values
+        ):
+            return
+        raise ValueError(
+            "rebalance requires a finite positive execution price"
+            if positive
+            else "non-finite position rebalance value"
+        )
 
-    @staticmethod
-    def _validate_rebalance_values(*values: float) -> None:
-        if not all(math.isfinite(float(value)) for value in values):
-            raise ValueError("non-finite position rebalance value")
-
-    def _plan_reduction(
-        self, before: Position, target_size: float, price: float
-    ) -> _ReductionOrder:
+    def _plan_reduction(self, before: Position, target_size: float, price: float) -> _ReductionOrder:
         closed_size = before.size - target_size
         released_margin = self._calc_margin(
             before.symbol, closed_size, before.entry_price, before.leverage
@@ -1385,14 +1356,7 @@ class BaseEngine(ABC):
             realized_pnl,
             exit_commission,
         )
-        return _ReductionOrder(
-            before=before,
-            target_size=target_size,
-            price=price,
-            released_margin=released_margin,
-            realized_pnl=realized_pnl,
-            exit_commission=exit_commission,
-        )
+        return _ReductionOrder(before, target_size, price, released_margin, realized_pnl, exit_commission)
 
     def _execute_position_increase(self, order: _OpenOrder, ts: pd.Timestamp) -> None:
         """Commit a same-direction opening delta."""
@@ -1404,14 +1368,10 @@ class BaseEngine(ABC):
                 f"planned order for {order.symbol} exceeds available capital"
             )
         new_size = before.size + order.size
-        after = Position(
-            symbol=before.symbol,
-            direction=before.direction,
+        after = replace(
+            before,
             entry_price=(before.size * before.entry_price + order.size * order.price) / new_size,
-            entry_time=before.entry_time,
             size=new_size,
-            leverage=before.leverage,
-            entry_bar_idx=before.entry_bar_idx,
             entry_commission=before.entry_commission + order.commission,
         )
         self.capital -= order.cost
@@ -1430,14 +1390,9 @@ class BaseEngine(ABC):
         before = self.positions[order.before.symbol]
         closed_size = before.size - order.target_size
         entry_commission = before.entry_commission * closed_size / before.size
-        after = Position(
-            symbol=before.symbol,
-            direction=before.direction,
-            entry_price=before.entry_price,
-            entry_time=before.entry_time,
+        after = replace(
+            before,
             size=order.target_size,
-            leverage=before.leverage,
-            entry_bar_idx=before.entry_bar_idx,
             entry_commission=before.entry_commission - entry_commission,
         )
         exit_margin = self._calc_margin(
