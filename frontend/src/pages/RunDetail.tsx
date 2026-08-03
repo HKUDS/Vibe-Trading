@@ -14,6 +14,7 @@ import {
   Download,
   FileCheck2,
   Fingerprint,
+  Gauge,
   List,
   Loader2,
   ShieldCheck,
@@ -22,7 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { api, type BacktestMetrics, type RunCard, type RunData, type ValidationData } from "@/lib/api";
+import { api, type BacktestMetrics, type RebalanceNotesPayload, type RiskXRayPayload, type RunCard, type RunData, type ValidationData } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import { CandlestickChart } from "@/components/charts/CandlestickChart";
@@ -34,7 +35,7 @@ import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 const rehypePlugins = [rehypeHighlight];
 
-type Tab = "chart" | "trades" | "runCard" | "code" | "validation";
+type Tab = "chart" | "trades" | "runCard" | "code" | "validation" | "studio";
 type ChartPayload = Pick<RunData, "price_series" | "indicator_series" | "trade_markers">;
 type ChartCache = Record<string, ChartPayload>;
 type ChartLoadProgress = { done: number; total: number };
@@ -115,9 +116,11 @@ export function RunDetail() {
 
   const hasValidation = !!run?.validation;
   const hasRunCard = !!run?.run_card;
+  const hasStudio = !!run?.risk_xray || !!run?.rebalance_notes;
   const TABS: { id: Tab; label: string; icon: typeof BarChart3; hidden?: boolean }[] = [
     { id: "chart", label: i18n.t("runDetail.chart"), icon: BarChart3 },
     { id: "trades", label: i18n.t("runDetail.trades"), icon: List },
+    { id: "studio", label: i18n.t("runDetail.studio"), icon: Gauge, hidden: !hasStudio },
     { id: "validation", label: i18n.t("runDetail.validation"), icon: ShieldCheck, hidden: !hasValidation },
     { id: "runCard", label: i18n.t("runDetail.runCard"), icon: FileCheck2, hidden: !hasRunCard },
     { id: "code", label: i18n.t("runDetail.code"), icon: Code2 },
@@ -382,6 +385,9 @@ export function RunDetail() {
           )}
           {tab === "trades" && <TradesTab run={run} />}
           {tab === "validation" && run.validation && <ValidationPanel data={run.validation} />}
+          {tab === "studio" && hasStudio && (
+            <StudioTab xray={run.risk_xray} notes={run.rebalance_notes} />
+          )}
           {tab === "runCard" && run.run_card && <RunCardTab card={run.run_card} />}
           {tab === "code" && <CodeTab code={code} />}
         </ErrorBoundary>
@@ -473,6 +479,94 @@ function RunCardTab({ card }: { card: RunCard }) {
           <p className="text-sm text-muted-foreground">{i18n.t("runDetail.noArtifactChecksums")}</p>
         )}
       </RunCardPanel>
+    </div>
+  );
+}
+
+function fmtPct(v: number | undefined, digits = 1): string {
+  if (v === undefined || Number.isNaN(v)) return "-";
+  return `${(v * 100).toFixed(digits)}%`;
+}
+
+function StudioTab({ xray, notes }: { xray?: RiskXRayPayload; notes?: RebalanceNotesPayload }) {
+  const concentration = xray?.concentration || {};
+  const volatility = xray?.volatility || {};
+  const drawdown = xray?.drawdown || {};
+  const weights = xray?.inputs?.weights || {};
+  const weightEntries = Object.entries(weights).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const summary = notes?.summary;
+  const rebalances = notes?.rebalances || [];
+
+  return (
+    <div className="space-y-4">
+      {xray && (
+        <RunCardPanel title={i18n.t("runDetail.riskXray")} icon={Gauge}>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <RunCardStat label={i18n.t("runDetail.hhi")} value={concentration.hhi !== undefined ? concentration.hhi.toFixed(3) : "-"} />
+            <RunCardStat label={i18n.t("runDetail.effectiveN")} value={concentration.effective_n !== undefined ? concentration.effective_n.toFixed(1) : "-"} />
+            <RunCardStat label={i18n.t("runDetail.annualizedVol")} value={fmtPct(volatility.annualized_vol)} />
+            <RunCardStat label={i18n.t("runDetail.maxDrawdown")} value={fmtPct(drawdown.max_drawdown)} />
+          </div>
+          {weightEntries.length > 0 && (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground [&_th]:font-medium">
+                    <th className="py-2 ps-4 pr-4">{i18n.t("runDetail.symbol")}</th>
+                    <th className="py-2 pr-4">{i18n.t("runDetail.weight")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {weightEntries.map(([sym, w]) => (
+                    <tr key={sym} className="border-b last:border-0 hover:bg-muted/40">
+                      <td className="py-1.5 ps-4 pr-4 font-mono text-xs">{sym}</td>
+                      <td className="py-1.5 pr-4 font-mono tabular-nums">{fmtPct(w)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {(xray.warnings || []).length > 0 && (
+            <p className="mt-2 text-xs text-warning">{(xray.warnings || []).join("; ")}</p>
+          )}
+        </RunCardPanel>
+      )}
+
+      {notes && summary && (
+        <RunCardPanel title={i18n.t("runDetail.rebalanceNotes")} icon={Gauge}>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <RunCardStat label={i18n.t("runDetail.rebalanceCount")} value={String(summary.rebalance_count)} />
+            <RunCardStat label={i18n.t("runDetail.turnoverMean")} value={fmtPct(summary.turnover_mean)} />
+            <RunCardStat label={i18n.t("runDetail.turnoverMax")} value={fmtPct(summary.turnover_max)} />
+            <RunCardStat label={i18n.t("runDetail.largestRebalance")} value={summary.largest_rebalance_date || "-"} />
+          </div>
+          {rebalances.length > 0 && (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground [&_th]:font-medium">
+                    <th className="py-2 ps-4 pr-4">{i18n.t("runDetail.date")}</th>
+                    <th className="py-2 pr-4">{i18n.t("runDetail.turnover")}</th>
+                    <th className="py-2 pr-4">{i18n.t("runDetail.entries")}</th>
+                    <th className="py-2">{i18n.t("runDetail.exits")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rebalances.map((r) => (
+                    <tr key={r.date} className="border-b last:border-0 hover:bg-muted/40">
+                      <td className="py-1.5 ps-4 pr-4 font-mono text-xs">{r.date}</td>
+                      <td className="py-1.5 pr-4 font-mono tabular-nums">{fmtPct(r.turnover)}</td>
+                      <td className="py-1.5 pr-4 text-xs">{(r.entries || []).map((e) => e.code).join(", ") || "-"}</td>
+                      <td className="py-1.5 text-xs">{(r.exits || []).map((e) => e.code).join(", ") || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </RunCardPanel>
+      )}
     </div>
   );
 }

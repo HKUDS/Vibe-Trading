@@ -555,6 +555,42 @@ export interface ValidationData {
   };
 }
 
+export interface RiskXRayPayload {
+  inputs?: {
+    symbols?: string[];
+    weights?: Record<string, number>;
+    aligned_days?: number;
+    return_observations?: number;
+    first_date?: string;
+    last_date?: string;
+  };
+  concentration?: { hhi?: number; effective_n?: number; top_weight?: number };
+  volatility?: { annualized_vol?: number };
+  drawdown?: { max_drawdown?: number };
+  tail_risk?: Record<string, unknown>;
+  diversification?: Record<string, unknown>;
+  correlation?: Record<string, unknown>;
+  skipped?: string[];
+  warnings?: string[];
+}
+
+export interface RebalanceNotesPayload {
+  rebalances?: Array<{
+    date: string;
+    turnover: number;
+    entries?: Array<{ code: string; to: number }>;
+    exits?: Array<{ code: string; from: number }>;
+    top_moves?: Array<{ code: string; from: number; to: number; delta: number }>;
+  }>;
+  summary?: {
+    rebalance_count: number;
+    turnover_total: number;
+    turnover_mean: number;
+    turnover_max: number;
+    largest_rebalance_date?: string | null;
+  };
+}
+
 export interface RunData {
   status: string;
   run_id: string;
@@ -567,6 +603,8 @@ export interface RunData {
   metrics?: BacktestMetrics;
   artifacts?: ArtifactInfo[];
   run_card?: RunCard;
+  risk_xray?: RiskXRayPayload;
+  rebalance_notes?: RebalanceNotesPayload;
   validation?: ValidationData;
 
   chart_symbols?: string[];

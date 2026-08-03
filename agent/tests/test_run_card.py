@@ -315,3 +315,40 @@ def test_options_backtest_writes_run_card(tmp_path: Path) -> None:
     assert card["data_sources"] == ["yfinance"]
     assert "greeks.csv" in {Path(artifact["path"]).name for artifact in card["artifacts"]}
     assert (tmp_path / "run_card.md").exists()
+
+
+def test_api_run_response_includes_portfolio_studio_artifacts(tmp_path: Path) -> None:
+    import api_server
+
+    run_dir = tmp_path / "run_studio"
+    (run_dir / "artifacts").mkdir(parents=True)
+    (run_dir / "state.json").write_text('{"status": "success"}\n', encoding="utf-8")
+    risk_xray = {
+        "concentration": {"hhi": 0.25, "effective_n": 4.0},
+        "volatility": {"annualized_vol": 0.18},
+        "drawdown": {"max_drawdown": -0.12},
+    }
+    rebalance_notes = {
+        "rebalances": [{"date": "2026-01-05", "turnover": 0.4, "entries": [], "exits": [], "top_moves": []}],
+        "summary": {"rebalance_count": 1, "turnover_total": 0.4, "turnover_mean": 0.4, "turnover_max": 0.4, "largest_rebalance_date": "2026-01-05"},
+    }
+    (run_dir / "artifacts" / "risk_xray.json").write_text(json.dumps(risk_xray), encoding="utf-8")
+    (run_dir / "artifacts" / "rebalance_notes.json").write_text(json.dumps(rebalance_notes), encoding="utf-8")
+
+    response = api_server._build_response_from_run_dir(run_dir, elapsed=0.0)
+
+    assert response.risk_xray == risk_xray
+    assert response.rebalance_notes == rebalance_notes
+
+
+def test_api_run_response_portfolio_studio_fields_none_when_absent(tmp_path: Path) -> None:
+    import api_server
+
+    run_dir = tmp_path / "run_plain"
+    run_dir.mkdir()
+    (run_dir / "state.json").write_text('{"status": "success"}\n', encoding="utf-8")
+
+    response = api_server._build_response_from_run_dir(run_dir, elapsed=0.0)
+
+    assert response.risk_xray is None
+    assert response.rebalance_notes is None
