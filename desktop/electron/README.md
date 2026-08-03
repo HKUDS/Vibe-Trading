@@ -8,7 +8,8 @@ agent, provider, session, frontend model UX, or messaging-channel code.
 ## What the shell does
 
 - Enforces a single desktop application instance.
-- Starts one owned `vibe-trading serve` process.
+- Starts one owned `vibe-trading serve` process through a parent-death
+  watchdog.
 - Selects a free loopback port and binds the backend to `127.0.0.1`.
 - Generates a 256-bit authentication secret for each desktop process.
 - Adds the secret to same-origin renderer requests without exposing its value
@@ -16,8 +17,13 @@ agent, provider, session, frontend model UX, or messaging-channel code.
 - Waits for the authenticated `/health` endpoint before loading the UI.
 - Captures backend output in Electron's per-user log directory.
 - Reports startup failures and exposes retry and log-folder actions.
-- Requests authenticated graceful shutdown before terminating the owned
-  Windows process tree as a fallback.
+- Requests authenticated graceful shutdown before asking the watchdog to
+  terminate the owned Windows process tree as a fallback.
+- Terminates the Python process tree if the Electron main process is killed
+  without running JavaScript shutdown handlers.
+- Localizes desktop-owned loading, status, error, dialog, and menu text in
+  English, Simplified Chinese, Japanese, Korean, and Arabic, including RTL
+  loading-page layout for Arabic.
 - Prevents in-window navigation away from the local backend origin.
 
 See [THREAT_MODEL.md](THREAT_MODEL.md) for the trust boundary and residual
@@ -41,6 +47,16 @@ npm ci
 npm start
 ```
 
+The Windows lifecycle suite used by CI can be run from the same directory:
+
+```powershell
+npm run smoke:lifecycle
+```
+
+It verifies localized message parity, graceful shutdown, authentication, and
+the parent-death path by force-terminating only the Electron main PID before
+checking that the Python process and loopback listener are gone.
+
 The shell searches for a repository `.venv\Scripts\vibe-trading.exe` before
 falling back to `vibe-trading.exe` on `PATH`. To select an explicit development
 backend:
@@ -59,8 +75,8 @@ This first change intentionally excludes:
 - update checks or release-feed configuration;
 - provider/model discovery and response metadata;
 - optional IM adapters and personal WeChat pairing;
-- changes outside `desktop/`, except the two generated-output entries in the
-  repository `.gitignore`.
+- changes outside `desktop/`, except generated-output entries in `.gitignore`
+  and the Windows desktop job in `.github/workflows/test.yml`.
 
 The desktop shell remains unofficial. No release or distribution ownership is
 implied by this source directory.

@@ -9,7 +9,9 @@
   "scripts": {
     "build": "tsc && node scripts/copy-static.mjs",
     "start": "npm run build && electron .",
-    "smoke:lifecycle": "npm run build && node scripts/smoke-lifecycle.mjs",
+    "test:locales": "npm run build && node scripts/test-locales.mjs",
+    "smoke:parent-death": "npm run build && node scripts/smoke-parent-death.mjs",
+    "smoke:lifecycle": "npm run build && node scripts/test-locales.mjs && node scripts/smoke-lifecycle.mjs && node scripts/smoke-parent-death.mjs",
     "sbom": "npm sbom --sbom-format cyclonedx"
   },
   "devDependencies": {

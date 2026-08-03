@@ -2,12 +2,17 @@ import { ChildProcess, spawn } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, WriteStream } from "node:fs";
 import { createServer } from "node:net";
 import path from "node:path";
+import {
+  DesktopMessages,
+  formatDesktopMessage,
+} from "./locales";
 
 type BackendManagerOptions = {
   appPath: string;
   resourcesPath: string;
   logDirectory: string;
   apiAuthKey: string;
+  messages: DesktopMessages;
   onStatus: (message: string) => void;
   onUnexpectedExit: (message: string) => void;
 };
@@ -18,8 +23,19 @@ type ResolvedBackend = {
   includeServeCommand: boolean;
 };
 
+type WatchdogMessage = {
+  type: string;
+  pid?: number;
+  code?: number | null;
+  signal?: NodeJS.Signals | null;
+  message?: string;
+  reason?: string;
+};
+
 export class BackendManager {
-  private child: ChildProcess | undefined;
+  private watchdog: ChildProcess | undefined;
+  private watchdogError: Error | undefined;
+  private backendPid: number | undefined;
   private baseUrl: string | undefined;
   private stopping = false;
   private logStream: WriteStream | undefined;
@@ -28,11 +44,12 @@ export class BackendManager {
   constructor(private readonly options: BackendManagerOptions) {}
 
   async start(): Promise<string> {
-    if (this.child) throw new Error("后端进程已经在运行。");
+    if (this.watchdog) throw new Error(this.options.messages.backendAlreadyRunning);
     this.stopping = false;
+    this.watchdogError = undefined;
     const resolved = this.resolveBackend();
     const executable = resolved.executable;
-    const port = await findFreePort();
+    const port = await findFreePort(this.options.messages.portUnavailable);
     this.baseUrl = `http://127.0.0.1:${port}/`;
     mkdirSync(this.options.logDirectory, { recursive: true });
     const day = new Date().toISOString().slice(0, 10).replaceAll("-", "");
@@ -42,6 +59,11 @@ export class BackendManager {
     });
     this.writeLog(`\n[${new Date().toISOString()}] Starting ${executable} on 127.0.0.1:${port}`);
 
+    const backendArguments = [
+      ...resolved.prefixArguments,
+      ...(resolved.includeServeCommand ? ["serve"] : []),
+      "--host", "127.0.0.1", "--port", String(port),
+    ];
     const gtkBin = path.join(path.dirname(executable), "gtk", "bin");
     const childEnvironment: NodeJS.ProcessEnv = {
       ...process.env,
@@ -49,44 +71,57 @@ export class BackendManager {
       VIBE_TRADING_DESKTOP_FAST_START: "1",
       PYTHONUTF8: "1",
       PYTHONUNBUFFERED: "1",
+      ELECTRON_RUN_AS_NODE: "1",
+      VIBE_TRADING_DESKTOP_PARENT_PID: String(process.pid),
+      VIBE_TRADING_DESKTOP_BACKEND_EXECUTABLE: executable,
+      VIBE_TRADING_DESKTOP_BACKEND_ARGUMENTS: Buffer.from(
+        JSON.stringify(backendArguments),
+        "utf8",
+      ).toString("base64url"),
+      VIBE_TRADING_DESKTOP_BACKEND_CWD: path.dirname(executable),
     };
     if (existsSync(gtkBin)) {
       childEnvironment.PATH = `${gtkBin}${path.delimiter}${process.env.PATH ?? ""}`;
       childEnvironment.WEASYPRINT_DLL_DIRECTORIES = gtkBin;
     }
 
-    const child = spawn(executable, [
-      ...resolved.prefixArguments,
-      ...(resolved.includeServeCommand ? ["serve"] : []),
-      "--host", "127.0.0.1", "--port", String(port),
-    ], {
-      cwd: path.dirname(executable),
+    const watchdogPath = path.join(__dirname, "backend-watchdog.js");
+    const watchdog = spawn(process.execPath, [watchdogPath], {
+      cwd: __dirname,
       windowsHide: true,
       env: childEnvironment,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
-    this.child = child;
-    child.stdout?.on("data", (chunk: Buffer) => this.capture("OUT", chunk));
-    child.stderr?.on("data", (chunk: Buffer) => this.capture("ERR", chunk));
-    child.once("error", (error) => this.writeLog(`[PROCESS] ${error.stack ?? error.message}`));
-    child.once("exit", (code, signal) => {
-      this.writeLog(`[PROCESS] exited code=${String(code)} signal=${String(signal)}`);
+    this.watchdog = watchdog;
+    watchdog.stdout?.on("data", (chunk: Buffer) => this.capture("OUT", chunk));
+    watchdog.stderr?.on("data", (chunk: Buffer) => this.capture("ERR", chunk));
+    watchdog.on("message", (message: WatchdogMessage) => this.handleWatchdogMessage(message));
+    watchdog.once("error", (error) => {
+      this.watchdogError = error;
+      this.writeLog(`[WATCHDOG] ${error.stack ?? error.message}`);
+    });
+    watchdog.once("exit", (code, signal) => {
+      this.writeLog(`[WATCHDOG] exited code=${String(code)} signal=${String(signal)}`);
+      this.backendPid = undefined;
       if (!this.stopping) {
-        this.options.onUnexpectedExit(`Vibe-Trading 后端意外退出（代码 ${String(code)}）。`);
+        this.options.onUnexpectedExit(formatDesktopMessage(
+          this.options.messages.backendUnexpectedExit,
+          { code: code ?? signal ?? "unknown" },
+        ));
       }
     });
 
-    this.options.onStatus(`后端已启动，正在等待健康检查 · ${port}`);
+    this.options.onStatus(formatDesktopMessage(this.options.messages.backendStarting, { port }));
     await this.waitUntilHealthy();
-    this.options.onStatus(`本地服务已就绪 · ${port}`);
+    this.options.onStatus(formatDesktopMessage(this.options.messages.backendReady, { port }));
     return this.baseUrl;
   }
 
   async stop(): Promise<void> {
-    const child = this.child;
-    if (!child) return;
+    const watchdog = this.watchdog;
+    if (!watchdog) return;
     this.stopping = true;
-    if (child.exitCode === null && this.baseUrl) {
+    if (isRunning(watchdog) && this.baseUrl) {
       try {
         await fetch(new URL("system/shutdown", this.baseUrl), {
           method: "POST",
@@ -98,19 +133,26 @@ export class BackendManager {
       }
     }
 
-    if (child.exitCode === null) {
-      await Promise.race([waitForExit(child), delay(3_000)]);
+    if (isRunning(watchdog)) {
+      await Promise.race([waitForExit(watchdog), delay(3_000)]);
     }
-    if (child.exitCode === null && child.pid) {
-      this.writeLog(`[SHUTDOWN] terminating process tree pid=${child.pid}`);
-      if (process.platform === "win32") {
-        await runTaskkill(child.pid);
-      } else {
-        child.kill("SIGTERM");
+    if (isRunning(watchdog)) {
+      this.writeLog(`[SHUTDOWN] asking watchdog to terminate backend pid=${String(this.backendPid)}`);
+      try {
+        watchdog.send({ type: "terminate-backend" });
+      } catch (error) {
+        this.writeLog(`[SHUTDOWN] watchdog IPC failed: ${errorText(error)}`);
       }
+      await Promise.race([waitForExit(watchdog), delay(5_000)]);
+    }
+    if (isRunning(watchdog) && watchdog.pid) {
+      this.writeLog(`[SHUTDOWN] terminating watchdog tree pid=${watchdog.pid}`);
+      await runTaskkill(watchdog.pid);
     }
 
-    this.child = undefined;
+    this.watchdog = undefined;
+    this.watchdogError = undefined;
+    this.backendPid = undefined;
     this.baseUrl = undefined;
     await new Promise<void>((resolve) => this.logStream?.end(resolve) ?? resolve());
     this.logStream = undefined;
@@ -120,12 +162,44 @@ export class BackendManager {
     return this.baseUrl;
   }
 
+  get processId(): number | undefined {
+    return this.backendPid;
+  }
+
+  private handleWatchdogMessage(message: WatchdogMessage): void {
+    switch (message?.type) {
+      case "backend-started":
+        if (typeof message.pid === "number") {
+          this.backendPid = message.pid;
+          this.writeLog(`[WATCHDOG] backend started pid=${message.pid}`);
+        }
+        break;
+      case "backend-error":
+        this.writeLog(`[WATCHDOG] backend error: ${message.message ?? "unknown"}`);
+        break;
+      case "backend-exited":
+        this.writeLog(
+          `[WATCHDOG] backend exited code=${String(message.code)} signal=${String(message.signal)}`,
+        );
+        break;
+      case "watchdog-terminating":
+        this.writeLog(`[WATCHDOG] terminating backend reason=${message.reason ?? "unknown"}`);
+        break;
+      default:
+        break;
+    }
+  }
+
   private async waitUntilHealthy(): Promise<void> {
-    if (!this.child || !this.baseUrl) throw new Error("后端尚未启动。");
+    if (!this.watchdog || !this.baseUrl) throw new Error(this.options.messages.backendNotStarted);
     const deadline = Date.now() + 180_000;
     while (Date.now() < deadline) {
-      if (this.child.exitCode !== null) {
-        throw new Error(`Vibe-Trading 后端提前退出（代码 ${this.child.exitCode}）。\n${this.tail()}`);
+      if (this.watchdogError) throw this.watchdogError;
+      if (!isRunning(this.watchdog)) {
+        throw new Error(formatDesktopMessage(this.options.messages.backendExitedEarly, {
+          code: this.watchdog.exitCode ?? this.watchdog.signalCode ?? "unknown",
+          details: this.tail(),
+        }));
       }
       try {
         const response = await fetch(new URL("health", this.baseUrl), {
@@ -138,13 +212,15 @@ export class BackendManager {
       }
       await delay(100);
     }
-    throw new Error(`等待 Vibe-Trading 后端就绪超时。\n${this.tail()}`);
+    throw new Error(formatDesktopMessage(this.options.messages.backendHealthTimeout, {
+      details: this.tail(),
+    }));
   }
 
   private capture(stream: "OUT" | "ERR", chunk: Buffer): void {
     for (const line of chunk.toString("utf8").split(/\r?\n/u)) {
       if (!line.trim()) continue;
-      const formatted = `[${new Date().toLocaleTimeString("zh-CN", { hour12: false })}] [${stream}] ${line}`;
+      const formatted = `[${new Date().toISOString()}] [${stream}] ${line}`;
       this.recentOutput.push(formatted);
       if (this.recentOutput.length > 80) this.recentOutput.shift();
       this.writeLog(formatted);
@@ -215,11 +291,11 @@ export class BackendManager {
         return { executable: path.resolve(candidate), prefixArguments: [], includeServeCommand: true };
       }
     }
-    throw new Error("找不到 vibe-trading.exe。请先安装后端，或设置 VIBE_TRADING_EXECUTABLE 环境变量。");
+    throw new Error(this.options.messages.backendNotFound);
   }
 }
 
-function findFreePort(): Promise<number> {
+function findFreePort(errorMessage: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.unref();
@@ -228,7 +304,7 @@ function findFreePort(): Promise<number> {
       const address = server.address();
       if (!address || typeof address === "string") {
         server.close();
-        reject(new Error("无法分配本地端口。"));
+        reject(new Error(errorMessage));
         return;
       }
       const port = address.port;
@@ -237,7 +313,12 @@ function findFreePort(): Promise<number> {
   });
 }
 
+function isRunning(child: ChildProcess): boolean {
+  return child.exitCode === null && child.signalCode === null;
+}
+
 function waitForExit(child: ChildProcess): Promise<void> {
+  if (!isRunning(child)) return Promise.resolve();
   return new Promise((resolve) => child.once("exit", () => resolve()));
 }
 
@@ -246,6 +327,14 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 function runTaskkill(pid: number): Promise<void> {
+  if (process.platform !== "win32") {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // The watchdog has already exited.
+    }
+    return Promise.resolve();
+  }
   return new Promise((resolve) => {
     const killer = spawn("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
       windowsHide: true,

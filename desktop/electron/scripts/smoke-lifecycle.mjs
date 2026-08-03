@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { BackendManager } from "../dist/backend-manager.js";
+import { getDesktopMessages } from "../dist/locales.js";
 
 const electronRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const logDirectory = await mkdtemp(path.join(os.tmpdir(), "vibe-trading-desktop-shell-"));
@@ -17,6 +18,7 @@ const backend = new BackendManager({
   resourcesPath: electronRoot,
   logDirectory,
   apiAuthKey,
+  messages: getDesktopMessages("en"),
   onStatus: (message) => statuses.push(message),
   onUnexpectedExit: (message) => {
     unexpectedExit = message;

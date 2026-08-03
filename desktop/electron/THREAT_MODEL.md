@@ -21,16 +21,20 @@ code signing are outside this change.
 ```text
 Electron main process
   |-- owns random API secret
-  |-- selects and starts backend executable
+  |-- selects backend executable and starts watchdog
   |-- injects Authorization on one loopback origin
   |
   +--> sandboxed renderer
   |      no Node.js, isolated context, deny-by-default permissions
   |      can use the authenticated local API through normal page requests
   |
-  +--> Python backend
-         binds 127.0.0.1:<random-port>
-         receives API_AUTH_KEY through its child environment
+  +--> backend parent-death watchdog
+         |-- inherits the launch secret only to pass it to Python
+         |-- exits without spawning Python if the parent is already gone
+         |-- monitors Electron IPC disconnect and parent PID liveness
+         +--> Python backend
+                binds 127.0.0.1:<random-port>
+                receives API_AUTH_KEY through its child environment
 ```
 
 The renderer is trusted to perform the same application actions as the web UI,
@@ -45,8 +49,9 @@ therefore security-significant.
 - The backend is launched with `--host 127.0.0.1`.
 - A free ephemeral port is selected for every backend start.
 - The secret is 32 cryptographically random bytes encoded with Base64URL.
-- The secret exists only in Electron main-process memory and the owned child
-  environment. It is not written to logs, configuration, or renderer storage.
+- The secret exists only in Electron main-process memory and the owned
+  watchdog/Python child environments. It is not written to logs,
+  configuration, or renderer storage.
 - Electron adds `Authorization: Bearer <secret>` only when the request origin
   exactly matches the active backend origin.
 - Health and shutdown requests are authenticated.
@@ -72,16 +77,25 @@ therefore security-significant.
 - Standard output and standard error are appended to a per-user Electron log.
 - Startup waits for authenticated health success and reports early process exit
   with a bounded log tail.
-- Shutdown first calls the authenticated backend shutdown route.
-- If the backend remains alive, Windows `taskkill /T /F` is applied only to the
-  PID of the child created by this Electron process.
+- Electron starts a small watchdog before the Python backend. The watchdog
+  verifies that the Electron main PID is alive before spawning Python.
+- The watchdog retains an IPC channel to Electron and also polls the exact
+  parent PID. An IPC disconnect or dead parent PID triggers Windows
+  `taskkill /T /F` against the Python process tree without relying on an
+  Electron JavaScript shutdown callback.
+- Normal shutdown first calls the authenticated backend shutdown route. If the
+  backend remains alive, Electron asks the watchdog to terminate it and finally
+  retains process-tree termination as a bounded fallback.
+- The automated parent-death smoke test terminates only the Electron main PID,
+  then independently verifies that both the Python PID and loopback listener
+  are gone.
 
 ## Residual risks
 
 - Renderer script injection can exercise the authenticated API even though it
   cannot read the raw secret.
 - A local administrator, debugger, or process with equivalent user privileges
-  may inspect either process or its environment.
+  may inspect the Electron, watchdog, or Python process and its environment.
 - Port discovery closes the probe socket before Python binds it. Another local
   process can win that race, causing startup failure; it does not receive the
   authentication secret.

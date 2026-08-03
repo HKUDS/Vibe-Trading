@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   app,
@@ -10,14 +11,24 @@ import {
   shell,
 } from "electron";
 import { BackendManager } from "./backend-manager";
+import {
+  DesktopLocale,
+  getDesktopMessages,
+  getRendererLocale,
+  resolveDesktopLocale,
+} from "./locales";
 
 let mainWindow: BrowserWindow | undefined;
 let backend: BackendManager | undefined;
 let bootPromise: Promise<void> | undefined;
 let quitting = false;
+let desktopLocale: DesktopLocale = "en";
+let desktopMessages = getDesktopMessages(desktopLocale);
 const apiAuthKey = randomBytes(32).toString("base64url");
 const productName = "Vibe-Trading Desktop (Unofficial Community Build)";
+const testUserData = process.env.VIBE_TRADING_DESKTOP_TEST_USER_DATA;
 
+if (testUserData) app.setPath("userData", path.resolve(testUserData));
 app.setName(productName);
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -29,11 +40,15 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus();
   });
   void app.whenReady().then(ready).catch((error) => {
-    dialog.showErrorBox("Vibe-Trading Desktop 启动失败", errorText(error));
+    dialog.showErrorBox(desktopMessages.startupFailureTitle, errorText(error));
   });
 }
 
 async function ready(): Promise<void> {
+  desktopLocale = resolveDesktopLocale(
+    process.env.VIBE_TRADING_DESKTOP_LOCALE ?? app.getLocale(),
+  );
+  desktopMessages = getDesktopMessages(desktopLocale);
   nativeTheme.themeSource = "dark";
   app.setAppLogsPath();
   createWindow();
@@ -44,6 +59,7 @@ async function ready(): Promise<void> {
 }
 
 function createWindow(): void {
+  const parentDeathSmoke = Boolean(process.env.VIBE_TRADING_DESKTOP_PARENT_DEATH_SMOKE_FILE);
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -76,7 +92,9 @@ function createWindow(): void {
       callback({ requestHeaders: details.requestHeaders });
     },
   );
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  if (!parentDeathSmoke) {
+    mainWindow.once("ready-to-show", () => mainWindow?.show());
+  }
   mainWindow.on("close", (event) => {
     if (quitting) return;
     event.preventDefault();
@@ -112,7 +130,13 @@ function registerIpc(): void {
 
 async function showLoadingPage(): Promise<void> {
   if (!mainWindow) return;
-  await mainWindow.loadFile(path.join(__dirname, "loading.html"));
+  const localePayload = Buffer.from(
+    JSON.stringify(getRendererLocale(desktopLocale)),
+    "utf8",
+  ).toString("base64url");
+  await mainWindow.loadFile(path.join(__dirname, "loading.html"), {
+    query: { locale: localePayload },
+  });
 }
 
 function boot(): Promise<void> {
@@ -131,6 +155,7 @@ async function bootInternal(): Promise<void> {
     resourcesPath: process.resourcesPath,
     logDirectory: app.getPath("logs"),
     apiAuthKey,
+    messages: desktopMessages,
     onStatus: (message) => mainWindow?.webContents.send("desktop:status", message),
     onUnexpectedExit: (message) => {
       if (!quitting) void reportBootError(message);
@@ -139,11 +164,24 @@ async function bootInternal(): Promise<void> {
 
   try {
     const url = await backend.start();
+    writeParentDeathSmokeRecord(url);
     await mainWindow.loadURL(url);
   } catch (error) {
     await backend.stop();
     await reportBootError(errorText(error));
   }
+}
+
+function writeParentDeathSmokeRecord(url: string): void {
+  const target = process.env.VIBE_TRADING_DESKTOP_PARENT_DEATH_SMOKE_FILE;
+  if (!target) return;
+  const backendPid = backend?.processId;
+  if (!backendPid) throw new Error("Parent-death smoke test could not resolve the backend PID");
+  writeFileSync(path.resolve(target), JSON.stringify({
+    mainPid: process.pid,
+    backendPid,
+    backendOrigin: new URL(url).origin,
+  }), { encoding: "utf8", flag: "wx" });
 }
 
 async function reportBootError(message: string): Promise<void> {
@@ -155,24 +193,26 @@ async function reportBootError(message: string): Promise<void> {
 function createMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     {
-      label: "应用",
+      label: desktopMessages.menuApplication,
       submenu: [
-        { label: "重启本地服务", click: () => void boot() },
-        { label: "打开日志文件夹", click: () => void shell.openPath(app.getPath("logs")) },
+        { label: desktopMessages.menuRestartService, click: () => void boot() },
+        { label: desktopMessages.menuOpenLogs, click: () => void shell.openPath(app.getPath("logs")) },
         { type: "separator" },
-        { role: "quit", label: "退出" },
+        { role: "quit", label: desktopMessages.menuQuit },
       ],
     },
     {
-      label: "视图",
+      label: desktopMessages.menuView,
       submenu: [
-        { role: "reload", label: "刷新" },
-        ...(!app.isPackaged ? [{ role: "toggleDevTools" as const, label: "开发者工具" }] : []),
+        { role: "reload", label: desktopMessages.menuReload },
+        ...(!app.isPackaged
+          ? [{ role: "toggleDevTools" as const, label: desktopMessages.menuDeveloperTools }]
+          : []),
         { type: "separator" },
-        { role: "resetZoom", label: "实际大小" },
-        { role: "zoomIn", label: "放大" },
-        { role: "zoomOut", label: "缩小" },
-        { role: "togglefullscreen", label: "全屏" },
+        { role: "resetZoom", label: desktopMessages.menuActualSize },
+        { role: "zoomIn", label: desktopMessages.menuZoomIn },
+        { role: "zoomOut", label: desktopMessages.menuZoomOut },
+        { role: "togglefullscreen", label: desktopMessages.menuFullscreen },
       ],
     },
   ]));
@@ -185,7 +225,7 @@ function assertMainWindowSender(sender: Electron.WebContents): void {
 async function shutdownAndQuit(): Promise<void> {
   if (quitting) return;
   quitting = true;
-  mainWindow?.webContents.send("desktop:status", "正在关闭本地服务…");
+  mainWindow?.webContents.send("desktop:status", desktopMessages.closingService);
   await backend?.stop();
   app.quit();
 }
@@ -216,5 +256,5 @@ app.on("window-all-closed", () => {
 });
 
 process.on("uncaughtException", (error) => {
-  dialog.showErrorBox("Vibe-Trading Desktop", error.stack ?? error.message);
+  dialog.showErrorBox(productName, error.stack ?? error.message);
 });

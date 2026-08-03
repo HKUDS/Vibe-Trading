@@ -1,0 +1,248 @@
+export type DesktopLocale = "en" | "zh-CN" | "ja" | "ko" | "ar";
+
+export type DesktopMessages = {
+  startupFailureTitle: string;
+  backendAlreadyRunning: string;
+  backendUnexpectedExit: string;
+  backendStarting: string;
+  backendReady: string;
+  backendNotStarted: string;
+  backendExitedEarly: string;
+  backendHealthTimeout: string;
+  backendNotFound: string;
+  portUnavailable: string;
+  closingService: string;
+  menuApplication: string;
+  menuRestartService: string;
+  menuOpenLogs: string;
+  menuQuit: string;
+  menuView: string;
+  menuReload: string;
+  menuDeveloperTools: string;
+  menuActualSize: string;
+  menuZoomIn: string;
+  menuZoomOut: string;
+  menuFullscreen: string;
+  loadingTitle: string;
+  loadingMessage: string;
+  loadingRetry: string;
+  loadingOpenLogs: string;
+  loadingFailedTitle: string;
+  loadingRestartingTitle: string;
+};
+
+export type DesktopRendererLocale = {
+  locale: DesktopLocale;
+  direction: "ltr" | "rtl";
+  messages: Pick<
+    DesktopMessages,
+    | "loadingTitle"
+    | "loadingMessage"
+    | "loadingRetry"
+    | "loadingOpenLogs"
+    | "loadingFailedTitle"
+    | "loadingRestartingTitle"
+  >;
+};
+
+export const supportedDesktopLocales: readonly DesktopLocale[] = [
+  "en",
+  "zh-CN",
+  "ja",
+  "ko",
+  "ar",
+];
+
+const messages: Record<DesktopLocale, DesktopMessages> = {
+  en: {
+    startupFailureTitle: "Vibe-Trading Desktop failed to start",
+    backendAlreadyRunning: "The backend process is already running.",
+    backendUnexpectedExit: "The Vibe-Trading backend exited unexpectedly (code {code}).",
+    backendStarting: "Backend started; waiting for health check · {port}",
+    backendReady: "Local service is ready · {port}",
+    backendNotStarted: "The backend has not started.",
+    backendExitedEarly: "The Vibe-Trading backend exited before it was ready (code {code}).\n{details}",
+    backendHealthTimeout: "Timed out waiting for the Vibe-Trading backend.\n{details}",
+    backendNotFound: "Could not find vibe-trading.exe. Install the backend first or set VIBE_TRADING_EXECUTABLE.",
+    portUnavailable: "Could not allocate a local port.",
+    closingService: "Closing the local service…",
+    menuApplication: "Application",
+    menuRestartService: "Restart local service",
+    menuOpenLogs: "Open log folder",
+    menuQuit: "Quit",
+    menuView: "View",
+    menuReload: "Reload",
+    menuDeveloperTools: "Developer tools",
+    menuActualSize: "Actual size",
+    menuZoomIn: "Zoom in",
+    menuZoomOut: "Zoom out",
+    menuFullscreen: "Fullscreen",
+    loadingTitle: "Starting Vibe-Trading Desktop",
+    loadingMessage: "The desktop app is preparing the local service. The first start may take a moment.",
+    loadingRetry: "Retry",
+    loadingOpenLogs: "Open log folder",
+    loadingFailedTitle: "Startup failed",
+    loadingRestartingTitle: "Restarting",
+  },
+  "zh-CN": {
+    startupFailureTitle: "Vibe-Trading Desktop 启动失败",
+    backendAlreadyRunning: "后端进程已经在运行。",
+    backendUnexpectedExit: "Vibe-Trading 后端意外退出（代码 {code}）。",
+    backendStarting: "后端已启动，正在等待健康检查 · {port}",
+    backendReady: "本地服务已就绪 · {port}",
+    backendNotStarted: "后端尚未启动。",
+    backendExitedEarly: "Vibe-Trading 后端在就绪前退出（代码 {code}）。\n{details}",
+    backendHealthTimeout: "等待 Vibe-Trading 后端就绪超时。\n{details}",
+    backendNotFound: "找不到 vibe-trading.exe。请先安装后端，或设置 VIBE_TRADING_EXECUTABLE。",
+    portUnavailable: "无法分配本地端口。",
+    closingService: "正在关闭本地服务…",
+    menuApplication: "应用",
+    menuRestartService: "重启本地服务",
+    menuOpenLogs: "打开日志文件夹",
+    menuQuit: "退出",
+    menuView: "视图",
+    menuReload: "刷新",
+    menuDeveloperTools: "开发者工具",
+    menuActualSize: "实际大小",
+    menuZoomIn: "放大",
+    menuZoomOut: "缩小",
+    menuFullscreen: "全屏",
+    loadingTitle: "正在启动 Vibe-Trading Desktop",
+    loadingMessage: "桌面端正在准备本地服务，第一次启动可能需要一点时间。",
+    loadingRetry: "重试",
+    loadingOpenLogs: "打开日志文件夹",
+    loadingFailedTitle: "启动失败",
+    loadingRestartingTitle: "正在重新启动",
+  },
+  ja: {
+    startupFailureTitle: "Vibe-Trading Desktop の起動に失敗しました",
+    backendAlreadyRunning: "バックエンドプロセスはすでに実行中です。",
+    backendUnexpectedExit: "Vibe-Trading バックエンドが予期せず終了しました（コード {code}）。",
+    backendStarting: "バックエンドを起動しました。ヘルスチェックを待っています · {port}",
+    backendReady: "ローカルサービスの準備ができました · {port}",
+    backendNotStarted: "バックエンドはまだ起動していません。",
+    backendExitedEarly: "Vibe-Trading バックエンドが準備完了前に終了しました（コード {code}）。\n{details}",
+    backendHealthTimeout: "Vibe-Trading バックエンドの準備待ちがタイムアウトしました。\n{details}",
+    backendNotFound: "vibe-trading.exe が見つかりません。バックエンドをインストールするか、VIBE_TRADING_EXECUTABLE を設定してください。",
+    portUnavailable: "ローカルポートを割り当てられませんでした。",
+    closingService: "ローカルサービスを終了しています…",
+    menuApplication: "アプリケーション",
+    menuRestartService: "ローカルサービスを再起動",
+    menuOpenLogs: "ログフォルダーを開く",
+    menuQuit: "終了",
+    menuView: "表示",
+    menuReload: "再読み込み",
+    menuDeveloperTools: "開発者ツール",
+    menuActualSize: "実際のサイズ",
+    menuZoomIn: "拡大",
+    menuZoomOut: "縮小",
+    menuFullscreen: "全画面表示",
+    loadingTitle: "Vibe-Trading Desktop を起動しています",
+    loadingMessage: "ローカルサービスを準備しています。初回起動には少し時間がかかる場合があります。",
+    loadingRetry: "再試行",
+    loadingOpenLogs: "ログフォルダーを開く",
+    loadingFailedTitle: "起動に失敗しました",
+    loadingRestartingTitle: "再起動しています",
+  },
+  ko: {
+    startupFailureTitle: "Vibe-Trading Desktop를 시작하지 못했습니다",
+    backendAlreadyRunning: "백엔드 프로세스가 이미 실행 중입니다.",
+    backendUnexpectedExit: "Vibe-Trading 백엔드가 예기치 않게 종료되었습니다(코드 {code}).",
+    backendStarting: "백엔드가 시작되었습니다. 상태 확인을 기다리는 중 · {port}",
+    backendReady: "로컬 서비스가 준비되었습니다 · {port}",
+    backendNotStarted: "백엔드가 아직 시작되지 않았습니다.",
+    backendExitedEarly: "Vibe-Trading 백엔드가 준비되기 전에 종료되었습니다(코드 {code}).\n{details}",
+    backendHealthTimeout: "Vibe-Trading 백엔드 준비를 기다리는 동안 시간이 초과되었습니다.\n{details}",
+    backendNotFound: "vibe-trading.exe를 찾을 수 없습니다. 백엔드를 설치하거나 VIBE_TRADING_EXECUTABLE을 설정하세요.",
+    portUnavailable: "로컬 포트를 할당할 수 없습니다.",
+    closingService: "로컬 서비스를 종료하는 중…",
+    menuApplication: "애플리케이션",
+    menuRestartService: "로컬 서비스 다시 시작",
+    menuOpenLogs: "로그 폴더 열기",
+    menuQuit: "종료",
+    menuView: "보기",
+    menuReload: "새로 고침",
+    menuDeveloperTools: "개발자 도구",
+    menuActualSize: "실제 크기",
+    menuZoomIn: "확대",
+    menuZoomOut: "축소",
+    menuFullscreen: "전체 화면",
+    loadingTitle: "Vibe-Trading Desktop 시작 중",
+    loadingMessage: "로컬 서비스를 준비하고 있습니다. 처음 시작할 때는 잠시 시간이 걸릴 수 있습니다.",
+    loadingRetry: "다시 시도",
+    loadingOpenLogs: "로그 폴더 열기",
+    loadingFailedTitle: "시작 실패",
+    loadingRestartingTitle: "다시 시작하는 중",
+  },
+  ar: {
+    startupFailureTitle: "تعذّر بدء Vibe-Trading Desktop",
+    backendAlreadyRunning: "عملية الواجهة الخلفية قيد التشغيل بالفعل.",
+    backendUnexpectedExit: "توقفت الواجهة الخلفية لـ Vibe-Trading بشكل غير متوقع (الرمز {code}).",
+    backendStarting: "بدأت الواجهة الخلفية؛ جارٍ انتظار فحص السلامة · {port}",
+    backendReady: "الخدمة المحلية جاهزة · {port}",
+    backendNotStarted: "لم تبدأ الواجهة الخلفية بعد.",
+    backendExitedEarly: "توقفت الواجهة الخلفية لـ Vibe-Trading قبل أن تصبح جاهزة (الرمز {code}).\n{details}",
+    backendHealthTimeout: "انتهت مهلة انتظار جاهزية الواجهة الخلفية لـ Vibe-Trading.\n{details}",
+    backendNotFound: "تعذّر العثور على vibe-trading.exe. ثبّت الواجهة الخلفية أولاً أو اضبط VIBE_TRADING_EXECUTABLE.",
+    portUnavailable: "تعذّر تخصيص منفذ محلي.",
+    closingService: "جارٍ إغلاق الخدمة المحلية…",
+    menuApplication: "التطبيق",
+    menuRestartService: "إعادة تشغيل الخدمة المحلية",
+    menuOpenLogs: "فتح مجلد السجلات",
+    menuQuit: "إنهاء",
+    menuView: "عرض",
+    menuReload: "إعادة تحميل",
+    menuDeveloperTools: "أدوات المطور",
+    menuActualSize: "الحجم الفعلي",
+    menuZoomIn: "تكبير",
+    menuZoomOut: "تصغير",
+    menuFullscreen: "ملء الشاشة",
+    loadingTitle: "جارٍ بدء Vibe-Trading Desktop",
+    loadingMessage: "يُجهّز تطبيق سطح المكتب الخدمة المحلية. قد يستغرق التشغيل الأول بعض الوقت.",
+    loadingRetry: "إعادة المحاولة",
+    loadingOpenLogs: "فتح مجلد السجلات",
+    loadingFailedTitle: "فشل بدء التشغيل",
+    loadingRestartingTitle: "جارٍ إعادة التشغيل",
+  },
+};
+
+export function resolveDesktopLocale(rawLocale: string | undefined): DesktopLocale {
+  const normalized = (rawLocale ?? "").trim().toLowerCase().replaceAll("_", "-");
+  if (normalized === "zh" || normalized.startsWith("zh-cn") || normalized.startsWith("zh-hans")) {
+    return "zh-CN";
+  }
+  if (normalized === "ja" || normalized.startsWith("ja-")) return "ja";
+  if (normalized === "ko" || normalized.startsWith("ko-")) return "ko";
+  if (normalized === "ar" || normalized.startsWith("ar-")) return "ar";
+  return "en";
+}
+
+export function getDesktopMessages(locale: DesktopLocale): DesktopMessages {
+  return messages[locale];
+}
+
+export function getRendererLocale(locale: DesktopLocale): DesktopRendererLocale {
+  const localeMessages = getDesktopMessages(locale);
+  return {
+    locale,
+    direction: locale === "ar" ? "rtl" : "ltr",
+    messages: {
+      loadingTitle: localeMessages.loadingTitle,
+      loadingMessage: localeMessages.loadingMessage,
+      loadingRetry: localeMessages.loadingRetry,
+      loadingOpenLogs: localeMessages.loadingOpenLogs,
+      loadingFailedTitle: localeMessages.loadingFailedTitle,
+      loadingRestartingTitle: localeMessages.loadingRestartingTitle,
+    },
+  };
+}
+
+export function formatDesktopMessage(
+  template: string,
+  values: Record<string, string | number | null | undefined>,
+): string {
+  return template.replace(/\{([a-zA-Z0-9_]+)\}/gu, (_match, key: string) => {
+    const value = values[key];
+    return value === null || value === undefined ? "" : String(value);
+  });
+}

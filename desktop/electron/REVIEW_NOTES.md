@@ -12,6 +12,7 @@
 
 ```text
 .gitignore
+.github/workflows/test.yml
 desktop/electron/
   README.md
   REVIEW_NOTES.md
@@ -21,16 +22,21 @@ desktop/electron/
   tsconfig.json
   scripts/
     copy-static.mjs
+    smoke-parent-death.mjs
     smoke-lifecycle.mjs
+    test-locales.mjs
   src/
     backend-manager.ts
+    backend-watchdog.ts
     loading.html
+    locales.ts
     main.ts
     preload.ts
 ```
 
 No agent, provider, session, frontend, channel, packaging, credential-storage,
-or updater file is changed.
+or updater file is changed. The workflow change adds only the Windows desktop
+source-lifecycle job requested during review.
 
 ## Dependency and license review
 
@@ -82,12 +88,17 @@ Host development validation on Windows:
   process or listening backend port
 - [x] repeated desktop startup and process-residue checks
 - [x] missing-backend startup fails with an actionable diagnostic
-- [ ] clean-Windows source startup from a restored VM snapshot
+- [x] all desktop-owned user-facing strings have en/zh-CN/ja/ko/ar parity and
+  Arabic selects RTL layout
+- [x] clean-Windows source startup is exercised by the
+  `Windows desktop source lifecycle` job on a fresh `windows-2025` runner
 
-The remaining clean-machine source check must be completed and recorded in the
-pull request before requesting final review. A previous packaged prototype was
-validated on a clean Windows VM, but that result is deliberately not counted
-here because it predates the current upstream baseline.
+The clean-Windows job installs Python 3.12 and Node 22 into a fresh runner,
+installs Vibe-Trading from the checked-out source, runs `npm ci`, performs a
+strict production build, starts the source backend through Electron, verifies
+the authenticated loopback boundary and graceful shutdown, then kills only
+the Electron main PID and asserts that the Python PID and listener disappear.
+This replaces the older unchecked manual-VM entry with a reproducible CI gate.
 
 ## Unsigned-build limitations
 
