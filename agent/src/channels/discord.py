@@ -228,7 +228,7 @@ if DISCORD_AVAILABLE:
                     await self._reply_ephemeral(interaction, "This channel is not allowed for this bot.")
                     return
                 await self._reply_ephemeral(
-                    interaction, "Use /help for available commands. Docs: https://github.com/HKUDS/Vibe-Trading"
+                    interaction, "Use /help for available commands. Docs: https://github.com/cosmic-hydra/Vibe-Trading"
                 )
 
             @self.tree.error

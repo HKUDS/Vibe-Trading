@@ -1,6 +1,6 @@
 import { initTheme } from "./theme.js";
 
-const REPO = "HKUDS/Vibe-Trading";
+const REPO = "cosmic-hydra/Vibe-Trading";
 const API = `https://api.github.com/repos/${REPO}`;
 const STARS_CACHE_KEY = "vibetrading-github-stars";
 const STARS_TTL_MS = 12 * 60 * 60 * 1000;

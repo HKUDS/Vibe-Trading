@@ -347,7 +347,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.1.10] — 2026-06-19
 
 Roll-up release; see the
-[v0.1.10 release notes](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.10)
+[v0.1.10 release notes](https://github.com/cosmic-hydra/Vibe-Trading/releases/tag/v0.1.10)
 for the full narrative.
 
 ### Added

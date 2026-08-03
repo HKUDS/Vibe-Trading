@@ -508,7 +508,7 @@ def _fetch_sp500_constituents() -> list[str]:
 
         resp = requests.get(
             url,
-            headers={"User-Agent": ("Vibe-Trading/0.1 (research bench; https://github.com/HKUDS/Vibe-Trading)")},
+            headers={"User-Agent": ("Vibe-Trading/0.1 (research bench; https://github.com/cosmic-hydra/Vibe-Trading)")},
             timeout=20,
         )
         resp.raise_for_status()

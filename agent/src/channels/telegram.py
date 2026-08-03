@@ -1151,7 +1151,7 @@ class TelegramChannel(BaseChannel):
         if not self.is_allowed(sender_id):
             await self._send_pairing_code_if_private(sender_id, update.message, user)
             return
-        await update.message.reply_text("Use /help for available commands. Docs: https://github.com/HKUDS/Vibe-Trading")
+        await update.message.reply_text("Use /help for available commands. Docs: https://github.com/cosmic-hydra/Vibe-Trading")
 
     @staticmethod
     def _sender_id(user) -> str:

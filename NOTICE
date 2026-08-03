@@ -1,7 +1,7 @@
 Vibe-Trading
-Copyright 2026 HKUDS contributors.
+Copyright 2026 cosmic-hydra contributors.
 
-This product includes software developed at HKUDS (https://github.com/HKUDS).
+This product includes software developed at cosmic-hydra (https://github.com/cosmic-hydra).
 
 This product bundles Microsoft Qlib feature definitions under the Apache 2.0
 license. See agent/src/factors/zoo/qlib158/NOTICE and LICENSE.md for the

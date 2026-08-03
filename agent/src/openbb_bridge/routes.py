@@ -46,7 +46,7 @@ _MANIFEST = AgentManifest(
         "factor analysis, swarm teams, and a broad multi-market financial tool "
         "library covering data, strategy generation, and trade analysis."
     ),
-    image="https://raw.githubusercontent.com/HKUDS/Vibe-Trading/main/frontend/public/favicon.png",
+    image="https://raw.githubusercontent.com/cosmic-hydra/Vibe-Trading/main/frontend/public/favicon.png",
     endpoints={"query": QUERY_PATH},
     features={
         # SSE streaming: implemented by the adapter's event mapper.

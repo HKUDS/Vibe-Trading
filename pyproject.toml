@@ -10,7 +10,7 @@ requires-python = ">=3.11,<3.14"
 license = "MIT"
 readme = "README.md"
 authors = [
-    {name = "HKUDS", email = "hkuds@connect.hku.hk"},
+    {name = "cosmic-hydra", email = "hkuds@connect.hku.hk"},
 ]
 keywords = ["finance", "trading", "backtesting", "agent", "swarm", "quantitative"]
 classifiers = [
@@ -68,8 +68,8 @@ dependencies = [
 [project.urls]
 Homepage = "https://vibetrading.wiki/"
 Documentation = "https://vibetrading.wiki/docs/"
-Repository = "https://github.com/HKUDS/Vibe-Trading"
-Issues = "https://github.com/HKUDS/Vibe-Trading/issues"
+Repository = "https://github.com/cosmic-hydra/Vibe-Trading"
+Issues = "https://github.com/cosmic-hydra/Vibe-Trading/issues"
 
 [project.scripts]
 vibe-trading = "cli:main"

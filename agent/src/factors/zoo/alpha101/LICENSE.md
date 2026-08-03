@@ -77,4 +77,4 @@ generator script is not retained in the published source tree).
 
 ## Contact
 
-Vibe-Trading project — <https://github.com/HKUDS/Vibe-Trading>
+Vibe-Trading project — <https://github.com/cosmic-hydra/Vibe-Trading>
