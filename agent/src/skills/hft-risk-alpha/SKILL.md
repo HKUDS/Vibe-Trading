@@ -34,6 +34,8 @@ Before writing `signal_engine.py`, lock numeric budgets:
 | `max_name_vol` | 0.3–0.8 ann. | Per-name trailing vol budget |
 | `max_portfolio_cvar` | 0.02–0.05 | Trailing portfolio CVaR budget |
 | `hft_costs.max_adv_participation` | 0.05–0.25 | Cap \|Δw_i\| vs trailing dollar ADV (when volume present) |
+| `hft_costs.fill_slippage_mode` | `replace` (preferred) / `additive` | `replace` uses only HFT spread+AS on fills (no double-count with native slippage); `additive` stacks both |
+| `hft_costs.adv_fallback_notional` | e.g. 5e6 | Constant dollar ADV when loaders omit `volume`/`amount` so ADV clips still apply |
 
 ## Hard requirements (emitted configs)
 
@@ -79,7 +81,9 @@ Gate helper: ``backtest.hft_config_gate.validate_risk_first_config`` /
     "adverse_selection_bps": 1.5,
     "participation_cap": 0.5,
     "max_adv_participation": 0.2,
-    "adv_lookback": 20
+    "adv_lookback": 20,
+    "fill_slippage_mode": "replace",
+    "adv_fallback_notional": 5000000.0
   },
   "commission": 0.0005,
   "slippage": 0.0005,
@@ -108,7 +112,8 @@ Gate helper: ``backtest.hft_config_gate.validate_risk_first_config`` /
 }
 ```
 
-Modules: `backtest.risk_overlay` (pre-fill), `backtest.hft_costs` (spread/impact/AS on **live fills**),
+Modules: `backtest.risk_overlay` (pre-fill), `backtest.hft_costs` (spread/impact/AS on **live fills**;
+`fill_slippage_mode=replace|additive`; ADV from `volume` → `amount` → `adv_fallback_notional`),
 `backtest.hft_config_gate` (emit/validate; runner auto-enforces for `1s`/minute/HFT-tagged).
 
 ## Objectives (profit under risk)

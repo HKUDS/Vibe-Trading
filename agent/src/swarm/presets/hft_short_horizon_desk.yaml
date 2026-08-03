@@ -66,11 +66,13 @@ agents:
       ## Required outputs
       1. Commission + slippage + impact assumptions (bps)
       2. Break-even edge vs turnover
-      3. Recommended ``cost_bps`` / ``commission`` / ``slippage`` for config
-      4. Stress list: adverse_selection_burst, latency_slippage_tax
-      5. Verdict: edge survives / does not survive under stressed costs
+      4. Proposed ``config.hft_costs`` (spread / impact / adverse selection) with
+         ``fill_slippage_mode=replace`` so costs are not double-counted vs native slippage
+      5. Stress list: adverse_selection_burst, latency_slippage_tax
+      6. Verdict: edge survives / does not survive under stressed costs
 
       Use load_skill for execution-model and enhanced-backtest stress scenarios.
+      Prefer ``hft_costs.adv_fallback_notional`` when volume panels may be missing.
     tools: [bash, read_file, write_file, load_skill, backtest]
     skills: [execution-model, enhanced-backtest, monte-carlo-sim]
     max_iterations: 50

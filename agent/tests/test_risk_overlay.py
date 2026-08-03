@@ -10,6 +10,7 @@ from backtest.enhanced_validation import signal_parameter_grid, stress_scenarios
 from backtest.hft_costs import (
     HftCostModel,
     apply_hft_fill_slippage,
+    build_dollar_volume_panel,
     clip_adv_participation,
     default_hft_cost_model,
     hft_cost_series,
@@ -403,6 +404,44 @@ class TestHftCosts:
         out, diag = prepare_positions_for_hft_costs(pos, model=model)
         assert diag["participation_clips"] >= 1
         assert float(out.diff().abs().sum(axis=1).iloc[1:].max()) <= 0.05 + 1e-8
+
+    def test_fill_slippage_mode_load_and_replace_flag(self) -> None:
+        m = load_hft_cost_model(
+            {"hft_costs": {"spread_bps": 2.0, "fill_slippage_mode": "replace"}}
+        )
+        assert m is not None
+        assert m.fill_slippage_mode == "replace"
+        assert m.replaces_native_slippage() is True
+        with pytest.raises(ValueError, match="fill_slippage_mode"):
+            load_hft_cost_model({"hft_costs": {"fill_slippage_mode": "stack"}})
+
+    def test_build_dollar_volume_prefers_volume_then_amount_then_fallback(self) -> None:
+        idx = pd.RangeIndex(10)
+        close = pd.DataFrame({"A": 10.0, "B": 20.0, "C": 30.0}, index=idx)
+        data_map = {
+            "A": pd.DataFrame({"volume": 100.0, "amount": 1.0}, index=idx),
+            "B": pd.DataFrame({"amount": 500.0}, index=idx),
+            "C": pd.DataFrame({"close": 30.0}, index=idx),
+        }
+        panel, diag = build_dollar_volume_panel(
+            data_map, close, ["A", "B", "C"], adv_fallback_notional=1_000.0
+        )
+        assert panel is not None
+        assert diag["dollar_volume_sources"]["A"] == "volume"
+        assert diag["dollar_volume_sources"]["B"] == "amount"
+        assert diag["dollar_volume_sources"]["C"] == "fallback_notional"
+        assert float(panel["A"].iloc[0]) == pytest.approx(1000.0)  # 10 * 100
+        assert float(panel["B"].iloc[0]) == pytest.approx(500.0)
+        assert float(panel["C"].iloc[0]) == pytest.approx(1000.0)
+
+    def test_zero_volume_falls_through_to_amount(self) -> None:
+        idx = pd.RangeIndex(5)
+        close = pd.DataFrame({"A": 10.0}, index=idx)
+        data_map = {"A": pd.DataFrame({"volume": 0.0, "amount": 250.0}, index=idx)}
+        panel, diag = build_dollar_volume_panel(data_map, close, ["A"])
+        assert panel is not None
+        assert diag["dollar_volume_sources"]["A"] == "amount"
+        assert float(panel["A"].iloc[0]) == pytest.approx(250.0)
 
 
 class TestOhlcStopAndRiskImprovement:

@@ -10,6 +10,11 @@ When wired through ``BaseEngine``, spread + adverse selection worsen
 **fill prices**; nonlinear impact is charged as an equity drag; optional
 ``participation_cap`` / ``max_adv_participation`` clip turnover before fills.
 
+``fill_slippage_mode`` controls interaction with the engine's native
+slippage: ``"additive"`` (default) stacks HFT haircut on top of native
+slippage; ``"replace"`` uses only HFT spread + adverse selection so costs
+are not double-counted when ``hft_costs`` is the authoritative stack.
+
 Cost per bar (as a fraction of equity)::
 
     (spread_bps / 1e4) * |Δw|_1
@@ -36,12 +41,21 @@ import pandas as pd
 _EPS = 1e-12
 
 
+_FILL_SLIPPAGE_MODES = frozenset({"additive", "replace"})
+
+
 @dataclass(frozen=True)
 class HftCostModel:
     """Default cost stack for high-turnover / short-horizon research.
 
     ``spread_bps``, ``impact_coeff`` (bps), and ``adverse_selection_bps`` are
     all in basis-point units — never raw fractions.
+
+    ``fill_slippage_mode``:
+      - ``additive`` — HFT fill haircut stacks on engine native slippage
+      - ``replace`` — only HFT spread + AS applied (avoids double-counting)
+    ``adv_fallback_notional`` — constant dollar ADV used when volume/amount
+    panels are missing so ``max_adv_participation`` still clips.
     """
 
     spread_bps: float = 2.0
@@ -51,6 +65,8 @@ class HftCostModel:
     participation_cap: Optional[float] = None  # max |Δw|_1 per bar
     max_adv_participation: Optional[float] = None  # max |Δw_i| vs name ADV/$equity
     adv_lookback: int = 20
+    fill_slippage_mode: str = "additive"
+    adv_fallback_notional: Optional[float] = None
     enabled: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
@@ -64,6 +80,9 @@ class HftCostModel:
             or self.participation_cap is not None
             or self.max_adv_participation is not None
         )
+
+    def replaces_native_slippage(self) -> bool:
+        return str(self.fill_slippage_mode).strip().lower() == "replace"
 
     def fill_slippage_bps(self) -> float:
         """Extra fill haircut (bps) from spread + adverse selection."""
@@ -122,6 +141,20 @@ def load_hft_cost_model(config: Mapping[str, Any]) -> Optional[HftCostModel]:
     if adv_lb < 2:
         raise ValueError(f"adv_lookback must be >= 2, got {adv_lb}")
 
+    mode_raw = raw.get("fill_slippage_mode", "additive")
+    mode = str(mode_raw).strip().lower() if mode_raw is not None else "additive"
+    if mode not in _FILL_SLIPPAGE_MODES:
+        raise ValueError(
+            f"fill_slippage_mode must be one of {sorted(_FILL_SLIPPAGE_MODES)}, got {mode_raw!r}"
+        )
+
+    fallback = raw.get("adv_fallback_notional")
+    fallback_f: Optional[float] = None
+    if fallback is not None:
+        fallback_f = _pos("adv_fallback_notional", float(fallback))
+        if fallback_f <= 0:
+            raise ValueError("adv_fallback_notional must be > 0 when set")
+
     model = HftCostModel(
         spread_bps=_pos("spread_bps", float(raw.get("spread_bps", 2.0))),
         impact_coeff=_pos("impact_coeff", float(raw.get("impact_coeff", 8.0))),
@@ -130,6 +163,8 @@ def load_hft_cost_model(config: Mapping[str, Any]) -> Optional[HftCostModel]:
         participation_cap=part_f,
         max_adv_participation=adv_part_f,
         adv_lookback=adv_lb,
+        fill_slippage_mode=mode,
+        adv_fallback_notional=fallback_f,
         enabled=True,
     )
     return model if model.active() else None
@@ -145,8 +180,78 @@ def default_hft_cost_model(*, aggressive: bool = False) -> HftCostModel:
             adverse_selection_bps=4.0,
             participation_cap=0.4,
             max_adv_participation=0.15,
+            fill_slippage_mode="replace",
         )
     return HftCostModel()
+
+
+def build_dollar_volume_panel(
+    data_map: Mapping[str, Any],
+    close: pd.DataFrame,
+    codes: Optional[list] = None,
+    *,
+    adv_fallback_notional: Optional[float] = None,
+) -> Tuple[Optional[pd.DataFrame], Dict[str, Any]]:
+    """Build a dollar-volume panel for ADV participation clipping.
+
+    Preference per name:
+      1. ``close * volume`` when volume is present
+      2. ``amount`` column when present (already dollar notional on many CN loaders)
+      3. constant ``adv_fallback_notional`` when configured
+      4. otherwise the name is omitted (clipping skipped for that name)
+
+    Returns ``(panel_or_None, diagnostics)`` with per-code source labels.
+    """
+    use_codes = list(codes) if codes is not None else list(close.columns)
+    sources: Dict[str, str] = {}
+    dv_cols: Dict[str, pd.Series] = {}
+    fallback = float(adv_fallback_notional) if adv_fallback_notional is not None else None
+    if fallback is not None and (not np.isfinite(fallback) or fallback <= 0):
+        raise ValueError("adv_fallback_notional must be finite and > 0")
+
+    for code in use_codes:
+        frame = data_map.get(code) if isinstance(data_map, Mapping) else None
+        px = close[code] if code in close.columns else None
+        if px is None:
+            sources[code] = "missing_price"
+            continue
+        px = px.astype(float)
+        used = False
+        if frame is not None and hasattr(frame, "columns"):
+            if "volume" in frame.columns:
+                vol = frame["volume"].reindex(close.index).astype(float)
+                vol_arr = vol.to_numpy(dtype=float)
+                finite = vol_arr[np.isfinite(vol_arr)]
+                # Treat all-zero / all-NaN volume as missing so amount/fallback can win.
+                if finite.size and float(np.max(np.abs(finite))) > _EPS:
+                    dv_cols[code] = (px * vol).fillna(0.0)
+                    sources[code] = "volume"
+                    used = True
+            if not used and "amount" in frame.columns:
+                amt = frame["amount"].reindex(close.index).astype(float)
+                amt_arr = amt.to_numpy(dtype=float)
+                finite_amt = amt_arr[np.isfinite(amt_arr)]
+                if finite_amt.size and float(np.max(np.abs(finite_amt))) > _EPS:
+                    dv_cols[code] = amt.fillna(0.0)
+                    sources[code] = "amount"
+                    used = True
+        if not used and fallback is not None:
+            dv_cols[code] = pd.Series(fallback, index=close.index, dtype=float)
+            sources[code] = "fallback_notional"
+            used = True
+        if not used:
+            sources[code] = "missing"
+
+    diag: Dict[str, Any] = {
+        "dollar_volume_sources": sources,
+        "n_with_volume": sum(1 for v in sources.values() if v == "volume"),
+        "n_with_amount": sum(1 for v in sources.values() if v == "amount"),
+        "n_with_fallback": sum(1 for v in sources.values() if v == "fallback_notional"),
+        "n_missing": sum(1 for v in sources.values() if v in {"missing", "missing_price"}),
+    }
+    if not dv_cols:
+        return None, diag
+    return pd.DataFrame(dv_cols), diag
 
 
 def apply_hft_fill_slippage(

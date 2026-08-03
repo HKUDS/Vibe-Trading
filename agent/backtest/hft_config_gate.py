@@ -315,6 +315,10 @@ def inject_risk_first_defaults(
             "participation_cap": 0.5,
             "max_adv_participation": 0.2,
             "adv_lookback": 20,
+            # Prefer replace so injected HFT stack does not double-count native slippage.
+            "fill_slippage_mode": "replace",
+            # Soft ADV when loaders omit volume/amount (still a bar proxy).
+            "adv_fallback_notional": 5_000_000.0,
         }
 
     return out

@@ -73,8 +73,10 @@ agents:
       5. Audit verdict
 
       Prefer config.validation with signal_parameter_grid.collect_trial_returns=true
-      (inspect cscv_pbo), regime_conditioned.export_regime_labels=true, and
-      monte_carlo_paths.sampling=sobol. Use enhanced-backtest skill and tools.
+      (inspect cscv_pbo), regime_conditioned.export_regime_labels=true,
+      monte_carlo_paths.sampling=sobol, and risk_adjusted_ranking
+      (reject return-only objectives). Prefer config.risk_overlay when the
+      strategy is high-turnover. Use enhanced-backtest skill and tools.
     tools: [bash, read_file, write_file, load_skill, monte_carlo, backtest]
     skills: [enhanced-backtest, monte-carlo-sim, research-discipline]
     max_iterations: 50

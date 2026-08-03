@@ -444,12 +444,22 @@ class BaseEngine(ABC):
         """Market slippage plus optional HFT spread/adverse-selection haircut.
 
         When ``config.hft_costs`` is active, fill prices are worsened by
-        ``spread_bps + adverse_selection_bps`` on top of the engine's native
-        slippage. Nonlinear impact is charged separately as equity drag in
+        ``spread_bps + adverse_selection_bps``. Mode:
+
+        - ``additive`` (default): HFT haircut stacks on the engine's native
+          slippage.
+        - ``replace``: only the HFT fill haircut is applied (avoids
+          double-counting when ``hft_costs`` is the authoritative stack).
+
+        Nonlinear impact is charged separately as equity drag in
         ``_execute_bars`` (bar proxy — not LOB).
         """
-        slipped = self.apply_slippage(price, direction)
         model = getattr(self, "_hft_cost_model", None)
+        if model is not None and model.replaces_native_slippage():
+            from backtest.hft_costs import apply_hft_fill_slippage
+
+            return apply_hft_fill_slippage(float(price), direction, model=model)
+        slipped = self.apply_slippage(price, direction)
         if model is None:
             return slipped
         from backtest.hft_costs import apply_hft_fill_slippage
@@ -824,27 +834,27 @@ class BaseEngine(ABC):
             hft_model = load_hft_cost_model(config)
             if hft_model is not None:
                 dollar_vol = None
+                dv_source_diag: Dict[str, Any] = {}
                 try:
-                    dv_cols: Dict[str, pd.Series] = {}
-                    for code in valid_codes:
-                        frame = data_map.get(code)
-                        if frame is None or "volume" not in frame.columns:
-                            continue
-                        px = close_df[code] if code in close_df.columns else None
-                        if px is None:
-                            continue
-                        vol = frame["volume"].reindex(close_df.index).astype(float)
-                        dv_cols[code] = (px.astype(float) * vol).fillna(0.0)
-                    if dv_cols:
-                        dollar_vol = pd.DataFrame(dv_cols)
+                    from backtest.hft_costs import build_dollar_volume_panel
+
+                    dollar_vol, dv_source_diag = build_dollar_volume_panel(
+                        data_map,
+                        close_df,
+                        valid_codes,
+                        adv_fallback_notional=hft_model.adv_fallback_notional,
+                    )
                 except Exception:
                     dollar_vol = None
+                    dv_source_diag = {"error": "dollar_volume_panel_build_failed"}
                 target_pos, hft_cost_diag = prepare_positions_for_hft_costs(
                     target_pos,
                     model=hft_model,
                     dollar_volume=dollar_vol,
                     equity=float(self.initial_capital),
                 )
+                if hft_cost_diag is not None and dv_source_diag:
+                    hft_cost_diag.update(dv_source_diag)
                 self._hft_cost_model = hft_model
                 print(
                     json.dumps(
@@ -852,8 +862,10 @@ class BaseEngine(ABC):
                             "hft_costs": {
                                 "enabled": True,
                                 "fill_slippage_bps": hft_model.fill_slippage_bps(),
+                                "fill_slippage_mode": hft_model.fill_slippage_mode,
                                 "participation_clips": (hft_cost_diag or {}).get("participation_clips"),
                                 "adv_participation_clips": (hft_cost_diag or {}).get("adv_participation_clips"),
+                                "dollar_volume_sources": (hft_cost_diag or {}).get("dollar_volume_sources"),
                                 "fidelity": "bar_proxy — no LOB / co-lo",
                             }
                         }
@@ -924,7 +936,9 @@ class BaseEngine(ABC):
             m["risk_overlay_final_gross_mean"] = risk_overlay_diag.get("final_gross_mean")
             # Persist full diagnostics alongside other portfolio-studio artifacts.
             try:
-                (run_dir / "artifacts" / "risk_overlay.json").write_text(
+                art_dir = run_dir / "artifacts"
+                art_dir.mkdir(parents=True, exist_ok=True)
+                (art_dir / "risk_overlay.json").write_text(
                     json.dumps(risk_overlay_diag, indent=2, default=str),
                     encoding="utf-8",
                 )
@@ -939,11 +953,20 @@ class BaseEngine(ABC):
             }
             m["hft_costs_enabled"] = True
             m["hft_fill_slippage_bps"] = (impact_diag or {}).get("fill_slippage_bps")
+            mode = None
+            if impact_diag and isinstance(impact_diag.get("model"), dict):
+                mode = impact_diag["model"].get("fill_slippage_mode")
+            if mode is None and hft_cost_diag and isinstance(hft_cost_diag.get("model"), dict):
+                mode = hft_cost_diag["model"].get("fill_slippage_mode")
+            m["hft_fill_slippage_mode"] = mode
             m["hft_impact_charged"] = (impact_diag or {}).get("impact_charged")
             m["hft_participation_clips"] = (hft_cost_diag or {}).get("participation_clips")
             m["hft_adv_participation_clips"] = (hft_cost_diag or {}).get("adv_participation_clips")
+            m["hft_dollar_volume_sources"] = (hft_cost_diag or {}).get("dollar_volume_sources")
             try:
-                (run_dir / "artifacts" / "hft_costs.json").write_text(
+                art_dir = run_dir / "artifacts"
+                art_dir.mkdir(parents=True, exist_ok=True)
+                (art_dir / "hft_costs.json").write_text(
                     json.dumps(hft_artifact, indent=2, default=str),
                     encoding="utf-8",
                 )

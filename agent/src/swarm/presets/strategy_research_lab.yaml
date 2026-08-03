@@ -39,12 +39,16 @@ agents:
 
       ## Output Requirements
       1. signal_engine.py conforming to strategy-generate skill
-      2. config.json including enhanced validation hooks where useful
+      2. ``config.json`` including enhanced validation hooks where useful —
+         prefer ``validation.risk_adjusted_ranking`` (and ``risk_overlay`` when
+         the book is high-turnover / short-horizon; use
+         ``backtest.hft_config_gate.inject_risk_first_defaults``)
       3. Real backtest metrics (do not fabricate)
       4. Artifact paths
       5. Known implementation caveats
 
       You must call the backtest tool. Enable validation keys from load_skill("enhanced-backtest").
+      Reject return-only selection objectives; rank with Sharpe/Sortino/Calmar/PSR gates.
     tools: [bash, read_file, write_file, edit_file, load_skill, backtest, get_market_data]
     skills: [strategy-generate, enhanced-backtest, yfinance, tushare]
     max_iterations: 50
@@ -68,6 +72,11 @@ agents:
       4. Monte Carlo path outcomes (ruin, ES, drawdown percentiles)
       5. Go / no-go with conditions
 
+      Prefer config.validation with stress, walk-forward, monte_carlo_paths
+      (sampling=sobol when GBM), risk_metrics (include_pbo=true), and
+      risk_adjusted_ranking / signal_parameter_grid.risk_ranking.
+      For short-horizon books also attach config.risk_overlay + hft_costs
+      (load_skill hft-risk-alpha / inject_risk_first_defaults).
       Use monte_carlo and load_skill("monte-carlo-sim") / enhanced-backtest.
     tools: [bash, read_file, write_file, load_skill, monte_carlo, backtest]
     skills: [monte-carlo-sim, enhanced-backtest, quant-statistics, risk-analysis]
