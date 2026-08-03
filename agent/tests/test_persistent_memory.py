@@ -215,6 +215,16 @@ class TestAdd:
         assert len(results) == 1
         assert results[0].title == "人民币汇率"
 
+    def test_update_index_exact_title_match(self, tmp_path: Path) -> None:
+        pm = PersistentMemory(memory_dir=tmp_path)
+        pm.add("Ref", "referencing main", "project", description="See details in [Main]")
+        pm.add("Main", "main content", "project", description="Main memory entry")
+        index_content = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
+        lines = [line for line in index_content.splitlines() if line.strip()]
+        assert len(lines) == 2
+        assert any(line.startswith("- [Ref](") for line in lines)
+        assert any(line.startswith("- [Main](") for line in lines)
+
 
 # ---------------------------------------------------------------------------
 # PersistentMemory.find_relevant

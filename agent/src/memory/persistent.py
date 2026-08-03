@@ -606,8 +606,9 @@ class PersistentMemory:
         if self._index_path.exists():
             lines = self._index_path.read_text(encoding="utf-8").split("\n")
             updated = False
+            target_prefix = f"- [{title}]("
             for i, line in enumerate(lines):
-                if f"[{title}]" in line:
+                if line.startswith(target_prefix):
                     lines[i] = new_line
                     updated = True
                     break
