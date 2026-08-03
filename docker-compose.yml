@@ -6,6 +6,13 @@ services:
     env_file:
       - agent/.env
     environment:
+      # Treat the Docker host gateway as loopback so the Web UI works from the
+      # host with the 127.0.0.1 port bind above. REQUIRES API_AUTH_KEY: when the
+      # port is published on 0.0.0.0, Docker's userland proxy re-originates every
+      # inbound connection from the gateway, so this address cannot distinguish
+      # the host from an arbitrary remote client. Without a key the trust is
+      # refused and startup preflight reports it. Set API_AUTH_KEY in agent/.env
+      # (loaded via env_file above) and enter the same key in Settings.
       - VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1
       - VIBE_TW_STOCK_DB=/data/tw-stock/latest.db
       # Ollama runs on the host; from inside the container "localhost" is the

@@ -143,14 +143,61 @@ def test_security_headers_present_on_response() -> None:
     assert response.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
     assert "geolocation=()" in response.headers.get("Permissions-Policy", "")
 
-    csp = response.headers.get("Content-Security-Policy-Report-Only", "")
+    # Enforcing by default -- Report-Only provides no protection.
+    csp = response.headers.get("Content-Security-Policy", "")
     assert "default-src 'self'" in csp
     assert "frame-ancestors 'none'" in csp
-    # Ships Report-Only first, never as an enforcing policy.
-    assert response.headers.get("Content-Security-Policy") is None
+    assert "script-src 'self';" in csp
+    assert response.headers.get("Content-Security-Policy-Report-Only") is None
 
     # No HSTS from the app — that belongs at the TLS-terminating proxy.
     assert response.headers.get("Strict-Transport-Security") is None
+
+
+def test_csp_report_only_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``VIBE_TRADING_CSP_REPORT_ONLY=1`` is the documented rollback switch."""
+    from src.config.accessor import reset_env_config
+
+    monkeypatch.setenv("VIBE_TRADING_CSP_REPORT_ONLY", "1")
+    reset_env_config()
+    try:
+        response = _local_client().get("/health")
+        assert "default-src 'self'" in response.headers.get(
+            "Content-Security-Policy-Report-Only", ""
+        )
+        assert response.headers.get("Content-Security-Policy") is None
+    finally:
+        monkeypatch.delenv("VIBE_TRADING_CSP_REPORT_ONLY", raising=False)
+        reset_env_config()
+
+
+def test_docs_csp_allows_bundle_host_but_app_pages_do_not() -> None:
+    """The Swagger/ReDoc CDN exception must not leak into the SPA's policy."""
+    client = _local_client()
+
+    docs_csp = client.get("/docs").headers.get("Content-Security-Policy", "")
+    assert "https://cdn.jsdelivr.net" in docs_csp
+    assert "frame-ancestors 'none'" in docs_csp
+
+    app_csp = client.get("/health").headers.get("Content-Security-Policy", "")
+    assert "cdn.jsdelivr.net" not in app_csp
+    assert "'unsafe-inline'" not in app_csp.split("style-src")[0]
+
+
+def test_docs_pages_reference_no_host_outside_their_csp() -> None:
+    """Every remote asset the docs pages load must be covered by the policy.
+
+    Guards against a FastAPI bump reintroducing an asset host the exception
+    does not allow (ReDoc's Google Fonts stylesheet was one such case), which
+    would silently render a blocked page under the enforcing policy.
+    """
+    import re
+
+    client = _local_client()
+    for path in ("/docs", "/redoc"):
+        html = client.get(path).text
+        hosts = set(re.findall(r"https?://([a-zA-Z0-9.\-]+)", html))
+        assert hosts <= {"cdn.jsdelivr.net"}, f"{path} references {hosts}"
 
 
 def test_security_headers_present_on_error_response(

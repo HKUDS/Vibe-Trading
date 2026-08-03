@@ -60,6 +60,36 @@ MSTEAMS_DEFAULT_TRUSTED_SERVICE_URL_HOSTS = [
     "smba.infra.dod.teams.microsoft.us",
     "*.botframework.com",
 ]
+# Hard ceiling on an inbound webhook body. Read before the bearer token can be
+# validated (the token is checked against the activity payload), so an
+# unauthenticated caller controls this allocation -- a Bot Framework activity is
+# a few KB, and 1 MiB leaves generous headroom without letting a declared
+# Content-Length drive unbounded memory use.
+MSTEAMS_MAX_INBOUND_BODY_BYTES = 1024 * 1024
+
+
+def msteams_validate_content_length(raw: str | None) -> tuple[int, int | None]:
+    """Validate an inbound ``Content-Length`` before allocating for the body.
+
+    Args:
+        raw: The raw header value, or ``None`` when absent.
+
+    Returns:
+        ``(length, error_status)``. ``error_status`` is ``None`` when the body
+        may be read, ``400`` for a malformed or negative value, and ``413``
+        when it exceeds :data:`MSTEAMS_MAX_INBOUND_BODY_BYTES`.
+    """
+    try:
+        length = int(raw if raw is not None else "0")
+    except (TypeError, ValueError):
+        return 0, 400
+    if length < 0:
+        return 0, 400
+    if length > MSTEAMS_MAX_INBOUND_BODY_BYTES:
+        return 0, 413
+    return length, None
+
+
 MSTEAMS_REF_META_FILENAME = "msteams_conversations_meta.json"
 MSTEAMS_REF_LOCK_FILENAME = "msteams_conversations.lock"
 MSTEAMS_REF_TOUCH_INTERVAL_S = 300
@@ -169,8 +199,25 @@ class MSTeamsChannel(BaseChannel):
                     self.end_headers()
                     return
 
+                # Bound the body before reading it: this runs before the bearer
+                # token can be validated (validation needs the parsed activity),
+                # so an unauthenticated caller controls the declared size.
+                length, length_error = msteams_validate_content_length(
+                    self.headers.get("Content-Length")
+                )
+                if length_error is not None:
+                    channel.logger.warning(
+                        "Rejecting inbound activity: Content-Length {!r} -> {}",
+                        self.headers.get("Content-Length"),
+                        length_error,
+                    )
+                    self.send_response(length_error)
+                    self.end_headers()
+                    return
+
                 try:
-                    length = int(self.headers.get("Content-Length", "0"))
+                    # Bounded by the check above, so a hostile Content-Length
+                    # cannot drive the allocation.
                     raw = self.rfile.read(length) if length > 0 else b"{}"
                     payload = json.loads(raw.decode("utf-8"))
                 except Exception as e:

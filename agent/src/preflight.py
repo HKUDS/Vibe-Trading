@@ -238,6 +238,32 @@ def _check_content_filter_threshold() -> CheckResult:
     )
 
 
+def _check_docker_loopback_trust() -> CheckResult:
+    """Report Docker host-gateway trust that is enabled but refused.
+
+    ``VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1`` without ``API_AUTH_KEY`` is refused
+    by the API (the gateway address cannot be distinguished from an arbitrary
+    remote client when the port is published on ``0.0.0.0``), so flag it as an
+    error rather than letting the operator debug a silent 403.
+    """
+    from src.api.security import docker_loopback_trust_error
+
+    message = docker_loopback_trust_error()
+    if message is None:
+        return CheckResult(
+            name="Docker Gateway Trust",
+            status="skipped",
+            message="not enabled",
+            impact="",
+        )
+    return CheckResult(
+        name="Docker Gateway Trust",
+        status="error",
+        message=message,
+        impact="requests from the Docker host gateway return 403",
+    )
+
+
 def _check_ccxt() -> CheckResult:
     """Check ccxt availability."""
     try:
@@ -282,6 +308,7 @@ def run_preflight(console: Optional[Console] = None) -> List[CheckResult]:
         _check_akshare,
         _check_ccxt,
         _check_content_filter_threshold,
+        _check_docker_loopback_trust,
     ]
 
     results: List[CheckResult] = []

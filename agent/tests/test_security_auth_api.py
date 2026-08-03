@@ -22,12 +22,22 @@ def _local_client() -> TestClient:
 
 
 @pytest.fixture(autouse=True)
-def clear_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Start every auth test from dev-mode auth."""
+def clear_api_key(monkeypatch: pytest.MonkeyPatch):
+    """Start every auth test from dev-mode auth.
+
+    The cached ``EnvConfig`` singleton is reset on both sides of the test so a
+    case that sets ``API_AUTH_KEY`` / ``VIBE_TRADING_TRUST_DOCKER_LOOPBACK``
+    cannot leak a stale config into the next one.
+    """
+    from src.config.accessor import reset_env_config
+
     monkeypatch.delenv("API_AUTH_KEY", raising=False)
     monkeypatch.delenv("VIBE_TRADING_TRUST_DOCKER_LOOPBACK", raising=False)
     monkeypatch.delenv("VIBE_TRADING_ENABLE_SHELL_TOOLS", raising=False)
     monkeypatch.setattr(api_server, "_API_KEY", "")
+    reset_env_config()
+    yield
+    reset_env_config()
 
 
 def test_remote_write_requires_api_key_when_key_unset() -> None:
@@ -65,9 +75,19 @@ def test_local_dev_write_allowed_when_key_unset() -> None:
     assert response.status_code in {201, 501}
 
 
-def test_docker_gateway_dev_write_allowed_only_with_compose_trust_flag(
+def test_docker_gateway_never_trusted_without_api_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The compose trust flag alone must not grant a dev-mode auth bypass.
+
+    When the published port is bound to ``0.0.0.0`` and Docker's userland proxy
+    is active, ``docker-proxy`` re-originates every inbound connection from the
+    gateway address — so an arbitrary remote client is indistinguishable from
+    the host here. The container cannot verify the host's port publishing, so
+    the trust must fail closed unless ``API_AUTH_KEY`` also gates the request.
+    """
+    from src.config.accessor import reset_env_config
+
     request = SimpleNamespace(client=SimpleNamespace(host="172.18.0.1"))
     monkeypatch.setattr(
         api_server,
@@ -78,10 +98,49 @@ def test_docker_gateway_dev_write_allowed_only_with_compose_trust_flag(
     assert not api_server._is_local_client(request)
 
     monkeypatch.setenv("VIBE_TRADING_TRUST_DOCKER_LOOPBACK", "1")
+    reset_env_config()
+
+    assert not api_server._is_local_client(request)
+
+
+def test_docker_gateway_trusted_with_compose_trust_flag_and_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gateway recognition still works once the required key is configured."""
     from src.config.accessor import reset_env_config
+
+    request = SimpleNamespace(client=SimpleNamespace(host="172.18.0.1"))
+    monkeypatch.setattr(
+        api_server,
+        "_default_gateway_ips",
+        lambda: {ipaddress.IPv4Address("172.18.0.1")},
+    )
+    monkeypatch.setenv("VIBE_TRADING_TRUST_DOCKER_LOOPBACK", "1")
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
     reset_env_config()
 
     assert api_server._is_local_client(request)
+
+
+def test_docker_loopback_trust_error_flags_missing_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Startup preflight surfaces the enabled-but-refused misconfiguration."""
+    from src.api.security import docker_loopback_trust_error
+    from src.config.accessor import reset_env_config
+
+    reset_env_config()
+    assert docker_loopback_trust_error() is None
+
+    monkeypatch.setenv("VIBE_TRADING_TRUST_DOCKER_LOOPBACK", "1")
+    reset_env_config()
+    message = docker_loopback_trust_error()
+    assert message is not None and "API_AUTH_KEY" in message
+
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    reset_env_config()
+    assert docker_loopback_trust_error() is None
 
 
 def test_docker_network_peer_is_not_local_even_with_compose_trust_flag(

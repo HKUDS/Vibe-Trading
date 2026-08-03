@@ -24,6 +24,8 @@ from fastapi import (
     Security,
     status,
 )
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
@@ -344,9 +346,13 @@ def register_system_routes(
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-    @app.get("/skills")
+    @app.get("/skills", dependencies=[Depends(require_auth)])
     async def list_skills():
-        """List registered skills (name and description)."""
+        """List registered skills (name and description).
+
+        Authenticated: the skill inventory describes the agent's installed
+        capabilities and is not appropriate pre-auth reconnaissance material.
+        """
         from src.agent.skills import SkillsLoader
 
         loader = SkillsLoader()
@@ -367,3 +373,51 @@ def register_system_routes(
             "docs": "/docs",
             "health": "/health",
         }
+
+    # --- API documentation (authenticated) ---
+    #
+    # ``api_server`` constructs the app with ``docs_url``/``redoc_url``/
+    # ``openapi_url`` set to ``None`` and delegates here so the schema and its
+    # viewers sit behind ``require_auth``. The schema enumerates every route --
+    # including the live-trading and mandate control plane -- so an unauthorized
+    # peer must not be able to read it.
+    #
+    # In loopback dev mode (no ``API_AUTH_KEY``) these behave exactly as the
+    # FastAPI defaults did. Once a key is configured, Swagger UI's in-browser
+    # fetch of the schema needs that key too; use ``Authorize`` in the UI or
+    # curl with a bearer header.
+
+    _openapi_url = "/openapi.json"
+
+    @app.get(_openapi_url, include_in_schema=False, dependencies=[Depends(require_auth)])
+    async def openapi_schema():
+        """Serve the OpenAPI schema to authorized callers only."""
+        return JSONResponse(app.openapi())
+
+    # Favicons point at the SPA's self-hosted asset rather than FastAPI's
+    # default remote one, so the docs CSP exception does not have to widen
+    # ``img-src`` to a third-party host.
+    _docs_favicon = "/favicon.svg"
+
+    @app.get("/docs", include_in_schema=False, dependencies=[Depends(require_auth)])
+    async def swagger_ui():
+        """Serve Swagger UI to authorized callers only."""
+        return get_swagger_ui_html(
+            openapi_url=_openapi_url,
+            title=f"{app.title} - Swagger UI",
+            swagger_favicon_url=_docs_favicon,
+        )
+
+    @app.get("/redoc", include_in_schema=False, dependencies=[Depends(require_auth)])
+    async def redoc_ui():
+        """Serve ReDoc to authorized callers only."""
+        # ``with_google_fonts=False`` drops ReDoc's fonts.googleapis.com
+        # stylesheet, so the docs CSP exception stays limited to the bundle
+        # host instead of also allowing a font CDN. ReDoc falls back to system
+        # fonts and is otherwise unchanged.
+        return get_redoc_html(
+            openapi_url=_openapi_url,
+            title=f"{app.title} - ReDoc",
+            redoc_favicon_url=_docs_favicon,
+            with_google_fonts=False,
+        )

@@ -181,12 +181,16 @@ _PERMISSIONS_POLICY = (
     "magnetometer=(), gyroscope=(), accelerometer=()"
 )
 
-# Report-Only first: a later switch to enforcing mode can be validated against
-# real traffic without risking a broken app. Scoped to what the built SPA needs:
-# same-origin scripts/styles/fonts/img plus same-origin fetch & EventSource.
-# Inline styles are allowed because ECharts and React ``style={}`` props set
-# them; fonts are self-hosted (@fontsource) so no external font host is listed.
-_CSP_REPORT_ONLY = (
+# Enforced by default. Scoped to what the built SPA needs: same-origin
+# scripts/styles/fonts/img plus same-origin fetch & EventSource. Inline styles
+# are allowed because ECharts and React ``style={}`` props set them; fonts are
+# self-hosted (@fontsource) so no external font host is listed. The SPA entry is
+# an external module script and ``lib/api.ts`` fetches a same-origin base, so
+# no inline-script or cross-origin-connect allowance is needed.
+#
+# Set ``VIBE_TRADING_CSP_REPORT_ONLY=1`` to ship this Report-Only instead --
+# a rollback switch for deployments serving assets this policy does not cover.
+_CSP_POLICY = (
     "default-src 'self'; "
     "script-src 'self'; "
     "style-src 'self' 'unsafe-inline'; "
@@ -197,6 +201,33 @@ _CSP_REPORT_ONLY = (
     "base-uri 'self'; "
     "form-action 'self'"
 )
+
+# Swagger UI and ReDoc load their bundle and stylesheet from jsdelivr and run a
+# bootstrap block that FastAPI's ``get_swagger_ui_html`` / ``get_redoc_html``
+# hardcode inline, so the strict policy above would leave both pages blank.
+# Both routes require auth and render only the OpenAPI schema, so they get a
+# narrowly scoped exception rather than relaxing the policy app-wide. Favicons
+# are pointed at the self-hosted ``/favicon.svg`` so ``img-src`` stays tight.
+_CSP_DOCS_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data:; "
+    "font-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+_CSP_DOCS_PATHS = frozenset({"/docs", "/redoc"})
+
+
+def _csp_header_name() -> str:
+    """Return the CSP header to emit (enforcing unless opted out)."""
+    if get_env_config().api.vibe_trading_csp_report_only:
+        return "Content-Security-Policy-Report-Only"
+    return "Content-Security-Policy"
 
 
 async def _apply_security_headers(request: Request, call_next):
@@ -209,7 +240,10 @@ async def _apply_security_headers(request: Request, call_next):
     """
     response = await call_next(request)
     headers = response.headers
-    headers.setdefault("Content-Security-Policy-Report-Only", _CSP_REPORT_ONLY)
+    policy = (
+        _CSP_DOCS_POLICY if request.url.path in _CSP_DOCS_PATHS else _CSP_POLICY
+    )
+    headers.setdefault(_csp_header_name(), policy)
     headers.setdefault("X-Content-Type-Options", "nosniff")
     headers.setdefault("X-Frame-Options", "DENY")
     headers.setdefault("Permissions-Policy", _PERMISSIONS_POLICY)
@@ -487,13 +521,54 @@ def _default_gateway_ips() -> set[ipaddress.IPv4Address]:
 
 
 def _trusted_docker_loopback_ip(ip: ipaddress._BaseAddress) -> bool:
-    """Return whether an IP is the trusted Docker host gateway."""
+    """Return whether an IP is the trusted Docker host gateway.
+
+    Fails closed without a configured API key. The Docker gateway address is
+    only a proxy for "the host's loopback" while the published port is bound to
+    ``127.0.0.1``. When it is published on ``0.0.0.0`` and Docker's userland
+    proxy is in play (the Docker Desktop default), ``docker-proxy`` re-originates
+    every inbound connection from the gateway — so an arbitrary remote client
+    arrives at this check indistinguishable from the host itself. The container
+    cannot observe the host's port-publishing config, so that precondition is
+    unverifiable from here.
+
+    Granting a blanket auth bypass on an unverifiable precondition is not sound
+    for a control plane that includes ``/mandate/commit`` and broker settings,
+    so gateway trust requires ``API_AUTH_KEY``. Because auth is key-first
+    (:func:`_validate_api_auth`), a configured key already authenticates the
+    request on its own; this guard's job is to ensure the *absence* of a key can
+    never be silently upgraded to full access via the gateway address.
+    """
     if not isinstance(ip, ipaddress.IPv4Address):
         return False
     if not get_env_config().api.vibe_trading_trust_docker_loopback:
         return False
+    if not _configured_api_key():
+        return False
     gateway_fn = _host_attr("_default_gateway_ips", _default_gateway_ips)
     return ip in gateway_fn()
+
+
+def docker_loopback_trust_error() -> Optional[str]:
+    """Return an operator message when gateway trust is enabled but inert.
+
+    ``VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1`` without ``API_AUTH_KEY`` is a
+    misconfiguration rather than a working setup: the trust is refused (see
+    :func:`_trusted_docker_loopback_ip`), so requests that the operator expects
+    to succeed will return 403. Surface it loudly at startup instead of letting
+    them debug a silent 403.
+    """
+    if not get_env_config().api.vibe_trading_trust_docker_loopback:
+        return None
+    if _configured_api_key():
+        return None
+    return (
+        "VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1 requires API_AUTH_KEY; "
+        "Docker host-gateway trust is IGNORED. Generate a key with "
+        "`python -c \"import secrets; print(secrets.token_urlsafe(32))\"`, set "
+        "API_AUTH_KEY in agent/.env, restart, then enter the same key once in "
+        "the Web UI Settings page."
+    )
 
 
 def _env_shell_tools_enabled() -> bool:

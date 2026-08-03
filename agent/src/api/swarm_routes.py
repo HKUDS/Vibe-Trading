@@ -76,9 +76,14 @@ def register_swarm_routes(
 
     # --- Routes ---
 
-    @app.get("/swarm/presets")
+    @app.get("/swarm/presets", dependencies=[Depends(require_auth)])
     async def list_swarm_presets():
-        """List Swarm YAML presets."""
+        """List Swarm YAML presets.
+
+        Authenticated for the same reason as ``/skills``: the preset inventory
+        describes configured agent capabilities and should not be readable by a
+        peer that cannot start a swarm run.
+        """
         from src.swarm.presets import list_presets
 
         return list_presets()

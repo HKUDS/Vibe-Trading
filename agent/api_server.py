@@ -164,8 +164,9 @@ app = FastAPI(
     title="Vibe-Trading API",
     description="Vibe-Trading API: natural-language finance research, backtesting, and swarm workflows",
     version=APP_VERSION,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None,  # docs/redoc/openapi re-registered behind require_auth
+    redoc_url=None,  # in register_system_routes -- see the rationale there
+    openapi_url=None,
     lifespan=_lifespan,
 )
 
