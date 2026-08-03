@@ -11,6 +11,7 @@ import json
 from datetime import datetime, timezone
 
 import mcp_server
+import src.mcp_tools.swarm as swarm_mod
 import src.swarm.runtime as rt
 from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, TaskStatus
 from src.swarm.store import SwarmStore
@@ -34,7 +35,7 @@ def _make_run(run_id: str, status: RunStatus) -> SwarmRun:
 
 def test_retry_run_missing_returns_error(tmp_path, monkeypatch):
     store = SwarmStore(base_dir=tmp_path)
-    monkeypatch.setattr(mcp_server, "_get_swarm_store", lambda: store)
+    monkeypatch.setattr(swarm_mod, "_get_swarm_store", lambda: store)
 
     payload = json.loads(mcp_server.retry_run("does-not-exist"))
 
@@ -44,7 +45,7 @@ def test_retry_run_missing_returns_error(tmp_path, monkeypatch):
 
 def test_retry_run_rejects_path_shaped_run_id(tmp_path, monkeypatch):
     store = SwarmStore(base_dir=tmp_path)
-    monkeypatch.setattr(mcp_server, "_get_swarm_store", lambda: store)
+    monkeypatch.setattr(swarm_mod, "_get_swarm_store", lambda: store)
 
     payload = json.loads(mcp_server.retry_run("../outside/victim"))
 
@@ -56,7 +57,7 @@ def test_retry_run_refuses_running_run(tmp_path, monkeypatch):
     store = SwarmStore(base_dir=tmp_path)
     run = _make_run("r-running", RunStatus.running)
     store.create_run(run)
-    monkeypatch.setattr(mcp_server, "_get_swarm_store", lambda: store)
+    monkeypatch.setattr(swarm_mod, "_get_swarm_store", lambda: store)
 
     payload = json.loads(mcp_server.retry_run("r-running"))
 
@@ -68,7 +69,7 @@ def test_retry_run_relaunches_failed_run_with_same_preset(tmp_path, monkeypatch)
     store = SwarmStore(base_dir=tmp_path)
     original = _make_run("r-failed", RunStatus.failed)
     store.create_run(original)
-    monkeypatch.setattr(mcp_server, "_get_swarm_store", lambda: store)
+    monkeypatch.setattr(swarm_mod, "_get_swarm_store", lambda: store)
 
     captured: dict[str, object] = {}
 

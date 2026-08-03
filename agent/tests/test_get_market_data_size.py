@@ -16,6 +16,7 @@ import json
 import pandas as pd
 
 import mcp_server
+import src.mcp_tools.market_data as market_data_mod
 
 _gmd = getattr(mcp_server.get_market_data, "fn", None) or getattr(
     mcp_server.get_market_data, "__wrapped__", mcp_server.get_market_data
@@ -35,7 +36,7 @@ def _loader_with_rows(n: int):
 
 
 def _call(monkeypatch, n, **kw):
-    monkeypatch.setattr(mcp_server, "_get_loader", lambda src: _loader_with_rows(n))
+    monkeypatch.setattr(market_data_mod, "_get_loader", lambda src: _loader_with_rows(n))
     return json.loads(_gmd(codes=["X.US"], start_date="2025-01-01", end_date="2026-01-01", source="yfinance", **kw))
 
 
@@ -107,7 +108,7 @@ def test_multi_symbol_capped_independently(monkeypatch):
         def fetch(self, codes, start, end, interval="1D"):
             return {"BIG.US": _frame(big), "SMALL.US": _frame(small)}
 
-    monkeypatch.setattr(mcp_server, "_get_loader", lambda src: _Multi)
+    monkeypatch.setattr(market_data_mod, "_get_loader", lambda src: _Multi)
     out = json.loads(
         _gmd(
             codes=["BIG.US", "SMALL.US"],

@@ -16,6 +16,7 @@ import json
 import pandas as pd
 
 import mcp_server
+import src.mcp_tools.analysis as analysis_mod
 from src.tools.factor_analysis_tool import FactorAnalysisTool
 
 # fastmcp wraps the tool; reach the raw callable.
@@ -38,7 +39,7 @@ class _RecordingRegistry:
 def test_wrapper_forwards_registered_contract(monkeypatch) -> None:
     """The wrapper must forward exactly the registered tool's argument keys."""
     rec = _RecordingRegistry()
-    monkeypatch.setattr(mcp_server, "_get_registry", lambda: rec)
+    monkeypatch.setattr(analysis_mod, "get_registry", lambda: rec)
 
     _fa(factor_csv="f.csv", return_csv="r.csv", output_dir="out", n_groups=3)
 

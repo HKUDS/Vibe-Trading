@@ -167,7 +167,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
 
     // Sub-chart
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let subSeries: any[] = [];
+    let subSeries: any[];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let subYAxis: any = { scale: true, gridIndex: 1, splitLine: { lineStyle: { color: t.gridColor } }, axisLabel: { color: t.textColor, fontSize: 10 } };
 

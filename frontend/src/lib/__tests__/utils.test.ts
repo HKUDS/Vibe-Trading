@@ -10,7 +10,11 @@ describe("cn", () => {
   });
 
   it("handles conditional classes via clsx", () => {
-    expect(cn("base", false && "hidden", "end")).toBe("base end");
+    // Function param keeps the falsy branch non-constant so the intent is
+    // legible to no-constant-binary-expression while still exercising clsx.
+    const buildClass = (includeHidden: boolean) => cn("base", includeHidden && "hidden", "end");
+    expect(buildClass(false)).toBe("base end");
+    expect(buildClass(true)).toBe("base hidden end");
   });
 
   it("handles undefined and null inputs", () => {

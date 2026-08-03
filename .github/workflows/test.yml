@@ -64,7 +64,18 @@ jobs:
         # test_e2e_harness_v2.py is gated by VIBE_TRADING_RUN_LIVE_E2E
         # (real-LLM only); list --ignore here so CI's intent is explicit and
         # the suite never silently switches state on env presence.
+        # fail_under is enforced via [tool.coverage.report].fail_under
+        # (pyproject.toml) so coverage can never silently regress below gate.
         run: pytest --ignore=agent/tests/e2e_backtest --ignore=agent/tests/test_e2e_harness_v2.py --cov=agent --cov-report=term-missing --cov-report=xml --tb=short -q
+
+      - name: Coverage summary
+        run: |
+          LINE_RATE=$(grep -o 'line-rate="[0-9.]*"' coverage.xml | head -1 | cut -d '"' -f 2)
+          if [ -n "$LINE_RATE" ]; then
+            PCT=$(python -c "print(round(float('$LINE_RATE') * 100, 1))")
+            echo "## Coverage: ${PCT}%" >> "$GITHUB_STEP_SUMMARY"
+            echo "Gate: [tool.coverage.report].fail_under in pyproject.toml" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -82,6 +93,13 @@ jobs:
         run: |
           cd frontend
           npx vitest run --reporter=verbose
+
+      - name: Frontend lint
+        # ESLint errors fail CI; warnings (new React-Compiler-era rules and
+        # deliberate dynamic-key i18n casts) are tracked for review.
+        run: |
+          cd frontend
+          npx eslint .
 
   windows-background:
     name: ${{ matrix.name }} / Python 3.14 background lifecycle

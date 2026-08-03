@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import src.mcp_tools._shared as shared_mod
 
 GOAL_TOOLS = (
     "start_research_goal",
@@ -56,7 +57,7 @@ def test_the_other_arguments_stay_required(tool_parameters) -> None:
 
 
 def test_resolve_session_id_is_stable_within_a_process(mcp_server, monkeypatch) -> None:
-    monkeypatch.setattr(mcp_server, "_mcp_session_id", None)
+    monkeypatch.setattr(shared_mod, "_mcp_session_id", None)
 
     first = mcp_server._resolve_session_id()
     second = mcp_server._resolve_session_id("")
@@ -73,8 +74,8 @@ def test_start_research_goal_works_without_a_session_id(mcp_server, tmp_path, mo
     """The end-to-end point: an omitted id must not become a validation error."""
     from src.goal import GoalStore
 
-    monkeypatch.setattr(mcp_server, "_goal_store", GoalStore(db_path=tmp_path / "g.db"))
-    monkeypatch.setattr(mcp_server, "_mcp_session_id", None)
+    monkeypatch.setattr(shared_mod, "_goal_store", GoalStore(db_path=tmp_path / "g.db"))
+    monkeypatch.setattr(shared_mod, "_mcp_session_id", None)
 
     result = mcp_server.start_research_goal(objective="Analyse SPY drawdowns")
 

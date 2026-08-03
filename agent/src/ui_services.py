@@ -13,9 +13,12 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_ANALYSIS_PERIODS = [5, 20]
 
@@ -482,11 +485,11 @@ def reconstruct_price_series(run_dir: Path) -> List[Dict[str, Any]]:
         )
         data_map = fetch_data_map(fetch_config).data_map
     except Exception as exc:
-        print(f"[WARN] reconstruct_price_series: DataLoader failed ({exc})")
+        logger.warning("reconstruct_price_series: DataLoader failed (%s)", exc)
         return []
 
     if not data_map:
-        print("[WARN] reconstruct_price_series: DataLoader returned empty")
+        logger.warning("reconstruct_price_series: DataLoader returned empty")
         return []
 
     return _flatten_data_map(data_map, start_date=start_date)

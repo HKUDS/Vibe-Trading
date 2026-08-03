@@ -23,6 +23,7 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 import mcp_server
+import src.mcp_tools.swarm as swarm_mod
 import src.swarm.runtime as rt
 import src.swarm.store as store_mod
 import src.swarm.worker as worker_mod
@@ -114,7 +115,7 @@ def test_get_swarm_status_surfaces_live_progress(tmp_path, monkeypatch):
         run.id,
         SwarmEvent(type="task_started", data={}, timestamp=_iso(datetime.now(timezone.utc))),
     )
-    monkeypatch.setattr(mcp_server, "_get_swarm_store", lambda: store)
+    monkeypatch.setattr(swarm_mod, "_get_swarm_store", lambda: store)
 
     payload = json.loads(mcp_server.get_swarm_status(run.id))
 
@@ -284,7 +285,7 @@ def test_reap_stale_runs_mcp_tool(tmp_path, monkeypatch):
             timestamp=_iso(datetime.now(timezone.utc) - timedelta(hours=1)),
         ),
     )
-    monkeypatch.setattr(mcp_server, "_get_swarm_store", lambda: store)
+    monkeypatch.setattr(swarm_mod, "_get_swarm_store", lambda: store)
 
     payload = json.loads(mcp_server.reap_stale_runs())
 
@@ -474,7 +475,7 @@ def test_get_swarm_status_auto_recovers_zombie(tmp_path, monkeypatch):
             timestamp=_iso(datetime.now(timezone.utc) - timedelta(hours=1)),
         ),
     )
-    monkeypatch.setattr(mcp_server, "_get_swarm_store", lambda: store)
+    monkeypatch.setattr(swarm_mod, "_get_swarm_store", lambda: store)
 
     payload = json.loads(mcp_server.get_swarm_status(run.id))
 
@@ -500,7 +501,7 @@ def test_mcp_run_result_rejects_path_shaped_run_id_without_outside_write(tmp_pat
     run.status = RunStatus.running
     run.tasks[0] = run.tasks[0].model_copy(update={"status": TaskStatus.completed, "summary": "SAFE_MCP_SWARM_MARKER"})
     (outside_dir / "run.json").write_text(run.model_dump_json(indent=2), encoding="utf-8")
-    monkeypatch.setattr(mcp_server, "_get_swarm_store", lambda: store)
+    monkeypatch.setattr(swarm_mod, "_get_swarm_store", lambda: store)
 
     payload = json.loads(mcp_server.get_run_result(traversal_id))
 

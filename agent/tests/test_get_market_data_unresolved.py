@@ -18,6 +18,7 @@ import pandas as pd
 import pytest
 
 import mcp_server
+import src.mcp_tools.market_data as market_data_mod
 
 # fastmcp wraps the tool; reach the raw callable.
 _gmd = getattr(mcp_server.get_market_data, "fn", None) or getattr(
@@ -53,7 +54,7 @@ class _BoomLoader:
 
 @pytest.fixture
 def good_only(monkeypatch):
-    monkeypatch.setattr(mcp_server, "_get_loader", lambda src: _GoodOnlyLoader)
+    monkeypatch.setattr(market_data_mod, "_get_loader", lambda src: _GoodOnlyLoader)
 
 
 def _call(codes):
@@ -74,7 +75,7 @@ def test_all_resolved_has_no_unresolved_key(good_only):
 
 
 def test_loader_exception_is_contained_not_lost(monkeypatch):
-    monkeypatch.setattr(mcp_server, "_get_loader", lambda src: _BoomLoader)
+    monkeypatch.setattr(market_data_mod, "_get_loader", lambda src: _BoomLoader)
     out = _call(["AAA.US", "BBB.US"])  # must not raise an opaque MCP error
     assert sorted(out.get("_unresolved", [])) == ["AAA.US", "BBB.US"]
 
@@ -82,7 +83,7 @@ def test_loader_exception_is_contained_not_lost(monkeypatch):
 def test_partial_loader_only_missing_codes_unresolved(monkeypatch):
     """G2: a loader returning only SOME requested codes -> the rest land
     under _unresolved (not silently dropped)."""
-    monkeypatch.setattr(mcp_server, "_get_loader", lambda src: _PartialLoader)
+    monkeypatch.setattr(market_data_mod, "_get_loader", lambda src: _PartialLoader)
     out = _call(["OK1.US", "OK2.US", "MISS1.US", "MISS2.US"])
     assert "OK1.US" in out and "OK2.US" in out
     assert sorted(out.get("_unresolved", [])) == ["MISS1.US", "MISS2.US"]
@@ -90,7 +91,7 @@ def test_partial_loader_only_missing_codes_unresolved(monkeypatch):
 
 def test_swallowed_loader_exception_is_logged(monkeypatch, caplog):
     """G2: the contained loader blow-up must still be logged (was silent)."""
-    monkeypatch.setattr(mcp_server, "_get_loader", lambda src: _BoomLoader)
+    monkeypatch.setattr(market_data_mod, "_get_loader", lambda src: _BoomLoader)
     with caplog.at_level(logging.ERROR, logger=mcp_server.logger.name):
         _call(["AAA.US", "BBB.US"])
     assert any("market-data loader" in r.message for r in caplog.records)

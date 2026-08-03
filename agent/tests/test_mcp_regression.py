@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import src.mcp_tools.trading as trading_mod
 
 # ---------------------------------------------------------------------------
 # No-config regression
@@ -247,7 +248,7 @@ def test_trading_mcp_wrappers_do_not_send_implicit_local_overrides(monkeypatch: 
     """No-arg trading_* MCP calls must not override profile defaults."""
     mod = _import_mcp_server()
     registry = _RecordingRegistry()
-    monkeypatch.setattr(mod, "_get_registry", lambda: registry)
+    monkeypatch.setattr(trading_mod, "get_registry", lambda: registry)
 
     mod.trading_check()
     mod.trading_account()
@@ -266,7 +267,7 @@ def test_trading_mcp_wrappers_forward_explicit_local_overrides(monkeypatch: pyte
     """Explicit local override fields are still forwarded to the backend."""
     mod = _import_mcp_server()
     registry = _RecordingRegistry()
-    monkeypatch.setattr(mod, "_get_registry", lambda: registry)
+    monkeypatch.setattr(trading_mod, "get_registry", lambda: registry)
 
     mod.trading_account(
         connection="ibkr-paper-local",

@@ -211,6 +211,7 @@ channels = [
 ]
 dev = [
     "black>=24.0,<27",
+    "hypothesis>=6.0,<7",
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "pytest-socket>=0.7.0",
@@ -246,7 +247,11 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
-fail_under = 0
+# Measured 69% on the full suite (2026-08-02). Gate at 60 to allow
+# environment-dependent skips a cushion while still failing loudly on
+# catastrophic coverage regressions; raise toward 65 once contributors land
+# tests for the connector/loader layers.
+fail_under = 60
 exclude_also = [
     "if __name__ == .__main__.",
     "raise NotImplementedError",
