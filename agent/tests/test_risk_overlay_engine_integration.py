@@ -204,12 +204,18 @@ def test_fail_closed_return_only_exits(tmp_path: Path) -> None:
 
 
 def test_replace_mode_cheaper_than_additive_on_same_book(tmp_path: Path) -> None:
-    """With large native US slippage, replace must not stack HFT on top."""
+    """With large native US slippage, replace must not stack HFT on top.
+
+    Uses a non-HFT-tagged daily book so ``require_hft_costs`` is False and
+    explicit ``additive`` is allowed for the A/B comparison. HFT-tagged
+    configs still fail closed on additive via the gate.
+    """
     data = _ohlcv_book(n=40, seed=5)
     codes = list(data.keys())
 
     def _run(mode: str, run_dir: Path) -> float:
         cfg = _base_config(codes)
+        cfg["tags"] = ["research"]  # avoid require_hft_costs hard-replace rule
         cfg["hft_costs"]["fill_slippage_mode"] = mode
         # Disable ADV/participation clips so fill path dominates the comparison.
         cfg["hft_costs"].pop("participation_cap", None)
@@ -219,6 +225,8 @@ def test_replace_mode_cheaper_than_additive_on_same_book(tmp_path: Path) -> None
             "max_gross_leverage": 1.0,
             "max_drawdown_kill": 0.5,  # effectively off
         }
+        # Skip re-assert so intentional additive mode survives for A/B.
+        cfg["_risk_first_enforced"] = True
         engine = GlobalEquityEngine(
             {"initial_cash": 1_000_000, "slippage_us": 0.02},
             market="us",
@@ -231,6 +239,11 @@ def test_replace_mode_cheaper_than_additive_on_same_book(tmp_path: Path) -> None
     # Additive stacks 2% native + ~5 bps HFT → worse fills → lower final value.
     assert replace_fv > additive_fv
 
+    # HFT-tagged + additive still fail closed.
+    bad = _base_config(codes)
+    bad["hft_costs"]["fill_slippage_mode"] = "additive"
+    with pytest.raises(ValueError, match="fill_slippage_mode"):
+        enforce_risk_first_config(bad, inject=False)
 
 def test_inject_defaults_set_replace_and_fallback() -> None:
     cfg = enforce_risk_first_config({"interval": "1m", "codes": ["AAPL.US"]})

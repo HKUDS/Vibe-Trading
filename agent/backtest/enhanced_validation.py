@@ -3,6 +3,7 @@
 Provides:
   - stress_scenarios — apply historical-style shocks to the equity return path
   - walk_forward_oos — rolling/expanding in-sample vs out-of-sample splits
+  - walk_forward_risk_gated — WF OOS folds fail-closed on DD/PSR/DSR/CVaR gates
   - parameter_sensitivity — post-hoc robustness grid over return/vol/cost knobs
   - signal_parameter_grid — true signal-engine style param re-runs on a price series
   - signal_engine_param_grid — SignalEngine.generate() vertical slice over params
@@ -117,6 +118,15 @@ _DEFAULT_STRESS: List[Dict[str, Any]] = [
         "name": "latency_slippage_tax",
         "cost_drag_bps": 25.0,
         "note": "Proxy for delayed fills: extra cost drag on every bar return",
+    },
+    {
+        "name": "adv_participation_stress",
+        "cost_drag_bps": 40.0,
+        "vol_multiplier": 1.4,
+        "note": (
+            "Proxy for eating through ADV: higher participation → impact + "
+            "vol spike (bar-level; not LOB depth)"
+        ),
     },
 ]
 
@@ -307,6 +317,120 @@ def walk_forward_oos(
         "oos_profitable_folds": int(sum(1 for r in oos_returns if r > 0)),
         "mean_sharpe_degradation": round(float(np.mean(degradations)), 4),
         "consistency_rate": round(float(sum(1 for r in oos_returns if r > 0) / len(folds)), 4),
+    }
+
+
+def walk_forward_risk_gated(
+    equity_curve: pd.Series,
+    trades: Optional[List[TradeRecord]] = None,
+    *,
+    n_windows: int = 5,
+    train_ratio: float = 0.7,
+    mode: str = "rolling",
+    bars_per_year: int = 252,
+    max_dd_limit: float = 0.20,
+    min_psr: float = 0.5,
+    min_dsr: Optional[float] = None,
+    max_cvar: Optional[float] = None,
+    max_oos_dd: Optional[float] = None,
+    max_sharpe_degradation: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Walk-forward OOS combined with risk gates on each OOS fold.
+
+    A fold *passes* when OOS |max_dd| / PSR / DSR / CVaR clear the gates
+    (and optional degradation / OOS-DD caps). Strategies that look fine
+    in-sample but blow OOS risk budgets fail closed.
+    """
+    base = walk_forward_oos(
+        equity_curve,
+        trades,
+        n_windows=n_windows,
+        train_ratio=train_ratio,
+        mode=mode,
+        bars_per_year=bars_per_year,
+    )
+    if "error" in base:
+        return base
+
+    from backtest.risk_metrics import score_trial_risk_adjusted
+
+    # Recompute OOS slices with the same geometry as walk_forward_oos.
+    n = len(equity_curve)
+    oos_span = max(n // (int(n_windows) + 1), 2)
+    mode_norm = (mode or "rolling").strip().lower()
+    oos_dd_lim = float(max_oos_dd) if max_oos_dd is not None else float(max_dd_limit)
+
+    gated_folds: List[Dict[str, Any]] = []
+    n_pass = 0
+    for fold in base.get("folds", []):
+        i = int(fold.get("fold", 1)) - 1
+        oos_end = n - (int(n_windows) - 1 - i) * oos_span
+        oos_start = oos_end - oos_span
+        oos_eq = equity_curve.iloc[max(0, oos_start) : min(n, oos_end)]
+        rets = oos_eq.pct_change().dropna().to_numpy(dtype=float)
+        scored = score_trial_risk_adjusted(
+            rets,
+            bars_per_year=bars_per_year,
+            max_dd_limit=oos_dd_lim,
+            min_psr=min_psr,
+            min_dsr=min_dsr,
+            max_cvar=max_cvar,
+            n_trials=max(1, int(n_windows)),
+        )
+        deg = float(fold.get("sharpe_degradation", 0.0))
+        deg_fail = (
+            max_sharpe_degradation is not None
+            and deg > float(max_sharpe_degradation) + 1e-12
+        )
+        passed = bool(scored.get("accepted")) and not deg_fail
+        if passed:
+            n_pass += 1
+        gated_folds.append(
+            {
+                "fold": fold.get("fold"),
+                "mode": mode_norm,
+                "oos_metrics": fold.get("oos"),
+                "sharpe_degradation": fold.get("sharpe_degradation"),
+                "risk_score": {
+                    k: scored.get(k)
+                    for k in (
+                        "accepted",
+                        "score",
+                        "sharpe",
+                        "max_dd",
+                        "psr",
+                        "dsr",
+                        "cvar",
+                        "reject_reasons",
+                    )
+                },
+                "passed": passed,
+                "degradation_fail": deg_fail,
+            }
+        )
+
+    n_folds = len(gated_folds)
+    return {
+        **base,
+        "risk_gates": {
+            "max_dd_limit": float(max_dd_limit),
+            "max_oos_dd": oos_dd_lim,
+            "min_psr": float(min_psr),
+            "min_dsr": float(min_dsr) if min_dsr is not None else None,
+            "max_cvar": float(max_cvar) if max_cvar is not None else None,
+            "max_sharpe_degradation": (
+                float(max_sharpe_degradation) if max_sharpe_degradation is not None else None
+            ),
+        },
+        "gated_folds": gated_folds,
+        "n_folds_passed": n_pass,
+        "n_folds_failed": n_folds - n_pass,
+        "pass_rate": round(n_pass / n_folds, 4) if n_folds else 0.0,
+        "passed": n_pass == n_folds and n_folds > 0,
+        "note": (
+            "Walk-forward OOS folds gated by risk_adjusted score (DD/PSR/DSR/CVaR). "
+            "Fail closed when any fold breaches risk budgets."
+        ),
     }
 
 
@@ -1069,10 +1193,17 @@ def _score_grid_cells(
                 objective=str(rk_cfg.get("objective", "sharpe_dd_penalty")),
                 max_dd_limit=float(rk_cfg.get("max_dd_limit", 0.20)),
                 min_psr=float(rk_cfg.get("min_psr", 0.5)),
+                min_dsr=(float(rk_cfg["min_dsr"]) if rk_cfg.get("min_dsr") is not None else None),
                 max_cvar=(float(rk_cfg["max_cvar"]) if rk_cfg.get("max_cvar") is not None else None),
                 cvar_alpha=float(rk_cfg.get("cvar_alpha", 0.95)),
                 dd_penalty=float(rk_cfg.get("dd_penalty", 2.0)),
                 labels=labels,
+                fragile_fold_std=(
+                    float(rk_cfg["fragile_fold_std"])
+                    if rk_cfg.get("fragile_fold_std") is not None
+                    else None
+                ),
+                fragile_n_folds=int(rk_cfg.get("fragile_n_folds", 4)),
             )
             out["risk_adjusted_ranking"] = {
                 k: ranking[k]
@@ -1475,6 +1606,31 @@ def run_enhanced_validation(
             train_ratio=float(wf_cfg.get("train_ratio", 0.7)),
             mode=str(wf_cfg.get("mode", "rolling")),
             bars_per_year=bars_per_year,
+        )
+
+    if "walk_forward_risk_gated" in config:
+        wfg = (
+            config["walk_forward_risk_gated"]
+            if isinstance(config["walk_forward_risk_gated"], dict)
+            else {}
+        )
+        results["walk_forward_risk_gated"] = walk_forward_risk_gated(
+            equity_curve,
+            trades,
+            n_windows=int(wfg.get("n_windows", 5)),
+            train_ratio=float(wfg.get("train_ratio", 0.7)),
+            mode=str(wfg.get("mode", "rolling")),
+            bars_per_year=bars_per_year,
+            max_dd_limit=float(wfg.get("max_dd_limit", 0.20)),
+            min_psr=float(wfg.get("min_psr", 0.5)),
+            min_dsr=(float(wfg["min_dsr"]) if wfg.get("min_dsr") is not None else None),
+            max_cvar=(float(wfg["max_cvar"]) if wfg.get("max_cvar") is not None else None),
+            max_oos_dd=(float(wfg["max_oos_dd"]) if wfg.get("max_oos_dd") is not None else None),
+            max_sharpe_degradation=(
+                float(wfg["max_sharpe_degradation"])
+                if wfg.get("max_sharpe_degradation") is not None
+                else None
+            ),
         )
 
     if "parameter_sensitivity" in config:

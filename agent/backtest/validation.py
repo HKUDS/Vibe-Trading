@@ -419,10 +419,15 @@ def run_validation(
             objective=str(rk_cfg.get("objective", "sharpe_dd_penalty")),
             max_dd_limit=float(rk_cfg.get("max_dd_limit", 0.20)),
             min_psr=float(rk_cfg.get("min_psr", 0.5)),
+            min_dsr=(float(rk_cfg["min_dsr"]) if rk_cfg.get("min_dsr") is not None else None),
             max_cvar=(float(rk_cfg["max_cvar"]) if rk_cfg.get("max_cvar") is not None else None),
             cvar_alpha=float(rk_cfg.get("cvar_alpha", 0.95)),
             dd_penalty=float(rk_cfg.get("dd_penalty", 2.0)),
             labels=rk_cfg.get("labels"),
+            fragile_fold_std=(
+                float(rk_cfg["fragile_fold_std"]) if rk_cfg.get("fragile_fold_std") is not None else None
+            ),
+            fragile_n_folds=int(rk_cfg.get("fragile_n_folds", 4)),
         )
 
     return results

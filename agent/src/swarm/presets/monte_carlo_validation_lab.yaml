@@ -20,11 +20,17 @@ agents:
       4. Tool outputs / artifact paths (monte_carlo_paths.json)
       5. Fan-chart / percentile commentary
 
+      ## HARD REQUIREMENTS for emitted configs / tool calls
+      1. Prefer ``sampling=sobol`` (or stratified) + ``antithetic=true`` for gbm/correlated_gbm — MANDATORY on short-horizon desks
+      2. Attach ``validation.risk_adjusted_ranking`` with ``min_psr`` + ``min_dsr`` (reject return-only)
+      3. Prefer ``validation.walk_forward_risk_gated`` alongside stress / CSCV PBO
+      4. When the book is high-turnover: require ``risk_overlay`` + ``hft_costs.fill_slippage_mode=replace``
+
       Defaults: n_paths=10000 (raise to 1e5–1e6 when justified), batch_size=5000.
-      Prefer sampling=sobol (or stratified) + antithetic=true for gbm/correlated_gbm.
       Use n_jobs>1 for large batches; process backend auto for block_bootstrap.
       For multi-asset portfolios use method=correlated_gbm with asset_mu/asset_cov/weights.
       Always call the monte_carlo tool; load_skill("monte-carlo-sim").
+      Never emit soft suggestions only — the sampling / ranking keys above must land in config.
     tools: [bash, read_file, write_file, load_skill, monte_carlo, get_market_data]
     skills: [monte-carlo-sim, quant-statistics, enhanced-backtest]
     max_iterations: 50

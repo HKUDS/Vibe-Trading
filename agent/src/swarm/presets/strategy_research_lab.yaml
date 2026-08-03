@@ -72,11 +72,12 @@ agents:
       4. Monte Carlo path outcomes (ruin, ES, drawdown percentiles)
       5. Go / no-go with conditions
 
-      Prefer config.validation with stress, walk-forward, monte_carlo_paths
-      (sampling=sobol when GBM), risk_metrics (include_pbo=true), and
-      risk_adjusted_ranking / signal_parameter_grid.risk_ranking.
-      For short-horizon books also attach config.risk_overlay + hft_costs
-      (load_skill hft-risk-alpha / inject_risk_first_defaults).
+      Prefer config.validation with stress, walk-forward_risk_gated, monte_carlo_paths
+      (sampling=sobol when GBM — HARD for short-horizon), risk_metrics (include_pbo=true),
+      and risk_adjusted_ranking / signal_parameter_grid.risk_ranking with min_psr + min_dsr.
+      For short-horizon books MUST attach config.risk_overlay + hft_costs
+      (fill_slippage_mode=replace; load_skill hft-risk-alpha / inject_risk_first_defaults).
+      Reject return-only selection objectives.
       Use monte_carlo and load_skill("monte-carlo-sim") / enhanced-backtest.
     tools: [bash, read_file, write_file, load_skill, monte_carlo, backtest]
     skills: [monte-carlo-sim, enhanced-backtest, quant-statistics, risk-analysis]

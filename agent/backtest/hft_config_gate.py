@@ -213,12 +213,42 @@ def validate_risk_first_config(
             errors.append("hft_costs is required for high-turnover HFT-proxy configs")
         elif isinstance(costs, Mapping) and costs.get("enabled", True) is False:
             errors.append("hft_costs.enabled must not be false")
+        elif isinstance(costs, Mapping):
+            mode = str(costs.get("fill_slippage_mode", "additive")).strip().lower()
+            if mode != "replace":
+                errors.append(
+                    "hft_costs.fill_slippage_mode must be 'replace' for HFT-proxy "
+                    "configs (avoids double-counting native slippage)"
+                )
     elif costs in (None, {}, False):
         interval = str(config.get("interval") or "").lower()
         if interval in {"1m", "5m", "15m", "30m"}:
             warnings.append(
                 "hft_costs recommended for minute-bar high-turnover configs (spread+impact+adverse selection)"
             )
+    elif isinstance(costs, Mapping):
+        mode = str(costs.get("fill_slippage_mode", "additive")).strip().lower()
+        if mode != "replace":
+            warnings.append(
+                "hft_costs.fill_slippage_mode='replace' recommended to avoid double-counting"
+            )
+
+    # ── Monte Carlo sampling quality (short-horizon / when MC present) ──
+    validation = config.get("validation") if isinstance(config.get("validation"), Mapping) else {}
+    mc = validation.get("monte_carlo_paths") if isinstance(validation, Mapping) else None
+    if isinstance(mc, Mapping) and mc:
+        method = str(mc.get("method", "bootstrap")).strip().lower()
+        sampling = str(mc.get("sampling", "")).strip().lower()
+        if method in {"gbm", "correlated_gbm"} and sampling not in {"sobol", "stratified"}:
+            if require_hft_costs or is_short_horizon_config(config):
+                errors.append(
+                    "validation.monte_carlo_paths.sampling must be 'sobol' or 'stratified' "
+                    "for short-horizon GBM MC (got {!r})".format(sampling or "unset")
+                )
+            else:
+                warnings.append(
+                    "monte_carlo_paths.sampling=sobol (or stratified) recommended for GBM family"
+                )
 
     return {
         "ok": len(errors) == 0,
@@ -267,6 +297,8 @@ def inject_risk_first_defaults(
     """Return a shallow-copied config with risk-first defaults filled in.
 
     Does not overwrite existing numeric knobs; only fills missing sections.
+    For short-horizon books, coerces ``hft_costs.fill_slippage_mode`` to
+    ``replace`` and injects Sobol MC + risk-gated walk-forward hooks.
     """
     out: Dict[str, Any] = dict(config)
 
@@ -275,10 +307,16 @@ def inject_risk_first_defaults(
             "enabled": True,
             "vol_target": 0.12,
             "vol_lookback": 20,
+            "vol_governor_lookback": 60,
+            "vol_governor_spike_ratio": 1.5,
             "max_gross_leverage": 1.0,
             "max_net_exposure": 0.4,
             "max_name_weight": 0.25,
+            "max_corr_cluster_gross": 0.6,
+            "corr_cluster_threshold": 0.75,
             "max_turnover": 0.3,
+            "turnover_cost_feedback": 0.002,
+            "turnover_cost_bps": 10.0,
             "max_drawdown_kill": 0.10,
             "kill_cooldown_bars": 5,
             "kill_reset_drawdown": 0.03,
@@ -298,11 +336,41 @@ def inject_risk_first_defaults(
             "objective": "sharpe_dd_penalty",
             "max_dd_limit": 0.15,
             "min_psr": 0.55,
+            "min_dsr": 0.45,
             "max_cvar": 0.04,
             "dd_penalty": 2.0,
+            "fragile_fold_std": 1.5,
+            "fragile_n_folds": 4,
         }
+    else:
+        # Fill missing DSR / fragile gates without overwriting user values.
+        rk = dict(validation["risk_adjusted_ranking"])
+        rk.setdefault("min_dsr", 0.45)
+        rk.setdefault("fragile_fold_std", 1.5)
+        validation["risk_adjusted_ranking"] = rk
     if "stress" not in validation:
         validation["stress"] = {}
+    if short_horizon and validation.get("monte_carlo_paths") in (None, {}, False):
+        validation["monte_carlo_paths"] = {
+            "method": "gbm",
+            "n_paths": 10_000,
+            "sampling": "sobol",
+            "antithetic": True,
+        }
+    elif isinstance(validation.get("monte_carlo_paths"), Mapping):
+        mc = dict(validation["monte_carlo_paths"])
+        method = str(mc.get("method", "bootstrap")).strip().lower()
+        if short_horizon and method in {"gbm", "correlated_gbm"}:
+            mc.setdefault("sampling", "sobol")
+            mc.setdefault("antithetic", True)
+        validation["monte_carlo_paths"] = mc
+    if short_horizon and validation.get("walk_forward_risk_gated") in (None, {}, False):
+        validation["walk_forward_risk_gated"] = {
+            "n_windows": 5,
+            "max_dd_limit": 0.15,
+            "min_psr": 0.5,
+            "min_dsr": 0.4,
+        }
     out["validation"] = validation
 
     if short_horizon and out.get("hft_costs") in (None, {}, False):
@@ -320,6 +388,15 @@ def inject_risk_first_defaults(
             # Soft ADV when loaders omit volume/amount (still a bar proxy).
             "adv_fallback_notional": 5_000_000.0,
         }
+    elif short_horizon and isinstance(out.get("hft_costs"), Mapping):
+        costs = dict(out["hft_costs"])
+        # Fill missing mode only — do not silently overwrite an explicit
+        # ``additive`` choice (research A/B); fail-closed gate still rejects
+        # additive when ``require_hft_costs`` is True.
+        if not costs.get("fill_slippage_mode"):
+            costs["fill_slippage_mode"] = "replace"
+        costs.setdefault("adv_fallback_notional", 5_000_000.0)
+        out["hft_costs"] = costs
 
     return out
 

@@ -13,6 +13,9 @@ budgets that matter for high-turnover / short-horizon styles:
   - per-name stop-loss scaling on adverse marked moves (close, or OHLC high/low proxy)
   - intrabar-ish proxies: partial fills + next-bar open slippage haircut
   - per-name trailing vol budgets and portfolio trailing CVaR budgets
+  - correlation-aware cluster gross caps (highly correlated names share a budget)
+  - turnover-aware cost feedback into sizing (shrink Δw when implied cost is high)
+  - optional trailing vol governor that only downscales spike regimes vs vol_target
 
 Config via ``config.json``::
 
@@ -20,10 +23,17 @@ Config via ``config.json``::
       "enabled": true,
       "vol_target": 0.12,
       "vol_lookback": 20,
+      "vol_governor_lookback": 60,
+      "vol_governor_spike_ratio": 1.5,
       "max_gross_leverage": 1.0,
       "max_net_exposure": 0.5,
       "max_name_weight": 0.25,
+      "max_corr_cluster_gross": 0.6,
+      "corr_cluster_threshold": 0.75,
+      "corr_lookback": 40,
       "max_turnover": 0.35,
+      "turnover_cost_feedback": 0.002,
+      "turnover_cost_bps": 10.0,
       "max_drawdown_kill": 0.12,
       "kill_cooldown_bars": 5,
       "kill_reset_drawdown": 0.03,
@@ -61,10 +71,20 @@ class RiskOverlayConfig:
     enabled: bool = True
     vol_target: Optional[float] = None
     vol_lookback: int = 20
+    # Longer lookback governor: only downscales when short vol spikes vs long vol.
+    vol_governor_lookback: Optional[int] = None
+    vol_governor_spike_ratio: float = 1.5
     max_gross_leverage: Optional[float] = None
     max_net_exposure: Optional[float] = None
     max_name_weight: Optional[float] = None
+    # Cap combined |w| among names whose trailing pairwise corr exceeds threshold.
+    max_corr_cluster_gross: Optional[float] = None
+    corr_cluster_threshold: float = 0.75
+    corr_lookback: int = 40
     max_turnover: Optional[float] = None
+    # Shrink Δw when implied turnover×bps cost exceeds this equity fraction.
+    turnover_cost_feedback: Optional[float] = None
+    turnover_cost_bps: float = 10.0
     max_drawdown_kill: Optional[float] = None
     kill_cooldown_bars: int = 0
     kill_reset_drawdown: Optional[float] = None
@@ -89,10 +109,13 @@ class RiskOverlayConfig:
             v is not None
             for v in (
                 self.vol_target,
+                self.vol_governor_lookback,
                 self.max_gross_leverage,
                 self.max_net_exposure,
                 self.max_name_weight,
+                self.max_corr_cluster_gross,
                 self.max_turnover,
+                self.turnover_cost_feedback,
                 self.max_drawdown_kill,
                 self.stop_loss,
                 self.inventory_mean_reversion,
@@ -183,14 +206,43 @@ def load_risk_overlay(config: Mapping[str, Any]) -> Optional[RiskOverlayConfig]:
     if not (0.5 < cvar_alpha < 1.0):
         raise ValueError(f"cvar_alpha must be in (0.5, 1), got {cvar_alpha}")
 
+    gov_lb_raw = raw.get("vol_governor_lookback")
+    gov_lb: Optional[int] = None
+    if gov_lb_raw is not None:
+        gov_lb = int(gov_lb_raw)
+        if gov_lb < 2:
+            raise ValueError(f"vol_governor_lookback must be >= 2, got {gov_lb}")
+
+    spike_ratio = float(raw.get("vol_governor_spike_ratio", 1.5))
+    if not np.isfinite(spike_ratio) or spike_ratio < 1.0:
+        raise ValueError(f"vol_governor_spike_ratio must be finite and >= 1, got {spike_ratio}")
+
+    corr_thr = float(raw.get("corr_cluster_threshold", 0.75))
+    if not np.isfinite(corr_thr) or not (0.0 < corr_thr <= 1.0):
+        raise ValueError(f"corr_cluster_threshold must be in (0, 1], got {corr_thr}")
+    corr_lb = int(raw.get("corr_lookback", 40))
+    if corr_lb < 5:
+        raise ValueError(f"corr_lookback must be >= 5, got {corr_lb}")
+
+    turnover_bps = float(raw.get("turnover_cost_bps", 10.0))
+    if not np.isfinite(turnover_bps) or turnover_bps < 0:
+        raise ValueError(f"turnover_cost_bps must be finite and >= 0, got {turnover_bps}")
+
     cfg = RiskOverlayConfig(
         enabled=enabled,
         vol_target=_finite_positive("vol_target", raw.get("vol_target")),
         vol_lookback=lookback,
+        vol_governor_lookback=gov_lb,
+        vol_governor_spike_ratio=spike_ratio,
         max_gross_leverage=_finite_positive("max_gross_leverage", raw.get("max_gross_leverage")),
         max_net_exposure=_finite_nonneg("max_net_exposure", raw.get("max_net_exposure")),
         max_name_weight=_finite_positive("max_name_weight", raw.get("max_name_weight")),
+        max_corr_cluster_gross=_finite_positive("max_corr_cluster_gross", raw.get("max_corr_cluster_gross")),
+        corr_cluster_threshold=corr_thr,
+        corr_lookback=corr_lb,
         max_turnover=_finite_positive("max_turnover", raw.get("max_turnover")),
+        turnover_cost_feedback=_finite_positive("turnover_cost_feedback", raw.get("turnover_cost_feedback")),
+        turnover_cost_bps=turnover_bps,
         max_drawdown_kill=_finite_positive("max_drawdown_kill", raw.get("max_drawdown_kill")),
         kill_cooldown_bars=cooldown,
         kill_reset_drawdown=_finite_positive("kill_reset_drawdown", raw.get("kill_reset_drawdown")),
@@ -209,6 +261,137 @@ def load_risk_overlay(config: Mapping[str, Any]) -> Optional[RiskOverlayConfig]:
     if not cfg.active():
         return None
     return cfg
+
+
+def _clip_exposure_caps(
+    w: np.ndarray,
+    config: RiskOverlayConfig,
+    *,
+    diagnostics: Optional[Dict[str, Any]] = None,
+    diag_prefix: str = "",
+) -> np.ndarray:
+    """Enforce name / gross / net caps. Safe to call repeatedly after scaling.
+
+    Order: per-name → gross → net. Net scaling preserves relative weights and
+    can leave gross below its cap (intentional — directional inventory first).
+    """
+    out = w
+    if config.max_name_weight is not None:
+        cap = float(config.max_name_weight)
+        over = np.abs(out) > cap + _EPS
+        if over.any():
+            out = out.copy()
+            out[over] = np.sign(out[over]) * cap
+            if diagnostics is not None:
+                key = f"{diag_prefix}name_clips" if diag_prefix else "name_clips"
+                diagnostics[key] = int(diagnostics.get(key, 0)) + 1
+
+    if config.max_gross_leverage is not None:
+        gross = float(np.sum(np.abs(out)))
+        lim = float(config.max_gross_leverage)
+        if gross > lim + _EPS:
+            out = out * (lim / gross)
+            if diagnostics is not None:
+                key = f"{diag_prefix}gross_clips" if diag_prefix else "gross_clips"
+                diagnostics[key] = int(diagnostics.get(key, 0)) + 1
+
+    if config.max_net_exposure is not None:
+        net = float(np.sum(out))
+        lim = float(config.max_net_exposure)
+        if abs(net) > lim + _EPS and abs(net) > _EPS:
+            out = out * (lim / abs(net))
+            if diagnostics is not None:
+                key = f"{diag_prefix}net_clips" if diag_prefix else "net_clips"
+                diagnostics[key] = int(diagnostics.get(key, 0)) + 1
+            # Net scale can re-inflate per-name / gross — one more pass.
+            if config.max_name_weight is not None:
+                cap = float(config.max_name_weight)
+                over = np.abs(out) > cap + _EPS
+                if over.any():
+                    out = out.copy()
+                    out[over] = np.sign(out[over]) * cap
+            if config.max_gross_leverage is not None:
+                gross = float(np.sum(np.abs(out)))
+                lim_g = float(config.max_gross_leverage)
+                if gross > lim_g + _EPS:
+                    out = out * (lim_g / gross)
+    return out
+
+
+def _corr_clusters_at_bar(
+    corr_mats: np.ndarray,
+    t: int,
+    threshold: float,
+    n_names: int,
+) -> list[list[int]]:
+    """Connected components where |corr_ij| >= threshold (union-find)."""
+    parent = list(range(n_names))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[rj] = ri
+
+    if t < 0 or t >= corr_mats.shape[0]:
+        return [[i] for i in range(n_names)]
+    mat = corr_mats[t]
+    thr = float(threshold)
+    for i in range(n_names):
+        for j in range(i + 1, n_names):
+            c = mat[i, j]
+            if np.isfinite(c) and abs(float(c)) >= thr:
+                union(i, j)
+    groups: Dict[int, list[int]] = {}
+    for i in range(n_names):
+        groups.setdefault(find(i), []).append(i)
+    return list(groups.values())
+
+
+def _clip_corr_clusters(
+    w: np.ndarray,
+    clusters: list[list[int]],
+    max_cluster_gross: float,
+) -> tuple[np.ndarray, int]:
+    """Scale each correlated cluster so sum(|w|) ≤ max_cluster_gross."""
+    out = w.copy()
+    clips = 0
+    lim = float(max_cluster_gross)
+    for members in clusters:
+        if len(members) < 2:
+            continue
+        gross = float(np.sum(np.abs(out[members])))
+        if gross > lim + _EPS:
+            out[members] *= lim / gross
+            clips += 1
+    return out, clips
+
+
+def _precompute_trailing_corr(
+    returns: pd.DataFrame,
+    lookback: int,
+) -> np.ndarray:
+    """Causal trailing pairwise corr (uses returns through t-1 via shift)."""
+    lagged = returns.shift(1)
+    n_bars, n_names = lagged.shape
+    out = np.full((n_bars, n_names, n_names), np.nan, dtype=float)
+    arr = lagged.to_numpy(dtype=float)
+    min_p = max(5, lookback // 2)
+    for t in range(n_bars):
+        start = max(0, t - lookback)
+        window = arr[start:t]
+        if window.shape[0] < min_p:
+            continue
+        with np.errstate(invalid="ignore", divide="ignore"):
+            c = np.corrcoef(window, rowvar=False)
+        if c.shape == (n_names, n_names):
+            out[t] = c
+    return out
 
 
 def _rolling_vol(returns: pd.Series, lookback: int, bars_per_year: int) -> pd.Series:
@@ -274,10 +457,16 @@ def apply_risk_overlay(
         "stop_events": 0,
         "ohlc_stop_events": 0,
         "turnover_clips": 0,
+        "turnover_cost_clips": 0,
         "vol_scales_applied": 0,
+        "vol_governor_scales": 0,
         "partial_fill_bars": 0,
         "name_vol_clips": 0,
         "cvar_scales": 0,
+        "corr_cluster_clips": 0,
+        "name_clips": 0,
+        "gross_clips": 0,
+        "net_clips": 0,
         "open_slippage_haircuts": 0,
         "fidelity": (
             "bar_proxy — no LOB / co-lo / queue priority; "
@@ -325,9 +514,18 @@ def apply_risk_overlay(
     rets_arr = rets.to_numpy(dtype=float)
 
     ann_vol = None
-    if config.vol_target is not None:
+    gov_vol = None
+    short_vol_for_gov = None
+    if config.vol_target is not None or config.vol_governor_lookback is not None:
         port_rets = (pos.shift(1).fillna(0.0) * rets).sum(axis=1)
-        ann_vol = _rolling_vol(port_rets, config.vol_lookback, config.bars_per_year)
+        if config.vol_target is not None:
+            ann_vol = _rolling_vol(port_rets, config.vol_lookback, config.bars_per_year)
+        if config.vol_governor_lookback is not None:
+            gov_vol = _rolling_vol(port_rets, int(config.vol_governor_lookback), config.bars_per_year)
+            # Short leg for spike detection: reuse vol_target series when present.
+            short_vol_for_gov = ann_vol if ann_vol is not None else _rolling_vol(
+                port_rets, config.vol_lookback, config.bars_per_year
+            )
 
     name_ann_vol: Optional[pd.DataFrame] = None
     if config.max_name_vol is not None:
@@ -342,9 +540,15 @@ def apply_risk_overlay(
         port_rets_for_cvar = (pos.shift(1).fillna(0.0) * rets).sum(axis=1)
         port_cvar = _rolling_cvar(port_rets_for_cvar, config.cvar_lookback, config.cvar_alpha)
 
+    corr_mats: Optional[np.ndarray] = None
+    if config.max_corr_cluster_gross is not None and n_names >= 2:
+        corr_mats = _precompute_trailing_corr(rets, config.corr_lookback)
+
     fill_rate = float(config.partial_fill_rate) if config.partial_fill_rate is not None else 1.0
     slip_bps = float(config.next_bar_open_slippage_bps) if config.next_bar_open_slippage_bps is not None else 0.0
     reset_dd = float(config.kill_reset_drawdown) if config.kill_reset_drawdown is not None else None
+    cost_feedback = float(config.turnover_cost_feedback) if config.turnover_cost_feedback is not None else None
+    cost_bps_frac = float(config.turnover_cost_bps) / 10_000.0
 
     for t in range(n_bars):
         target = out[t].copy()  # desired from signal/optimizer (pre-stateful clips)
@@ -380,13 +584,6 @@ def apply_risk_overlay(
                     intensity = min(1.0, intensity)
                     w = w - intensity * net * (np.abs(w) / gross)
 
-        # ── Per-name concentration ──
-        if config.max_name_weight is not None:
-            cap = float(config.max_name_weight)
-            over = np.abs(w) > cap + _EPS
-            if over.any():
-                w[over] = np.sign(w[over]) * cap
-
         # ── Per-name trailing vol budget ──
         if config.max_name_vol is not None and name_ann_vol is not None:
             row = name_ann_vol.iloc[t].to_numpy(dtype=float)
@@ -397,19 +594,16 @@ def apply_risk_overlay(
                     w[j] *= lim / v
                     diagnostics["name_vol_clips"] += 1
 
-        # ── Gross leverage ──
-        if config.max_gross_leverage is not None:
-            gross = float(np.sum(np.abs(w)))
-            lim = float(config.max_gross_leverage)
-            if gross > lim + _EPS:
-                w *= lim / gross
+        # ── Correlation cluster gross caps ──
+        if config.max_corr_cluster_gross is not None and corr_mats is not None:
+            clusters = _corr_clusters_at_bar(
+                corr_mats, t, config.corr_cluster_threshold, n_names
+            )
+            w, n_clips = _clip_corr_clusters(w, clusters, float(config.max_corr_cluster_gross))
+            diagnostics["corr_cluster_clips"] += n_clips
 
-        # ── Net exposure ──
-        if config.max_net_exposure is not None:
-            net = float(np.sum(w))
-            lim = float(config.max_net_exposure)
-            if abs(net) > lim + _EPS and abs(net) > _EPS:
-                w *= lim / abs(net)
+        # ── Name / gross / net exposure (pre-scale) ──
+        w = _clip_exposure_caps(w, config, diagnostics=diagnostics)
 
         # ── Vol targeting (scale using trailing portfolio vol) ──
         if config.vol_target is not None and ann_vol is not None:
@@ -421,6 +615,23 @@ def apply_risk_overlay(
                 w *= scale
                 diagnostics["vol_scales_applied"] += 1
 
+        # ── Trailing vol governor: only downscale spike regimes ──
+        # Compares short-horizon vol to longer governor lookback; when
+        # short >> long * spike_ratio, shrink further (never leverages up).
+        if (
+            config.vol_governor_lookback is not None
+            and gov_vol is not None
+            and short_vol_for_gov is not None
+        ):
+            short_v = float(short_vol_for_gov.iloc[t]) if t < len(short_vol_for_gov) else float("nan")
+            long_v = float(gov_vol.iloc[t]) if t < len(gov_vol) else float("nan")
+            ratio = float(config.vol_governor_spike_ratio)
+            if np.isfinite(short_v) and np.isfinite(long_v) and long_v > _EPS:
+                if short_v > long_v * ratio + _EPS:
+                    gov_scale = (long_v * ratio) / short_v
+                    w *= gov_scale
+                    diagnostics["vol_governor_scales"] += 1
+
         # ── Portfolio trailing CVaR budget ──
         if config.max_portfolio_cvar is not None and port_cvar is not None:
             cv = float(port_cvar.iloc[t]) if t < len(port_cvar) else float("nan")
@@ -430,12 +641,8 @@ def apply_risk_overlay(
                 w *= scale
                 diagnostics["cvar_scales"] += 1
 
-        # Re-enforce gross after vol / CVaR scale.
-        if config.max_gross_leverage is not None:
-            gross = float(np.sum(np.abs(w)))
-            lim = float(config.max_gross_leverage)
-            if gross > lim + _EPS:
-                w *= lim / gross
+        # Re-enforce ALL exposure caps after vol / governor / CVaR scale.
+        w = _clip_exposure_caps(w, config, diagnostics=diagnostics, diag_prefix="post_scale_")
 
         # ── Next-bar open slippage haircut on new risk ──
         # Proxy: when opening/increasing risk into an adverse open gap, shrink
@@ -497,6 +704,16 @@ def apply_risk_overlay(
                     entry_dir[j] = 0.0
                     diagnostics["stop_events"] += 1
 
+        # ── Turnover-aware cost feedback into sizing ──
+        if cost_feedback is not None and cost_bps_frac > _EPS:
+            delta = w - prev
+            turnover = float(np.sum(np.abs(delta)))
+            implied_cost = turnover * cost_bps_frac
+            if implied_cost > cost_feedback + _EPS and turnover > _EPS:
+                scale = cost_feedback / implied_cost
+                w = prev + delta * scale
+                diagnostics["turnover_cost_clips"] += 1
+
         # ── Partial fill: only a fraction of intended Δw executes this bar ──
         if fill_rate < 1.0 - _EPS:
             delta = w - prev
@@ -512,6 +729,9 @@ def apply_risk_overlay(
             if turnover > lim + _EPS and turnover > _EPS:
                 w = prev + delta * (lim / turnover)
                 diagnostics["turnover_clips"] += 1
+
+        # Final exposure pass after turnover / partial-fill (never exceed caps).
+        w = _clip_exposure_caps(w, config, diagnostics=diagnostics, diag_prefix="final_")
 
         # ── Drawdown kill-switch on causal overlay equity proxy ──
         if t > 0:

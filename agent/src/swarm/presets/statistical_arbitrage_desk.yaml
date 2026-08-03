@@ -130,10 +130,10 @@ agents:
       5. **Capacity estimate** — Max AUM from microstructure position caps
 
       Use load_skill("pair-trading"), load_skill("strategy-generate"), load_skill("quant-statistics").
-      Use backtest with realistic costs. Prefer config.validation.risk_adjusted_ranking
-      (not return-only) and config.risk_overlay (gross/net caps, DD kill, turnover)
-      for multi-pair books; for high-turnover pairs also attach hft_costs with
-      fill_slippage_mode=replace to avoid double-counting native slippage.
+      Prefer config.validation.risk_adjusted_ranking with min_psr + min_dsr
+      (not return-only) and config.risk_overlay (gross/net/corr-cluster caps, DD kill,
+      turnover_cost_feedback, vol_governor). For high-turnover pairs MUST attach
+      hft_costs with fill_slippage_mode=replace + adv_fallback_notional.
     tools: [bash, read_file, write_file, load_skill, backtest]
     skills: [pair-trading, strategy-generate, quant-statistics]
     max_iterations: 50

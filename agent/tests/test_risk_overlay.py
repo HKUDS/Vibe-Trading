@@ -518,3 +518,101 @@ class TestSimulatePnl:
         eq0 = simulate_strategy_pnl(pos, rets, cost_bps=0.0)
         eq1 = simulate_strategy_pnl(pos, rets, cost_bps=50.0)
         assert float(eq1.iloc[-1]) <= float(eq0.iloc[-1]) + 1e-9
+
+
+class TestRicherPortfolioRisk:
+    def test_net_cap_survives_vol_upscale(self) -> None:
+        # Quiet returns → vol_target scales book UP; net must still hold.
+        n = 80
+        idx = pd.RangeIndex(n)
+        rets = pd.DataFrame({"A": 0.0002, "B": 0.0002}, index=idx)
+        pos = pd.DataFrame({"A": 0.4, "B": 0.4}, index=idx)
+        cfg = RiskOverlayConfig(
+            vol_target=0.05,
+            vol_lookback=10,
+            max_gross_leverage=1.0,
+            max_net_exposure=0.3,
+            bars_per_year=252,
+        )
+        out, _ = apply_risk_overlay(pos, rets, config=cfg)
+        assert float(out.sum(axis=1).abs().max()) <= 0.3 + 1e-6
+        assert float(out.abs().sum(axis=1).max()) <= 1.0 + 1e-6
+
+    def test_turnover_cost_feedback_clips(self) -> None:
+        pos, rets, _ = _book(n=60, seed=3)
+        cfg = RiskOverlayConfig(
+            turnover_cost_feedback=0.00005,
+            turnover_cost_bps=40.0,
+            bars_per_year=252,
+        )
+        out, diag = apply_risk_overlay(pos, rets, config=cfg)
+        assert diag["turnover_cost_clips"] >= 1
+        assert float(out.diff().abs().sum(axis=1).iloc[1:].mean()) < float(
+            pos.diff().abs().sum(axis=1).iloc[1:].mean()
+        )
+
+
+class TestValidationUpgrades:
+    def test_min_dsr_and_fragile_gates(self) -> None:
+        rng = np.random.default_rng(0)
+        n = 200
+        # Stable trial.
+        stable = rng.normal(0.001, 0.005, n)
+        # Fragile: strong early, crash late → high fold std.
+        fragile = np.concatenate([
+            rng.normal(0.01, 0.005, n // 2),
+            rng.normal(-0.01, 0.02, n - n // 2),
+        ])
+        mat = np.column_stack([stable, fragile])
+        out = rank_trials_risk_adjusted(
+            mat,
+            max_dd_limit=0.5,
+            min_psr=0.0,
+            min_dsr=0.0,
+            fragile_fold_std=0.05,
+            fragile_n_folds=4,
+        )
+        assert out["n_rejected"] >= 1
+        assert any(
+            any("fragile" in r for r in (s.get("reject_reasons") or []))
+            for s in out["rejected"]
+        )
+
+    def test_walk_forward_risk_gated(self) -> None:
+        from backtest.enhanced_validation import walk_forward_risk_gated
+
+        rng = np.random.default_rng(2)
+        eq = pd.Series(
+            1_000_000 * np.cumprod(1 + rng.normal(0.0004, 0.01, 300)),
+            index=pd.bdate_range("2020-01-02", periods=300),
+        )
+        out = walk_forward_risk_gated(
+            eq,
+            n_windows=4,
+            max_dd_limit=0.5,
+            min_psr=0.0,
+            min_dsr=0.0,
+        )
+        assert "gated_folds" in out
+        assert out["n_folds_passed"] + out["n_folds_failed"] == out["n_windows"]
+        assert "pass_rate" in out
+
+    def test_adv_participation_stress_present(self) -> None:
+        rng = np.random.default_rng(3)
+        eq = pd.Series(
+            1_000_000 * np.cumprod(1 + rng.normal(0.0002, 0.01, 120)),
+            index=pd.bdate_range("2023-01-03", periods=120),
+        )
+        out = stress_scenarios(eq)
+        names = {s["name"] for s in out["scenarios"]}
+        assert "adv_participation_stress" in names
+
+
+class TestGateReplaceAndSobol:
+    def test_require_hft_costs_demands_replace(self) -> None:
+        cfg = inject_risk_first_defaults({"interval": "1m"}, short_horizon=True)
+        ok = validate_risk_first_config(cfg, require_hft_costs=True)
+        assert ok["ok"] is True
+        cfg["hft_costs"]["fill_slippage_mode"] = "additive"
+        bad = validate_risk_first_config(cfg, require_hft_costs=True)
+        assert bad["ok"] is False

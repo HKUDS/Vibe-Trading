@@ -455,6 +455,7 @@ def score_trial_risk_adjusted(
     objective: str = "sharpe_dd_penalty",
     max_dd_limit: float = 0.20,
     min_psr: float = 0.5,
+    min_dsr: Optional[float] = None,
     max_cvar: Optional[float] = None,
     cvar_alpha: float = 0.95,
     dd_penalty: float = 2.0,
@@ -472,6 +473,7 @@ def score_trial_risk_adjusted(
     Hard rejects (``accepted=False``) when:
       - |max_dd| > max_dd_limit
       - PSR < min_psr
+      - DSR < min_dsr (when min_dsr set)
       - CVaR > max_cvar (when max_cvar set; CVaR is positive loss)
     """
     r = np.asarray(returns, dtype=float)
@@ -493,12 +495,24 @@ def score_trial_risk_adjusted(
     sortino = _sortino(r, bars_per_year)
     calmar = _calmar(r, bars_per_year)
 
+    dsr = deflated_sharpe_ratio(
+        sharpe,
+        int(moments["n"]),
+        int(n_trials),
+        skew=float(moments["skew"]),
+        kurtosis=float(moments["kurtosis"]),
+        bars_per_year=bars_per_year,
+    )
+    dsr_val = float(dsr.get("dsr", 0.0)) if isinstance(dsr, dict) and "dsr" in dsr else 0.0
+
     reject_reasons: list[str] = []
     if abs(mdd) > float(max_dd_limit) + 1e-12:
         reject_reasons.append(f"max_dd={mdd:.4f} exceeds limit={max_dd_limit}")
     psr_val = float(psr.get("psr", 0.0)) if "psr" in psr else 0.0
     if psr_val < float(min_psr):
         reject_reasons.append(f"psr={psr_val:.4f} below min_psr={min_psr}")
+    if min_dsr is not None and dsr_val < float(min_dsr):
+        reject_reasons.append(f"dsr={dsr_val:.4f} below min_dsr={min_dsr}")
     if max_cvar is not None and np.isfinite(cvar) and cvar > float(max_cvar):
         reject_reasons.append(f"cvar={cvar:.4f} exceeds max_cvar={max_cvar}")
 
@@ -538,15 +552,6 @@ def score_trial_risk_adjusted(
         obj = "sharpe_dd_penalty" if obj not in {"sharpe_dd_penalty"} else obj
         score = sharpe - float(dd_penalty) * abs(mdd)
 
-    dsr = deflated_sharpe_ratio(
-        sharpe,
-        int(moments["n"]),
-        int(n_trials),
-        skew=float(moments["skew"]),
-        kurtosis=float(moments["kurtosis"]),
-        bars_per_year=bars_per_year,
-    )
-
     return {
         "accepted": len(reject_reasons) == 0,
         "reject_reasons": reject_reasons,
@@ -558,8 +563,9 @@ def score_trial_risk_adjusted(
         "max_dd": round(float(mdd), 6),
         "cvar": round(float(cvar), 6) if np.isfinite(cvar) else None,
         "psr": round(psr_val, 6),
-        "dsr": dsr.get("dsr"),
+        "dsr": round(dsr_val, 6) if np.isfinite(dsr_val) else dsr.get("dsr"),
         "n_obs": int(moments["n"]),
+        "n_trials_deflation": int(n_trials),
     }
 
 
@@ -570,14 +576,21 @@ def rank_trials_risk_adjusted(
     objective: str = "sharpe_dd_penalty",
     max_dd_limit: float = 0.20,
     min_psr: float = 0.5,
+    min_dsr: Optional[float] = None,
     max_cvar: Optional[float] = None,
     cvar_alpha: float = 0.95,
     dd_penalty: float = 2.0,
     labels: Optional[Sequence[Any]] = None,
+    fragile_fold_std: Optional[float] = None,
+    fragile_n_folds: int = 4,
 ) -> Dict[str, Any]:
     """Rank / reject a (T, N) trial return matrix with risk-adjusted scores.
 
     Prefer this over raw Sharpe max when selecting alphas under risk budgets.
+
+    When ``fragile_fold_std`` is set, each trial is split into ``fragile_n_folds``
+    contiguous blocks; if the cross-fold score std exceeds the threshold the
+    trial is rejected as a fragile parameter cell.
     """
     if isinstance(trial_returns, pd.DataFrame):
         mat = trial_returns.to_numpy(dtype=float)
@@ -600,6 +613,7 @@ def rank_trials_risk_adjusted(
             objective=objective,
             max_dd_limit=max_dd_limit,
             min_psr=min_psr,
+            min_dsr=min_dsr,
             max_cvar=max_cvar,
             cvar_alpha=cvar_alpha,
             dd_penalty=dd_penalty,
@@ -607,6 +621,39 @@ def rank_trials_risk_adjusted(
         )
         row["trial_index"] = int(j)
         row["label"] = col_labels[j] if j < len(col_labels) else j
+
+        # Fragile param-cell gate: high fold-to-fold score variance → reject.
+        if fragile_fold_std is not None and row.get("accepted"):
+            n_folds = max(2, int(fragile_n_folds))
+            block = t_obs // n_folds
+            if block >= 5:
+                fold_scores: list[float] = []
+                for f in range(n_folds):
+                    sl = mat[f * block : (f + 1) * block, j]
+                    fs = score_trial_risk_adjusted(
+                        sl,
+                        bars_per_year=bars_per_year,
+                        objective=objective,
+                        max_dd_limit=1.0,  # fold gate is variance, not hard DD
+                        min_psr=0.0,
+                        min_dsr=None,
+                        max_cvar=None,
+                        dd_penalty=dd_penalty,
+                        n_trials=1,
+                    )
+                    fold_scores.append(float(fs.get("score", float("nan"))))
+                finite = [x for x in fold_scores if np.isfinite(x)]
+                fold_std = float(np.std(finite)) if len(finite) >= 2 else 0.0
+                row["fold_score_std"] = round(fold_std, 6)
+                row["fold_scores"] = [round(x, 4) for x in fold_scores]
+                if fold_std > float(fragile_fold_std) + 1e-12:
+                    row["accepted"] = False
+                    reasons = list(row.get("reject_reasons") or [])
+                    reasons.append(
+                        f"fragile_fold_std={fold_std:.4f} exceeds limit={fragile_fold_std}"
+                    )
+                    row["reject_reasons"] = reasons
+
         scored.append(row)
 
     accepted = [s for s in scored if s["accepted"]]
@@ -623,18 +670,22 @@ def rank_trials_risk_adjusted(
         "gates": {
             "max_dd_limit": float(max_dd_limit),
             "min_psr": float(min_psr),
+            "min_dsr": float(min_dsr) if min_dsr is not None else None,
             "max_cvar": float(max_cvar) if max_cvar is not None else None,
             "cvar_alpha": float(cvar_alpha),
             "dd_penalty": float(dd_penalty),
+            "fragile_fold_std": float(fragile_fold_std) if fragile_fold_std is not None else None,
+            "fragile_n_folds": int(fragile_n_folds),
         },
         "best": best,
         "ranking": ranking,
         "rejected": rejected,
         "all_scores": scored,
         "note": (
-            "Risk-first ranking: reject high-DD / low-PSR / high-CVaR trials, "
-            "then sort survivors by the chosen risk-adjusted objective "
-            "(default Sharpe with drawdown penalty)."
+            "Risk-first ranking: reject high-DD / low-PSR / low-DSR / high-CVaR / "
+            "fragile-fold trials, then sort survivors by the chosen risk-adjusted "
+            "objective (default Sharpe with drawdown penalty). PSR and DSR are "
+            "attached on every scored trial."
         ),
     }
 

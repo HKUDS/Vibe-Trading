@@ -33,8 +33,13 @@ Before writing `signal_engine.py`, lock numeric budgets:
 | `next_bar_open_slippage_bps` | 2–10 | Haircut increments on adverse open gaps |
 | `max_name_vol` | 0.3–0.8 ann. | Per-name trailing vol budget |
 | `max_portfolio_cvar` | 0.02–0.05 | Trailing portfolio CVaR budget |
+| `max_corr_cluster_gross` | 0.4–0.8 | Cap combined \|w\| among highly correlated names |
+| `corr_cluster_threshold` | 0.7–0.85 | Pairwise \|corr\| to join a risk cluster |
+| `vol_governor_lookback` | 40–90 | Longer vol lookback; only downscales spike regimes |
+| `vol_governor_spike_ratio` | 1.2–2.0 | Trigger when short vol > long × ratio |
+| `turnover_cost_feedback` | 0.0005–0.005 | Shrink Δw when implied turnover×bps cost exceeds this |
 | `hft_costs.max_adv_participation` | 0.05–0.25 | Cap \|Δw_i\| vs trailing dollar ADV (when volume present) |
-| `hft_costs.fill_slippage_mode` | `replace` (preferred) / `additive` | `replace` uses only HFT spread+AS on fills (no double-count with native slippage); `additive` stacks both |
+| `hft_costs.fill_slippage_mode` | `replace` (**required** for HFT) / `additive` | `replace` uses only HFT spread+AS on fills (no double-count with native slippage) |
 | `hft_costs.adv_fallback_notional` | e.g. 5e6 | Constant dollar ADV when loaders omit `volume`/`amount` so ADV clips still apply |
 
 ## Hard requirements (emitted configs)
@@ -42,12 +47,14 @@ Before writing `signal_engine.py`, lock numeric budgets:
 `strategy-generate` + this skill **must** emit:
 
 1. Active ``risk_overlay`` with at least ``max_drawdown_kill`` + ``max_gross_leverage``
-2. ``validation.risk_adjusted_ranking`` with a risk-aware ``objective`` and ``max_dd_limit``
-3. For minute / high-turnover: ``hft_costs`` (spread + impact + adverse selection)
+2. ``validation.risk_adjusted_ranking`` with a risk-aware ``objective``, ``max_dd_limit``, ``min_psr``, and preferably ``min_dsr`` + ``fragile_fold_std``
+3. For minute / high-turnover: ``hft_costs`` with ``fill_slippage_mode: replace``
+4. When MC is GBM-family: ``validation.monte_carlo_paths.sampling: sobol`` (or stratified)
+5. Prefer ``validation.walk_forward_risk_gated`` so OOS folds fail closed on risk budgets
 
 **Reject** return-only objectives (`total_return`, `pnl`, `raw_return`, …).
 Gate helper: ``backtest.hft_config_gate.validate_risk_first_config`` /
-``inject_risk_first_defaults``.
+``inject_risk_first_defaults`` (auto-coerces replace mode + Sobol defaults).
 
 ## `config.json` — risk overlay
 
@@ -138,11 +145,12 @@ Never select alphas on raw return alone. Return-only objectives are hard-rejecte
 7. Budgets: `max_name_vol`, `max_portfolio_cvar`
 8. Swarm: preset `hft_short_horizon_desk`
 
-## Demo
+## Demo / scorecard
 
 ```bash
 cd agent && python scripts/demo_risk_overlay_hft.py
+cd agent && python scripts/demo_best_book_scorecard.py
 ```
 
-Compares unconstrained vs risk-overlay books under HFT cost stack; reports
-risk-adjusted score ↑ and drawdown / ruin reductions.
+Compares unconstrained vs risk-overlay books under HFT cost stack; prints a
+clear scorecard (risk↓, risk-adj↑, CSCV/PSR/DSR, Sobol/bootstrap MC ruin/ES).

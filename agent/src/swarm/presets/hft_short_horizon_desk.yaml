@@ -114,17 +114,27 @@ agents:
 
       {upstream_context}
 
+      ## HARD REQUIREMENTS (fail closed — not suggestions)
+      Emitted ``config.json`` MUST include ALL of:
+      1. ``risk_overlay`` with ``max_drawdown_kill`` + ``max_gross_leverage`` (+ prefer corr cluster / vol governor / turnover_cost_feedback)
+      2. ``hft_costs`` with ``fill_slippage_mode: replace`` and ``adv_fallback_notional``
+      3. ``validation.risk_adjusted_ranking`` with risk-aware objective, ``max_dd_limit``, ``min_psr``, ``min_dsr``
+      4. ``validation.monte_carlo_paths`` with ``sampling: sobol`` (or stratified) when method is gbm/correlated_gbm
+      5. Prefer ``validation.walk_forward_risk_gated`` so OOS folds fail closed on DD/PSR/DSR
+
+      Call ``backtest.hft_config_gate.inject_risk_first_defaults`` then
+      ``validate_risk_first_config(..., require_hft_costs=True)`` before writing config.
+      **Reject** return-only objectives. Do not ship soft "prefer" language in the final config — the keys above are mandatory.
+
       ## Required outputs
       1. Strategy logic (entry/exit) with explicit risk overlay knobs
-      2. ``config.json`` including ``risk_overlay`` + ``validation.risk_adjusted_ranking`` + ``hft_costs``
-         (use ``backtest.hft_config_gate.inject_risk_first_defaults``; reject return-only objectives)
+      2. Validated ``config.json`` (HARD REQUIREMENTS above)
       3. ``signal_engine.py`` following strategy-generate + hft-risk-alpha
-      4. Backtest metrics emphasizing Sharpe/Sortino/Calmar/PSR and max DD — not raw return
+      4. Real backtest metrics emphasizing Sharpe/Sortino/Calmar/PSR/DSR and max DD — not raw return
       5. Honest limits: no co-lo / queue-priority claim; bar proxies only
 
       You must run **backtest** with real outputs—do not fabricate numbers.
-      Rank trials with risk_adjusted_ranking / risk_ranking; reject high-DD or low-PSR.
-      Before writing config, call validate via load_skill("hft-risk-alpha") hard-requirements.
+      Rank trials with risk_adjusted_ranking; reject high-DD / low-PSR / low-DSR / fragile cells.
     tools: [bash, read_file, write_file, edit_file, load_skill, backtest, monte_carlo]
     skills: [strategy-generate, hft-risk-alpha, enhanced-backtest, technical-basic]
     max_iterations: 50
