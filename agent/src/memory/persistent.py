@@ -428,10 +428,10 @@ class PersistentMemory:
                 # Add linked entries not already in results
                 result_paths = {r.path for r in results}
                 for entry in all_entries:
+                    if len(results) >= max_results:
+                        break
                     if entry.path.stem in linked_ids and entry.path not in result_paths:
                         results.append(entry)
-                        if len(results) >= max_results:
-                            break
             except Exception:
                 logger.debug("semantic link expansion failed", exc_info=True)
 

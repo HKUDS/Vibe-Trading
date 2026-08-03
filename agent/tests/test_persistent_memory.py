@@ -249,6 +249,19 @@ class TestFindRelevant:
         results = pm.find_relevant("stock analysis", max_results=3)
         assert len(results) == 3
 
+    def test_max_results_with_semantic_links(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("VT_MEMORY_LINKS", "true")
+        pm = PersistentMemory(memory_dir=tmp_path)
+        p1 = pm.add("stock-0", "stock analysis zero", "project", description="stock zero")
+        p2 = pm.add("stock-1", "stock analysis one", "project", description="stock one")
+        p3 = pm.add("stock-2", "stock analysis two", "project", description="stock two")
+        assert p1 is not None and p2 is not None and p3 is not None
+        from src.memory.semantic_links import SemanticLinker
+        linker = SemanticLinker(tmp_path)
+        linker.save_relations(p1, [(str(p3), 0.95)])
+        results = pm.find_relevant("stock analysis", max_results=2)
+        assert len(results) == 2
+
     def test_metadata_weighted_higher(self, tmp_path: Path) -> None:
         pm = PersistentMemory(memory_dir=tmp_path)
         # "bitcoin" in description (metadata) → weighted 2x
