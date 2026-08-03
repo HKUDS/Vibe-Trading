@@ -1513,37 +1513,6 @@ Vibe-Trading/
 
 ---
 
-## 🏛 Ecosystem
-
-Vibe-Trading is part of the **[HKUDS](https://github.com/HKUDS)** agent ecosystem:
-
-<table>
-  <tr>
-    <td align="center" width="20%">
-      <a href="https://github.com/HKUDS/nanobot"><b>NanoBot</b></a><br>
-      <sub>Ultra-Lightweight Personal AI Assistant</sub>
-    </td>
-    <td align="center" width="20%">
-      <a href="https://github.com/HKUDS/AI-Trader"><b>AI-Trader</b></a><br>
-      <sub>Agent-Native Signal &amp; Copy Trading Platform</sub>
-    </td>
-    <td align="center" width="20%">
-      <a href="https://github.com/HKUDS/CLI-Anything"><b>CLI-Anything</b></a><br>
-      <sub>Making All Software Agent-Native</sub>
-    </td>
-    <td align="center" width="20%">
-      <a href="https://github.com/HKUDS/OpenSpace"><b>OpenSpace</b></a><br>
-      <sub>Self-Evolving AI Agent Skills</sub>
-    </td>
-    <td align="center" width="20%">
-      <a href="https://github.com/HKUDS/ClawTeam"><b>ClawTeam</b></a><br>
-      <sub>Agent Swarm Intelligence</sub>
-    </td>
-  </tr>
-</table>
-
----
-
 ## 🗺 Roadmap
 
 > We ship in phases. Items move to [Issues](https://github.com/HKUDS/Vibe-Trading/issues) when work begins.
