@@ -183,7 +183,7 @@ describe("RunDetail page", () => {
       },
       rebalance_notes: {
         rebalances: [
-          { date: "2026-02-02", turnover: 0.35, entries: [{ code: "AAPL", to: 0.6 }], exits: [], top_moves: [] },
+          { date: "2026-02-02", turnover: 0.35, entries: [{ code: "NVDA", to: 0.6 }], exits: [], top_moves: [] },
         ],
         summary: { rebalance_count: 1, turnover_total: 0.35, turnover_mean: 0.35, turnover_max: 0.35, largest_rebalance_date: "2026-02-02" },
       },
@@ -199,6 +199,7 @@ describe("RunDetail page", () => {
     expect(screen.getByText("0.520")).toBeInTheDocument();
     expect(screen.getByText("22.0%")).toBeInTheDocument();
     expect(screen.getByText("AAPL")).toBeInTheDocument();
+    expect(screen.getByText("NVDA")).toBeInTheDocument();
     expect(screen.getByText("Rebalance Notes")).toBeInTheDocument();
     expect(screen.getByText("2026-02-02")).toBeInTheDocument();
     expect(screen.getByText("35.0%")).toBeInTheDocument();
