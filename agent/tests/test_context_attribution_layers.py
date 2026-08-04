@@ -78,6 +78,7 @@ class TestAttributionPromptIntegrity:
             skill_descriptions="[test skills]",
             memory_summary="[test memory]",
             memory_section="[test section]",
+            strategy_discovery_routing="[test routing]",
             current_datetime="2025-01-01 12:00:00",
         )
         assert len(result) > 1000
@@ -86,6 +87,7 @@ class TestAttributionPromptIntegrity:
         assert "{tool_count}" not in result
         assert "{skill_count}" not in result
         assert "{data_source_count}" not in result
+        assert "{strategy_discovery_routing}" not in result
 
     def test_strategy_routing_thresholds_present(self):
         """Verify strategy routing classification is defined."""

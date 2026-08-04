@@ -1,0 +1,200 @@
+"""Frozen-contract tests for ``src.strategy_discovery.store`` — issue #969.
+
+``EvidenceStore`` is the facade-owned SQLite cache keyed by
+``(strategy_id, regime)``. These tests pin: explicit tmp-path initialization,
+auto table creation, upsert-replace semantics, filtered+sorted reads,
+``clear()`` / ``row_count()``, NaN rejection, and tuple→JSON→tuple
+round-tripping of ``date_ranges`` / ``warnings``. A fresh database MUST be
+empty (AC7: no seed corpus is baked into the package).
+
+No network, no wall clock: every row carries an explicit ``last_verified``.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+
+import pytest
+
+try:
+    from src.strategy_discovery import models as sd_models
+    from src.strategy_discovery.evidence_store import EvidenceStore
+
+    STORE_AVAILABLE = True
+except ImportError:
+    sd_models = None
+    EvidenceStore = None
+    STORE_AVAILABLE = False
+
+requires_store = pytest.mark.skipif(
+    not STORE_AVAILABLE,
+    reason="waiting on sibling A: src.strategy_discovery.evidence_store not landed yet (issue #969)",
+)
+
+
+def _make_store(db_file):
+    """Construct EvidenceStore tolerantly across positional/keyword db path."""
+    try:
+        return EvidenceStore(db_file)
+    except TypeError:
+        for kw in ("db_path", "path", "db_file", "database"):
+            try:
+                return EvidenceStore(**{kw: db_file})
+            except TypeError:
+                continue
+        raise
+
+
+def _row(strategy_id="alpha_zoo:a1", regime="bear_market", trades=12, **overrides):
+    fields = dict(
+        strategy_id=strategy_id,
+        regime=regime,
+        trades_in_regime=trades,
+        position_size=1.0,
+        return_in_regime=0.083,
+        benchmark_in_regime=-0.246,
+        excess_in_regime=0.329,
+        sharpe_in_regime=0.72,
+        max_drawdown_in_regime=-0.152,
+        date_ranges=("2018-01 to 2018-12", "2022-01 to 2022-12"),
+        breakeven_fee_bps=45.2,
+        cost_sensitive=False,
+        evidence_quality="adequate",
+        warnings=("insufficient-trades: sample", "short-coverage: sample"),
+        last_verified="2026-08-01",
+    )
+    fields.update(overrides)
+    return sd_models.EvidenceRow(**fields)
+
+
+@requires_store
+class TestInitialization:
+    def test_explicit_tmp_path_db_and_table_auto_created(self, tmp_path) -> None:
+        db_file = tmp_path / "evidence.db"
+        store = _make_store(db_file)
+        assert db_file.exists()
+        with sqlite3.connect(db_file) as conn:
+            tables = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+        assert any(
+            "strategy_regime_evidence" in t for t in tables
+        ), f"expected the strategy_regime_evidence table to be auto-created, found {tables}"
+        assert store.row_count() == 0
+
+    def test_fresh_db_is_empty_no_seed_corpus(self, tmp_path) -> None:
+        # AC7: a brand-new store has no rows — evidence only comes from
+        # reproducible runs written through upsert_rows/rebuild_evidence.
+        store = _make_store(tmp_path / "fresh.db")
+        assert store.row_count() == 0
+        assert store.get_rows() == []
+
+
+@requires_store
+class TestUpsertAndRead:
+    def test_upsert_then_get_roundtrip_all_fields(self, tmp_path) -> None:
+        store = _make_store(tmp_path / "s.db")
+        store.upsert_rows([_row()])
+        rows = store.get_rows()
+        assert len(rows) == 1
+        got = rows[0]
+        src = _row()
+        for field in (
+            "strategy_id",
+            "regime",
+            "trades_in_regime",
+            "position_size",
+            "return_in_regime",
+            "benchmark_in_regime",
+            "excess_in_regime",
+            "sharpe_in_regime",
+            "max_drawdown_in_regime",
+            "date_ranges",
+            "breakeven_fee_bps",
+            "cost_sensitive",
+            "evidence_quality",
+            "warnings",
+            "last_verified",
+        ):
+            assert getattr(got, field) == getattr(
+                src, field
+            ), f"field {field} did not round-trip"
+
+    def test_upsert_replaces_on_same_key(self, tmp_path) -> None:
+        store = _make_store(tmp_path / "s.db")
+        store.upsert_rows([_row(trades=12)])
+        store.upsert_rows([_row(trades=99, sharpe_in_regime=1.5)])
+        assert store.row_count() == 1
+        got = store.get_rows()[0]
+        assert got.trades_in_regime == 99
+        assert got.sharpe_in_regime == 1.5
+
+    def test_get_rows_filters_by_strategy_id_and_regime(self, tmp_path) -> None:
+        store = _make_store(tmp_path / "s.db")
+        store.upsert_rows(
+            [
+                _row(strategy_id="alpha_zoo:a1", regime="bear_market"),
+                _row(strategy_id="sdm:s1", regime="bull_market"),
+            ]
+        )
+        by_strategy = store.get_rows(strategy_id="alpha_zoo:a1")
+        assert len(by_strategy) == 1
+        assert by_strategy[0].strategy_id == "alpha_zoo:a1"
+        by_regime = store.get_rows(regime="bull_market")
+        assert len(by_regime) == 1
+        assert by_regime[0].regime == "bull_market"
+
+    def test_get_rows_sorted_by_strategy_then_regime(self, tmp_path) -> None:
+        store = _make_store(tmp_path / "s.db")
+        store.upsert_rows(
+            [
+                _row(strategy_id="sdm:z", regime="structural"),
+                _row(strategy_id="alpha_zoo:a", regime="bull_market"),
+                _row(strategy_id="alpha_zoo:a", regime="bear_market"),
+            ]
+        )
+        rows = store.get_rows()
+        keys = [(r.strategy_id, r.regime) for r in rows]
+        assert keys == sorted(keys)
+
+    def test_clear_empties_store(self, tmp_path) -> None:
+        store = _make_store(tmp_path / "s.db")
+        store.upsert_rows([_row(), _row(strategy_id="sdm:s1")])
+        assert store.row_count() == 2
+        store.clear()
+        assert store.row_count() == 0
+        assert store.get_rows() == []
+
+
+@requires_store
+class TestValidationAndSerialization:
+    def test_nan_in_row_raises_value_error(self, tmp_path) -> None:
+        store = _make_store(tmp_path / "s.db")
+        bad = _row(sharpe_in_regime=float("nan"))
+        with pytest.raises(ValueError):
+            store.upsert_rows([bad])
+        assert store.row_count() == 0
+
+    def test_date_ranges_and_warnings_roundtrip_tuple_json_tuple(
+        self, tmp_path
+    ) -> None:
+        store = _make_store(tmp_path / "s.db")
+        date_ranges = ("2018-01 to 2018-12", "2022-01 to 2022-12")
+        warnings = (
+            "insufficient-trades: only 7 trades",
+            "cost-sensitive: breakeven 3.1 bps",
+        )
+        store.upsert_rows([_row(date_ranges=date_ranges, warnings=warnings)])
+        got = store.get_rows()[0]
+        assert got.date_ranges == date_ranges
+        assert isinstance(got.date_ranges, tuple)
+        assert got.warnings == warnings
+        assert isinstance(got.warnings, tuple)
+
+        store.upsert_rows([_row(strategy_id="sdm:empty", date_ranges=(), warnings=())])
+        empty = store.get_rows(strategy_id="sdm:empty")[0]
+        assert empty.date_ranges == ()
+        assert empty.warnings == ()

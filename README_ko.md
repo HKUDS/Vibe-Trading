@@ -381,9 +381,9 @@ OHLCV를 넘어 **18개 읽기 전용 데이터 도구**가 펀더멘털과 자�
 메인 README를 읽기 쉽게 유지하기 위해 상세 목록은 아래에 접어 두었습니다. 사용 가능한 구성 요소를 확인하고 싶을 때 열어보세요.
 
 <details>
-<summary><b>금융 스킬 라이브러리</b> <sub>9개 카테고리 88개 스킬</sub></summary>
+<summary><b>금융 스킬 라이브러리</b> <sub>9개 카테고리 89개 스킬</sub></summary>
 
-- 📊 9개 카테고리로 구성된 88개 전문 금융 스킬
+- 📊 9개 카테고리로 구성된 89개 전문 금융 스킬
 - 🌐 전통 시장부터 크립토 & DeFi까지 완전한 커버리지
 - 🔬 데이터 sourcing부터 정량 리서치까지 포괄하는 기능
 
@@ -396,7 +396,7 @@ OHLCV를 넘어 **18개 읽기 전용 데이터 도구**가 펀더멘털과 자�
 | Crypto | 7 | `perp-funding-basis`, `liquidation-heatmap`, `stablecoin-flow`, `defi-yield`, `onchain-analysis` |
 | Flow | 8 | `hk-connect-flow`, `us-etf-flow`, `edgar-sec-filings`, `financial-statement`, `adr-hshare` |
 | Tool | 10 | `backtest-diagnose`, `report-generate`, `pine-script`, `doc-reader`, `web-reader`, `vnpy-export`, `trade-journal` |
-| Research | 2 | `alpha-zoo`, `strategy-dev-manager` |
+| Research | 3 | `alpha-zoo`, `strategy-dev-manager`, `strategy-discovery` |
 | Risk Analysis | 1 | `ashare-pre-st-filter` |
 
 </details>
@@ -733,7 +733,7 @@ vibe-trading channels status --local  # IM 채널 설정과 설치 힌트 확인
 | Command | Description |
 |---------|-------------|
 | `/help` | 모든 명령 표시 |
-| `/skills` | 88개 finance skills 목록 |
+| `/skills` | 89개 finance skills 목록 |
 | `/swarm` | 30개 swarm team presets 목록 |
 | `/swarm run <preset> [vars_json]` | live streaming으로 swarm team 실행 |
 | `/swarm list` | Swarm run history |
@@ -990,7 +990,7 @@ curl -X DELETE http://localhost:8899/scheduled-runs/<job_id>
 
 ## 🔌 MCP Plugin
 
-Vibe-Trading은 모든 MCP-compatible client를 위해 54개 MCP tools를 제공합니다. stdio subprocess로 실행되므로 server setup이 필요 없습니다. 핵심 research tools는 HK/US/crypto에서 API key 없이 작동하고, trading connector tools는 선택된 connector profile을 사용하며, `run_swarm`만 LLM key가 필요합니다.
+Vibe-Trading은 모든 MCP-compatible client를 위해 58개 MCP tools를 제공합니다. stdio subprocess로 실행되므로 server setup이 필요 없습니다. 핵심 research tools는 HK/US/crypto에서 API key 없이 작동하고, trading connector tools는 선택된 connector profile을 사용하며, `run_swarm`만 LLM key가 필요합니다.
 
 **환경 변수:** server는 client가 직접 spawn하므로 shell의 `export`는 전달되지 않습니다 —— client의 `env` block에 설정하세요. 생성된 backtest code는 allowed run roots 안으로 제한되므로, 결과를 자신의 작업 directory에 쓰려면 `VIBE_TRADING_ALLOWED_RUN_ROOTS`가 필요합니다:
 
@@ -1046,7 +1046,7 @@ vibe-trading-mcp --transport sse   # legacy SSE (deprecated)
 
 </details>
 
-**노출되는 MCP tools(54):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`.
+**노출되는 MCP tools(58):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`.
 
 <details>
 <summary><b>ClawHub에서 설치(한 번의 명령)</b></summary>
@@ -1066,7 +1066,7 @@ ClawHub에서 보기: [clawhub.ai/skills/vibe-trading](https://clawhub.ai/skills
 <details>
 <summary><b>OpenSpace — 자가 진화 스킬</b></summary>
 
-88개 finance skills는 모두 [open-space.cloud](https://open-space.cloud)에 게시되어 있으며 OpenSpace의 self-evolution engine을 통해 자율적으로 발전합니다.
+89개 finance skills는 모두 [open-space.cloud](https://open-space.cloud)에 게시되어 있으며 OpenSpace의 self-evolution engine을 통해 자율적으로 발전합니다.
 
 OpenSpace와 함께 사용하려면 두 MCP server를 agent config에 추가하세요:
 
@@ -1088,7 +1088,7 @@ OpenSpace와 함께 사용하려면 두 MCP server를 agent config에 추가하�
 }
 ```
 
-OpenSpace는 88개 skills를 모두 자동 발견하여 auto-fix, auto-improve, community sharing을 활성화합니다. OpenSpace-connected agent에서 `search_skills("finance backtest")`로 Vibe-Trading skills를 검색하세요.
+OpenSpace는 89개 skills를 모두 자동 발견하여 auto-fix, auto-improve, community sharing을 활성화합니다. OpenSpace-connected agent에서 `search_skills("finance backtest")`로 Vibe-Trading skills를 검색하세요.
 
 </details>
 
@@ -1146,13 +1146,13 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli/                        # CLI package — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server — 54 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 58 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core
 │   │   │   ├── loop.py             #   5-layer compression + read/write tool batching
 │   │   │   ├── context.py          #   system prompt + auto-recall from persistent memory
-│   │   │   ├── skills.py           #   skill loader (88 bundled + user-created via CRUD)
+│   │   │   ├── skills.py           #   skill loader (89 bundled + user-created via CRUD)
 │   │   │   ├── tools.py            #   tool base class + registry
 │   │   │   ├── memory.py           #   lightweight workspace state per run
 │   │   │   ├── frontmatter.py      #   shared YAML frontmatter parser
@@ -1179,7 +1179,7 @@ Vibe-Trading/
 │   │   ├── api/                    # FastAPI 라우트 모듈
 │   │   │   └── alpha_routes.py     #   /alpha/list, /alpha/{id}, /alpha/bench, SSE stream
 │   │   │
-│   │   ├── skills/                 # 88 finance skills in 9 categories (SKILL.md each)
+│   │   ├── skills/                 # 89 finance skills in 9 categories (SKILL.md each)
 │   │   ├── swarm/                  # Swarm DAG execution engine
 │   │   │   └── presets/            #   30 swarm preset YAML definitions
 │   │   ├── session/                # Multi-turn chat + FTS5 session search

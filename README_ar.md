@@ -381,9 +381,9 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 القوائم التفصيلية مطوية أدناه حتى يبقى README سهل القراءة. افتحها عندما تريد فحص اللبنات المتاحة.
 
 <details>
-<summary><b>مكتبة المهارات المالية</b> <sub>88 مهارة عبر 9 فئات</sub></summary>
+<summary><b>مكتبة المهارات المالية</b> <sub>89 مهارة عبر 9 فئات</sub></summary>
 
-- 📊 88 مهارة مالية متخصصة منظمة في 9 فئات
+- 📊 89 مهارة مالية متخصصة منظمة في 9 فئات
 - 🌐 تغطية كاملة من الأسواق التقليدية إلى الكريبتو وDeFi
 - 🔬 قدرات شاملة من مصادر البيانات إلى البحث الكمي
 
@@ -396,7 +396,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 | Crypto | 7 | `perp-funding-basis`, `liquidation-heatmap`, `stablecoin-flow`, `defi-yield`, `onchain-analysis` |
 | Flow | 8 | `hk-connect-flow`, `us-etf-flow`, `edgar-sec-filings`, `financial-statement`, `adr-hshare` |
 | Tool | 10 | `backtest-diagnose`, `report-generate`, `pine-script`, `doc-reader`, `web-reader`, `vnpy-export`, `trade-journal` |
-| Research | 2 | `alpha-zoo`, `strategy-dev-manager` |
+| Research | 3 | `alpha-zoo`, `strategy-dev-manager`, `strategy-discovery` |
 | Risk Analysis | 1 | `ashare-pre-st-filter` |
 
 </details>
@@ -733,7 +733,7 @@ vibe-trading channels status --local  # فحص إعدادات قنوات IM وت
 | الأمر | الوصف |
 |---------|-------------|
 | `/help` | عرض كل الأوامر |
-| `/skills` | عرض كل المهارات المالية الـ 88 |
+| `/skills` | عرض كل المهارات المالية الـ 89 |
 | `/swarm` | عرض إعدادات فرق السرب الـ 30 |
 | `/swarm run <preset> [vars_json]` | تشغيل فريق سرب مع بث مباشر |
 | `/swarm list` | سجل تشغيلات السرب |
@@ -990,7 +990,7 @@ curl -X DELETE http://localhost:8899/scheduled-runs/<job_id>
 
 ## 🔌 MCP Plugin
 
-يعرض Vibe-Trading 54 أداة MCP لأي عميل متوافق مع MCP. يعمل كعملية stdio فرعية، دون إعداد خادم. أدوات البحث الأساسية تعمل دون أي مفاتيح API لأسواق HK/US/crypto؛ وأدوات connector للتداول تستخدم profile الموصل المختار، ويحتاج `run_swarm` وحده إلى مفتاح LLM.
+يعرض Vibe-Trading 58 أداة MCP لأي عميل متوافق مع MCP. يعمل كعملية stdio فرعية، دون إعداد خادم. أدوات البحث الأساسية تعمل دون أي مفاتيح API لأسواق HK/US/crypto؛ وأدوات connector للتداول تستخدم profile الموصل المختار، ويحتاج `run_swarm` وحده إلى مفتاح LLM.
 
 **متغيرات البيئة:** العميل هو من يشغّل الخادم بنفسه، لذا لا يصل إليه `export` من الـ shell أبداً —— اضبطها في كتلة `env` الخاصة بالعميل. كود الاختبار الخلفي المولَّد محصور ضمن جذور التشغيل المسموح بها، لذا تحتاج إلى `VIBE_TRADING_ALLOWED_RUN_ROOTS` لكتابة النتائج في دليل عمل خاص بك:
 
@@ -1046,7 +1046,7 @@ vibe-trading-mcp --transport sse   # legacy SSE (deprecated)
 
 </details>
 
-**أدوات MCP المعروضة (54):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `analyze_options`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`.
+**أدوات MCP المعروضة (58):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`.
 
 <details>
 <summary><b>التثبيت من ClawHub (أمر واحد)</b></summary>
@@ -1066,7 +1066,7 @@ npx clawhub@latest install vibe-trading --force
 <details>
 <summary><b>OpenSpace — مهارات ذاتية التطور</b></summary>
 
-كل المهارات المالية الـ 88 منشورة على [open-space.cloud](https://open-space.cloud) وتتطور ذاتياً عبر محرك التطور الذاتي في OpenSpace.
+كل المهارات المالية الـ 89 منشورة على [open-space.cloud](https://open-space.cloud) وتتطور ذاتياً عبر محرك التطور الذاتي في OpenSpace.
 
 للاستخدام مع OpenSpace، أضف خادمي MCP إلى إعداد وكيلك:
 
@@ -1088,7 +1088,7 @@ npx clawhub@latest install vibe-trading --force
 }
 ```
 
-سيكتشف OpenSpace كل المهارات الـ 88 تلقائياً، مما يتيح auto-fix وauto-improve والمشاركة المجتمعية. ابحث عن مهارات Vibe-Trading عبر `search_skills("finance backtest")` في أي وكيل متصل بـ OpenSpace.
+سيكتشف OpenSpace كل المهارات الـ 89 تلقائياً، مما يتيح auto-fix وauto-improve والمشاركة المجتمعية. ابحث عن مهارات Vibe-Trading عبر `search_skills("finance backtest")` في أي وكيل متصل بـ OpenSpace.
 
 </details>
 
@@ -1146,13 +1146,13 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli/                        # CLI package — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server — 54 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 58 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core
 │   │   │   ├── loop.py             #   5-layer compression + read/write tool batching
 │   │   │   ├── context.py          #   system prompt + auto-recall from persistent memory
-│   │   │   ├── skills.py           #   skill loader (88 bundled + user-created via CRUD)
+│   │   │   ├── skills.py           #   skill loader (89 bundled + user-created via CRUD)
 │   │   │   ├── tools.py            #   tool base class + registry
 │   │   │   ├── memory.py           #   lightweight workspace state per run
 │   │   │   ├── frontmatter.py      #   shared YAML frontmatter parser
@@ -1179,7 +1179,7 @@ Vibe-Trading/
 │   │   ├── api/                    # وحدات مسارات FastAPI
 │   │   │   └── alpha_routes.py     #   /alpha/list, /alpha/{id}, /alpha/bench, SSE stream
 │   │   │
-│   │   ├── skills/                 # 88 finance skills in 9 categories (SKILL.md each)
+│   │   ├── skills/                 # 89 finance skills in 9 categories (SKILL.md each)
 │   │   ├── swarm/                  # Swarm DAG execution engine
 │   │   │   └── presets/            #   30 swarm preset YAML definitions
 │   │   ├── session/                # Multi-turn chat + FTS5 session search
