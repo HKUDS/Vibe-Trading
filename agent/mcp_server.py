@@ -6,16 +6,19 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 55 tools: skills, research goals, backtest/factor/options/pattern
+Surfaces 58 tools: skills, research goals, backtest/factor/options/pattern
 analysis, market data, fundamentals & capital-flow & news & discovery
 (get_fund_flow / get_dragon_tiger / get_northbound_flow / get_margin_trading /
 get_block_trades / get_shareholder_count / get_lockup_expiry / get_sector_info /
 get_research_reports / get_stock_news / get_sec_filings /
 get_financial_statements / get_options_chain / get_stock_profile /
-screen_market / search_symbol / get_macro_series / iwencai_search), read-only
+screen_market / search_symbol / get_macro_series / iwencai_search /
+qveris_search / qveris_inspect / qveris_execute), read-only
 trading-connector reads, swarm orchestration, trade-journal and shadow-account
 analysis. Every exposed tool is read-only or research-only; no order-placing or
-order-cancelling tool is ever surfaced via MCP.
+order-cancelling tool is ever surfaced via MCP. The QVeris tools additionally
+require QVeris paid routing (QVERIS_API_KEY + paid mode), and qveris_execute
+is billable research-data execution only — it never places orders.
 
 Usage:
     python mcp_server.py                    # stdio transport (default)
@@ -1392,10 +1395,12 @@ def get_market_data(
 # Each wrapper delegates to the auto-discovered local registry, exactly like
 # factor_analysis / pattern_recognition above. The registry returns a clean
 # JSON error envelope when a key-gated tool (get_macro_series needs
-# FRED_API_KEY, iwencai_search needs VIBE_TRADING_IWENCAI_KEY) is absent — see
+# FRED_API_KEY, iwencai_search needs VIBE_TRADING_IWENCAI_KEY, the qveris_*
+# tools need QVeris paid routing: QVERIS_API_KEY + paid mode) is absent — see
 # ``_execute_key_gated`` below, which honours that contract even though the
 # tool is excluded from the registry by ``check_available()``. Every tool below
-# is strictly read-only data — no order/trading tool is ever surfaced via MCP.
+# is read-only or research-only data — no order/trading tool is ever surfaced
+# via MCP (qveris_execute spends QVeris credits on data calls, never orders).
 # ---------------------------------------------------------------------------
 
 
@@ -1405,35 +1410,47 @@ def get_market_data(
 # answer with a generic "Tool not found". That contradicts the documented
 # contract above (a clean, env-var-named error). For these tools we therefore
 # fall through to the tool's own ``execute()`` — whose missing-key envelope
-# names the exact env var (``FRED_API_KEY`` / ``VIBE_TRADING_IWENCAI_KEY``).
+# names the exact env var (``FRED_API_KEY`` / ``VIBE_TRADING_IWENCAI_KEY``),
+# or the missing QVeris paid-routing setup (``QVERIS_API_KEY`` + paid mode).
 def _key_gated_tool_classes() -> dict[str, Any]:
     """Return the {tool_name: tool_class} map for key-gated MCP tools.
 
-    Imported lazily so a missing optional dependency in either module degrades
-    to the registry path rather than breaking module import.
+    Imported lazily so a missing optional dependency in any mapped module
+    degrades to the registry path rather than breaking module import.
 
     Returns:
         Mapping of MCP tool name to its ``BaseTool`` subclass.
     """
     from src.tools.fred_macro_tool import FredMacroTool
     from src.tools.iwencai_tool import IWenCaiSearchTool
+    from src.tools.qveris_tool import (
+        QVerisExecuteTool,
+        QVerisInspectTool,
+        QVerisSearchTool,
+    )
 
     return {
         "get_macro_series": FredMacroTool,
         "iwencai_search": IWenCaiSearchTool,
+        "qveris_search": QVerisSearchTool,
+        "qveris_inspect": QVerisInspectTool,
+        "qveris_execute": QVerisExecuteTool,
     }
 
 
 def _execute_key_gated(name: str, params: dict[str, Any]) -> str:
-    """Run a key-gated read-only tool, preserving its env-var-named error.
+    """Run a key-gated MCP tool, preserving its env-var-named error.
 
-    Prefers the auto-discovered registry (present when the API key is set). When
-    the key is absent the tool is excluded from the registry, so we invoke its
-    concrete ``execute()`` directly to surface the documented missing-key error
-    that names the exact env var — never a generic "Tool not found".
+    Prefers the auto-discovered registry (present when the API key is set and,
+    for the qveris_* tools, paid mode is on). When the gating is absent the
+    tool is excluded from the registry, so we invoke its concrete ``execute()``
+    directly to surface the documented missing-key error that names the exact
+    env var — or the missing QVeris paid routing — never a generic "Tool not
+    found".
 
     Args:
-        name: MCP tool name (``get_macro_series`` or ``iwencai_search``).
+        name: MCP tool name (``get_macro_series``, ``iwencai_search``,
+            ``qveris_search``, ``qveris_inspect`` or ``qveris_execute``).
         params: Keyword arguments forwarded to the tool.
 
     Returns:
@@ -1805,6 +1822,100 @@ def iwencai_search(query: str, limit: int = 20) -> str:
         limit: Maximum securities to return.
     """
     return _execute_key_gated("iwencai_search", {"query": query, "limit": limit})
+
+
+@mcp.tool
+def qveris_search(query: str, limit: int = 20, session_id: str | None = None) -> str:
+    """Search the QVeris premium data/tool marketplace for capabilities.
+
+    Discovery is free. Returns candidate tools with ``tool_id``, ``provider``,
+    ``parameters``, ``expected_cost`` and ``stats.success_rate``; choose by
+    expected cost and success rate before any paid execute. Requires QVeris
+    paid routing (``QVERIS_API_KEY`` and paid mode via ``vibe-trading data
+    mode paid`` or Settings -> QVeris) — without it the tool returns a
+    not-available error.
+
+    Args:
+        query: Capability search query, e.g. "US listed options chain implied
+            volatility Greeks AAPL".
+        limit: Maximum candidates to return.
+        session_id: Optional QVeris session id linking follow-up calls.
+    """
+    params: dict[str, Any] = {"query": query, "limit": limit}
+    if session_id:
+        params["session_id"] = session_id
+    return _execute_key_gated("qveris_search", params)
+
+
+@mcp.tool
+def qveris_inspect(
+    tool_ids: list[str],
+    search_id: str | None = None,
+    session_id: str | None = None,
+) -> str:
+    """Inspect full parameter schemas of QVeris tools before executing them.
+
+    Fetches the complete descriptors for one or more ``tool_ids`` returned by
+    ``qveris_search``. Inspection is free: verify required parameters, enum
+    values, date formats and output shape before a paid call. Requires QVeris
+    paid routing (``QVERIS_API_KEY`` and paid mode via ``vibe-trading data
+    mode paid`` or Settings -> QVeris) — without it the tool returns a
+    not-available error.
+
+    Args:
+        tool_ids: QVeris tool ids taken from ``qveris_search`` results.
+        search_id: Optional search id from the ``qveris_search`` response.
+        session_id: Optional QVeris session id linking follow-up calls.
+    """
+    params: dict[str, Any] = {"tool_ids": tool_ids}
+    if search_id:
+        params["search_id"] = search_id
+    if session_id:
+        params["session_id"] = session_id
+    return _execute_key_gated("qveris_inspect", params)
+
+
+@mcp.tool
+def qveris_execute(
+    tool_id: str,
+    parameters: dict[str, Any],
+    search_id: str | None = None,
+    session_id: str | None = None,
+    model: str | None = None,
+    max_response_size: int = 20480,
+) -> str:
+    """Execute one QVeris capability after discovery and inspection.
+
+    Runs the ``tool_id`` selected via ``qveris_search`` / ``qveris_inspect``.
+    MAY BE BILLABLE — provider calls are charged by QVeris when billable
+    (failed or empty calls are not charged), and the tool enforces the local
+    per-session credit budget before sending the request; the result preserves
+    ``cost`` and ``remaining_credits``. Research/data execution only — it
+    never places orders. Requires QVeris paid routing (``QVERIS_API_KEY`` and
+    paid mode via ``vibe-trading data mode paid`` or Settings -> QVeris) —
+    without it the tool returns a not-available error.
+
+    Args:
+        tool_id: QVeris tool id to execute.
+        parameters: Provider call parameters matching the inspected schema.
+        search_id: Optional search id from the ``qveris_search`` response.
+        session_id: Optional QVeris session id used for budget accounting.
+        model: Optional provider model override.
+        max_response_size: Provider response truncation budget (default
+            20480; -1 disables truncation).
+    """
+    params: dict[str, Any] = {
+        "tool_id": tool_id,
+        "parameters": parameters,
+        "max_response_size": max_response_size,
+    }
+    if search_id:
+        params["search_id"] = search_id
+    if session_id:
+        params["session_id"] = session_id
+    if model:
+        params["model"] = model
+    return _execute_key_gated("qveris_execute", params)
 
 
 # ---------------------------------------------------------------------------
