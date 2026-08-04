@@ -1039,6 +1039,14 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
         from backtest.engines.china_a import ChinaAEngine
         return ChinaAEngine(config)
     elif source == "yfinance":
+        # yfinance serves crypto pairs (BTC-USDT, BTC-USD) next to equities,
+        # so route on the instrument market here too. Handing crypto to
+        # GlobalEquityEngine applies zero-commission equity rules while the
+        # CryptoEngine fee keys (taker_rate/maker_rate/slippage) sit ignored
+        # in the config, and nothing warns.
+        if "crypto" in markets:
+            from backtest.engines.crypto import CryptoEngine
+            return CryptoEngine(config)
         from backtest.engines.global_equity import GlobalEquityEngine
         market = _detect_submarket(codes)
         return GlobalEquityEngine(config, market=market)
