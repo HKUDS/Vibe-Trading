@@ -71,6 +71,21 @@ therefore security-significant.
 - Renderer traffic uses an isolated persistent Electron partition rather than
   the default browser session.
 
+### Backend executable resolution
+
+- `VIBE_TRADING_EXECUTABLE`, when it names an existing file, is an explicit
+  operator override and takes precedence.
+- Packaged-runtime discovery checks only exact paths anchored to Electron's
+  application and resources directories, including fixed `app` and `resources`
+  subtrees. It does not walk their ancestors.
+- Source-mode discovery is disabled for packaged applications. During source
+  development, an ancestor is accepted only when its `pyproject.toml` contains
+  `[project].name = "vibe-trading-ai"`; only that marked root's
+  `.venv\Scripts\vibe-trading.exe` is eligible.
+- The final fallback checks non-empty `PATH` entries for `vibe-trading.exe`.
+- No generic executable candidate is evaluated while walking ancestors, and
+  the filesystem drive root is never treated as a source-project root.
+
 ### Process lifecycle
 
 - Only one desktop application instance is allowed.
@@ -101,6 +116,9 @@ therefore security-significant.
   authentication secret.
 - The development override `VIBE_TRADING_EXECUTABLE` trusts the explicitly
   selected executable. Users must not point it at untrusted code.
+- The `PATH` fallback trusts the desktop process environment and normal Windows
+  executable-path integrity. A process able to alter that environment can
+  select the backend that receives the launch secret.
 - The child inherits the desktop process environment. Secure credential
   isolation is deferred to the packaging/credential-storage review.
 - Forceful tree termination can interrupt in-progress local work after the

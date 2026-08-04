@@ -57,9 +57,13 @@ It verifies localized message parity, graceful shutdown, authentication, and
 the parent-death path by force-terminating only the Electron main PID before
 checking that the Python process and loopback listener are gone.
 
-The shell searches for a repository `.venv\Scripts\vibe-trading.exe` before
-falling back to `vibe-trading.exe` on `PATH`. To select an explicit development
-backend:
+Backend resolution is intentionally narrow. It checks an explicit
+`VIBE_TRADING_EXECUTABLE` override first, then exact application/resource
+locations used by packaged builds. In source mode only, it may use
+`.venv\Scripts\vibe-trading.exe` from an ancestor containing this project's
+`pyproject.toml` (`[project].name = "vibe-trading-ai"`). Its final fallback is
+`vibe-trading.exe` on `PATH`; arbitrary ancestor directories and the drive root
+are never searched for executables. To select an explicit development backend:
 
 ```powershell
 $env:VIBE_TRADING_EXECUTABLE = "C:\path\to\vibe-trading.exe"

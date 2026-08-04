@@ -1,5 +1,11 @@
 import { ChildProcess, spawn } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, WriteStream } from "node:fs";
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  WriteStream,
+} from "node:fs";
 import { createServer } from "node:net";
 import path from "node:path";
 import {
@@ -10,6 +16,7 @@ import {
 type BackendManagerOptions = {
   appPath: string;
   resourcesPath: string;
+  allowSourceDiscovery: boolean;
   logDirectory: string;
   apiAuthKey: string;
   messages: DesktopMessages;
@@ -17,10 +24,19 @@ type BackendManagerOptions = {
   onUnexpectedExit: (message: string) => void;
 };
 
-type ResolvedBackend = {
+export type ResolvedBackend = {
   executable: string;
   prefixArguments: string[];
   includeServeCommand: boolean;
+};
+
+export type BackendResolutionOptions = {
+  appPath: string;
+  resourcesPath: string;
+  moduleDirectory?: string;
+  allowSourceDiscovery: boolean;
+  executableOverride?: string;
+  pathEnvironment?: string;
 };
 
 type WatchdogMessage = {
@@ -47,7 +63,15 @@ export class BackendManager {
     if (this.watchdog) throw new Error(this.options.messages.backendAlreadyRunning);
     this.stopping = false;
     this.watchdogError = undefined;
-    const resolved = this.resolveBackend();
+    const resolved = resolveBackend({
+      appPath: this.options.appPath,
+      resourcesPath: this.options.resourcesPath,
+      moduleDirectory: __dirname,
+      allowSourceDiscovery: this.options.allowSourceDiscovery,
+      executableOverride: process.env.VIBE_TRADING_EXECUTABLE,
+      pathEnvironment: process.env.PATH,
+    });
+    if (!resolved) throw new Error(this.options.messages.backendNotFound);
     const executable = resolved.executable;
     const port = await findFreePort(this.options.messages.portUnavailable);
     this.baseUrl = `http://127.0.0.1:${port}/`;
@@ -68,7 +92,6 @@ export class BackendManager {
     const childEnvironment: NodeJS.ProcessEnv = {
       ...process.env,
       API_AUTH_KEY: this.options.apiAuthKey,
-      VIBE_TRADING_DESKTOP_FAST_START: "1",
       PYTHONUTF8: "1",
       PYTHONUNBUFFERED: "1",
       ELECTRON_RUN_AS_NODE: "1",
@@ -235,64 +258,111 @@ export class BackendManager {
     this.logStream?.write(`${message}\n`);
   }
 
-  private resolveBackend(): ResolvedBackend {
-    const configured = process.env.VIBE_TRADING_EXECUTABLE;
-    if (configured && existsSync(configured)) {
-      return { executable: path.resolve(configured), prefixArguments: [], includeServeCommand: true };
-    }
+}
 
-    const roots = new Set<string>([
-      this.options.appPath,
-      this.options.resourcesPath,
-      __dirname,
-      process.cwd(),
-    ]);
-    for (const initialRoot of [...roots]) {
-      let current = path.resolve(initialRoot);
-      for (let depth = 0; depth < 10; depth += 1) {
-        roots.add(current);
-        const parent = path.dirname(current);
-        if (parent === current) break;
-        current = parent;
-      }
-    }
+const sourceProjectName = "vibe-trading-ai";
 
-    for (const root of roots) {
-      for (const pythonCandidate of [
-        path.join(root, "backend", "python.exe"),
-        path.join(root, "runtime", "backend", "python.exe"),
-      ]) {
-        if (existsSync(pythonCandidate)) {
-          return {
-            executable: path.resolve(pythonCandidate),
-            prefixArguments: [
-              "-c",
-              "import api_server; raise SystemExit(api_server.serve_main())",
-            ],
-            includeServeCommand: false,
-          };
-        }
-      }
-      for (const candidate of [
-        path.join(root, "backend", "Scripts", "vibe-trading.exe"),
-        path.join(root, "runtime", "Scripts", "vibe-trading.exe"),
-        path.join(root, ".venv", "Scripts", "vibe-trading.exe"),
-        path.join(root, "Vibe-Trading", ".venv", "Scripts", "vibe-trading.exe"),
-      ]) {
-        if (existsSync(candidate)) {
-          return { executable: path.resolve(candidate), prefixArguments: [], includeServeCommand: true };
-        }
-      }
-    }
+export function resolveBackend(options: BackendResolutionOptions): ResolvedBackend | undefined {
+  const configured = options.executableOverride;
+  if (configured && existsSync(configured)) return commandBackend(configured);
 
-    for (const entry of (process.env.PATH ?? "").split(path.delimiter)) {
-      const candidate = path.join(entry.replaceAll('"', ""), "vibe-trading.exe");
-      if (existsSync(candidate)) {
-        return { executable: path.resolve(candidate), prefixArguments: [], includeServeCommand: true };
-      }
-    }
-    throw new Error(this.options.messages.backendNotFound);
+  for (const root of trustedPackagedRoots(options.appPath, options.resourcesPath)) {
+    const resolved = resolvePackagedBackend(root);
+    if (resolved) return resolved;
   }
+
+  if (options.allowSourceDiscovery) {
+    const sourceRoots = new Set<string>();
+    for (const start of [options.appPath, options.moduleDirectory]) {
+      if (!start) continue;
+      const sourceRoot = findMarkedSourceRoot(start);
+      if (sourceRoot) sourceRoots.add(sourceRoot);
+    }
+    for (const sourceRoot of sourceRoots) {
+      const candidate = path.join(sourceRoot, ".venv", "Scripts", "vibe-trading.exe");
+      if (existsSync(candidate)) return commandBackend(candidate);
+    }
+  }
+
+  for (const rawEntry of (options.pathEnvironment ?? "").split(path.delimiter)) {
+    const entry = rawEntry.replaceAll('"', "").trim();
+    if (!entry) continue;
+    const candidate = path.join(entry, "vibe-trading.exe");
+    if (existsSync(candidate)) return commandBackend(candidate);
+  }
+  return undefined;
+}
+
+function trustedPackagedRoots(appPath: string, resourcesPath: string): string[] {
+  return [...new Set([
+    path.resolve(appPath),
+    path.resolve(resourcesPath),
+    path.resolve(resourcesPath, "app"),
+    path.resolve(resourcesPath, "resources"),
+  ])];
+}
+
+function resolvePackagedBackend(root: string): ResolvedBackend | undefined {
+  for (const candidate of [
+    path.join(root, "backend", "python.exe"),
+    path.join(root, "runtime", "backend", "python.exe"),
+  ]) {
+    if (existsSync(candidate)) {
+      return {
+        executable: path.resolve(candidate),
+        prefixArguments: [
+          "-c",
+          "import api_server; raise SystemExit(api_server.serve_main())",
+        ],
+        includeServeCommand: false,
+      };
+    }
+  }
+  for (const candidate of [
+    path.join(root, "backend", "Scripts", "vibe-trading.exe"),
+    path.join(root, "runtime", "Scripts", "vibe-trading.exe"),
+  ]) {
+    if (existsSync(candidate)) return commandBackend(candidate);
+  }
+  return undefined;
+}
+
+function findMarkedSourceRoot(start: string): string | undefined {
+  let current = path.resolve(start);
+  while (true) {
+    const parent = path.dirname(current);
+    if (parent === current) return undefined;
+    if (isVibeTradingProject(path.join(current, "pyproject.toml"))) return current;
+    current = parent;
+  }
+}
+
+function isVibeTradingProject(markerPath: string): boolean {
+  if (!existsSync(markerPath)) return false;
+  try {
+    let inProjectSection = false;
+    for (const rawLine of readFileSync(markerPath, "utf8").split(/\r?\n/u)) {
+      const line = rawLine.trim();
+      if (/^\[[^\]]+\]$/u.test(line)) {
+        inProjectSection = line === "[project]";
+        continue;
+      }
+      if (!inProjectSection) continue;
+      const name = /^name\s*=\s*(["'])([^"']+)\1(?:\s*#.*)?$/u.exec(line)?.[2];
+      if (name) return name === sourceProjectName;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function commandBackend(executable: string): ResolvedBackend {
+  return {
+    executable: path.resolve(executable),
+    prefixArguments: [],
+    includeServeCommand: true,
+  };
 }
 
 function findFreePort(errorMessage: string): Promise<number> {

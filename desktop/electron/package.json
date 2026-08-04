@@ -10,8 +10,9 @@
     "build": "tsc && node scripts/copy-static.mjs",
     "start": "npm run build && electron .",
     "test:locales": "npm run build && node scripts/test-locales.mjs",
+    "test:backend-resolution": "npm run build && node scripts/test-backend-resolution.mjs",
     "smoke:parent-death": "npm run build && node scripts/smoke-parent-death.mjs",
-    "smoke:lifecycle": "npm run build && node scripts/test-locales.mjs && node scripts/smoke-lifecycle.mjs && node scripts/smoke-parent-death.mjs",
+    "smoke:lifecycle": "npm run build && node scripts/test-locales.mjs && node scripts/test-backend-resolution.mjs && node scripts/smoke-lifecycle.mjs && node scripts/smoke-parent-death.mjs",
     "sbom": "npm sbom --sbom-format cyclonedx"
   },
   "devDependencies": {

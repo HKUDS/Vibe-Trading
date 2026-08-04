@@ -153,6 +153,7 @@ async function bootInternal(): Promise<void> {
   backend = new BackendManager({
     appPath: app.getAppPath(),
     resourcesPath: process.resourcesPath,
+    allowSourceDiscovery: !app.isPackaged,
     logDirectory: app.getPath("logs"),
     apiAuthKey,
     messages: desktopMessages,

@@ -24,6 +24,7 @@ desktop/electron/
     copy-static.mjs
     smoke-parent-death.mjs
     smoke-lifecycle.mjs
+    test-backend-resolution.mjs
     test-locales.mjs
   src/
     backend-manager.ts
@@ -49,7 +50,7 @@ npm audit --json
 npm sbom --sbom-format cyclonedx
 ```
 
-Host result refreshed on 2026-07-31:
+Host result refreshed on 2026-08-04:
 
 - 14 installed dependency packages;
 - 0 known npm audit vulnerabilities;
@@ -88,6 +89,11 @@ Host development validation on Windows:
   process or listening backend port
 - [x] repeated desktop startup and process-residue checks
 - [x] missing-backend startup fails with an actionable diagnostic
+- [x] backend discovery prefers an explicit override, then exact packaged
+  locations, a marker-anchored source virtual environment, and finally `PATH`
+- [x] an executable planted in an unmarked ancestor is ignored, a wrong
+  `pyproject.toml` project name is rejected, and packaged mode does not search
+  source ancestors
 - [x] all desktop-owned user-facing strings have en/zh-CN/ja/ko/ar parity and
   Arabic selects RTL layout
 - [x] clean-Windows source startup is exercised by the
