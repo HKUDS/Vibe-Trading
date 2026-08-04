@@ -201,8 +201,10 @@ describe("RunDetail page", () => {
     expect(screen.getByText("AAPL")).toBeInTheDocument();
     expect(screen.getByText("NVDA")).toBeInTheDocument();
     expect(screen.getByText("Rebalance Notes")).toBeInTheDocument();
-    expect(screen.getByText("2026-02-02")).toBeInTheDocument();
-    expect(screen.getByText("35.0%")).toBeInTheDocument();
+    // the date shows up twice: once in the rebalances table, once in the summary card
+    expect(screen.getAllByText("2026-02-02")).toHaveLength(2);
+    // 35.0% shows up three times: the table row plus the mean and max summary cards
+    expect(screen.getAllByText("35.0%")).toHaveLength(3);
   });
 
   it("hides the Portfolio Studio tab when the payloads are absent", async () => {
