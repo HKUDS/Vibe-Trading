@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-import agent.mcp_server as mcp_server
+import mcp_server
 from src.tools import qveris_tool as qt
 
 
