@@ -225,6 +225,24 @@ class TestAdd:
         assert any(line.startswith("- [Ref](") for line in lines)
         assert any(line.startswith("- [Main](") for line in lines)
 
+    def test_hierarchy_routed_entry_stays_scannable(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        # Regression: with VT_MEMORY_HIERARCHY enabled, add() used to hand the
+        # bare slug to MemoryHierarchy.route_entry(), which treats its argument
+        # as the leaf filename verbatim — the entry was written without the
+        # .md extension and scan_all() (suffix == ".md" filter) could not see
+        # it, so the memory vanished from list_entries()/find().
+        monkeypatch.setenv("VT_MEMORY_HIERARCHY", "1")
+        pm = PersistentMemory(memory_dir=tmp_path)
+        path = pm.add("routed-mem", "body text", "project", description="routed")
+        assert path.suffix == ".md"
+        assert path.parent.name == "project"
+        entries = pm.list_entries()
+        assert len(entries) == 1
+        assert entries[0].title == "routed-mem"
+        assert pm.find("routed-mem") is not None
+
 
 # ---------------------------------------------------------------------------
 # PersistentMemory.find_relevant

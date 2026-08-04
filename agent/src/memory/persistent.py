@@ -486,13 +486,18 @@ class PersistentMemory:
             digest = hashlib.sha256(stripped_name.encode("utf-8")).hexdigest()[:6]
             slug = f"{slug}_{digest}" if slug else digest
 
+        filename = f"{memory_type}_{slug}.md"
+
         from src.config.accessor import get_env_config
+        # route_entry() treats its second argument as the leaf filename
+        # verbatim, so the .md extension must be included here; a bare slug
+        # produced extension-less files that scan_all() could not see,
+        # silently dropping hierarchy-routed entries from list_entries().
         if get_env_config().memory.hierarchy_enabled:
             from src.memory.hierarchy import MemoryHierarchy
             hierarchy = MemoryHierarchy(self._dir)
-            path = hierarchy.route_entry(memory_type, slug)
+            path = hierarchy.route_entry(memory_type, filename)
         else:
-            filename = f"{memory_type}_{slug}.md"
             path = self._dir / filename
         safe_name = stripped_name.replace("\n", " ").replace("\r", " ")
         safe_desc = (description or stripped_name).replace("\n", " ").replace("\r", " ")
