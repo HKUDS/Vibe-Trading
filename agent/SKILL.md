@@ -130,7 +130,7 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (55)
+## Available MCP Tools (58)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
@@ -174,6 +174,9 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `run_shadow_backtest` | Multi-market backtest + delta-PnL attribution | None* |
 | `render_shadow_report` | HTML/PDF shadow report (8 sections + charts) | None |
 | `scan_shadow_signals` | Today's symbols matching the shadow's cadence | None |
+| `qveris_search` | Search QVeris premium data/tool capabilities (free) | QVERIS_API_KEY |
+| `qveris_inspect` | Inspect QVeris tool parameter schemas (free) | QVERIS_API_KEY |
+| `qveris_execute` | Execute a QVeris tool (billed per call) | QVERIS_API_KEY |
 | `list_swarm_presets` | List multi-agent team presets | None |
 | `run_swarm` | Execute a multi-agent research team | LLM key |
 | `get_swarm_status` | Poll swarm run status without blocking | None |

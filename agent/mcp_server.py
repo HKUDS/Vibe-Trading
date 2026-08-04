@@ -241,9 +241,7 @@ class _HostGuardMiddleware:
             if not any(_host_matches(normalized, pattern) for pattern in self.allowed_hosts):
                 from starlette.responses import PlainTextResponse
 
-                await PlainTextResponse("Invalid host header", status_code=400)(
-                    scope, receive, send
-                )
+                await PlainTextResponse("Invalid host header", status_code=400)(scope, receive, send)
                 return
         await self.app(scope, receive, send)
 
@@ -270,9 +268,7 @@ class _OriginGuardMiddleware:
             if not _origin_allowed(origin, self.allowed_hosts):
                 from starlette.responses import PlainTextResponse
 
-                await PlainTextResponse("Origin not allowed", status_code=403)(
-                    scope, receive, send
-                )
+                await PlainTextResponse("Origin not allowed", status_code=403)(scope, receive, send)
                 return
         await self.app(scope, receive, send)
 
@@ -1248,9 +1244,7 @@ async def run_swarm(
     runtime = SwarmRuntime(store=store, agent_config=agent_config)
 
     try:
-        run = runtime.start_run(
-            preset_name, variables, include_shell_tools=_include_shell_tools
-        )
+        run = runtime.start_run(preset_name, variables, include_shell_tools=_include_shell_tools)
     except FileNotFoundError as exc:
         return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
     except ValueError as exc:
@@ -1317,6 +1311,7 @@ async def run_swarm(
 # ---------------------------------------------------------------------------
 # Market data tool
 # ---------------------------------------------------------------------------
+
 
 def _detect_source(code: str) -> str:
     return detect_source(code)
@@ -1417,10 +1412,14 @@ def _key_gated_tool_classes() -> dict[str, Any]:
     """
     from src.tools.fred_macro_tool import FredMacroTool
     from src.tools.iwencai_tool import IWenCaiSearchTool
+    from src.tools.qveris_tool import QVerisExecuteTool, QVerisInspectTool, QVerisSearchTool
 
     return {
         "get_macro_series": FredMacroTool,
         "iwencai_search": IWenCaiSearchTool,
+        "qveris_search": QVerisSearchTool,
+        "qveris_inspect": QVerisInspectTool,
+        "qveris_execute": QVerisExecuteTool,
     }
 
 
@@ -1805,6 +1804,105 @@ def iwencai_search(query: str, limit: int = 20) -> str:
         limit: Maximum securities to return.
     """
     return _execute_key_gated("iwencai_search", {"query": query, "limit": limit})
+
+
+# ---------------------------------------------------------------------------
+# QVeris marketplace tools
+#
+# Discovery (search/inspect) is free; execute is billed by QVeris. All three
+# are key-gated on the QVeris API key and share the registry contract above.
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool
+def qveris_search(query: str, limit: int = 20, session_id: str | None = None) -> str:
+    """Search QVeris premium data/tool capabilities (free discovery call).
+
+    Returns matching tools with their ids, expected_cost and success-rate stats
+    for choosing between them. Feed the ids to qveris_inspect for the full
+    parameter schema, then qveris_execute to call one. Read-only; requires the
+    QVeris API key (without it the tool returns a not-available error).
+
+    Args:
+        query: Capability search query (e.g. "realtime us stock quote").
+        limit: Maximum results, 1-100 (default 20).
+        session_id: Optional QVeris session to continue.
+    """
+    params: dict[str, Any] = {"query": query, "limit": limit}
+    if session_id:
+        params["session_id"] = session_id
+    return _execute_key_gated("qveris_search", params)
+
+
+@mcp.tool
+def qveris_inspect(
+    tool_ids: list[str],
+    search_id: str | None = None,
+    session_id: str | None = None,
+) -> str:
+    """Inspect full QVeris tool parameter schemas before a paid execute call.
+
+    Free call. Returns each tool's parameters, billing rule and expected cost,
+    so the caller can assemble `parameters` and judge the price before
+    qveris_execute spends credits. Read-only; requires the QVeris API key.
+
+    Args:
+        tool_ids: QVeris tool ids from qveris_search.
+        search_id: Optional search context to carry over.
+        session_id: Optional QVeris session to continue.
+    """
+    params: dict[str, Any] = {"tool_ids": tool_ids}
+    if search_id:
+        params["search_id"] = search_id
+    if session_id:
+        params["session_id"] = session_id
+    return _execute_key_gated("qveris_inspect", params)
+
+
+@mcp.tool
+def qveris_execute(
+    tool_id: str,
+    parameters: dict[str, Any],
+    search_id: str | None = None,
+    session_id: str | None = None,
+    model: str | None = None,
+    max_response_size: int = 20480,
+    expected_cost: float | None = None,
+    billing_rule: dict[str, Any] | None = None,
+) -> str:
+    """Execute a QVeris tool (billed by QVeris per call).
+
+    Spends real QVeris credits, gated by the per-session credit budget. Inspect
+    the tool first with qveris_inspect and pass the expected_cost/billing_rule
+    it quotes back so the budget check uses the real price. Requires the QVeris
+    API key.
+
+    Args:
+        tool_id: QVeris tool id from qveris_search.
+        parameters: Call arguments matching the tool's inspected schema.
+        search_id: Optional search context to carry over.
+        session_id: Optional QVeris session to continue.
+        model: Optional model override for the tool call.
+        max_response_size: Response size cap in bytes (default 20480).
+        expected_cost: Quote copied from qveris_search/inspect, if available.
+        billing_rule: Billing rule copied from qveris_inspect, if available.
+    """
+    params: dict[str, Any] = {
+        "tool_id": tool_id,
+        "parameters": parameters,
+        "max_response_size": max_response_size,
+    }
+    if search_id:
+        params["search_id"] = search_id
+    if session_id:
+        params["session_id"] = session_id
+    if model:
+        params["model"] = model
+    if expected_cost is not None:
+        params["expected_cost"] = expected_cost
+    if billing_rule is not None:
+        params["billing_rule"] = billing_rule
+    return _execute_key_gated("qveris_execute", params)
 
 
 # ---------------------------------------------------------------------------
@@ -2213,9 +2311,7 @@ def main():
         default="127.0.0.1",
         help="Network bind host for --transport sse / http (default: 127.0.0.1)",
     )
-    parser.add_argument(
-        "--port", type=int, default=8900, help="SSE/HTTP port (default: 8900)"
-    )
+    parser.add_argument("--port", type=int, default=8900, help="SSE/HTTP port (default: 8900)")
     parser.add_argument(
         "--enable-shell-tools",
         action="store_true",
@@ -2232,9 +2328,7 @@ def main():
 
         _migrate.migrate_legacy_state()
     except Exception:  # pragma: no cover — best-effort
-        logging.getLogger(__name__).warning(
-            "Legacy state migration failed", exc_info=True
-        )
+        logging.getLogger(__name__).warning("Legacy state migration failed", exc_info=True)
 
     _include_shell_tools = _resolve_include_shell_tools(args.enable_shell_tools)
     _registry = None
@@ -2251,9 +2345,7 @@ def main():
 
         from src.config.accessor import get_env_config
 
-        allowed_hosts = _parse_allowed_hosts(
-            get_env_config().api.vibe_trading_mcp_allowed_hosts
-        )
+        allowed_hosts = _parse_allowed_hosts(get_env_config().api.vibe_trading_mcp_allowed_hosts)
         transport = "streamable-http" if args.transport == "http" else "sse"
         app = _build_network_app(transport, allowed_hosts)
         uvicorn.run(app, host=args.host, port=args.port)
