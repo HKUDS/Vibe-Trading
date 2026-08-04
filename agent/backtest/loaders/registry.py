@@ -54,6 +54,7 @@ VALID_SOURCES: set[str] = {
     "pykrx",
     "longbridge",
     "mt5",
+    "tickerall",
     "local",
     "auto",
 }
@@ -104,6 +105,7 @@ def _ensure_registered() -> None:
         "backtest.loaders.pykrx_loader",
         "backtest.loaders.longbridge",
         "backtest.loaders.mt5_loader",
+        "backtest.loaders.tickerall_loader",
         "backtest.loaders.local_loader",
     ]
     import importlib
