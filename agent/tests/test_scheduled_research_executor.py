@@ -673,10 +673,10 @@ def test_executor_marks_job_failed_when_timezone_unresolvable(tmp_path: Path) ->
 
 def test_tick_continues_past_a_job_whose_lifecycle_write_raises(tmp_path: Path) -> None:
     class ExplodingUpsertStore(ScheduledResearchJobStore):
-        def upsert(self, job: ScheduledResearchJob) -> None:
+        def upsert(self, job: ScheduledResearchJob, *, validate: bool = True) -> None:
             if job.id == "bad":
                 raise RuntimeError("disk full")
-            super().upsert(job)
+            super().upsert(job, validate=validate)
 
     store = ExplodingUpsertStore(path=tmp_path / "jobs.json")
     good_store = ScheduledResearchJobStore(path=tmp_path / "jobs.json")
@@ -697,3 +697,44 @@ def test_tick_continues_past_a_job_whose_lifecycle_write_raises(tmp_path: Path) 
     saved = good_store.get("good")
     assert saved is not None
     assert saved.status == JobStatus.COMPLETED
+
+
+def test_job_with_invalid_persisted_schedule_fails_visibly_once(tmp_path: Path) -> None:
+    # A 16-digit interval was accepted by an earlier grammar; it must surface
+    # as a failed job rather than retry forever.
+    store = _store(tmp_path)
+    store.save({"legacy": _job("legacy", schedule="9" * 16, next_run_at=10)})
+    calls: list[str] = []
+
+    async def dispatch(job: ScheduledResearchJob) -> None:
+        calls.append(job.id)
+
+    async def scenario() -> None:
+        executor = ScheduledResearchExecutor(store, dispatch)
+        await executor.tick(100)
+        await executor.tick(200)
+
+    asyncio.run(scenario())
+
+    saved = store.get("legacy")
+    assert saved is not None
+    assert calls == []  # never dispatched
+    assert saved.status == JobStatus.FAILED
+    assert saved.failure_kind == "schedule"
+    assert "interval is too large" in (saved.last_error or "")
+    assert saved.last_run_at == 100  # second tick left it alone
+
+
+def test_lifecycle_writes_survive_a_schedule_the_grammar_now_rejects(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    job = _job("legacy", schedule="9" * 16, next_run_at=10)
+    store.save({job.id: job})
+
+    with pytest.raises(ValueError):
+        store.upsert(job)  # creation-style write still validates
+
+    job.status = JobStatus.FAILED
+    store.upsert(job, validate=False)  # lifecycle write lands
+    saved = store.get("legacy")
+    assert saved is not None
+    assert saved.status == JobStatus.FAILED
