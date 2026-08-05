@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import inspect
 import json
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 import mcp_server
 from src.tools.alpha_bench_tool import AlphaBenchTool
 from src.tools.alpha_zoo_tool import AlphaZooTool
+from src.tools import alpha_bench_tool as alpha_bench_module
 
 
 _ALPHA_ZOO = getattr(mcp_server.alpha_zoo, "fn", None) or getattr(
@@ -170,3 +172,60 @@ def test_alpha_bench_rejects_output_outside_allowed_roots(monkeypatch) -> None:
     assert result["status"] == "error"
     assert "allowed" in result["error"]
     assert registry.calls == []
+
+
+def test_alpha_bench_does_not_follow_preexisting_report_symlink(
+    monkeypatch, tmp_path: Path
+) -> None:
+    class _BenchRegistry:
+        def get(self, alpha_id: str) -> object:
+            return object()
+
+    class _FixedDateTime:
+        @classmethod
+        def now(cls, tz: dt.tzinfo | None = None) -> dt.datetime:
+            return dt.datetime(2026, 1, 2, 3, 4, 5, tzinfo=tz)
+
+    output_dir = tmp_path / "reports"
+    output_dir.mkdir()
+    external_target = tmp_path / "external.html"
+    predictable_report_link = output_dir / "alpha_bench_20260102T030405Z.html"
+    report_link = output_dir / "alpha_bench_20260102T030405Z_fixed.html"
+    predictable_report_link.symlink_to(external_target)
+    report_link.symlink_to(external_target)
+
+    monkeypatch.setattr(
+        "src.factors.registry.get_default_registry", lambda: _BenchRegistry()
+    )
+    monkeypatch.setattr(alpha_bench_module, "datetime", _FixedDateTime)
+    monkeypatch.setattr(alpha_bench_module.secrets, "token_hex", lambda length: "fixed")
+    monkeypatch.setattr(alpha_bench_module, "_load_universe_panel", lambda *args, **kwargs: {})
+    monkeypatch.setattr(alpha_bench_module, "_compute_forward_returns", lambda panel: {})
+    monkeypatch.setattr(
+        alpha_bench_module,
+        "_bench_one_alpha",
+        lambda *args, **kwargs: {
+            "id": "alpha101_001",
+            "zoo": "alpha101",
+            "theme": [],
+            "formula_latex": "1",
+            "ic_mean": 0.1,
+            "ic_std": 0.2,
+            "ir": 0.5,
+            "ic_positive_ratio": 0.5,
+            "ic_count": 1,
+        },
+    )
+
+    result = alpha_bench_module.run_alpha_bench(
+        alpha_id="alpha101_001",
+        universe="sp500",
+        period="2020-2021",
+        output_dir=str(output_dir),
+    )
+
+    assert result["status"] == "error"
+    assert "failed to write report" in result["error"]
+    assert report_link.is_symlink()
+    assert predictable_report_link.is_symlink()
+    assert not external_target.exists()
