@@ -48,10 +48,15 @@ _BORDERLINE_WARNING = (
 )
 
 #: Note attached to query results when the evidence table is completely empty.
+#: Honest wording: there is NO user-runnable CLI/workflow that populates the
+#: store — rows land only via the evidence harness library API.
 _EMPTY_EVIDENCE_NOTE = (
-    "No per-regime evidence computed yet. Run the strategy_discovery evidence "
-    "harness over reproducible backtests; the facade refuses to assess regimes "
-    "without evidence."
+    "No per-regime evidence computed yet. The evidence store is populated only "
+    "by the evidence harness library API "
+    "(src.strategy_discovery.evidence_harness.rebuild_evidence over "
+    "reproducible run artifacts); automated workflow wiring is still pending, "
+    "so until then rows come from harness runs executed by developers/"
+    "integrators. The facade refuses to assess regimes without evidence."
 )
 
 
@@ -96,8 +101,11 @@ class StrategyDiscoveryFacade:
                 first use (``EvidenceStore()``).
             sdm_store: SDM artifact store. Default resolved lazily through
                 ``src.strategy_store._shared.get_store()``.
-            alpha_registry: Alpha Zoo registry. Default constructed lazily
-                from ``src.factors.registry.Registry()``.
+            alpha_registry: Alpha Zoo registry. Default resolved lazily via
+                the process-wide shared
+                ``src.factors.registry.get_default_registry()`` singleton —
+                constructing a ``Registry()`` per facade instance would re-run
+                the AST scan of every zoo module (~0.85s) on each construction.
         """
         self._evidence_store = evidence_store
         self._sdm_store = sdm_store
@@ -139,13 +147,19 @@ class StrategyDiscoveryFacade:
         return self._sdm_store
 
     def _get_alpha_registry(self) -> Any:
-        """Return the Alpha Zoo registry, tolerating a failed zoo load."""
+        """Return the Alpha Zoo registry, tolerating a failed zoo load.
+
+        The default resolution goes through the process-wide
+        ``get_default_registry()`` singleton: building a fresh ``Registry()``
+        AST-scans every zoo module (~0.85s), which must not happen per facade
+        instance. Constructor-injected registries (tests) bypass this path.
+        """
         if self._alpha_registry is None and not self._alpha_failed:
             try:
                 # Local import; intentional — zoo scan must never block package import.
-                from src.factors.registry import Registry
+                from src.factors.registry import get_default_registry
 
-                self._alpha_registry = Registry()
+                self._alpha_registry = get_default_registry()
             except Exception:  # noqa: BLE001 — degrade to zero alphas
                 logger.warning(
                     "Alpha Zoo registry unavailable; alpha catalog entries degraded to none",
@@ -457,7 +471,8 @@ class StrategyDiscoveryFacade:
                 scope = f" in regime {regime!r}" if regime is not None else ""
                 envelope["note"] = (
                     f"No evidence rows found for strategy_id {strategy_id!r}{scope}. "
-                    "Evidence is computed only from reproducible run artifacts."
+                    "Evidence rows are written only by the evidence harness "
+                    "library API over reproducible run artifacts."
                 )
             return _json_safe(envelope)
         except Exception:  # noqa: BLE001 — never raise from the public facade

@@ -236,7 +236,10 @@ class EvidenceStore:
         rows: list[EvidenceRow] = []
         with self._connect() as conn:
             for record in conn.execute(sql, params).fetchall():
-                rows.append(self._row_from_record(record))
+                row = self._row_from_record(record)
+                if row is None:
+                    continue
+                rows.append(row)
         return rows
 
     def strategy_ids(self) -> list[str]:
@@ -254,17 +257,27 @@ class EvidenceStore:
     # -- conversion ----------------------------------------------------------
 
     @staticmethod
-    def _row_from_record(record: sqlite3.Row) -> EvidenceRow:
-        """Convert a database record back into an ``EvidenceRow``."""
+    def _row_from_record(record: sqlite3.Row) -> EvidenceRow | None:
+        """Convert a database record back into an ``EvidenceRow``.
+
+        Returns ``None`` for records whose regime is outside ``REGIMES``.
+        Such rows can only reach the store through external tampering (the
+        write path validates regimes via ``EvidenceRow``); the honest
+        behaviour for a never-invent store is to drop them from reads rather
+        than remap onto a documented regime and present fabricated state.
+        """
         regime = record["regime"]
         if regime not in REGIMES:
-            # Never crash reads on legacy/unknown regime values; normalize to
-            # the closest documented state while preserving the raw label via
-            # a warning is not possible on a frozen row — log instead.
-            logger.warning("evidence row with unknown regime %r observed", regime)
+            logger.warning(
+                "evidence row %s carries unknown regime %r; skipping it "
+                "(possible externally tampered evidence database)",
+                record["strategy_id"],
+                regime,
+            )
+            return None
         return EvidenceRow(
             strategy_id=record["strategy_id"],
-            regime=regime if regime in REGIMES else REGIMES[2],
+            regime=regime,
             trades_in_regime=int(record["trades_in_regime"]),
             position_size=record["position_size"],
             return_in_regime=record["return_in_regime"],

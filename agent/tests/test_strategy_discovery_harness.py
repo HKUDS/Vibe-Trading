@@ -1,27 +1,40 @@
 """Frozen-contract tests for ``src.strategy_discovery.evidence_harness`` — #969.
 
 AC3 (evidence from reproducible runs only) is exercised here end to end on
-synthetic run directories built in tmp_path: ``artifacts/trades.csv``
-(date + pnl/return_pct rows, closed trades only) and ``artifacts/equity.csv``
-(date, equity, benchmark). The benchmark series is a piecewise-constant-slope
-curve engineered so that, with ``benchmark_window=5`` and thresholds of
-±0.05, days 2024-01-14..16 are a bear window, 2024-01-21..24 a bull window,
-and 2024-01-07..08 structural — regardless of whether the harness measures
+synthetic run directories built in tmp_path with the REAL engine artifact
+schema (``backtest/engines/base.py::_write_artifacts``):
+
+* ``artifacts/trades.csv`` — columns ``timestamp, code, side, price, qty,
+  reason, pnl, holding_days, return_pct`` with TWO rows per round trip:
+  an entry row (``reason="signal"``, ``pnl=0.0``, ``holding_days=0``)
+  followed by the exit row carrying the realized pnl. Round trips must be
+  counted ONCE (exit rows only); exit rows may reuse ``reason="signal"``
+  (the base engine closes positions on signal), so the marker is pnl, not
+  reason.
+* ``artifacts/equity.csv`` — date column ``timestamp`` (the engine's index
+  name) plus ``ret, equity, drawdown, benchmark_equity, active_ret``.
+  Benchmark values live in ``benchmark_equity``.
+
+The benchmark series is a piecewise-constant-slope curve engineered so
+that, with ``benchmark_window=5`` and thresholds of ±0.05, days
+2024-01-14..16 are a bear window, 2024-01-21..24 a bull window, and
+2024-01-07..08 structural — regardless of whether the harness measures
 the window return as an endpoint ratio or a mean of daily changes (both
 agree inside the segments; the self-check class pins this).
 
-``TestFixtureSelfCheck`` runs today without the sibling package; the rest
-skips with a clear reason until ``src.strategy_discovery.evidence_harness``
-lands. Deterministic: all dates are fixed strings, no wall-clock reads.
+Legacy one-row-per-trade artifacts (``date``/``benchmark`` columns, no
+zero-pnl entry marker) stay covered through the alias + detection paths.
+Deterministic: all dates are fixed strings, no wall-clock reads.
 """
 
 from __future__ import annotations
 
-import csv
 import inspect
 import math
 import re
+from collections.abc import Sequence
 from datetime import date, timedelta
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -29,11 +42,13 @@ import pytest
 try:
     from src.strategy_discovery import evidence_harness as sd_harness
     from src.strategy_discovery import models as sd_models
+    from src.strategy_discovery import run_artifacts as sd_artifacts
 
     HARNESS_AVAILABLE = True
 except ImportError:
     sd_harness = None
     sd_models = None
+    sd_artifacts = None
     HARNESS_AVAILABLE = False
 
 requires_harness = pytest.mark.skipif(
@@ -47,6 +62,21 @@ BEAR_DAYS = {date(2024, 1, 14), date(2024, 1, 15), date(2024, 1, 16)}
 BULL_DAYS = {date(2024, 1, 21), date(2024, 1, 22), date(2024, 1, 23), date(2024, 1, 24)}
 STRUCTURAL_DAYS = {date(2024, 1, 7), date(2024, 1, 8)}
 EXPECTED_COUNTS = {"bear_market": 3, "bull_market": 4, "structural": 2}
+ALL_TRADE_DAYS = sorted(BEAR_DAYS | BULL_DAYS | STRUCTURAL_DAYS)
+
+#: Exact column order written by base.py::_write_artifacts.
+ENGINE_TRADE_COLUMNS = [
+    "timestamp",
+    "code",
+    "side",
+    "price",
+    "qty",
+    "reason",
+    "pnl",
+    "holding_days",
+    "return_pct",
+]
+ENGINE_EQUITY_COLUMNS = ["ret", "equity", "drawdown", "benchmark_equity", "active_ret"]
 
 
 def _benchmark_series() -> pd.Series:
@@ -66,44 +96,154 @@ def _benchmark_series() -> pd.Series:
     )
     assert len(values) == DAYS
     index = [START + timedelta(days=i) for i in range(DAYS)]
-    return pd.Series(values, index=pd.DatetimeIndex(index), name="benchmark")
+    return pd.Series(values, index=pd.DatetimeIndex(index), name="benchmark_equity")
 
 
-def _write_run_fixture(base_dir, *, include_trades=True, include_equity=True):
-    """Build a synthetic run_dir with artifacts/ CSVs (<= 40 rows each)."""
+def _engine_equity_frame() -> pd.DataFrame:
+    """equity.csv exactly as backtest/engines/base.py::_write_artifacts."""
+    bench = _benchmark_series()
+    equity = pd.Series(
+        [1_000_000.0 * (1.001**i) for i in range(DAYS)], index=bench.index
+    )
+    port_ret = equity.pct_change().fillna(0.0)
+    peak = equity.cummax()
+    drawdown = (equity - peak) / peak.replace(0, 1)
+    bench_ret = bench.pct_change().fillna(0.0)
+    eq_df = pd.DataFrame(
+        {
+            "ret": port_ret,
+            "equity": equity,
+            "drawdown": drawdown,
+            "benchmark_equity": bench,
+            "active_ret": port_ret - bench_ret,
+        },
+        index=bench.index,
+    )
+    eq_df.index.name = "timestamp"
+    return eq_df
+
+
+def _entry_row(trade_date: date, code: str) -> dict:
+    return {
+        "timestamp": trade_date.strftime("%Y-%m-%d"),
+        "code": code,
+        "side": "buy",
+        "price": 10.0,
+        "qty": 100.0,
+        "reason": "signal",
+        "pnl": 0.0,
+        "holding_days": 0,
+        "return_pct": 0.0,
+    }
+
+
+def _exit_row(
+    trade_date: date, code: str, *, pnl: float = 50.0, reason: str = "signal"
+) -> dict:
+    return {
+        "timestamp": trade_date.strftime("%Y-%m-%d"),
+        "code": code,
+        "side": "sell",
+        "price": 10.5,
+        "qty": 100.0,
+        "reason": reason,
+        "pnl": pnl,
+        "holding_days": 0,
+        "return_pct": 0.5,
+    }
+
+
+def _engine_trade_rows(
+    round_trips: Sequence[tuple[date, str, float, str]],
+) -> list[dict]:
+    """Entry+exit row pairs, exactly as the engine writer emits them."""
+    rows: list[dict] = []
+    for exit_date, code, pnl, exit_reason in round_trips:
+        # Same-day round trips keep per-code holding intervals disjoint, so
+        # the fixture is single-position by construction.
+        rows.append(_entry_row(exit_date, code))
+        rows.append(_exit_row(exit_date, code, pnl=pnl, reason=exit_reason))
+    return rows
+
+
+def _write_trades_csv(artifacts: Path, rows: list[dict]) -> None:
+    pd.DataFrame(rows, columns=ENGINE_TRADE_COLUMNS).to_csv(
+        artifacts / "trades.csv", index=False
+    )
+
+
+def _write_run_fixture(
+    base_dir: Path, *, include_trades: bool = True, include_equity: bool = True
+) -> Path:
+    """Real engine-schema run_dir: 9 same-day round trips, one position."""
     run_dir = base_dir / "run_fixture"
     artifacts = run_dir / "artifacts"
     artifacts.mkdir(parents=True, exist_ok=True)
 
     if include_equity:
-        bench = _benchmark_series()
-        equity = pd.Series(
-            [1_000_000.0 * (1.001**i) for i in range(DAYS)], index=bench.index
-        )
-        df = pd.DataFrame({"equity": equity.values, "benchmark": bench.values})
-        df.insert(0, "date", [d.strftime("%Y-%m-%d") for d in bench.index])
-        df.insert(1, "timestamp", df["date"])
-        df["benchmark_equity"] = df["benchmark"]
-        df.to_csv(artifacts / "equity.csv", index=False)
+        _engine_equity_frame().to_csv(artifacts / "equity.csv")
 
     if include_trades:
-        rows = []
-        for trade_date in sorted(BEAR_DAYS | BULL_DAYS | STRUCTURAL_DAYS):
-            rows.append(
-                {
-                    "date": trade_date.strftime("%Y-%m-%d"),
-                    "timestamp": trade_date.strftime("%Y-%m-%d"),
-                    "code": "TEST.SH",
-                    "side": "sell",
-                    "pnl": 50.0,
-                    "return_pct": 0.5,
-                }
+        round_trips = [
+            (
+                trade_date,
+                "TEST.SH",
+                50.0,
+                # Exits reuse reason="signal" (base engine closes on signal
+                # too) — the entry/exit marker must be pnl, not reason.
+                "signal" if i < 8 else "end",
             )
-        with open(artifacts / "trades.csv", "w", newline="") as fh:
-            writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
-            writer.writeheader()
-            writer.writerows(rows)
+            for i, trade_date in enumerate(ALL_TRADE_DAYS)
+        ]
+        _write_trades_csv(artifacts, _engine_trade_rows(round_trips))
 
+    return run_dir
+
+
+def _write_multi_position_fixture(base_dir: Path) -> Path:
+    """Two overlapping holdings: AAA Jan 14-16 and BBB Jan 15-21 → peak 2."""
+    run_dir = base_dir / "multi_position_run"
+    artifacts = run_dir / "artifacts"
+    artifacts.mkdir(parents=True, exist_ok=True)
+    _engine_equity_frame().to_csv(artifacts / "equity.csv")
+
+    rows = [
+        _entry_row(date(2024, 1, 14), "AAA.US"),
+        _entry_row(date(2024, 1, 15), "BBB.US"),
+        _exit_row(date(2024, 1, 16), "AAA.US", pnl=30.0, reason="stop_loss"),
+        _exit_row(date(2024, 1, 21), "BBB.US", pnl=40.0, reason="take_profit"),
+    ]
+    _write_trades_csv(artifacts, rows)
+    return run_dir
+
+
+def _write_legacy_fixture(base_dir: Path) -> Path:
+    """Legacy one-row-per-trade artifacts: date/benchmark aliases, no marker."""
+    run_dir = base_dir / "legacy_run"
+    artifacts = run_dir / "artifacts"
+    artifacts.mkdir(parents=True, exist_ok=True)
+
+    bench = _benchmark_series()
+    legacy_equity = pd.DataFrame(
+        {
+            "date": [d.strftime("%Y-%m-%d") for d in bench.index],
+            "equity": [1_000_000.0 * (1.001**i) for i in range(DAYS)],
+            "benchmark": bench.values,
+        }
+    )
+    legacy_equity.to_csv(artifacts / "equity.csv", index=False)
+
+    legacy_rows = [
+        {
+            "date": trade_date.strftime("%Y-%m-%d"),
+            "code": "TEST.SH",
+            "side": "sell",
+            "pnl": 50.0,
+            "return_pct": 0.5,
+        }
+        for trade_date in ALL_TRADE_DAYS
+    ]
+    pd.DataFrame(legacy_rows).to_csv(artifacts / "trades.csv", index=False)
     return run_dir
 
 
@@ -120,6 +260,18 @@ def _call_compute(strategy_id, run_dir, **candidates):
     else:
         kwargs = {k: v for k, v in candidates.items() if k in sig.parameters}
     return func(strategy_id=strategy_id, run_dir=run_dir, **kwargs)
+
+
+def _compute_with_fixture_windows(run_dir):
+    """Shared call shape: fixture-engineered windows + pinned today."""
+    return _call_compute(
+        "sdm:fixture_run",
+        run_dir,
+        benchmark_window=5,
+        bear_threshold=-0.05,
+        bull_threshold=0.05,
+        today="2026-08-01",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -157,35 +309,36 @@ class TestFixtureSelfCheck:
                         -0.05 <= value <= 0.05
                     ), f"{trade_date} should be structural (got {value:.4f})"
 
-    def test_trade_fixture_shape(self, tmp_path) -> None:
+    def test_trade_fixture_shape_matches_engine_schema(self, tmp_path) -> None:
         run_dir = _write_run_fixture(tmp_path)
         trades = pd.read_csv(run_dir / "artifacts" / "trades.csv")
         equity = pd.read_csv(run_dir / "artifacts" / "equity.csv")
-        assert len(trades) == 9
-        assert {"date", "pnl", "return_pct"} <= set(trades.columns)
+
+        assert list(trades.columns) == ENGINE_TRADE_COLUMNS
+        # 9 round trips → 18 rows: entry rows (pnl == 0) + exit rows (pnl > 0).
+        assert len(trades) == 18
+        assert int((trades["pnl"] == 0.0).sum()) == 9
+        assert int((trades["pnl"] > 0).sum()) == 9
+        assert (trades["reason"] != "").all()
+
+        assert list(equity.columns) == ["timestamp", *ENGINE_EQUITY_COLUMNS]
         assert len(equity) == DAYS
-        assert {"date", "equity", "benchmark"} <= set(equity.columns)
-        assert (trades["pnl"] > 0).all()
+        assert "benchmark" not in equity.columns, "no dual benchmark columns"
+        assert "date" not in equity.columns, "no dual date columns"
 
 
 # ---------------------------------------------------------------------------
-# compute_evidence_for_run
+# compute_evidence_for_run on the REAL engine schema
 # ---------------------------------------------------------------------------
 
 
 @requires_harness
 class TestComputeEvidence:
-    def test_expected_regime_attribution_and_trade_counts(self, tmp_path) -> None:
+    def test_real_schema_yields_rows_with_expected_attribution(self, tmp_path) -> None:
         run_dir = _write_run_fixture(tmp_path)
-        rows = _call_compute(
-            "sdm:fixture_run",
-            run_dir,
-            benchmark_window=5,
-            bear_threshold=-0.05,
-            bull_threshold=0.05,
-            today="2026-08-01",
-        )
+        rows = _compute_with_fixture_windows(run_dir)
         assert isinstance(rows, list)
+        assert rows, "real engine-schema artifacts must produce evidence rows"
         counts = {row.regime: row.trades_in_regime for row in rows}
         regimes = {row.regime for row in rows}
         assert regimes == set(EXPECTED_COUNTS), f"unexpected regime set: {regimes}"
@@ -198,16 +351,37 @@ class TestComputeEvidence:
                 row.last_verified == "2026-08-01"
             ), f"{row.regime}: explicit today= must pin last_verified, got {row.last_verified!r}"
 
+    def test_entry_rows_are_excluded_from_trade_counts(self, tmp_path) -> None:
+        trades_path = _write_run_fixture(tmp_path) / "artifacts" / "trades.csv"
+        activity = sd_artifacts.read_trade_activity(trades_path)
+        assert activity is not None
+        exit_dates, max_concurrent = activity
+        # 18 physical rows but exactly 9 round trips — one count per exit row.
+        assert exit_dates == sorted(ALL_TRADE_DAYS)
+        assert len(exit_dates) == 9
+        assert max_concurrent == 1
+
+        rows = _compute_with_fixture_windows(_write_run_fixture(tmp_path / "again"))
+        assert sum(row.trades_in_regime for row in rows) == 9
+
+    def test_benchmark_is_read_from_benchmark_equity(self, tmp_path) -> None:
+        run_dir = _write_run_fixture(tmp_path)
+        equity_frame = pd.read_csv(run_dir / "artifacts" / "equity.csv")
+        assert "benchmark_equity" in equity_frame.columns
+        assert "benchmark" not in equity_frame.columns
+
+        rows = _compute_with_fixture_windows(run_dir)
+        assert rows
+        for row in rows:
+            assert row.benchmark_in_regime is not None, (
+                f"{row.regime}: benchmark must be read from the benchmark_equity "
+                f"column"
+            )
+            assert row.excess_in_regime is not None
+
     def test_date_ranges_format(self, tmp_path) -> None:
         run_dir = _write_run_fixture(tmp_path)
-        rows = _call_compute(
-            "sdm:fixture_run",
-            run_dir,
-            benchmark_window=5,
-            bear_threshold=-0.05,
-            bull_threshold=0.05,
-            today="2026-08-01",
-        )
+        rows = _compute_with_fixture_windows(run_dir)
         pattern = re.compile(r"^\d{4}-\d{2} to \d{4}-\d{2}$")
         for row in rows:
             assert isinstance(row.date_ranges, tuple)
@@ -217,14 +391,7 @@ class TestComputeEvidence:
 
     def test_quality_classification_applied(self, tmp_path) -> None:
         run_dir = _write_run_fixture(tmp_path)
-        rows = _call_compute(
-            "sdm:fixture_run",
-            run_dir,
-            benchmark_window=5,
-            bear_threshold=-0.05,
-            bull_threshold=0.05,
-            today="2026-08-01",
-        )
+        rows = _compute_with_fixture_windows(run_dir)
         for row in rows:
             coverage = sd_models.coverage_days_from_ranges(list(row.date_ranges))
             expected_quality = sd_models.classify_quality(
@@ -269,6 +436,34 @@ class TestComputeEvidence:
                 f"(full={full}, half={half})"
             )
 
+    def test_single_position_run_carries_no_concurrency_caveat(self, tmp_path) -> None:
+        run_dir = _write_run_fixture(tmp_path)
+        rows = _compute_with_fixture_windows(run_dir)
+        assert rows
+        for row in rows:
+            assert not any(
+                w.startswith(sd_harness.MULTI_POSITION_WARNING_PREFIX)
+                for w in row.warnings
+            ), f"{row.regime}: single-position runs need no concurrency caveat"
+
+    def test_unparseable_trade_dates_are_rejected_not_fatal(self, tmp_path) -> None:
+        run_dir = _write_run_fixture(tmp_path)
+        trades_path = run_dir / "artifacts" / "trades.csv"
+        trades = pd.read_csv(trades_path)
+        junk_row = {column: "" for column in trades.columns}
+        junk_row.update(
+            {"timestamp": "not-a-date", "code": "TEST.SH", "side": "sell", "pnl": 50.0}
+        )
+        pd.concat([trades, pd.DataFrame([junk_row])], ignore_index=True).to_csv(
+            trades_path, index=False
+        )
+
+        rows = _compute_with_fixture_windows(run_dir)
+        counts = {row.regime: row.trades_in_regime for row in rows}
+        assert (
+            counts == EXPECTED_COUNTS
+        ), "unparseable-date rows must be skipped without changing counts"
+
     def test_missing_csvs_or_artifacts_returns_empty_list_no_crash(
         self, tmp_path
     ) -> None:
@@ -299,6 +494,93 @@ class TestComputeEvidence:
             )
             == []
         )
+
+    def test_binary_garbage_trades_returns_empty_without_raising(
+        self, tmp_path
+    ) -> None:
+        run_dir = _write_run_fixture(tmp_path)
+        trades_path = run_dir / "artifacts" / "trades.csv"
+        trades_path.write_bytes(b"\xff\xfe\x00\x81garbage\x93\xfd")
+
+        assert sd_artifacts.read_trade_activity(trades_path) is None
+        assert _compute_with_fixture_windows(run_dir) == []
+
+    def test_binary_garbage_equity_returns_empty_without_raising(
+        self, tmp_path
+    ) -> None:
+        run_dir = _write_run_fixture(tmp_path)
+        equity_path = run_dir / "artifacts" / "equity.csv"
+        equity_path.write_bytes(b"\x93\xfd\x00binary\xff\xfe")
+
+        assert sd_artifacts.read_equity_series(equity_path) is None
+        assert _compute_with_fixture_windows(run_dir) == []
+
+
+# ---------------------------------------------------------------------------
+# Legacy one-row-per-trade artifacts still parse via aliases
+# ---------------------------------------------------------------------------
+
+
+@requires_harness
+class TestLegacyAliasSupport:
+    def test_legacy_date_benchmark_artifacts_still_parse(self, tmp_path) -> None:
+        run_dir = _write_legacy_fixture(tmp_path)
+        equity = pd.read_csv(run_dir / "artifacts" / "equity.csv")
+        assert {"date", "equity", "benchmark"} <= set(equity.columns)
+        assert "timestamp" not in equity.columns
+
+        rows = _compute_with_fixture_windows(run_dir)
+        counts = {row.regime: row.trades_in_regime for row in rows}
+        assert (
+            counts == EXPECTED_COUNTS
+        ), "legacy one-row-per-trade artifacts must keep counting every row"
+        for row in rows:
+            assert row.benchmark_in_regime is not None
+            # No zero-pnl marker → concurrency undetectable → generic caveat.
+            assert any(
+                w.startswith(sd_harness.MULTI_POSITION_WARNING_PREFIX)
+                and "concurrency is unknown" in w
+                for w in row.warnings
+            ), f"{row.regime}: marker-less artifacts must carry the generic caveat"
+
+    def test_legacy_reader_counts_every_row_without_concurrency(self, tmp_path) -> None:
+        trades_path = _write_legacy_fixture(tmp_path) / "artifacts" / "trades.csv"
+        activity = sd_artifacts.read_trade_activity(trades_path)
+        assert activity is not None
+        trade_dates, max_concurrent = activity
+        assert trade_dates == sorted(ALL_TRADE_DAYS)
+        assert max_concurrent is None
+
+
+# ---------------------------------------------------------------------------
+# Multi-position runs carry the aggregate-breakeven caveat
+# ---------------------------------------------------------------------------
+
+
+@requires_harness
+class TestMultiPositionCaveat:
+    def test_overlapping_positions_flag_the_breakeven_approximation(
+        self, tmp_path
+    ) -> None:
+        run_dir = _write_multi_position_fixture(tmp_path)
+        activity = sd_artifacts.read_trade_activity(
+            run_dir / "artifacts" / "trades.csv"
+        )
+        assert activity is not None
+        assert activity[1] == 2, "AAA (Jan 14-16) and BBB (Jan 15-21) overlap"
+
+        rows = _compute_with_fixture_windows(run_dir)
+        counts = {row.regime: row.trades_in_regime for row in rows}
+        assert counts == {"bear_market": 1, "bull_market": 1}
+        for row in rows:
+            caveats = [
+                w
+                for w in row.warnings
+                if w.startswith(sd_harness.MULTI_POSITION_WARNING_PREFIX)
+            ]
+            assert len(caveats) == 1, f"{row.regime}: exactly one caveat expected"
+            assert "2 concurrent positions" in caveats[0]
+            assert "aggregate run figures" in caveats[0]
 
 
 # ---------------------------------------------------------------------------
@@ -342,8 +624,8 @@ class TestRebuildEvidence:
         assert store_rows, "good run_dir must have produced evidence rows"
         assert {r.strategy_id for r in store_rows} == {"sdm:fixture_run"}
         # Rebuild runs compute_evidence_for_run with its documented defaults;
-        # whatever regime windows those defaults find, no fixture trade may be
-        # lost or fabricated (9 closed trades in the fixture).
+        # whatever regime windows those defaults find, no fixture round trip
+        # may be lost or double-counted (9 round trips, exit rows only).
         assert sum(r.trades_in_regime for r in store_rows) == 9
 
         assert isinstance(

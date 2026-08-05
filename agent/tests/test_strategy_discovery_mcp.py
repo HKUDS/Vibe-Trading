@@ -130,8 +130,12 @@ class TestDelegation:
     def test_broken_registry_yields_actionable_error_not_exception(
         self, monkeypatch
     ) -> None:
+        # The exception message is a leak canary: the envelope must be a
+        # generic error, never echoing raw exception text (internal paths).
+        canary = "internal-detail /etc/shards/leak canary 7f3d"
+
         def _exploding_registry():
-            raise RuntimeError("strategy discovery registry unavailable")
+            raise RuntimeError(canary)
 
         monkeypatch.setattr(mcp_server, "_get_registry", _exploding_registry)
         for name in SD_TOOLS:
@@ -144,4 +148,8 @@ class TestDelegation:
             assert (
                 payload.get("status") == "error" or payload.get("ok") is False
             ), f"{name}: broken registry must produce an error envelope, got {payload!r}"
-            assert payload.get("error"), f"{name}: error envelope must carry a message"
+            error = payload.get("error")
+            assert error, f"{name}: error envelope must carry a message"
+            assert (
+                canary not in error
+            ), f"{name}: raw exception text leaked into the envelope: {error!r}"

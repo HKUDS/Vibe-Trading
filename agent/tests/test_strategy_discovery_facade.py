@@ -367,7 +367,9 @@ class TestQueryStrategies:
 
     def test_empty_store_returns_honest_note(self, tmp_path) -> None:
         # AC8: an empty evidence store yields an ok envelope with a note that
-        # no evidence has been computed — never rows, never an error.
+        # no evidence has been computed — never rows, never an error. The
+        # note must point at the evidence harness LIBRARY API (the only write
+        # path) and never suggest a user-runnable workflow/CLI exists.
         facade, _ = _make_facade(tmp_path, alpha_ids=("a1",))
         payload = facade.query_strategies(min_evidence_quality="any")
         assert payload["status"] == "ok"
@@ -377,6 +379,13 @@ class TestQueryStrategies:
             note
         ), "empty store query must carry a 'note' explaining no evidence exists"
         assert isinstance(note, str)
+        assert "rebuild_evidence" in note, (
+            "the note must name the harness library API as the only write "
+            f"path: {note!r}"
+        )
+        assert (
+            "vibe-trading" not in note
+        ), f"the note must not suggest a CLI command exists: {note!r}"
 
     def test_item_shape_carries_every_evidence_field_plus_borderline(
         self, tmp_path
@@ -536,3 +545,51 @@ class TestGetStrategyEvidence:
         assert payload["found"] is False
         assert payload["rows"] == []
         assert payload.get("note"), "honest-empty envelope must carry a note"
+
+
+# ---------------------------------------------------------------------------
+# Default Alpha Zoo registry resolution (process-cached singleton)
+# ---------------------------------------------------------------------------
+
+
+@requires_facade
+class TestDefaultAlphaRegistryResolution:
+    """The default registry must come from the process-wide
+    ``get_default_registry()`` singleton — constructing ``Registry()`` per
+    facade instance would re-run the zoo AST scan (~0.85s) every time."""
+
+    def test_default_resolution_uses_shared_singleton(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        sentinel = FakeAlphaRegistry([FakeAlpha("z1")])
+        calls = []
+
+        def fake_get_default_registry():
+            calls.append(1)
+            return sentinel
+
+        monkeypatch.setattr(
+            "src.factors.registry.get_default_registry", fake_get_default_registry
+        )
+        facade = StrategyDiscoveryFacade(
+            evidence_store=_make_store(tmp_path),
+            sdm_store=FakeSdmStore([]),
+        )
+        assert facade._get_alpha_registry() is sentinel
+        assert facade._get_alpha_registry() is sentinel
+        assert calls == [1], "singleton accessor must be hit once, then cached"
+
+    def test_injected_registry_bypasses_singleton(self, tmp_path, monkeypatch) -> None:
+        def fake_get_default_registry():
+            raise AssertionError("injected registry must not touch the singleton")
+
+        monkeypatch.setattr(
+            "src.factors.registry.get_default_registry", fake_get_default_registry
+        )
+        injected = FakeAlphaRegistry([FakeAlpha("i1")])
+        facade = StrategyDiscoveryFacade(
+            evidence_store=_make_store(tmp_path),
+            sdm_store=FakeSdmStore([]),
+            alpha_registry=injected,
+        )
+        assert facade._get_alpha_registry() is injected

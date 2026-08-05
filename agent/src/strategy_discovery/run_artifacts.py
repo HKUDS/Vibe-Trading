@@ -1,15 +1,35 @@
 """Read-only parsing of backtest run artifacts for the evidence harness.
 
 Pure CSV I/O over ``run_dir/artifacts`` — no network, no invention. The
-harness reads only what a reproducible run actually recorded:
+harness reads only what a reproducible run actually recorded.
 
-* ``trades.csv`` — one row per trade; needs a date column (aliases:
-  ``date``, ``trade_date``, ``exit_date``).
-* ``equity.csv`` — daily series with columns ``date``, ``equity`` (aliases
-  ``nav``/``value``), optional ``benchmark`` and optional ``exposure``.
+Real engine schema (``backtest/engines/base.py::_write_artifacts``, the
+writer every reproducible run goes through):
 
-Unusable files return ``None`` with a logged warning; malformed rows are
-skipped rather than guessed at.
+* ``trades.csv`` — columns ``timestamp, code, side, price, qty, reason,
+  pnl, holding_days, return_pct`` with TWO rows per round trip: an entry
+  row (``reason="signal"``, ``pnl=0.0``, ``holding_days=0``) followed by
+  the exit row carrying the realized ``pnl``.
+* ``equity.csv`` — date column ``timestamp`` (the engine's index name)
+  plus ``ret, equity, drawdown, benchmark_equity, active_ret``.
+
+Entry/exit convention. The engine writes no dedicated marker column, and
+``reason`` is not one either — exits can also carry ``reason="signal"``
+(the base engine closes positions on signal). This reader therefore
+mirrors the repo's own artifact-reload convention in
+``backtest/validation.py``: a row is a closed-trade (exit) row iff its
+``pnl`` parses to a nonzero finite value, while ``pnl == 0.0`` rows are
+entry rows. Files with no zero-pnl rows at all are treated as legacy
+one-row-per-trade artifacts where every dated row is a meaningful closed
+trade. Documented limitation (shared with ``validation.py``): an
+exact-break-even exit (``pnl == 0.0``) is indistinguishable from an entry
+row and is not counted as a round trip.
+
+Legacy artifacts keep parsing through column aliases (``date`` for
+``timestamp``, ``benchmark`` for ``benchmark_equity``). Unusable files —
+missing date/equity columns, decode errors, OS errors, malformed CSV —
+return ``None`` with a logged warning instead of raising; malformed rows
+are skipped rather than guessed at.
 """
 
 from __future__ import annotations
@@ -23,14 +43,32 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-#: Accepted names for the trade-date column in ``trades.csv``.
-TRADE_DATE_ALIASES = ("date", "trade_date", "exit_date")
+#: Accepted names for the trade-date column in ``trades.csv``. The engine
+#: names it ``timestamp``; the remaining names are legacy aliases kept for
+#: older artifacts. Real engine name first, legacy after.
+TRADE_DATE_ALIASES = ("timestamp", "date", "trade_date", "exit_date")
+
+#: Accepted names for the date column in ``equity.csv``. The engine writes
+#: its date index as ``timestamp``; ``date`` is the legacy alias.
+EQUITY_DATE_ALIASES = ("timestamp", "date")
 
 #: Accepted names for the strategy equity column in ``equity.csv``.
 EQUITY_COLUMN_ALIASES = ("equity", "nav", "value")
 
-_BENCHMARK_COLUMN = "benchmark"
-_EXPOSURE_COLUMN = "exposure"
+#: Accepted names for the benchmark column in ``equity.csv``. The engine
+#: writes ``benchmark_equity``; ``benchmark`` is the legacy alias.
+_BENCHMARK_ALIASES = ("benchmark_equity", "benchmark")
+_EXPOSURE_ALIASES = ("exposure",)
+
+#: Engine marker columns in ``trades.csv`` used for entry/exit detection
+#: and per-code position pairing.
+_PNL_ALIASES = ("pnl",)
+_CODE_ALIASES = ("code",)
+
+#: Errors that mean "artifact unreadable" rather than "bug": non-UTF-8
+#: bytes, missing files/permissions, and malformed CSV (NUL bytes, broken
+#: quoting, oversized fields). Readers degrade to ``None`` on all of these.
+_UNREADABLE_ERRORS = (OSError, UnicodeDecodeError, csv.Error)
 
 
 def parse_iso_date(token: object) -> date | None:
@@ -66,26 +104,132 @@ def _find_column(fieldnames: Sequence[str], aliases: Sequence[str]) -> str | Non
     return None
 
 
+def _max_concurrent_positions(intervals: Sequence[tuple[date, date]]) -> int:
+    """Peak number of overlapping ``(entry, exit)`` holding intervals.
+
+    Entries are processed before exits on the same date, so a same-day
+    round trip still registers as one open position. That choice is
+    deliberate: the feed into the multi-position breakeven caveat should
+    over-flag rather than under-flag.
+    """
+    if not intervals:
+        return 0
+    events: list[tuple[date, int]] = []
+    for entry_date, exit_date in intervals:
+        start, end = sorted((entry_date, exit_date))
+        events.append((start, 1))
+        events.append((end, -1))
+    # Same-date ordering: +1 (entry) before -1 (exit).
+    events.sort(key=lambda event: (event[0], -event[1]))
+    current = peak = 0
+    for _, delta in events:
+        current += delta
+        if current > peak:
+            peak = current
+    return peak
+
+
+def read_trade_activity(path: Path) -> tuple[list[date], int | None] | None:
+    """Round-trip exit dates and peak concurrency from ``trades.csv``.
+
+    Returns ``(exit_dates, max_concurrent)``:
+
+    * ``exit_dates`` — one date per closed round trip, sorted. Engine
+      artifacts hold two rows per round trip (entry row ``pnl=0.0`` plus
+      exit row with realized pnl); only exit rows count, so a round trip
+      is counted once, never twice. Legacy one-row-per-trade artifacts
+      (no zero-pnl marker rows) count every dated row.
+    * ``max_concurrent`` — peak simultaneously open positions derived
+      from the entry/exit pairs (FIFO per code, matching the engine's
+      one-position-per-symbol book), or ``None`` when the file lacks the
+      zero-pnl entry marker and concurrency is undetectable.
+
+    Returns ``None`` when the file is unusable: no date column, decode /
+    OS / CSV errors, or no usable content. Rows with unparseable dates
+    are skipped, never fatal. See the module docstring for the entry/exit
+    marker convention.
+    """
+    try:
+        with path.open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = reader.fieldnames or []
+            date_column = _find_column(fieldnames, TRADE_DATE_ALIASES)
+            if date_column is None:
+                logger.warning(
+                    "trades.csv at %s has no date column (expected one of %s)",
+                    path,
+                    ", ".join(TRADE_DATE_ALIASES),
+                )
+                return None
+            pnl_column = _find_column(fieldnames, _PNL_ALIASES)
+            code_column = _find_column(fieldnames, _CODE_ALIASES)
+
+            rows: list[tuple[date, str, float | None]] = []
+            for record in reader:
+                trade_date = parse_iso_date(record.get(date_column))
+                if trade_date is None:
+                    continue  # reject unparseable dates row-by-row
+                pnl = (
+                    parse_finite_float(record.get(pnl_column))
+                    if pnl_column is not None
+                    else None
+                )
+                code = (
+                    str(record.get(code_column) or "").strip()
+                    if code_column is not None
+                    else ""
+                )
+                rows.append((trade_date, code, pnl))
+    except _UNREADABLE_ERRORS as exc:
+        logger.warning(
+            "trades.csv at %s is unreadable (%s); treated as unusable", path, exc
+        )
+        return None
+
+    if not rows:
+        return [], None
+
+    # The engine writes entry rows with pnl=0.0 and exit rows with realized
+    # pnl (backtest/engines/base.py::_write_artifacts); backtest/validation.py
+    # reloads the same artifacts with `pnl != 0` as the exit-row filter. When
+    # no marker row exists, every dated row is a closed trade (legacy
+    # one-row-per-trade artifacts) and concurrency is undetectable.
+    has_entry_marker = any(pnl is not None and pnl == 0.0 for _, _, pnl in rows)
+    if not has_entry_marker:
+        return sorted(trade_date for trade_date, _, _ in rows), None
+
+    exit_dates: list[date] = []
+    open_entries: dict[str, list[date]] = {}
+    intervals: list[tuple[date, date]] = []
+    for trade_date, code, pnl in rows:
+        if pnl is None:
+            continue  # unclassifiable without a usable pnl marker
+        if pnl != 0.0:
+            # Exit row: one closed round trip.
+            exit_dates.append(trade_date)
+            pending = open_entries.get(code)
+            if pending:
+                intervals.append((pending.pop(0), trade_date))
+        else:
+            # Entry row (engine marker pnl == 0.0).
+            open_entries.setdefault(code, []).append(trade_date)
+    exit_dates.sort()
+    return exit_dates, _max_concurrent_positions(intervals)
+
+
 def read_trade_dates(path: Path) -> list[date] | None:
-    """Trade dates from ``trades.csv``; ``None`` when the file is unusable."""
-    dates: list[date] = []
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
-        fieldnames = reader.fieldnames or []
-        date_column = _find_column(fieldnames, TRADE_DATE_ALIASES)
-        if date_column is None:
-            logger.warning(
-                "trades.csv at %s has no date column (expected one of %s)",
-                path,
-                ", ".join(TRADE_DATE_ALIASES),
-            )
-            return None
-        for record in reader:
-            parsed = parse_iso_date(record.get(date_column))
-            if parsed is not None:
-                dates.append(parsed)
-    dates.sort()
-    return dates
+    """Closed-trade dates from ``trades.csv``; ``None`` when unusable.
+
+    One date per round trip: engine artifacts carry entry+exit row pairs
+    and only exit rows count. Thin wrapper around
+    :func:`read_trade_activity`, which documents the marker convention
+    and the legacy one-row-per-trade behavior.
+    """
+    activity = read_trade_activity(path)
+    if activity is None:
+        return None
+    exit_dates, _ = activity
+    return exit_dates
 
 
 def read_equity_series(
@@ -93,44 +237,56 @@ def read_equity_series(
 ) -> tuple[list[date], list[float], list[float | None], list[float]] | None:
     """(dates, equity, benchmark-or-None-per-bar, exposures) from ``equity.csv``.
 
-    Rows without a parseable date and finite positive equity value are
-    skipped. Returns ``None`` when the file lacks a usable date/equity
-    column pair or contains no usable rows.
+    Column aliases: the date column is ``timestamp`` in engine artifacts
+    (legacy ``date`` still parses); the benchmark column is
+    ``benchmark_equity`` in engine artifacts (legacy ``benchmark`` still
+    parses). Rows without a parseable date and finite positive equity
+    value are skipped. Returns ``None`` when the file lacks a usable
+    date/equity column pair, contains no usable rows, or is unreadable
+    (decode / OS / CSV errors degrade instead of raising).
     """
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
-        fieldnames = reader.fieldnames or []
-        date_column = _find_column(fieldnames, ("date",))
-        equity_column = _find_column(fieldnames, EQUITY_COLUMN_ALIASES)
-        if date_column is None or equity_column is None:
-            logger.warning(
-                "equity.csv at %s lacks a date/equity column pair (equity aliases: %s)",
-                path,
-                ", ".join(EQUITY_COLUMN_ALIASES),
-            )
-            return None
-        benchmark_column = _find_column(fieldnames, (_BENCHMARK_COLUMN,))
-        exposure_column = _find_column(fieldnames, (_EXPOSURE_COLUMN,))
+    try:
+        with path.open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = reader.fieldnames or []
+            date_column = _find_column(fieldnames, EQUITY_DATE_ALIASES)
+            equity_column = _find_column(fieldnames, EQUITY_COLUMN_ALIASES)
+            if date_column is None or equity_column is None:
+                logger.warning(
+                    "equity.csv at %s lacks a date/equity column pair "
+                    "(date aliases: %s; equity aliases: %s)",
+                    path,
+                    ", ".join(EQUITY_DATE_ALIASES),
+                    ", ".join(EQUITY_COLUMN_ALIASES),
+                )
+                return None
+            benchmark_column = _find_column(fieldnames, _BENCHMARK_ALIASES)
+            exposure_column = _find_column(fieldnames, _EXPOSURE_ALIASES)
 
-        records: dict[date, tuple[float, float | None, float | None]] = {}
-        for record in reader:
-            bar_date = parse_iso_date(record.get(date_column))
-            equity = parse_finite_float(record.get(equity_column))
-            if bar_date is None or equity is None or equity <= 0:
-                continue
-            benchmark = (
-                parse_finite_float(record.get(benchmark_column))
-                if benchmark_column is not None
-                else None
-            )
-            exposure = (
-                parse_finite_float(record.get(exposure_column))
-                if exposure_column is not None
-                else None
-            )
-            if bar_date in records:  # duplicate dates: keep the first bar
-                continue
-            records[bar_date] = (equity, benchmark, exposure)
+            records: dict[date, tuple[float, float | None, float | None]] = {}
+            for record in reader:
+                bar_date = parse_iso_date(record.get(date_column))
+                equity = parse_finite_float(record.get(equity_column))
+                if bar_date is None or equity is None or equity <= 0:
+                    continue
+                benchmark = (
+                    parse_finite_float(record.get(benchmark_column))
+                    if benchmark_column is not None
+                    else None
+                )
+                exposure = (
+                    parse_finite_float(record.get(exposure_column))
+                    if exposure_column is not None
+                    else None
+                )
+                if bar_date in records:  # duplicate dates: keep the first bar
+                    continue
+                records[bar_date] = (equity, benchmark, exposure)
+    except _UNREADABLE_ERRORS as exc:
+        logger.warning(
+            "equity.csv at %s is unreadable (%s); treated as unusable", path, exc
+        )
+        return None
 
     if not records:
         return None

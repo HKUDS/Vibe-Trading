@@ -960,15 +960,20 @@ def _strategy_discovery_execute(tool_name: str, params: dict[str, Any]) -> str:
 
     Registry or facade failures never propagate to the MCP client as a bare
     exception — silent, confident failure is exactly the mode this feature
-    exists to prevent (see the phantom-tool rejection of PR #896).
+    exists to prevent (see the phantom-tool rejection of PR #896). The
+    envelope carries a generic message only; raw exception text can leak
+    internal paths and stays in the server logs via ``logger.exception``.
     """
     try:
         registry = _get_registry()
         return registry.execute(tool_name, params)
-    except Exception as exc:  # noqa: BLE001 - honest error beats a raw traceback
+    except Exception:  # noqa: BLE001 - honest error beats a raw traceback
         logger.exception("strategy discovery tool %s unavailable", tool_name)
         return json.dumps(
-            {"status": "error", "error": f"strategy discovery unavailable: {exc}"},
+            {
+                "status": "error",
+                "error": "strategy discovery unavailable; see server logs",
+            },
             ensure_ascii=False,
         )
 
@@ -1018,8 +1023,9 @@ def query_strategies(
             "bull_market", or "structural". Omit to query across all regimes.
         min_sharpe: Optional minimum Sharpe on the per-regime evidence rows.
         min_evidence_quality: Minimum evidence quality to keep — "adequate"
-            (default), "marginal", "insufficient", or "any" to keep
-            everything including rows below all thresholds.
+            (default), "marginal", "insufficient", or "any". "any" only
+            removes the quality floor; rows must still pass the other
+            filters (min_trades, cost_feasible, min_sharpe) to be kept.
         min_trades: Minimum executed-trade count for evidence to count
             (default 10; fewer trades reads as insufficient evidence).
         cost_feasible: Keep only strategies that pass the sizing-corrected

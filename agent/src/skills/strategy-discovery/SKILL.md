@@ -47,7 +47,7 @@ Evidence-gated query.
 |-----------|------|---------|---------|
 | `regime` | string | none | `bear_market`, `bull_market`, or `structural`; omit for all regimes |
 | `min_sharpe` | number | none | Minimum Sharpe on the evidence rows |
-| `min_evidence_quality` | string | `adequate` | `adequate` \| `marginal` \| `insufficient` \| `any` (`any` keeps everything, including rows below all thresholds) |
+| `min_evidence_quality` | string | `adequate` | `adequate` \| `marginal` \| `insufficient` \| `any`. `any` only removes the quality floor — rows must still pass the other filters (`min_trades`, `cost_feasible`, `min_sharpe`) to be kept |
 | `min_trades` | integer | 10 | Minimum executed-trade count for evidence to count |
 | `cost_feasible` | boolean | true | Keep only rows that clear the cost screen |
 | `limit` | integer | 10 | Maximum number of rows to return |
@@ -88,11 +88,17 @@ where `g` is the gross edge over the evidence window, `n` is the number of trade
 
 The facade deliberately **does not report an `estimated_net_sharpe`**. A net Sharpe requires picking concrete cost assumptions, and any choice there would present an unverified estimate as evidence. The honest number is the breakeven itself — it tells the caller how much per-trade cost the gross edge tolerates, and leaves the cost assumption to them.
 
+## Multi-position caveat
+
+`breakeven_fee_bps` is computed from **aggregate** run figures — `ln(1+g) / (2·n·s) · 10⁴`, where `g`, `n`, and `s` are the window's aggregate gross edge, trade count, and average position size. Per the #969 discussion (sergio12S), the aggregate breakeven has **no closed form for multi-sleeve / multi-name strategies**: measured error is 1.1–6.5x versus per-position accounting.
+
+The failure direction is **conservative**: the aggregate figure over-flags `cost_sensitive`. It can reject strategies that would actually be affordable; it never recommends one that is not. For rows representing multi-position strategies, audit the verdict via the per-row `position_size` field before trusting the breakeven flag.
+
 ## Honest-Empty Semantics
 
 The facade refuses regime assessments without computed evidence. If a strategy has no backtest evidence for a regime, `get_strategy_evidence` returns an honest empty for that regime instead of a guess; `query_strategies` likewise never fabricates rows to satisfy a filter.
 
-An empty result is an answer, not an error: it means "no computed evidence exists for this request." The way to change that is to run the evidence harness over reproducible backtests (the `strategy-dev-manager` / `alpha-zoo` bench workflows) so real evidence rows land in the store — never to relax a threshold or narrate from a scenario tag.
+An empty result is an answer, not an error: it means "no computed evidence exists for this request." There is **no user-runnable command or workflow** that changes that. The evidence store is populated only by the evidence harness **library API** (`src.strategy_discovery.evidence_harness.rebuild_evidence` over reproducible run artifacts); automated workflow wiring is still pending, so until then evidence rows come from harness runs executed by developers/integrators. Never relax a threshold or narrate from a scenario tag instead.
 
 ## Composition Guarantee
 

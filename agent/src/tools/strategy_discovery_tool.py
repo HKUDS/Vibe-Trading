@@ -24,9 +24,14 @@ from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
 
-# Documented evidence-quality ladder. "any" keeps every row, including those
-# below all thresholds; the facade itself interprets the levels.
+# Documented evidence-quality ladder. "any" only removes the quality floor;
+# the other filters (min_trades, cost_feasible, min_sharpe) still apply, so
+# it does NOT literally keep every stored row. The facade interprets levels.
 _EVIDENCE_QUALITIES = ("adequate", "marginal", "insufficient", "any")
+
+#: Length cap for free-text string parameters. Values are identifiers
+#: (e.g. "alpha_zoo:<id>"), so anything larger is malformed or hostile.
+_MAX_STRING_PARAM_CHARS = 500
 
 
 def _err(msg: str) -> str:
@@ -86,6 +91,11 @@ def _coerce_opt_str(value: Any, name: str) -> str | None:
         return None
     if not isinstance(value, str):
         raise ValueError(f"{name} must be a string, got {value!r}")
+    if len(value) > _MAX_STRING_PARAM_CHARS:
+        raise ValueError(
+            f"{name} is too long ({len(value)} chars; "
+            f"max {_MAX_STRING_PARAM_CHARS})"
+        )
     text = value.strip()
     return text or None
 
@@ -158,9 +168,11 @@ class ListStrategiesTool(BaseTool):
         try:
             facade = _get_facade()
             result = facade.list_strategies(limit=limit, offset=offset, source=source)
-        except Exception as exc:
+        except Exception:
+            # Full detail goes to the server logs only; the envelope must not
+            # echo raw exception text (it can leak internal paths).
             logger.exception("list_strategies failed")
-            return _err(f"list_strategies failed: {exc}")
+            return _err("list_strategies failed internally; see server logs")
         return _envelope(result)
 
 
@@ -197,8 +209,9 @@ class QueryStrategiesTool(BaseTool):
                 "default": "adequate",
                 "description": (
                     "Minimum evidence quality to keep: adequate (default), "
-                    "marginal, insufficient, or any (keeps everything, "
-                    "including rows below all thresholds)."
+                    "marginal, insufficient, or any. 'any' only removes the "
+                    "quality floor — rows must still pass the other filters "
+                    "(min_trades, cost_feasible, min_sharpe) to be kept."
                 ),
             },
             "min_trades": {
@@ -263,9 +276,11 @@ class QueryStrategiesTool(BaseTool):
                 cost_feasible=cost_feasible,
                 limit=limit,
             )
-        except Exception as exc:
+        except Exception:
+            # Full detail goes to the server logs only; the envelope must not
+            # echo raw exception text (it can leak internal paths).
             logger.exception("query_strategies failed")
-            return _err(f"query_strategies failed: {exc}")
+            return _err("query_strategies failed internally; see server logs")
         return _envelope(result)
 
 
@@ -315,7 +330,9 @@ class GetStrategyEvidenceTool(BaseTool):
         try:
             facade = _get_facade()
             result = facade.get_strategy_evidence(strategy_id, regime=regime)
-        except Exception as exc:
+        except Exception:
+            # Full detail goes to the server logs only; the envelope must not
+            # echo raw exception text (it can leak internal paths).
             logger.exception("get_strategy_evidence failed")
-            return _err(f"get_strategy_evidence failed: {exc}")
+            return _err("get_strategy_evidence failed internally; see server logs")
         return _envelope(result)

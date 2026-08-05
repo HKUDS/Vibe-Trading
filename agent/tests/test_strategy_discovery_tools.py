@@ -200,3 +200,89 @@ class TestInvalidParameters:
         payload = _strict_json_loads(tool.execute(strategy_id=12345))
         assert payload["status"] == "error"
         assert payload.get("error")
+
+
+@requires_tools
+class TestStringLengthCap:
+    """Free-text params are identifiers; over-long values are rejected at the
+    tool boundary via the standard error envelope, before any facade call."""
+
+    def test_overlong_strategy_id_is_rejected_with_clear_message(
+        self, fake_facade
+    ) -> None:
+        tool = _instantiate_tools()["get_strategy_evidence"]
+        payload = _strict_json_loads(tool.execute(strategy_id="a" * 501))
+        assert payload["status"] == "error"
+        error = payload.get("error", "")
+        assert error, "cap rejection must carry a message"
+        assert "too long" in error.lower(), f"expected a length message: {error!r}"
+        assert (
+            not fake_facade.instances or not fake_facade.instances[-1].calls
+        ), "an over-long parameter must not reach the facade"
+
+    def test_exactly_500_chars_is_accepted(self, fake_facade) -> None:
+        tool = _instantiate_tools()["get_strategy_evidence"]
+        payload = _strict_json_loads(tool.execute(strategy_id="a" * 500))
+        assert payload["status"] == "ok"
+        assert payload["strategy_id"] == "a" * 500
+
+    def test_overlong_regime_and_source_are_rejected(self, fake_facade) -> None:
+        query = _instantiate_tools()["query_strategies"]
+        listed = _instantiate_tools()["list_strategies"]
+        bad = "r" * 700
+        for payload in (
+            _strict_json_loads(query.execute(regime=bad)),
+            _strict_json_loads(listed.execute(source=bad)),
+        ):
+            assert payload["status"] == "error"
+            assert "too long" in payload.get("error", "").lower()
+
+
+@requires_tools
+class TestGenericErrorEnvelope:
+    """Unexpected facade failures must surface as a generic error envelope —
+    raw exception text (file paths, internals) belongs to server logs only."""
+
+    class ExplodingFacade:
+        _SECRET = "traceback-canary /Users/x/.vibe-trading/secrets/token"
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def list_strategies(self, *args, **kwargs):
+            raise RuntimeError(self._SECRET)
+
+        def query_strategies(self, *args, **kwargs):
+            raise RuntimeError(self._SECRET)
+
+        def get_strategy_evidence(self, *args, **kwargs):
+            raise RuntimeError(self._SECRET)
+
+    def test_facade_exception_yields_generic_message_without_leak(
+        self, monkeypatch
+    ) -> None:
+        import src.strategy_discovery as sd_package
+
+        monkeypatch.setattr(
+            sd_package, "StrategyDiscoveryFacade", self.ExplodingFacade, raising=True
+        )
+        if getattr(sdt, "StrategyDiscoveryFacade", None) is not None:
+            monkeypatch.setattr(
+                sdt, "StrategyDiscoveryFacade", self.ExplodingFacade, raising=True
+            )
+        tools = _instantiate_tools()
+        for name, call in (
+            ("list_strategies", lambda t: t.execute(limit=1)),
+            ("query_strategies", lambda t: t.execute()),
+            ("get_strategy_evidence", lambda t: t.execute(strategy_id="alpha_zoo:a1")),
+        ):
+            payload = _strict_json_loads(call(tools[name]))
+            assert payload["status"] == "error", f"{name}: expected error envelope"
+            error = payload.get("error", "")
+            assert error, f"{name}: error envelope must carry a message"
+            assert (
+                self.ExplodingFacade._SECRET not in error
+            ), f"{name}: raw exception text leaked into the envelope: {error!r}"
+            assert (
+                "failed internally" in error
+            ), f"{name}: expected the generic 'failed internally' wording: {error!r}"

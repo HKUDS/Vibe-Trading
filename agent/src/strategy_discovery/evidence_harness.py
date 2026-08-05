@@ -3,6 +3,11 @@
 Builds on the artifact readers in :mod:`run_artifacts`; this module owns the
 regime labeling and the per-regime metrics. Conventions:
 
+* Trade counting — engine ``trades.csv`` artifacts hold TWO rows per round
+  trip (entry row ``pnl=0.0`` + exit row with realized pnl); only exit rows
+  are counted, so a round trip contributes exactly one trade. Legacy
+  one-row-per-trade artifacts are detected via the marker column and keep
+  counting every row (see :func:`run_artifacts.read_trade_activity`).
 * Regime labeling — each bar is labeled by the rolling cumulative benchmark
   return over the trailing ``benchmark_window`` bars ending at that bar
   (``<= bear_threshold`` → bear_market, ``>= bull_threshold`` → bull_market,
@@ -13,6 +18,11 @@ regime labeling and the per-regime metrics. Conventions:
   bars; Sharpe is mean/std of per-bar strategy returns inside regime bars,
   annualized with ``sqrt(252)`` (bars assumed daily); max drawdown tracks
   the strategy equity peak across regime bars.
+* Multi-position caveat — ``breakeven_fee_bps`` divides aggregate run
+  returns by aggregate trade counts; for runs that held several positions
+  at once that is an approximation (issue #969). Runs with detected
+  concurrency > 1 — or whose artifacts make concurrency undetectable —
+  carry a stable ``multi-position-breakeven:`` warning on every row.
 
 Missing inputs return ``[]`` with a warning: honest empty beats fabricated
 rows every time.
@@ -41,7 +51,7 @@ from src.strategy_discovery.models import (
 from src.strategy_discovery.run_artifacts import (
     parse_finite_float,
     read_equity_series,
-    read_trade_dates,
+    read_trade_activity,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,6 +73,47 @@ DEFAULT_BULL_THRESHOLD = 0.15
 #: Annualization factor for Sharpe: bars are assumed daily, so the per-bar
 #: Sharpe is scaled by sqrt(252). Documented convention, not a hidden magic.
 SHARPE_ANNUALIZATION_BARS = 252
+
+#: Stable warning prefix for the multi-position breakeven caveat, kept in
+#: the same prefix-token style as ``models.build_warnings`` so downstream
+#: tools can match it without parsing prose.
+MULTI_POSITION_WARNING_PREFIX = "multi-position-breakeven:"
+
+#: Known approximation error of the aggregate breakeven estimate for
+#: multi-position runs (issue #969 discussion): 1.1x-6.5x. The direction is
+#: conservative — it can over-flag ``cost_sensitive``, never under-flag an
+#: unaffordable strategy.
+_MULTI_POSITION_CAVEAT_BODY = (
+    "breakeven_fee_bps is computed from aggregate run figures and is an "
+    "approximation for multi-position/multi-name runs (known error "
+    "1.1-6.5x, conservative — may over-flag cost_sensitive, never "
+    "under-flag unaffordable costs)"
+)
+
+
+def _breakeven_caveat(max_concurrent: int | None) -> str | None:
+    """Run-level caveat for the aggregate breakeven estimate, or ``None``.
+
+    ``max_concurrent`` comes from the entry/exit pairs in ``trades.csv``:
+    above 1 the breakeven arithmetic (aggregate return divided by
+    aggregate trade count) is only an approximation, so every evidence row
+    of that run carries the caveat. ``None`` (missing entry/exit marker →
+    concurrency undetectable) gets the generic wording instead of silence.
+    Single-position runs need no caveat.
+    """
+    if max_concurrent is None:
+        return (
+            f"{MULTI_POSITION_WARNING_PREFIX} trades.csv lacks the engine "
+            f"entry/exit marker (zero-pnl rows), so position concurrency "
+            f"is unknown; {_MULTI_POSITION_CAVEAT_BODY}"
+        )
+    if max_concurrent > 1:
+        return (
+            f"{MULTI_POSITION_WARNING_PREFIX} run held up to "
+            f"{max_concurrent} concurrent positions; "
+            f"{_MULTI_POSITION_CAVEAT_BODY}"
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -238,13 +289,14 @@ def compute_evidence_for_run(
         )
         return []
 
-    trade_dates = read_trade_dates(trades_path)
-    if trade_dates is None or not trade_dates:
+    activity = read_trade_activity(trades_path)
+    if activity is None or not activity[0]:
         logger.warning(
             "strategy %s: trades.csv unusable or empty — no evidence computed",
             strategy_id,
         )
         return []
+    trade_dates, max_concurrent = activity
     series = read_equity_series(equity_path)
     if series is None:
         logger.warning(
@@ -276,6 +328,7 @@ def compute_evidence_for_run(
         )
 
     resolved_size = _resolve_position_size(position_size, exposures)
+    breakeven_caveat = _breakeven_caveat(max_concurrent)
     last_verified = (
         today if isinstance(today, str) and today else date.today().isoformat()
     )
@@ -324,6 +377,8 @@ def compute_evidence_for_run(
         warnings = build_warnings(
             trades_in_regime, coverage_days, breakeven, quality, cost_sensitive
         )
+        if breakeven_caveat is not None:
+            warnings = (*warnings, breakeven_caveat)
 
         rows.append(
             EvidenceRow(

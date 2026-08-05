@@ -3,9 +3,10 @@
 ``EvidenceStore`` is the facade-owned SQLite cache keyed by
 ``(strategy_id, regime)``. These tests pin: explicit tmp-path initialization,
 auto table creation, upsert-replace semantics, filtered+sorted reads,
-``clear()`` / ``row_count()``, NaN rejection, and tuple→JSON→tuple
-round-tripping of ``date_ranges`` / ``warnings``. A fresh database MUST be
-empty (AC7: no seed corpus is baked into the package).
+``clear()`` / ``row_count()``, NaN rejection, tuple→JSON→tuple
+round-tripping of ``date_ranges`` / ``warnings``, and skip-with-warning for
+rows carrying an unknown regime (externally tampered database). A fresh
+database MUST be empty (AC7: no seed corpus is baked into the package).
 
 No network, no wall clock: every row carries an explicit ``last_verified``.
 """
@@ -198,3 +199,63 @@ class TestValidationAndSerialization:
         empty = store.get_rows(strategy_id="sdm:empty")[0]
         assert empty.date_ranges == ()
         assert empty.warnings == ()
+
+
+@requires_store
+class TestUnknownRegimeSkip:
+    """Rows with an off-vocabulary regime can only reach the SQLite file via
+    external tampering (``EvidenceRow`` rejects unknown regimes on the write
+    path). The never-invent contract drops them from reads with a warning —
+    never remaps them onto a documented regime."""
+
+    _TAMPERED_INSERT = (
+        "INSERT INTO strategy_regime_evidence ("
+        "strategy_id, regime, trades_in_regime, date_ranges, "
+        "breakeven_fee_bps, cost_sensitive, evidence_quality, warnings, "
+        "last_verified"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+
+    def _tamper_row(self, store, strategy_id, regime) -> None:
+        """Bypass the validated write path exactly like an external editor."""
+        with sqlite3.connect(store.db_path) as conn:
+            conn.execute(
+                self._TAMPERED_INSERT,
+                (strategy_id, regime, 42, "[]", None, 0, "adequate", "[]", ""),
+            )
+            conn.commit()
+
+    def test_unknown_regime_row_is_skipped_not_remapped(self, tmp_path, caplog) -> None:
+        store = _make_store(tmp_path / "s.db")
+        self._tamper_row(store, "sdm:tampered", "sideways")
+        with caplog.at_level("WARNING"):
+            rows = store.get_rows()
+        assert rows == [], (
+            "unknown-regime rows must be dropped from reads, never remapped "
+            f"onto a documented regime: {rows!r}"
+        )
+        assert any(
+            "sideways" in record.message for record in caplog.records
+        ), "skipping a tampered row must log a warning naming the regime"
+
+    def test_valid_rows_survive_alongside_tampered_row(self, tmp_path, caplog) -> None:
+        store = _make_store(tmp_path / "s.db")
+        store.upsert_rows([_row(strategy_id="alpha_zoo:ok", regime="bear_market")])
+        self._tamper_row(store, "sdm:tampered", "monsoon")
+        with caplog.at_level("WARNING"):
+            rows = store.get_rows()
+        assert [(r.strategy_id, r.regime) for r in rows] == [
+            ("alpha_zoo:ok", "bear_market")
+        ]
+        assert rows[0].regime == "bear_market"
+        assert any("monsoon" in record.message for record in caplog.records)
+
+    def test_row_count_still_counts_physical_rows(self, tmp_path) -> None:
+        # row_count() is a raw COUNT(*) over the file — the skip happens in
+        # row hydration, so it reflects physical rows including tampered ones.
+        store = _make_store(tmp_path / "s.db")
+        store.upsert_rows([_row(strategy_id="alpha_zoo:ok")])
+        self._tamper_row(store, "sdm:tampered", "sideways")
+        assert store.row_count() == 2
+        assert store.get_rows() != []
+        assert store.get_rows()[0].strategy_id == "alpha_zoo:ok"
