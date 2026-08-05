@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Database, KeyRound, Loader2, MessageSquareMore, Play, RefreshCw, RotateCcw, Save, Server, SlidersHorizontal, Square } from "lucide-react";
+import { Database, KeyRound, Loader2, MessageSquareMore, Play, QrCode, RefreshCw, RotateCcw, Save, Server, SlidersHorizontal, Square } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ModelPicker } from "@/components/settings/ModelPicker";
+import { ChannelQRLoginDialog } from "@/components/settings/ChannelQRLoginDialog";
 import { QVerisSettings } from "@/components/settings/QVerisSettings"; // QVERIS-INTEGRATION
-import { api, isAuthRequiredError, type ChannelRuntimeStatus, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
+import { api, isAuthRequiredError, type ChannelQRLoginResponse, type ChannelRuntimeStatus, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
 import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
 
 interface LLMFormState {
@@ -53,6 +54,11 @@ export function Settings() {
   const [dataSaving, setDataSaving] = useState(false);
   const [channelRefreshing, setChannelRefreshing] = useState(false);
   const [channelAction, setChannelAction] = useState<"start" | "stop" | null>(null);
+  const [qrLoginOpen, setQrLoginOpen] = useState(false);
+  const [qrLoginChannel, setQrLoginChannel] = useState("");
+  const [qrLogin, setQrLogin] = useState<ChannelQRLoginResponse | null>(null);
+  const [qrLoginLoading, setQrLoginLoading] = useState(false);
+  const [qrLoginError, setQrLoginError] = useState<string | null>(null);
   const [settingsLoadError, setSettingsLoadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -140,6 +146,75 @@ export function Settings() {
     } finally {
       setChannelAction(null);
     }
+  };
+
+  const startChannelQRLogin = async (channel: string) => {
+    setQrLoginOpen(true);
+    setQrLoginChannel(channel);
+    setQrLogin(null);
+    setQrLoginError(null);
+    setQrLoginLoading(true);
+    try {
+      const result = await api.startChannelQRLogin(channel);
+      setQrLogin(result);
+      if (result.status === "authenticated") {
+        toast.success(t("settings.channels.qr.connected"));
+      }
+    } catch (error) {
+      setQrLoginError(error instanceof Error ? error.message : t("settings.unknownError", { defaultValue: "Unknown error" }));
+    } finally {
+      setQrLoginLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const sessionId = qrLogin?.session_id;
+    if (!qrLoginOpen || !sessionId || !["waiting", "scanned"].includes(qrLogin.status)) return;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await api.getChannelQRLogin(sessionId);
+        if (!active) return;
+        setQrLogin((current) => ({
+          ...result,
+          qr_content: result.qr_content ?? current?.qr_content,
+        }));
+        if (result.status === "authenticated") {
+          toast.success(t("settings.channels.qr.connected"));
+          void refreshChannelStatus();
+        }
+      } catch (error) {
+        if (active) {
+          setQrLoginError(error instanceof Error ? error.message : t("settings.unknownError", { defaultValue: "Unknown error" }));
+        }
+      }
+    }, 1500);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [qrLogin, qrLoginOpen, t]);
+
+  const closeChannelQRLogin = () => {
+    const sessionId = qrLogin?.session_id;
+    setQrLoginOpen(false);
+    setQrLogin(null);
+    setQrLoginError(null);
+    if (sessionId) void api.cancelChannelQRLogin(sessionId).catch(() => undefined);
+  };
+
+  const retryChannelQRLogin = () => {
+    const sessionId = qrLogin?.session_id;
+    void (async () => {
+      if (sessionId) {
+        try {
+          await api.cancelChannelQRLogin(sessionId);
+        } catch {
+          // The server may already have expired and removed the old challenge.
+        }
+      }
+      await startChannelQRLogin(qrLoginChannel);
+    })();
   };
 
   const providers = settings?.providers ?? [];
@@ -433,7 +508,18 @@ export function Settings() {
                       </div>
                     </td>
                     <td className="max-w-md px-3 py-2 align-top text-xs text-muted-foreground">
-                      {item.install_hint || item.error || t("settings.channels.noRecovery")}
+                      <div>{item.install_hint || item.error || t("settings.channels.noRecovery")}</div>
+                      {item.qr_login_supported && (
+                        <button
+                          type="button"
+                          onClick={() => void startChannelQRLogin(name)}
+                          disabled={channelBusy || channelStatus.running || item.running}
+                          className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <QrCode className="h-3.5 w-3.5" />
+                          {t("settings.channels.qr.connect")}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -748,6 +834,15 @@ export function Settings() {
           </div>
         </div>
       </form>
+      <ChannelQRLoginDialog
+        open={qrLoginOpen}
+        channelName={channelRows.find(([name]) => name === qrLoginChannel)?.[1].display_name || qrLoginChannel}
+        login={qrLogin}
+        loading={qrLoginLoading}
+        error={qrLoginError}
+        onClose={closeChannelQRLogin}
+        onRetry={retryChannelQRLogin}
+      />
     </div>
   );
 }

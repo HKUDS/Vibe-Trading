@@ -376,7 +376,27 @@
       "stoppedToast": "تم إيقاف قنوات IM",
       "refreshFailed": "فشل تحديث قنوات IM",
       "startFailed": "فشل بدء قنوات IM",
-      "stopFailed": "فشل إيقاف قنوات IM"
+      "stopFailed": "فشل إيقاف قنوات IM",
+      "qr": {
+        "connect": "امسح للاتصال",
+        "title": "اتصال بـ {{channel}}",
+        "description": "افتح WeChat على هاتفك وامسح هذا الرمز. تبقى بيانات تسجيل الدخول على الخادم فقط.",
+        "codeTitle": "رمز QR لـ {{channel}}",
+        "preparing": "جارٍ إعداد رمز QR آمن…",
+        "confirmOnPhone": "تم مسح الرمز. أكّد تسجيل الدخول على هاتفك.",
+        "connected": "تم الاتصال بـ WeChat بنجاح.",
+        "retry": "إعادة المحاولة",
+        "cancel": "إلغاء",
+        "done": "تم",
+        "close": "إغلاق تسجيل الدخول بالرمز",
+        "status": {
+          "waiting": "في انتظار مسح الرمز…",
+          "scanned": "تم مسح الرمز",
+          "authenticated": "متصل",
+          "expired": "انتهت صلاحية رمز QR.",
+          "failed": "فشل تسجيل الدخول إلى WeChat."
+        }
+      }
     },
     "generation": "إعدادات التوليد",
     "dataSourceSettings": "إعدادات مصادر البيانات",

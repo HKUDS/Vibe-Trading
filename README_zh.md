@@ -822,6 +822,11 @@ vibe-trading channels login weixin     # 需要时执行适配器登录流程
 vibe-trading channels pairing --channel telegram list
 ```
 
+个人微信可在启用 `channels.weixin` 并保持通道 runtime 停止后，打开
+**Settings → IM 通道 → 扫码连接**。Web UI 会展示短时二维码并轮询确认状态；
+确认后的 bot token 仅由服务端持久化，绝不会返回浏览器。关闭弹窗会取消本次
+登录，二维码过期时页面会自动刷新。
+
 内置适配器包括 `websocket`、`telegram`、`slack`、`discord`、`matrix`、`whatsapp`、`signal`、`qq`、`napcat`、`weixin`、`wecom`、`feishu`、`dingtalk`、`msteams`、`email` 和 `mochat`。可按需安装单个平台，例如 `pip install "vibe-trading-ai[telegram]"`，也可以一次安装全量通道依赖：`pip install "vibe-trading-ai[channels]"`。
 
 **聊天内斜杠命令**（通道无关，全部 16 个适配器通用）：
@@ -957,6 +962,9 @@ vibe-trading serve --port 8899
 | `GET` | `/channels/status` | 读取 IM 通道运行时与适配器状态 |
 | `POST` | `/channels/start` | 启动已配置的 IM 通道适配器 |
 | `POST` | `/channels/stop` | 停止已配置的 IM 通道适配器 |
+| `POST` | `/channels/{channel}/qr-login` | 为支持的适配器启动短时 Web 扫码登录 |
+| `GET` | `/channels/qr-login/{session_id}` | 轮询 Web 扫码登录状态（不返回凭据） |
+| `DELETE` | `/channels/qr-login/{session_id}` | 取消 Web 扫码登录 |
 | `POST` | `/channels/pairing/command` | 针对共享存储执行 sender pairing 命令 |
 | `POST` | `/scheduled-runs` | 创建定时研究任务（间隔毫秒或 cron） |
 | `GET` | `/scheduled-runs` | 列出定时任务 |
@@ -980,7 +988,7 @@ Web UI Settings 页面允许本地用户更新 LLM provider/model、base URL、g
 
 Settings 读取无副作用：`GET /settings/llm` 和 `GET /settings/data-sources` 永远不会创建 `agent/.env`，并且只返回项目相对路径。Settings 读写可能暴露凭据状态或更新凭据/运行时环境，因此在配置了 `API_AUTH_KEY` 时会要求认证。如果 dev mode 下未设置 `API_AUTH_KEY`，settings 访问只接受 loopback clients。
 
-同一个 Settings 页面也包含 **IM 通道**面板，面向本地 operator。它会轮询 `/channels/status`，展示 configured/enabled/available/loaded/running 状态，暴露适配器恢复提示，并可直接启动或停止已配置的通道 runtime。
+同一个 Settings 页面也包含 **IM 通道**面板，面向本地 operator。它会轮询 `/channels/status`，展示 configured/enabled/available/loaded/running 状态，暴露适配器恢复提示，并可直接启动或停止已配置的通道 runtime。支持二维码登录的适配器会显示**扫码连接**操作；个人微信是首个支持项，确认登录后的凭据只保存在服务端，不会返回浏览器。
 
 ### 定时研究（Scheduled research）
 

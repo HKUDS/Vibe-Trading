@@ -855,6 +855,12 @@ vibe-trading channels login weixin     # run an adapter login hook when needed
 vibe-trading channels pairing --channel telegram list
 ```
 
+For personal WeChat, enable `channels.weixin`, keep the channel runtime stopped,
+then open **Settings → IM Channels → Scan to connect**. The Web UI renders the
+short-lived QR challenge and polls for confirmation; the resulting bot token is
+persisted only by the server and is never returned to the browser. Closing the
+dialog cancels the challenge, and expired codes refresh automatically.
+
 The built-in adapters cover `websocket`, `telegram`, `slack`, `discord`, `matrix`, `whatsapp`, `signal`, `qq`, `napcat`, `weixin`, `wecom`, `feishu`, `dingtalk`, `msteams`, `email`, and `mochat`. Use narrow extras such as `pip install "vibe-trading-ai[telegram]"`, or install the full channel set with `pip install "vibe-trading-ai[channels]"`.
 
 **In-chat slash commands** (channel-agnostic, work in all 16 adapters):
@@ -992,6 +998,9 @@ vibe-trading serve --port 8899
 | `GET` | `/channels/status` | Read IM channel runtime and adapter status |
 | `POST` | `/channels/start` | Start configured IM channel adapters |
 | `POST` | `/channels/stop` | Stop configured IM channel adapters |
+| `POST` | `/channels/{channel}/qr-login` | Start a short-lived browser QR login for a supported adapter |
+| `GET` | `/channels/qr-login/{session_id}` | Poll a browser QR login (credentials are never returned) |
+| `DELETE` | `/channels/qr-login/{session_id}` | Cancel a browser QR login |
 | `POST` | `/channels/pairing/command` | Run a sender-pairing command against the shared store |
 | `POST` | `/scheduled-runs` | Create a scheduled research job (interval-ms or cron) |
 | `GET` | `/scheduled-runs` | List scheduled jobs |
@@ -1017,7 +1026,7 @@ The Web UI Settings page lets local users update the LLM provider/model, base UR
 
 Settings reads are side-effect free: `GET /settings/llm` and `GET /settings/data-sources` never create `agent/.env`, and they only return project-relative paths. Settings reads and writes can expose credential state or update credentials/runtime environment, so they require `API_AUTH_KEY` when configured. If `API_AUTH_KEY` is unset for dev mode, settings access is accepted only from loopback clients.
 
-The same Settings page includes an **IM Channels** panel for local operators. It polls `/channels/status`, shows configured/enabled/available/loaded/running states, surfaces adapter recovery hints, and can start or stop the configured channel runtime without going back to the terminal.
+The same Settings page includes an **IM Channels** panel for local operators. It polls `/channels/status`, shows configured/enabled/available/loaded/running states, surfaces adapter recovery hints, and can start or stop the configured channel runtime without going back to the terminal. QR-capable adapters expose a **Scan to connect** action; personal WeChat is the first supported adapter, and its credentials remain server-side.
 
 ### Scheduled research
 

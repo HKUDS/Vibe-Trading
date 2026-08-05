@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Any
 
 from src.channels.bus.events import InboundMessage, OutboundMessage
@@ -31,6 +30,7 @@ class BaseChannel(ABC):
     send_progress: bool = True
     send_tool_hints: bool = False
     show_reasoning: bool = True
+    qr_login_supported: bool = False
 
     def __init__(self, config: Any, bus: MessageBus) -> None:
         """Initialize the channel.
@@ -54,6 +54,23 @@ class BaseChannel(ABC):
         Override in subclasses that support interactive login.
         """
         return True
+
+    async def begin_qr_login(self) -> dict[str, Any]:
+        """Start a browser-driven QR login challenge.
+
+        Adapters that set ``qr_login_supported`` must return a JSON-safe status
+        payload containing transient ``qr_content`` for the browser to render.
+        Credentials must be persisted by the adapter and must never be included
+        in this payload.
+        """
+        raise NotImplementedError(f"{self.name} does not support QR login")
+
+    async def poll_qr_login(self) -> dict[str, Any]:
+        """Advance an active browser-driven QR login challenge by one poll."""
+        raise NotImplementedError(f"{self.name} does not support QR login")
+
+    async def cancel_qr_login(self) -> None:
+        """Cancel an active browser-driven QR login challenge."""
 
     @abstractmethod
     async def start(self) -> None:

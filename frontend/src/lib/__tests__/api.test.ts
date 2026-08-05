@@ -94,6 +94,32 @@ describe("api request helper", () => {
     );
   });
 
+  it("uses encoded, authenticated paths for channel QR login", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn(() => "remote-test-key"),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ channel: "weixin personal", status: "authenticated" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await loadApiModule();
+
+    await api.startChannelQRLogin("weixin personal");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/channels/weixin%20personal/qr-login",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer remote-test-key" }),
+      }),
+    );
+  });
+
   it("sends the stored API key when fetching a correlation regime timeline", async () => {
     vi.stubGlobal("localStorage", {
       getItem: vi.fn(() => "remote-test-key"),
