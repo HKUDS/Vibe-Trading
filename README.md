@@ -637,11 +637,37 @@ vibe-trading-mcp               # start MCP server (stdio)
 - **Python 3.11+** for Path B
 - **Docker** for Path A
 - OpenAI Codex can also be used with ChatGPT OAuth: set `LANGCHAIN_PROVIDER=openai-codex`, then run `vibe-trading provider login openai-codex`. This does not use `OPENAI_API_KEY`.
-- GitHub Copilot can be used with a Copilot subscription instead of an API key: set `LANGCHAIN_PROVIDER=copilot`. The official Copilot SDK resolves `COPILOT_GITHUB_TOKEN`, stored Copilot CLI credentials, or GitHub CLI credentials. Run `copilot` or `gh auth login` if needed.
+- GitHub Copilot can be used with an active Copilot subscription instead of a separately billed LLM API key. See [GitHub Copilot SDK provider](#github-copilot-sdk-provider).
 
 > **Supported LLM providers:** OpenRouter, Requesty, OpenAI, Anthropic (native Messages API), DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, iFlytek Spark, Z.ai, NVIDIA NIM, GitHub Copilot, Ollama (local). When no `*_BASE_URL` is set, each provider falls back to its canonical endpoint, so just a key is enough. See `.env.example` for config.
 
 > **Tip:** All markets work without any API keys thanks to automatic fallback. yfinance (HK/US), OKX (crypto), mootdx (A-shares, TCP-direct, no IP throttle), and AKShare (A-shares, US, HK, futures, forex) are all free. Tushare token is optional — mootdx is the preferred no-token A-share fallback, with AKShare as a broader backup.
+
+### GitHub Copilot SDK provider
+
+The normal Vibe-Trading install includes the official GitHub Copilot SDK; installing the Copilot CLI is optional. Authenticate with any one of these supported methods:
+
+```bash
+gh auth login                         # use GitHub CLI credentials
+# or run `copilot` and sign in         # stores credentials in the OS keychain
+# or export COPILOT_GITHUB_TOKEN=gho_xxx
+```
+
+Then configure `agent/.env`:
+
+```dotenv
+LANGCHAIN_PROVIDER=copilot
+LANGCHAIN_MODEL_NAME=claude-sonnet-5
+# COPILOT_GITHUB_TOKEN=gho_xxx         # optional; recommended for Docker/CI
+```
+
+Start Vibe-Trading normally. Its preflight reports whether the SDK can authenticate:
+
+```bash
+vibe-trading
+```
+
+Authentication priority is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, stored Copilot CLI credentials, then `gh` credentials. Vibe-Trading does not copy or persist SDK credentials. Host keychain credentials are not automatically available inside Docker, so containers should receive `COPILOT_GITHUB_TOKEN`.
 
 ### Path A: Docker (zero setup)
 
