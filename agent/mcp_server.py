@@ -6,7 +6,7 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 55 tools: skills, research goals, backtest/factor/options/pattern
+Surfaces 57 tools: skills, research goals, backtest/factor/options/pattern
 analysis, market data, fundamentals & capital-flow & news & discovery
 (get_fund_flow / get_dragon_tiger / get_northbound_flow / get_margin_trading /
 get_block_trades / get_shareholder_count / get_lockup_expiry / get_sector_info /
@@ -742,6 +742,72 @@ def factor_analysis(
             "n_groups": n_groups,
         },
     )
+
+
+@mcp.tool
+def alpha_zoo(
+    action: str,
+    alpha_id: str | None = None,
+    zoo: str | None = None,
+    theme: str | None = None,
+    universe: str | None = None,
+    limit: int = 50,
+) -> str:
+    """Browse the bundled Alpha Zoo registry.
+
+    Args:
+        action: ``list_alphas``, ``get_alpha``, or ``health``.
+        alpha_id: Alpha id required by ``get_alpha``.
+        zoo: Optional zoo filter for ``list_alphas``.
+        theme: Optional theme filter for ``list_alphas``.
+        universe: Optional universe filter for ``list_alphas``.
+        limit: Maximum number of alphas returned by ``list_alphas``.
+    """
+    registry = _get_registry()
+    params: dict[str, Any] = {"action": action, "limit": limit}
+    if alpha_id is not None:
+        params["alpha_id"] = alpha_id
+    if zoo is not None:
+        params["zoo"] = zoo
+    if theme is not None:
+        params["theme"] = theme
+    if universe is not None:
+        params["universe"] = universe
+    return registry.execute("alpha_zoo", params)
+
+
+@mcp.tool
+def alpha_bench(
+    universe: str,
+    period: str,
+    alpha_id: str | None = None,
+    zoo: str | None = None,
+    top: int = 20,
+    output_dir: str | None = None,
+) -> str:
+    """Benchmark one Alpha Zoo alpha or a complete zoo on a universe.
+
+    Args:
+        universe: Universe to benchmark, such as ``sp500`` or ``csi300``.
+        period: ``YYYY-YYYY`` or ``YYYY-MM-DD/YYYY-MM-DD``.
+        alpha_id: Optional single alpha id; mutually exclusive with ``zoo``.
+        zoo: Optional zoo id; mutually exclusive with ``alpha_id``.
+        top: Number of top-ranked alphas to include in the report.
+        output_dir: Optional directory for the generated HTML report.
+    """
+    registry = _get_registry()
+    params: dict[str, Any] = {
+        "universe": universe,
+        "period": period,
+        "top": top,
+    }
+    if alpha_id is not None:
+        params["alpha_id"] = alpha_id
+    if zoo is not None:
+        params["zoo"] = zoo
+    if output_dir is not None:
+        params["output_dir"] = output_dir
+    return registry.execute("alpha_bench", params)
 
 
 # ---------------------------------------------------------------------------

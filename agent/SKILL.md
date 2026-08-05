@@ -130,7 +130,7 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (55)
+## Available MCP Tools (57)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
@@ -142,6 +142,8 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `update_research_goal_status` | Update goal lifecycle status | None |
 | `backtest` | Run vectorized backtest engine | None* |
 | `factor_analysis` | IC/IR analysis + layered backtest | None* |
+| `alpha_zoo` | Browse bundled alpha metadata and registry health | None |
+| `alpha_bench` | Benchmark one alpha or a complete zoo | None* |
 | `analyze_options` | Black-Scholes price + Greeks | None |
 | `analyze_options_payoff` | Multi-leg expiry payoff + spot/IV scenarios | None |
 | `pattern_recognition` | Detect chart patterns (H&S, double top, etc.) | None |
