@@ -6,13 +6,15 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 57 tools: skills, research goals, backtest/factor/options/pattern
+Surfaces 61 tools: skills, research goals, backtest/factor/alpha-zoo/alpha-bench/options/pattern
 analysis, market data, fundamentals & capital-flow & news & discovery
 (get_fund_flow / get_dragon_tiger / get_northbound_flow / get_margin_trading /
 get_block_trades / get_shareholder_count / get_lockup_expiry / get_sector_info /
 get_research_reports / get_stock_news / get_sec_filings /
 get_financial_statements / get_options_chain / get_stock_profile /
-screen_market / search_symbol / get_macro_series / iwencai_search), read-only
+screen_market / search_symbol / get_macro_series / iwencai_search),
+institutional-research and alternative data (get_institutional_holdings /
+etf_holdings / prediction_market / research_papers), read-only
 trading-connector reads, swarm orchestration, trade-journal and shadow-account
 analysis. Every exposed tool is read-only or research-only; no order-placing or
 order-cancelling tool is ever surfaced via MCP.
@@ -51,6 +53,8 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from copy import deepcopy
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -1940,6 +1944,162 @@ def iwencai_search(query: str, limit: int = 20) -> str:
         limit: Maximum securities to return.
     """
     return _execute_key_gated("iwencai_search", {"query": query, "limit": limit})
+
+
+# ---------------------------------------------------------------------------
+# Institutional-research & alternative-data tools (schema mirrored from source)
+#
+# get_institutional_holdings / etf_holdings / prediction_market /
+# research_papers carry large multi-mode JSON Schemas (mode enums, per-mode
+# required arguments, paging bounds) that live on the tool class itself.
+# Re-declaring them here as Python signatures — the pattern used by the
+# single-purpose tools above — would create a SECOND definition that silently
+# drifts from the agent-side one every time a mode or bound changes. So these
+# four are registered with the tool class' own ``parameters`` and
+# ``description``: an MCP client sees byte-identical argument documentation to
+# what the agent sees, from one source.
+#
+# Read-only is structural here, not a comment: _register_mirrored_tool refuses
+# any class whose ``is_readonly`` is not True, so an order-placing tool cannot
+# be surfaced through this path even if someone adds it to the list below.
+# ``trading_place_order`` / ``trading_cancel_order`` are never MCP-exposed.
+#
+# Tradeoff accepted: fastmcp validates call arguments against the wrapper's
+# Python signature, not against ``parameters``, so a mirrored tool receives its
+# arguments unvalidated by the server (we only drop nulls and undeclared keys).
+# That is the same contract the tool already has with the agent — every one of
+# these tools parses/clamps its own ``**kwargs`` — and ToolRegistry.execute
+# turns any failure into a JSON error envelope rather than a transport error.
+# KNOWN DIVERGENCE from the hand-written wrappers above, which declare
+# ``additionalProperties: false`` and therefore REJECT an undeclared argument:
+# here an undeclared argument is dropped instead. Every identity argument is
+# still enforced by the tool itself (a missing symbol/manager/query fails
+# closed), so the residual risk is a mistyped OPTIONAL argument silently
+# falling back to its default. Closing this belongs on the tool classes —
+# adding ``additionalProperties: false`` to their ``parameters`` fixes the
+# agent side and this surface at once, since the schema here is theirs.
+# ---------------------------------------------------------------------------
+
+
+_MIRRORED_TOOL_SOURCES = (
+    ("src.tools.institutional_holdings_tool", "InstitutionalHoldingsTool"),
+    ("src.tools.etf_holdings_tool", "EtfHoldingsTool"),
+    ("src.tools.prediction_market_tool", "PredictionMarketTool"),
+    ("src.tools.research_papers_tool", "ResearchPapersTool"),
+)
+
+
+def _mirrored_tool_classes() -> list[Any]:
+    """Return the read-only tool classes exposed with their own JSON Schema.
+
+    Each module is imported lazily AND independently: a missing optional
+    dependency or a broken module costs exactly the one tool it defines, and
+    the other three still reach the MCP surface. Importing them together in a
+    single ``from ... import`` block would make one bad module drop all four.
+
+    Returns:
+        The ``BaseTool`` subclasses to mirror onto the MCP surface, in
+        declaration order, minus any whose module failed to import.
+    """
+    classes: list[Any] = []
+    for module_path, class_name in _MIRRORED_TOOL_SOURCES:
+        try:
+            classes.append(getattr(import_module(module_path), class_name))
+        except Exception:  # noqa: BLE001 - one unavailable module, not four
+            logger.exception(
+                "Tool module %s is unavailable; its MCP tool will be absent", module_path
+            )
+    return classes
+
+
+def _string_result_output_schema() -> dict[str, Any] | None:
+    """Return the output schema fastmcp derives for a ``-> str`` tool.
+
+    Derived from a probe function instead of hardcoded so the mirrored tools
+    keep announcing the same result envelope as the ``@mcp.tool`` wrappers
+    above across fastmcp versions (currently a wrapped ``{"result": str}``).
+
+    Returns:
+        The derived output schema, or None if this fastmcp version declares none.
+    """
+    from fastmcp.tools import FunctionTool
+
+    def _probe() -> str:  # pragma: no cover - shape probe only
+        return ""
+
+    return FunctionTool.from_function(_probe, name="probe").output_schema
+
+
+def _mirrored_call_params(schema: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Reduce raw MCP call arguments to the ones the tool actually declares.
+
+    Drops ``None`` values (no mirrored schema declares a nullable property, so
+    an explicit null means "not supplied") and keys the schema does not declare,
+    matching the ``additionalProperties: false`` behaviour of the hand-written
+    wrappers.
+
+    Args:
+        schema: The tool's own ``parameters`` JSON Schema.
+        kwargs: Arguments as received from the MCP client.
+
+    Returns:
+        The filtered keyword arguments to forward to the registry.
+    """
+    declared = schema.get("properties") or {}
+    return {k: v for k, v in kwargs.items() if v is not None and k in declared}
+
+
+def _register_mirrored_tool(tool_cls: Any) -> bool:
+    """Register one read-only tool on the MCP surface using its own schema.
+
+    Args:
+        tool_cls: A ``BaseTool`` subclass with ``name`` / ``description`` /
+            ``parameters``.
+
+    Returns:
+        True when the tool was registered; False when it was refused (not
+        read-only) or this fastmcp version rejected the registration.
+    """
+    name = getattr(tool_cls, "name", "")
+    if getattr(tool_cls, "is_readonly", False) is not True:
+        logger.error(
+            "Refusing to expose non-read-only tool %r via MCP; only read-only "
+            "tools are ever surfaced.",
+            name or tool_cls,
+        )
+        return False
+
+    try:
+        from fastmcp.tools import FunctionTool
+
+        schema = deepcopy(getattr(tool_cls, "parameters", None)) or {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
+
+        def _call(**kwargs: Any) -> str:
+            """Forward an MCP call to the auto-discovered local tool registry."""
+            return _get_registry().execute(name, _mirrored_call_params(schema, kwargs))
+
+        mcp.add_tool(
+            FunctionTool(
+                fn=_call,
+                name=name,
+                description=tool_cls.description,
+                parameters=schema,
+                output_schema=_string_result_output_schema(),
+                return_type=str,
+            )
+        )
+    except Exception:  # noqa: BLE001 - never let one tool break server startup
+        logger.exception("Failed to expose tool %r via MCP", name)
+        return False
+    return True
+
+
+for _mirrored_cls in _mirrored_tool_classes():
+    _register_mirrored_tool(_mirrored_cls)
 
 
 # ---------------------------------------------------------------------------

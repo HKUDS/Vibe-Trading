@@ -90,6 +90,7 @@ include = ["src*", "backtest*", "cli*"]
     "skills/**/*.json",
     "skills/**/*.py",
     "providers/*.json",
+    "scheduled_research/playbooks/*.md",
     "swarm/presets/*.yaml",
     "shadow_account/templates/*.j2",
     "shadow_account/templates/*.html",
