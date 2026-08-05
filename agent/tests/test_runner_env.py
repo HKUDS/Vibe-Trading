@@ -137,6 +137,23 @@ def test_prepare_sandbox_home_reexposes_only_loader_paths(tmp_path: Path) -> Non
     assert (vt / "cache").exists()
 
 
+def test_prepare_sandbox_home_preseeds_mootdx_config(tmp_path: Path) -> None:
+    sandbox = _prepare_sandbox_home(tmp_path)
+    try:
+        cfg = sandbox / ".mootdx" / "config.json"
+        # mootdx's setup() runs `finally: load_config()`, re-reading the file
+        # even after bestip(sync=False) fails to write it — the sandbox HOME
+        # must ship a valid config or mootdx raises an uncaught FileNotFoundError.
+        assert cfg.exists()
+        import json
+
+        assert isinstance(json.loads(cfg.read_text(encoding="utf-8")), dict)
+    finally:
+        import shutil
+
+        shutil.rmtree(sandbox, ignore_errors=True)
+
+
 def test_make_rlimit_preexec_returns_callable_on_posix() -> None:
     # Structural check only — the returned closure mutates *this* process's
     # rlimits if called directly, so it must never be invoked in-process here;
