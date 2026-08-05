@@ -1131,6 +1131,9 @@ frozenlist==1.8.0 \
     #   aiohttp
     #   aiosignal
     #   ccxt
+github-copilot-sdk==1.0.8 \
+    --hash=sha256:7c3d868b73daa3a154ae6c1c5a2bd9301c47349c6b080f1ed77ba9027da3e0fa
+    # via -r agent/requirements.txt
 griffelib==2.1.0 \
     --hash=sha256:762a186d2c6fd6794d4ea20d428d597ffb857cb56b66421651cbba15bdd5e813 \
     --hash=sha256:cc7b3d2d2865ad0b909fcc38086e3f554b5ea7acbaa7bbb7ecaa3f5dfb7d9f00
@@ -1216,6 +1219,7 @@ httpx[brotli,http2,socks]==0.28.1 \
     #   -r agent/requirements.txt
     #   ddgs
     #   fastmcp-slim
+    #   github-copilot-sdk
     #   langgraph-sdk
     #   langsmith
     #   mcp
@@ -2705,6 +2709,7 @@ pydantic[email]==2.13.4 \
     #   -r agent/requirements.txt
     #   fastapi
     #   fastmcp-slim
+    #   github-copilot-sdk
     #   langchain
     #   langchain-core
     #   langgraph
@@ -2895,6 +2900,7 @@ python-dateutil==2.9.0.post0 \
     --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
     --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
     # via
+    #   github-copilot-sdk
     #   matplotlib
     #   pandas
 python-docx==1.2.0 \

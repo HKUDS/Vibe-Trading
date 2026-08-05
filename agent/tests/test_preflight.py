@@ -75,6 +75,43 @@ def test_llm_preflight_probe_reports_request_errors(monkeypatch) -> None:
     assert "Timeout: timed out" in result.message
 
 
+def test_copilot_preflight_uses_sdk_auth_instead_of_openai_base_url(
+    monkeypatch,
+) -> None:
+    """Copilot has no OpenAI base URL because the official SDK owns transport."""
+    import src.providers.copilot_auth as copilot_auth
+    import src.providers.llm as llm
+
+    monkeypatch.setenv("LANGCHAIN_PROVIDER", "copilot")
+    monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "claude-sonnet-5")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
+    monkeypatch.setattr(llm, "_ensure_dotenv", lambda: None)
+    monkeypatch.setattr(llm, "_sync_provider_env", lambda: None)
+    monkeypatch.setattr(
+        llm,
+        "provider_diagnostics",
+        lambda: {
+            "base_url": "https://api.githubcopilot.com",
+            "timeout_seconds": 120,
+            "max_retries": 2,
+            "proxy": {},
+        },
+    )
+    monkeypatch.setattr(
+        copilot_auth,
+        "get_copilot_auth_status",
+        lambda: (True, "sykuang (via gh)"),
+        raising=False,
+    )
+
+    result = preflight._check_llm_provider()
+
+    assert result.status == "ready"
+    assert result.critical is False
+    assert "sykuang (via gh)" in result.message
+
+
 def test_akshare_check_uses_spec_without_import(monkeypatch) -> None:
     """AKShare's package import is heavy; preflight should only check discovery."""
     monkeypatch.delitem(sys.modules, "akshare", raising=False)

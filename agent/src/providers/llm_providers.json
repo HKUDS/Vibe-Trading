@@ -202,5 +202,16 @@
     "default_model": "qwen2.5:32b",
     "default_base_url": "http://localhost:11434",
     "api_key_required": false
+  },
+  {
+    "name": "copilot",
+    "label": "GitHub Copilot SDK",
+    "api_key_env": "COPILOT_GITHUB_TOKEN",
+    "base_url_env": "COPILOT_BASE_URL",
+    "default_model": "claude-sonnet-5",
+    "default_base_url": "https://api.githubcopilot.com",
+    "api_key_required": false,
+    "auth_type": "gh_cli",
+    "login_command": "gh auth login"
   }
 ]

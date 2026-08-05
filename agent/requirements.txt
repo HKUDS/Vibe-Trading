@@ -12,6 +12,7 @@ langgraph-checkpoint>=2.1.0,<5
 python-dotenv>=1.0.0
 httpx>=0.28.0
 oauth-cli-kit>=0.1.3
+github-copilot-sdk>=1.0.8,<2
 
 # Data & Computation
 pandas>=2.0.0,<3.0.0

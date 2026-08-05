@@ -394,6 +394,7 @@
     "configured": "設定済み",
     "keepCurrentKey": "空欄で現在のキーを保持",
     "providerUsesOauth": "このプロバイダーは OAuth を使用します。実行: {{command}}",
+    "providerUsesManagedAuth": "このプロバイダーが認証を管理します。実行: {{command}}",
     "noApiKeyRequired": "このプロバイダーは API キーを必要としません。",
     "keepCurrentToken": "空欄で現在のトークンを保持",
     "iwencaiApiKey": "iWenCai API キー",
@@ -410,6 +411,7 @@
     "unknownError": "不明なエラー",
     "providerChangeHint": "プロバイダーを変更すると、推奨モデルとエンドポイントが更新されます。",
     "oauth": "OAuth",
+    "authentication": "認証",
     "apiKey": "APIキー",
     "tushareTokenDesc": "中国A株・先物・ファンド・マクロデータに使用します。未設定の場合、利用可能なところではAKShareにフォールバックします。"
   },
