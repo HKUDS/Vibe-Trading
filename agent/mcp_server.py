@@ -795,7 +795,55 @@ def alpha_bench(
         top: Number of top-ranked alphas to include in the report.
         output_dir: Optional directory for the generated HTML report.
     """
-    registry = _get_registry()
+    if not alpha_id and not zoo:
+        return json.dumps(
+            {
+                "status": "error",
+                "error": "alpha_id or zoo is required for MCP alpha_bench",
+            },
+            ensure_ascii=False,
+        )
+    if alpha_id and zoo:
+        return json.dumps(
+            {
+                "status": "error",
+                "error": "alpha_id and zoo are mutually exclusive",
+            },
+            ensure_ascii=False,
+        )
+
+    try:
+        from datetime import date
+
+        from src.tools.alpha_bench_tool import _parse_period
+
+        start_raw, end_raw = _parse_period(period)
+        start_date = date.fromisoformat(start_raw)
+        end_date = date.fromisoformat(end_raw)
+        try:
+            max_end = start_date.replace(year=start_date.year + 10)
+        except ValueError:
+            max_end = start_date.replace(year=start_date.year + 10, day=28)
+        if end_date > max_end:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": "MCP alpha_bench period must be no more than 10 years",
+                },
+                ensure_ascii=False,
+            )
+    except ValueError as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
+
+    if top <= 0 or top > 100:
+        return json.dumps(
+            {
+                "status": "error",
+                "error": "MCP alpha_bench top must be between 1 and 100",
+            },
+            ensure_ascii=False,
+        )
+
     params: dict[str, Any] = {
         "universe": universe,
         "period": period,
@@ -805,8 +853,29 @@ def alpha_bench(
         params["alpha_id"] = alpha_id
     if zoo is not None:
         params["zoo"] = zoo
-    if output_dir is not None:
-        params["output_dir"] = output_dir
+
+    if output_dir:
+        from src.config.paths import get_runtime_root
+        from src.tools.path_utils import allowed_write_roots, resolve_safe_path
+
+        try:
+            report_roots = [
+                Path.home() / ".vibe-trading" / "reports",
+                get_runtime_root() / "reports",
+                *allowed_write_roots(),
+            ]
+            params["output_dir"] = str(
+                resolve_safe_path(
+                    output_dir,
+                    None,
+                    report_roots,
+                    purpose="alpha bench report",
+                )
+            )
+        except ValueError as exc:
+            return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
+
+    registry = _get_registry()
     return registry.execute("alpha_bench", params)
 
 
