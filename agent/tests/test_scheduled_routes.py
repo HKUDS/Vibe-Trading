@@ -320,3 +320,42 @@ def test_create_interval_with_timezone_keeps_immediate_first_fire(
 
     assert response.status_code == 201
     assert before <= response.json()["next_run_at"] <= after
+
+
+def test_create_rejects_ids_the_delete_route_would_refuse(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    for bad_id in ("my scan.v1", "a/b", "café", "x" * 129):
+        response = client.post(
+            "/scheduled-runs",
+            json={"id": bad_id, "prompt": "scan", "schedule": "60000"},
+        )
+        assert response.status_code == 422, bad_id
+        assert "job id" in response.json()["detail"]
+        assert store.get(bad_id) is None
+
+
+def test_created_job_is_always_deletable(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    created = client.post(
+        "/scheduled-runs",
+        json={"prompt": "scan", "schedule": "60000"},
+    )
+    assert created.status_code == 201
+    job_id = created.json()["id"]
+
+    assert client.delete(f"/scheduled-runs/{job_id}").status_code == 204
+    assert store.get(job_id) is None
+
+
+def test_create_accepts_ids_within_the_id_rule(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    for good_id in ("daily-scan", "scan_2026", "A" * 128):
+        response = client.post(
+            "/scheduled-runs",
+            json={"id": good_id, "prompt": "scan", "schedule": "60000"},
+        )
+        assert response.status_code == 201, good_id
+        assert client.delete(f"/scheduled-runs/{good_id}").status_code == 204

@@ -6,6 +6,7 @@ Mounted by ``agent/api_server.py`` via ``register_scheduled_routes(app, ...)``.
 from __future__ import annotations
 
 import logging
+import re
 import sys as _sys
 import time
 import uuid
@@ -25,6 +26,11 @@ logger = logging.getLogger(__name__)
 
 _SCHEDULED_RESEARCH_SCHEDULER_ENV = "VIBE_TRADING_ENABLE_SCHEDULER"
 _SCHEDULED_RESEARCH_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+# Mirrors ``_SAFE_PATH_PARAM_RE`` in src/api/helpers.py, which the delete route
+# enforces on the job id. Kept in sync so a job can never be created under an
+# id the delete route refuses.
+_SAFE_JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +117,12 @@ class CreateScheduledRunRequest(BaseModel):
     """Request body for POST /scheduled-runs."""
 
     id: Optional[str] = Field(
-        None, description="Job id; auto-generated UUID when omitted"
+        None,
+        description=(
+            "Job id; auto-generated UUID when omitted. Must match the id rule "
+            "the delete route enforces: letters, digits, '_' and '-', 1-128 "
+            "characters."
+        ),
     )
     prompt: str = Field(
         ..., min_length=1, description="Research prompt or backtest description"
@@ -206,6 +217,18 @@ def register_scheduled_routes(
         )
 
         from src.scheduled_research.executor import next_due
+
+        # A job whose id the delete route rejects can never be cancelled
+        # through the API, so the id is held to that same rule at creation
+        # rather than at first attempted delete.
+        if request.id is not None and not _SAFE_JOB_ID_RE.fullmatch(request.id):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "job id must be 1-128 characters of letters, digits, "
+                    "'_' or '-'"
+                ),
+            )
 
         try:
             validate_schedule(request.schedule)
