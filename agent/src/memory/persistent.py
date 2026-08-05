@@ -490,7 +490,7 @@ class PersistentMemory:
         if get_env_config().memory.hierarchy_enabled:
             from src.memory.hierarchy import MemoryHierarchy
             hierarchy = MemoryHierarchy(self._dir)
-            path = hierarchy.route_entry(memory_type, slug)
+            path = hierarchy.route_entry(memory_type, f"{slug}.md")
         else:
             filename = f"{memory_type}_{slug}.md"
             path = self._dir / filename
