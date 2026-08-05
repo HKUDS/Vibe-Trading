@@ -90,6 +90,23 @@ def parse_cron_field(part: str, low: int, high: int) -> Optional[Set[int]]:
     return values
 
 
+def is_interval_schedule(schedule: str) -> bool:
+    """Return whether *schedule* is the interval-milliseconds form.
+
+    The one place that answers "interval or cron?", so callers that treat the
+    two forms differently — the executor's advancement path, the create route's
+    timezone handling — cannot disagree about which is which.
+
+    Args:
+        schedule: A schedule string in either accepted form.
+
+    Returns:
+        ``True`` for a bare positive-integer interval, ``False`` otherwise
+        (including malformed input, which the validators reject separately).
+    """
+    return bool(_INTERVAL_MS_RE.fullmatch(str(schedule).strip()))
+
+
 def validate_schedule(schedule: str) -> None:
     """Raise ``ValueError`` when *schedule* is malformed.
 
