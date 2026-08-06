@@ -37,8 +37,8 @@ from src.market_data import (
         ("000001.SZ", "tencent"),
         ("430139.BJ", "tencent"),
         ("AAPL.US", "yahoo"),
-        ("700.HK", "yahoo"),
-        ("00700.HK", "yahoo"),
+        ("700.HK", "tencent"),
+        ("00700.HK", "tencent"),
         ("RELIANCE.NS", "yahoo"),  # India NSE
         ("TCS.NS", "yahoo"),
         ("M&M.NS", "yahoo"),  # ampersand in ticker
@@ -254,9 +254,9 @@ def test_fetch_auto_groups_by_detected_source() -> None:
 def test_fetch_auto_hk_walks_hk_chain_not_us_chain() -> None:
     """HK symbols must degrade through the hk_equity chain, not the US one.
 
-    A source-name-only chain lookup matches ``yahoo`` against the us_equity
-    chain first, where the attempt budget exhausts on the US-only stooq/sina
-    loaders and never reaches eastmoney/akshare.
+    A source-name-only chain lookup would match HK's yahoo membership against
+    the us_equity chain first, where the attempt budget exhausts on the
+    US-only stooq/sina loaders and never reaches eastmoney/akshare.
     """
     from backtest.loaders.base import NoAvailableSourceError
 
@@ -275,7 +275,7 @@ def test_fetch_auto_hk_walks_hk_chain_not_us_chain() -> None:
         source="auto",
         loader_resolver=resolver,
     )
-    assert attempts[:2] == ["yahoo", "eastmoney"]
+    assert attempts[:2] == ["tencent", "eastmoney"]
     assert "stooq" not in attempts and "sina" not in attempts
     assert "_unresolved" not in out
     assert "00700.HK" in out
