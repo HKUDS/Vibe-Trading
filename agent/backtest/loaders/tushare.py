@@ -5,7 +5,8 @@ Minute data uses ``pro.stk_mins()`` (Tushare points >= 2000).
 """
 
 import logging
-from typing import Dict, List, Optional
+import time
+from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 
@@ -13,6 +14,70 @@ from backtest.loaders._symbol_utils import _is_etf_listed
 from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.cn_adjust import apply_qfq
 from backtest.loaders.registry import register
+
+#: Substrings that identify a Tushare per-minute quota rejection rather than a
+#: real failure. Tushare returns these as an ordinary exception message, so the
+#: only way to tell "you are going too fast" from "this symbol does not exist"
+#: is to read the text.
+_RATE_LIMIT_MARKERS: tuple[str, ...] = (
+    "每分钟",
+    "每天",
+    "抽取",
+    "访问该接口",
+    "频率",
+    "rate limit",
+    "too many requests",
+)
+
+#: Backoff schedule in seconds. The quota window is a minute, so the last wait
+#: has to cross one; three attempts totalling ~65s clear it without turning a
+#: genuinely broken call into a two-minute hang.
+_RATE_LIMIT_BACKOFF_SECONDS: tuple[float, ...] = (5.0, 20.0, 40.0)
+
+
+def _is_rate_limited(exc: Exception) -> bool:
+    """Return whether an exception is a quota rejection rather than a failure.
+
+    Args:
+        exc: The exception raised by a Tushare endpoint call.
+
+    Returns:
+        True when the message carries any marker in :data:`_RATE_LIMIT_MARKERS`.
+    """
+    message = str(exc).lower()
+    return any(marker.lower() in message for marker in _RATE_LIMIT_MARKERS)
+
+
+def _call_with_backoff(fn: Callable[..., Any], /, **kwargs: Any) -> Any:
+    """Call a Tushare endpoint, waiting out a per-minute quota rejection.
+
+    Only quota rejections are retried. Retrying an ordinary failure would turn
+    a broken symbol or a bad date range into a silent multi-second stall and
+    then the same error anyway, so those propagate on the first attempt.
+
+    Args:
+        fn: The endpoint callable, e.g. ``api.daily``.
+        **kwargs: Passed straight through.
+
+    Returns:
+        Whatever the endpoint returns.
+
+    Raises:
+        Exception: The endpoint's own exception, either immediately (not a
+            quota issue) or after the backoff schedule is exhausted.
+    """
+    for delay in _RATE_LIMIT_BACKOFF_SECONDS:
+        try:
+            return fn(**kwargs)
+        except Exception as exc:  # noqa: BLE001 - classified immediately below
+            if not _is_rate_limited(exc):
+                raise
+            logger.warning(
+                "tushare quota hit (%s); waiting %.0fs before retrying", exc, delay
+            )
+            time.sleep(delay)
+    return fn(**kwargs)
+
 
 logger = logging.getLogger(__name__)
 
@@ -158,12 +223,12 @@ class DataLoader:
             adjust = None
         elif _is_hk_equity(code):
             endpoint_name = "hk_daily"
-            df = self.api.hk_daily(ts_code=code, start_date=start_date, end_date=end_date)
+            df = _call_with_backoff(self.api.hk_daily, ts_code=code, start_date=start_date, end_date=end_date)
             # Tushare publishes no HK adjustment-factor series.
             adjust = None
         else:
             endpoint_name = "daily"
-            df = self.api.daily(ts_code=code, start_date=start_date, end_date=end_date)
+            df = _call_with_backoff(self.api.daily, ts_code=code, start_date=start_date, end_date=end_date)
             adjust = getattr(self.api, "adj_factor", None)
 
         if df is None or df.empty:
@@ -183,7 +248,7 @@ class DataLoader:
             return ohlcv
 
         try:
-            factor = adjust(ts_code=code, start_date=start_date, end_date=end_date)
+            factor = _call_with_backoff(adjust, ts_code=code, start_date=start_date, end_date=end_date)
         except Exception as exc:  # noqa: BLE001 - one bad fetch must not raise
             logger.warning("tushare adjustment-factor fetch failed for %s: %s", code, exc)
             factor = None

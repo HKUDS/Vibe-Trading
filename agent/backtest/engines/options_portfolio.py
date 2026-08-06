@@ -12,6 +12,10 @@ v2 enhancements over v1:
 
 Signal interface: OptionsSignalEngine.generate(data_map) returns a list of trade instructions.
 Artifacts: equity.csv, metrics.csv, trades.csv, greeks.csv.
+
+Black-Scholes price and Greeks come from ``src.quantlib.options``. What stays
+here is the engine's own volatility surface -- historical vol, the smile, and
+the per-leg vol every pricing site must agree on.
 """
 
 import json
@@ -21,95 +25,8 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-from scipy.stats import norm
 
-
-# --- Black-Scholes pricing ---
-
-
-def bs_price(S: float, K: float, T: float, r: float, sigma: float,
-             option_type: str = "call") -> float:
-    """Black-Scholes European option pricing.
-
-    Args:
-        S: Underlying spot price.
-        K: Strike price.
-        T: Time to expiry in years.
-        r: Risk-free rate (annualised).
-        sigma: Annualised volatility.
-        option_type: Option type, "call" or "put".
-
-    Returns:
-        Theoretical option price.
-
-    Example:
-        >>> round(bs_price(100, 100, 1.0, 0.05, 0.2, "call"), 2)
-        10.45
-    """
-    # Non-positive S/K makes log(S/K) undefined; reuse the intrinsic fallback
-    # (iv_smile_adjustment already soft-guards non-positive S/K).
-    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
-        if option_type == "call":
-            return max(S - K, 0.0)
-        return max(K - S, 0.0)
-
-    d1 = (np.log(S / K) + (r + sigma ** 2 / 2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-
-    if option_type == "call":
-        return float(S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2))
-    return float(K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1))
-
-
-# --- Greeks ---
-
-
-def bs_greeks(S: float, K: float, T: float, r: float, sigma: float,
-              option_type: str = "call") -> Dict[str, float]:
-    """Calculate Black-Scholes Greeks.
-
-    Args:
-        S: Underlying spot price.
-        K: Strike price.
-        T: Time to expiry in years.
-        r: Risk-free rate (annualised).
-        sigma: Annualised volatility.
-        option_type: Option type, "call" or "put".
-
-    Returns:
-        Dict containing delta, gamma, theta, vega.
-    """
-    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
-        intrinsic_call = 1.0 if S > K else 0.0
-        delta = intrinsic_call if option_type == "call" else intrinsic_call - 1.0
-        return {"delta": delta, "gamma": 0.0, "theta": 0.0, "vega": 0.0}
-
-    sqrt_T = np.sqrt(T)
-    d1 = (np.log(S / K) + (r + sigma ** 2 / 2) * T) / (sigma * sqrt_T)
-    d2 = d1 - sigma * sqrt_T
-    nd1_pdf = float(norm.pdf(d1))
-
-    # Delta
-    if option_type == "call":
-        delta = float(norm.cdf(d1))
-    else:
-        delta = float(norm.cdf(d1) - 1.0)
-
-    # Gamma (same for call and put)
-    gamma = float(nd1_pdf / (S * sigma * sqrt_T))
-
-    # Theta (daily)
-    theta_common = -(S * nd1_pdf * sigma) / (2 * sqrt_T)
-    if option_type == "call":
-        theta = theta_common - r * K * np.exp(-r * T) * norm.cdf(d2)
-    else:
-        theta = theta_common + r * K * np.exp(-r * T) * norm.cdf(-d2)
-    theta = float(theta / 365.0)  # convert to daily
-
-    # Vega (per 1% change in volatility)
-    vega = float(S * nd1_pdf * sqrt_T / 100.0)
-
-    return {"delta": delta, "gamma": gamma, "theta": theta, "vega": vega}
+from src.quantlib.options import bs_greeks, bs_price, normalise_option_type
 
 
 # --- Historical volatility ---
@@ -188,19 +105,24 @@ class OptionPosition:
     """A single option leg position.
 
     Attributes:
-        option_type: "call" or "put".
+        option_type: "call" or "put", folded to lower case on construction so
+            that settlement here and pricing in ``src.quantlib.options`` cannot
+            disagree about a leg typed ``"Call"``.
         strike: Strike price.
         expiry: Expiry date.
         qty: Quantity (positive = long, negative = short).
         entry_price: Theoretical option price at entry.
         entry_date: Entry date string.
         underlying_code: Underlying instrument code.
+
+    Raises:
+        ValueError: If ``option_type`` is neither call nor put.
     """
 
     def __init__(self, option_type: str, strike: float, expiry: str,
                  qty: int, entry_price: float, entry_date: str,
                  underlying_code: str):
-        self.option_type = option_type
+        self.option_type = normalise_option_type(option_type)
         self.strike = strike
         self.expiry = pd.Timestamp(expiry)
         self.qty = qty
@@ -413,7 +335,10 @@ def run_options_backtest(
             iv_val = ivs.get(underlying, 0.3)
 
             for leg in legs:
-                leg_type = leg.get("type", "call")
+                # Fold before it is priced, matched and recorded: config comes
+                # from the user, and a raw "Call" would price as a call and
+                # settle as a put.
+                leg_type = normalise_option_type(leg.get("type", "call"))
                 strike = leg.get("strike", spot)
                 expiry = leg.get("expiry", "")
                 qty = leg.get("qty", 1)
@@ -516,6 +441,7 @@ def run_options_backtest(
         total_gamma = 0.0
         total_theta = 0.0
         total_vega = 0.0
+        total_rho = 0.0
 
         for pos in positions:
             spot = spot_prices.get(pos.underlying_code, 0.0)
@@ -532,6 +458,7 @@ def run_options_backtest(
             total_gamma += greeks["gamma"] * pos.qty * contract_multiplier
             total_theta += greeks["theta"] * pos.qty * contract_multiplier
             total_vega += greeks["vega"] * pos.qty * contract_multiplier
+            total_rho += greeks["rho"] * pos.qty * contract_multiplier
 
         equity_records.append({
             "timestamp": date_str,
@@ -546,6 +473,7 @@ def run_options_backtest(
             "gamma": round(total_gamma, 6),
             "theta": round(total_theta, 6),
             "vega": round(total_vega, 6),
+            "rho": round(total_rho, 6),
             "num_positions": len(positions),
         })
 
@@ -604,7 +532,9 @@ def _find_matching_position(
     Args:
         positions: Current open positions.
         underlying: Underlying instrument code.
-        option_type: Option type.
+        option_type: Option type, already folded by ``normalise_option_type``;
+            ``OptionPosition`` folds its own, so both sides compare in lower
+            case.
         strike: Strike price.
         expiry: Expiry date string.
 

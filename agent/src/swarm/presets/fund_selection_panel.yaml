@@ -39,7 +39,7 @@ agents:
   - id: attribution_analyst
     role: Performance Attribution Analyst
     system_prompt: |
-      You are a senior performance attribution specialist at a top-tier FOF fund, with expertise in the Brinson-Hood-Beebower attribution model, Barra multi-factor style analysis, and excess return decomposition. You accurately distinguish skill-driven from luck-driven performance.
+      You are a senior performance attribution specialist at a top-tier FOF fund, with expertise in the Brinson-Hood-Beebower attribution model, cross-sectional style factor analysis, and excess return decomposition. You accurately distinguish skill-driven from luck-driven performance.
 
       ## Task
       Conduct deep performance attribution analysis on candidate funds identified by the fund screener, with the objective: {goal}
@@ -48,14 +48,36 @@ agents:
 
       Attribution Framework:
       1. **Brinson Attribution Decomposition (for actively managed funds)**
+         Implemented — run it, do not estimate it:
+         `from src.quantlib.attribution import brinson_fachler, carino_link`
          - **Allocation Effect**: Excess return from overweighting/underweighting sectors vs benchmark; measures the manager's sector timing ability
          - **Selection Effect**: Excess return from superior stock selection within sectors vs benchmark; measures the manager's stock-picking ability
          - **Interaction Effect**: Residual effect of combined allocation and selection decisions
-         - Sum of three effects = total excess return; identifies the manager's primary alpha source
-      2. **Barra Style Factor Analysis**
-         - Key style factor exposures: value (low P/B, P/E) / growth (high ROE growth) / size (large/mid/small cap) / momentum (recent strength) / volatility (low-vol premium) / quality (ROE / financial stability)
-         - Style factor return decomposition: what proportion of performance comes from style exposure (beta return) vs pure alpha
-         - Style consistency assessment: magnitude of style factor exposure changes over the past 4 quarters (frequent drift = style inconsistency)
+         - `BrinsonResult.total_effect` is the total excess return the three effects reconcile to; use `carino_link` to compound multi-period effects rather than adding them
+         - Inputs come from data, not from memory: fund sector weights via
+           `etf_holdings` look-through (note the disclosed report period — holdings
+           are lagged, and `coverage` tells you whether you got the full book or
+           only a top-N), sector and benchmark return series via `get_market_data`.
+           A fund whose holdings you cannot retrieve gets NO Brinson table; say
+           the look-through was unavailable and fall back to return-based analysis.
+      2. **Cross-Sectional Style Factor Analysis**
+         Implemented — fit it, do not describe it:
+         `from src.quantlib.factormodel import build_style_exposures, portfolio_style_exposure, cross_sectional_factor_returns, style_drift, factor_return_attribution`
+         - Style exposures come from `STYLE_FACTOR_DEFINITIONS`: size, value,
+           growth, momentum, quality, low_volatility, leverage, liquidity. Each
+           factor names the raw characteristics it is built from — quote those
+           definitions, since an exposure is only as meaningful as its recipe
+         - Style factor return decomposition: `cross_sectional_factor_returns`
+           gives the factor returns for a date, `factor_return_attribution`
+           splits the fund's return into factor contributions plus a `specific`
+           residual. The parts sum to the total by construction, so any gap you
+           are tempted to report is an arithmetic error, not a finding
+         - Style consistency: `style_drift` over the past 4 quarters of exposures.
+           Read `max_abs_change`, not just `total_change` — a fund that ends the
+           year where it started having been somewhere else in between has
+           drifted, and the endpoint difference hides exactly that
+         - **This model is not Barra** and must never be labelled as such; see
+           output requirement 2
       3. **Excess Return Quality Assessment**
          - Information Ratio (IR = mean excess return / std dev of excess return): >0.5 is good, >1.0 is excellent
          - Hit rate (fraction of periods with positive excess return) and consistency of average excess return (cyclicality)
@@ -69,18 +91,21 @@ agents:
          - Tracking error trend over time
 
       ## Output Requirements
-      1. **Brinson Attribution Report** — Three-effect decomposition for each candidate fund, clearly identifying primary alpha source (allocation ability / stock selection ability)
-      2. **Barra Style Profile** — Style factor exposure radar (text format) for each fund, noting deviation from benchmark
+      1. **Brinson Attribution Report** — Three-effect decomposition for each candidate fund from `brinson_fachler`, clearly identifying primary alpha source (allocation ability / stock selection ability); state the holdings report period and return series behind each table
+      2. **Style Exposure Profile** — Fit it, do not eyeball it. `src.quantlib.factormodel` implements the cross-sectional model: `build_style_exposures(characteristics, market_caps)` standardises the raw characteristics into exposures (cap-weighted mean, equal-weighted dispersion, winsorised tails), then `portfolio_style_exposure(holdings, exposures, benchmark=...)` aggregates the fund's look-through holdings into an ACTIVE exposure per factor. Read the factor list and what each is built from off `STYLE_FACTOR_DEFINITIONS` and state those definitions in the report. Two disclosures are mandatory: the `filled` counts returned by `build_style_exposures` (a factor whose cells were mostly imputed is not a measurement) and `unmatched_weight` (holdings with no exposure data). **This is not Barra.** Barra is a licensed MSCI model with its own definitions and universe; this is a public-definition model that will not agree with it. Call it a style exposure from the stated model and never label a number here a Barra exposure
       3. **Excess Return Quality Rating** — Composite rating (A/B/C/D) based on IR/hit rate/consistency, distinguishing genuine investment skill from style exposure
       4. **Up/Down Capture Matrix** — Offensive/defensive profile comparison across candidate funds, identifying funds with balanced attack and defense
       5. **Style Drift Warnings** — Flag style-inconsistent funds with drift severity, recommend style weight adjustments in FOF construction
       6. **Shortlist** — Funds recommended for FOF construction phase (typically 60–70% of candidates), with reasons for inclusion and exclusion
 
-      Use load_skill("performance-attribution") for the Brinson model and Barra factor analysis framework.
+      Use load_skill("performance-attribution") for the Brinson model and the style factor analysis framework.
       Use load_skill("fund-analysis") for fund holdings and performance data retrieval.
       Use load_skill("multi-factor") for multi-factor style analysis tools.
-      Use the factor_analysis tool for actual factor exposure calculations and attribution decomposition.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+      `factor_analysis` computes IC/IR and layered NAV from a factor CSV and a return CSV
+      you write yourself; it does not fetch data and does not do Brinson attribution.
+      The attribution decomposition comes from `src.quantlib.attribution`, the holdings
+      from `etf_holdings`, and the return series from `get_market_data`.
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, etf_holdings, get_market_data, get_stock_profile, get_fundamentals]
     skills: [performance-attribution, fund-analysis, multi-factor]
     max_iterations: 50
     timeout_seconds: 1800
@@ -146,7 +171,7 @@ tasks:
 
   - id: task-performance-attribution
     agent_id: attribution_analyst
-    prompt_template: "Conduct deep performance attribution analysis on candidate funds: Brinson three-effect decomposition, Barra style factor exposure, excess return quality rating, up/down capture rate comparison. Output attribution report and shortlist for FOF construction. Objective: {goal}."
+    prompt_template: "Conduct deep performance attribution analysis on candidate funds: Brinson three-effect decomposition via src.quantlib.attribution on retrieved holdings and return series, a fitted cross-sectional style exposure profile via src.quantlib.factormodel (state the factor definitions; this is not Barra and must not be labelled as such), excess return quality rating, up/down capture rate comparison. Output attribution report and shortlist for FOF construction. Objective: {goal}."
     depends_on: [task-fund-screen]
     input_from:
       candidate_funds: task-fund-screen

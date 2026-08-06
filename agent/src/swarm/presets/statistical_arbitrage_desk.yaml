@@ -41,8 +41,27 @@ agents:
       5. **Cointegration stability report** — Rolling tests on Top 10; flag structural breaks
 
       Use load_skill("pair-trading"), load_skill("quant-statistics").
-      Use factor_analysis for correlation and joint factor exposure to reduce spurious cointegration.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+
+      ## What is implemented vs what is not
+      `factor_analysis` computes IC/IR and layered NAV from a factor CSV and a
+      return CSV you write — it does not compute correlations or cointegration.
+      Pull the price panel with `get_market_data` (`screen_market` to enumerate the
+      universe first), then in `bash`:
+      - `src.quantlib.timeseries.adf_test(series)` — unit-root precondition
+      - `src.quantlib.timeseries.cointegration_test(y, x)` — the p-value in output 1
+      - `src.quantlib.timeseries.find_hedge_ratio(y, x)` — the OLS hedge ratio
+      - `src.quantlib.timeseries.compute_half_life(spread)` — half-life for output 4
+      - `src.quantlib.timeseries.granger_test(data, x_col, y_col, max_lag)` — the
+        price-discovery direction
+      - `src.quantlib.timeseries.bootstrap_statistic(...)` — confidence intervals
+        on any spread statistic you report
+      These lazily import an optional statistics backend and raise an actionable
+      `ImportError` if it is absent; if that happens, report the test as
+      unavailable rather than guessing a p-value.
+      **The Hurst exponent and a Kalman time-varying hedge ratio are NOT
+      implemented here.** Write and show the estimator yourself in `bash`, or drop
+      those columns and say they were not computed — do not populate them by feel.
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_market_data, screen_market]
     skills: [pair-trading, quant-statistics, correlation-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -83,7 +102,31 @@ agents:
       5. **Liquidity risk alerts** — Pairs likely to dry up in stress (e.g. one-sided drawdown days); contingency exit plan
 
       Use load_skill("market-microstructure"), load_skill("execution-model").
-    tools: [bash, read_file, write_file, load_skill]
+
+      ADV, turnover and intraday liquidity are measured from bars — pull them with
+      `get_market_data` (intraday interval for the time-of-day question). Market
+      impact is MODELLED, not observed: `src.quantlib.impact.linear_impact` and
+      `sqrt_impact` give the estimate (the sqrt form needs ADV and volatility),
+      `fixed_slippage` the flat-bps baseline, and `delayed_execution` shows the
+      cost of acting a bar late. Name the model and the coefficient you used and
+      label the output an estimate.
+      **Order-book depth: measurable for crypto, not for equities.** For a crypto
+      leg, `orderbook_depth` returns the live L2 ladder — bid/ask spread in bps,
+      depth imbalance, and the impact cost of a stated notional walked through
+      the real ladder in both directions. Use it instead of a proxy, and read
+      three fields before you quote anything from it: `fully_filled` (False means
+      the book could not absorb your size — report the shortfall, never the
+      partial average as if it were the fill), `timestamp` with
+      `timestamp_source` (a book is a snapshot that expires in seconds, and
+      `local_fetch_time` means the venue did not stamp it), and the `units` block
+      (quantities are base asset, notionals are quote asset — for `ETH-BTC` the
+      quote is BTC, not a dollar).
+      For an EQUITY leg there is still no depth or quote feed: score depth from a
+      stated proxy (turnover, ADV), say it is a proxy, or leave it out. Never
+      present a crypto depth measurement and an equity depth proxy in the same
+      column without marking which is which.
+      Granger causality between legs comes from `src.quantlib.timeseries.granger_test`.
+    tools: [bash, read_file, write_file, load_skill, get_market_data, orderbook_depth]
     skills: [market-microstructure, execution-model]
     max_iterations: 50
     timeout_seconds: 1800
@@ -181,7 +224,20 @@ agents:
       5. **Verdict** — Pass / conditional pass / fail; pre-launch conditions and ongoing monitors
 
       Use load_skill("risk-analysis"), load_skill("volatility").
-    tools: [bash, read_file, write_file, load_skill]
+
+      Compute the risk numbers from data. Pull the leg histories with
+      `get_market_data`, build the book's return series at the proposed weights in
+      `bash`, then use `src.quantlib.risk.historical_var` / `parametric_var` /
+      `historical_cvar` for output 2 (state confidence and horizon),
+      `max_drawdown_analysis` for the drawdown view, and `fit_gpd_tail` for the
+      joint-failure tail. For the "correlation zeros" stress, rebuild the return
+      series under that assumption and re-run VaR — do not scale the base number by
+      a guessed multiplier. `src.quantlib.timeseries.bootstrap_sharpe` gives a
+      confidence interval on the book's Sharpe; report the interval, not a point
+      estimate, when the sample is short.
+      Net beta and factor tilts must be regressed against a benchmark series you
+      pulled. Any figure without a named sample window does not go in the report.
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
     skills: [risk-analysis, volatility]
     max_iterations: 50
     timeout_seconds: 1800

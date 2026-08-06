@@ -57,31 +57,71 @@ agents:
          - Impact on core competitiveness / moat (positive reinforcement vs. negative erosion)
       2. **Valuation Impact Pathway**
          - Expected direction and magnitude of change in P/E, P/B, EV/EBITDA, and other key multiples
-         - Impact on DCF key assumptions (changes to growth rate / discount rate / terminal growth rate)
+         - Impact on DCF key assumptions — direction and rough magnitude of the change to growth rate / discount rate / terminal growth rate. There is no DCF engine in this system, so describe how the assumptions move; do NOT quote a DCF value or a revised intrinsic value
          - Statistical analysis of historical valuation re-rating magnitude under similar events
       3. **Market Pricing Analysis**
          - Whether post-event stock price reaction aligns with fundamental impact expectations
-         - Options implied volatility change (where options data available) reflecting market expectations
+         - Options implied volatility change reflecting market expectations — you have no options-chain tool, so this line is only usable if an IV reading appears in a source you retrieved via `read_url` / `get_stock_news`; cite it, or omit the line entirely
          - Analyst consensus revision direction (upgrade / downgrade / maintain) and research rating change trends
          - Conclusion: Is the market fully priced (overreaction / fully priced / underpriced)?
       4. **Historical Event Benchmarking** — Find historical cases most similar to the current event (at least 2); analyze:
          - Average cumulative abnormal return (CAR / CAAR) at T+1, T+5, T+20, T+60
          - Hit rate of direction-consistent abnormal returns post-event
          - Key factors driving persistence or dissipation of abnormal returns
+
+         **How to actually produce CAR/CAAR.** `src.quantlib.eventstudy.event_study`
+         implements this — estimation-window market model, abnormal returns, CAR,
+         CAAR, and the three test statistics. Do not hand-roll the arithmetic and
+         do not settle for subtracting the benchmark.
+         1. Establish each comparable event's DATE from a retrieved source —
+            `get_stock_news` or `read_url`. An event date you cannot cite is not
+            usable; drop that comparable rather than guessing when it happened.
+         2. Pull the securities' and the benchmark's daily bars with
+            `get_market_data`, convert to simple returns, and assemble a
+            date × symbol frame plus a benchmark return series.
+         3. In `bash`:
+            `from src.quantlib.eventstudy import event_study` then
+            `event_study(returns, market_returns, events, event_window=(-1, 20))`
+            where `events` is a list of `(symbol, event_date)` pairs. The default
+            `model="market"` fits alpha and beta on a 120-row estimation window
+            ending 10 rows before the window opens, so the result is
+            RISK-adjusted, not merely market-adjusted. Report which model you used.
+         4. Read `caar_total` for the headline and `caar` for the T+1 / T+5 / T+20 /
+            T+60 path — run the study once per horizon by widening `event_window`.
+         5. **Report `bmp_p_value`, not just the mean.** A CAAR without a test
+            statistic is an anecdote. When `bmp_p_value` and `patell_p_value`
+            disagree, quote BMP and say why: events raise volatility, and Patell
+            assumes they do not. Also report `len(result.events)` and
+            `result.dropped` — a study over 12 events of which 7 were dropped is
+            a different study and the reader must be told.
+         6. If `result.shared_event_dates` is non-empty the events overlap in
+            calendar time, the independence the p-values assume is violated, and
+            you must say so rather than quoting them as if it were not.
+         7. With fewer than ~5 measurable events, report the individual CARs and
+            say the sample is too small for a meaningful CAAR. Do not present a
+            mean of two observations as an "abnormal return distribution".
+         If you cannot complete steps 1–2, write "historical benchmarking not
+         available for this event" and move on. Never state a CAR figure you did
+         not compute from retrieved bars.
       5. **Related Target Transmission** — For core targets, identify: directly impacted targets, supply chain upstream / downstream beneficiaries / casualties, competitive position changes for industry peers
 
       ## Output Requirements
       1. **Event Impact Matrix** — For each high / medium-rated event: impact direction (+/-/?), impact magnitude (small <3% / medium 3–10% / large >10%), impact duration (very short / short / medium term), confidence (high / medium / low)
       2. **Market Pricing Status** — Explicitly assess each event for pricing bias: overreaction (mean-reversion opportunity), fully priced (no opportunity), underpriced (follow-through opportunity)
-      3. **Historical CAR Statistics** — For the 3–5 most tradeable events, provide abnormal return distributions from historically similar events
+      3. **Historical CAR Statistics** — For the 3–5 most tradeable events, provide the abnormal return distribution computed from retrieved bars, naming each comparable event, its dated source, and the sample size; mark any event where the study could not be run as unavailable
       4. **Related Target Map** — Impact transmission chain for each core event (list of beneficiary / loser targets)
       5. **Top 5 Tradeable Events** — Ranked by composite score ("impact direction clarity × impact magnitude × market pricing bias × historical hit rate"); recommend the 5 most valuable events with rationale
       6. **Devil's Advocate** — For each recommended event, list the counter-logic that could invalidate the thesis
 
       Use load_skill("sentiment-analysis") for market sentiment and expectation quantification tools.
       Use load_skill("valuation-model") for valuation analysis frameworks and tools.
-      Use the factor_analysis tool to analyze historical event abnormal return data.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+      `factor_analysis` computes IC/IR and layered NAV from a factor CSV and a return CSV
+      you write yourself — it does not fetch data and does not run event studies.
+      Event dates come from `get_stock_news` / `read_url`, bars from `get_market_data`,
+      and the event study itself from `src.quantlib.eventstudy.event_study` — which
+      owns the estimation-window model, the CAR arithmetic and the significance
+      tests, so none of the three is yours to reimplement.
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_market_data, get_stock_news, read_url]
     skills: [corporate-events, sentiment-analysis, valuation-model]
     max_iterations: 50
     timeout_seconds: 1800

@@ -401,3 +401,73 @@ class TestTushareE2E:
         for code in ["600519.SH", "510050.SH", "000001.SH"]:
             assert code in result
             assert not result[code].empty
+
+
+# --- rate-limit backoff (2026-08-06) ---
+
+
+class TestRateLimitBackoff:
+    """Only a quota rejection is retried; a real failure still fails fast."""
+
+    def test_a_quota_rejection_is_retried_then_succeeds(self, monkeypatch):
+        from backtest.loaders import tushare as mod
+
+        monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+        calls = {"n": 0}
+
+        def flaky(**kwargs):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise RuntimeError("抱歉，您每分钟最多访问该接口200次")
+            return "ok"
+
+        assert mod._call_with_backoff(flaky) == "ok"
+        assert calls["n"] == 3
+
+    def test_a_real_failure_is_not_retried(self, monkeypatch):
+        from backtest.loaders import tushare as mod
+
+        monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+        calls = {"n": 0}
+
+        def broken(**kwargs):
+            calls["n"] += 1
+            raise ValueError("ts_code does not exist")
+
+        with pytest.raises(ValueError):
+            mod._call_with_backoff(broken)
+        # Retrying this would stall for a minute and then fail identically.
+        assert calls["n"] == 1
+
+    def test_the_backoff_schedule_crosses_the_quota_window(self):
+        from backtest.loaders.tushare import _RATE_LIMIT_BACKOFF_SECONDS
+
+        # The quota window is a minute; the schedule has to be able to outlast it.
+        assert sum(_RATE_LIMIT_BACKOFF_SECONDS) >= 60.0
+
+    def test_an_exhausted_schedule_finally_propagates(self, monkeypatch):
+        from backtest.loaders import tushare as mod
+
+        monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+
+        def always_limited(**kwargs):
+            raise RuntimeError("每分钟最多访问该接口")
+
+        with pytest.raises(RuntimeError, match="每分钟"):
+            mod._call_with_backoff(always_limited)
+
+    @pytest.mark.parametrize(
+        "message, limited",
+        [
+            ("抱歉，您每分钟最多访问该接口200次", True),
+            ("您今天最多访问该接口", True),
+            ("rate limit exceeded", True),
+            ("Too Many Requests", True),
+            ("ts_code 格式错误", False),
+            ("connection refused", False),
+        ],
+    )
+    def test_classification(self, message, limited):
+        from backtest.loaders.tushare import _is_rate_limited
+
+        assert _is_rate_limited(RuntimeError(message)) is limited

@@ -14,9 +14,23 @@ agents:
       ## Attribution framework
 
       ### Brinson attribution
+      Do NOT hand-estimate these three effects — they are implemented. Run them
+      in `bash`:
+      `from src.quantlib.attribution import brinson_fachler, carino_link`
+      - `brinson_fachler(portfolio_weights, benchmark_weights, portfolio_returns,
+        benchmark_returns)` returns a `BrinsonResult` carrying a `SectorEffect`
+        per sector (allocation / selection / interaction, each with `.total`)
+        plus `.total_effect`.
+      - For a multi-period review, compute one `BrinsonResult` per period and
+        pass the sequence to `carino_link` so the sub-period effects compound to
+        the true cumulative active return instead of being naively summed.
       - **Allocation effect**: P&L from sector/asset-class weights vs benchmark
       - **Selection effect**: P&L from stock selection at given weights vs benchmark
       - **Interaction effect**: cross term of allocation and selection
+      Weights and returns are inputs, not outputs: take the portfolio's weights
+      from {portfolio} and pull the sector/benchmark return series with
+      `get_market_data`. If a required series cannot be retrieved, report the
+      attribution as not computable for that sector — never fill the gap.
 
       ### Factor attribution
       - Decompose excess return into: market, size, value, momentum, quality, industry exposures
@@ -27,14 +41,18 @@ agents:
       - Identify top 5 contributors and bottom 5 detractors
 
       ## Required outputs
-      1. **Brinson three-way split** — Quantified % contribution from allocation / selection / interaction, broken out by industry
+      1. **Brinson three-way split** — Quantified % contribution from allocation / selection / interaction, broken out by industry, produced by `brinson_fachler` (Cariño-linked across sub-periods); state the weight and return series you fed it
       2. **Factor exposure table** — Average portfolio factor exposures (β-like) and return attribution; identify dominant return drivers
       3. **Stock contribution ranking** — Top 5 contributors and bottom 5 detractors with return source analysis
       4. **Alpha quality** — Whether excess return is systematic alpha (persistent) vs luck; give a confidence score
       5. **Attribution diagnosis** — Whether the book’s core thesis worked this period; what was right/wrong; improvements for next cycle
 
-      Use load_skill("performance-attribution") for methodology, load_skill("multi-factor") for factor exposure; factor_analysis for quant factor attribution.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+      Use load_skill("performance-attribution") for methodology, load_skill("multi-factor") for factor exposure.
+      `factor_analysis` computes IC/IR and layered NAV from a factor CSV and a return CSV
+      that you write yourself — it does not fetch data and does not perform Brinson
+      attribution. Use `get_market_data` for the return series, `src.quantlib.attribution`
+      for the Brinson decomposition, and `factor_analysis` only for the factor IC work.
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_market_data]
     skills: [performance-attribution, multi-factor]
     max_iterations: 50
     timeout_seconds: 1800
@@ -78,7 +96,18 @@ agents:
       5. **Overall risk rating** — Portfolio risk score 1–5 stars (5 = highest risk); top 3 issues and suggested actions
 
       Use load_skill("risk-analysis") for methodology, load_skill("volatility") for vol and VaR.
-    tools: [bash, read_file, write_file, load_skill]
+      VaR and CVaR are implemented — run them rather than estimating. Pull the
+      constituent bars with `get_market_data`, build the portfolio return series
+      at the current weights in `bash`, then:
+      `src.quantlib.risk.historical_var(returns, confidence, horizon)`,
+      `parametric_var(...)`, `historical_cvar(...)` at both 95% and 99%,
+      `max_drawdown_analysis(equity)`, and `fit_gpd_tail(returns)` for the tail
+      beyond the sample. For the −20% market shock, apply the portfolio's
+      measured beta to the shock rather than asserting a loss figure.
+      ADV and pairwise correlations come from the same bars. If a position's bars
+      cannot be retrieved, list it as uncovered and state what share of NAV the
+      risk report therefore excludes — never extrapolate over the gap.
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
     skills: [risk-analysis, volatility]
     max_iterations: 50
     timeout_seconds: 1800
@@ -121,7 +150,18 @@ agents:
       5. **Execution improvements** — Concrete fixes (order types, slicing, optimal time windows)
 
       Use load_skill("execution-model") for execution analytics, load_skill("market-microstructure") for microstructure-driven costs.
-    tools: [bash, read_file, write_file, load_skill]
+
+      Execution analysis needs FILLS, and fills only come from the user. Parse a
+      broker blotter (同花顺 / 东财 / 富途 / generic CSV) with
+      `analyze_trade_journal`, and pull the matching bars with `get_market_data`
+      to build VWAP/TWAP benchmarks in `bash`. Market impact is modelled, not
+      observed — `src.quantlib.impact.linear_impact` and `sqrt_impact` give the
+      estimate, `fixed_slippage` the flat-bps baseline; name which model and which
+      coefficient you used, and label the output an estimate.
+      If no blotter was supplied, say so and report execution quality as not
+      assessable. Do not synthesise fill prices, VWAP deviations, or an
+      implementation shortfall from position weights alone.
+    tools: [bash, read_file, write_file, load_skill, analyze_trade_journal, get_market_data]
     skills: [execution-model, market-microstructure]
     max_iterations: 50
     timeout_seconds: 1800

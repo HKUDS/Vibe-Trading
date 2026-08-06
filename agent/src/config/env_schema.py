@@ -167,6 +167,18 @@ class DataConfig(_EnvBase):
     fred_api_key: str = Field(alias="FRED_API_KEY", default="")
     vibe_trading_iwencai_key: str = Field(alias="VIBE_TRADING_IWENCAI_KEY", default="")
     vibe_trading_sec_ua: str = Field(alias="VIBE_TRADING_SEC_UA", default="")
+    # 13F scan bounds. No gt=0 constraint: a non-positive override must fall
+    # back to the default like any other bad value, and a constraint would
+    # raise a ValidationError at config load instead.
+    vibe_trading_sec_13f_max_xml_mb: float = Field(
+        alias="VIBE_TRADING_SEC_13F_MAX_XML_MB", default=25.0
+    )
+    vibe_trading_sec_13f_budget_s: float = Field(
+        alias="VIBE_TRADING_SEC_13F_BUDGET_S", default=120.0
+    )
+    vibe_trading_sec_ftd_url: str = Field(alias="VIBE_TRADING_SEC_FTD_URL", default="")
+    vibe_trading_sec_ftd_files: int = Field(alias="VIBE_TRADING_SEC_FTD_FILES", default=1)
+    vibe_trading_openalex_mailto: str = Field(alias="VIBE_TRADING_OPENALEX_MAILTO", default="")
     vibe_tw_stock_db: str = Field(alias="VIBE_TW_STOCK_DB", default="")
     vibe_trading_data_cache: EnvBool = Field(alias="VIBE_TRADING_DATA_CACHE", default=False)
     vibe_trading_data_cache_root: str = Field(alias="VIBE_TRADING_DATA_CACHE_ROOT", default="")
@@ -344,6 +356,7 @@ class AgentTuningConfig(_EnvBase):
     )
     vibe_trading_bench_workers: int = Field(alias="VIBE_TRADING_BENCH_WORKERS", default=0)
     vibe_trading_search_backends: str = Field(alias="VIBE_TRADING_SEARCH_BACKENDS", default="")
+    vibe_trading_slash_arg_max: int = Field(alias="VIBE_TRADING_SLASH_ARG_MAX", default=600)
     vibe_trading_search_bing_fallback: EnvBool = Field(
         alias="VIBE_TRADING_SEARCH_BING_FALLBACK", default=True,
     )
@@ -366,6 +379,7 @@ class PathConfig(_EnvBase):
 
     vibe_trading_hypotheses_path: str = Field(alias="VIBE_TRADING_HYPOTHESES_PATH", default="")
     vibe_trading_goal_db_path: str = Field(alias="VIBE_TRADING_GOAL_DB_PATH", default="")
+    vibe_trading_playbook_dir: str = Field(alias="VIBE_TRADING_PLAYBOOK_DIR", default="")
     vibe_trading_swarm_agent_config: str = Field(
         alias="VIBE_TRADING_SWARM_AGENT_CONFIG", default="",
     )

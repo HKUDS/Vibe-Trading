@@ -124,7 +124,27 @@ agents:
       - Gap risk: stock can gap beyond stop-loss → position sizing must account for this
 
       Use load_skill for options analysis and event-driven strategy frameworks.
-    tools: [bash, read_file, write_file, load_skill]
+
+      ## Every number here needs the chain — retrieve it or drop the section
+      `load_skill` loads methodology; it does not fetch data.
+      - `get_options_chain(ticker, expiration)` gives the strike ladder with
+        bid/ask, last, volume, open interest and `implied_volatility` — that is
+        the source for the ATM straddle price, the put/call ratio, the skew and
+        the open-interest-by-strike map. **Yahoo-backed, US-listed only**: if the
+        target is not US-listed, say the options sections are unavailable.
+      - Implied move = ATM straddle price ÷ spot, from the retrieved quotes.
+        Realised earnings moves come from `get_market_data` bars around the past
+        8 reporting dates — retrieve those dates, don't recall them.
+      - `options_pricing` / `src.quantlib.options.bs_greeks` for per-leg theta and
+        the decay estimate; `src.quantlib.options.implied_volatility` to invert an
+        IV the chain did not carry.
+      - **Unusual activity — sweeps and block trades — is NOT available.** There is
+        no options tape or flow feed in this system; volume and open interest from
+        the chain are the most you have. Say that plainly instead of describing
+        flow you cannot see.
+      Any implied move, PCR, skew or OI figure that did not come from a chain call
+      you actually ran must not appear.
+    tools: [bash, read_file, write_file, load_skill, get_options_chain, get_market_data, options_pricing]
     skills: [options-advanced, options-strategy, event-driven, volatility]
     max_iterations: 50
     timeout_seconds: 1800

@@ -18,6 +18,7 @@ from src.session.models import (
     Attempt,
     AttemptStatus,
     Message,
+    Principal,
     Session,
 )
 from src.session.search import get_shared_index
@@ -114,17 +115,28 @@ class SessionService:
         with self._inflight_lock:
             self._inflight.discard(session_id)
 
-    def create_session(self, title: str = "", config: Optional[Dict[str, Any]] = None) -> Session:
+    def create_session(
+        self,
+        title: str = "",
+        config: Optional[Dict[str, Any]] = None,
+        owner: Optional["Principal"] = None,
+    ) -> Session:
         """Create a new session.
 
         Args:
             title: Session title.
             config: Session configuration.
+            owner: Principal the session belongs to, from the authenticated
+                request. Optional because sessions are also created by the CLI
+                and by internal paths that have no request context; those get
+                ``None``, which reads as "owner unknown" and is deliberately
+                distinct from a principal that authenticated but cannot be
+                attributed to a person (see ``Principal.attributable``).
 
         Returns:
             The newly created Session.
         """
-        session = Session(title=title, config=config or {})
+        session = Session(title=title, config=config or {}, owner=owner)
         self.store.create_session(session)
         self._search_index.index_session(session.session_id, title)
         self.event_bus.emit(session.session_id, "session.created", {"session_id": session.session_id, "title": title})

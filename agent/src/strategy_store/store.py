@@ -28,6 +28,8 @@ from src.strategy_store.models import (
     BenchResult,
     DecaySnapshot,
     DecaySignal,
+    ValidationStatus,
+    validate_validation_status_transition,
 )
 
 
@@ -168,6 +170,12 @@ class InMemoryStrategyStore:
                     f"artifact '{artifact.name}' already exists in "
                     f"universe '{artifact.universe}'"
                 )
+        # A brand-new record has no prior validation history, so its implicit
+        # "current" state is UNVALIDATED — registering directly with
+        # validation_status=APPROVED would skip the VALIDATED step.
+        validate_validation_status_transition(
+            ValidationStatus.UNVALIDATED, artifact.validation_status
+        )
         now = _now_iso()
         artifact_id = artifact.id or _new_artifact_id()
         stored = replace(
@@ -251,8 +259,15 @@ class InMemoryStrategyStore:
 
         Returns the updated artifact, or ``None`` if the ID is not found.
         """
-        if artifact.id not in self._artifacts:
+        existing = self._artifacts.get(artifact.id)
+        if existing is None:
             return None
+
+        # Structural enforcement of the validation state machine: an
+        # unvalidated model can never be updated straight into APPROVED.
+        validate_validation_status_transition(
+            existing.validation_status, artifact.validation_status
+        )
 
         now = _now_iso()
         stored = replace(artifact, updated_at=now)

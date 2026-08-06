@@ -31,12 +31,17 @@ jobs:
         # `openbb` is included so agent/tests/test_openbb_bridge actually runs:
         # those tests importorskip on openbb_ai, so without the extra the whole
         # OpenBB Workspace bridge would report green while never being exercised.
-        run: pip install -e ".[dev,openbb]"
+        # `stats` is included for the same reason: the quantlib econometrics
+        # tests skip without statsmodels/arch, and skipped is not tested.
+        run: pip install -e ".[dev,openbb,stats]"
 
       - name: Verify optional extras under test are importable
-        # Fails loudly if the openbb extra stops resolving, instead of letting
-        # the bridge suite silently degrade to skips.
-        run: python -c "import openbb_ai, importlib.metadata as m; print('openbb-ai', m.version('openbb-ai'))"
+        # Fails loudly if an extra stops resolving, instead of letting its
+        # suite silently degrade to skips.
+        run: |
+          python -c "import openbb_ai, importlib.metadata as m; print('openbb-ai', m.version('openbb-ai'))"
+          python -c "import statsmodels; print('statsmodels', statsmodels.__version__)"
+          python -c "import arch; print('arch', arch.__version__)"
 
       - name: Repository safety gates
         run: bash tools/ci_grep_gates.sh

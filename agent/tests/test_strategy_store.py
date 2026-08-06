@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import uuid
+
 import pytest
 
 from src.strategy_store.models import (
@@ -13,6 +15,11 @@ from src.strategy_store.models import (
     BenchCategory,
     DecaySnapshot,
     DecaySignal,
+    ModelTier,
+    ValidationStatus,
+    is_four_eyes_violation,
+    validate_model_registration,
+    validate_validation_status_transition,
 )
 from src.strategy_store.store import InMemoryStrategyStore
 from src.strategy_store.decay import DecayEvaluator, DecayThresholds
@@ -886,3 +893,505 @@ class TestSqliteStore:
 
         assert self.store.get_bench_history(aid) == []
         assert self.store.get_decay_history(aid) == []
+
+
+# ===========================================================================
+# TestModelGovernance — pure-logic ModelRecord helpers (models.py)
+# ===========================================================================
+
+
+class TestModelGovernance:
+    """Tests for the model-governance fields and validation helpers."""
+
+    def test_artifact_governance_defaults(self):
+        """Bare Artifact construction (pre-governance call sites) is unaffected."""
+        art = _make_artifact()
+        assert art.developer is None
+        assert art.owner is None
+        assert art.validator is None
+        assert art.approver is None
+        assert art.model_version is None
+        assert art.artifact_version is None
+        assert art.model_tier is None
+        assert art.intended_use is None
+        assert art.limitations is None
+        assert art.validation_status == ValidationStatus.UNVALIDATED
+        assert art.validation_date is None
+
+    def test_model_tier_enum(self):
+        expected = {"tier_1_critical", "tier_2_significant", "tier_3_limited"}
+        assert {t.value for t in ModelTier} == expected
+
+    def test_validation_status_enum(self):
+        expected = {"unvalidated", "in_validation", "validated", "approved", "rejected"}
+        assert {s.value for s in ValidationStatus} == expected
+
+    # -- four-eyes principle -------------------------------------------------
+
+    def test_four_eyes_violation_same_person(self):
+        art = _make_artifact()
+        art = Artifact(**{**art.__dict__, "developer": "Alice", "approver": "Alice"})
+        assert is_four_eyes_violation(art) is True
+
+    def test_four_eyes_violation_case_and_whitespace_insensitive(self):
+        art = _make_artifact()
+        art = Artifact(
+            **{**art.__dict__, "developer": " Alice ", "approver": "alice"}
+        )
+        assert is_four_eyes_violation(art) is True
+
+    def test_four_eyes_no_violation_different_people(self):
+        art = _make_artifact()
+        art = Artifact(
+            **{**art.__dict__, "developer": "Alice", "approver": "Bob"}
+        )
+        assert is_four_eyes_violation(art) is False
+
+    def test_four_eyes_not_flagged_when_roles_unset(self):
+        """With developer or approver unset there is nothing to compare — not a violation."""
+        art = _make_artifact()
+        assert is_four_eyes_violation(art) is False
+
+        only_developer = Artifact(**{**art.__dict__, "developer": "Alice"})
+        assert is_four_eyes_violation(only_developer) is False
+
+    def test_four_eyes_does_not_raise(self):
+        """Four-eyes detection is advisory only — it must never raise."""
+        art = _make_artifact()
+        art = Artifact(**{**art.__dict__, "developer": "Alice", "approver": "Alice"})
+        # Calling it must not raise even though it flags a violation.
+        result = is_four_eyes_violation(art)
+        assert result is True
+
+    # -- intended_use / limitations required ---------------------------------
+
+    def test_validate_model_registration_requires_intended_use(self):
+        art = _make_artifact()
+        art = Artifact(**{**art.__dict__, "limitations": "US large-cap only"})
+        with pytest.raises(ValueError, match="intended_use"):
+            validate_model_registration(art)
+
+    def test_validate_model_registration_requires_limitations(self):
+        art = _make_artifact()
+        art = Artifact(**{**art.__dict__, "intended_use": "Daily rebalance signal"})
+        with pytest.raises(ValueError, match="limitations"):
+            validate_model_registration(art)
+
+    def test_validate_model_registration_rejects_blank_strings(self):
+        """Whitespace-only intended_use/limitations count as empty."""
+        art = _make_artifact()
+        art = Artifact(
+            **{**art.__dict__, "intended_use": "   ", "limitations": "   "}
+        )
+        with pytest.raises(ValueError):
+            validate_model_registration(art)
+
+    def test_validate_model_registration_passes_when_both_set(self):
+        art = _make_artifact()
+        art = Artifact(
+            **{
+                **art.__dict__,
+                "intended_use": "Daily rebalance signal for CSI300 longs",
+                "limitations": "Not validated out-of-sample post-2024",
+            }
+        )
+        validate_model_registration(art)  # must not raise
+
+    # -- validation state machine --------------------------------------------
+
+    def test_unvalidated_to_approved_blocked(self):
+        with pytest.raises(ValueError, match="VALIDATED"):
+            validate_validation_status_transition(
+                ValidationStatus.UNVALIDATED, ValidationStatus.APPROVED
+            )
+
+    def test_in_validation_to_approved_blocked(self):
+        with pytest.raises(ValueError):
+            validate_validation_status_transition(
+                ValidationStatus.IN_VALIDATION, ValidationStatus.APPROVED
+            )
+
+    def test_rejected_to_approved_blocked(self):
+        with pytest.raises(ValueError):
+            validate_validation_status_transition(
+                ValidationStatus.REJECTED, ValidationStatus.APPROVED
+            )
+
+    def test_validated_to_approved_allowed(self):
+        validate_validation_status_transition(
+            ValidationStatus.VALIDATED, ValidationStatus.APPROVED
+        )  # must not raise
+
+    def test_approved_to_approved_idempotent(self):
+        validate_validation_status_transition(
+            ValidationStatus.APPROVED, ValidationStatus.APPROVED
+        )  # re-approval is a no-op, must not raise
+
+    def test_non_approved_transitions_unrestricted(self):
+        """The guard only restricts reaching APPROVED; other moves are free."""
+        validate_validation_status_transition(
+            ValidationStatus.UNVALIDATED, ValidationStatus.IN_VALIDATION
+        )
+        validate_validation_status_transition(
+            ValidationStatus.IN_VALIDATION, ValidationStatus.VALIDATED
+        )
+        validate_validation_status_transition(
+            ValidationStatus.VALIDATED, ValidationStatus.REJECTED
+        )
+        validate_validation_status_transition(
+            ValidationStatus.APPROVED, ValidationStatus.UNVALIDATED
+        )  # e.g. re-opening for a new review cycle
+
+
+# ===========================================================================
+# TestModelGovernanceStore — store-level enforcement + persistence
+# ===========================================================================
+
+
+class TestModelGovernanceStore:
+    """Governance-field persistence and enforcement across both store backends."""
+
+    def _governed_artifact(self, **overrides) -> Artifact:
+        base = _make_artifact(name=overrides.pop("name", "governed_factor"))
+        fields = {
+            **base.__dict__,
+            "developer": "Alice",
+            "owner": "Bob",
+            "validator": "Carol",
+            "approver": "Dave",
+            "model_version": "1.0.0",
+            "artifact_version": "art-v3",
+            "model_tier": ModelTier.TIER_2_SIGNIFICANT,
+            "intended_use": "Daily rebalance signal for CSI300 longs",
+            "limitations": "Not validated out-of-sample post-2024",
+            "validation_status": ValidationStatus.VALIDATED,
+            "validation_date": "2026-08-01",
+        }
+        fields.update(overrides)
+        return Artifact(**fields)
+
+    @pytest.mark.parametrize("backend", ["sqlite", "memory"])
+    def test_governance_fields_round_trip(self, backend, tmp_path):
+        store = (
+            _sqlite_store(tmp_path)
+            if backend == "sqlite"
+            else InMemoryStrategyStore()
+        )
+        art = self._governed_artifact()
+        aid = store.register_artifact(art)
+        fetched = store.get_artifact(aid)
+
+        assert fetched is not None
+        assert fetched.developer == "Alice"
+        assert fetched.owner == "Bob"
+        assert fetched.validator == "Carol"
+        assert fetched.approver == "Dave"
+        assert fetched.model_version == "1.0.0"
+        assert fetched.artifact_version == "art-v3"
+        assert fetched.model_tier == ModelTier.TIER_2_SIGNIFICANT
+        assert fetched.intended_use == "Daily rebalance signal for CSI300 longs"
+        assert fetched.limitations == "Not validated out-of-sample post-2024"
+        assert fetched.validation_status == ValidationStatus.VALIDATED
+        assert fetched.validation_date == "2026-08-01"
+
+    @pytest.mark.parametrize("backend", ["sqlite", "memory"])
+    def test_register_directly_as_approved_blocked(self, backend, tmp_path):
+        """A model can't be born APPROVED — it has no prior VALIDATED state."""
+        store = (
+            _sqlite_store(tmp_path)
+            if backend == "sqlite"
+            else InMemoryStrategyStore()
+        )
+        art = self._governed_artifact(validation_status=ValidationStatus.APPROVED)
+        with pytest.raises(ValueError, match="VALIDATED"):
+            store.register_artifact(art)
+
+    @pytest.mark.parametrize("backend", ["sqlite", "memory"])
+    def test_update_to_approved_requires_prior_validated(self, backend, tmp_path):
+        store = (
+            _sqlite_store(tmp_path)
+            if backend == "sqlite"
+            else InMemoryStrategyStore()
+        )
+        art = self._governed_artifact(validation_status=ValidationStatus.UNVALIDATED)
+        aid = store.register_artifact(art)
+        fetched = store.get_artifact(aid)
+        assert fetched is not None
+
+        # Still UNVALIDATED — jumping to APPROVED must be blocked.
+        illegal = Artifact(**{**fetched.__dict__, "validation_status": ValidationStatus.APPROVED})
+        with pytest.raises(ValueError, match="VALIDATED"):
+            store.update_artifact(illegal)
+
+        # Going through VALIDATED first works, and APPROVED after that works too.
+        validated = Artifact(**{**fetched.__dict__, "validation_status": ValidationStatus.VALIDATED})
+        result = store.update_artifact(validated)
+        assert result is not None
+        assert result.validation_status == ValidationStatus.VALIDATED
+
+        approved = Artifact(**{**result.__dict__, "validation_status": ValidationStatus.APPROVED})
+        result2 = store.update_artifact(approved)
+        assert result2 is not None
+        assert result2.validation_status == ValidationStatus.APPROVED
+
+    def test_four_eyes_detectable_after_round_trip(self, tmp_path):
+        """A same-person dev/approve record is registerable (not force-rejected)
+        but is_four_eyes_violation must flag it after reading it back."""
+        store = _sqlite_store(tmp_path)
+        art = self._governed_artifact(
+            name="four_eyes_factor", developer="Alice", approver="Alice"
+        )
+        aid = store.register_artifact(art)
+        fetched = store.get_artifact(aid)
+        assert fetched is not None
+        assert is_four_eyes_violation(fetched) is True
+
+
+def _sqlite_store(tmp_path):
+    from src.strategy_store.sqlite_store import SqliteStrategyStore
+
+    return SqliteStrategyStore(db_path=tmp_path / f"gov_{uuid.uuid4().hex[:8]}.db")
+
+
+# ===========================================================================
+# TestSchemaMigration — backward-compatible SQLite migration
+# ===========================================================================
+
+
+_LEGACY_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS artifacts (
+    id              TEXT PRIMARY KEY,
+    type            TEXT NOT NULL CHECK(type IN ('factor', 'strategy')),
+    name            TEXT NOT NULL,
+    source_paper    TEXT,
+    source_url      TEXT,
+    formula_latex   TEXT,
+    theme           TEXT,
+    columns_required TEXT,
+    decay_horizon   INTEGER DEFAULT 20,
+    signal_definition TEXT,
+    entry_rules     TEXT,
+    exit_rules      TEXT,
+    position_sizing TEXT,
+    universe        TEXT NOT NULL,
+    signal_engine_path TEXT,
+    run_dir         TEXT,
+    hypothesis_id   TEXT,
+    status          TEXT NOT NULL DEFAULT 'created'
+                    CHECK(status IN (
+                        'created','benching','active',
+                        'monitoring','decayed','disabled')),
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    disabled_at     TEXT,
+    disabled_reason TEXT,
+    UNIQUE(name, universe)
+);
+
+CREATE TABLE IF NOT EXISTS bench_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    artifact_id     TEXT NOT NULL
+                    REFERENCES artifacts(id) ON DELETE CASCADE,
+    bench_type      TEXT NOT NULL
+                    CHECK(bench_type IN ('initial','periodic','manual')),
+    ic_mean         REAL,
+    ic_std          REAL,
+    ir              REAL,
+    ic_positive_ratio REAL,
+    t_stat          REAL,
+    sharpe          REAL,
+    annual_return   REAL,
+    max_drawdown    REAL,
+    calmar          REAL,
+    category        TEXT
+                    CHECK(category IN (
+                        'alive','reversed','dead',
+                        'confirmed_alive','noise')),
+    train_start     TEXT,
+    train_end       TEXT,
+    test_start      TEXT,
+    test_end        TEXT,
+    run_dir         TEXT,
+    created_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS decay_snapshots (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    artifact_id     TEXT NOT NULL
+                    REFERENCES artifacts(id) ON DELETE CASCADE,
+    rolling_ic_mean     REAL,
+    rolling_ir          REAL,
+    baseline_ic_mean    REAL,
+    ic_ratio            REAL,
+    decay_signal    TEXT
+                    CHECK(decay_signal IN (
+                        'healthy','warning','decayed','critical')),
+    consecutive_warnings INTEGER DEFAULT 0,
+    detail          TEXT,
+    created_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_status
+    ON artifacts(status);
+CREATE INDEX IF NOT EXISTS idx_artifacts_type
+    ON artifacts(type);
+CREATE INDEX IF NOT EXISTS idx_bench_artifact
+    ON bench_history(artifact_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_decay_artifact
+    ON decay_snapshots(artifact_id, created_at);
+"""
+
+
+def _build_legacy_db(db_path) -> None:
+    """Create a pre-governance-schema database with one legacy artifact row.
+
+    Mirrors exactly the ``_init_db`` DDL as it existed before the
+    model-governance migration (no developer/owner/validator/approver/
+    model_version/artifact_version/model_tier/intended_use/limitations/
+    validation_status/validation_date columns).
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(_LEGACY_SCHEMA_SQL)
+    conn.execute("PRAGMA user_version=1")
+    conn.execute(
+        """
+        INSERT INTO artifacts (
+            id, type, name, source_paper, source_url, formula_latex,
+            theme, columns_required, decay_horizon, signal_definition,
+            entry_rules, exit_rules, position_sizing, universe,
+            signal_engine_path, run_dir, hypothesis_id, status,
+            created_at, updated_at, disabled_at, disabled_reason
+        ) VALUES (
+            'art_legacy001', 'factor', 'legacy_momentum', NULL, NULL, NULL,
+            '[]', '[]', 20, NULL,
+            NULL, NULL, NULL, 'CSI300',
+            NULL, NULL, NULL, 'active',
+            '2025-01-01T00:00:00+00:00', '2025-01-01T00:00:00+00:00', NULL, NULL
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+class TestSchemaMigration:
+    """Backward-compatible migration of a pre-governance SQLite database."""
+
+    def test_old_db_opens_and_reads_via_new_code(self, tmp_path):
+        """The most important test: a DB written before governance fields
+        existed must still be readable (and writable) by the new store."""
+        from src.strategy_store.sqlite_store import SqliteStrategyStore
+
+        db_path = tmp_path / "legacy.db"
+        _build_legacy_db(db_path)
+
+        store = SqliteStrategyStore(db_path=db_path)
+        fetched = store.get_artifact("art_legacy001")
+
+        assert fetched is not None
+        assert fetched.name == "legacy_momentum"
+        assert fetched.universe == "CSI300"
+        assert fetched.status == ArtifactStatus.ACTIVE
+        # New governance columns default sanely for pre-existing rows.
+        assert fetched.developer is None
+        assert fetched.owner is None
+        assert fetched.validator is None
+        assert fetched.approver is None
+        assert fetched.model_version is None
+        assert fetched.artifact_version is None
+        assert fetched.model_tier is None
+        assert fetched.intended_use is None
+        assert fetched.limitations is None
+        assert fetched.validation_status == ValidationStatus.UNVALIDATED
+        assert fetched.validation_date is None
+
+    def test_old_db_still_writable_after_migration(self, tmp_path):
+        """New writes (including governance fields) work on a migrated DB."""
+        from src.strategy_store.sqlite_store import SqliteStrategyStore
+
+        db_path = tmp_path / "legacy_write.db"
+        _build_legacy_db(db_path)
+
+        store = SqliteStrategyStore(db_path=db_path)
+        aid = store.register_artifact(
+            Artifact(
+                id="",
+                type=ArtifactType.FACTOR,
+                name="post_migration_factor",
+                universe="CSI300",
+                developer="Alice",
+                intended_use="Signal for post-migration coverage",
+                limitations="Untested pre-2020",
+            )
+        )
+        fetched = store.get_artifact(aid)
+        assert fetched is not None
+        assert fetched.developer == "Alice"
+        assert fetched.intended_use == "Signal for post-migration coverage"
+
+        # The pre-existing legacy row is still intact and readable too.
+        legacy = store.get_artifact("art_legacy001")
+        assert legacy is not None
+        assert legacy.name == "legacy_momentum"
+
+    def test_old_db_update_status_still_works(self, tmp_path):
+        """update_status (unrelated to governance) keeps working on a migrated row."""
+        from src.strategy_store.sqlite_store import SqliteStrategyStore
+
+        db_path = tmp_path / "legacy_status.db"
+        _build_legacy_db(db_path)
+
+        store = SqliteStrategyStore(db_path=db_path)
+        updated = store.update_status(
+            "art_legacy001", ArtifactStatus.DISABLED, reason="migrated-test"
+        )
+        assert updated is not None
+        assert updated.status == ArtifactStatus.DISABLED
+        assert updated.disabled_reason == "migrated-test"
+        # Governance fields remain untouched/default.
+        assert updated.validation_status == ValidationStatus.UNVALIDATED
+
+    def test_migration_is_idempotent(self, tmp_path):
+        """Running the column-migration twice does not error or duplicate columns."""
+        from src.strategy_store.sqlite_store import SqliteStrategyStore
+
+        db_path = tmp_path / "idempotent.db"
+        _build_legacy_db(db_path)
+
+        store = SqliteStrategyStore(db_path=db_path)
+        # First open already ran the migration once (in __init__ -> _init_db).
+        # Run it again explicitly, twice more, to prove idempotency.
+        store._migrate_governance_columns()
+        store._migrate_governance_columns()
+
+        columns = [
+            row["name"]
+            for row in store._conn.execute("PRAGMA table_info(artifacts)")
+        ]
+        # No duplicate column names.
+        assert len(columns) == len(set(columns))
+        assert columns.count("validation_status") == 1
+        assert columns.count("developer") == 1
+
+        # Store still functions normally after repeated migration calls.
+        fetched = store.get_artifact("art_legacy001")
+        assert fetched is not None
+
+    def test_migration_idempotent_across_fresh_reopen(self, tmp_path):
+        """Re-opening an already-migrated DB with a fresh store instance is safe."""
+        from src.strategy_store.sqlite_store import SqliteStrategyStore
+
+        db_path = tmp_path / "reopen.db"
+        _build_legacy_db(db_path)
+
+        store1 = SqliteStrategyStore(db_path=db_path)
+        aid = store1.register_artifact(_make_artifact(name="reopen_factor"))
+
+        # Re-open with a brand-new store instance — _init_db (and the
+        # migration inside it) runs again against an already-migrated file.
+        store2 = SqliteStrategyStore(db_path=db_path)
+        fetched = store2.get_artifact(aid)
+        assert fetched is not None
+        assert fetched.name == "reopen_factor"
