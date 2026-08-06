@@ -251,6 +251,111 @@ def test_fetch_auto_groups_by_detected_source() -> None:
     assert "AAPL.US" in out and "BTC-USDT" in out
 
 
+def test_fetch_auto_hk_walks_hk_chain_not_us_chain() -> None:
+    """HK symbols must degrade through the hk_equity chain, not the US one.
+
+    A source-name-only chain lookup matches ``yahoo`` against the us_equity
+    chain first, where the attempt budget exhausts on the US-only stooq/sina
+    loaders and never reaches eastmoney/akshare.
+    """
+    from backtest.loaders.base import NoAvailableSourceError
+
+    attempts: list[str] = []
+
+    def resolver(src: str):
+        attempts.append(src)
+        if src == "eastmoney":
+            return _StubLoader
+        raise NoAvailableSourceError(f"{src} unavailable in test")
+
+    out = fetch_market_data(
+        codes=["00700.HK"],
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        source="auto",
+        loader_resolver=resolver,
+    )
+    assert attempts[:2] == ["yahoo", "eastmoney"]
+    assert "stooq" not in attempts and "sina" not in attempts
+    assert "_unresolved" not in out
+    assert "00700.HK" in out
+
+
+def test_fetch_auto_hk_akshare_reachable_within_default_budget() -> None:
+    """akshare (Eastmoney-backed HK daily) must be reachable within the
+    default ``max_fallback_attempts`` when every earlier HK source is down."""
+    from backtest.loaders.base import NoAvailableSourceError
+
+    attempts: list[str] = []
+
+    def resolver(src: str):
+        attempts.append(src)
+        if src == "akshare":
+            return _StubLoader
+        raise NoAvailableSourceError(f"{src} unavailable in test")
+
+    out = fetch_market_data(
+        codes=["09988.HK"],
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        source="auto",
+        loader_resolver=resolver,
+    )
+    assert "_unresolved" not in out
+    assert "09988.HK" in out
+    assert attempts[-1] == "akshare"
+    assert len(attempts) <= 5
+
+
+def test_fetch_auto_india_walks_india_chain() -> None:
+    """India symbols must degrade through the india_equity chain (chain
+    selection is market-aware for every market, not just HK)."""
+    from backtest.loaders.base import NoAvailableSourceError
+
+    attempts: list[str] = []
+
+    def resolver(src: str):
+        attempts.append(src)
+        if src == "yfinance":
+            return _StubLoader
+        raise NoAvailableSourceError(f"{src} unavailable in test")
+
+    out = fetch_market_data(
+        codes=["RELIANCE.NS"],
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        source="auto",
+        loader_resolver=resolver,
+    )
+    assert attempts == ["yahoo", "yfinance"]
+    assert "_unresolved" not in out
+    assert "RELIANCE.NS" in out
+
+
+def test_fetch_auto_us_still_walks_us_chain() -> None:
+    """US routing is unchanged by the market-aware chain selection."""
+    from backtest.loaders.base import NoAvailableSourceError
+
+    attempts: list[str] = []
+
+    def resolver(src: str):
+        attempts.append(src)
+        if src == "stooq":
+            return _StubLoader
+        raise NoAvailableSourceError(f"{src} unavailable in test")
+
+    out = fetch_market_data(
+        codes=["AAPL.US"],
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        source="auto",
+        loader_resolver=resolver,
+    )
+    assert attempts[:2] == ["yahoo", "stooq"]
+    assert "_unresolved" not in out
+    assert "AAPL.US" in out
+
+
 def test_fetch_loader_error_falls_through_to_unresolved() -> None:
     out = fetch_market_data(
         codes=["X.US"],

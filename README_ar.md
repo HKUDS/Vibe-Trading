@@ -342,7 +342,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 | `tencent` · `mootdx` | A-share | none | never IP-banned (`mootdx` = 通达信 TCP) |
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
-| `tushare` | A / futures / fund / macro | token | richest A-share |
+| `tushare` | A / HK / futures / fund / macro | token | richest A-share |
 | `yahoo` · `sina` · `stooq` | US (/HK) | none | direct chart/quotes/options · K-line to 1984 · EOD CSV |
 | `yfinance` | US / HK | none | wrapper |
 | `longbridge` | US / HK | App Key + App Secret + Access Token | مصدر OHLCV تاريخي اختياري؛ ثبّت الـ SDK الاختياري |
@@ -359,7 +359,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
 
 - **أسهم A** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `local`
 - **أسهم US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
-- **أسهم HK** → `eastmoney` · `yahoo` · `futu` · `yfinance` · `akshare` · `longbridge` · `local`
+- **أسهم HK** → `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **أسهم الهند (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
 - **كوريا (KOSPI/KOSDAQ)** → `pykrx` · `yahoo` · `yfinance` · `local`
 - **الكريبتو** → `okx` · `ccxt` · `binance` · `yfinance` · `local`
