@@ -284,3 +284,57 @@ def test_signal_engine_allows_unreachable_network_helper(tmp_path) -> None:
 
     module = _load_module_from_file(signal_file, _module_name())
     assert hasattr(module, "SignalEngine")
+
+
+def test_signal_engine_allows_signed_numeric_literal_assignment(tmp_path) -> None:
+    # A negative threshold (e.g. a mined ``prior_5d_return`` bound) parses as
+    # ``UnaryOp(USub, Constant)`` rather than a bare ``Constant``. It is still a
+    # compile-time constant that executes nothing at import, so it must be treated
+    # as a safe literal assignment (issue #985 second rejection path).
+    signal_file = tmp_path / "signal_engine.py"
+    signal_file.write_text(
+        "\n".join(
+            [
+                '"""Strategy with signed numeric thresholds."""',
+                "THRESHOLD = -0.08",
+                "BOUNDS = [{'min': -0.08, 'max': 0.02}]",
+                "class SignalEngine:",
+                "    def generate(self, *args, **kwargs):",
+                "        return []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    module = _load_module_from_file(signal_file, _module_name())
+
+    assert module.THRESHOLD == -0.08
+    assert module.BOUNDS == [{"min": -0.08, "max": 0.02}]
+
+
+@pytest.mark.parametrize(
+    "decorator_line",
+    ["    @staticmethod", "    @classmethod", "    @some_decorator"],
+    ids=["staticmethod", "classmethod", "custom"],
+)
+def test_signal_engine_still_rejects_decorators(tmp_path, decorator_line) -> None:
+    # The issue #985 fix removes decorators from the generated template instead of
+    # loosening this validator, so every decorator must stay rejected.
+    signal_file = tmp_path / "signal_engine.py"
+    signal_file.write_text(
+        "\n".join(
+            [
+                '"""Strategy with a decorated method."""',
+                "class SignalEngine:",
+                decorator_line,
+                "    def helper(cls):",
+                "        return []",
+                "    def generate(self, *args, **kwargs):",
+                "        return []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Decorators are not allowed"):
+        _load_module_from_file(signal_file, _module_name())

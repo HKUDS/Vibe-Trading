@@ -39,8 +39,7 @@ class SignalEngine:
     rule's holding days. Non-matching codes yield a zero series.
     """
 
-    @staticmethod
-    def _compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    def _compute_rsi(self, close: pd.Series, period: int = 14) -> pd.Series:
         """Causal Wilder-EWM RSI (mirrors ``compute_rsi`` in example_signal_engine.py:13)."""
         delta = close.diff()
         gain = delta.clip(lower=0)
@@ -50,8 +49,7 @@ class SignalEngine:
         rs = avg_gain / avg_loss
         return 100 - 100 / (1 + rs)
 
-    @staticmethod
-    def _compute_prior_return(close: pd.Series, window: int = 5) -> pd.Series:
+    def _compute_prior_return(self, close: pd.Series, window: int = 5) -> pd.Series:
         """Trailing close-to-close return over *window* bars."""
         return close.pct_change(window)
 
@@ -77,8 +75,8 @@ class SignalEngine:
                 return rule
         return None
 
-    @staticmethod
     def _conditional_entry(
+        self,
         index: pd.Index,
         rsi: pd.Series,
         prior_ret: pd.Series,

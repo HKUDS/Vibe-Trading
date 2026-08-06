@@ -183,6 +183,17 @@ def _is_literal_node(node: ast.AST) -> bool:
     """Return whether an AST node is made only from literal values."""
     if isinstance(node, ast.Constant):
         return True
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+        # Signed numbers (e.g. a mined ``-0.08`` return threshold) parse as a
+        # UnaryOp over a Constant rather than a bare Constant. They are
+        # compile-time constants: no name lookup, call, or attribute access
+        # runs when the definition is imported, so they stay import-time safe.
+        operand = node.operand
+        return (
+            isinstance(operand, ast.Constant)
+            and isinstance(operand.value, (int, float, complex))
+            and not isinstance(operand.value, bool)
+        )
     if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
         return all(_is_literal_node(item) for item in node.elts)
     if isinstance(node, ast.Dict):
