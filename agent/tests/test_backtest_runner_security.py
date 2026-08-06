@@ -85,6 +85,70 @@ def test_signal_engine_allows_minimal_valid_strategy(tmp_path) -> None:
     assert module.SignalEngine().generate() == []
 
 
+def test_signal_engine_allows_signed_literal_constants(tmp_path) -> None:
+    signal_file = tmp_path / "signal_engine.py"
+    signal_file.write_text(
+        "\n".join(
+            [
+                '"""Generated signal engine."""',
+                "NEG_BOUND = -0.0205",
+                "SIGNED_POS = +1.5",
+                'RULES = [{"min": -1.5, "max": -0.5}]',
+                "def _helper(x: float = -1.0) -> float:",
+                "    return x",
+                "class SignalEngine:",
+                "    def generate(self, *args, **kwargs):",
+                "        return [NEG_BOUND, SIGNED_POS, RULES, _helper()]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    module = _load_module_from_file(signal_file, _module_name())
+
+    assert module.SignalEngine().generate() == [-0.0205, 1.5, [{"min": -1.5, "max": -0.5}], -1.0]
+
+
+def test_signal_engine_rejects_non_sign_unary_literal(tmp_path) -> None:
+    signal_file = tmp_path / "signal_engine.py"
+    signal_file.write_text(
+        "\n".join(
+            [
+                '"""Generated signal engine."""',
+                "FLAG = not True",
+                "class SignalEngine:",
+                "    def generate(self, *args, **kwargs):",
+                "        return []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Executable top-level statement"):
+        _load_module_from_file(signal_file, _module_name())
+
+
+def test_signal_engine_rejects_decorators(tmp_path) -> None:
+    signal_file = tmp_path / "signal_engine.py"
+    signal_file.write_text(
+        "\n".join(
+            [
+                '"""Generated signal engine."""',
+                "class SignalEngine:",
+                "    @staticmethod",
+                "    def _helper() -> None:",
+                "        return None",
+                "    def generate(self, *args, **kwargs):",
+                "        return []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Decorators are not allowed"):
+        _load_module_from_file(signal_file, _module_name())
+
+
 # --------------------------------------------------------------------------- #
 # VT-001: forbidden operations hidden INSIDE method bodies.
 #

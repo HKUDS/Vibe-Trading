@@ -190,6 +190,13 @@ def _is_literal_node(node: ast.AST) -> bool:
             (key is None or _is_literal_node(key)) and _is_literal_node(value)
             for key, value in zip(node.keys, node.values)
         )
+    if isinstance(node, ast.UnaryOp):
+        # Signed numeric literals (-0.0205) parse as UnaryOp(USub, Constant);
+        # sign arithmetic over literals has no execution path.
+        return (
+            isinstance(node.op, (ast.UAdd, ast.USub))
+            and _is_literal_node(node.operand)
+        )
     return False
 
 
