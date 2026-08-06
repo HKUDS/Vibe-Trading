@@ -56,7 +56,7 @@ import sys
 from copy import deepcopy
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 # Ensure agent/ is on sys.path
 AGENT_DIR = Path(__file__).resolve().parent
@@ -64,6 +64,8 @@ if str(AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(AGENT_DIR))
 
 from fastmcp import Context, FastMCP
+from pydantic import BeforeValidator
+
 from cli._version import __version__ as APP_VERSION
 from src.market_data import (
     DEFAULT_MAX_ROWS,
@@ -403,6 +405,54 @@ def _blank_to_none(value: str | None) -> str | None:
     return value or None
 
 
+def _coerce_json_string(value: Any) -> Any:
+    """Decode JSON array/object strings some MCP clients send for list/dict args.
+
+    FastMCP publishes optional list/dict parameters as ``anyOf`` schemas, and
+    several MCP clients (observed with Claude Desktop / Claude Code) do not
+    surface ``anyOf`` to the model as a concrete type — the model then serializes
+    the argument as a JSON string (``'["us"]'``), which strict pydantic
+    validation rejects before the tool body ever runs (issue #987). This
+    validator is attached as a ``BeforeValidator`` to every list/dict MCP
+    parameter, so it runs *before* type checking and decodes such a string into
+    the list/dict it encodes.
+
+    Non-string values pass through untouched. A string that is not a JSON array
+    or object is returned unchanged so pydantic still raises its normal, precise
+    type error rather than a confusing JSON parse failure.
+
+    Args:
+        value: The raw argument received from the MCP client.
+
+    Returns:
+        The decoded list/dict when the value is a JSON array/object string,
+        otherwise the value unchanged.
+    """
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped[:1] in ("[", "{"):
+            try:
+                return json.loads(stripped)
+            except (json.JSONDecodeError, ValueError):
+                return value
+    return value
+
+
+# Lenient list/dict parameter types for the @mcp.tool signatures below
+# (issue #987). Each wraps the real type with _coerce_json_string so a
+# JSON-encoded string from a client is decoded before pydantic validates it,
+# while the published JSON schema — and thus every well-behaved client — is left
+# exactly as before.
+_lenient = BeforeValidator(_coerce_json_string)
+_lenient_str_list = Annotated[list[str], _lenient]
+_lenient_str_list_opt = Annotated[list[str] | None, _lenient]
+_lenient_float_list_opt = Annotated[list[float] | None, _lenient]
+_lenient_dict_list = Annotated[list[dict[str, Any]], _lenient]
+_lenient_dict_list_opt = Annotated[list[dict[str, Any]] | None, _lenient]
+_lenient_dict_any_opt = Annotated[dict[str, Any] | None, _lenient]
+_lenient_dict_str_str = Annotated[dict[str, str], _lenient]
+
+
 def _audit_rows_from_payload(value: list[dict[str, Any]] | None):
     """Parse MCP completion audit rows."""
     from src.goal import AuditRow
@@ -478,7 +528,7 @@ def load_skill(name: str) -> str:
 def start_research_goal(
     objective: str,
     session_id: str = "",
-    criteria: list[str] | None = None,
+    criteria: _lenient_str_list_opt = None,
     ui_summary: str = "",
     protocol: str = "thesis_review",
     risk_tier: str = "research_general",
@@ -555,17 +605,17 @@ def add_goal_evidence(
     source_provider: str | None = None,
     source_type: str | None = None,
     source_uri: str | None = None,
-    symbol_universe: list[str] | None = None,
-    benchmark: list[str] | None = None,
+    symbol_universe: _lenient_str_list_opt = None,
+    benchmark: _lenient_str_list_opt = None,
     timeframe: str | None = None,
     method: str | None = None,
-    assumptions: dict[str, Any] | None = None,
+    assumptions: _lenient_dict_any_opt = None,
     artifact_path: str | None = None,
     artifact_hash: str | None = None,
     data_as_of: str | None = None,
     confidence: str | None = None,
     caveat: str | None = None,
-    contradicts_claim_ids: list[str] | None = None,
+    contradicts_claim_ids: _lenient_str_list_opt = None,
 ) -> str:
     """Append traceable evidence to a finance research goal.
 
@@ -643,7 +693,7 @@ def update_research_goal_status(
     expected_goal_id: str,
     status: str,
     session_id: str = "",
-    audit: list[dict[str, Any]] | None = None,
+    audit: _lenient_dict_list_opt = None,
     recap: str | None = None,
 ) -> str:
     """Update a finance research goal status after an audit.
@@ -788,7 +838,7 @@ def analyze_options(
 
 @mcp.tool
 def analyze_options_payoff(
-    legs: list[dict[str, Any]],
+    legs: _lenient_dict_list,
     entry_spot: float,
     expiry_days: float,
     risk_free_rate: float = 0.05,
@@ -798,7 +848,7 @@ def analyze_options_payoff(
     spot_min: float | None = None,
     spot_max: float | None = None,
     spot_points: int = 121,
-    scenario_iv_values: list[float] | None = None,
+    scenario_iv_values: _lenient_float_list_opt = None,
 ) -> str:
     """Analyze a multi-leg option strategy's payoff and spot/IV scenarios.
 
@@ -1209,7 +1259,7 @@ def list_swarm_presets() -> str:
 @mcp.tool
 async def run_swarm(
     preset_name: str,
-    variables: dict[str, str],
+    variables: _lenient_dict_str_str,
     wait_seconds: int = 3600,
     start_only: bool = False,
     ctx: Context | None = None,
@@ -1347,7 +1397,7 @@ def _cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
 
 @mcp.tool
 def get_market_data(
-    codes: list[str],
+    codes: _lenient_str_list,
     start_date: str,
     end_date: str,
     source: str = "auto",
@@ -1453,7 +1503,7 @@ def _execute_key_gated(name: str, params: dict[str, Any]) -> str:
 
 
 @mcp.tool
-def get_fund_flow(codes: list[str], period: str = "daily", days: int = 30) -> str:
+def get_fund_flow(codes: _lenient_str_list, period: str = "daily", days: int = 30) -> str:
     """Fetch order-bucket net capital inflow (main/super-large/large/medium/small).
 
     Markets: A-share (.SH/.SZ/.BJ), Hong Kong (.HK) and US (.US). Use this to
@@ -1706,7 +1756,7 @@ def get_options_chain(ticker: str, expiration: int | None = None) -> str:
 
 
 @mcp.tool
-def get_stock_profile(ticker: str, sections: list[str] | None = None) -> str:
+def get_stock_profile(ticker: str, sections: _lenient_str_list_opt = None) -> str:
     """Fetch a read-only company profile for a US or HK listing (Yahoo Finance).
 
     Returns valuation key statistics, analyst price targets and
@@ -2269,7 +2319,7 @@ def run_shadow_backtest(
     shadow_id: str,
     window_start: str = "",
     window_end: str = "",
-    markets: list[str] | None = None,
+    markets: _lenient_str_list_opt = None,
     journal_path: str = "",
 ) -> str:
     """Run a multi-market backtest (A股/港股/美股/crypto) on a Shadow Account
