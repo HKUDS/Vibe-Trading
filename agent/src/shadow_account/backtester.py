@@ -40,7 +40,7 @@ SUPPORTED_MARKETS: tuple[str, ...] = ("china_a", "hk", "us", "crypto")
 _LIQUID_BASKETS: dict[str, list[str]] = {
     "china_a": ["600519.SH", "000858.SZ", "300750.SZ", "600036.SH", "000001.SZ"],
     "hk":      ["00700.HK", "09988.HK", "03690.HK", "00388.HK", "01810.HK"],
-    "us":      ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"],
+    "us":      ["AAPL.US", "MSFT.US", "NVDA.US", "AMZN.US", "GOOGL.US"],
     "crypto":  ["BTC-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT", "XRP-USDT"],
 }
 
