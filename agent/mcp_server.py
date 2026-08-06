@@ -2275,6 +2275,10 @@ def run_shadow_backtest(
     """Run a multi-market backtest (A股/港股/美股/crypto) on a Shadow Account
     profile and compute delta-PnL attribution vs the user's realized trades.
 
+    Markets are backtested per settlement currency (CNY / HKD / USD pools;
+    us + crypto share the USD pool); the headline PnL uses the profile's
+    source-market currency.
+
     Requires `extract_shadow_strategy` to have run first.
 
     Args:

@@ -3,8 +3,9 @@
 Responsibilities:
     1. Pick representative symbols per market based on the user's preferred
        markets (with a liquid-basket fallback).
-    2. Render a run_dir (via ``codegen.write_run_dir``) and call
-       ``src.tools.backtest_tool.run_backtest``.
+    2. Group the selection by settlement currency, render one run_dir per
+       currency pool (via ``codegen.write_run_dir``) and call
+       ``src.tools.backtest_tool.run_backtest`` once per pool.
     3. Parse the emitted artifacts (metrics JSON / equity CSV) back into a
        ``ShadowBacktestResult``.
     4. Compute attribution: noise trades, missed signals, early/late exits,
@@ -23,6 +24,7 @@ from typing import Any
 
 import pandas as pd
 
+from backtest.engines._market_hooks import code_currency
 from src.shadow_account.codegen import write_run_dir
 from src.shadow_account.models import (
     AttributionBreakdown,
@@ -90,6 +92,72 @@ def flatten_codes(selection: dict[str, list[str]]) -> list[str]:
     return out
 
 
+def _group_selection_by_currency(
+    selection: dict[str, list[str]],
+) -> dict[str, dict[str, list[str]]]:
+    """Group a per-market selection by settlement currency.
+
+    The composite backtest engine refuses a code set that spans currencies
+    (its shared capital pool has no FX translation), so multi-market shadow
+    runs are split into one backtest per currency pool. Markets that settle
+    in the same currency (us + crypto → USD) share one pool.
+
+    Args:
+        selection: Dict market → list of codes.
+
+    Returns:
+        ``{currency: {market: [codes]}}`` preserving market insertion order
+        within each group and first-seen currency order across groups.
+        Codes are grouped per-code, so a market whose codes span currencies
+        is split across groups. Empty code lists produce no entries.
+    """
+    groups: dict[str, dict[str, list[str]]] = {}
+    for market, codes in selection.items():
+        for code in codes:
+            currency = code_currency(code)
+            groups.setdefault(currency, {}).setdefault(market, []).append(code)
+    return groups
+
+
+def _usable_metrics(combined: dict[str, Any]) -> bool:
+    """True when a combined metrics dict carries real numbers (not an error)."""
+    return bool(combined) and "error" not in combined
+
+
+def _headline_index(
+    group_results: list[tuple[str, dict[str, float]]],
+    selection: dict[str, list[str]],
+    source_market: str,
+) -> int:
+    """Pick the headline currency group for combined metrics + attribution.
+
+    Preference order:
+        1. The group holding the profile's source-market codes, when it has
+           usable metrics — the journal's realized PnL is denominated in that
+           market's currency, so only this pool makes delta-PnL meaningful.
+        2. The first group with usable metrics (deterministic fallback).
+        3. Index 0 (all groups failed — keeps the error-reporting path).
+
+    Args:
+        group_results: ``(currency, combined)`` pairs in run order.
+        selection: Original per-market selection.
+        source_market: Profile's dominant journal market.
+
+    Returns:
+        Index into ``group_results``.
+    """
+    source_codes = selection.get(source_market) or []
+    if source_codes:
+        source_currency = code_currency(source_codes[0])
+        for i, (currency, combined) in enumerate(group_results):
+            if currency == source_currency and _usable_metrics(combined):
+                return i
+    for i, (_, combined) in enumerate(group_results):
+        if _usable_metrics(combined):
+            return i
+    return 0
+
+
 # ---------------- Backtest execution ----------------
 
 def run_shadow_backtest(
@@ -106,13 +174,20 @@ def run_shadow_backtest(
 ) -> ShadowBacktestResult:
     """Drive a multi-market backtest from a ShadowProfile.
 
+    Markets are backtested per settlement currency: the composite engine
+    refuses a mixed-currency code set (its shared capital pool has no FX
+    translation), so the selection is split into one run per currency pool —
+    e.g. the default four markets produce three runs: CNY (china_a),
+    HKD (hk) and USD (us + crypto sharing one pool). Each pool starts with
+    the full ``initial_capital``; there is no cross-currency aggregation.
+
     Args:
         profile: ShadowProfile to replay.
         window_start / window_end: ISO dates.
         markets: Target market buckets.
         per_market_count: Codes per market.
         source: Loader source (``auto`` routes by suffix).
-        initial_capital: Starting cash.
+        initial_capital: Starting cash per currency pool.
         journal_path: Original journal path (used to compute attribution
             against the user's realized trades). Attribution is skipped if
             None or the file is missing.
@@ -122,33 +197,74 @@ def run_shadow_backtest(
             entrypoint.
 
     Returns:
-        ShadowBacktestResult with per-market + combined metrics, equity
-        curves (when emitted), and attribution (zeros when unavailable).
+        ShadowBacktestResult with per-market metrics from each market's own
+        currency pool, combined metrics from the headline pool (the profile's
+        source-market currency when available — the only pool whose PnL is
+        comparable with the journal), one equity curve per pool plus a
+        ``combined`` alias of the headline curve, and attribution (zeros when
+        unavailable).
     """
     selection = select_multi_market_codes(
         profile, per_market_count=per_market_count, markets=markets,
     )
-    codes = flatten_codes(selection)
-    if not codes:
+    groups = _group_selection_by_currency(selection)
+    if not groups:
         raise ValueError("No codes available for requested markets.")
 
-    run_dir = runs_dir(profile.shadow_id)
-    write_run_dir(
-        profile,
-        run_dir,
-        codes=codes,
-        start_date=window_start,
-        end_date=window_end,
-        source=source,
-        initial_capital=initial_capital,
-    )
-
+    base_dir = runs_dir(profile.shadow_id)
     backtest_fn = run_backtest_fn or _default_run_backtest_fn()
-    payload = json.loads(backtest_fn(str(run_dir)))
 
-    per_market, combined, equity_curves = _summarize_artifacts(
-        payload=payload, run_dir=run_dir, selection=selection,
+    # One backtest per currency pool; a failing pool degrades to an error
+    # row without aborting the others.
+    group_results: list[
+        tuple[str, dict[str, dict[str, float]], dict[str, float], list[tuple[str, float]]]
+    ] = []
+    for currency, sub_selection in groups.items():
+        codes = flatten_codes(sub_selection)
+        group_run_dir = base_dir / currency
+        write_run_dir(
+            profile,
+            group_run_dir,
+            codes=codes,
+            start_date=window_start,
+            end_date=window_end,
+            source=source,
+            initial_capital=initial_capital,
+        )
+        payload = json.loads(backtest_fn(str(group_run_dir)))
+        per_market, combined, curves = _summarize_artifacts(
+            payload=payload, run_dir=group_run_dir, selection=sub_selection,
+        )
+        group_results.append(
+            (currency, per_market, combined, curves.get("combined") or []),
+        )
+
+    headline = _headline_index(
+        [(currency, combined) for currency, _, combined, _ in group_results],
+        selection,
+        profile.source_market,
     )
+    headline_currency, _, headline_combined, headline_points = group_results[headline]
+
+    per_market: dict[str, dict[str, float]] = {}
+    for _, group_per_market, _, _ in group_results:
+        per_market.update(group_per_market)
+
+    combined = dict(headline_combined)
+    if len(group_results) > 1 and _usable_metrics(combined):
+        combined["_currency_note"] = (
+            f"headline metrics are the {headline_currency} currency pool; "
+            f"{len(group_results)} currency pools ran — other pools are "
+            "reported in per_market rows (no FX conversion)"
+        )
+
+    equity_curves: dict[str, list[tuple[str, float]]] = {
+        currency: points
+        for currency, _, _, points in group_results
+        if points
+    }
+    if headline_points:
+        equity_curves["combined"] = headline_points
 
     attribution, shadow_pnl, real_pnl = _attribution_or_zero(
         profile=profile,
@@ -166,7 +282,7 @@ def run_shadow_backtest(
         real_total_pnl=real_pnl,
         delta_pnl=round(shadow_pnl - real_pnl, 2),
     )
-    _cache_result(run_dir, result)
+    _cache_result(base_dir, result)
     return result
 
 
@@ -337,14 +453,13 @@ def _per_market_breakdown(
     combined: dict[str, float],
     selection: dict[str, list[str]],
 ) -> dict[str, dict[str, float]]:
-    """Project the combined metrics into each requested market.
+    """Project one currency pool's combined metrics into its markets.
 
-    v1 limitation: the runner emits a single combined metrics file regardless
-    of cross-market composition, so per-market rows reuse the combined
-    metrics. This is faithful (same backtest) but intentionally lossy; a
-    follow-up can split equity by market attribution.
+    Markets within a pool genuinely shared the capital pool, so they share
+    its metrics; each market's row is completed from its own pool's run.
+    Error payloads yield empty rows rather than propagating the error dict.
     """
-    if not combined:
+    if not _usable_metrics(combined):
         return {market: {} for market in selection}
     return {market: dict(combined) for market in selection}
 
