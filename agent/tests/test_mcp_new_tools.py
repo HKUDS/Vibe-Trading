@@ -41,6 +41,7 @@ MIRRORED_TOOL_NAMES = (
 KNOWN_MUTATING_MCP_TOOLS = frozenset(
     {
         "add_goal_evidence",
+        "alpha_bench",
         "backtest",
         "run_swarm",
         "start_research_goal",

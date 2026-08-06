@@ -909,7 +909,7 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    report_path = output_dir / f"alpha_bench_{ts}.html"
+    report_path = output_dir / f"alpha_bench_{ts}_{secrets.token_hex(16)}.html"
 
     context = {
         "csp": _CSP,
@@ -924,7 +924,11 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
     }
 
     try:
-        report_path.write_text(_render_html(context), encoding="utf-8")
+        report_html = _render_html(context)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        report_fd = os.open(report_path, flags, 0o666)
+        with os.fdopen(report_fd, "w", encoding="utf-8") as report_file:
+            report_file.write(report_html)
     except OSError as exc:
         return {"status": "error", "error": f"failed to write report: {exc}"}
 
