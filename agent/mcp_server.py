@@ -6,7 +6,8 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 59 tools: skills, research goals, backtest/factor/options/pattern
+Surfaces 62 tools: skills, research goals, strategy discovery,
+backtest/factor/options/pattern
 analysis, market data, fundamentals & capital-flow & news & discovery
 (get_fund_flow / get_dragon_tiger / get_northbound_flow / get_margin_trading /
 get_block_trades / get_shareholder_count / get_lockup_expiry / get_sector_info /
@@ -951,6 +952,124 @@ def read_file(path: str) -> str:
     """
     registry = _get_registry()
     return registry.execute("read_file", {"path": path})
+
+
+# ---------------------------------------------------------------------------
+# Strategy discovery tools
+# ---------------------------------------------------------------------------
+
+
+def _strategy_discovery_execute(tool_name: str, params: dict[str, Any]) -> str:
+    """Delegate to a strategy-discovery agent tool with an honest error envelope.
+
+    Registry or facade failures never propagate to the MCP client as a bare
+    exception — silent, confident failure is exactly the mode this feature
+    exists to prevent (see the phantom-tool rejection of PR #896). The
+    envelope carries a generic message only; raw exception text can leak
+    internal paths and stays in the server logs via ``logger.exception``.
+    """
+    try:
+        registry = _get_registry()
+        return registry.execute(tool_name, params)
+    except Exception:  # noqa: BLE001 - honest error beats a raw traceback
+        logger.exception("strategy discovery tool %s unavailable", tool_name)
+        return json.dumps(
+            {
+                "status": "error",
+                "error": "strategy discovery unavailable; see server logs",
+            },
+            ensure_ascii=False,
+        )
+
+
+@mcp.tool
+def list_strategies(limit: int = 20, offset: int = 0, source: str | None = None) -> str:
+    """List discoverable strategies across the Alpha Zoo and the SDM strategy store.
+
+    Read-only catalogue of what strategies exist and what state they are in.
+    Rows carry identification metadata plus evidence status; use
+    get_strategy_evidence for the per-regime evidence behind any strategy.
+    Nothing returned is a recommendation — rows below the evidence threshold
+    are flagged insufficient/marginal rather than recommended.
+
+    Args:
+        limit: Maximum number of strategies to return (default 20).
+        offset: Pagination offset for stable browsing (default 0).
+        source: Optional source filter — "alpha_zoo" or "sdm". Omit to
+            browse both sources.
+    """
+    return _strategy_discovery_execute(
+        "list_strategies",
+        {"limit": limit, "offset": offset, "source": source},
+    )
+
+
+@mcp.tool
+def query_strategies(
+    regime: str | None = None,
+    min_sharpe: float | None = None,
+    min_evidence_quality: str = "adequate",
+    min_trades: int = 10,
+    cost_feasible: bool = True,
+    limit: int = 10,
+) -> str:
+    """Query strategies whose computed per-regime evidence passes the filters.
+
+    Evidence-gated discovery: strategies are ranked by per-regime evidence
+    rows from reproducible backtests instead of boolean scenario tags.
+    Strategies below the evidence thresholds (trade count, coverage) are
+    flagged insufficient/marginal rather than recommended, and the
+    sizing-corrected cost screen keeps only strategies that clear their
+    breakeven.
+
+    Args:
+        regime: Optional market-regime filter — "bear_market",
+            "bull_market", or "structural". Omit to query across all regimes.
+        min_sharpe: Optional minimum Sharpe on the per-regime evidence rows.
+        min_evidence_quality: Minimum evidence quality to keep — "adequate"
+            (default), "marginal", "insufficient", or "any". "any" only
+            removes the quality floor; rows must still pass the other
+            filters (min_trades, cost_feasible, min_sharpe) to be kept.
+        min_trades: Minimum executed-trade count for evidence to count
+            (default 10; fewer trades reads as insufficient evidence).
+        cost_feasible: Keep only strategies that pass the sizing-corrected
+            cost-breakeven screen (default True).
+        limit: Maximum number of strategies to return (default 10).
+    """
+    return _strategy_discovery_execute(
+        "query_strategies",
+        {
+            "regime": regime,
+            "min_sharpe": min_sharpe,
+            "min_evidence_quality": min_evidence_quality,
+            "min_trades": min_trades,
+            "cost_feasible": cost_feasible,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool
+def get_strategy_evidence(strategy_id: str, regime: str | None = None) -> str:
+    """Return the computed per-regime evidence rows for one strategy.
+
+    Read-only evidence detail: shows what reproducible backtests support the
+    strategy in each regime — trade count, coverage, Sharpe, and the
+    sizing-corrected cost breakeven. Rows below the evidence thresholds are
+    flagged insufficient/marginal rather than recommended; the facade refuses
+    regime assessments without computed evidence, so absent regimes are an
+    honest empty, not a guess.
+
+    Args:
+        strategy_id: Strategy identifier from list_strategies or
+            query_strategies.
+        regime: Optional regime filter — "bear_market", "bull_market", or
+            "structural". Omit for every regime with evidence.
+    """
+    return _strategy_discovery_execute(
+        "get_strategy_evidence",
+        {"strategy_id": strategy_id, "regime": regime},
+    )
 
 
 # ---------------------------------------------------------------------------

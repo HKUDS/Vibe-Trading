@@ -389,6 +389,9 @@ class PathConfig(_EnvBase):
     vibe_trading_strategy_store_db_path: str = Field(
         alias="VIBE_TRADING_STRATEGY_STORE_DB_PATH", default="",
     )
+    vibe_trading_strategy_discovery_db_path: str = Field(
+        alias="VIBE_TRADING_STRATEGY_DISCOVERY_DB_PATH", default="",
+    )
 
 
 # ---------------------------------------------------------------------------
