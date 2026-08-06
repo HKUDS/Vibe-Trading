@@ -388,7 +388,11 @@ class StrategyDiscoveryFacade:
                     return False
                 if row.trades_in_regime < min_trades:
                     return False
-                if cost_feasible and row.cost_sensitive:
+                if cost_feasible and (
+                    row.breakeven_fee_bps is None or row.cost_sensitive
+                ):
+                    # Fail-closed: a null breakeven means the cost screen is
+                    # unverifiable (multi-position run), which is not a pass.
                     return False
                 if min_sharpe is not None and (
                     row.sharpe_in_regime is None or row.sharpe_in_regime < min_sharpe

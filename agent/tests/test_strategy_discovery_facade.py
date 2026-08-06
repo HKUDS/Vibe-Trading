@@ -55,6 +55,9 @@ EVIDENCE_FIELDS = (
     "evidence_quality",
     "warnings",
     "last_verified",
+    "evidence_stage",
+    "provenance",
+    "regime_definition",
 )
 
 
@@ -341,6 +344,42 @@ class TestQueryStrategies:
             "bear_market",
             "bull_market",
         }
+
+    def test_cost_feasible_is_fail_closed_on_null_breakeven(self, tmp_path) -> None:
+        # sergio12S (#969): a null breakeven means the cost screen is
+        # unverifiable (multi-position run) — unverifiable is not a pass, so
+        # the default filter drops the row; cost_feasible=False reveals it.
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("a1",),
+            rows=(
+                _row(
+                    "alpha_zoo:a1",
+                    "bear_market",
+                    breakeven_fee_bps=None,
+                    cost_sensitive=False,
+                    warnings=("multi-position-breakeven: sample caveat",),
+                ),
+                _row(
+                    "alpha_zoo:a1",
+                    "bull_market",
+                    breakeven_fee_bps=45.0,
+                    cost_sensitive=False,
+                ),
+            ),
+        )
+        feasible = facade.query_strategies(cost_feasible=True)
+        assert {i["regime"] for i in feasible["items"]} == {
+            "bull_market"
+        }, "a null-breakeven row must not pass the default cost screen"
+        everything = facade.query_strategies(cost_feasible=False)
+        items = {i["regime"]: i for i in everything["items"]}
+        assert set(items) == {"bear_market", "bull_market"}
+        assert items["bear_market"]["breakeven_fee_bps"] is None
+        assert any(
+            w.startswith("multi-position-breakeven:")
+            for w in items["bear_market"]["warnings"]
+        ), "the revealed row must keep its unverifiability warning"
 
     def test_min_sharpe_drops_none_sharpe_and_low_sharpe(self, tmp_path) -> None:
         facade, _ = _make_facade(

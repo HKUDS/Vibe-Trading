@@ -23,6 +23,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from src.strategy_discovery.models import (
+    EVIDENCE_STAGES,
     QUALITY_INSUFFICIENT,
     REGIMES,
     EvidenceRow,
@@ -59,9 +60,36 @@ CREATE TABLE IF NOT EXISTS strategy_regime_evidence (
     evidence_quality       TEXT NOT NULL,
     warnings               TEXT NOT NULL,
     last_verified          TEXT NOT NULL DEFAULT '',
+    evidence_stage         TEXT NOT NULL DEFAULT 'backtest',
+    provenance             TEXT NOT NULL DEFAULT '',
+    regime_definition      TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (strategy_id, regime)
 )
 """
+
+#: Columns that must exist; a cache DB missing any of them predates the
+#: provenance/stage contract and is dropped + recreated (the cache is
+#: disposable — rows only ever come from a harness rebuild).
+_REQUIRED_COLUMNS = (
+    "strategy_id",
+    "regime",
+    "trades_in_regime",
+    "position_size",
+    "return_in_regime",
+    "benchmark_in_regime",
+    "excess_in_regime",
+    "sharpe_in_regime",
+    "max_drawdown_in_regime",
+    "date_ranges",
+    "breakeven_fee_bps",
+    "cost_sensitive",
+    "evidence_quality",
+    "warnings",
+    "last_verified",
+    "evidence_stage",
+    "provenance",
+    "regime_definition",
+)
 
 _INSERT_SQL = """
 INSERT OR REPLACE INTO strategy_regime_evidence (
@@ -69,8 +97,8 @@ INSERT OR REPLACE INTO strategy_regime_evidence (
     return_in_regime, benchmark_in_regime, excess_in_regime,
     sharpe_in_regime, max_drawdown_in_regime, date_ranges,
     breakeven_fee_bps, cost_sensitive, evidence_quality, warnings,
-    last_verified
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    last_verified, evidence_stage, provenance, regime_definition
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -155,6 +183,34 @@ class EvidenceStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.execute(_SCHEMA)
+            self._migrate_stale_schema(conn)
+
+    @staticmethod
+    def _migrate_stale_schema(conn) -> None:
+        """Drop and recreate a cache DB that predates the current schema.
+
+        ``CREATE TABLE IF NOT EXISTS`` never alters an existing table, so a
+        DB written before the provenance/stage columns existed would keep
+        serving rows without them. The cache is disposable by contract, so
+        the honest response is to drop it (a rebuild regenerates every row).
+        """
+        present = {
+            record["name"]
+            for record in conn.execute(
+                f"PRAGMA table_info({EvidenceStore.TABLE})"
+            ).fetchall()
+        }
+        missing = [c for c in _REQUIRED_COLUMNS if c not in present]
+        if not missing:
+            return
+        logger.warning(
+            "strategy_discovery cache %s predates columns %s; dropping the "
+            "disposable cache so a harness rebuild can repopulate it",
+            EvidenceStore.TABLE,
+            ", ".join(missing),
+        )
+        conn.execute(f"DROP TABLE {EvidenceStore.TABLE}")
+        conn.execute(_SCHEMA)
 
     # -- connection helpers --------------------------------------------------
 
@@ -203,6 +259,9 @@ class EvidenceStore:
                         row.evidence_quality,
                         json.dumps(list(row.warnings), ensure_ascii=False),
                         row.last_verified,
+                        row.evidence_stage,
+                        row.provenance,
+                        row.regime_definition,
                     ),
                 )
                 count += 1
@@ -275,6 +334,16 @@ class EvidenceStore:
                 regime,
             )
             return None
+        keys = set(record.keys())
+        stage = record["evidence_stage"] if "evidence_stage" in keys else "backtest"
+        if stage not in EVIDENCE_STAGES:
+            logger.warning(
+                "evidence row %s carries unknown evidence_stage %r; "
+                "skipping it (possible externally tampered evidence database)",
+                record["strategy_id"],
+                stage,
+            )
+            return None
         return EvidenceRow(
             strategy_id=record["strategy_id"],
             regime=regime,
@@ -291,4 +360,10 @@ class EvidenceStore:
             evidence_quality=record["evidence_quality"] or QUALITY_INSUFFICIENT,
             warnings=tuple(json.loads(record["warnings"] or "[]")),
             last_verified=record["last_verified"] or "",
+            evidence_stage=stage,
+            provenance=(record["provenance"] if "provenance" in keys else "") or "",
+            regime_definition=(
+                record["regime_definition"] if "regime_definition" in keys else ""
+            )
+            or "",
         )

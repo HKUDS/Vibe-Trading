@@ -36,6 +36,16 @@ class TestConstants:
     def test_regimes_tuple_exact(self) -> None:
         assert sd_models.REGIMES == ("bear_market", "bull_market", "structural")
 
+    def test_evidence_stages_vocabulary_exact(self) -> None:
+        assert sd_models.EVIDENCE_STAGES == (
+            "hypothesis",
+            "backtest",
+            "holdout",
+            "shadow",
+            "live_canary",
+            "retired",
+        )
+
     def test_quality_ladder_constants_and_order(self) -> None:
         assert sd_models.QUALITY_ADEQUATE == "adequate"
         assert sd_models.QUALITY_MARGINAL == "marginal"
@@ -72,6 +82,9 @@ class TestEvidenceRow:
         assert row.evidence_quality == "insufficient"
         assert row.warnings == ()
         assert row.last_verified == ""
+        assert row.evidence_stage == "backtest"
+        assert row.provenance == ""
+        assert row.regime_definition == ""
         with pytest.raises(dataclasses.FrozenInstanceError):
             row.trades_in_regime = 99
 
@@ -80,6 +93,25 @@ class TestEvidenceRow:
             sd_models.EvidenceRow(
                 strategy_id="s", regime="sideways", trades_in_regime=12
             )
+
+    def test_invalid_evidence_stage_raises_value_error(self) -> None:
+        with pytest.raises(ValueError):
+            sd_models.EvidenceRow(
+                strategy_id="s",
+                regime="bear_market",
+                trades_in_regime=12,
+                evidence_stage="rumor",
+            )
+
+    def test_every_evidence_stage_is_accepted(self) -> None:
+        for stage in sd_models.EVIDENCE_STAGES:
+            row = sd_models.EvidenceRow(
+                strategy_id="s",
+                regime="bear_market",
+                trades_in_regime=12,
+                evidence_stage=stage,
+            )
+            assert row.evidence_stage == stage
 
     def test_full_construction_roundtrip(self) -> None:
         row = sd_models.EvidenceRow(

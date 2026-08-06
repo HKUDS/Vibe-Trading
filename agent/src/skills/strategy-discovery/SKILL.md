@@ -49,7 +49,7 @@ Evidence-gated query.
 | `min_sharpe` | number | none | Minimum Sharpe on the evidence rows |
 | `min_evidence_quality` | string | `adequate` | `adequate` \| `marginal` \| `insufficient` \| `any`. `any` only removes the quality floor — rows must still pass the other filters (`min_trades`, `cost_feasible`, `min_sharpe`) to be kept |
 | `min_trades` | integer | 10 | Minimum executed-trade count for evidence to count |
-| `cost_feasible` | boolean | true | Keep only rows that clear the cost screen |
+| `cost_feasible` | boolean | true | Keep only rows that clear the cost screen. Fail-closed: rows whose breakeven is unverifiable (`null`, see Multi-position caveat) are excluded; set `false` to inspect them with their warnings |
 | `limit` | integer | 10 | Maximum number of rows to return |
 
 ### get_strategy_evidence
@@ -62,6 +62,18 @@ Per-regime evidence detail for one strategy.
 | `regime` | string | none | Optional regime filter (same values as `query_strategies`) |
 
 Returns the per-regime evidence rows: trade count, coverage window, Sharpe, cost breakeven, and the resulting evidence-quality flag.
+
+## Evidence Row Contract
+
+Every row is self-describing — the metadata travels with the numbers:
+
+| Field | Meaning |
+|-------|---------|
+| `evidence_stage` | Pipeline stage that produced the row: `hypothesis` \| `backtest` \| `holdout` \| `shadow` \| `live_canary` \| `retired`. The harness writes only `backtest` today (it computes over backtest artifacts); the other stages are reserved. A row answers "backtest evidence exists; no holdout/shadow/live evidence exists yet" — never more than the stage it carries |
+| `provenance` | The reproducible backtest run directory the row was computed from (`artifacts/trades.csv` + `artifacts/equity.csv` inside it). The run directory holds the config and signal engine that produced the figures, so every row is traceable to a reproducible artifact |
+| `regime_definition` | JSON naming the regime-labeling parameters used (rolling benchmark window, bear/bull thresholds, Sharpe annualization) — the definition travels with the data, not hidden in code constants |
+| `breakeven_fee_bps` | Sizing-corrected cost breakeven, or `null` when the cost screen is unverifiable (see Multi-position caveat) |
+| `warnings` | Stable machine-readable prefixes: `insufficient-trades:`, `short-coverage:`, `cost-sensitive:`, `borderline-evidence:`, `multi-position-breakeven:` |
 
 ## Evidence Thresholds
 
@@ -90,9 +102,15 @@ The facade deliberately **does not report an `estimated_net_sharpe`**. A net Sha
 
 ## Multi-position caveat
 
-`breakeven_fee_bps` is computed from **aggregate** run figures — `ln(1+g) / (2·n·s) · 10⁴`, where `g`, `n`, and `s` are the window's aggregate gross edge, trade count, and average position size. Per the #969 discussion (sergio12S), the aggregate breakeven has **no closed form for multi-sleeve / multi-name strategies**: measured error is 1.1–6.5x versus per-position accounting.
+`breakeven_fee_bps` is exact only for strategies holding **one position at a time**. Per the #969 discussion (sergio12S), the aggregate form has **no closed form for multi-sleeve / multi-name strategies** — the portfolio break-even equation needs per-sleeve returns and trade counts, which aggregate figures do not contain; measured error is 1.1–6.5x versus per-position accounting, and the error is not a constant factor.
 
-The failure direction is **conservative**: the aggregate figure over-flags `cost_sensitive`. It can reject strategies that would actually be affordable; it never recommends one that is not. For rows representing multi-position strategies, audit the verdict via the per-row `position_size` field before trusting the breakeven flag.
+The harness therefore **refuses to store an aggregate breakeven**: any run that held more than one concurrent position — or whose artifacts make concurrency undetectable — gets `breakeven_fee_bps = null` on every row, plus a stable `multi-position-breakeven:` warning. A null is a better answer than a number that is wrong by a factor between 1.1 and 6.5.
+
+Consequences for queries:
+
+- `cost_feasible=true` (default) is **fail-closed**: a null breakeven means the cost screen is unverifiable, which is not a pass — such rows are excluded from default results.
+- The rows are not lost: query with `cost_feasible=false` or call `get_strategy_evidence` to see them with their warnings.
+- Single-position runs keep the exact sizing-corrected breakeven and are unaffected.
 
 ## Honest-Empty Semantics
 

@@ -30,6 +30,7 @@ Deterministic: all dates are fixed strings, no wall-clock reads.
 from __future__ import annotations
 
 import inspect
+import json
 import math
 import re
 from collections.abc import Sequence
@@ -445,6 +446,25 @@ class TestComputeEvidence:
                 w.startswith(sd_harness.MULTI_POSITION_WARNING_PREFIX)
                 for w in row.warnings
             ), f"{row.regime}: single-position runs need no concurrency caveat"
+            assert (
+                row.breakeven_fee_bps is not None
+            ), f"{row.regime}: single-position runs keep the exact breakeven"
+
+    def test_rows_carry_stage_provenance_and_regime_definition(self, tmp_path) -> None:
+        # initial-d (#969): every row names its evidence stage, the run it
+        # came from, and the regime-labeling parameters used.
+        run_dir = _write_run_fixture(tmp_path)
+        rows = _compute_with_fixture_windows(run_dir)
+        assert rows
+        definition = json.loads(rows[0].regime_definition)
+        for row in rows:
+            assert row.evidence_stage == "backtest"
+            assert row.provenance == str(run_dir)
+            assert json.loads(row.regime_definition) == definition
+        assert definition["benchmark_window"] == 5
+        assert definition["bear_threshold"] == -0.05
+        assert definition["bull_threshold"] == 0.05
+        assert definition["sharpe_annualization_bars"] == 252
 
     def test_unparseable_trade_dates_are_rejected_not_fatal(self, tmp_path) -> None:
         run_dir = _write_run_fixture(tmp_path)
@@ -530,13 +550,15 @@ class TestLegacyAliasSupport:
         assert "timestamp" not in equity.columns
 
         rows = _compute_with_fixture_windows(run_dir)
-        counts = {row.regime: row.trades_in_regime for row in rows}
+        counts = {r.regime: r.trades_in_regime for r in rows}
         assert (
             counts == EXPECTED_COUNTS
         ), "legacy one-row-per-trade artifacts must keep counting every row"
         for row in rows:
             assert row.benchmark_in_regime is not None
-            # No zero-pnl marker → concurrency undetectable → generic caveat.
+            # No zero-pnl marker → concurrency undetectable → fail-closed:
+            # generic caveat and a null breakeven, never a silent aggregate.
+            assert row.breakeven_fee_bps is None
             assert any(
                 w.startswith(sd_harness.MULTI_POSITION_WARNING_PREFIX)
                 and "concurrency is unknown" in w
@@ -559,9 +581,10 @@ class TestLegacyAliasSupport:
 
 @requires_harness
 class TestMultiPositionCaveat:
-    def test_overlapping_positions_flag_the_breakeven_approximation(
-        self, tmp_path
-    ) -> None:
+    def test_overlapping_positions_null_the_breakeven(self, tmp_path) -> None:
+        # sergio12S (#969): the aggregate breakeven is structurally invalid
+        # for multi-position runs, so the row stores null instead of a number
+        # wrong by 1.1-6.5x — never a silent aggregate figure.
         run_dir = _write_multi_position_fixture(tmp_path)
         activity = sd_artifacts.read_trade_activity(
             run_dir / "artifacts" / "trades.csv"
@@ -570,9 +593,16 @@ class TestMultiPositionCaveat:
         assert activity[1] == 2, "AAA (Jan 14-16) and BBB (Jan 15-21) overlap"
 
         rows = _compute_with_fixture_windows(run_dir)
-        counts = {row.regime: row.trades_in_regime for row in rows}
+        counts = {r.regime: r.trades_in_regime for r in rows}
         assert counts == {"bear_market": 1, "bull_market": 1}
         for row in rows:
+            assert row.breakeven_fee_bps is None, (
+                f"{row.regime}: multi-position breakeven must be null, got "
+                f"{row.breakeven_fee_bps!r}"
+            )
+            assert (
+                row.cost_sensitive is False
+            ), f"{row.regime}: sensitivity is unverifiable, not assertable"
             caveats = [
                 w
                 for w in row.warnings
@@ -580,7 +610,7 @@ class TestMultiPositionCaveat:
             ]
             assert len(caveats) == 1, f"{row.regime}: exactly one caveat expected"
             assert "2 concurrent positions" in caveats[0]
-            assert "aggregate run figures" in caveats[0]
+            assert "breakeven_fee_bps is null" in caveats[0]
 
 
 # ---------------------------------------------------------------------------

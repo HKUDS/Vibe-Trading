@@ -18,11 +18,13 @@ regime labeling and the per-regime metrics. Conventions:
   bars; Sharpe is mean/std of per-bar strategy returns inside regime bars,
   annualized with ``sqrt(252)`` (bars assumed daily); max drawdown tracks
   the strategy equity peak across regime bars.
-* Multi-position caveat — ``breakeven_fee_bps`` divides aggregate run
-  returns by aggregate trade counts; for runs that held several positions
-  at once that is an approximation (issue #969). Runs with detected
-  concurrency > 1 — or whose artifacts make concurrency undetectable —
-  carry a stable ``multi-position-breakeven:`` warning on every row.
+* Multi-position null — the sizing-corrected breakeven identity is exact
+  only for strategies holding one position at a time. For runs that held
+  several positions at once the aggregate form is structurally invalid
+  (no closed form; measured error 1.1x-6.5x — issue #969, sergio12S), so
+  those rows carry ``breakeven_fee_bps = None`` instead of a wrong number,
+  plus a stable ``multi-position-breakeven:`` warning. Runs whose artifacts
+  make concurrency undetectable are treated the same way (fail-closed).
 
 Missing inputs return ``[]`` with a warning: honest empty beats fabricated
 rows every time.
@@ -31,6 +33,7 @@ rows every time.
 from __future__ import annotations
 
 import bisect
+import json
 import logging
 import math
 import statistics
@@ -74,31 +77,58 @@ DEFAULT_BULL_THRESHOLD = 0.15
 #: Sharpe is scaled by sqrt(252). Documented convention, not a hidden magic.
 SHARPE_ANNUALIZATION_BARS = 252
 
+#: Stage of every harness-produced row: the harness computes exclusively
+#: over backtest run artifacts, so no other stage is honest today.
+HARNESS_EVIDENCE_STAGE = "backtest"
+
+
+def describe_regime_definition(
+    benchmark_window: int, bear_threshold: float, bull_threshold: float
+) -> str:
+    """Canonical JSON naming the regime-labeling parameters of a compute run.
+
+    Stored on every evidence row so the definition travels with the data
+    instead of living only in code constants (issue #969, initial-d).
+    """
+    return json.dumps(
+        {
+            "benchmark_window": benchmark_window,
+            "bear_threshold": bear_threshold,
+            "bull_threshold": bull_threshold,
+            "sharpe_annualization_bars": SHARPE_ANNUALIZATION_BARS,
+        },
+        sort_keys=True,
+    )
+
+
 #: Stable warning prefix for the multi-position breakeven caveat, kept in
 #: the same prefix-token style as ``models.build_warnings`` so downstream
 #: tools can match it without parsing prose.
 MULTI_POSITION_WARNING_PREFIX = "multi-position-breakeven:"
 
-#: Known approximation error of the aggregate breakeven estimate for
-#: multi-position runs (issue #969 discussion): 1.1x-6.5x. The direction is
-#: conservative — it can over-flag ``cost_sensitive``, never under-flag an
-#: unaffordable strategy.
+#: Why the aggregate breakeven is refused for multi-position runs (issue
+#: #969 discussion, sergio12S): the portfolio break-even equation has no
+#: closed form and needs per-sleeve returns and trade counts, which the
+#: aggregate figures do not contain. A null is a better answer than a
+#: number that is wrong by a factor between 1.1 and 6.5.
 _MULTI_POSITION_CAVEAT_BODY = (
-    "breakeven_fee_bps is computed from aggregate run figures and is an "
-    "approximation for multi-position/multi-name runs (known error "
-    "1.1-6.5x, conservative — may over-flag cost_sensitive, never "
-    "under-flag unaffordable costs)"
+    "the sizing-corrected breakeven identity is only exact for "
+    "single-position strategies; the aggregate form is structurally "
+    "invalid for multi-position/multi-name runs (no closed form, measured "
+    "error 1.1-6.5x), so breakeven_fee_bps is null and the cost screen is "
+    "unverifiable — inspect such rows with cost_feasible=false"
 )
 
 
 def _breakeven_caveat(max_concurrent: int | None) -> str | None:
-    """Run-level caveat for the aggregate breakeven estimate, or ``None``.
+    """Run-level caveat that nulls the breakeven, or ``None``.
 
     ``max_concurrent`` comes from the entry/exit pairs in ``trades.csv``:
     above 1 the breakeven arithmetic (aggregate return divided by
-    aggregate trade count) is only an approximation, so every evidence row
-    of that run carries the caveat. ``None`` (missing entry/exit marker →
-    concurrency undetectable) gets the generic wording instead of silence.
+    aggregate trade count) is structurally invalid, so every evidence row
+    of that run carries ``breakeven_fee_bps = None`` plus the caveat.
+    ``None`` (missing entry/exit marker → concurrency undetectable) is
+    treated the same way — fail-closed, never a silent aggregate number.
     Single-position runs need no caveat.
     """
     if max_concurrent is None:
@@ -332,6 +362,10 @@ def compute_evidence_for_run(
     last_verified = (
         today if isinstance(today, str) and today else date.today().isoformat()
     )
+    regime_definition = describe_regime_definition(
+        benchmark_window, bear_threshold, bull_threshold
+    )
+    provenance = str(run_dir)
 
     rows: list[EvidenceRow] = []
     for regime in REGIMES:
@@ -366,12 +400,19 @@ def compute_evidence_for_run(
         max_dd = _max_drawdown(bar_indices, equities)
         date_ranges = _month_spans(bar_indices, dates)
 
-        breakeven = breakeven_fee_bps(
-            compounded_return, trades_in_regime, resolved_size
-        )
-        cost_sensitive = (
-            breakeven is not None and breakeven < COST_SENSITIVE_BREAKEVEN_BPS
-        )
+        if breakeven_caveat is None:
+            breakeven = breakeven_fee_bps(
+                compounded_return, trades_in_regime, resolved_size
+            )
+            cost_sensitive = (
+                breakeven is not None and breakeven < COST_SENSITIVE_BREAKEVEN_BPS
+            )
+        else:
+            # Multi-position (or undetectable concurrency): the aggregate
+            # breakeven is structurally invalid, so null it fail-closed
+            # instead of storing a wrong number (issue #969, sergio12S).
+            breakeven = None
+            cost_sensitive = False
         coverage_days = coverage_days_from_ranges(date_ranges)
         quality = classify_quality(trades_in_regime, coverage_days)
         warnings = build_warnings(
@@ -397,6 +438,9 @@ def compute_evidence_for_run(
                 evidence_quality=quality,
                 warnings=warnings,
                 last_verified=last_verified,
+                evidence_stage=HARNESS_EVIDENCE_STAGE,
+                provenance=provenance,
+                regime_definition=regime_definition,
             )
         )
     return rows

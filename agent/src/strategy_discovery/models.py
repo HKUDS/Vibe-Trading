@@ -28,6 +28,20 @@ from datetime import date, timedelta
 #: these; ``EvidenceRow.__post_init__`` rejects anything else.
 REGIMES = ("bear_market", "bull_market", "structural")
 
+#: Evidence-stage ladder (issue #969 discussion, initial-d). Every row names
+#: the stage of the pipeline that produced it; today only ``backtest`` is
+#: written (the harness computes over backtest artifacts), the remaining
+#: stages are reserved so holdout/shadow/live evidence can join later
+#: without a schema change.
+EVIDENCE_STAGES = (
+    "hypothesis",
+    "backtest",
+    "holdout",
+    "shadow",
+    "live_canary",
+    "retired",
+)
+
 # ---------------------------------------------------------------------------
 # Evidence-quality ladder
 # ---------------------------------------------------------------------------
@@ -99,11 +113,24 @@ class EvidenceRow:
     warnings: tuple[str, ...] = ()
     #: ISO date string ("YYYY-MM-DD") of the last harness verification.
     last_verified: str = ""
+    #: Pipeline stage that produced this row; one of ``EVIDENCE_STAGES``.
+    evidence_stage: str = "backtest"
+    #: Reproducible artifact reference: the backtest run directory whose
+    #: ``artifacts/`` this row was computed from.
+    provenance: str = ""
+    #: JSON string naming the regime-labeling parameters (window, bear/bull
+    #: thresholds, Sharpe annualization) used when this row was computed.
+    regime_definition: str = ""
 
     def __post_init__(self) -> None:
         if self.regime not in REGIMES:
             raise ValueError(
                 f"invalid regime {self.regime!r}; expected one of {REGIMES}"
+            )
+        if self.evidence_stage not in EVIDENCE_STAGES:
+            raise ValueError(
+                f"invalid evidence_stage {self.evidence_stage!r}; "
+                f"expected one of {EVIDENCE_STAGES}"
             )
 
 

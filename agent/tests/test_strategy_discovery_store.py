@@ -63,6 +63,9 @@ def _row(strategy_id="alpha_zoo:a1", regime="bear_market", trades=12, **override
         evidence_quality="adequate",
         warnings=("insufficient-trades: sample", "short-coverage: sample"),
         last_verified="2026-08-01",
+        evidence_stage="backtest",
+        provenance="/tmp/runs/fixture_run",
+        regime_definition='{"bear_threshold": -0.1, "benchmark_window": 252}',
     )
     fields.update(overrides)
     return sd_models.EvidenceRow(**fields)
@@ -119,6 +122,9 @@ class TestUpsertAndRead:
             "evidence_quality",
             "warnings",
             "last_verified",
+            "evidence_stage",
+            "provenance",
+            "regime_definition",
         ):
             assert getattr(got, field) == getattr(
                 src, field
@@ -259,3 +265,106 @@ class TestUnknownRegimeSkip:
         assert store.row_count() == 2
         assert store.get_rows() != []
         assert store.get_rows()[0].strategy_id == "alpha_zoo:ok"
+
+    def test_unknown_evidence_stage_row_is_skipped(self, tmp_path, caplog) -> None:
+        store = _make_store(tmp_path / "s.db")
+        with sqlite3.connect(store.db_path) as conn:
+            conn.execute(
+                "INSERT INTO strategy_regime_evidence ("
+                "strategy_id, regime, trades_in_regime, date_ranges, "
+                "cost_sensitive, evidence_quality, warnings, last_verified, "
+                "evidence_stage"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "sdm:tampered",
+                    "bear_market",
+                    42,
+                    "[]",
+                    0,
+                    "adequate",
+                    "[]",
+                    "",
+                    "rumor",
+                ),
+            )
+            conn.commit()
+        with caplog.at_level("WARNING"):
+            rows = store.get_rows()
+        assert rows == []
+        assert any(
+            "rumor" in record.message for record in caplog.records
+        ), "skipping an unknown-stage row must log a warning naming the stage"
+
+
+@requires_store
+class TestSchemaMigration:
+    """A cache DB written before the provenance/stage columns existed is
+    disposable: opening it drops and recreates the table rather than serving
+    rows that cannot carry the #969 contract."""
+
+    _LEGACY_SCHEMA = """
+    CREATE TABLE strategy_regime_evidence (
+        strategy_id            TEXT NOT NULL,
+        regime                 TEXT NOT NULL,
+        trades_in_regime       INTEGER NOT NULL,
+        position_size          REAL,
+        return_in_regime       REAL,
+        benchmark_in_regime    REAL,
+        excess_in_regime       REAL,
+        sharpe_in_regime       REAL,
+        max_drawdown_in_regime REAL,
+        date_ranges            TEXT NOT NULL,
+        breakeven_fee_bps      REAL,
+        cost_sensitive         INTEGER NOT NULL DEFAULT 0,
+        evidence_quality       TEXT NOT NULL,
+        warnings               TEXT NOT NULL,
+        last_verified          TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (strategy_id, regime)
+    )
+    """
+
+    def test_stale_cache_is_dropped_and_recreated_empty(self, tmp_path, caplog) -> None:
+        db_file = tmp_path / "stale.db"
+        with sqlite3.connect(db_file) as conn:
+            conn.execute(self._LEGACY_SCHEMA)
+            conn.execute(
+                "INSERT INTO strategy_regime_evidence ("
+                "strategy_id, regime, trades_in_regime, date_ranges, "
+                "cost_sensitive, evidence_quality, warnings"
+                ") VALUES ('sdm:legacy', 'bear_market', 12, '[]', 0, "
+                "'adequate', '[]')"
+            )
+            conn.commit()
+
+        with caplog.at_level("WARNING"):
+            store = _make_store(db_file)
+        assert (
+            store.row_count() == 0
+        ), "a pre-provenance cache must be dropped, not served"
+        with sqlite3.connect(db_file) as conn:
+            columns = {
+                r[1]
+                for r in conn.execute(
+                    "PRAGMA table_info(strategy_regime_evidence)"
+                ).fetchall()
+            }
+        for column in ("evidence_stage", "provenance", "regime_definition"):
+            assert column in columns, f"recreated table missing {column}"
+        assert any(
+            "predates columns" in record.message for record in caplog.records
+        ), "dropping a stale cache must log a warning"
+
+        store.upsert_rows([_row()])
+        assert store.row_count() == 1
+
+    def test_current_schema_is_not_dropped(self, tmp_path, caplog) -> None:
+        store = _make_store(tmp_path / "s.db")
+        store.upsert_rows([_row()])
+        with caplog.at_level("WARNING"):
+            reopened = _make_store(tmp_path / "s.db")
+        assert (
+            reopened.row_count() == 1
+        ), "a current-schema cache must survive re-open untouched"
+        assert not any(
+            "predates columns" in record.message for record in caplog.records
+        )
