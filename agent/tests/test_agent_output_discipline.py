@@ -53,7 +53,7 @@ def _rendered_prompt() -> str:
 
 
 class TestOutputPrinciplesArePresent:
-    """All five principles must survive into the prompt the model actually sees."""
+    """All principles must survive into the prompt the model actually sees."""
 
     def test_the_section_exists(self) -> None:
         assert "## Output Principles" in _SYSTEM_PROMPT
@@ -92,9 +92,16 @@ class TestOutputPrinciplesArePresent:
         assert "Refuse out loud, never silently." in prompt
         assert "name the principle it conflicts with" in prompt
 
-    def test_all_five_are_numbered_in_order(self) -> None:
+    def test_principle_six_stops_when_enough_evidence(self) -> None:
+        prompt = _rendered_prompt()
+
+        assert "Answer at the level of detail asked" in prompt
+        assert "stop calling tools" in prompt
+        assert "Do not re-fetch data you already have" in prompt
+
+    def test_all_principles_are_numbered_in_order(self) -> None:
         block = _rendered_prompt().split("## Output Principles", 1)[1].split("## Tools", 1)[0]
-        positions = [block.index(f"{n}. **") for n in range(1, 6)]
+        positions = [block.index(f"{n}. **") for n in range(1, 7)]
 
         assert positions == sorted(positions)
 
