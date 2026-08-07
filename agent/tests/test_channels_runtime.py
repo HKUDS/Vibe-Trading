@@ -265,6 +265,7 @@ def test_channel_runtime_routes_inbound_to_session_and_outbound(tmp_path: Path) 
                     sender_id="user-1",
                     chat_id="chat-1",
                     content="hello from IM",
+                    metadata={"message_id": "orig-msg-42"},
                 )
             )
 
@@ -281,6 +282,10 @@ def test_channel_runtime_routes_inbound_to_session_and_outbound(tmp_path: Path) 
                 "_channel_runtime": True,
                 "attempt_id": "attempt-1",
                 "session_id": "session-1",
+                # The originating message id is threaded through so the QQ
+                # adapter can send the reply as a passive message (msg_id)
+                # instead of an active message QQ rejects for non-privileged bots.
+                "message_id": "orig-msg-42",
             },
         )
 
