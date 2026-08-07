@@ -173,6 +173,46 @@ def _write_trades_csv(artifacts: Path, rows: list[dict]) -> None:
     )
 
 
+#: Engine metrics.csv header (base.py::_write_artifacts flattens the metrics
+#: dict into one header row + one value row). trade_count is the column the
+#: Phase 2 hard gate reads for run ELIGIBILITY.
+ENGINE_METRICS_COLUMNS = [
+    "final_value",
+    "total_return",
+    "annual_return",
+    "max_drawdown",
+    "sharpe",
+    "calmar",
+    "sortino",
+    "win_rate",
+    "profit_loss_ratio",
+    "profit_factor",
+    "max_consecutive_loss",
+    "avg_holding_days",
+    "trade_count",
+    "benchmark_return",
+    "excess_return",
+    "information_ratio",
+]
+
+
+def _write_run_state(run_dir: Path, *, trade_count: int, status: str = "success"):
+    """Real-runtime state.json + engine metrics.csv for a fixture run.
+
+    The Phase 2 hard gates read ``state.json`` (runtime-written, ``{"status":
+    "success"}``) and ``artifacts/metrics.csv`` (engine-written header+value
+    rows), so every fixture that must pass ingestion carries both.
+    """
+    (run_dir / "state.json").write_text(
+        json.dumps({"status": status}), encoding="utf-8"
+    )
+    values = [1_000_000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0]
+    values += [trade_count, 0.0, 0.0, 0.0]
+    pd.DataFrame([values], columns=ENGINE_METRICS_COLUMNS).to_csv(
+        run_dir / "artifacts" / "metrics.csv", index=False
+    )
+
+
 def _write_run_fixture(
     base_dir: Path, *, include_trades: bool = True, include_equity: bool = True
 ) -> Path:
@@ -198,6 +238,7 @@ def _write_run_fixture(
         ]
         _write_trades_csv(artifacts, _engine_trade_rows(round_trips))
 
+    _write_run_state(run_dir, trade_count=len(ALL_TRADE_DAYS))
     return run_dir
 
 
@@ -215,6 +256,7 @@ def _write_multi_position_fixture(base_dir: Path) -> Path:
         _exit_row(date(2024, 1, 21), "BBB.US", pnl=40.0, reason="take_profit"),
     ]
     _write_trades_csv(artifacts, rows)
+    _write_run_state(run_dir, trade_count=2)
     return run_dir
 
 
@@ -245,6 +287,7 @@ def _write_legacy_fixture(base_dir: Path) -> Path:
         for trade_date in ALL_TRADE_DAYS
     ]
     pd.DataFrame(legacy_rows).to_csv(artifacts / "trades.csv", index=False)
+    _write_run_state(run_dir, trade_count=len(ALL_TRADE_DAYS))
     return run_dir
 
 

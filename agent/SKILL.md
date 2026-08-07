@@ -117,7 +117,7 @@ One-line cross-sectional IC / IR / alive-reversed-dead categorisation across fiv
 
 Each alpha ships with `__alpha_meta__` (formula LaTeX + theme + universe + warmup + columns required), guarded by an AST purity gate + 300-row lookahead sentinel test. Use the `vibe-trading alpha {list,show,bench,compare,export-manifest}` CLI, the `/alpha/*` REST routes (browser at `/alpha-zoo`), or compose multi-factor signals via `ZooSignalEngine.from_zoo(...)`.
 
-### Finance Skills (89)
+### Finance Skills (90)
 Comprehensive knowledge base covering:
 - Technical analysis (candlestick, Elliott wave, Ichimoku, SMC, harmonic, chanlun)
 - Quantitative methods (factor research, ML strategy, pair trading, multi-factor)
@@ -130,7 +130,7 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (58)
+## Available MCP Tools (59)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
@@ -172,6 +172,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `list_strategies` | Browse discoverable strategies (Alpha Zoo + SDM store) | None |
 | `query_strategies` | Evidence-gated query: regime / Sharpe / quality / cost filters | None |
 | `get_strategy_evidence` | Per-regime evidence rows for one strategy | None |
+| `refresh_strategy_evidence` | Rebuild the disposable strategy-evidence cache from run artifacts | None |
 | `analyze_trade_journal` | Parse broker CSV → profile + behavior diagnostics | None |
 | `extract_shadow_strategy` | Distill 3-5 if-then rules from profitable roundtrips | None |
 | `run_shadow_backtest` | Multi-market backtest + delta-PnL attribution | None* |

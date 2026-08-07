@@ -1,23 +1,31 @@
-"""Strategy-discovery agent tools: evidence-gated read-only discovery surface.
+"""Strategy-discovery agent tools: evidence-gated discovery surface.
 
-Three tools — ``list_strategies`` / ``query_strategies`` /
-``get_strategy_evidence`` — expose the Strategy Discovery facade over the
-Alpha Zoo registry and the SDM strategy store. The surface is evidence-gated:
-strategies carry computed per-regime evidence rows instead of boolean
-scenario tags, and anything below the evidence thresholds is flagged
-``insufficient`` / ``marginal`` rather than recommended.
+Four tools — ``list_strategies`` / ``query_strategies`` /
+``get_strategy_evidence`` / ``refresh_strategy_evidence`` — expose the
+Strategy Discovery facade over the Alpha Zoo registry and the SDM strategy
+store. The surface is evidence-gated: strategies carry computed per-regime
+evidence rows instead of boolean scenario tags, and anything below the
+evidence thresholds is flagged ``insufficient`` / ``marginal`` rather than
+recommended.
 
-All three tools are read-only. The facade is constructed lazily inside each
-``execute()`` (never at import time), parameter types are coerced/validated
-defensively (bad input yields an error envelope, never a traceback), and any
-unexpected exception is wrapped into the standard ``{"status": "error", ...}``
-envelope.
+The first three tools are read-only. The fourth,
+``refresh_strategy_evidence``, is a WRITE tool with a deliberately narrow
+scope: it rebuilds ONLY the disposable facade-owned evidence cache from
+local backtest run artifacts (manifest-driven; plan D6/D7). It never writes
+to the Alpha Zoo or SDM sources of truth, and it uses no network and no
+credentials.
+
+The facade is constructed lazily inside each ``execute()`` (never at import
+time), parameter types are coerced/validated defensively (bad input yields
+an error envelope, never a traceback), and any unexpected exception is
+wrapped into the standard ``{"status": "error", ...}`` envelope.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from src.agent.tools import BaseTool
@@ -335,4 +343,314 @@ class GetStrategyEvidenceTool(BaseTool):
             # echo raw exception text (it can leak internal paths).
             logger.exception("get_strategy_evidence failed")
             return _err("get_strategy_evidence failed internally; see server logs")
+        return _envelope(result)
+
+
+# ---------------------------------------------------------------------------
+# refresh_strategy_evidence — manifest-driven cache rebuild (WRITE tool)
+# ---------------------------------------------------------------------------
+
+#: Stable skip-reason prefix for run dirs that resolve outside the allowed
+#: roots (plan D7). The offending path follows the colon so the envelope stays
+#: machine-readable and actionable at the same time.
+PATH_OUTSIDE_ALLOWED_ROOTS = "path-outside-allowed-roots"
+
+
+def _allowed_refresh_run_roots() -> list[Path]:
+    """Roots a refresh run_dir may live inside (plan D7).
+
+    The runtime runs root (``get_runtime_root()/"runs"``, honouring
+    ``VIBE_TRADING_HOME``) plus any operator-configured
+    ``VIBE_TRADING_ALLOWED_RUN_ROOTS`` entries. Environment access goes
+    through the config accessor (never ``os.environ`` directly — the
+    repository's AST CI gate forbids that here); any config-layer failure
+    degrades to the runtime runs root only.
+    """
+    roots: list[Path] = []
+    try:
+        from src.config.paths import get_runtime_root
+
+        runtime_runs = (get_runtime_root() / "runs").resolve()
+        roots.append(runtime_runs)
+    except Exception:  # noqa: BLE001 — config layer optional for this package
+        logger.debug("runtime runs root unavailable", exc_info=True)
+    try:
+        from src.config.accessor import get_env_config
+
+        raw = get_env_config().api.vibe_trading_allowed_run_roots or ""
+        for item in raw.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            resolved = Path(item).expanduser().resolve()
+            if resolved not in roots:
+                roots.append(resolved)
+    except Exception:  # noqa: BLE001 — degrade to the runtime runs root only
+        logger.debug("allowed run roots config unavailable", exc_info=True)
+    return roots
+
+
+def _run_dir_allowed(run_dir: Path, roots: list[Path]) -> bool:
+    """Whether a resolved run dir lives inside one of the allowed roots."""
+    return any(run_dir.is_relative_to(root) for root in roots)
+
+
+def load_manifest(path: str | Path) -> list:
+    """Read a refresh manifest file and return its run-spec entry list.
+
+    Two shapes are accepted (plan §4.6): a JSON object with a ``runs`` array
+    (``{"runs": [{strategy_id, run_dir, position_size?}, ...]}``) or a bare
+    JSON array of the same entries.
+
+    Raises:
+        ValueError: With an operator-facing message when the file is missing
+            or unreadable, is not valid JSON, or has the wrong shape. The
+            agent tool and the CLI share this helper so both surfaces report
+            the same failure the same way.
+    """
+    manifest_path = Path(str(path)).expanduser()
+    try:
+        raw = manifest_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(
+            f"manifest file {manifest_path} is missing or unreadable "
+            f"({exc.strerror or 'I/O error'})"
+        ) from exc
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"manifest file {manifest_path} is not valid JSON: {exc.msg} "
+            f"at line {exc.lineno} column {exc.colno}"
+        ) from exc
+    if isinstance(parsed, list):
+        return parsed
+    if isinstance(parsed, dict):
+        runs = parsed.get("runs")
+        if not isinstance(runs, list):
+            raise ValueError(
+                f"manifest file {manifest_path} must be a JSON object with a "
+                "'runs' array or a bare JSON array of run specs"
+            )
+        return runs
+    raise ValueError(
+        f"manifest file {manifest_path} must be a JSON object with a 'runs' "
+        "array or a bare JSON array of run specs"
+    )
+
+
+def validate_refresh_entries(
+    entries: list,
+) -> tuple[list[dict], list[dict]]:
+    """Split raw manifest entries into rebuild-ready specs and skip records.
+
+    Per-entry validation (plan §4.6/D7): the entry must be a mapping with a
+    non-empty ``strategy_id`` (capped at ``_MAX_STRING_PARAM_CHARS``) and a
+    non-empty ``run_dir`` that resolves (expanduser + resolve) inside the
+    allowed run roots. Offending entries are returned as
+    ``{"run_dir": ..., "reason": ...}`` skip records — the remaining entries
+    still process. An optional ``position_size`` is passed through untouched
+    (the harness validates it).
+
+    Returns:
+        ``(specs, skipped)`` — specs ready for ``rebuild_evidence`` and the
+        skip records for the envelope.
+    """
+    roots = _allowed_refresh_run_roots()
+    specs: list[dict] = []
+    skipped: list[dict] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            skipped.append(
+                {
+                    "run_dir": None,
+                    "reason": f"run spec at index {index} is not an object",
+                }
+            )
+            continue
+        run_dir_raw = entry.get("run_dir")
+        run_dir_label = (
+            str(run_dir_raw)
+            if isinstance(run_dir_raw, str) and run_dir_raw.strip()
+            else None
+        )
+        strategy_id = entry.get("strategy_id")
+        if not isinstance(strategy_id, str) or not strategy_id.strip():
+            skipped.append(
+                {
+                    "run_dir": run_dir_label,
+                    "reason": "missing strategy_id or run_dir",
+                }
+            )
+            continue
+        if len(strategy_id) > _MAX_STRING_PARAM_CHARS:
+            skipped.append(
+                {
+                    "run_dir": run_dir_label,
+                    "reason": (
+                        f"strategy_id is too long ({len(strategy_id)} chars; "
+                        f"max {_MAX_STRING_PARAM_CHARS})"
+                    ),
+                }
+            )
+            continue
+        if run_dir_label is None:
+            skipped.append(
+                {"run_dir": None, "reason": "missing strategy_id or run_dir"}
+            )
+            continue
+        try:
+            resolved = Path(run_dir_label).expanduser().resolve()
+        except (OSError, RuntimeError) as exc:
+            skipped.append(
+                {
+                    "run_dir": run_dir_label,
+                    "reason": f"run_dir could not be resolved: {exc}",
+                }
+            )
+            continue
+        if not _run_dir_allowed(resolved, roots):
+            skipped.append(
+                {
+                    "run_dir": run_dir_label,
+                    "reason": f"{PATH_OUTSIDE_ALLOWED_ROOTS}:{run_dir_label}",
+                }
+            )
+            continue
+        spec: dict = {
+            "strategy_id": strategy_id.strip(),
+            "run_dir": str(resolved),
+        }
+        if "position_size" in entry:
+            spec["position_size"] = entry["position_size"]
+        specs.append(spec)
+    return specs, skipped
+
+
+def refresh_strategy_evidence_core(
+    *,
+    manifest_path: str | None = None,
+    runs: list | None = None,
+) -> dict:
+    """Shared refresh core for the agent tool and the CLI (one code path).
+
+    Validates the exactly-one-source rule, loads the manifest (or accepts
+    inline ``runs``), validates every entry (path containment included), and
+    rebuilds the DEFAULT evidence store — ``EvidenceStore()`` resolution:
+    env override → runtime root → ``~/.vibe-trading``; NEVER a CWD-relative
+    path.
+
+    Returns:
+        The strict envelope ``{status, runs, strategies, rows, skipped}``
+        where ``runs`` counts every supplied entry (processed + skipped) and
+        ``skipped`` merges entry-level skips with harness skips.
+
+    Raises:
+        ValueError: Operator-facing usage errors (exactly-one rule violated,
+            manifest missing/invalid/wrong shape, ``runs`` not an array).
+    """
+    if manifest_path is not None and runs is not None:
+        raise ValueError("provide exactly one of manifest_path or runs, not both")
+    if manifest_path is None and runs is None:
+        raise ValueError(
+            "refresh_strategy_evidence requires exactly one of manifest_path " "or runs"
+        )
+    if manifest_path is not None:
+        entries = load_manifest(manifest_path)
+    else:
+        if not isinstance(runs, list):
+            raise ValueError(
+                "runs must be an array of {strategy_id, run_dir, "
+                "position_size?} objects"
+            )
+        entries = runs
+
+    specs, skipped = validate_refresh_entries(entries)
+    if not specs:
+        # Nothing admissible to rebuild from. Do NOT call rebuild_evidence:
+        # an empty rebuild clears the store, and wiping the cache because
+        # every input entry was invalid would be a destructive surprise.
+        return {
+            "status": "ok",
+            "runs": len(entries),
+            "strategies": 0,
+            "rows": 0,
+            "skipped": skipped,
+        }
+
+    from src.strategy_discovery import EvidenceStore, rebuild_evidence
+
+    result = dict(rebuild_evidence(specs, EvidenceStore()))
+    result["runs"] = len(entries)
+    result["skipped"] = skipped + list(result.get("skipped", []))
+    return result
+
+
+class RefreshStrategyEvidenceTool(BaseTool):
+    """Rebuild the disposable strategy-evidence cache from run artifacts."""
+
+    name = "refresh_strategy_evidence"
+    description = (
+        "Rebuild the strategy-discovery evidence cache from real backtest "
+        "run artifacts. WRITE tool, disposable-cache scope only: it replaces "
+        "the facade-owned evidence cache (drop-and-rebuild by contract) and "
+        "never touches the Alpha Zoo or SDM sources of truth; no network, no "
+        "credentials. Provide EXACTLY ONE of manifest_path (JSON manifest: "
+        '{"runs": [{strategy_id, run_dir, position_size?}, ...]} — a bare '
+        "JSON array of the same entries is also accepted) or runs (inline "
+        "array of the same objects). Runs that fail the ingestion gates "
+        "(unhealthy artifacts, path outside the allowed run roots) are "
+        "skipped with machine-readable reasons while the rest still process."
+    )
+    parameters = {
+        "type": "object",
+        "properties": {
+            "manifest_path": {
+                "type": "string",
+                "description": (
+                    "Path to a JSON manifest file: an object with a 'runs' "
+                    "array or a bare JSON array of "
+                    "{strategy_id, run_dir, position_size?} entries. "
+                    "Provide exactly one of manifest_path or runs."
+                ),
+            },
+            "runs": {
+                "type": "array",
+                "description": (
+                    "Inline run specs: an array of "
+                    "{strategy_id, run_dir, position_size?} objects. "
+                    "Provide exactly one of manifest_path or runs."
+                ),
+                "items": {"type": "object"},
+            },
+        },
+        "required": [],
+    }
+    is_readonly = False
+    repeatable = True
+
+    def execute(self, **kwargs: Any) -> str:
+        try:
+            manifest_path = _coerce_opt_str(
+                kwargs.get("manifest_path"), "manifest_path"
+            )
+        except ValueError as exc:
+            return _err(str(exc))
+        runs = kwargs.get("runs")
+        if runs is not None and not isinstance(runs, list):
+            return _err(
+                "runs must be an array of {strategy_id, run_dir, "
+                "position_size?} objects"
+            )
+        try:
+            result = refresh_strategy_evidence_core(
+                manifest_path=manifest_path, runs=runs
+            )
+        except ValueError as exc:
+            return _err(str(exc))
+        except Exception:
+            # Full detail goes to the server logs only; the envelope must not
+            # echo raw exception text (it can leak internal paths).
+            logger.exception("refresh_strategy_evidence failed")
+            return _err("refresh_strategy_evidence failed internally; see server logs")
         return _envelope(result)

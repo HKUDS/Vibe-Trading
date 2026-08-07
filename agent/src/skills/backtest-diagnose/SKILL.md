@@ -62,6 +62,10 @@ These issues require the user to check the API token, switch data sources, or wa
 4. The equity series contains no `NaN`
 5. `exit_code == 0`
 
+## Evidence hookup
+
+This Hard-Gate Checklist is also the evidence ingestion gate for Strategy Discovery: a run failing any gate produces **no evidence rows** — never partial rows — and is skipped with a stable machine-readable token (`hard-gate:exit-nonzero`, `hard-gate:metrics-missing`, `hard-gate:zero-trades`, `hard-gate:equity-empty`, `hard-gate:equity-nan`). Diagnose and fix the failing gate as usual, rerun the backtest, then repopulate the evidence cache with `refresh_strategy_evidence` (agent tool / MCP tool, or `vibe-trading strategy-evidence refresh --manifest <path>`) so the fixed run becomes queryable evidence. See the `strategy-discovery` skill for the manifest format and the full gate list.
+
 ## Fixing Principles
 
 - Use **edit_file** to make precise code fixes instead of rewriting the entire file with `write_file`, unless the structure is fundamentally broken

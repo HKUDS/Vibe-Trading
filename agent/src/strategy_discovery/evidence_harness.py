@@ -52,8 +52,11 @@ from src.strategy_discovery.models import (
     coverage_days_from_ranges,
 )
 from src.strategy_discovery.run_artifacts import (
+    equity_has_non_finite,
     parse_finite_float,
     read_equity_series,
+    read_metrics_trade_count,
+    read_run_status,
     read_trade_activity,
 )
 
@@ -80,6 +83,114 @@ SHARPE_ANNUALIZATION_BARS = 252
 #: Stage of every harness-produced row: the harness computes exclusively
 #: over backtest run artifacts, so no other stage is honest today.
 HARNESS_EVIDENCE_STAGE = "backtest"
+
+# ---------------------------------------------------------------------------
+# Hard gates (backtest-diagnose hookup, plan D4). The backtest-diagnose
+# Hard-Gate Checklist IS the evidence ingestion gate: an unhealthy run
+# produces no evidence rows, and the refusal is reported with one of these
+# stable, machine-readable tokens (1:1 with the checklist).
+# ---------------------------------------------------------------------------
+
+#: Run did not finish successfully — state.json missing/unreadable (fail
+#: closed) or its ``status`` is not ``"success"``.
+HARD_GATE_EXIT_NONZERO = "hard-gate:exit-nonzero"
+
+#: ``artifacts/metrics.csv`` missing or empty.
+HARD_GATE_METRICS_MISSING = "hard-gate:metrics-missing"
+
+#: metrics.csv ``trade_count`` is zero, negative, or unparseable.
+HARD_GATE_ZERO_TRADES = "hard-gate:zero-trades"
+
+#: ``artifacts/equity.csv`` missing, empty, or unverifiable.
+HARD_GATE_EQUITY_EMPTY = "hard-gate:equity-empty"
+
+#: equity series contains a NaN/non-finite value anywhere.
+HARD_GATE_EQUITY_NAN = "hard-gate:equity-nan"
+
+
+def check_run_hard_gates(run_dir: str | Path) -> tuple[bool, str | None]:
+    """Run the D4 hard gates against one run dir, in order.
+
+    Returns ``(True, None)`` when the run is admissible as evidence, else
+    ``(False, "hard-gate:<token>: <detail>")`` with the FIRST failing gate's
+    stable token. Gate order and sources (plan D4):
+
+    1. ``state.json`` exists AND ``status == "success"`` → else
+       ``hard-gate:exit-nonzero`` (a missing state.json fails closed onto
+       the same token).
+    2. ``artifacts/metrics.csv`` exists non-empty → else
+       ``hard-gate:metrics-missing``.
+    3. ``trade_count > 0`` parsed from metrics.csv → else
+       ``hard-gate:zero-trades``.
+    4. ``artifacts/equity.csv`` exists non-empty → else
+       ``hard-gate:equity-empty``.
+    5. equity series contains no NaN/non-finite value → else
+       ``hard-gate:equity-nan``.
+
+    Documented divergence (eligibility vs sufficiency): metrics.csv
+    ``trade_count`` gates ELIGIBILITY (this hard gate), while the harness's
+    own closed-round-trip count gates EVIDENCE SUFFICIENCY (per-regime rows
+    below). They can disagree — e.g. entries without exits raise
+    ``trade_count`` without adding a round trip — and that is intentional:
+    the hard gate only certifies the run is structurally healthy.
+    """
+    run_path = Path(run_dir)
+
+    status = read_run_status(run_path)
+    if status != "success":
+        detail = (
+            "state.json missing or unreadable (run status unknown)"
+            if status is None
+            else f"run status is {status!r}, not 'success'"
+        )
+        return False, f"{HARD_GATE_EXIT_NONZERO}: {detail}"
+
+    metrics_path = run_path / "artifacts" / "metrics.csv"
+    try:
+        metrics_present = metrics_path.is_file() and metrics_path.stat().st_size > 0
+    except OSError:
+        metrics_present = False
+    if not metrics_present:
+        return (
+            False,
+            f"{HARD_GATE_METRICS_MISSING}: artifacts/metrics.csv missing or empty",
+        )
+
+    trade_count = read_metrics_trade_count(run_path)
+    if trade_count is None or trade_count <= 0:
+        detail = (
+            "trade_count missing or unparseable in metrics.csv"
+            if trade_count is None
+            else f"trade_count is {trade_count}"
+        )
+        return False, f"{HARD_GATE_ZERO_TRADES}: {detail}"
+
+    equity_path = run_path / "artifacts" / "equity.csv"
+    try:
+        equity_present = equity_path.is_file() and equity_path.stat().st_size > 0
+    except OSError:
+        equity_present = False
+    if not equity_present:
+        return (
+            False,
+            f"{HARD_GATE_EQUITY_EMPTY}: artifacts/equity.csv missing or empty",
+        )
+
+    non_finite = equity_has_non_finite(run_path)
+    if non_finite is None:
+        return (
+            False,
+            f"{HARD_GATE_EQUITY_EMPTY}: artifacts/equity.csv unreadable or "
+            "carries no usable rows",
+        )
+    if non_finite:
+        return (
+            False,
+            f"{HARD_GATE_EQUITY_NAN}: equity series contains NaN/non-finite "
+            "values; no partial-curve evidence is computed",
+        )
+
+    return True, None
 
 
 def describe_regime_definition(
@@ -301,6 +412,12 @@ def compute_evidence_for_run(
 
     Returns ``[]`` (with a warning) whenever the required artifacts are
     absent or unusable — the harness never fabricates missing data.
+
+    The D4 hard gates (:func:`check_run_hard_gates`) run FIRST, so direct
+    library callers get the same fail-closed refusal as
+    :func:`rebuild_evidence` (which also calls the gates itself before
+    computing, so it can record the exact gate token as the skip reason —
+    both paths share the one gate function).
     """
     if benchmark_window <= 0:
         raise ValueError("benchmark_window must be a positive integer")
@@ -308,6 +425,16 @@ def compute_evidence_for_run(
         raise ValueError("bear_threshold must be strictly below bull_threshold")
 
     run_path = Path(run_dir)
+    gate_ok, gate_reason = check_run_hard_gates(run_path)
+    if not gate_ok:
+        logger.warning(
+            "strategy %s: run %s refused by the evidence ingestion gate "
+            "(%s) — no evidence computed",
+            strategy_id,
+            run_path,
+            gate_reason,
+        )
+        return []
     trades_path = run_path / "artifacts" / "trades.csv"
     equity_path = run_path / "artifacts" / "equity.csv"
     if not trades_path.is_file() or not equity_path.is_file():
@@ -447,18 +574,33 @@ def compute_evidence_for_run(
 
 
 def rebuild_evidence(runs: Sequence[Mapping], store: EvidenceStore) -> dict:
-    """Clear the store and rebuild it from a sequence of run specifications.
+    """Atomically replace the store contents from a sequence of run specs.
 
     Each mapping needs ``strategy_id`` and ``run_dir``; an optional
     ``position_size`` overrides exposure-derived sizing. Runs that yield no
     computable evidence are reported in ``skipped`` with a reason — nothing
-    is invented for them.
+    is invented for them. Runs refused by the D4 hard gates are skipped with
+    the exact ``hard-gate:<token>`` reason (the gates run here BEFORE
+    computation so the envelope can record the token;
+    :func:`compute_evidence_for_run` re-checks them internally for direct
+    library callers — both paths share :func:`check_run_hard_gates`).
+
+    ATOMIC (plan D5): ALL rows are computed first, then written with one
+    ``store.replace_rows(all_rows)`` call (DELETE-all + INSERT-all in a
+    single transaction). A mid-compute failure therefore never leaves the
+    store half-populated — the previous contents survive intact. An empty
+    ``all_rows`` still replaces (clears) the store: a rebuild is a full
+    statement of the evidence, not a patch.
+
+    Eligibility vs sufficiency (plan D4): the hard gates certify run
+    ELIGIBILITY from metrics.csv ``trade_count``; the per-regime rows below
+    are gated by EVIDENCE SUFFICIENCY (the harness's closed-round-trip
+    count). The two counts can disagree (entries without exits); that is
+    intentional and documented.
     """
     skipped: list[dict] = []
     all_rows: list[EvidenceRow] = []
     ok_strategies: set[str] = set()
-
-    store.clear()
 
     for index, spec in enumerate(runs):
         if not isinstance(spec, Mapping):
@@ -485,6 +627,10 @@ def rebuild_evidence(runs: Sequence[Mapping], store: EvidenceStore) -> dict:
             )
             continue
         try:
+            gate_ok, gate_reason = check_run_hard_gates(run_dir)
+            if not gate_ok:
+                skipped.append({"run_dir": str(run_dir), "reason": gate_reason})
+                continue
             rows = compute_evidence_for_run(
                 strategy_id, run_dir, position_size=spec.get("position_size")
             )
@@ -510,7 +656,7 @@ def rebuild_evidence(runs: Sequence[Mapping], store: EvidenceStore) -> dict:
         all_rows.extend(rows)
         ok_strategies.add(strategy_id)
 
-    written = store.upsert_rows(all_rows)
+    written = store.replace_rows(all_rows)
     return {
         "status": "ok",
         "runs": len(runs),

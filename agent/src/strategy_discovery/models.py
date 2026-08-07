@@ -80,6 +80,34 @@ BORDERLINE_BREAKEVEN_BPS = 10.0
 BORDERLINE_COVERAGE_BUFFER_DAYS = 365
 
 # ---------------------------------------------------------------------------
+# Evidence decay vocabulary and thresholds (Phase 2, #969)
+# ---------------------------------------------------------------------------
+
+#: Decay verdict vocabulary. Computed AT READ TIME from the evidence itself
+#: (window recency) — never persisted, never derived from model memory.
+DECAY_FRESH = "fresh"
+DECAY_AGING = "aging"
+DECAY_STALE = "stale"
+
+#: Evidence-window age (days since the latest ``date_ranges`` window ended)
+#: at or above which a row is flagged ``aging``. Justified against the
+#: documented quarterly re-backtest cadence: a window end more than ~90 days
+#: old means the strategy has missed at least one scheduled re-verification
+#: cycle, so the row carries an ``aged-evidence:`` warning — but it is NOT
+#: excluded, because one missed cycle is recoverable.
+DECAY_AGING_EVIDENCE_AGE_DAYS = 90
+
+#: Evidence-window age (days) at or above which a row is ``stale`` and is
+#: excluded from default recommendations. A window end more than ~180 days
+#: old means at least two consecutive quarterly re-backtest cycles were
+#: missed; the evidence can no longer vouch for the current market, so the
+#: row is refused by default (inspectable via ``include_stale``).
+#: Boundary semantics: ``age >= DECAY_STALE_EVIDENCE_AGE_DAYS`` ⇒ stale,
+#: elif ``age >= DECAY_AGING_EVIDENCE_AGE_DAYS`` ⇒ aging, else fresh — the
+#: exact threshold belongs to the STRICTER side (fail-closed, sergio12S).
+DECAY_STALE_EVIDENCE_AGE_DAYS = 180
+
+# ---------------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------------
 
@@ -217,6 +245,122 @@ def classify_quality(trades_in_regime: int, coverage_days: int) -> str:
     if coverage_days < MIN_COVERAGE_DAYS:
         return QUALITY_MARGINAL
     return QUALITY_ADEQUATE
+
+
+def evidence_window_end(date_ranges) -> date | None:
+    """Last calendar day of the latest evidence window, or ``None``.
+
+    Each entry is parsed as ``"YYYY-MM to YYYY-MM"``; the window end is the
+    last day of the latest end month (month-granular ranges are end-anchored
+    to month-end, see :func:`_month_last_day_anchor`). Malformed entries
+    contribute nothing; ``None`` when nothing parses cleanly.
+    """
+    max_end: date | None = None
+
+    for entry in date_ranges:
+        if not isinstance(entry, str):
+            continue
+        pieces = [p for p in re.split(r"\s+to\s+", entry.strip(), flags=re.IGNORECASE)]
+        if len(pieces) != 2:
+            continue
+        end_start = _parse_month_first(pieces[1])
+        if end_start is None:
+            continue
+        end = _month_last_day_anchor(end_start)
+        if max_end is None or end > max_end:
+            max_end = end
+
+    return max_end
+
+
+def evidence_age_days(date_ranges, today: date) -> int | None:
+    """Age in days of the latest evidence window relative to ``today``.
+
+    ``today − evidence_window_end``, clamped to ``>= 0``: month-granular
+    ranges are end-anchored to month-end, so a window ending in the current
+    month can land in the future relative to ``today`` — a negative age is
+    reported as 0 (freshest possible), never as a negative number. Returns
+    ``None`` when no window end parses (callers fail closed on that).
+    """
+    window_end = evidence_window_end(date_ranges)
+    if window_end is None:
+        return None
+    return max(0, (today - window_end).days)
+
+
+def staleness_days(last_verified: str, today: date) -> int | None:
+    """Days since the row was last verified; ``None`` for malformed input.
+
+    Reported on every returned row but NEVER used for gating (plan D1):
+    ``staleness_days`` would let a scheduled refresh of unchanged artifacts
+    keep every row "fresh" forever — decay gating is driven by
+    :func:`evidence_age_days` instead.
+    """
+    if not isinstance(last_verified, str):
+        return None
+    text = last_verified.strip()
+    if not text:
+        return None
+    try:
+        verified = date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+    return max(0, (today - verified).days)
+
+
+def classify_decay(
+    date_ranges,
+    today: date,
+    aging_days: int = DECAY_AGING_EVIDENCE_AGE_DAYS,
+    stale_days: int = DECAY_STALE_EVIDENCE_AGE_DAYS,
+) -> str:
+    """Decay verdict from the evidence window recency (pure, read-time).
+
+    Boundary semantics: ``age >= stale_days`` ⇒ ``stale``, elif
+    ``age >= aging_days`` ⇒ ``aging``, else ``fresh`` — an exact threshold
+    belongs to the stricter side. Unparseable/empty ``date_ranges`` classify
+    as ``stale`` fail-closed: evidence whose window cannot be dated cannot
+    vouch for anything (sergio12S discipline, #969).
+    """
+    age = evidence_age_days(date_ranges, today)
+    if age is None:
+        return DECAY_STALE
+    if age >= stale_days:
+        return DECAY_STALE
+    if age >= aging_days:
+        return DECAY_AGING
+    return DECAY_FRESH
+
+
+def decay_warning(decay_status: str, evidence_age_days: int | None) -> str | None:
+    """Stable decay warning for a row, or ``None`` for fresh rows.
+
+    Prefixes are fixed tokens (``stale-evidence:``, ``aged-evidence:``) with
+    the day count in the body so downstream tools can match them without
+    parsing prose. A stale verdict with an unknown age (unparseable window)
+    still warns — with the unparseable reason instead of a day count.
+    """
+    if decay_status == DECAY_STALE:
+        if evidence_age_days is None:
+            return (
+                "stale-evidence: evidence window end is missing or "
+                "unparseable, treated as stale fail-closed — re-backtest "
+                "over a recent window and refresh before relying on this row"
+            )
+        return (
+            f"stale-evidence: evidence window ended {evidence_age_days} days "
+            f"ago (>= {DECAY_STALE_EVIDENCE_AGE_DAYS}-day staleness "
+            "threshold) — excluded from default recommendations; re-backtest "
+            "over a recent window and refresh to reinstate"
+        )
+    if decay_status == DECAY_AGING:
+        return (
+            f"aged-evidence: evidence window ended {evidence_age_days} days "
+            f"ago (>= {DECAY_AGING_EVIDENCE_AGE_DAYS}-day aging threshold) — "
+            "still queryable, but verify with a fresh backtest before "
+            "relying on this row"
+        )
+    return None
 
 
 def breakeven_fee_bps(

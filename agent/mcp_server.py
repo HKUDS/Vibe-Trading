@@ -6,7 +6,7 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 62 tools: skills, research goals, strategy discovery,
+Surfaces 63 tools: skills, research goals, strategy discovery,
 backtest/factor/options/pattern
 analysis, market data, fundamentals & capital-flow & news & discovery
 (get_fund_flow / get_dragon_tiger / get_northbound_flow / get_margin_trading /
@@ -17,7 +17,9 @@ screen_market / search_symbol / get_macro_series / iwencai_search),
 institutional-research and alternative data (get_institutional_holdings /
 etf_holdings / prediction_market / research_papers), read-only
 trading-connector reads, swarm orchestration, trade-journal and shadow-account
-analysis. Every exposed tool is read-only or research-only; no order-placing or
+analysis. Every exposed tool is read-only or research-only except
+refresh_strategy_evidence, which writes ONLY the disposable facade-owned
+strategy-evidence cache from local run artifacts; no order-placing or
 order-cancelling tool is ever surfaced via MCP.
 
 Usage:
@@ -1069,6 +1071,38 @@ def get_strategy_evidence(strategy_id: str, regime: str | None = None) -> str:
     return _strategy_discovery_execute(
         "get_strategy_evidence",
         {"strategy_id": strategy_id, "regime": regime},
+    )
+
+
+@mcp.tool
+def refresh_strategy_evidence(
+    manifest_path: str | None = None, runs: list | None = None
+) -> str:
+    """Rebuild the strategy-discovery evidence cache from backtest run artifacts.
+
+    WRITE tool with disposable-cache-only scope: it replaces the facade-owned
+    strategy-evidence cache (drop-and-rebuild by contract) from local run
+    artifacts and NEVER touches the Alpha Zoo or SDM sources of truth. No
+    network access, no credentials, no broker paths.
+
+    Provide EXACTLY ONE of the two parameters:
+    - manifest_path: path to a JSON manifest — an object with a "runs" array
+      ({"runs": [{strategy_id, run_dir, position_size?}, ...]}) or a bare
+      JSON array of the same entries.
+    - runs: inline array of {strategy_id, run_dir, position_size?} objects.
+
+    Supplying both or neither returns an error envelope. Runs that fail the
+    ingestion gates (unhealthy artifacts, run_dir outside the allowed run
+    roots) are skipped with machine-readable reasons while the rest still
+    process.
+
+    Args:
+        manifest_path: Path to the JSON manifest file (see above).
+        runs: Inline run specs (see above).
+    """
+    return _strategy_discovery_execute(
+        "refresh_strategy_evidence",
+        {"manifest_path": manifest_path, "runs": runs},
     )
 
 

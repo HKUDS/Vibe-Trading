@@ -35,6 +35,7 @@ are skipped rather than guessed at.
 from __future__ import annotations
 
 import csv
+import json
 import logging
 import math
 from collections.abc import Sequence
@@ -298,3 +299,101 @@ def read_equity_series(
         values[2] for _, values in ordered if values[2] is not None and values[2] > 0
     ]
     return dates, equities, benchmarks, exposures
+
+
+# ---------------------------------------------------------------------------
+# Hard-gate readers (Phase 2, #969): the backtest-diagnose hookup. Each
+# reader degrades to None on unusable input so the gate fails CLOSED — an
+# unverifiable run is never admitted as evidence.
+# ---------------------------------------------------------------------------
+
+
+def read_run_status(run_dir: str | Path) -> str | None:
+    """Run status from ``state.json``; ``None`` when missing or unreadable.
+
+    Runs carry no exit code in ``run_card.json``; the runtime writes
+    ``state.json`` (``{"status": "success"|"failed"|"cancelled", ...}``).
+    A missing state.json yields ``None`` — the ingestion gate treats that as
+    a failure, fail-closed.
+    """
+    path = Path(run_dir) / "state.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    status = payload.get("status")
+    if not isinstance(status, str) or not status.strip():
+        return None
+    return status.strip()
+
+
+def read_metrics_trade_count(run_dir: str | Path) -> int | None:
+    """``trade_count`` from the ``artifacts/metrics.csv`` header row.
+
+    The engine writes metrics.csv as one header row of metric names plus one
+    value row. Returns ``None`` when the file is missing, has no value row,
+    lacks a ``trade_count`` column, or the value is not a finite number —
+    the ingestion gate treats all of these as zero trades, fail-closed.
+    """
+    path = Path(run_dir) / "artifacts" / "metrics.csv"
+    try:
+        with path.open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.reader(handle)
+            header = next(reader, None)
+            if header is None:
+                return None
+            normalized = [name.strip().lower() for name in header]
+            if "trade_count" not in normalized:
+                return None
+            column = normalized.index("trade_count")
+            value_row = next(reader, None)
+            if value_row is None or column >= len(value_row):
+                return None
+            value = parse_finite_float(value_row[column])
+            if value is None:
+                return None
+            return int(value)
+    except _UNREADABLE_ERRORS as exc:
+        logger.warning(
+            "metrics.csv at %s is unreadable (%s); treated as unusable", path, exc
+        )
+        return None
+
+
+def equity_has_non_finite(run_dir: str | Path) -> bool | None:
+    """Scan ``artifacts/equity.csv`` equity column for NaN/Inf values.
+
+    Returns ``True`` when any data row's equity cell is missing, malformed,
+    or non-finite; ``False`` when every row carries a finite equity value.
+    Returns ``None`` when the verdict itself is unverifiable — file missing
+    or unreadable, no equity column, or no data rows — which the ingestion
+    gate treats as ``hard-gate:equity-empty`` (fail-closed).
+
+    Unlike :func:`read_equity_series`, which skips unusable rows, this
+    reader refuses to look past them: a NaN mid-curve means the equity
+    series is structurally broken and no partial-curve evidence may be
+    computed from it (Phase 1 silent-skip latent, #969).
+    """
+    path = Path(run_dir) / "artifacts" / "equity.csv"
+    try:
+        with path.open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = reader.fieldnames or []
+            equity_column = _find_column(fieldnames, EQUITY_COLUMN_ALIASES)
+            if equity_column is None:
+                return None
+            saw_row = False
+            for record in reader:
+                saw_row = True
+                if parse_finite_float(record.get(equity_column)) is None:
+                    return True
+            if not saw_row:
+                return None
+            return False
+    except _UNREADABLE_ERRORS as exc:
+        logger.warning(
+            "equity.csv at %s is unreadable (%s); treated as unusable", path, exc
+        )
+        return None

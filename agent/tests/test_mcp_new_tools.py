@@ -30,11 +30,13 @@ MIRRORED_TOOL_NAMES = (
     "research_papers",
 )
 
-# Tools that mutate state (is_readonly is not True on the agent side) and were
-# ALREADY exposed on the MCP surface before the institutional-research tools
-# were added. They are sandbox/session writes — a backtest run, a session file
-# write, a swarm launch, research-goal bookkeeping, and selecting which broker
-# profile subsequent READS use — not broker order flow.
+# Tools that mutate state (is_readonly is not True on the agent side) and are
+# deliberately exposed on the MCP surface. They are sandbox/session writes — a
+# backtest run, a session file write, a swarm launch, research-goal
+# bookkeeping, selecting which broker profile subsequent READS use, and
+# refresh_strategy_evidence (Phase 2, plan D13: rebuilds ONLY the disposable
+# facade-owned evidence cache from local run artifacts — never Alpha Zoo/SDM
+# sources of truth, no network, no credentials) — not broker order flow.
 #
 # This snapshot is the regression gate: adding an MCP tool that mutates
 # anything outside this list must fail the suite loudly.
@@ -42,6 +44,7 @@ KNOWN_MUTATING_MCP_TOOLS = frozenset(
     {
         "add_goal_evidence",
         "backtest",
+        "refresh_strategy_evidence",
         "run_swarm",
         "start_research_goal",
         "trading_select_connection",
@@ -97,9 +100,9 @@ def test_mcp_tool_count_covers_the_mirrored_tools() -> None:
     """The MCP surface must not shrink below the documented 59 tools."""
     tools = _mcp_tools()
 
-    assert len(tools) >= 59, (
-        f"Expected at least 59 MCP tools (55 pre-existing + 4 mirrored), found {len(tools)}."
-    )
+    assert (
+        len(tools) >= 59
+    ), f"Expected at least 59 MCP tools (55 pre-existing + 4 mirrored), found {len(tools)}."
 
 
 def test_mirrored_tool_names_match_the_agent_side_registry() -> None:
@@ -114,9 +117,9 @@ def test_mirrored_tool_names_match_the_agent_side_registry() -> None:
     registry = build_registry()
 
     for name in MIRRORED_TOOL_NAMES:
-        assert registry.get(name) is not None, (
-            f"{name} is exposed via MCP but absent from the agent registry"
-        )
+        assert (
+            registry.get(name) is not None
+        ), f"{name} is exposed via MCP but absent from the agent registry"
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +184,9 @@ def test_order_placing_tools_are_never_exposed_via_mcp() -> None:
     order_tools = {TradingPlaceOrderTool.name, TradingCancelOrderTool.name}
 
     leaked = order_tools & registered
-    assert not leaked, f"Order-placing tools leaked onto the MCP surface: {sorted(leaked)}"
+    assert (
+        not leaked
+    ), f"Order-placing tools leaked onto the MCP surface: {sorted(leaked)}"
 
 
 def test_no_unexpected_mutating_tool_is_exposed_via_mcp() -> None:
@@ -211,7 +216,9 @@ def test_no_unexpected_mutating_tool_is_exposed_via_mcp() -> None:
 def test_every_mirrored_tool_is_readonly() -> None:
     """The tools added through the mirroring path are all read-only."""
     for name, cls in _tool_classes().items():
-        assert cls.is_readonly is True, f"{name} is not read-only and must not be mirrored"
+        assert (
+            cls.is_readonly is True
+        ), f"{name} is not read-only and must not be mirrored"
 
 
 def test_register_mirrored_tool_refuses_a_non_readonly_class(caplog) -> None:
@@ -336,7 +343,10 @@ def test_one_broken_tool_module_costs_only_its_own_tool(monkeypatch, caplog) -> 
 def test_mirrored_call_params_filter() -> None:
     """The parameter filter keeps declared, non-null arguments only."""
     mod = _import_mcp_server()
-    schema = {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}}}
+    schema = {
+        "type": "object",
+        "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+    }
 
     assert mod._mirrored_call_params(schema, {"a": "x", "b": 0, "c": 1, "d": None}) == {
         "a": "x",

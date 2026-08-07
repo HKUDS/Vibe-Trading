@@ -267,6 +267,52 @@ class EvidenceStore:
                 count += 1
         return count
 
+    def replace_rows(self, rows: Sequence[EvidenceRow]) -> int:
+        """Atomically replace ALL evidence rows with ``rows``.
+
+        DELETE-all + INSERT-all inside ONE ``_connect()`` context — a single
+        transaction, so a failure anywhere leaves the previous contents
+        intact (rollback) instead of the clear-then-upsert window where a
+        crash could leave the store empty (plan D5). Per-row validation is
+        identical to :meth:`upsert_rows` and runs before the DELETE, so an
+        invalid row set never touches the table. Returns rows written.
+
+        Raises:
+            ValueError: When any row carries a NaN/Inf numeric field.
+        """
+        materialized = list(rows)
+        for row in materialized:
+            _validate_row_for_write(row)
+        count = 0
+        with self._connect() as conn:
+            conn.execute(f"DELETE FROM {self.TABLE}")
+            for row in materialized:
+                conn.execute(
+                    _INSERT_SQL,
+                    (
+                        row.strategy_id,
+                        row.regime,
+                        row.trades_in_regime,
+                        row.position_size,
+                        row.return_in_regime,
+                        row.benchmark_in_regime,
+                        row.excess_in_regime,
+                        row.sharpe_in_regime,
+                        row.max_drawdown_in_regime,
+                        json.dumps(list(row.date_ranges), ensure_ascii=False),
+                        row.breakeven_fee_bps,
+                        1 if row.cost_sensitive else 0,
+                        row.evidence_quality,
+                        json.dumps(list(row.warnings), ensure_ascii=False),
+                        row.last_verified,
+                        row.evidence_stage,
+                        row.provenance,
+                        row.regime_definition,
+                    ),
+                )
+                count += 1
+        return count
+
     def clear(self) -> None:
         """Delete every evidence row (used by harness rebuilds)."""
         with self._connect() as conn:

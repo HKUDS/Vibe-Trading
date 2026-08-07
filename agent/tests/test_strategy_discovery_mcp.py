@@ -1,10 +1,11 @@
 """Frozen-contract tests for Strategy Discovery tools over MCP — issue #969.
 
 AC1 (no phantom tools): ``list_strategies`` / ``query_strategies`` /
-``get_strategy_evidence`` must be registered on the FastMCP server and each
-wrapper must delegate to ``registry.execute(<own name>, <args>)`` — never the
-generic "Tool not found" path when the facade layer can answer, and never a
-crash when the registry is missing or broken (actionable JSON instead).
+``get_strategy_evidence`` / ``refresh_strategy_evidence`` must be registered
+on the FastMCP server and each wrapper must delegate to
+``registry.execute(<own name>, <args>)`` — never the generic "Tool not
+found" path when the facade layer can answer, and never a crash when the
+registry is missing or broken (actionable JSON instead).
 
 Follows the ``test_qveris_mcp.py`` fixture pattern: a fresh/monkeypatched
 ``mcp_server._registry`` per test. No network: delegation is verified against
@@ -21,7 +22,12 @@ import pytest
 import mcp_server
 from src.agent.tools import ToolRegistry
 
-SD_TOOLS = ("list_strategies", "query_strategies", "get_strategy_evidence")
+SD_TOOLS = (
+    "list_strategies",
+    "query_strategies",
+    "get_strategy_evidence",
+    "refresh_strategy_evidence",
+)
 
 
 def _unwrapped(name: str):

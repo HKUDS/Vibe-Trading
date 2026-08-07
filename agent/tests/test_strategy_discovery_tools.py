@@ -1,10 +1,13 @@
 """Frozen-contract tests for ``src.tools.strategy_discovery_tool`` — issue #969.
 
-AC1 (tools callable at runtime): the module must expose exactly three
+AC1 (tools callable at runtime): the module must expose exactly four
 ``BaseTool`` classes whose ``name`` attributes are ``list_strategies`` /
-``query_strategies`` / ``get_strategy_evidence``, all read-only, returning
-strict-JSON envelopes with ``status`` ok/error and never raising on invalid
-parameter types.
+``query_strategies`` / ``get_strategy_evidence`` /
+``refresh_strategy_evidence``. The three query tools are read-only; the
+refresh tool is the single WRITE tool (``is_readonly=False``, scope limited
+to the disposable evidence cache — Phase 2, plan D13). All return strict-JSON
+envelopes with ``status`` ok/error and never raise on invalid parameter
+types.
 
 The sibling-built ``StrategyDiscoveryFacade`` construction is intercepted at
 module level (patching ``sdt.StrategyDiscoveryFacade``) so a ``FakeFacade``
@@ -32,7 +35,9 @@ requires_tools = pytest.mark.skipif(
     reason="waiting on sibling B: src.tools.strategy_discovery_tool not landed yet (issue #969)",
 )
 
-EXPECTED_NAMES = {"list_strategies", "query_strategies", "get_strategy_evidence"}
+READ_TOOL_NAMES = {"list_strategies", "query_strategies", "get_strategy_evidence"}
+WRITE_TOOL_NAME = "refresh_strategy_evidence"
+EXPECTED_NAMES = READ_TOOL_NAMES | {WRITE_TOOL_NAME}
 
 
 def _strict_json_loads(text: str) -> dict:
@@ -109,8 +114,8 @@ def _discover_tool_classes():
 
 def _instantiate_tools() -> dict:
     classes = _discover_tool_classes()
-    assert len(classes) == 3, (
-        f"expected exactly 3 BaseTool classes in strategy_discovery_tool, found "
+    assert len(classes) == 4, (
+        f"expected exactly 4 BaseTool classes in strategy_discovery_tool, found "
         f"{[c.__name__ for c in classes]}"
     )
     tools = {cls().name: cls() for cls in classes}
@@ -122,15 +127,36 @@ def _instantiate_tools() -> dict:
 
 @requires_tools
 class TestToolClasses:
-    def test_three_tools_with_exact_names_all_read_only(self, fake_facade) -> None:
+    def test_query_tools_with_exact_names_are_read_only(self, fake_facade) -> None:
         tools = _instantiate_tools()
-        for name in EXPECTED_NAMES:
+        for name in READ_TOOL_NAMES:
             tool = tools[name]
             assert isinstance(tool, BaseTool)
             assert (
                 tool.parameters
             ), f"{name} must declare a JSON-schema parameters block"
             assert tool.is_readonly is True, f"{name} must be read-only"
+
+    def test_refresh_tool_is_the_single_write_tool(self, fake_facade) -> None:
+        # Phase 2 (plan D13): refresh_strategy_evidence is a WRITE tool, but
+        # its scope is the disposable evidence cache only — it rebuilds that
+        # cache from run artifacts and never touches Alpha Zoo/SDM sources of
+        # truth. It must be the ONLY non-read-only tool in the module.
+        tools = _instantiate_tools()
+        tool = tools[WRITE_TOOL_NAME]
+        assert isinstance(tool, BaseTool)
+        assert tool.parameters, "refresh tool must declare a parameters block"
+        assert tool.is_readonly is False, (
+            "refresh_strategy_evidence writes the disposable evidence cache "
+            "and must not be marked read-only"
+        )
+        assert tool.repeatable is True, "the cache rebuild is safely repeatable"
+        non_readonly = [
+            name for name, instance in tools.items() if instance.is_readonly is False
+        ]
+        assert non_readonly == [
+            WRITE_TOOL_NAME
+        ], f"only {WRITE_TOOL_NAME} may be non-read-only, got {non_readonly}"
 
 
 @requires_tools

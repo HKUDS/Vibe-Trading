@@ -20,6 +20,8 @@ unknown-regime error carrying the valid regime list, honest empty evidence
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 try:
@@ -38,6 +40,28 @@ requires_facade = pytest.mark.skipif(
     not FACADE_AVAILABLE,
     reason="waiting on sibling A: src.strategy_discovery facade/models/evidence_store not landed yet (issue #969)",
 )
+
+#: Fixed clock for queries over the default ``_row`` fixtures (window end
+#: 2022-12-31): keeps those rows fresh so the Phase 1 gate tests stay
+#: deterministic — decay is computed at read time (plan D1/D2), so these
+#: tests inject the clock instead of reading the wall clock.
+FRESH_TODAY = "2023-02-01"
+
+#: Fixed clock for the borderline fixtures: fresh for the edge row (window
+#: end 2026-02-28) and aging-but-not-stale for the solid row (window end
+#: 2024-12-31, age 152d at this date).
+BORDERLINE_TODAY = "2025-06-01"
+
+#: Fixed clock for the Phase 2 decay/lifecycle fixtures.
+QUERY_TODAY = "2026-08-06"
+QUERY_TODAY_DATE = date(2026, 8, 6)
+
+#: Window ends for the decay fixtures (month-end anchored), all relative to
+#: QUERY_TODAY_DATE: stale (2022-12-31), aging (2026-02-28), fresh
+#: (2026-06-30).
+STALE_RANGES = ("2019-01 to 2022-12",)
+AGING_RANGES = ("2020-01 to 2026-02",)
+FRESH_RANGES = ("2020-01 to 2026-06",)
 
 EVIDENCE_FIELDS = (
     "strategy_id",
@@ -117,6 +141,12 @@ class FakeSdmStore:
     def list_artifacts(self, **kwargs):
         self.list_calls.append(kwargs)
         return list(self._artifacts)
+
+    def get_artifact(self, artifact_id):
+        for artifact in self._artifacts:
+            if artifact.id == artifact_id:
+                return artifact
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -297,14 +327,23 @@ class TestQueryStrategies:
         facade, _ = self._seed_quality_ladder(tmp_path)
         # Default floor is "adequate"; "marginal" admits adequate+marginal;
         # "any" keeps every row including insufficient (QUALITY_ORDER based).
-        assert {i["regime"] for i in facade.query_strategies()["items"]} == {
-            "bear_market"
-        }
+        assert {
+            i["regime"] for i in facade.query_strategies(today=FRESH_TODAY)["items"]
+        } == {"bear_market"}
         assert {
             i["regime"]
-            for i in facade.query_strategies(min_evidence_quality="marginal")["items"]
+            for i in facade.query_strategies(
+                min_evidence_quality="marginal", today=FRESH_TODAY
+            )["items"]
         } == {"bear_market", "bull_market"}
-        assert len(facade.query_strategies(min_evidence_quality="any")["items"]) == 3
+        assert (
+            len(
+                facade.query_strategies(min_evidence_quality="any", today=FRESH_TODAY)[
+                    "items"
+                ]
+            )
+            == 3
+        )
 
     def test_min_trades_filter(self, tmp_path) -> None:
         facade, _ = _make_facade(
@@ -315,7 +354,9 @@ class TestQueryStrategies:
                 _row("alpha_zoo:a1", "bull_market", trades_in_regime=12),
             ),
         )
-        payload = facade.query_strategies(min_trades=12, min_evidence_quality="any")
+        payload = facade.query_strategies(
+            min_trades=12, min_evidence_quality="any", today=FRESH_TODAY
+        )
         assert {i["regime"] for i in payload["items"]} == {"bull_market"}
 
     def test_cost_feasible_drops_cost_sensitive_rows(self, tmp_path) -> None:
@@ -337,9 +378,9 @@ class TestQueryStrategies:
                 ),
             ),
         )
-        feasible = facade.query_strategies(cost_feasible=True)
+        feasible = facade.query_strategies(cost_feasible=True, today=FRESH_TODAY)
         assert {i["regime"] for i in feasible["items"]} == {"bull_market"}
-        everything = facade.query_strategies(cost_feasible=False)
+        everything = facade.query_strategies(cost_feasible=False, today=FRESH_TODAY)
         assert {i["regime"] for i in everything["items"]} == {
             "bear_market",
             "bull_market",
@@ -368,11 +409,11 @@ class TestQueryStrategies:
                 ),
             ),
         )
-        feasible = facade.query_strategies(cost_feasible=True)
+        feasible = facade.query_strategies(cost_feasible=True, today=FRESH_TODAY)
         assert {i["regime"] for i in feasible["items"]} == {
             "bull_market"
         }, "a null-breakeven row must not pass the default cost screen"
-        everything = facade.query_strategies(cost_feasible=False)
+        everything = facade.query_strategies(cost_feasible=False, today=FRESH_TODAY)
         items = {i["regime"]: i for i in everything["items"]}
         assert set(items) == {"bear_market", "bull_market"}
         assert items["bear_market"]["breakeven_fee_bps"] is None
@@ -391,7 +432,7 @@ class TestQueryStrategies:
                 _row("alpha_zoo:a1", "structural", sharpe_in_regime=0.9),
             ),
         )
-        payload = facade.query_strategies(min_sharpe=0.5)
+        payload = facade.query_strategies(min_sharpe=0.5, today=FRESH_TODAY)
         assert {i["regime"] for i in payload["items"]} == {"structural"}
 
     def test_unknown_regime_error_lists_valid_regimes(self, tmp_path) -> None:
@@ -405,10 +446,10 @@ class TestQueryStrategies:
             ), f"valid regime {regime} missing from error: {message!r}"
 
     def test_empty_store_returns_honest_note(self, tmp_path) -> None:
-        # AC8: an empty evidence store yields an ok envelope with a note that
-        # no evidence has been computed — never rows, never an error. The
-        # note must point at the evidence harness LIBRARY API (the only write
-        # path) and never suggest a user-runnable workflow/CLI exists.
+        # AC8 + D12: an empty evidence store yields an ok envelope with a note
+        # that no evidence has been computed — never rows, never an error. The
+        # note names `refresh_strategy_evidence` (agent/MCP tool + the
+        # `vibe-trading strategy-evidence refresh` CLI) as the population path.
         facade, _ = _make_facade(tmp_path, alpha_ids=("a1",))
         payload = facade.query_strategies(min_evidence_quality="any")
         assert payload["status"] == "ok"
@@ -418,13 +459,13 @@ class TestQueryStrategies:
             note
         ), "empty store query must carry a 'note' explaining no evidence exists"
         assert isinstance(note, str)
-        assert "rebuild_evidence" in note, (
-            "the note must name the harness library API as the only write "
+        assert "refresh_strategy_evidence" in note, (
+            "the note must name refresh_strategy_evidence as the population "
             f"path: {note!r}"
         )
         assert (
-            "vibe-trading" not in note
-        ), f"the note must not suggest a CLI command exists: {note!r}"
+            "vibe-trading strategy-evidence refresh" in note
+        ), f"the note must name the CLI population command: {note!r}"
 
     def test_item_shape_carries_every_evidence_field_plus_borderline(
         self, tmp_path
@@ -434,7 +475,7 @@ class TestQueryStrategies:
         facade, _ = _make_facade(
             tmp_path, alpha_ids=("a1",), rows=(_row("alpha_zoo:a1", "bear_market"),)
         )
-        payload = facade.query_strategies(regime="bear_market")
+        payload = facade.query_strategies(regime="bear_market", today=FRESH_TODAY)
         item = payload["items"][0]
         for field in EVIDENCE_FIELDS:
             assert field in item, f"query item missing EvidenceRow field: {field}"
@@ -455,7 +496,7 @@ class TestQueryStrategies:
                 _row("sdm:s1", "bull_market"),
             ),
         )
-        payload = facade.query_strategies(min_evidence_quality="any")
+        payload = facade.query_strategies(min_evidence_quality="any", today=FRESH_TODAY)
         assert payload["items"], "seeded store should produce items"
         for item in payload["items"]:
             stored = store.get_rows(
@@ -516,6 +557,7 @@ class TestBorderlineAdversarial:
             min_evidence_quality="adequate",
             min_trades=10,
             cost_feasible=True,
+            today=BORDERLINE_TODAY,
         )
         assert payload["status"] == "ok"
         items = {i["strategy_id"]: i for i in payload["items"]}
@@ -531,7 +573,7 @@ class TestBorderlineAdversarial:
 
     def test_comfortable_row_is_not_borderline(self, tmp_path) -> None:
         facade, _ = self._seed(tmp_path)
-        payload = facade.query_strategies(regime="bear_market")
+        payload = facade.query_strategies(regime="bear_market", today=BORDERLINE_TODAY)
         items = {i["strategy_id"]: i for i in payload["items"]}
         solid = items["alpha_zoo:solid"]
         assert solid["borderline"] is False
@@ -632,3 +674,500 @@ class TestDefaultAlphaRegistryResolution:
             alpha_registry=injected,
         )
         assert facade._get_alpha_registry() is injected
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (D1/D2/D9): read-time decay gate on query_strategies
+# ---------------------------------------------------------------------------
+
+
+def _decay_row(strategy_id, regime, ranges, **overrides):
+    """A row that passes every Phase 1 gate (non-borderline by construction):
+    20 trades, adequate quality, comfortable breakeven, long coverage — so
+    only the decay/lifecycle gates can move it. Overrides win."""
+    fields = dict(
+        trades_in_regime=20,
+        date_ranges=ranges,
+        breakeven_fee_bps=45.0,
+        cost_sensitive=False,
+        evidence_quality="adequate",
+        sharpe_in_regime=0.8,
+    )
+    fields.update(overrides)
+    return _row(strategy_id, regime, **fields)
+
+
+@requires_facade
+class TestDecayGate:
+    def test_stale_rows_excluded_by_default_with_count(self, tmp_path) -> None:
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("fresh1", "stale1"),
+            rows=(
+                _decay_row("alpha_zoo:fresh1", "bear_market", FRESH_RANGES),
+                _decay_row("alpha_zoo:stale1", "bear_market", STALE_RANGES),
+            ),
+        )
+        payload = facade.query_strategies(today=QUERY_TODAY)
+        assert payload["status"] == "ok"
+        assert [i["strategy_id"] for i in payload["items"]] == ["alpha_zoo:fresh1"]
+        assert payload["stale_excluded"] == 1
+        assert payload["lifecycle_excluded"] == 0
+
+    def test_include_stale_surfaces_stale_rows_with_warning(self, tmp_path) -> None:
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("fresh1", "stale1"),
+            rows=(
+                _decay_row("alpha_zoo:fresh1", "bear_market", FRESH_RANGES),
+                _decay_row("alpha_zoo:stale1", "bear_market", STALE_RANGES),
+            ),
+        )
+        payload = facade.query_strategies(include_stale=True, today=QUERY_TODAY)
+        items = {i["strategy_id"]: i for i in payload["items"]}
+        assert set(items) == {"alpha_zoo:fresh1", "alpha_zoo:stale1"}
+        assert payload["stale_excluded"] == 0
+
+        stale = items["alpha_zoo:stale1"]
+        assert stale["decay_status"] == sd_models.DECAY_STALE
+        expected_age = (QUERY_TODAY_DATE - date(2022, 12, 31)).days
+        assert stale["evidence_age_days"] == expected_age
+        assert any(
+            isinstance(w, str) and w.startswith("stale-evidence:")
+            for w in stale["warnings"]
+        ), f"stale-included row must carry the stale warning: {stale['warnings']!r}"
+
+        fresh = items["alpha_zoo:fresh1"]
+        assert fresh["decay_status"] == sd_models.DECAY_FRESH
+        assert fresh["evidence_age_days"] == (QUERY_TODAY_DATE - date(2026, 6, 30)).days
+        assert not any(
+            isinstance(w, str) and w.startswith(("stale-evidence:", "aged-evidence:"))
+            for w in fresh["warnings"]
+        )
+
+    def test_stale_included_rows_sort_after_non_stale(self, tmp_path) -> None:
+        # The stale row has MORE trades, so quality/trade-count ordering alone
+        # would rank it first — the stale-last sort key must override that.
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("fresh1", "stale1"),
+            rows=(
+                _decay_row(
+                    "alpha_zoo:fresh1", "bear_market", FRESH_RANGES, trades_in_regime=20
+                ),
+                _decay_row(
+                    "alpha_zoo:stale1", "bear_market", STALE_RANGES, trades_in_regime=50
+                ),
+            ),
+        )
+        payload = facade.query_strategies(include_stale=True, today=QUERY_TODAY)
+        assert [i["strategy_id"] for i in payload["items"]] == [
+            "alpha_zoo:fresh1",
+            "alpha_zoo:stale1",
+        ]
+
+    def test_aging_rows_flagged_but_not_excluded(self, tmp_path) -> None:
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("aging1", "fresh1"),
+            rows=(
+                _decay_row("alpha_zoo:aging1", "bear_market", AGING_RANGES),
+                _decay_row("alpha_zoo:fresh1", "bull_market", FRESH_RANGES),
+            ),
+        )
+        payload = facade.query_strategies(today=QUERY_TODAY)
+        items = {i["strategy_id"]: i for i in payload["items"]}
+        assert set(items) == {
+            "alpha_zoo:aging1",
+            "alpha_zoo:fresh1",
+        }, "aging rows are never excluded — they carry a warning instead"
+        assert payload["stale_excluded"] == 0
+
+        aging = items["alpha_zoo:aging1"]
+        assert aging["decay_status"] == sd_models.DECAY_AGING
+        assert aging["evidence_age_days"] == (QUERY_TODAY_DATE - date(2026, 2, 28)).days
+        assert any(
+            isinstance(w, str) and w.startswith("aged-evidence:")
+            for w in aging["warnings"]
+        ), f"aging row must carry the aged warning: {aging['warnings']!r}"
+
+    def test_staleness_days_reported_but_never_gating(self, tmp_path) -> None:
+        # D1: last_verified is report-only. This row was verified yesterday
+        # (staleness_days == 1) yet its window ended years ago — it is still
+        # stale, and the fresh row with an OLD last_verified is still fresh.
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("fresh1", "stale1"),
+            rows=(
+                _decay_row(
+                    "alpha_zoo:fresh1",
+                    "bear_market",
+                    FRESH_RANGES,
+                    last_verified="2026-01-01",
+                ),
+                _decay_row(
+                    "alpha_zoo:stale1",
+                    "bull_market",
+                    STALE_RANGES,
+                    last_verified="2026-08-05",
+                ),
+            ),
+        )
+        payload = facade.query_strategies(include_stale=True, today=QUERY_TODAY)
+        items = {i["strategy_id"]: i for i in payload["items"]}
+        assert (
+            items["alpha_zoo:fresh1"]["staleness_days"]
+            == (QUERY_TODAY_DATE - date(2026, 1, 1)).days
+        )
+        assert items["alpha_zoo:fresh1"]["decay_status"] == sd_models.DECAY_FRESH
+        assert items["alpha_zoo:stale1"]["staleness_days"] == 1
+        assert items["alpha_zoo:stale1"]["decay_status"] == sd_models.DECAY_STALE
+
+    def test_injected_today_changes_the_verdict_deterministically(
+        self, tmp_path
+    ) -> None:
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("a1",),
+            rows=(_decay_row("alpha_zoo:a1", "bear_market", STALE_RANGES),),
+        )
+        near = facade.query_strategies(today="2023-01-15")
+        assert [i["strategy_id"] for i in near["items"]] == ["alpha_zoo:a1"]
+        assert near["items"][0]["decay_status"] == sd_models.DECAY_FRESH
+        assert near["stale_excluded"] == 0
+
+        far = facade.query_strategies(today=QUERY_TODAY)
+        assert far["items"] == []
+        assert far["stale_excluded"] == 1
+
+    def test_include_stale_must_be_boolean(self, tmp_path) -> None:
+        facade, _ = _make_facade(tmp_path, alpha_ids=("a1",))
+        payload = facade.query_strategies(include_stale="yes")
+        assert payload["status"] == "error"
+        assert "include_stale" in payload.get("error", "")
+
+    def test_unparseable_today_is_error_envelope(self, tmp_path) -> None:
+        facade, _ = _make_facade(tmp_path, alpha_ids=("a1",))
+        for bad in ("not-a-date", "2026-13-45", 20260806):
+            payload = facade.query_strategies(today=bad)
+            assert payload["status"] == "error", f"today={bad!r} must be rejected"
+            assert payload.get("error")
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (D8/D9): SDM lifecycle gate
+# ---------------------------------------------------------------------------
+
+
+class ExplodingSdmStore:
+    """SDM store whose artifact lookup always fails — the lifecycle gate must
+    degrade (skip), never crash the query."""
+
+    def list_artifacts(self, **kwargs):
+        return []
+
+    def get_artifact(self, artifact_id):
+        raise RuntimeError("sdm store exploded")
+
+
+@requires_facade
+class TestLifecycleGate:
+    def _seed_sdm_row(self, tmp_path, status):
+        return _make_facade(
+            tmp_path,
+            alpha_ids=(),
+            artifacts=[FakeArtifact("s1", status=status)],
+            rows=(_decay_row("sdm:s1", "bear_market", FRESH_RANGES),),
+        )
+
+    def test_decayed_sdm_artifact_excluded_from_recommendations(self, tmp_path) -> None:
+        facade, _ = self._seed_sdm_row(tmp_path, "decayed")
+        payload = facade.query_strategies(today=QUERY_TODAY)
+        assert payload["items"] == []
+        assert payload["lifecycle_excluded"] == 1
+        assert payload["stale_excluded"] == 0
+        # include_stale does NOT rescue lifecycle-excluded rows.
+        still_out = facade.query_strategies(include_stale=True, today=QUERY_TODAY)
+        assert still_out["items"] == []
+        assert still_out["lifecycle_excluded"] == 1
+
+    def test_disabled_sdm_artifact_excluded(self, tmp_path) -> None:
+        facade, _ = self._seed_sdm_row(tmp_path, "disabled")
+        payload = facade.query_strategies(today=QUERY_TODAY)
+        assert payload["items"] == []
+        assert payload["lifecycle_excluded"] == 1
+
+    def test_active_sdm_artifact_not_excluded(self, tmp_path) -> None:
+        facade, _ = self._seed_sdm_row(tmp_path, "active")
+        payload = facade.query_strategies(today=QUERY_TODAY)
+        assert [i["strategy_id"] for i in payload["items"]] == ["sdm:s1"]
+        assert payload["lifecycle_excluded"] == 0
+
+    def test_sdm_lookup_failure_degrades_to_no_gate(self, tmp_path) -> None:
+        facade = StrategyDiscoveryFacade(
+            evidence_store=_make_store(tmp_path),
+            sdm_store=ExplodingSdmStore(),
+            alpha_registry=FakeAlphaRegistry([]),
+        )
+        facade._get_evidence_store().upsert_rows(
+            [_decay_row("sdm:s1", "bear_market", FRESH_RANGES)]
+        )
+        payload = facade.query_strategies(today=QUERY_TODAY)
+        assert payload["status"] == "ok", "lookup failure must never crash a query"
+        assert [i["strategy_id"] for i in payload["items"]] == ["sdm:s1"]
+        assert payload["lifecycle_excluded"] == 0
+
+    def test_unknown_sdm_artifact_degrades_to_no_gate(self, tmp_path) -> None:
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=(),
+            artifacts=[FakeArtifact("other", status="decayed")],
+            rows=(_decay_row("sdm:s1", "bear_market", FRESH_RANGES),),
+        )
+        payload = facade.query_strategies(today=QUERY_TODAY)
+        assert [i["strategy_id"] for i in payload["items"]] == ["sdm:s1"]
+        assert payload["lifecycle_excluded"] == 0
+
+    def test_stale_and_lifecycle_counts_together(self, tmp_path) -> None:
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("fresh1", "stale1"),
+            artifacts=[FakeArtifact("s1", status="decayed")],
+            rows=(
+                _decay_row("alpha_zoo:fresh1", "bear_market", FRESH_RANGES),
+                _decay_row("alpha_zoo:stale1", "bull_market", STALE_RANGES),
+                _decay_row("sdm:s1", "structural", FRESH_RANGES),
+            ),
+        )
+        payload = facade.query_strategies(today=QUERY_TODAY)
+        assert [i["strategy_id"] for i in payload["items"]] == ["alpha_zoo:fresh1"]
+        assert payload["stale_excluded"] == 1
+        assert payload["lifecycle_excluded"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (D11): empty vs all-excluded notes
+# ---------------------------------------------------------------------------
+
+
+@requires_facade
+class TestAllExcludedNote:
+    def test_all_excluded_note_reports_gate_breakdown(self, tmp_path) -> None:
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("stale1", "low1"),
+            rows=(
+                _decay_row("alpha_zoo:stale1", "bear_market", STALE_RANGES),
+                _decay_row(
+                    "alpha_zoo:low1",
+                    "bull_market",
+                    FRESH_RANGES,
+                    evidence_quality="insufficient",
+                ),
+            ),
+        )
+        payload = facade.query_strategies(today=QUERY_TODAY)
+        assert payload["items"] == []
+        note = payload.get("note", "")
+        assert note, "non-empty-but-all-excluded must carry a breakdown note"
+        assert "1 below the quality/cost/trades/Sharpe floors" in note
+        assert "1 stale-excluded" in note
+        assert "0 lifecycle-excluded" in note
+
+    def test_all_excluded_note_differs_from_empty_note(self, tmp_path) -> None:
+        empty_facade, _ = _make_facade(tmp_path, alpha_ids=("a1",))
+        empty_note = empty_facade.query_strategies(today=QUERY_TODAY).get("note", "")
+
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("stale1",),
+            rows=(_decay_row("alpha_zoo:stale1", "bear_market", STALE_RANGES),),
+        )
+        excluded_note = facade.query_strategies(today=QUERY_TODAY).get("note", "")
+
+        assert empty_note and excluded_note
+        assert empty_note != excluded_note
+        assert "refresh_strategy_evidence" in empty_note
+        assert "excluded by gates" in excluded_note
+
+    def test_passing_query_carries_no_note(self, tmp_path) -> None:
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("fresh1",),
+            rows=(_decay_row("alpha_zoo:fresh1", "bear_market", FRESH_RANGES),),
+        )
+        payload = facade.query_strategies(today=QUERY_TODAY)
+        assert payload["items"]
+        assert "note" not in payload
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (D10): get_strategy_evidence inspection surface
+# ---------------------------------------------------------------------------
+
+
+@requires_facade
+class TestGetStrategyEvidenceDecay:
+    def test_rows_carry_decay_fields(self, tmp_path) -> None:
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("aging1",),
+            rows=(_decay_row("alpha_zoo:aging1", "bear_market", AGING_RANGES),),
+        )
+        payload = facade.get_strategy_evidence("alpha_zoo:aging1", today=QUERY_TODAY)
+        assert payload["found"] is True
+        row = payload["rows"][0]
+        assert row["decay_status"] == sd_models.DECAY_AGING
+        assert row["evidence_age_days"] == (QUERY_TODAY_DATE - date(2026, 2, 28)).days
+        assert row["staleness_days"] == (QUERY_TODAY_DATE - date(2026, 8, 1)).days
+        assert any(
+            isinstance(w, str) and w.startswith("aged-evidence:")
+            for w in row["warnings"]
+        )
+
+    def test_stale_rows_returned_unfiltered(self, tmp_path) -> None:
+        # D10: the inspection surface never filters — a stale row is returned
+        # with its stale warning, not dropped.
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("stale1",),
+            rows=(_decay_row("alpha_zoo:stale1", "bear_market", STALE_RANGES),),
+        )
+        payload = facade.get_strategy_evidence("alpha_zoo:stale1", today=QUERY_TODAY)
+        assert payload["found"] is True
+        assert len(payload["rows"]) == 1
+        row = payload["rows"][0]
+        assert row["decay_status"] == sd_models.DECAY_STALE
+        assert any(
+            isinstance(w, str) and w.startswith("stale-evidence:")
+            for w in row["warnings"]
+        )
+
+    def test_sdm_lifecycle_note_for_decayed_artifact(self, tmp_path) -> None:
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=(),
+            artifacts=[FakeArtifact("s1", status="decayed")],
+            rows=(_decay_row("sdm:s1", "bear_market", FRESH_RANGES),),
+        )
+        payload = facade.get_strategy_evidence("sdm:s1", today=QUERY_TODAY)
+        note = payload.get("lifecycle_note", "")
+        assert note.startswith("sdm-lifecycle:"), f"got {note!r}"
+        assert "'decayed'" in note
+        assert payload["rows"][0].get("lifecycle_note") == note
+
+    def test_alpha_rows_carry_no_lifecycle_note(self, tmp_path) -> None:
+        facade, _ = _make_facade(
+            tmp_path,
+            alpha_ids=("a1",),
+            rows=(_decay_row("alpha_zoo:a1", "bear_market", FRESH_RANGES),),
+        )
+        payload = facade.get_strategy_evidence("alpha_zoo:a1", today=QUERY_TODAY)
+        assert "lifecycle_note" not in payload
+        assert "lifecycle_note" not in payload["rows"][0]
+
+    def test_sdm_lookup_failure_omits_note_without_crash(self, tmp_path) -> None:
+        facade = StrategyDiscoveryFacade(
+            evidence_store=_make_store(tmp_path),
+            sdm_store=ExplodingSdmStore(),
+            alpha_registry=FakeAlphaRegistry([]),
+        )
+        facade._get_evidence_store().upsert_rows(
+            [_decay_row("sdm:s1", "bear_market", FRESH_RANGES)]
+        )
+        payload = facade.get_strategy_evidence("sdm:s1", today=QUERY_TODAY)
+        assert payload["status"] == "ok"
+        assert payload["found"] is True
+        assert "lifecycle_note" not in payload
+
+    def test_unparseable_today_is_error_envelope(self, tmp_path) -> None:
+        facade, _ = _make_facade(tmp_path, alpha_ids=("a1",))
+        payload = facade.get_strategy_evidence("alpha_zoo:a1", today="bogus")
+        assert payload["status"] == "error"
+        assert payload.get("error")
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 adversarial composition (sergio12S): just inside the staleness
+# boundary AND just inside the trades band at the same time
+# ---------------------------------------------------------------------------
+
+
+@requires_facade
+class TestDecayBorderlineComposition:
+    """One row, two threshold edges at once:
+
+    * trades_in_regime=11 — just inside the borderline trade band
+      (MIN_TRADES=10 <= 11 < 10+BORDERLINE_TRADE_BUFFER=15);
+    * window end 2026-01-31 with injected clocks 2026-07-29 (age 179, just
+      inside the stale boundary ⇒ aging) and 2026-07-30 (age exactly 180 ⇒
+      stale, the stricter side — fail-closed).
+    """
+
+    COMPOSITION_RANGES = ("2020-01 to 2026-01",)
+    INSIDE_TODAY = "2026-07-29"
+    BOUNDARY_TODAY = "2026-07-30"
+
+    def _seed(self, tmp_path):
+        return _make_facade(
+            tmp_path,
+            alpha_ids=("edge",),
+            rows=(
+                _row(
+                    "alpha_zoo:edge",
+                    "bear_market",
+                    trades_in_regime=11,
+                    date_ranges=self.COMPOSITION_RANGES,
+                    breakeven_fee_bps=45.0,
+                    cost_sensitive=False,
+                    evidence_quality="adequate",
+                    sharpe_in_regime=0.8,
+                ),
+            ),
+        )
+
+    def test_fixture_ages_are_exact(self) -> None:
+        end = date(2026, 1, 31)
+        assert (date(2026, 7, 29) - end).days == 179
+        assert (date(2026, 7, 30) - end).days == 180
+        assert sd_models.coverage_days_from_ranges(self.COMPOSITION_RANGES) >= (
+            sd_models.MIN_COVERAGE_DAYS + sd_models.BORDERLINE_COVERAGE_BUFFER_DAYS
+        ), "coverage must NOT be the borderline axis — trades must be"
+
+    def test_just_inside_boundary_is_aging_with_both_warnings(self, tmp_path) -> None:
+        facade, _ = self._seed(tmp_path)
+        payload = facade.query_strategies(today=self.INSIDE_TODAY)
+        assert payload["stale_excluded"] == 0
+        items = {i["strategy_id"]: i for i in payload["items"]}
+        assert "alpha_zoo:edge" in items, "age 179 is aging, not stale — keep it"
+        edge = items["alpha_zoo:edge"]
+        assert edge["decay_status"] == sd_models.DECAY_AGING
+        assert edge["evidence_age_days"] == 179
+        assert edge["borderline"] is True
+        prefixes = {
+            w.split(":", 1)[0] + ":" for w in edge["warnings"] if isinstance(w, str)
+        }
+        assert "aged-evidence:" in prefixes
+        assert "borderline-evidence:" in prefixes
+
+    def test_exact_boundary_is_stale_fail_closed(self, tmp_path) -> None:
+        facade, _ = self._seed(tmp_path)
+        payload = facade.query_strategies(today=self.BOUNDARY_TODAY)
+        assert payload["items"] == [], (
+            "age exactly 180 belongs to the STRICTER side — the row must be "
+            "excluded from default recommendations (fail-closed)"
+        )
+        assert payload["stale_excluded"] == 1
+
+        revealed = facade.query_strategies(
+            include_stale=True, today=self.BOUNDARY_TODAY
+        )
+        items = {i["strategy_id"]: i for i in revealed["items"]}
+        edge = items["alpha_zoo:edge"]
+        assert edge["decay_status"] == sd_models.DECAY_STALE
+        assert edge["evidence_age_days"] == 180
+        prefixes = {
+            w.split(":", 1)[0] + ":" for w in edge["warnings"] if isinstance(w, str)
+        }
+        assert "stale-evidence:" in prefixes
+        assert "borderline-evidence:" in prefixes

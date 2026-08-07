@@ -18,6 +18,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import math
+from datetime import date
 from typing import Any
 
 from src.strategy_discovery.evidence_store import EvidenceStore
@@ -25,12 +26,17 @@ from src.strategy_discovery.models import (
     BORDERLINE_BREAKEVEN_BPS,
     BORDERLINE_COVERAGE_BUFFER_DAYS,
     BORDERLINE_TRADE_BUFFER,
+    DECAY_STALE,
     MIN_COVERAGE_DAYS,
     MIN_TRADES,
     QUALITY_ORDER,
     REGIMES,
     StrategySummary,
+    classify_decay,
     coverage_days_from_ranges,
+    decay_warning,
+    evidence_age_days,
+    staleness_days,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,16 +54,26 @@ _BORDERLINE_WARNING = (
 )
 
 #: Note attached to query results when the evidence table is completely empty.
-#: Honest wording: there is NO user-runnable CLI/workflow that populates the
-#: store — rows land only via the evidence harness library API.
+#: Names the population path: the ``refresh_strategy_evidence`` tool (agent +
+#: MCP) and the ``vibe-trading strategy-evidence refresh`` CLI command, both
+#: of which drive the evidence harness over reproducible run artifacts.
 _EMPTY_EVIDENCE_NOTE = (
-    "No per-regime evidence computed yet. The evidence store is populated only "
-    "by the evidence harness library API "
-    "(src.strategy_discovery.evidence_harness.rebuild_evidence over "
-    "reproducible run artifacts); automated workflow wiring is still pending, "
-    "so until then rows come from harness runs executed by developers/"
-    "integrators. The facade refuses to assess regimes without evidence."
+    "No per-regime evidence computed yet. Populate the store with "
+    "`refresh_strategy_evidence` — exposed as an agent/MCP tool and as the "
+    "CLI command `vibe-trading strategy-evidence refresh --manifest <path>` — "
+    "which rebuilds evidence from reproducible backtest run artifacts "
+    "(library callers may drive "
+    "src.strategy_discovery.evidence_harness.rebuild_evidence directly). The "
+    "facade refuses to assess regimes without evidence."
 )
+
+#: SDM lifecycle states that exclude an ``sdm:*`` row from default
+#: recommendations regardless of evidence freshness (plan D8 lifecycle
+#: mirroring — artifact status only, never the DecayEvaluator FSM).
+_SDM_EXCLUDED_STATUSES = ("decayed", "disabled")
+
+#: Stable prefix for lifecycle exclusions surfaced on inspection rows.
+_SDM_LIFECYCLE_PREFIX = "sdm-lifecycle:"
 
 
 def _error(message: str) -> dict[str, Any]:
@@ -83,6 +99,37 @@ def _json_safe(value: Any) -> Any:
 def _is_int(value: Any) -> bool:
     """True for real integers only (bool is explicitly excluded)."""
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _parse_today(today: str | None) -> date:
+    """Resolve the injected clock: ISO ``today`` string or the wall clock.
+
+    Raises ``ValueError`` for a non-string or unparseable ``today`` so the
+    caller can answer with an error envelope instead of a wrong date.
+    """
+    if today is None:
+        return date.today()
+    if not isinstance(today, str):
+        raise ValueError(f"today must be an ISO date string or None, got {today!r}")
+    return date.fromisoformat(today.strip())
+
+
+def _decay_fields(row, today: date) -> dict[str, Any]:
+    """Read-time decay verdict for one evidence row (plan D1/D2).
+
+    Computed from the row's own ``date_ranges`` window end at query time —
+    never persisted. ``staleness_days`` (from ``last_verified``) is reported
+    alongside but NEVER gates: refreshing unchanged artifacts must not be
+    able to keep a row "fresh" forever.
+    """
+    age = evidence_age_days(row.date_ranges, today)
+    status = classify_decay(row.date_ranges, today)
+    return {
+        "decay_status": status,
+        "evidence_age_days": age,
+        "staleness_days": staleness_days(row.last_verified, today),
+        "_decay_warning": decay_warning(status, age),
+    }
 
 
 class StrategyDiscoveryFacade:
@@ -145,6 +192,42 @@ class StrategyDiscoveryFacade:
                 )
                 self._sdm_failed = True
         return self._sdm_store
+
+    def _sdm_artifact_status(self, artifact_id: str) -> str | None:
+        """Read-only SDM artifact status lookup for lifecycle mirroring.
+
+        Degrades gracefully (plan D8): a missing store, a missing
+        ``get_artifact`` surface, or any lookup failure returns ``None``
+        with a logged warning — the lifecycle gate then SKIPS that row
+        rather than crashing or fabricating a status.
+        """
+        store = self._get_sdm_store()
+        if store is None:
+            return None
+        getter = getattr(store, "get_artifact", None)
+        if not callable(getter):
+            logger.warning(
+                "SDM store exposes no get_artifact(); lifecycle gate skipped "
+                "for artifact %s",
+                artifact_id,
+            )
+            return None
+        try:
+            artifact = getter(artifact_id)
+        except Exception:  # noqa: BLE001 — degrade, never crash the facade
+            logger.warning(
+                "SDM artifact lookup failed for %s; lifecycle gate skipped",
+                artifact_id,
+                exc_info=True,
+            )
+            return None
+        if artifact is None:
+            return None
+        status = getattr(artifact, "status", None)
+        status = getattr(status, "value", status)
+        if isinstance(status, str) and status.strip():
+            return status.strip().lower()
+        return None
 
     def _get_alpha_registry(self) -> Any:
         """Return the Alpha Zoo registry, tolerating a failed zoo load.
@@ -339,8 +422,20 @@ class StrategyDiscoveryFacade:
         min_trades: int = 10,
         cost_feasible: bool = True,
         limit: int = 10,
+        include_stale: bool = False,
+        today: str | None = None,
     ) -> dict:
-        """Evidence-gated query: only rows backed by stored evidence qualify."""
+        """Evidence-gated query: only rows backed by stored evidence qualify.
+
+        Gate order (plan D9): quality floor → min_trades → cost_feasible
+        (fail-closed null) → min_sharpe → decay gate (stale rows excluded
+        unless ``include_stale=True``) → SDM lifecycle gate (``sdm:*`` rows
+        whose artifact status is decayed/disabled are ALWAYS excluded from
+        recommendations). Decay is computed at read time from each row's
+        ``date_ranges`` window end (``evidence_age_days`` drives;
+        ``last_verified`` / ``staleness_days`` are reported, never gating).
+        ``today`` (ISO string) injects the clock for deterministic tests.
+        """
         if regime is not None and regime not in REGIMES:
             return _error(
                 f"unknown regime {regime!r}; valid regimes: {', '.join(REGIMES)}"
@@ -360,6 +455,12 @@ class StrategyDiscoveryFacade:
             return _error("min_sharpe must be a finite number or None")
         if not _is_int(limit) or limit <= 0:
             return _error("limit must be a positive integer")
+        if not isinstance(include_stale, bool):
+            return _error("include_stale must be a boolean")
+        try:
+            today_date = _parse_today(today)
+        except ValueError as exc:
+            return _error(str(exc))
 
         try:
             store = self._get_evidence_store()
@@ -400,9 +501,39 @@ class StrategyDiscoveryFacade:
                     return False
                 return True
 
-            filtered = [row for row in rows if passes(row)]
+            below_floor = 0
+            decay_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+            survivors: list[Any] = []
+            for row in rows:
+                if not passes(row):
+                    below_floor += 1
+                    continue
+                survivors.append(row)
+
+            stale_excluded = 0
+            post_decay: list[Any] = []
+            for row in survivors:
+                decay = _decay_fields(row, today_date)
+                decay_by_key[(row.strategy_id, row.regime)] = decay
+                if decay["decay_status"] == DECAY_STALE and not include_stale:
+                    stale_excluded += 1
+                    continue
+                post_decay.append(row)
+
+            lifecycle_excluded = 0
+            filtered: list[Any] = []
+            for row in post_decay:
+                if row.strategy_id.startswith("sdm:"):
+                    status = self._sdm_artifact_status(row.strategy_id.split(":", 1)[1])
+                    if status in _SDM_EXCLUDED_STATUSES:
+                        lifecycle_excluded += 1
+                        continue
+                filtered.append(row)
+
             filtered.sort(
                 key=lambda row: (
+                    decay_by_key[(row.strategy_id, row.regime)]["decay_status"]
+                    == DECAY_STALE,
                     -QUALITY_ORDER.get(row.evidence_quality, 0),
                     -row.trades_in_regime,
                     row.strategy_id,
@@ -413,6 +544,12 @@ class StrategyDiscoveryFacade:
             items: list[dict[str, Any]] = []
             for row in filtered[:limit]:
                 data = dataclasses.asdict(row)
+                decay = decay_by_key[(row.strategy_id, row.regime)]
+                data["decay_status"] = decay["decay_status"]
+                data["evidence_age_days"] = decay["evidence_age_days"]
+                data["staleness_days"] = decay["staleness_days"]
+                if decay["_decay_warning"] is not None:
+                    data["warnings"] = [*data["warnings"], decay["_decay_warning"]]
                 borderline = self._is_borderline(row)
                 data["borderline"] = borderline
                 if borderline:
@@ -429,26 +566,58 @@ class StrategyDiscoveryFacade:
                     "min_evidence_quality": min_evidence_quality,
                     "min_trades": min_trades,
                     "cost_feasible": cost_feasible,
+                    "include_stale": include_stale,
                 },
+                "stale_excluded": stale_excluded,
+                "lifecycle_excluded": lifecycle_excluded,
                 "items": items,
             }
             if table_empty:
                 envelope["note"] = _EMPTY_EVIDENCE_NOTE
+            elif rows and not filtered:
+                # D11: non-empty table, zero rows pass — say WHY, so the
+                # agent can tell users what to fix instead of staring at an
+                # unexplained empty list.
+                envelope["note"] = (
+                    "Evidence exists but every row was excluded by gates: "
+                    f"{below_floor} below the quality/cost/trades/Sharpe "
+                    f"floors, {stale_excluded} stale-excluded, "
+                    f"{lifecycle_excluded} lifecycle-excluded. Use "
+                    "include_stale=true to inspect stale rows; "
+                    "lifecycle-excluded rows stay out of recommendations "
+                    "(inspect them with get_strategy_evidence). Re-backtest "
+                    "over a recent window and run refresh_strategy_evidence "
+                    "to reinstate stale evidence."
+                )
             return _json_safe(envelope)
         except Exception:  # noqa: BLE001 — never raise from the public facade
             logger.exception("query_strategies failed")
             return _error("query_strategies failed internally; see logs")
 
     def get_strategy_evidence(
-        self, strategy_id: str, regime: str | None = None
+        self, strategy_id: str, regime: str | None = None, today: str | None = None
     ) -> dict:
-        """Full per-regime evidence breakdown for one strategy."""
+        """Full per-regime evidence breakdown for one strategy.
+
+        Inspection surface (plan D10): returns ALL rows unfiltered — decay
+        and lifecycle state are surfaced as fields/notes, never used to drop
+        rows here. Each row gains the read-time decay fields
+        (``decay_status`` / ``evidence_age_days`` / ``staleness_days``) plus
+        the decay warning; ``sdm:*`` strategies additionally carry a
+        ``lifecycle_note`` when the SDM artifact status is decayed/disabled
+        (lookup failure degrades to omitting the note, never a crash).
+        ``today`` (ISO string) injects the clock for deterministic tests.
+        """
         if not isinstance(strategy_id, str) or not strategy_id.strip():
             return _error("strategy_id is required (non-empty string)")
         if regime is not None and regime not in REGIMES:
             return _error(
                 f"unknown regime {regime!r}; valid regimes: {', '.join(REGIMES)}"
             )
+        try:
+            today_date = _parse_today(today)
+        except ValueError as exc:
+            return _error(str(exc))
 
         try:
             rows = []
@@ -464,19 +633,45 @@ class StrategyDiscoveryFacade:
                     )
                     rows = []
 
+            lifecycle_note: str | None = None
+            if strategy_id.startswith("sdm:"):
+                status = self._sdm_artifact_status(strategy_id.split(":", 1)[1])
+                if status in _SDM_EXCLUDED_STATUSES:
+                    lifecycle_note = (
+                        f"{_SDM_LIFECYCLE_PREFIX} SDM artifact status is "
+                        f"'{status}' — excluded from default recommendations "
+                        "regardless of evidence freshness"
+                    )
+
+            rendered: list[dict[str, Any]] = []
+            for row in rows:
+                data = dataclasses.asdict(row)
+                decay = _decay_fields(row, today_date)
+                data["decay_status"] = decay["decay_status"]
+                data["evidence_age_days"] = decay["evidence_age_days"]
+                data["staleness_days"] = decay["staleness_days"]
+                if decay["_decay_warning"] is not None:
+                    data["warnings"] = [*data["warnings"], decay["_decay_warning"]]
+                if lifecycle_note is not None:
+                    data["lifecycle_note"] = lifecycle_note
+                rendered.append(data)
+
             envelope: dict[str, Any] = {
                 "status": "ok",
                 "strategy_id": strategy_id,
                 "regime": regime,
                 "found": bool(rows),
-                "rows": [dataclasses.asdict(row) for row in rows],
+                "rows": rendered,
             }
+            if lifecycle_note is not None:
+                envelope["lifecycle_note"] = lifecycle_note
             if not rows:
                 scope = f" in regime {regime!r}" if regime is not None else ""
                 envelope["note"] = (
                     f"No evidence rows found for strategy_id {strategy_id!r}{scope}. "
-                    "Evidence rows are written only by the evidence harness "
-                    "library API over reproducible run artifacts."
+                    "Evidence rows are written by `refresh_strategy_evidence` "
+                    "(agent/MCP tool, or the CLI `vibe-trading strategy-evidence "
+                    "refresh`) over reproducible run artifacts."
                 )
             return _json_safe(envelope)
         except Exception:  # noqa: BLE001 — never raise from the public facade

@@ -12,6 +12,8 @@ Registries here are real ``ToolRegistry`` instances populated with minimal
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 
 import pytest
 
@@ -108,3 +110,54 @@ class TestRoutingBlock:
         # The contract pins "never raises on garbage registry (object())".
         assert sd_guard.routing_block(object()) == ""
         assert sd_guard.routing_block(None) == ""
+
+
+SKILL_MD_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "src"
+    / "skills"
+    / "strategy-discovery"
+    / "SKILL.md"
+)
+
+EXPECTED_FOUR_TOOLS = EXPECTED_TOOLS + ("refresh_strategy_evidence",)
+
+# Underscore-form identifiers only. Tool names on this surface are always
+# snake_case, so CLI invocations, file names, env vars, and hyphenated or
+# colon-suffixed skip tokens never enter the candidate set. Parameter names
+# (``strategy_id``, ``manifest_path``, ...) do pass the filter — that is
+# harmless, because the assertion is on the intersection with registered tool
+# names, and parameters are not registered tools.
+_TOOL_TOKEN_RE = re.compile(r"`([a-z]+(?:_[a-z0-9]+)+)`")
+
+
+@requires_guard
+class TestSkillMdNamesOnlyRegisteredTools:
+    """D14 / #894 phantom-guard extension.
+
+    The documented periodic recipe names tools the agent must actually be able
+    to call. Intersecting the skill's backticked snake_case tokens with the
+    real auto-discovered registry means a rename on either side — the doc or
+    the tool code — fails CI, instead of resurfacing #894 as a skill that
+    advertises a tool the registry never registered.
+    """
+
+    def test_intersection_is_exactly_the_four_tools(self) -> None:
+        from src.tools import build_registry
+
+        text = SKILL_MD_PATH.read_text(encoding="utf-8")
+        tokens = set(_TOOL_TOKEN_RE.findall(text))
+        registered = set(build_registry().tool_names)
+
+        intersection = tokens & registered
+        assert intersection == set(EXPECTED_FOUR_TOOLS), (
+            "strategy-discovery SKILL.md and the tool registry disagree: "
+            f"intersection={sorted(intersection)}, "
+            f"expected={sorted(EXPECTED_FOUR_TOOLS)}"
+        )
+
+    def test_routing_block_names_the_refresh_tool(self) -> None:
+        # The routing block advertises the refresh step unconditionally once
+        # the three read tools register (its presence is guarded by the
+        # SKILL.md intersection test above, not by itself).
+        assert "refresh_strategy_evidence" in sd_guard.ROUTING_BLOCK

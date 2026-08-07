@@ -27,6 +27,7 @@ ROUTING_BLOCK: str = """**Strategy Discovery** — user asks what strategies exi
 1. `list_strategies()` — unified catalog across Alpha Zoo + SDM store
 2. `query_strategies(regime=...)` — evidence-gated per-regime results; report trades, date coverage, breakeven and warnings verbatim; NEVER present insufficient or marginal evidence as a recommendation
 3. `get_strategy_evidence(strategy_id=...)` — full per-regime evidence breakdown
+4. `refresh_strategy_evidence(manifest_path=...)` — after re-backtesting a strategy, rebuild the disposable evidence cache from the new run artifacts so its evidence rows repopulate
 Never recommend a strategy whose supporting regime evidence is missing or insufficient."""
 
 
