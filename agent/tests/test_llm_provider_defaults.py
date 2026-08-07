@@ -15,6 +15,7 @@ from src.providers.capabilities import (
 
 EXPECTED_PROVIDER_DEFAULTS = {
     "openrouter": "deepseek/deepseek-v4-pro",
+    "orcarouter": "deepseek/deepseek-v4-pro",
     "requesty": "openai/gpt-4o-mini",
     "openai": "gpt-5.5",
     "anthropic": "claude-sonnet-4-6",
@@ -102,6 +103,23 @@ def test_interactive_onboard_suggests_current_primary_models() -> None:
     assert onboard_defaults["siliconflow-cn"] == "deepseek-ai/DeepSeek-V3.1-Terminus"
     assert onboard_defaults["siliconflow-global"] == "deepseek-ai/DeepSeek-V3.1-Terminus"
     assert onboard_defaults["nvidia"] == "nvidia/nemotron-3-ultra-550b-a55b"
+
+
+def test_orcarouter_is_available_in_both_cli_onboarding_surfaces() -> None:
+    onboard = next(provider for provider in ONBOARD_PROVIDERS if provider.key == "orcarouter")
+    legacy = next(item for item in cli._PROVIDER_CHOICES if item["provider"] == "orcarouter")
+
+    assert onboard.key_env == legacy["key_env"] == "ORCAROUTER_API_KEY"
+    assert onboard.base_env == legacy["base_env"] == "ORCAROUTER_BASE_URL"
+    assert onboard.base_url == legacy["base_url"] == "https://api.orcarouter.ai/v1"
+    # OrcaRouter keys are `sk-orca-` prefixed; the shared `sk-` prefix used by
+    # OpenAI/DeepSeek would accept an OpenAI key pasted into this slot.
+    assert onboard.key_prefix == legacy["key_prefix"] == "sk-orca-"
+
+
+def test_orcarouter_default_base_url_is_reachable_from_provider_name_alone() -> None:
+    """Setting only LANGCHAIN_PROVIDER + key must still hit the right endpoint."""
+    assert _provider_default_base_urls()["orcarouter"] == "https://api.orcarouter.ai/v1"
 
 
 def test_nvidia_is_available_in_both_cli_onboarding_surfaces() -> None:

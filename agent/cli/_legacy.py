@@ -409,6 +409,7 @@ def _provider_key_env(provider: str | None) -> str | None:
     """Return the credential environment variable for a provider."""
     return {
         "openrouter": "OPENROUTER_API_KEY",
+        "orcarouter": "ORCAROUTER_API_KEY",
         "requesty": "REQUESTY_API_KEY",
         "openai": "OPENAI_API_KEY",
         "deepseek": "DEEPSEEK_API_KEY",
@@ -432,6 +433,7 @@ def _provider_base_env(provider: str | None) -> str | None:
     """Return the base URL environment variable for a provider."""
     return {
         "openrouter": "OPENROUTER_BASE_URL",
+        "orcarouter": "ORCAROUTER_BASE_URL",
         "requesty": "REQUESTY_BASE_URL",
         "openai": "OPENAI_BASE_URL",
         "openai-codex": "OPENAI_CODEX_BASE_URL",
@@ -5081,6 +5083,19 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "model": "openai-codex/gpt-5.4",
         "key_prefix": None,
         "key_placeholder": None,
+    },
+    # Appended rather than grouped with the other gateways on purpose: this
+    # menu is picked by number, so inserting mid-list would renumber every
+    # entry below it (and the pinned indices in tests/test_cli_init.py).
+    {
+        "label": "OrcaRouter (OpenAI-compatible gateway - multiple models)",
+        "provider": "orcarouter",
+        "key_env": "ORCAROUTER_API_KEY",
+        "base_env": "ORCAROUTER_BASE_URL",
+        "base_url": "https://api.orcarouter.ai/v1",
+        "model": "deepseek/deepseek-v4-pro",
+        "key_prefix": "sk-orca-",
+        "key_placeholder": "sk-orca-...",
     },
 ]
 

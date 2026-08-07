@@ -66,6 +66,25 @@ def test_provider_capabilities_are_provider_specific() -> None:
     assert openrouter.send_reasoning_content is False
 
 
+def test_orcarouter_captures_reasoning_without_the_relay_opt_in() -> None:
+    """OrcaRouter relays reasoning unprompted, so it takes no extra_body opt-in.
+
+    Verified live against the gateway: reasoning models return
+    ``reasoning_content`` on a plain request, while an ``extra_body.reasoning``
+    object is accepted with HTTP 200 yet has no effect (an Anthropic route
+    produced no reasoning, and an invalid effort value was not rejected).
+    Sending it would be dead weight that also hides typos.
+    """
+    orcarouter = get_provider_capabilities("orcarouter", "deepseek/deepseek-v4-pro")
+
+    assert orcarouter.name == "orcarouter"
+    assert orcarouter.api_key_env == "ORCAROUTER_API_KEY"
+    assert orcarouter.base_url_env == "ORCAROUTER_BASE_URL"
+    assert orcarouter.capture_reasoning is True
+    assert orcarouter.openrouter_reasoning_body is False
+    assert orcarouter.send_reasoning_content is False
+
+
 def test_requesty_capabilities_mirror_openrouter() -> None:
     """Requesty is an OpenAI-compatible gateway wired like OpenRouter."""
     requesty = get_provider_capabilities("requesty", "openai/gpt-4o-mini")

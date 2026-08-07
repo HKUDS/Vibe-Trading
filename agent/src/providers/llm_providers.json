@@ -9,6 +9,15 @@
     "api_key_required": true
   },
   {
+    "name": "orcarouter",
+    "label": "OrcaRouter",
+    "api_key_env": "ORCAROUTER_API_KEY",
+    "base_url_env": "ORCAROUTER_BASE_URL",
+    "default_model": "deepseek/deepseek-v4-pro",
+    "default_base_url": "https://api.orcarouter.ai/v1",
+    "api_key_required": true
+  },
+  {
     "name": "requesty",
     "label": "Requesty",
     "api_key_env": "REQUESTY_API_KEY",
