@@ -173,13 +173,23 @@ class TechnicalIndicatorTool(BaseTool):
             return json.dumps({"ok": False, "error": f"Failed to fetch data: {exc}"})
 
         df = data.get(symbol)
-        if df is None or df.empty:
+        if isinstance(df, dict):
+            # Some loaders return a dict-like per-symbol payload.
+            if not df:
+                return json.dumps({"ok": False, "error": f"No data returned for {symbol}"})
+        elif df is None or df.empty:
             return json.dumps({"ok": False, "error": f"No data returned for {symbol}"})
 
         close = df.get("close") if isinstance(df, pd.DataFrame) else None
         if close is None:
             # Some loaders return a dict-like structure; try common key names.
-            if hasattr(df, "to_dict"):
+            if isinstance(df, dict):
+                # Plain dict payload (e.g. a loader that returns records).
+                for key in ("close", "Close", "CLOSE", "adj_close"):
+                    if key in df:
+                        close = df[key]
+                        break
+            elif hasattr(df, "to_dict"):
                 d = df.to_dict() if callable(df.to_dict) else dict(df)
                 for key in ("close", "Close", "CLOSE", "adj_close"):
                     if key in d:

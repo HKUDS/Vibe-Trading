@@ -170,6 +170,26 @@ class TestTechnicalIndicatorToolIntegration:
         assert result["ok"] is True
         assert result["indicators"]["rsi_14"] is not None
 
+    def test_execute_dict_payload(self, monkeypatch, sample_close):
+        """Loader returns a plain dict per symbol — must not crash on .empty."""
+        payload = {
+            "AAPL": {
+                "close": sample_close.tolist(),
+                "open": [float(v * 0.99) for v in sample_close.tolist()],
+            }
+        }
+        monkeypatch.setattr(
+            "src.tools.technical_indicator_tool.fetch_market_data",
+            lambda **kw: payload,
+        )
+        tool = TechnicalIndicatorTool()
+        result = json.loads(tool.execute(symbol="AAPL"))
+        assert result["ok"] is True
+        assert result["symbol"] == "AAPL"
+        assert result["indicators"]["rsi_14"] is not None
+        assert result["indicators"]["macd"] is not None
+        assert result["latest_close"] == float(sample_close.iloc[-1])
+
     def test_execute_fetch_failure(self, monkeypatch):
         """Loader raises → error envelope."""
         monkeypatch.setattr(
