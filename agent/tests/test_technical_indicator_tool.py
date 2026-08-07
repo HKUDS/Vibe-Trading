@@ -220,3 +220,121 @@ class TestTechnicalIndicatorToolIntegration:
         assert result["indicators"]["bollinger"] is None
         # But SMA 20 should be null, SMA 50/200 null — only EMA 20 needs 20 bars, null too
         assert result["indicators"]["sma_20"] is None
+
+
+class TestLoaderPayloadShapes:
+    """Regression: #1002 — loader payloads arrive as list[dict], not DataFrame."""
+
+    def _records(self, n: int = 30) -> list[dict]:
+        """Simulate fetch_market_data's real return shape: list of OHLCV dicts."""
+        return [
+            {
+                "trade_date": pd.Timestamp("2026-01-01") + pd.Timedelta(days=i),
+                "open": float(100 + i),
+                "high": float(101 + i),
+                "low": float(99 + i),
+                "close": float(100 + i),
+                "volume": 1_000_000 + i,
+            }
+            for i in range(n)
+        ]
+
+    def test_list_of_dicts_success(self, monkeypatch):
+        """Real fetch_market_data payload (list[dict]) must not crash (#1002)."""
+        payload = {"MSFT": self._records()}
+        monkeypatch.setattr(
+            "src.tools.technical_indicator_tool.fetch_market_data",
+            lambda **kw: payload,
+        )
+        tool = TechnicalIndicatorTool()
+        result = json.loads(tool.execute(symbol="MSFT"))
+        assert result["ok"] is True
+        assert result["indicators"]["rsi_14"] is not None
+        assert result["latest_close"] == 129.0
+
+    def test_wrapped_capped_payload_success(self, monkeypatch):
+        """fetch_market_data wraps records under 'data' when truncation applies."""
+        payload = {
+            "MSFT": {
+                "rows": 42,
+                "returned": 30,
+                "truncated": True,
+                "policy": "every-14th-row",
+                "hint": "narrow the date range",
+                "data": self._records(),
+            }
+        }
+        monkeypatch.setattr(
+            "src.tools.technical_indicator_tool.fetch_market_data",
+            lambda **kw: payload,
+        )
+        tool = TechnicalIndicatorTool()
+        result = json.loads(tool.execute(symbol="MSFT"))
+        assert result["ok"] is True
+        assert result["indicators"]["rsi_14"] is not None
+        assert result["latest_close"] == 129.0
+
+    def test_list_of_dicts_uppercase_key(self, monkeypatch):
+        """Loader with Close key (case variant) still resolves."""
+        records = self._records()
+        records[0]["Close"] = records[0].pop("close")
+        for r in records[1:]:
+            r["Close"] = r.pop("close")
+        monkeypatch.setattr(
+            "src.tools.technical_indicator_tool.fetch_market_data",
+            lambda **kw: {"MSFT": records},
+        )
+        tool = TechnicalIndicatorTool()
+        result = json.loads(tool.execute(symbol="MSFT"))
+        assert result["ok"] is True
+        assert result["indicators"]["rsi_14"] is not None
+
+    def test_empty_list(self, monkeypatch):
+        """Empty list payload → clean error, not AttributeError."""
+        monkeypatch.setattr(
+            "src.tools.technical_indicator_tool.fetch_market_data",
+            lambda **kw: {"MSFT": []},
+        )
+        tool = TechnicalIndicatorTool()
+        result = json.loads(tool.execute(symbol="MSFT"))
+        assert result["ok"] is False
+
+    def test_list_missing_close(self, monkeypatch):
+        """Records without any close key → clean error."""
+        records = self._records()
+        for r in records:
+            r.pop("close")
+        monkeypatch.setattr(
+            "src.tools.technical_indicator_tool.fetch_market_data",
+            lambda **kw: {"MSFT": records},
+        )
+        tool = TechnicalIndicatorTool()
+        result = json.loads(tool.execute(symbol="MSFT"))
+        assert result["ok"] is False
+        assert "close" in result["error"].lower()
+
+    def test_dict_payload_success(self, monkeypatch):
+        """dict-like payload with 'close' key still works."""
+        monkeypatch.setattr(
+            "src.tools.technical_indicator_tool.fetch_market_data",
+            lambda **kw: {"MSFT": {"close": [float(100 + i) for i in range(30)]}},
+        )
+        tool = TechnicalIndicatorTool()
+        result = json.loads(tool.execute(symbol="MSFT"))
+        assert result["ok"] is True
+        assert result["indicators"]["rsi_14"] is not None
+
+    def test_dataframe_payload_still_works(self, monkeypatch):
+        """DataFrame payload keeps working (existing loader contract)."""
+        close = pd.Series(
+            [float(100 + i) for i in range(30)],
+            index=pd.date_range("2026-01-01", periods=30, freq="D"),
+        )
+        monkeypatch.setattr(
+            "src.tools.technical_indicator_tool.fetch_market_data",
+            lambda **kw: {"MSFT": pd.DataFrame({"close": close})},
+        )
+        tool = TechnicalIndicatorTool()
+        result = json.loads(tool.execute(symbol="MSFT"))
+        assert result["ok"] is True
+        assert result["indicators"]["rsi_14"] is not None

@@ -32,6 +32,44 @@ _DEFAULT_LOOKBACK = 200
 _MAX_LOOKBACK = 500
 
 
+_CLOSE_KEYS = ("close", "Close", "CLOSE", "adj_close")
+
+
+def _extract_close_series(df: Any) -> pd.Series | None:
+    """Extract the close-price series from a loader payload.
+
+    ``fetch_market_data`` caps its result as
+    ``{symbol: {"rows":…, "returned":…, "data": [record…]}}`` when truncation
+    applies, so records may sit under a ``"data"`` key; some loaders may instead
+    yield a ``DataFrame`` (indexed by date), a plain dict keyed by column, or a
+    bare ``list[dict]``. Accept all these shapes and return the close column as
+    a Series, or ``None`` when absent.
+    """
+    if isinstance(df, pd.DataFrame):
+        for key in _CLOSE_KEYS:
+            if key in df.columns:
+                return pd.Series(df[key].to_numpy(), dtype=float)
+        return None
+    if isinstance(df, dict):
+        inner = df.get("data")
+        if isinstance(inner, list) and inner and isinstance(inner[0], dict):
+            keys = set(inner[0].keys())
+            for key in _CLOSE_KEYS:
+                if key in keys:
+                    return pd.Series([float(row[key]) for row in inner], dtype=float)
+        for key in _CLOSE_KEYS:
+            if key in df:
+                return pd.Series(list(df[key]), dtype=float)
+        return None
+    if isinstance(df, list) and df and isinstance(df[0], dict):
+        keys = set(df[0].keys())
+        for key in _CLOSE_KEYS:
+            if key in keys:
+                return pd.Series([float(row[key]) for row in df], dtype=float)
+        return None
+    return None
+
+
 def _compute_sma(close: pd.Series, period: int) -> float | None:
     """Simple moving average over the last *period* bars."""
     if len(close) < period:
@@ -173,19 +211,17 @@ class TechnicalIndicatorTool(BaseTool):
             return json.dumps({"ok": False, "error": f"Failed to fetch data: {exc}"})
 
         df = data.get(symbol)
-        if df is None or df.empty:
+        if df is None:
+            return json.dumps({"ok": False, "error": f"No data returned for {symbol}"})
+        if isinstance(df, pd.DataFrame) and df.empty:
+            return json.dumps({"ok": False, "error": f"No data returned for {symbol}"})
+        if isinstance(df, list) and not df:
+            return json.dumps({"ok": False, "error": f"No data returned for {symbol}"})
+        if isinstance(df, dict) and not df:
             return json.dumps({"ok": False, "error": f"No data returned for {symbol}"})
 
-        close = df.get("close") if isinstance(df, pd.DataFrame) else None
-        if close is None:
-            # Some loaders return a dict-like structure; try common key names.
-            if hasattr(df, "to_dict"):
-                d = df.to_dict() if callable(df.to_dict) else dict(df)
-                for key in ("close", "Close", "CLOSE", "adj_close"):
-                    if key in d:
-                        close = pd.Series(d[key])
-                        break
-        if close is None:
+        close = _extract_close_series(df)
+        if close is None or close.empty:
             return json.dumps({"ok": False, "error": "No close price column in data"})
 
         if not isinstance(close, pd.Series):
