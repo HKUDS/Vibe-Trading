@@ -99,6 +99,51 @@ def test_backtest_runtime_env_prepends_runtime_pythonpath(
     assert env["PYTHONPATH"] == f"{pythonpath_extra}{os.pathsep}existing-path"
 
 
+def test_backtest_runtime_env_adds_exact_current_run_root(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    configured_root = tmp_path / "configured-runs"
+    run_dir = tmp_path / "state-root" / "runs" / "run-1"
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(configured_root))
+
+    env = Runner(timeout=1)._build_runtime_env(run_dir)
+
+    assert env["VIBE_TRADING_ALLOWED_RUN_ROOTS"].split(",") == [
+        str(configured_root),
+        str(run_dir.resolve()),
+    ]
+
+
+def test_execute_keeps_real_home_run_valid_after_home_is_sandboxed(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    real_home = tmp_path / "real-home"
+    run_dir = real_home / ".vibe-trading" / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(real_home))
+    monkeypatch.delenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", raising=False)
+
+    entry = _probe_entry(
+        tmp_path,
+        "import sys\n"
+        "from src.tools.path_utils import safe_run_dir\n"
+        "print(safe_run_dir(sys.argv[1]))\n",
+    )
+    agent_root = Path(runner_mod.__file__).resolve().parents[2]
+
+    result = Runner(timeout=60).execute(
+        entry,
+        run_dir,
+        cwd=agent_root,
+        cli_args=[str(run_dir)],
+    )
+
+    assert result.success, result.stderr
+    assert str(run_dir.resolve()) in result.stdout
+
+
 # --------------------------------------------------------------------------- #
 # VT-001 runtime defense-in-depth: ephemeral HOME, UID-drop fallback, rlimits.
 # --------------------------------------------------------------------------- #
