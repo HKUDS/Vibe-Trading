@@ -448,6 +448,24 @@ class Runner:
             }
         )
 
+        # ``execute()`` replaces HOME with an ephemeral sandbox directory.  The
+        # backtest entry point validates ``run_dir`` again in that child
+        # process, so its HOME-derived default roots no longer include a run
+        # created under the real ``~/.vibe-trading/runs``.  Carry the exact
+        # current run directory across the boundary as an explicit root.  Using
+        # the run itself (rather than its parent) keeps the sandbox grant as
+        # narrow as possible while ensuring artifacts land in the canonical
+        # directory indexed by the Reports API.
+        allowed_run_roots = [
+            item.strip()
+            for item in env.get("VIBE_TRADING_ALLOWED_RUN_ROOTS", "").split(",")
+            if item.strip()
+        ]
+        current_run_root = str(run_dir.resolve())
+        if current_run_root not in allowed_run_roots:
+            allowed_run_roots.append(current_run_root)
+        env["VIBE_TRADING_ALLOWED_RUN_ROOTS"] = ",".join(allowed_run_roots)
+
         if pythonpath_extra:
             existing = env.get("PYTHONPATH", "")
             env["PYTHONPATH"] = str(pythonpath_extra) + (os.pathsep + existing if existing else "")
