@@ -6,6 +6,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`vibe-trading update`** — new CLI subcommand that checks PyPI for a newer `vibe-trading-ai` release and upgrades in place via pip when one exists (no confirmation prompt). Editable/development installs and uninstalled checkouts are detected and answered with the right manual instruction (`git pull` + reinstall) instead of a pip upgrade that would silently replace the dev install with a released wheel.
 - **Memory Tier 2: Structural Organization** — four independently-gated modules for memory lifecycle enhancement:
   - H-MEM hierarchical directory routing (`VT_MEMORY_HIERARCHY`)
   - A-MEM semantic linking via BM25 (`VT_MEMORY_LINKS`)

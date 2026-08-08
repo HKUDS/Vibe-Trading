@@ -4714,6 +4714,10 @@ def _build_parser() -> argparse.ArgumentParser:
     chat_parser = subparsers.add_parser("chat", help="Interactive chat mode")
     chat_parser.add_argument("--max-iter", dest="chat_max_iter", type=int, default=50, help="Maximum agent iterations")
 
+    subparsers.add_parser(
+        "update", help="Check for and install the latest vibe-trading-ai release from PyPI"
+    )
+
     subparsers.add_parser("init", help="Interactive setup: create ~/.vibe-trading/.env")
 
     # Cross-platform frontend setup. See cmd_setup() for details.
@@ -5739,6 +5743,10 @@ def main(argv: list[str] | None = None) -> int:
         return _coerce_exit_code(cmd_show(args.show))
     if args.command == "chat":
         return _coerce_exit_code(cmd_interactive(args.chat_max_iter))
+    if args.command == "update":
+        from cli.commands.update import cmd_update
+
+        return _coerce_exit_code(cmd_update())
     if args.command == "alpha":
         from src.factors.cli_handlers import dispatch as _alpha_dispatch
         return _coerce_exit_code(_alpha_dispatch(args))
