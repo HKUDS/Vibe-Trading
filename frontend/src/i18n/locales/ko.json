@@ -390,6 +390,7 @@
     "llmSettingsSaved": "LLM 설정이 저장되었습니다",
     "saveLlmSettingsFailed": "LLM 설정 저장 실패: {{message}}",
     "dataSourceSettingsSaved": "데이터 소스 설정이 저장되었습니다",
+    "desktopCredentialRestarting": "자격 증명이 암호화되었습니다. 로컬 서비스를 다시 시작하는 중입니다…",
     "saveDataSourceSettingsFailed": "데이터 소스 설정 저장 실패: {{message}}",
     "configured": "구성됨",
     "keepCurrentKey": "비우면 현재 키 유지",

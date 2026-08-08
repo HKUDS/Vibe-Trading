@@ -390,6 +390,7 @@
     "llmSettingsSaved": "تم حفظ إعدادات LLM",
     "saveLlmSettingsFailed": "فشل حفظ إعدادات LLM: {{message}}",
     "dataSourceSettingsSaved": "تم حفظ إعدادات مصادر البيانات",
+    "desktopCredentialRestarting": "تم تشفير بيانات الاعتماد. جارٍ إعادة تشغيل الخدمة المحلية…",
     "saveDataSourceSettingsFailed": "فشل حفظ إعدادات مصادر البيانات: {{message}}",
     "configured": "تم التكوين",
     "keepCurrentKey": "اتركه فارغًا للاحتفاظ بالمفتاح الحالي",

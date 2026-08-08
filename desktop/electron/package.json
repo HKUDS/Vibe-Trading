@@ -12,12 +12,74 @@
     "test:locales": "npm run build && node scripts/test-locales.mjs",
     "test:backend-resolution": "npm run build && node scripts/test-backend-resolution.mjs",
     "smoke:parent-death": "npm run build && node scripts/smoke-parent-death.mjs",
+    "prepare:electron": "node scripts/prepare-electron.mjs",
+    "runtime:win": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-backend.ps1",
+    "smoke:credentials": "npm run build && electron scripts/smoke-credentials.cjs",
     "smoke:lifecycle": "npm run build && node scripts/test-locales.mjs && node scripts/test-backend-resolution.mjs && node scripts/smoke-lifecycle.mjs && node scripts/smoke-parent-death.mjs",
+    "pack:win": "npm run build && npm run prepare:electron && electron-builder --publish never --win dir",
+    "installer:win:review": "npm run build && npm run prepare:electron && node scripts/build-review-installer.mjs",
+    "installer:win:signed": "node scripts/build-signed-installer.mjs",
     "sbom": "npm sbom --sbom-format cyclonedx"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
     "electron": "43.1.1",
+    "electron-builder": "26.15.3",
     "typescript": "^5.9.3"
+  },
+  "build": {
+    "appId": "io.github.vibetrading.community.desktop",
+    "productName": "Vibe-Trading Desktop (Unofficial Community Build)",
+    "compression": "normal",
+    "artifactName": "Vibe-Trading-Desktop-Unofficial-${version}-${arch}.${ext}",
+    "asar": true,
+    "electronLanguages": [
+      "ar",
+      "en-GB",
+      "en-US",
+      "ja",
+      "ko",
+      "zh-CN"
+    ],
+    "electronDist": ".cache/electron-dist",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "runtime/backend",
+        "to": "backend"
+      },
+      {
+        "from": "../../LICENSE",
+        "to": "licenses/Vibe-Trading-LICENSE.txt"
+      },
+      {
+        "from": "../../NOTICE",
+        "to": "licenses/Vibe-Trading-NOTICE.txt"
+      }
+    ],
+    "win": {
+      "icon": "../../assets/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "useZip": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

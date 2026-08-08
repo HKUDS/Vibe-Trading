@@ -20,6 +20,7 @@ type BackendManagerOptions = {
   logDirectory: string;
   apiAuthKey: string;
   messages: DesktopMessages;
+  credentialEnvironment?: NodeJS.ProcessEnv;
   onStatus: (message: string) => void;
   onUnexpectedExit: (message: string) => void;
 };
@@ -91,7 +92,9 @@ export class BackendManager {
     const gtkBin = path.join(path.dirname(executable), "gtk", "bin");
     const childEnvironment: NodeJS.ProcessEnv = {
       ...process.env,
+      ...this.options.credentialEnvironment,
       API_AUTH_KEY: this.options.apiAuthKey,
+      VIBE_TRADING_DESKTOP_SECURE_CREDENTIALS: "1",
       PYTHONUTF8: "1",
       PYTHONUNBUFFERED: "1",
       ELECTRON_RUN_AS_NODE: "1",
@@ -110,7 +113,9 @@ export class BackendManager {
 
     const watchdogPath = path.join(__dirname, "backend-watchdog.js");
     const watchdog = spawn(process.execPath, [watchdogPath], {
-      cwd: __dirname,
+      // In a packaged app __dirname is inside app.asar. Electron's fs layer can
+      // read that path, but Windows cannot use an ASAR path as a process cwd.
+      cwd: this.options.resourcesPath,
       windowsHide: true,
       env: childEnvironment,
       stdio: ["ignore", "pipe", "pipe", "ipc"],

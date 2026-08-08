@@ -22,7 +22,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.config.env_schema import EnvConfig
 
-__all__ = ["get_env_config", "reset_env_config", "_parse_bool", "get_env_or"]
+__all__ = [
+    "get_env_config",
+    "reset_env_config",
+    "_parse_bool",
+    "get_env_or",
+    "get_env_value",
+]
 
 # ---------------------------------------------------------------------------
 # Module-level singleton state
@@ -130,3 +136,13 @@ def get_env_or(primary: str, fallback: str, default: str = "") -> str:
     if value:
         return value
     return default
+
+
+def get_env_value(name: str, default: str = "") -> str:
+    """Read a dynamically named environment value through the config layer.
+
+    Most application settings should use typed :class:`EnvConfig` fields.
+    This narrow accessor exists for data-driven registries whose environment
+    aliases are loaded at runtime, such as provider credential metadata.
+    """
+    return os.getenv(name, default)

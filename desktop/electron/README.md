@@ -1,9 +1,12 @@
 # Vibe-Trading Desktop (Unofficial Community Build)
 
-This directory contains a source-only Electron host for the existing
-Vibe-Trading FastAPI and React application. It does not contain an installer,
-an embedded Python runtime, credential storage, an updater, or changes to the
-agent, provider, session, frontend model UX, or messaging-channel code.
+This directory contains an Electron host for the existing Vibe-Trading FastAPI
+and React application. The Windows packaging layer can assemble an unsigned
+NSIS review artifact or require and verify Authenticode signing for a
+publishable installer. Both use an isolated Python runtime and encrypted
+credential storage. This layer does not contain an updater, optional IM
+adapters, personal WeChat pairing, or changes to the agent loop and provider
+behavior.
 
 ## What the shell does
 
@@ -28,7 +31,8 @@ agent, provider, session, frontend model UX, or messaging-channel code.
 
 See [THREAT_MODEL.md](THREAT_MODEL.md) for the trust boundary and residual
 risks. See [REVIEW_NOTES.md](REVIEW_NOTES.md) for the file inventory and
-validation ledger.
+validation ledger. See [WINDOWS_PACKAGING.md](WINDOWS_PACKAGING.md) for the
+packaging-specific boundary and build commands.
 
 ## Run from source
 
@@ -72,15 +76,17 @@ npm start
 
 ## Review scope
 
-This first change intentionally excludes:
+The desktop lifecycle shell and Windows packaging are kept as separate review
+layers. The packaging layer adds Electron Builder, an unsigned NSIS review
+artifact, a checksum-pinned CPython 3.12.10 base runtime, and `safeStorage`
+credential migration.
 
-- Electron Builder, NSIS, release workflows, and embedded Python;
-- `safeStorage`, credential migration, and settings UI changes;
+It intentionally excludes:
+
 - update checks or release-feed configuration;
 - provider/model discovery and response metadata;
 - optional IM adapters and personal WeChat pairing;
-- changes outside `desktop/`, except generated-output entries in `.gitignore`
-  and the Windows desktop job in `.github/workflows/test.yml`.
+- broker-specific optional packages.
 
 The desktop shell remains unofficial. No release or distribution ownership is
 implied by this source directory.

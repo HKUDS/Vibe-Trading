@@ -11,4 +11,7 @@ contextBridge.exposeInMainWorld("vibeDesktop", {
   retry: () => ipcRenderer.send("desktop:retry"),
   openLogs: () => ipcRenderer.send("desktop:open-logs"),
   restartBackend: () => ipcRenderer.invoke("desktop:restart-backend") as Promise<boolean>,
+  getCredentialStatus: () => ipcRenderer.invoke("desktop:get-credential-status"),
+  setCredential: (name: string, value: string | null) =>
+    ipcRenderer.invoke("desktop:set-credential", name, value),
 });

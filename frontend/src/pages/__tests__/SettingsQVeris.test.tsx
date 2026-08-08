@@ -31,6 +31,7 @@ vi.mock("@/lib/apiAuth", () => ({
 vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),
+    info: vi.fn(),
     error: vi.fn(),
   },
 }));
@@ -153,6 +154,7 @@ describe("Settings QVeris card", () => {
 
   afterEach(() => {
     cleanup();
+    delete window.vibeDesktop;
     vi.unstubAllGlobals();
   });
 
@@ -205,6 +207,40 @@ describe("Settings QVeris card", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/qveris/config", expect.objectContaining({ method: "PUT" })));
     const putCall = fetchMock.mock.calls.find(([path, init]) => String(path) === "/qveris/config" && init?.method === "PUT");
     expect(JSON.parse(String(putCall?.[1]?.body))).not.toHaveProperty("api_key");
+  });
+
+  it("stores a desktop API key through safe storage and restarts the backend", async () => {
+    const setCredential = vi.fn().mockResolvedValue({
+      available: true,
+      configured: ["QVERIS_API_KEY"],
+      migrated: [],
+    });
+    const restartBackend = vi.fn().mockResolvedValue(true);
+    window.vibeDesktop = {
+      isDesktop: true,
+      getCredentialStatus: vi.fn(),
+      setCredential,
+      restartBackend,
+    };
+    const fetchMock = mockQVerisFetch();
+    render(<QVerisSettings />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save QVeris settings" })).toBeEnabled(),
+    );
+    fireEvent.change(screen.getByPlaceholderText("sk-...8TI"), {
+      target: { value: "sk-desktop-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save QVeris settings" }));
+
+    await waitFor(() =>
+      expect(setCredential).toHaveBeenCalledWith("QVERIS_API_KEY", "sk-desktop-key"),
+    );
+    const putCall = fetchMock.mock.calls.find(
+      ([path, init]) => String(path) === "/qveris/config" && init?.method === "PUT",
+    );
+    expect(JSON.parse(String(putCall?.[1]?.body))).not.toHaveProperty("api_key");
+    expect(restartBackend).toHaveBeenCalledTimes(1);
   });
 
   it("uses the signup href from the config response and renders the empty usage state", async () => {

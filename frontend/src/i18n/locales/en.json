@@ -395,6 +395,7 @@
     "llmSettingsSaved": "LLM settings saved",
     "saveLlmSettingsFailed": "Failed to save LLM settings: {{message}}",
     "dataSourceSettingsSaved": "Data source settings saved",
+    "desktopCredentialRestarting": "Credential encrypted. Restarting the local service…",
     "saveDataSourceSettingsFailed": "Failed to save data source settings: {{message}}",
     "configured": "Configured",
     "keepCurrentKey": "Leave blank to keep the current key",

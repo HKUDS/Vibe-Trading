@@ -390,6 +390,7 @@
     "llmSettingsSaved": "LLM 设置已保存",
     "saveLlmSettingsFailed": "保存 LLM 设置失败: {{message}}",
     "dataSourceSettingsSaved": "数据源设置已保存",
+    "desktopCredentialRestarting": "凭据已加密，正在重启本地服务…",
     "saveDataSourceSettingsFailed": "保存数据源设置失败: {{message}}",
     "configured": "已配置",
     "keepCurrentKey": "留空以保留当前密钥",

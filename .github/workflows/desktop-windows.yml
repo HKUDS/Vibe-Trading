@@ -1,0 +1,94 @@
+name: Desktop Windows
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop-windows.yml"
+      - "agent/**"
+      - "desktop/electron/**"
+      - "frontend/**"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    # The checksum-pinned legacy GTK runtime extractor crashes on the Server
+    # 2025 image even though the resulting runtime works on current Windows.
+    # Keep packaging reproducible on the clean Server 2022 image until the
+    # native PDF dependency is replaced with a newer archive format.
+    runs-on: windows-2022
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/electron/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install desktop dependencies
+        working-directory: desktop/electron
+        run: npm ci
+
+      - name: Verify encrypted credential storage
+        working-directory: desktop/electron
+        run: npm run smoke:credentials
+
+      - name: Assemble minimal Python runtime
+        working-directory: desktop/electron
+        shell: powershell
+        run: .\scripts\build-backend.ps1 -BuildPython "${{ env.pythonLocation }}\python.exe" -Clean
+
+      - name: Verify backend lifecycle
+        working-directory: desktop/electron
+        run: npm run smoke:lifecycle
+
+      - name: Build NSIS installer
+        working-directory: desktop/electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run installer:win:review
+
+      - name: Verify packaged startup and parent-death cleanup
+        working-directory: desktop/electron
+        shell: powershell
+        run: |
+          $env:VIBE_TRADING_DESKTOP_ELECTRON_EXECUTABLE = (
+            Resolve-Path 'release\win-unpacked\Vibe-Trading Desktop (Unofficial Community Build).exe'
+          ).Path
+          node scripts/smoke-parent-death.mjs
+
+      - name: Verify installer and record checksum
+        working-directory: desktop/electron
+        shell: powershell
+        run: |
+          $installer = Get-ChildItem -LiteralPath release -Filter 'Vibe-Trading-Desktop-Unofficial-*-x64.exe' |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $installer) { throw 'Installer not found' }
+          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Set-Content -LiteralPath release\SHA256SUMS.txt -Encoding ascii
+          "### Unsigned Windows packaging check" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          "" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          "- File: ``$($installer.Name)``" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          "- SHA-256: ``$hash``" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          "- Status: built for review only; not uploaded or published" |
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY

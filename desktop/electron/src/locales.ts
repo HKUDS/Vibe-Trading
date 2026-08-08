@@ -11,6 +11,11 @@ export type DesktopMessages = {
   backendHealthTimeout: string;
   backendNotFound: string;
   portUnavailable: string;
+  credentialEncryptionUnavailable: string;
+  credentialFileUnsupported: string;
+  credentialKeyUnsupported: string;
+  credentialRequestInvalid: string;
+  credentialStoreUnavailable: string;
   closingService: string;
   menuApplication: string;
   menuRestartService: string;
@@ -65,6 +70,11 @@ const messages: Record<DesktopLocale, DesktopMessages> = {
     backendHealthTimeout: "Timed out waiting for the Vibe-Trading backend.\n{details}",
     backendNotFound: "Could not find vibe-trading.exe. Install the backend first or set VIBE_TRADING_EXECUTABLE.",
     portUnavailable: "Could not allocate a local port.",
+    credentialEncryptionUnavailable: "Credential encryption is unavailable for this Windows user session.",
+    credentialFileUnsupported: "The desktop credential file format is not supported.",
+    credentialKeyUnsupported: "This credential key is not supported.",
+    credentialRequestInvalid: "The credential request is invalid.",
+    credentialStoreUnavailable: "Secure credential storage has not been initialized.",
     closingService: "Closing the local service…",
     menuApplication: "Application",
     menuRestartService: "Restart local service",
@@ -95,6 +105,11 @@ const messages: Record<DesktopLocale, DesktopMessages> = {
     backendHealthTimeout: "等待 Vibe-Trading 后端就绪超时。\n{details}",
     backendNotFound: "找不到 vibe-trading.exe。请先安装后端，或设置 VIBE_TRADING_EXECUTABLE。",
     portUnavailable: "无法分配本地端口。",
+    credentialEncryptionUnavailable: "当前 Windows 用户会话无法使用凭据加密。",
+    credentialFileUnsupported: "桌面凭据文件格式不受支持。",
+    credentialKeyUnsupported: "不支持该凭据键。",
+    credentialRequestInvalid: "凭据请求无效。",
+    credentialStoreUnavailable: "安全凭据存储尚未初始化。",
     closingService: "正在关闭本地服务…",
     menuApplication: "应用",
     menuRestartService: "重启本地服务",
@@ -125,6 +140,11 @@ const messages: Record<DesktopLocale, DesktopMessages> = {
     backendHealthTimeout: "Vibe-Trading バックエンドの準備待ちがタイムアウトしました。\n{details}",
     backendNotFound: "vibe-trading.exe が見つかりません。バックエンドをインストールするか、VIBE_TRADING_EXECUTABLE を設定してください。",
     portUnavailable: "ローカルポートを割り当てられませんでした。",
+    credentialEncryptionUnavailable: "この Windows ユーザーセッションでは資格情報の暗号化を利用できません。",
+    credentialFileUnsupported: "デスクトップ資格情報ファイルの形式はサポートされていません。",
+    credentialKeyUnsupported: "この資格情報キーはサポートされていません。",
+    credentialRequestInvalid: "資格情報の要求が無効です。",
+    credentialStoreUnavailable: "安全な資格情報ストアが初期化されていません。",
     closingService: "ローカルサービスを終了しています…",
     menuApplication: "アプリケーション",
     menuRestartService: "ローカルサービスを再起動",
@@ -155,6 +175,11 @@ const messages: Record<DesktopLocale, DesktopMessages> = {
     backendHealthTimeout: "Vibe-Trading 백엔드 준비를 기다리는 동안 시간이 초과되었습니다.\n{details}",
     backendNotFound: "vibe-trading.exe를 찾을 수 없습니다. 백엔드를 설치하거나 VIBE_TRADING_EXECUTABLE을 설정하세요.",
     portUnavailable: "로컬 포트를 할당할 수 없습니다.",
+    credentialEncryptionUnavailable: "현재 Windows 사용자 세션에서 자격 증명 암호화를 사용할 수 없습니다.",
+    credentialFileUnsupported: "데스크톱 자격 증명 파일 형식이 지원되지 않습니다.",
+    credentialKeyUnsupported: "지원되지 않는 자격 증명 키입니다.",
+    credentialRequestInvalid: "자격 증명 요청이 올바르지 않습니다.",
+    credentialStoreUnavailable: "보안 자격 증명 저장소가 초기화되지 않았습니다.",
     closingService: "로컬 서비스를 종료하는 중…",
     menuApplication: "애플리케이션",
     menuRestartService: "로컬 서비스 다시 시작",
@@ -185,6 +210,11 @@ const messages: Record<DesktopLocale, DesktopMessages> = {
     backendHealthTimeout: "انتهت مهلة انتظار جاهزية الواجهة الخلفية لـ Vibe-Trading.\n{details}",
     backendNotFound: "تعذّر العثور على vibe-trading.exe. ثبّت الواجهة الخلفية أولاً أو اضبط VIBE_TRADING_EXECUTABLE.",
     portUnavailable: "تعذّر تخصيص منفذ محلي.",
+    credentialEncryptionUnavailable: "تشفير بيانات الاعتماد غير متاح لجلسة مستخدم Windows الحالية.",
+    credentialFileUnsupported: "تنسيق ملف بيانات اعتماد سطح المكتب غير مدعوم.",
+    credentialKeyUnsupported: "مفتاح بيانات الاعتماد هذا غير مدعوم.",
+    credentialRequestInvalid: "طلب بيانات الاعتماد غير صالح.",
+    credentialStoreUnavailable: "لم تتم تهيئة مخزن بيانات الاعتماد الآمن.",
     closingService: "جارٍ إغلاق الخدمة المحلية…",
     menuApplication: "التطبيق",
     menuRestartService: "إعادة تشغيل الخدمة المحلية",

@@ -256,6 +256,31 @@ def test_update_deepseek_settings_uses_exact_reported_payload(
     assert "DEEPSEEK_API_KEY=sk-deepseek-test" in env_text
     assert "DEEPSEEK_BASE_URL=https://api.deepseek.com/v1" in env_text
 
+
+def test_desktop_secure_mode_never_persists_injected_llm_key(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VIBE_TRADING_DESKTOP_SECURE_CREDENTIALS", "1")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "dpapi-decrypted-key")
+
+    response = client.put(
+        "/settings/llm",
+        json={
+            "provider": "deepseek",
+            "model_name": "deepseek-chat",
+            "base_url": "https://api.deepseek.com/v1",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["api_key_configured"] is True
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "dpapi-decrypted-key" not in env_text
+    assert "DEEPSEEK_API_KEY=" in env_text
+
+
 @pytest.mark.parametrize(
     ("provider", "api_key_env", "base_url_env", "base_url"),
     [
@@ -504,6 +529,23 @@ def test_update_data_source_settings_persists_tushare_token(
 
     env_text = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "TUSHARE_TOKEN=ts-secret-token" in env_text
+
+
+def test_desktop_secure_mode_never_persists_injected_tushare_token(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VIBE_TRADING_DESKTOP_SECURE_CREDENTIALS", "1")
+    monkeypatch.setenv("TUSHARE_TOKEN", "dpapi-tushare-token")
+
+    response = client.put("/settings/data-sources", json={})
+
+    assert response.status_code == 200
+    assert response.json()["tushare_token_configured"] is True
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "dpapi-tushare-token" not in env_text
+    assert "TUSHARE_TOKEN=" in env_text
 
 
 def test_settings_writes_reject_remote_dev_mode_clients(

@@ -36,6 +36,7 @@ function toForm(settings: LLMSettings): LLMFormState {
 
 export function Settings() {
   const { t } = useTranslation();
+  const isDesktop = window.vibeDesktop?.isDesktop === true;
   const [settings, setSettings] = useState<LLMSettings | null>(null);
   const [dataSettings, setDataSettings] = useState<DataSourceSettings | null>(null);
   const [channelStatus, setChannelStatus] = useState<ChannelRuntimeStatus | null>(null);
@@ -218,16 +219,27 @@ export function Settings() {
     if (!form) return;
     setSaving(true);
     try {
+      const desktop = window.vibeDesktop;
       const updated = await api.updateLLMSettings({
         ...form,
-        api_key: apiKey.trim() || undefined,
-        clear_api_key: clearApiKey,
+        api_key: isDesktop ? undefined : apiKey.trim() || undefined,
+        clear_api_key: isDesktop ? false : clearApiKey,
       });
+      if (desktop && selectedProvider?.api_key_env && (apiKey.trim() || clearApiKey)) {
+        await desktop.setCredential(
+          selectedProvider.api_key_env,
+          clearApiKey ? null : apiKey.trim(),
+        );
+      }
       setSettings(updated);
       setForm(toForm(updated));
       setApiKey("");
       setClearApiKey(false);
       toast.success(t("settings.llmSettingsSaved"));
+      if (desktop && selectedProvider?.api_key_env && (apiKey.trim() || clearApiKey)) {
+        toast.info(t("settings.desktopCredentialRestarting"));
+        await desktop.restartBackend();
+      }
     } catch (error) {
       toast.error(t("settings.saveLlmSettingsFailed", {
         message: error instanceof Error
@@ -243,14 +255,25 @@ export function Settings() {
     event.preventDefault();
     setDataSaving(true);
     try {
+      const desktop = window.vibeDesktop;
       const updated = await api.updateDataSourceSettings({
-        tushare_token: tushareToken.trim() || undefined,
-        clear_tushare_token: clearTushareToken,
+        tushare_token: isDesktop ? undefined : tushareToken.trim() || undefined,
+        clear_tushare_token: isDesktop ? false : clearTushareToken,
       });
+      if (desktop && (tushareToken.trim() || clearTushareToken)) {
+        await desktop.setCredential(
+          "TUSHARE_TOKEN",
+          clearTushareToken ? null : tushareToken.trim(),
+        );
+      }
       setDataSettings(updated);
       setTushareToken("");
       setClearTushareToken(false);
       toast.success(t("settings.dataSourceSettingsSaved"));
+      if (desktop && (tushareToken.trim() || clearTushareToken)) {
+        toast.info(t("settings.desktopCredentialRestarting"));
+        await desktop.restartBackend();
+      }
     } catch (error) {
       toast.error(t("settings.saveDataSourceSettingsFailed", {
         message: error instanceof Error
@@ -302,7 +325,7 @@ export function Settings() {
           <h1 className="text-2xl font-semibold tracking-tight">{t("settings.title")}</h1>
           <p className="max-w-3xl text-sm text-muted-foreground">{t("settings.subtitle")}</p>
         </div>
-        {localApiAccessSection}
+        {!isDesktop && localApiAccessSection}
         {/* QVERIS-INTEGRATION */}
         <QVerisSettings />
         <div className="flex min-h-32 items-center justify-center rounded-lg border bg-card p-5 text-sm text-muted-foreground">
@@ -455,7 +478,7 @@ export function Settings() {
         <p className="max-w-3xl text-sm text-muted-foreground">{t("settings.subtitle")}</p>
       </div>
 
-      {localApiAccessSection}
+      {!isDesktop && localApiAccessSection}
 
       {/* QVERIS-INTEGRATION */}
       <QVerisSettings />

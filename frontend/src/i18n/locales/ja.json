@@ -390,6 +390,7 @@
     "llmSettingsSaved": "LLM 設定を保存しました",
     "saveLlmSettingsFailed": "LLM 設定の保存に失敗: {{message}}",
     "dataSourceSettingsSaved": "データソース設定を保存しました",
+    "desktopCredentialRestarting": "認証情報を暗号化しました。ローカルサービスを再起動しています…",
     "saveDataSourceSettingsFailed": "データソース設定の保存に失敗: {{message}}",
     "configured": "設定済み",
     "keepCurrentKey": "空欄で現在のキーを保持",
