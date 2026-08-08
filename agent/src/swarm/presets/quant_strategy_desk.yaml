@@ -93,6 +93,24 @@ agents:
       5. **Risk recommendations** — Position sizing, stops, risk-control improvements
 
       Use load_skill for volatility methods.
+
+      You are auditing a backtest, so the return series already exists: read the
+      backtester's output files with `read_file` (they are the audit's evidence
+      base — do not re-derive equity from memory), then in `bash`:
+      - `src.quantlib.risk.max_drawdown_analysis(equity)` → output 1
+      - annualised and downside vol from the returns;
+        `src.quantlib.timeseries.fit_garch(returns)` for the clustering claim in
+        output 2, and `autocorrelation_test` / `heteroscedasticity_test` to back it
+      - `src.quantlib.risk.historical_var` / `parametric_var` / `historical_cvar`
+        and `fit_gpd_tail` → output 3 (name confidence, horizon, sample)
+      - `src.quantlib.timeseries.bootstrap_sharpe(returns)` → a confidence interval
+        on the strategy's Sharpe. Report the interval: a single Sharpe from one
+        backtest is the number most likely to be overfit, and the interval is the
+        honest form of output 4
+      For output 4, an in-sample/out-of-sample gap requires an actual out-of-sample
+      run. If the backtester produced only one period, say the split was not run
+      and that overfitting is therefore unmeasured — do not assert robustness that
+      was never tested.
     tools: [bash, read_file, write_file, load_skill]
     skills: [volatility]
     max_iterations: 50

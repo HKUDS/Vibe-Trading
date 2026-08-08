@@ -21,6 +21,7 @@ import pandas as pd
 
 from backtest.loaders import sec_edgar_client
 from backtest.loaders.base import cached_loader_fetch, validate_date_range
+from backtest.loaders.sec_frames import ANNUAL_SPAN_DAYS, QUARTER_SPAN_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ def _extract_concept_series(
         df = df.drop_duplicates(subset=["period_start", "period_end"], keep=keep)
         duration = (df["period_end"] - df["period_start"]).dt.days
         if freq == "annual":
-            df = df[duration.between(330, 380)]
+            df = df[duration.between(*ANNUAL_SPAN_DAYS)]
         else:
             df = _quarterly_flow_frames(df, duration)
     else:
@@ -138,8 +139,8 @@ def _quarterly_flow_frames(df: pd.DataFrame, duration: pd.Series) -> pd.DataFram
     ``FY - (Q1 + Q2 + Q3)``. The synthesized row is anchored on the 10-K
     ``filed`` date, which keeps it PIT-safe.
     """
-    quarters = df[duration.between(60, 120)].copy()
-    annuals = df[duration.between(330, 380)]
+    quarters = df[duration.between(*QUARTER_SPAN_DAYS)].copy()
+    annuals = df[duration.between(*ANNUAL_SPAN_DAYS)]
     quarter_ends = set(quarters["period_end"])
     synthesized: list[dict[str, Any]] = []
     for annual in annuals.to_dict("records"):
@@ -383,6 +384,20 @@ def _compute_derived(derived: Any, dependencies: dict[str, pd.DataFrame]) -> pd.
 
 
 def _resolve_ciks(symbols: list[str]) -> dict[str, str | None]:
+    """Map each symbol to its SEC CIK.
+
+    Args:
+        symbols: Requested symbols.
+
+    Returns:
+        A symbol -> CIK mapping; the value is ``None`` for a symbol the SEC
+        ticker table does not carry.
+
+    Raises:
+        ValueError: If no symbol resolves. Returning an all-null panel here
+            reads as "this issuer reports nothing" rather than "this loader
+            cannot serve this market", which is the more damaging of the two.
+    """
     ciks: dict[str, str | None] = {}
     missing: list[str] = []
     for symbol in symbols:
@@ -392,6 +407,12 @@ def _resolve_ciks(symbols: list[str]) -> dict[str, str | None]:
             missing.append(symbol)
     if missing:
         logger.warning("No SEC CIK for symbols: %s", ", ".join(missing))
+    if symbols and len(missing) == len(symbols):
+        raise ValueError(
+            f"no SEC CIK resolved for any of: {', '.join(missing)}. The "
+            "fundamentals loader is US-only (SEC XBRL); pass a US ticker with "
+            "or without a .US suffix, e.g. 'AAPL' or 'AAPL.US'."
+        )
     return ciks
 
 

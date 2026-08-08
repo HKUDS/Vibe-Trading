@@ -12,7 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from src.scheduled_research.models import JobStatus, ScheduledResearchJob, validate_schedule
+from src.scheduled_research.models import (
+    JobStatus,
+    ScheduledResearchJob,
+    validate_schedule,
+    validate_timezone,
+)
 from src.scheduled_research.store import CorruptStoreError, ScheduledResearchJobStore
 
 
@@ -94,6 +99,63 @@ class TestValidateSchedule:
 
     def test_accepts_boundary_values(self) -> None:
         validate_schedule("59 23 31 12 6")  # all field maxima
+
+    def test_accepts_weekday_range(self) -> None:
+        validate_schedule("30 23 * * 1-5")
+
+    def test_rejects_oversized_interval(self) -> None:
+        validate_schedule("9" * 15)  # ~31,000 years is the accepted ceiling
+        with pytest.raises(ValueError, match="interval is too large"):
+            validate_schedule("9" * 16)
+
+    def test_accepts_list_and_mixed_range(self) -> None:
+        validate_schedule("0 9 * * 1,3,5")
+        validate_schedule("0 9 * * 1,3-5")
+        validate_schedule("0 9 1-15 * *")
+
+    def test_rejects_reversed_range(self) -> None:
+        with pytest.raises(ValueError, match="reversed"):
+            validate_schedule("0 9 * * 5-1")
+
+    def test_rejects_out_of_range_list_and_range_ends(self) -> None:
+        with pytest.raises(ValueError):
+            validate_schedule("0 9 * * 1-8")  # dow high end > 6
+        with pytest.raises(ValueError):
+            validate_schedule("0 9 * * 1,9")  # dow list member > 6
+
+    def test_rejects_range_step_and_wildcard_in_list(self) -> None:
+        with pytest.raises(ValueError):
+            validate_schedule("0 9 * * 1-5/2")  # range steps are not part of the grammar
+        with pytest.raises(ValueError):
+            validate_schedule("0 9 * * *,1")  # wildcard cannot appear in a list
+
+    def test_rejects_empty_list_atoms(self) -> None:
+        with pytest.raises(ValueError):
+            validate_schedule("0 9 * * 1,,3")
+        with pytest.raises(ValueError):
+            validate_schedule("0 9 * * 1-")
+        with pytest.raises(ValueError):
+            validate_schedule("0 9 * * -5")
+
+
+class TestValidateTimezone:
+    def test_accepts_none(self) -> None:
+        validate_timezone(None)
+
+    def test_accepts_iana_keys(self) -> None:
+        validate_timezone("UTC")
+        validate_timezone("Pacific/Auckland")
+        validate_timezone("Australia/Adelaide")
+
+    def test_rejects_unknown_key(self) -> None:
+        with pytest.raises(ValueError, match="not a recognized IANA timezone"):
+            validate_timezone("Not/AZone")
+
+    def test_rejects_empty_and_blank(self) -> None:
+        with pytest.raises(ValueError):
+            validate_timezone("")
+        with pytest.raises(ValueError):
+            validate_timezone("   ")
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +287,60 @@ class TestScheduledResearchJobStore:
         assert fetched.prompt == job.prompt
         assert fetched.schedule == "0 */4 * * *"
 
+    def test_timezone_round_trips_through_store(self, tmp_path: Path) -> None:
+        store = ScheduledResearchJobStore(path=tmp_path / "jobs.json")
+        job = _make_job("tz-001", schedule="30 23 * * 1-5")
+        job.timezone = "Pacific/Auckland"
+        store.upsert(job)
+
+        fetched = ScheduledResearchJobStore(path=tmp_path / "jobs.json").get("tz-001")
+        assert fetched is not None
+        assert fetched.timezone == "Pacific/Auckland"
+
+    def test_legacy_record_without_timezone_loads_as_none(self, tmp_path: Path) -> None:
+        store_path = tmp_path / "jobs.json"
+        legacy = _make_job("legacy-tz").to_dict()
+        legacy.pop("timezone")
+        store_path.write_text(
+            json.dumps({"schema_version": 1, "jobs": [legacy]}), encoding="utf-8"
+        )
+
+        fetched = ScheduledResearchJobStore(path=store_path).get("legacy-tz")
+        assert fetched is not None
+        assert fetched.timezone is None
+
+    def test_upsert_accepts_unresolvable_timezone_shape(self, tmp_path: Path) -> None:
+        # Resolvability depends on the host tz database; the store checks only
+        # the shape so lifecycle writes never crash on foreign keys.
+        store = ScheduledResearchJobStore(path=tmp_path / "jobs.json")
+        job = _make_job("tz-shape", schedule="0 12 * * *")
+        job.timezone = "Not/AZone"
+        store.upsert(job)
+        fetched = store.get("tz-shape")
+        assert fetched is not None
+        assert fetched.timezone == "Not/AZone"
+
+    def test_upsert_rejects_blank_timezone(self, tmp_path: Path) -> None:
+        store = ScheduledResearchJobStore(path=tmp_path / "jobs.json")
+        job = _make_job("tz-blank")
+        job.timezone = "   "
+        with pytest.raises(ValueError, match="timezone"):
+            store.upsert(job)
+
+    def test_from_dict_degrades_non_string_timezone_to_none(self) -> None:
+        # Loading must never raise: the store quarantines the entire file when
+        # one record fails, so an unusable value falls back to UTC semantics.
+        raw = _make_job("tz-type").to_dict()
+        raw["timezone"] = 13
+        assert ScheduledResearchJob.from_dict(raw).timezone is None
+
+    def test_from_dict_normalizes_blank_timezone_to_none(self) -> None:
+        # A blank string must load as None so every loaded record satisfies
+        # the shape check the store re-runs on executor lifecycle writes.
+        raw = _make_job("tz-blank-load").to_dict()
+        raw["timezone"] = "   "
+        assert ScheduledResearchJob.from_dict(raw).timezone is None
+
     def test_retry_state_round_trips_and_legacy_jobs_get_defaults(self, tmp_path: Path) -> None:
         store_path = tmp_path / "jobs.json"
         store = ScheduledResearchJobStore(path=store_path)
@@ -259,3 +375,25 @@ class TestScheduledResearchJobStore:
         cron_job = _make_job("cron-1", schedule="*/30 * * * *")
         store.upsert(cron_job)
         assert store.get("cron-1") is not None
+
+
+class TestLegacyTimezoneValues:
+    def test_non_string_timezone_degrades_that_job_to_utc(self, tmp_path: Path) -> None:
+        # Before the timezone field existed the key was ignored entirely; a
+        # record carrying a non-string value must still load, and must not
+        # take the rest of the store down with it.
+        store_path = tmp_path / "jobs.json"
+        good = _make_job("good").to_dict()
+        bad = _make_job("bad").to_dict()
+        bad["timezone"] = 123
+        store_path.write_text(
+            json.dumps({"schema_version": 1, "jobs": [good, bad]}), encoding="utf-8"
+        )
+
+        jobs = ScheduledResearchJobStore(path=store_path).load()
+
+        assert set(jobs) == {"good", "bad"}
+        assert jobs["bad"].timezone is None
+        assert jobs["good"].timezone is None
+        assert store_path.exists()  # not quarantined
+        assert not list(tmp_path.glob("*.corrupt-*"))

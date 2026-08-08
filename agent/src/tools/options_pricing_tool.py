@@ -6,10 +6,8 @@ import json
 import math
 from typing import Any
 
-import numpy as np
-from scipy.stats import norm
-
 from src.agent.tools import BaseTool
+from src.quantlib.options import bs_greeks, bs_price
 
 
 def _validate_inputs(
@@ -52,6 +50,10 @@ def _bs_price_and_greeks(
 ) -> dict:
     """Compute Black-Scholes price and Greeks.
 
+    Thin adapter over :mod:`src.quantlib.options`, which owns the one
+    implementation of this formula in the repo. This function's only jobs are
+    to merge price and Greeks into a single dict and to round for display.
+
     Args:
         spot: Current underlying price.
         strike: Strike price.
@@ -61,46 +63,14 @@ def _bs_price_and_greeks(
         option_type: "call" or "put".
 
     Returns:
-        Dict containing price, delta, gamma, theta, vega.
+        Dict containing price, delta, gamma, theta, vega and rho, each rounded
+        to six decimal places.
     """
-    if T <= 0 or sigma <= 0:
-        if option_type == "call":
-            price = max(spot - strike, 0.0)
-            delta = 1.0 if spot > strike else 0.0
-        else:
-            price = max(strike - spot, 0.0)
-            delta = -1.0 if spot < strike else 0.0
-        return {"price": price, "delta": delta, "gamma": 0.0, "theta": 0.0, "vega": 0.0}
-
-    sqrt_T = np.sqrt(T)
-    d1 = (np.log(spot / strike) + (r + sigma**2 / 2) * T) / (sigma * sqrt_T)
-    d2 = d1 - sigma * sqrt_T
-    nd1_pdf = float(norm.pdf(d1))
-
-    if option_type == "call":
-        price = float(spot * norm.cdf(d1) - strike * np.exp(-r * T) * norm.cdf(d2))
-        delta = float(norm.cdf(d1))
-    else:
-        price = float(strike * np.exp(-r * T) * norm.cdf(-d2) - spot * norm.cdf(-d1))
-        delta = float(norm.cdf(d1) - 1.0)
-
-    gamma = float(nd1_pdf / (spot * sigma * sqrt_T))
-
-    theta_common = -(spot * nd1_pdf * sigma) / (2 * sqrt_T)
-    if option_type == "call":
-        theta = theta_common - r * strike * np.exp(-r * T) * norm.cdf(d2)
-    else:
-        theta = theta_common + r * strike * np.exp(-r * T) * norm.cdf(-d2)
-    theta = float(theta / 365.0)
-
-    vega = float(spot * nd1_pdf * sqrt_T / 100.0)
-
+    price = bs_price(spot, strike, T, r, sigma, option_type)
+    greeks = bs_greeks(spot, strike, T, r, sigma, option_type)
     return {
         "price": round(price, 6),
-        "delta": round(delta, 6),
-        "gamma": round(gamma, 6),
-        "theta": round(theta, 6),
-        "vega": round(vega, 6),
+        **{name: round(value, 6) for name, value in greeks.items()},
     }
 
 

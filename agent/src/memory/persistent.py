@@ -428,10 +428,10 @@ class PersistentMemory:
                 # Add linked entries not already in results
                 result_paths = {r.path for r in results}
                 for entry in all_entries:
+                    if len(results) >= max_results:
+                        break
                     if entry.path.stem in linked_ids and entry.path not in result_paths:
                         results.append(entry)
-                        if len(results) >= max_results:
-                            break
             except Exception:
                 logger.debug("semantic link expansion failed", exc_info=True)
 
@@ -490,7 +490,14 @@ class PersistentMemory:
         if get_env_config().memory.hierarchy_enabled:
             from src.memory.hierarchy import MemoryHierarchy
             hierarchy = MemoryHierarchy(self._dir)
-            path = hierarchy.route_entry(memory_type, slug)
+            # route_entry() treats its second argument as the leaf filename
+            # verbatim, so the ".md" has to be here: a bare slug wrote entries
+            # with no suffix, and every scan filters on suffix == ".md", which
+            # made them invisible to list_entries() and find(). The category
+            # directory already carries the type, and the name must match what
+            # recover_extensionless_entries() renames orphans to, or the same
+            # entry ends up on disk twice.
+            path = hierarchy.route_entry(memory_type, f"{slug}.md")
         else:
             filename = f"{memory_type}_{slug}.md"
             path = self._dir / filename
@@ -606,8 +613,9 @@ class PersistentMemory:
         if self._index_path.exists():
             lines = self._index_path.read_text(encoding="utf-8").split("\n")
             updated = False
+            target_prefix = f"- [{title}]("
             for i, line in enumerate(lines):
-                if f"[{title}]" in line:
+                if line.startswith(target_prefix):
                     lines[i] = new_line
                     updated = True
                     break

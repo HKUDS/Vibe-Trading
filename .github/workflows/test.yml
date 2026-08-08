@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual trigger. On 2026-08-06 twelve commits landed on main without a
+  # single push-event run being created, and there was then no way to get a
+  # verdict on main short of pushing an empty commit.
+  workflow_dispatch:
 
 jobs:
   test:
@@ -31,12 +35,17 @@ jobs:
         # `openbb` is included so agent/tests/test_openbb_bridge actually runs:
         # those tests importorskip on openbb_ai, so without the extra the whole
         # OpenBB Workspace bridge would report green while never being exercised.
-        run: pip install -e ".[dev,openbb]"
+        # `stats` is included for the same reason: the quantlib econometrics
+        # tests skip without statsmodels/arch, and skipped is not tested.
+        run: pip install -e ".[dev,openbb,stats]"
 
       - name: Verify optional extras under test are importable
-        # Fails loudly if the openbb extra stops resolving, instead of letting
-        # the bridge suite silently degrade to skips.
-        run: python -c "import openbb_ai, importlib.metadata as m; print('openbb-ai', m.version('openbb-ai'))"
+        # Fails loudly if an extra stops resolving, instead of letting its
+        # suite silently degrade to skips.
+        run: |
+          python -c "import openbb_ai, importlib.metadata as m; print('openbb-ai', m.version('openbb-ai'))"
+          python -c "import statsmodels; print('statsmodels', statsmodels.__version__)"
+          python -c "import arch; print('arch', arch.__version__)"
 
       - name: Repository safety gates
         run: bash tools/ci_grep_gates.sh
@@ -114,3 +123,41 @@ jobs:
           agent/tests/test_background_tools.py
           agent/tests/test_bash_tool.py
           -q
+
+  desktop-electron-windows:
+    name: Windows desktop source lifecycle
+    runs-on: windows-2025
+    timeout-minutes: 30
+
+    steps:
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # actions/setup-python v7.0.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+          architecture: x64
+          cache: pip
+
+      # actions/setup-node v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/electron/package-lock.json
+
+      - name: Install Vibe-Trading source backend
+        run: python -m pip install -e .
+
+      - name: Install desktop dependencies
+        working-directory: desktop/electron
+        run: npm ci
+
+      - name: Build desktop shell
+        working-directory: desktop/electron
+        run: npm run build
+
+      - name: Run desktop lifecycle and parent-death smoke tests
+        working-directory: desktop/electron
+        run: npm run smoke:lifecycle

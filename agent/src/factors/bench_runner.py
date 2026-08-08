@@ -22,8 +22,15 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Any, Callable, Iterable
 
+import numpy as np
+
 from src.config.accessor import get_env_config
 from src.factors.factor_analysis_core import compute_ic_series
+from src.quantlib.multipletesting import (
+    MIN_OBSERVATIONS,
+    deflated_sharpe_ratio,
+    expected_maximum_sharpe,
+)
 from src.factors.registry import (
     Registry,
     RegistryError,
@@ -331,10 +338,60 @@ def run_bench(
         except Exception:  # noqa: BLE001
             universe_meta = {"raw": str(universe_meta_raw)}
 
+    # Multiple-testing correction. `n_alphas_tested` has always been carried
+    # here and has only ever been displayed; the best IR out of hundreds of
+    # searched alphas is the maximum of hundreds of draws, and under a null
+    # where none of them works that maximum is comfortably positive. The block
+    # below prices that. Every key is NEW -- nothing existing changes value, so
+    # no consumer of this dict is affected.
+    #
+    # Note on what is being deflated: `ir` here is mean(IC)/std(IC), not a
+    # return Sharpe. The deflation family applies to any max-of-N t-like
+    # statistic, but the resulting probability must be read as "this IC-IR
+    # survives the search", never as a statement about realised returns.
+    multiple_testing: dict[str, Any] = {"applicable": False}
+    if len(rows) >= 2:
+        ir_values = np.array([float(r["ir"]) for r in rows], dtype=float)
+        best_row = rows_by_ir[0]
+        best_ir = float(best_row["ir"])
+        ir_dispersion = float(ir_values.std(ddof=1))
+        observations = int(best_row.get("ic_count", 0))
+        expected_max = expected_maximum_sharpe(len(rows), ir_dispersion)
+        multiple_testing = {
+            "applicable": True,
+            "n_trials": len(rows),
+            "best_id": best_row["id"],
+            "best_ir": round(best_ir, 6),
+            "ir_dispersion": round(ir_dispersion, 6),
+            "expected_max_ir_under_null": round(expected_max, 6),
+            "ir_haircut": round(best_ir - expected_max, 6),
+            "ic_observations": observations,
+            "statistic": "ic_information_ratio",
+        }
+        if observations >= MIN_OBSERVATIONS:
+            deflated = deflated_sharpe_ratio(
+                observed_sharpe=best_ir,
+                n_trials=len(rows),
+                n_observations=observations,
+                trial_sharpe_std=ir_dispersion,
+            )
+            multiple_testing["deflated_probability"] = round(
+                deflated.deflated_sharpe_ratio, 6
+            )
+            multiple_testing["survives_deflation"] = deflated.survives
+        else:
+            multiple_testing["deflated_probability"] = None
+            multiple_testing["survives_deflation"] = None
+            multiple_testing["note"] = (
+                f"only {observations} IC observation(s); the deflated statistic "
+                f"needs at least {MIN_OBSERVATIONS} to mean anything"
+            )
+
     entry.update(
         {
             "status": "ok",
             "n_alphas_tested": len(rows),
+            "multiple_testing": multiple_testing,
             "n_skipped": len(skipped),
             "alive": counts["alive"],
             "reversed": counts["reversed"],

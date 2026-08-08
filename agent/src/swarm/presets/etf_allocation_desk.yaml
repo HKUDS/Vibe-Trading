@@ -188,7 +188,22 @@ agents:
       5. **Rebalancing Strategy Recommendation** — Recommend rebalancing trigger conditions (time + threshold dual trigger); estimate annual average rebalancing frequency and transaction costs (%); compare with no-rebalancing scenario risk
 
       Use load_skill("risk-analysis") for risk budgeting and risk decomposition methods; load_skill("volatility") for volatility modeling and correlation estimation; load_skill("etf-analysis") for ETF product risk characteristic analysis.
-    tools: [bash, read_file, write_file, load_skill]
+
+      The whole risk table in output 1 is measured, not remembered: pull each
+      asset-class proxy ETF's history with `get_market_data` and compute
+      volatility, correlation and drawdown in `bash`
+      (`src.quantlib.risk.max_drawdown_analysis` for the drawdown column,
+      `historical_var` / `historical_cvar` for tail figures). Name the sample
+      window — asset-class correlations are regime-dependent and a number without
+      a window is meaningless.
+      For output 2, the optimizers exist — do not hand-assign the weights.
+      `risk_parity`, `equal_volatility` and `max_diversification` each live in
+      `backtest/optimizers/` and are selected through the `optimizer` field of the
+      backtest config, so run `backtest` once per scheme and compare the weights
+      it produced. The same runs give you the output-5 turnover and transaction
+      cost figures with rebalancing applied.
+      If a proxy's history cannot be retrieved, exclude that asset class and say so.
+    tools: [bash, read_file, write_file, load_skill, get_market_data, backtest]
     skills: [risk-analysis, volatility, etf-analysis]
     max_iterations: 50
     timeout_seconds: 1800

@@ -154,6 +154,13 @@ def _build_response_from_run_dir(
         except (json.JSONDecodeError, OSError):
             pass
 
+    risk_xray = _load_json_file(run_dir / "artifacts" / "risk_xray.json")
+    if risk_xray is not None:
+        response.risk_xray = risk_xray
+    rebalance_notes = _load_json_file(run_dir / "artifacts" / "rebalance_notes.json")
+    if rebalance_notes is not None:
+        response.rebalance_notes = rebalance_notes
+
     llm_usage_path = run_dir / "llm_usage.json"
     if llm_usage_path.exists():
         try:

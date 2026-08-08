@@ -240,9 +240,11 @@ class MemoryLifecycle:
 
         self._append_gc_log(actions, dry_run)
 
-        # Tier 2: Trigger compression for aged entries
+        # Tier 2: Trigger compression for aged entries. Skipped on dry_run:
+        # compression rewrites entry bodies and frontmatter in place, and a
+        # dry run must not mutate the files it is only auditing.
         from src.config.accessor import get_env_config
-        if get_env_config().memory.compression_enabled:
+        if not dry_run and get_env_config().memory.compression_enabled:
             try:
                 from src.memory.compression import CompressionPipeline
                 pipeline = CompressionPipeline(self._memory._dir)

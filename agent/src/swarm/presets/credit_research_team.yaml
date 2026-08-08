@@ -44,8 +44,42 @@ agents:
       5. **Credit Risk Red-Line Checklist** — List 5–8 key risk events that, if triggered, require immediate re-assessment (e.g., EBITDA/interest coverage below 2x / short-term debt > 50% of total / net financing turns negative)
 
       Use load_skill("credit-analysis") for credit analysis methodology; load_skill("financial-statement") for advanced financial statement interpretation.
-      Use the factor_analysis tool to support cross-sectional multi-dimensional financial metric comparisons.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+
+      ## The default models are implemented — run them, do not eyeball them
+      `from src.quantlib import credit` in `bash`:
+      - `altman_z_score(working_capital, retained_earnings, ebit, equity_value,
+        total_liabilities, total_assets, revenue=None, model=...)` returns an
+        `AltmanZScore`. Pick the `model` deliberately — `ALTMAN_MODELS` carries
+        variants with different coefficients and different zone cut-offs, and the
+        Safe/Grey/Distress boundaries quoted above belong to the ORIGINAL model.
+        If you use another variant, quote that variant's boundaries.
+      - `merton_model(equity_value, equity_vol, debt_face, risk_free, horizon)`
+        solves for asset value and vol and returns the `MertonResult`;
+        `kmv_default_point(short_term_debt, long_term_debt)` then
+        `kmv_distance_to_default(...)` for the KMV form.
+      - `edf_reference_band(dd)` maps distance-to-default to an EDF BAND. It is a
+        reference band, not a calibrated PD — report the band and say so. Do not
+        convert it into a single point default probability.
+      - `credit_spread_analysis(bond_yields, risk_free_yields, ...)` and
+        `spread_term_structure(...)` for the spread work; mind `input_unit`
+        (percent vs decimal) — passing the wrong one silently scales everything
+        by 100.
+      Statement inputs come from `get_financial_statements`, market cap / equity
+      vol / share count from `get_stock_profile` and `get_market_data`. Every model
+      input must trace to one of those calls; if a line item is missing, report the
+      model as not runnable rather than substituting an assumed value.
+      **There is no agency rating feed here.** Agency ratings and rating
+      histories are only usable if you retrieved them via `read_url` and cite
+      the source. A market-implied PD, by contrast, is not missing: it is
+      precisely what the `merton_model` call above produces from equity value,
+      equity vol and debt face. Report it as a model output alongside the inputs
+      that produced it, never as a vendor figure. Your "proprietary rating" is your own
+      judgement mapped from the computed metrics — present it as that, never as
+      an agency-comparable rating.
+      `factor_analysis` computes IC/IR and layered NAV from CSVs you write; it does
+      not do cross-sectional peer comparison for you — build the peer table from
+      per-issuer lookups.
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_financial_statements, get_stock_profile, get_market_data, read_url]
     skills: [credit-analysis, financial-statement]
     max_iterations: 50
     timeout_seconds: 1800

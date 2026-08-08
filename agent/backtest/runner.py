@@ -183,6 +183,17 @@ def _is_literal_node(node: ast.AST) -> bool:
     """Return whether an AST node is made only from literal values."""
     if isinstance(node, ast.Constant):
         return True
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+        # Signed numbers (e.g. a mined ``-0.08`` return threshold) parse as a
+        # UnaryOp over a Constant rather than a bare Constant. They are
+        # compile-time constants: no name lookup, call, or attribute access
+        # runs when the definition is imported, so they stay import-time safe.
+        operand = node.operand
+        return (
+            isinstance(operand, ast.Constant)
+            and isinstance(operand.value, (int, float, complex))
+            and not isinstance(operand.value, bool)
+        )
     if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
         return all(_is_literal_node(item) for item in node.elts)
     if isinstance(node, ast.Dict):
@@ -277,9 +288,20 @@ def _validate_class_body(node: ast.ClassDef) -> None:
 # imports file-wide would reject strategies generated from ~12 shipped skills, so
 # we block the dangerous *use* along the executed path instead of a harmless
 # unused top-level import. Direct ``getattr``/``setattr``/``delattr`` indirection
-# onto ``os`` / forbidden modules is now rejected (see _reject_forbidden_getattr);
-# exotic reach via ``builtins.getattr`` or aliasing remains a documented residual
-# (VT-001) — this is defense-in-depth, not a kernel-level guarantee.
+# onto ``os`` / forbidden modules is now rejected (see _reject_forbidden_getattr),
+# and a renamed binding no longer hides the root (see
+# _module_level_forbidden_aliases). This is defense-in-depth, not a kernel-level
+# guarantee: an AST denylist cannot be complete.
+#
+# MEASURED RESIDUAL, so it is not left implied. After the lists below, these
+# still reach the executed path: ``inspect``, ``operator``, ``threading``,
+# ``codeop``, ``tempfile``, and ``os.makedirs``. None of them reaches a broker
+# on its own — ``inspect``/``operator`` need an object you already hold,
+# ``threading`` runs code that is still in this file and gets scanned if it is
+# reachable, ``codeop`` yields a code object that needs the already-blocked
+# ``eval``/``exec`` to run, and the last two are filesystem, not the red line.
+# They are named here so the next person extends this list from evidence rather
+# than from a fresh survey.
 _FORBIDDEN_IMPORT_MODULES = frozenset(
     {
         "socket",
@@ -297,8 +319,70 @@ _FORBIDDEN_IMPORT_MODULES = frozenset(
         "telnetlib",
         "multiprocessing",
         "ctypes",
+        # Modules that resolve or execute a module BY NAME. Blocking the
+        # ``src.trading`` prefix is worth nothing while any of these can fetch
+        # the same module from a string, and every one of them was measured
+        # ACCEPTED against the live scanner:
+        #   importlib.import_module("src.trading.service")
+        #   builtins.__import__("src.trading.service")
+        #   sys.modules["src.trading.service"]
+        #   pkgutil.resolve_name("src.trading.service:place_order")
+        #   runpy.run_module("src.trading.service")
+        # ``pickle``/``marshal`` belong here for the same reason: a crafted
+        # payload imports and calls through ``__reduce__`` without naming the
+        # module in the source at all. None has a use in a signal engine, which
+        # receives a data_map and returns signals.
+        "importlib",
+        "builtins",
+        "sys",
+        "pkgutil",
+        "runpy",
+        "pickle",
+        "marshal",
+        # Process spawn and filesystem reach, alongside the subprocess entry
+        # already above.
+        "shutil",
+        "webbrowser",
+        "gc",
     }
 )
+# Project-internal subtrees that reach a broker. The red line is that no
+# research or backtest path can arrive at a connector's ``place_order``, and
+# until now that separation rested on the subprocess never being handed
+# credentials rather than on the scanner refusing the import. It refuses now.
+#
+# These are matched on the dotted PREFIX rather than the root package, because
+# the root is ``src`` — which also holds ``src.quantlib``, the finance-math
+# layer strategies are explicitly meant to import (see the credit-analysis
+# skill). Blocking the root would take that away to close this.
+_FORBIDDEN_IMPORT_PREFIXES = (
+    "src.trading",
+    "src.live",
+    "agent.src.trading",
+    "agent.src.live",
+    "trading.connectors",
+    "live.sdk_order_gate",
+)
+
+
+def _is_forbidden_module_path(name: str) -> bool:
+    """Return True when a dotted module path names a forbidden module or subtree.
+
+    Args:
+        name: Dotted module path, e.g. ``socket`` or ``src.trading.service``.
+
+    Returns:
+        True when the root package is forbidden outright, or the path falls
+        inside a forbidden subtree.
+    """
+    if not name:
+        return False
+    if name.split(".")[0] in _FORBIDDEN_IMPORT_MODULES:
+        return True
+    return any(
+        name == prefix or name.startswith(prefix + ".")
+        for prefix in _FORBIDDEN_IMPORT_PREFIXES
+    )
 # ``os`` itself is allowed (os.path etc.), but these attributes shell out, spawn,
 # or read the process environment — none has a place in a signal engine.
 _FORBIDDEN_OS_ATTRS = frozenset(
@@ -316,6 +400,51 @@ _FORBIDDEN_OS_ATTRS = frozenset(
         "environ",
         "environb",
         "startfile",
+        # Filesystem mutation, alongside the open()/pathlib write guards. A
+        # signal engine returns signals; deleting or renaming files is not part
+        # of that contract, and os.remove was measured ACCEPTED.
+        "remove",
+        "unlink",
+        "rmdir",
+        "removedirs",
+        "rename",
+        "renames",
+        "replace",
+        "truncate",
+        "chmod",
+        "chown",
+        "symlink",
+        "link",
+    }
+)
+# The object graph is the last structural route to a module the import checks
+# refuse: ``().__class__.__mro__[1].__subclasses__()`` reaches every loaded
+# class without naming one, and ``(lambda: 0).__globals__['__builtins__']``
+# hands back the builtins mapping that ``_FORBIDDEN_BUILTINS`` exists to gate.
+# Both were measured ACCEPTED.
+#
+# Only the traversal attributes are listed, not every dunder: a signal engine
+# has no reason to walk ``__mro__`` or read ``__globals__``, but banning dunders
+# wholesale would reject ordinary code. This does not make the sandbox complete
+# — see the residual note on _FORBIDDEN_IMPORT_MODULES.
+_FORBIDDEN_DUNDER_ATTRS = frozenset(
+    {
+        "__class__",
+        "__bases__",
+        "__base__",
+        "__mro__",
+        "__subclasses__",
+        "__globals__",
+        "__builtins__",
+        "__code__",
+        "__closure__",
+        "__func__",
+        "__self__",
+        "__reduce__",
+        "__reduce_ex__",
+        "__getattribute__",
+        "__init_subclass__",
+        "__subclasshook__",
     }
 )
 _FORBIDDEN_BUILTINS = frozenset(
@@ -343,6 +472,30 @@ def _attribute_root_name(node: ast.Attribute) -> str | None:
     while isinstance(current, ast.Attribute):
         current = current.value
     return current.id if isinstance(current, ast.Name) else None
+
+
+def _attribute_dotted_path(node: ast.Attribute) -> str | None:
+    """Rebuild the dotted path of an attribute chain (``a.b.c`` -> ``a.b.c``).
+
+    The root name alone cannot decide a forbidden-subtree check: ``src`` is
+    shared by the blocked ``src.trading`` and the permitted ``src.quantlib``.
+
+    Args:
+        node: Attribute node at the end of the chain.
+
+    Returns:
+        The dotted path, or None when the chain is not rooted in a plain name
+        (e.g. it starts from a call or subscript).
+    """
+    parts: list[str] = []
+    current: ast.AST = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return None
+    parts.append(current.id)
+    return ".".join(reversed(parts))
 
 
 def _reject_forbidden_open(node: ast.Call) -> None:
@@ -376,6 +529,50 @@ def _reject_forbidden_open(node: ast.Call) -> None:
         raise ValueError(f"open() with a non-relative path {path!r} {_SCRUB_MSG}")
 
 
+def _reject_forbidden_pathlib_write(node: ast.Call) -> None:
+    """Reject the pathlib spellings of a file write that ``open()`` already bars.
+
+    ``_reject_forbidden_open`` refuses ``open(path, "w")``, but the identical
+    write reaches disk through ``Path(p).write_text()``, ``.write_bytes()`` and
+    ``Path(p).open("w")``, none of which that check can see — it only matches a
+    bare ``open`` or ``io``/``os.open``. The guard therefore did not do the one
+    thing it says it does. Measured against the live scanner,
+    ``Path('/tmp/x').write_text('x')`` was ACCEPTED.
+
+    Matching is on the method name rather than on proving the receiver is a
+    ``Path``: the receiver is usually a call expression, and a signal engine
+    that defines its own ``write_text`` is not a pattern worth preserving. A
+    strategy is handed a data_map and returns signals; it writes nothing.
+
+    Args:
+        node: Call node on the executed path.
+
+    Raises:
+        ValueError: If the call writes to the filesystem.
+    """
+    func = node.func
+    if not isinstance(func, ast.Attribute):
+        return
+    if func.attr in {"write_text", "write_bytes"}:
+        raise ValueError(f"Writing files via .{func.attr}() {_SCRUB_MSG}")
+    if func.attr != "open":
+        return
+    if isinstance(func.value, ast.Name) and func.value.id in {"io", "os"}:
+        return  # module-level open(path, mode) — _reject_forbidden_open owns it
+    # A BOUND ``.open()`` takes the mode first: the receiver is not an argument,
+    # so the index is 0 here where the module-level form uses 1.
+    mode_node: ast.AST | None = node.args[0] if node.args else None
+    for kw in node.keywords:
+        if kw.arg == "mode":
+            mode_node = kw.value
+    if mode_node is None:
+        return
+    if not (isinstance(mode_node, ast.Constant) and isinstance(mode_node.value, str)):
+        raise ValueError(f".open() with a non-literal mode {_SCRUB_MSG}")
+    if any(ch in _OPEN_WRITE_MODE_CHARS for ch in mode_node.value):
+        raise ValueError(f"Writing files via .open(mode={mode_node.value!r}) {_SCRUB_MSG}")
+
+
 def _reject_forbidden_getattr(node: ast.Call) -> None:
     """Reject getattr/setattr/delattr indirection onto ``os`` / forbidden modules.
 
@@ -394,6 +591,9 @@ def _reject_forbidden_getattr(node: ast.Call) -> None:
         root: str | None = target.id
     elif isinstance(target, ast.Attribute):
         root = _attribute_root_name(target)
+        dotted = _attribute_dotted_path(target)
+        if dotted and _is_forbidden_module_path(dotted):
+            raise ValueError(f"{func.id}() indirection onto {dotted!r} {_SCRUB_MSG}")
     else:
         root = None
     if root == "os" or root in _FORBIDDEN_IMPORT_MODULES:
@@ -404,12 +604,18 @@ def _reject_forbidden_node(node: ast.AST) -> None:
     """Raise ``ValueError`` if a single AST node performs a forbidden operation."""
     if isinstance(node, ast.Import):
         for alias in node.names:
-            if alias.name.split(".")[0] in _FORBIDDEN_IMPORT_MODULES:
+            if _is_forbidden_module_path(alias.name):
                 raise ValueError(f"Import of {alias.name!r} {_SCRUB_MSG}")
     elif isinstance(node, ast.ImportFrom):
-        root = (node.module or "").split(".")[0]
-        if root in _FORBIDDEN_IMPORT_MODULES:
+        module = node.module or ""
+        root = module.split(".")[0]
+        if _is_forbidden_module_path(module):
             raise ValueError(f"Import from {node.module!r} {_SCRUB_MSG}")
+        # "from src.trading import service" names the subtree in the alias,
+        # not the module, so the prefix check above cannot see it.
+        for alias in node.names:
+            if _is_forbidden_module_path(f"{module}.{alias.name}" if module else alias.name):
+                raise ValueError(f"Import of {module}.{alias.name!r} {_SCRUB_MSG}")
         if root == "os":
             for alias in node.names:
                 if _is_forbidden_os_attr(alias.name):
@@ -418,14 +624,67 @@ def _reject_forbidden_node(node: ast.AST) -> None:
         root = _attribute_root_name(node)
         if root in _FORBIDDEN_IMPORT_MODULES:
             raise ValueError(f"Use of {root}.{node.attr} {_SCRUB_MSG}")
+        dotted = _attribute_dotted_path(node)
+        if dotted and _is_forbidden_module_path(dotted):
+            raise ValueError(f"Use of {dotted} {_SCRUB_MSG}")
         if root == "os" and _is_forbidden_os_attr(node.attr):
             raise ValueError(f"Use of os.{node.attr} {_SCRUB_MSG}")
+        if node.attr in _FORBIDDEN_DUNDER_ATTRS:
+            raise ValueError(f"Object-graph traversal via .{node.attr} {_SCRUB_MSG}")
     elif isinstance(node, ast.Name):
         if node.id in _FORBIDDEN_BUILTINS:
             raise ValueError(f"Use of {node.id!r} {_SCRUB_MSG}")
     elif isinstance(node, ast.Call):
         _reject_forbidden_open(node)
+        _reject_forbidden_pathlib_write(node)
         _reject_forbidden_getattr(node)
+
+
+def _module_level_forbidden_aliases(tree: ast.Module) -> dict[str, str]:
+    """Map module-level names that are bound to a forbidden module.
+
+    Module-level imports are deliberately not rejected outright (see the
+    ``_FORBIDDEN_IMPORT_MODULES`` comment): the shipped skill examples carry an
+    unused ``import requests`` beside a helper the runner never reaches, and a
+    file-wide import block would reject strategies generated from them. The
+    compensating check is on the *use* along the executed path — but that check
+    matches dotted chains rooted in the module's own name, so a binding that
+    renames it slipped past both::
+
+        from socket import socket as S              ->  S()
+        import socket as sk                         ->  sk.socket()
+        from src.trading.service import place_order ->  place_order(1)
+
+    This recovers the binding so the use site can be judged by what the name
+    actually refers to, which closes the aliasing half of the VT-001 residual
+    without touching the harmless unused import.
+
+    Args:
+        tree: Parsed signal engine module.
+
+    Returns:
+        Bound name -> the dotted path it refers to, for forbidden targets only.
+    """
+    aliases: dict[str, str] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            # A plain ``import socket`` needs no entry: its use is a dotted
+            # chain rooted in ``socket``, which the attribute check already
+            # rejects. Only a rename hides that root.
+            for alias in node.names:
+                if alias.asname and _is_forbidden_module_path(alias.name):
+                    aliases[alias.asname] = alias.name
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for alias in node.names:
+                target = f"{module}.{alias.name}" if module else alias.name
+                if (
+                    _is_forbidden_module_path(module)
+                    or _is_forbidden_module_path(target)
+                    or (module.split(".")[0] == "os" and _is_forbidden_os_attr(alias.name))
+                ):
+                    aliases[alias.asname or alias.name] = target
+    return aliases
 
 
 def _scan_runtime_reachable(tree: ast.Module) -> None:
@@ -453,6 +712,7 @@ def _scan_runtime_reachable(tree: ast.Module) -> None:
     worklist: list[ast.AST] = [
         m for m in engine_cls.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
     ]
+    aliases = _module_level_forbidden_aliases(tree)
     visited: set[int] = set()
     while worklist:
         fn = worklist.pop()
@@ -461,6 +721,11 @@ def _scan_runtime_reachable(tree: ast.Module) -> None:
         visited.add(id(fn))
         for node in ast.walk(fn):
             _reject_forbidden_node(node)
+            if isinstance(node, ast.Name) and node.id in aliases:
+                raise ValueError(
+                    f"Use of {node.id!r}, bound at module level to "
+                    f"{aliases[node.id]!r}, {_SCRUB_MSG}"
+                )
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                 target = module_funcs.get(node.func.id)
                 if target is not None:
@@ -1039,6 +1304,14 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
         from backtest.engines.china_a import ChinaAEngine
         return ChinaAEngine(config)
     elif source == "yfinance":
+        # yfinance serves crypto pairs (BTC-USDT, BTC-USD) next to equities,
+        # so route on the instrument market here too. Handing crypto to
+        # GlobalEquityEngine applies zero-commission equity rules while the
+        # CryptoEngine fee keys (taker_rate/maker_rate/slippage) sit ignored
+        # in the config, and nothing warns.
+        if "crypto" in markets:
+            from backtest.engines.crypto import CryptoEngine
+            return CryptoEngine(config)
         from backtest.engines.global_equity import GlobalEquityEngine
         market = _detect_submarket(codes)
         return GlobalEquityEngine(config, market=market)

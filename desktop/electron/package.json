@@ -1,0 +1,23 @@
+{
+  "name": "vibe-trading-desktop-unofficial-community",
+  "version": "0.3.0",
+  "private": true,
+  "author": "Vibe-Trading Desktop Community Contributors",
+  "license": "MIT",
+  "description": "Vibe-Trading Desktop (Unofficial Community Build)",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc && node scripts/copy-static.mjs",
+    "start": "npm run build && electron .",
+    "test:locales": "npm run build && node scripts/test-locales.mjs",
+    "test:backend-resolution": "npm run build && node scripts/test-backend-resolution.mjs",
+    "smoke:parent-death": "npm run build && node scripts/smoke-parent-death.mjs",
+    "smoke:lifecycle": "npm run build && node scripts/test-locales.mjs && node scripts/test-backend-resolution.mjs && node scripts/smoke-lifecycle.mjs && node scripts/smoke-parent-death.mjs",
+    "sbom": "npm sbom --sbom-format cyclonedx"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "electron": "43.1.1",
+    "typescript": "^5.9.3"
+  }
+}

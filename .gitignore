@@ -27,6 +27,19 @@ agent/runs/
 agent/.ui_runtime/
 agent/.tasks/
 agent/uploads/
+# Same runtime artifacts, but written to the repo root when the CLI or server
+# is started from there — sessions.db holds real session transcripts and
+# live/ holds broker audit and kill-switch state.
+/sessions.db
+/sessions.db-shm
+/sessions.db-wal
+/sessions/
+/runs/
+/shadow_runs/
+/swarm/runs/
+/live/
+/uploads/
+/imports/
 agent/tests/*_result.json
 .ruff_cache/
 frontend/dist/
@@ -87,6 +100,10 @@ NOTES.md
 AGENTS.md
 
 .DS_Store
+
+# Desktop shell build outputs
+desktop/electron/node_modules/
+desktop/electron/dist/
 
 # Alpha Zoo wiki artifacts (generated, not source)
 wiki/alpha-library/manifest.json

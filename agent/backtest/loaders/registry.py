@@ -136,7 +136,10 @@ _NO_NETWORK_FALLBACK_SOURCES: frozenset[str] = frozenset({"local", "qveris"})  #
 FALLBACK_CHAINS: dict[str, list[str]] = {
     "a_share":   ["tencent", "mootdx", "eastmoney", "baostock", "akshare", "tushare", "local"],
     "us_equity": ["yahoo", "stooq", "sina", "eastmoney", "yfinance", "tiingo", "fmp", "finnhub", "alphavantage", "longbridge", "akshare", "local"],
-    "hk_equity": ["eastmoney", "yahoo", "futu", "yfinance", "akshare", "longbridge", "local"],
+    # HK: tencent leads (no observed IP ban); akshare (Eastmoney-backed)
+    # precedes the Yahoo-SDK family, which is blocked from mainland IPs;
+    # tushare hk_daily is key-gated.
+    "hk_equity": ["tencent", "eastmoney", "yahoo", "futu", "akshare", "yfinance", "tushare", "longbridge", "local"],
     "india_equity": ["yahoo", "yfinance", "india_broker", "local"],
     "kr_equity":   ["pykrx", "yahoo", "yfinance", "local"],
     # OKX first (native), then dedicated Binance, then generic CCXT / Yahoo.

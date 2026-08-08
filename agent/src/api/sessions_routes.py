@@ -332,13 +332,26 @@ def register_sessions_routes(app: FastAPI) -> None:
     # Session CRUD routes
     # -----------------------------------------------------------------------
 
-    @app.post("/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_auth)])
-    async def create_session(request: CreateSessionRequest):
-        """Create a chat session."""
+    @app.post("/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
+    async def create_session(
+        request: CreateSessionRequest,
+        principal=Depends(require_auth),
+    ):
+        """Create a chat session.
+
+        The authenticated principal is recorded as the session owner. Under the
+        shared-key and loopback auth modes that principal is not attributable to
+        a named human -- it carries ``attributable=False`` and must not be read
+        as an identity. Recording it anyway is still worth doing: it captures
+        HOW the session was authorised, which is the part that becomes an
+        identity once an identity provider is wired in.
+        """
         svc = _host_get_session_service()
         if not svc:
             raise HTTPException(status_code=501, detail="Session runtime not enabled")
-        session = svc.create_session(title=request.title, config=request.config)
+        session = svc.create_session(
+            title=request.title, config=request.config, owner=principal
+        )
         return SessionResponse(
             session_id=session.session_id,
             title=session.title,

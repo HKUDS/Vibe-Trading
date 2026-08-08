@@ -164,7 +164,21 @@ agents:
       - Next review time / trigger for position reassessment
 
       Use load_skill for risk analysis and asset allocation frameworks.
-    tools: [bash, read_file, write_file, load_skill]
+
+      The gate thresholds above are written as "X%" because YOU must set them from
+      measurement, not pick round numbers. Pull the histories with
+      `get_market_data` and, in `bash`:
+      - realised vol and the BTC-vs-index correlation for the correlation gate
+        (state the window — crypto correlation is unstable across regimes)
+      - `src.quantlib.risk.historical_var` / `historical_cvar` for the loss gates
+        and `max_drawdown_analysis` for the drawdown gate, so each threshold is
+        anchored to an observed distribution rather than a habit
+      - `fit_gpd_tail` for the tail beyond the sample
+      Funding, liquidation-cluster and stablecoin-flow readings come from upstream
+      analysts in `{upstream_context}` — cite the upstream figure. If an upstream
+      section reported its data as unavailable, the gate that depends on it is
+      also unavailable: say so instead of inventing a threshold for it.
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
     skills: [risk-analysis, asset-allocation, volatility, hedging-strategy]
     max_iterations: 50
     timeout_seconds: 1800

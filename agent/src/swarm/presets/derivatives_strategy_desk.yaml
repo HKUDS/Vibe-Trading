@@ -43,7 +43,31 @@ agents:
         - Steep skew + low IV Premium → directionally biased strategy
 
       Use load_skill("volatility") for volatility analysis standards; load_skill("options-advanced") for advanced options analysis methods.
-      Use the options_pricing tool for volatility calculations and surface modeling.
+
+      ## Where each number actually comes from
+      `options_pricing` takes a volatility you already know and returns a
+      Black-Scholes price plus delta/gamma/theta/vega. It does NOT invert IV and
+      it does NOT build a surface — never cite it as the source of an IV.
+      - **Market IV, skew, term structure**: `get_options_chain` returns the
+        per-contract ladder (strike, bid/ask, last, volume, open interest,
+        `implied_volatility`) for one expiration, plus the expiration list. Call
+        it once per tenor to build a term structure, and read the skew off the
+        strike ladder. **Yahoo-backed and US-listed only** — if {target} is not
+        a US-listed underlying, say so and report the IV sections as unavailable
+        rather than estimating them.
+      - **25-delta strikes**: the chain gives no delta column. Recover delta by
+        running each contract's own `implied_volatility` back through
+        `src.quantlib.options.bs_greeks(S, K, T, r, sigma, option_type)` in `bash`,
+        then interpolate to the 25-delta point. State the interpolation you used.
+      - **IV from a price** (e.g. a contract with a stale or missing IV field):
+        `src.quantlib.options.implied_volatility(market_price, S, K, T, r, option_type)`
+        inverts it directly.
+      - **Historical volatility and GARCH persistence**: compute HV from bars in
+        `bash`; `src.quantlib.timeseries.fit_garch(returns, horizon)` gives the
+        fitted GARCH result for the persistence claim.
+      Any percentile you quote ("current HV sits at the 80th percentile") must be
+      computed from a history you actually pulled. If you did not pull the
+      history, do not quote a percentile.
 
       ## Output Requirements
       1. **Volatility Environment Summary** — One-sentence qualitative characterization: current volatility is "low / medium / high", specific percentile, implied future volatility direction
@@ -52,7 +76,7 @@ agents:
       4. **Term Structure Shape** — Front-month / second-month / quarterly IV comparison; term structure slope and trading implications
       5. **Skew Characteristics Analysis** — Put skew and risk reversal current levels; compare vs. historical median; assess market sentiment bias
       6. **Volatility Strategy Direction Recommendation** — Based on the above, explicitly recommend "long volatility / short volatility / directional bias / calendar spread"; include confidence level
-    tools: [bash, read_file, write_file, load_skill, options_pricing]
+    tools: [bash, read_file, write_file, load_skill, options_pricing, get_options_chain, get_market_data]
     skills: [volatility, options-advanced]
     max_iterations: 50
     timeout_seconds: 1800
@@ -117,7 +141,7 @@ agents:
       4. **Initial Greeks Overview** — Current values of Delta / Gamma / Theta / Vega and their interpretation (risk exposure direction at initiation)
       5. **Entry and Exit Rules** — Entry trigger conditions, profit-taking rules, stop-loss rules, time stop rules; specific and actionable
       6. **Strategy Applicability and Failure Scenarios** — Under what conditions the strategy is effective; under what conditions it fails (requiring prompt adjustment)
-    tools: [bash, read_file, write_file, load_skill, options_pricing]
+    tools: [bash, read_file, write_file, load_skill, options_pricing, get_options_chain, get_market_data]
     skills: [options-strategy, options-advanced, hedging-strategy, options-payoff]
     max_iterations: 50
     timeout_seconds: 1800
@@ -155,6 +179,14 @@ agents:
       - **Vanna**: Delta sensitivity to IV (cross-effect of direction and volatility)
       - **Volga / Vomma**: Second derivative of Vega with respect to IV (convexity when vol moves to extremes)
 
+      `src.quantlib.options.bs_greeks` returns delta, gamma, theta, vega and rho —
+      there is no closed-form vanna or volga in this system. Compute them by
+      bumping sigma in `bash` and differencing, and say that is what you did:
+      `vanna ≈ (bs_greeks(..., sigma+h)["delta"] - bs_greeks(..., sigma-h)["delta"]) / (2h)`
+      `volga ≈ (bs_greeks(..., sigma+h)["vega"]  - bs_greeks(..., sigma-h)["vega"])  / (2h)`
+      State the bump size `h` you used. A vanna or volga figure that did not come
+      out of this calculation must not appear in the report.
+
       ### III. Scenario Analysis
       Build a 2D scenario matrix (underlying price × implied volatility):
       - Price dimension: current price ±5% / ±10% / ±15% / ±20% (6 nodes)
@@ -169,16 +201,23 @@ agents:
       - **Liquidity Risk**: Exit cost when bid-ask spreads widen to 3× normal levels
 
       Use load_skill("options-advanced") for advanced Greeks calculation standards; load_skill("risk-analysis") for risk management standards; load_skill("volatility") for Vega and volatility risk understanding.
-      Use the options_pricing tool to compute portfolio Greeks and the scenario analysis matrix.
+      Use `options_pricing` (or `src.quantlib.options.bs_greeks` in `bash` when you need
+      rho or a bumped input) per leg, then aggregate across legs yourself — nothing
+      computes a portfolio-level Greek or a scenario matrix for you. Build the
+      price × IV matrix by re-pricing every leg at each grid node in `bash`.
+      For the CVaR / expected-shortfall figure, use
+      `src.quantlib.risk.historical_cvar` or `src.quantlib.risk.monte_carlo_gbm` +
+      `analyze_mc_results` on a return series you actually pulled — do not assert a
+      shortfall number without one.
 
       ## Output Requirements
-      1. **Portfolio Greeks Summary Table** — Current values of Delta / Gamma / Theta / Vega / Vanna, with intuitive interpretation ("earn/lose $X per day" format)
+      1. **Portfolio Greeks Summary Table** — Current values of Delta / Gamma / Theta / Vega / Vanna, aggregated from per-leg `bs_greeks` output (vanna by the sigma-bump above), with intuitive interpretation ("earn/lose $X per day" format)
       2. **Scenario Analysis Matrix** — Price × volatility 2D matrix; clearly display P&L distribution; annotate breakeven boundaries
       3. **Key Risk Point Identification** — Under which scenarios does the portfolio suffer the largest losses? Maximum loss amount and probability estimate for the worst case
       4. **Gamma / Theta Trade-off Analysis** — Current intraday battle between Gamma and Theta; analyze whether it is "trading time for space" or "trading space for time"
       5. **Stress Test Results** — Historical extreme scenario and single-day shock test results; provide maximum expected shortfall (ES / CVaR)
       6. **Dynamic Adjustment Recommendations** — At what price / time / IV level should the strategy be adjusted (Delta rebalancing trigger, roll timing, stop-loss exit conditions)
-    tools: [bash, read_file, write_file, load_skill, options_pricing]
+    tools: [bash, read_file, write_file, load_skill, options_pricing, get_options_chain, get_market_data]
     skills: [options-advanced, risk-analysis, volatility, options-payoff]
     max_iterations: 50
     timeout_seconds: 1800

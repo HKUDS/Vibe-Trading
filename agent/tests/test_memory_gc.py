@@ -172,6 +172,61 @@ class TestRunGC:
         assert (tmp_path / "archive" / "project_very-low.md").exists()
         assert not (tmp_path / "project_very-low.md").exists()
 
+    def test_gc_dry_run_skips_compression(self, tmp_path: Path, monkeypatch) -> None:
+        """dry_run=True must not rewrite entries via the compression pipeline."""
+        monkeypatch.setenv("VT_MEMORY_GC", "1")
+        monkeypatch.setenv("VT_MEMORY_COMPRESSION", "1")
+        # Younger than MIN_AGE_DAYS so Tier-1 skips it, but last_accessed is
+        # older than DAILY_THRESHOLD_DAYS (7) so Tier-2 would compress it.
+        now = time.time()
+        created_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 2 * 86400))
+        accessed_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 9 * 86400))
+        body = " ".join(
+            f"Sentence number {i} discusses trading topic {i} in detail."
+            for i in range(12)
+        )
+        path = _create_memory_file(
+            tmp_path,
+            "aged-raw",
+            content=body,
+            keywords=["alpha", "momentum"],
+            created_at=created_iso,
+            last_accessed=accessed_iso,
+        )
+        before = path.read_text(encoding="utf-8")
+        pm = PersistentMemory(memory_dir=tmp_path)
+        lc = MemoryLifecycle(pm)
+        actions = lc.run_gc(dry_run=True)
+        assert actions == []
+        assert path.read_text(encoding="utf-8") == before
+
+    def test_gc_execute_applies_compression(self, tmp_path: Path, monkeypatch) -> None:
+        """dry_run=False still applies Tier-2 compression to eligible entries."""
+        monkeypatch.setenv("VT_MEMORY_GC", "1")
+        monkeypatch.setenv("VT_MEMORY_COMPRESSION", "1")
+        now = time.time()
+        created_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 2 * 86400))
+        accessed_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 9 * 86400))
+        body = " ".join(
+            f"Sentence number {i} discusses trading topic {i} in detail."
+            for i in range(12)
+        )
+        path = _create_memory_file(
+            tmp_path,
+            "aged-raw-exec",
+            content=body,
+            keywords=["alpha", "momentum"],
+            created_at=created_iso,
+            last_accessed=accessed_iso,
+        )
+        before = path.read_text(encoding="utf-8")
+        pm = PersistentMemory(memory_dir=tmp_path)
+        lc = MemoryLifecycle(pm)
+        lc.run_gc(dry_run=False)
+        after = path.read_text(encoding="utf-8")
+        assert after != before
+        assert "compression_level: daily" in after
+
 
 # ---------------------------------------------------------------------------
 # 2. find_relevant importance weighting

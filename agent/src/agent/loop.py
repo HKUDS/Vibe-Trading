@@ -47,12 +47,12 @@ from src.providers.content_filter import (
 from src.config.accessor import get_env_config
 from src.config.paths import get_runs_dir, get_sessions_dir
 from src.tools.background_tools import get_background_manager
+from src.config.limits import TOOL_RESULT_LIMIT, truncate_tool_result
 from src.tools.redaction import redact_payload, redact_tool_result
 
 RUNS_DIR = get_runs_dir()
 SESSIONS_DIR = get_sessions_dir()
 KEEP_RECENT = 3
-TOOL_RESULT_LIMIT = 10_000
 LLM_USAGE_ARTIFACT = "llm_usage.json"
 
 COLLAPSE_PRESERVE_RECENT = 6
@@ -564,6 +564,63 @@ class AgentLoop:
         """
         self._cancel_event.set()
 
+    def _write_run_manifest(self, trace_dir: "Path", messages: List[Dict[str, Any]]) -> None:
+        """Record what methodology produced this run, beside its trace.
+
+        Answers "under what system prompt, which skills, and which tool set was
+        that number produced" -- the question a reproducibility review asks and
+        that nothing in this repo could previously answer. Written once per run
+        as ``run_manifest.json`` next to ``trace.jsonl``.
+
+        The system-prompt hash transitively covers every skill injected at
+        context-build time, because those skills ARE part of the prompt string.
+        Skills pulled mid-run via ``load_skill`` are not, and appear in the
+        trace instead; the manifest says so rather than implying coverage it
+        does not have.
+
+        The prompt itself is never stored -- only its hash. The prompt can carry
+        user memory and workspace content, and this file is a provenance record,
+        not a second copy of the conversation.
+
+        Args:
+            trace_dir: Directory holding this run's trace.
+            messages: The fully built message list about to be sent.
+
+        Note:
+            Never raises. A provenance record that can break a run is worse than
+            a missing one; a failure is logged and the run continues.
+        """
+        try:
+            from datetime import datetime, timezone
+
+            from src.governance.manifest import (
+                build_run_manifest,
+                collect_key_package_versions,
+            )
+
+            system_prompt = next(
+                (m.get("content", "") for m in messages if m.get("role") == "system"), ""
+            )
+            manifest = build_run_manifest(
+                run_id=f"iter-{self._run_iteration + 1}",
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                system_prompt=str(system_prompt),
+                tool_names=list(self.registry.tool_names),
+                package_versions=collect_key_package_versions(),
+                extra={
+                    "skill_coverage": (
+                        "skills injected at context-build time are inside the "
+                        "hashed system prompt; skills loaded mid-run via "
+                        "load_skill appear in trace.jsonl, not here"
+                    ),
+                },
+            )
+            path = trace_dir / "run_manifest.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(manifest.to_json(indent=2), encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("run manifest not written (%s: %s)", type(exc).__name__, exc)
+
     def run(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None, session_id: str = "") -> Dict[str, Any]:
         """Run the ReAct loop synchronously.
 
@@ -617,6 +674,7 @@ class AgentLoop:
 
         trace_dir = SESSIONS_DIR / session_id if session_id else run_dir
         trace = TraceWriter(trace_dir)
+        self._write_run_manifest(trace_dir, messages)
         if self._run_iteration == 0 and trace.path.exists():
             existing = TraceWriter.read(trace_dir)
             self._run_iteration = max(
@@ -1706,7 +1764,7 @@ class AgentLoop:
                 )
 
         status = "ok" if success else "error"
-        truncated = result[:TOOL_RESULT_LIMIT]
+        truncated = truncate_tool_result(result)
         messages.append(context.format_tool_result(tc.id, tc.name, truncated))
 
         # One redaction feeds every subscriber below: the persisted trace

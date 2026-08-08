@@ -1,6 +1,6 @@
 name: value_investing_committee
 title: "Value Investing Committee (Buffett / Munger / Duan / Li Lu)"
-description: "Four adversarial master perspectives — Buffett (moat & price), Munger (inversion & risk), Duan Yongping (good business & trustworthy management), Li Lu (10-year certainty & civilizational trend, incl. demographic/consumption macro) — run in parallel on one company, then a chair synthesizes consensus and contradictions into a verdict. Inspired by the ai-berkshire master-视角 framework. Use for deep value-investing deliberation on a single named company."
+description: "Four adversarial master perspectives — Buffett (moat & price), Munger (inversion & risk), Duan Yongping (good business & trustworthy management), Li Lu (10-year certainty & civilizational trend, incl. demographic/consumption macro) — run in parallel on one company, then a chair synthesizes consensus and contradictions into a verdict. Inspired by the ai-berkshire master-视角 framework. Each perspective is a reconstruction of a publicly documented methodology, not the named individual and not an endorsement. Use for deep value-investing deliberation on a single named company."
 
 agents:
   - id: buffett
@@ -28,7 +28,7 @@ agents:
 
       Use load_skill / get_financial_statements / get_market_data / financial_rigor to source and verify numbers precisely (no "TBD" skips).
     tools: [bash, read_file, write_file, load_skill, get_market_data, get_financial_statements, web_search, financial_rigor]
-    skills: [fundamental-filter, valuation-model, quality-screen, management-deep-dive]
+    skills: [fundamental-filter, valuation-model, management-deep-dive]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1
@@ -88,7 +88,7 @@ agents:
 
       load_skill("thesis-tracker") to build a thesis and red lines.
     tools: [bash, read_file, write_file, load_skill, get_market_data, get_financial_statements, web_search, financial_rigor]
-    skills: [management-deep-dive, fundamental-filter, thesis-tracker, quality-screen]
+    skills: [management-deep-dive, fundamental-filter, thesis-tracker]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1
@@ -137,19 +137,25 @@ agents:
 
       ## You must output
       1. **Consensus** (all four agree; highest confidence) — e.g. "the moat is real", "management is trustworthy", "valuation is stretched".
-      2. **Contradictions** (who disagrees with whom, on what) — e.g. Buffett thinks cheap, Munger sees a path to zero; Duan likes management, Li Lu doubts 10-year certainty. **Explain the root cause of the disagreement** (caliber difference / time-horizon difference / risk-preference difference).
+      2. **Contradictions** (which lens disagrees with which, on what) — e.g. the moat-and-price lens reads the price as cheap while the inversion lens finds a path to zero; the good-business lens trusts management while the 10-year-certainty lens doubts durability. **Explain the root cause of the disagreement** (caliber difference / time-horizon difference / risk-preference difference).
       3. **Verdict** — on consensus + contradictions, give invest / watch / avoid + confidence (information sufficiency).
       4. **Fatal risks & "thesis-broken" signals** — synthesize Munger's failure paths into 3 stop-loss triggers.
       5. **One-page decision table** — core logic 3 sentences / value range / key assumptions & validation nodes / conclusion.
 
       ## Principles
-      - Adversarial tension is by design: Buffett says "cheap enough", Munger asks "how could it die", Duan says "good business", Li Lu asks "still here in 10 years" — when synthesizing, don't smooth contradictions; explain them.
+      - Adversarial tension is by design: the moat-and-price lens asks "cheap enough", the inversion lens asks "how could it die", the good-business lens asks "would you entrust management with your money", the 10-year-certainty lens asks "still here in 10 years" — when synthesizing, don't smooth contradictions; explain them.
+      - **Attribute to the framework, never to the person.** Write "under the moat-and-price framework, the price is defensible", never "Buffett would buy this". The four upstream analyses are reconstructions of publicly documented methodologies — not the opinions of the named individuals, not written or endorsed by them. State this once in the report, and state that the verdict is analysis, not investment advice.
       - Honestly report information gaps: if the four masters lack information on some dimension, state "under missing X, conclusion confidence is Y".
       - Use report_audit (extract → verdict) as a quality gate on key numbers in the final report.
 
+      Use load_skill("report-generate") for the report format and writing standards.
+      You have no data tool: every figure must already appear in {upstream_context}.
+      Carry forward any dimension an upstream lens reported as missing rather than
+      resolving it yourself.
+
       Output the full Markdown report and save it with write_file.
-    tools: [bash, read_file, write_file, report_audit]
-    skills: [report-generate, investment-checklist]
+    tools: [bash, read_file, write_file, load_skill, report_audit]
+    skills: [report-generate]
     max_iterations: 50
     timeout_seconds: 1800
     max_retries: 1

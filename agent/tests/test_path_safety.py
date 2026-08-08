@@ -148,6 +148,27 @@ class TestSafeRunDir:
 
         assert result == agent_runs.resolve()
 
+    def test_rejection_lists_allowed_roots_and_mcp_scope(self, tmp_path: Path, monkeypatch):
+        """A rejection must say what IS allowed, not only which env var exists.
+
+        Reported in #963: an MCP client user could only guess at the boundary,
+        and setting the variable in a shell silently does nothing because the
+        client spawns the server itself.
+        """
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(allowed))
+        rejected = tmp_path / "elsewhere"
+        rejected.mkdir()
+
+        with pytest.raises(ValueError) as excinfo:
+            safe_run_dir(str(rejected))
+
+        message = str(excinfo.value)
+        assert "outside allowed run roots" in message
+        assert f"  - {allowed.resolve()}" in message
+        assert "MCP client" in message
+
 
 class TestSafeRunId:
     def test_configured_run_id_accepted(self, tmp_path: Path, monkeypatch):

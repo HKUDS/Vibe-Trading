@@ -25,6 +25,9 @@ from src.strategy_store.models import (
     BenchResult,
     DecaySignal,
     DecaySnapshot,
+    ModelTier,
+    ValidationStatus,
+    validate_validation_status_transition,
 )
 
 # ---------------------------------------------------------------------------
@@ -32,6 +35,30 @@ from src.strategy_store.models import (
 # ---------------------------------------------------------------------------
 
 _DEFAULT_DB_PATH = Path.home() / ".vibe-trading" / "strategy_store.db"
+
+# Schema version introduced by the model-governance migration (adds the
+# developer/owner/validator/approver/model_version/artifact_version/
+# model_tier/intended_use/limitations/validation_status/validation_date
+# columns to `artifacts`). Bumping PRAGMA user_version documents intent;
+# the migration itself is idempotent via a column-existence check so it is
+# safe to run unconditionally on every open regardless of the stamped
+# version (covers DBs that were hand-edited or partially migrated).
+_SCHEMA_VERSION_GOVERNANCE = 2
+
+# column_name -> DDL type/default fragment used by ALTER TABLE ADD COLUMN.
+_GOVERNANCE_COLUMNS: dict[str, str] = {
+    "developer": "TEXT",
+    "owner": "TEXT",
+    "validator": "TEXT",
+    "approver": "TEXT",
+    "model_version": "TEXT",
+    "artifact_version": "TEXT",
+    "model_tier": "TEXT",
+    "intended_use": "TEXT",
+    "limitations": "TEXT",
+    "validation_status": "TEXT DEFAULT 'unvalidated'",
+    "validation_date": "TEXT",
+}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -209,7 +236,26 @@ class SqliteStrategyStore:
             )
             if self._conn.execute("PRAGMA user_version").fetchone()[0] < 1:
                 self._conn.execute("PRAGMA user_version=1")
+            self._migrate_governance_columns()
+            if self._conn.execute("PRAGMA user_version").fetchone()[0] < _SCHEMA_VERSION_GOVERNANCE:
+                self._conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION_GOVERNANCE}")
             self._conn.commit()
+
+    def _migrate_governance_columns(self) -> None:
+        """Add model-governance columns to ``artifacts`` if missing.
+
+        Idempotent: checks ``PRAGMA table_info`` for each column before
+        issuing ``ALTER TABLE ADD COLUMN``, so it is safe to call on every
+        connection open — including against a pre-governance database that
+        predates this migration (the primary backward-compatibility path)
+        and against re-running this exact method twice in the same process.
+        """
+        existing_columns = {
+            row["name"] for row in self._conn.execute("PRAGMA table_info(artifacts)")
+        }
+        for column, ddl in _GOVERNANCE_COLUMNS.items():
+            if column not in existing_columns:
+                self._conn.execute(f"ALTER TABLE artifacts ADD COLUMN {column} {ddl}")
 
     # -- Write transaction --------------------------------------------------
 
@@ -253,6 +299,21 @@ class SqliteStrategyStore:
             updated_at=row["updated_at"],
             disabled_at=row["disabled_at"],
             disabled_reason=row["disabled_reason"],
+            developer=row["developer"],
+            owner=row["owner"],
+            validator=row["validator"],
+            approver=row["approver"],
+            model_version=row["model_version"],
+            artifact_version=row["artifact_version"],
+            model_tier=ModelTier(row["model_tier"]) if row["model_tier"] else None,
+            intended_use=row["intended_use"],
+            limitations=row["limitations"],
+            validation_status=(
+                ValidationStatus(row["validation_status"])
+                if row["validation_status"]
+                else ValidationStatus.UNVALIDATED
+            ),
+            validation_date=row["validation_date"],
         )
 
     @staticmethod
@@ -303,6 +364,13 @@ class SqliteStrategyStore:
     @_synchronized
     def register_artifact(self, artifact: Artifact) -> str:
         """Register a new artifact.  Returns the artifact_id."""
+        # A brand-new record has no prior validation history, so its implicit
+        # "current" state is UNVALIDATED — registering directly with
+        # validation_status=APPROVED would skip the VALIDATED step.
+        validate_validation_status_transition(
+            ValidationStatus.UNVALIDATED, artifact.validation_status
+        )
+
         now = _now_iso()
         artifact_id = artifact.id or _new_artifact_id()
         created_at = artifact.created_at or now
@@ -316,8 +384,12 @@ class SqliteStrategyStore:
                         theme, columns_required, decay_horizon, signal_definition,
                         entry_rules, exit_rules, position_sizing, universe,
                         signal_engine_path, run_dir, hypothesis_id, status,
-                        created_at, updated_at, disabled_at, disabled_reason
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        created_at, updated_at, disabled_at, disabled_reason,
+                        developer, owner, validator, approver, model_version,
+                        artifact_version, model_tier, intended_use, limitations,
+                        validation_status, validation_date
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         artifact_id,
@@ -342,6 +414,17 @@ class SqliteStrategyStore:
                         now,
                         artifact.disabled_at,
                         artifact.disabled_reason,
+                        artifact.developer,
+                        artifact.owner,
+                        artifact.validator,
+                        artifact.approver,
+                        artifact.model_version,
+                        artifact.artifact_version,
+                        artifact.model_tier.value if artifact.model_tier else None,
+                        artifact.intended_use,
+                        artifact.limitations,
+                        artifact.validation_status.value,
+                        artifact.validation_date,
                     ),
                 )
         except sqlite3.IntegrityError as exc:
@@ -446,6 +529,12 @@ class SqliteStrategyStore:
         if existing is None:
             return None
 
+        # Structural enforcement of the validation state machine: an
+        # unvalidated model can never be updated straight into APPROVED.
+        validate_validation_status_transition(
+            existing.validation_status, artifact.validation_status
+        )
+
         now = _now_iso()
         with self._write_transaction():
             self._conn.execute(
@@ -457,7 +546,11 @@ class SqliteStrategyStore:
                     entry_rules = ?, exit_rules = ?, position_sizing = ?,
                     universe = ?, signal_engine_path = ?, run_dir = ?,
                     hypothesis_id = ?, status = ?, updated_at = ?,
-                    disabled_at = ?, disabled_reason = ?
+                    disabled_at = ?, disabled_reason = ?,
+                    developer = ?, owner = ?, validator = ?, approver = ?,
+                    model_version = ?, artifact_version = ?, model_tier = ?,
+                    intended_use = ?, limitations = ?, validation_status = ?,
+                    validation_date = ?
                 WHERE id = ?
                 """,
                 (
@@ -481,6 +574,17 @@ class SqliteStrategyStore:
                     now,
                     artifact.disabled_at,
                     artifact.disabled_reason,
+                    artifact.developer,
+                    artifact.owner,
+                    artifact.validator,
+                    artifact.approver,
+                    artifact.model_version,
+                    artifact.artifact_version,
+                    artifact.model_tier.value if artifact.model_tier else None,
+                    artifact.intended_use,
+                    artifact.limitations,
+                    artifact.validation_status.value,
+                    artifact.validation_date,
                     artifact.id,
                 ),
             )

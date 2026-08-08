@@ -24,21 +24,25 @@ Real world:
 No slippage model -> overly optimistic backtest -> losses in live trading
 ```
 
+**Do not retype these models.** All four are implemented and tested in
+`src/quantlib/impact.py`; import them. The tested versions validate their inputs —
+a zero ADV raises instead of dividing by zero, and a negative `delay_bars` raises
+instead of silently introducing look-ahead bias.
+
+```python
+from src.quantlib.impact import fixed_slippage, linear_impact, sqrt_impact, delayed_execution
+```
+
 ### 1. Fixed Slippage Model
 
 ```python
-def fixed_slippage(price: float, direction: int, bps: float = 5.0) -> float:
-    """
-    Args:
-        price: Original price
-        direction: 1=buy, -1=sell
-        bps: Slippage in basis points (1bp = 0.01%), default 5bp
-    Returns:
-        Execution price after slippage
-    """
-    slippage = price * bps / 10000
-    return price + direction * slippage
+fixed_slippage(price=100.0, direction=1, bps=5.0)   # 100.05  (buy pays up)
+fixed_slippage(price=100.0, direction=-1, bps=5.0)  #  99.95  (sell receives less)
 ```
+
+`direction` is 1 to buy or -1 to sell, and must be exactly one of those — it
+multiplies the impact, so an unchecked 2 would silently double the modelled cost.
+`bps` defaults to `DEFAULT_SLIPPAGE_BPS` (5.0).
 
 **Reference fixed-slippage assumptions by market:**
 
@@ -55,26 +59,16 @@ def fixed_slippage(price: float, direction: int, bps: float = 5.0) -> float:
 
 ### 2. Linear Impact Model
 
-```python
-def linear_impact(price: float, direction: int,
-                  volume_traded: float, adv: float,
-                  impact_coeff: float = 0.1) -> float:
-    """
-    Linear market impact: impact ∝ traded volume / ADV
+`impact = impact_coeff × volume_traded / adv`
 
-    Args:
-        price: Original price
-        direction: 1=buy, -1=sell
-        volume_traded: Trade size (shares or notional)
-        adv: Average Daily Volume
-        impact_coeff: Impact coefficient, usually 0.05-0.2
-    Returns:
-        Execution price after impact
-    """
-    participation_rate = volume_traded / adv
-    impact = impact_coeff * participation_rate
-    return price * (1 + direction * impact)
+```python
+# 100k shares against 1M ADV = 10% participation; at coeff 0.1 that is a 1% move.
+linear_impact(price=100.0, direction=1, volume_traded=100_000, adv=1_000_000, impact_coeff=0.1)
+# 101.0
 ```
+
+Marginal impact is constant here, which overstates the cost of very large orders.
+`impact_coeff` defaults to `DEFAULT_LINEAR_IMPACT_COEFF` (0.1).
 
 **Reference impact coefficients:**
 
@@ -85,37 +79,30 @@ def linear_impact(price: float, direction: int,
 | US equities | 0.03-0.08 | Market-maker buffering |
 | Crypto | 0.05-0.15 | 24h trading is dispersed |
 
-### 3. Square-Root Impact Model (Almgren-Chriss)
+### 3. Square-Root Impact Model
+
+`impact = η × σ × sqrt(volume_traded / adv)`
 
 ```python
-import numpy as np
-
-def sqrt_impact(price: float, direction: int,
-                volume_traded: float, adv: float,
-                volatility: float, eta: float = 0.5) -> float:
-    """
-    Square-root market impact (more accepted in academia):
-    impact = η × σ × sqrt(V/ADV)
-
-    Args:
-        price: Original price
-        direction: 1=buy, -1=sell
-        volume_traded: Trade size
-        adv: Average daily volume
-        volatility: Daily volatility (standard deviation)
-        eta: Impact elasticity coefficient, usually 0.3-0.8
-    Returns:
-        Execution price after impact
-    """
-    participation = volume_traded / adv
-    impact = eta * volatility * np.sqrt(participation)
-    return price * (1 + direction * impact)
+# 250k against 1M ADV = 25% participation; 0.5 × 0.02 × sqrt(0.25) = 0.005 = 50bps.
+sqrt_impact(price=100.0, direction=1, volume_traded=250_000, adv=1_000_000,
+            volatility=0.02, eta=0.5)
+# 100.5  (100.49999999999999 in binary floating point)
 ```
+
+`volatility` is daily return volatility as a decimal fraction. `eta` defaults to
+`DEFAULT_SQRT_IMPACT_ETA` (0.5); 0.3-0.8 is the usual calibrated range.
 
 **Advantages of the square-root model**:
 - Strongest empirical support (standard in financial literature)
 - Marginal impact declines for larger orders (intuitive)
 - Parameters can be estimated from historical data
+
+> **Naming.** This impact term is often labelled "Almgren-Chriss", and it does come
+> from that literature, but it is **not** Almgren-Chriss optimal execution. There is
+> no trading trajectory, no permanent/temporary impact split and no risk-aversion
+> parameter here, and none is implemented anywhere in this repository. Call it a
+> square-root impact function, and do not claim an optimal schedule was computed.
 
 ### Slippage Model Selection Decision Tree
 
@@ -173,21 +160,16 @@ Pros and cons:
 ### Simulating Execution Delay in Backtests
 
 ```python
-def delayed_execution(signal_series: pd.Series, delay_bars: int = 1) -> pd.Series:
-    """
-    Simulate the delay from signal generation to execution
-
-    Args:
-        signal_series: Original signal
-        delay_bars: Number of bars to delay, default 1 (T+1 execution)
-    Returns:
-        Delayed signal
-
-    China A-shares: delay_bars=1 (T+1 rule)
-    Crypto: delay_bars=0 or 1
-    """
-    return signal_series.shift(delay_bars)
+signals = delayed_execution(raw_signal, delay_bars=1)   # T+1: trade tomorrow on today's signal
+signals = delayed_execution(raw_signal, delay_bars=0)   # same-bar execution
 ```
+
+- China A-shares: `delay_bars=1` (T+1 rule)
+- Crypto: `delay_bars=0` or `1`
+
+A negative `delay_bars` raises. It would pull future signal values into the past,
+which is look-ahead bias and silently inflates every backtest containing it — the
+tested implementation refuses rather than letting that pass unnoticed.
 
 ## Integrated Transaction-Cost Model
 
@@ -246,6 +228,9 @@ Implicit cost:
 ### Advanced Execution Assumptions (implemented in `signal_engine.py`)
 
 ```python
+from src.quantlib.impact import delayed_execution
+
+
 class SignalEngine:
     def __init__(self):
         # Execution assumption parameters
@@ -259,7 +244,7 @@ class SignalEngine:
             raw_signal = self._compute_signal(df)
 
             # 2. Apply execution delay
-            delayed_signal = raw_signal.shift(self.execution_delay)
+            delayed_signal = delayed_execution(raw_signal, self.execution_delay)
 
             # 3. Apply volume filter (do not trade when liquidity is too low)
             volume_ok = df['volume'] > df['volume'].rolling(20).mean() * 0.3
@@ -347,3 +332,4 @@ Conclusion: the strategy still has meaningful profitability under 10bps slippage
 5. **Volume constraints**: order size should not exceed 5-10% of the day’s traded volume, otherwise the impact model becomes invalid
 6. **Backtest overfitting**: even with slippage included, the strategy may still overfit; out-of-sample validation matters more
 7. **`commission` in config**: the default `0.001` (0.1%) is a reasonable all-in cost estimate
+8. **The models are implemented, not improvised**: `src/quantlib/impact.py` holds all four, tested. Import them rather than retyping; the tested versions reject a zero ADV, a negative order size and a negative execution delay, all of which the retyped versions used to accept silently
