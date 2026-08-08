@@ -181,6 +181,15 @@ class TestFallbackChains:
         # the previous chain unchanged.
         assert FALLBACK_CHAINS["forex"] == ["mt5", "akshare", "yfinance", "local"]
 
+    def test_tickerall_is_explicit_only_never_a_fallback(self) -> None:
+        """TickerAll is a valid explicit source but must NEVER join an automatic
+        fallback chain. It reads a user's own broker account over a hosted API, so
+        it runs only on a deliberate ``source="tickerall"`` request - never silently
+        as a degradation target for another source. This guards that contract."""
+        assert "tickerall" in VALID_SOURCES
+        for market, chain in FALLBACK_CHAINS.items():
+            assert "tickerall" not in chain, f"tickerall must not be in the {market} fallback chain"
+
 
 # ---------------------------------------------------------------------------
 # VALID_SOURCES

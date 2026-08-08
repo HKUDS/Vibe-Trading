@@ -1,7 +1,7 @@
 ---
 name: vibe-trading
 version: 0.1.13
-description: Professional finance research toolkit — backtesting (9 engines + benchmark comparison panel), factor analysis, Alpha Zoo (462 pre-built alphas across qlib158/alpha101/gtja191/academic/fundamental), options pricing, 89 finance skills, 30 multi-agent swarm teams, Trade Journal analyzer, and Shadow Account (extract → backtest → render) across 24 market-data sources (tushare, yfinance, okx, binance, akshare, baostock, tencent, mootdx, ccxt, futu, mt5, local, eastmoney, sina, stooq, yahoo, pykrx, india_broker, qveris, longbridge, plus optional-key finnhub/alphavantage/tiingo/fmp).
+description: Professional finance research toolkit — backtesting (9 engines + benchmark comparison panel), factor analysis, Alpha Zoo (462 pre-built alphas across qlib158/alpha101/gtja191/academic/fundamental), options pricing, 89 finance skills, 30 multi-agent swarm teams, Trade Journal analyzer, and Shadow Account (extract → backtest → render) across 25 market-data sources (tushare, yfinance, okx, binance, akshare, baostock, tencent, mootdx, ccxt, futu, mt5, tickerall, local, eastmoney, sina, stooq, yahoo, pykrx, india_broker, qveris, longbridge, plus optional-key finnhub/alphavantage/tiingo/fmp).
 dependencies:
   python: ">=3.11"
   pip:
@@ -74,13 +74,14 @@ Feed a CSV broker export (同花顺 / 东财 / 富途 / generic), and the agent 
 5. `scan_shadow_signals` — list today's symbols that match your shadow's entry cadence (research only).
 
 ### Backtesting
-Create and run quantitative strategies across 9 engines (ChinaA, GlobalEquity, IndiaEquity, KoreaEquity, Crypto, ChinaFutures, GlobalFutures, Forex + options) with 24 market-data sources (auto-detect + ordered fallback):
+Create and run quantitative strategies across 9 engines (ChinaA, GlobalEquity, IndiaEquity, KoreaEquity, Crypto, ChinaFutures, GlobalFutures, Forex + options) with 25 market-data sources (auto-detect + ordered fallback; the hosted forex `tickerall` source is explicit-only):
 - **HK/US equities** via yfinance / stooq / yahoo (free, no API key); optionally via **Longbridge** historical OHLCV (`longbridge`, requires the optional SDK and `LONGBRIDGE_APP_KEY` / `LONGBRIDGE_APP_SECRET` / `LONGBRIDGE_ACCESS_TOKEN`). To force it for a run, set `"source": "longbridge"` in `config.json`.
 - **India equities (NSE/BSE)** via yahoo / yfinance using `<SYMBOL>.NS` (NSE, e.g. `RELIANCE.NS`) or `<SCRIP>.BO` (BSE, e.g. `500325.BO`) — free, no API key. The `IndiaEquityEngine` models T+1 delivery, no overnight shorts (set `allow_short` for intraday), configurable circuit bands, 1-share lots, and the STT/stamp-duty/exchange/GST cost stack. Optionally back-fill from your live broker via the `india_broker` source (Shoonya/Dhan; requires broker login).
 - **Korea equities (KRX: KOSPI/KOSDAQ)** via pykrx using `<CODE>.KS` (KOSPI, e.g. `005930.KS`) or `<CODE>.KQ` (KOSDAQ, e.g. `247540.KQ`) — free, no API key (`pip install "vibe-trading-ai[krx]"`; yahoo/yfinance fallback needs no extra). pykrx serves **daily bars only** (an intraday request falls through to another source) and its adjusted series is Naver-backed rather than a verbatim KRX print. The `KoreaEquityEngine` models same-day round trips (no T+1), the ±30% daily price limit measured from the previous close and quantized to the KRX tick grid, tick-rounded fills, the 0.20% sell-side transaction tax (2026 rate), and 1-share lots. It is **long-only**: `allow_short` is refused, because KRX covered-short and uptick rules cannot be enforced on daily bars.
 - **Cryptocurrency** via OKX or CCXT/100+ exchanges (free, no API key)
 - **China A-shares** via AKShare / baostock / tencent / sina / eastmoney / mootdx (free, no API key) — `TUSHARE_TOKEN` optional for premium quality
 - **Futures, forex, macro** via AKShare (free, no API key)
+- **Forex / metals with no local terminal** via the hosted **TickerAll** MetaTrader 5 feed (`source="tickerall"`, `TICKERALL_API_KEY` + `TICKERALL_ACCOUNT_ID`, read-only) — the same broker feed as the `mt5` loader but over a hosted API on any OS. **Explicit-only** (never an automatic fallback).
 - **HK & A-share equities** via Futu (broker login required, optional)
 - **Local CSV/parquet bars** via the `local` loader (offline, no network)
 - **Premium cross-market data** via QVeris (optional API key)
