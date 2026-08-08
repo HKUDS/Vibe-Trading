@@ -72,22 +72,26 @@ def test_completed_attempt_tool_trail_round_trips_through_history_endpoint(
     response = client.get(f"/sessions/{session.session_id}/messages")
 
     assert response.status_code == 200
-    assert response.json() == [
-        {
-            "message_id": service.store.get_messages(session.session_id)[0].message_id,
-            "session_id": session.session_id,
-            "role": "assistant",
-            "content": "AAPL is trading near 195.",
-            "created_at": service.store.get_messages(session.session_id)[0].created_at,
-            "linked_attempt_id": attempt.attempt_id,
-            "metadata": {"status": "completed"},
-            "tool_trail": expected_trail,
-        }
-    ]
-
     stored = service.store.get_messages(session.session_id)[0]
     assert isinstance(stored, Message)
     assert stored.tool_trail == expected_trail
+    payload = response.json()
+    assert len(payload) == 1
+    metadata = payload[0].pop("metadata")
+    assert metadata["status"] == "completed"
+    assert isinstance(metadata["elapsed_ms"], int)
+    assert metadata["elapsed_ms"] >= 0
+    assert payload == [
+        {
+            "message_id": stored.message_id,
+            "session_id": session.session_id,
+            "role": "assistant",
+            "content": "AAPL is trading near 195.",
+            "created_at": stored.created_at,
+            "linked_attempt_id": attempt.attempt_id,
+            "tool_trail": expected_trail,
+        }
+    ]
 
 
 def test_run_with_agent_consolidates_tool_events_by_call_id(

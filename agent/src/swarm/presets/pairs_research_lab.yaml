@@ -53,8 +53,15 @@ agents:
       5. **Correlation stability report** — Top 20: did correlation collapse materially in past 2y? Fragile pairs and warnings
 
       Use load_skill("correlation-analysis"), load_skill("pair-trading"), load_skill("multi-factor").
-      Use factor_analysis for correlation and clustering.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+      Pull the price panel with `get_market_data` and compute the correlation matrix,
+      the clustering and the ratio statistics yourself in `bash` (pandas / scipy).
+      `factor_analysis` computes IC/IR and layered NAV from CSVs you write — it does
+      not compute correlations or clusters, so do not cite it for them. Use
+      `screen_market` to enumerate the {market} / {sector} universe before scanning.
+      Every correlation, cluster and score must come from the panel you pulled;
+      name the date range. A pair whose history you could not retrieve is excluded
+      from the pool, not scored from expectation.
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_market_data, screen_market]
     skills: [correlation-analysis, pair-trading, multi-factor]
     max_iterations: 50
     timeout_seconds: 1800
@@ -116,15 +123,33 @@ agents:
       - Historical stability of cointegration × 15
 
       ## Required outputs
-      1. **Cointegration summary** — EG p / Johansen / verdict—strong / weak / none—table
+      1. **Cointegration summary** — Engle–Granger p from `cointegration_test` and the verdict (strong / weak / none) per pair. Include a Johansen column only if you implemented and ran the test yourself; otherwise mark it "not computed" and base the verdict on EG alone
       2. **OU parameter table** — θ, μ, σ, half-life for passing pairs—sort by half-life
       3. **Hedge-ratio stability** — Top 10: OLS vs Kalman history—stable / medium / highly time-varying
       4. **Hurst & MR quality rank** — Hurst + half-life joint “tradable mean-reversion” rank
       5. **Rolling cointegration** — Top 10: 12m rolling window p-value time series; periods of failure; fragility today
 
       Use load_skill("correlation-analysis"), load_skill("quant-statistics").
-      Use factor_analysis for ADF, Johansen, Kalman where applicable.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+
+      ## What is implemented vs what is not
+      `factor_analysis` computes IC/IR and layered NAV from a factor CSV and a
+      return CSV you write yourself. It does NOT run ADF, Johansen or Kalman —
+      never cite it as the source of a test statistic.
+      Pull the price series with `get_market_data`, then in `bash`:
+      - `src.quantlib.timeseries.adf_test(series, significance)` → Step 1 unit-root test
+      - `src.quantlib.timeseries.cointegration_test(y, x, significance)` → Engle–Granger
+      - `src.quantlib.timeseries.find_hedge_ratio(y, x)` → the static OLS β
+      - `src.quantlib.timeseries.compute_half_life(spread)` → t½ directly
+      These lazily import an optional statistics backend and raise an actionable
+      `ImportError` if it is absent. If that happens, report the test as
+      unavailable — do not substitute a judgement call for a p-value.
+      **KPSS, Johansen (trace / max-eigenvalue), Kalman time-varying β, VECM and
+      the Hurst exponent are NOT implemented anywhere in this system.** Either
+      write and show the estimator yourself in `bash`, or drop that row and say
+      it was not computed. A Johansen trace statistic or a Hurst value that did
+      not come out of code you ran is a fabricated number — the classification
+      thresholds above then apply only to the tests you actually completed.
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_market_data]
     skills: [correlation-analysis, quant-statistics]
     max_iterations: 50
     timeout_seconds: 1800

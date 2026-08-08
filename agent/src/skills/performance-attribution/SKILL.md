@@ -12,18 +12,10 @@ Decompose portfolio excess returns into explainable sources: sector allocation, 
 
 ## Brinson Attribution Model
 
+**Do not retype these formulas into throwaway Python.** They are implemented and
+tested in `src/quantlib/attribution.py`; import them.
+
 ### Single-Period Brinson-Fachler Model
-
-```
-Total excess return = portfolio return - benchmark return
-
-Decomposed into three parts:
-1. Allocation effect: sector-weight deviation × sector benchmark return deviation
-2. Selection effect: stock selection within a sector × sector benchmark weight
-3. Interaction effect: weight deviation × stock-selection deviation
-```
-
-**Mathematical formulas**:
 
 ```
 Let w_p,i = portfolio weight of sector i
@@ -32,44 +24,116 @@ Let w_p,i = portfolio weight of sector i
     r_b,i = benchmark return of sector i
     R_b   = total benchmark return
 
-Allocation_i = (w_p,i - w_b,i) × (r_b,i - R_b)
-Selection_i  = w_b,i × (r_p,i - r_b,i)
+Allocation_i  = (w_p,i - w_b,i) × (r_b,i - R_b)
+Selection_i   =  w_b,i          × (r_p,i - r_b,i)
 Interaction_i = (w_p,i - w_b,i) × (r_p,i - r_b,i)
 
-Total excess = Σ(Allocation_i) + Σ(Selection_i) + Σ(Interaction_i)
+Total active return = Σ(Allocation_i) + Σ(Selection_i) + Σ(Interaction_i)
 ```
 
+**The decomposition itself has no residual term.** The three effects sum to
+`R_p - R_b` identically, for any sector returns whatsoever, provided the
+portfolio and benchmark weights carry the same total. `brinson_fachler` enforces
+the weight-sum precondition and raises rather than returning a decomposition
+that does not tie out.
+
+A residual is therefore never a property of the algebra — but it is a real and
+expected property of a *reported* attribution, because the inputs are a
+snapshot. Intra-period trading, cash drag, corporate actions and FX translation
+all move the actual portfolio return away from the one these weights and sector
+returns imply. So:
+
+- residual inside the decomposition, given the inputs → **impossible**; if you
+  see one, the arithmetic or the weight convention is wrong;
+- residual between the decomposition and the reported fund return → **normal**;
+  quantify it and attribute it to its source rather than absorbing it silently
+  into selection. This is what the `/attrib` reconciliation gate asks for.
+
+```python
+from src.quantlib.attribution import brinson_fachler
+
+result = brinson_fachler(
+    portfolio_weights={"Tech": 0.40, "Financials": 0.10, "Energy": 0.30, "Health": 0.20},
+    benchmark_weights={"Tech": 0.25, "Financials": 0.30, "Energy": 0.25, "Health": 0.20},
+    portfolio_returns={"Tech": 0.12, "Financials": 0.04, "Energy": -0.02, "Health": 0.07},
+    benchmark_returns={"Tech": 0.10, "Financials": 0.05, "Energy": -0.01, "Health": 0.06},
+)
+
+result.portfolio_return   # 0.0600
+result.benchmark_return   # 0.0495
+result.active_return      # 0.0105
+result.allocation         # 0.0045
+result.selection          # 0.0015
+result.interaction        # 0.0045
+# 0.0045 + 0.0015 + 0.0045 == 0.0105 exactly (residual ~3e-18, machine epsilon)
+
+for effect in result.sectors:
+    print(effect.sector, effect.allocation, effect.selection, effect.interaction, effect.total)
+```
+
+A sector return may be omitted only where the matching weight is zero. A
+benchmark sector you did not own therefore shows zero selection and zero
+interaction, and the whole effect lands in allocation — you cannot demonstrate
+stock-picking skill in something you never held.
+
 ### Example Brinson Attribution
+
+Rendered from the call above, so every figure below is reproducible:
 
 ```markdown
 ### Brinson Sector Attribution
 
 | Sector | Portfolio Weight | Benchmark Weight | Portfolio Return | Benchmark Return | Allocation | Selection | Interaction |
 |------|---------|---------|---------|---------|---------|---------|---------|
-| Food & Beverage | 20% | 10% | 15% | 8% | +0.3% | +0.7% | +0.7% |
-| Electronics | 15% | 12% | 5% | 10% | -0.1% | -0.6% | +0.2% |
-| Banks | 5% | 20% | 3% | 2% | +0.3% | +0.2% | -0.2% |
-| Others | 60% | 58% | 8% | 7% | +0.0% | +0.6% | +0.0% |
-| **Total** | 100% | 100% | 9.5% | 6.2% | **+0.5%** | **+0.9%** | **+0.7%** |
+| Tech | 40% | 25% | 12% | 10% | +0.7575% | +0.50% | +0.30% |
+| Financials | 10% | 30% | 4% | 5% | -0.0100% | -0.30% | +0.20% |
+| Energy | 30% | 25% | -2% | -1% | -0.2975% | -0.25% | -0.05% |
+| Health | 20% | 20% | 7% | 6% | +0.0000% | +0.20% | +0.00% |
+| **Total** | 100% | 100% | 6.00% | 4.95% | **+0.45%** | **+0.15%** | **+0.45%** |
 
-Excess return 3.3% = allocation effect 0.5% + selection effect 0.9% + interaction effect 0.7% + residual 0.2%
+Active return 1.05% = allocation 0.45% + selection 0.15% + interaction 0.45%. No residual.
 ```
 
 ### Multi-Period Attribution (Linked Brinson)
 
+Single-period effects add, but returns compound, so simply summing each period's
+effects does **not** reproduce the compounded active return. Take the four-sector
+period above and two more like it (the exact three are the `_three_periods`
+fixture in `tests/quantlib/test_attribution.py`, so you can run them): summing the
+three active returns gives 2.8500%, while the compounded active return is 3.0318%
+— an 18.2bp error that grows with the horizon and the return level.
+
+Use **Carino logarithmic linking**, implemented as `carino_link`. It is
+residual-free, and its per-period scaling factor depends only on that period's
+total portfolio and benchmark return — never on the effects being linked — so
+linking is deterministic and cannot be steered by how sectors were bucketed.
+(Menchero linking is also residual-free but distributes a correction term derived
+from the effects themselves; Carino needs less machinery for the same guarantee.)
+
 ```
-Directly summing single-period attribution creates residuals (compounding effect). Common approaches:
+k   = (ln(1 + R_P) - ln(1 + R_B)) / (R_P - R_B)        # over the whole horizon
+k_t = (ln(1 + R_p,t) - ln(1 + R_b,t)) / (R_p,t - R_b,t)  # for period t
 
-Method 1: arithmetic linking (simple sum of each period's attribution)
-  - Advantage: simple
-  - Disadvantage: residual remains
-
-Method 2: Carino logarithmic linking
-  - Advantage: no residual
-  - Disadvantage: more complex
-
-Practical recommendation: arithmetic linking is enough for monthly attribution; residuals are usually <0.1%
+linked effect = Σ_t (k_t / k) × effect_{i,t}
 ```
+
+```python
+from src.quantlib.attribution import brinson_fachler, carino_link
+
+periods = [brinson_fachler(**month) for month in monthly_inputs]
+linked = carino_link(periods)
+
+linked.active_return   # compounded, not summed
+linked.allocation, linked.selection, linked.interaction
+linked.scaling_factors  # one k_t / k per period, exposed so a report can be audited
+
+for sector in linked.sectors:
+    print(sector.sector, sector.total)
+# allocation + selection + interaction == linked.active_return exactly
+```
+
+Arithmetic linking is acceptable **only** when you explicitly report the residual.
+Since `carino_link` costs one function call and leaves none, prefer it.
 
 ## Factor Attribution
 
@@ -252,3 +316,4 @@ Watch the risk of excessive small-cap exposure (`SMB beta=0.25`).
 5. **Multiple-testing problem**: if you test 100 strategies, about 5 may appear significant by chance (`p=0.05`); use multiple-comparison correction
 6. **Factor data requirement**: factor attribution requires factor return data, which can be obtained from `tushare` or self-constructed
 7. **Attribution in backtest reports**: `metrics.csv` already provides basic metrics after a backtest; this skill adds deeper attribution analysis
+8. **Brinson is implemented, not improvised**: `src/quantlib/attribution.py` holds the tested single-period and Carino-linked decomposition. Import it. Hand-written attribution code that reports a single-period residual is a bug in that code, not a property of the model

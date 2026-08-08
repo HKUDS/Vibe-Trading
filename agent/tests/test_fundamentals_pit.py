@@ -326,3 +326,43 @@ def test_ytd_and_full_year_frames_are_excluded_and_q4_is_synthesized(
     # NOT values inflated by the 30.0 YTD frame or the 100.0 full-year frame.
     assert series.loc[pd.Timestamp("2024-02-01")] == 100.0
     assert series.loc[pd.Timestamp("2024-02-02")] == 100.0
+
+
+def test_unresolvable_symbols_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A market this loader cannot serve must raise, not return an empty panel.
+
+    ``get_fundamentals("600519.SH")`` used to answer ``ok: true`` with every
+    value null, which reads as "this issuer reports nothing" rather than "this
+    loader is US-only".
+    """
+    _install_schema_stub(monkeypatch)
+    _patch_sec(monkeypatch, {})
+
+    with pytest.raises(ValueError, match="no SEC CIK resolved"):
+        fundamentals_loader.load_fundamental_panel(
+            symbols=["600519.SH"],
+            fields=["revenue"],
+            start="2023-01-01",
+            end="2023-03-01",
+        )
+
+
+def test_a_partially_resolvable_batch_still_loads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One unresolvable symbol must not sink the symbols that do resolve."""
+    _install_schema_stub(monkeypatch)
+    _patch_sec(
+        monkeypatch,
+        {"AAPL": _facts({"Revenues": [_fact_row("2023-12-31", "2024-01-30", 100.0)]})},
+    )
+
+    panel = fundamentals_loader.load_fundamental_panel(
+        ["AAPL", "600519.SH"],
+        ["revenue"],
+        "2024-01-01",
+        "2024-02-05",
+        freq="quarterly",
+    )
+    assert panel["revenue"]["AAPL"].notna().any()
+    assert panel["revenue"]["600519.SH"].isna().all()

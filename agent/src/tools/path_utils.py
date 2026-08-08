@@ -25,6 +25,17 @@ from src.config.accessor import get_env_config
 _ALLOWED_FILE_ROOTS_ENV = "VIBE_TRADING_ALLOWED_FILE_ROOTS"
 _ALLOWED_RUN_ROOTS_ENV = "VIBE_TRADING_ALLOWED_RUN_ROOTS"
 
+# MCP clients spawn the server themselves, so a shell export never reaches it.
+_ENV_SCOPE_HINT = (
+    "Under an MCP client, set it in that client's server env block — "
+    "exporting it in a shell does not reach the spawned server."
+)
+
+
+def _describe_roots(roots: list[Path]) -> str:
+    """Render allowed roots as an indented list for a rejection message."""
+    return "Allowed roots:\n" + "\n".join(f"  - {root}" for root in roots)
+
 
 def _rejects_unc(p: str) -> None:
     """Raise ValueError if `p` starts with a UNC share prefix."""
@@ -286,13 +297,15 @@ def _safe_import_path(p: str, *, purpose: str) -> Path:
     _rejects_unc(p)
     resolved = _import_candidate(p)
 
-    for root in allowed_file_roots():
+    roots = allowed_file_roots()
+    for root in roots:
         if resolved.is_relative_to(root):
             return resolved
 
     raise ValueError(
-        f"Path {p!r} is outside allowed {purpose} roots. "
-        f"Set {_ALLOWED_FILE_ROOTS_ENV} to add an import directory."
+        f"Path {p!r} is outside allowed {purpose} roots.\n"
+        f"{_describe_roots(roots)}\n"
+        f"Set {_ALLOWED_FILE_ROOTS_ENV} to add an import directory. {_ENV_SCOPE_HINT}"
     )
 
 
@@ -344,13 +357,15 @@ def safe_run_dir(p: str) -> Path:
     _rejects_unc(p)
     resolved = Path(p).expanduser().resolve()
 
-    for root in _allowed_run_roots():
+    roots = _allowed_run_roots()
+    for root in roots:
         if resolved.is_relative_to(root):
             return resolved
 
     raise ValueError(
-        f"run_dir {p!r} is outside allowed run roots. "
-        f"Set {_ALLOWED_RUN_ROOTS_ENV} to add a run directory."
+        f"run_dir {p!r} is outside allowed run roots.\n"
+        f"{_describe_roots(roots)}\n"
+        f"Set {_ALLOWED_RUN_ROOTS_ENV} to add a run directory. {_ENV_SCOPE_HINT}"
     )
 
 
@@ -376,9 +391,13 @@ def safe_run_id(run_id: str) -> Path:
     ):
         raise ValueError(f"run_id {run_id!r} must be a bare run directory name")
 
-    for root in _allowed_run_roots():
+    roots = _allowed_run_roots()
+    for root in roots:
         resolved = (root / candidate.name).resolve()
         if resolved.is_relative_to(root) and resolved.is_dir():
             return resolved
 
-    raise ValueError(f"run_id {run_id!r} was not found under allowed run roots")
+    raise ValueError(
+        f"run_id {run_id!r} was not found under allowed run roots.\n"
+        f"{_describe_roots(roots)}"
+    )

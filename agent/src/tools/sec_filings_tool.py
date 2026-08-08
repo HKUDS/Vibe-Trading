@@ -22,12 +22,14 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
+from backtest.loaders import sec_frames
 from backtest.loaders.sec_edgar_client import (
     cik_for,
     get_company_facts,
     get_submissions,
 )
 from src.agent.tools import BaseTool
+from src.tools._result_paging import fit_records
 
 # Hard caps so a long filing history or metric series cannot bloat the payload.
 _MAX_LIMIT = 40
@@ -76,6 +78,15 @@ class SecFilingsTool(BaseTool):
                     "carries the reported time series for that concept."
                 ),
             },
+            "offset": {
+                "type": "integer",
+                "description": (
+                    "Index of the first filing to return, newest first; "
+                    "defaults to 0. Filings are returned whole and only as many "
+                    "as fit one result — read paging.total and paging.next_offset "
+                    "and call again to continue."
+                ),
+            },
             "limit": {
                 "type": "integer",
                 "description": (
@@ -98,8 +109,10 @@ class SecFilingsTool(BaseTool):
         Returns:
             A JSON string envelope. On success:
             ``{"ok": true, "market": "US", "source": "sec_edgar",
-            "data": {"ticker", "cik", "filings": [...], "metric": {...}}}``
-            (``metric`` present only when requested). On failure:
+            "paging": {...}, "data": {"ticker", "cik", "filings": [...],
+            "metric": {...}}}`` (``metric`` present only when requested).
+            ``filings`` is paged: read ``paging.next_offset`` to continue.
+            On failure:
             ``{"ok": false, "error": str}``.
         """
         ticker = kwargs.get("ticker")
@@ -129,23 +142,35 @@ class SecFilingsTool(BaseTool):
 
         filings = _parse_filings(submissions, form_filter, cik)
 
-        data: Dict[str, Any] = {
-            "ticker": ticker,
-            "cik": cik,
-            "filings": filings,
-        }
-
+        metric_block: Dict[str, Any] | None = None
         if metric_name is not None:
             try:
                 facts = get_company_facts(cik)
             except Exception as exc:  # noqa: BLE001 - surface any fetch failure as envelope
                 return _error(f"SEC companyfacts request failed: {exc}")
-            data["metric"] = _parse_metric(facts, metric_name, limit)
+            metric_block = _parse_metric(facts, metric_name, limit)
 
-        return json.dumps(
-            {"ok": True, "market": "US", "source": "sec_edgar", "data": data},
-            ensure_ascii=False,
-        )
+        try:
+            offset = max(int(kwargs.get("offset") or 0), 0)
+        except (TypeError, ValueError):
+            return _error("offset must be an integer")
+
+        # The filing index is the bulk of this envelope — 12,077 of 12,190
+        # characters for a bare AAPL call, i.e. the default request already
+        # overflowed the result budget and lost its tail without saying so.
+        def _build(page: List[Any], paging: Dict[str, Any]) -> Dict[str, Any]:
+            data: Dict[str, Any] = {"ticker": ticker, "cik": cik, "filings": page}
+            if metric_block is not None:
+                data["metric"] = metric_block
+            return {
+                "ok": True,
+                "market": "US",
+                "source": "sec_edgar",
+                "paging": paging,
+                "data": data,
+            }
+
+        return fit_records(filings, offset, _build)
 
 
 def _clamp_limit(value: Any) -> int:
@@ -243,9 +268,11 @@ def _parse_metric(facts: Any, metric_name: str, limit: int) -> Dict[str, Any]:
     """Extract one us-gaap concept's reported series from a companyfacts payload.
 
     XBRL companyfacts nest as ``facts.us-gaap.<Concept>.units.<Unit>`` -> a list
-    of points (``{end, val, fy, fp, form, accn, frame?}``). We surface the most
-    populated unit, newest points last in source order then truncated to the
-    most recent ``limit``.
+    of points (``{start?, end, val, fy, fp, form, accn, filed, frame?}``). We
+    surface the most populated unit, deduplicated to one point per ``(start,
+    end)`` span, sorted oldest first and truncated to the most recent ``limit``.
+    Each point carries its span so a year-to-date frame can never be read as a
+    quarter.
 
     Args:
         facts: Decoded companyfacts JSON.
@@ -275,6 +302,20 @@ def _parse_metric(facts: Any, metric_name: str, limit: int) -> Dict[str, Any]:
     base["unit"] = unit_key
 
     points = [p for p in (_normalize_point(r) for r in rows) if p is not None]
+    # A period is filed once and then repeated as a comparative in every later
+    # filing, so keeping each vintage both inflates the series and pushes real
+    # history out of ``limit``. Identity is the ``(start, end)`` span; the
+    # newest filing wins so a restatement is what surfaces.
+    latest: Dict[tuple[Any, Any], Dict[str, Any]] = {}
+    for point in points:
+        key = (point["start"], point["end"])
+        prior = latest.get(key)
+        if prior is None or str(point["filed"] or "") >= str(prior["filed"] or ""):
+            latest[key] = point
+    points = sorted(
+        latest.values(),
+        key=lambda point: (str(point["end"] or ""), str(point["start"] or "")),
+    )
     base["points"] = points[-limit:] if limit > 0 else points
     return base
 
@@ -305,8 +346,8 @@ def _normalize_point(row: Any) -> Optional[Dict[str, Any]]:
         row: One element of a unit's fact list.
 
     Returns:
-        ``{end, val, fiscal_year, fiscal_period, form, accession, frame}`` or
-        ``None``.
+        ``{end, val, start, period_days, period_type, filed, fiscal_year,
+        fiscal_period, form, accession, frame}`` or ``None``.
     """
     if not isinstance(row, dict):
         return None
@@ -314,9 +355,17 @@ def _normalize_point(row: Any) -> Optional[Dict[str, Any]]:
     val = _to_number(row.get("val"))
     if not end and val is None:
         return None
+    days = sec_frames.span_days(row)
     return {
         "end": end,
         "val": val,
+        # Without the span a nine-month year-to-date figure is indistinguishable
+        # from the quarter ending the same day, and both are reported under the
+        # same fiscal_period on the same 10-Q.
+        "start": row.get("start"),
+        "period_days": days,
+        "period_type": sec_frames.classify_span(days),
+        "filed": row.get("filed"),
         "fiscal_year": row.get("fy"),
         "fiscal_period": row.get("fp"),
         "form": row.get("form"),

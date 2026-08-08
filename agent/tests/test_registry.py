@@ -156,7 +156,7 @@ class TestFallbackChains:
             "finnhub", "alphavantage", "longbridge", "akshare", "local",
         ]
         assert FALLBACK_CHAINS["hk_equity"] == [
-            "eastmoney", "yahoo", "futu", "yfinance", "akshare", "longbridge", "local",
+            "tencent", "eastmoney", "yahoo", "futu", "akshare", "yfinance", "tushare", "longbridge", "local",
         ]
 
     def test_us_equity_includes_sina_fallback(self) -> None:

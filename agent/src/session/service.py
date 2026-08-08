@@ -11,20 +11,24 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
-
-# Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
-_AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from src.session.events import EventBus
 from src.session.models import (
     Attempt,
     AttemptStatus,
     Message,
+    Principal,
     Session,
 )
 from src.session.search import get_shared_index
 from src.session.store import SessionStore
+
+if TYPE_CHECKING:
+    from src.agent.loop import AgentLoop
+
+# Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
+_AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
 
 
 #: Terminal attempt status -> SSE event name. Cancellation is its own event so
@@ -111,17 +115,28 @@ class SessionService:
         with self._inflight_lock:
             self._inflight.discard(session_id)
 
-    def create_session(self, title: str = "", config: Optional[Dict[str, Any]] = None) -> Session:
+    def create_session(
+        self,
+        title: str = "",
+        config: Optional[Dict[str, Any]] = None,
+        owner: Optional["Principal"] = None,
+    ) -> Session:
         """Create a new session.
 
         Args:
             title: Session title.
             config: Session configuration.
+            owner: Principal the session belongs to, from the authenticated
+                request. Optional because sessions are also created by the CLI
+                and by internal paths that have no request context; those get
+                ``None``, which reads as "owner unknown" and is deliberately
+                distinct from a principal that authenticated but cannot be
+                attributed to a person (see ``Principal.attributable``).
 
         Returns:
             The newly created Session.
         """
-        session = Session(title=title, config=config or {})
+        session = Session(title=title, config=config or {}, owner=owner)
         self.store.create_session(session)
         self._search_index.index_session(session.session_id, title)
         self.event_bus.emit(session.session_id, "session.created", {"session_id": session.session_id, "title": title})
@@ -238,6 +253,7 @@ class SessionService:
         including in the pre-run bookkeeping below — must not leave the session
         permanently busy.
         """
+        started_at = time.perf_counter()
         try:
             attempt.mark_running()
             self.store.update_attempt(attempt)
@@ -272,6 +288,18 @@ class SessionService:
             reply_metadata["status"] = attempt.status.value
             if attempt.metrics:
                 reply_metadata["metrics"] = attempt.metrics
+            reply_metadata["elapsed_ms"] = max(0, round((time.perf_counter() - started_at) * 1000))
+            runtime_keys = (
+                "provider",
+                "configured_model",
+                "model",
+                "model_source",
+                "reasoning_effort",
+            )
+            for key in runtime_keys:
+                value = result.get(key)
+                if value is not None:
+                    reply_metadata[key] = value
 
             reply = Message(
                 session_id=session.session_id, role="assistant",
@@ -290,7 +318,8 @@ class SessionService:
                 session.session_id,
                 _TERMINAL_EVENTS.get(attempt.status.value, "attempt.failed"),
                 {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
-                 "summary": attempt.summary, "error": attempt.error, "run_dir": attempt.run_dir},
+                 "summary": attempt.summary, "error": attempt.error, "run_dir": attempt.run_dir,
+                 **{key: reply_metadata[key] for key in ("elapsed_ms", *runtime_keys) if key in reply_metadata}},
             )
 
         except asyncio.CancelledError:

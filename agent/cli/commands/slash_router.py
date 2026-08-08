@@ -1,7 +1,12 @@
 """Slash command registry + fuzzy matcher.
 
-Source of truth for the 15 user-facing slash commands defined in
-``docs/2026-05-19_session02_uiux_design_proposal.md`` §3.4.
+Source of truth for the user-facing slash commands. The literal
+:data:`SLASH_COMMANDS` tuple below holds the base set; further groups append
+themselves through idempotent, name-checked registration functions — the
+institutional workflow cards and the scheduled-research ``/playbook``
+catalogue further down this module, and the live connector / data-routing
+groups from :mod:`cli.main` at ITS import time. Read the registry at runtime
+rather than assuming a fixed length.
 
 Each :class:`Command` is a frozen dataclass — registry entries are
 immutable so callers can cache filtered slices without worrying about
@@ -59,6 +64,96 @@ _ALIASES: dict[str, str] = {
     ":q":   "quit",
     "?":    "help",
 }
+
+
+def _register_institutional_slash_commands() -> None:
+    """Append the institutional research workflow commands to the registry.
+
+    ``/comps``, ``/dcf``, ``/attrib``, ``/memo``, ``/earnings`` and ``/screen``
+    each own a handler module under :mod:`cli.commands.institutional`, and each
+    carries its own execution skeleton and worked numeric example. They are
+    registered here rather than inlined into :data:`SLASH_COMMANDS` so the same
+    guarantees the connector group gets in :func:`cli.main._register_live_slash_commands`
+    apply: a name already in the registry is never overwritten, and a repeated
+    call never duplicates a row.
+
+    Running at this module's import time — the earliest possible moment — means
+    ``cli.commands.help`` (which binds :data:`SLASH_COMMANDS` at ITS import) and
+    ``cli.completer`` (which snapshots the tuple as a default argument) both see
+    the commands regardless of import order.
+
+    The specs come from :mod:`cli.commands.institutional.playbooks`, a data-only
+    module that imports nothing from :mod:`cli`, so there is no import cycle.
+    """
+    from .institutional.playbooks import PLAYBOOKS
+
+    global SLASH_COMMANDS, _ALIASES
+
+    existing = {cmd.name for cmd in SLASH_COMMANDS}
+    additions = tuple(
+        Command(pb.slug, pb.summary, pb.handler_module)
+        for pb in PLAYBOOKS
+        if pb.slug not in existing
+    )
+    if additions:
+        commands = list(SLASH_COMMANDS)
+        # Sit just above ``quit`` so the exit row stays last.
+        quit_idx = next(
+            (i for i, c in enumerate(commands) if c.name == "quit"), len(commands)
+        )
+        commands[quit_idx:quit_idx] = list(additions)
+        SLASH_COMMANDS = tuple(commands)
+
+    # Aliases only ever ADD keys. A key that is already a command name, or is
+    # already claimed by another alias, is left untouched — an alias must never
+    # shadow an existing command.
+    registered = {cmd.name for cmd in SLASH_COMMANDS}
+    new_aliases = {
+        alias: pb.slug
+        for pb in PLAYBOOKS
+        for alias in pb.aliases
+        if alias not in registered and alias not in _ALIASES
+    }
+    if new_aliases:
+        _ALIASES = {**_ALIASES, **new_aliases}
+
+
+_register_institutional_slash_commands()
+
+
+def _register_research_playbook_slash_command() -> None:
+    """Append ``/playbook`` — the scheduled-research template catalogue.
+
+    Registered here for the same reason the institutional group is: this module
+    is imported before ``cli.commands.help`` and ``cli.completer`` read the
+    registry, so one reassignment surfaces the command in the help screen, the
+    typeahead and the fuzzy matcher at once. Idempotent and never overwrites a
+    name that already exists.
+
+    The :class:`Command` is built literally rather than imported from the
+    handler module, so no import cycle (and no scheduler-store import cost) is
+    paid just to draw the completion menu.
+    """
+    global SLASH_COMMANDS
+
+    if any(cmd.name == "playbook" for cmd in SLASH_COMMANDS):
+        return
+    commands = list(SLASH_COMMANDS)
+    quit_idx = next(
+        (i for i, c in enumerate(commands) if c.name == "quit"), len(commands)
+    )
+    commands.insert(
+        quit_idx,
+        Command(
+            "playbook",
+            "Scheduled research templates (list / run / schedule)",
+            "cli.commands.research_playbook",
+        ),
+    )
+    SLASH_COMMANDS = tuple(commands)
+
+
+_register_research_playbook_slash_command()
 
 
 def _parse_token(input_text: str) -> str:

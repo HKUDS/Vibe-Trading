@@ -70,7 +70,10 @@ agents:
       ### Valuation bubble
       - Use load_skill("fundamental-filter") for valuation framework
       - PE/PB/PS vs historical percentile and industry premium
-      - Gap between DCF intrinsic value and market price
+      - Gap between price and fair value — there is no DCF engine here, so do NOT
+        report a DCF intrinsic value. Anchor fair value on something you can
+        source: historical multiple percentiles, or a mean-reversion target from
+        a stated multiple and earnings assumption, with the assumption labelled
       - Promised vs delivered earnings track record
       - Red flags in goodwill, deferred revenue, receivables, etc.
 
@@ -84,20 +87,33 @@ agents:
       - Use load_skill("risk-analysis") and load_skill("volatility") for quant risk
       - Historical max drawdown; tail metrics (VaR/CVaR)
       - Correlation and beta vs market/industry
-      - Short cost and unusual signals in option-implied vol
       - Macro headwinds: rates, FX, regulation
+      Compute the risk numbers, do not assert them. From bars pulled with
+      `get_market_data`, in `bash`:
+      `src.quantlib.risk.historical_var` / `parametric_var` / `historical_cvar`
+      (confidence and horizon are arguments — state which you used),
+      `max_drawdown_analysis(equity)` for the drawdown profile, and
+      `fit_gpd_tail(returns)` for the tail beyond the empirical sample.
+      Option-implied vol is retrievable, not assumable: pull the chain with
+      `get_options_chain`, read ATM implied vol off the strike ladder for the
+      nearest expiration beyond your horizon, and compare it with the realised
+      vol you computed from the bars. A wide IV-over-HV premium is a bear point
+      in its own right. The chain is Yahoo-backed and **US-listed only** — if
+      {target} is not US-listed, say so and omit the IV section rather than
+      substituting a guess. Borrow / short-lending cost has no data source in
+      this system: do not report a borrow fee.
 
       ## Required outputs
       1. **Bear risk bullets** — 3–5 one-line top bear points, each with severity (high/medium)
       2. **Technical breakdown risk** — All topping patterns and divergences, with resistance and stop levels
-      3. **Valuation bubble assessment** — Quantify premium vs fair value; fair-value / mean-reversion downside target
+      3. **Valuation bubble assessment** — Quantify premium vs fair value; state the fair-value method (historical percentile or stated-multiple mean reversion) and its assumptions, not a DCF
       4. **Fundamental deterioration evidence** — Concrete data for weakening quality
-      5. **Risk metrics** — VaR, expected max drawdown, downside under stress scenarios
+      5. **Risk metrics** — VaR and CVaR from `src.quantlib.risk` (name the confidence level and horizon), max drawdown from `max_drawdown_analysis`, tail downside from `fit_gpd_tail`; state the sample window every figure came from
       6. **Bear target prices** — Downside range from multiple mean reversion and earnings cuts
       7. **What would disprove the bear case** — Signals that would invalidate the bear thesis (i.e., bull-side rebuttal points)
 
       Use factor_analysis for risk-factor views; use load_skill for risk frameworks.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis, get_options_chain]
     skills: [technical-basic, fundamental-filter, yfinance, risk-analysis, volatility]
     max_iterations: 50
     timeout_seconds: 1800
@@ -134,6 +150,24 @@ agents:
       - Stop discipline: recommended stop levels and triggers
       - Hedges: options or related shorts to trim tail risk
 
+      Every number above is computed, not judged. Pull bars with `get_market_data`
+      and run, in `bash`:
+      - realised vol, ADV and correlation from the bars themselves
+      - `src.quantlib.risk.historical_var` / `historical_cvar` for the loss levels,
+        `fit_gpd_tail` for the black-swan tail, `max_drawdown_analysis` for drawdown
+      - `monte_carlo_gbm(...)` + `analyze_mc_results(...)` for the three stress
+        scenarios; report the seed and path count so the run is reproducible
+      Name the sample window for each figure. If you could not retrieve bars, say
+      the risk metrics are unavailable and give a qualitative review — an
+      unsourced VaR or stop price is worse than none. Price the hedge you
+      recommend — do not leave it as a shape. `options_payoff` takes the signed
+      legs and returns entry debit/credit, analytic breakevens and bounded or
+      unbounded max loss, which is what sizing a protective put or a collar
+      actually requires; `options_pricing` values a single leg. Source the
+      implied vol from `get_options_chain` when the name is US-listed, and when
+      it is not, state the vol assumption you used and that it is an assumption.
+      A hedge whose cost you did not compute is not a recommendation.
+
       ### Compliance & concentration
       - Single-name cap (often 5–10% of NAV)
       - Industry / market concentration
@@ -149,7 +183,7 @@ agents:
       7. **Risk conditions** — If approval is conditional, state prerequisites (e.g., wait for earnings)
 
       Stay independent; do not cheerlead either side; optimize portfolio-level risk.
-    tools: [bash, read_file, write_file, load_skill]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, get_options_chain, options_pricing, options_payoff]
     skills: [risk-analysis, volatility, correlation-analysis]
     max_iterations: 50
     timeout_seconds: 1800

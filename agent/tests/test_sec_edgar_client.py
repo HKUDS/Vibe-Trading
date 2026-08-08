@@ -69,6 +69,39 @@ class TestCikFor:
             assert sec.cik_for("NOCIK") is None
 
 
+class TestSymbolSuffixes:
+    """The SEC table carries bare tickers with dashes and no dots at all.
+
+    ``get_fundamentals("AAPL.US")`` — the tool's own documented example — used to
+    return ``ok: true`` with an all-null panel because the ``.US`` market suffix
+    was passed through to the lookup verbatim.
+    """
+
+    _PAYLOAD = {
+        "0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."},
+        "1": {"cik_str": 1067983, "ticker": "BRK-B", "title": "Berkshire B"},
+    }
+
+    def test_us_market_suffix_is_stripped(self):
+        with patch.object(sec, "throttled_get_json", return_value=self._PAYLOAD):
+            assert sec.cik_for("AAPL.US") == "0000320193"
+            assert sec.cik_for("aapl.us") == "0000320193"
+
+    def test_share_class_written_with_a_dot_resolves(self):
+        with patch.object(sec, "throttled_get_json", return_value=self._PAYLOAD):
+            assert sec.cik_for("BRK.B") == "0001067983"
+            assert sec.cik_for("BRK-B") == "0001067983"
+
+    def test_share_class_and_market_suffix_together_resolve(self):
+        with patch.object(sec, "throttled_get_json", return_value=self._PAYLOAD):
+            assert sec.cik_for("BRK.B.US") == "0001067983"
+
+    def test_a_non_us_market_suffix_is_not_stripped(self):
+        with patch.object(sec, "throttled_get_json", return_value=self._PAYLOAD):
+            assert sec.cik_for("600519.SH") is None
+            assert sec.cik_for("00700.HK") is None
+
+
 class TestCikPadding:
     """_pad_cik normalizes ints, padded strings, and CIK-prefixed strings."""
 

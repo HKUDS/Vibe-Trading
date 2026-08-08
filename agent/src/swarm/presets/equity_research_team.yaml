@@ -99,7 +99,12 @@ agents:
       6. **Action Recommendations** — Provide clear position and timing guidance
 
       Ensure the report is internally consistent, data is traceable, and conclusions are logically supported.
-    tools: [bash, read_file, write_file]
+      Use load_skill("report-generate") for the research report format and writing standards.
+      You have no data tool: every figure in this report must already appear in
+      {upstream_context}. If two upstream analysts disagree on a number, surface
+      the disagreement rather than picking one; if a section reported its data as
+      unavailable, carry that through instead of filling the gap.
+    tools: [bash, read_file, write_file, load_skill]
     skills: [report-generate]
     max_iterations: 50
     timeout_seconds: 1800

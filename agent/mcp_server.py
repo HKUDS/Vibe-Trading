@@ -6,16 +6,21 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 55 tools: skills, research goals, backtest/factor/options/pattern
+Surfaces 62 tools: skills, research goals, backtest/factor/options/pattern
 analysis, market data, fundamentals & capital-flow & news & discovery
 (get_fund_flow / get_dragon_tiger / get_northbound_flow / get_margin_trading /
 get_block_trades / get_shareholder_count / get_lockup_expiry / get_sector_info /
 get_research_reports / get_stock_news / get_sec_filings /
 get_financial_statements / get_options_chain / get_stock_profile /
-screen_market / search_symbol / get_macro_series / iwencai_search), read-only
+screen_market / search_symbol / get_macro_series / iwencai_search /
+qveris_search / qveris_inspect / qveris_execute),
+institutional-research and alternative data (get_institutional_holdings /
+etf_holdings / prediction_market / research_papers), read-only
 trading-connector reads, swarm orchestration, trade-journal and shadow-account
 analysis. Every exposed tool is read-only or research-only; no order-placing or
-order-cancelling tool is ever surfaced via MCP.
+order-cancelling tool is ever surfaced via MCP. The QVeris tools additionally
+require QVeris paid routing (QVERIS_API_KEY + paid mode), and qveris_execute
+is billable research-data execution only — it never places orders.
 
 Usage:
     python mcp_server.py                    # stdio transport (default)
@@ -51,8 +56,10 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from copy import deepcopy
+from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 # Ensure agent/ is on sys.path
 AGENT_DIR = Path(__file__).resolve().parent
@@ -60,6 +67,8 @@ if str(AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(AGENT_DIR))
 
 from fastmcp import Context, FastMCP
+from pydantic import BeforeValidator
+
 from cli._version import __version__ as APP_VERSION
 from src.market_data import (
     DEFAULT_MAX_ROWS,
@@ -399,6 +408,54 @@ def _blank_to_none(value: str | None) -> str | None:
     return value or None
 
 
+def _coerce_json_string(value: Any) -> Any:
+    """Decode JSON array/object strings some MCP clients send for list/dict args.
+
+    FastMCP publishes optional list/dict parameters as ``anyOf`` schemas, and
+    several MCP clients (observed with Claude Desktop / Claude Code) do not
+    surface ``anyOf`` to the model as a concrete type — the model then serializes
+    the argument as a JSON string (``'["us"]'``), which strict pydantic
+    validation rejects before the tool body ever runs (issue #987). This
+    validator is attached as a ``BeforeValidator`` to every list/dict MCP
+    parameter, so it runs *before* type checking and decodes such a string into
+    the list/dict it encodes.
+
+    Non-string values pass through untouched. A string that is not a JSON array
+    or object is returned unchanged so pydantic still raises its normal, precise
+    type error rather than a confusing JSON parse failure.
+
+    Args:
+        value: The raw argument received from the MCP client.
+
+    Returns:
+        The decoded list/dict when the value is a JSON array/object string,
+        otherwise the value unchanged.
+    """
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped[:1] in ("[", "{"):
+            try:
+                return json.loads(stripped)
+            except (json.JSONDecodeError, ValueError):
+                return value
+    return value
+
+
+# Lenient list/dict parameter types for the @mcp.tool signatures below
+# (issue #987). Each wraps the real type with _coerce_json_string so a
+# JSON-encoded string from a client is decoded before pydantic validates it,
+# while the published JSON schema — and thus every well-behaved client — is left
+# exactly as before.
+_lenient = BeforeValidator(_coerce_json_string)
+_lenient_str_list = Annotated[list[str], _lenient]
+_lenient_str_list_opt = Annotated[list[str] | None, _lenient]
+_lenient_float_list_opt = Annotated[list[float] | None, _lenient]
+_lenient_dict_list = Annotated[list[dict[str, Any]], _lenient]
+_lenient_dict_list_opt = Annotated[list[dict[str, Any]] | None, _lenient]
+_lenient_dict_any_opt = Annotated[dict[str, Any] | None, _lenient]
+_lenient_dict_str_str = Annotated[dict[str, str], _lenient]
+
+
 def _audit_rows_from_payload(value: list[dict[str, Any]] | None):
     """Parse MCP completion audit rows."""
     from src.goal import AuditRow
@@ -474,7 +531,7 @@ def load_skill(name: str) -> str:
 def start_research_goal(
     objective: str,
     session_id: str = "",
-    criteria: list[str] | None = None,
+    criteria: _lenient_str_list_opt = None,
     ui_summary: str = "",
     protocol: str = "thesis_review",
     risk_tier: str = "research_general",
@@ -551,17 +608,17 @@ def add_goal_evidence(
     source_provider: str | None = None,
     source_type: str | None = None,
     source_uri: str | None = None,
-    symbol_universe: list[str] | None = None,
-    benchmark: list[str] | None = None,
+    symbol_universe: _lenient_str_list_opt = None,
+    benchmark: _lenient_str_list_opt = None,
     timeframe: str | None = None,
     method: str | None = None,
-    assumptions: dict[str, Any] | None = None,
+    assumptions: _lenient_dict_any_opt = None,
     artifact_path: str | None = None,
     artifact_hash: str | None = None,
     data_as_of: str | None = None,
     confidence: str | None = None,
     caveat: str | None = None,
-    contradicts_claim_ids: list[str] | None = None,
+    contradicts_claim_ids: _lenient_str_list_opt = None,
 ) -> str:
     """Append traceable evidence to a finance research goal.
 
@@ -639,7 +696,7 @@ def update_research_goal_status(
     expected_goal_id: str,
     status: str,
     session_id: str = "",
-    audit: list[dict[str, Any]] | None = None,
+    audit: _lenient_dict_list_opt = None,
     recap: str | None = None,
 ) -> str:
     """Update a finance research goal status after an audit.
@@ -784,7 +841,7 @@ def analyze_options(
 
 @mcp.tool
 def analyze_options_payoff(
-    legs: list[dict[str, Any]],
+    legs: _lenient_dict_list,
     entry_spot: float,
     expiry_days: float,
     risk_free_rate: float = 0.05,
@@ -794,7 +851,7 @@ def analyze_options_payoff(
     spot_min: float | None = None,
     spot_max: float | None = None,
     spot_points: int = 121,
-    scenario_iv_values: list[float] | None = None,
+    scenario_iv_values: _lenient_float_list_opt = None,
 ) -> str:
     """Analyze a multi-leg option strategy's payoff and spot/IV scenarios.
 
@@ -1205,7 +1262,7 @@ def list_swarm_presets() -> str:
 @mcp.tool
 async def run_swarm(
     preset_name: str,
-    variables: dict[str, str],
+    variables: _lenient_dict_str_str,
     wait_seconds: int = 3600,
     start_only: bool = False,
     ctx: Context | None = None,
@@ -1343,7 +1400,7 @@ def _cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
 
 @mcp.tool
 def get_market_data(
-    codes: list[str],
+    codes: _lenient_str_list,
     start_date: str,
     end_date: str,
     source: str = "auto",
@@ -1392,10 +1449,12 @@ def get_market_data(
 # Each wrapper delegates to the auto-discovered local registry, exactly like
 # factor_analysis / pattern_recognition above. The registry returns a clean
 # JSON error envelope when a key-gated tool (get_macro_series needs
-# FRED_API_KEY, iwencai_search needs VIBE_TRADING_IWENCAI_KEY) is absent — see
+# FRED_API_KEY, iwencai_search needs VIBE_TRADING_IWENCAI_KEY, the qveris_*
+# tools need QVeris paid routing: QVERIS_API_KEY + paid mode) is absent — see
 # ``_execute_key_gated`` below, which honours that contract even though the
 # tool is excluded from the registry by ``check_available()``. Every tool below
-# is strictly read-only data — no order/trading tool is ever surfaced via MCP.
+# is read-only or research-only data — no order/trading tool is ever surfaced
+# via MCP (qveris_execute spends QVeris credits on data calls, never orders).
 # ---------------------------------------------------------------------------
 
 
@@ -1405,35 +1464,47 @@ def get_market_data(
 # answer with a generic "Tool not found". That contradicts the documented
 # contract above (a clean, env-var-named error). For these tools we therefore
 # fall through to the tool's own ``execute()`` — whose missing-key envelope
-# names the exact env var (``FRED_API_KEY`` / ``VIBE_TRADING_IWENCAI_KEY``).
+# names the exact env var (``FRED_API_KEY`` / ``VIBE_TRADING_IWENCAI_KEY``),
+# or the missing QVeris paid-routing setup (``QVERIS_API_KEY`` + paid mode).
 def _key_gated_tool_classes() -> dict[str, Any]:
     """Return the {tool_name: tool_class} map for key-gated MCP tools.
 
-    Imported lazily so a missing optional dependency in either module degrades
-    to the registry path rather than breaking module import.
+    Imported lazily so a missing optional dependency in any mapped module
+    degrades to the registry path rather than breaking module import.
 
     Returns:
         Mapping of MCP tool name to its ``BaseTool`` subclass.
     """
     from src.tools.fred_macro_tool import FredMacroTool
     from src.tools.iwencai_tool import IWenCaiSearchTool
+    from src.tools.qveris_tool import (
+        QVerisExecuteTool,
+        QVerisInspectTool,
+        QVerisSearchTool,
+    )
 
     return {
         "get_macro_series": FredMacroTool,
         "iwencai_search": IWenCaiSearchTool,
+        "qveris_search": QVerisSearchTool,
+        "qveris_inspect": QVerisInspectTool,
+        "qveris_execute": QVerisExecuteTool,
     }
 
 
 def _execute_key_gated(name: str, params: dict[str, Any]) -> str:
-    """Run a key-gated read-only tool, preserving its env-var-named error.
+    """Run a key-gated MCP tool, preserving its env-var-named error.
 
-    Prefers the auto-discovered registry (present when the API key is set). When
-    the key is absent the tool is excluded from the registry, so we invoke its
-    concrete ``execute()`` directly to surface the documented missing-key error
-    that names the exact env var — never a generic "Tool not found".
+    Prefers the auto-discovered registry (present when the API key is set and,
+    for the qveris_* tools, paid mode is on). When the gating is absent the
+    tool is excluded from the registry, so we invoke its concrete ``execute()``
+    directly to surface the documented missing-key error that names the exact
+    env var — or the missing QVeris paid routing — never a generic "Tool not
+    found".
 
     Args:
-        name: MCP tool name (``get_macro_series`` or ``iwencai_search``).
+        name: MCP tool name (``get_macro_series``, ``iwencai_search``,
+            ``qveris_search``, ``qveris_inspect`` or ``qveris_execute``).
         params: Keyword arguments forwarded to the tool.
 
     Returns:
@@ -1449,7 +1520,7 @@ def _execute_key_gated(name: str, params: dict[str, Any]) -> str:
 
 
 @mcp.tool
-def get_fund_flow(codes: list[str], period: str = "daily", days: int = 30) -> str:
+def get_fund_flow(codes: _lenient_str_list, period: str = "daily", days: int = 30) -> str:
     """Fetch order-bucket net capital inflow (main/super-large/large/medium/small).
 
     Markets: A-share (.SH/.SZ/.BJ), Hong Kong (.HK) and US (.US). Use this to
@@ -1702,7 +1773,7 @@ def get_options_chain(ticker: str, expiration: int | None = None) -> str:
 
 
 @mcp.tool
-def get_stock_profile(ticker: str, sections: list[str] | None = None) -> str:
+def get_stock_profile(ticker: str, sections: _lenient_str_list_opt = None) -> str:
     """Fetch a read-only company profile for a US or HK listing (Yahoo Finance).
 
     Returns valuation key statistics, analyst price targets and
@@ -1805,6 +1876,289 @@ def iwencai_search(query: str, limit: int = 20) -> str:
         limit: Maximum securities to return.
     """
     return _execute_key_gated("iwencai_search", {"query": query, "limit": limit})
+
+
+@mcp.tool
+def qveris_search(query: str, limit: int = 20, session_id: str | None = None) -> str:
+    """Search the QVeris premium data/tool marketplace for capabilities.
+
+    Discovery is free. Returns candidate tools with ``tool_id``, ``provider``,
+    ``parameters``, ``expected_cost`` and ``stats.success_rate``; choose by
+    expected cost and success rate before any paid execute. Requires QVeris
+    paid routing (``QVERIS_API_KEY`` and paid mode via ``vibe-trading data
+    mode paid`` or Settings -> QVeris) — without it the tool returns a
+    not-available error.
+
+    Args:
+        query: Capability search query, e.g. "US listed options chain implied
+            volatility Greeks AAPL".
+        limit: Maximum candidates to return.
+        session_id: Optional QVeris session id linking follow-up calls.
+    """
+    params: dict[str, Any] = {"query": query, "limit": limit}
+    if session_id:
+        params["session_id"] = session_id
+    return _execute_key_gated("qveris_search", params)
+
+
+@mcp.tool
+def qveris_inspect(
+    tool_ids: list[str],
+    search_id: str | None = None,
+    session_id: str | None = None,
+) -> str:
+    """Inspect full parameter schemas of QVeris tools before executing them.
+
+    Fetches the complete descriptors for one or more ``tool_ids`` returned by
+    ``qveris_search``. Inspection is free: verify required parameters, enum
+    values, date formats and output shape before a paid call. Requires QVeris
+    paid routing (``QVERIS_API_KEY`` and paid mode via ``vibe-trading data
+    mode paid`` or Settings -> QVeris) — without it the tool returns a
+    not-available error.
+
+    Args:
+        tool_ids: QVeris tool ids taken from ``qveris_search`` results.
+        search_id: Optional search id from the ``qveris_search`` response.
+        session_id: Optional QVeris session id linking follow-up calls.
+    """
+    params: dict[str, Any] = {"tool_ids": tool_ids}
+    if search_id:
+        params["search_id"] = search_id
+    if session_id:
+        params["session_id"] = session_id
+    return _execute_key_gated("qveris_inspect", params)
+
+
+@mcp.tool
+def qveris_execute(
+    tool_id: str,
+    parameters: dict[str, Any],
+    search_id: str | None = None,
+    session_id: str | None = None,
+    model: str | None = None,
+    max_response_size: int = 20480,
+) -> str:
+    """Execute one QVeris capability after discovery and inspection.
+
+    Runs the ``tool_id`` selected via ``qveris_search`` / ``qveris_inspect``.
+    MAY BE BILLABLE — provider calls are charged by QVeris when billable
+    (failed or empty calls are not charged), and the tool enforces the local
+    per-session credit budget before sending the request; the result preserves
+    ``cost`` and ``remaining_credits``. Research/data execution only — it
+    never places orders. Requires QVeris paid routing (``QVERIS_API_KEY`` and
+    paid mode via ``vibe-trading data mode paid`` or Settings -> QVeris) —
+    without it the tool returns a not-available error.
+
+    Args:
+        tool_id: QVeris tool id to execute.
+        parameters: Provider call parameters matching the inspected schema.
+        search_id: Optional search id from the ``qveris_search`` response.
+        session_id: Optional QVeris session id used for budget accounting.
+        model: Optional provider model override.
+        max_response_size: Provider response truncation budget (default
+            20480; -1 disables truncation).
+    """
+    params: dict[str, Any] = {
+        "tool_id": tool_id,
+        "parameters": parameters,
+        "max_response_size": max_response_size,
+    }
+    if search_id:
+        params["search_id"] = search_id
+    if session_id:
+        params["session_id"] = session_id
+    if model:
+        params["model"] = model
+    return _execute_key_gated("qveris_execute", params)
+
+
+# ---------------------------------------------------------------------------
+# Institutional-research & alternative-data tools (schema mirrored from source)
+#
+# get_institutional_holdings / etf_holdings / prediction_market /
+# research_papers carry large multi-mode JSON Schemas (mode enums, per-mode
+# required arguments, paging bounds) that live on the tool class itself.
+# Re-declaring them here as Python signatures — the pattern used by the
+# single-purpose tools above — would create a SECOND definition that silently
+# drifts from the agent-side one every time a mode or bound changes. So these
+# four are registered with the tool class' own ``parameters`` and
+# ``description``: an MCP client sees byte-identical argument documentation to
+# what the agent sees, from one source.
+#
+# Read-only is structural here, not a comment: _register_mirrored_tool refuses
+# any class whose ``is_readonly`` is not True, so an order-placing tool cannot
+# be surfaced through this path even if someone adds it to the list below.
+# ``trading_place_order`` / ``trading_cancel_order`` are never MCP-exposed.
+#
+# Tradeoff accepted: fastmcp validates call arguments against the wrapper's
+# Python signature, not against ``parameters``, so a mirrored tool receives its
+# arguments unvalidated by the server (we only drop nulls and undeclared keys).
+# That is the same contract the tool already has with the agent — every one of
+# these tools parses/clamps its own ``**kwargs`` — and ToolRegistry.execute
+# turns any failure into a JSON error envelope rather than a transport error.
+# KNOWN DIVERGENCE from the hand-written wrappers above, which declare
+# ``additionalProperties: false`` and therefore REJECT an undeclared argument:
+# here an undeclared argument is dropped instead. Every identity argument is
+# still enforced by the tool itself (a missing symbol/manager/query fails
+# closed), so the residual risk is a mistyped OPTIONAL argument silently
+# falling back to its default. Closing this belongs on the tool classes —
+# adding ``additionalProperties: false`` to their ``parameters`` fixes the
+# agent side and this surface at once, since the schema here is theirs.
+# ---------------------------------------------------------------------------
+
+
+_MIRRORED_TOOL_SOURCES = (
+    ("src.tools.institutional_holdings_tool", "InstitutionalHoldingsTool"),
+    ("src.tools.etf_holdings_tool", "EtfHoldingsTool"),
+    ("src.tools.prediction_market_tool", "PredictionMarketTool"),
+    ("src.tools.research_papers_tool", "ResearchPapersTool"),
+)
+
+
+def _mirrored_tool_classes() -> list[Any]:
+    """Return the read-only tool classes exposed with their own JSON Schema.
+
+    Each module is imported lazily AND independently: a missing optional
+    dependency or a broken module costs exactly the one tool it defines, and
+    the other three still reach the MCP surface. Importing them together in a
+    single ``from ... import`` block would make one bad module drop all four.
+
+    Returns:
+        The ``BaseTool`` subclasses to mirror onto the MCP surface, in
+        declaration order, minus any whose module failed to import.
+    """
+    classes: list[Any] = []
+    for module_path, class_name in _MIRRORED_TOOL_SOURCES:
+        try:
+            classes.append(getattr(import_module(module_path), class_name))
+        except Exception:  # noqa: BLE001 - one unavailable module, not four
+            logger.exception(
+                "Tool module %s is unavailable; its MCP tool will be absent", module_path
+            )
+    return classes
+
+
+def _string_result_output_schema() -> dict[str, Any] | None:
+    """Return the output schema fastmcp derives for a ``-> str`` tool.
+
+    Derived from a probe function instead of hardcoded so the mirrored tools
+    keep announcing the same result envelope as the ``@mcp.tool`` wrappers
+    above across fastmcp versions (currently a wrapped ``{"result": str}``).
+
+    Returns:
+        The derived output schema, or None if this fastmcp version declares none.
+    """
+    from fastmcp.tools import FunctionTool
+
+    def _probe() -> str:  # pragma: no cover - shape probe only
+        return ""
+
+    return FunctionTool.from_function(_probe, name="probe").output_schema
+
+
+def _mirrored_call_params(schema: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Reduce raw MCP call arguments to the ones the tool actually declares.
+
+    Drops ``None`` values (no mirrored schema declares a nullable property, so
+    an explicit null means "not supplied") and keys the schema does not declare,
+    matching the ``additionalProperties: false`` behaviour of the hand-written
+    wrappers.
+
+    Args:
+        schema: The tool's own ``parameters`` JSON Schema.
+        kwargs: Arguments as received from the MCP client.
+
+    Returns:
+        The filtered keyword arguments to forward to the registry.
+    """
+    declared = schema.get("properties") or {}
+    params: dict[str, Any] = {}
+    for key, value in kwargs.items():
+        if value is None or key not in declared:
+            continue
+        # A mirrored tool has no Python signature for fastmcp to validate
+        # against, so the JSON-string arguments the BeforeValidator decodes on
+        # the annotated wrappers arrive here untouched and would reach the tool
+        # as a str where it expects a list. Decode off the DECLARED type, which
+        # covers every mirrored tool and every future one, rather than the
+        # three array parameters that happen to exist today
+        # (prediction_market.ids, research_papers.categories/paper_ids).
+        if _declares_json_container(declared[key]):
+            value = _coerce_json_string(value)
+        params[key] = value
+    return params
+
+
+def _declares_json_container(prop_schema: Any) -> bool:
+    """Return whether a property's schema admits a JSON array or object.
+
+    Args:
+        prop_schema: One entry from a JSON Schema ``properties`` map.
+
+    Returns:
+        True when the declared type is ``array``/``object``, including when it
+        appears inside an ``anyOf`` union.
+    """
+    if not isinstance(prop_schema, dict):
+        return False
+    types = {prop_schema.get("type")}
+    for variant in prop_schema.get("anyOf") or ():
+        if isinstance(variant, dict):
+            types.add(variant.get("type"))
+    return bool(types & {"array", "object"})
+
+
+def _register_mirrored_tool(tool_cls: Any) -> bool:
+    """Register one read-only tool on the MCP surface using its own schema.
+
+    Args:
+        tool_cls: A ``BaseTool`` subclass with ``name`` / ``description`` /
+            ``parameters``.
+
+    Returns:
+        True when the tool was registered; False when it was refused (not
+        read-only) or this fastmcp version rejected the registration.
+    """
+    name = getattr(tool_cls, "name", "")
+    if getattr(tool_cls, "is_readonly", False) is not True:
+        logger.error(
+            "Refusing to expose non-read-only tool %r via MCP; only read-only "
+            "tools are ever surfaced.",
+            name or tool_cls,
+        )
+        return False
+
+    try:
+        from fastmcp.tools import FunctionTool
+
+        schema = deepcopy(getattr(tool_cls, "parameters", None)) or {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
+
+        def _call(**kwargs: Any) -> str:
+            """Forward an MCP call to the auto-discovered local tool registry."""
+            return _get_registry().execute(name, _mirrored_call_params(schema, kwargs))
+
+        mcp.add_tool(
+            FunctionTool(
+                fn=_call,
+                name=name,
+                description=tool_cls.description,
+                parameters=schema,
+                output_schema=_string_result_output_schema(),
+                return_type=str,
+            )
+        )
+    except Exception:  # noqa: BLE001 - never let one tool break server startup
+        logger.exception("Failed to expose tool %r via MCP", name)
+        return False
+    return True
+
+
+for _mirrored_cls in _mirrored_tool_classes():
+    _register_mirrored_tool(_mirrored_cls)
 
 
 # ---------------------------------------------------------------------------
@@ -2109,7 +2463,7 @@ def run_shadow_backtest(
     shadow_id: str,
     window_start: str = "",
     window_end: str = "",
-    markets: list[str] | None = None,
+    markets: _lenient_str_list_opt = None,
     journal_path: str = "",
 ) -> str:
     """Run a multi-market backtest (A股/港股/美股/crypto) on a Shadow Account

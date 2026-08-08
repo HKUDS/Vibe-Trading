@@ -20,6 +20,7 @@ from src.channelsui.mcp_presets_api import normalize_mcp_preset_mentions
 from src.channelsui.transcription_ws import webui_transcription_event
 from src.session.goal_state import goal_state_ws_blob
 from src.session.models import Message, Session
+from src.session.service import SessionBusyError
 from src.session.webui_turns import (
     clear_websocket_turn_started,
     mark_websocket_turn_started,
@@ -265,6 +266,7 @@ def test_channel_runtime_routes_inbound_to_session_and_outbound(tmp_path: Path) 
                     sender_id="user-1",
                     chat_id="chat-1",
                     content="hello from IM",
+                    metadata={"message_id": "orig-msg-42"},
                 )
             )
 
@@ -281,6 +283,10 @@ def test_channel_runtime_routes_inbound_to_session_and_outbound(tmp_path: Path) 
                 "_channel_runtime": True,
                 "attempt_id": "attempt-1",
                 "session_id": "session-1",
+                # The originating message id is threaded through so the QQ
+                # adapter can send the reply as a passive message (msg_id)
+                # instead of an active message QQ rejects for non-privileged bots.
+                "message_id": "orig-msg-42",
             },
         )
 
@@ -312,6 +318,7 @@ def test_channel_runtime_handles_pairing_commands_without_agent(tmp_path: Path, 
                     sender_id="owner",
                     chat_id="chat-1",
                     content="/PAIRING LIST",
+                    metadata={"message_id": "pairing-msg-1"},
                 )
             )
             outbound = await asyncio.wait_for(bus.consume_outbound(), timeout=1)
@@ -323,6 +330,7 @@ def test_channel_runtime_handles_pairing_commands_without_agent(tmp_path: Path, 
         assert outbound.chat_id == "chat-1"
         assert "No pending pairing requests" in outbound.content
         assert outbound.metadata["_pairing_command"] is True
+        assert outbound.metadata["message_id"] == "pairing-msg-1"
 
     asyncio.run(scenario())
 
@@ -361,6 +369,7 @@ def test_channel_runtime_rejects_pairing_from_non_operator(
                     sender_id="stranger",
                     chat_id="chat-1",
                     content=f"/pairing approve {code}",
+                    metadata={"message_id": "pairing-msg-2"},
                 )
             )
             outbound = await asyncio.wait_for(bus.consume_outbound(), timeout=1)
@@ -369,6 +378,7 @@ def test_channel_runtime_rejects_pairing_from_non_operator(
 
         assert service.sent == []
         assert outbound.metadata.get("unauthorized") is True
+        assert outbound.metadata["message_id"] == "pairing-msg-2"
         assert "Not authorized" in outbound.content
         # The code must NOT have been consumed by the rejected attempt.
         assert pairing.is_approved("signal", "victim-sender") is False
@@ -649,7 +659,13 @@ def test_channel_runtime_new_command_with_no_existing_session(tmp_path: Path) ->
         await runtime.start(start_manager=False)
         try:
             await bus.publish_inbound(
-                InboundMessage(channel="telegram", sender_id="u1", chat_id="c1", content="/new")
+                InboundMessage(
+                    channel="telegram",
+                    sender_id="u1",
+                    chat_id="c1",
+                    content="/new",
+                    metadata={"message_id": "reset-msg-1"},
+                )
             )
             reply = await asyncio.wait_for(bus.consume_outbound(), timeout=1)
         finally:
@@ -657,8 +673,61 @@ def test_channel_runtime_new_command_with_no_existing_session(tmp_path: Path) ->
 
         assert "No active session to reset" in reply.content
         assert reply.metadata.get("session_reset") is True
+        assert reply.metadata["message_id"] == "reset-msg-1"
         assert service.sent == []
         assert len(service.created) == 0
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("failure", "flag"),
+    [
+        (SessionBusyError("busy"), "busy"),
+        (RuntimeError("boom"), "error"),
+    ],
+)
+def test_channel_runtime_preserves_message_id_for_failure_replies(
+    tmp_path: Path,
+    failure: Exception,
+    flag: str,
+) -> None:
+    async def scenario() -> None:
+        from src.channels.runtime import ChannelRuntime
+
+        bus = MessageBus()
+        service = FakeSessionService()
+
+        async def fail_send(*args: Any, **kwargs: Any) -> dict[str, str]:
+            del args, kwargs
+            raise failure
+
+        service.send_message = fail_send  # type: ignore[method-assign]
+        runtime = ChannelRuntime(
+            bus=bus,
+            session_service=service,
+            manager=None,
+            session_map_path=tmp_path / "channel_sessions.json",
+            reply_timeout_s=1,
+            poll_interval_s=0.01,
+        )
+        await runtime.start(start_manager=False)
+        try:
+            await bus.publish_inbound(
+                InboundMessage(
+                    channel="qq",
+                    sender_id="u1",
+                    chat_id="c1",
+                    content="hello",
+                    metadata={"message_id": "origin-msg-1"},
+                )
+            )
+            reply = await asyncio.wait_for(bus.consume_outbound(), timeout=1)
+        finally:
+            await runtime.stop()
+
+        assert reply.metadata[flag] is True
+        assert reply.metadata["message_id"] == "origin-msg-1"
 
     asyncio.run(scenario())
 

@@ -202,6 +202,10 @@ Notes:
 - IV > 500% is usually an outlier and should be filtered
 ```
 
+This is already implemented, guards included, as
+`src.quantlib.options.implied_volatility` — see section 4.1. The formulas above
+document what it computes; they are not an instruction to rewrite it.
+
 ---
 
 ## 3. Payoff Diagram Analysis
@@ -262,174 +266,51 @@ Plot one theoretical value curve for each `σ` and distinguish them by color to 
 
 ## 4. Python Code Templates
 
-### 4.1 Black-Scholes Pricing Functions
+### 4.1 Black-Scholes Pricing Functions — Import, Do Not Retype
+
+`bs_price`, `bs_greeks` and `implied_volatility` are implemented once in
+`src/quantlib/options.py` and pinned by `tests/quantlib/test_options.py`
+(published Hull reference values, put-call parity, Greeks against
+finite-difference bumps, implied-vol round-trips). Import them.
+
+**Do not retype the formulas from section 2 into your own helper.** A retyped
+copy is a different, untested function on every run, and the copies that used to
+live here had two live defects: they crashed on a non-positive spot or strike,
+and they reported a zero Delta for an expiring in-the-money option.
 
 ```python
-import numpy as np
-from scipy.stats import norm
-from scipy.optimize import brentq
-from typing import Literal
+from src.quantlib.options import bs_greeks, bs_price, implied_volatility
 
-def bs_price(
-    S: float,
-    K: float,
-    T: float,
-    r: float,
-    sigma: float,
-    option_type: Literal["call", "put"],
-    q: float = 0.0,
-) -> float:
-    """Black-Scholes option pricing.
-
-    Args:
-        S: Current underlying price
-        K: Strike price
-        T: Time to expiration in years
-        r: Risk-free rate in annualized continuous compounding, e.g. 0.03
-        sigma: Annualized volatility, e.g. 0.20
-        option_type: "call" or "put"
-        q: Continuous dividend yield, defaults to 0
-
-    Returns:
-        Theoretical option price
-
-    Raises:
-        ValueError: If sigma <= 0
-    """
-    if T <= 0:
-        # After expiration, return intrinsic value directly.
-        if option_type == "call":
-            return max(0.0, S - K)
-        return max(0.0, K - S)
-    if sigma <= 0:
-        raise ValueError(f"sigma must be > 0, got {sigma}")
-
-    d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-
-    if option_type == "call":
-        price = S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
-    else:
-        price = K * np.exp(-r * T) * norm.cdf(-d2) - S * np.exp(-q * T) * norm.cdf(-d1)
-
-    return float(price)
-
-
-def bs_greeks(
-    S: float,
-    K: float,
-    T: float,
-    r: float,
-    sigma: float,
-    option_type: Literal["call", "put"],
-    q: float = 0.0,
-) -> dict:
-    """Calculate the five major Greeks under the Black-Scholes model.
-
-    Returns:
-        A dict with keys: delta, gamma, theta, vega, rho.
-        Theta and Vega are already converted to per-day and per-1% units.
-    """
-    if T <= 1e-6:
-        return {"delta": 0.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0, "rho": 0.0}
-
-    d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-    n_prime_d1 = norm.pdf(d1)
-    exp_qt = np.exp(-q * T)
-    exp_rt = np.exp(-r * T)
-
-    if option_type == "call":
-        delta = exp_qt * norm.cdf(d1)
-        rho = K * T * exp_rt * norm.cdf(d2) / 100
-        theta = (
-            -S * exp_qt * n_prime_d1 * sigma / (2 * np.sqrt(T))
-            - r * K * exp_rt * norm.cdf(d2)
-            + q * S * exp_qt * norm.cdf(d1)
-        ) / 365
-    else:
-        delta = exp_qt * (norm.cdf(d1) - 1)
-        rho = -K * T * exp_rt * norm.cdf(-d2) / 100
-        theta = (
-            -S * exp_qt * n_prime_d1 * sigma / (2 * np.sqrt(T))
-            + r * K * exp_rt * norm.cdf(-d2)
-            - q * S * exp_qt * norm.cdf(-d1)
-        ) / 365
-
-    gamma = exp_qt * n_prime_d1 / (S * sigma * np.sqrt(T))
-    vega = S * exp_qt * n_prime_d1 * np.sqrt(T) / 100
-
-    return {
-        "delta": round(delta, 6),
-        "gamma": round(gamma, 6),
-        "theta": round(theta, 6),
-        "vega": round(vega, 6),
-        "rho": round(rho, 6),
-    }
-
-
-def implied_volatility(
-    market_price: float,
-    S: float,
-    K: float,
-    T: float,
-    r: float,
-    option_type: Literal["call", "put"],
-    q: float = 0.0,
-    tol: float = 1e-6,
-    max_iter: int = 200,
-) -> float:
-    """Solve implied volatility with Newton-Raphson.
-
-    Args:
-        market_price: Observed market price
-        tol: Convergence tolerance
-        max_iter: Maximum number of iterations
-
-    Returns:
-        Annualized implied volatility. Returns np.nan on failure.
-
-    Raises:
-        ValueError: If the market price is below intrinsic value
-    """
-    # Check intrinsic value first.
-    intrinsic = max(0.0, S - K if option_type == "call" else K - S)
-    if market_price < intrinsic - 1e-6:
-        raise ValueError(f"Market price {market_price} is below intrinsic value {intrinsic}")
-
-    # Brenner-Subrahmanyam initial approximation.
-    sigma = np.sqrt(2 * np.pi / T) * market_price / S
-    sigma = max(0.001, min(sigma, 5.0))
-
-    for _ in range(max_iter):
-        price = bs_price(S, K, T, r, sigma, option_type, q)
-        vega = bs_greeks(S, K, T, r, sigma, option_type, q)["vega"] * 100  # restore per-1.0 unit
-
-        diff = price - market_price
-        if abs(diff) < tol:
-            return round(sigma, 6)
-
-        if abs(vega) < 1e-10:
-            # Vega is near zero, fall back to bisection.
-            try:
-                return float(brentq(
-                    lambda v: bs_price(S, K, T, r, v, option_type, q) - market_price,
-                    1e-4, 10.0, xtol=tol, maxiter=200
-                ))
-            except ValueError:
-                return np.nan
-
-        sigma -= diff / vega
-        sigma = max(1e-4, min(sigma, 10.0))  # clamp to a reasonable range
-
-    return np.nan  # did not converge
+price = bs_price(S=100, K=100, T=0.25, r=0.03, sigma=0.20, option_type="call", q=0.0)
+greeks = bs_greeks(100, 100, 0.25, 0.03, 0.20, "call")   # delta gamma theta vega rho
+iv = implied_volatility(market_price=5.0, S=100, K=100, T=0.25, r=0.03, option_type="call")
 ```
+
+Argument order is `(S, K, T, r, sigma, option_type="call", q=0.0)` for both
+pricing functions; `implied_volatility` takes `market_price` first, then
+`(S, K, T, r, option_type="call", q=0.0, tol=1e-6, max_iter=200)`.
+
+Contract worth knowing before you use the numbers:
+
+| Point | Behaviour |
+|---|---|
+| Units | Theta per calendar day; Vega and Rho per 1 percentage point; Delta and Gamma per 1.0 of spot. Nothing is rounded |
+| `option_type` | Case-insensitive; anything other than call/put raises `ValueError` |
+| Degenerate input | `T <= 0`, `sigma <= 0`, `S <= 0` or `K <= 0` returns intrinsic value, and Greeks with the correct ±1/0 point-mass Delta — it does not raise |
+| IV lower guard | Raises `ValueError` below the **discounted** forward intrinsic. Using undiscounted `K - S` instead would wrongly reject deep ITM European puts, which really do trade below it |
+| IV upper guard | Raises `ValueError` at or above the no-arbitrage ceiling (`S·e^(-qT)` for a call, `K·e^(-rT)` for a put) — no volatility reaches it |
+| IV failure | Newton seeded by Brenner-Subrahmanyam, falling back to bisection when Vega collapses; returns `nan` only if neither converges |
 
 ### 4.2 Multi-Leg Portfolio Payoff Calculation
 
 ```python
 from dataclasses import dataclass
+from typing import Literal
+
 import numpy as np
+from scipy.optimize import brentq
+
+from src.quantlib.options import bs_price
 
 @dataclass
 class OptionLeg:
@@ -708,6 +589,8 @@ def plot_payoff_plotly(
 ### 4.5 Greeks Profile vs Underlying Price
 
 ```python
+from src.quantlib.options import bs_greeks
+
 def plot_greeks_profile(
     legs: list[OptionLeg],
     S_current: float,
@@ -846,6 +729,8 @@ Underlying approaches the call strike:
 ## Quick Usage Example
 
 ```python
+from src.quantlib.options import implied_volatility
+
 # Example: Iron Condor payoff diagram
 legs = [
     OptionLeg("put",  K=90,  direction=-1, premium=1.5, T=0.083, sigma=0.20),
@@ -866,5 +751,5 @@ iv = implied_volatility(
     market_price=5.0, S=100, K=100,
     T=0.25, r=0.03, option_type="call"
 )
-print(f"Implied volatility: {iv:.2%}")  # about 0.20
+print(f"Implied volatility: {iv:.2%}")  # 23.25%
 ```

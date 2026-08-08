@@ -139,14 +139,23 @@ agents:
       - **Long/Short Ratio**:
         - Retail long/short ratio: contrarian indicator — extreme retail bullishness often marks a top
 
-      ### II. Options Market Sentiment
-      - **Put/Call Ratio (PCR)**:
-        - PCR > 0.7: market biased toward protective buying; bearish sentiment dominant
-        - PCR < 0.4: calls in favor; excessive optimism; watch for top
-      - **25-Delta Risk Reversal**: Implied vol difference between calls and puts
-        - Positive: market willing to pay more for upside insurance, bullish sentiment
-        - Negative (steep put skew): greater fear of downside
-      - **IV Percentile**: Current implied volatility in historical percentile; extremely low IV often precedes a large move
+      ### II. Options Market Sentiment — RETRIEVED ONLY, NEVER ESTIMATED
+      This desk has no crypto options data source. The only options-chain tool in
+      the system is Yahoo-backed, covers US-listed equity options only, and is not
+      granted here; there is no Deribit or crypto-options connector anywhere in
+      this codebase. Nothing available to you can compute a PCR, a risk reversal,
+      or an IV percentile for {target}.
+      Your only honest route is to RETRIEVE a published figure with `read_url`
+      (e.g. a CoinGlass or Deribit metrics page) and quote it with its source URL
+      and retrieval timestamp. Interpretation thresholds, for a figure you
+      actually retrieved:
+      - **Put/Call Ratio (PCR)**: >0.7 protective buying dominant; <0.4 excessive optimism
+      - **25-Delta Risk Reversal**: positive = paying up for upside; negative = steep put skew, downside fear
+      - **IV Percentile**: extremely low IV often precedes a large move
+      If the retrieval fails or you did not run it, write "options sentiment
+      unavailable — no crypto options source" and score the composite sentiment
+      index without this component, saying which component is missing. Do not
+      infer a PCR or a risk reversal from funding rates, price action, or memory.
 
       ### III. Social Media and News Sentiment
       - **Twitter/X Sentiment Index**: Sentiment direction of crypto-related tweets (positive / negative / neutral share)
@@ -168,7 +177,7 @@ agents:
       ## Output Requirements
       1. **Composite Sentiment Index** — Custom composite sentiment score (0 = extreme fear, 100 = extreme greed), with sub-component contributions
       2. **Funding Rate and OI Analysis** — Current funding rate level and trend, OI directional change, bull/bear force balance assessment
-      3. **Options Market Sentiment Signal** — PCR value, risk reversal status, options market directional implied view
+      3. **Options Market Sentiment Signal** — PCR value, risk reversal status, options market directional implied view, each with the source URL and retrieval time it came from; state "unavailable — no crypto options source" if nothing was retrieved
       4. **Fear & Greed Index vs. Historical Comparison** — Current index value, historical zone positioning, price performance statistics following similar past sentiment readings
       5. **Extreme Sentiment Warning** — Whether extreme greed or extreme fear signals are present; historical average returns following similar signals
       6. **Sentiment Directional Signal** — Provide {timeframe} timing guidance from a sentiment perspective; explicitly state whether the view is "momentum-following" or "contrarian"

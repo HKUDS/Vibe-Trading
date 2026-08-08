@@ -295,16 +295,16 @@ try_register_openbb_routes(app)
 # ============================================================================
 # Scheduled Research Routes - defined in src/api/scheduled_routes.py
 # ============================================================================
-#
-# Lightweight CRUD endpoints backed by ScheduledResearchJobStore. The endpoint
-# handlers only record and expose jobs; the optional executor lifecycle is
-# guarded separately by VIBE_TRADING_ENABLE_SCHEDULER.
+# Job CRUD plus the playbook-template catalogue, all auth-gated. Handlers only
+# record and expose jobs; execution is guarded by VIBE_TRADING_ENABLE_SCHEDULER.
 
 from src.api.scheduled_routes import register_scheduled_routes  # noqa: E402
 register_scheduled_routes(app)
 
 from src.api.scheduled_routes import (  # noqa: E402, F401
+    CreateRunFromPlaybookRequest,
     CreateScheduledRunRequest,
+    PlaybookResponse,
     ScheduledRunResponse,
     _dispatch_scheduled_research_job,
     _get_scheduled_research_executor,

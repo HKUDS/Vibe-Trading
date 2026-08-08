@@ -1,12 +1,13 @@
 import i18n from '@/i18n';
 import { Component, memo, useState, useCallback, type ReactNode } from "react";
-import { XCircle, RefreshCw, Copy, Check, Paperclip, Users, Target } from "lucide-react";
+import { XCircle, RefreshCw, Copy, Check, Paperclip, Users, Target, Clock3 } from "lucide-react";
 import ReactMarkdown, { type Options as ReactMarkdownOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
+import { toast } from "sonner";
 import { normalizeMathDelimiters } from "@/lib/markdown";
 import type { AgentMessage } from "@/types/agent";
 import type { StoredAgentMessage } from "@/stores/agent";
@@ -102,13 +103,43 @@ export const MarkdownContent = memo(function MarkdownContent({
   );
 });
 
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fall through to the selection-based compatibility path.
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  } finally {
+    textarea.remove();
+  }
+  return copied;
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(text).then(() => {
+  const handleCopy = useCallback(async () => {
+    if (await copyText(text)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    });
+      return;
+    }
+    toast.error(i18n.t("messageBubble.copyFailed"));
   }, [text]);
   const label = copied ? i18n.t("messageBubble.copied") : i18n.t("messageBubble.copy");
 
@@ -143,6 +174,14 @@ function getRetryHint(content: string): string {
 interface Props {
   msg: StoredAgentMessage;
   onRetry?: (msg: AgentMessage) => void;
+}
+
+function formatElapsed(elapsedMs: number): string {
+  if (elapsedMs < 1000) return `${Math.max(1, Math.round(elapsedMs))} ms`;
+  const seconds = elapsedMs / 1000;
+  if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)} s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${Math.round(seconds % 60)}s`;
 }
 
 export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props) {
@@ -190,6 +229,14 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props
         <div className="flex-1 min-w-0 space-y-1.5">
           <CopyButton text={msg.content} />
           <MarkdownContent content={msg.content} />
+          {msg.elapsed_ms != null && (
+            <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground/55">
+              <span className="inline-flex items-center gap-1 tabular-nums" title={i18n.t("messageBubble.elapsedTime")}>
+                <Clock3 className="h-3 w-3" aria-hidden="true" />
+                {formatElapsed(msg.elapsed_ms)}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     );

@@ -65,8 +65,13 @@ agents:
       6. **Key levels** — strong/weak support and resistance with prices
       7. **Composite TA score** — −5 bearish to +5 bullish aggregate
 
-      Every claim needs explicit price levels—no vague prose.
-    tools: [bash, read_file, write_file, load_skill]
+      Every claim needs explicit price levels—no vague prose. Those levels must be
+      READ OFF DATA: pull {timeframe} bars with `get_market_data` and compute the
+      moving averages, MACD/RSI/KDJ and volume statistics with
+      `technical_indicators` (or in `bash` from the bars). A support, resistance,
+      MA value or measured target that you did not derive from retrieved bars is
+      fabricated — if the bars cannot be retrieved, say so and give no levels.
+    tools: [bash, read_file, write_file, load_skill, get_market_data, technical_indicators]
     skills: [technical-basic, candlestick]
     max_iterations: 50
     timeout_seconds: 1800
@@ -117,8 +122,13 @@ agents:
       6. **Five-element resonance** — price/Tenkan/Kijun/Chikou/cloud alignment
       7. **Ichimoku score** — −5..+5 with element weights
 
-      Cover all five building blocks—no partial analysis.
-    tools: [bash, read_file, write_file, load_skill]
+      Cover all five building blocks—no partial analysis. Ichimoku is fully
+      determined by the bars: pull them with `get_market_data` and compute
+      Tenkan / Kijun / Senkou A / Senkou B / Chikou in `bash` from the standard
+      9 / 26 / 52 windows (state the windows if you deviate). Cloud bounds and
+      the quantised S/R prices are outputs of that calculation, never estimates.
+      If the bars cannot be retrieved, report the analysis as unavailable.
+    tools: [bash, read_file, write_file, load_skill, get_market_data, technical_indicators]
     skills: [ichimoku]
     max_iterations: 50
     timeout_seconds: 1800
@@ -261,8 +271,14 @@ agents:
       6. **Optimal entry zone** — combined OB/FVG/liquidity for long/short
       7. **SMC score** — −5..+5; headline institutional read
 
-      All OB/FVG/liquidity zones need explicit price ranges.
-    tools: [bash, read_file, write_file, load_skill]
+      All OB/FVG/liquidity zones need explicit price ranges, and every range must
+      be located in retrieved bars: pull them with `get_market_data` (minute or
+      intraday interval as {timeframe} requires) and identify swings, order blocks
+      and fair-value gaps from the actual OHLC sequence in `bash`. A fair-value gap
+      is a specific three-bar condition — point to the bars that form it. Zones you
+      cannot locate in the data do not get listed, and a "fill probability" must be
+      a measured historical fill rate or be omitted.
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
     skills: [smc, minute-analysis]
     max_iterations: 50
     timeout_seconds: 1800

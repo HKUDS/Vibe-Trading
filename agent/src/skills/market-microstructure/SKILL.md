@@ -130,7 +130,15 @@ Amihud calculation (China A-shares):
 
 ### 1. Price-Impact Models
 
-**Linear impact (Almgren-Chriss)**:
+**Power-law impact**:
+
+> **Naming.** This is the concave impact term from the Almgren-Chriss
+> literature, and it is neither linear (the exponent is 0.6, not 1) nor
+> Almgren-Chriss *optimal execution* — no trading trajectory, no
+> permanent/temporary split and no risk-aversion parameter is computed here or
+> anywhere in this repo. The tested implementation is
+> `src.quantlib.impact.sqrt_impact`; call it rather than retyping the formula.
+
 ```
 Model: impact = η × σ × (Q / V)^0.6
   η: impact coefficient, about 0.5-1.5 for China A-shares

@@ -296,19 +296,37 @@ def _load_css() -> str:
     return font_face + "\n" + css
 
 
+_WEASYPRINT_HTML: Any = None  # weasyprint.HTML once probed; False if unavailable
+
+
 def _try_render_pdf(
     html: str, output_dir: Path, shadow_id: str,
 ) -> tuple[Path | None, str]:
-    """Render PDF via weasyprint, returning (path|None, engine_name)."""
-    try:
-        from weasyprint import HTML  # type: ignore[import-not-found]
-    except Exception as exc:  # pragma: no cover — import-level failure
-        logger.warning("weasyprint unavailable (%s); HTML-only output.", exc)
+    """Render PDF via weasyprint, returning (path|None, engine_name).
+
+    The import is probed at most once per process. Retrying it after a failure
+    is not merely wasteful, it is unsafe: the failed import drops weasyprint's
+    cffi ``Lib`` object, whose deallocator ``dlclose()``s the libgobject handle,
+    while GLib's quark table keeps static-string keys pointing into the image
+    that just went away. A later re-import re-runs libgobject's constructor,
+    which looks those keys up and can fault inside ``g_str_equal`` — GNOME bug
+    705535. Three report renders in one process was enough to hit it.
+    """
+    global _WEASYPRINT_HTML
+    if _WEASYPRINT_HTML is False:
         return None, "html-only"
+    if _WEASYPRINT_HTML is None:
+        try:
+            from weasyprint import HTML  # type: ignore[import-not-found]
+        except Exception as exc:  # pragma: no cover — import-level failure
+            _WEASYPRINT_HTML = False
+            logger.warning("weasyprint unavailable (%s); HTML-only output.", exc)
+            return None, "html-only"
+        _WEASYPRINT_HTML = HTML
 
     pdf_path = output_dir / f"{shadow_id}.pdf"
     try:
-        HTML(string=html, base_url=str(_TEMPLATES_DIR)).write_pdf(str(pdf_path))
+        _WEASYPRINT_HTML(string=html, base_url=str(_TEMPLATES_DIR)).write_pdf(str(pdf_path))
     except Exception as exc:
         logger.warning("weasyprint render failed (%s); HTML-only output.", exc)
         if pdf_path.exists():

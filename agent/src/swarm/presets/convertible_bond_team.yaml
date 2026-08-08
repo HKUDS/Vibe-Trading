@@ -26,7 +26,25 @@ agents:
       5. **Bond-Floor Value Ranking** — Composite bond-floor score based on YTM, premium over floor, and credit quality; output Top 30 ranked list with scoring rationale
 
       Use load_skill("convertible-bond") for convertible bond analytical methodology; load_skill("fundamental-filter") to support credit assessment.
-    tools: [bash, read_file, write_file, load_skill]
+
+      ## The bond math is implemented — run it, do not approximate it
+      `from src.quantlib import fixedincome` in `bash`:
+      - `bond_price(face, coupon_rate, ytm, n_periods, freq)` → the straight-bond floor
+      - `ytm_solve(price, face, coupon_rate, n_periods, freq)` → YTM from market price
+      - `modified_duration(...)`, `convexity(...)`, `dv01(...)` → the ±50 bp
+        sensitivity in output 4. Use duration AND convexity for a 50 bp move;
+        duration alone understates it
+      - `accrued_interest(...)` / `year_fraction(..., day_count=...)` → settlement math;
+        state the day-count convention you used, it changes the answer
+      - `fit_yield_curve(maturities, yields, model="svensson")` → the discount curve
+        when you are spreading against a term structure; report the fit's `.rmse`
+      Prices and terms come from `get_market_data` and `read_url` (issuer prospectus
+      / exchange disclosure) — a coupon, maturity, put schedule or rating you did
+      not retrieve must not be entered into the model. **Credit RATINGS are not
+      available from any tool here**: quote a rating only with the source you read
+      it from, and if you have none, group by a stated proxy (issuer size, leverage
+      from `get_financial_statements`) and label the grouping a proxy, not a rating.
+    tools: [bash, read_file, write_file, load_skill, get_market_data, get_financial_statements, read_url]
     skills: [convertible-bond, fundamental-filter, credit-analysis]
     max_iterations: 50
     timeout_seconds: 1800

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Database, KeyRound, Loader2, MessageSquareMore, Play, RefreshCw, RotateCcw, Save, Server, SlidersHorizontal, Square } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { ModelPicker } from "@/components/settings/ModelPicker";
 import { QVerisSettings } from "@/components/settings/QVerisSettings"; // QVERIS-INTEGRATION
 import { api, isAuthRequiredError, type ChannelRuntimeStatus, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
 import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
@@ -40,6 +41,9 @@ export function Settings() {
   const [channelStatus, setChannelStatus] = useState<ChannelRuntimeStatus | null>(null);
   const [form, setForm] = useState<LLMFormState | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelListHint, setModelListHint] = useState<string | null>(null);
   const [localApiKey, setLocalApiKeyState] = useState(() => getApiAuthKey());
   const [clearApiKey, setClearApiKey] = useState(false);
   const [tushareToken, setTushareToken] = useState("");
@@ -65,6 +69,10 @@ export function Settings() {
         if (llmResult.status === "fulfilled") {
           setSettings(llmResult.value);
           setForm(toForm(llmResult.value));
+          setModelOptions(Array.from(new Set([
+            llmResult.value.model_name,
+            llmResult.value.providers.find((provider) => provider.name === llmResult.value.provider)?.default_model ?? "",
+          ].filter(Boolean))));
         } else {
           const message = llmResult.reason instanceof Error
             ? llmResult.reason.message
@@ -147,6 +155,8 @@ export function Settings() {
       model_name: provider.default_model,
       base_url: provider.default_base_url,
     });
+    setModelOptions([provider.default_model]);
+    setModelListHint(null);
   };
 
   const onProviderChange = (name: string) => {
@@ -160,6 +170,40 @@ export function Settings() {
     });
     setApiKey("");
     setClearApiKey(false);
+    setModelOptions([provider.default_model]);
+    setModelListHint(null);
+  };
+
+  const refreshModels = async () => {
+    if (!form || !selectedProvider) return;
+    setModelsLoading(true);
+    setModelListHint(null);
+    try {
+      const result = await api.listLLMModels({
+        provider: form.provider,
+        base_url: form.base_url,
+        api_key: apiKey.trim() || undefined,
+      });
+      setModelOptions(Array.from(new Set([
+        form.model_name,
+        selectedProvider.default_model,
+        ...result.models,
+      ].filter(Boolean))));
+      const warningMessages = {
+        oauth_discovery_unsupported: t("settings.modelDiscoveryOauthUnsupported"),
+        api_key_required: t("settings.modelDiscoveryApiKeyRequired"),
+        model_list_unavailable: t("settings.modelDiscoveryUnavailable"),
+      };
+      setModelListHint(
+        result.warning_code
+          ? warningMessages[result.warning_code]
+          : t("settings.modelsLoaded", { count: result.models.length }),
+      );
+    } catch (error) {
+      setModelListHint(error instanceof Error ? error.message : t("settings.modelsLoadFailed"));
+    } finally {
+      setModelsLoading(false);
+    }
   };
 
   const submitLocalApiKey = (event: FormEvent) => {
@@ -404,7 +448,6 @@ export function Settings() {
       )}
     </section>
   );
-
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div className="space-y-2">
@@ -455,12 +498,23 @@ export function Settings() {
             <label className="grid gap-2">
               <span className={labelClass}>{t("settings.model")}</span>
               <div className="flex gap-2">
-                <input
+                <ModelPicker
                   value={form.model_name}
-                  onChange={(event) => setForm({ ...form, model_name: event.target.value })}
-                  className={fieldClass}
-                  required
+                  options={modelOptions}
+                  onChange={(modelName) => setForm({ ...form, model_name: modelName })}
+                  ariaLabel={t("settings.model")}
+                  optionsAriaLabel={t("settings.modelOptions")}
                 />
+                <button
+                  type="button"
+                  onClick={() => void refreshModels()}
+                  disabled={modelsLoading}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  title={t("settings.loadModels")}
+                >
+                  {modelsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  <span className="hidden sm:inline">{t("settings.loadModels")}</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => applyProviderDefaults()}
@@ -471,7 +525,9 @@ export function Settings() {
                   <span className="hidden sm:inline">{t("settings.useProviderDefaults")}</span>
                 </button>
               </div>
-              <span className={hintClass}>{t("settings.modelIdHint")}</span>
+              <span className={hintClass}>
+                {modelListHint || t("settings.modelPickerHint")}
+              </span>
             </label>
 
             <label className="grid gap-2">
@@ -550,6 +606,7 @@ export function Settings() {
                 onChange={(event) => setForm({ ...form, temperature: Number(event.target.value) })}
                 className={fieldClass}
               />
+              <span className={hintClass}>{t("settings.temperatureDesc")}</span>
             </label>
 
             <label className="grid gap-2">
@@ -585,7 +642,7 @@ export function Settings() {
                 onChange={(event) => setForm({ ...form, reasoning_effort: event.target.value })}
                 className={fieldClass}
               >
-                <option value="">{t("settings.off")}</option>
+                <option value="">{t("settings.providerDefault")}</option>
                 <option value="none">{t("settings.reasoningEffortNone")}</option>
                 <option value="low">{t("settings.reasoningEffortLow")}</option>
                 <option value="medium">{t("settings.reasoningEffortMedium")}</option>

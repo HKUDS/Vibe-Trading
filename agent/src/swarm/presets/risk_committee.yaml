@@ -20,8 +20,16 @@ agents:
       4. **Current drawdown state** — Whether in a drawdown now; distance from last high
       5. **Drawdown alert** — Estimated drawdown probability based on volatility and trend
 
-      Use load_skill for data access and volatility methods.
-    tools: [bash, read_file, write_file, load_skill]
+      `load_skill` loads methodology documents; it does NOT fetch data. Pull the
+      price history with `get_market_data`, build the equity curve in `bash`, then
+      call `src.quantlib.risk.max_drawdown_analysis(equity)` for the drawdown
+      profile. Rank the top-5 events and the recovery times from that output.
+      For output 5, run `src.quantlib.risk.monte_carlo_gbm(...)` +
+      `analyze_mc_results(...)` and report the seed, path count and drift/vol
+      inputs so the probability is reproducible — a drawdown probability stated
+      without a simulation behind it is a guess and must not be given.
+      If the history cannot be retrieved, say so and produce nothing numeric.
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
     skills: [volatility]
     max_iterations: 50
     timeout_seconds: 1800
@@ -38,14 +46,18 @@ agents:
       {upstream_context}
 
       ## Required outputs
-      1. **VaR estimates** — 95%/99%/99.9% VaR via parametric + historical simulation
-      2. **CVaR (ES)** — Conditional tail expectation / expected shortfall
-      3. **Stress tests** — At least three historical crisis scenarios with simulated loss
-      4. **Tail event probability** — Extreme-value (GEV/GPD style) probability framing where appropriate
-      5. **Protection ideas** — Methods to hedge tail risk
+      1. **VaR estimates** — 95%/99% VaR from `src.quantlib.risk.parametric_var` AND `historical_var` on the same return series, reported side by side. 99.9% historical VaR needs roughly 1000+ observations to mean anything: if your sample is shorter, say so and give the parametric figure only
+      2. **CVaR (ES)** — `src.quantlib.risk.historical_cvar` at each confidence level
+      2b. **VaR model validation** — A VaR you did not backtest is a claim, not a measurement. Roll the VaR forward over the sample and run `src.quantlib.var_backtest.var_backtest(returns, var_series, confidence)`. Report the Kupiec p-value (is the breach COUNT right), the Christoffersen independence p-value (did the breaches CLUSTER — this is the one that ends firms, and Kupiec is blind to it), and the Basel traffic-light zone. A model in the yellow or red zone must be reported as failing validation even when its headline VaR looks reasonable
+      3. **Stress tests** — At least three historical crisis scenarios. Define each by its DATE RANGE, pull that window with `get_market_data`, and report the realised loss over it. Do not quote a crisis loss from memory
+      4. **Tail event probability** — `src.quantlib.risk.fit_gpd_tail(returns, threshold_pct)`; report the threshold you used, since the fit depends on it
+      5. **Protection ideas** — Priced hedge structures, not shapes. Build each candidate as signed legs and run `options_payoff` for entry debit/credit, analytic breakevens and max loss; `options_pricing` values a single leg. Take the implied vol from `get_options_chain` when the underlying is US-listed, and when it is not, state the vol you assumed and label it an assumption. Report the cost of protection as a percentage of the notional being protected — an unpriced hedge cannot be compared against the tail loss it is supposed to cover
 
-      Use load_skill for vol analytics and statistical methods.
-    tools: [bash, read_file, write_file, load_skill]
+      `load_skill` loads methodology documents; it does NOT fetch data — pull returns
+      with `get_market_data` first. Every figure above must name the sample window
+      it came from. If the series cannot be retrieved, report the section as
+      unavailable rather than producing an illustrative number.
+    tools: [bash, read_file, write_file, load_skill, get_market_data, get_options_chain, options_pricing, options_payoff]
     skills: [volatility]
     max_iterations: 50
     timeout_seconds: 1800
@@ -68,8 +80,34 @@ agents:
       4. **Historical analogs** — 2–3 past periods most similar to today
       5. **Forward look** — 1–3 month path probabilities under a regime framework
 
-      Use load_skill for technical and volatility methods.
-    tools: [bash, read_file, write_file, load_skill]
+      `load_skill` loads methodology documents; it does NOT fetch data. Pull bars
+      with `get_market_data` and derive the regime evidence in `bash`:
+      realised vol and trend from the bars, `technical_indicators` for the
+      momentum readings, `src.quantlib.timeseries.fit_garch(returns, horizon)` for
+      volatility persistence, and `src.quantlib.risk.monte_carlo_gbm` +
+      `analyze_mc_results` for the forward path probabilities (state seed and
+      path count).
+
+      **The regime label is fitted, not asserted.** Run
+      `src.quantlib.timeseries.fit_markov_regime(returns, n_regimes=2)`. It returns
+      the regimes ordered calmest-first, so `regime_0` is the low-vol state and the
+      last is the high-vol one, and it tells you which state the series is in NOW
+      via `current_regime` with `current_regime_probability`. Report that
+      probability — a regime call at 0.55 confidence is a different statement from
+      one at 0.98 and must not be written as though it were the same. Take the
+      persistence of the current state from `expected_durations[current_regime]`
+      (in trading days) and the odds of leaving it from the matching row of
+      `transition_matrix`, where `transition_matrix[i][j]` reads "P(regime j
+      tomorrow | regime i today)". That row IS output 3 (transition signals) and
+      feeds output 5 (forward look) — quote it rather than narrating around it.
+      Check `converged`; if the fit did not converge, say so and fall back to a
+      stated rule on measured vol and trend.
+      The model gives you a VOLATILITY state, not a direction. Bull / bear / chop
+      is your own mapping from that state plus the trend you measured, so state
+      the mapping you used.
+      For historical analogs, name the date range of each and show the
+      measured similarity; an analog you did not measure is an anecdote, label it one.
+    tools: [bash, read_file, write_file, load_skill, get_market_data, technical_indicators]
     skills: [volatility, technical-basic]
     max_iterations: 50
     timeout_seconds: 1800

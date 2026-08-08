@@ -147,6 +147,13 @@ export const api = {
   // Codex-style LLM summary title from the first exchange; backend refuses to
   // overwrite a manual rename, so this is safe to fire-and-forget.
   autoTitleSession: (sid: string) => request<{ status: string; title: string }>(`/sessions/${sid}/title/auto`, { method: "POST" }),
+  // Scheduled research: cadence + timezone are stored as authored (local
+  // wall-clock cron + IANA key), so list rows render without any UTC math.
+  listScheduledRuns: (signal?: AbortSignal) => request<ScheduledRun[]>("/scheduled-runs", { signal }),
+  createScheduledRun: (body: CreateScheduledRunRequest) =>
+    request<ScheduledRun>("/scheduled-runs", { method: "POST", body: JSON.stringify(body) }),
+  deleteScheduledRun: (id: string) =>
+    request<void>(`/scheduled-runs/${encodeURIComponent(id)}`, { method: "DELETE" }),
   sendMessage: (sid: string, content: string) => request<{ message_id: string; attempt_id: string }>(`/sessions/${sid}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
   cancelSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}/cancel`, { method: "POST" }),
   getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${sid}/messages`),
@@ -200,6 +207,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  listLLMModels: (settings: ListLLMModelsRequest) =>
+    request<LLMModelsResponse>("/settings/llm/models", {
+      method: "POST",
+      body: JSON.stringify(settings),
+    }),
   getDataSourceSettings: () => request<DataSourceSettings>("/settings/data-sources"),
   updateDataSourceSettings: (settings: UpdateDataSourceSettingsRequest) =>
     request<DataSourceSettings>("/settings/data-sources", {
@@ -214,7 +226,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-
   // Alpha Zoo API
   listAlphas: (params: AlphaListParams = {}) => {
     const q = new URLSearchParams();
@@ -284,6 +295,31 @@ export const api = {
     }),
 };
 
+// --- Scheduled research types ---
+
+export interface ScheduledRun {
+  id: string;
+  prompt: string;
+  schedule: string;
+  next_run_at: number;
+  status: string;
+  created_at: number;
+  last_run_at: number | null;
+  consecutive_failures: number;
+  last_error: string | null;
+  failure_kind: string | null;
+  config: Record<string, unknown>;
+  timezone: string | null;
+}
+
+export interface CreateScheduledRunRequest {
+  id?: string;
+  prompt: string;
+  schedule: string;
+  timezone?: string | null;
+  config?: Record<string, unknown>;
+}
+
 // --- Swarm types ---
 
 export interface SwarmPreset {
@@ -343,6 +379,23 @@ export interface UpdateLLMSettingsRequest {
   timeout_seconds: number;
   max_retries: number;
   reasoning_effort?: string;
+}
+
+export interface ListLLMModelsRequest {
+  provider: string;
+  base_url?: string;
+  api_key?: string;
+}
+
+export interface LLMModelsResponse {
+  provider: string;
+  models: string[];
+  source: "provider" | "default";
+  warning_code?:
+    | "oauth_discovery_unsupported"
+    | "api_key_required"
+    | "model_list_unavailable"
+    | null;
 }
 
 export interface DataSourceSettings {
@@ -502,6 +555,42 @@ export interface ValidationData {
   };
 }
 
+export interface RiskXRayPayload {
+  inputs?: {
+    symbols?: string[];
+    weights?: Record<string, number>;
+    aligned_days?: number;
+    return_observations?: number;
+    first_date?: string;
+    last_date?: string;
+  };
+  concentration?: { hhi?: number; effective_n?: number; top_weight?: number };
+  volatility?: { annualized_vol?: number };
+  drawdown?: { max_drawdown?: number };
+  tail_risk?: Record<string, unknown>;
+  diversification?: Record<string, unknown>;
+  correlation?: Record<string, unknown>;
+  skipped?: string[];
+  warnings?: string[];
+}
+
+export interface RebalanceNotesPayload {
+  rebalances?: Array<{
+    date: string;
+    turnover: number;
+    entries?: Array<{ code: string; to: number }>;
+    exits?: Array<{ code: string; from: number }>;
+    top_moves?: Array<{ code: string; from: number; to: number; delta: number }>;
+  }>;
+  summary?: {
+    rebalance_count: number;
+    turnover_total: number;
+    turnover_mean: number;
+    turnover_max: number;
+    largest_rebalance_date?: string | null;
+  };
+}
+
 export interface RunData {
   status: string;
   run_id: string;
@@ -514,6 +603,8 @@ export interface RunData {
   metrics?: BacktestMetrics;
   artifacts?: ArtifactInfo[];
   run_card?: RunCard;
+  risk_xray?: RiskXRayPayload;
+  rebalance_notes?: RebalanceNotesPayload;
   validation?: ValidationData;
 
   chart_symbols?: string[];

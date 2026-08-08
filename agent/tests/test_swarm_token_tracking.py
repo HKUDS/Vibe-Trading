@@ -30,13 +30,13 @@ from src.swarm.worker import _estimate_tokens
 # --------------------------------------------------------------------------- #
 
 
-def _fake_ai_message(usage_metadata=None, content="hello", finish="stop"):
+def _fake_ai_message(usage_metadata=None, content="hello", finish="stop", response_metadata=None):
     """Build the smallest object that quacks like a LangChain AIMessage."""
     return SimpleNamespace(
         content=content,
         tool_calls=[],
         additional_kwargs={},
-        response_metadata={"finish_reason": finish},
+        response_metadata={"finish_reason": finish, **(response_metadata or {})},
         usage_metadata=usage_metadata,
     )
 
@@ -51,6 +51,18 @@ def test_parse_response_propagates_usage_metadata_dict() -> None:
         "output_tokens": 56,
         "total_tokens": 1290,
     }
+
+
+def test_parse_response_propagates_authoritative_provider_model_metadata() -> None:
+    msg = _fake_ai_message(
+        response_metadata={
+            "model_name": "deepseek-v4-flash-202607",
+        }
+    )
+
+    parsed = ChatLLM._parse_response(msg)
+
+    assert parsed.response_model == "deepseek-v4-flash-202607"
 
 
 def test_parse_response_normalises_typed_dict_like_usage_to_plain_dict() -> None:

@@ -112,6 +112,13 @@ describe("MessageBubble", () => {
       expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
       expect(screen.getByRole("status")).toHaveTextContent("Copied");
     });
+
+    it("shows the total response time without exposing token counts", () => {
+      render(<MessageBubble msg={makeMsg({ type: "answer", elapsed_ms: 2340 })} />);
+      expect(screen.getByText("2.3 s")).toBeInTheDocument();
+      expect(screen.queryByText(/token/i)).not.toBeInTheDocument();
+    });
+
   });
 
   describe("error messages", () => {

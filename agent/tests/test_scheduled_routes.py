@@ -194,3 +194,217 @@ def test_delete_rejects_unsafe_job_id(
     response = client.delete("/scheduled-runs/bad.id")
 
     assert response.status_code == 400
+
+
+def test_create_with_timezone_echoes_and_persists(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "auckland-scan",
+            "prompt": "pre-open scan of NZX names",
+            "schedule": "30 23 * * 1-5",
+            "timezone": "Pacific/Auckland",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["timezone"] == "Pacific/Auckland"
+
+    saved = store.get("auckland-scan")
+    assert saved is not None
+    assert saved.timezone == "Pacific/Auckland"
+    assert saved.schedule == "30 23 * * 1-5"
+
+
+def test_create_without_timezone_defaults_to_null(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={"id": "utc-scan", "prompt": "scan", "schedule": "0 9 * * *"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert "timezone" in body
+    assert body["timezone"] is None
+    saved = store.get("utc-scan")
+    assert saved is not None
+    assert saved.timezone is None
+
+
+def test_create_rejects_unknown_timezone(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "bad-tz",
+            "prompt": "scan",
+            "schedule": "0 9 * * *",
+            "timezone": "Not/AZone",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "IANA timezone" in response.json()["detail"]
+    assert store.get("bad-tz") is None
+
+
+def test_list_includes_timezone(client: TestClient, store: ScheduledResearchJobStore):
+    _seed(store, id="tz-listed", schedule="0 9 * * 1-5", timezone="Australia/Adelaide")
+
+    response = client.get("/scheduled-runs")
+
+    assert response.status_code == 200
+    rows = {row["id"]: row for row in response.json()}
+    assert rows["tz-listed"]["timezone"] == "Australia/Adelaide"
+
+
+def test_create_tz_cron_defaults_next_run_to_first_authored_occurrence(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    from src.scheduled_research.executor import next_due
+
+    before = int(__import__("time").time() * 1000)
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "first-occurrence",
+            "prompt": "scan",
+            "schedule": "30 23 * * 1-5",
+            "timezone": "Pacific/Auckland",
+        },
+    )
+    after = int(__import__("time").time() * 1000)
+
+    assert response.status_code == 201
+    next_run_at = response.json()["next_run_at"]
+    # The first fire is the first authored wall-clock occurrence, which for a
+    # 23:30 weekday cadence is strictly in the future — never "now".
+    assert next_run_at > after
+    assert next_due("30 23 * * 1-5", before, "Pacific/Auckland") <= next_run_at
+    assert next_run_at <= next_due("30 23 * * 1-5", after, "Pacific/Auckland")
+
+
+def test_create_without_timezone_keeps_immediate_first_fire(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    before = int(__import__("time").time() * 1000)
+    response = client.post(
+        "/scheduled-runs",
+        json={"id": "legacy-default", "prompt": "scan", "schedule": "0 9 * * *"},
+    )
+    after = int(__import__("time").time() * 1000)
+
+    assert response.status_code == 201
+    assert before <= response.json()["next_run_at"] <= after
+
+
+def test_create_interval_with_timezone_keeps_immediate_first_fire(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    before = int(__import__("time").time() * 1000)
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "interval-tz",
+            "prompt": "scan",
+            "schedule": "60000",
+            "timezone": "Pacific/Auckland",
+        },
+    )
+    after = int(__import__("time").time() * 1000)
+
+    assert response.status_code == 201
+    assert before <= response.json()["next_run_at"] <= after
+
+
+def test_create_rejects_ids_the_delete_route_would_refuse(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    for bad_id in ("my scan.v1", "a/b", "café", "x" * 129):
+        response = client.post(
+            "/scheduled-runs",
+            json={"id": bad_id, "prompt": "scan", "schedule": "60000"},
+        )
+        assert response.status_code == 422, bad_id
+        assert "job id" in response.json()["detail"]
+        assert store.get(bad_id) is None
+
+
+def test_created_job_is_always_deletable(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    created = client.post(
+        "/scheduled-runs",
+        json={"prompt": "scan", "schedule": "60000"},
+    )
+    assert created.status_code == 201
+    job_id = created.json()["id"]
+
+    assert client.delete(f"/scheduled-runs/{job_id}").status_code == 204
+    assert store.get(job_id) is None
+
+
+def test_create_accepts_ids_within_the_id_rule(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    for good_id in ("daily-scan", "scan_2026", "A" * 128):
+        response = client.post(
+            "/scheduled-runs",
+            json={"id": good_id, "prompt": "scan", "schedule": "60000"},
+        )
+        assert response.status_code == 201, good_id
+        assert client.delete(f"/scheduled-runs/{good_id}").status_code == 204
+def test_create_interval_accepts_a_timezone_it_will_never_use(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    # The composer attaches the browser zone to every create. An interval
+    # schedule ignores it, and the executor never resolves it, so a key this
+    # host cannot resolve must not block the create.
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "interval-unknown-zone",
+            "prompt": "scan",
+            "schedule": "60000",
+            "timezone": "Mars/Olympus_Mons",
+        },
+    )
+
+    assert response.status_code == 201
+    saved = store.get("interval-unknown-zone")
+    assert saved is not None
+    assert saved.timezone == "Mars/Olympus_Mons"
+
+
+def test_create_cron_still_rejects_an_unresolvable_timezone(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "cron-unknown-zone",
+            "prompt": "scan",
+            "schedule": "0 9 * * *",
+            "timezone": "Mars/Olympus_Mons",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "IANA timezone" in response.json()["detail"]
+    assert store.get("cron-unknown-zone") is None
+
+
+def test_create_rejects_a_blank_timezone_for_both_schedule_forms(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    for schedule in ("60000", "0 9 * * *"):
+        response = client.post(
+            "/scheduled-runs",
+            json={"prompt": "scan", "schedule": schedule, "timezone": "   "},
+        )
+        assert response.status_code == 422, schedule

@@ -225,26 +225,35 @@ CX = [Σ t(t+1)·CF_t/(1+y)^(t+2)] / P
 价格变化修正：ΔP/P ≈ -MD·Δy + 0.5·CX·(Δy)²
 ```
 
-#### 债券价格公式（完整）
+#### 债券价格公式（实现）
+
+定价函数是仓库里的实测代码，直接 import，**不要在会话里重新手写**：
+
 ```python
-def bond_price(face, coupon_rate, ytm, n_periods, freq=1):
-    """附息债券定价（贴现现金流法）。
+from src.quantlib.fixedincome import bond_price
 
-    Args:
-        face: 面值
-        coupon_rate: 票面利率（年化）
-        ytm: 到期收益率（年化）
-        n_periods: 剩余付息期数
-        freq: 每年付息次数（1=年付，2=半年付）
+bond_price(face=100, coupon_rate=0.05, ytm=0.04, n_periods=5, freq=1)
+# -> 104.4518...   5年期、票息5%、YTM=4%、年付
+```
 
-    Returns:
-        债券现值（脏价）
-    """
-    c = face * coupon_rate / freq
-    y = ytm / freq
-    pv_coupons = c * (1 - (1+y)**(-n_periods)) / y
-    pv_face = face / (1+y)**n_periods
-    return pv_coupons + pv_face
+两个约定在这里是**显式参数**，不是隐含假设：
+
+- `compounding`：`"discrete"`（默认，每年 `freq` 次离散复利，即上面 `P = Σ C/(1+y/m)^t` 的形式）或 `"continuous"`。
+- 日算基准：`bond_price` 按整数付息期贴现，因此返回的是**付息日**的价格（净价，应计为 0）。
+  非付息日结算要另加应计利息才是全价（脏价）：
+
+```python
+import datetime as dt
+from src.quantlib.fixedincome import accrued_interest
+
+accrued = accrued_interest(
+    face=100, coupon_rate=0.05, freq=2,
+    last_coupon=dt.date(2024, 1, 15),
+    settlement=dt.date(2024, 4, 15),
+    next_coupon=dt.date(2024, 7, 15),
+    day_count="30/360",   # ACT/365F(默认) | ACT/360 | ACT/ACT | 30/360 | 30E/360
+)                          # -> 1.25
+dirty_price = bond_price(100, 0.05, 0.04, 10, 2) + accrued
 ```
 
 ---
@@ -513,449 +522,218 @@ P = Σ CF_t / (1 + r_t + OAS)^t
 
 ---
 
-## 五、Python 代码模板
+## 五、Python 实现（quantlib）
 
-### 5.1 债券定价与久期计算
+本章的模型**已经是仓库里的实测代码**，位于 `src/quantlib/fixedincome.py`（债券数学 + 曲线拟合）
+与 `src/quantlib/credit.py`（Altman Z / Merton-KMV / 利差）。两个模块都有对应的
+`tests/quantlib/test_fixedincome.py`、`tests/quantlib/test_credit.py`，久期与 DV01 是对
+"重新定价 ±1bp" 逐点核过的。
+
+**直接 import 调用，不要在会话里重写这些公式。** 手写一遍既拿不到测试保障，也不可复现。
+
+一律的单位约定：利率与比率是小数（`0.05` 表示 5%），期限与时间跨度是**年**，
+久期/凸性的返回值是**年 / 年²**（不是付息期数），带 `_bp` 后缀的才是基点。
+
+### 5.1 债券定价、久期与 DV01
 
 ```python
-import numpy as np
-from scipy.optimize import brentq
+from src.quantlib.fixedincome import (
+    bond_price, ytm_solve, macaulay_duration, modified_duration,
+    convexity, dv01, effective_duration,
+)
 
+face, coupon, ytm, n, freq = 100, 0.05, 0.04, 5, 1
 
-def bond_price(face: float, coupon_rate: float, ytm: float,
-               n_periods: int, freq: int = 1) -> float:
-    """附息债券净现值定价。
+price = bond_price(face, coupon, ytm, n, freq)          # 104.4518
+ytm_solve(price, face, coupon, n, freq)                 # 0.04（价格反解 YTM）
 
-    Args:
-        face: 面值，通常100
-        coupon_rate: 年票面利率（小数形式，如0.05表示5%）
-        ytm: 年到期收益率（小数形式）
-        n_periods: 剩余付息期数
-        freq: 每年付息次数（1=年付，2=半年付）
-
-    Returns:
-        债券全价（脏价）
-
-    Examples:
-        >>> bond_price(100, 0.05, 0.04, 5)  # 5年期、5%票息、YTM=4%
-        104.4518...
-    """
-    c = face * coupon_rate / freq
-    y = ytm / freq
-    if y == 0:
-        return c * n_periods + face
-    pv_coupons = c * (1 - (1 + y) ** (-n_periods)) / y
-    pv_face = face / (1 + y) ** n_periods
-    return pv_coupons + pv_face
-
-
-def ytm_solve(price: float, face: float, coupon_rate: float,
-              n_periods: int, freq: int = 1) -> float:
-    """给定市场价格反求YTM（数值解法）。
-
-    Args:
-        price: 债券市场价格（脏价）
-        face: 面值
-        coupon_rate: 年票面利率
-        n_periods: 剩余付息期数
-        freq: 每年付息次数
-
-    Returns:
-        年化YTM（小数形式）
-
-    Raises:
-        ValueError: 无法在合理范围内找到解时
-    """
-    def pv_diff(y):
-        return bond_price(face, coupon_rate, y, n_periods, freq) - price
-
-    try:
-        return brentq(pv_diff, -0.5, 10.0)
-    except ValueError as e:
-        raise ValueError(f"无法求解YTM，检查输入参数: {e}")
-
-
-def macaulay_duration(face: float, coupon_rate: float, ytm: float,
-                      n_periods: int, freq: int = 1) -> float:
-    """Macaulay久期（单位：期数，除以freq得年数）。
-
-    Args:
-        face: 面值
-        coupon_rate: 年票面利率
-        ytm: 年到期收益率
-        n_periods: 剩余付息期数
-        freq: 每年付息次数
-
-    Returns:
-        Macaulay久期（年）
-    """
-    c = face * coupon_rate / freq
-    y = ytm / freq
-    price = bond_price(face, coupon_rate, ytm, n_periods, freq)
-
-    weighted_sum = sum(
-        t * (c / (1 + y) ** t)
-        for t in range(1, n_periods)
-    ) + n_periods * ((c + face) / (1 + y) ** n_periods)
-
-    return (weighted_sum / price) / freq
-
-
-def modified_duration(face: float, coupon_rate: float, ytm: float,
-                      n_periods: int, freq: int = 1) -> float:
-    """修正久期。
-
-    Returns:
-        修正久期（对ytm的价格弹性，取负号后）
-    """
-    d_mac = macaulay_duration(face, coupon_rate, ytm, n_periods, freq)
-    return d_mac / (1 + ytm / freq)
-
-
-def convexity(face: float, coupon_rate: float, ytm: float,
-              n_periods: int, freq: int = 1) -> float:
-    """债券凸性。
-
-    Returns:
-        凸性（年²）
-    """
-    c = face * coupon_rate / freq
-    y = ytm / freq
-    price = bond_price(face, coupon_rate, ytm, n_periods, freq)
-
-    conv_sum = sum(
-        t * (t + 1) * (c / (1 + y) ** (t + 2))
-        for t in range(1, n_periods)
-    ) + n_periods * (n_periods + 1) * ((c + face) / (1 + y) ** (n_periods + 2))
-
-    return (conv_sum / price) / (freq ** 2)
-
-
-def dv01(face: float, coupon_rate: float, ytm: float,
-         n_periods: int, freq: int = 1, par_amount: float = 1_000_000) -> float:
-    """DV01（每百万面值的基点价值）。
-
-    Args:
-        par_amount: 持仓面值，默认100万
-
-    Returns:
-        每1bp利率变动对应的价格变化（元）
-    """
-    d_mod = modified_duration(face, coupon_rate, ytm, n_periods, freq)
-    price = bond_price(face, coupon_rate, ytm, n_periods, freq)
-    return d_mod * (price / 100) * 0.0001 * par_amount
+macaulay_duration(face, coupon, ytm, n, freq)           # 4.5571 年
+modified_duration(face, coupon, ytm, n, freq)           # 4.3818 年
+convexity(face, coupon, ytm, n, freq)                   # 24.4766 年²
+dv01(face, coupon, ytm, n, freq, par_amount=1_000_000)  # 457.69 元/bp
 ```
 
----
+**参数要点**
+
+| 参数 | 说明 |
+|------|------|
+| `freq` | 每年付息次数，`1`=年付、`2`=半年付。所有函数都接受，绝不写死 |
+| `compounding` | `"discrete"`（默认）或 `"continuous"`。连续复利下修正久期恒等于 Macaulay 久期 |
+| `par_amount` | `dv01` 的持仓面值，默认 100 万；对冲的市值按 `par_amount * price / face` 计 |
+| `bracket` | `ytm_solve` 的求根区间，默认 `(-0.5, 10.0)`，覆盖所有可交易债券 |
+
+含权债（可赎回债、MBS）的现金流会随利率移动，解析久期不适用，改用重新定价法：
+
+```python
+d_eff = effective_duration(reprice=lambda y: my_oas_model(y), yield_level=0.04, bump=1e-4)
+```
+
+`reprice` 必须自带赎回/早偿逻辑；`effective_duration` 只负责 `(P_down - P_up) / (2·P₀·Δy)`。
 
 ### 5.2 收益率曲线拟合（Nelson-Siegel / Svensson）
 
 ```python
 import numpy as np
-from scipy.optimize import minimize
-from typing import Tuple
+from src.quantlib.fixedincome import fit_yield_curve, nelson_siegel, svensson
 
+maturities = np.array([0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30])
+yields     = np.array([0.019, 0.020, 0.022, 0.024, 0.025, 0.027, 0.028, 0.029, 0.033, 0.035])
 
-def nelson_siegel(tau: np.ndarray, beta0: float, beta1: float,
-                  beta2: float, lambda1: float) -> np.ndarray:
-    """Nelson-Siegel 即期利率模型。
-
-    Args:
-        tau: 期限数组（年）
-        beta0: 长期利率水平（level）
-        beta1: 斜率因子（slope）
-        beta2: 曲率因子（curvature）
-        lambda1: 曲线衰减速度
-
-    Returns:
-        各期限即期利率数组
-    """
-    factor1 = (1 - np.exp(-tau / lambda1)) / (tau / lambda1)
-    factor2 = factor1 - np.exp(-tau / lambda1)
-    return beta0 + beta1 * factor1 + beta2 * factor2
-
-
-def svensson(tau: np.ndarray, beta0: float, beta1: float,
-             beta2: float, beta3: float,
-             lambda1: float, lambda2: float) -> np.ndarray:
-    """Svensson 模型（NS扩展，双曲率因子）。
-
-    Args:
-        tau: 期限数组（年）
-        beta0-beta3: 参数
-        lambda1, lambda2: 两个衰减速度参数
-
-    Returns:
-        各期限即期利率数组
-    """
-    f1 = (1 - np.exp(-tau / lambda1)) / (tau / lambda1)
-    f2 = f1 - np.exp(-tau / lambda1)
-    f3 = (1 - np.exp(-tau / lambda2)) / (tau / lambda2) - np.exp(-tau / lambda2)
-    return beta0 + beta1 * f1 + beta2 * f2 + beta3 * f3
-
-
-def fit_yield_curve(maturities: np.ndarray, yields: np.ndarray,
-                    model: str = "svensson") -> Tuple[np.ndarray, callable]:
-    """拟合收益率曲线并返回插值函数。
-
-    Args:
-        maturities: 已知债券期限（年），如 [0.25, 0.5, 1, 2, 3, 5, 7, 10]
-        yields: 对应YTM（小数），如 [0.02, 0.021, ...]
-        model: "nelson_siegel" 或 "svensson"
-
-    Returns:
-        (最优参数, 插值函数)
-
-    Raises:
-        ValueError: 未知模型名称
-    """
-    if model == "nelson_siegel":
-        def objective(params):
-            fitted = nelson_siegel(maturities, *params)
-            return np.sum((fitted - yields) ** 2)
-        x0 = [0.04, -0.02, 0.01, 1.5]
-        bounds = [(0, 0.2), (-0.2, 0.2), (-0.2, 0.2), (0.1, 10)]
-        result = minimize(objective, x0, method="L-BFGS-B", bounds=bounds)
-        return result.x, lambda t: nelson_siegel(np.array(t), *result.x)
-
-    elif model == "svensson":
-        def objective(params):
-            fitted = svensson(maturities, *params)
-            return np.sum((fitted - yields) ** 2)
-        x0 = [0.04, -0.02, 0.01, 0.01, 1.5, 5.0]
-        bounds = [(0, 0.2), (-0.2, 0.2), (-0.2, 0.2), (-0.2, 0.2),
-                  (0.1, 10), (0.1, 20)]
-        result = minimize(objective, x0, method="L-BFGS-B", bounds=bounds)
-        return result.x, lambda t: svensson(np.array(t), *result.x)
-
-    else:
-        raise ValueError(f"未知模型: {model}，支持 nelson_siegel / svensson")
+fit = fit_yield_curve(maturities, yields, model="svensson")
+fit.params      # (beta0, beta1, beta2, beta3, lambda1, lambda2)
+fit.rmse        # 拟合残差（小数，与输入同单位）
+fit(4.5)        # 任意期限插值 -> 该点即期利率
+fit([1, 5, 10]) # 也接受数组
 ```
 
----
+`fit_yield_curve` 返回一个 **`CurveFit` 对象**（不是 `(params, func)` 元组）：它本身可调用，
+同时带 `model` / `params` / `rmse` 三个只读字段。`model` 取 `"nelson_siegel"`（4 参数）
+或 `"svensson"`（6 参数，双曲率因子）。
+
+拟合方式是**可分离最小二乘**：给定衰减参数 λ 后 β 是线性的，用 OLS 精确求解，
+只对 1~2 个 λ 做网格 + Nelder-Mead 搜索。这一点很要紧——对全部参数一起做单点起始的
+L-BFGS-B（本 skill 早先模板的做法）**连自己生成的曲线都还原不回来**：
+在 10 个期限的无噪 Nelson-Siegel 曲线上它停在 RMSE 6.4e-4（6.4bp），
+而现在这个实现是 4.0e-14。
+
+需要直接按参数取值（例如做因子分解、做情景模拟）时用底层函数：
+
+```python
+nelson_siegel(tau=[1, 5, 10], beta0=0.045, beta1=-0.02, beta2=0.03, lambda1=2.5)
+svensson(tau=5.0, beta0=0.05, beta1=-0.03, beta2=0.04, beta3=-0.02,
+         lambda1=1.2, lambda2=8.0)
+```
+
+`beta0` 是水平因子（长端渐近利率），`beta0 + beta1` 是瞬时短端利率，
+`beta2` / `beta3` 是曲率因子，`lambda*` 是衰减速度（年）。传标量返回标量，传数组返回数组。
 
 ### 5.3 Altman Z-Score 计算
 
 ```python
-import pandas as pd
+from src.quantlib.credit import altman_z_score
 
+z = altman_z_score(
+    working_capital=200,      # X1 分子：流动资产 - 流动负债
+    retained_earnings=300,    # X2 分子：留存收益
+    ebit=150,                 # X3 分子：息税前利润
+    equity_value=900,         # X4 分子：original 用股权市值，prime/double_prime 用账面净资产
+    total_liabilities=600,    # X4 分母：全部负债的账面值
+    total_assets=1000,        # X1/X2/X3/X5 的分母
+    revenue=1200,             # X5 分子；double_prime 不需要，可省略
+    model="original",         # original | prime | double_prime
+)
 
-def altman_z_score(working_capital: float, retained_earnings: float,
-                   ebit: float, market_cap: float, total_debt: float,
-                   revenue: float, total_assets: float,
-                   model: str = "original") -> dict:
-    """Altman Z-Score 违约风险评估。
-
-    Args:
-        working_capital: 营运资本（流动资产-流动负债）
-        retained_earnings: 留存收益
-        ebit: 息税前利润
-        market_cap: 股权市值（original）或账面净资产（prime/double_prime）
-        total_debt: 总债务
-        revenue: 营业收入
-        total_assets: 总资产
-        model: "original"（上市制造业）| "prime"（私有企业）| "double_prime"（非制造业）
-
-    Returns:
-        含Z-Score、各分项、风险等级的字典
-    """
-    x1 = working_capital / total_assets
-    x2 = retained_earnings / total_assets
-    x3 = ebit / total_assets
-    x4 = market_cap / total_debt
-    x5 = revenue / total_assets
-
-    if model == "original":
-        z = 1.2*x1 + 1.4*x2 + 3.3*x3 + 0.6*x4 + 1.0*x5
-        safe_zone = z > 2.99
-        distress_zone = z < 1.81
-    elif model == "prime":
-        z = 0.717*x1 + 0.847*x2 + 3.107*x3 + 0.420*x4 + 0.998*x5
-        safe_zone = z > 2.90
-        distress_zone = z < 1.23
-    elif model == "double_prime":
-        # 去掉X5（非制造业资产周转率意义不同）
-        z = 6.56*x1 + 3.26*x2 + 6.72*x3 + 1.05*x4
-        safe_zone = z > 2.60
-        distress_zone = z < 1.10
-    else:
-        raise ValueError(f"未知模型: {model}")
-
-    if safe_zone:
-        risk_level = "安全区（低违约风险）"
-    elif distress_zone:
-        risk_level = "危险区（高违约风险）"
-    else:
-        risk_level = "灰色区（需深入分析）"
-
-    return {
-        "z_score": round(z, 4),
-        "risk_level": risk_level,
-        "components": {
-            "X1_流动性": round(x1, 4),
-            "X2_盈利积累": round(x2, 4),
-            "X3_盈利能力": round(x3, 4),
-            "X4_杠杆": round(x4, 4),
-            "X5_效率": round(x5, 4) if model != "double_prime" else "N/A",
-        }
-    }
+z.z_score            # 3.255
+z.zone               # "safe" | "grey" | "distress"
+z.label_zh           # "安全区（低违约风险）"
+z.components         # {"x1": 0.20, "x2": 0.30, "x3": 0.15, "x4": 1.50, "x5": 1.20}
+z.safe_threshold     # 2.99
+z.distress_threshold # 1.81
 ```
 
----
+三个变体的系数与临界值在 `ALTMAN_MODELS` 里，与 §1.2 的表格一一对应：
 
-### 5.4 信用利差时序分析
+| `model` | 适用对象 | 系数 (X1..X5) | 安全 / 危险 |
+|---------|----------|---------------|-------------|
+| `original` | 上市制造业（Altman 1968） | 1.2 / 1.4 / 3.3 / 0.6 / 1.0 | > 2.99 / < 1.81 |
+| `prime`（Z'） | 私有企业，X4 改用账面净资产 | 0.717 / 0.847 / 3.107 / 0.420 / 0.998 | > 2.90 / < 1.23 |
+| `double_prime`（Z''） | 非制造业 / 新兴市场，去掉 X5 | 6.56 / 3.26 / 6.72 / 1.05 / — | > 2.60 / < 1.10 |
+
+> **X4 的分母是「全部负债」，不是「有息负债」。** §1.2 的变量表写的是"总负债账面值"，
+> 参数名 `total_liabilities` 与模型定义一致。用有息负债代入会系统性高估 Z 值。
+
+同一份报表在三个变体下给出的分区可以不同（上例：`original` 安全区、`prime` 灰色区），
+这正是重新标定的意义，不是矛盾。
+
+### 5.4 信用利差分析
 
 ```python
-import pandas as pd
-import numpy as np
-from typing import Optional
+from src.quantlib.credit import credit_spread_analysis, spread_term_structure
 
-
-def credit_spread_analysis(
-    bond_yields: pd.Series,
-    risk_free_yields: pd.Series,
-    window: int = 252,
-    issuer_name: Optional[str] = None
-) -> pd.DataFrame:
-    """信用利差时序分析（Z-Score标准化 + 历史分位数）。
-
-    Args:
-        bond_yields: 信用债收益率时间序列（%，日频）
-        risk_free_yields: 对应期限无风险利率（%，日频）
-        window: 滚动窗口（交易日数），默认252（1年）
-        issuer_name: 发行人名称，用于输出标注
-
-    Returns:
-        含信用利差、Z-Score、历史分位数的DataFrame
-
-    Raises:
-        ValueError: 输入序列长度不一致时
-    """
-    if len(bond_yields) != len(risk_free_yields):
-        raise ValueError("收益率序列长度必须一致")
-
-    spread = bond_yields - risk_free_yields
-    spread.name = f"{issuer_name or '未知发行人'}_信用利差(bp)"
-    spread_bp = spread * 100  # 转换为基点
-
-    result = pd.DataFrame({"信用利差_bp": spread_bp})
-
-    # 滚动统计
-    result["滚动均值"] = spread_bp.rolling(window).mean()
-    result["滚动标准差"] = spread_bp.rolling(window).std()
-    result["Z-Score"] = (spread_bp - result["滚动均值"]) / result["滚动标准差"]
-
-    # 历史分位数（使用全样本）
-    result["历史分位数"] = spread_bp.rank(pct=True)
-
-    # 利差变化
-    result["日变化_bp"] = spread_bp.diff()
-    result["月变化_bp"] = spread_bp.diff(21)
-
-    # 信号生成
-    result["利差信号"] = "中性"
-    result.loc[result["Z-Score"] < -1.5, "利差信号"] = "偏贵（利差偏低）"
-    result.loc[result["Z-Score"] > 1.5, "利差信号"] = "偏便宜（利差偏高）"
-
-    return result
-
-
-def spread_term_structure(
-    issuers: dict,
-    risk_free_curve: pd.Series
-) -> pd.DataFrame:
-    """信用利差期限结构分析。
-
-    Args:
-        issuers: {发行人: {期限: 收益率}} 字典
-            例：{"AAA城投": {1: 0.025, 3: 0.028, 5: 0.032}}
-        risk_free_curve: 无风险利率曲线 {期限: 收益率}
-
-    Returns:
-        信用利差期限结构矩阵（行=发行人，列=期限）
-    """
-    records = []
-    for issuer, ytm_curve in issuers.items():
-        row = {"发行人": issuer}
-        for term, ytm in ytm_curve.items():
-            rf = risk_free_curve.get(term, np.nan)
-            row[f"{term}Y利差(bp)"] = round((ytm - rf) * 10000, 1)
-        records.append(row)
-    return pd.DataFrame(records).set_index("发行人")
+df = credit_spread_analysis(
+    bond_yields=bond_ytm_series,       # pd.Series，索引=日期
+    risk_free_yields=cgb_ytm_series,   # 必须与上面同一个索引
+    window=252,                        # 滚动窗口（交易日）
+    lookback_periods=21,               # 慢速变化列的回溯期
+    signal_z=1.5,                      # 触发 rich/cheap 的 |z| 阈值
+    input_unit="percent",              # percent | decimal | bp
+)
 ```
 
----
+返回的 DataFrame 列固定为：`spread_bp`、`rolling_mean_bp`、`rolling_std_bp`、`z_score`、
+`historical_percentile`、`change_1p_bp`、`change_lookback_bp`、`signal`。
+`signal` 取 `"rich"`（利差偏低、偏贵）/ `"neutral"` / `"cheap"`（利差偏高、偏便宜）。
 
-### 5.5 Merton 模型违约概率
+> **`historical_percentile` 是全样本排名，带前视偏差，不能当回测信号用。** 它把每一行
+> 和它**之后**的行一起排序——同一天的分位数会随着新数据到来而改变（实测：同一行在 50 行
+> 切片上是 0.02，在 100 行上变成 0.01）。这是原模板的行为，保留是为了不静默改变口径。
+> `z_score` 与 `signal` 走滚动窗口，是因果的，要做信号用这两个。
 
 ```python
-import numpy as np
-from scipy.stats import norm
-from scipy.optimize import fsolve
-from typing import Tuple
-
-
-def merton_model(
-    equity_value: float,
-    equity_vol: float,
-    debt_face: float,
-    risk_free: float,
-    T: float
-) -> dict:
-    """Merton结构化模型：估算违约概率和信用利差。
-
-    Args:
-        equity_value: 股权市值（亿元）
-        equity_vol: 股权年化波动率（小数）
-        debt_face: 债务面值（亿元，简化为零息债）
-        risk_free: 无风险利率（小数）
-        T: 债务到期年限
-
-    Returns:
-        含资产价值、距违约距离、违约概率、信用利差的字典
-    """
-    def equations(params):
-        V, sigma_V = params
-        d1 = (np.log(V / debt_face) + (risk_free + 0.5 * sigma_V**2) * T) / (sigma_V * np.sqrt(T))
-        d2 = d1 - sigma_V * np.sqrt(T)
-
-        # 方程1：股权=资产看涨期权
-        eq1 = V * norm.cdf(d1) - debt_face * np.exp(-risk_free * T) * norm.cdf(d2) - equity_value
-        # 方程2：股权波动率=资产波动率的杠杆放大
-        eq2 = norm.cdf(d1) * sigma_V * V - equity_vol * equity_value
-        return [eq1, eq2]
-
-    # 初始值估计
-    V0 = equity_value + debt_face
-    sigma_V0 = equity_vol * equity_value / V0
-
-    solution = fsolve(equations, [V0, sigma_V0], full_output=True)
-    V_star, sigma_V_star = solution[0]
-
-    d1 = (np.log(V_star / debt_face) + (risk_free + 0.5 * sigma_V_star**2) * T) / (sigma_V_star * np.sqrt(T))
-    d2 = d1 - sigma_V_star * np.sqrt(T)
-
-    # 风险中性违约概率
-    pd_rn = norm.cdf(-d2)
-
-    # 距违约距离（真实世界近似，用无风险利率代替真实漂移）
-    dd = d2
-
-    # 信用利差（简化估算）
-    debt_value = debt_face * np.exp(-risk_free * T) * norm.cdf(d2) + V_star * norm.cdf(-d1)
-    if debt_value > 0 and T > 0:
-        credit_spread = -np.log(debt_value / (debt_face * np.exp(-risk_free * T))) / T
-    else:
-        credit_spread = np.nan
-
-    return {
-        "资产价值_亿": round(V_star, 2),
-        "资产波动率": round(sigma_V_star, 4),
-        "距违约距离_DD": round(dd, 3),
-        "违约概率_RN": f"{pd_rn*100:.2f}%",
-        "信用利差_bp": round(credit_spread * 10000, 1) if not np.isnan(credit_spread) else "N/A",
-    }
+grid = spread_term_structure(
+    issuers={"AAA城投": {1: 0.025, 3: 0.028, 5: 0.032},
+             "AA城投":  {1: 0.032, 3: 0.041, 5: 0.055}},
+    risk_free_curve={1: 0.020, 3: 0.022, 5: 0.025},
+    input_unit="decimal",   # 注意默认值与上面那个函数不同
+    decimals=1,
+)
+# 行=发行人，列=1Y_spread_bp / 3Y_spread_bp / 5Y_spread_bp
 ```
+
+> **输入单位必须自己确认。** 两个函数的历史默认值不一致：`credit_spread_analysis`
+> 默认收益率是**百分数**（`3.2` 表示 3.2%），`spread_term_structure` 默认是**小数**（`0.032`）。
+> 默认值保留了原模板的行为，但 `input_unit` 现在是显式参数——喂数据前先看清楚手里的序列是哪一种，
+> 搞反就是 100 倍的利差。
+
+### 5.5 Merton 结构化模型与 KMV
+
+```python
+from src.quantlib.credit import (
+    merton_model, merton_asset_solve, distance_to_default,
+    kmv_default_point, kmv_distance_to_default, edf_reference_band,
+)
+
+m = merton_model(
+    equity_value=100,   # 股权市值
+    equity_vol=0.40,    # 股权年化波动率
+    debt_face=100,      # 债务面值（简化为单笔零息债）
+    risk_free=0.03,     # 连续复利无风险利率
+    horizon=1.0,        # 债务到期年限
+    asset_drift=None,   # 距违约距离用的资产漂移；None = 用 risk_free（风险中性口径）
+)
+
+m.asset_value           # 197.04  反推出的资产价值
+m.asset_vol             # 0.2030  反推出的资产波动率
+m.distance_to_default   # 3.3868  asset_drift=None 时等于 d2
+m.default_probability   # 0.000354  风险中性违约概率 N(-d2)
+m.credit_spread_bp      # 0.176 bp
+```
+
+联立方程（§1.3 的两式）在 `merton_asset_solve` 里解，且是在**对数空间**求解的，
+所以根不会跑到负资产或负波动率上；不收敛会直接抛 `ValueError`，不会静默返回垃圾解。
+
+**Merton 与 KMV 的 DD 是两个不同的量，不要混用**：
+
+```python
+# Merton：对数空间、带漂移与期限
+distance_to_default(asset_value=200, asset_vol=0.25, default_point=100,
+                    horizon=2.0, drift=0.06)
+
+# KMV：线性缺口，无期限无漂移，违约点只含短债 + 部分长债
+dp = kmv_default_point(short_term_debt=100, long_term_debt=200,
+                       long_term_weight=0.5)      # -> 200
+kmv_distance_to_default(asset_value=1000, asset_vol=0.25, default_point=dp)  # -> 3.2
+
+edf_reference_band(3.2)   # -> (0.001, 0.01)，即 §8 表里的 0.1%–1% 档
+```
+
+> `edf_reference_band` 只是把 §8 那张"DD → EDF"经验表做成了查表函数。
+> 真正的 KMV EDF 来自穆迪的专有违约数据库，这里的输出只能当**量级校验**，
+> 绝不能当作已标定的违约概率报出去。
+
+**风险中性 vs 真实世界**：`asset_drift` 只影响 `distance_to_default`，不影响 `d2`、
+`default_probability` 和 `credit_spread`——后三者按定义就是风险中性的。想看真实世界口径，
+传一个预期资产回报进去，然后配 `edf_reference_band` 读档，不要拿 `N(-dd)` 当 EDF 报。
 
 ---
 

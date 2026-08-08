@@ -10,6 +10,20 @@ category: analysis
 
 Common statistical methodology used in quantitative investing, covering time-series testing, volatility modeling, regression diagnostics, and statistical inference. Provides the statistical foundation for strategy development and factor research.
 
+## Implementation
+
+Every test below is already implemented and unit-tested in `src.quantlib.timeseries`. **Import and call it — do not retype these formulas into throwaway code**, which is how sign errors and double-sqrt bugs get into results.
+
+```python
+from src.quantlib.timeseries import (
+    adf_test, cointegration_test, find_hedge_ratio, compute_half_life,
+    granger_test, fit_garch, heteroscedasticity_test, autocorrelation_test,
+    vif_test, bootstrap_statistic, bootstrap_sharpe,
+)
+```
+
+**Optional backends**: `statsmodels` powers everything except the two bootstrap helpers (which are pure numpy); `arch` powers `fit_garch` only. Neither is declared as a dependency of `vibe-trading-ai`, so both are imported lazily inside the functions. Importing the module always works; calling a function whose backend is missing raises an `ImportError` naming the package and the install command (`pip install "statsmodels>=0.14"` / `pip install "arch>=6.0"`). If you hit that error, report it to the user rather than silently substituting a different method.
+
 ## Time-Series Tests
 
 ### 1. ADF Unit-Root Test (Stationarity Test)
@@ -17,26 +31,16 @@ Common statistical methodology used in quantitative investing, covering time-ser
 **Why it matters**: regressing non-stationary series directly can produce spurious regression, making conclusions unreliable.
 
 ```python
-from statsmodels.tsa.stattools import adfuller
+from src.quantlib.timeseries import adf_test
 
-def adf_test(series: pd.Series, significance: float = 0.05) -> dict:
-    """
-    ADF test: H0 = unit root exists (non-stationary), H1 = stationary
+result = adf_test(prices['close'], significance=0.05)
+# {'adf_statistic': -1.23, 'p_value': 0.65, 'lags_used': 4,
+#  'is_stationary': False,
+#  'critical_values': {'1%': -3.44, '5%': -2.87, '10%': -2.57}}
 
-    Args:
-        series: Time series
-        significance: Significance level
-    Returns:
-        Test result
-    """
-    result = adfuller(series.dropna(), autolag='AIC')
-    return {
-        'adf_statistic': result[0],
-        'p_value': result[1],
-        'lags_used': result[2],
-        'is_stationary': result[1] < significance,
-        'critical_values': result[4],  # 1%, 5%, 10%
-    }
+if not result['is_stationary']:
+    returns = np.log(prices['close']).diff().dropna()
+    adf_test(returns)  # log returns are normally stationary
 ```
 
 **Decision rules**:
@@ -63,58 +67,40 @@ def adf_test(series: pd.Series, significance: float = 0.05) -> dict:
 **Purpose**: determine whether two non-stationary series share a long-run equilibrium relationship (the foundation of pair trading / statistical arbitrage).
 
 ```python
-from statsmodels.tsa.stattools import coint
+from src.quantlib.timeseries import cointegration_test
 
-def cointegration_test(y: pd.Series, x: pd.Series) -> dict:
-    """
-    Engle-Granger two-step cointegration test
-    H0: no cointegration relationship
-
-    Args:
-        y, x: Two price series
-    Returns:
-        Test result
-    """
-    score, p_value, critical = coint(y, x)
-    return {
-        'test_statistic': score,
-        'p_value': p_value,
-        'is_cointegrated': p_value < 0.05,
-        'critical_values': {'1%': critical[0], '5%': critical[1], '10%': critical[2]},
-    }
+result = cointegration_test(prices_a, prices_b, significance=0.05)
+# {'test_statistic': -4.52, 'p_value': 0.002, 'is_cointegrated': True,
+#  'critical_values': {'1%': -3.90, '5%': -3.34, '10%': -3.05}}
 ```
+
+Both legs must be individually non-stationary (check with `adf_test` first) — cointegration on two already-stationary series is meaningless.
+
+Both legs must also share one index. Two same-length series on *different* indices raise `ValueError` rather than being zipped positionally, because a positional join of, say, an A-share calendar against a US one reports cointegration between days that never coexisted. Reindex or inner-join the two legs yourself before calling.
 
 **Application in pair trading**:
 
 ```python
-import statsmodels.api as sm
+from src.quantlib.timeseries import find_hedge_ratio, compute_half_life
 
-def find_hedge_ratio(y: pd.Series, x: pd.Series) -> dict:
-    """
-    Compute hedge ratio: y = α + β×x + ε
-    Spread = y - β×x
-    """
-    x_const = sm.add_constant(x)
-    model = sm.OLS(y, x_const).fit()
+result = find_hedge_ratio(prices_a, prices_b)
+# {'hedge_ratio': 2.49, 'intercept': 0.40,
+#  'spread_mean': 0.40, 'spread_std': 1.73, 'half_life': 16.7}
 
-    spread = y - model.params[1] * x
+spread = prices_a - result['hedge_ratio'] * prices_b
+z_score = (spread - result['spread_mean']) / result['spread_std']
 
-    return {
-        'hedge_ratio': model.params[1],
-        'intercept': model.params[0],
-        'spread_mean': spread.mean(),
-        'spread_std': spread.std(),
-        'half_life': compute_half_life(spread),  # mean-reversion speed
-    }
-
-def compute_half_life(spread: pd.Series) -> float:
-    """Estimate half-life with OLS regression."""
-    spread_lag = spread.shift(1)
-    delta = spread - spread_lag
-    model = sm.OLS(delta.dropna(), sm.add_constant(spread_lag.dropna())).fit()
-    half_life = -np.log(2) / model.params[1]
-    return half_life
+# half_life is in observation periods (days for daily bars) and is `inf`
+# when the spread does not mean-revert. Sanity-check it before trading:
+# a half-life longer than your holding horizon means the spread will not
+# close in time, however good the cointegration p-value looks.
+compute_half_life(spread)
 ```
+
+A perfectly flat leg (a name halted for the whole window) makes the regression
+degenerate, so `find_hedge_ratio` and `compute_half_life` raise `ValueError`
+rather than return a meaningless β. Treat that as "this pair has no usable data
+in this window", not as something to work around.
 
 **Pair-trading signal**:
 
@@ -133,16 +119,14 @@ z_score = (spread - mean) / std
 ### 3. Granger Causality Test
 
 ```python
-from statsmodels.tsa.stattools import grangercausalitytests
+from src.quantlib.timeseries import granger_test
 
-def granger_test(data: pd.DataFrame, x_col: str, y_col: str, max_lag: int = 5):
-    """
-    Test whether x Granger-causes y (whether historical x helps predict y).
-    Note: Granger causality is not true causality, only predictive causality.
-    """
-    results = grangercausalitytests(data[[y_col, x_col]].dropna(), maxlag=max_lag)
-    return {lag: results[lag][0]['ssr_ftest'][1] for lag in range(1, max_lag+1)}
+p_by_lag = granger_test(df, x_col='volume', y_col='return', max_lag=5)
+# {1: 0.003, 2: 0.011, 3: 0.08, 4: 0.21, 5: 0.33}
+# small p at lag k -> past x at that lag helps predict y
 ```
+
+Granger causality is **predictive, not structural**: it says past `x` improves the forecast of `y`, never that `x` causes `y`. A common confounder is that both respond to a third variable. Note also that testing 5 lags is 5 hypothesis tests — one small p-value among them is weak evidence.
 
 ## GARCH Volatility Modeling
 
@@ -161,37 +145,21 @@ Parameter meanings:
 ```
 
 ```python
-from arch import arch_model
+from src.quantlib.timeseries import fit_garch
 
-def fit_garch(returns: pd.Series) -> dict:
-    """
-    Fit a GARCH(1,1) model.
-
-    Args:
-        returns: Daily return series (in percentage form)
-    Returns:
-        Model parameters and forecasts
-    """
-    model = arch_model(returns * 100, vol='Garch', p=1, q=1,
-                       mean='Constant', dist='normal')
-    result = model.fit(disp='off')
-
-    # Forecast volatility for the next 5 days
-    forecast = result.forecast(horizon=5)
-
-    return {
-        'omega': result.params['omega'],
-        'alpha': result.params['alpha[1]'],
-        'beta': result.params['beta[1]'],
-        'persistence': result.params['alpha[1]'] + result.params['beta[1]'],
-        'long_run_vol': np.sqrt(result.params['omega'] /
-                        (1 - result.params['alpha[1]'] - result.params['beta[1]'])) / 100,
-        'current_vol': np.sqrt(result.conditional_volatility[-1]) / 100,
-        'forecast_vol_5d': np.sqrt(forecast.variance.values[-1, :]) / 100,
-        'aic': result.aic,
-        'bic': result.bic,
-    }
+# `returns` are FRACTIONS (0.01 = 1%); the function rescales to percent itself.
+result = fit_garch(returns, horizon=5)
+# {'omega': 0.0453, 'alpha': 0.1213, 'beta': 0.8348, 'persistence': 0.9561,
+#  'long_run_vol': 0.0102, 'current_vol': 0.0149,
+#  'forecast_vol': array([0.0138, 0.0137, 0.0136, 0.0134, 0.0133]),
+#  'horizon': 5, 'aic': 10882.39, 'bic': 10907.57}
 ```
+
+The forecast decays from `current_vol` toward `long_run_vol` — that mean reversion is the whole point of the model, and a forecast that does *not* decay signals `persistence` too close to 1.
+
+All volatilities come back as **daily fractions** — multiply by `sqrt(252)` to annualise. `long_run_vol` is `nan` when `persistence >= 1`, which means the model has no finite unconditional variance and its long-horizon forecast is not usable.
+
+Requires the optional `arch` package (`pip install "arch>=6.0"`); the call raises a named `ImportError` if it is absent.
 
 ### GARCH Variants
 
@@ -223,26 +191,16 @@ BTC:
 ### 1. Heteroskedasticity Test
 
 ```python
-from statsmodels.stats.diagnostic import het_white, het_breuschpagan
+import statsmodels.api as sm
+from src.quantlib.timeseries import heteroscedasticity_test
 
-def heteroscedasticity_test(model_result) -> dict:
-    """
-    Test whether residuals are heteroskedastic.
-    H0: homoskedasticity
-    """
-    # White test
-    white_stat, white_p, _, _ = het_white(model_result.resid, model_result.model.exog)
-
-    # BP test
-    bp_stat, bp_p, _, _ = het_breuschpagan(model_result.resid, model_result.model.exog)
-
-    return {
-        'white_p': white_p,
-        'bp_p': bp_p,
-        'has_heteroscedasticity': white_p < 0.05 or bp_p < 0.05,
-        'fix': 'Use HAC standard errors (Newey-West) or WLS' if white_p < 0.05 else 'No adjustment needed',
-    }
+fitted = sm.OLS(y, sm.add_constant(X)).fit()
+result = heteroscedasticity_test(fitted)   # pass the FITTED result, not the data
+# {'white_p': 0.0001, 'bp_p': 0.0003, 'has_heteroscedasticity': True,
+#  'fix': 'Use HAC standard errors (Newey-West) or WLS'}
 ```
+
+`fix` tracks `has_heteroscedasticity`, and the verdict is `white_p < α` **or** `bp_p < α` — either test rejecting is enough to act on. The two disagree fairly often near the threshold (White has less power against a simple linear variance trend), so do not read "White says no" as the answer.
 
 **Heteroskedasticity fixes**:
 - Use `model.fit(cov_type='HAC', cov_kwds={'maxlags': 5})`
@@ -252,48 +210,30 @@ def heteroscedasticity_test(model_result) -> dict:
 ### 2. Autocorrelation Test
 
 ```python
-from statsmodels.stats.diagnostic import acorr_ljungbox
-from statsmodels.stats.stattools import durbin_watson
+from src.quantlib.timeseries import autocorrelation_test
 
-def autocorrelation_test(residuals: pd.Series, lags: int = 10) -> dict:
-    """
-    Test whether residuals are autocorrelated.
-    H0: no autocorrelation
-    """
-    # DW test (first-order only)
-    dw = durbin_watson(residuals)
-
-    # Ljung-Box test (multiple lags)
-    lb_result = acorr_ljungbox(residuals, lags=lags)
-
-    return {
-        'durbin_watson': dw,
-        'dw_interpretation': 'positive autocorrelation' if dw < 1.5 else 'no autocorrelation' if dw < 2.5 else 'negative autocorrelation',
-        'ljung_box_p': lb_result['lb_pvalue'].values,
-        'has_autocorrelation': any(lb_result['lb_pvalue'] < 0.05),
-        'fix': 'Use Newey-West standard errors or include lag terms',
-    }
+result = autocorrelation_test(fitted.resid, lags=10)
+# {'durbin_watson': 1.21, 'dw_interpretation': 'positive autocorrelation',
+#  'ljung_box_p': array([0.001, 0.002, ...]),   # one p-value per lag
+#  'has_autocorrelation': True,
+#  'fix': 'Use Newey-West standard errors or include lag terms'}
 ```
+
+⚠️ **`has_autocorrelation` is `any(p < significance)` across all `lags` — that is a family of tests, not one.** On pure white noise it fires about **13%** of the time at `lags=10` versus about **2%** at `lags=1` (measured over 120 seeds, n=1500). Treat a lone flag at high `lags` as a prompt to inspect `ljung_box_p` lag by lag, not as a 5%-level rejection.
 
 ### 3. Multicollinearity Test
 
 ```python
-from statsmodels.stats.outliers_influence import variance_inflation_factor
+from src.quantlib.timeseries import vif_test
 
-def vif_test(X: pd.DataFrame) -> pd.DataFrame:
-    """
-    VIF test for multicollinearity
-    VIF > 10 -> severe collinearity
-    VIF > 5 -> needs attention
-    """
-    vif_data = pd.DataFrame()
-    vif_data['feature'] = X.columns
-    vif_data['VIF'] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
-    vif_data['concern'] = vif_data['VIF'].apply(
-        lambda x: 'severe' if x > 10 else 'watch' if x > 5 else 'normal'
-    )
-    return vif_data
+vif_test(factors, severe_threshold=10.0, watch_threshold=5.0)
+#     feature     VIF  concern
+# 0     value   28.41   severe
+# 1  momentum    1.12   normal
+# 2      size    6.30    watch
 ```
+
+Include the constant column if your model has one — VIF is otherwise distorted by the un-centred means.
 
 ### Regression Diagnostics Checklist
 
@@ -311,39 +251,15 @@ def vif_test(X: pd.DataFrame) -> pd.DataFrame:
 ### Nonparametric Bootstrap
 
 ```python
-def bootstrap_statistic(data: np.ndarray, statistic_func,
-                        n_bootstrap: int = 10000,
-                        confidence: float = 0.95) -> dict:
-    """
-    Estimate a confidence interval for a statistic with Bootstrap.
+from src.quantlib.timeseries import bootstrap_statistic
 
-    Args:
-        data: Raw data
-        statistic_func: Statistic function (for example np.mean, np.median)
-        n_bootstrap: Number of Bootstrap resamples
-        confidence: Confidence level
-    Returns:
-        Point estimate and confidence interval
-    """
-    n = len(data)
-    bootstrap_stats = np.array([
-        statistic_func(np.random.choice(data, size=n, replace=True))
-        for _ in range(n_bootstrap)
-    ])
-
-    alpha = 1 - confidence
-    lower = np.percentile(bootstrap_stats, alpha/2 * 100)
-    upper = np.percentile(bootstrap_stats, (1 - alpha/2) * 100)
-
-    return {
-        'point_estimate': statistic_func(data),
-        'bootstrap_mean': np.mean(bootstrap_stats),
-        'bootstrap_std': np.std(bootstrap_stats),
-        'ci_lower': lower,
-        'ci_upper': upper,
-        'confidence': confidence,
-    }
+result = bootstrap_statistic(returns.values, np.median,
+                             n_bootstrap=10000, confidence=0.95, seed=42)
+# {'point_estimate': 0.0004, 'bootstrap_mean': 0.0004, 'bootstrap_std': 0.0002,
+#  'ci_lower': 0.0001, 'ci_upper': 0.0008, 'confidence': 0.95}
 ```
+
+Pass `seed` whenever the number goes into a report — an unseeded bootstrap gives a slightly different interval on every run, which makes results irreproducible. Needs no optional dependency (pure numpy).
 
 ### Bootstrap Applications in Quant
 
@@ -355,15 +271,19 @@ def bootstrap_statistic(data: np.ndarray, statistic_func,
 | Strategy comparison | Paired Bootstrap | Whether strategy A is significantly better than B |
 
 ```python
-def bootstrap_sharpe(returns: pd.Series, n_bootstrap: int = 10000) -> dict:
-    """Bootstrap confidence interval for the Sharpe ratio."""
-    def sharpe(r):
-        return r.mean() / r.std() * np.sqrt(252) if r.std() > 0 else 0
+from src.quantlib.timeseries import bootstrap_sharpe
 
-    result = bootstrap_statistic(returns.values, sharpe, n_bootstrap)
-    result['is_significant'] = result['ci_lower'] > 0  # 95% CI excludes 0
-    return result
+# Takes a RETURN series (fractions), not an equity curve.
+result = bootstrap_sharpe(returns, n_bootstrap=10000,
+                          periods_per_year=252, seed=42)
+# {'point_estimate': 1.25, 'ci_lower': 0.62, 'ci_upper': 1.88,
+#  'bootstrap_mean': 1.26, 'bootstrap_std': 0.32,
+#  'confidence': 0.95, 'is_significant': True}
 ```
+
+`is_significant` means the interval sits entirely above zero. Remember what it does **not** mean: the interval is centred on the *realised* Sharpe, so it quantifies sampling error around this sample, not whether the edge persists out of sample. With only 1000 daily bars the realised Sharpe of a zero-edge strategy already has a standard deviation of `sqrt(252/1000) ≈ 0.50`.
+
+For a backtest **equity curve** use `backtest.validation.bootstrap_sharpe_ci` instead — it differences the curve itself and returns report-shaped keys. The two also use different denominators: `bootstrap_sharpe` divides by the sample standard deviation (`ddof=1`), `bootstrap_sharpe_ci` by the population one (`ddof=0`). On identical data they differ by `sqrt(n / (n-1))` — about 0.2% over a year of daily bars. Report one or the other, never both as if they agreed.
 
 ## Hypothesis-Testing Framework
 

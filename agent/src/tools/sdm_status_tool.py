@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+
+from src.strategy_store.models import is_four_eyes_violation
 from typing import Any
 
 from src.agent.tools import BaseTool
@@ -40,6 +42,31 @@ def _artifact_to_dict(artifact: Any) -> dict[str, Any]:
             if hasattr(d["category"], "value")
             else d["category"]
         )
+    for enum_field in ("model_tier", "validation_status"):
+        if d.get(enum_field) is not None and hasattr(d[enum_field], "value"):
+            d[enum_field] = d[enum_field].value
+
+    # Model-governance readout. Reported on every artifact, including the ones
+    # carrying no governance data at all -- "this model is unregistered" is the
+    # finding, and omitting the block when it is empty would hide it.
+    governance = {
+        "registered": any(
+            d.get(f) for f in ("developer", "owner", "validator", "approver",
+                               "intended_use", "limitations")
+        ),
+        "four_eyes_violation": is_four_eyes_violation(artifact),
+    }
+    if not governance["registered"]:
+        governance["note"] = (
+            "no owner, validator, approver, intended use or limitations recorded: "
+            "this is an unregistered model under any model-risk policy"
+        )
+    elif governance["four_eyes_violation"]:
+        governance["note"] = (
+            f"developer and approver are the same person ({d.get('developer')!r}); "
+            "the approval carries no independent review"
+        )
+    d["governance"] = governance
     return d
 
 

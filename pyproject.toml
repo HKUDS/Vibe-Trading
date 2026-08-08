@@ -90,6 +90,7 @@ include = ["src*", "backtest*", "cli*"]
     "skills/**/*.json",
     "skills/**/*.py",
     "providers/*.json",
+    "scheduled_research/playbooks/*.md",
     "swarm/presets/*.yaml",
     "shadow_account/templates/*.j2",
     "shadow_account/templates/*.html",
@@ -130,6 +131,14 @@ krx = [
     # Free, no-auth Korea (KRX: KOSPI/KOSDAQ) EOD OHLCV. Without this extra
     # the kr_equity chain falls back to yahoo/yfinance (.KS/.KQ suffixes).
     "pykrx>=1.0.45",
+]
+stats = [
+    # Econometrics behind src/quantlib/timeseries: stationarity (ADF),
+    # cointegration, Granger causality, Ljung-Box, VIF and GARCH. Those
+    # functions lazy-import and raise an actionable ImportError naming this
+    # extra, so the base install stays lean and nothing silently degrades.
+    "statsmodels>=0.14",
+    "arch>=6.0",
 ]
 ashare = [
     # Free, no-auth A-share source over BaoStock's TCP protocol; bypasses the

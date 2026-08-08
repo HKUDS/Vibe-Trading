@@ -13,16 +13,16 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ROWS = 250
 
-# Symbol -> preferred source. The matched source is the head of its market's
+# Symbol -> preferred source. The matched source is a member of its market's
 # fallback chain (registry.FALLBACK_CHAINS), so an unavailable preferred source
-# still degrades gracefully to the rest of the chain. US/HK equities route to
-# the throttle-tolerant Yahoo public endpoint first (lower IP-ban risk than the
-# yfinance SDK), A-shares to the Tencent quote endpoint.
+# still degrades gracefully to the rest of the chain. US equities route to the
+# throttle-tolerant Yahoo public endpoint first (lower IP-ban risk than the
+# yfinance SDK), A-shares and HK equities to the never-banned Tencent endpoint.
 _SOURCE_PATTERNS = [
     (re.compile(r"^local:", re.I), "local"),
     (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "tencent"),
     (re.compile(r"^[A-Z]+\.US$", re.I), "yahoo"),
-    (re.compile(r"^\d{3,5}\.HK$", re.I), "yahoo"),
+    (re.compile(r"^\d{3,5}\.HK$", re.I), "tencent"),
     # India: NSE (RELIANCE.NS) / BSE (500325.BO). Tickers may carry '&' and '-'
     # (e.g. M&M.NS, BAJAJ-AUTO.NS). Served by Yahoo's public chart endpoint.
     (re.compile(r"^[A-Z0-9&.\-]+\.(NS|BO)$", re.I), "yahoo"),
@@ -102,7 +102,7 @@ def fetch_market_data(
     max_rows: int = DEFAULT_MAX_ROWS,
     loader_resolver: Callable[[str], type] = get_loader,
     fallback_chain_provider: Callable[[str], list[str]] | None = None,
-    max_fallback_attempts: int = 3,
+    max_fallback_attempts: int = 5,
     include_provenance: bool = False,
 ) -> dict[str, Any]:
     """Fetch normalized OHLCV data through the repository loader layer.
@@ -113,6 +113,7 @@ def fetch_market_data(
     OKX → Binance → CCXT → Yahoo). At most ``max_fallback_attempts`` retries
     are attempted before the symbol is recorded as ``_unresolved``.
     """
+    from backtest.engines._market_hooks import _detect_market
     from backtest.loaders.base import NoAvailableSourceError
     from backtest.loaders.registry import FALLBACK_CHAINS
 
@@ -125,29 +126,35 @@ def fetch_market_data(
         for code in codes
     }
 
-    if source == "auto":
-        groups: dict[str, list[str]] = {}
-        for code in codes:
-            src = detect_source(code)
-            groups.setdefault(src, []).append(code)
-    else:
-        groups = {source: list(codes)}
+    groups: dict[tuple[str, str], list[str]] = {}
+    for code in codes:
+        src = detect_source(code) if source == "auto" else source
+        groups.setdefault((src, _detect_market(code)), []).append(code)
 
-    def _chain_for(src: str) -> list[str]:
-        """Return the ordered fallback chain for the market containing ``src``.
+    def _chain_for(src: str, market: str) -> list[str]:
+        """Return the ordered fallback chain for ``src``.
+
+        Prefers the chain of the symbol's own market when ``src`` is a member
+        of it. Matching by source name alone is ambiguous — ``yahoo`` appears
+        in the US, HK, India and Korea chains, and a first-match lookup would
+        send HK symbols down the US chain, exhausting the attempt budget on
+        US-only sources.
 
         Falls back to ``[src]`` so an explicit source outside any chain still
         gets at least one attempt.
         """
         if fallback_chain_provider is not None:
             return fallback_chain_provider(src)
-        for market, chain in FALLBACK_CHAINS.items():
+        market_chain = FALLBACK_CHAINS.get(market, [])
+        if src in market_chain:
+            return market_chain
+        for chain in FALLBACK_CHAINS.values():
             if src in chain:
                 return chain
         return [src]
 
-    for src, src_codes in groups.items():
-        chain = _chain_for(src)
+    for (src, market), src_codes in groups.items():
+        chain = _chain_for(src, market)
         # Start the attempt list with the requested source, then the rest of
         # the chain (preserving order, no duplicates).
         attempts: list[str] = []
