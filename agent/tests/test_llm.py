@@ -224,6 +224,15 @@ class TestSyncProviderEnv:
         assert result["OPENAI_API_KEY"] == "sf-key-123"
         assert result["OPENAI_API_BASE"] == base_url
 
+    def test_modelscope_provider(self) -> None:
+        result = self._run_sync({
+            "LANGCHAIN_PROVIDER": "modelscope",
+            "MODELSCOPE_API_KEY": "ms-key-123",
+            "MODELSCOPE_BASE_URL": "https://api-inference.modelscope.cn/v1",
+        })
+        assert result["OPENAI_API_KEY"] == "ms-key-123"
+        assert result["OPENAI_API_BASE"] == "https://api-inference.modelscope.cn/v1"
+
     def test_groq_provider(self) -> None:
         result = self._run_sync(
             {

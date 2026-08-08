@@ -637,7 +637,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 - 경로 A용 **Docker**
 - OpenAI Codex도 ChatGPT OAuth로 사용할 수 있습니다. `LANGCHAIN_PROVIDER=openai-codex`를 설정한 뒤 `vibe-trading provider login openai-codex`를 실행하세요. 이 방식은 `OPENAI_API_KEY`를 사용하지 않습니다.
 
-> **지원 LLM provider:** OpenRouter, Requesty, OpenAI, Anthropic (native Messages API), DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, iFlytek Spark, Z.ai, NVIDIA NIM, Ollama(local). `*_BASE_URL`이 설정되지 않으면 각 provider는 canonical endpoint로 폴백하므로 key만 있으면 충분합니다. 설정은 `.env.example`을 참고하세요.
+> **지원 LLM provider:** OpenRouter, Requesty, OpenAI, Anthropic (native Messages API), DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, Ollama(local). `*_BASE_URL`이 설정되지 않으면 각 provider는 canonical endpoint로 폴백하므로 key만 있으면 충분합니다. 설정은 `.env.example`을 참고하세요.
 
 > **팁:** 자동 fallback 덕분에 모든 시장은 API key 없이도 작동합니다. yfinance(HK/US), OKX(crypto), mootdx(A주, TCP 직결, IP 제한 없음), AKShare(A주, US, HK, futures, forex)는 모두 무료입니다. Tushare token은 선택 사항이며, mootdx가 권장 no-token A주 fallback이고 AKShare는 더 넓은 커버리지의 백업입니다.
 

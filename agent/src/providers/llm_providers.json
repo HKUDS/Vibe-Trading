@@ -195,6 +195,15 @@
     "api_key_required": true
   },
   {
+    "name": "modelscope",
+    "label": "ModelScope",
+    "api_key_env": "MODELSCOPE_API_KEY",
+    "base_url_env": "MODELSCOPE_BASE_URL",
+    "default_model": "Qwen/Qwen3.5-27B",
+    "default_base_url": "https://api-inference.modelscope.cn/v1",
+    "api_key_required": true
+  },
+  {
     "name": "ollama",
     "label": "Ollama",
     "api_key_env": null,

@@ -183,6 +183,11 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
     "spark": _SPARK_CAPABILITIES,
     "iflytek": _SPARK_CAPABILITIES,
     "zai": ProviderCapabilities("zai", "ZAI_API_KEY", "ZAI_BASE_URL"),
+    "modelscope": ProviderCapabilities(
+        "modelscope",
+        "MODELSCOPE_API_KEY",
+        "MODELSCOPE_BASE_URL",
+    ),
     "ollama": ProviderCapabilities("ollama", None, "OLLAMA_BASE_URL"),
     "openai-codex": _OPENAI_CODEX_CAPABILITIES,
     "openai_codex": _OPENAI_CODEX_CAPABILITIES,
