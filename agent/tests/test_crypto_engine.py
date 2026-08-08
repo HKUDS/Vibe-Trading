@@ -12,6 +12,7 @@ Validates:
 from __future__ import annotations
 
 import json
+import math
 
 import pandas as pd
 import pytest
@@ -500,10 +501,6 @@ class TestHistoricalFundingRate:
 
 
 class TestStrictPerpetualLifecycle:
-    def test_strict_rebalance_fails_closed_until_margin_integration(self) -> None:
-        with pytest.raises(ValueError, match="strict USD-M position rebalancing"):
-            _strict_engine(position_adjustment="rebalance")
-
     @pytest.mark.parametrize("interval", ["3m", "60m", "4H", "1D"])
     def test_strict_100x_rejects_unsupported_or_coarse_intervals(
         self, interval: str
@@ -748,3 +745,509 @@ class TestStrictPerpetualLifecycle:
             "BTC-USDT-PERP": "position_liquidation",
             "ETH-USDT-PERP": "end_of_backtest",
         }
+
+    @pytest.mark.parametrize("margin_mode", ["isolated", "cross"])
+    def test_rebalance_matches_hand_computed_collateral_and_fill_accounting(
+        self, margin_mode: str
+    ) -> None:
+        class StateCaptureEngine(CryptoEngine):
+            def __init__(self, config: dict) -> None:
+                super().__init__(config)
+                self.states: list[dict] = []
+
+            def after_rebalance_bar(self, timestamp, data_map, codes) -> bool:
+                stop = super().after_rebalance_bar(timestamp, data_map, codes)
+                position = self.positions["BTC-USDT-PERP"]
+                account = self._account_state()
+                self.states.append(
+                    {
+                        "size": position.size,
+                        "entry_price": position.entry_price,
+                        "entry_fee": position.entry_commission,
+                        "capital": self.capital,
+                        "isolated_margin": self._isolated_margins.get(position.symbol),
+                        "wallet_balance": account.wallet_balance,
+                    }
+                )
+                return stop
+
+        dates = pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
+        engine = StateCaptureEngine(
+            {
+                "initial_cash": 1_000.0,
+                "leverage": 10.0,
+                "maker_rate": 0.0002,
+                "taker_rate": 0.001,
+                "slippage": 0.0,
+                "perpetual_strict": True,
+                "funding_mode": "data",
+                "margin_mode": margin_mode,
+                "position_adjustment": "rebalance",
+            }
+        )
+
+        _run_strict(
+            engine,
+            {"BTC-USDT-PERP": _strict_frame(dates)},
+            {"BTC-USDT-PERP": [0.25, 0.50, 0.20]},
+        )
+
+        assert [state["size"] for state in engine.states] == pytest.approx(
+            [25.0, 49.875, 19.90025]
+        )
+        assert [state["entry_price"] for state in engine.states] == pytest.approx(
+            [100.0, 100.0, 100.0]
+        )
+        assert [state["entry_fee"] for state in engine.states] == pytest.approx(
+            [2.5, 4.9875, 1.990025]
+        )
+        assert [state["capital"] for state in engine.states] == pytest.approx(
+            [747.5, 496.2625, 793.012525]
+        )
+        assert [state["wallet_balance"] for state in engine.states] == pytest.approx(
+            [997.5, 995.0125, 992.015025]
+        )
+        isolated_margins = [state["isolated_margin"] for state in engine.states]
+        if margin_mode == "isolated":
+            assert isolated_margins == pytest.approx([250.0, 498.75, 199.0025])
+        else:
+            assert isolated_margins == [None, None, None]
+
+        fills = [
+            event
+            for event in engine._perpetual_events
+            if event["event_type"] == "market_fill"
+        ]
+        assert [event["action"] for event in fills] == [
+            "open",
+            "increase",
+            "reduce",
+            "close",
+        ]
+        assert [event["signed_quantity"] for event in fills[:3]] == pytest.approx(
+            [25.0, 24.875, -29.97475]
+        )
+        assert [event["trading_fee"] for event in fills[:3]] == pytest.approx(
+            [2.5, 2.4875, 2.997475]
+        )
+        assert fills[2]["realized_pnl"] == pytest.approx(0.0)
+        assert fills[2]["released_margin"] == pytest.approx(299.7475)
+
+    def test_rebalance_funding_precedes_increase_at_preincrease_size(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
+        engine = _strict_engine(position_adjustment="rebalance", taker_rate=0.001)
+        frame = _strict_frame(
+            dates,
+            funding_rate=[0.0, 0.001, 0.0],
+            settlements=[None, dates[1], None],
+        )
+
+        _run_strict(
+            engine,
+            {"BTC-USDT-PERP": frame},
+            {"BTC-USDT-PERP": [0.25, 0.50, 0.20]},
+        )
+
+        funding = next(
+            event
+            for event in engine._perpetual_events
+            if event["event_type"] == "funding_settlement"
+        )
+        increase = next(
+            event
+            for event in engine._perpetual_events
+            if event["event_type"] == "market_fill" and event["action"] == "increase"
+        )
+        assert funding["signed_quantity"] == pytest.approx(25.0)
+        assert funding["sequence"] < increase["sequence"]
+
+    def test_isolated_reduction_keeps_funding_pnl_and_collateral_consistent(
+        self,
+    ) -> None:
+        class StateCaptureEngine(CryptoEngine):
+            def __init__(self, config: dict) -> None:
+                super().__init__(config)
+                self.states: list[dict] = []
+
+            def after_rebalance_bar(self, timestamp, data_map, codes) -> bool:
+                stop = super().after_rebalance_bar(timestamp, data_map, codes)
+                position = self.positions["BTC-USDT-PERP"]
+                self.states.append(
+                    {
+                        "capital": self.capital,
+                        "wallet_balance": self._account_state().wallet_balance,
+                        "isolated_margin": self._isolated_margins[position.symbol],
+                        "size": position.size,
+                    }
+                )
+                return stop
+
+        dates = pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
+        engine = StateCaptureEngine(
+            {
+                **_strict_engine(
+                    position_adjustment="rebalance",
+                    taker_rate=0.001,
+                ).config
+            }
+        )
+        frame = _strict_frame(
+            dates,
+            execution_open=[100.0, 100.0, 110.0],
+            mark=[100.0, 100.0, 110.0],
+            funding_rate=[0.0, 0.001, 0.0],
+            settlements=[None, dates[1], None],
+        )
+
+        _run_strict(
+            engine,
+            {"BTC-USDT-PERP": frame},
+            {"BTC-USDT-PERP": [0.25, 0.50, 0.20]},
+        )
+
+        after_increase, after_reduction = engine.states[1:]
+        assert after_increase == pytest.approx(
+            {
+                "capital": 495.025,
+                "wallet_balance": 992.525,
+                "isolated_margin": 495.0,
+                "size": 49.75,
+            }
+        )
+        assert after_reduction == pytest.approx(
+            {
+                "capital": 945.7052772727273,
+                "wallet_balance": 1216.6189136363636,
+                "isolated_margin": 269.5522613065327,
+                "size": 27.0913636363636,
+            }
+        )
+        reduction = next(
+            event
+            for event in engine._perpetual_events
+            if event["event_type"] == "market_fill" and event["action"] == "reduce"
+        )
+        assert reduction["realized_pnl"] == pytest.approx(226.5863636363636)
+        assert reduction["released_margin"] == pytest.approx(226.5863636363636)
+        assert reduction["trading_fee"] == pytest.approx(2.49245)
+        assert after_reduction["wallet_balance"] == pytest.approx(
+            1_000.0
+            - 2.5  # opening fee
+            - 2.5  # funding paid before the increase
+            - 2.475  # increase fee
+            + reduction["realized_pnl"]
+            - reduction["trading_fee"]
+        )
+
+    def test_cross_rebalance_reduces_before_addition_and_then_checks_risk(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC")
+        engine = _strict_engine(
+            position_adjustment="rebalance",
+            margin_mode="cross",
+            taker_rate=0.0,
+            maker_rate=0.0,
+        )
+        frames = {
+            symbol: _strict_frame(dates)
+            for symbol in ("BTC-USDT-PERP", "ETH-USDT-PERP")
+        }
+
+        _run_strict(
+            engine,
+            frames,
+            {
+                "BTC-USDT-PERP": [0.40, 0.10],
+                "ETH-USDT-PERP": [0.40, 0.70],
+            },
+        )
+
+        second_bar = [
+            event
+            for event in engine._perpetual_events
+            if event["timestamp"] == dates[1].isoformat()
+        ]
+        reduce_event = next(event for event in second_bar if event.get("action") == "reduce")
+        increase_event = next(
+            event for event in second_bar if event.get("action") == "increase"
+        )
+        risk_events = [
+            event
+            for event in second_bar
+            if event["event_type"] == "risk_snapshot" and event["phase"] == "post_fill"
+        ]
+        assert reduce_event["symbol"] == "BTC-USDT-PERP"
+        assert increase_event["symbol"] == "ETH-USDT-PERP"
+        assert len(risk_events) == 2
+        assert (
+            reduce_event["sequence"]
+            < risk_events[0]["sequence"]
+            < increase_event["sequence"]
+            < risk_events[1]["sequence"]
+        )
+        assert [event["status"] for event in risk_events] == ["healthy", "healthy"]
+
+    def test_strict_100x_rebalance_stays_finite_without_breach(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
+        engine = _strict_engine(
+            interval="1H",
+            leverage=100.0,
+            position_adjustment="rebalance",
+            taker_rate=0.001,
+        )
+
+        _run_strict(
+            engine,
+            {"BTC-USDT-PERP": _strict_frame(dates)},
+            {"BTC-USDT-PERP": [0.02, 0.03, 0.01]},
+        )
+
+        assert {
+            event["action"]
+            for event in engine._perpetual_events
+            if event["event_type"] == "market_fill"
+        } >= {"increase", "reduce"}
+        assert all(
+            math.isfinite(value)
+            for snapshot in engine.equity_snapshots
+            for value in (snapshot.equity, snapshot.capital)
+        )
+        assert all(
+            math.isfinite(float(event[field]))
+            for event in engine._perpetual_events
+            if event["event_type"] == "risk_snapshot"
+            for field in (
+                "margin_balance",
+                "initial_margin",
+                "maintenance_margin",
+                "available_balance",
+            )
+        )
+
+    def test_strict_rebalance_fills_use_raw_execution_open(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
+        engine = _strict_engine(
+            position_adjustment="rebalance",
+            slippage=0.10,
+            taker_rate=0.0,
+            maker_rate=0.0,
+        )
+        frame = _strict_frame(
+            dates,
+            execution_open=[101.0, 102.0, 103.0],
+            mark=[113.3, 113.3, 113.3],
+        )
+
+        _run_strict(
+            engine,
+            {"BTC-USDT-PERP": frame},
+            {"BTC-USDT-PERP": [0.25, 0.50, 0.20]},
+        )
+
+        fills = {
+            event["action"]: event["execution_price"]
+            for event in engine._perpetual_events
+            if event["event_type"] == "market_fill"
+            and event["action"] in {"open", "increase", "reduce"}
+        }
+        assert fills == {"open": 101.0, "increase": 102.0, "reduce": 103.0}
+
+    def test_strict_hold_keeps_configured_slippage_behavior(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC")
+        engine = _strict_engine(
+            position_adjustment="hold",
+            slippage=0.10,
+            taker_rate=0.0,
+            maker_rate=0.0,
+        )
+
+        _run_strict(
+            engine,
+            {"BTC-USDT-PERP": _strict_frame(dates)},
+            {"BTC-USDT-PERP": [0.25, 0.25]},
+        )
+
+        fills = [
+            event
+            for event in engine._perpetual_events
+            if event["event_type"] == "market_fill"
+        ]
+        assert [event["action"] for event in fills] == ["open", "close"]
+        assert [event["execution_price"] for event in fills] == pytest.approx(
+            [110.0, 90.0]
+        )
+
+    def test_cross_atomic_liquidation_stops_remaining_additions(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=1, freq="h", tz="UTC")
+        engine = _strict_engine(
+            position_adjustment="rebalance",
+            margin_mode="cross",
+            taker_rate=0.0,
+            maker_rate=0.0,
+        )
+        frames = {
+            "BTC-USDT-PERP": _strict_frame(dates, mark_low=[80.0]),
+            "ETH-USDT-PERP": _strict_frame(dates),
+        }
+
+        _run_strict(
+            engine,
+            frames,
+            {
+                "BTC-USDT-PERP": [0.50],
+                "ETH-USDT-PERP": [0.25],
+            },
+        )
+
+        fills = [
+            event
+            for event in engine._perpetual_events
+            if event["event_type"] == "market_fill" and event["action"] == "open"
+        ]
+        assert [event["symbol"] for event in fills] == ["BTC-USDT-PERP"]
+        assert engine.terminal_status == "account_liquidation"
+        assert not engine.positions
+
+    def test_isolated_atomic_liquidation_allows_other_symbol_to_continue(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=1, freq="h", tz="UTC")
+        engine = _strict_engine(
+            position_adjustment="rebalance",
+            margin_mode="isolated",
+            taker_rate=0.0,
+            maker_rate=0.0,
+        )
+        frames = {
+            "BTC-USDT-PERP": _strict_frame(dates, mark_low=[90.0]),
+            "ETH-USDT-PERP": _strict_frame(dates),
+        }
+
+        _run_strict(
+            engine,
+            frames,
+            {
+                "BTC-USDT-PERP": [0.50],
+                "ETH-USDT-PERP": [0.25],
+            },
+        )
+
+        fills = [
+            event
+            for event in engine._perpetual_events
+            if event["event_type"] == "market_fill" and event["action"] == "open"
+        ]
+        assert [event["symbol"] for event in fills] == [
+            "BTC-USDT-PERP",
+            "ETH-USDT-PERP",
+        ]
+        liquidation = next(
+            event
+            for event in engine._perpetual_events
+            if event["event_type"] == "position_liquidation"
+        )
+        assert liquidation["symbol"] == "BTC-USDT-PERP"
+        assert engine.terminal_status == "completed"
+
+    def test_isolated_liquidation_rejects_now_unfunded_addition(self) -> None:
+        dates = pd.date_range("2026-01-01", periods=1, freq="h", tz="UTC")
+        engine = _strict_engine(
+            position_adjustment="rebalance",
+            margin_mode="isolated",
+            taker_rate=0.0,
+            maker_rate=0.0,
+        )
+        frames = {
+            "BTC-USDT-PERP": _strict_frame(dates, mark_low=[80.0]),
+            "ETH-USDT-PERP": _strict_frame(dates),
+        }
+
+        _run_strict(
+            engine,
+            frames,
+            {
+                "BTC-USDT-PERP": [0.50],
+                "ETH-USDT-PERP": [0.25],
+            },
+        )
+
+        opens = [
+            event
+            for event in engine._perpetual_events
+            if event["event_type"] == "market_fill" and event["action"] == "open"
+        ]
+        assert [event["symbol"] for event in opens] == ["BTC-USDT-PERP"]
+        rejected = next(
+            event
+            for event in engine._perpetual_events
+            if event["event_type"] == "order_rejected"
+        )
+        assert rejected["symbol"] == "ETH-USDT-PERP"
+        assert rejected["reason"] == "insufficient_capital_after_liquidation"
+        assert rejected["required_capital"] == pytest.approx(250.0)
+        assert rejected["available_capital"] == pytest.approx(0.0)
+        assert engine.terminal_status == "completed"
+
+    def test_cross_rebalance_increase_precedes_adverse_account_liquidation(
+        self,
+    ) -> None:
+        dates = pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC")
+        engine = _strict_engine(
+            initial_cash=1_000.0,
+            position_adjustment="rebalance",
+            taker_rate=0.0,
+            maker_rate=0.0,
+            margin_mode="cross",
+        )
+        frame = _strict_frame(dates, mark_low=[100.0, 80.0])
+
+        _run_strict(
+            engine,
+            {"BTC-USDT-PERP": frame},
+            {"BTC-USDT-PERP": [0.25, 0.50]},
+        )
+
+        increase = next(
+            event
+            for event in engine._perpetual_events
+            if event["event_type"] == "market_fill" and event["action"] == "increase"
+        )
+        liquidation = next(
+            event
+            for event in engine._perpetual_events
+            if event["event_type"] == "account_liquidation"
+        )
+        assert increase["sequence"] < liquidation["sequence"]
+        assert not engine.positions
+        assert engine.terminal_status == "account_liquidation"
+
+    def test_rebalance_evidence_artifacts_are_deterministic(self, tmp_path) -> None:
+        dates = pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
+        frame = _strict_frame(dates)
+        targets = {"BTC-USDT-PERP": [0.25, 0.50, 0.20]}
+
+        results = []
+        for run_name in ("first", "second"):
+            engine = _strict_engine(
+                position_adjustment="rebalance",
+                taker_rate=0.001,
+            )
+            _run_strict(engine, {"BTC-USDT-PERP": frame}, targets)
+            metrics = _write_strict_artifacts(
+                engine,
+                {"BTC-USDT-PERP": frame},
+                targets,
+                tmp_path / run_name,
+            )
+            events, summary = _read_strict_evidence(tmp_path / run_name)
+            results.append((events, summary, metrics))
+
+        first_events, first_summary, first_metrics = results[0]
+        second_events, second_summary, second_metrics = results[1]
+        assert first_events == second_events
+        assert first_summary == second_summary
+        assert first_metrics == second_metrics
+        assert [
+            event["action"]
+            for event in first_events
+            if event["event_type"] == "market_fill"
+        ] == ["open", "increase", "reduce", "close"]
+        assert first_summary["total_trading_fee"] == pytest.approx(9.975)
+        assert first_metrics["perpetual_trading_fees"] == pytest.approx(9.975)
