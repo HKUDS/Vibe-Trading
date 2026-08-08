@@ -156,7 +156,7 @@ class TestTechnicalIndicatorToolIntegration:
         assert result["indicators"]["sma_200"] is not None
         assert result["indicators"]["ema_20"] is not None
         assert result["latest_close"] == 349.0
-        assert result["latest_date"] is not None
+        assert result["latest_date"] == str(sample_df.index[-1].date())
 
     def test_execute_dataframe_with_adj_close(self, monkeypatch, sample_close):
         """Loader returns 'adj_close' instead of 'close'."""
@@ -251,9 +251,10 @@ class TestLoaderPayloadShapes:
         assert result["ok"] is True
         assert result["indicators"]["rsi_14"] is not None
         assert result["latest_close"] == 129.0
+        assert result["latest_date"] == "2026-01-30"
 
-    def test_wrapped_capped_payload_success(self, monkeypatch):
-        """fetch_market_data wraps records under 'data' when truncation applies."""
+    def test_wrapped_capped_payload_is_rejected(self, monkeypatch):
+        """A discontinuous capped payload must never produce indicators."""
         payload = {
             "MSFT": {
                 "rows": 42,
@@ -270,9 +271,32 @@ class TestLoaderPayloadShapes:
         )
         tool = TechnicalIndicatorTool()
         result = json.loads(tool.execute(symbol="MSFT"))
+        assert result["ok"] is False
+        assert "consecutive" in result["error"]
+
+    def test_fetches_uncapped_then_sorts_and_tails_locally(self, monkeypatch):
+        """Long windows use the latest consecutive bars, not even-stride samples."""
+        records = self._records(600)
+        observed: dict[str, int] = {}
+
+        def _mock_fetch(**kwargs):
+            observed["max_rows"] = kwargs["max_rows"]
+            if kwargs["max_rows"]:
+                step = len(records) // kwargs["max_rows"]
+                return {"MSFT": records[::step]}
+            return {"MSFT": list(reversed(records))}
+
+        monkeypatch.setattr(
+            "src.tools.technical_indicator_tool.fetch_market_data",
+            _mock_fetch,
+        )
+        tool = TechnicalIndicatorTool()
+        result = json.loads(tool.execute(symbol="MSFT", lookback=30))
+        assert observed["max_rows"] == 0
         assert result["ok"] is True
-        assert result["indicators"]["rsi_14"] is not None
-        assert result["latest_close"] == 129.0
+        assert result["latest_close"] == 699.0
+        assert result["latest_date"] == "2027-08-23"
+        assert result["indicators"]["sma_20"] == pytest.approx(689.5)
 
     def test_list_of_dicts_uppercase_key(self, monkeypatch):
         """Loader with Close key (case variant) still resolves."""
@@ -288,6 +312,7 @@ class TestLoaderPayloadShapes:
         result = json.loads(tool.execute(symbol="MSFT"))
         assert result["ok"] is True
         assert result["indicators"]["rsi_14"] is not None
+        assert result["latest_date"] == "2026-01-30"
 
     def test_empty_list(self, monkeypatch):
         """Empty list payload → clean error, not AttributeError."""
@@ -323,6 +348,7 @@ class TestLoaderPayloadShapes:
         result = json.loads(tool.execute(symbol="MSFT"))
         assert result["ok"] is True
         assert result["indicators"]["rsi_14"] is not None
+        assert result["latest_date"] is None
 
     def test_dataframe_payload_still_works(self, monkeypatch):
         """DataFrame payload keeps working (existing loader contract)."""
@@ -338,3 +364,4 @@ class TestLoaderPayloadShapes:
         result = json.loads(tool.execute(symbol="MSFT"))
         assert result["ok"] is True
         assert result["indicators"]["rsi_14"] is not None
+        assert result["latest_date"] == "2026-01-30"
