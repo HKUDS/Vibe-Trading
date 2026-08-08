@@ -136,7 +136,11 @@ class ChannelRuntime:
                                 "Not authorized: pairing management is restricted to "
                                 "configured operators."
                             ),
-                            metadata={PAIRING_COMMAND_META_KEY: True, "unauthorized": True},
+                            metadata={
+                                PAIRING_COMMAND_META_KEY: True,
+                                "unauthorized": True,
+                                "message_id": msg.metadata.get("message_id"),
+                            },
                         )
                     )
                     return
@@ -151,7 +155,10 @@ class ChannelRuntime:
                         channel=msg.channel,
                         chat_id=msg.chat_id,
                         content=reply,
-                        metadata={PAIRING_COMMAND_META_KEY: True},
+                        metadata={
+                            PAIRING_COMMAND_META_KEY: True,
+                            "message_id": msg.metadata.get("message_id"),
+                        },
                     )
                 )
                 return
@@ -167,7 +174,11 @@ class ChannelRuntime:
                         channel=msg.channel,
                         chat_id=msg.chat_id,
                         content=reply,
-                        metadata={"_channel_runtime": True, "session_reset": True},
+                        metadata={
+                            "_channel_runtime": True,
+                            "session_reset": True,
+                            "message_id": msg.metadata.get("message_id"),
+                        },
                     )
                 )
                 return
