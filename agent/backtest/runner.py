@@ -16,7 +16,7 @@ import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Literal, Optional
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
@@ -76,6 +76,7 @@ class BacktestConfigSchema(BaseModel):
     source: str = "tushare"
     interval: str = "1D"
     engine: str = "daily"
+    position_adjustment: Literal["hold", "rebalance"] = "hold"
     # Returns divide by initial_cash, so a non-positive value yields inf/NaN
     # metrics (total_return, annual_return, ...). Reject it at the config
     # boundary instead of letting the run produce non-finite results.

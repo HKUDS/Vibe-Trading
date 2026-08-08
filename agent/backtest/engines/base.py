@@ -38,10 +38,10 @@ from backtest.metrics import (
     bar_returns,
     by_exit_reason_stats,
     by_symbol_stats,
+    calc_fill_turnover_series,
     calc_metrics,
-    calc_trade_turnover_series,
 )
-from backtest.models import EquitySnapshot, Position, TradeRecord
+from backtest.models import EquitySnapshot, FillRecord, Position, TradeRecord
 
 
 def _json_safe_scalar_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
@@ -406,6 +406,7 @@ class BaseEngine(ABC):
         self.base_price_fields: tuple[str, ...] = ("pre_close",)
         self.capital: float = self.initial_capital
         self.positions: Dict[str, Position] = {}
+        self.fill_records: List[FillRecord] = []
         self.trades: List[TradeRecord] = []
         self.equity_snapshots: List[EquitySnapshot] = []
         self._bar_idx: int = 0
@@ -752,7 +753,7 @@ class BaseEngine(ABC):
         bench_equity = self.initial_capital * (1 + bench_ret).cumprod()
 
         # 6. Metrics
-        realized_turnover = calc_trade_turnover_series(self.trades, equity_series)
+        realized_turnover = calc_fill_turnover_series(self.fill_records, equity_series)
         m = calc_metrics(
             equity_series,
             self.trades,
@@ -1376,6 +1377,17 @@ class BaseEngine(ABC):
         )
         self.capital -= order.cost
         self.positions[order.symbol] = after
+        self._record_fill(
+            symbol=order.symbol,
+            timestamp=ts,
+            action="increase",
+            signed_quantity=order.direction * order.size,
+            execution_price=order.price,
+            fee=order.commission,
+            margin=order.margin,
+            leverage=order.leverage,
+            reason="target_rebalance",
+        )
         self.after_position_adjustment(
             action="increase",
             timestamp=ts,
@@ -1403,6 +1415,7 @@ class BaseEngine(ABC):
             if order.released_margin > 1e-9
             else 0.0
         )
+        holding_bars = self._weighted_holding_bars(before)
         self.capital += order.capital_credit
         self.positions[before.symbol] = after
         self.trades.append(TradeRecord(
@@ -1417,11 +1430,23 @@ class BaseEngine(ABC):
             pnl=order.realized_pnl,
             pnl_pct=pnl_pct,
             exit_reason="target_rebalance",
-            holding_bars=max(self._bar_idx - before.entry_bar_idx, 0),
+            holding_bars=holding_bars,
             commission=entry_commission + order.exit_commission,
             entry_margin=order.released_margin,
             exit_margin=exit_margin,
         ))
+        self._record_fill(
+            symbol=before.symbol,
+            timestamp=ts,
+            action="reduce",
+            signed_quantity=-before.direction * closed_size,
+            execution_price=order.price,
+            fee=order.exit_commission,
+            margin=exit_margin,
+            leverage=before.leverage,
+            reason="target_rebalance",
+            holding_bars=holding_bars,
+        )
         self.after_position_adjustment(
             action="partial_reduction",
             timestamp=ts,
@@ -1450,6 +1475,17 @@ class BaseEngine(ABC):
             entry_bar_idx=self._bar_idx,
             entry_commission=order.commission,
         )
+        self._record_fill(
+            symbol=order.symbol,
+            timestamp=ts,
+            action="open",
+            signed_quantity=order.direction * order.size,
+            execution_price=order.price,
+            fee=order.commission,
+            margin=order.margin,
+            leverage=order.leverage,
+            reason="signal",
+        )
 
     def _close_position(
         self,
@@ -1472,7 +1508,7 @@ class BaseEngine(ABC):
 
         self.capital += margin + pnl - exit_comm
 
-        holding_bars = max(self._bar_idx - pos.entry_bar_idx, 0)
+        holding_bars = self._weighted_holding_bars(pos)
 
         self.trades.append(TradeRecord(
             symbol=symbol,
@@ -1491,6 +1527,79 @@ class BaseEngine(ABC):
             entry_margin=margin,
             exit_margin=exit_margin,
         ))
+        self._record_fill(
+            symbol=symbol,
+            timestamp=exit_time,
+            action="close",
+            signed_quantity=-pos.direction * pos.size,
+            execution_price=exit_price,
+            fee=exit_comm,
+            margin=exit_margin,
+            leverage=pos.leverage,
+            reason=reason,
+            holding_bars=holding_bars,
+        )
+
+    def _record_fill(
+        self,
+        *,
+        symbol: str,
+        timestamp: pd.Timestamp,
+        action: str,
+        signed_quantity: float,
+        execution_price: float,
+        fee: float,
+        margin: float,
+        leverage: float,
+        reason: str,
+        holding_bars: float | None = None,
+    ) -> None:
+        """Append execution evidence without making it account state."""
+        self.fill_records.append(FillRecord(
+            symbol=symbol,
+            timestamp=timestamp,
+            bar_idx=self._bar_idx,
+            action=action,
+            signed_quantity=signed_quantity,
+            notional=margin * leverage,
+            execution_price=execution_price,
+            fee=fee,
+            margin=margin,
+            reason=reason,
+            holding_bars=holding_bars,
+        ))
+
+    def _weighted_holding_bars(self, position: Position) -> float:
+        """Derive compressed-position age from immutable fill evidence.
+
+        Reductions consume every accumulated opening delta proportionally,
+        matching the weighted-average entry accounting used by this engine.
+        """
+        lots: list[list[float]] = []
+        for fill in self.fill_records:
+            if fill.symbol != position.symbol:
+                continue
+            quantity = abs(fill.signed_quantity)
+            if fill.action in {"open", "increase"}:
+                lots.append([quantity, float(fill.bar_idx)])
+                continue
+            if fill.action not in {"reduce", "close"}:
+                continue
+            total = sum(lot[0] for lot in lots)
+            if total <= 1e-12 or quantity >= total - 1e-12:
+                lots.clear()
+                continue
+            remaining_ratio = (total - quantity) / total
+            for lot in lots:
+                lot[0] *= remaining_ratio
+
+        total = sum(lot[0] for lot in lots)
+        if total <= 1e-12:
+            return float(max(self._bar_idx - position.entry_bar_idx, 0))
+        return sum(
+            quantity * max(self._bar_idx - int(bar_idx), 0)
+            for quantity, bar_idx in lots
+        ) / total
 
     # ── Artifacts ──
 
@@ -1545,6 +1654,7 @@ class BaseEngine(ABC):
                 "reason": "signal",
                 "pnl": 0.0,
                 "holding_days": 0,
+                "holding_bars": 0.0,
                 "return_pct": 0.0,
             })
             # Exit event
@@ -1561,11 +1671,34 @@ class BaseEngine(ABC):
                 "reason": t.exit_reason,
                 "pnl": round(t.pnl, 4),
                 "holding_days": hold_days,
+                "holding_bars": t.holding_bars,
                 "return_pct": round(t.pnl_pct, 2),
             })
 
-        trade_cols = ["timestamp", "code", "side", "price", "qty", "reason", "pnl", "holding_days", "return_pct"]
+        trade_cols = [
+            "timestamp", "code", "side", "price", "qty", "reason", "pnl",
+            "holding_days", "holding_bars", "return_pct",
+        ]
         pd.DataFrame(trade_rows or [], columns=trade_cols).to_csv(out / "trades.csv", index=False)
+
+        # Immutable execution evidence. JSONL keeps each delta self-contained
+        # and avoids treating this append-only audit trail as mutable position
+        # or account state.
+        with (out / "fills.jsonl").open("w", encoding="utf-8") as handle:
+            for fill in self.fill_records:
+                handle.write(json.dumps({
+                    "symbol": fill.symbol,
+                    "timestamp": fill.timestamp.isoformat(),
+                    "bar_idx": fill.bar_idx,
+                    "action": fill.action,
+                    "signed_quantity": fill.signed_quantity,
+                    "notional": fill.notional,
+                    "execution_price": fill.execution_price,
+                    "fee": fill.fee,
+                    "margin": fill.margin,
+                    "reason": fill.reason,
+                    "holding_bars": fill.holding_bars,
+                }, allow_nan=False) + "\n")
 
         # Metrics
         flat_metrics = {k: v for k, v in metrics.items() if not isinstance(v, dict)}

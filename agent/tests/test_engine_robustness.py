@@ -290,6 +290,24 @@ class TestBacktestConfigSchema:
         assert c.codes == ["AAPL.US"]
         assert c.interval == "1D"
         assert c.engine == "daily"
+        assert c.position_adjustment == "hold"
+
+    def test_position_adjustment_accepts_rebalance_and_rejects_unknown_mode(self) -> None:
+        valid = BacktestConfigSchema(
+            codes=["AAPL.US"],
+            start_date="2025-01-01",
+            end_date="2025-06-01",
+            position_adjustment="rebalance",
+        )
+        assert valid.position_adjustment == "rebalance"
+
+        with pytest.raises(ValueError, match="position_adjustment"):
+            BacktestConfigSchema(
+                codes=["AAPL.US"],
+                start_date="2025-01-01",
+                end_date="2025-06-01",
+                position_adjustment="resize",
+            )
 
     def test_fundamental_fields_must_be_table_to_field_list_mapping(self) -> None:
         with pytest.raises(ValueError, match="fundamental_fields"):

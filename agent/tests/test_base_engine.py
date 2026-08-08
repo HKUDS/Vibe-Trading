@@ -5,6 +5,9 @@ Uses ChinaAEngine as a concrete implementation since BaseEngine is abstract.
 
 from __future__ import annotations
 
+import json
+from dataclasses import FrozenInstanceError
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -169,6 +172,71 @@ def test_rebalance_increases_then_reduces_same_direction_position():
     assert partial.size == 3.0
     assert partial.entry_margin == 300.0
     assert partial.pnl == 0.0
+
+
+def test_rebalance_persists_immutable_fill_deltas_and_weighted_holding():
+    engine = _AdjustmentEngine()
+    _run_adjustments(engine, {"A": [0.25, 0.50, 0.20]})
+
+    assert [fill.action for fill in engine.fill_records] == [
+        "open",
+        "increase",
+        "reduce",
+        "close",
+    ]
+    assert [fill.signed_quantity for fill in engine.fill_records] == pytest.approx(
+        [2.5, 2.5, -3.0, -2.0]
+    )
+    assert [fill.notional for fill in engine.fill_records] == pytest.approx(
+        [250.0, 250.0, 300.0, 200.0]
+    )
+    assert [fill.margin for fill in engine.fill_records] == pytest.approx(
+        [250.0, 250.0, 300.0, 200.0]
+    )
+    assert [fill.execution_price for fill in engine.fill_records] == pytest.approx(
+        [100.0, 100.0, 100.0, 100.0]
+    )
+    assert [fill.fee for fill in engine.fill_records] == pytest.approx([0.0] * 4)
+    assert [fill.holding_bars for fill in engine.fill_records] == [None, None, 1.5, 1.5]
+    assert [trade.holding_bars for trade in engine.trades] == pytest.approx([1.5, 1.5])
+
+    with pytest.raises(FrozenInstanceError):
+        engine.fill_records[0].fee = 1.0  # type: ignore[misc]
+
+
+def test_fill_delta_artifact_is_jsonl_and_exposes_weighted_holding(tmp_path):
+    engine = _AdjustmentEngine()
+    weights = {"A": [0.25, 0.50, 0.20]}
+    _run_adjustments(engine, weights)
+    dates = pd.date_range("2026-01-02", periods=3)
+    prices = pd.DataFrame({"open": 100.0, "close": 100.0}, index=dates)
+    equity = pd.Series(
+        [snapshot.equity for snapshot in engine.equity_snapshots], index=dates
+    )
+    engine._write_artifacts(
+        tmp_path,
+        {"A": prices},
+        dates,
+        equity,
+        pd.Series(1_000.0, index=dates),
+        pd.Series(0.0, index=dates),
+        pd.DataFrame(weights, index=dates),
+        {},
+        ["A"],
+    )
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "artifacts" / "fills.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    assert [row["action"] for row in rows] == ["open", "increase", "reduce", "close"]
+    assert rows[2]["holding_bars"] == pytest.approx(1.5)
+
+    trades = pd.read_csv(tmp_path / "artifacts" / "trades.csv")
+    exits = trades[trades["pnl"].notna() & (trades["reason"] != "signal")]
+    assert exits["holding_bars"].tolist() == pytest.approx([1.5, 1.5])
 
 
 def test_partial_reduction_allocates_nonzero_entry_and_exit_fees():

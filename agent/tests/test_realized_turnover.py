@@ -11,7 +11,11 @@ from backtest.engines.base import BaseEngine
 from backtest.engines.china_a import ChinaAEngine
 from backtest.engines.composite import CompositeEngine
 from backtest.engines.global_futures import GlobalFuturesEngine
-from backtest.metrics import calc_metrics, calc_trade_turnover_series
+from backtest.metrics import (
+    calc_fill_turnover_series,
+    calc_metrics,
+    calc_trade_turnover_series,
+)
 
 
 class _RoundedEngine(BaseEngine):
@@ -117,6 +121,30 @@ def test_buy_hold_counts_entry_and_terminal_exit() -> None:
     assert turnover.tolist() == pytest.approx([0.5, 0.0, 0.5])
     assert turnover.sum() == pytest.approx(1.0)
     assert turnover.mean() == pytest.approx(1.0 / 3.0)
+
+
+def test_rebalance_turnover_uses_each_fill_timestamp_without_double_counting() -> None:
+    dates = pd.bdate_range("2026-01-05", periods=3)
+    bars = pd.DataFrame({"open": 100.0, "close": 100.0}, index=dates)
+    engine = _RoundedEngine(
+        {"initial_cash": 1_000.0, "position_adjustment": "rebalance"}
+    )
+    engine._execute_bars(
+        dates,
+        {"TEST": bars},
+        pd.DataFrame({"TEST": bars["close"]}, index=dates),
+        pd.DataFrame({"TEST": [0.25, 0.50, 0.20]}, index=dates),
+        ["TEST"],
+    )
+    equity = pd.Series(
+        [snapshot.equity for snapshot in engine.equity_snapshots], index=dates
+    )
+
+    turnover = calc_fill_turnover_series(engine.fill_records, equity)
+
+    # Integer sizing fills 200 open, 300 increase, then 300 reduce + 200 close.
+    assert turnover.tolist() == pytest.approx([0.10, 0.15, 0.25])
+    assert turnover.sum() == pytest.approx(0.5)
 
 
 def test_full_rotation_counts_both_executed_legs() -> None:

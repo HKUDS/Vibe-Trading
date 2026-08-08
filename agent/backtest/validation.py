@@ -367,8 +367,10 @@ def _load_trades(run_dir: Path) -> List[TradeRecord]:
     trades = []
     exit_rows = df[df["pnl"] != 0].reset_index(drop=True)
     for _, row in exit_rows.iterrows():
-        hold = pd.to_numeric(row.get("holding_days", 0), errors="coerce")
-        holding_bars = 0 if pd.isna(hold) else int(hold)
+        hold = pd.to_numeric(row.get("holding_bars"), errors="coerce")
+        if pd.isna(hold):
+            hold = pd.to_numeric(row.get("holding_days", 0), errors="coerce")
+        holding_bars = 0.0 if pd.isna(hold) else float(hold)
         trades.append(
             TradeRecord(
                 symbol=str(row.get("code", "")),

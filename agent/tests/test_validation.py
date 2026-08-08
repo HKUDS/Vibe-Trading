@@ -406,3 +406,19 @@ def test_load_trades_blank_holding_days_defaults_to_zero(tmp_path: Path) -> None
     assert len(trades) == 1
     assert trades[0].holding_bars == 0
     assert trades[0].pnl == 10.0
+
+
+def test_load_trades_prefers_fill_derived_holding_bars(tmp_path: Path) -> None:
+    from backtest.validation import _load_trades
+
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "trades.csv").write_text(
+        "timestamp,code,side,price,qty,reason,pnl,holding_days,holding_bars,return_pct\n"
+        "2026-01-05,A,sell,100,3,target_rebalance,1,3,1.5,0.1\n",
+        encoding="utf-8",
+    )
+
+    trades = _load_trades(tmp_path)
+
+    assert trades[0].holding_bars == pytest.approx(1.5)
