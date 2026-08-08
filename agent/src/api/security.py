@@ -521,54 +521,13 @@ def _default_gateway_ips() -> set[ipaddress.IPv4Address]:
 
 
 def _trusted_docker_loopback_ip(ip: ipaddress._BaseAddress) -> bool:
-    """Return whether an IP is the trusted Docker host gateway.
-
-    Fails closed without a configured API key. The Docker gateway address is
-    only a proxy for "the host's loopback" while the published port is bound to
-    ``127.0.0.1``. When it is published on ``0.0.0.0`` and Docker's userland
-    proxy is in play (the Docker Desktop default), ``docker-proxy`` re-originates
-    every inbound connection from the gateway — so an arbitrary remote client
-    arrives at this check indistinguishable from the host itself. The container
-    cannot observe the host's port-publishing config, so that precondition is
-    unverifiable from here.
-
-    Granting a blanket auth bypass on an unverifiable precondition is not sound
-    for a control plane that includes ``/mandate/commit`` and broker settings,
-    so gateway trust requires ``API_AUTH_KEY``. Because auth is key-first
-    (:func:`_validate_api_auth`), a configured key already authenticates the
-    request on its own; this guard's job is to ensure the *absence* of a key can
-    never be silently upgraded to full access via the gateway address.
-    """
+    """Return whether an IP is the explicitly trusted Docker host gateway."""
     if not isinstance(ip, ipaddress.IPv4Address):
         return False
     if not get_env_config().api.vibe_trading_trust_docker_loopback:
         return False
-    if not _configured_api_key():
-        return False
     gateway_fn = _host_attr("_default_gateway_ips", _default_gateway_ips)
     return ip in gateway_fn()
-
-
-def docker_loopback_trust_error() -> Optional[str]:
-    """Return an operator message when gateway trust is enabled but inert.
-
-    ``VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1`` without ``API_AUTH_KEY`` is a
-    misconfiguration rather than a working setup: the trust is refused (see
-    :func:`_trusted_docker_loopback_ip`), so requests that the operator expects
-    to succeed will return 403. Surface it loudly at startup instead of letting
-    them debug a silent 403.
-    """
-    if not get_env_config().api.vibe_trading_trust_docker_loopback:
-        return None
-    if _configured_api_key():
-        return None
-    return (
-        "VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1 requires API_AUTH_KEY; "
-        "Docker host-gateway trust is IGNORED. Generate a key with "
-        "`python -c \"import secrets; print(secrets.token_urlsafe(32))\"`, set "
-        "API_AUTH_KEY in agent/.env, restart, then enter the same key once in "
-        "the Web UI Settings page."
-    )
 
 
 def _env_shell_tools_enabled() -> bool:

@@ -186,6 +186,7 @@ def register_system_routes(
 
     _security = host._security
     _require_shutdown_authorization = host._require_shutdown_authorization
+    _configured_api_key = host._configured_api_key
     require_auth = host.require_auth
     _app_version = app_version if app_version is not None else host.APP_VERSION
 
@@ -374,18 +375,19 @@ def register_system_routes(
             "health": "/health",
         }
 
-    # --- API documentation (authenticated) ---
+    # --- API documentation ---
     #
     # ``api_server`` constructs the app with ``docs_url``/``redoc_url``/
     # ``openapi_url`` set to ``None`` and delegates here so the schema and its
-    # viewers sit behind ``require_auth``. The schema enumerates every route --
-    # including the live-trading and mandate control plane -- so an unauthorized
-    # peer must not be able to read it.
+    # schema sits behind ``require_auth``. It enumerates every route -- including
+    # the live-trading and mandate control plane -- so an unauthorized peer must
+    # not be able to read it.
     #
-    # In loopback dev mode (no ``API_AUTH_KEY``) these behave exactly as the
-    # FastAPI defaults did. Once a key is configured, Swagger UI's in-browser
-    # fetch of the schema needs that key too; use ``Authorize`` in the UI or
-    # curl with a bearer header.
+    # A browser navigation cannot attach a Bearer header before Swagger's
+    # ``Authorize`` control loads, and its initial schema fetch is unauthenticated
+    # too. Interactive docs therefore remain available only in keyless loopback
+    # dev mode. Keyed deployments return 404 for both viewers and expose the
+    # schema only to programmatic callers that send the Bearer header.
 
     _openapi_url = "/openapi.json"
 
@@ -399,18 +401,30 @@ def register_system_routes(
     # ``img-src`` to a third-party host.
     _docs_favicon = "/favicon.svg"
 
-    @app.get("/docs", include_in_schema=False, dependencies=[Depends(require_auth)])
-    async def swagger_ui():
-        """Serve Swagger UI to authorized callers only."""
+    @app.get("/docs", include_in_schema=False)
+    async def swagger_ui(
+        request: Request,
+        cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
+    ):
+        """Serve Swagger UI only in keyless loopback development mode."""
+        if _configured_api_key():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+        await require_auth(request, cred)
         return get_swagger_ui_html(
             openapi_url=_openapi_url,
             title=f"{app.title} - Swagger UI",
             swagger_favicon_url=_docs_favicon,
         )
 
-    @app.get("/redoc", include_in_schema=False, dependencies=[Depends(require_auth)])
-    async def redoc_ui():
-        """Serve ReDoc to authorized callers only."""
+    @app.get("/redoc", include_in_schema=False)
+    async def redoc_ui(
+        request: Request,
+        cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
+    ):
+        """Serve ReDoc only in keyless loopback development mode."""
+        if _configured_api_key():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+        await require_auth(request, cred)
         # ``with_google_fonts=False`` drops ReDoc's fonts.googleapis.com
         # stylesheet, so the docs CSP exception stays limited to the bundle
         # host instead of also allowing a font CDN. ReDoc falls back to system

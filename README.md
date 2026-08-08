@@ -650,7 +650,7 @@ docker compose up --build
 
 Open `http://localhost:8899`. Backend + frontend in one container.
 
-Docker publishes the backend on `127.0.0.1:8899` by default and runs the app as a non-root container user. If you intentionally expose the API beyond your own machine, set a strong `API_AUTH_KEY` and send `Authorization: Bearer <key>` from clients. The shipped `VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1` also requires `API_AUTH_KEY` — without a key the host-gateway trust is refused and startup preflight flags it (see the note below).
+Docker publishes the backend on `127.0.0.1:8899` by default and runs the app as a non-root container user. If you intentionally expose the API beyond your own machine, set a strong `API_AUTH_KEY` and send `Authorization: Bearer <key>` from clients.
 
 > [!NOTE]
 > **Using Ollama with Docker:** the container reaches a host-side Ollama via `host.docker.internal`, not `localhost` (inside the container `localhost` is the container itself). `docker-compose.yml` defaults `OLLAMA_BASE_URL` to `http://host.docker.internal:11434`; export `OLLAMA_BASE_URL` (or set it in a top-level `.env`) to point elsewhere. This relies on the `host-gateway` mapping in `extra_hosts`, which requires **Docker Engine ≥ 20.10 / Compose v2** (provided automatically on Docker Desktop).
@@ -698,7 +698,7 @@ vibe-trading serve --port 8899     # FastAPI serves dist/ as static files
 ```
 
 > [!NOTE]
-> `vibe-trading serve` binds `0.0.0.0` and is loopback-only by default: opening the UI on the **same machine** (`http://localhost:8899`) works with zero config. If you browse from **another machine, a VM host, or a phone on your LAN**, sensitive endpoints return `403` and the chat shows "Remote API access requires an API key" — set a strong `API_AUTH_KEY` in `agent/.env`, restart, and enter the same key once in **Settings**. (Docker Desktop's host gateway: set `VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1` **and** `API_AUTH_KEY`. The key is mandatory — when the port is published on `0.0.0.0`, Docker's userland proxy re-originates every inbound connection from the gateway address, so it cannot distinguish the host from an arbitrary remote client. Without a key the trust is refused and requests from the gateway return `403`.)
+> `vibe-trading serve` binds `0.0.0.0` and is loopback-only by default: opening the UI on the **same machine** (`http://localhost:8899`) works with zero config. If you browse from **another machine, a VM host, or a phone on your LAN**, sensitive endpoints return `403` and the chat shows "Remote API access requires an API key" — set a strong `API_AUTH_KEY` in `agent/.env`, restart, and enter the same key once in **Settings**. (Docker Desktop's host gateway: set `VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1` with the default `127.0.0.1` port bind.)
 
 </details>
 
@@ -999,7 +999,10 @@ vibe-trading serve --port 8899
 | `GET` | `/correlation/regime` | Correlation edge-density regime timeline |
 | `GET` | `/agents.json` · `POST` `/v1/query` | OpenBB Workspace bridge — registered only with the optional `openbb` extra; `/v1/query` requires auth |
 
-Interactive docs: `http://localhost:8899/docs`
+Interactive docs are available at `http://localhost:8899/docs` in keyless
+loopback development mode. When `API_AUTH_KEY` is configured, `/docs` and
+`/redoc` are disabled; authenticated tooling can fetch `/openapi.json` with an
+`Authorization: Bearer <key>` header.
 
 ### Security defaults
 
