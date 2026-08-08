@@ -394,6 +394,7 @@
     "configured": "已配置",
     "keepCurrentKey": "留空以保留当前密钥",
     "providerUsesOauth": "该提供商使用 OAuth。请运行: {{command}}",
+    "providerUsesManagedAuth": "该提供商自行管理身份验证。请运行: {{command}}",
     "noApiKeyRequired": "此提供商不需要 API 密钥。",
     "keepCurrentToken": "留空以保留当前 Token",
     "iwencaiApiKey": "iWenCai API 密钥",
@@ -410,6 +411,7 @@
     "unknownError": "未知错误",
     "providerChangeHint": "切换服务商后，推荐的模型和接口地址会自动更新。",
     "oauth": "OAuth",
+    "authentication": "身份验证",
     "apiKey": "API 密钥",
     "tushareTokenDesc": "用于中国 A 股、期货、基金和宏观数据。没填的话会自动改用 AKShare 的免费数据。"
   },

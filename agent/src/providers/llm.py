@@ -814,6 +814,12 @@ def _sync_provider_env() -> None:
         os.environ.pop("OPENAI_API_KEY", None)
         return
 
+    if provider in {"copilot", "github-copilot"}:
+        os.environ.pop("OPENAI_API_BASE", None)
+        os.environ.pop("OPENAI_BASE_URL", None)
+        os.environ.pop("OPENAI_API_KEY", None)
+        return
+
     creds = get_llm_credentials(provider, get_env_config().llm.langchain_model_name)
     api_key = creds["api_key"]
     base_url = creds["base_url"]
@@ -1015,6 +1021,14 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
             temperature=temperature,
             timeout=get_env_config().llm.timeout_seconds,
             reasoning_effort=effort or None,
+        )
+
+    if provider in {"copilot", "github-copilot"}:
+        from src.providers.copilot_auth import CopilotSDKLLM
+
+        return CopilotSDKLLM(
+            model=name,
+            timeout=get_env_config().llm.timeout_seconds,
         )
 
     if provider == "anthropic":

@@ -264,12 +264,12 @@ async def _list_provider_models(
 ) -> LLMModelsResponse:
     """Best-effort live model discovery with a safe editable fallback."""
     fallback = [provider.default_model]
-    if provider.auth_type == "oauth":
+    if provider.auth_type in {"oauth", "gh_cli"}:
         return LLMModelsResponse(
             provider=provider.name,
             models=fallback,
             source="default",
-            warning_code="oauth_discovery_unsupported",
+            warning_code=f"{provider.auth_type}_discovery_unsupported",
         )
     if provider.api_key_required and not api_key:
         return LLMModelsResponse(
@@ -333,6 +333,15 @@ def _build_llm_settings_response(
             token = None
         api_key_configured = bool(token)
         api_key_hint = None
+    elif provider.auth_type == "gh_cli":
+        try:
+            from src.providers.copilot_auth import get_copilot_auth_status
+
+            authenticated, auth_status = get_copilot_auth_status()
+        except Exception:
+            authenticated, auth_status = False, ""
+        api_key_configured = authenticated
+        api_key_hint = auth_status if authenticated else None
     return LLMSettingsResponse(
         provider=provider.name,
         model_name=env_values.get("LANGCHAIN_MODEL_NAME", provider.default_model),
@@ -389,7 +398,14 @@ def _sync_runtime_env(provider: LLMProviderOption, updates: Dict[str, str]) -> N
         else:
             os.environ.pop(key, None)
 
-    if provider.api_key_env:
+    if provider.auth_type == "gh_cli":
+        # The Copilot SDK owns credential discovery and transport.
+        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ.pop("OPENAI_API_BASE", None)
+        os.environ.pop("OPENAI_BASE_URL", None)
+        reset_env_config()
+        return
+    elif provider.api_key_env:
         key_value = os.environ.get(provider.api_key_env, "")  # noqa: env-gate — dynamic provider api_key_env
         if host._is_configured_secret(key_value, LLM_API_KEY_PLACEHOLDERS):
             os.environ["OPENAI_API_KEY"] = key_value

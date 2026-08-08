@@ -64,6 +64,14 @@ def _package_version() -> str:
 _VIBE_USER_AGENT = f"Vibe-Trading/{_package_version()}"
 
 
+@lru_cache(maxsize=1)
+def _gh_cli_token() -> str:
+    """Return an explicit Copilot token; the SDK handles stored credentials."""
+    from src.providers.copilot_auth import resolve_copilot_token
+
+    return resolve_copilot_token()[0]
+
+
 _MOONSHOT_CAPABILITIES = ProviderCapabilities(
     "moonshot",
     "MOONSHOT_API_KEY",
@@ -115,6 +123,13 @@ _SPARK_CAPABILITIES = ProviderCapabilities(
 
 _OPENAI_CODEX_CAPABILITIES = ProviderCapabilities(
     "openai-codex", None, "OPENAI_CODEX_BASE_URL"
+)
+
+# GitHub Copilot is routed through the official SDK in ``build_llm``.
+_COPILOT_CAPABILITIES = ProviderCapabilities(
+    "copilot",
+    "COPILOT_GITHUB_TOKEN",
+    "COPILOT_BASE_URL",
 )
 
 
@@ -184,6 +199,8 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
     "iflytek": _SPARK_CAPABILITIES,
     "zai": ProviderCapabilities("zai", "ZAI_API_KEY", "ZAI_BASE_URL"),
     "ollama": ProviderCapabilities("ollama", None, "OLLAMA_BASE_URL"),
+    "copilot": _COPILOT_CAPABILITIES,
+    "github-copilot": _COPILOT_CAPABILITIES,
     "openai-codex": _OPENAI_CODEX_CAPABILITIES,
     "openai_codex": _OPENAI_CODEX_CAPABILITIES,
     "opencode-zen": ProviderCapabilities(
@@ -323,6 +340,9 @@ def get_llm_credentials(
             os.getenv("OPENAI_API_KEY", "")  # noqa: env-gate — ollama default key
             or "ollama"
         )
+
+    if caps.name == "copilot" and not api_key:
+        api_key = _gh_cli_token()
 
     base_url = (
         (

@@ -322,12 +322,15 @@ export function Settings() {
     );
   }
 
+  const usesManagedAuth = Boolean(
+    selectedProvider?.auth_type && selectedProvider.auth_type !== "api_key",
+  );
   const keyStatus = settings.api_key_configured
     ? t("settings.configured")
     : settings.api_key_required
       ? t("settings.keepCurrentKey")
-      : selectedProvider?.auth_type === "oauth" && selectedProvider.login_command
-        ? t("settings.providerUsesOauth", { command: selectedProvider.login_command })
+      : usesManagedAuth && selectedProvider?.login_command
+        ? t("settings.providerUsesManagedAuth", { command: selectedProvider.login_command })
         : t("settings.noApiKeyRequired");
   const apiKeyDisabled = !selectedProvider?.api_key_required || clearApiKey;
   const tushareStatus = dataSettings.tushare_token_configured
@@ -538,7 +541,7 @@ export function Settings() {
                 className={fieldClass}
                 placeholder={selectedProvider?.default_base_url}
                 list={selectedProvider?.base_url_options?.length ? "llm-base-url-options" : undefined}
-                disabled={selectedProvider?.auth_type === "oauth"}
+                disabled={usesManagedAuth}
               />
               {selectedProvider?.base_url_options?.length ? (
                 <datalist id="llm-base-url-options">
@@ -551,8 +554,8 @@ export function Settings() {
 
             <label className="grid gap-2">
               <span className={labelClass}>
-                {selectedProvider?.auth_type === "oauth"
-                  ? t("settings.oauth", { defaultValue: "OAuth" })
+                {usesManagedAuth
+                  ? t("settings.authentication", { defaultValue: "Authentication" })
                   : t("settings.apiKey", { defaultValue: "API key" })}
               </span>
               <div className="relative">

@@ -394,6 +394,7 @@
     "configured": "تم التكوين",
     "keepCurrentKey": "اتركه فارغًا للاحتفاظ بالمفتاح الحالي",
     "providerUsesOauth": "يستخدم هذا المزوّد OAuth. شغّل: {{command}}",
+    "providerUsesManagedAuth": "يدير هذا المزوّد المصادقة. شغّل: {{command}}",
     "noApiKeyRequired": "لا يتطلب هذا المزوّد مفتاح API.",
     "keepCurrentToken": "اتركه فارغًا للاحتفاظ بالرمز الحالي",
     "iwencaiApiKey": "مفتاح API لـ iWenCai",
@@ -410,6 +411,7 @@
     "unknownError": "خطأ غير معروف",
     "providerChangeHint": "يؤدي تغيير المزوّد إلى تحديث النموذج ونقطة النهاية الموصى بهما.",
     "oauth": "OAuth",
+    "authentication": "المصادقة",
     "apiKey": "مفتاح API",
     "tushareTokenDesc": "يُستخدم لبيانات الأسهم الصينية (فئة A) والعقود الآجلة والصناديق والاقتصاد الكلي. إذا لم يُضبط، يتراجع المشروع إلى AKShare حيثما توفر."
   },

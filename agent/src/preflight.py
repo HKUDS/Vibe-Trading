@@ -100,6 +100,25 @@ def _check_llm_provider() -> CheckResult:
             impact="",
         )
 
+    if provider.lower() in {"copilot", "github-copilot"}:
+        from src.providers.copilot_auth import get_copilot_auth_status
+
+        authenticated, status_message = get_copilot_auth_status()
+        if not authenticated:
+            return CheckResult(
+                name=f"LLM ({provider})",
+                status="not_configured",
+                message=f"Copilot SDK: {status_message}",
+                impact="run `gh auth login`, `copilot`, or set COPILOT_GITHUB_TOKEN",
+                critical=True,
+            )
+        return CheckResult(
+            name=f"LLM ({provider})",
+            status="ready",
+            message=f"{model} via Copilot SDK ({status_message}) | {diag_hint}",
+            impact="",
+        )
+
     if not base_url:
         return CheckResult(
             name=f"LLM ({provider})",

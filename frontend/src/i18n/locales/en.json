@@ -399,6 +399,7 @@
     "configured": "Configured",
     "keepCurrentKey": "Leave blank to keep the current key",
     "providerUsesOauth": "This provider uses OAuth. Run: {{command}}",
+    "providerUsesManagedAuth": "This provider manages authentication. Run: {{command}}",
     "noApiKeyRequired": "This provider does not require an API key.",
     "keepCurrentToken": "Leave blank to keep the current token",
     "iwencaiApiKey": "iWenCai API Key",
@@ -415,6 +416,7 @@
     "unknownError": "Unknown error",
     "providerChangeHint": "Changing providers updates the recommended model and endpoint.",
     "oauth": "OAuth",
+    "authentication": "Authentication",
     "apiKey": "API key",
     "tushareTokenDesc": "Used for China A-share, futures, fund, and macro data. If unset, the project falls back to AKShare where available."
   },
