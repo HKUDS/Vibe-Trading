@@ -56,7 +56,7 @@ def _bars(closes: list[float], volumes: list[float] | None = None) -> pd.DataFra
 def test_scan_today_signals_matches_price_features() -> None:
     profile = _profile()
     frames = {
-        "AAPL": _bars(
+        "AAPL.US": _bars(
             [10, 10.2, 10.4, 10.5, 10.7, 11.4],
             [100, 100, 100, 100, 100, 180],
         ),
@@ -66,7 +66,7 @@ def test_scan_today_signals_matches_price_features() -> None:
 
     assert matches == [
         {
-            "symbol": "AAPL",
+            "symbol": "AAPL.US",
             "market": "us",
             "rule_id": "R1",
             "reason": "R1 price features matched (hold 3-7d)",
@@ -78,7 +78,7 @@ def test_scan_today_signals_matches_price_features() -> None:
 def test_scan_today_signals_returns_no_match_when_features_fail() -> None:
     profile = _profile()
     frames = {
-        "AAPL": _bars(
+        "AAPL.US": _bars(
             [11.5, 11.2, 11.0, 10.9, 10.7, 10.5],
             [180, 160, 150, 140, 130, 100],
         ),
@@ -90,7 +90,7 @@ def test_scan_today_signals_returns_no_match_when_features_fail() -> None:
 @pytest.mark.unit
 def test_scan_today_signals_skips_missing_and_empty_data() -> None:
     profile = _profile()
-    frames = {"AAPL": pd.DataFrame(), "MSFT": pd.DataFrame({"open": [1, 2]})}
+    frames = {"AAPL.US": pd.DataFrame(), "MSFT.US": pd.DataFrame({"open": [1, 2]})}
 
     assert scan_today_signals(profile, target_date="2026-04-06", price_frames=frames) == []
 
@@ -109,7 +109,10 @@ def test_scan_today_signals_respects_per_market_cap() -> None:
         [10, 10.2, 10.4, 10.5, 10.7, 11.4],
         [100, 100, 100, 100, 100, 180],
     )
-    frames = {symbol: frame for symbol in ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"]}
+    frames = {
+        symbol: frame
+        for symbol in ["AAPL.US", "MSFT.US", "NVDA.US", "AMZN.US", "GOOGL.US"]
+    }
 
     matches = scan_today_signals(
         profile,
@@ -118,7 +121,7 @@ def test_scan_today_signals_respects_per_market_cap() -> None:
         price_frames=frames,
     )
 
-    assert [match["symbol"] for match in matches] == ["AAPL", "MSFT"]
+    assert [match["symbol"] for match in matches] == ["AAPL.US", "MSFT.US"]
 
 
 def _ramp(n: int, start: float, step: float) -> list[float]:
@@ -137,11 +140,11 @@ def test_scan_today_signals_matches_rsi_range_condition() -> None:
     profile = _profile({"market": "us", "entry_rsi14": {"min": 50.0, "max": 100.0}})
     closes = _ramp(20, 10.0, 0.2)  # >= 14 bars so RSI is defined
     target = pd.Timestamp("2026-04-01") + pd.Timedelta(days=len(closes) - 1)
-    frames = {"AAPL": _bars(closes)}
+    frames = {"AAPL.US": _bars(closes)}
 
     matches = scan_today_signals(profile, target_date=target.date(), price_frames=frames)
 
-    assert [m["symbol"] for m in matches] == ["AAPL"]
+    assert [m["symbol"] for m in matches] == ["AAPL.US"]
 
 
 @pytest.mark.unit
@@ -150,7 +153,7 @@ def test_scan_today_signals_rejects_out_of_band_rsi() -> None:
     profile = _profile({"market": "us", "entry_rsi14": {"min": 0.0, "max": 30.0}})
     closes = _ramp(20, 10.0, 0.2)
     target = pd.Timestamp("2026-04-01") + pd.Timedelta(days=len(closes) - 1)
-    frames = {"AAPL": _bars(closes)}
+    frames = {"AAPL.US": _bars(closes)}
 
     assert scan_today_signals(profile, target_date=target.date(), price_frames=frames) == []
 
@@ -164,11 +167,11 @@ def test_scan_today_signals_honors_prior_return_dict_band() -> None:
     band; a too-high floor must reject it.
     """
     closes = [10, 10.2, 10.4, 10.5, 10.7, 11.4]
-    frames = {"AAPL": _bars(closes)}
+    frames = {"AAPL.US": _bars(closes)}
 
     inside = _profile({"market": "us", "prior_5d_return": {"min": 0.10, "max": 0.20}})
     assert [m["symbol"] for m in scan_today_signals(
-        inside, target_date="2026-04-06", price_frames=frames)] == ["AAPL"]
+        inside, target_date="2026-04-06", price_frames=frames)] == ["AAPL.US"]
 
     outside = _profile({"market": "us", "prior_5d_return": {"min": 0.50, "max": 1.0}})
     assert scan_today_signals(outside, target_date="2026-04-06", price_frames=frames) == []
@@ -178,7 +181,7 @@ def test_scan_today_signals_honors_prior_return_dict_band() -> None:
 def test_scan_today_signals_no_match_when_rsi_history_insufficient() -> None:
     """Too few bars to compute RSI → the RSI-bearing rule cannot match."""
     profile = _profile({"market": "us", "entry_rsi14": {"min": 0.0, "max": 100.0}})
-    frames = {"AAPL": _bars(_ramp(6, 10.0, 0.2))}  # < 14 bars, RSI undefined
+    frames = {"AAPL.US": _bars(_ramp(6, 10.0, 0.2))}  # < 14 bars, RSI undefined
 
     assert scan_today_signals(profile, target_date="2026-04-06", price_frames=frames) == []
 

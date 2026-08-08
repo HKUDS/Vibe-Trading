@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <title>Vibe-Trading Desktop (Unofficial Community Build)</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #0b0f14; color: #f4f7fa; min-height: 100vh; display: grid; place-items: center; }
+      main { width: min(560px, calc(100vw - 48px)); text-align: center; }
+      .logo { width: 68px; height: 68px; margin: 0 auto 24px; border-radius: 20px; display: grid; place-items: center; background: #14251f; color: #29d391; font: 700 36px/1 Inter, sans-serif; }
+      h1 { margin: 0; font-size: 26px; font-weight: 650; }
+      p { color: #9aa7b5; line-height: 1.65; margin: 13px 0 24px; }
+      .track { height: 4px; overflow: hidden; border-radius: 4px; background: #1e2732; }
+      .bar { width: 36%; height: 100%; border-radius: inherit; background: #29d391; animation: loading 1.25s ease-in-out infinite; }
+      .actions { display: none; gap: 10px; justify-content: center; margin-top: 22px; }
+      button { border: 1px solid #2b3745; background: #19232d; color: #f4f7fa; border-radius: 7px; padding: 9px 15px; cursor: pointer; }
+      button:hover { background: #22303d; }
+      body.error .track { display: none; }
+      body.error .actions { display: flex; }
+      body.error .logo { background: #2a171a; color: #ef5350; }
+      html[dir="rtl"] .actions { flex-direction: row-reverse; }
+      @keyframes loading { from { transform: translateX(-120%); } to { transform: translateX(300%); } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="logo" aria-hidden="true">V</div>
+      <h1 id="title"></h1>
+      <p id="message" role="status" aria-live="polite"></p>
+      <div id="progress" class="track" role="progressbar"><div class="bar"></div></div>
+      <div class="actions">
+        <button id="retry" type="button"></button>
+        <button id="logs" type="button"></button>
+      </div>
+    </main>
+    <script>
+      const api = window.vibeDesktop;
+      const encodedLocale = new URLSearchParams(window.location.search).get("locale");
+      const unpaddedLocale = (encodedLocale || "").replaceAll("-", "+").replaceAll("_", "/");
+      const normalizedLocale = unpaddedLocale.padEnd(Math.ceil(unpaddedLocale.length / 4) * 4, "=");
+      const localePayload = JSON.parse(
+        new TextDecoder().decode(Uint8Array.from(atob(normalizedLocale), (character) => character.charCodeAt(0))),
+      );
+      let messages = localePayload.messages;
+      let pageState = "loading";
+      let hasRuntimeMessage = false;
+
+      function applyLocale(payload) {
+        messages = payload.messages;
+        document.documentElement.lang = payload.locale || "en";
+        document.documentElement.dir = payload.direction === "rtl" ? "rtl" : "ltr";
+        document.querySelector("#retry").textContent = messages.loadingRetry;
+        document.querySelector("#logs").textContent = messages.loadingOpenLogs;
+        document.querySelector("#progress").setAttribute("aria-label", messages.loadingTitle);
+        document.querySelector("#title").textContent = pageState === "error"
+          ? messages.loadingFailedTitle
+          : pageState === "restarting"
+            ? messages.loadingRestartingTitle
+            : messages.loadingTitle;
+        if (!hasRuntimeMessage) document.querySelector("#message").textContent = messages.loadingMessage;
+      }
+
+      api.onStatus((message) => {
+        hasRuntimeMessage = true;
+        document.querySelector("#message").textContent = message;
+      });
+      api.onError((message) => {
+        pageState = "error";
+        hasRuntimeMessage = true;
+        document.body.classList.add("error");
+        document.querySelector("#title").textContent = messages.loadingFailedTitle;
+        document.querySelector("#message").textContent = message;
+      });
+      document.querySelector("#retry").addEventListener("click", () => {
+        pageState = "restarting";
+        hasRuntimeMessage = false;
+        document.body.classList.remove("error");
+        document.querySelector("#title").textContent = messages.loadingRestartingTitle;
+        document.querySelector("#message").textContent = messages.loadingMessage;
+        api.retry();
+      });
+      document.querySelector("#logs").addEventListener("click", () => api.openLogs());
+      applyLocale(localePayload);
+    </script>
+  </body>
+</html>

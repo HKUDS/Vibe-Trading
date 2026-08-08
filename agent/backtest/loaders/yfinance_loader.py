@@ -203,7 +203,12 @@ def _normalize_frame(frame: pd.DataFrame, requested_interval: str) -> pd.DataFra
     normalized = normalized.dropna(subset=["open", "high", "low", "close"])
     normalized = validate_ohlc(normalized)
 
-    if requested_interval == "4H" and not normalized.empty:
+    # ``requested_interval`` reaches here with whatever case the caller used
+    # (``_INTERVAL_MAP`` accepts both ``4H`` and ``4h``). A case-sensitive
+    # check here let lowercase ``4h`` fetch hourly data via
+    # ``_to_yfinance_interval`` but skip this resample, silently returning
+    # native 1h bars mislabeled as 4H.
+    if str(requested_interval).strip().upper() == "4H" and not normalized.empty:
         normalized = normalized.resample("4h").agg(
             {
                 "open": "first",

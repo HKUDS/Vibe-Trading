@@ -151,6 +151,30 @@ def _json_response(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, default=str)
 
 
+def _unconfigured_message(config: QVerisConfig | None = None) -> str:
+    """Build an actionable error message when QVeris routing is unavailable.
+
+    Args:
+        config: Optional pre-loaded configuration; defaults to
+            :func:`load_qveris_config`.
+
+    Returns:
+        Operator-facing error text. When no API key is saved it names
+        ``QVERIS_API_KEY`` and the paid-mode switch; when a key exists but
+        paid routing is off it points at the paid-mode toggle only.
+    """
+    cfg = config or load_qveris_config()
+    if not has_qveris_credentials(cfg):
+        return (
+            "QVeris is not configured; set QVERIS_API_KEY and enable paid mode "
+            "(`vibe-trading data mode paid` or Settings -> QVeris) to use QVeris tools"
+        )
+    return (
+        "QVeris paid mode is off; enable it with `vibe-trading data mode paid` "
+        "or Settings -> QVeris to use QVeris tools"
+    )
+
+
 def _parse_expected_cost(value: Any) -> float | None:
     """Extract a numeric expected-cost hint from QVeris metadata."""
     if value is None:
@@ -397,7 +421,7 @@ class QVerisSearchTool(_QVerisBaseTool):
         it is rejected rather than sent to the marketplace as ``""``.
         """
         if not is_qveris_configured():
-            return _json_response({"ok": False, "error": "QVeris is not configured"})
+            return _json_response({"ok": False, "error": _unconfigured_message()})
         query = kwargs.get("query")
         if not isinstance(query, str) or not query.strip():
             return _json_response(
@@ -436,7 +460,7 @@ class QVerisInspectTool(_QVerisBaseTool):
 
     def execute(self, **kwargs: Any) -> str:
         if not is_qveris_configured():
-            return _json_response({"ok": False, "error": "QVeris is not configured"})
+            return _json_response({"ok": False, "error": _unconfigured_message()})
         payload = self._client().inspect(
             list(kwargs["tool_ids"]),
             search_id=kwargs.get("search_id"),
@@ -547,7 +571,7 @@ class QVerisExecuteTool(_QVerisBaseTool):
         """
         cfg = load_qveris_config()
         if not is_qveris_configured(cfg):
-            return _json_response({"ok": False, "error": "QVeris is not configured"})
+            return _json_response({"ok": False, "error": _unconfigured_message(cfg)})
         raw_tool_id = kwargs.get("tool_id")
         if not isinstance(raw_tool_id, str) or not raw_tool_id.strip():
             return _json_response(

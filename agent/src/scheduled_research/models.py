@@ -8,12 +8,15 @@ to a follow-up PR once the product shape is confirmed.
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional, Set
 from zoneinfo import ZoneInfo
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Schedule validation
@@ -88,6 +91,23 @@ def parse_cron_field(part: str, low: int, high: int) -> Optional[Set[int]]:
         else:
             values.add(int(start))
     return values
+
+
+def is_interval_schedule(schedule: str) -> bool:
+    """Return whether *schedule* is the interval-milliseconds form.
+
+    The one place that answers "interval or cron?", so callers that treat the
+    two forms differently — the executor's advancement path, the create route's
+    timezone handling — cannot disagree about which is which.
+
+    Args:
+        schedule: A schedule string in either accepted form.
+
+    Returns:
+        ``True`` for a bare positive-integer interval, ``False`` otherwise
+        (including malformed input, which the validators reject separately).
+    """
+    return bool(_INTERVAL_MS_RE.fullmatch(str(schedule).strip()))
 
 
 def validate_schedule(schedule: str) -> None:
@@ -274,15 +294,20 @@ class ScheduledResearchJob:
             raise TypeError("'last_error' must be a string or null")
         if failure_kind is not None and failure_kind not in {"dispatch", "schedule"}:
             raise ValueError("'failure_kind' must be 'dispatch', 'schedule', or null")
-        # Type-checked only: resolving the zone at load time would let one
-        # unresolvable key quarantine the whole store file. Absent -> None
-        # (UTC); a blank string normalizes to None too, so every loaded record
-        # satisfies the shape check the store re-runs on lifecycle writes.
-        tz = data.get("timezone")
-        if tz is not None and not isinstance(tz, str):
-            raise TypeError("'timezone' must be a string or null")
-        if tz is not None and not tz.strip():
-            tz = None
+        # Never raises: the store quarantines the whole file when a single
+        # record fails to load, so an unusable timezone value degrades that
+        # one job to UTC — the semantics it had before the field existed —
+        # instead of taking every other job down with it. Absent, blank, and
+        # non-string values all normalize to None.
+        raw_tz = data.get("timezone")
+        tz = raw_tz if isinstance(raw_tz, str) and raw_tz.strip() else None
+        if raw_tz is not None and tz is None:
+            logger.warning(
+                "scheduled research job %s has an unusable timezone %r; "
+                "evaluating its schedule in UTC",
+                job_id,
+                raw_tz,
+            )
         status = JobStatus(data["status"])
         raw_config = data.get("config")
         config: Dict[str, Any] = raw_config if isinstance(raw_config, dict) else {}

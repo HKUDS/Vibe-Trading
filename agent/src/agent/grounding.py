@@ -242,6 +242,44 @@ _INDICATOR_VALUE_RE = re.compile(
     r"[-+]?\d[\d,]*(?:\.\d+)?",
     re.IGNORECASE,
 )
+# A trading plan quotes levels it does not claim to have observed. In the
+# committee report attached to #983, "收盘 ≥6.45 且量 ≥35M手" is an entry
+# trigger, "年线 4.63 成目标区" is a target zone, and neither asserts anything
+# about what the instrument traded at. Compared against observed OHLC evidence
+# they were reported first as numeric_claim_unavailable (before the run fetched
+# prices) and then as numeric_claim_conflict (after it did) — the same false
+# positive under two codes.
+#
+# This is a real relaxation, so every branch is span-local and anchored to the
+# token that makes the number prospective, never to a word elsewhere in the
+# clause: "现价 5.97，目标位 6.45" masks 6.45 and still checks 5.97. An
+# assertion carries no such token and stays checked.
+#
+# Branch (d) accepts a conditional opener. A number inside "若收盘 5.36" is a
+# hypothesis, and a hypothesis does not misrepresent observed data the way a
+# bare quote does — but it is the widest branch here, so it requires the opener
+# to PRECEDE the number with no digits in between, which keeps it from reaching
+# back over an assertion that was already made.
+_PROSPECTIVE_LEVEL_RE = re.compile(
+    r"(?:"
+    # (a) comparison operator immediately before the number
+    r"(?:>=|<=|≥|≤|>|<|大于|小于|不低于|不高于|高于|低于)\s*[-+]?\d[\d,]*(?:\.\d+)?"
+    r"|"
+    # (b) a level marker introducing the number
+    r"(?:目标位|目标区|目标价|止损位?|止盈位?|触发价|触发位|触发点|上看|下看|"
+    r"target\s+(?:price|level|zone)|trigger|stop[-\s]?loss|take[-\s]?profit)"
+    r"\s*(?:为|是|至|到|on|at|of|=)?\s*[:：]?\s*[-+]?\d[\d,]*(?:\.\d+)?"
+    r"|"
+    # (c) the number followed by a level marker
+    r"[-+]?\d[\d,]*(?:\.\d+)?\s*(?:一线|附近)?\s*(?:成为?|作为|是)?\s*"
+    r"(?:目标区|目标位|止损位|止盈位)"
+    r"|"
+    # (d) a conditional opener before the number, digits fencing the reach
+    r"(?:若|如果|一旦|倘若|假如|\bif\b|\bwhen\b|\bshould\b)[^0-9\n]{0,12}"
+    r"[-+]?\d[\d,]*(?:\.\d+)?"
+    r")",
+    re.IGNORECASE,
+)
 # Full-width brackets and enumeration commas delimit prose clauses. ASCII
 # parentheses are deliberately not separators: an explicit derivation such as
 # "(8.5 - 7.9) / 2" must stay in one segment for the formula check.
@@ -1777,6 +1815,7 @@ class GroundingLedger:
         masked = _AGGREGATE_AMOUNT_RE.sub(" ", masked)
         masked = _LABELLED_SCORE_RE.sub(" ", masked)
         masked = _INDICATOR_VALUE_RE.sub(" ", masked)
+        masked = _PROSPECTIVE_LEVEL_RE.sub(" ", masked)
         without_dates = _QUANTITY_WITH_UNIT_RE.sub(" ", masked)
         values: list[float] = []
         for match in _NUMBER_RE.finditer(without_dates):

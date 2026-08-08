@@ -225,6 +225,57 @@ class TestAdd:
         assert any(line.startswith("- [Ref](") for line in lines)
         assert any(line.startswith("- [Main](") for line in lines)
 
+    def test_hierarchy_routed_entry_stays_scannable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Regression: with VT_MEMORY_HIERARCHY enabled, add() used to hand the
+        # bare slug to MemoryHierarchy.route_entry(), which treats its argument
+        # as the leaf filename verbatim — the entry was written without the
+        # .md extension and scan_all() (suffix == ".md" filter) could not see
+        # it, so the memory vanished from list_entries()/find().
+        monkeypatch.setenv("VT_MEMORY_HIERARCHY", "1")
+        pm = PersistentMemory(memory_dir=tmp_path)
+        path = pm.add("routed-mem", "body text", "project", description="routed")
+        assert path.suffix == ".md"
+        assert path.parent.name == "project"
+        entries = pm.list_entries()
+        assert len(entries) == 1
+        assert entries[0].title == "routed-mem"
+        assert pm.find("routed-mem") is not None
+
+    def test_recovered_orphan_and_new_write_agree_on_the_same_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The write path and the orphan recovery must name entries identically.
+
+        ``recover_extensionless_entries`` renames an orphan by appending the
+        missing suffix, so it produces ``<category>/<slug>.md``. If the write
+        path is ever changed to a different convention, the same logical entry
+        exists twice — once under the recovered name, once under the new one —
+        and both show up in ``list_entries()``. This pins the agreement rather
+        than the spelling: it asks the two code paths for the same entry and
+        requires one file.
+        """
+        from src.memory.hierarchy import MemoryHierarchy
+
+        monkeypatch.setenv("VT_MEMORY_HIERARCHY", "1")
+        category = tmp_path / "project"
+        category.mkdir()
+        orphan = category / "shared-slug"
+        orphan.write_text(
+            "---\nname: shared-slug\ndescription: d\nmetadata:\n  type: project\n---\n\nold\n",
+            encoding="utf-8",
+        )
+        recovered = MemoryHierarchy(tmp_path).recover_extensionless_entries()
+        assert len(recovered) == 1
+
+        written = PersistentMemory(memory_dir=tmp_path).add(
+            "shared-slug", "new body", "project", description="d",
+        )
+
+        assert written == recovered[0]
+        assert sorted(p.name for p in category.iterdir()) == ["shared-slug.md"]
+
 
 # ---------------------------------------------------------------------------
 # PersistentMemory.find_relevant

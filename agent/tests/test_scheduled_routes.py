@@ -359,3 +359,52 @@ def test_create_accepts_ids_within_the_id_rule(
         )
         assert response.status_code == 201, good_id
         assert client.delete(f"/scheduled-runs/{good_id}").status_code == 204
+def test_create_interval_accepts_a_timezone_it_will_never_use(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    # The composer attaches the browser zone to every create. An interval
+    # schedule ignores it, and the executor never resolves it, so a key this
+    # host cannot resolve must not block the create.
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "interval-unknown-zone",
+            "prompt": "scan",
+            "schedule": "60000",
+            "timezone": "Mars/Olympus_Mons",
+        },
+    )
+
+    assert response.status_code == 201
+    saved = store.get("interval-unknown-zone")
+    assert saved is not None
+    assert saved.timezone == "Mars/Olympus_Mons"
+
+
+def test_create_cron_still_rejects_an_unresolvable_timezone(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "cron-unknown-zone",
+            "prompt": "scan",
+            "schedule": "0 9 * * *",
+            "timezone": "Mars/Olympus_Mons",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "IANA timezone" in response.json()["detail"]
+    assert store.get("cron-unknown-zone") is None
+
+
+def test_create_rejects_a_blank_timezone_for_both_schedule_forms(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    for schedule in ("60000", "0 9 * * *"):
+        response = client.post(
+            "/scheduled-runs",
+            json={"prompt": "scan", "schedule": schedule, "timezone": "   "},
+        )
+        assert response.status_code == 422, schedule

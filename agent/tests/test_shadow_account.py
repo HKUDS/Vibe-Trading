@@ -5,7 +5,9 @@ Fixtures are synthesized in-test via tmp_path; no binary fixtures on disk.
 
 from __future__ import annotations
 
+import builtins
 import json
+import types
 from pathlib import Path
 
 import pandas as pd
@@ -497,6 +499,75 @@ def test_render_shadow_report_handles_empty_equity(
     assert Path(out["html_path"]).exists()
     # Section 6 should degrade gracefully when no counterfactuals exist.
     assert "No material counterfactual" in Path(out["html_path"]).read_text(encoding="utf-8")
+
+
+@pytest.mark.unit
+def test_weasyprint_import_is_probed_once_per_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A weasyprint import that failed must never be retried in the process.
+
+    The retry is what crashes: the failed import drops weasyprint's cffi
+    ``Lib``, whose deallocator ``dlclose()``s libgobject while GLib's quark
+    table still holds static-string keys into that image, so the next import
+    re-runs libgobject's constructor and faults (GNOME bug 705535). Three
+    report renders in one process were enough to hit it.
+    """
+    from src.shadow_account import reporter
+
+    monkeypatch.setattr(reporter, "_WEASYPRINT_HTML", None)
+    attempts: list[str] = []
+    real_import = builtins.__import__
+
+    def counting_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "weasyprint" or name.startswith("weasyprint."):
+            attempts.append(name)
+            raise ImportError("cannot load library 'libgobject-2.0-0'")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", counting_import)
+
+    for _ in range(3):
+        assert reporter._try_render_pdf("<html></html>", tmp_path, "sid") == (None, "html-only")
+
+    assert attempts == ["weasyprint"]
+
+
+@pytest.mark.unit
+def test_weasyprint_probe_is_cached_when_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful probe is reused, and still renders on every call."""
+    from src.shadow_account import reporter
+
+    monkeypatch.setattr(reporter, "_WEASYPRINT_HTML", None)
+    attempts: list[str] = []
+    real_import = builtins.__import__
+
+    class _FakeHTML:
+        def __init__(self, string: str, base_url: str) -> None:
+            self.string = string
+
+        def write_pdf(self, target: str) -> None:
+            Path(target).write_bytes(b"%PDF-1.4\n")
+
+    fake = types.ModuleType("weasyprint")
+    fake.HTML = _FakeHTML  # type: ignore[attr-defined]
+
+    def counting_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "weasyprint":
+            attempts.append(name)
+            return fake
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", counting_import)
+
+    for shadow_id in ("first", "second"):
+        pdf_path, engine = reporter._try_render_pdf("<html></html>", tmp_path, shadow_id)
+        assert engine == "weasyprint"
+        assert pdf_path is not None and pdf_path.exists()
+
+    assert attempts == ["weasyprint"]
 
 
 # ---------------- M5/M6: Tool wrappers + scanner ----------------

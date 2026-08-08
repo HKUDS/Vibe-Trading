@@ -347,8 +347,26 @@ class ScheduledResearchExecutor:
             return
         job = current
 
+        # A persisted schedule the current grammar rejects (an older release
+        # accepted a form since narrowed) must surface as a failed job, not as
+        # an exception on the way to dispatch: that would leave the record
+        # PENDING and due, retrying on every tick forever with nothing visible
+        # to the user.
+        try:
+            validate_schedule(job.schedule)
+        except ValueError as exc:
+            logger.error("scheduled research job %s has an invalid schedule", job.id, exc_info=True)
+            job.status = JobStatus.FAILED
+            job.failure_kind = "schedule"
+            job.last_error = _persisted_error(exc)
+            job.last_run_at = now_ms
+            self._persist_completion(job)
+            return
+
         job.status = JobStatus.RUNNING
-        self._store.upsert(job)
+        # Lifecycle writes bypass validation: this record is already persisted,
+        # and a write that cannot land would strand the job mid-flight.
+        self._store.upsert(job, validate=False)
 
         dispatch_error: Exception | None = None
         try:
@@ -430,4 +448,4 @@ class ScheduledResearchExecutor:
         if not self._same_record(current, job):
             logger.info("scheduled research job %s replaced during dispatch; skipping completion write", job.id)
             return
-        self._store.upsert(job)
+        self._store.upsert(job, validate=False)
