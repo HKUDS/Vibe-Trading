@@ -1,9 +1,9 @@
-"""Shadow Account persistence (~/.vibe-trading/shadow_accounts/).
+"""Shadow Account persistence under the configured runtime root.
 
 Layout:
-    ~/.vibe-trading/shadow_accounts/<shadow_id>.json   ShadowProfile
-    ~/.vibe-trading/shadow_runs/<shadow_id>/           backtest run dir
-    ~/.vibe-trading/shadow_reports/<shadow_id>.pdf     rendered report
+    <runtime-root>/shadow_accounts/<shadow_id>.json   ShadowProfile
+    <runtime-root>/shadow_runs/<shadow_id>/           backtest run dir
+    <runtime-root>/shadow_reports/<shadow_id>.pdf     rendered report
 """
 
 from __future__ import annotations
@@ -15,12 +15,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.config.paths import get_runtime_root
 from src.shadow_account.models import ShadowProfile, ShadowRule
 
 
 def _root() -> Path:
     """Return the Shadow Account root directory (auto-created)."""
-    root = Path.home() / ".vibe-trading"
+    root = get_runtime_root()
     root.mkdir(parents=True, exist_ok=True)
     return root
 

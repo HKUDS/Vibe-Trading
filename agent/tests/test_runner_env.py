@@ -115,14 +115,17 @@ def test_backtest_runtime_env_adds_exact_current_run_root(
     ]
 
 
-def test_execute_keeps_real_home_run_valid_after_home_is_sandboxed(
+@pytest.mark.parametrize("run_bucket", ("runs", "shadow_runs"))
+def test_execute_keeps_runtime_run_valid_after_home_is_sandboxed(
     monkeypatch,
     tmp_path: Path,
+    run_bucket: str,
 ) -> None:
     real_home = tmp_path / "real-home"
-    run_dir = real_home / ".vibe-trading" / "runs" / "run-1"
+    run_dir = real_home / ".vibe-trading" / run_bucket / "run-1"
     run_dir.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(real_home))
+    monkeypatch.delenv("VIBE_TRADING_HOME", raising=False)
     monkeypatch.delenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", raising=False)
 
     entry = _probe_entry(

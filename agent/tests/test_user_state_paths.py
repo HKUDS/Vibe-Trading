@@ -80,6 +80,24 @@ def test_state_dir_helpers_live_under_runtime_root(
     assert get_uploads_dir() == root / "uploads"
 
 
+def test_shadow_account_dirs_live_under_runtime_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from src.shadow_account.storage import profiles_dir, reports_dir, runs_dir
+    from src.tools.path_utils import _default_run_roots
+
+    root = tmp_path / "state-root"
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(root))
+
+    assert profiles_dir() == root / "shadow_accounts"
+    assert reports_dir() == root / "shadow_reports"
+    shadow_run = runs_dir("shadow_test")
+    assert shadow_run == root / "shadow_runs" / "shadow_test"
+    assert shadow_run.parent.resolve() in {
+        candidate.resolve() for candidate in _default_run_roots()
+    }
+
+
 def test_legacy_cli_constants_derive_from_runtime_root() -> None:
     from cli import _legacy
     from src.config import paths
