@@ -70,6 +70,18 @@ class TestHierarchyAddRoutesToSubdir:
         assert path.parent == tmp_path / "user"
         assert path.exists()
 
+    def test_hierarchy_add_writes_discoverable_md(self, tmp_path, monkeypatch):
+        """With VT_MEMORY_HIERARCHY=true, add() must write a .md that list_entries sees."""
+        monkeypatch.setenv("VT_MEMORY_HIERARCHY", "true")
+        reset_env_config()
+
+        mem = PersistentMemory(tmp_path)
+        path = mem.add("visible entry", "content that must be discoverable", "project")
+
+        assert path is not None
+        assert path.suffix == ".md"
+        assert "visible entry" in {e.title for e in mem.list_entries()}
+
 
 # ---------------------------------------------------------------------------
 # 2. Hierarchy: scan_all finds both flat and routed entries

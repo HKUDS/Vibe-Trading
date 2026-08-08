@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
@@ -142,6 +143,31 @@ def _prepare_sandbox_home(real_home: Path | None) -> Path:
     try:
         os.chmod(sandbox, 0o755)
     except OSError:
+        pass
+    # Pre-seed mootdx's config.json so its setup() doesn't crash on an empty
+    # HOME. mootdx's config.py runs `finally: load_config()`, which re-reads the
+    # file even after bestip(sync=False) fails to write it — the FileNotFoundError
+    # from the finally block is uncaught and surfaces as asyncio "Exception in
+    # callback" noise. Copy the real HOME's config when available: it carries
+    # bestip-selected servers, so mootdx connects without re-running bestip.
+    # Library defaults alone leave BESTIP empty, which trips a ValueError inside
+    # mootdx; a valid empty object is the last-resort fallback.
+    try:
+        mootdx_dir = sandbox / ".mootdx"
+        mootdx_dir.mkdir(parents=True, exist_ok=True)
+        src_cfg = (real_home / ".mootdx" / "config.json") if real_home else None
+        if src_cfg and src_cfg.is_file():
+            payload = src_cfg.read_text(encoding="utf-8")
+        else:
+            from mootdx.config import settings as mootdx_defaults
+
+            payload = json.dumps(mootdx_defaults, ensure_ascii=False)
+    except Exception:  # mootdx missing / unreadable config
+        payload = "{}"
+    try:
+        (mootdx_dir / "config.json").write_text(payload, encoding="utf-8")
+    except OSError:
+        # Best-effort: the market-data tool falls back to other A-share sources.
         pass
     return sandbox
 
@@ -421,6 +447,24 @@ class Runner:
                 "PYTHONUTF8": "1",
             }
         )
+
+        # ``execute()`` replaces HOME with an ephemeral sandbox directory.  The
+        # backtest entry point validates ``run_dir`` again in that child
+        # process, so its HOME-derived default roots no longer include a run
+        # created under the real ``~/.vibe-trading/runs``.  Carry the exact
+        # current run directory across the boundary as an explicit root.  Using
+        # the run itself (rather than its parent) keeps the sandbox grant as
+        # narrow as possible while ensuring artifacts land in the canonical
+        # directory indexed by the Reports API.
+        allowed_run_roots = [
+            item.strip()
+            for item in env.get("VIBE_TRADING_ALLOWED_RUN_ROOTS", "").split(",")
+            if item.strip()
+        ]
+        current_run_root = str(run_dir.resolve())
+        if current_run_root not in allowed_run_roots:
+            allowed_run_roots.append(current_run_root)
+        env["VIBE_TRADING_ALLOWED_RUN_ROOTS"] = ",".join(allowed_run_roots)
 
         if pythonpath_extra:
             existing = env.get("PYTHONPATH", "")

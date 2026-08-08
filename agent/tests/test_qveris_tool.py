@@ -111,7 +111,25 @@ def test_free_mode_execute_is_unavailable(monkeypatch: pytest.MonkeyPatch):
         qt.QVerisExecuteTool().execute(tool_id="tool_1", parameters={"x": 1})
     )
 
-    assert payload == {"ok": False, "error": "QVeris is not configured"}
+    assert payload == {
+        "ok": False,
+        "error": (
+            "QVeris paid mode is off; enable it with `vibe-trading data mode paid` "
+            "or Settings -> QVeris to use QVeris tools"
+        ),
+    }
+
+
+def test_unconfigured_execute_names_missing_api_key():
+    payload = json.loads(qt.QVerisSearchTool().execute(query="options iv"))
+
+    assert payload == {
+        "ok": False,
+        "error": (
+            "QVeris is not configured; set QVERIS_API_KEY and enable paid mode "
+            "(`vibe-trading data mode paid` or Settings -> QVeris) to use QVeris tools"
+        ),
+    }
 
 
 def test_paid_mode_rejects_when_expected_cost_exceeds_budget(monkeypatch):
@@ -289,3 +307,107 @@ def test_execute_hydrates_truncated_full_content():
     assert payload["result"]["full_content"] == {"rows": [{"close": 1.23}]}
     assert payload["result"]["full_content_downloaded"] is True
     assert fake.calls[1]["headers"] is None
+
+
+def test_zero_expected_cost_from_the_caller_cannot_clear_the_budget_gate(monkeypatch):
+    """A caller-written quote of 0 must not reserve nothing and sail through.
+
+    ``expected_cost`` is an ordinary tool argument, so it is written by an LLM
+    on the agent path and by an arbitrary client over MCP. It used to
+    short-circuit the marketplace lookup and be adopted verbatim, so 0 cleared
+    the pre-check with a zero reservation whatever the real price was.
+    """
+    qt.save_qveris_config(
+        qt.QVerisConfig(
+            enabled=True,
+            api_key="sk-live",
+            mode="paid",
+            budget_credits_per_session=1.0,
+        )
+    )
+
+    class FakeClient:
+        def inspect(self, *args, **kwargs):
+            del args, kwargs
+            return {"results": [{"tool_id": "tool_1", "expected_cost": "5 credits"}]}
+
+        def execute(self, *args, **kwargs):  # pragma: no cover - must not run
+            raise AssertionError("execute must be blocked by the budget gate")
+
+    monkeypatch.setattr(qt.QVerisExecuteTool, "_client", lambda self: FakeClient())
+
+    payload = json.loads(
+        qt.QVerisExecuteTool().execute(
+            tool_id="tool_1",
+            parameters={},
+            session_id="attack",
+            expected_cost=0.0,
+        )
+    )
+
+    assert payload["status"] == "budget_exceeded"
+    assert payload["quote"]["expected_cost"] == 5.0
+    assert payload["quote"]["quote_source"] == "server_overrode_lower_caller_quote"
+    assert qt._SESSION_SPEND.get("attack", 0.0) == 0.0
+
+
+def test_an_unverifiable_zero_quote_fails_closed(monkeypatch):
+    """With no server quote to corroborate it, 0 means unknown, not free."""
+    qt.save_qveris_config(
+        qt.QVerisConfig(
+            enabled=True,
+            api_key="sk-live",
+            mode="paid",
+            budget_credits_per_session=1.0,
+        )
+    )
+
+    class FakeClient:
+        def inspect(self, *args, **kwargs):
+            del args, kwargs
+            raise RuntimeError("marketplace unreachable")
+
+        def execute(self, *args, **kwargs):  # pragma: no cover - must not run
+            raise AssertionError("execute must be blocked by the budget gate")
+
+    monkeypatch.setattr(qt.QVerisExecuteTool, "_client", lambda self: FakeClient())
+
+    payload = json.loads(
+        qt.QVerisExecuteTool().execute(
+            tool_id="tool_1", parameters={}, session_id="offline", expected_cost=0
+        )
+    )
+
+    assert payload["status"] == "budget_exceeded"
+
+
+def test_an_honest_caller_quote_is_still_honoured(monkeypatch):
+    """The caller hint keeps working when it is not understating the price."""
+    qt.save_qveris_config(
+        qt.QVerisConfig(
+            enabled=True,
+            api_key="sk-live",
+            mode="paid",
+            budget_credits_per_session=10.0,
+        )
+    )
+
+    class FakeClient:
+        def inspect(self, *args, **kwargs):
+            del args, kwargs
+            return {"results": [{"tool_id": "tool_1", "expected_cost": "1 credit"}]}
+
+        def execute(self, *args, **kwargs):
+            del args, kwargs
+            return {"success": True, "cost": 1.0, "result": {}}
+
+    monkeypatch.setattr(qt.QVerisExecuteTool, "_client", lambda self: FakeClient())
+
+    payload = json.loads(
+        qt.QVerisExecuteTool().execute(
+            tool_id="tool_1", parameters={}, session_id="honest", expected_cost="2 credits"
+        )
+    )
+
+    assert payload["ok"] is True
+    assert qt._SESSION_SPEND["honest"] == pytest.approx(1.0)

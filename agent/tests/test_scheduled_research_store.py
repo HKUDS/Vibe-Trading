@@ -327,11 +327,12 @@ class TestScheduledResearchJobStore:
         with pytest.raises(ValueError, match="timezone"):
             store.upsert(job)
 
-    def test_from_dict_rejects_non_string_timezone(self) -> None:
+    def test_from_dict_degrades_non_string_timezone_to_none(self) -> None:
+        # Loading must never raise: the store quarantines the entire file when
+        # one record fails, so an unusable value falls back to UTC semantics.
         raw = _make_job("tz-type").to_dict()
         raw["timezone"] = 13
-        with pytest.raises(TypeError, match="'timezone' must be a string or null"):
-            ScheduledResearchJob.from_dict(raw)
+        assert ScheduledResearchJob.from_dict(raw).timezone is None
 
     def test_from_dict_normalizes_blank_timezone_to_none(self) -> None:
         # A blank string must load as None so every loaded record satisfies
@@ -374,3 +375,25 @@ class TestScheduledResearchJobStore:
         cron_job = _make_job("cron-1", schedule="*/30 * * * *")
         store.upsert(cron_job)
         assert store.get("cron-1") is not None
+
+
+class TestLegacyTimezoneValues:
+    def test_non_string_timezone_degrades_that_job_to_utc(self, tmp_path: Path) -> None:
+        # Before the timezone field existed the key was ignored entirely; a
+        # record carrying a non-string value must still load, and must not
+        # take the rest of the store down with it.
+        store_path = tmp_path / "jobs.json"
+        good = _make_job("good").to_dict()
+        bad = _make_job("bad").to_dict()
+        bad["timezone"] = 123
+        store_path.write_text(
+            json.dumps({"schema_version": 1, "jobs": [good, bad]}), encoding="utf-8"
+        )
+
+        jobs = ScheduledResearchJobStore(path=store_path).load()
+
+        assert set(jobs) == {"good", "bad"}
+        assert jobs["bad"].timezone is None
+        assert jobs["good"].timezone is None
+        assert store_path.exists()  # not quarantined
+        assert not list(tmp_path.glob("*.corrupt-*"))

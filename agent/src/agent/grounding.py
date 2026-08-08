@@ -170,6 +170,19 @@ _NUMBER_RE = re.compile(
     r"(?![A-Za-z0-9_])"
 )
 _DATE_RE = re.compile(r"\b(?:19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}\b")
+# A year-less "8/5" is how a trading day is written in running prose, and it
+# contributed 8 and 5 as candidate prices (#983). The month and day ranges are
+# bounded, and both sides are fenced off from a longer slash run, so the window
+# enumeration "20/50/200-day" cannot be mistaken for a date.
+_SHORT_DATE_RE = re.compile(
+    r"(?<![\d/])(?:0?[1-9]|1[0-2])/(?:0?[1-9]|[12]\d|3[01])(?![\d/])"
+)
+# A percentage range masks only its upper bound through the "%" tail check
+# below, because the sign touches the second number: "1–2%" left 1 behind
+# (#983). Mask the span as a whole.
+_PERCENT_RANGE_RE = re.compile(
+    r"\d[\d,]*(?:\.\d+)?\s*[-–—~至]\s*\d[\d,]*(?:\.\d+)?\s*[%％]"
+)
 # Localized calendar text carries digits that the ISO pattern above leaves
 # behind: "8 月 3 日" otherwise contributes 8 and 3 as candidate prices.
 _LOCALIZED_DATE_RE = re.compile(
@@ -184,12 +197,87 @@ _AGGREGATE_AMOUNT_RE = re.compile(
     r"\s*(?:为|是|约)?\s*[:：]?\s*[-+]?\d[\d,]*(?:\.\d+)?",
     re.IGNORECASE,
 )
-# Quantities, horizons, and lot sizes are unit-bearing: "100 股", "1–4 周",
-# "3 个月". None of them are prices.
+# Quantities, horizons, lot sizes, and lookback windows are unit-bearing:
+# "100 股", "1–4 周", "3 个月", "52-week", "20/50/200-day". None are prices.
+# The hyphenated English compound needs its own branch: the range alternation
+# consumes "-4" in "1-4 周" but stalls on "-week", which left 52 behind to be
+# compared against an OHLC range (#1001). The slash enumeration shares a single
+# trailing unit, so "20/50/200-day" has to be masked as one span or its first
+# two window lengths survive. ASCII units carry a trailing word boundary so
+# "120 more" is not read as a quantity; the CJK branch cannot, because 周 and
+# 内 are both word characters and "1–4 周内" must still mask.
 _QUANTITY_WITH_UNIT_RE = re.compile(
-    r"\d[\d,]*(?:\.\d+)?(?:\s*[-–—~至]\s*\d[\d,]*(?:\.\d+)?)?\s*"
-    r"(?:股|手|张|份|口|笔|倍|个月|周|天|日|年|次|"
-    r"shares?|contracts?|lots?|units?|weeks?|months?|days?|years?)",
+    r"\d[\d,]*(?:\.\d+)?"
+    r"(?:\s*/\s*\d[\d,]*(?:\.\d+)?)*"
+    r"(?:\s*[-–—~至]\s*\d[\d,]*(?:\.\d+)?)?"
+    r"\s*[-–—]?\s*"
+    r"(?:"
+    r"(?:股|手|张|份|口|笔|倍|个月|周|天|日|年|次)"
+    r"|(?:shares?|contracts?|lots?|units?|sessions?|bars?|periods?|"
+    r"wks?|weeks?|months?|days?|years?|yrs?)\b"
+    r")",
+    re.IGNORECASE,
+)
+# A conviction reading is on a labelled scale, not a price scale: the 6 in
+# "CONFIDENCE: 6" is bounded by the label that introduces it. Only the value
+# bound to the label is masked, so a genuine quote elsewhere in the same
+# clause is still checked. The optional denominator covers "6/10" (#1001).
+_LABELLED_SCORE_RE = re.compile(
+    r"(?:confidence|conviction|score|rating|probability|odds|weighting|"
+    r"置信度|信心|评分|得分|概率|胜率)"
+    r"\s*(?:is|of|=|为|是)?\s*[:：]?\s*"
+    r"[-+]?\d[\d,]*(?:\.\d+)?(?:\s*/\s*\d[\d,]*(?:\.\d+)?)?",
+    re.IGNORECASE,
+)
+# A named indicator reads on its own scale — "RSI of 46.7" is bounded at 100,
+# not quoted in the instrument's currency. The name must be adjacent to the
+# value, so a bare number elsewhere in the clause stays checked. Only
+# unambiguous indicator names are listed: generic words such as "momentum" or
+# "volatility" sit too close to price prose to mask safely.
+_INDICATOR_VALUE_RE = re.compile(
+    r"\b(?:rsi|macd|atr|adx|cci|obv|kdj|boll|dif|dea|vix|iv|"
+    r"sharpe|sortino|beta)\b"
+    r"(?:\s*\([^)]{0,20}\))?"
+    r"\s*(?:is|at|of|reads?|=|为|是)?\s*[:：]?\s*"
+    r"[-+]?\d[\d,]*(?:\.\d+)?",
+    re.IGNORECASE,
+)
+# A trading plan quotes levels it does not claim to have observed. In the
+# committee report attached to #983, "收盘 ≥6.45 且量 ≥35M手" is an entry
+# trigger, "年线 4.63 成目标区" is a target zone, and neither asserts anything
+# about what the instrument traded at. Compared against observed OHLC evidence
+# they were reported first as numeric_claim_unavailable (before the run fetched
+# prices) and then as numeric_claim_conflict (after it did) — the same false
+# positive under two codes.
+#
+# This is a real relaxation, so every branch is span-local and anchored to the
+# token that makes the number prospective, never to a word elsewhere in the
+# clause: "现价 5.97，目标位 6.45" masks 6.45 and still checks 5.97. An
+# assertion carries no such token and stays checked.
+#
+# Branch (d) accepts a conditional opener. A number inside "若收盘 5.36" is a
+# hypothesis, and a hypothesis does not misrepresent observed data the way a
+# bare quote does — but it is the widest branch here, so it requires the opener
+# to PRECEDE the number with no digits in between, which keeps it from reaching
+# back over an assertion that was already made.
+_PROSPECTIVE_LEVEL_RE = re.compile(
+    r"(?:"
+    # (a) comparison operator immediately before the number
+    r"(?:>=|<=|≥|≤|>|<|大于|小于|不低于|不高于|高于|低于)\s*[-+]?\d[\d,]*(?:\.\d+)?"
+    r"|"
+    # (b) a level marker introducing the number
+    r"(?:目标位|目标区|目标价|止损位?|止盈位?|触发价|触发位|触发点|上看|下看|"
+    r"target\s+(?:price|level|zone)|trigger|stop[-\s]?loss|take[-\s]?profit)"
+    r"\s*(?:为|是|至|到|on|at|of|=)?\s*[:：]?\s*[-+]?\d[\d,]*(?:\.\d+)?"
+    r"|"
+    # (c) the number followed by a level marker
+    r"[-+]?\d[\d,]*(?:\.\d+)?\s*(?:一线|附近)?\s*(?:成为?|作为|是)?\s*"
+    r"(?:目标区|目标位|止损位|止盈位)"
+    r"|"
+    # (d) a conditional opener before the number, digits fencing the reach
+    r"(?:若|如果|一旦|倘若|假如|\bif\b|\bwhen\b|\bshould\b)[^0-9\n]{0,12}"
+    r"[-+]?\d[\d,]*(?:\.\d+)?"
+    r")",
     re.IGNORECASE,
 )
 # Full-width brackets and enumeration commas delimit prose clauses. ASCII
@@ -256,6 +344,53 @@ def _is_number(value: Any) -> bool:
         isinstance(value, (int, float))
         and not isinstance(value, bool)
         and math.isfinite(float(value))
+    )
+
+
+# "." is deliberately not a separator: a decimal price such as 8.5 would parse
+# as month 8 day 5 and match a real trading day.
+_YEARLESS_CLAIM_DATE_RE = re.compile(
+    r"^(0?[1-9]|1[0-2])\s*[-/月]\s*(0?[1-9]|[12]\d|3[01])\s*[日号]?$"
+)
+_ISO_TIMESTAMP_RE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})")
+
+
+def _timestamp_matches_claim_date(timestamp: str, date_value: str) -> bool:
+    """Match an evidence timestamp against the date cell of a claim.
+
+    The comparison used to be ``timestamp.startswith(date_value)``, which can
+    only succeed when the answer repeats the year. A table whose date column
+    reads ``08-05`` — the ordinary way a report writes a trading day — matched
+    nothing, so every cell in the row was reported as having no supporting
+    evidence while that evidence sat right there (#983: 79 such rejections in
+    one run, every value inside the observed range).
+
+    A year-less date is matched on month and day. That is deliberately looser:
+    where the evidence spans more than one year, such a claim matches the same
+    calendar day in either. Matching the wrong year is a smaller failure than
+    matching nothing, but it is a real one, so the caller still compares the
+    value against every record that matched rather than trusting the date.
+
+    Args:
+        timestamp: Evidence timestamp, normally ISO ``YYYY-MM-DD``.
+        date_value: Date cell as written in the answer.
+
+    Returns:
+        True when the timestamp denotes the day the claim names.
+    """
+    stamp = (timestamp or "").strip()
+    claim = (date_value or "").strip()
+    if not stamp or not claim:
+        return False
+    if stamp.startswith(claim):
+        return True
+    yearless = _YEARLESS_CLAIM_DATE_RE.match(claim)
+    iso = _ISO_TIMESTAMP_RE.match(stamp)
+    if not yearless or not iso:
+        return False
+    return (int(iso.group(2)), int(iso.group(3))) == (
+        int(yearless.group(1)),
+        int(yearless.group(2)),
     )
 
 
@@ -1587,7 +1722,8 @@ class GroundingLedger:
             candidates = [
                 record
                 for record in candidates
-                if record.timestamp and record.timestamp.startswith(date_value)
+                if record.timestamp
+                and _timestamp_matches_claim_date(record.timestamp, date_value)
             ]
         if not candidates:
             return {
@@ -1658,9 +1794,12 @@ class GroundingLedger:
         """Extract the numbers in a claim that could plausibly be prices.
 
         Digits that belong to a canonical symbol, a calendar date, an aggregate
-        amount, a unit-bearing quantity, or a percentage are masked first. Left
-        unmasked they are compared against observed OHLC ranges and reject a
-        correct draft: ``000543.SZ`` alone contributes 543.
+        amount, a labelled score, a named indicator reading, a unit-bearing
+        quantity, or a percentage are masked first. Left unmasked they are
+        compared against observed OHLC ranges and reject a correct draft:
+        ``000543.SZ`` alone contributes 543, and a well-formed verdict line
+        contributes its confidence score and every moving-average window it
+        names (#1001).
 
         Args:
             text: One claim segment or table cell.
@@ -1671,7 +1810,12 @@ class GroundingLedger:
         masked = _CANONICAL_SYMBOL_RE.sub(" ", text)
         masked = _LOCALIZED_DATE_RE.sub(" ", masked)
         masked = _DATE_RE.sub(" ", masked)
+        masked = _SHORT_DATE_RE.sub(" ", masked)
+        masked = _PERCENT_RANGE_RE.sub(" ", masked)
         masked = _AGGREGATE_AMOUNT_RE.sub(" ", masked)
+        masked = _LABELLED_SCORE_RE.sub(" ", masked)
+        masked = _INDICATOR_VALUE_RE.sub(" ", masked)
+        masked = _PROSPECTIVE_LEVEL_RE.sub(" ", masked)
         without_dates = _QUANTITY_WITH_UNIT_RE.sub(" ", masked)
         values: list[float] = []
         for match in _NUMBER_RE.finditer(without_dates):

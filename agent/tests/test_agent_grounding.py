@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable
 
+import pytest
+
 from src.agent.context import ContextBuilder
 from src.agent.grounding import GroundingLedger
 from src.agent.loop import AgentLoop, _is_tool_success
@@ -879,6 +881,88 @@ def test_price_validation_still_rejects_a_quote_outside_observed_range(
     assert [issue["code"] for issue in result.issues] == ["numeric_claim_conflict"]
 
 
+def test_price_validation_ignores_score_indicator_and_window_digits(
+    tmp_path: Path,
+) -> None:
+    """Confidence scores, indicator readings, and lookback windows are not prices (#1001).
+
+    A well-formed verdict line carries a conviction score, the moving-average
+    windows it cites, and an oscillator reading. Compared against an OHLC range
+    every one of them contradicts it, which rejected drafts that were correct.
+    """
+    ledger = _screened_ledger(tmp_path)
+
+    for draft in (
+        # The reported shape: a labelled score on a 1-10 scale.
+        "000543.SZ VERDICT: FLAT CONFIDENCE: 6 REASON: 收盘价 8.20 CNY（source: tencent）",
+        "000543.SZ CONFIDENCE: 6/10，收盘价 8.20 CNY（source: tencent）",
+        # The hyphenated English compound the quantity mask used to stall on.
+        "000543.SZ 现价 8.20 CNY 距 52-week high 有距离（source: tencent）",
+        "000543.SZ 收盘价 8.20 CNY 低于其 20/50/200-day 均线（source: tencent）",
+        # An indicator reading sharing a clause with a genuine quote.
+        "000543.SZ 现价 8.20 CNY 而 RSI 46.7（source: tencent）",
+    ):
+        result = ledger.validate_final_answer(draft)
+        assert result.valid is True, (draft, result.issues)
+
+
+def test_price_validation_ignores_short_dates_and_percent_ranges(
+    tmp_path: Path,
+) -> None:
+    """A year-less date and a percentage range are not prices (#983).
+
+    Taken from the trace attached to #983: "8/5 收盘 5.97" contributed 8 and 5,
+    and "1–2%" contributed its lower bound, because the percent tail check only
+    masks the number the sign touches.
+    """
+    ledger = _screened_ledger(tmp_path)
+
+    for draft in (
+        "000543.SZ 8/5 收盘价 8.20 CNY（source: tencent）",
+        "000543.SZ 现价 8.20 CNY，距阻力位仅 1–2%（source: tencent）",
+        "000543.SZ 现价 8.20 CNY，距阻力位仅 1-2%（source: tencent）",
+    ):
+        result = ledger.validate_final_answer(draft)
+        assert result.valid is True, (draft, result.issues)
+
+
+def test_short_date_mask_does_not_swallow_a_plain_ratio(tmp_path: Path) -> None:
+    """The month/day mask is bounded, so an ordinary ratio still reads (#983).
+
+    "P/E 15" and the window enumeration "20/50/200-day" both contain slashes.
+    Neither may be consumed as a date, or the mask would hide real figures.
+    """
+    ledger = _screened_ledger(tmp_path)
+
+    result = ledger.validate_final_answer("000543.SZ 收盘价 42.00 CNY，P/E 15（source: tencent）")
+
+    assert result.valid is False
+    assert [issue["code"] for issue in result.issues] == ["numeric_claim_conflict"]
+    assert [issue["value"] for issue in result.issues] == [42.0]
+
+
+def test_masked_window_does_not_shield_a_wrong_quote_in_the_same_clause(
+    tmp_path: Path,
+) -> None:
+    """The new masks are span-local: a bad quote beside one is still caught (#1001).
+
+    This is the lower side of the guard. Masking ``52-week`` must remove only
+    the window length; a contradicted price in the same clause has to survive
+    the mask and reject the draft, or the fix would have bought precision by
+    silencing the check it exists to run.
+    """
+    ledger = _screened_ledger(tmp_path)
+
+    for draft in (
+        "000543.SZ 52-week high 之下，收盘价 42.00 CNY（source: tencent）",
+        "000543.SZ CONFIDENCE: 6 REASON: 收盘价 42.00 CNY（source: tencent）",
+        "000543.SZ RSI 46.7，收盘价 42.00 CNY（source: tencent）",
+    ):
+        result = ledger.validate_final_answer(draft)
+        assert result.valid is False, draft
+        assert [issue["code"] for issue in result.issues] == ["numeric_claim_conflict"], draft
+
+
 def test_screening_run_reaches_a_final_answer_through_the_agent_loop(
     tmp_path: Path,
 ) -> None:
@@ -911,3 +995,138 @@ def test_screening_run_reaches_a_final_answer_through_the_agent_loop(
         "000543.SZ 买入价 8.20 CNY（100 股成本 820 CNY；source: tencent）"
     )
     assert validation.valid is True, validation.issues
+
+
+def test_price_table_with_a_year_less_date_matches_its_evidence(tmp_path: Path) -> None:
+    """A table dated ``08-01`` must find the evidence stamped ``2026-08-01`` (#983).
+
+    The date filter was ``timestamp.startswith(date_value)``, which can only
+    succeed when the answer repeats the year. A report writing the trading day
+    the ordinary way matched nothing, so every cell in the row came back as
+    having no supporting evidence — 79 such rejections in the trace attached to
+    #983, every value sitting inside the observed range.
+    """
+    ledger = _screened_ledger(tmp_path)
+
+    for date_cell in ("08-01", "8/1", "8月1日", "2026-08-01"):
+        draft = (
+            "000543.SZ 行情（source: tencent; currency: CNY）\n\n"
+            "| 日期 | 开盘 | 最高 | 最低 | 收盘 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            f"| {date_cell} | 7.90 | 8.50 | 7.90 | 8.20 |\n"
+        )
+        result = ledger.validate_final_answer(draft)
+        assert result.valid is True, (date_cell, result.issues)
+
+
+def test_year_less_date_still_rejects_a_wrong_quote(tmp_path: Path) -> None:
+    """Matching the day must not stop the value from being checked (#983).
+
+    Resolving the date is what lets the comparison happen at all; it must not
+    become a way to pass without one.
+    """
+    ledger = _screened_ledger(tmp_path)
+
+    draft = (
+        "000543.SZ 行情（source: tencent; currency: CNY）\n\n"
+        "| 日期 | 开盘 | 最高 | 最低 | 收盘 |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 08-01 | 7.90 | 8.50 | 7.90 | 42.00 |\n"
+    )
+    result = ledger.validate_final_answer(draft)
+
+    assert result.valid is False
+    assert "numeric_claim_conflict" in {issue["code"] for issue in result.issues}
+
+
+def test_a_date_that_names_a_different_day_is_still_unavailable(tmp_path: Path) -> None:
+    """Loosening the year must not collapse distinct trading days together."""
+    ledger = _screened_ledger(tmp_path)
+
+    draft = (
+        "000543.SZ 行情（source: tencent; currency: CNY）\n\n"
+        "| 日期 | 开盘 | 最高 | 最低 | 收盘 |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 07-15 | 7.90 | 8.50 | 7.90 | 8.20 |\n"
+    )
+    result = ledger.validate_final_answer(draft)
+
+    assert result.valid is False
+    assert "numeric_claim_unavailable" in {issue["code"] for issue in result.issues}
+
+
+# ---------------------------------------------------------------------------
+# #983: a trading plan quotes levels it does not claim to have observed.
+#
+# The committee report attached to that issue was refused for its own entry
+# triggers and target zones. With no price evidence yet in the parent session
+# they came back as numeric_claim_unavailable; once the run fetched prices the
+# same numbers came back as numeric_claim_conflict. One false positive, two
+# codes.
+# ---------------------------------------------------------------------------
+
+_PLAN_LEVELS_FROM_983 = [
+    "- **转多信号：** 收盘 ≥6.45 且量 ≥35M手",
+    "- **转空强化：** 收盘 <5.36 且 3 日不收复 → 年线 4.63 成目标区",
+    "| B 破位空 | 任意收盘 <5.36 | 收盘 ≥5.75 且量 ≥20M手 |",
+    "目标位 6.80，止损 5.20",
+    "若收盘 5.36 则减仓",
+    "target price 6.80 with stop-loss 5.20",
+]
+
+
+@pytest.mark.parametrize("segment", _PLAN_LEVELS_FROM_983, ids=range(len(_PLAN_LEVELS_FROM_983)))
+def test_plan_levels_are_not_read_as_observed_price_claims(segment: str) -> None:
+    """A trigger, a target and a hypothesis assert nothing about observed data."""
+    assert GroundingLedger._numbers_without_dates_or_percent(segment) == []
+
+
+# The other side of the same guard. Every entry here is an assertion about what
+# the instrument did, and each must survive the mask above — otherwise the
+# relaxation is a way to state a price without being checked.
+_ASSERTIONS_THAT_MUST_STAY_CHECKED = [
+    ("8/5 收盘 5.97", [5.97]),
+    ("现价 5.97", [5.97]),
+    ("收盘价为 6.03", [6.03]),
+    ("the close was 6.03", [6.03]),
+    # Span-local: the target is masked, the quote beside it is not.
+    ("现价 5.97，目标位 6.45", [5.97]),
+    # A conditional opener must not reach back over a quote already made.
+    ("收盘 6.03，若跌破 5.36 减仓", [6.03]),
+    ("开盘 6.80 最高 7.18 最低 6.68", [6.80, 7.18, 6.68]),
+]
+
+
+@pytest.mark.parametrize(
+    "segment,expected",
+    _ASSERTIONS_THAT_MUST_STAY_CHECKED,
+    ids=[c[0][:24] for c in _ASSERTIONS_THAT_MUST_STAY_CHECKED],
+)
+def test_plan_level_mask_leaves_observed_quotes_checked(
+    segment: str, expected: list[float],
+) -> None:
+    assert GroundingLedger._numbers_without_dates_or_percent(segment) == expected
+
+
+def test_plan_level_mask_does_not_shield_a_wrong_quote_end_to_end(tmp_path: Path) -> None:
+    """The end-to-end gate still rejects a fabricated quote beside a plan level."""
+    ledger = _screened_ledger(tmp_path)
+
+    result = ledger.validate_final_answer(
+        "000543.SZ 收盘价 42.00 CNY，目标位 45.00（source: tencent）"
+    )
+
+    assert result.valid is False
+    assert "numeric_claim_conflict" in {issue["code"] for issue in result.issues}
+
+
+def test_plan_level_alone_reaches_a_valid_answer(tmp_path: Path) -> None:
+    """A plan stated without quoting an observed price passes the numeric gate."""
+    ledger = _screened_ledger(tmp_path)
+
+    result = ledger.validate_final_answer(
+        "000543.SZ 收盘价 8.20 CNY（source: tencent）。"
+        "转多信号：收盘 ≥9.10；转空强化：收盘 <7.40 且 3 日不收复 → 目标位 6.90。"
+    )
+
+    assert result.valid is True, result.issues

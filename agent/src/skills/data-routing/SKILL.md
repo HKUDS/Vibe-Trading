@@ -96,7 +96,9 @@ same-market sources automatically. Only set a concrete source when the user asks
   baostock / akshare > eastmoney (throttled).
 - **US stocks**: stooq / yahoo > tiingo / finnhub / fmp / alphavantage (key-gated) >
   sina / eastmoney (throttled) > yfinance.
-- **HK stocks**: tencent > eastmoney / yahoo > yfinance.
+- **HK stocks**: tencent (never banned, daily) > eastmoney / yahoo > futu (local
+  OpenD) > akshare (Eastmoney-backed, daily only) > yfinance > tushare
+  (`TUSHARE_TOKEN`) / longbridge (key-gated).
 - **Crypto**: okx (single exchange) > ccxt (multi-exchange).
 - **Futures / macro**: tushare > akshare.
 - **Forex / metals**: mt5 (local MetaTrader 5 terminal, Windows) > akshare.

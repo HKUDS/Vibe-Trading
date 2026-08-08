@@ -169,3 +169,55 @@ describe("RunDetail page", () => {
     expect(screen.getByText("artifacts/result.json")).toHaveClass("ps-4");
   });
 });
+
+  it("renders the Portfolio Studio tab from risk_xray and rebalance_notes payloads", async () => {
+    apiMock.getRun.mockResolvedValue({
+      status: "success",
+      run_id: "studio-run",
+      prompt: "Studio run",
+      risk_xray: {
+        inputs: { symbols: ["AAPL", "MSFT"], weights: { AAPL: 0.6, MSFT: 0.4 }, aligned_days: 60 },
+        concentration: { hhi: 0.52, effective_n: 1.9 },
+        volatility: { annualized_vol: 0.22 },
+        drawdown: { max_drawdown: -0.11 },
+      },
+      rebalance_notes: {
+        rebalances: [
+          { date: "2026-02-02", turnover: 0.35, entries: [{ code: "NVDA", to: 0.6 }], exits: [], top_moves: [] },
+        ],
+        summary: { rebalance_count: 1, turnover_total: 0.35, turnover_mean: 0.35, turnover_max: 0.35, largest_rebalance_date: "2026-02-02" },
+      },
+    });
+    apiMock.getRunCode.mockResolvedValue({});
+
+    renderRunDetail("/runs/studio-run");
+
+    await screen.findByText("Studio run");
+    fireEvent.click(screen.getByRole("tab", { name: "Portfolio Studio" }));
+
+    expect(await screen.findByText("Risk X-Ray")).toBeInTheDocument();
+    expect(screen.getByText("0.520")).toBeInTheDocument();
+    expect(screen.getByText("22.0%")).toBeInTheDocument();
+    expect(screen.getByText("AAPL")).toBeInTheDocument();
+    expect(screen.getByText("NVDA")).toBeInTheDocument();
+    expect(screen.getByText("Rebalance Notes")).toBeInTheDocument();
+    // the date shows up twice: once in the rebalances table, once in the summary card
+    expect(screen.getAllByText("2026-02-02")).toHaveLength(2);
+    // 35.0% shows up three times: the table row plus the mean and max summary cards
+    expect(screen.getAllByText("35.0%")).toHaveLength(3);
+  });
+
+  it("hides the Portfolio Studio tab when the payloads are absent", async () => {
+    apiMock.getRun.mockResolvedValue({
+      status: "success",
+      run_id: "plain-run",
+      prompt: "Plain run",
+      trade_log: [],
+    });
+    apiMock.getRunCode.mockResolvedValue({});
+
+    renderRunDetail("/runs/plain-run");
+
+    await screen.findByText("Plain run");
+    expect(screen.queryByRole("tab", { name: "Portfolio Studio" })).not.toBeInTheDocument();
+  });

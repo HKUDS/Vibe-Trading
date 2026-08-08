@@ -135,7 +135,7 @@ class ScheduledResearchJobStore:
         os.replace(tmp, target)
         self._fsync_dir(target.parent)
 
-    def upsert(self, job: ScheduledResearchJob) -> None:
+    def upsert(self, job: ScheduledResearchJob, *, validate: bool = True) -> None:
         """Insert or replace a job by id.
 
         Validates the schedule string and the timezone's shape before
@@ -146,13 +146,21 @@ class ScheduledResearchJobStore:
 
         Args:
             job: The job to store.
+            validate: When ``False``, skip schedule/timezone validation. Set by
+                the executor when recording lifecycle state (RUNNING, FAILED,
+                a retry time) for a job that is *already* persisted: such a
+                write must always land, otherwise a record whose schedule no
+                longer validates could never be marked failed and would retry
+                every tick forever. Creation paths keep the default.
 
         Raises:
-            ValueError: When ``job.schedule`` or ``job.timezone`` is malformed.
+            ValueError: When ``job.schedule`` or ``job.timezone`` is malformed
+                and *validate* is true.
             CorruptStoreError: When the existing store cannot be parsed.
         """
-        validate_schedule(job.schedule)
-        validate_timezone_shape(job.timezone)
+        if validate:
+            validate_schedule(job.schedule)
+            validate_timezone_shape(job.timezone)
         jobs = self.load()
         jobs[job.id] = job
         self.save(jobs)

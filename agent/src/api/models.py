@@ -77,6 +77,12 @@ class RunResponse(BaseModel):
     artifacts_metrics_csv: Optional[List[Dict[str, Any]]] = Field(None, description="Full metrics rows")
     artifacts_trades_csv: Optional[List[Dict[str, Any]]] = Field(None, description="Full trade rows")
     validation: Optional[Dict[str, Any]] = Field(None, description="Statistical validation results")
+    risk_xray: Optional[Dict[str, Any]] = Field(
+        None, description="Portfolio risk x-ray payload when the run emitted one"
+    )
+    rebalance_notes: Optional[Dict[str, Any]] = Field(
+        None, description="Per-rebalance weight-drift notes when the run emitted them"
+    )
 
     run_directory: str = Field(..., description="Run directory path")
     run_stage: Optional[str] = Field(None, description="UI-facing run stage")

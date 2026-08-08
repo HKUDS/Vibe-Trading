@@ -89,15 +89,71 @@ class MemoryHierarchy:
         )
         return self._base_dir / filename
 
+    def recover_extensionless_entries(self) -> List[Path]:
+        """Rename category entries that were written without the ``.md`` suffix.
+
+        ``route_entry`` documents its second argument as "the .md filename",
+        but a caller passed a bare slug, so entries landed as
+        ``<category>/<slug>`` with no suffix. Every scan here filters on
+        ``suffix == ".md"``, which means those entries are not merely
+        mis-named — they are invisible to ``list_entries`` and ``find``, and
+        stay invisible after the write path is corrected, because nothing
+        goes back for them.
+
+        Only a suffix-less file whose content opens with a frontmatter fence
+        is touched, so an unrelated file dropped in a category directory is
+        left alone. An existing ``<slug>.md`` wins; the orphan is left in
+        place rather than silently overwriting the newer entry.
+
+        Returns:
+            Paths of the entries after renaming, in the order recovered.
+        """
+        recovered: List[Path] = []
+        for category in CATEGORIES:
+            cat_dir = self._base_dir / category
+            if not cat_dir.is_dir():
+                continue
+            for item in sorted(cat_dir.iterdir()):
+                if item.name in _SKIP_NAMES or not item.is_file():
+                    continue
+                if item.suffix:
+                    continue
+                target = item.with_suffix(".md")
+                if target.exists():
+                    logger.warning(
+                        "Extension-less memory entry %s shadowed by %s; leaving "
+                        "it in place rather than overwriting the newer entry",
+                        item,
+                        target,
+                    )
+                    continue
+                try:
+                    head = item.read_text(encoding="utf-8")[:3]
+                except OSError:
+                    continue
+                if head.strip() != "---":
+                    continue
+                try:
+                    item.rename(target)
+                except OSError:
+                    logger.warning("Could not recover memory entry %s", item)
+                    continue
+                logger.info("Recovered memory entry %s -> %s", item.name, target.name)
+                recovered.append(target)
+        return recovered
+
     def scan_all(self) -> List[Path]:
         """Scan base dir + all category subdirs for *.md files.
 
         Skips entries listed in _SKIP_NAMES and the archive/ directory.
         Includes flat-stored entries in base dir for backward compatibility.
+        Entries orphaned by the missing-suffix write bug are recovered first,
+        so they become visible without the user having to run anything.
 
         Returns:
             Sorted list of .md file paths.
         """
+        self.recover_extensionless_entries()
         results: List[Path] = []
 
         # Scan base directory (flat legacy entries)

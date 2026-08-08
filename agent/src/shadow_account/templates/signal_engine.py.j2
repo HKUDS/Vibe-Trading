@@ -29,75 +29,6 @@ def _market_of(code: str) -> str:
     return "other"
 
 
-def _compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
-    """Causal Wilder-EWM RSI (mirrors ``compute_rsi`` in example_signal_engine.py:13)."""
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = (-delta).clip(lower=0)
-    avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
-    avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
-    rs = avg_gain / avg_loss
-    return 100 - 100 / (1 + rs)
-
-
-def _compute_prior_return(close: pd.Series, window: int = 5) -> pd.Series:
-    """Trailing close-to-close return over *window* bars."""
-    return close.pct_change(window)
-
-
-def _conditional_entry(
-    index: pd.Index,
-    rsi: pd.Series,
-    prior_ret: pd.Series,
-    rule: dict,
-) -> pd.Series:
-    hold_days = max(1, int(rule["hold_days"]))
-    hour_min = int(rule["entry_hour_min"])
-    hour_max = int(rule["entry_hour_max"])
-    weight = float(rule["weight"])
-
-    rsi_min = rule.get("entry_rsi14_min")
-    rsi_max = rule.get("entry_rsi14_max")
-    ret_min = rule.get("prior_5d_return_min")
-    ret_max = rule.get("prior_5d_return_max")
-
-    # Daily (or coarser) bars share a single time-of-day, so an
-    # entry-hour window mined from intraday journal fills carries no
-    # information here — gating on it would reject every bar (daily
-    # bars are typically stamped at midnight, before any market-hours
-    # window). Enforce the window only on intraday data.
-    intraday = len({pd.Timestamp(ts).time() for ts in index}) > 1
-
-    values = [0.0] * len(index)
-    remaining_hold = 0
-
-    for i in range(len(index)):
-        if remaining_hold > 0:
-            values[i] = weight
-            remaining_hold -= 1
-            continue
-
-        if intraday:
-            bar_hour = pd.Timestamp(index[i]).hour
-            if bar_hour < hour_min or bar_hour > hour_max:
-                continue
-
-        if rsi_min is not None and rsi_max is not None:
-            rsi_val = rsi.iloc[i]
-            if pd.isna(rsi_val) or rsi_val < rsi_min or rsi_val > rsi_max:
-                continue
-
-        if ret_min is not None and ret_max is not None:
-            ret_val = prior_ret.iloc[i]
-            if pd.isna(ret_val) or ret_val < ret_min or ret_val > ret_max:
-                continue
-
-        values[i] = weight
-        remaining_hold = hold_days - 1
-
-    return pd.Series(values, index=index)
-
-
 class SignalEngine:
     """Shadow Account signal engine (conditional entry, daily timeframe).
 
@@ -108,6 +39,20 @@ class SignalEngine:
     rule's holding days. Non-matching codes yield a zero series.
     """
 
+    def _compute_rsi(self, close: pd.Series, period: int = 14) -> pd.Series:
+        """Causal Wilder-EWM RSI (mirrors ``compute_rsi`` in example_signal_engine.py:13)."""
+        delta = close.diff()
+        gain = delta.clip(lower=0)
+        loss = (-delta).clip(lower=0)
+        avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
+        avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
+        rs = avg_gain / avg_loss
+        return 100 - 100 / (1 + rs)
+
+    def _compute_prior_return(self, close: pd.Series, window: int = 5) -> pd.Series:
+        """Trailing close-to-close return over *window* bars."""
+        return close.pct_change(window)
+
     def generate(self, data_map: dict) -> dict:
         signals: dict[str, pd.Series] = {}
         for code, df in data_map.items():
@@ -115,9 +60,9 @@ class SignalEngine:
             rule = self._pick_rule(code)
             if rule is not None:
                 close = df["close"]
-                rsi = _compute_rsi(close)
-                prior_ret = _compute_prior_return(close)
-                sig = _conditional_entry(
+                rsi = self._compute_rsi(close)
+                prior_ret = self._compute_prior_return(close)
+                sig = self._conditional_entry(
                     df.index, rsi, prior_ret, rule,
                 )
             signals[code] = sig
@@ -129,3 +74,56 @@ class SignalEngine:
             if rule["market"] == market or rule["market"] == "other":
                 return rule
         return None
+
+    def _conditional_entry(
+        self,
+        index: pd.Index,
+        rsi: pd.Series,
+        prior_ret: pd.Series,
+        rule: dict,
+    ) -> pd.Series:
+        hold_days = max(1, int(rule["hold_days"]))
+        hour_min = int(rule["entry_hour_min"])
+        hour_max = int(rule["entry_hour_max"])
+        weight = float(rule["weight"])
+
+        rsi_min = rule.get("entry_rsi14_min")
+        rsi_max = rule.get("entry_rsi14_max")
+        ret_min = rule.get("prior_5d_return_min")
+        ret_max = rule.get("prior_5d_return_max")
+
+        # Daily (or coarser) bars share a single time-of-day, so an
+        # entry-hour window mined from intraday journal fills carries no
+        # information here — gating on it would reject every bar (daily
+        # bars are typically stamped at midnight, before any market-hours
+        # window). Enforce the window only on intraday data.
+        intraday = len({pd.Timestamp(ts).time() for ts in index}) > 1
+
+        values = [0.0] * len(index)
+        remaining_hold = 0
+
+        for i in range(len(index)):
+            if remaining_hold > 0:
+                values[i] = weight
+                remaining_hold -= 1
+                continue
+
+            if intraday:
+                bar_hour = pd.Timestamp(index[i]).hour
+                if bar_hour < hour_min or bar_hour > hour_max:
+                    continue
+
+            if rsi_min is not None and rsi_max is not None:
+                rsi_val = rsi.iloc[i]
+                if pd.isna(rsi_val) or rsi_val < rsi_min or rsi_val > rsi_max:
+                    continue
+
+            if ret_min is not None and ret_max is not None:
+                ret_val = prior_ret.iloc[i]
+                if pd.isna(ret_val) or ret_val < ret_min or ret_val > ret_max:
+                    continue
+
+            values[i] = weight
+            remaining_hold = hold_days - 1
+
+        return pd.Series(values, index=index)

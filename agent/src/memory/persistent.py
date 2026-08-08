@@ -490,7 +490,14 @@ class PersistentMemory:
         if get_env_config().memory.hierarchy_enabled:
             from src.memory.hierarchy import MemoryHierarchy
             hierarchy = MemoryHierarchy(self._dir)
-            path = hierarchy.route_entry(memory_type, slug)
+            # route_entry() treats its second argument as the leaf filename
+            # verbatim, so the ".md" has to be here: a bare slug wrote entries
+            # with no suffix, and every scan filters on suffix == ".md", which
+            # made them invisible to list_entries() and find(). The category
+            # directory already carries the type, and the name must match what
+            # recover_extensionless_entries() renames orphans to, or the same
+            # entry ends up on disk twice.
+            path = hierarchy.route_entry(memory_type, f"{slug}.md")
         else:
             filename = f"{memory_type}_{slug}.md"
             path = self._dir / filename

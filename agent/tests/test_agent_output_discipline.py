@@ -53,11 +53,12 @@ def _rendered_prompt() -> str:
 
 
 class TestOutputPrinciplesArePresent:
-    """All five principles must survive into the prompt the model actually sees."""
+    """All principles must survive into the prompt the model actually sees."""
 
     def test_the_section_exists(self) -> None:
         assert "## Output Principles" in _SYSTEM_PROMPT
         assert "## Output Principles" in _rendered_prompt()
+        assert "These six principles define" in _rendered_prompt()
 
     def test_principle_one_requires_a_tool_behind_every_number(self) -> None:
         prompt = _rendered_prompt()
@@ -86,15 +87,23 @@ class TestOutputPrinciplesArePresent:
         assert "Analysis, not advice." in prompt
         assert "Do not tell the user what to buy, sell, or hold" in prompt
 
-    def test_principle_five_requires_an_audible_refusal(self) -> None:
+    def test_principle_five_stops_when_enough_evidence(self) -> None:
+        prompt = _rendered_prompt()
+
+        assert "Answer at the level of detail asked" in prompt
+        assert "stop calling tools" in prompt
+        assert "Do not re-fetch data you already have" in prompt
+
+    def test_principle_six_requires_an_audible_refusal(self) -> None:
         prompt = _rendered_prompt()
 
         assert "Refuse out loud, never silently." in prompt
+        assert "principles 1–5" in prompt
         assert "name the principle it conflicts with" in prompt
 
-    def test_all_five_are_numbered_in_order(self) -> None:
+    def test_all_principles_are_numbered_in_order(self) -> None:
         block = _rendered_prompt().split("## Output Principles", 1)[1].split("## Tools", 1)[0]
-        positions = [block.index(f"{n}. **") for n in range(1, 6)]
+        positions = [block.index(f"{n}. **") for n in range(1, 7)]
 
         assert positions == sorted(positions)
 

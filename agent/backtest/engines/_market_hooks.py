@@ -34,6 +34,9 @@ _MARKET_PATTERNS = [
     (re.compile(r"^\d{6}\.(KS|KQ)$", re.I), "kr_equity"),
     (re.compile(r"^[A-Z]+-USDT$", re.I), "crypto"),
     (re.compile(r"^[A-Z]+/USDT$", re.I), "crypto"),
+    # yfinance's native crypto spelling (BTC-USD, ETH-USD). Distinct from
+    # USDT pairs only in the quote currency; both belong to CryptoEngine.
+    (re.compile(r"^[A-Z]+-USD$", re.I), "crypto"),
     # China futures: product+delivery.exchange (e.g. IF2406.CFFEX, rb2410.SHFE)
     (re.compile(r"^[A-Za-z]{1,2}\d{3,4}\.(ZCE|DCE|SHFE|INE|CFFEX|GFEX)$", re.I), "futures"),
     # Global futures: product+month-code (e.g. ESZ4, CLF25, GCM2025)
