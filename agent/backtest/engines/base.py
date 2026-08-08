@@ -1574,11 +1574,19 @@ class BaseEngine(ABC):
 
         Reductions consume every accumulated opening delta proportionally,
         matching the weighted-average entry accounting used by this engine.
+        Only the active position lifecycle matters; stopping at its preceding
+        full close avoids rescanning the entire fill ledger on every exit.
         """
-        lots: list[list[float]] = []
-        for fill in self.fill_records:
+        active_fills: list[FillRecord] = []
+        for fill in reversed(self.fill_records):
             if fill.symbol != position.symbol:
                 continue
+            if fill.action == "close":
+                break
+            active_fills.append(fill)
+
+        lots: list[list[float]] = []
+        for fill in reversed(active_fills):
             quantity = abs(fill.signed_quantity)
             if fill.action in {"open", "increase"}:
                 lots.append([quantity, float(fill.bar_idx)])
