@@ -376,7 +376,27 @@
       "stoppedToast": "IM チャンネルを停止しました",
       "refreshFailed": "IM チャンネルの更新に失敗しました",
       "startFailed": "IM チャンネルの開始に失敗しました",
-      "stopFailed": "IM チャンネルの停止に失敗しました"
+      "stopFailed": "IM チャンネルの停止に失敗しました",
+      "qr": {
+        "connect": "スキャンして接続",
+        "title": "{{channel}} に接続",
+        "description": "スマートフォンで WeChat を開き、このコードをスキャンしてください。認証情報はサーバーだけに保存されます。",
+        "codeTitle": "{{channel}} の QR コード",
+        "preparing": "安全な QR コードを準備しています…",
+        "confirmOnPhone": "スキャン済みです。スマートフォンでログインを確認してください。",
+        "connected": "WeChat に接続しました。",
+        "retry": "再試行",
+        "cancel": "キャンセル",
+        "done": "完了",
+        "close": "QR ログインを閉じる",
+        "status": {
+          "waiting": "スキャンを待っています…",
+          "scanned": "スキャン済み",
+          "authenticated": "接続済み",
+          "expired": "QR コードの有効期限が切れました。",
+          "failed": "WeChat ログインに失敗しました。"
+        }
+      }
     },
     "generation": "生成設定",
     "dataSourceSettings": "データソース設定",

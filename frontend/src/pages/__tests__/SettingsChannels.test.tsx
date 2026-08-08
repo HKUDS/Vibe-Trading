@@ -8,6 +8,9 @@ const apiMock = vi.hoisted(() => ({
   listLLMModels: vi.fn(),
   startChannels: vi.fn(),
   stopChannels: vi.fn(),
+  startChannelQRLogin: vi.fn(),
+  getChannelQRLogin: vi.fn(),
+  cancelChannelQRLogin: vi.fn(),
   updateLLMSettings: vi.fn(),
   updateDataSourceSettings: vi.fn(),
 }));
@@ -94,6 +97,18 @@ function channelStatus(overrides = {}) {
         error: "ModuleNotFoundError",
         install_hint: "pip install 'vibe-trading-ai[telegram]'",
       },
+      weixin: {
+        name: "weixin",
+        display_name: "WeChat",
+        configured: true,
+        enabled: true,
+        available: true,
+        loaded: true,
+        running: false,
+        qr_login_supported: true,
+        error: "",
+        install_hint: "",
+      },
     },
     ...overrides,
   };
@@ -112,6 +127,18 @@ describe("Settings IM channels panel", () => {
     });
     apiMock.startChannels.mockResolvedValue(channelStatus({ running: true }));
     apiMock.stopChannels.mockResolvedValue(channelStatus());
+    apiMock.startChannelQRLogin.mockResolvedValue({
+      channel: "weixin",
+      status: "waiting",
+      session_id: "qr-session",
+      qr_content: "https://weixin.example/scan",
+    });
+    apiMock.getChannelQRLogin.mockResolvedValue({
+      channel: "weixin",
+      status: "waiting",
+      session_id: "qr-session",
+    });
+    apiMock.cancelChannelQRLogin.mockResolvedValue({ status: "cancelled" });
   });
 
   it("renders channel runtime status and refreshes it", async () => {
@@ -134,6 +161,17 @@ describe("Settings IM channels panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start channels" }));
 
     await waitFor(() => expect(apiMock.startChannels).toHaveBeenCalledTimes(1));
+  });
+
+  it("opens a browser-rendered QR login for supported channels", async () => {
+    render(<Settings />);
+    await screen.findByText("IM Channels");
+
+    fireEvent.click(screen.getByRole("button", { name: "Scan to connect" }));
+
+    expect(await screen.findByRole("dialog", { name: "Connect WeChat" })).toBeInTheDocument();
+    expect(apiMock.startChannelQRLogin).toHaveBeenCalledWith("weixin");
+    expect(await screen.findByTitle("QR code for WeChat")).toBeInTheDocument();
   });
 
   it("still renders LLM and data source settings when channel status fails", async () => {

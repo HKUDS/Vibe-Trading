@@ -221,6 +221,12 @@ export const api = {
   getChannelStatus: () => request<ChannelRuntimeStatus>("/channels/status"),
   startChannels: () => request<ChannelRuntimeActionResponse>("/channels/start", { method: "POST" }),
   stopChannels: () => request<ChannelRuntimeActionResponse>("/channels/stop", { method: "POST" }),
+  startChannelQRLogin: (channel: string) =>
+    request<ChannelQRLoginResponse>(`/channels/${encodeURIComponent(channel)}/qr-login`, { method: "POST" }),
+  getChannelQRLogin: (sessionId: string) =>
+    request<ChannelQRLoginResponse>(`/channels/qr-login/${encodeURIComponent(sessionId)}`),
+  cancelChannelQRLogin: (sessionId: string) =>
+    request<ChannelQRLoginCancelResponse>(`/channels/qr-login/${encodeURIComponent(sessionId)}`, { method: "DELETE" }),
   runChannelPairingCommand: (body: ChannelPairingCommandRequest) =>
     request<ChannelPairingCommandResponse>("/channels/pairing/command", {
       method: "POST",
@@ -420,6 +426,7 @@ export interface ChannelAdapterStatus {
   available: boolean;
   loaded: boolean;
   running: boolean;
+  qr_login_supported?: boolean;
   error?: string;
   install_hint?: string;
 }
@@ -434,6 +441,21 @@ export interface ChannelRuntimeStatus {
 
 export interface ChannelRuntimeActionResponse extends ChannelRuntimeStatus {
   status: string;
+}
+
+export type ChannelQRLoginStatus = "waiting" | "scanned" | "authenticated" | "expired" | "failed";
+
+export interface ChannelQRLoginResponse {
+  channel: string;
+  status: ChannelQRLoginStatus;
+  session_id?: string;
+  qr_content?: string;
+  message?: string;
+}
+
+export interface ChannelQRLoginCancelResponse {
+  channel?: string;
+  status: "cancelled";
 }
 
 export interface ChannelPairingCommandRequest {

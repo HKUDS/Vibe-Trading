@@ -376,7 +376,27 @@
       "stoppedToast": "IM 通道已停止",
       "refreshFailed": "刷新 IM 通道失败",
       "startFailed": "启动 IM 通道失败",
-      "stopFailed": "停止 IM 通道失败"
+      "stopFailed": "停止 IM 通道失败",
+      "qr": {
+        "connect": "扫码连接",
+        "title": "连接 {{channel}}",
+        "description": "请打开手机微信扫描二维码。登录凭据仅保存在服务端。",
+        "codeTitle": "{{channel}} 登录二维码",
+        "preparing": "正在生成安全二维码…",
+        "confirmOnPhone": "二维码已扫描，请在手机上确认登录。",
+        "connected": "微信连接成功。",
+        "retry": "重新生成",
+        "cancel": "取消",
+        "done": "完成",
+        "close": "关闭扫码登录",
+        "status": {
+          "waiting": "等待扫码…",
+          "scanned": "已扫码",
+          "authenticated": "已连接",
+          "expired": "二维码已过期。",
+          "failed": "微信登录失败。"
+        }
+      }
     },
     "generation": "生成设置",
     "dataSourceSettings": "数据源设置",

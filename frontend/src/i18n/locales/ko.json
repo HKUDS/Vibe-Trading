@@ -376,7 +376,27 @@
       "stoppedToast": "IM 채널이 중지되었습니다",
       "refreshFailed": "IM 채널 새로 고침 실패",
       "startFailed": "IM 채널 시작 실패",
-      "stopFailed": "IM 채널 중지 실패"
+      "stopFailed": "IM 채널 중지 실패",
+      "qr": {
+        "connect": "스캔하여 연결",
+        "title": "{{channel}} 연결",
+        "description": "휴대폰에서 WeChat을 열고 이 코드를 스캔하세요. 로그인 자격 증명은 서버에만 저장됩니다.",
+        "codeTitle": "{{channel}} QR 코드",
+        "preparing": "안전한 QR 코드를 준비하는 중…",
+        "confirmOnPhone": "스캔되었습니다. 휴대폰에서 로그인을 확인하세요.",
+        "connected": "WeChat이 연결되었습니다.",
+        "retry": "다시 시도",
+        "cancel": "취소",
+        "done": "완료",
+        "close": "QR 로그인 닫기",
+        "status": {
+          "waiting": "코드 스캔 대기 중…",
+          "scanned": "스캔됨",
+          "authenticated": "연결됨",
+          "expired": "QR 코드가 만료되었습니다.",
+          "failed": "WeChat 로그인에 실패했습니다."
+        }
+      }
     },
     "generation": "생성 설정",
     "dataSourceSettings": "데이터 소스 설정",

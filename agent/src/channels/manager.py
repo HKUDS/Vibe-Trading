@@ -5,9 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from collections.abc import Callable
 from contextlib import suppress
-from pathlib import Path
 from typing import Any
 
 from src.channels.base import BaseChannel
@@ -118,6 +116,7 @@ class ChannelManager:
                         "available": True,
                         "loaded": True,
                         "running": channel.is_running,
+                        "qr_login_supported": bool(channel.qr_login_supported),
                         "display_name": getattr(cls, "display_name", name),
                         "error": "",
                     }
@@ -467,6 +466,7 @@ class ChannelManager:
                     "enabled": True,
                     "loaded": True,
                     "running": channel.is_running,
+                    "qr_login_supported": bool(channel.qr_login_supported),
                     "display_name": getattr(channel, "display_name", name),
                 }
             )
