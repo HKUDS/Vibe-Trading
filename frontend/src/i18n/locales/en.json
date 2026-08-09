@@ -381,7 +381,27 @@
       "stoppedToast": "IM channels stopped",
       "refreshFailed": "Failed to refresh IM channels",
       "startFailed": "Failed to start IM channels",
-      "stopFailed": "Failed to stop IM channels"
+      "stopFailed": "Failed to stop IM channels",
+      "qr": {
+        "connect": "Scan to connect",
+        "title": "Connect {{channel}}",
+        "description": "Open WeChat on your phone and scan this code. Login credentials stay on the server.",
+        "codeTitle": "QR code for {{channel}}",
+        "preparing": "Preparing a secure QR code…",
+        "confirmOnPhone": "QR code scanned. Confirm the login on your phone.",
+        "connected": "WeChat connected successfully.",
+        "retry": "Try again",
+        "cancel": "Cancel",
+        "done": "Done",
+        "close": "Close QR login",
+        "status": {
+          "waiting": "Waiting for you to scan the code…",
+          "scanned": "Code scanned",
+          "authenticated": "Connected",
+          "expired": "This QR code expired.",
+          "failed": "WeChat login failed."
+        }
+      }
     },
     "generation": "Generation",
     "dataSourceSettings": "Data Source Settings",

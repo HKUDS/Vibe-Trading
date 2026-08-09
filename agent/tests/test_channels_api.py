@@ -99,3 +99,45 @@ def test_channels_pairing_command_uses_shared_store(tmp_path: Path, monkeypatch)
     assert response.status_code == 200
     assert response.json()["channel"] == "telegram"
     assert "No pending pairing requests" in response.json()["reply"]
+
+
+def test_weixin_qr_login_never_returns_credentials(tmp_path: Path, monkeypatch) -> None:
+    from src.channels.weixin import WeixinChannel
+
+    async def begin_qr_login(self):
+        return {"status": "waiting", "qr_content": "https://weixin.example/scan"}
+
+    async def poll_qr_login(self):
+        self._token = "server-only-token"
+        return {"status": "authenticated"}
+
+    async def cancel_qr_login(self):
+        return None
+
+    monkeypatch.setattr(WeixinChannel, "begin_qr_login", begin_qr_login)
+    monkeypatch.setattr(WeixinChannel, "poll_qr_login", poll_qr_login)
+    monkeypatch.setattr(WeixinChannel, "cancel_qr_login", cancel_qr_login)
+    client = _client(tmp_path, monkeypatch, channels_config={"weixin": {"enabled": True}})
+
+    started = client.post("/channels/weixin/qr-login")
+
+    assert started.status_code == 200
+    start_payload = started.json()
+    assert start_payload["status"] == "waiting"
+    assert start_payload["qr_content"] == "https://weixin.example/scan"
+    assert "token" not in json.dumps(start_payload).lower()
+
+    completed = client.get(f"/channels/qr-login/{start_payload['session_id']}")
+
+    assert completed.status_code == 200
+    assert completed.json() == {"channel": "weixin", "status": "authenticated"}
+    assert "token" not in completed.text.lower()
+
+
+def test_qr_login_rejects_adapters_without_browser_qr_support(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch, channels_config={"email": {"enabled": True}})
+
+    response = client.post("/channels/email/qr-login")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Channel 'email' does not support QR login"
