@@ -1,0 +1,111 @@
+name: Test and deploy personal
+
+on:
+  pull_request:
+    branches:
+      - personal
+  push:
+    branches:
+      - personal
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vibe-trading-personal-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Python safety and syntax checks
+        run: |
+          bash tools/ci_grep_gates.sh
+          python -m compileall -q agent/cli agent/src
+          python -m py_compile agent/api_server.py agent/mcp_server.py
+
+      - name: Run Python tests
+        env:
+          VIBE_TRADING_HOME: ${{ runner.temp }}/vibe-trading
+        run: >-
+          python -m pytest
+          agent/tests/test_cli_version.py
+          agent/tests/test_serve_bind.py
+          agent/tests/test_api_infrastructure.py
+          --tb=short
+          -q
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm run test:run
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy personal branch
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE'
+          cd /opt/trading-projects/code/Vibe-Trading
+
+          if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+              echo "Deployment aborted: server checkout has tracked local changes." >&2
+              git status --short >&2
+              exit 1
+          fi
+
+          git fetch origin personal
+          git switch personal
+          git pull --ff-only origin personal
+          bash scripts/deploy-personal.sh
+          REMOTE
