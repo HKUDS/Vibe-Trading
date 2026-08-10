@@ -111,3 +111,21 @@ def test_next_due_range_weekdays_skips_weekend() -> None:
     # 2026-06-26 is a Friday; after 17:00 Friday → 09:00 Monday
     after = _ms(2026, 6, 26, 17, 30)
     assert next_due("0 9-17 * * 1-5", after) == _ms(2026, 6, 29, 9, 0)
+
+
+def test_validate_rejects_star_slash_in_comma_list() -> None:
+    """*/5,10 is accepted by validation but crashes the parser — must be rejected."""
+    with pytest.raises(ValueError, match="not valid"):
+        validate_schedule("*/5,10 * * * *")
+
+
+def test_validate_rejects_star_in_comma_list() -> None:
+    """*,5 is not a valid cron field — star must be whole-field only."""
+    with pytest.raises(ValueError, match="not valid"):
+        validate_schedule("*,5 * * * *")
+
+
+def test_validate_rejects_star_slash_after_comma() -> None:
+    """10,*/5 is also invalid — step atoms must be whole-field only."""
+    with pytest.raises(ValueError, match="not valid"):
+        validate_schedule("10,*/5 * * * *")

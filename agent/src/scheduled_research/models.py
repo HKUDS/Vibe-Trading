@@ -25,8 +25,8 @@ from typing import Any, Dict, Optional
 #     Each field may be: *, */n, a single number, a comma-separated list
 #     (e.g. "0,15,30,45"), or a hyphen range (e.g. "9-17").
 _INTERVAL_MS_RE = re.compile(r"^[1-9][0-9]*$")
-_CRON_ATOM_RE = r"\*|\*/[1-9][0-9]*|[0-9]+|[0-9]+-[0-9]+"
-_CRON_FIELD_RE = re.compile(rf"^({_CRON_ATOM_RE})(?:,({_CRON_ATOM_RE}))*$")
+_CRON_LIST_ATOM_RE = r"(?:[0-9]+-[0-9]+|[0-9]+)"
+_CRON_FIELD_RE = re.compile(rf"^(?:\*|\*/[1-9][0-9]*|{_CRON_LIST_ATOM_RE}(?:,(?:{_CRON_LIST_ATOM_RE}))*)$")
 _CRON_PARTS = 5
 # Inclusive (low, high) bounds per cron field: minute hour day-of-month month
 # day-of-week. A bare number and a ``*/n`` step are both validated against the
