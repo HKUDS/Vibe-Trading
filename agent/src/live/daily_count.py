@@ -6,7 +6,10 @@ advisory defense-in-depth — the broker enforces the real ceiling — so any
 read failure reads as ``0`` (fail-open on the count only, never on the order).
 """
 
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # type: ignore[assignment]
 import json
 from datetime import datetime, timezone
 
@@ -54,14 +57,17 @@ def increment_daily_count(broker: str) -> int:
     The lock is held only across the counter file read + write, not across the
     broker call.
     """
-    today = _utc_today()
     path = _counter_path(broker)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     lock_path = _lock_path(broker)
 
     with open(lock_path, "w") as lock_file:
-        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        if fcntl is not None:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
         try:
+            # Compute today inside the lock so a thread that waits across
+            # the UTC midnight boundary stamps the count under the new day.
+            today = _utc_today()
             count = read_daily_count(broker) + 1
             tmp = path.with_name(f".{path.name}.tmp")
             tmp.write_text(
@@ -70,5 +76,6 @@ def increment_daily_count(broker: str) -> int:
             )
             tmp.replace(path)
         finally:
-            fcntl.flock(lock_file, fcntl.LOCK_UN)
+            if fcntl is not None:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
     return count
