@@ -57,6 +57,14 @@ class BackgroundManager:
             })
 
     def check(self, task_id: Optional[str] = None) -> str:
+        """Report status of one background task or a summary of all tasks.
+
+        Args:
+            task_id: Optional task identifier. When omitted, all tasks are listed.
+
+        Returns:
+            JSON string for a single task, or a plain-text summary of all tasks.
+        """
         with self._lock:
             if task_id:
                 t = self.tasks.get(task_id)
