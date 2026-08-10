@@ -22,9 +22,11 @@ from typing import Any, Dict, Optional
 #   * a bare positive integer (interval in milliseconds), e.g. "60000"
 #   * a simplified cron expression with 5 fields, e.g. "0 */6 * * *"
 #     Fields: minute hour day-of-month month day-of-week
-#     Each field may be: number, *, or */n
+#     Each field may be: *, */n, a single number, a comma-separated list
+#     (e.g. "0,15,30,45"), or a hyphen range (e.g. "9-17").
 _INTERVAL_MS_RE = re.compile(r"^[1-9][0-9]*$")
-_CRON_FIELD_RE = re.compile(r"^(\*|\*/[1-9][0-9]*|[0-9]+)$")
+_CRON_ATOM_RE = r"\*|\*/[1-9][0-9]*|[0-9]+|[0-9]+-[0-9]+"
+_CRON_FIELD_RE = re.compile(rf"^({_CRON_ATOM_RE})(?:,({_CRON_ATOM_RE}))*$")
 _CRON_PARTS = 5
 # Inclusive (low, high) bounds per cron field: minute hour day-of-month month
 # day-of-week. A bare number and a ``*/n`` step are both validated against the
@@ -53,12 +55,27 @@ def validate_schedule(schedule: str) -> None:
         raise ValueError(f"schedule must be a positive integer (ms) or a 5-field cron string; got: {schedule!r}")
     for part, (low, high) in zip(parts, _CRON_BOUNDS):
         if not _CRON_FIELD_RE.fullmatch(part):
-            raise ValueError(f"cron field {part!r} is not valid; each field must be *, */n, or a number")
+            raise ValueError(
+                f"cron field {part!r} is not valid; each field must be *, "
+                f"*/n, a number, a comma-separated list, or a hyphen range"
+            )
         if part == "*":
             continue
-        value = int(part[2:]) if part.startswith("*/") else int(part)
-        if not low <= value <= high:
-            raise ValueError(f"cron field {part!r} is out of range; expected {low}-{high}")
+        for atom in part.split(","):
+            if atom.startswith("*/"):
+                value = int(atom[2:])
+            elif "-" in atom:
+                lo_s, hi_s = atom.split("-", 1)
+                lo, hi = int(lo_s), int(hi_s)
+                if lo > hi:
+                    raise ValueError(f"cron field {part!r} has an inverted range {atom!r}")
+                if not low <= lo <= high or not low <= hi <= high:
+                    raise ValueError(f"cron field {part!r} is out of range; expected {low}-{high}")
+                continue
+            else:
+                value = int(atom)
+            if not low <= value <= high:
+                raise ValueError(f"cron field {part!r} is out of range; expected {low}-{high}")
 
 
 # ---------------------------------------------------------------------------
