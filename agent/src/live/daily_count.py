@@ -6,18 +6,22 @@ advisory defense-in-depth — the broker enforces the real ceiling — so any
 read failure reads as ``0`` (fail-open on the count only, never on the order).
 """
 
-from __future__ import annotations
-
+import fcntl
 import json
 from datetime import datetime, timezone
 
 from src.live.paths import broker_dir
 
 _COUNTER_FILENAME = "trade_counter.json"
+_LOCK_FILENAME = "trade_counter.lock"
 
 
 def _counter_path(broker: str):
     return broker_dir(broker) / _COUNTER_FILENAME
+
+
+def _lock_path(broker: str):
+    return broker_dir(broker) / _LOCK_FILENAME
 
 
 def _utc_today() -> str:
@@ -43,12 +47,28 @@ def read_daily_count(broker: str) -> int:
 
 
 def increment_daily_count(broker: str) -> int:
-    """Persist ``broker``'s incremented count for today (atomic). Returns new count."""
+    """Persist ``broker``'s incremented count for today (atomic). Returns new count.
+
+    The read-modify-write is guarded by an ``flock`` on a sibling lock file so
+    two concurrent orders cannot both read the same count and lose an increment.
+    The lock is held only across the counter file read + write, not across the
+    broker call.
+    """
     today = _utc_today()
-    count = read_daily_count(broker) + 1
     path = _counter_path(broker)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(json.dumps({"date": today, "count": count}, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(path)
+    lock_path = _lock_path(broker)
+
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            count = read_daily_count(broker) + 1
+            tmp = path.with_name(f".{path.name}.tmp")
+            tmp.write_text(
+                json.dumps({"date": today, "count": count}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            tmp.replace(path)
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
     return count
