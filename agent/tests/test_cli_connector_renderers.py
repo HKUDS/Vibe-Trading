@@ -135,3 +135,43 @@ def test_connector_account_still_handles_ibkr_summary(capsys) -> None:
     out = capsys.readouterr().out
     assert "NetLiquidation" in out
     assert "50000" in out
+
+
+def _profile(transport: str):
+    from src.trading.types import TradingProfile
+
+    return TradingProfile(
+        id=f"probe-{transport}",
+        connector="alpaca",
+        label="Probe",
+        environment="paper",
+        transport=transport,
+        capabilities=("account.read",),
+        readonly=True,
+    )
+
+
+def test_connector_check_hides_remote_mcp_rows_for_broker_sdk(capsys) -> None:
+    """Regression (#1064): a broker_sdk report has no OAuth/capability state."""
+    report = {"status": "ok", "host": "https://paper-api.alpaca.markets"}
+    with patch.object(_legacy, "_selected_profile_or", return_value=_profile("broker_sdk")):
+        with patch("src.trading.service.check_connection", return_value=report):
+            rc = _legacy.cmd_connector_check("probe-broker_sdk")
+
+    assert rc == _legacy.EXIT_SUCCESS
+    out = capsys.readouterr().out
+    assert "Connector profile is ready." in out
+    for label in ("Configured", "OAuth token", "Capabilities"):
+        assert label not in out
+
+
+def test_connector_check_still_reports_remote_mcp_authorization(capsys) -> None:
+    report = {"status": "ok", "configured": True, "oauth_token_present": True, "capabilities": ["account.read"]}
+    with patch.object(_legacy, "_selected_profile_or", return_value=_profile("remote_mcp")):
+        with patch("src.trading.service.check_connection", return_value=report):
+            rc = _legacy.cmd_connector_check("probe-remote_mcp")
+
+    assert rc == _legacy.EXIT_SUCCESS
+    out = capsys.readouterr().out
+    assert "OAuth token" in out and "present" in out
+    assert "account.read" in out
