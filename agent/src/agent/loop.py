@@ -62,6 +62,11 @@ COLLAPSE_TAIL = 500
 
 TAIL_TOKEN_BUDGET = 20_000
 
+# Per-pass serialization budget for auto-compact summarization. The head is
+# folded through the summarization LLM in chunks whose serialized JSON stays
+# under this limit, so no message is ever silently dropped by a hard slice.
+COMPACT_HEAD_CHAR_BUDGET = 80_000
+
 
 def _override(name: str):
     """Return a monkeypatched module-level override if present."""
@@ -457,6 +462,31 @@ Rules:
 - Keep the same section structure.
 - Do NOT drop any critical context from the previous summary.
 {focus_section}"""
+
+
+def _chunk_messages_for_summary(messages: list, char_budget: int) -> list[list]:
+    """Split messages into chunks whose serialized JSON stays under ``char_budget``.
+
+    Message boundaries are never broken: each message lands in exactly one
+    chunk. A single message larger than the budget forms its own oversized
+    chunk rather than being dropped, so no content is silently lost.
+    """
+    chunks: list[list] = []
+    current: list = []
+    current_len = 2  # "[]"
+    for msg in messages:
+        msg_text = json.dumps(msg, default=str, ensure_ascii=False)
+        added = len(msg_text) + (2 if current else 0)  # ", " separator
+        if current and current_len + added > char_budget:
+            chunks.append(current)
+            current = [msg]
+            current_len = 2 + len(msg_text)
+        else:
+            current.append(msg)
+            current_len += added
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def _is_tool_success(result: str) -> bool:
@@ -1807,6 +1837,8 @@ class AgentLoop:
           - Token-budget tail: keeps ~20K tokens of recent messages (not a fixed count).
           - Structured summary template: preserves goal, progress, decisions, files, etc.
           - Iterative update: Nth compression updates previous summary, zero info decay.
+          - Chunked head fold: an oversized head is summarized in budget-sized
+            passes, so no message is silently dropped by a serialization slice.
           - Tool pair fix: repairs orphaned tool_call/tool_result after compression.
           - Focus-topic: optionally prioritize specific topic in summary.
 
@@ -1859,20 +1891,25 @@ class AgentLoop:
         # Build focus section
         focus_section = _FOCUS_SECTION.format(topic=focus_topic) if focus_topic else ""
 
-        # Build summary prompt (structured template or iterative update)
-        conv_text = json.dumps(head, default=str, ensure_ascii=False)[:80000]
-
-        if self._previous_summary:
-            prompt = _ITERATIVE_UPDATE_PROMPT.format(
-                previous_summary=self._previous_summary,
-                new_turns=conv_text,
-                focus_section=focus_section,
-            )
-        else:
-            prompt = _STRUCTURED_SUMMARY_PROMPT.format(focus_section=focus_section) + conv_text
-
-        summary_resp = self.llm.chat([{"role": "user", "content": prompt}])
-        summary = summary_resp.content or ""
+        # Fold the head through the summarization LLM in budget-sized chunks.
+        # A single hard slice (the old ``[:80000]``) silently discarded
+        # everything past the cut — neither summarized nor preserved. Here
+        # every message reaches the summarization LLM exactly once: the first
+        # pass starts from the previous summary (or the structured template),
+        # and each later pass folds the next chunk into the running summary.
+        summary = self._previous_summary or ""
+        for chunk in _chunk_messages_for_summary(head, COMPACT_HEAD_CHAR_BUDGET):
+            conv_text = json.dumps(chunk, default=str, ensure_ascii=False)
+            if summary:
+                prompt = _ITERATIVE_UPDATE_PROMPT.format(
+                    previous_summary=summary,
+                    new_turns=conv_text,
+                    focus_section=focus_section,
+                )
+            else:
+                prompt = _STRUCTURED_SUMMARY_PROMPT.format(focus_section=focus_section) + conv_text
+            summary_resp = self.llm.chat([{"role": "user", "content": prompt}])
+            summary = summary_resp.content or ""
         self._previous_summary = summary
 
         tokens_before = estimate_tokens(messages)
