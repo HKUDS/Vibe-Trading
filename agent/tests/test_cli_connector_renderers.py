@@ -77,6 +77,51 @@ def test_connector_account_renders_balances_table(capsys) -> None:
     assert "12" in out and "345" in out  # net_assets 12,345 rendered
 
 
+def test_account_summary_rows_keep_zero_and_skip_none() -> None:
+    rows = _legacy._account_summary_rows({"cash": "0", "pattern_day_trader": None, "pnl": {"equity": 1.5}})
+    # A 0 cash balance is a real figure here, unlike in the remote-MCP flattener.
+    assert rows == [("cash", "0"), ("pnl.equity", "1.5")]
+
+
+def test_connector_account_renders_alpaca_account_mapping(capsys) -> None:
+    """Regression (#1064): Alpaca reports its fields under ``account``."""
+    alpaca_account = {
+        "status": "ok",
+        "profile_id": "alpaca-paper-trade",
+        "profile": "paper",
+        "is_paper": True,
+        "host": "https://paper-api.alpaca.markets",
+        "account": {
+            "account_number": "PA12345678",
+            "status": "AccountStatus.ACTIVE",
+            "currency": "USD",
+            "cash": "100000",
+            "equity": "100000",
+            "buying_power": "400000",
+            "portfolio_value": "100000",
+            "pattern_day_trader": None,
+            "trading_blocked": False,
+        },
+    }
+    rc = _legacy._print_connector_account(alpaca_account)
+
+    assert rc == _legacy.EXIT_SUCCESS
+    out = capsys.readouterr().out
+    assert "No account summary returned." not in out
+    assert "PA12345678" in out
+    assert "buying_power" in out and "400000" in out
+    assert "pattern_day_trader" not in out
+
+
+def test_connector_account_ignores_a_non_mapping_account_field(capsys) -> None:
+    """Tiger reports a plain account id in ``account``, not a field map."""
+    tiger_account = {"status": "ok", "profile_id": "tiger-paper-sdk", "account": "20240101"}
+    rc = _legacy._print_connector_account(tiger_account)
+
+    assert rc == _legacy.EXIT_SUCCESS
+    assert "No account summary returned." in capsys.readouterr().out
+
+
 def test_connector_account_still_handles_ibkr_summary(capsys) -> None:
     ibkr_account = {
         "status": "ok",
