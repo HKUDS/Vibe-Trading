@@ -4101,6 +4101,36 @@ def _flatten_account_fields(data: dict[str, Any], prefix: str = "") -> list[tupl
     return rows
 
 
+def _account_summary_rows(account: dict[str, Any], prefix: str = "") -> list[tuple[str, str]]:
+    """Flatten a ``broker_sdk`` account mapping into (field, value) rows.
+
+    Unlike the remote-MCP flattener, zero values are kept: these connectors
+    report a fixed set of account fields, so a 0 cash or margin figure is a
+    real balance rather than an empty asset-class slot.
+    """
+    rows: list[tuple[str, str]] = []
+    for key, value in account.items():
+        if value is None:
+            continue
+        label = f"{prefix}{key}"
+        if isinstance(value, dict):
+            rows.extend(_account_summary_rows(value, prefix=f"{label}."))
+            continue
+        rows.append((label, str(value)))
+    return rows
+
+
+def _print_connector_account_fields(result: dict[str, Any], account: dict[str, Any]) -> int:
+    """Render the single-account field map returned by ``broker_sdk`` connectors."""
+    table = Table(title=f"Account Summary · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
+    table.add_column("Field")
+    table.add_column("Value", justify="right")
+    for tag, value in _account_summary_rows(account):
+        table.add_row(tag, value)
+    console.print(table)
+    return EXIT_SUCCESS
+
+
 def _print_connector_account(result: dict[str, Any]) -> int:
     accounts = ", ".join(result.get("accounts", [])) or "(none)"
     rows = result.get("summary", [])
@@ -4110,6 +4140,14 @@ def _print_connector_account(result: dict[str, Any]) -> int:
         label = accounts if accounts != "(none)" else result.get("profile_id", result.get("profile", "unknown"))
         console.print(f"Accounts: [cyan]{rich_escape(str(label))}[/cyan]")
         return _print_connector_balances(result)
+    # Single-account broker_sdk connectors (Alpaca, …) put the fields under an
+    # ``account`` mapping instead of a ``balances`` list (#1064). Tiger reports a
+    # plain account id there, hence the mapping check.
+    account = result.get("account")
+    if not rows and isinstance(account, dict):
+        label = account.get("account_number") or result.get("profile_id", result.get("profile", "unknown"))
+        console.print(f"Account: [cyan]{rich_escape(str(label))}[/cyan]")
+        return _print_connector_account_fields(result, account)
     if not rows:
         # Not the broker_sdk flat shape — try the remote-MCP nested shape.
         # Robinhood's tool result double-wraps: result["data"] unwraps to
