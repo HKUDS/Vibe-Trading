@@ -4003,9 +4003,15 @@ def cmd_connector_check(
         table.add_row("Connector", profile.connector)
         table.add_row("Environment", profile.environment)
         table.add_row("Transport", profile.transport)
-        table.add_row("Configured", "yes" if report.get("configured") else "[red]no[/red]")
-        table.add_row("OAuth token", "present" if report.get("oauth_token_present") else "[yellow]missing[/yellow]")
-        table.add_row("Capabilities", ", ".join(report.get("capabilities", [])))
+        # Only the remote-MCP status path reports these; a broker_sdk report
+        # carries none of them (and Alpaca authenticates with an API key pair,
+        # not OAuth), so the rows contradicted the readiness line below (#1064).
+        if profile.transport != "broker_sdk":
+            table.add_row("Configured", "yes" if report.get("configured") else "[red]no[/red]")
+            table.add_row(
+                "OAuth token", "present" if report.get("oauth_token_present") else "[yellow]missing[/yellow]"
+            )
+            table.add_row("Capabilities", ", ".join(report.get("capabilities", [])))
         console.print(table)
 
     if report.get("status") not in {"ok"}:
