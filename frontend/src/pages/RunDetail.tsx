@@ -19,6 +19,7 @@ import {
   List,
   LayoutDashboard,
   Loader2,
+  PieChart,
   ShieldCheck,
   Sigma,
   XCircle,
@@ -47,10 +48,13 @@ import { Skeleton, SkeletonMetrics, SkeletonChart } from "@/components/common/Sk
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { getStrategyReportIdentity, StrategyResearchDashboard } from "@/components/charts/StrategyResearchDashboard";
 import { FactorResearchPanel } from "@/components/charts/FactorResearchPanel";
+import { PositionsPieChart } from "@/components/charts/PositionsPieChart";
+import { PositionWeightsChart } from "@/components/charts/PositionWeightsChart";
+import { computeDrift, exposureSummary, parsePositionRows, topSymbols, toWeightSeries } from "@/lib/positions";
 
 const rehypePlugins = [rehypeHighlight];
 
-type Tab = "dashboard" | "chart" | "tearsheet" | "trades" | "runCard" | "code" | "validation" | "studio" | "factor";
+type Tab = "dashboard" | "chart" | "tearsheet" | "trades" | "runCard" | "code" | "validation" | "studio" | "factor" | "positions";
 type ChartPayload = Pick<RunData, "price_series" | "indicator_series" | "trade_markers">;
 type ChartCache = Record<string, ChartPayload>;
 type ChartLoadProgress = { done: number; total: number };
@@ -134,6 +138,7 @@ export function RunDetail() {
   const hasValidation = !!run?.validation;
   const hasRunCard = !!run?.run_card;
   const hasStudio = !!run?.risk_xray || !!run?.rebalance_notes;
+  const hasPositions = !!run?.artifacts_positions_csv?.length;
   const hasTearsheet = (run?.artifacts_equity_csv?.length ?? 0) > 0 || (run?.equity_curve?.length ?? 0) > 0;
   const hasFactor = !!run?.has_factor_artifacts;
   const TABS: { id: Tab; label: string; icon: typeof BarChart3; hidden?: boolean }[] = [
@@ -143,6 +148,7 @@ export function RunDetail() {
     { id: "trades", label: i18n.t("runDetail.trades"), icon: List },
     { id: "factor", label: i18n.t("runDetail.factor"), icon: Sigma, hidden: !hasFactor },
     { id: "studio", label: i18n.t("runDetail.studio"), icon: Gauge, hidden: !hasStudio },
+    { id: "positions", label: i18n.t("runDetail.positions"), icon: PieChart, hidden: !hasPositions },
     { id: "validation", label: i18n.t("runDetail.validation"), icon: ShieldCheck, hidden: !hasValidation },
     { id: "runCard", label: i18n.t("runDetail.runCard"), icon: FileCheck2, hidden: !hasRunCard },
     { id: "code", label: i18n.t("runDetail.code"), icon: Code2 },
@@ -417,6 +423,7 @@ export function RunDetail() {
           {tab === "studio" && hasStudio && (
             <StudioTab xray={run.risk_xray} notes={run.rebalance_notes} />
           )}
+          {tab === "positions" && hasPositions && <PositionsTab run={run} />}
           {tab === "runCard" && run.run_card && <RunCardTab card={run.run_card} />}
           {tab === "code" && <CodeTab code={code} />}
         </ErrorBoundary>
@@ -594,6 +601,88 @@ function StudioTab({ xray, notes }: { xray?: RiskXRayPayload; notes?: RebalanceN
               </table>
             </div>
           )}
+        </RunCardPanel>
+      )}
+    </div>
+  );
+}
+
+function PositionsTab({ run }: { run: RunData }) {
+  const rows = useMemo(() => parsePositionRows(run.artifacts_positions_csv), [run.artifacts_positions_csv]);
+  const targetRows = useMemo(() => parsePositionRows(run.artifacts_target_positions_csv), [run.artifacts_target_positions_csv]);
+  const latest = rows[rows.length - 1]?.weights ?? {};
+  const latestEntries = Object.entries(latest).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const { gross, net } = exposureSummary(latest);
+  const symbols = useMemo(() => topSymbols(rows), [rows]);
+  const series = useMemo(() => toWeightSeries(rows, symbols), [rows, symbols]);
+  const drift = useMemo(() => computeDrift(targetRows, rows), [targetRows, rows]);
+
+  if (rows.length === 0) {
+    return <div className="p-4 text-sm text-muted-foreground">{i18n.t("runDetail.noPositionData")}</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <RunCardPanel title={i18n.t("runDetail.latestWeights")} icon={PieChart}>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <RunCardStat label={i18n.t("runDetail.grossExposure")} value={fmtPct(gross)} />
+          <RunCardStat label={i18n.t("runDetail.netExposure")} value={fmtPct(net)} />
+          <RunCardStat label={i18n.t("runDetail.rebalanceCount")} value={String(rows.length)} />
+          <RunCardStat label={i18n.t("runDetail.date")} value={rows[rows.length - 1]?.time || "-"} />
+        </div>
+        <div className="mt-3 grid gap-4 xl:grid-cols-2">
+          <PositionsPieChart weights={latest} />
+          <div className="max-h-72 overflow-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground [&_th]:font-medium">
+                  <th className="py-2 ps-4 pr-4">{i18n.t("runDetail.symbol")}</th>
+                  <th className="py-2 pr-4">{i18n.t("runDetail.weight")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {latestEntries.map(([sym, w]) => (
+                  <tr key={sym} className="border-b last:border-0 hover:bg-muted/40">
+                    <td className="py-1.5 ps-4 pr-4 font-mono text-xs">{sym}</td>
+                    <td className="py-1.5 pr-4 font-mono tabular-nums">{fmtPct(w, 2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </RunCardPanel>
+
+      {rows.length > 1 && (
+        <RunCardPanel title={i18n.t("runDetail.weightEvolution")} icon={PieChart}>
+          <PositionWeightsChart points={series} symbols={symbols} />
+        </RunCardPanel>
+      )}
+
+      {drift.length > 0 && (
+        <RunCardPanel title={i18n.t("runDetail.targetVsActual")} icon={Gauge}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground [&_th]:font-medium">
+                  <th className="py-2 ps-4 pr-4">{i18n.t("runDetail.symbol")}</th>
+                  <th className="py-2 pr-4">{i18n.t("runDetail.target")}</th>
+                  <th className="py-2 pr-4">{i18n.t("runDetail.actual")}</th>
+                  <th className="py-2">{i18n.t("runDetail.drift")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drift.map((r) => (
+                  <tr key={r.symbol} className="border-b last:border-0 hover:bg-muted/40">
+                    <td className="py-1.5 ps-4 pr-4 font-mono text-xs">{r.symbol}</td>
+                    <td className="py-1.5 pr-4 font-mono tabular-nums">{fmtPct(r.target, 2)}</td>
+                    <td className="py-1.5 pr-4 font-mono tabular-nums">{fmtPct(r.actual, 2)}</td>
+                    <td className="py-1.5 font-mono tabular-nums">{`${r.drift >= 0 ? "+" : ""}${fmtPct(r.drift, 2)}`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </RunCardPanel>
       )}
     </div>

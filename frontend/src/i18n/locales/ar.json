@@ -634,7 +634,18 @@
     "ddTroughToRecovery": "القاع إلى التعافي",
     "ddNotRecovered": "لم يتعافَ",
     "ddDays": "{{count}} يوم",
-    "dashboard": "لوحة البحث"
+    "dashboard": "لوحة البحث",
+    "positions": "المراكز",
+    "latestWeights": "أحدث الأوزان",
+    "weightEvolution": "تطور الأوزان",
+    "targetVsActual": "الهدف مقابل الفعلي",
+    "drift": "الانحراف",
+    "other": "أخرى",
+    "grossExposure": "إجمالي التعرض",
+    "netExposure": "صافي التعرض",
+    "noPositionData": "لا توجد بيانات مراكز لهذا التشغيل.",
+    "target": "الهدف",
+    "actual": "الفعلي"
   },
   "compare": {
     "title": "مقارنة الاستراتيجيات",

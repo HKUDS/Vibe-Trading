@@ -634,7 +634,18 @@
     "ddTroughToRecovery": "低点→恢复",
     "ddNotRecovered": "未恢复",
     "ddDays": "{{count}} 天",
-    "dashboard": "研究仪表盘"
+    "dashboard": "研究仪表盘",
+    "positions": "持仓",
+    "latestWeights": "最新持仓权重",
+    "weightEvolution": "权重变迁",
+    "targetVsActual": "目标与实际对比",
+    "drift": "偏离",
+    "other": "其他",
+    "grossExposure": "总敞口",
+    "netExposure": "净敞口",
+    "noPositionData": "本 run 无持仓数据。",
+    "target": "目标权重",
+    "actual": "实际权重"
   },
   "compare": {
     "title": "策略对比",

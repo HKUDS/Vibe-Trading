@@ -639,7 +639,18 @@
     "ddTroughToRecovery": "Trough→Rec.",
     "ddNotRecovered": "Not recovered",
     "ddDays": "{{count}} d",
-    "dashboard": "Research dashboard"
+    "dashboard": "Research dashboard",
+    "positions": "Positions",
+    "latestWeights": "Latest Weights",
+    "weightEvolution": "Weight Evolution",
+    "targetVsActual": "Target vs Actual",
+    "drift": "Drift",
+    "other": "Other",
+    "grossExposure": "Gross",
+    "netExposure": "Net",
+    "noPositionData": "No position rows in this run.",
+    "target": "Target",
+    "actual": "Actual"
   },
   "compare": {
     "title": "Strategy Comparison",

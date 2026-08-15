@@ -639,7 +639,18 @@
     "ddTroughToRecovery": "Valle→Rec.",
     "ddNotRecovered": "No recuperado",
     "ddDays": "{{count}} d",
-    "dashboard": "Panel de investigación"
+    "dashboard": "Panel de investigación",
+    "positions": "Posiciones",
+    "latestWeights": "Pesos más recientes",
+    "weightEvolution": "Evolución de pesos",
+    "targetVsActual": "Objetivo vs real",
+    "drift": "Desviación",
+    "other": "Otros",
+    "grossExposure": "Bruto",
+    "netExposure": "Neto",
+    "noPositionData": "Esta ejecución no tiene datos de posiciones.",
+    "target": "Objetivo",
+    "actual": "Real"
   },
   "compare": {
     "title": "Comparación de estrategias",

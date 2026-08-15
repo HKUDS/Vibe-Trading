@@ -669,6 +669,8 @@ export interface RunData {
   /** Full equity.csv rows (timestamp/equity/drawdown as strings); not capped like equity_curve. */
   artifacts_equity_csv?: Array<Record<string, string>>;
   artifacts_metrics_csv?: Array<Record<string, string>>;
+  artifacts_positions_csv?: Array<Record<string, string>>;
+  artifacts_target_positions_csv?: Array<Record<string, string>>;
   artifacts_trades_csv?: Array<Record<string, string>>;
   run_logs?: Array<{ source?: string; line_number?: number; message?: string }>;
 }

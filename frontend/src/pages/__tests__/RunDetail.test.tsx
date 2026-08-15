@@ -19,6 +19,12 @@ vi.mock("@/components/charts/CandlestickChart", () => ({
 vi.mock("@/components/charts/EquityChart", () => ({
   EquityChart: () => <div data-testid="equity-chart" />,
 }));
+vi.mock("@/components/charts/PositionsPieChart", () => ({
+  PositionsPieChart: () => <div data-testid="positions-pie-chart" />,
+}));
+vi.mock("@/components/charts/PositionWeightsChart", () => ({
+  PositionWeightsChart: () => <div data-testid="position-weights-chart" />,
+}));
 vi.mock("@/components/charts/StrategyResearchDashboard", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/components/charts/StrategyResearchDashboard")>();
   return {
@@ -343,4 +349,53 @@ describe("RunDetail page", () => {
 
     await screen.findByText("Plain run");
     expect(screen.queryByRole("tab", { name: "Portfolio Studio" })).not.toBeInTheDocument();
+  });
+
+  it("renders the Positions tab from positions artifacts, including target-vs-actual drift", async () => {
+    apiMock.getRun.mockResolvedValue({
+      status: "success",
+      run_id: "positions-run",
+      prompt: "Positions run",
+      artifacts_positions_csv: [
+        { timestamp: "2026-02-01", AAPL: 0.5, MSFT: 0.3, TSLA: 0.2 },
+        { timestamp: "2026-03-01", AAPL: 0.6, MSFT: 0.25, TSLA: 0.15 },
+      ],
+      artifacts_target_positions_csv: [
+        { timestamp: "2026-03-01", AAPL: 0.65, MSFT: 0.25, TSLA: 0.1 },
+      ],
+    });
+    apiMock.getRunCode.mockResolvedValue({});
+
+    renderRunDetail("/runs/positions-run");
+
+    await screen.findByText("Positions run");
+    fireEvent.click(screen.getByRole("tab", { name: "Positions" }));
+
+    expect(await screen.findByText("Latest Weights")).toBeInTheDocument();
+    // gross and net both sum to 100% for this long-only fully invested book
+    expect(screen.getAllByText("100.0%")).toHaveLength(2);
+    // latest actual weights: weights table row plus drift table's actual column
+    expect(screen.getAllByText("60.00%")).toHaveLength(2);
+    expect(screen.getByText("65.00%")).toBeInTheDocument();
+    expect(screen.getByText("-5.00%")).toBeInTheDocument();
+    expect(screen.getByText("+5.00%")).toBeInTheDocument();
+    expect(screen.getByText("Target vs Actual")).toBeInTheDocument();
+    // two snapshots -> the evolution chart renders
+    expect(screen.getByTestId("position-weights-chart")).toBeInTheDocument();
+    expect(screen.getByTestId("positions-pie-chart")).toBeInTheDocument();
+  });
+
+  it("hides the Positions tab when the run has no positions artifact", async () => {
+    apiMock.getRun.mockResolvedValue({
+      status: "success",
+      run_id: "plain-run",
+      prompt: "Plain run",
+      trade_log: [],
+    });
+    apiMock.getRunCode.mockResolvedValue({});
+
+    renderRunDetail("/runs/plain-run");
+
+    await screen.findByText("Plain run");
+    expect(screen.queryByRole("tab", { name: "Positions" })).not.toBeInTheDocument();
   });

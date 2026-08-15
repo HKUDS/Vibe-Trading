@@ -634,7 +634,18 @@
     "ddTroughToRecovery": "저점→회복",
     "ddNotRecovered": "미회복",
     "ddDays": "{{count}}일",
-    "dashboard": "리서치 대시보드"
+    "dashboard": "리서치 대시보드",
+    "positions": "포지션",
+    "latestWeights": "최신 비중",
+    "weightEvolution": "비중 변화",
+    "targetVsActual": "목표 vs 실제",
+    "drift": "괴리",
+    "other": "기타",
+    "grossExposure": "총 익스포저",
+    "netExposure": "순 익스포저",
+    "noPositionData": "이 실행에는 포지션 데이터가 없습니다.",
+    "target": "목표",
+    "actual": "실제"
   },
   "compare": {
     "title": "전략 비교",

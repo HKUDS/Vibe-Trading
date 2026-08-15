@@ -634,7 +634,18 @@
     "ddTroughToRecovery": "安値→回復",
     "ddNotRecovered": "未回復",
     "ddDays": "{{count}}日",
-    "dashboard": "リサーチダッシュボード"
+    "dashboard": "リサーチダッシュボード",
+    "positions": "ポジション",
+    "latestWeights": "最新ウェイト",
+    "weightEvolution": "ウェイト推移",
+    "targetVsActual": "目標 vs 実際",
+    "drift": "乖離",
+    "other": "その他",
+    "grossExposure": "グロス",
+    "netExposure": "ネット",
+    "noPositionData": "このランにはポジションデータがありません。",
+    "target": "目標",
+    "actual": "実際"
   },
   "compare": {
     "title": "戦略比較",
