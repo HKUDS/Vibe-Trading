@@ -18,7 +18,7 @@ from src.agent.context import ContextBuilder
 from src.agent.progress import HeartbeatTimer
 from src.agent.skills import SkillsLoader
 from src.agent.tools import ToolRegistry
-from src.config.limits import TOOL_RESULT_LIMIT
+from src.config.limits import truncate_tool_result
 from src.config.schema import AgentConfig
 from src.providers.chat import ChatLLM, LLMResponse, ProviderStreamError
 from src.providers.content_filter import (
@@ -791,7 +791,7 @@ def run_worker(
             )
             messages.append(
                 ContextBuilder.format_tool_result(
-                    tc.id, tc.name, result[:TOOL_RESULT_LIMIT]
+                    tc.id, tc.name, truncate_tool_result(result)
                 )
             )
 
