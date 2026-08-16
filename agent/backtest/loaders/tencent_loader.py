@@ -13,7 +13,10 @@ from __future__ import annotations
 import json
 import logging
 from typing import Dict, List, Optional
+import ssl
+import urllib.request
 
+import certifi
 import pandas as pd
 
 from backtest.loaders.base import cached_loader_fetch, validate_date_range
@@ -23,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
 
+_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 def _is_a_share(code: str) -> bool:
     return code.upper().endswith((".SZ", ".SH"))
@@ -114,12 +118,11 @@ class DataLoader:
             f"{start_date},{end_date},500,qfq"
         )
 
-        import urllib.request
         req = urllib.request.Request(url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Referer": "https://web.ifzq.gtimg.cn/",
         })
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
             raw = resp.read().decode("utf-8")
 
         data = json.loads(raw)

@@ -41,7 +41,7 @@ def _hk_kline_payload(tencent_code: str) -> str:
 
 
 def _patch_http(monkeypatch, urls: list[str], payload: str) -> None:
-    def fake_urlopen(req, timeout=None):  # noqa: ANN001, ANN002
+    def fake_urlopen(req, timeout=None, **kwargs):  # noqa: ANN001, ANN002
         urls.append(req.full_url)
         return _FakeResponse(payload)
 

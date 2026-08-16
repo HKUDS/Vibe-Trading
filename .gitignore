@@ -113,3 +113,5 @@ desktop/electron/runtime/
 wiki/alpha-library/manifest.json
 wiki/alpha-library/content/
 bench_report.json
+
+.idea/*
