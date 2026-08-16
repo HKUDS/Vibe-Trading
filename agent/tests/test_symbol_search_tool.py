@@ -434,3 +434,156 @@ class TestShanghaiAliasAndUnsupportedQueries:
 
         search.assert_called_once()
         assert data["sources"]["yahoo"] == "ok"
+
+
+class TestTickerNameQueryYahooSkip:
+    """A ticker+name query Yahoo cannot serve must be skipped, not "ok".
+
+    Yahoo's search endpoint answers a multi-token query whose first token is a
+    bare all-caps ticker ("XOM ExxonMobil") with zero quotes. Recording that as
+    "ok" counted a second clean source, so a caller deciding whether an entity
+    exists read "not listed" as two corroborating "not found" answers; the
+    unsupported shape must read as "skipped" instead, mirroring the non-ASCII
+    guard. Eastmoney is NOT skipped for this shape — it can serve multi-token
+    queries — only the Yahoo path relabels.
+    """
+
+    def test_ticker_name_query_skips_yahoo_without_ok_status(self):
+        """Yahoo returns zero quotes for the shape and is relabeled "skipped"."""
+        with patch.object(
+            ss.eastmoney_client,
+            "get_json",
+            return_value={"QuotationCodeTable": {"Data": []}},
+        ), patch.object(
+            ss.yahoo_client, "search", return_value=[]
+        ) as search, patch.object(
+            ss.sec_edgar_client, "cik_for", return_value=None
+        ):
+            data = json.loads(
+                ss.SymbolSearchTool().execute(query="XOM ExxonMobil")
+            )["data"]
+
+        # Post-response relabel, not a pre-call skip: Yahoo is still consulted.
+        search.assert_called_once()
+        assert data["sources"]["yahoo"].startswith("skipped:")
+        assert data["sources"]["eastmoney"] == "ok"
+        assert data["count"] == 0
+
+    def test_ticker_name_query_with_matching_quotes_stays_ok(self):
+        """The relabel must NOT fire when Yahoo can actually serve the shape."""
+        quotes = [
+            {
+                "symbol": "XOM",
+                "shortname": "Exxon Mobil Corp.",
+                "exchange": "NYQ",
+                "quoteType": "EQUITY",
+            }
+        ]
+        with patch.object(
+            ss.eastmoney_client,
+            "get_json",
+            return_value={"QuotationCodeTable": {"Data": []}},
+        ), patch.object(
+            ss.yahoo_client, "search", return_value=quotes
+        ) as search, patch.object(
+            ss.sec_edgar_client, "cik_for", return_value="0000034088"
+        ):
+            data = json.loads(
+                ss.SymbolSearchTool().execute(query="XOM ExxonMobil")
+            )["data"]
+
+        search.assert_called_once()
+        assert data["sources"]["yahoo"] == "ok"
+        assert data["count"] == 1
+
+    def test_multi_word_name_query_still_reaches_yahoo(self):
+        """A multi-word NAME ("Exxon Mobil") is not a ticker+name shape."""
+        with patch.object(
+            ss.eastmoney_client,
+            "get_json",
+            return_value={"QuotationCodeTable": {"Data": []}},
+        ), patch.object(
+            ss.yahoo_client, "search", return_value=_yahoo_quotes()
+        ) as search, patch.object(
+            ss.sec_edgar_client, "cik_for", return_value="0000320193"
+        ):
+            data = json.loads(ss.SymbolSearchTool().execute(query="Exxon Mobil"))["data"]
+
+        search.assert_called_once()
+        assert data["sources"]["yahoo"] == "ok"
+
+    def test_single_token_query_still_reaches_yahoo(self):
+        """A bare single-token ticker ("XOM") is not a ticker+name shape."""
+        with patch.object(
+            ss.eastmoney_client,
+            "get_json",
+            return_value={"QuotationCodeTable": {"Data": []}},
+        ), patch.object(
+            ss.yahoo_client, "search", return_value=_yahoo_quotes()
+        ) as search, patch.object(
+            ss.sec_edgar_client, "cik_for", return_value="0000320193"
+        ):
+            data = json.loads(ss.SymbolSearchTool().execute(query="XOM"))["data"]
+
+        search.assert_called_once()
+        assert data["sources"]["yahoo"] == "ok"
+
+    def test_suffixed_ticker_with_name_still_reaches_yahoo(self):
+        """The bare-ticker clause must not fire on suffixed Canadian tickers."""
+        with patch.object(
+            ss.eastmoney_client,
+            "get_json",
+            return_value={"QuotationCodeTable": {"Data": []}},
+        ), patch.object(
+            ss.yahoo_client, "search", return_value=_yahoo_quotes()
+        ) as search:
+            data = json.loads(
+                ss.SymbolSearchTool().execute(query="BTO.TO B2Gold")
+            )["data"]
+
+        search.assert_called_once()
+        assert data["sources"]["yahoo"] == "ok"
+
+    def test_single_token_ascii_empty_result_stays_ok(self):
+        """A bare single token Yahoo cannot match is "not listed", not "skipped".
+
+        The relabel is shape-specific: only a multi-token ticker+name query is
+        unsupported. A single token (e.g. a bogus ticker) that returns zero
+        quotes is an authoritative "not listed" and must stay "ok", otherwise
+        every genuinely-absent entity would read as an unsupported shape.
+        """
+        with patch.object(
+            ss.eastmoney_client,
+            "get_json",
+            return_value={"QuotationCodeTable": {"Data": []}},
+        ), patch.object(
+            ss.yahoo_client, "search", return_value=[]
+        ) as search:
+            data = json.loads(
+                ss.SymbolSearchTool().execute(query="XOMZZZ")
+            )["data"]
+
+        search.assert_called_once()
+        assert data["sources"]["yahoo"] == "ok"
+
+    def test_multi_word_name_empty_result_stays_ok(self):
+        """A multi-word NAME ("Exxon Mobil") with zero quotes is "not listed".
+
+        The shape classifier keys on a bare all-caps FIRST token ("XOM
+        ExxonMobil"). A name-led query ("Exxon Mobil") is a shape Yahoo can
+        serve, so its empty answer is an authoritative "not listed" and must
+        not be relabeled to "skipped".
+        """
+        with patch.object(
+            ss.eastmoney_client,
+            "get_json",
+            return_value={"QuotationCodeTable": {"Data": []}},
+        ), patch.object(
+            ss.yahoo_client, "search", return_value=[]
+        ) as search:
+            data = json.loads(
+                ss.SymbolSearchTool().execute(query="Exxon Mobil")
+            )["data"]
+
+        search.assert_called_once()
+        assert data["sources"]["yahoo"] == "ok"

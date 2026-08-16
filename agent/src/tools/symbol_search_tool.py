@@ -219,6 +219,30 @@ def _is_canadian_symbol(text: str) -> bool:
     return bool(_CANADIAN_SYMBOL_RE.match((text or "").strip()))
 
 
+def _is_ticker_name_query(query: str) -> bool:
+    """Whether *query* is a bare all-caps ticker followed by a name hint.
+
+    Yahoo's search endpoint answers this shape ("XOM ExxonMobil") with zero
+    quotes, so the Yahoo path skips it rather than letting a caller deciding
+    whether an entity exists read the empty result as "not listed". Unlike the
+    Canadian fail-fast, Eastmoney is NOT skipped for this shape — it can serve
+    multi-token queries — so this helper is only consulted on the Yahoo path.
+
+    The first token must be bare all-caps (``[A-Z0-9&]{1,6}``); the absence of
+    a dot/hyphen excludes suffixed tickers (``BTO.TO``, ``BRK.B``) and
+    mixed-case name tokens.
+
+    Args:
+        query: Free-text name or ticker fragment.
+
+    Returns:
+        ``True`` when the query has at least two tokens and starts with a
+        bare all-caps ticker-like token.
+    """
+    tokens = (query or "").strip().split()
+    return len(tokens) >= 2 and bool(re.fullmatch(r"[A-Z0-9&]{1,6}", tokens[0]))
+
+
 def _search_eastmoney(query: str) -> tuple[List[Dict[str, Any]], str]:
     """Query Eastmoney's suggest endpoint and normalize the candidates.
 
@@ -357,6 +381,13 @@ def _search_yahoo(query: str) -> tuple[List[Dict[str, Any]], str]:
     except Exception as exc:  # noqa: BLE001 - one source failing is non-fatal
         logger.warning("yahoo search failed for %r: %s", query, exc)
         return [], f"yahoo search failed: {exc}"
+
+    if not quotes and _is_ticker_name_query(query):
+        # Mirror the non-ASCII guard above: Yahoo answers a multi-token
+        # ticker+name query ("XOM ExxonMobil") with zero quotes, which a
+        # caller deciding whether an entity exists would otherwise read as
+        # "not listed". An unsupported query shape must not read as an outage.
+        return [], f"{_SKIPPED}ticker+name query is not supported by this source"
 
     candidates: List[Dict[str, Any]] = []
     for quote in quotes[:_PER_SOURCE_CAP]:
