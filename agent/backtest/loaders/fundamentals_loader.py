@@ -36,6 +36,7 @@ _FLOW_CONCEPTS = {
     "SalesRevenueNet",
     "CostOfGoodsAndServicesSold",
     "CostOfRevenue",
+    "GrossProfit",
     "OperatingIncomeLoss",
     "NetIncomeLoss",
     "ProfitLoss",

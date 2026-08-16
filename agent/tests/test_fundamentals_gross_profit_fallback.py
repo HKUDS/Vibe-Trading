@@ -161,3 +161,79 @@ def test_gross_profit_stays_null_without_either_source(
 
     assert pd.isna(panel["gross_profit"]["AAA"].loc["2024-05-01"])
     assert pd.isna(panel["gross_profitability"]["AAA"].loc["2024-05-01"])
+
+
+def test_gross_profit_direct_concept_is_ttm_summed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_sec(
+        monkeypatch,
+        {
+            "AAA": _facts(
+                {
+                    "GrossProfit": [
+                        _fact_row("2023-06-30", "2023-07-20", 10.0),
+                        _fact_row("2023-09-30", "2023-10-20", 20.0),
+                        _fact_row("2023-12-31", "2024-01-20", 30.0),
+                        _fact_row("2024-03-31", "2024-04-20", 40.0),
+                    ]
+                }
+            )
+        },
+    )
+    index = pd.date_range("2024-04-01", "2024-05-01", freq="D")
+
+    panel = fundamentals_loader.load_fundamental_panel(
+        ["AAA"],
+        ["gross_profit"],
+        "2024-04-01",
+        "2024-05-01",
+        freq="ttm",
+        index=index,
+    )
+
+    gross_profit = panel["gross_profit"]["AAA"]
+    # TTM must be the rolling four-quarter sum, not the latest quarter.
+    assert gross_profit.loc["2024-05-01"] == 100.0
+
+
+def test_gross_profit_direct_concept_excludes_annual_span_from_quarterly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_sec(
+        monkeypatch,
+        {
+            "AAA": _facts(
+                {
+                    "GrossProfit": [
+                        _fact_row("2023-06-30", "2023-07-20", 10.0),
+                        _fact_row("2023-09-30", "2023-10-20", 20.0),
+                        _fact_row("2023-12-31", "2024-01-20", 30.0),
+                        _fact_row(
+                            "2024-03-31",
+                            "2024-02-20",
+                            100.0,
+                            form="10-K",
+                            start="2023-03-31",
+                        ),
+                    ]
+                }
+            )
+        },
+    )
+    index = pd.date_range("2024-02-01", "2024-03-10", freq="D")
+
+    panel = fundamentals_loader.load_fundamental_panel(
+        ["AAA"],
+        ["gross_profit"],
+        "2024-02-01",
+        "2024-03-10",
+        freq="quarterly",
+        index=index,
+    )
+
+    gross_profit = panel["gross_profit"]["AAA"]
+    # The 10-K row is an annual span: quarterly cadence must synthesize fiscal
+    # Q4 (100 - 10 - 20 - 30), never surface the full-year value.
+    assert gross_profit.loc["2024-02-19"] == 30.0
+    assert gross_profit.loc["2024-02-20"] == 40.0
