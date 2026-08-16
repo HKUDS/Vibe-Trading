@@ -259,6 +259,23 @@ def load_fundamental_panel(
             columns=symbol_list,
         )
 
+    # Raw fields may declare a fallback derivation (e.g. gross_profit =
+    # revenue - cogs). Fill only cells where the directly-reported concept was
+    # absent; reported values win.
+    for field in raw_fields:
+        spec = _raw_field_spec(schema, field)
+        if spec is None:
+            continue
+        deps = _spec_get(spec, "dependencies") or ()
+        compute = _spec_get(spec, "compute")
+        if not callable(compute) or not deps:
+            continue
+        dep_frames = {str(dep): panels.get(str(dep)) for dep in deps}
+        if any(frame is None for frame in dep_frames.values()):
+            continue
+        fallback = _compute_derived(spec, dep_frames)
+        panels[field] = panels[field].where(panels[field].notna(), fallback)
+
     def panel_for(field: str) -> pd.DataFrame:
         if field in panels:
             return panels[field]
@@ -340,13 +357,17 @@ def _collect_raw_fields(schema: Any, fields: Iterable[str]) -> set[str]:
     def visit(field: str) -> None:
         if field in visiting:
             raise ValueError(f"cyclic derived fundamental field: {field}")
+        visiting.add(field)
         derived = _derived_field(schema, field)
         if derived is None:
             raw.add(field)
-            return
-        visiting.add(field)
-        for dep in _derived_dependencies(derived):
-            visit(_resolve_field_name(schema, dep))
+            spec = _raw_field_spec(schema, field)
+            if spec is not None:
+                for dep in _spec_get(spec, "dependencies") or ():
+                    visit(_resolve_field_name(schema, str(dep)))
+        else:
+            for dep in _derived_dependencies(derived):
+                visit(_resolve_field_name(schema, dep))
         visiting.remove(field)
 
     for field in fields:
@@ -356,6 +377,13 @@ def _collect_raw_fields(schema: Any, fields: Iterable[str]) -> set[str]:
 
 def _derived_field(schema: Any, field: str) -> Any | None:
     return getattr(schema, "DERIVED_FIELDS", {}).get(field)
+
+
+def _raw_field_spec(schema: Any, field: str) -> Any | None:
+    raw_fields = getattr(schema, "RAW_FIELDS", {})
+    if isinstance(raw_fields, dict):
+        return raw_fields.get(field)
+    return getattr(raw_fields, field, None)
 
 
 def _spec_get(derived: Any, key: str) -> Any:
