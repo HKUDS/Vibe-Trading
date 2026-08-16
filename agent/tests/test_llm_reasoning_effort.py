@@ -18,9 +18,11 @@ Responses API for endpoints that support it.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -309,6 +311,170 @@ class TestUnsupportedProviders:
         )
 
         assert kwargs["reasoning_effort"] == "high"
+
+
+class TestAnthropicNativeProvider:
+    """The native Anthropic adapter takes effort as `reasoning_effort`.
+
+    langchain-anthropic renders that kwarg as ``output_config={'effort': ...}``
+    on the wire, which is where the Anthropic API expects it — unlike the
+    OpenAI-compatible providers above, which send a top-level field.
+    """
+
+    def _capture(self, env: dict[str, str]) -> dict[str, Any]:
+        """Run build_llm for the Anthropic provider and return adapter kwargs.
+
+        Patches the temperature-safe subclass factory rather than the module
+        attribute, because ``_build_anthropic`` resolves ChatAnthropic lazily
+        through ``import_module`` at call time.
+
+        Args:
+            env: Full environment for the call; every other variable is cleared.
+
+        Returns:
+            Keyword arguments build_llm passed to the adapter.
+        """
+        if importlib.util.find_spec("langchain_anthropic") is None:
+            pytest.skip("langchain-anthropic is not installed")
+        captured: dict[str, Any] = {}
+
+        class _FakeChatAnthropic:
+            model_fields = {"reasoning_effort": object()}
+
+            def __init__(self, **kwargs: Any) -> None:
+                captured.update(kwargs)
+
+        with patch.dict(os.environ, env, clear=True):
+            with patch.object(
+                llm_mod, "_make_temperature_safe_anthropic", lambda _: _FakeChatAnthropic
+            ):
+                build_llm()
+        return captured
+
+    def _env(self, **overrides: str) -> dict[str, str]:
+        """Return a minimal Anthropic environment with optional overrides."""
+        env = {
+            "LANGCHAIN_PROVIDER": "anthropic",
+            "ANTHROPIC_API_KEY": "sk-ant-test",
+            "LANGCHAIN_MODEL_NAME": "claude-fable-5",
+        }
+        env.update(overrides)
+        return env
+
+    def test_effort_reaches_the_anthropic_adapter(self) -> None:
+        """The gap this closes: the value was read and then dropped."""
+        kwargs = self._capture(self._env(LANGCHAIN_REASONING_EFFORT="high"))
+
+        assert kwargs["reasoning_effort"] == "high"
+
+    def test_unset_effort_stays_absent(self) -> None:
+        kwargs = self._capture(self._env())
+
+        assert kwargs["reasoning_effort"] is None
+
+    def test_temperature_is_omitted_when_effort_is_sent(self) -> None:
+        """Effort enables adaptive thinking, which rejects temperature != 1.
+
+        The platform's default is 0.0, so sending both fails the request with
+        `temperature may only be set to 1 when thinking is enabled or in
+        adaptive mode`. The pre-existing temperature-safe wrapper does not
+        catch this — it handles models that reject temperature outright.
+        """
+        kwargs = self._capture(self._env(LANGCHAIN_REASONING_EFFORT="high"))
+
+        assert kwargs["temperature"] is None
+
+    def test_temperature_is_preserved_without_effort(self) -> None:
+        """No effort means no thinking, so the deterministic default stands."""
+        kwargs = self._capture(self._env(LANGCHAIN_TEMPERATURE="0.0"))
+
+        assert kwargs["temperature"] == 0.0
+
+    def test_a_model_that_rejects_effort_is_not_sent_it(self) -> None:
+        """Haiku 4.5 answers `This model does not support the effort parameter`.
+
+        This is the case that matters in a swarm: a per-agent model split puts
+        cheap models on the data-gathering seats, and a global effort setting
+        would fail those workers with a hard 400 rather than a warning.
+        """
+        kwargs = self._capture(
+            self._env(
+                LANGCHAIN_MODEL_NAME="claude-haiku-4-5",
+                LANGCHAIN_REASONING_EFFORT="high",
+            )
+        )
+
+        assert kwargs["reasoning_effort"] is None
+        assert kwargs["temperature"] == 0.0
+
+    def test_an_unrecognised_model_is_not_sent_it(self) -> None:
+        """The allowlist is positive: unknown means no, not maybe.
+
+        Guessing wrong breaks the request outright, while a missing entry only
+        leaves the effort setting inert — the same asymmetry that keeps
+        `top_level_reasoning_effort` a positive allowlist in capabilities.py.
+        """
+        kwargs = self._capture(
+            self._env(
+                LANGCHAIN_MODEL_NAME="some-future-anthropic-model",
+                LANGCHAIN_REASONING_EFFORT="high",
+            )
+        )
+
+        assert kwargs["reasoning_effort"] is None
+
+    def test_an_adapter_without_the_field_is_not_sent_it(self) -> None:
+        """pyproject allows langchain-anthropic>=1.3.0, which predates the field.
+
+        ChatAnthropic sets `extra="ignore"`, so an older install would swallow
+        the kwarg silently — while the caller still paid the dropped
+        temperature. Sending neither is the honest outcome.
+        """
+        captured: dict[str, Any] = {}
+
+        class _OldChatAnthropic:
+            """Stands in for a langchain-anthropic without the field."""
+
+            model_fields: dict[str, Any] = {}
+
+            def __init__(self, **kwargs: Any) -> None:
+                captured.update(kwargs)
+
+        old_module = SimpleNamespace(ChatAnthropic=_OldChatAnthropic)
+
+        with patch.dict(
+            os.environ, self._env(LANGCHAIN_REASONING_EFFORT="high"), clear=True
+        ):
+            with patch.object(llm_mod, "import_module", lambda _: old_module):
+                with patch.object(
+                    llm_mod,
+                    "_make_temperature_safe_anthropic",
+                    lambda _: _OldChatAnthropic,
+                ):
+                    build_llm()
+
+        assert captured["reasoning_effort"] is None
+        assert captured["temperature"] == 0.0
+
+    def test_the_installed_adapter_renders_effort_as_output_config(self) -> None:
+        """Guards the assumption the whole change rests on.
+
+        `reasoning_effort` is only worth forwarding because langchain-anthropic
+        turns it into the `output_config.effort` field the API reads. If a
+        future release renames or drops that mapping, this fails here rather
+        than silently at request time.
+        """
+        if importlib.util.find_spec("langchain_anthropic") is None:
+            pytest.skip("langchain-anthropic is not installed")
+        from langchain_anthropic import ChatAnthropic
+        from langchain_core.messages import HumanMessage
+
+        instance = ChatAnthropic(
+            model="claude-fable-5", api_key="sk-ant-test", reasoning_effort="high"
+        )
+        payload = instance._get_request_payload([HumanMessage(content="hi")])
+
+        assert payload["output_config"]["effort"] == "high"
 
 
 class TestRelayOptIn:

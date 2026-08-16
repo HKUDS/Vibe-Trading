@@ -924,17 +924,81 @@ def _make_temperature_safe_anthropic(base_cls: type) -> type:
     return safe_cls
 
 
+# Effort is not universal across the Anthropic line. Fable 5, Opus 5, Opus
+# 4.5-4.8 and Sonnet 5 / 4.6 accept it; Haiku 4.5 and Sonnet 4.5 reject it
+# outright with
+#   400 invalid_request_error: This model does not support the effort parameter.
+#
+# That bites hardest in a swarm, where a per-agent ``model_name`` split
+# deliberately puts cheap models on the data-gathering seats: one global effort
+# setting then kills exactly those workers, and it fails as a hard 400 rather
+# than a warning.
+#
+# A positive allowlist, for the same reason ``top_level_reasoning_effort`` in
+# providers/capabilities.py is one: an unrecognised model gets nothing, because
+# the cost of a wrong entry is that every request to it fails, while the cost of
+# a missing one is only that the effort setting is inert there.
+_EFFORT_CAPABLE_ANTHROPIC: tuple[str, ...] = (
+    "claude-fable-5",
+    "claude-mythos-5",
+    "claude-mythos-preview",
+    "claude-opus-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-opus-4-5",
+    "claude-sonnet-5",
+    "claude-sonnet-4-6",
+)
+
+
+def _anthropic_supports_effort(model: str) -> bool:
+    """Report whether an Anthropic model accepts the effort parameter.
+
+    Args:
+        model: The configured Anthropic model name.
+
+    Returns:
+        True when the model is on the allowlist above.
+    """
+    name = (model or "").strip().lower()
+    return any(name.startswith(prefix) for prefix in _EFFORT_CAPABLE_ANTHROPIC)
+
+
+def _adapter_accepts_effort(chat_anthropic: type) -> bool:
+    """Report whether the installed langchain-anthropic exposes the field.
+
+    ``ChatAnthropic`` is configured with ``extra="ignore"``, so an unknown
+    keyword is dropped in silence rather than raising. pyproject allows
+    ``langchain-anthropic>=1.3.0``, and ``reasoning_effort`` arrived later --
+    without this check, an older install would swallow the value while the
+    caller still paid the temperature cost below, which is the worst of both.
+
+    Args:
+        chat_anthropic: The resolved ``ChatAnthropic`` class.
+
+    Returns:
+        True when the class declares a ``reasoning_effort`` field.
+    """
+    return "reasoning_effort" in getattr(chat_anthropic, "model_fields", {})
+
+
 def _build_anthropic(
     *,
     model: str,
     temperature: float,
     callbacks: Any = None,
+    effort: str = "",
 ) -> Any:
     """Build the native Anthropic Messages API adapter.
 
     Uses a temperature-safe subclass so models that deprecate the `temperature`
     field (e.g. claude-opus-5 / claude-sonnet-5) work transparently while models
     that still accept it keep the configured deterministic value.
+
+    `effort` is the configured LANGCHAIN_REASONING_EFFORT, forwarded only to
+    models that accept it (see `_anthropic_supports_effort`); an empty string
+    means unset.
     """
     try:
         module = import_module("langchain_anthropic")
@@ -946,13 +1010,30 @@ def _build_anthropic(
         ) from exc
 
     safe_anthropic = _make_temperature_safe_anthropic(chat_anthropic)
+    use_effort = (
+        bool(effort)
+        and _anthropic_supports_effort(model)
+        and _adapter_accepts_effort(chat_anthropic)
+    )
+    # Effort makes langchain-anthropic enable adaptive thinking, and the API
+    # then rejects any temperature other than 1:
+    #   `temperature` may only be set to 1 when thinking is enabled or in
+    #   adaptive mode
+    # The platform's default is 0.0, so temperature is omitted entirely
+    # whenever effort is in play. The temperature-safe wrapper above does not
+    # cover this: it handles models that reject `temperature` outright, not
+    # this thinking-conditional variant.
     return safe_anthropic(
         model=model,
         max_tokens=get_env_config().llm.anthropic_max_tokens,
-        temperature=temperature,
+        temperature=None if use_effort else temperature,
         timeout=get_env_config().llm.timeout_seconds,
         max_retries=get_env_config().llm.max_retries,
         callbacks=callbacks,
+        # Rendered by langchain-anthropic as output_config={'effort': ...}.
+        # Without it, Fable 5 and Opus 5 run at the default effort however
+        # LANGCHAIN_REASONING_EFFORT is set.
+        reasoning_effort=effort if use_effort else None,
         api_key=os.getenv("ANTHROPIC_API_KEY") or None,  # noqa: env-gate — native provider credential
         base_url=(
             os.getenv("ANTHROPIC_BASE_URL")  # noqa: env-gate — native provider endpoint
@@ -1287,6 +1368,7 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
             model=name,
             temperature=temperature,
             callbacks=callbacks,
+            effort=get_env_config().llm.langchain_reasoning_effort.strip().lower(),
         )
 
     if provider == "deepseek":
