@@ -19,6 +19,7 @@ from src.agent.grounding import (
 from src.agent.loop import AgentLoop, _is_tool_success
 from src.agent.tools import BaseTool, ToolRegistry
 from src.agent.trace import TraceWriter
+from tests.message_roles_helpers import assert_system_messages_only_lead
 
 
 def _resolver_payload(
@@ -860,6 +861,7 @@ class _CorrectingLLM:
                 )
             ),
         ]
+        self.messages_history: list[list[dict[str, Any]]] = []
 
     def stream_chat(
         self,
@@ -869,6 +871,7 @@ class _CorrectingLLM:
         on_reasoning_chunk: Callable[[str], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
     ) -> _Response:
+        self.messages_history.append(list(messages))
         response = self.responses.pop(0)
         if response.content and on_text_chunk:
             on_text_chunk(response.content)
@@ -888,9 +891,10 @@ def test_agent_loop_rejects_then_corrects_ungrounded_final_answer(
     registry.register(resolver)
     registry.register(market)
     events: list[tuple[str, dict[str, Any]]] = []
+    llm = _CorrectingLLM()
     agent = AgentLoop(
         registry=registry,
-        llm=_CorrectingLLM(),
+        llm=llm,
         max_iterations=4,
         event_callback=lambda event, data: events.append((event, data)),
     )
@@ -904,6 +908,8 @@ def test_agent_loop_rejects_then_corrects_ungrounded_final_answer(
     assert "1.137" in result["content"]
     assert "0.881" not in result["content"]
     assert market.calls == 1
+    # The correction nudge must not be a mid-conversation system message.
+    assert_system_messages_only_lead(llm.messages_history)
     streamed = "".join(
         data.get("delta", "") for event, data in events if event == "text_delta"
     )

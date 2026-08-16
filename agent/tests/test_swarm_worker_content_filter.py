@@ -15,6 +15,7 @@ from src.providers.chat import LLMResponse, ToolCallRequest
 from src.swarm.models import SwarmAgentSpec, SwarmEvent, SwarmTask, WorkerResult
 import src.swarm.worker as worker_mod
 from src.swarm.worker import run_worker
+from tests.message_roles_helpers import assert_system_messages_only_lead
 
 FINAL_TEXT = (
     "# BTC-USDT — Short-Term View\n\n"
@@ -125,7 +126,7 @@ def test_content_filter_event_emitted(monkeypatch, tmp_path):
 
 
 def test_content_filter_system_message_injected(monkeypatch, tmp_path):
-    """A system message is injected after content-filter skip."""
+    """Steering text is injected as a user message with an inline system tag."""
     llm = _ScriptedChatLLM([
         LLMResponse(content="", content_filter_triggered=True),
         LLMResponse(content=FINAL_TEXT),
@@ -135,11 +136,15 @@ def test_content_filter_system_message_injected(monkeypatch, tmp_path):
 
     assert llm.calls == 2
     second_call_messages = llm.received_messages[1]
-    system_msgs = [
+    steering = [
         m for m in second_call_messages
-        if m.get("role") == "system" and "content moderation" in m.get("content", "")
+        if "content moderation" in m.get("content", "")
     ]
-    assert len(system_msgs) == 1
+    assert len(steering) == 1
+    assert steering[0]["role"] == "user"
+    assert steering[0]["content"].startswith("<system>")
+    assert steering[0]["content"].endswith("</system>")
+    assert_system_messages_only_lead(llm.received_messages)
 
 
 def test_multiple_content_filters_increment_counter(monkeypatch, tmp_path):

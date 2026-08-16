@@ -683,8 +683,8 @@ def run_worker(
                 {"iteration": iteration, "content_filter_count": content_filter_count},
             )
             messages.append({
-                "role": "system",
-                "content": CONTENT_FILTER_SKIP_MESSAGE,
+                "role": "user",
+                "content": f"<system>{CONTENT_FILTER_SKIP_MESSAGE}</system>",
             })
             continue
 

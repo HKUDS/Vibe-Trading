@@ -12,6 +12,7 @@ from typing import Any, Callable
 import pytest
 
 from src.providers.chat import LLMResponse, ToolCallRequest
+from tests.message_roles_helpers import assert_system_messages_only_lead
 
 
 class _ContentFilterLoopLLM:
@@ -131,19 +132,22 @@ def test_content_filter_trace_entry(
 def test_content_filter_injects_system_message(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """System message is injected into messages after content filter hit."""
+    """Steering text is a user message with an inline <system> tag, never mid-conversation system."""
     llm = _ContentFilterLoopLLM(filter_count=1, final_content="Done.")
 
     _run(monkeypatch, tmp_path, llm)
 
     assert llm.calls == 2
     messages_on_second_call = llm.messages_history[1]
-    system_messages = [
+    steering = [
         m for m in messages_on_second_call
         if "content moderation" in str(m.get("content", ""))
     ]
-    assert len(system_messages) == 1
-    assert "[SYSTEM]" in system_messages[0]["content"]
+    assert len(steering) == 1
+    assert steering[0]["role"] == "user"
+    assert steering[0]["content"].startswith("<system>")
+    assert steering[0]["content"].endswith("</system>")
+    assert_system_messages_only_lead(llm.messages_history)
 
 
 def test_multiple_content_filter_hits(

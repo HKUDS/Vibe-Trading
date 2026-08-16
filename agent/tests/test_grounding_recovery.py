@@ -25,6 +25,7 @@ from src.agent.grounding import (
     GroundingLedger,
 )
 from src.providers.chat import LLMResponse
+from tests.message_roles_helpers import assert_system_messages_only_lead
 
 pytestmark = pytest.mark.unit
 
@@ -326,6 +327,7 @@ class _FailingDraftLLM:
 
     def __init__(self) -> None:
         self.calls = 0
+        self.messages_history: list[list[dict[str, Any]]] = []
 
     def stream_chat(
         self,
@@ -336,6 +338,7 @@ class _FailingDraftLLM:
         should_cancel: Callable[[], bool] | None = None,
     ) -> LLMResponse:
         self.calls += 1
+        self.messages_history.append(list(messages))
         draft = "机器人ETF 现价 1.171，建议买入。"
         if on_text_chunk:
             on_text_chunk(draft)
@@ -378,5 +381,8 @@ def test_loop_runs_recovery_before_fallback(
     # Symbol resolution budget is two: two recovery turns, then fallback.
     assert [e.get("action") for e in recovery_entries] == ["search_symbol", "search_symbol"]
     assert llm.calls >= 3
+    # Recovery and correction steering must never be mid-conversation system
+    # messages: Anthropic only accepts a single leading system block.
+    assert_system_messages_only_lead(llm.messages_history)
     # The run still terminates fail-closed once recovery is exhausted.
     assert result["content"]
