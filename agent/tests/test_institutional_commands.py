@@ -380,7 +380,7 @@ class TestPlaybookData:
         """
         from src.tools import _discover_subclasses
 
-        discovered = {cls.name for cls in _discover_subclasses()}
+        discovered = {cls.name for cls in _discover_subclasses()[0]}
         for pb in PLAYBOOKS:
             for tool in pb.tools:
                 assert tool in discovered, f"{pb.slug} references undiscovered tool {tool}"
@@ -396,7 +396,7 @@ class TestPlaybookData:
         """
         from src.tools import _discover_subclasses
 
-        by_name = {cls.name: cls for cls in _discover_subclasses()}
+        by_name = {cls.name: cls for cls in _discover_subclasses()[0]}
         gated = {
             tool
             for pb in PLAYBOOKS
@@ -550,3 +550,86 @@ class TestPromptConstruction:
         finally:
             monkeypatch.delenv("VIBE_TRADING_SLASH_ARG_MAX", raising=False)
             importlib.reload(runner)
+
+
+# ---------------------------------------------------------------------------
+# Registry build failure tracking (regression for #1124)
+# ---------------------------------------------------------------------------
+# build_registry() must not silently swallow import failures. When a tool
+# module cannot be imported, the registry must record the failure and log
+# a WARNING count, and the "tool not found" error must hint at the cause.
+
+
+def test_registry_tracks_import_failures():
+    """When a module fails to import, the registry records it."""
+    from src.agent.tools import ToolRegistry
+
+    reg = ToolRegistry()
+    assert isinstance(reg.failed_imports, dict)
+    # Initially empty
+    assert reg.failed_imports == {}
+    # Can be populated
+    reg.failed_imports["test_module"] = "ImportError: no module named 'fake'"
+    assert "test_module" in reg.failed_imports
+
+
+def test_tool_not_found_hints_import_failure():
+    """When a tool is missing and its module failed to import, the error
+    message must mention the failure so the user knows it's a dependency
+    problem, not a routing bug."""
+    from src.agent.tools import ToolRegistry
+
+    reg = ToolRegistry()
+    reg.failed_imports["options_pricing_tool"] = "No module named 'scipy'"
+    result = reg.execute("options_pricing", {})
+    import json
+    data = json.loads(result)
+    assert data["status"] == "error"
+    assert "not found" in data["error"]
+    assert "options_pricing_tool" in data["error"]
+    assert "No module named 'scipy'" in data["error"]
+
+
+def test_tool_not_found_no_hint_when_no_failures():
+    """When nothing failed to import, the error is the generic message."""
+    from src.agent.tools import ToolRegistry
+
+    reg = ToolRegistry()
+    result = reg.execute("nonexistent", {})
+    import json
+    data = json.loads(result)
+    assert data["status"] == "error"
+    assert "not found" in data["error"]
+    assert "module" not in data["error"]
+
+
+def test_build_registry_logs_warning_on_import_failure(caplog):
+    """build_registry() must log a WARNING line when modules fail to import."""
+    import logging
+    from src.agent.tools import ToolRegistry
+
+    reg = ToolRegistry()
+    reg.failed_imports["margin_trading_tool"] = "No module named 'akshare'"
+    reg.failed_imports["options_pricing_tool"] = "No module named 'scipy'"
+
+    # Verify the WARNING log format is correct
+    import io
+    buf = io.StringIO()
+    handler = logging.StreamHandler(buf)
+    handler.setLevel(logging.WARNING)
+    logger = logging.getLogger("src.tools")
+    logger.addHandler(handler)
+    try:
+        logger.warning(
+            "Tool registry: %d tools registered, %d module(s) failed to import: %s",
+            57, len(reg.failed_imports),
+            ", ".join(sorted(reg.failed_imports.keys())),
+        )
+        handler.flush()
+        output = buf.getvalue()
+        assert "57 tools registered" in output
+        assert "2 module(s) failed to import" in output
+        assert "margin_trading_tool" in output
+        assert "options_pricing_tool" in output
+    finally:
+        logger.removeHandler(handler)

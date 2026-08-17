@@ -252,7 +252,7 @@ def _registered_multiword_tool_names() -> List[str]:
     """
     from src.tools import _discover_subclasses
 
-    return sorted({c.name for c in _discover_subclasses() if c.name and "_" in c.name})
+    return sorted({c.name for c in _discover_subclasses()[0] if c.name and "_" in c.name})
 
 
 @pytest.mark.parametrize("slug", _lens_ids())

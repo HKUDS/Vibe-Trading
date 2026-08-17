@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
-from typing import Any, Dict, List, Optional
 
 
 class BaseTool(ABC):
@@ -56,6 +56,8 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: Dict[str, BaseTool] = {}
+        # module_name -> error message for modules that failed to import
+        self.failed_imports: Dict[str, str] = {}
 
     def register(self, tool: BaseTool) -> None:
         """Register a tool."""
@@ -73,7 +75,14 @@ class ToolRegistry:
         """Execute a tool and guarantee a valid JSON return value."""
         tool = self._tools.get(name)
         if not tool:
-            return json.dumps({"status": "error", "error": f"Tool '{name}' not found"}, ensure_ascii=False)
+            hint = ""
+            if self.failed_imports:
+                # Check if the tool name matches a known module pattern
+                for module_name, error in self.failed_imports.items():
+                    if name in module_name or module_name.replace("_tool", "") in name:
+                        hint = f" (module '{module_name}' failed to import: {error.split(chr(10))[0]})"
+                        break
+            return json.dumps({"status": "error", "error": f"Tool '{name}' not found{hint}"}, ensure_ascii=False)
         try:
             return tool.execute(**params)
         except Exception as exc:
