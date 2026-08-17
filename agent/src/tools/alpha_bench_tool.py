@@ -501,6 +501,30 @@ def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     if all(k in panel for k in ("open", "high", "low", "close")):
         panel["vwap"] = (panel["open"] + panel["high"] + panel["low"] + panel["close"]) / 4.0
 
+    # Per-code sector tags for alpha101 industry-neutralized alphas.
+    # The registry gates 19 alpha101 alphas behind requires_sector=True;
+    # their compute() calls _ind_neutralize() which expects a same-shape
+    # DataFrame of sector labels.  yfinance Ticker.info is free.
+    try:
+        import yfinance as yf
+
+        close_cols = panel["close"].columns
+        sector_map: dict[str, str] = {}
+        for code in close_cols:
+            try:
+                info = yf.Ticker(code.removesuffix(".US")).info
+                sector = info.get("sector")
+                if sector:
+                    sector_map[code] = sector
+            except Exception:  # noqa: BLE001 — per-code best-effort
+                pass
+        if sector_map:
+            panel["sector"] = pd.DataFrame(
+                {c: sector_map.get(c, "") for c in close_cols},
+                index=panel["close"].index,
+            )
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        logger.warning("sp500 panel: sector enrichment failed: %s", exc)
     # Attach a non-DataFrame metadata blob. Registry.compute() only iterates
     # required column names, so this extra key is ignored by the compute path.
     panel["_meta"] = {
