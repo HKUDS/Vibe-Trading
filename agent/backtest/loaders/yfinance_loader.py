@@ -3,13 +3,38 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from collections import defaultdict
+from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 import pandas as pd
 import yfinance as yf
 
 logger = logging.getLogger(__name__)
+
+
+def _configure_yfinance_cache() -> None:
+    """Put yfinance's cookie/timezone cache in a writable application path.
+
+    yfinance 1.x persists a small SQLite database before downloading data.
+    On some Windows service accounts the OS user-cache directory is readable
+    but not writable, which makes every otherwise-valid download fail with
+    ``unable to open database file``. The cache is optional for this loader,
+    so keep it in the system temp directory unless the operator supplies an
+    explicit location.
+    """
+    configured = os.getenv("VIBE_TRADING_YFINANCE_CACHE", "").strip()
+    cache_dir = Path(configured) if configured else Path(tempfile.gettempdir()) / "vibe-trading" / "yfinance"
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        yf.set_tz_cache_location(str(cache_dir))
+    except Exception as exc:  # pragma: no cover - provider cache is best effort
+        logger.debug("Unable to configure yfinance cache at %s: %s", cache_dir, exc)
+
+
+_configure_yfinance_cache()
 
 from backtest.loaders.base import (
     loader_cache_get,

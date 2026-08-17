@@ -31,6 +31,18 @@ const AlphaZoo = lazy(() =>
 const OptionsLab = lazy(() =>
   import("@/pages/OptionsLab").then((m) => ({ default: m.OptionsLab })),
 );
+const Overview = lazy(() =>
+  import("@/pages/Overview").then((m) => ({ default: m.Overview })),
+);
+const StockDetail = lazy(() =>
+  import("@/pages/StockDetail").then((m) => ({ default: m.StockDetail })),
+);
+const HumanoidRobot = lazy(() =>
+  import("@/pages/HumanoidRobot").then((m) => ({ default: m.HumanoidRobot })),
+);
+const Research = lazy(() =>
+  import("@/pages/HumanoidRobot").then((m) => ({ default: m.Research })),
+);
 
 function PageLoader() {
   return (
@@ -52,7 +64,11 @@ export const router = createBrowserRouter([
   {
     element: <Layout />,
     children: [
-      { path: "/", element: wrap(Agent) },
+      { path: "/overview", element: wrap(Overview) },
+      { path: "/stocks/:symbol", element: wrap(StockDetail) },
+      { path: "/research", element: wrap(Research) },
+      { path: "/humanoid-robot", element: wrap(HumanoidRobot) },
+      { path: "/", element: wrap(Overview) },
       { path: "/about", element: wrap(Home) },
       { path: "/agent", element: wrap(Agent) },
       { path: "/runtime", element: wrap(Runtime) },

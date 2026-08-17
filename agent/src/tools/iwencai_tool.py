@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
 
 from backtest.loaders._http import resolve_min_interval, throttled_get_json
@@ -158,7 +159,7 @@ class IWenCaiSearchTool(BaseTool):
             value; ``False`` otherwise, which silently excludes the tool from
             the registry. Never raises.
         """
-        return bool(get_env_config().data.vibe_trading_iwencai_key)
+        return bool(get_env_config().data.vibe_trading_iwencai_key or os.getenv("IWENCAI_API_KEY", "").strip())
 
     description = (
         "Run a natural-language A-share research query against iWenCai (问财), a "
@@ -204,7 +205,7 @@ class IWenCaiSearchTool(BaseTool):
             "data": {"query": ..., "count": int, "results": [...]}}``. On
             failure: ``{"ok": false, "error": "..."}``.
         """
-        key = get_env_config().data.vibe_trading_iwencai_key or None
+        key = get_env_config().data.vibe_trading_iwencai_key or os.getenv("IWENCAI_API_KEY", "").strip() or None
         if not key:
             return self._error(
                 f"iWenCai access key not configured; set {_KEY_ENV} to enable this tool"

@@ -208,6 +208,14 @@ from src.api.sessions_routes import (  # noqa: F401, E402
 from src.api.system_routes import register_system_routes  # noqa: E402
 register_system_routes(app)
 
+# --- Market overview ---
+from src.api.market_routes import register_market_routes  # noqa: E402
+register_market_routes(app)
+
+# --- Extended market data ---
+from src.api.extended_market_routes import register_extended_market_routes  # noqa: E402
+register_extended_market_routes(app)
+
 from src.api.system_routes import _terminate_current_process  # noqa: F401, E402
 
 # --- Settings ---

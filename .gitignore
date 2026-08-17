@@ -53,6 +53,7 @@ wiki/.wrangler/
 .wrangler/
 wiki/.cache/
 .vibe-dev/
+.vibe-trading/
 .vibe-record/
 .cache/
 .remotion/
@@ -73,6 +74,7 @@ docs/screenshots/boot.png
 data/minutes/
 data/overnight*.log
 data/*.log
+*.log
 data/test_write.txt
 agent/.pytest_tmp/
 agent/vibe_trading.egg-info/
@@ -113,5 +115,7 @@ desktop/electron/runtime/
 wiki/alpha-library/manifest.json
 wiki/alpha-library/content/
 bench_report.json
+.idea/**
+.npm-cache/**
 
 .idea/*

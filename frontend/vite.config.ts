@@ -17,6 +17,7 @@ const PROXY_PATHS = [
   "/shadow-reports",
   "/scheduled-runs",
   "/options",
+  "/market",
 ];
 
 export default defineConfig(({ mode }) => {

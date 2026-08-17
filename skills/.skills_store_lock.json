@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "skills": {
+    "report-search": {
+      "name": "report-search",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=report-search",
+      "source": "skillhub",
+      "version": ""
+    },
+    "hithink-basicinfo-query": {
+      "name": "hithink-basicinfo-query",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=hithink-basicinfo-query",
+      "source": "skillhub",
+      "version": ""
+    },
+    "announcement-search": {
+      "name": "announcement-search",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=announcement-search",
+      "source": "skillhub",
+      "version": ""
+    },
+    "模拟炒股": {
+      "name": "模拟炒股",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=%E6%A8%A1%E6%8B%9F%E7%82%92%E8%82%A1",
+      "source": "skillhub",
+      "version": ""
+    },
+    "hithink-market-query": {
+      "name": "hithink-market-query",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=hithink-market-query",
+      "source": "skillhub",
+      "version": ""
+    },
+    "hithink-event-query": {
+      "name": "hithink-event-query",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=hithink-event-query",
+      "source": "skillhub",
+      "version": ""
+    },
+    "hithink-fund-selector": {
+      "name": "hithink-fund-selector",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=hithink-fund-selector",
+      "source": "skillhub",
+      "version": ""
+    },
+    "hithink-insresearch-query": {
+      "name": "hithink-insresearch-query",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=hithink-insresearch-query",
+      "source": "skillhub",
+      "version": ""
+    },
+    "hithink-usstock-selector": {
+      "name": "hithink-usstock-selector",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=hithink-usstock-selector",
+      "source": "skillhub",
+      "version": ""
+    },
+    "分钟级数据分析": {
+      "name": "分钟级数据分析",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=%E5%88%86%E9%92%9F%E7%BA%A7%E6%95%B0%E6%8D%AE%E5%88%86%E6%9E%90",
+      "source": "skillhub",
+      "version": ""
+    },
+    "K线形态识别": {
+      "name": "K线形态识别",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=K%E7%BA%BF%E5%BD%A2%E6%80%81%E8%AF%86%E5%88%AB",
+      "source": "skillhub",
+      "version": ""
+    },
+    "多因子选股策略": {
+      "name": "多因子选股策略",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=%E5%A4%9A%E5%9B%A0%E5%AD%90%E9%80%89%E8%82%A1%E7%AD%96%E7%95%A5",
+      "source": "skillhub",
+      "version": ""
+    },
+    "行业轮动分析": {
+      "name": "行业轮动分析",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=%E8%A1%8C%E4%B8%9A%E8%BD%AE%E5%8A%A8%E5%88%86%E6%9E%90",
+      "source": "skillhub",
+      "version": ""
+    },
+    "高分红股挑选": {
+      "name": "高分红股挑选",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=%E9%AB%98%E5%88%86%E7%BA%A2%E8%82%A1%E6%8C%91%E9%80%89",
+      "source": "skillhub",
+      "version": ""
+    },
+    "财报前瞻": {
+      "name": "财报前瞻",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=%E8%B4%A2%E6%8A%A5%E5%89%8D%E7%9E%BB",
+      "source": "skillhub",
+      "version": ""
+    },
+    "社交媒体情报分析": {
+      "name": "社交媒体情报分析",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=%E7%A4%BE%E4%BA%A4%E5%AA%92%E4%BD%93%E6%83%85%E6%8A%A5%E5%88%86%E6%9E%90",
+      "source": "skillhub",
+      "version": ""
+    },
+    "市场情绪分析": {
+      "name": "市场情绪分析",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=%E5%B8%82%E5%9C%BA%E6%83%85%E7%BB%AA%E5%88%86%E6%9E%90",
+      "source": "skillhub",
+      "version": ""
+    },
+    "news-search": {
+      "name": "news-search",
+      "zip_url": "http://ms.10jqka.com.cn/gateway/market/api/v1/skills/square/download?name=news-search",
+      "source": "skillhub",
+      "version": ""
+    }
+  }
+}

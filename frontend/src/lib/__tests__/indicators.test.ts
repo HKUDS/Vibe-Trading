@@ -1,4 +1,4 @@
-import { calcMA, calcEMA, calcBOLL, calcMACD, calcRSI, calcKDJ } from "../indicators";
+import { calcMA, calcEMA, calcBOLL, calcMACD, calcMACDFS, calcRSI, calcKDJ, calcIntradayAverage } from "../indicators";
 
 describe("calcMA", () => {
   it("returns null for indices before period-1", () => {
@@ -119,6 +119,16 @@ describe("calcMACD", () => {
       }
     }
   });
+
+  it("calcMACDFS doubles the MACD histogram", () => {
+    const macd = calcMACD(data);
+    const macdfs = calcMACDFS(data);
+    for (let i = 0; i < data.length; i++) {
+      if (macd.histogram[i] !== null) {
+        expect(macdfs.histogram[i]).toBeCloseTo(macd.histogram[i]! * 2, 10);
+      }
+    }
+  });
 });
 
 describe("calcRSI", () => {
@@ -206,5 +216,21 @@ describe("calcKDJ", () => {
     expect(k[0]).toBeNull();
     expect(d[0]).toBeNull();
     expect(j[0]).toBeNull();
+  });
+});
+
+describe("calcIntradayAverage", () => {
+  it("returns the cumulative volume-weighted average price", () => {
+    expect(calcIntradayAverage([
+      { open: 10, high: 12, low: 10, close: 11, volume: 100 },
+      { open: 12, high: 14, low: 12, close: 13, volume: 300 },
+    ])).toEqual([10.75, 12.25]);
+  });
+
+  it("falls back to the close when a bar has no volume", () => {
+    expect(calcIntradayAverage([
+      { open: 10, high: 10, low: 10, close: 10, volume: 0 },
+      { open: 11, high: 11, low: 11, close: 11, volume: 100 },
+    ])).toEqual([10, 11]);
   });
 });

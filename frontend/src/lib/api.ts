@@ -40,6 +40,275 @@ export interface CorrelationResponse {
   matrix: number[][];
 }
 
+export interface MarketIndexSnapshot {
+  key: string;
+  name: string;
+  symbol: string;
+  market: "a_share" | "us";
+  price: number | null;
+  change: number | null;
+  change_pct: number | null;
+  source: string;
+  status: "ok" | "unavailable";
+}
+
+export interface MarketIndicesResponse {
+  items: MarketIndexSnapshot[];
+  updated_at: string;
+  cache_status?: "cached" | "refreshing";
+  from_cache?: boolean;
+}
+
+export interface MarketWatchlistOverviewResponse {
+  a_share: MarketIndexSnapshot[];
+  us: MarketIndexSnapshot[];
+  updated_at: string | null;
+  cache_status?: "cached" | "refreshing";
+  from_cache?: boolean;
+}
+
+export interface MarketSymbolCandidate {
+  symbol: string;
+  name: string;
+  market: "a_share" | "us";
+}
+
+export interface MarketSearchResponse {
+  items: MarketSymbolCandidate[];
+}
+
+export interface MarketWatchlistEntry {
+  symbol: string;
+  name: string;
+}
+
+export interface MarketWatchlistsResponse {
+  a_share: MarketWatchlistEntry[];
+  us: MarketWatchlistEntry[];
+}
+
+export type StockDetailPeriod = "1m" | "1d" | "1w" | "1mo" | "15m" | "30m" | "60m" | "120m";
+export type StockCacheStatus = "cached" | "refreshing" | "live";
+
+export interface StockDetailResponse {
+  symbol: string;
+  market: "a_share" | "us";
+  period: StockDetailPeriod;
+  profile: Record<string, any>;
+  financials: Record<string, any>;
+  bars: PriceBar[];
+  reports: Array<Record<string, any>>;
+  news: Array<Record<string, any>>;
+  news_pagination?: {
+    page: number;
+    page_size: number;
+    has_more: boolean;
+  };
+  errors?: Record<string, string>;
+  cache_status?: StockCacheStatus;
+  from_cache?: boolean;
+  updated_at: string;
+}
+
+export interface StockInfoResponse {
+  symbol: string;
+  market: "a_share" | "us";
+  profile: Record<string, any>;
+  financials: Record<string, any>;
+  errors?: Record<string, string>;
+  cache_status?: StockCacheStatus;
+  from_cache?: boolean;
+  updated_at?: string;
+}
+
+export interface StockBarsResponse {
+  symbol: string;
+  market: "a_share" | "us";
+  period: StockDetailPeriod;
+  bars: PriceBar[];
+  errors?: Record<string, string>;
+  cache_status?: StockCacheStatus;
+  from_cache?: boolean;
+  updated_at?: string;
+}
+
+export interface StockReportsResponse {
+  symbol: string;
+  market: "a_share" | "us";
+  reports: Array<Record<string, any>>;
+  errors?: Record<string, string>;
+  cache_status?: StockCacheStatus;
+  from_cache?: boolean;
+  updated_at?: string;
+}
+
+export interface StockIndustryResponse {
+  symbol: string;
+  market: "a_share" | "us";
+  industry: string;
+  boards: Array<Record<string, any>>;
+  errors?: Record<string, string>;
+  cache_status?: StockCacheStatus;
+  from_cache?: boolean;
+  updated_at?: string;
+}
+
+export interface StockNewsPage {
+  items: Array<Record<string, any>>;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+  cache_status?: StockCacheStatus;
+  from_cache?: boolean;
+  updated_at: string;
+}
+
+export interface StockFundFlowRow {
+  timestamp: string;
+  main: number;
+  small: number;
+  medium: number;
+  large: number;
+  super_large: number;
+}
+
+export interface StockFundFlowSymbolData {
+  symbol: string;
+  secid?: string;
+  rows: StockFundFlowRow[];
+  error?: string;
+  warning?: string;
+}
+
+export interface StockFundFlowResponse {
+  ok: boolean;
+  period: "daily" | "min";
+  buckets: string[];
+  data: Record<string, StockFundFlowSymbolData>;
+  error?: string;
+}
+
+export interface StockTechnicalIndicatorsResponse {
+  ok: boolean;
+  symbol: string;
+  interval: "1d" | "1wk" | "1mo";
+  latest_close?: number | null;
+  latest_date?: string | null;
+  indicators: {
+    rsi_14?: number | null;
+    macd?: {
+      macd_line?: number | null;
+      signal_line?: number | null;
+      histogram?: number | null;
+    } | null;
+    bollinger?: {
+      upper?: number | null;
+      middle?: number | null;
+      lower?: number | null;
+    } | null;
+    sma_20?: number | null;
+    sma_50?: number | null;
+    sma_200?: number | null;
+    ema_20?: number | null;
+  };
+  error?: string;
+}
+
+export interface RobotResearchReport {
+  date: string;
+  institution: string;
+  title: string;
+  segment: string;
+}
+
+export interface RobotResearchReportsResponse {
+  items: RobotResearchReport[];
+  days: number;
+  status: "ok" | "unavailable";
+  updated_at: string;
+}
+
+export interface ResearchReport {
+  report_id: string;
+  title: string;
+  summary: string | null;
+  institution: string | null;
+  author: string | null;
+  publish_time: string | null;
+  rating: string | null;
+  target_price: number | null;
+  source: string;
+  sources?: string[];
+  company_code?: string | null;
+  source_url: string | null;
+  pdf_url: string | null;
+  industry_id: string;
+  section_id: string | null;
+}
+
+export interface ResearchSourceStatus {
+  a_stock_data: "ok" | "unavailable";
+  report_search: "ok" | "unavailable";
+}
+
+export interface ResearchIndustry {
+  id: string;
+  name: string;
+  description: string;
+  segments: string[];
+  sections: Array<{ id: string; label: string; description?: string }>;
+}
+
+export interface ResearchIndustriesResponse {
+  items: ResearchIndustry[];
+  updated_at: string;
+  status: string;
+}
+
+export interface ResearchReportsResponse {
+  items: ResearchReport[];
+  sources: ResearchSourceStatus;
+  updated_at: string;
+  status: string;
+  days?: number;
+}
+
+export interface HotIndustry {
+  rank: number;
+  name: string;
+  board_code: string;
+  change_pct: number | null;
+  main_net: number | null;
+  main_pct: number | null;
+  up_count: number | null;
+  down_count: number | null;
+  leader: string | null;
+  heat_score: number;
+  heat_basis: string;
+}
+
+export interface HotIndustriesResponse {
+  items: HotIndustry[];
+  sources: Record<string, string>;
+  status: string;
+  updated_at: string;
+  as_of_date: string;
+  refresh_policy: string;
+}
+
+export interface ResearchAnalysisJob {
+  job_id?: string;
+  industry_id?: string;
+  status: string;
+  progress?: number;
+  current_step?: string;
+  model_name?: string | null;
+  analysis?: Record<string, any> | null;
+  error_message?: string | null;
+  error?: string;
+  updated_at?: string;
+}
+
 export interface RegimeEpisode {
   start: string;
   end: string | null;
@@ -128,6 +397,89 @@ function appendQueryParam(url: string, key: string, value: string): string {
 }
 
 export const api = {
+  getStockDetail: (symbol: string, period: StockDetailPeriod = "1d", signal?: AbortSignal, includeNews = true) =>
+    request<StockDetailResponse>(`/market/stocks/${encodeURIComponent(symbol)}?period=${encodeURIComponent(period)}&include_news=${includeNews ? "true" : "false"}`, { signal }),
+  getStockNews: (symbol: string, page = 1, pageSize = 20, signal?: AbortSignal) =>
+    request<StockNewsPage>(
+      `/market/stocks/${encodeURIComponent(symbol)}/news?page=${encodeURIComponent(String(page))}&page_size=${encodeURIComponent(String(pageSize))}`,
+      { signal },
+    ),
+  getStockInfo: (symbol: string, signal?: AbortSignal) =>
+    request<StockInfoResponse>(`/market/stocks/${encodeURIComponent(symbol)}/info`, { signal }),
+  getStockBars: (symbol: string, period: StockDetailPeriod = "1d", signal?: AbortSignal) =>
+    request<StockBarsResponse>(`/market/stocks/${encodeURIComponent(symbol)}/bars?period=${encodeURIComponent(period)}`, { signal }),
+  getStockReports: (symbol: string, signal?: AbortSignal) =>
+    request<StockReportsResponse>(`/market/stocks/${encodeURIComponent(symbol)}/reports`, { signal }),
+  getStockIndustry: (symbol: string, signal?: AbortSignal) =>
+    request<StockIndustryResponse>(`/market/stocks/${encodeURIComponent(symbol)}/industry`, { signal }),
+  getStockFundFlow: (symbol: string, period: "daily" | "min" = "daily", days = 30, signal?: AbortSignal) =>
+    request<StockFundFlowResponse>(
+      `/market/stocks/${encodeURIComponent(symbol)}/fund-flow?period=${encodeURIComponent(period)}&days=${encodeURIComponent(String(days))}`,
+      { signal },
+    ),
+  getStockTechnicalIndicators: (symbol: string, interval: "1d" | "1wk" | "1mo" = "1d", lookback = 200, signal?: AbortSignal) =>
+    request<StockTechnicalIndicatorsResponse>(
+      `/market/stocks/${encodeURIComponent(symbol)}/technical-indicators?interval=${encodeURIComponent(interval)}&lookback=${encodeURIComponent(String(lookback))}`,
+      { signal },
+    ),
+  getMarketWatchlists: (signal?: AbortSignal) =>
+    request<MarketWatchlistsResponse>("/market/watchlists", { signal }),
+  saveMarketWatchlists: (watchlists: MarketWatchlistsResponse, signal?: AbortSignal) =>
+    request<MarketWatchlistsResponse>("/market/watchlists", {
+      method: "PUT",
+      body: JSON.stringify(watchlists),
+      signal,
+    }),
+  searchMarketSymbols: (query: string, market: "a_share" | "us", signal?: AbortSignal) =>
+    request<MarketSearchResponse>(
+      `/market/search?query=${encodeURIComponent(query)}&market=${encodeURIComponent(market)}`,
+      { signal },
+    ),
+  getMarketQuotes: (market: "a_share" | "us", symbols: string[], signal?: AbortSignal) =>
+    request<MarketIndicesResponse>(
+      `/market/quotes?market=${encodeURIComponent(market)}&symbols=${encodeURIComponent(symbols.join(","))}`,
+      { signal },
+    ),
+  getMarketIndices: (signal?: AbortSignal) =>
+    request<MarketIndicesResponse>("/market/indices", { signal }),
+  getMarketAShareOverview: (signal?: AbortSignal) =>
+    request<MarketIndicesResponse>("/market/overview/a-share", { signal }),
+  getMarketUSOverview: (signal?: AbortSignal) =>
+    request<MarketIndicesResponse>("/market/overview/us", { signal }),
+  getMarketWatchlistOverview: (signal?: AbortSignal) =>
+    request<MarketWatchlistOverviewResponse>("/market/overview/watchlist", { signal }),
+  getRobotResearchReports: (days = 90, limit = 200, signal?: AbortSignal) =>
+    request<RobotResearchReportsResponse>(
+      `/market/research-reports?days=${encodeURIComponent(String(days))}&limit=${encodeURIComponent(String(limit))}`,
+      { signal },
+    ),
+  listResearchIndustries: (query = "", signal?: AbortSignal, limit = 50) =>
+    request<ResearchIndustriesResponse>(
+      `/market/research/industries?query=${encodeURIComponent(query)}&limit=${encodeURIComponent(String(limit))}`,
+      { signal },
+    ),
+  getHotResearchIndustries: (limit = 10, signal?: AbortSignal) =>
+    request<HotIndustriesResponse>(`/market/research/hot-industries?limit=${encodeURIComponent(String(limit))}`, { signal }),
+  getResearchIndustry: (industryId: string, signal?: AbortSignal) =>
+    request<{ industry: ResearchIndustry; analysis: Record<string, any> | null; analysis_job_id: string | null; analysis_status: string }>(
+      `/market/research/industries/${encodeURIComponent(industryId)}`,
+      { signal },
+    ),
+  getResearchIndustryReports: (industryId: string, days = 90, limit = 50, sectionId?: string, signal?: AbortSignal) => {
+    const q = new URLSearchParams({ days: String(days), limit: String(limit) });
+    if (sectionId) q.set("section_id", sectionId);
+    return request<ResearchReportsResponse>(
+      `/market/research/industries/${encodeURIComponent(industryId)}/reports?${q.toString()}`,
+      { signal },
+    );
+  },
+  startResearchAnalysis: (industryId: string, force = false, signal?: AbortSignal) =>
+    request<ResearchAnalysisJob>(
+      `/market/research/industries/${encodeURIComponent(industryId)}/analysis?force=${String(force)}`,
+      { method: "POST", signal },
+    ),
+  getResearchAnalysisJob: (jobId: string, signal?: AbortSignal) =>
+    request<ResearchAnalysisJob>(`/market/research/analysis/${encodeURIComponent(jobId)}`, { signal }),
   uploadFile,
   getCorrelation: (codes: string, days: number, method: "pearson" | "spearman") =>
     request<CorrelationResponse>(

@@ -1855,6 +1855,42 @@ def get_stock_news(code: str | None = None, scope: str = "stock", limit: int = 2
 
 
 @mcp.tool
+def get_a_share_data(
+    operation: str,
+    code: str | None = None,
+    codes: _lenient_str_list_opt = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    statement: str = "profile",
+    scope: str = "stock",
+    limit: int = 20,
+) -> str:
+    """Fetch A-share data through the additive a-stock-data adapter surface.
+
+    Operations are ``quote``, ``bars``, ``reports``, ``news``,
+    ``fundamentals``, and ``announcements``. Use ``codes`` for a batch quote;
+    other operations use ``code``. Existing market, research, news, and
+    financial-statement tools remain available unchanged.
+    """
+    params: dict[str, Any] = {
+        "operation": operation,
+        "statement": statement,
+        "scope": scope,
+        "limit": limit,
+    }
+    if code:
+        params["code"] = code
+    if codes:
+        params["codes"] = codes
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    registry = _get_registry()
+    return registry.execute("get_a_share_data", params)
+
+
+@mcp.tool
 def get_sec_filings(
     ticker: str,
     form: str | None = None,

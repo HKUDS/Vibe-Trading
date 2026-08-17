@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router";
-import { Activity, BarChart3, Bot, CalendarClock, CandlestickChart, Check, ChevronDown, FileText, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2 } from "lucide-react";
+import { Activity, BarChart3, Bot, CalendarClock, CandlestickChart, Check, ChevronDown, FileText, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
@@ -17,10 +17,11 @@ import { SUPPORTED_LANGUAGES } from "@/i18n";
 export function Layout() {
   const { t } = useTranslation();
 
-  // "/" is the product (chat); marketing moved to /about. The Agent entry
-  // matches both "/" and legacy "/agent" deep links.
+  // The overview is the app's landing page. The Agent entry has its own
+  // route so generic home links never open the chat surface.
   const NAV = [
-    { to: "/", icon: Bot, label: t('layout.agent') },
+    { to: "/overview", icon: LayoutDashboard, label: t('layout.overview') },
+    { to: "/agent", icon: Bot, label: t('layout.agent') },
     { to: "/runtime", icon: Activity, label: t('layout.runtime') },
     { to: "/scheduled", icon: CalendarClock, label: t('layout.scheduled') },
     { to: "/reports", icon: FileText, label: t('layout.reports') },
@@ -114,7 +115,7 @@ export function Layout() {
         {/* Brand */}
         <div className={cn("border-b border-border/60", collapsed ? "p-2 flex justify-center" : "p-4 max-md:p-2 max-md:flex max-md:justify-center")}>
           <Link
-            to="/"
+            to="/overview"
             aria-label="Vibe-Trading"
             className={cn("flex items-center", collapsed ? "justify-center" : "gap-2 max-md:justify-center")}
           >
@@ -140,7 +141,7 @@ export function Layout() {
                 className={cn(
                   "flex items-center rounded-md text-[13px] transition-colors",
                   collapsed ? "justify-center px-2 py-1.5" : "gap-3 px-3 py-1.5 max-md:justify-center max-md:px-2",
-                  (to === "/" ? pathname === "/" || pathname.startsWith("/agent") : pathname.startsWith(to))
+                  pathname.startsWith(to)
                     ? "bg-primary/10 text-primary font-medium"
                     : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                 )}

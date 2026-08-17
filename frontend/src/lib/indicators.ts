@@ -1,5 +1,22 @@
 type N = number | null;
 
+/** Cumulative volume-weighted average price for one trading session. */
+export function calcIntradayAverage(
+  data: Array<{ open: number; high: number; low: number; close: number; volume: number }>,
+): number[] {
+  let totalVolume = 0;
+  let totalValue = 0;
+  return data.map((bar) => {
+    const volume = Number.isFinite(bar.volume) && bar.volume > 0 ? bar.volume : 0;
+    const typicalPrice = (bar.open + bar.high + bar.low + bar.close) / 4;
+    if (volume > 0 && Number.isFinite(typicalPrice)) {
+      totalVolume += volume;
+      totalValue += typicalPrice * volume;
+    }
+    return totalVolume > 0 ? totalValue / totalVolume : bar.close;
+  });
+}
+
 export function calcMA(data: number[], period: number): N[] {
   return data.map((_, i) => {
     if (i < period - 1) return null;
@@ -44,7 +61,7 @@ export function calcBOLL(data: number[], period = 20, mult = 2) {
   return { upper, mid, lower };
 }
 
-export function calcMACD(data: number[], fast = 12, slow = 26, sig = 9) {
+function calcMACDWithHistogramScale(data: number[], fast: number, slow: number, sig: number, histogramScale: number) {
   const ef = calcEMA(data, fast);
   const es = calcEMA(data, slow);
   const dif: N[] = data.map((_, i) =>
@@ -62,10 +79,19 @@ export function calcMACD(data: number[], fast = 12, slow = 26, sig = 9) {
   idx.forEach((ii, j) => {
     if (sigEma[j] !== null) {
       signal[ii] = sigEma[j];
-      hist[ii] = dif[ii]! - sigEma[j]!;
+      hist[ii] = (dif[ii]! - sigEma[j]!) * histogramScale;
     }
   });
   return { dif, signal, histogram: hist };
+}
+
+export function calcMACD(data: number[], fast = 12, slow = 26, sig = 9) {
+  return calcMACDWithHistogramScale(data, fast, slow, sig, 1);
+}
+
+/** MACD used by Chinese intraday charts: the histogram is 2 * (DIF - DEA). */
+export function calcMACDFS(data: number[], fast = 12, slow = 26, sig = 9) {
+  return calcMACDWithHistogramScale(data, fast, slow, sig, 2);
 }
 
 export function calcRSI(data: number[], period = 14): N[] {

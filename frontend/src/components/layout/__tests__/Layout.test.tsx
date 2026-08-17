@@ -23,6 +23,7 @@ vi.mock("react-i18next", () => ({
       "layout.delete": "Delete",
       "layout.expand": "Expand",
       "layout.home": "Home",
+      "layout.overview": "Overview",
       "layout.language": "Language",
       "layout.light": "Light",
       "layout.mainNavigation": "Main navigation",
@@ -30,6 +31,7 @@ vi.mock("react-i18next", () => ({
       "layout.noSessions": "No sessions yet",
       "layout.rename": "Rename",
       "layout.reports": "Reports",
+      "layout.research": "Research",
       "layout.runtime": "Runtime",
       "layout.sessions": "Sessions",
       "layout.settings": "Settings",
@@ -92,6 +94,8 @@ describe("Layout accessibility", () => {
     expect(screen.getByRole("complementary", { name: "Vibe-Trading sidebar" })).toHaveClass("max-md:w-12");
     expect(screen.getByRole("navigation", { name: "Main navigation" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Vibe-Trading" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Vibe-Trading" })).toHaveAttribute("href", "/overview");
+    expect(screen.queryByRole("link", { name: "Research" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "New Chat" })).toHaveAttribute("title", "New Chat");
     expect(screen.getByText("Skip to main content")).toHaveAttribute("href", "#main");
     expect(screen.getByRole("main")).toHaveAttribute("id", "main");
