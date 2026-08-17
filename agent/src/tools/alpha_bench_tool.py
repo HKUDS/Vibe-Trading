@@ -501,6 +501,34 @@ def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     if all(k in panel for k in ("open", "high", "low", "close")):
         panel["vwap"] = (panel["open"] + panel["high"] + panel["low"] + panel["close"]) / 4.0
 
+    # PIT-safe fundamentals for the fundamental zoo (fund:* columns).
+    # Shares the same unified schema the zoo's alphas reference; fetching is
+    # best-effort — missing statements stay NaN and the zoo z-scores exclude
+    # those names per date.
+    try:
+        from backtest.loaders.fundamentals_loader import load_fundamental_panel
+
+        fund_fields = [
+            "roe",
+            "gross_profitability",
+            "asset_growth",
+            "net_income",
+            "shares_diluted",
+        ]
+        fund_panels = load_fundamental_panel(
+            project_codes, fund_fields, start, end, freq="ttm", pit=True
+        )
+        for field, frame in fund_panels.items():
+            if frame is not None and not frame.empty:
+                # registry.compute() looks up the literal column name the alpha
+                # declares; align both axes to the OHLCV panel so the output
+                # shape validation matches (yahoo may drop a few tickers).
+                panel[f"fund:{field}"] = frame.reindex(
+                    index=panel["close"].index, columns=panel["close"].columns
+                )
+    except Exception as exc:  # noqa: BLE001 - best-effort enrichment
+        logger.warning("sp500 panel: fundamentals enrichment failed: %s", exc)
+
     # Attach a non-DataFrame metadata blob. Registry.compute() only iterates
     # required column names, so this extra key is ignored by the compute path.
     panel["_meta"] = {
