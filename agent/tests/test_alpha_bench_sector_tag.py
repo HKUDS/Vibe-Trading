@@ -30,6 +30,14 @@ class _FakeLoader:
 @pytest.fixture
 def wired_env(monkeypatch):
     monkeypatch.setattr(abt, "_fetch_sp500_constituents", lambda: ["AAA", "BBB"])
+    import yfinance as yf
+
+    class _FakeTicker:
+        @property
+        def info(self):
+            return {"sector": "Technology"}
+
+    monkeypatch.setattr(yf, "Ticker", lambda code: _FakeTicker())
     import backtest.loaders.registry as reg
 
     monkeypatch.setattr(reg, "resolve_loader", lambda _market: _FakeLoader())
