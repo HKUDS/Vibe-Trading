@@ -250,6 +250,56 @@ def _require_nonnegative(value: float, name: str, model: str) -> float:
         )
     return numeric
 
+def _require_finite(value: float, name: str, model: str) -> float:
+    """Check that a rate or ratio input is a finite number.
+
+    Unlike ``_require_nonnegative``, this allows negative values — rates
+    and ratios (beta, growth rates, etc.) can legitimately be negative.
+    It only rejects NaN, Inf, and non-numeric inputs.
+
+    Args:
+        value: The candidate number.
+        name: Field name for the error message.
+        model: Model name for the error message.
+
+    Returns:
+        ``value`` as a float.
+
+    Raises:
+        ValuationError: If the value is not a finite number.
+    """
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValuationError(f"{model}: {name} must be a number, got {value!r}") from exc
+    if not math.isfinite(numeric):
+        raise ValuationError(
+            f"{model}: {name} must be a finite number, got {numeric!r}"
+        )
+    return numeric
+
+
+def _guard_sequence_finite(seq: Sequence[float], name: str, model: str) -> list[float]:
+    """Check every element of a sequence is a finite number.
+
+    Returns a list of floats (eagerly consumed) so downstream code
+    does not need to re-check.
+    """
+    result: list[float] = []
+    for i, v in enumerate(seq):
+        try:
+            numeric = float(v)
+        except (TypeError, ValueError) as exc:
+            raise ValuationError(
+                f"{model}: {name}[{i}] must be a number, got {v!r}"
+            ) from exc
+        if not math.isfinite(numeric):
+            raise ValuationError(
+                f"{model}: {name}[{i}] must be a finite number, got {numeric!r}"
+            )
+        result.append(numeric)
+    return result
+
 
 def _validate_weights(equity_weight: float, debt_weight: float, *, model: str) -> None:
     """Check that a pair of capital-structure weights is usable.
@@ -403,6 +453,14 @@ def wacc(
             f"wacc: capital_structure_basis must be one of "
             f"{CAPITAL_STRUCTURE_BASES}, got {capital_structure_basis!r}"
         )
+    model = "wacc"
+    risk_free_rate = _require_finite(risk_free_rate, "risk_free_rate", model)
+    beta = _require_finite(beta, "beta", model)
+    equity_risk_premium = _require_finite(equity_risk_premium, "equity_risk_premium", model)
+    pretax_cost_of_debt = _require_finite(pretax_cost_of_debt, "pretax_cost_of_debt", model)
+    tax_rate = _require_finite(tax_rate, "tax_rate", model)
+    size_premium = _require_finite(size_premium, "size_premium", model)
+    country_risk_premium = _require_finite(country_risk_premium, "country_risk_premium", model)
     if not 0.0 <= tax_rate <= 1.0:
         raise ValuationError(f"wacc: tax_rate must be within [0, 1], got {tax_rate!r}")
 
@@ -417,8 +475,8 @@ def wacc(
         ]
         if missing:
             raise MissingInputError(missing, "wacc")
-        equity_mv = float(market_value_of_equity)  # type: ignore[arg-type]
-        debt_mv = float(market_value_of_debt)  # type: ignore[arg-type]
+        equity_mv = _require_finite(market_value_of_equity, "market_value_of_equity", model)
+        debt_mv = _require_finite(market_value_of_debt, "market_value_of_debt", model)
         if equity_mv < 0.0 or debt_mv < 0.0:
             raise ValuationError(
                 f"wacc: market values must be non-negative, got "
@@ -564,16 +622,22 @@ def fcff_bridge(
             empty, or if the other three forecasts are not the same length as
             ``ebit``.
     """
+    model = "fcff_bridge"
+    tax_rate = _require_finite(tax_rate, "tax_rate", model)
     if not 0.0 <= tax_rate <= 1.0:
         raise ValuationError(f"fcff_bridge: tax_rate must be within [0, 1], got {tax_rate!r}")
-
-    ebit_list = list(ebit)
+    ebit_list = _guard_sequence_finite(ebit, "ebit", model)
     horizon = len(ebit_list)
     if horizon == 0:
         raise ValuationError(
             "fcff_bridge: ebit forecast is empty; at least one projection year "
             "is required"
         )
+    depreciation_amortization = _guard_sequence_finite(
+        depreciation_amortization, "depreciation_amortization", model
+    )
+    capex = _guard_sequence_finite(capex, "capex", model)
+    delta_nwc = _guard_sequence_finite(delta_nwc, "delta_nwc", model)
     forecasts = {
         "depreciation_amortization": list(depreciation_amortization),
         "capex": list(capex),
@@ -706,8 +770,12 @@ def terminal_value(
             happens to equal ``-final_year_fcff`` exactly, which makes the
             implied-growth reverse-solve's denominator zero.
     """
-    _require_assumption(terminal_growth, "terminal_growth", "terminal_value")
-    _require_assumption(exit_multiple, "exit_multiple", "terminal_value")
+    model = "terminal_value"
+    final_year_fcff = _require_finite(final_year_fcff, "final_year_fcff", model)
+    terminal_year_ebitda = _require_finite(terminal_year_ebitda, "terminal_year_ebitda", model)
+    wacc_rate = _require_finite(wacc_rate, "wacc_rate", model)
+    _require_assumption(terminal_growth, "terminal_growth", model)
+    _require_assumption(exit_multiple, "exit_multiple", model)
 
     if wacc_rate <= -1.0:
         raise ValuationError(

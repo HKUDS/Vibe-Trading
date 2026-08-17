@@ -996,3 +996,140 @@ def test_dcf_result_exposes_every_intermediate_object():
     assert isinstance(result.net_debt_bridge, NetDebtBridgeResult)
     assert len(result.fcff_bridge) == 3
     assert len(result.discounted_fcff) == 3
+
+
+# ---------------------------------------------------------------------------
+# 11. Non-finite inputs are refused (regression for #1120)
+# ---------------------------------------------------------------------------
+# The engine's rule (contracts.py) is that an unusable input makes the model
+# NOT RUNNABLE. wacc(), fcff_bridge() and terminal_value() previously read
+# their numeric inputs with float(...) and never checked math.isfinite, so
+# NaN/Inf sailed through: wacc(beta=inf) -> wacc=inf and, via the
+# __post_init__ reconciliation using math.isclose (where inf == inf is True),
+# run_dcf returned a plausible-looking negative share price instead of
+# refusing. See issue #1120.
+
+
+def _wacc_args():
+    return dict(
+        risk_free_rate=0.04,
+        beta=1.2,
+        equity_risk_premium=0.05,
+        pretax_cost_of_debt=0.06,
+        tax_rate=0.25,
+        capital_structure_basis="target",
+        target_equity_weight=0.7,
+        target_debt_weight=0.3,
+    )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "risk_free_rate",
+        "beta",
+        "equity_risk_premium",
+        "pretax_cost_of_debt",
+        "tax_rate",
+        "size_premium",
+        "country_risk_premium",
+    ],
+)
+@pytest.mark.parametrize("bad_value", [float("inf"), float("-inf"), float("nan")])
+def test_wacc_refuses_non_finite_rate_inputs(field, bad_value):
+    """The issue's exact repro: beta=inf must raise, not produce wacc=inf."""
+    args = _wacc_args()
+    args[field] = bad_value
+    with pytest.raises(ValuationError) as excinfo:
+        wacc(**args)
+    assert "must be a finite number" in str(excinfo.value)
+
+
+def test_wacc_refuses_non_finite_current_structure_market_values():
+    with pytest.raises(ValuationError):
+        wacc(
+            risk_free_rate=0.04,
+            beta=1.2,
+            equity_risk_premium=0.05,
+            pretax_cost_of_debt=0.06,
+            tax_rate=0.25,
+            capital_structure_basis="current",
+            market_value_of_equity=float("inf"),
+            market_value_of_debt=300.0,
+        )
+
+
+@pytest.mark.parametrize("field", ["ebit", "depreciation_amortization", "capex", "delta_nwc"])
+def test_fcff_bridge_refuses_non_finite_forecast_element(field):
+    args = dict(
+        ebit=[100.0, 105.0, 110.0],
+        tax_rate=0.25,
+        depreciation_amortization=[20.0, 21.0, 22.0],
+        capex=[30.0, 28.0, 26.0],
+        delta_nwc=[5.0, 4.0, 3.0],
+    )
+    args[field] = [100.0, float("nan"), 110.0]
+    with pytest.raises(ValuationError) as excinfo:
+        fcff_bridge(**args)
+    assert f"{field}[1]" in str(excinfo.value)
+
+
+def test_fcff_bridge_refuses_non_finite_tax_rate():
+    with pytest.raises(ValuationError):
+        fcff_bridge(
+            ebit=[100.0, 105.0],
+            tax_rate=float("inf"),
+            depreciation_amortization=[20.0, 21.0],
+            capex=[30.0, 28.0],
+            delta_nwc=[5.0, 4.0],
+        )
+
+
+def _tv_args():
+    return dict(
+        final_year_fcff=75.5,
+        terminal_year_ebitda=132.0,
+        wacc_rate=0.0905,
+        terminal_growth=Assumption("terminal_growth", 0.03, "stated"),
+        exit_multiple=Assumption("exit_multiple", 8.0, "stated"),
+    )
+
+
+@pytest.mark.parametrize(
+    "field, bad_value",
+    [
+        ("final_year_fcff", float("nan")),
+        ("terminal_year_ebitda", float("inf")),
+        ("wacc_rate", float("nan")),
+    ],
+)
+def test_terminal_value_refuses_non_finite_inputs(field, bad_value):
+    args = _tv_args()
+    args[field] = bad_value
+    with pytest.raises(ValuationError) as excinfo:
+        terminal_value(**args)
+    assert "must be a finite number" in str(excinfo.value)
+
+
+def test_run_dcf_refuses_non_finite_beta_instead_of_returning_negative_price():
+    """End-to-end repro of issue #1120: beta=inf used to produce a negative
+    value_per_share. Now it must refuse with ValuationError."""
+    inputs = base_inputs()
+    inputs["beta"] = float("inf")
+    with pytest.raises(ValuationError) as excinfo:
+        run_dcf(
+            inputs,
+            capital_structure_basis="target",
+            discounting_convention="mid_year",
+            terminal_value_method="perpetuity_growth",
+        )
+    assert "beta" in str(excinfo.value)
+
+
+def test_wacc_allows_negative_beta_but_refuses_non_finite():
+    """Negative beta is legitimate (defensive stocks); only non-finite must
+    raise — keeps the guard's contract narrow."""
+    args = _wacc_args()
+    args["beta"] = -0.5
+    ok = wacc(**args)
+    assert ok.cost_of_equity == pytest.approx(0.04 - 0.5 * 0.05, abs=1e-9)
