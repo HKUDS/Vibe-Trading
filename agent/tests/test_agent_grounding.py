@@ -1134,6 +1134,25 @@ def test_short_date_mask_does_not_swallow_a_plain_ratio(tmp_path: Path) -> None:
     assert [issue["value"] for issue in result.issues] == [42.0]
 
 
+def test_iso_date_mask_matches_when_it_directly_abuts_cjk_text(tmp_path: Path) -> None:
+    """A date with no separating space/punctuation from Chinese prose still masks (#1786964822).
+
+    Python's ``\\b`` treats CJK ideographs as word characters, so the old
+    ``\\b...\\b``-anchored date pattern never matched "2026-07-14最低": there is
+    no boundary between "4" and "最" when both sides count as "\\w". The date's
+    year/month/day survived as three unmasked numbers and were rejected as
+    conflicting with the observed OHLC range even though the report was
+    correct.
+    """
+    ledger = _screened_ledger(tmp_path)
+
+    result = ledger.validate_final_answer(
+        "000543.SZ 现价 8.20 CNY (2026-07-14最低)（source: tencent）"
+    )
+
+    assert result.valid is True, result.issues
+
+
 def test_masked_window_does_not_shield_a_wrong_quote_in_the_same_clause(
     tmp_path: Path,
 ) -> None:

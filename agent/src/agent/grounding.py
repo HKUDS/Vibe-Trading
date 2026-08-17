@@ -201,7 +201,17 @@ _RATE_FORMULA_IDENTITY_RE = re.compile(
     r"\b[01](?=\s*[-+]\s*(?:[A-Za-z_][A-Za-z0-9_]*_?rate\b|[^\d\s()+*/=-]{0,12}(?:成本率|费率|税率|滑点率)))",
     re.IGNORECASE,
 )
-_DATE_RE = re.compile(r"\b(?:19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}\b")
+# "\b" is a word boundary between "\w" and non-"\w", but Python's regex module
+# treats CJK ideographs as "\w" too, so a trailing "\b" never matches where a
+# date directly abuts Chinese prose with no separating space or punctuation:
+# "(2026-07-14最低)" left the date unmasked, and its 2026/7/14 were extracted
+# as candidate prices and rejected against the observed OHLC range. Anchoring
+# on the same ASCII-only lookaround as ``_NUMBER_RE``/``_SHORT_DATE_RE`` keeps
+# the date from merging with an adjacent digit or letter run while still
+# matching when CJK text touches either side.
+_DATE_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}(?![A-Za-z0-9_])"
+)
 # A year-less "8/5" is how a trading day is written in running prose, and it
 # contributed 8 and 5 as candidate prices (#983). The month and day ranges are
 # bounded, and both sides are fenced off from a longer slash run, so the window
