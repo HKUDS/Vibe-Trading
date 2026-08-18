@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import i18n from "@/i18n";
 import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
-import type { PriceBar, TradeMarker, IndicatorPoint, StockFundFlowRow } from "@/lib/api";
+import type { PriceBar, TradeMarker, IndicatorPoint, StockFundFlowRow, ChanTrainingAnalysis } from "@/lib/api";
 import { calcMA, calcBOLL, calcMACD, calcMACDFS, calcRSI, calcKDJ, calcEMA, calcIntradayAverage } from "@/lib/indicators";
 import { getChartTheme } from "@/lib/chart-theme";
 import { abbreviateNum } from "@/lib/formatters";
@@ -48,6 +48,148 @@ export function getChartGridLayout(intraday: boolean) {
   ];
 }
 
+export function resetChartDataZoom(
+  chart: { dispatchAction: (action: { type: "dataZoom"; dataZoomIndex: number; startValue: number; endValue: number }) => void },
+  dataLength: number,
+) {
+  const endValue = Math.max(0, dataLength - 1);
+  for (const dataZoomIndex of [0, 1]) {
+    chart.dispatchAction({ type: "dataZoom", dataZoomIndex, startValue: 0, endValue });
+  }
+}
+
+export type ChartDataZoomRange = { start: number; end: number };
+
+/** Move the visible range by one small, cursor-anchored wheel step. */
+export function buildChartDataZoomStep(
+  range: ChartDataZoomRange,
+  dataLength: number,
+  deltaY: number,
+  anchorIndex?: number,
+): ChartDataZoomRange {
+  const maxIndex = Math.max(0, dataLength - 1);
+  if (maxIndex <= 1) return { start: 0, end: maxIndex };
+
+  const start = Math.max(0, Math.min(maxIndex, Math.round(range.start)));
+  const end = Math.max(start, Math.min(maxIndex, Math.round(range.end)));
+  const currentSpan = Math.max(1, end - start);
+  const fullSpan = maxIndex;
+  const minSpan = Math.min(5, fullSpan);
+  const zoomIn = deltaY < 0;
+  const step = Math.max(1, Math.ceil(currentSpan * 0.12));
+  const targetSpan = zoomIn
+    ? Math.max(minSpan, currentSpan - step)
+    : Math.min(fullSpan, currentSpan + step);
+  const safeAnchor = Math.max(start, Math.min(end, Math.round(anchorIndex ?? (start + end) / 2)));
+  const anchorRatio = currentSpan > 0 ? (safeAnchor - start) / currentSpan : 0.5;
+
+  let nextStart = Math.round(safeAnchor - anchorRatio * targetSpan);
+  let nextEnd = nextStart + targetSpan;
+  if (nextStart < 0) {
+    nextEnd -= nextStart;
+    nextStart = 0;
+  }
+  if (nextEnd > maxIndex) {
+    nextStart -= nextEnd - maxIndex;
+    nextEnd = maxIndex;
+  }
+  return {
+    start: Math.max(0, nextStart),
+    end: Math.min(maxIndex, nextEnd),
+  };
+}
+
+function readChartDataZoomRange(
+  chart: { getOption: () => unknown },
+  dataLength: number,
+): ChartDataZoomRange {
+  const maxIndex = Math.max(0, dataLength - 1);
+  const option = chart.getOption() as {
+    dataZoom?: Array<{ start?: number; end?: number; startValue?: number; endValue?: number }>;
+  };
+  const current = option.dataZoom?.[0] ?? {};
+  const rawStartValue = Number(current.startValue);
+  const rawEndValue = Number(current.endValue);
+  const rawStartPercent = Number(current.start);
+  const rawEndPercent = Number(current.end);
+  const start = Number.isFinite(rawStartValue)
+    ? rawStartValue
+    : Number.isFinite(rawStartPercent)
+      ? (rawStartPercent / 100) * maxIndex
+      : 0;
+  const end = Number.isFinite(rawEndValue)
+    ? rawEndValue
+    : Number.isFinite(rawEndPercent)
+      ? (rawEndPercent / 100) * maxIndex
+      : maxIndex;
+  return {
+    start: Math.round(Math.max(0, Math.min(maxIndex, start))),
+    end: Math.round(Math.max(0, Math.min(maxIndex, end))),
+  };
+}
+
+export function getStablePriceAxisBounds(highs: number[], lows: number[]) {
+  const values = [...highs, ...lows].map(Number).filter((value) => Number.isFinite(value));
+  if (values.length === 0) return {};
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const padding = Math.max((high - low) * 0.05, Math.abs(high || low) * 0.001, 0.01);
+  return { min: low - padding, max: high + padding };
+}
+
+export function getChanFractalMarkerStyle(kind: "top" | "bottom", upColor: string, downColor: string) {
+  const isTop = kind === "top";
+  return {
+    symbolRotate: isTop ? 180 : 0,
+    symbolOffset: [0, isTop ? -13 : 13] as [number, number],
+    color: isTop ? upColor : downColor,
+  };
+}
+
+export function ChanTheoryGuide() {
+  const [expanded, setExpanded] = useState(false);
+  const items = [
+    { symbol: "▼", className: "text-red-500", title: "顶分型", description: "局部高点结构，图中用向下的三角标识。" },
+    { symbol: "▲", className: "text-emerald-500", title: "底分型", description: "局部低点结构，图中用向上的三角标识。" },
+    { symbol: "╱", className: "text-sky-500", title: "笔", description: "蓝色细虚线，连接相邻有效顶、底分型。" },
+    { symbol: "━", className: "text-amber-500", title: "线段", description: "橙色粗实线，由多笔组成的更高一级结构。" },
+    { symbol: "▰", className: "text-sky-500", title: "中枢 / 区间", description: "蓝色半透明区域，表示多段走势的重叠价格区间。" },
+    { symbol: "B/S", className: "text-primary", title: "交易标记", description: "B表示买入，S表示卖出，均按当前K线收盘价成交。" },
+  ];
+  return (
+    <aside className="mb-3 rounded-xl border border-border/70 bg-card p-3 text-xs">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 text-left"
+      >
+        <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h3 className="text-sm font-semibold">缠论图例说明</h3>
+          <span className="leading-5 text-muted-foreground">图中颜色和符号对应的缠论结构</span>
+        </span>
+        <span className="text-muted-foreground">{expanded ? "收起" : "展开"}</span>
+      </button>
+      {expanded && <>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        {items.map((item) => (
+          <div key={item.title} className="flex items-start gap-3">
+            <span className={cn("flex h-6 min-w-8 items-center justify-center rounded border border-border/60 bg-muted/20 font-mono text-base font-semibold", item.className)}>{item.symbol}</span>
+            <div className="min-w-0">
+              <p className="font-medium">{item.title}</p>
+              <p className="mt-0.5 leading-5 text-muted-foreground">{item.description}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 border-t border-border/60 pt-2 leading-5 text-muted-foreground">
+        训练模式只展示当前已揭示的 K 线和结构，不使用未来数据。
+      </div>
+      </>}
+    </aside>
+  );
+}
+
 export function buildChartDataUpdate(
   chartDates: string[],
   series: Array<{ name: string; data: unknown; [key: string]: unknown }>,
@@ -58,8 +200,29 @@ export function buildChartDataUpdate(
   };
 }
 
+type DisposableChart = {
+  dispose: () => void;
+  isDisposed?: () => boolean;
+};
+
+/** ECharts v6 can throw while disposing an unrendered dataZoom view. */
+export function disposeChartSafely(chart: DisposableChart | null | undefined) {
+  if (!chart || chart.isDisposed?.()) return;
+  try {
+    chart.dispose();
+  } catch {
+    // Teardown must not turn a route change into an application error.
+  }
+}
+
 interface Props {
   data: PriceBar[];
+  calculationData?: PriceBar[];
+  calculationOffset?: number;
+  initialStartIndex?: number;
+  initialEndIndex?: number;
+  viewportStartIndex?: number;
+  viewportEndIndex?: number;
   markers?: TradeMarker[];
   indicators?: Record<string, IndicatorPoint[]>;
   height?: number;
@@ -71,6 +234,8 @@ interface Props {
   sub?: Sub;
   onSubChange?: (sub: Sub) => void;
   availableSubs?: Sub[];
+  chanAnalysis?: ChanTrainingAnalysis | null;
+  showChan?: boolean;
 }
 
 interface IntradayAxisData {
@@ -276,10 +441,15 @@ function buildIntradayAxis(data: PriceBar[], market: "a_share" | "us"): Intraday
   };
 }
 
-export function CandlestickChart({ data, markers, indicators, height = 500, intraday = false, previousClose, market = "a_share", symbol, fundFlowRows = [], sub: controlledSub, onSubChange, availableSubs }: Props) {
+export function CandlestickChart({ data, calculationData, calculationOffset = 0, initialStartIndex, initialEndIndex, viewportStartIndex, viewportEndIndex, markers, indicators, height = 500, intraday = false, previousClose, market = "a_share", symbol, fundFlowRows = [], sub: controlledSub, onSubChange, availableSubs, chanAnalysis, showChan = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const zoomSelectionRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof echarts.init> | null>(null);
   const chartLayoutKeyRef = useRef<string | null>(null);
+  const initialZoomKeyRef = useRef<string | null>(null);
+  const activeSubSeriesIdsRef = useRef<string[]>([]);
+  const previousSubRef = useRef<Sub | null>(null);
+  const zoomDragRef = useRef<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
   const [internalSub, setInternalSub] = useState<Sub>("vol");
   const [range, setRange] = useState<Range>("1M");
   const [overlays, setOverlays] = useState<Set<Overlay>>(new Set(["ma5", "ma20"]));
@@ -287,6 +457,13 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
   const dark = useThemeDark();
   const sub = controlledSub ?? internalSub;
   const subOptions = availableSubs ? SUB_OPTIONS.filter(([id]) => availableSubs.includes(id)) : SUB_OPTIONS;
+  const hasImplicitViewport = useMemo(() => {
+    if (intraday || !calculationData || (calculationOffset <= 0 && data.length >= calculationData.length) || data.length <= calculationOffset || data.length > calculationData.length) return false;
+    return data.every((bar, index) => bar.time === calculationData[index]?.time);
+  }, [calculationData, calculationOffset, data, intraday]);
+  const effectiveCalculationOffset = hasImplicitViewport ? 0 : calculationOffset;
+  const effectiveViewportStartIndex = viewportStartIndex ?? (hasImplicitViewport ? calculationOffset : undefined);
+  const effectiveViewportEndIndex = viewportEndIndex ?? (hasImplicitViewport ? data.length - 1 : undefined);
 
   const selectSub = useCallback((next: Sub) => {
     setInternalSub(next);
@@ -313,19 +490,26 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
   }, [data]);
 
   // Memoize indicator calculations — only recompute when data changes (not on overlay toggle)
-  const indicatorCache = useMemo(() => ({
-    ma5: calcMA(baseData.closes, 5),
-    ma10: calcMA(baseData.closes, 10),
-    ma20: calcMA(baseData.closes, 20),
-    ma60: calcMA(baseData.closes, 60),
-    ema12: calcEMA(baseData.closes, 12),
-    ema26: calcEMA(baseData.closes, 26),
-    boll: calcBOLL(baseData.closes, 20, 2),
-    macd: calcMACD(baseData.closes),
-    macdfs: calcMACDFS(baseData.closes),
-    rsi: calcRSI(baseData.closes),
-    kdj: calcKDJ(baseData.highs, baseData.lows, baseData.closes),
-  }), [baseData]);
+  const indicatorCache = useMemo(() => {
+    const source = calculationData ?? data;
+    const closes = source.map((item) => item.close);
+    const highs = source.map((item) => item.high);
+    const lows = source.map((item) => item.low);
+    const slice = <T,>(values: T[]) => values.slice(effectiveCalculationOffset, effectiveCalculationOffset + data.length);
+    return {
+      ma5: slice(calcMA(closes, 5)),
+      ma10: slice(calcMA(closes, 10)),
+      ma20: slice(calcMA(closes, 20)),
+      ma60: slice(calcMA(closes, 60)),
+      ema12: slice(calcEMA(closes, 12)),
+      ema26: slice(calcEMA(closes, 26)),
+      boll: { upper: slice(calcBOLL(closes, 20, 2).upper), mid: slice(calcBOLL(closes, 20, 2).mid), lower: slice(calcBOLL(closes, 20, 2).lower) },
+      macd: { dif: slice(calcMACD(closes).dif), signal: slice(calcMACD(closes).signal), histogram: slice(calcMACD(closes).histogram) },
+      macdfs: { dif: slice(calcMACDFS(closes).dif), signal: slice(calcMACDFS(closes).signal), histogram: slice(calcMACDFS(closes).histogram) },
+      rsi: slice(calcRSI(closes)),
+      kdj: { k: slice(calcKDJ(highs, lows, closes).k), d: slice(calcKDJ(highs, lows, closes).d), j: slice(calcKDJ(highs, lows, closes).j) },
+    };
+  }, [calculationData, effectiveCalculationOffset, data]);
   const intradayAverage = useMemo(() => calcIntradayAverage(data), [data]);
   const intradayAxis = useMemo(() => (intraday ? buildIntradayAxis(data, market) : null), [data, intraday, market]);
 
@@ -346,6 +530,9 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
     connectCharts();
     chartRef.current = chart;
     chartLayoutKeyRef.current = null;
+    initialZoomKeyRef.current = null;
+    activeSubSeriesIdsRef.current = [];
+    previousSubRef.current = null;
 
     let resizeFrame: number | null = null;
     const ro = new ResizeObserver(() => {
@@ -359,11 +546,143 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
     return () => {
       ro.disconnect();
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      chart.dispose();
+      disposeChartSafely(chart);
       chartRef.current = null;
       chartLayoutKeyRef.current = null;
+      initialZoomKeyRef.current = null;
+      activeSubSeriesIdsRef.current = [];
+      previousSubRef.current = null;
     };
   }, [data.length === 0, dark]); // only re-init when going empty↔non-empty or theme changes
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || data.length === 0) return;
+    const handleRestore = () => {
+      requestAnimationFrame(() => {
+        if (chartRef.current !== chart) return;
+        resetChartDataZoom(chart, data.length);
+      });
+    };
+    chart.on("restore", handleRestore);
+    return () => {
+      chart.off("restore", handleRestore);
+    };
+  }, [data.length]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const container = containerRef.current;
+    const selection = zoomSelectionRef.current;
+    if (!chart || !container || !selection || data.length === 0) return;
+    const pointFrom = (event: MouseEvent | PointerEvent | WheelEvent) => {
+      const bounds = container.getBoundingClientRect();
+      return {
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+        event,
+      };
+    };
+    const clampIndex = (x: number) => {
+      const converted = chart.convertFromPixel({ seriesIndex: 0 }, [x, chart.getHeight() / 2]);
+      const rawValue = Array.isArray(converted) ? converted[0] : converted;
+      const numericValue = typeof rawValue === "number" ? rawValue : Number(rawValue);
+      const categoryIndex = Number.isFinite(numericValue)
+        ? numericValue
+        : data.findIndex((bar) => bar.time === String(rawValue));
+      return Math.max(0, Math.min(data.length - 1, Math.round(categoryIndex >= 0 ? categoryIndex : 0)));
+    };
+    const clearSelection = () => {
+      zoomDragRef.current = null;
+      selection.style.display = "none";
+    };
+    const updateSelection = () => {
+      const drag = zoomDragRef.current;
+      if (!drag) return;
+      const left = Math.min(drag.startX, drag.currentX);
+      const top = Math.min(drag.startY, drag.currentY);
+      selection.style.display = "block";
+      selection.style.left = `${left}px`;
+      selection.style.top = `${top}px`;
+      selection.style.width = `${Math.abs(drag.currentX - drag.startX)}px`;
+      selection.style.height = `${Math.abs(drag.currentY - drag.startY)}px`;
+    };
+    const beginDrag = (event: MouseEvent | PointerEvent) => {
+      if (!event.ctrlKey || event.button !== 0) return;
+      event.preventDefault();
+      if ("pointerId" in event) container.setPointerCapture?.(event.pointerId);
+      const point = pointFrom(event);
+      zoomDragRef.current = { startX: point.x, startY: point.y, currentX: point.x, currentY: point.y };
+      updateSelection();
+    };
+    const updateDrag = (event: MouseEvent | PointerEvent) => {
+      if (!zoomDragRef.current) return;
+      const point = pointFrom(event);
+      zoomDragRef.current.currentX = point.x;
+      zoomDragRef.current.currentY = point.y;
+      updateSelection();
+    };
+    const finishDrag = (event: MouseEvent | PointerEvent) => {
+      const drag = zoomDragRef.current;
+      if (!drag) return;
+      event.preventDefault();
+      const point = pointFrom(event);
+      drag.currentX = point.x;
+      drag.currentY = point.y;
+      const left = Math.min(drag.startX, drag.currentX);
+      const right = Math.max(drag.startX, drag.currentX);
+      clearSelection();
+      if (right - left < 8) return;
+      const startValue = clampIndex(left);
+      const endValue = clampIndex(right);
+      if (endValue <= startValue) return;
+      const zoom = { type: "dataZoom" as const, startValue, endValue };
+      chart.dispatchAction({ ...zoom, dataZoomIndex: 0 });
+      chart.dispatchAction({ ...zoom, dataZoomIndex: 1 });
+    };
+    const handlePointerDown = (event: PointerEvent) => beginDrag(event);
+    const handlePointerMove = (event: PointerEvent) => updateDrag(event);
+    const handlePointerUp = (event: PointerEvent) => finishDrag(event);
+    const handleMouseDown = (event: MouseEvent) => beginDrag(event);
+    const handleMouseMove = (event: MouseEvent) => updateDrag(event);
+    const handleMouseUp = (event: MouseEvent) => finishDrag(event);
+    const handleWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey || !(event.target instanceof Node) || !container.contains(event.target)) return;
+      const point = pointFrom(event);
+      const converted = chart.convertFromPixel({ seriesIndex: 0 }, [point.x, chart.getHeight() / 2]);
+      const rawValue = Array.isArray(converted) ? converted[0] : converted;
+      const numericValue = typeof rawValue === "number" ? rawValue : Number(rawValue);
+      const anchorIndex = Number.isFinite(numericValue) ? numericValue : undefined;
+      const currentRange = readChartDataZoomRange(chart, data.length);
+      const nextRange = buildChartDataZoomStep(currentRange, data.length, event.deltaY, anchorIndex);
+      event.preventDefault();
+      clearSelection();
+      const zoom = { type: "dataZoom" as const, startValue: nextRange.start, endValue: nextRange.end };
+      chart.dispatchAction({ ...zoom, dataZoomIndex: 0 });
+      chart.dispatchAction({ ...zoom, dataZoomIndex: 1 });
+    };
+    const handlePointerCancel = () => clearSelection();
+
+    container.addEventListener("pointerdown", handlePointerDown);
+    container.addEventListener("pointermove", handlePointerMove);
+    container.addEventListener("pointerup", handlePointerUp);
+    container.addEventListener("pointercancel", handlePointerCancel);
+    container.addEventListener("mousedown", handleMouseDown);
+    container.addEventListener("mousemove", handleMouseMove);
+    container.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("wheel", handleWheel, { capture: true, passive: false });
+    return () => {
+      container.removeEventListener("pointerdown", handlePointerDown);
+      container.removeEventListener("pointermove", handlePointerMove);
+      container.removeEventListener("pointerup", handlePointerUp);
+      container.removeEventListener("pointercancel", handlePointerCancel);
+      container.removeEventListener("mousedown", handleMouseDown);
+      container.removeEventListener("mousemove", handleMouseMove);
+      container.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("wheel", handleWheel, true);
+      clearSelection();
+    };
+  }, [data.length]);
 
   // Update chart options — setOption on existing instance, no dispose
   useEffect(() => {
@@ -371,15 +690,17 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
     if (!chart || data.length === 0) return;
 
     const t = getChartTheme();
-    const { dates, closes, opens, candle } = baseData;
+    const { dates, closes, highs, lows, opens, candle } = baseData;
     const chartDates = intradayAxis?.categories ?? dates;
     const chartCloses = intradayAxis?.prices ?? closes;
     const chartAverage = intradayAxis?.averages ?? intradayAverage;
     const dailyCandle = candle.map((value, index) => {
       const color = dailyLimitColor(data, index, market, symbol);
-      return color
-        ? { value, itemStyle: { color, color0: color, borderColor: color, borderColor0: color } }
-        : value;
+      return {
+        id: dates[index],
+        value,
+        ...(color ? { itemStyle: { color, color0: color, borderColor: color, borderColor0: color } } : {}),
+      };
     });
     // Intraday guides need more contrast than the regular historical-chart
     // grid. Keep them neutral so they do not compete with the price/average
@@ -414,21 +735,98 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
     if (!intraday && overlays.has("boll")) {
       const boll = indicatorCache.boll;
       overlaySeries.push(
-        { name: "BOLL+", type: "line", data: boll.upper, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.bollColor, width: 0.8, type: "dashed" } },
-        { name: "BOLL", type: "line", data: boll.mid, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.bollColor, width: 1 } },
-        { name: "BOLL-", type: "line", data: boll.lower, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.bollColor, width: 0.8, type: "dashed" } },
+        { name: "BOLL+", type: "line", data: boll.upper, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.upColor, width: 0.8, type: "dashed" } },
+        { name: "BOLL", type: "line", data: boll.mid, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.infoColor, width: 1 } },
+        { name: "BOLL-", type: "line", data: boll.lower, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.downColor, width: 0.8, type: "dashed" } },
       );
       legendNames.push("BOLL");
     }
 
     // Trade markers
-    const marks = (markers || []).map(m => ({
-      coord: [m.time, m.price],
+    const marks = (markers || []).map(m => {
+      const markerBar = data.find((bar) => bar.time === m.time);
+      const anchorPrice = markerBar
+        ? (m.side === "BUY" ? markerBar.low : markerBar.high)
+        : m.price;
+      return {
+      coord: [m.time, anchorPrice],
       value: m.side === "BUY" ? "B" : "S",
       name: [`${m.side} @ ${m.price}`, m.qty ? `Qty: ${m.qty}` : "", m.reason || ""].filter(Boolean).join("\n"),
       itemStyle: { color: m.side === "BUY" ? t.upColor : t.downColor },
-      label: { color: "#fff", fontSize: 10, fontWeight: "bold" as const },
-    }));
+      symbolOffset: [0, m.side === "BUY" ? 30 : -30],
+      label: { show: true, color: "#fff", fontSize: 14, fontWeight: "bold" as const },
+      };
+    });
+
+    // Chan structures are supplied by the session snapshot.  They are keyed
+    // by global bar index so masked training bars and review bars can share
+    // the same persisted analysis without recalculating it in the browser.
+    const timeForChanIndex = (index: number) => data[index - effectiveCalculationOffset]?.time;
+    const chanMarks = showChan && !intraday && chanAnalysis ? [
+      ...chanAnalysis.fractals.map((point) => {
+        const time = timeForChanIndex(point.bar_index);
+        if (!time) return null;
+        const isTop = point.kind === "top";
+        const visual = getChanFractalMarkerStyle(point.kind, t.upColor, t.downColor);
+        return {
+          coord: [time, point.price],
+          value: isTop ? "顶" : "底",
+          name: `${isTop ? "顶分型" : "底分型"} · K${point.bar_index + 1}`,
+          symbol: "triangle",
+          symbolRotate: visual.symbolRotate,
+          symbolSize: 12,
+          symbolOffset: visual.symbolOffset,
+          itemStyle: { color: visual.color, opacity: 0.9 },
+          label: { show: false },
+        };
+      }),
+      ...chanAnalysis.signals.map((signal) => {
+        const time = timeForChanIndex(signal.bar_index);
+        const bar = data[signal.bar_index - effectiveCalculationOffset];
+        if (!time || !bar) return null;
+        const isBuy = signal.side === "buy";
+        return {
+          coord: [time, isBuy ? bar.low : bar.high],
+          value: signal.label,
+          name: `${signal.label} · K${signal.bar_index + 1}`,
+          symbol: "roundRect",
+          symbolSize: [26, 16],
+          symbolOffset: [0, isBuy ? 22 : -22],
+          itemStyle: { color: isBuy ? t.upColor : t.downColor, opacity: 0.92 },
+          label: { show: true, color: "#fff", fontSize: 9, fontWeight: "bold" as const },
+        };
+      }),
+    ].filter((item): item is NonNullable<typeof item> => item !== null) : [];
+    const chanStrokeLines = showChan && !intraday && chanAnalysis
+      ? chanAnalysis.strokes.map((stroke) => {
+          const startTime = timeForChanIndex(stroke.start_index);
+          const endTime = timeForChanIndex(stroke.end_index);
+          return startTime && endTime ? [
+            { coord: [startTime, stroke.start_price] },
+            { coord: [endTime, stroke.end_price] },
+          ] : null;
+        }).filter((line): line is [{ coord: [string, number] }, { coord: [string, number] }] => line !== null)
+      : [];
+    const chanSegmentLines = showChan && !intraday && chanAnalysis
+      ? chanAnalysis.segments.map((segment) => {
+          const startTime = timeForChanIndex(segment.start_index);
+          const endTime = timeForChanIndex(segment.end_index);
+          return startTime && endTime ? [
+            { coord: [startTime, segment.start_price] },
+            { coord: [endTime, segment.end_price] },
+          ] : null;
+        }).filter((line): line is [{ coord: [string, number] }, { coord: [string, number] }] => line !== null)
+      : [];
+    const chanCenterAreas = showChan && !intraday && chanAnalysis
+      ? chanAnalysis.centers.map((center) => {
+          const startTime = timeForChanIndex(center.start_index);
+          const endTime = timeForChanIndex(center.end_index);
+          return startTime && endTime ? [
+            { coord: [startTime, center.low] },
+            { coord: [endTime, center.high] },
+          ] : null;
+        }).filter((area): area is [{ coord: [string, number] }, { coord: [string, number] }] => area !== null)
+      : [];
 
     // Volume
     const vol = data.map((d, i) => ({
@@ -436,7 +834,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
       itemStyle: { color: closes[i] >= opens[i] ? t.volumeUp : t.volumeDown },
     }));
     const amount = data.map((d, i) => ({
-      value: d.volume * ((d.open + d.high + d.low + d.close) / 4),
+      value: d.amount ?? d.volume * ((d.open + d.high + d.low + d.close) / 4),
       itemStyle: { color: closes[i] >= opens[i] ? t.volumeUp : t.volumeDown },
     }));
     const subDates = intradayAxis?.categories ?? dates;
@@ -528,6 +926,19 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
 
     const maxBars = RANGE_BARS[range];
     const defaultStart = intraday || maxBars >= data.length ? 0 : Math.max(0, 100 - (maxBars / data.length) * 100);
+    const hasViewport = !intraday && effectiveViewportStartIndex !== undefined && effectiveViewportEndIndex !== undefined;
+    const viewportStart = hasViewport ? Math.max(0, Math.min(data.length - 1, effectiveViewportStartIndex)) : 0;
+    const viewportEnd = hasViewport ? Math.max(viewportStart, Math.min(data.length - 1, effectiveViewportEndIndex)) : data.length - 1;
+    const hasInitialZoom = !intraday && initialStartIndex !== undefined && initialEndIndex !== undefined;
+    const zoomStartIndex = hasInitialZoom ? Math.max(0, Math.min(data.length - 1, initialStartIndex)) : 0;
+    const zoomEndIndex = hasInitialZoom ? Math.max(zoomStartIndex, Math.min(data.length - 1, initialEndIndex)) : data.length - 1;
+    const initialZoomKey = hasInitialZoom ? `${symbol || ""}:${data.length}:${zoomStartIndex}:${zoomEndIndex}` : null;
+    const shouldApplyInitialZoom = hasInitialZoom && initialZoomKey !== initialZoomKeyRef.current;
+    const initialZoom = hasViewport
+      ? { startValue: viewportStart, endValue: viewportEnd }
+      : shouldApplyInitialZoom
+        ? { startValue: zoomStartIndex, endValue: zoomEndIndex }
+        : {};
     const referencePrice = previousClose && previousClose > 0 ? previousClose : closes[0];
     const intradayCloses = chartCloses.filter((close): close is number => close !== null && Number.isFinite(close));
     const maxRelativeMove = referencePrice
@@ -550,10 +961,104 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
           { name: "Average", type: "line", data: chartAverage, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", connectNulls: false, smooth: false, lineStyle: { color: "#facc15", width: 1.5 } },
         ]
       : [{
-          name: "K", type: "candlestick", data: dailyCandle, xAxisIndex: 0, yAxisIndex: 0,
+          id: "K", name: "K", type: "candlestick", data: dailyCandle, xAxisIndex: 0, yAxisIndex: 0,
           itemStyle: { color: t.upColor, color0: t.downColor, borderColor: t.upColor, borderColor0: t.downColor },
-          markPoint: marks.length > 0 ? { data: marks, symbolSize: 28, tooltip: { formatter: (p: { name?: string; value?: string }) => p.name || p.value || "" } } : undefined,
+          markPoint: chanMarks.length > 0 ? {
+            data: chanMarks,
+            symbol: "circle",
+            symbolSize: 30,
+            label: { show: true, color: "#fff", fontSize: 14, fontWeight: "bold" },
+            tooltip: { formatter: (p: { name?: string; value?: string }) => p.name || p.value || "" },
+          } : undefined,
+          markArea: chanCenterAreas.length > 0 ? {
+            silent: true,
+            itemStyle: { color: t.infoColor, opacity: 0.06 },
+            data: chanCenterAreas,
+          } : undefined,
         }];
+
+    const chanStructureSeries = showChan && !intraday ? [
+      {
+        id: "chan-strokes",
+        name: "__chan_strokes__",
+        type: "line",
+        data: [],
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        silent: true,
+        showSymbol: false,
+        tooltip: { show: false },
+        markLine: chanStrokeLines.length > 0 ? {
+          symbol: ["none", "none"],
+          silent: true,
+          label: { show: false },
+          data: chanStrokeLines,
+          lineStyle: { color: t.infoColor, width: 1, type: "dashed", opacity: 0.9 },
+        } : undefined,
+      },
+      {
+        id: "chan-segments",
+        name: "__chan_segments__",
+        type: "line",
+        data: [],
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        silent: true,
+        showSymbol: false,
+        tooltip: { show: false },
+        markLine: chanSegmentLines.length > 0 ? {
+          symbol: ["none", "none"],
+          silent: true,
+          label: { show: false },
+          data: chanSegmentLines,
+          lineStyle: { color: t.warningColor, width: 2.2, type: "solid", opacity: 0.95 },
+        } : undefined,
+      },
+    ] : [];
+
+    const tradeMarkerSeries = !intraday ? [{
+      id: "trade-markers",
+      name: "__trade_markers__",
+      type: "line",
+      data: [],
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      silent: true,
+      showSymbol: false,
+      tooltip: { show: false },
+      markPoint: marks.length > 0 ? {
+        data: marks,
+        symbol: "circle",
+        symbolSize: 30,
+        label: { show: true, color: "#fff", fontSize: 14, fontWeight: "bold" },
+        tooltip: { formatter: (p: { name?: string; value?: string }) => p.name || p.value || "" },
+      } : { data: [] },
+    }] : [];
+
+    const renderedSubSeries = subSeries.map((series, index) => ({
+      ...series,
+      id: `sub-${sub}-${index}`,
+      show: true,
+    }));
+    const chartSeries = [
+      ...mainSeries,
+      ...chanStructureSeries,
+      ...tradeMarkerSeries,
+      ...overlaySeries,
+      ...extraSeries,
+      ...renderedSubSeries,
+    ];
+
+    const stablePriceAxisBounds = getStablePriceAxisBounds(highs, lows);
+    const chartYAxis = intraday
+      ? [
+          { id: "main-y", scale: true, min: intradayAxisMin, max: intradayAxisMax, gridIndex: 0, axisLine: { show: true, lineStyle: { color: t.axisColor } }, axisTick: { show: true }, splitLine: { show: false }, axisLabel: { color: t.textColor, fontSize: 10, formatter: (value: number) => referencePrice ? `${(((value - referencePrice) / referencePrice) * 100).toFixed(2)}%` : String(value) } },
+          { id: "sub-y", ...subYAxis, gridIndex: 1, axisLabel: { ...subYAxis.axisLabel, color: t.textColor, fontSize: 10 } },
+        ]
+      : [
+          { id: "main-y", scale: true, ...stablePriceAxisBounds, gridIndex: 0, splitLine: { lineStyle: { color: t.gridColor } }, axisLabel: { color: t.textColor, fontSize: 10 } },
+          { id: "sub-y", ...subYAxis },
+        ];
 
     const chartOption = {
       backgroundColor: "transparent",
@@ -584,7 +1089,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
       },
       axisPointer: { link: [{ xAxisIndex: "all" }] },
       toolbox: {
-        feature: { saveAsImage: { title: "Save" }, dataZoom: { title: { zoom: "Zoom", back: "Reset" } }, restore: { title: "Reset" } },
+        feature: { saveAsImage: { title: "下载" } },
         right: 8, top: 0, iconStyle: { borderColor: t.textColor },
       },
       legend: { data: legendNames, textStyle: { color: t.textColor, fontSize: 10 }, right: 80, top: 2, type: "scroll", itemWidth: 12, itemHeight: 8, itemGap: 8 },
@@ -604,53 +1109,115 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
             { type: "category", data: dates, gridIndex: 0, axisLine: { lineStyle: { color: t.axisColor } }, axisLabel: { color: t.textColor, fontSize: 10 }, boundaryGap: true },
             { type: "category", data: dates, gridIndex: 1, axisLine: { lineStyle: { color: t.axisColor } }, axisLabel: { show: false }, boundaryGap: true },
           ],
-      yAxis: intraday
-        ? [
-            { scale: true, min: intradayAxisMin, max: intradayAxisMax, gridIndex: 0, axisLine: { show: true, lineStyle: { color: t.axisColor } }, axisTick: { show: true }, splitLine: { show: false }, axisLabel: { color: t.textColor, fontSize: 10, formatter: (value: number) => referencePrice ? `${(((value - referencePrice) / referencePrice) * 100).toFixed(2)}%` : String(value) } },
-            { ...subYAxis, gridIndex: 1, axisLabel: { ...subYAxis.axisLabel, color: t.textColor, fontSize: 10 } },
-          ]
-        : [
-            { scale: true, gridIndex: 0, splitLine: { lineStyle: { color: t.gridColor } }, axisLabel: { color: t.textColor, fontSize: 10 } },
-            subYAxis,
-          ],
+      yAxis: chartYAxis,
       dataZoom: [
-        { type: "inside", xAxisIndex: intraday ? [0, 1] : [0, 1], start: defaultStart, end: 100 },
-        { type: "slider", xAxisIndex: intraday ? [0, 1] : [0, 1], bottom: 4, height: 20, labelFormatter: (val: string) => val },
+        { type: "inside", xAxisIndex: intraday ? [0, 1] : [0, 1], start: defaultStart, end: 100, zoomOnMouseWheel: false, moveOnMouseWheel: false, moveOnMouseMove: false, ...initialZoom },
+        { type: "slider", xAxisIndex: intraday ? [0, 1] : [0, 1], bottom: 4, height: 20, labelFormatter: (val: string) => val, ...initialZoom },
       ],
-      series: [
-        ...mainSeries,
-        ...overlaySeries,
-        ...extraSeries,
-        ...subSeries,
-      ],
+      series: chartSeries,
     };
     const chartLayoutKey = JSON.stringify({
       dark,
       intraday,
       market,
-      symbol,
       previousClose,
-      sub,
+      initialStartIndex,
+      initialEndIndex,
       range,
-      overlays: [...overlays].sort(),
-      markers,
+      showChan,
+      chanVersion: chanAnalysis?.version,
     });
+    const subSeriesIds = renderedSubSeries.map((series) => String(series.id));
     if (chartLayoutKeyRef.current !== chartLayoutKey) {
       // A layout/configuration change needs a complete option replacement.
       chart.setOption(chartOption, true);
       chartLayoutKeyRef.current = chartLayoutKey;
+      activeSubSeriesIdsRef.current = subSeriesIds;
+      previousSubRef.current = sub;
+      if (shouldApplyInitialZoom && initialZoomKey) {
+        initialZoomKeyRef.current = initialZoomKey;
+        // ECharts can keep the previous dataZoom state when a category axis is
+        // replaced. Re-apply the review window after the option is mounted so
+        // the full dataset remains loaded while only the requested slice is
+        // visible initially.
+        requestAnimationFrame(() => {
+          if (chartRef.current !== chart) return;
+          const zoom = { type: "dataZoom" as const, startValue: zoomStartIndex, endValue: zoomEndIndex };
+          chart.dispatchAction({ ...zoom, dataZoomIndex: 0 });
+          chart.dispatchAction({ ...zoom, dataZoomIndex: 1 });
+        });
+      }
     } else {
-      // Live refresh: update only categories and series data. This preserves
-      // the existing canvas background, axes, zoom state, and zero reference
-      // line instead of rebuilding them on every quote tick.
-      chart.setOption(buildChartDataUpdate(chartDates, [
-        ...mainSeries,
-        ...overlaySeries,
-        ...extraSeries,
-        ...subSeries,
-      ]), { lazyUpdate: true });
+      const subOnlyChanged = previousSubRef.current !== null && previousSubRef.current !== sub;
+      if (subOnlyChanged) {
+        // Sub-indicator switches do not submit the main K-line series at all.
+        // Old sub series are hidden by id, then the newly selected series are
+        // added to the same secondary grid without disturbing dataZoom.
+        const hiddenPreviousSubSeries = activeSubSeriesIdsRef.current
+          .filter((id) => !subSeriesIds.includes(id))
+          .map((id) => ({ id, show: false, data: [] }));
+        chart.setOption({
+          legend: { data: legendNames },
+          yAxis: [{ id: "sub-y", ...chartYAxis[1] }],
+          series: [...hiddenPreviousSubSeries, ...renderedSubSeries],
+        });
+        activeSubSeriesIdsRef.current = subSeriesIds;
+      } else {
+        // Price/data refreshes update the complete series set but still omit
+        // dataZoom, so the user's current window remains unchanged.
+        chart.setOption({
+          ...buildChartDataUpdate(chartDates, chartSeries),
+          legend: { data: legendNames },
+          yAxis: chartYAxis,
+          series: chartSeries,
+        }, { replaceMerge: ["series"] });
+        activeSubSeriesIdsRef.current = subSeriesIds;
+      }
+      previousSubRef.current = sub;
     }
-  }, [data, markers, baseData, indicatorCache, extraIndicators, intraday, intradayAverage, intradayAxis, previousClose, market, symbol, fundFlowRows, sub, range, overlays, dark]);
+  }, [data, baseData, indicatorCache, extraIndicators, initialStartIndex, initialEndIndex, intraday, intradayAverage, intradayAxis, previousClose, market, symbol, fundFlowRows, sub, range, overlays, dark]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || intraday || effectiveViewportStartIndex === undefined || effectiveViewportEndIndex === undefined || data.length === 0) return;
+    const startValue = Math.max(0, Math.min(data.length - 1, effectiveViewportStartIndex));
+    const endValue = Math.max(startValue, Math.min(data.length - 1, effectiveViewportEndIndex));
+    const zoom = { type: "dataZoom" as const, startValue, endValue };
+    chart.dispatchAction({ ...zoom, dataZoomIndex: 0 });
+    chart.dispatchAction({ ...zoom, dataZoomIndex: 1 });
+  }, [data.length, effectiveViewportStartIndex, effectiveViewportEndIndex, intraday]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || intraday || data.length === 0) return;
+    const t = getChartTheme();
+    const marks = (markers || []).map((marker) => {
+      const markerBar = data.find((bar) => bar.time === marker.time);
+      const anchorPrice = markerBar
+        ? (marker.side === "BUY" ? markerBar.low : markerBar.high)
+        : marker.price;
+      return {
+        coord: [marker.time, anchorPrice],
+        value: marker.side === "BUY" ? "B" : "S",
+        name: [`${marker.side} @ ${marker.price}`, marker.qty ? `Qty: ${marker.qty}` : "", marker.reason || ""].filter(Boolean).join("\n"),
+        itemStyle: { color: marker.side === "BUY" ? t.upColor : t.downColor },
+        symbolOffset: [0, marker.side === "BUY" ? 30 : -30],
+        label: { show: true, color: "#fff", fontSize: 14, fontWeight: "bold" as const },
+      };
+    });
+    chart.setOption({
+      series: [{
+        id: "trade-markers",
+        markPoint: marks.length > 0 ? {
+          data: marks,
+          symbol: "circle",
+          symbolSize: 30,
+          label: { show: true, color: "#fff", fontSize: 14, fontWeight: "bold" },
+          tooltip: { formatter: (point: { name?: string; value?: string }) => point.name || point.value || "" },
+        } : { data: [] },
+      }],
+    });
+  }, [data, dark, intraday, markers, market, symbol]);
 
   if (data.length === 0) {
     return <div className="text-muted-foreground text-sm p-4">{i18n.t("charts.noPriceData")}</div>;
@@ -658,7 +1225,8 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-1 flex-wrap">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
         {/* Time range */}
         {!intraday && <div className="flex gap-0.5">
           {(["1M", "3M", "6M", "1Y", "ALL"] as const).map((r) => (
@@ -706,8 +1274,12 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
             <button key={id} onClick={() => selectSub(id)} className={cn("px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors", sub === id ? "bg-primary/15 text-primary font-medium" : "text-muted-foreground/50 hover:text-muted-foreground")}>{label}</button>
           ))}
         </div>
+        </div>
+        <div className="relative w-full shrink-0" style={{ height, minHeight: height, maxHeight: height }}>
+          <div ref={containerRef} className="h-full w-full overflow-hidden" />
+          <div ref={zoomSelectionRef} className="pointer-events-none absolute z-20 hidden border border-primary bg-primary/10" />
+        </div>
       </div>
-      <div ref={containerRef} style={{ height }} />
     </div>
   );
 }

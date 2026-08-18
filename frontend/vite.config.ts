@@ -19,6 +19,7 @@ const PROXY_PATHS = [
   "/options",
   "/market",
   "/portfolio",
+  "/chan-training",
 ];
 
 export default defineConfig(({ mode }) => {
@@ -58,6 +59,7 @@ export default defineConfig(({ mode }) => {
         // (/portfolio/portfolios, /portfolio/{id}/snapshot, ...). HTML
         // navigation must stay local while non-HTML API requests keep proxying.
         "/portfolio": apiProxyWithHtmlFallback,
+        "/chan-training": apiProxyWithHtmlFallback,
         "^/alpha(?:/|$)": apiProxy,
       },
     },

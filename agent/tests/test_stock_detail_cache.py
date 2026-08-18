@@ -43,6 +43,8 @@ def test_a_share_detail_reuses_static_data_and_same_day_daily_bars(monkeypatch, 
     second = market_routes._stock_detail_a_share("600519.SH", "1d")
 
     assert first["bars"] == second["bars"]
+    assert first["chan_analysis"]["version"] == "chan-structure-v2"
+    assert second["chan_analysis"]["version"] == "chan-structure-v2"
     assert calls == {"quote": 1, "profile": 1, "financials": 1, "reports": 2, "boards": 1, "bars": 1, "news": 2}
 
     with sqlite3.connect(store.db_path) as connection:

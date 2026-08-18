@@ -155,6 +155,24 @@ merging. Authors are strongly encouraged to self-check first.
   module-level constants.
 - Delete unused code rather than commenting it out.
 
+## Market UI performance memory
+
+- Reuse already loaded K-line data, subcharts, indicators, Chan analysis, and
+  instrument information for the same symbol and period.
+- Prefer incremental updates: append or replace only the changed/latest bar,
+  update only the affected subchart, and update trade markers without
+  rebuilding the main K-line series.
+- Switching an indicator or subchart must not reset the K-line viewport or
+  re-request unchanged K-line data.
+- Keep chart instances mounted. Do not dispose and recreate ECharts for
+  ordinary data, viewport, marker, or subchart changes; use keyed series and
+  dataZoom updates instead.
+- Explicit refresh buttons may bypass the client cache. Scheduled refreshes
+  should be limited to data that can actually change, such as intraday data
+  while the market is open.
+- Historical/replay data is immutable once persisted; do not recompute or
+  refetch it on every render.
+
 ## Attribution
 
 Do NOT add `Co-Authored-By:` trailers or AI-assistant attribution lines to

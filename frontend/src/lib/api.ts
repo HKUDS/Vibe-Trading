@@ -190,6 +190,7 @@ export interface StockDetailResponse {
   profile: Record<string, any>;
   financials: Record<string, any>;
   bars: PriceBar[];
+  chan_analysis?: ChanTrainingAnalysis | null;
   reports: Array<Record<string, any>>;
   news: Array<Record<string, any>>;
   news_pagination?: {
@@ -219,6 +220,7 @@ export interface StockBarsResponse {
   market: "a_share" | "us";
   period: StockDetailPeriod;
   bars: PriceBar[];
+  chan_analysis?: ChanTrainingAnalysis | null;
   errors?: Record<string, string>;
   cache_status?: StockCacheStatus;
   from_cache?: boolean;
@@ -569,6 +571,26 @@ export const api = {
     request<MarketIndicesResponse>("/market/overview/us", { signal }),
   getMarketWatchlistOverview: (signal?: AbortSignal) =>
     request<MarketWatchlistOverviewResponse>("/market/overview/watchlist", { signal }),
+  syncChanTrainingInstruments: (market: "a_share" | "us" | "all", signal?: AbortSignal) =>
+    request<ChanTrainingInstrumentSyncResponse>("/chan-training/instruments/sync", { method: "POST", body: JSON.stringify({ market }), signal }),
+  getChanTrainingInstrumentCounts: (market?: "a_share" | "us", signal?: AbortSignal) =>
+    request<ChanTrainingInstrumentCounts>(`/chan-training/instruments${market ? `?market=${encodeURIComponent(market)}` : ""}`, { signal }),
+  createChanTrainingSession: (payload: ChanTrainingCreateRequest, signal?: AbortSignal) =>
+    request<ChanTrainingSession>("/chan-training/sessions", { method: "POST", body: JSON.stringify(payload), signal }),
+  listChanTrainingSessions: (signal?: AbortSignal) =>
+    request<{ items: ChanTrainingSession[] }>("/chan-training/sessions", { signal }),
+  getChanTrainingSession: (id: string, signal?: AbortSignal) =>
+    request<ChanTrainingSession>(`/chan-training/sessions/${encodeURIComponent(id)}`, { signal }),
+  deleteChanTrainingSession: (id: string, signal?: AbortSignal) =>
+    request<{ deleted: boolean; id: string }>(`/chan-training/sessions/${encodeURIComponent(id)}`, { method: "DELETE", signal }),
+  getChanTrainingReview: (id: string, signal?: AbortSignal) =>
+    request<ChanTrainingSession>(`/chan-training/sessions/${encodeURIComponent(id)}/review`, { signal }),
+  saveChanTrainingState: (id: string, cursor: number, signal?: AbortSignal) =>
+    request<ChanTrainingSession>(`/chan-training/sessions/${encodeURIComponent(id)}/state`, { method: "PATCH", body: JSON.stringify({ cursor }), signal }),
+  executeChanTrainingTrade: (id: string, side: "buy" | "sell", ratio: string, signal?: AbortSignal) =>
+    request<ChanTrainingSession>(`/chan-training/sessions/${encodeURIComponent(id)}/trades`, { method: "POST", body: JSON.stringify({ side, ratio }), signal }),
+  finishChanTrainingSession: (id: string, signal?: AbortSignal) =>
+    request<ChanTrainingSession>(`/chan-training/sessions/${encodeURIComponent(id)}/finish`, { method: "POST", signal }),
   getRobotResearchReports: (days = 90, limit = 200, signal?: AbortSignal) =>
     request<RobotResearchReportsResponse>(
       `/market/research-reports?days=${encodeURIComponent(String(days))}&limit=${encodeURIComponent(String(limit))}`,
@@ -968,6 +990,144 @@ export interface PriceBar {
   low: number;
   close: number;
   volume: number;
+  amount?: number;
+  indicators?: Record<string, number | null>;
+}
+
+export interface ChanTrainingSession {
+  id: string;
+  market: "a_share" | "us";
+  period: "1d" | "1w";
+  symbol: string | null;
+  name: string | null;
+  currency: string;
+  initial_capital: string;
+  window_size: number;
+  initial_cursor: number;
+  current_cursor: number;
+  cash: string;
+  position: string;
+  avg_cost: string;
+  realized_pnl: string;
+  total_fees: string;
+  commission_enabled: boolean;
+  commission_rate: string;
+  stamp_enabled: boolean;
+  stamp_rate: string;
+  transfer_enabled: boolean;
+  transfer_rate: string;
+  status: "active" | "finished" | string;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+  bars?: PriceBar[];
+  trades?: ChanTrainingTrade[];
+  events?: ChanTrainingEvent[];
+  chan_analysis?: ChanTrainingAnalysis | null;
+}
+
+export interface ChanTrainingFractal {
+  kind: "top" | "bottom";
+  bar_index: number;
+  confirmed_index: number;
+  price: number;
+}
+
+export interface ChanTrainingStroke {
+  start_index: number;
+  end_index: number;
+  start_price: number;
+  end_price: number;
+  direction: "up" | "down";
+  confirmed_index: number;
+}
+
+export interface ChanTrainingSegment {
+  start_index: number;
+  end_index: number;
+  start_price: number;
+  end_price: number;
+  direction: "up" | "down";
+  confirmed_index: number;
+}
+
+export interface ChanTrainingCenter {
+  start_index: number;
+  end_index: number;
+  high: number;
+  low: number;
+  confirmed_index: number;
+}
+
+export interface ChanTrainingSignal {
+  label: "B2" | "S2" | "B3" | "S3" | string;
+  side: "buy" | "sell";
+  bar_index: number;
+  price: number;
+  confirmed_index: number;
+}
+
+export interface ChanTrainingAnalysis {
+  version: string;
+  fractals: ChanTrainingFractal[];
+  strokes: ChanTrainingStroke[];
+  segments: ChanTrainingSegment[];
+  centers: ChanTrainingCenter[];
+  signals: ChanTrainingSignal[];
+}
+
+export interface ChanTrainingTrade {
+  id: string;
+  sequence: number;
+  side: "buy" | "sell";
+  ratio: string;
+  bar_index: number;
+  trade_time: string;
+  price: string;
+  quantity: string;
+  gross_amount: string;
+  commission: string;
+  stamp_tax: string;
+  transfer_fee: string;
+  total_fees: string;
+  cash_after: string;
+  position_after: string;
+  avg_cost_after: string;
+  total_assets_after: string;
+  created_at: string;
+}
+
+export interface ChanTrainingEvent {
+  id: string;
+  sequence: number;
+  event_type: string;
+  bar_index: number;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ChanTrainingCreateRequest {
+  market: "a_share" | "us";
+  period: "1d" | "1w";
+  initial_capital: string;
+  window_size: number;
+  commission_enabled: boolean;
+  commission_rate: string;
+  stamp_enabled: boolean;
+  stamp_rate: string;
+  transfer_enabled: boolean;
+  transfer_rate: string;
+}
+
+export interface ChanTrainingInstrumentCounts {
+  market?: "a_share" | "us";
+  count?: number;
+  counts?: Record<string, number>;
+}
+
+export interface ChanTrainingInstrumentSyncResponse {
+  market: "a_share" | "us" | "all";
+  available: Record<string, number>;
 }
 
 export interface TradeMarker {

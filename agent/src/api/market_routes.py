@@ -32,6 +32,7 @@ from src.a_share_data import (
     ths_bars,
 )
 from src.api.security import require_auth
+from src.chan_training_analysis import ANALYSIS_VERSION, build_chan_analysis
 from src.iwencai_skillhub import IwencaiSkillError, search_stock_news as iwencai_stock_news, search_stock_reports as iwencai_stock_reports
 from src.market_overview_store import MarketOverviewStore
 from src.research.industry_research import get_industry_research_service
@@ -687,7 +688,7 @@ def _stock_market_is_open(market: str) -> bool:
 def _stock_period_dates(period: str) -> tuple[str, str]:
     end = date.today() + timedelta(days=1)
     days = {
-        "1d": 365,
+        "1d": 365 * 2,
         "1w": 365 * 5,
         "1mo": 365 * 10,
         "1m": 6,
@@ -1153,18 +1154,56 @@ def _stock_industry_a_share(symbol: str) -> dict[str, Any]:
 
 def _normalise_stock_bars(bars: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Expose provider bars using the frontend PriceBar contract."""
-    return [
-        {
+    result: list[dict[str, Any]] = []
+    for item in bars:
+        if not isinstance(item, dict) or not (item.get("time") or item.get("trade_date")):
+            continue
+        open_, high, low, close, volume = (item.get(key) for key in ("open", "high", "low", "close", "volume"))
+        amount = item.get("amount")
+        if amount is None:
+            try:
+                amount = float(volume or 0) * (float(open_ or 0) + float(high or 0) + float(low or 0) + float(close or 0)) / 4
+            except (TypeError, ValueError):
+                amount = 0
+        result.append({
             "time": str(item.get("time") or item.get("trade_date") or ""),
-            "open": _number(item.get("open")),
-            "high": _number(item.get("high")),
-            "low": _number(item.get("low")),
-            "close": _number(item.get("close")),
-            "volume": _number(item.get("volume")),
-        }
-        for item in bars
-        if isinstance(item, dict) and (item.get("time") or item.get("trade_date"))
-    ]
+            "open": _number(open_), "high": _number(high), "low": _number(low), "close": _number(close),
+            "volume": _number(volume), "amount": _number(amount),
+        })
+    return result
+
+
+def _ensure_cached_chan_analysis(
+    errors: dict[str, str],
+    store: StockDetailStore | None,
+    symbol: str,
+    period: str,
+    record: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Backfill a missing persisted Chan snapshot without refetching bars."""
+    cached_analysis = record.get("chan_analysis") if record else None
+    if not store or period not in {"1d", "1w", "1mo"} or not record or (
+        isinstance(cached_analysis, dict) and cached_analysis.get("version") == ANALYSIS_VERSION
+    ):
+        return record
+    bars = record.get("bars") or []
+    if not isinstance(bars, list) or not bars:
+        return record
+    analysis = _safe_detail_fetch(
+        errors,
+        "cache_chan_write",
+        lambda: build_chan_analysis(bars),
+        None,
+    )
+    if analysis is None:
+        return record
+    _safe_detail_fetch(
+        errors,
+        "cache_chan_write",
+        lambda: store.save_chan_analysis(symbol, period, analysis),
+        None,
+    )
+    return {**record, "chan_analysis": analysis}
 
 
 def _a_share_current_session_bars(bars: list[dict[str, Any]], session_date: str) -> list[dict[str, Any]]:
@@ -1183,6 +1222,45 @@ def _a_share_current_session_bars(bars: list[dict[str, Any]], session_date: str)
     ]
 
 
+_INTRADAY_EXPECTED_BARS: dict[str, dict[str, int]] = {
+    "a_share": {"1m": 240, "15m": 16, "30m": 8, "60m": 4, "120m": 2},
+    "us": {"1m": 390, "15m": 26, "30m": 13, "60m": 7, "120m": 4},
+}
+
+
+def _intraday_cache_complete(market: str, period: str, record: dict[str, Any] | None) -> bool:
+    """Check whether the newest cached session has all expected candles."""
+    expected = _INTRADAY_EXPECTED_BARS.get(market, {}).get(period)
+    if expected is None or not record:
+        return False
+    bars = record.get("bars") or []
+    if not isinstance(bars, list) or not bars:
+        return False
+    session_rows: dict[str, set[str]] = {}
+    for item in bars:
+        if not isinstance(item, dict):
+            continue
+        stamp = str(item.get("trade_date") or item.get("time") or "")
+        session = str(item.get("_session") or "")[:10] if market == "us" else ""
+        if not session and market == "us":
+            try:
+                parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=_SHANGHAI)
+                session = parsed.astimezone(_US_EASTERN).date().isoformat()
+            except (TypeError, ValueError):
+                session = stamp[:10]
+        if not session:
+            session = stamp[:10]
+        if len(session) != 10 or session[4] != "-" or session[7] != "-":
+            continue
+        session_rows.setdefault(session, set()).add(stamp)
+    if not session_rows:
+        return False
+    latest_session = max(session_rows)
+    return len(session_rows[latest_session]) >= expected
+
+
 def _stock_bars_a_share(symbol: str, period: str = "1d") -> dict[str, Any]:
     canonical = canonical_a_share_code(symbol, stock_only=True)
     errors: dict[str, str] = {}
@@ -1194,7 +1272,32 @@ def _stock_bars_a_share(symbol: str, period: str = "1d") -> dict[str, Any]:
         raw_bars = record.get("bars") or []
         if raw_bars and any(item.get("source") == "tencent" for item in raw_bars if isinstance(item, dict)):
             record = None
-    if period in _HISTORICAL_INTRADAY_PERIODS and record is None:
+    if period not in _INTRADAY_PERIODS:
+        # Daily/weekly/monthly Chan data is a once-per-day snapshot. The first
+        # request after the trading date changes computes and persists it;
+        # subsequent requests read the same bars and analysis directly.
+        record = _ensure_cached_chan_analysis(errors, store, canonical, period, record)
+        if record and store and record.get("refreshed_date") == store.today():
+            status = "cached"
+        else:
+            fresh_bars = _safe_detail_fetch(
+                errors,
+                "bars",
+                lambda: _fetch_stock_bars_a_share(canonical, period),
+                [],
+            )
+            if fresh_bars:
+                analysis = _safe_detail_fetch(
+                    errors,
+                    "cache_bars_write",
+                    lambda: store.save_bars(canonical, period, fresh_bars) if store else None,
+                    None,
+                )
+                record = {"bars": fresh_bars, "chan_analysis": analysis}
+                status = "cached"
+            else:
+                status = "cached" if record else "unavailable"
+    elif period in _HISTORICAL_INTRADAY_PERIODS and record is None:
         # Historical minute periods must return data on the first request.
         # They are not live-session-only feeds, so do the initial provider
         # fetch inline; otherwise a one-shot frontend request only sees the
@@ -1208,21 +1311,39 @@ def _stock_bars_a_share(symbol: str, period: str = "1d") -> dict[str, Any]:
         if fresh_bars:
             record = {"bars": fresh_bars}
             if store:
-                _safe_detail_fetch(errors, "cache_bars_write", lambda: store.save_bars(canonical, period, fresh_bars), None)
+                analysis = _safe_detail_fetch(errors, "cache_bars_write", lambda: store.save_bars(canonical, period, fresh_bars), None)
+                if analysis is not None:
+                    record["chan_analysis"] = analysis
             status = "cached"
         else:
             status = "unavailable"
     else:
         ttl = 15.0 if period in _PERSISTED_INTRADAY_PERIODS else _DETAIL_CACHE_TTL_SECONDS
-        status = _detail_cache_status(
-            f"bars:{canonical}:{period}",
-            record,
-            lambda: _refresh_stock_bars_a_share(canonical, period),
-            ttl_seconds=ttl,
-            # Only the 1-minute line is a live-session-only feed. Historical
-            # minute candles remain refreshable outside market hours.
-            allow_refresh=period != "1m" or _stock_market_is_open("a_share"),
-        )
+        market_open = _stock_market_is_open("a_share")
+        complete = _intraday_cache_complete("a_share", period, record)
+        if not market_open and not complete:
+            fresh_bars = _safe_detail_fetch(errors, "bars", lambda: _fetch_stock_bars_a_share(canonical, period), [])
+            if fresh_bars:
+                analysis = _safe_detail_fetch(
+                    errors,
+                    "cache_bars_write",
+                    lambda: store.save_bars(canonical, period, fresh_bars) if store else None,
+                    None,
+                )
+                record = {"bars": fresh_bars, "chan_analysis": analysis}
+                status = "cached"
+            else:
+                status = "cached" if record else "unavailable"
+        else:
+            status = _detail_cache_status(
+                f"bars:{canonical}:{period}",
+                record,
+                lambda: _refresh_stock_bars_a_share(canonical, period),
+                ttl_seconds=ttl,
+                # A complete session is reused while closed. During market
+                # hours the existing short/long TTL controls refreshes.
+                allow_refresh=market_open,
+            )
     bars = (record or {}).get("bars") or []
     if period == "1m":
         bars = _a_share_current_session_bars(bars, store.today() if store else datetime.now(_SHANGHAI).date().isoformat())
@@ -1231,6 +1352,7 @@ def _stock_bars_a_share(symbol: str, period: str = "1d") -> dict[str, Any]:
         "market": "a_share",
         "period": period,
         "bars": _normalise_stock_bars(bars),
+        "chan_analysis": (record or {}).get("chan_analysis"),
         "errors": errors,
         "cache_status": status,
         "from_cache": record is not None,
@@ -1272,18 +1394,55 @@ def _stock_bars_us(symbol: str, period: str = "1d") -> dict[str, Any]:
     errors: dict[str, str] = {}
     store = _safe_detail_fetch(errors, "cache", _get_stock_detail_store, None)
     record = _safe_detail_fetch(errors, "cache_read", lambda: store.get_bars(canonical, period), None) if store else None
-    status = _detail_cache_status(
-        f"bars:{canonical}:{period}",
-        record,
-        lambda: _refresh_stock_bars_us(canonical, period),
-        ttl_seconds=15.0 if period in _PERSISTED_INTRADAY_PERIODS else _DETAIL_CACHE_TTL_SECONDS,
-        allow_refresh=period not in _INTRADAY_PERIODS or _stock_market_is_open("us"),
-    )
+    if period not in _INTRADAY_PERIODS:
+        record = _ensure_cached_chan_analysis(errors, store, canonical, period, record)
+        if record and store and record.get("refreshed_date") == store.today():
+            status = "cached"
+        else:
+            fresh_bars = _safe_detail_fetch(errors, "bars", lambda: _fetch_stock_bars_us(canonical, period), [])
+            if fresh_bars:
+                analysis = _safe_detail_fetch(
+                    errors,
+                    "cache_bars_write",
+                    lambda: store.save_bars(canonical, period, fresh_bars) if store else None,
+                    None,
+                )
+                record = {"bars": fresh_bars, "chan_analysis": analysis}
+                status = "cached"
+            else:
+                status = "cached" if record else "unavailable"
+    else:
+        market_open = _stock_market_is_open("us")
+        complete = _intraday_cache_complete("us", period, record)
+        if not market_open and not complete:
+            fresh_bars = _safe_detail_fetch(errors, "bars", lambda: _fetch_stock_bars_us(canonical, period), [])
+            if fresh_bars:
+                analysis = _safe_detail_fetch(
+                    errors,
+                    "cache_bars_write",
+                    lambda: store.save_bars(canonical, period, fresh_bars) if store else None,
+                    None,
+                )
+                record = {"bars": fresh_bars, "chan_analysis": analysis}
+                status = "cached"
+            else:
+                status = "cached" if record else "unavailable"
+        else:
+            status = _detail_cache_status(
+                f"bars:{canonical}:{period}",
+                record,
+                lambda: _refresh_stock_bars_us(canonical, period),
+                ttl_seconds=15.0,
+                # A complete session is reused while closed. During market
+                # hours the existing short TTL controls refreshes.
+                allow_refresh=market_open,
+            )
     return {
         "symbol": canonical,
         "market": "us",
         "period": period,
         "bars": _normalise_stock_bars((record or {}).get("bars") or []),
+        "chan_analysis": (record or {}).get("chan_analysis"),
         "errors": errors,
         "cache_status": status,
         "from_cache": record is not None,
@@ -1370,11 +1529,13 @@ def _stock_detail_a_share(symbol: str, period: str = "1d", include_news: bool = 
     reports = _safe_detail_fetch(errors, "reports", lambda: _recent_stock_reports(_fetch_stock_reports(canonical, limit=20)), [])
 
     bars_payload = None
+    chan_analysis = None
     bar_cache_status = "live"
     bar_from_cache = False
     if period in _PERSISTED_INTRADAY_PERIODS:
         bars_payload = _stock_bars_a_share(canonical, period)
         bars = bars_payload.get("bars") or []
+        chan_analysis = bars_payload.get("chan_analysis")
         errors.update(bars_payload.get("errors") or {})
         bar_cache_status = str(bars_payload.get("cache_status") or "refreshing")
         bar_from_cache = bool(bars_payload.get("from_cache"))
@@ -1382,8 +1543,10 @@ def _stock_detail_a_share(symbol: str, period: str = "1d", include_news: bool = 
         cached_bars = None
         if store and period not in _INTRADAY_PERIODS:
             cached_bars = _safe_detail_fetch(errors, "cache_bars_read", lambda: store.get_bars(canonical, period), None)
+            cached_bars = _ensure_cached_chan_analysis(errors, store, canonical, period, cached_bars)
         if cached_bars and store and cached_bars.get("refreshed_date") == store.today():
             bars = cached_bars.get("bars") or []
+            chan_analysis = cached_bars.get("chan_analysis")
             bar_cache_status = "cached"
             bar_from_cache = True
         else:
@@ -1396,7 +1559,7 @@ def _stock_detail_a_share(symbol: str, period: str = "1d", include_news: bool = 
             if fresh_bars:
                 bars = fresh_bars
                 if store and period not in _INTRADAY_PERIODS:
-                    _safe_detail_fetch(errors, "cache_bars_write", lambda: store.save_bars(canonical, period, fresh_bars), None)
+                    chan_analysis = _safe_detail_fetch(errors, "cache_bars_write", lambda: store.save_bars(canonical, period, fresh_bars), None)
             else:
                 # Keep yesterday's chart usable when the daily refresh provider
                 # is temporarily unavailable; the error remains visible to callers.
@@ -1432,6 +1595,7 @@ def _stock_detail_a_share(symbol: str, period: str = "1d", include_news: bool = 
             for item in bars
             if isinstance(item, dict) and item.get("trade_date")
         ],
+        "chan_analysis": chan_analysis,
         "reports": reports,
         "news": _recent_stock_news(news),
         "news_pagination": {"page": 1, "page_size": 20, "has_more": len(news) >= 20},
@@ -1448,30 +1612,52 @@ def _stock_detail_us(symbol: str, period: str = "1d", include_news: bool = True)
     errors: dict[str, str] = {}
     snapshot = _safe_detail_fetch(errors, "quote", lambda: _fetch_us_snapshots([canonical]).get(canonical, (None, None, "yfinance")), (None, None, "yfinance"))
     bars: list[dict[str, Any]] = []
+    chan_analysis = None
     bar_cache_status = "live"
     bar_from_cache = False
     if period in _PERSISTED_INTRADAY_PERIODS:
         bars_payload = _stock_bars_us(canonical, period)
         bars = bars_payload.get("bars") or []
+        chan_analysis = bars_payload.get("chan_analysis")
         errors.update(bars_payload.get("errors") or {})
         bar_cache_status = str(bars_payload.get("cache_status") or "refreshing")
         bar_from_cache = bool(bars_payload.get("from_cache"))
     else:
-        try:
-            bars = [
-                {
-                    "time": str(item.get("trade_date") or ""),
-                    "open": item.get("open"),
-                    "high": item.get("high"),
-                    "low": item.get("low"),
-                    "close": item.get("close"),
-                    "volume": item.get("volume"),
-                }
-                for item in _fetch_stock_bars_us(canonical, period)
-                if item.get("trade_date")
-            ]
-        except Exception as exc:
-            errors["bars"] = str(exc)
+        store = _safe_detail_fetch(errors, "cache", _get_stock_detail_store, None)
+        cached_bars = _safe_detail_fetch(errors, "cache_bars_read", lambda: store.get_bars(canonical, period), None) if store else None
+        cached_bars = _ensure_cached_chan_analysis(errors, store, canonical, period, cached_bars)
+        if cached_bars and store and cached_bars.get("refreshed_date") == store.today():
+            raw_bars = cached_bars.get("bars") or []
+            chan_analysis = cached_bars.get("chan_analysis")
+            bar_cache_status = "cached"
+            bar_from_cache = True
+        else:
+            raw_bars = _safe_detail_fetch(errors, "bars", lambda: _fetch_stock_bars_us(canonical, period), [])
+            if raw_bars:
+                chan_analysis = _safe_detail_fetch(
+                    errors,
+                    "cache_bars_write",
+                    lambda: store.save_bars(canonical, period, raw_bars) if store else build_chan_analysis(raw_bars),
+                    None,
+                )
+                bar_cache_status = "cached"
+                bar_from_cache = False
+            else:
+                raw_bars = (cached_bars or {}).get("bars") or []
+                chan_analysis = (cached_bars or {}).get("chan_analysis")
+                bar_cache_status = "cached" if cached_bars else "unavailable"
+        bars = [
+            {
+                "time": str(item.get("trade_date") or item.get("time") or ""),
+                "open": item.get("open"),
+                "high": item.get("high"),
+                "low": item.get("low"),
+                "close": item.get("close"),
+                "volume": item.get("volume"),
+            }
+            for item in raw_bars
+            if isinstance(item, dict) and (item.get("trade_date") or item.get("time"))
+        ]
     raw_news = _safe_detail_fetch(
         errors,
         "news",
@@ -1493,6 +1679,7 @@ def _stock_detail_us(symbol: str, period: str = "1d", include_news: bool = True)
         },
         "financials": {},
         "bars": bars,
+        "chan_analysis": chan_analysis,
         "reports": [],
         "news": news,
         "news_pagination": {"page": 1, "page_size": 20, "has_more": False},

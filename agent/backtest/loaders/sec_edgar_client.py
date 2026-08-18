@@ -144,6 +144,26 @@ def _build_ticker_map(payload: Any) -> Dict[str, str]:
     return mapping
 
 
+def list_company_tickers() -> list[dict[str, str]]:
+    """Return the latest SEC reporting-company ticker/name snapshot.
+
+    This is used by the Chan training instrument synchronizer.  It intentionally
+    fetches the source snapshot directly rather than deriving a universe from a
+    small application-maintained ticker list.
+    """
+    payload = _sec_get_json(_TICKERS_URL)
+    records = payload.values() if isinstance(payload, dict) else payload
+    result: list[dict[str, str]] = []
+    for record in records or []:
+        if not isinstance(record, dict):
+            continue
+        ticker = str(record.get("ticker") or "").strip().upper()
+        title = str(record.get("title") or "").strip()
+        if ticker and title:
+            result.append({"symbol": ticker, "name": title})
+    return result
+
+
 def _ticker_map() -> Dict[str, str]:
     """Return the process-wide ticker->CIK map, fetching once and memoizing.
 

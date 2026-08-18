@@ -189,6 +189,28 @@ describe("StockDetail", () => {
     expect(apiMock.getStockNews).not.toHaveBeenCalled();
   });
 
+  it("reuses persisted daily bars when returning to a previously loaded period", async () => {
+    const router = createMemoryRouter(
+      [{ path: "/stocks/:symbol", element: <StockDetail /> }],
+      { initialEntries: ["/stocks/600519.SH"] },
+    );
+
+    render(<RouterProvider router={router} />);
+    await waitFor(() => expect(apiMock.getStockBars).toHaveBeenCalledWith("600519.SH", "1m"));
+
+    fireEvent.click(screen.getByRole("button", { name: "日线" }));
+    await waitFor(() => expect(apiMock.getStockBars).toHaveBeenCalledWith("600519.SH", "1d"));
+
+    apiMock.getStockBars.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "分时" }));
+    await waitFor(() => expect(apiMock.getStockBars).toHaveBeenCalledWith("600519.SH", "1m"));
+
+    apiMock.getStockBars.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "日线" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "日线" })).toHaveAttribute("aria-pressed", "true"));
+    expect(apiMock.getStockBars).not.toHaveBeenCalled();
+  });
+
   it("requests bars only once when the backend refresh is still in progress", async () => {
     const router = createMemoryRouter(
       [{ path: "/stocks/:symbol", element: <StockDetail /> }],

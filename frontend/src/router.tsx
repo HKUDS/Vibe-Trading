@@ -38,6 +38,9 @@ const StockDetail = lazy(() =>
   import("@/pages/StockDetail").then((m) => ({ default: m.StockDetail })),
 );
 const Portfolio = lazy(() => import("@/pages/Portfolio").then((m) => ({ default: m.Portfolio })));
+const ChanTraining = lazy(() => import("@/pages/ChanTraining").then((m) => ({ default: m.ChanTraining })));
+const ChanTrainingReviews = lazy(() => import("@/pages/ChanTrainingReviews").then((m) => ({ default: m.ChanTrainingReviews })));
+const ChanTrainingReview = lazy(() => import("@/pages/ChanTrainingReview").then((m) => ({ default: m.ChanTrainingReview })));
 const HumanoidRobot = lazy(() =>
   import("@/pages/HumanoidRobot").then((m) => ({ default: m.HumanoidRobot })),
 );
@@ -68,6 +71,9 @@ export const router = createBrowserRouter([
       { path: "/overview", element: wrap(Overview) },
       { path: "/stocks/:symbol", element: wrap(StockDetail) },
       { path: "/portfolio", element: wrap(Portfolio) },
+      { path: "/chan-training", element: wrap(ChanTraining) },
+      { path: "/chan-training/reviews", element: wrap(ChanTrainingReviews) },
+      { path: "/chan-training/reviews/:sessionId", element: wrap(ChanTrainingReview) },
       { path: "/research", element: wrap(Research) },
       { path: "/humanoid-robot", element: wrap(HumanoidRobot) },
       { path: "/", element: wrap(Overview) },

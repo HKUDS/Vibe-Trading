@@ -2,8 +2,8 @@ import { type ReactNode, type UIEventHandler, useEffect, useMemo, useRef, useSta
 import { ArrowLeft, ExternalLink, Loader2, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
-import { CandlestickChart, type Sub } from "@/components/charts/CandlestickChart";
-import { api, type StockDetailPeriod, type StockDetailResponse, type StockFundFlowRow } from "@/lib/api";
+import { CandlestickChart, ChanTheoryGuide, type Sub } from "@/components/charts/CandlestickChart";
+import { api, type StockBarsResponse, type StockDetailPeriod, type StockDetailResponse, type StockFundFlowRow, type StockInfoResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 function numberValue(value: unknown): number | null {
@@ -91,6 +91,7 @@ function mergeDetail(
     profile: { ...(current?.profile || {}), ...(patch.profile || {}) },
     financials: { ...(current?.financials || {}), ...(patch.financials || {}) },
     bars: patch.bars ?? current?.bars ?? [],
+    chan_analysis: patch.chan_analysis !== undefined ? patch.chan_analysis : current?.chan_analysis,
     reports: patch.reports ?? current?.reports ?? [],
     news: patch.news ?? current?.news ?? [],
     news_pagination: patch.news_pagination || current?.news_pagination,
@@ -159,6 +160,9 @@ export function StockDetail() {
   const [reportsLoading, setReportsLoading] = useState(false);
   const [subChart, setSubChart] = useState<Sub>("vol");
   const [fundFlowRows, setFundFlowRows] = useState<StockFundFlowRow[]>([]);
+  const infoCacheRef = useRef(new Map<string, StockInfoResponse>());
+  const barsCacheRef = useRef(new Map<string, StockBarsResponse>());
+  const fundFlowCacheRef = useRef(new Map<string, StockFundFlowRow[]>());
   const routeToken = useRef(0);
   const profileRequestToken = useRef(0);
   const industryRequestToken = useRef(0);
@@ -167,15 +171,22 @@ export function StockDetail() {
   const reportsRequestToken = useRef(0);
   const fundFlowPeriod = period === "1m" ? "min" : "daily";
 
-  const loadInfo = async (initial = false) => {
+  const loadInfo = async (initial = false, force = false) => {
     if (!symbol) return;
     const route = routeToken.current;
+    const cached = !force ? infoCacheRef.current.get(symbol) : undefined;
+    if (cached) {
+      setDetail((current) => mergeDetail(current, cached, symbol, current?.period || period));
+      if (initial) setLoading(false);
+      return;
+    }
     const request = ++profileRequestToken.current;
     setProfileLoading(true);
     try {
       for (let attempt = 0; attempt < 8; attempt += 1) {
         const response = await api.getStockInfo(symbol);
         if (route !== routeToken.current || request !== profileRequestToken.current) return;
+        if (response.cache_status !== "refreshing") infoCacheRef.current.set(symbol, response);
         setDetail((current) => mergeDetail(current, response, symbol, current?.period || period));
         if (initial) setLoading(false);
         if (response.cache_status !== "refreshing") return;
@@ -211,10 +222,18 @@ export function StockDetail() {
     }
   };
 
-  const loadBars = async (requestedPeriod: StockDetailPeriod, initial = false) => {
+  const loadBars = async (requestedPeriod: StockDetailPeriod, initial = false, force = false) => {
     if (!symbol) return;
     const route = routeToken.current;
     const request = ++barsRequestToken.current;
+    const cacheKey = `${symbol}:${requestedPeriod}`;
+    const cached = !force && !INTRADAY_PERIODS.has(requestedPeriod) ? barsCacheRef.current.get(cacheKey) : undefined;
+    if (cached) {
+      setDetail((current) => mergeDetail(current, cached, symbol, requestedPeriod));
+      if (initial) setLoading(false);
+      setBarsLoading(false);
+      return;
+    }
     setBarsLoading(true);
     const currentPeriod = detail?.symbol === symbol ? detail.period : null;
     setDetail((current) => mergeDetail(
@@ -235,6 +254,9 @@ export function StockDetail() {
       // will pick up the completed cache instead of polling this endpoint.
       const response = await api.getStockBars(symbol, requestedPeriod);
       if (route !== routeToken.current || request !== barsRequestToken.current) return;
+      if (response.cache_status !== "refreshing" && !INTRADAY_PERIODS.has(requestedPeriod)) {
+        barsCacheRef.current.set(cacheKey, response);
+      }
       setDetail((current) => mergeDetail(current, response, symbol, requestedPeriod));
       if (initial) setLoading(false);
     } catch (err) {
@@ -246,6 +268,9 @@ export function StockDetail() {
 
   useEffect(() => {
     const route = ++routeToken.current;
+    infoCacheRef.current.clear();
+    barsCacheRef.current.clear();
+    fundFlowCacheRef.current.clear();
     setPeriod("1m");
     setLoading(true);
     setBaseReady(false);
@@ -363,6 +388,14 @@ export function StockDetail() {
       return;
     }
     let active = true;
+    const cacheKey = `${detail.symbol}:${fundFlowPeriod}`;
+    const cachedRows = fundFlowCacheRef.current.get(cacheKey);
+    if (cachedRows) {
+      setFundFlowRows(cachedRows);
+      return () => {
+        active = false;
+      };
+    }
     void api.getStockFundFlow(detail.symbol, fundFlowPeriod, 30)
       .then(async (payload) => {
         if (!active) return;
@@ -375,7 +408,11 @@ export function StockDetail() {
             // Keep the empty state when both granularities are unavailable.
           }
         }
-        if (active) setFundFlowRows(result?.rows || []);
+        if (active) {
+          const rows = result?.rows || [];
+          fundFlowCacheRef.current.set(cacheKey, rows);
+          setFundFlowRows(rows);
+        }
       })
       .catch(() => {
         if (active) setFundFlowRows([]);
@@ -467,7 +504,7 @@ export function StockDetail() {
         <section className="space-y-3" aria-labelledby="stock-profile-heading">
           <div className="flex items-center justify-between gap-3">
             <h2 id="stock-profile-heading" className="text-sm font-semibold tracking-wide">{t("stockDetail.profile")}</h2>
-            <RefreshButton testId="refresh-profile" label={`${t("stockDetail.profile")} ${t("stockDetail.refresh")}`} loading={profileLoading} onClick={() => void loadInfo()} />
+            <RefreshButton testId="refresh-profile" label={`${t("stockDetail.profile")} ${t("stockDetail.refresh")}`} loading={profileLoading} onClick={() => void loadInfo(false, true)} />
           </div>
           <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
             <div className="grid gap-4 border-b border-border/60 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
@@ -504,7 +541,7 @@ export function StockDetail() {
         <section className="space-y-3" aria-labelledby="stock-chart-heading">
           <div className="flex items-center justify-between gap-3">
             <h2 id="stock-chart-heading" className="text-sm font-semibold tracking-wide">{t("stockDetail.kline")}</h2>
-            <RefreshButton testId="refresh-bars" label={`${t("stockDetail.kline")} ${t("stockDetail.refresh")}`} loading={barsLoading} onClick={() => void loadBars(period)} />
+            <RefreshButton testId="refresh-bars" label={`${t("stockDetail.kline")} ${t("stockDetail.refresh")}`} loading={barsLoading} onClick={() => void loadBars(period, false, true)} />
           </div>
           <div className="rounded-xl border border-border/60 bg-card p-3 sm:p-4">
             <div className="mb-3 flex flex-wrap items-center gap-1.5 border-b border-border/60 pb-3">
@@ -531,6 +568,7 @@ export function StockDetail() {
               ))}
               {barsLoading && <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin text-muted-foreground" />}
             </div>
+            {!INTRADAY_PERIODS.has(period) && <ChanTheoryGuide />}
             <CandlestickChart
               data={detail.bars}
               height={520}
@@ -541,6 +579,8 @@ export function StockDetail() {
               fundFlowRows={fundFlowRows}
               sub={subChart}
               onSubChange={setSubChart}
+              chanAnalysis={detail.chan_analysis}
+              showChan={!INTRADAY_PERIODS.has(period)}
               availableSubs={detail.market === "a_share" ? undefined : (["vol", "amount", "macd", "macdfs", "rsi", "kdj", "boll", "expma"] as Sub[])}
             />
           </div>
