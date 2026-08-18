@@ -5,6 +5,34 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Futu connector — extended read endpoints.** The Futu (`futu-api`) connector
+  exposes seven new read-only functions covering the gaps left by the original
+  five endpoints:
+  - `get_rehab(symbol)` — dividend / split / rights-issue adjustment factors for
+    accurate forward-adjusted close prices in backtests.
+  - `get_capital_flow(symbol, period_type)` — historical main-flow time series
+    (super / big / mid / small inflow buckets) for institutional-flow analysis.
+  - `get_capital_distribution(symbol)` — today's live in-flow vs out-flow snapshot.
+  - `get_history_deals(start, end, code)` — historical fill records for true
+    cost-basis reconstruction in shadow-account workflows. Single-query window
+    capped at 360 days by the upstream SDK.
+  - `get_acc_cash_flow(clearing_date)` — account cash-flow movements for capital
+    management review.
+  - `get_financials(symbol, statement_type)` — financial statements (income /
+    balance / cash flow) for fundamental analysis.
+  - `get_earnings_calendar(market, begin_date, end_date)` — upcoming earnings
+    with EPS / revenue consensus for earnings-season planning.
+  Each function is read-only, fail-closed, and routed through the same
+  `_quote_ctx` / `_trade_ctx` / `_assert_gateway` envelope as the existing five,
+  so missing data and missing privileges degrade to a clean error payload. New
+  capabilities are exposed as `trading_rehab`, `trading_capital_flow`,
+  `trading_capital_distribution`, `trading_history_deals`,
+  `trading_acc_cash_flow`, `trading_financials`, and `trading_earnings_calendar`
+  BaseTool subclasses. The `futu-api` SDK is loaded lazily: the SDK is required
+  only when one of these endpoints (or the existing account / position / order
+  surface) is actually called.
+
 ## [0.1.13] — 2026-08-10
 
 Rolls up 408 commits / 162 merged pull requests since 0.1.12.

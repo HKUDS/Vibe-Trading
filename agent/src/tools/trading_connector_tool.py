@@ -28,10 +28,17 @@ from src.trading.service import (
     etoro_copy_precheck,
     etoro_copy_start,
     get_account,
+    get_acc_cash_flow,
+    get_capital_distribution,
+    get_capital_flow,
+    get_earnings_calendar,
+    get_financials,
     get_history,
+    get_history_deals,
     get_open_orders,
     get_positions,
     get_quote,
+    get_rehab,
     place_order,
     search_instruments,
 )
@@ -421,6 +428,269 @@ class TradingHistoryTool(BaseTool):
                     use_rth=bool(kwargs.get("use_rth", True)),
                     period=str(kwargs.get("period") or "1d"),
                     limit=int(kwargs.get("limit") or 90),
+                    **_overrides(kwargs),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            return _json_result({"status": "error", "error": str(exc)})
+
+
+class TradingRehabTool(BaseTool):
+    """Read dividend / split adjustment factors for a symbol.
+
+    Use the returned adjustment factors to compute forward-adjusted close prices
+    so backtests don't show dividend-driven gaps. Read-only.
+    """
+
+    name = "trading_rehab"
+    description = "Read dividend / split / rights-issue adjustment factors for a symbol from the selected trading connector profile. Read-only."
+    parameters = {
+        "type": "object",
+        "properties": {
+            **TradingQuoteTool.parameters["properties"],
+        },
+        "required": ["symbol"],
+    }
+    repeatable = True
+    is_readonly = True
+
+    def execute(self, **kwargs: Any) -> str:
+        """Read rehab adjustment factors."""
+        try:
+            return _json_result(
+                get_rehab(
+                    str(kwargs["symbol"]),
+                    _connection(kwargs.get("connection")),
+                    **_overrides(kwargs),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            return _json_result({"status": "error", "error": str(exc)})
+
+
+class TradingCapitalFlowTool(BaseTool):
+    """Read historical main-flow (super/big/mid/small) time series for a symbol.
+
+    Tracks institutional vs retail capital inflow / outflow across
+    intraday / daily / weekly / monthly buckets. Read-only.
+    """
+
+    name = "trading_capital_flow"
+    description = "Read historical capital flow time series (institutional / retail inflow-outflow) for a symbol. period_type: INTRADAY/DAY/WEEK/MONTH. Read-only."
+    parameters = {
+        "type": "object",
+        "properties": {
+            **TradingQuoteTool.parameters["properties"],
+            "period_type": {
+                "type": "string",
+                "default": "INTRADAY",
+                "description": "Aggregation window: INTRADAY / DAY / WEEK / MONTH.",
+            },
+        },
+        "required": ["symbol"],
+    }
+    repeatable = True
+    is_readonly = True
+
+    def execute(self, **kwargs: Any) -> str:
+        """Read capital flow time series."""
+        try:
+            return _json_result(
+                get_capital_flow(
+                    str(kwargs["symbol"]),
+                    _connection(kwargs.get("connection")),
+                    period_type=str(kwargs.get("period_type") or "INTRADAY"),
+                    **_overrides(kwargs),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            return _json_result({"status": "error", "error": str(exc)})
+
+
+class TradingCapitalDistributionTool(BaseTool):
+    """Read the LATEST capital in-flow vs out-flow snapshot for a symbol.
+
+    Today's running tally of super/big/mid/small buys vs sells. Use it to spot
+    when institutions are accumulating or distributing right now. Read-only.
+    """
+
+    name = "trading_capital_distribution"
+    description = "Read today's capital in-flow vs out-flow snapshot (super/big/mid/small buckets) for a symbol. Read-only."
+    parameters = {
+        "type": "object",
+        "properties": {
+            **TradingQuoteTool.parameters["properties"],
+        },
+        "required": ["symbol"],
+    }
+    repeatable = True
+    is_readonly = True
+
+    def execute(self, **kwargs: Any) -> str:
+        """Read today's capital distribution snapshot."""
+        try:
+            return _json_result(
+                get_capital_distribution(
+                    str(kwargs["symbol"]),
+                    _connection(kwargs.get("connection")),
+                    **_overrides(kwargs),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            return _json_result({"status": "error", "error": str(exc)})
+
+
+class TradingHistoryDealsTool(BaseTool):
+    """Read historical FILL records (executed deals) for shadow-account analysis.
+
+    Unlike history_order_list_query (returns intent), this returns only orders
+    that ACTUALLY filled — with fill price, qty, counter broker, fee, settlement
+    date. Required for true cost-basis reconstruction. Read-only.
+    """
+
+    name = "trading_history_deals"
+    description = "Read historical FILL records (executed deals) for shadow-account cost-basis reconstruction. start/end YYYY-MM-DD; max window 360 days. Read-only."
+    parameters = {
+        "type": "object",
+        "properties": {
+            **TradingQuoteTool.parameters["properties"],
+            "start": {"type": "string", "description": "Start date YYYY-MM-DD."},
+            "end": {"type": "string", "description": "End date YYYY-MM-DD."},
+            "code": {
+                "type": "string",
+                "default": "",
+                "description": "Optional Futu instrument code (e.g. HK.00700). Empty = all symbols.",
+            },
+        },
+        "required": ["start", "end"],
+    }
+    repeatable = True
+    is_readonly = True
+
+    def execute(self, **kwargs: Any) -> str:
+        """Read historical fill records."""
+        try:
+            return _json_result(
+                get_history_deals(
+                    str(kwargs["start"]),
+                    str(kwargs["end"]),
+                    _connection(kwargs.get("connection")),
+                    code=str(kwargs.get("code") or ""),
+                    **_overrides(kwargs),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            return _json_result({"status": "error", "error": str(exc)})
+
+
+class TradingAccCashFlowTool(BaseTool):
+    """Read account cash-flow movements for a clearing date.
+
+    Tracks deposit / withdrawal / FX conversion / buy-sell settlement /
+    margin interest / dividends received / fees. Read-only.
+    """
+
+    name = "trading_acc_cash_flow"
+    description = "Read account cash-flow movements for a clearing date (YYYY-MM-DD): deposit, withdrawal, FX, settlement, fees. Read-only."
+    parameters = {
+        "type": "object",
+        "properties": {
+            **TradingQuoteTool.parameters["properties"],
+            "clearing_date": {
+                "type": "string",
+                "description": "Clearing date YYYY-MM-DD.",
+            },
+        },
+        "required": ["clearing_date"],
+    }
+    repeatable = True
+    is_readonly = True
+
+    def execute(self, **kwargs: Any) -> str:
+        """Read account cash-flow for one clearing date."""
+        try:
+            return _json_result(
+                get_acc_cash_flow(
+                    str(kwargs["clearing_date"]),
+                    _connection(kwargs.get("connection")),
+                    **_overrides(kwargs),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            return _json_result({"status": "error", "error": str(exc)})
+
+
+class TradingFinancialsTool(BaseTool):
+    """Read financial statements (income / balance / cash flow) for a symbol.
+
+    Returns structure_list (field definitions) + report_list (period values).
+    Read-only.
+    """
+
+    name = "trading_financials"
+    description = "Read financial statements (INCOME / BALANCE / CASH_FLOW) for a symbol. Returns structure_list + report_list across N periods. Read-only."
+    parameters = {
+        "type": "object",
+        "properties": {
+            **TradingQuoteTool.parameters["properties"],
+            "statement_type": {
+                "type": "string",
+                "default": "INCOME",
+                "description": "Statement type: INCOME / BALANCE / CASH_FLOW.",
+            },
+            "num": {"type": "integer", "default": 20, "description": "Maximum periods."},
+        },
+        "required": ["symbol"],
+    }
+    repeatable = True
+    is_readonly = True
+
+    def execute(self, **kwargs: Any) -> str:
+        """Read financial statements."""
+        try:
+            return _json_result(
+                get_financials(
+                    str(kwargs["symbol"]),
+                    _connection(kwargs.get("connection")),
+                    statement_type=str(kwargs.get("statement_type") or "INCOME"),
+                    num=int(kwargs.get("num") or 20),
+                    **_overrides(kwargs),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            return _json_result({"status": "error", "error": str(exc)})
+
+
+class TradingEarningsCalendarTool(BaseTool):
+    """Read upcoming earnings-release dates with EPS / revenue consensus.
+
+    Used to plan earnings-season trades (vol crush, surprise, IV rank).
+    Read-only.
+    """
+
+    name = "trading_earnings_calendar"
+    description = "Read upcoming earnings calendar (code, name, EPS/revenue forecast, IV, IV rank) for US / HK. begin/end YYYY-MM-DD. Read-only."
+    parameters = {
+        "type": "object",
+        "properties": {
+            **TradingQuoteTool.parameters["properties"],
+            "market": {"type": "string", "default": "US", "description": "US or HK."},
+            "begin_date": {"type": "string", "default": "", "description": "Begin YYYY-MM-DD."},
+            "end_date": {"type": "string", "default": "", "description": "End YYYY-MM-DD."},
+        },
+    }
+    repeatable = True
+    is_readonly = True
+
+    def execute(self, **kwargs: Any) -> str:
+        """Read earnings calendar."""
+        try:
+            return _json_result(
+                get_earnings_calendar(
+                    _connection(kwargs.get("connection")),
+                    market=str(kwargs.get("market") or "US"),
+                    begin_date=str(kwargs.get("begin_date") or ""),
+                    end_date=str(kwargs.get("end_date") or ""),
                     **_overrides(kwargs),
                 )
             )

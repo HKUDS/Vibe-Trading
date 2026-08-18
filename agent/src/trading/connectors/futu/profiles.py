@@ -9,7 +9,18 @@ trade environment (``SIMULATE`` vs ``REAL``) and the account is resolved by its
 
 from __future__ import annotations
 
-from src.trading.types import READ_CAPABILITIES, TradingProfile
+from src.trading.types import (
+    FUTU_EXTENDED_READ_CAPABILITIES,
+    READ_CAPABILITIES,
+    TradingProfile,
+)
+
+# Profiles exposed by this connector. The extended Futu-only read capabilities
+# (rehab, capital flow, history deals, etc.) are appended to every profile so
+# the agent loop can see them in capability listings — but the service layer
+# still returns a clean "unsupported" response for any profile that lacks the
+# runtime SDK call.
+_FUTU_READS = READ_CAPABILITIES + FUTU_EXTENDED_READ_CAPABILITIES
 
 FUTU_PROFILES: tuple[TradingProfile, ...] = (
     TradingProfile(
@@ -18,7 +29,7 @@ FUTU_PROFILES: tuple[TradingProfile, ...] = (
         label="Futu Paper · futu-api",
         environment="paper",
         transport="broker_sdk",
-        capabilities=READ_CAPABILITIES,
+        capabilities=_FUTU_READS,
         readonly=True,
         config={"profile": "paper", "filter_trdmarket": "HK"},
         notes=(
@@ -34,7 +45,7 @@ FUTU_PROFILES: tuple[TradingProfile, ...] = (
         label="Futu Live · futu-api Read-Only",
         environment="live",
         transport="broker_sdk",
-        capabilities=READ_CAPABILITIES,
+        capabilities=_FUTU_READS,
         readonly=True,
         config={"profile": "live-readonly", "filter_trdmarket": "HK"},
         notes=(
@@ -49,7 +60,7 @@ FUTU_PROFILES: tuple[TradingProfile, ...] = (
         label="Futu Paper · futu-api Trading",
         environment="paper",
         transport="broker_sdk",
-        capabilities=READ_CAPABILITIES + ("orders.place",),
+        capabilities=_FUTU_READS + ("orders.place",),
         readonly=False,
         config={"profile": "paper", "filter_trdmarket": "HK"},
         notes=(
@@ -66,7 +77,7 @@ FUTU_PROFILES: tuple[TradingProfile, ...] = (
         label="Futu Live · futu-api Trading",
         environment="live",
         transport="broker_sdk",
-        capabilities=READ_CAPABILITIES + ("orders.place.requires_mandate",),
+        capabilities=_FUTU_READS + ("orders.place.requires_mandate",),
         readonly=False,
         config={"profile": "live", "filter_trdmarket": "HK"},
         notes=(
