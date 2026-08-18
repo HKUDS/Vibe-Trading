@@ -73,7 +73,8 @@ export function ChanTraining() {
         if (!active) return;
         const resumed = await api.getChanTrainingSession(active.id);
         if (!cancelled) {
-          setSession(resumed);
+          revealedSession.current = null;
+          setSession(maskSession(resumed));
           setRevealed(false);
         }
       })
@@ -123,7 +124,8 @@ export function ChanTraining() {
     setLoading(true);
     try {
       const created = await api.createChanTrainingSession({ ...form, initial_capital: String(capital), window_size: Number(form.window_size) });
-      setSession(created);
+      revealedSession.current = null;
+      setSession(maskSession(created));
       setRevealed(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "行情获取失败，请重试");
@@ -153,14 +155,16 @@ export function ChanTraining() {
   };
 
   const move = useCallback(async (delta: number) => {
-    if (!session || action || session.status !== "active") return;
+    if (!session || action || !["active", "finished"].includes(session.status)) return;
     const bars = session.bars || [];
     const next = Math.max(session.window_size - 1, Math.min(session.current_cursor + delta, bars.length - 1));
     if (next === session.current_cursor) return;
     setAction(true);
     try {
       const updated = await api.saveChanTrainingState(session.id, next);
-      const nextSession = revealed ? updated : maskSession(updated);
+      const nextSession = revealed
+        ? await api.getChanTrainingReview(session.id)
+        : maskSession(updated);
       setSession((current) => mergeStableSession(current, nextSession));
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存训练进度失败");

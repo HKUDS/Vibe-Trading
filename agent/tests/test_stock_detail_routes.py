@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -108,6 +109,35 @@ def test_a_share_detail_route_aggregates_profile_bars_reports_and_news(monkeypat
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     assert response.json()["symbol"] == "002407.SZ"
+
+
+def test_a_share_detail_keeps_cached_chan_analysis_when_daily_refresh_fails(monkeypatch, tmp_path) -> None:
+    store = market_routes.StockDetailStore(tmp_path / "details.db")
+    bars = [
+        {"trade_date": "2026-08-14", "open": 10, "high": 12, "low": 9, "close": 11, "volume": 100},
+        {"trade_date": "2026-08-15", "open": 11, "high": 13, "low": 10, "close": 12, "volume": 120},
+        {"trade_date": "2026-08-16", "open": 12, "high": 14, "low": 11, "close": 13, "volume": 140},
+    ]
+    store.save_bars("600519.SH", "1d", bars)
+    with sqlite3.connect(store.db_path) as connection:
+        connection.execute(
+            "UPDATE stock_detail_bars_cache SET refreshed_date = '2000-01-01' WHERE symbol = ? AND period = ?",
+            ("600519.SH", "1d"),
+        )
+
+    monkeypatch.setattr(market_routes, "_get_stock_detail_store", lambda: store)
+    monkeypatch.setattr(market_routes, "tencent_quote", lambda codes: {codes[0]: {"name": "test", "price": 13.0}})
+    monkeypatch.setattr(market_routes, "eastmoney_stock_info", lambda code: {})
+    monkeypatch.setattr(market_routes, "_a_share_financials", lambda code: {})
+    monkeypatch.setattr(market_routes, "eastmoney_stock_boards", lambda code: [])
+    monkeypatch.setattr(market_routes, "_fetch_stock_reports", lambda code, limit: [])
+    monkeypatch.setattr(market_routes, "_fetch_stock_bars_a_share", lambda code, period: [])
+
+    payload = market_routes._stock_detail_a_share("600519.SH", "1d", include_news=False)
+
+    assert payload["bars"]
+    assert payload["chan_analysis"] is not None
+    assert set(payload["chan_analysis"]) == {"fractals", "strokes", "segments", "centers", "signals"}
 
 
 def test_stock_news_route_supports_newest_first_pagination(monkeypatch) -> None:
@@ -283,8 +313,8 @@ def test_us_daily_bars_compute_chan_once_and_reuse_snapshot(monkeypatch, tmp_pat
     second = market_routes._stock_bars_us("AAPL.US", "1d")
 
     assert calls["bars"] == 1
-    assert first["chan_analysis"]["version"] == "chan-structure-v2"
-    assert second["chan_analysis"]["version"] == "chan-structure-v2"
+    assert "version" not in first["chan_analysis"]
+    assert "version" not in second["chan_analysis"]
     assert second["from_cache"] is True
 
 
@@ -378,6 +408,27 @@ def test_us_intraday_bars_are_filtered_to_latest_session_and_converted_to_shangh
     payload = market_routes._stock_detail_us("AAPL.US", "1m")
 
     assert [bar["time"] for bar in payload["bars"]] == ["2026-08-17 21:30", "2026-08-17 22:30"]
+
+
+def test_daily_history_defaults_to_listing_start_for_both_markets() -> None:
+    assert market_routes._stock_period_dates("1d", market="a_share")[0] == "1990-01-01"
+    assert market_routes._stock_period_dates("1d", market="us")[0] == "1900-01-01"
+
+
+def test_a_share_daily_history_fetches_multiple_windows_and_merges_bars(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_bars(code, start, end, period="1d"):
+        calls.append((start, end))
+        if len(calls) <= 2:
+            return [{"trade_date": start, "open": 10, "high": 11, "low": 9, "close": 10, "volume": 100}]
+        return []
+
+    monkeypatch.setattr(market_routes, "tencent_bars", fake_bars)
+    bars = market_routes._fetch_stock_bars_a_share("600519.SH", "1d")
+
+    assert len(calls) == 3
+    assert [bar["trade_date"] for bar in bars] == sorted([calls[0][0], calls[1][0]])
 
 
 def test_us_120_minute_bars_are_aggregated_and_persisted(monkeypatch, tmp_path) -> None:

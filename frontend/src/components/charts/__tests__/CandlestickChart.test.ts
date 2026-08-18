@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildChartDataUpdate, buildChartDataZoomStep, buildFundFlowSeries, disposeChartSafely, getChanFractalMarkerStyle, getChartGridLayout, getStablePriceAxisBounds, resetChartDataZoom } from "../CandlestickChart";
+import { buildChartDataUpdate, buildChartDataZoomStep, buildFundFlowSeries, buildChartPanRange, canStartChartDrag, disposeChartSafely, formatPriceAxisLabel, getChanAnalysisRenderKey, getChanFractalMarkerStyle, getChartDragMode, getChartGridLayout, getChartPanDelta, getInitialChartDataZoomRange, getPriceAxisBoundsForRange, getStablePriceAxisBounds, getSubChartAxisBounds, resetChartDataZoom } from "../CandlestickChart";
 
 describe("CandlestickChart lifecycle", () => {
   it("does not let an ECharts teardown error escape during unmount", () => {
@@ -54,6 +54,27 @@ describe("CandlestickChart price axis", () => {
   it("uses the complete current dataset so horizontal wheel zoom does not rescale candle height", () => {
     expect(getStablePriceAxisBounds([100, 120, 110], [90, 95, 80])).toEqual({ min: 78, max: 122 });
   });
+
+  it("formats price-axis labels to two decimal places", () => {
+    expect(formatPriceAxisLabel(12.3)).toBe("12.30");
+    expect(formatPriceAxisLabel(0.456)).toBe("0.46");
+  });
+
+  it("recalculates bounds from the visible range after zooming", () => {
+    expect(getPriceAxisBoundsForRange([
+      { high: 100, low: 90 },
+      { high: 120, low: 80 },
+      { high: 105, low: 95 },
+    ], 1, 2)).toEqual({ min: 78, max: 122 });
+  });
+
+  it("uses the initial visible range instead of the full dataset", () => {
+    expect(getInitialChartDataZoomRange(100, "1M")).toEqual({ start: 78, end: 99 });
+    expect(getPriceAxisBoundsForRange([
+      ...Array.from({ length: 78 }, () => ({ high: 100, low: 1 })),
+      ...Array.from({ length: 22 }, () => ({ high: 12, low: 8 })),
+    ], 78, 99)).toEqual({ min: 7.8, max: 12.2 });
+  });
 });
 
 describe("CandlestickChart wheel zoom", () => {
@@ -69,6 +90,28 @@ describe("CandlestickChart wheel zoom", () => {
   });
 });
 
+describe("CandlestickChart sub-chart switching", () => {
+  it("clears RSI bounds when switching to a non-RSI sub-chart", () => {
+    expect(getSubChartAxisBounds("rsi")).toEqual({ min: 0, max: 100 });
+    expect(getSubChartAxisBounds("vol")).toEqual({ min: null, max: null });
+    expect(getSubChartAxisBounds("macd")).toEqual({ min: null, max: null });
+  });
+});
+
+describe("CandlestickChart mouse drag", () => {
+  it("uses pan mode for plain left drag and box zoom for Ctrl-left drag", () => {
+    expect(canStartChartDrag({ button: 0, ctrlKey: false })).toBe(true);
+    expect(getChartDragMode({ button: 0, ctrlKey: false })).toBe("pan");
+    expect(getChartDragMode({ button: 0, ctrlKey: true })).toBe("zoom");
+  });
+
+  it("moves the visible window by the horizontal drag delta", () => {
+    expect(buildChartPanRange({ start: 10, end: 30 }, 100, 5)).toEqual({ start: 15, end: 35 });
+    expect(buildChartPanRange({ start: 0, end: 20 }, 100, -5)).toEqual({ start: 0, end: 20 });
+    expect(getChartPanDelta(200, 150, 10)).toBe(5);
+  });
+});
+
 describe("Chan fractal marker mapping", () => {
   it("places top fractals above highs with the up/red color and bottoms below lows with the down/green color", () => {
     expect(getChanFractalMarkerStyle("top", "red", "green")).toEqual({
@@ -81,6 +124,13 @@ describe("Chan fractal marker mapping", () => {
       symbolOffset: [0, 13],
       color: "green",
     });
+  });
+
+  it("changes the render key when Chan structures change", () => {
+    const base = { fractals: [], strokes: [], segments: [], centers: [], signals: [] };
+    const withFractal = { ...base, fractals: [{ kind: "top" as const, bar_index: 2, confirmed_index: 3, price: 12 }] };
+
+    expect(getChanAnalysisRenderKey(base)).not.toBe(getChanAnalysisRenderKey(withFractal));
   });
 });
 

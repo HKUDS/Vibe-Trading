@@ -12,10 +12,12 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from src.config.paths import get_runtime_root
-from src.chan_training_analysis import ANALYSIS_VERSION, build_chan_analysis
+from src.chan_training_analysis import build_chan_analysis
 
 
 _DEFAULT_DB_NAME = "market_stock_details.db"
+_CHAN_CACHE_RESET_KEY = "chan_analysis_reset_done"
+_FULL_DAILY_HISTORY_RESET_KEY = "full_daily_history_reset_done"
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _STORE_LOCK = threading.RLock()
 
@@ -72,27 +74,57 @@ class StockDetailStore:
                     refreshed_date TEXT NOT NULL,
                     PRIMARY KEY (symbol, period)
                 );
+                CREATE TABLE IF NOT EXISTS stock_detail_cache_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
                 """
             )
             columns = {str(row["name"]) for row in connection.execute("PRAGMA table_info(stock_detail_bars_cache)").fetchall()}
             if "chan_analysis_json" not in columns:
                 connection.execute("ALTER TABLE stock_detail_bars_cache ADD COLUMN chan_analysis_json TEXT")
-            rows = connection.execute(
-                "SELECT symbol, period, bars_json, chan_analysis_json FROM stock_detail_bars_cache WHERE period IN ('1d', '1w', '1mo')"
-            ).fetchall()
-            for row in rows:
-                try:
-                    bars = json.loads(row["bars_json"] or "[]")
-                    cached_analysis = json.loads(row["chan_analysis_json"] or "") if row["chan_analysis_json"] else None
-                    needs_refresh = not isinstance(cached_analysis, dict) or cached_analysis.get("version") != ANALYSIS_VERSION
-                    analysis = build_chan_analysis(bars) if isinstance(bars, list) and needs_refresh else None
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    analysis = None
-                if analysis is not None:
+            reset = connection.execute(
+                "SELECT 1 FROM stock_detail_cache_meta WHERE key = ?",
+                (_CHAN_CACHE_RESET_KEY,),
+            ).fetchone() is None
+            if reset:
+                # The previous Chan payload carried a versioned contract. Drop
+                # those snapshots once and rebuild the current structure from
+                # the immutable K-lines; no old payload is adapted at runtime.
+                connection.execute(
+                    "UPDATE stock_detail_bars_cache SET chan_analysis_json = NULL WHERE period IN ('1d', '1w', '1mo')"
+                )
+                rows = connection.execute(
+                    "SELECT symbol, period, bars_json FROM stock_detail_bars_cache WHERE period IN ('1d', '1w', '1mo')"
+                ).fetchall()
+                for row in rows:
+                    try:
+                        bars = json.loads(row["bars_json"] or "[]")
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        continue
+                    if not isinstance(bars, list) or not bars:
+                        continue
+                    analysis = build_chan_analysis(bars)
                     connection.execute(
                         "UPDATE stock_detail_bars_cache SET chan_analysis_json = ? WHERE symbol = ? AND period = ?",
                         (json.dumps(_json_safe(analysis), ensure_ascii=False, allow_nan=False), row["symbol"], row["period"]),
                     )
+                connection.execute(
+                    "INSERT OR REPLACE INTO stock_detail_cache_meta (key, value) VALUES (?, ?)",
+                    (_CHAN_CACHE_RESET_KEY, "done"),
+                )
+            if connection.execute(
+                "SELECT 1 FROM stock_detail_cache_meta WHERE key = ?",
+                (_FULL_DAILY_HISTORY_RESET_KEY,),
+            ).fetchone() is None:
+                # Existing daily caches were limited to a recent lookback.
+                # Drop only those bars; static data and other periods remain
+                # reusable, and the next request repopulates the full history.
+                connection.execute("DELETE FROM stock_detail_bars_cache WHERE period = '1d'")
+                connection.execute(
+                    "INSERT OR REPLACE INTO stock_detail_cache_meta (key, value) VALUES (?, ?)",
+                    (_FULL_DAILY_HISTORY_RESET_KEY, "done"),
+                )
 
     def get_static(self, symbol: str) -> dict[str, Any] | None:
         with self._lock, self._connect() as connection:

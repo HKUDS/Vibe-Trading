@@ -1078,7 +1078,6 @@ export interface ChanTrainingSignal {
 }
 
 export interface ChanTrainingAnalysis {
-  version: string;
   fractals: ChanTrainingFractal[];
   strokes: ChanTrainingStroke[];
   segments: ChanTrainingSegment[];

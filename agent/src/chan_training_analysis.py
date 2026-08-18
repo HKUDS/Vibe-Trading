@@ -12,7 +12,6 @@ from __future__ import annotations
 from typing import Any
 
 
-ANALYSIS_VERSION = "chan-structure-v2"
 MIN_FRACTAL_DISTANCE = 3
 
 
@@ -294,7 +293,6 @@ def build_chan_analysis(bars: list[dict[str, Any]]) -> dict[str, Any]:
     strokes = _strokes(fractals)
     centers = _centers(strokes)
     return {
-        "version": ANALYSIS_VERSION,
         "fractals": fractals,
         "strokes": strokes,
         "segments": _segments(strokes),
@@ -305,7 +303,7 @@ def build_chan_analysis(bars: list[dict[str, Any]]) -> dict[str, Any]:
 
 def filter_chan_analysis(analysis: dict[str, Any], max_index: int) -> dict[str, Any]:
     """Return only structures confirmed by the current training cursor."""
-    result: dict[str, Any] = {"version": analysis.get("version", ANALYSIS_VERSION)}
+    result: dict[str, Any] = {}
     for key in ("fractals", "strokes", "segments", "centers", "signals"):
         values = analysis.get(key, [])
         result[key] = [

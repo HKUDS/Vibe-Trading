@@ -14,6 +14,10 @@ export type Sub = "fundflow" | "vol" | "amount" | "macd" | "macdfs" | "rsi" | "k
 type Range = "1M" | "3M" | "6M" | "1Y" | "ALL";
 type Overlay = "ma5" | "ma10" | "ma20" | "ma60" | "ema12" | "ema26" | "boll";
 
+export function getSubChartAxisBounds(sub: Sub) {
+  return sub === "rsi" ? { min: 0, max: 100 } : { min: null, max: null };
+}
+
 const SUB_OPTIONS: Array<readonly [Sub, string]> = [
   ["fundflow", "资金流"],
   ["vol", "成交量"],
@@ -60,6 +64,13 @@ export function resetChartDataZoom(
 }
 
 export type ChartDataZoomRange = { start: number; end: number };
+
+export function getInitialChartDataZoomRange(dataLength: number, range: "1M" | "3M" | "6M" | "1Y" | "ALL"): ChartDataZoomRange {
+  const maxIndex = Math.max(0, dataLength - 1);
+  const maxBars = RANGE_BARS[range];
+  const start = maxBars >= dataLength ? 0 : Math.max(0, dataLength - maxBars);
+  return { start, end: maxIndex };
+}
 
 /** Move the visible range by one small, cursor-anchored wheel step. */
 export function buildChartDataZoomStep(
@@ -138,6 +149,55 @@ export function getStablePriceAxisBounds(highs: number[], lows: number[]) {
   return { min: low - padding, max: high + padding };
 }
 
+export function getPriceAxisBoundsForRange(data: Pick<PriceBar, "high" | "low">[], start: number, end: number) {
+  const first = Math.max(0, Math.min(data.length - 1, Math.round(start)));
+  const last = Math.max(first, Math.min(data.length - 1, Math.round(end)));
+  const visible = data.slice(first, last + 1);
+  return getStablePriceAxisBounds(
+    visible.map((bar) => bar.high),
+    visible.map((bar) => bar.low),
+  );
+}
+
+export function formatPriceAxisLabel(value: number) {
+  return Number.isFinite(value) ? value.toFixed(2) : String(value);
+}
+
+export type ChartDragMode = "pan" | "zoom";
+
+export function getChartDragMode(event: Pick<MouseEvent, "button" | "ctrlKey">): ChartDragMode | null {
+  if (event.button !== 0) return null;
+  return event.ctrlKey ? "zoom" : "pan";
+}
+
+export function canStartChartDrag(event: Pick<MouseEvent, "button" | "ctrlKey">) {
+  return getChartDragMode(event) !== null;
+}
+
+export function buildChartPanRange(range: ChartDataZoomRange, dataLength: number, deltaIndex: number): ChartDataZoomRange {
+  const maxIndex = Math.max(0, dataLength - 1);
+  const span = Math.max(0, Math.round(range.end) - Math.round(range.start));
+  let start = Math.round(range.start) + Math.round(deltaIndex);
+  let end = start + span;
+  if (start < 0) {
+    end -= start;
+    start = 0;
+  }
+  if (end > maxIndex) {
+    start -= end - maxIndex;
+    end = maxIndex;
+  }
+  return {
+    start: Math.max(0, start),
+    end: Math.max(0, Math.min(maxIndex, end)),
+  };
+}
+
+export function getChartPanDelta(startX: number, currentX: number, pixelsPerIndex: number) {
+  if (!Number.isFinite(startX) || !Number.isFinite(currentX) || !Number.isFinite(pixelsPerIndex) || pixelsPerIndex <= 0) return 0;
+  return Math.round((startX - currentX) / pixelsPerIndex);
+}
+
 export function getChanFractalMarkerStyle(kind: "top" | "bottom", upColor: string, downColor: string) {
   const isTop = kind === "top";
   return {
@@ -145,6 +205,18 @@ export function getChanFractalMarkerStyle(kind: "top" | "bottom", upColor: strin
     symbolOffset: [0, isTop ? -13 : 13] as [number, number],
     color: isTop ? upColor : downColor,
   };
+}
+
+export function getChanAnalysisRenderKey(analysis: ChanTrainingAnalysis | null | undefined) {
+  if (!analysis) return "none";
+  const encode = (items: unknown[]) => JSON.stringify(items);
+  return JSON.stringify({
+    fractals: encode(analysis.fractals.map((item) => [item.kind, item.bar_index, item.confirmed_index, item.price])),
+    strokes: encode(analysis.strokes.map((item) => [item.start_index, item.end_index, item.start_price, item.end_price, item.direction, item.confirmed_index])),
+    segments: encode(analysis.segments.map((item) => [item.start_index, item.end_index, item.start_price, item.end_price, item.direction, item.confirmed_index])),
+    centers: encode(analysis.centers.map((item) => [item.start_index, item.end_index, item.low, item.high, item.confirmed_index])),
+    signals: encode(analysis.signals.map((item) => [item.label, item.side, item.bar_index, item.price, item.confirmed_index])),
+  });
 }
 
 export function ChanTheoryGuide() {
@@ -450,7 +522,15 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
   const initialZoomKeyRef = useRef<string | null>(null);
   const activeSubSeriesIdsRef = useRef<string[]>([]);
   const previousSubRef = useRef<Sub | null>(null);
-  const zoomDragRef = useRef<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
+  const zoomDragRef = useRef<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    mode: ChartDragMode;
+    baseRange: ChartDataZoomRange;
+    pixelsPerIndex: number;
+  } | null>(null);
   const [internalSub, setInternalSub] = useState<Sub>("vol");
   const [range, setRange] = useState<Range>("1M");
   const [overlays, setOverlays] = useState<Set<Overlay>>(new Set(["ma5", "ma20"]));
@@ -563,13 +643,16 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
       requestAnimationFrame(() => {
         if (chartRef.current !== chart) return;
         resetChartDataZoom(chart, data.length);
+        if (!intraday) {
+          chart.setOption({ yAxis: [{ id: "main-y", ...getPriceAxisBoundsForRange(data, 0, data.length - 1) }] });
+        }
       });
     };
     chart.on("restore", handleRestore);
     return () => {
       chart.off("restore", handleRestore);
     };
-  }, [data.length]);
+  }, [data, data.length, intraday]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -597,9 +680,45 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
       zoomDragRef.current = null;
       selection.style.display = "none";
     };
+    const updatePriceAxis = (start: number, end: number) => {
+      if (intraday) return;
+      chart.setOption({ yAxis: [{ id: "main-y", ...getPriceAxisBoundsForRange(data, start, end) }] });
+    };
+    let pendingDataZoom: ChartDataZoomRange | null = null;
+    let dataZoomFrame: number | null = null;
+    const applyPendingDataZoom = () => {
+      dataZoomFrame = null;
+      const nextRange = pendingDataZoom;
+      pendingDataZoom = null;
+      if (!nextRange) return;
+      // Update both zoom components and the visible price bounds in one
+      // option merge. Two sequential dispatchAction calls render the line
+      // overlays before the candle/Chan mark series catch up during a drag.
+      chart.setOption({
+        dataZoom: [
+          { startValue: nextRange.start, endValue: nextRange.end },
+          { startValue: nextRange.start, endValue: nextRange.end },
+        ],
+        ...(intraday ? {} : { yAxis: [{ id: "main-y", ...getPriceAxisBoundsForRange(data, nextRange.start, nextRange.end) }] }),
+      });
+    };
+    const dispatchDataZoom = (nextRange: ChartDataZoomRange, immediate = false) => {
+      pendingDataZoom = nextRange;
+      if (immediate) {
+        if (dataZoomFrame !== null) cancelAnimationFrame(dataZoomFrame);
+        dataZoomFrame = null;
+        applyPendingDataZoom();
+        return;
+      }
+      if (dataZoomFrame === null) dataZoomFrame = requestAnimationFrame(applyPendingDataZoom);
+    };
+    const handleDataZoom = () => {
+      const range = readChartDataZoomRange(chart, data.length);
+      updatePriceAxis(range.start, range.end);
+    };
     const updateSelection = () => {
       const drag = zoomDragRef.current;
-      if (!drag) return;
+      if (!drag || drag.mode !== "zoom") return;
       const left = Math.min(drag.startX, drag.currentX);
       const top = Math.min(drag.startY, drag.currentY);
       selection.style.display = "block";
@@ -609,18 +728,42 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
       selection.style.height = `${Math.abs(drag.currentY - drag.startY)}px`;
     };
     const beginDrag = (event: MouseEvent | PointerEvent) => {
-      if (!event.ctrlKey || event.button !== 0) return;
+      const mode = getChartDragMode(event);
+      if (!mode) return;
       event.preventDefault();
       if ("pointerId" in event) container.setPointerCapture?.(event.pointerId);
       const point = pointFrom(event);
-      zoomDragRef.current = { startX: point.x, startY: point.y, currentX: point.x, currentY: point.y };
-      updateSelection();
+      const baseRange = readChartDataZoomRange(chart, data.length);
+      const visibleSpan = Math.max(1, baseRange.end - baseRange.start);
+      const plotWidth = Math.max(1, chart.getWidth() - CHART_GRID_LEFT - CHART_GRID_RIGHT);
+      zoomDragRef.current = {
+        startX: point.x,
+        startY: point.y,
+        currentX: point.x,
+        currentY: point.y,
+        mode,
+        baseRange,
+        pixelsPerIndex: plotWidth / visibleSpan,
+      };
+      if (mode === "zoom") updateSelection();
+      else selection.style.display = "none";
     };
     const updateDrag = (event: MouseEvent | PointerEvent) => {
-      if (!zoomDragRef.current) return;
+      const drag = zoomDragRef.current;
+      if (!drag) return;
+      event.preventDefault();
       const point = pointFrom(event);
-      zoomDragRef.current.currentX = point.x;
-      zoomDragRef.current.currentY = point.y;
+      drag.currentX = point.x;
+      drag.currentY = point.y;
+      if (drag.mode === "pan") {
+        const deltaIndex = getChartPanDelta(drag.startX, drag.currentX, drag.pixelsPerIndex);
+        const nextRange = buildChartPanRange(drag.baseRange, data.length, deltaIndex);
+        const currentRange = readChartDataZoomRange(chart, data.length);
+        if (nextRange.start !== currentRange.start || nextRange.end !== currentRange.end) {
+          dispatchDataZoom(nextRange);
+        }
+        return;
+      }
       updateSelection();
     };
     const finishDrag = (event: MouseEvent | PointerEvent) => {
@@ -630,6 +773,15 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
       const point = pointFrom(event);
       drag.currentX = point.x;
       drag.currentY = point.y;
+      if (drag.mode === "pan") {
+        const deltaIndex = getChartPanDelta(drag.startX, drag.currentX, drag.pixelsPerIndex);
+        const nextRange = buildChartPanRange(drag.baseRange, data.length, deltaIndex);
+        const currentRange = readChartDataZoomRange(chart, data.length);
+        clearSelection();
+        if (nextRange.start === currentRange.start && nextRange.end === currentRange.end) return;
+        dispatchDataZoom(nextRange, true);
+        return;
+      }
       const left = Math.min(drag.startX, drag.currentX);
       const right = Math.max(drag.startX, drag.currentX);
       clearSelection();
@@ -637,9 +789,7 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
       const startValue = clampIndex(left);
       const endValue = clampIndex(right);
       if (endValue <= startValue) return;
-      const zoom = { type: "dataZoom" as const, startValue, endValue };
-      chart.dispatchAction({ ...zoom, dataZoomIndex: 0 });
-      chart.dispatchAction({ ...zoom, dataZoomIndex: 1 });
+      dispatchDataZoom({ start: startValue, end: endValue }, true);
     };
     const handlePointerDown = (event: PointerEvent) => beginDrag(event);
     const handlePointerMove = (event: PointerEvent) => updateDrag(event);
@@ -658,12 +808,11 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
       const nextRange = buildChartDataZoomStep(currentRange, data.length, event.deltaY, anchorIndex);
       event.preventDefault();
       clearSelection();
-      const zoom = { type: "dataZoom" as const, startValue: nextRange.start, endValue: nextRange.end };
-      chart.dispatchAction({ ...zoom, dataZoomIndex: 0 });
-      chart.dispatchAction({ ...zoom, dataZoomIndex: 1 });
+      dispatchDataZoom(nextRange, true);
     };
     const handlePointerCancel = () => clearSelection();
 
+    chart.on("datazoom", handleDataZoom);
     container.addEventListener("pointerdown", handlePointerDown);
     container.addEventListener("pointermove", handlePointerMove);
     container.addEventListener("pointerup", handlePointerUp);
@@ -673,6 +822,9 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
     container.addEventListener("mouseup", handleMouseUp);
     window.addEventListener("wheel", handleWheel, { capture: true, passive: false });
     return () => {
+      if (dataZoomFrame !== null) cancelAnimationFrame(dataZoomFrame);
+      pendingDataZoom = null;
+      chart.off("datazoom", handleDataZoom);
       container.removeEventListener("pointerdown", handlePointerDown);
       container.removeEventListener("pointermove", handlePointerMove);
       container.removeEventListener("pointerup", handlePointerUp);
@@ -683,7 +835,7 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
       window.removeEventListener("wheel", handleWheel, true);
       clearSelection();
     };
-  }, [data.length]);
+  }, [data, intraday]);
 
   // Update chart options — setOption on existing instance, no dispose
   useEffect(() => {
@@ -691,7 +843,7 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
     if (!chart || data.length === 0) return;
 
     const t = getChartTheme();
-    const { dates, closes, highs, lows, opens, candle } = baseData;
+    const { dates, closes, opens, candle } = baseData;
     const chartDates = intradayAxis?.categories ?? dates;
     const chartCloses = intradayAxis?.prices ?? closes;
     const chartAverage = intradayAxis?.averages ?? intradayAverage;
@@ -727,7 +879,7 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
     for (const [key, { name, data: lineData }] of Object.entries(overlayMap)) {
       if (intraday) break;
       if (overlays.has(key as Overlay)) {
-        overlaySeries.push({ name, type: "line", data: lineData, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: OVERLAY_COLORS[colorIdx], width: 1 } });
+        overlaySeries.push({ id: `overlay-${key}`, name, type: "line", data: lineData, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: OVERLAY_COLORS[colorIdx], width: 1 } });
         legendNames.push(name);
         colorIdx++;
       }
@@ -736,9 +888,9 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
     if (!intraday && overlays.has("boll")) {
       const boll = indicatorCache.boll;
       overlaySeries.push(
-        { name: "BOLL+", type: "line", data: boll.upper, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.upColor, width: 0.8, type: "dashed" } },
-        { name: "BOLL", type: "line", data: boll.mid, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.infoColor, width: 1 } },
-        { name: "BOLL-", type: "line", data: boll.lower, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.downColor, width: 0.8, type: "dashed" } },
+        { id: "overlay-boll-upper", name: "BOLL+", type: "line", data: boll.upper, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.upColor, width: 0.8, type: "dashed" } },
+        { id: "overlay-boll-mid", name: "BOLL", type: "line", data: boll.mid, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.infoColor, width: 1 } },
+        { id: "overlay-boll-lower", name: "BOLL-", type: "line", data: boll.lower, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.downColor, width: 0.8, type: "dashed" } },
       );
       legendNames.push("BOLL");
     }
@@ -927,11 +1079,12 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
     // Backend custom indicators (Map-based O(1) lookup)
     const extraSeries = intraday ? [] : extraIndicators.map((ind, i) => {
       legendNames.push(ind.name);
-      return { name: ind.name, type: "line" as const, data: ind.values, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { width: 1, color: OVERLAY_COLORS[(colorIdx + i) % OVERLAY_COLORS.length], type: "dashed" as const } };
+      return { id: `extra-${ind.name}`, name: ind.name, type: "line" as const, data: ind.values, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { width: 1, color: OVERLAY_COLORS[(colorIdx + i) % OVERLAY_COLORS.length], type: "dashed" as const } };
     });
 
     const maxBars = RANGE_BARS[range];
     const defaultStart = intraday || maxBars >= data.length ? 0 : Math.max(0, 100 - (maxBars / data.length) * 100);
+    const defaultRange = getInitialChartDataZoomRange(data.length, range);
     const hasViewport = !intraday && effectiveViewportStartIndex !== undefined && effectiveViewportEndIndex !== undefined;
     const viewportStart = hasViewport ? Math.max(0, Math.min(data.length - 1, effectiveViewportStartIndex)) : 0;
     const viewportEnd = hasViewport ? Math.max(viewportStart, Math.min(data.length - 1, effectiveViewportEndIndex)) : data.length - 1;
@@ -945,6 +1098,14 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
       : shouldApplyInitialZoom
         ? { startValue: zoomStartIndex, endValue: zoomEndIndex }
         : {};
+    const initialVisibleRange = hasViewport
+      ? { start: viewportStart, end: viewportEnd }
+      : shouldApplyInitialZoom
+        ? { start: zoomStartIndex, end: zoomEndIndex }
+        : defaultRange;
+    const initialPriceAxisBounds = intraday
+      ? {}
+      : getPriceAxisBoundsForRange(data, initialVisibleRange.start, initialVisibleRange.end);
     const referencePrice = previousClose && previousClose > 0 ? previousClose : closes[0];
     const intradayCloses = chartCloses.filter((close): close is number => close !== null && Number.isFinite(close));
     const maxRelativeMove = referencePrice
@@ -963,8 +1124,8 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
       : [];
     const mainSeries = intraday
       ? [
-          { name: "Price", type: "line", data: chartCloses, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", connectNulls: false, smooth: false, lineStyle: { color: t.infoColor, width: 1.5 }, markLine: { symbol: ["none", "none"], silent: true, label: { show: false }, data: intradayGuides } },
-          { name: "Average", type: "line", data: chartAverage, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", connectNulls: false, smooth: false, lineStyle: { color: "#facc15", width: 1.5 } },
+          { id: "intraday-price", name: "Price", type: "line", data: chartCloses, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", connectNulls: false, smooth: false, lineStyle: { color: t.infoColor, width: 1.5 }, markLine: { symbol: ["none", "none"], silent: true, label: { show: false }, data: intradayGuides } },
+          { id: "intraday-average", name: "Average", type: "line", data: chartAverage, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", connectNulls: false, smooth: false, lineStyle: { color: "#facc15", width: 1.5 } },
         ]
       : [{
           id: "K", name: "K", type: "candlestick", data: dailyCandle, xAxisIndex: 0, yAxisIndex: 0,
@@ -1053,21 +1214,23 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
       ...overlaySeries,
       ...extraSeries,
       ...renderedSubSeries,
-    ];
+    ].map((series) => ({ ...series, animation: false, animationDuration: 0, animationDurationUpdate: 0, progressive: 0 }));
 
-    const stablePriceAxisBounds = getStablePriceAxisBounds(highs, lows);
     const chartYAxis = intraday
       ? [
           { id: "main-y", scale: true, min: intradayAxisMin, max: intradayAxisMax, gridIndex: 0, axisLine: { show: true, lineStyle: { color: t.axisColor } }, axisTick: { show: true }, splitLine: { show: false }, axisLabel: { color: t.textColor, fontSize: 10, formatter: (value: number) => referencePrice ? `${(((value - referencePrice) / referencePrice) * 100).toFixed(2)}%` : String(value) } },
           { id: "sub-y", ...subYAxis, gridIndex: 1, axisLabel: { ...subYAxis.axisLabel, color: t.textColor, fontSize: 10 } },
         ]
       : [
-          { id: "main-y", scale: true, ...stablePriceAxisBounds, gridIndex: 0, splitLine: { lineStyle: { color: t.gridColor } }, axisLabel: { color: t.textColor, fontSize: 10 } },
+          { id: "main-y", scale: true, ...initialPriceAxisBounds, gridIndex: 0, splitLine: { lineStyle: { color: t.gridColor } }, axisLabel: { color: t.textColor, fontSize: 10, formatter: formatPriceAxisLabel } },
           { id: "sub-y", ...subYAxis },
         ];
 
     const chartOption = {
       backgroundColor: "transparent",
+      animation: false,
+      animationDuration: 0,
+      animationDurationUpdate: 0,
       tooltip: {
         trigger: "axis", axisPointer: { type: "cross" },
         backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder,
@@ -1131,7 +1294,7 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
       initialEndIndex,
       range,
       showChan,
-      chanVersion: chanAnalysis?.version,
+      chanVersion: getChanAnalysisRenderKey(chanAnalysis),
     });
     const subSeriesIds = renderedSubSeries.map((series) => String(series.id));
     if (chartLayoutKeyRef.current !== chartLayoutKey) {
@@ -1162,26 +1325,40 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
         const hiddenPreviousSubSeries = activeSubSeriesIdsRef.current
           .filter((id) => !subSeriesIds.includes(id))
           .map((id) => ({ id, show: false, data: [] }));
+        const currentRange = readChartDataZoomRange(chart, data.length);
+        const nextChartYAxis = intraday
+          ? chartYAxis
+          : [
+              { ...chartYAxis[0], ...getPriceAxisBoundsForRange(data, currentRange.start, currentRange.end) },
+              { ...chartYAxis[1], ...getSubChartAxisBounds(sub) },
+            ];
         chart.setOption({
           legend: { data: legendNames },
-          yAxis: [{ id: "sub-y", ...chartYAxis[1] }],
+          yAxis: nextChartYAxis,
           series: [...hiddenPreviousSubSeries, ...renderedSubSeries],
-        });
+        }, { replaceMerge: ["yAxis"] });
         activeSubSeriesIdsRef.current = subSeriesIds;
       } else {
         // Price/data refreshes update the complete series set but still omit
         // dataZoom, so the user's current window remains unchanged.
+        const currentRange = readChartDataZoomRange(chart, data.length);
+        const currentChartYAxis = intraday
+          ? chartYAxis
+          : [
+              { ...chartYAxis[0], ...getPriceAxisBoundsForRange(data, currentRange.start, currentRange.end) },
+              chartYAxis[1],
+            ];
         chart.setOption({
           ...buildChartDataUpdate(chartDates, chartSeries),
           legend: { data: legendNames },
-          yAxis: chartYAxis,
+          yAxis: currentChartYAxis,
           series: chartSeries,
         }, { replaceMerge: ["series"] });
         activeSubSeriesIdsRef.current = subSeriesIds;
       }
       previousSubRef.current = sub;
     }
-  }, [data, baseData, indicatorCache, extraIndicators, initialStartIndex, initialEndIndex, intraday, intradayAverage, intradayAxis, previousClose, market, symbol, fundFlowRows, sub, range, overlays, dark]);
+  }, [data, baseData, indicatorCache, extraIndicators, initialStartIndex, initialEndIndex, intraday, intradayAverage, intradayAxis, previousClose, market, symbol, fundFlowRows, sub, range, overlays, dark, chanAnalysis, showChan]);
 
   useEffect(() => {
     const chart = chartRef.current;

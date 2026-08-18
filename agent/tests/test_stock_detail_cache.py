@@ -2,10 +2,43 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from src.api import market_routes
 from src.stock_detail_store import StockDetailStore
+
+
+def test_stock_detail_discards_old_chan_payload_and_rebuilds_latest_contract(tmp_path) -> None:
+    db_path = tmp_path / "legacy-stock-details.db"
+    bars = [{"trade_date": "2026-08-17", "open": 10, "high": 12, "low": 9, "close": 11, "volume": 100}]
+    with sqlite3.connect(db_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE stock_detail_bars_cache (
+                symbol TEXT NOT NULL,
+                period TEXT NOT NULL,
+                bars_json TEXT NOT NULL,
+                chan_analysis_json TEXT,
+                fetched_at TEXT NOT NULL,
+                refreshed_date TEXT NOT NULL,
+                PRIMARY KEY (symbol, period)
+            );
+            CREATE TABLE stock_detail_cache_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            """
+        )
+        connection.execute("INSERT INTO stock_detail_cache_meta VALUES (?, ?)", ("full_daily_history_reset_done", "done"))
+        connection.execute(
+            "INSERT INTO stock_detail_bars_cache VALUES (?, ?, ?, ?, ?, ?)",
+            ("600519.SH", "1d", json.dumps(bars), json.dumps({"version": "chan-structure-v2"}), "now", "today"),
+        )
+
+    store = StockDetailStore(db_path)
+    analysis = store.get_bars("600519.SH", "1d")["chan_analysis"]
+
+    assert analysis is not None
+    assert "version" not in analysis
+    assert set(analysis) == {"fractals", "strokes", "segments", "centers", "signals"}
 
 
 def test_a_share_detail_reuses_static_data_and_same_day_daily_bars(monkeypatch, tmp_path) -> None:
@@ -43,8 +76,8 @@ def test_a_share_detail_reuses_static_data_and_same_day_daily_bars(monkeypatch, 
     second = market_routes._stock_detail_a_share("600519.SH", "1d")
 
     assert first["bars"] == second["bars"]
-    assert first["chan_analysis"]["version"] == "chan-structure-v2"
-    assert second["chan_analysis"]["version"] == "chan-structure-v2"
+    assert "version" not in first["chan_analysis"]
+    assert "version" not in second["chan_analysis"]
     assert calls == {"quote": 1, "profile": 1, "financials": 1, "reports": 2, "boards": 1, "bars": 1, "news": 2}
 
     with sqlite3.connect(store.db_path) as connection:

@@ -15,6 +15,7 @@ const apiMock = vi.hoisted(() => ({
 
 vi.mock("@/lib/api", () => ({ api: apiMock }));
 vi.mock("@/components/charts/CandlestickChart", () => ({
+  ChanTheoryGuide: () => <div data-testid="chan-theory-guide" />,
   CandlestickChart: ({ intraday, onSubChange }: { intraday?: boolean; onSubChange?: (sub: string) => void }) => (
     <div data-testid="stock-chart" data-intraday={String(Boolean(intraday))}>
       <button type="button" onClick={() => onSubChange?.("fundflow")}>资金流</button>

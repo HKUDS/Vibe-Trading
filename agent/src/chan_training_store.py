@@ -171,7 +171,6 @@ class ChanTrainingStore:
                     ON training_events(session_id, sequence);
                 CREATE TABLE IF NOT EXISTS training_chan_analysis (
                     session_id TEXT PRIMARY KEY REFERENCES training_sessions(id) ON DELETE CASCADE,
-                    analysis_version TEXT NOT NULL,
                     payload_json TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -191,8 +190,23 @@ class ChanTrainingStore:
                     ON training_instruments(market, status, updated_at DESC);
                 """
             )
-            # Sessions created before the persisted analysis table was added
-            # are backfilled once from their immutable bar snapshots.
+            # The old table stored a versioned Chan contract. Since the current
+            # contract is the only supported one, discard that table and rebuild
+            # its payloads from the immutable session bars.
+            chan_columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(training_chan_analysis)").fetchall()}
+            if "analysis_version" in chan_columns:
+                conn.execute("DROP TABLE training_chan_analysis")
+                conn.execute(
+                    """CREATE TABLE training_chan_analysis (
+                        session_id TEXT PRIMARY KEY REFERENCES training_sessions(id) ON DELETE CASCADE,
+                        payload_json TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )"""
+                )
+
+            # Sessions created before the persisted analysis table was added,
+            # or cleared by the migration above, are backfilled once.
             missing_sessions = conn.execute(
                 """SELECT id FROM training_sessions
                    WHERE id NOT IN (SELECT session_id FROM training_chan_analysis)"""
@@ -207,8 +221,8 @@ class ChanTrainingStore:
                 analysis = build_chan_analysis([dict(row) for row in rows])
                 now_analysis = _now()
                 conn.execute(
-                    "INSERT INTO training_chan_analysis (session_id, analysis_version, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                    (session["id"], str(analysis.get("version") or "unknown"), json.dumps(_json_safe(analysis), ensure_ascii=False), now_analysis, now_analysis),
+                    "INSERT INTO training_chan_analysis (session_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                    (session["id"], json.dumps(_json_safe(analysis), ensure_ascii=False), now_analysis, now_analysis),
                 )
 
     def upsert_instruments(self, instruments: list[dict[str, Any]]) -> int:
@@ -320,6 +334,10 @@ class ChanTrainingStore:
         window_size = int(config.get("window_size") or 60)
         if capital <= ZERO or window_size < 2 or window_size > len(bars):
             raise ValueError("invalid training capital or window size")
+        # Persist only the current analysis shape, even when a caller supplies
+        # a stale or partial payload. The bar snapshot is the source of truth.
+        if chan_analysis is not None:
+            chan_analysis = build_chan_analysis(bars)
         initial_cursor = int(config.get("initial_cursor", max(window_size - 1, len(bars) // 2)))
         initial_cursor = max(window_size - 1, min(initial_cursor, len(bars) - 1))
         now = _now()
@@ -357,8 +375,8 @@ class ChanTrainingStore:
             if chan_analysis is not None:
                 now_analysis = _now()
                 conn.execute(
-                    "INSERT INTO training_chan_analysis (session_id, analysis_version, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                    (session_id, str(chan_analysis.get("version") or "unknown"), json.dumps(_json_safe(chan_analysis), ensure_ascii=False), now_analysis, now_analysis),
+                    "INSERT INTO training_chan_analysis (session_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                    (session_id, json.dumps(_json_safe(chan_analysis), ensure_ascii=False), now_analysis, now_analysis),
                 )
             self._insert_event(conn, session_id, 1, "start", initial_cursor, {"market": market, "period": period})
         return self.get_session(scope, session_id, include_hidden=True)
@@ -423,7 +441,7 @@ class ChanTrainingStore:
                 try:
                     payload["chan_analysis"] = json.loads(analysis_row["payload_json"] or "{}")
                 except (TypeError, ValueError, json.JSONDecodeError):
-                    payload["chan_analysis"] = {"version": "unknown"}
+                    payload["chan_analysis"] = None
             else:
                 payload["chan_analysis"] = None
         if not include_hidden:
@@ -451,8 +469,8 @@ class ChanTrainingStore:
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = self._get_row(scope, session_id, conn)
-            if row["status"] != "active":
-                raise ValueError("training session is not active")
+            if row["status"] not in {"active", "finished"}:
+                raise ValueError("training session is not navigable")
             bars_count = conn.execute("SELECT COUNT(*) AS count FROM training_session_bars WHERE session_id = ?", (session_id,)).fetchone()["count"]
             next_cursor = max(row["window_size"] - 1, min(int(cursor), bars_count - 1))
             sequence = conn.execute("SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence FROM training_events WHERE session_id = ?", (session_id,)).fetchone()["sequence"]

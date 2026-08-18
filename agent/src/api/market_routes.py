@@ -32,7 +32,7 @@ from src.a_share_data import (
     ths_bars,
 )
 from src.api.security import require_auth
-from src.chan_training_analysis import ANALYSIS_VERSION, build_chan_analysis
+from src.chan_training_analysis import build_chan_analysis
 from src.iwencai_skillhub import IwencaiSkillError, search_stock_news as iwencai_stock_news, search_stock_reports as iwencai_stock_reports
 from src.market_overview_store import MarketOverviewStore
 from src.research.industry_research import get_industry_research_service
@@ -83,6 +83,8 @@ _OVERVIEW_REFRESH_LOCK = threading.RLock()
 _OVERVIEW_REFRESHING: set[str] = set()
 _DETAIL_CACHE_TTL_SECONDS = 24 * 60 * 60
 _STOCK_CONTENT_LOOKBACK_DAYS = 365
+_A_SHARE_HISTORY_START = "1990-01-01"
+_US_HISTORY_START = "1900-01-01"
 # Keep refreshes serialized. This avoids a burst of period requests competing
 # for the same provider and makes the latest write deterministic.
 _DETAIL_REFRESH_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stock-detail-refresh")
@@ -685,8 +687,10 @@ def _stock_market_is_open(market: str) -> bool:
     return 570 <= minutes < 960
 
 
-def _stock_period_dates(period: str) -> tuple[str, str]:
+def _stock_period_dates(period: str, *, market: str | None = None) -> tuple[str, str]:
     end = date.today() + timedelta(days=1)
+    if period == "1d" and market in {"a_share", "us"}:
+        return (_A_SHARE_HISTORY_START if market == "a_share" else _US_HISTORY_START, end.isoformat())
     days = {
         "1d": 365 * 2,
         "1w": 365 * 5,
@@ -899,9 +903,52 @@ def _fetch_historical_a_share_bars(canonical: str, start_date: str, end_date: st
         return []
 
 
+def _fetch_all_a_share_daily_bars(canonical: str, start_date: str, end_date: str) -> list[dict[str, Any]]:
+    """Fetch the complete A-share daily history in provider-sized windows."""
+    earliest = date.fromisoformat(start_date)
+    cursor_end = date.fromisoformat(end_date)
+    merged: dict[str, dict[str, Any]] = {}
+    # Keep each request below Tencent's 500-bar response cap. A calendar year
+    # is comfortably below that limit even with leap years.
+    window_days = 365
+
+    while cursor_end > earliest:
+        cursor_start = max(earliest, cursor_end - timedelta(days=window_days))
+        chunk = tencent_bars(
+            canonical,
+            cursor_start.isoformat(),
+            cursor_end.isoformat(),
+            period="1d",
+        )
+        if not chunk:
+            break
+        stamps = [str(bar.get("trade_date") or bar.get("time") or "")[:10] for bar in chunk if isinstance(bar, dict)]
+        stamps = [stamp for stamp in stamps if stamp]
+        if not stamps:
+            break
+        for bar in chunk:
+            if not isinstance(bar, dict):
+                continue
+            stamp = str(bar.get("trade_date") or bar.get("time") or "")[:10]
+            if stamp:
+                merged[stamp] = bar
+        if not merged:
+            break
+        oldest = min(stamps)
+        # A newly listed stock has no older window. Also stop when a provider
+        # ignores the requested range and keeps returning the same recent page.
+        if oldest > (cursor_start + timedelta(days=7)).isoformat():
+            break
+        cursor_end = cursor_start - timedelta(days=1)
+
+    return [merged[key] for key in sorted(merged)]
+
+
 def _fetch_stock_bars_a_share(canonical: str, period: str) -> list[dict[str, Any]]:
-    start_date, end_date = _stock_period_dates(period)
-    if period in {"15m", "30m", "60m"}:
+    start_date, end_date = _stock_period_dates(period, market="a_share")
+    if period == "1d":
+        bars = _fetch_all_a_share_daily_bars(canonical, start_date, end_date)
+    elif period in {"15m", "30m", "60m"}:
         bars = _fetch_historical_a_share_bars(canonical, start_date, end_date, period)
         if period == "30m" and not bars:
             source_bars = _fetch_historical_a_share_bars(canonical, start_date, end_date, "15m")
@@ -939,7 +986,7 @@ def _refresh_stock_quote_us(canonical: str) -> None:
 
 
 def _fetch_stock_bars_us(canonical: str, period: str) -> list[dict[str, Any]]:
-    start, end = _stock_period_dates(period)
+    start, end = _stock_period_dates(period, market="us")
     interval = {"1d": "1D", "1w": "1W", "1mo": "1M", "1m": "1m", "15m": "15m", "30m": "30m", "60m": "1H", "120m": "1H"}[period]
     frame = YFinanceLoader().fetch([canonical], start, end, interval=interval).get(canonical)
     bars: list[dict[str, Any]] = []
@@ -1182,9 +1229,11 @@ def _ensure_cached_chan_analysis(
 ) -> dict[str, Any] | None:
     """Backfill a missing persisted Chan snapshot without refetching bars."""
     cached_analysis = record.get("chan_analysis") if record else None
-    if not store or period not in {"1d", "1w", "1mo"} or not record or (
-        isinstance(cached_analysis, dict) and cached_analysis.get("version") == ANALYSIS_VERSION
-    ):
+    has_current_structure = isinstance(cached_analysis, dict) and all(
+        isinstance(cached_analysis.get(key), list)
+        for key in ("fractals", "strokes", "segments", "centers", "signals")
+    )
+    if not store or period not in {"1d", "1w", "1mo"} or not record or has_current_structure:
         return record
     bars = record.get("bars") or []
     if not isinstance(bars, list) or not bars:
@@ -1291,7 +1340,7 @@ def _stock_bars_a_share(symbol: str, period: str = "1d") -> dict[str, Any]:
                     errors,
                     "cache_bars_write",
                     lambda: store.save_bars(canonical, period, fresh_bars) if store else None,
-                    None,
+                    build_chan_analysis(fresh_bars),
                 )
                 record = {"bars": fresh_bars, "chan_analysis": analysis}
                 status = "cached"
@@ -1311,7 +1360,12 @@ def _stock_bars_a_share(symbol: str, period: str = "1d") -> dict[str, Any]:
         if fresh_bars:
             record = {"bars": fresh_bars}
             if store:
-                analysis = _safe_detail_fetch(errors, "cache_bars_write", lambda: store.save_bars(canonical, period, fresh_bars), None)
+                analysis = _safe_detail_fetch(
+                    errors,
+                    "cache_bars_write",
+                    lambda: store.save_bars(canonical, period, fresh_bars),
+                    build_chan_analysis(fresh_bars),
+                )
                 if analysis is not None:
                     record["chan_analysis"] = analysis
             status = "cached"
@@ -1328,7 +1382,7 @@ def _stock_bars_a_share(symbol: str, period: str = "1d") -> dict[str, Any]:
                     errors,
                     "cache_bars_write",
                     lambda: store.save_bars(canonical, period, fresh_bars) if store else None,
-                    None,
+                    build_chan_analysis(fresh_bars),
                 )
                 record = {"bars": fresh_bars, "chan_analysis": analysis}
                 status = "cached"
@@ -1405,7 +1459,7 @@ def _stock_bars_us(symbol: str, period: str = "1d") -> dict[str, Any]:
                     errors,
                     "cache_bars_write",
                     lambda: store.save_bars(canonical, period, fresh_bars) if store else None,
-                    None,
+                    build_chan_analysis(fresh_bars),
                 )
                 record = {"bars": fresh_bars, "chan_analysis": analysis}
                 status = "cached"
@@ -1553,17 +1607,23 @@ def _stock_detail_a_share(symbol: str, period: str = "1d", include_news: bool = 
             fresh_bars = _safe_detail_fetch(
                 errors,
                 "bars",
-                lambda: tencent_bars(canonical, *_stock_period_dates(period), period=period),
+                lambda: _fetch_stock_bars_a_share(canonical, period),
                 [],
             )
             if fresh_bars:
                 bars = fresh_bars
                 if store and period not in _INTRADAY_PERIODS:
-                    chan_analysis = _safe_detail_fetch(errors, "cache_bars_write", lambda: store.save_bars(canonical, period, fresh_bars), None)
+                    chan_analysis = _safe_detail_fetch(
+                        errors,
+                        "cache_bars_write",
+                        lambda: store.save_bars(canonical, period, fresh_bars),
+                        build_chan_analysis(fresh_bars),
+                    )
             else:
                 # Keep yesterday's chart usable when the daily refresh provider
                 # is temporarily unavailable; the error remains visible to callers.
                 bars = (cached_bars or {}).get("bars") or []
+                chan_analysis = (cached_bars or {}).get("chan_analysis")
     news = _safe_detail_fetch(
         errors,
         "news",
@@ -1638,7 +1698,7 @@ def _stock_detail_us(symbol: str, period: str = "1d", include_news: bool = True)
                     errors,
                     "cache_bars_write",
                     lambda: store.save_bars(canonical, period, raw_bars) if store else build_chan_analysis(raw_bars),
-                    None,
+                    build_chan_analysis(raw_bars),
                 )
                 bar_cache_status = "cached"
                 bar_from_cache = False

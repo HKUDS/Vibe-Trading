@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -67,6 +69,23 @@ def test_delete_session_cascades_review_data(tmp_path: Path) -> None:
         store.get_session("user-1", session["id"])
 
 
+def test_finished_session_can_reveal_later_bars_but_cannot_trade(tmp_path: Path) -> None:
+    store = ChanTrainingStore(tmp_path / "training.db")
+    session = store.create_session(
+        "user-1",
+        {"market": "us", "period": "1d", "symbol": "AAPL.US", "name": "Apple", "initial_capital": "100000", "window_size": 2, "commission_rate": "0", "stamp_rate": "0", "transfer_rate": "0"},
+        _bars(),
+    )
+
+    store.finish("user-1", session["id"])
+    moved = store.save_state("user-1", session["id"], 10)
+
+    assert moved["status"] == "finished"
+    assert moved["current_cursor"] == 10
+    with pytest.raises(ValueError, match="not active"):
+        store.execute_trade("user-1", session["id"], "buy", "1/2")
+
+
 def test_full_buy_uses_all_affordable_cash(tmp_path: Path) -> None:
     store = ChanTrainingStore(tmp_path / "training.db")
     session = store.create_session(
@@ -103,7 +122,7 @@ def test_chan_analysis_is_persisted_and_live_payload_is_cursor_bounded(tmp_path:
     for index, (high, low) in enumerate(highs_lows):
         bars.append({"time": f"2025-01-{index + 1:02d}", "open": low, "high": high, "low": low, "close": (high + low) / 2, "volume": 100, "amount": 1000})
     analysis = build_chan_analysis(bars)
-    assert analysis["version"] == "chan-structure-v2"
+    assert "version" not in analysis
     assert analysis["fractals"]
     store = ChanTrainingStore(tmp_path / "training.db")
     session = store.create_session(
@@ -117,6 +136,33 @@ def test_chan_analysis_is_persisted_and_live_payload_is_cursor_bounded(tmp_path:
     assert all(item["confirmed_index"] <= live["current_cursor"] for item in live["chan_analysis"]["fractals"])
     review = store.get_session("user-1", session["id"], include_hidden=True)
     assert len(review["chan_analysis"]["fractals"]) >= len(live["chan_analysis"]["fractals"])
+
+
+def test_training_store_drops_legacy_analysis_schema_and_rebuilds_from_bars(tmp_path: Path) -> None:
+    bars = [
+        {"time": "2025-01-01", "open": 10, "high": 12, "low": 9, "close": 11, "volume": 100, "amount": 1000},
+        {"time": "2025-01-02", "open": 11, "high": 13, "low": 10, "close": 12, "volume": 100, "amount": 1000},
+    ]
+    db_path = tmp_path / "legacy-training.db"
+    store = ChanTrainingStore(db_path)
+    session = store.create_session(
+        "user-1",
+        {"market": "us", "period": "1d", "symbol": "AAPL.US", "name": "Apple", "initial_capital": "100000", "window_size": 2, "commission_rate": "0", "stamp_rate": "0", "transfer_rate": "0"},
+        bars,
+        build_chan_analysis(bars),
+    )
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("ALTER TABLE training_chan_analysis ADD COLUMN analysis_version TEXT NOT NULL DEFAULT 'chan-structure-v2'")
+        connection.execute("UPDATE training_chan_analysis SET payload_json = ?", (json.dumps({"version": "chan-structure-v2"}),))
+
+    migrated = ChanTrainingStore(db_path)
+    analysis = migrated.get_session("user-1", session["id"], include_hidden=True)["chan_analysis"]
+    with sqlite3.connect(db_path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(training_chan_analysis)")}
+
+    assert analysis is not None
+    assert "version" not in analysis
+    assert columns == {"session_id", "payload_json", "created_at", "updated_at"}
 
 
 def _stroke(index: int, direction: str, start: float, end: float, low: float, high: float) -> dict[str, object]:
