@@ -156,8 +156,14 @@ _CANONICAL_SYMBOL_RE = re.compile(
     re.IGNORECASE,
 )
 _ACTIONABLE_MARKET_RE = re.compile(
+    # `trade` alone is dropped: it overlaps with "trade journal",
+    # "trade history", "trade list" — the user's own activity log, not a
+    # request to transact. Real transactional language is already covered
+    # by buy / sell / entry / 中文入场/交易价格. Keeping `trade`
+    # here produced a thousand false-positive identity-required sessions
+    # (see test_grounding_safe_fallback_categorize).
     r"(?:\bbuy\b|\bsell\b|\bentry\b|\btarget price\b|\bcurrent price\b|"
-    r"\blatest price\b|\bprice of\b|\btrade\b|"
+    r"\blatest price\b|\bprice of\b|"
     r"\bvaluation of\b|\bwhat (?:is|are) .{1,80} worth\b|"
     r"\bis .{1,80} (?:listed|publicly traded)\b|"
     r"买入|卖出|入场|目标价|现价|最新价|股价|交易价格|估值|值多少钱|"
@@ -247,6 +253,41 @@ _QUANTITY_WITH_UNIT_RE = re.compile(
     r"(?:股|手|张|份|口|笔|倍|个月|周|天|日|年|次|个交易日|项|行)"
     r"|(?:shares?|contracts?|lots?|units?|sessions?|bars?|periods?|"
     r"wks?|weeks?|months?|days?|years?|yrs?)\b"
+    r")",
+    re.IGNORECASE,
+)
+# A count context flags the number as enumeration/aggregate, not a price. The
+# unitless count carries no currency; it follows a quantifier word
+# ("105 missing", "loaded 462", "12 alphas", "the 357 total") or precedes one
+# ("总数 105", "个交易日 12"). A range/comparison word ("less than 462",
+# "最多 10") also flags the bounded number as a count, not a price. A
+# free-floating digit run like "12+191+154" inside a count phrase is masked
+# in one pass. Bare unitless numbers inside prose otherwise still need the
+# price check, so the regex is anchored to the count words on both sides —
+# neither a free-floating "105" nor a bare "alphas 105" matches.
+_COUNT_CONTEXT_RE = re.compile(
+    r"(?:"
+    # number preceded by a count word. Any non-digit punctuation (parens,
+    # brackets, em-dash) between the word and the digits is tolerated so
+    # "counts (12", "总数: 105", "loaded=462" all match.
+    r"(?:missing|loaded|in\s+total|total|per[-\s]?\w+|counts?|"
+    r"less\s+than|fewer\s+than|at\s+most|at\s+least|more\s+than|"
+    r"up\s+to|around|about|nearly|"
+    r"共|总共|合计|共计|总数|累计|合计|存在|还差|还剩|剩余|缺失|"
+    r"个|条|项|个交易日|只|最多|至少|低于|高于|超过|不足|大于|小于|"
+    r"不大于|不小于)"
+    r"[^\d]*?"
+    r"\d[\d,]*(?:\.\d+)?"
+    # Continue the chain: "12+191+154" inside "counts (12+191+154)"
+    r"(?:\s*[+\-×÷*/=]\s*\d[\d,]*(?:\.\d+)?)*"
+    r"|"
+    # number (possibly chained) followed by a count word
+    r"\d[\d,]*(?:\.\d+)?"
+    r"(?:\s*[+\-×÷*/=]\s*\d[\d,]*(?:\.\d+)?)*"
+    r"[^\d]*?"
+    r"(?:missing|fewer|more|total|alphas?|records?|rows?|entries?|items?|"
+    r"signals?|items|trades?|deals?|fills?|orders?|"
+    r"个|条|项|个交易日|只|共|总共)"
     r")",
     re.IGNORECASE,
 )
@@ -1291,6 +1332,31 @@ class GroundingLedger:
                 f"The verified observed OHLC range is: {joined}. "
                 "I will not invent an entry price without a visible derivation or refreshed evidence."
             )
+        # Distinguish: if identity was never required (this run answered a
+        # non-market question like an alpha-zoo enumeration or a journal
+        # analysis), the issue is that the draft cited numbers without tool
+        # evidence, not that the user forgot to confirm a ticker. Tell the
+        # user — and ourselves — that the assistant needs to re-derive the
+        # numbers from tool calls instead of guessing.
+        if not self._identity_required:
+            tool_names = sorted({failure["tool"] for failure in self._tool_failures if "tool" in failure})
+            tools_hint = (
+                f"失败的工具调用：{', '.join(tool_names)}。" if tool_names else ""
+            )
+            if is_zh:
+                return (
+                    "我之前的回答里包含数字但没有工具证据支撑，我已拒绝该答案。"
+                    f"{tools_hint}请让我重新基于工具调用结果整理一份有据可查的回答。"
+                )
+            return (
+                "I rejected the previous draft because it cited numbers without "
+                "tool evidence. "
+                f"Failed tool calls: {', '.join(tool_names)}. "
+                "Let me re-derive the numbers from tool calls in a follow-up turn."
+                if tool_names
+                else "I rejected the previous draft because it cited numbers without "
+                "tool evidence. Let me re-derive them from tool calls in a follow-up turn."
+            )
         if is_zh:
             return (
                 "当前无法安全确认标的身份或价格证据，因此没有生成交易结论。"
@@ -2333,6 +2399,12 @@ class GroundingLedger:
         """
         masked = _MD_LIST_ITEM_RE.sub(" ", text)
         masked = _RATE_FORMULA_IDENTITY_RE.sub(" ", masked)
+        # Count/range context must run BEFORE canonical symbols, otherwise the
+        # lazy "[^\d]*?" in _COUNT_CONTEXT_RE would happily cross an
+        # already-masked symbol gap and gobble the next count word. Symbol
+        # masks (line below) then clean up whatever 600519.SH / 0700.HK is
+        # sitting next to.
+        masked = _COUNT_CONTEXT_RE.sub(" ", masked)
         masked = _CANONICAL_SYMBOL_RE.sub(" ", masked)
         masked = _LOCALIZED_DATE_RE.sub(" ", masked)
         masked = _DATE_RE.sub(" ", masked)
