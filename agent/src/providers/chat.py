@@ -296,6 +296,31 @@ class ChatLLM:
             reasoning_effort=runtime_cfg.langchain_reasoning_effort.strip().lower(),
         )
 
+    def close(self) -> None:
+        """Best-effort close of the underlying provider HTTP client.
+
+        build_llm() constructs a fresh provider adapter (and its own pooled
+        httpx client) on every call, and nothing previously released it --
+        callers (e.g. src/swarm/worker.py's run_worker, which builds one
+        ChatLLM per task) just let it fall out of scope, leaking one pooled
+        connection each. LangChain's chat model wrappers expose no uniform
+        close API across providers, so this probes the attribute names
+        actually used by the adapters build_llm() can return (root_client/
+        client, covering ChatOpenAI and its OpenAI-compatible subclasses,
+        which is the path most deployments without the optional native
+        langchain-deepseek/langchain-anthropic extras installed will hit)
+        and swallows any failure -- called from cleanup, where a close
+        error must never mask the task's real result.
+        """
+        for attr in ("root_client", "client"):
+            client = getattr(self._llm, attr, None)
+            close = getattr(client, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    logger.debug("ChatLLM.close: failed to close %s", attr, exc_info=True)
+
     def chat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> LLMResponse:
         """Call the LLM synchronously.
 
