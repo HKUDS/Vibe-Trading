@@ -220,7 +220,7 @@ def test_factor_scan_caps_directory_entries(tmp_path: Path, monkeypatch) -> None
 
     entry_limit = 7
     monkeypatch.setattr(runs_routes, "_FACTOR_MAX_SCAN_ENTRIES", entry_limit)
-    real_scandir = runs_routes.os.scandir
+    real_scandir = runs_routes.scandir
     entries_seen = 0
 
     class GuardedScandir:
@@ -246,10 +246,63 @@ def test_factor_scan_caps_directory_entries(tmp_path: Path, monkeypatch) -> None
             assert entries_seen <= entry_limit
             return entry
 
-    monkeypatch.setattr(runs_routes.os, "scandir", GuardedScandir)
+    monkeypatch.setattr(runs_routes, "scandir", GuardedScandir)
 
     assert runs_routes._has_factor_artifacts(run_dir) is False
     assert entries_seen == entry_limit
+
+
+def test_factor_scan_guard_does_not_leak_to_global_os(tmp_path: Path, monkeypatch) -> None:
+    """The directory-entry cap must patch runs_routes.scandir only, never the
+    shared os module. Patching os.scandir process-wide breaks any directory
+    scan that runs during the test (teardown hooks, pytest internals), with
+    cascade failures that survive monkeypatch undo. Regression for #1123."""
+    import os
+
+    run_dir = tmp_path / "run_wide"
+    artifacts_dir = run_dir / "artifacts"
+    for index in range(40):
+        (artifacts_dir / f"branch_{index:03d}").mkdir(parents=True)
+
+    entry_limit = 7
+    monkeypatch.setattr(runs_routes, "_FACTOR_MAX_SCAN_ENTRIES", entry_limit)
+    real_scandir = runs_routes.scandir
+    entries_seen = 0
+
+    class GuardedScandir:
+        def __init__(self, path: Path) -> None:
+            self._context = real_scandir(path)
+            self._iterator = None
+
+        def __enter__(self):
+            self._iterator = iter(self._context.__enter__())
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return self._context.__exit__(exc_type, exc_value, traceback)
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            nonlocal entries_seen
+            assert self._iterator is not None
+            entry = next(self._iterator)
+            entries_seen += 1
+            assert entries_seen <= entry_limit
+            return entry
+
+    monkeypatch.setattr(runs_routes, "scandir", GuardedScandir)
+
+    # The global os.scandir must still be the real one — unpatched.
+    assert os.scandir is real_scandir or os.scandir.__name__ == "scandir"
+    assert getattr(os.scandir, "__name__", "") == "scandir"
+    assert "GuardedScandir" not in repr(os.scandir)
+
+    # And a plain directory listing through the global os must work
+    # without tripping the entry cap.
+    listing = [e.name for e in os.scandir(artifacts_dir)]
+    assert len(listing) == 40
 
 
 def test_factor_scan_caps_nesting_depth(tmp_path: Path, monkeypatch) -> None:

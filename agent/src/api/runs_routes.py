@@ -8,7 +8,7 @@ from __future__ import annotations
 import csv
 import json
 import math
-import os
+from os import scandir
 import statistics
 from collections import deque
 from datetime import datetime
@@ -261,7 +261,7 @@ def _iter_factor_series_files(
         directory, depth = pending.popleft()
         child_directories: List[Path] = []
         try:
-            with os.scandir(directory) as scan:
+            with scandir(directory) as scan:
                 iterator = iter(scan)
                 while entries_seen < _FACTOR_MAX_SCAN_ENTRIES:
                     try:
