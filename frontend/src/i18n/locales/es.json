@@ -10,6 +10,7 @@
   "layout": {
     "home": "Inicio",
     "overview": "Resumen",
+    "portfolio": "Cartera",
     "humanoidRobot": "Robot humanoide",
     "research": "Investigación",
     "agent": "Agente",

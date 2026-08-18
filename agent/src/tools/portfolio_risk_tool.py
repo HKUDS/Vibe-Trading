@@ -50,7 +50,7 @@ class PortfolioRiskXrayTool(BaseTool):
             "symbols": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Symbols in the basket, e.g. [\"AAPL\", \"MSFT\", \"SPY\"].",
+                "description": "Symbols in the basket, e.g. [\"AAPL\", \"MSFT\", \"SPY\"]. Optional when portfolio_id is supplied.",
             },
             "weights": {
                 "type": "object",
@@ -73,8 +73,12 @@ class PortfolioRiskXrayTool(BaseTool):
                 "type": "string",
                 "description": "Bar interval passed to the loaders; defaults to '1D'.",
             },
+            "portfolio_id": {
+                "type": "string",
+                "description": "Optional personal portfolio id. Holdings are used as the basket when symbols are omitted.",
+            },
         },
-        "required": ["symbols"],
+        "required": [],
     }
 
     def __init__(self, data_fetcher: Callable[..., dict[str, Any]] | None = None) -> None:
@@ -93,6 +97,17 @@ class PortfolioRiskXrayTool(BaseTool):
     # ------------------------------------------------------------------
     def _run(self, **kwargs: Any) -> str:
         symbols = kwargs.get("symbols")
+        if symbols is None and kwargs.get("portfolio_id"):
+            from src.portfolio.calculator import calculate_snapshot
+            from src.portfolio.store import PortfolioStore
+
+            scope = "shared-key-holder"
+            transactions = PortfolioStore().all_transactions(scope, str(kwargs["portfolio_id"]))
+            derived = calculate_snapshot(transactions)
+            symbols = [item["symbol"] for item in derived["holdings"]]
+            costs = {item["symbol"]: float(item["cost_basis"]) for item in derived["holdings"]}
+            total_cost = sum(costs.values())
+            kwargs["weights"] = {symbol: value / total_cost for symbol, value in costs.items()} if total_cost else None
         if not isinstance(symbols, list) or not symbols or not all(
             isinstance(s, str) and s.strip() for s in symbols
         ):

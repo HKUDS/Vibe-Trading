@@ -18,6 +18,7 @@ const PROXY_PATHS = [
   "/scheduled-runs",
   "/options",
   "/market",
+  "/portfolio",
 ];
 
 export default defineConfig(({ mode }) => {
@@ -53,6 +54,10 @@ export default defineConfig(({ mode }) => {
         // (/options/payoff, /options/chain) — same dual role as /correlation.
         // Overrides the plain PROXY_PATHS entry above.
         "/options": apiProxyWithHtmlFallback,
+        // /portfolio is both the SPA Personal Portfolio route and an API prefix
+        // (/portfolio/portfolios, /portfolio/{id}/snapshot, ...). HTML
+        // navigation must stay local while non-HTML API requests keep proxying.
+        "/portfolio": apiProxyWithHtmlFallback,
         "^/alpha(?:/|$)": apiProxy,
       },
     },

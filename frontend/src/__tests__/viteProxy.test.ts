@@ -18,4 +18,8 @@ describe("Vite API proxy config", () => {
   it("proxies authentication endpoints", () => {
     expect(config).toContain('"/auth"');
   });
+
+  it("keeps the portfolio SPA route on the HTML fallback while preserving API proxying", () => {
+    expect(config).toContain('"/portfolio": apiProxyWithHtmlFallback');
+  });
 });

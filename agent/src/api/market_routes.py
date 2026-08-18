@@ -82,7 +82,9 @@ _OVERVIEW_REFRESH_LOCK = threading.RLock()
 _OVERVIEW_REFRESHING: set[str] = set()
 _DETAIL_CACHE_TTL_SECONDS = 24 * 60 * 60
 _STOCK_CONTENT_LOOKBACK_DAYS = 365
-_DETAIL_REFRESH_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="stock-detail-refresh")
+# Keep refreshes serialized. This avoids a burst of period requests competing
+# for the same provider and makes the latest write deterministic.
+_DETAIL_REFRESH_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stock-detail-refresh")
 _DETAIL_REFRESH_LOCK = threading.RLock()
 _DETAIL_REFRESHING: set[str] = set()
 _ROBOT_REPORT_KEYWORDS = (
@@ -515,7 +517,7 @@ def _get_watchlist_store() -> WatchlistStore:
 
 
 def _get_stock_detail_store() -> StockDetailStore:
-    """Return the persistent daily cache for stock-detail data."""
+    """Return the persistent stock-detail cache for the active runtime."""
     return StockDetailStore()
 
 
@@ -566,17 +568,20 @@ def _detail_cache_status(
     record: dict[str, Any] | None,
     fetcher: Any,
     ttl_seconds: float = _DETAIL_CACHE_TTL_SECONDS,
+    allow_refresh: bool = True,
 ) -> str:
     age = _detail_record_age(record)
     stale = record is None or age is None or age >= ttl_seconds
-    if stale:
+    if stale and allow_refresh:
         _schedule_detail_refresh(cache_key, fetcher)
     with _DETAIL_REFRESH_LOCK:
         # Keep the first response marked as refreshing even if a very fast
         # background task finished between scheduling and this lock check.
         # Otherwise the frontend can accept the placeholder payload and never
         # poll the newly written cache entry.
-        return "refreshing" if stale or cache_key in _DETAIL_REFRESHING else "cached"
+        if allow_refresh and (stale or cache_key in _DETAIL_REFRESHING):
+            return "refreshing"
+        return "cached" if record is not None else "unavailable"
 
 
 def _canonical_us_symbol(symbol: str) -> str:
@@ -654,8 +659,29 @@ def _a_share_financials(code: str) -> dict[str, Any]:
 
 
 _STOCK_PERIODS = {"1d", "1w", "1mo", "1m", "15m", "30m", "60m", "120m"}
+_INTRADAY_PERIODS = frozenset({"1m", "15m", "30m", "60m", "120m"})
+_HISTORICAL_INTRADAY_PERIODS = frozenset(_INTRADAY_PERIODS - {"1m"})
+_PERSISTED_INTRADAY_PERIODS = _INTRADAY_PERIODS
 _US_EASTERN = ZoneInfo("America/New_York")
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+def _stock_market_is_open(market: str) -> bool:
+    """Return whether a regular equity session is currently open.
+
+    This deliberately covers regular sessions only. Exchange holidays are
+    treated as open on weekdays because the quote provider remains the final
+    authority and will return the last available candle without causing a
+    refresh storm.
+    """
+    zone = _SHANGHAI if market == "a_share" else _US_EASTERN
+    current = datetime.now(zone)
+    if current.weekday() >= 5:
+        return False
+    minutes = current.hour * 60 + current.minute
+    if market == "a_share":
+        return 570 <= minutes < 690 or 780 <= minutes < 900
+    return 570 <= minutes < 960
 
 
 def _stock_period_dates(period: str) -> tuple[str, str]:
@@ -752,6 +778,12 @@ def _refresh_stock_info_a_share(canonical: str) -> None:
             store.update_static(canonical, {name: value})
 
 
+def _refresh_stock_quote_a_share(canonical: str) -> None:
+    quote = tencent_quote([canonical]).get(canonical, {})
+    if quote:
+        _get_stock_detail_store().update_static(canonical, {"quote": quote})
+
+
 def _refresh_stock_industry_a_share(canonical: str) -> None:
     store = _get_stock_detail_store()
     static = store.get_static(canonical) or {}
@@ -775,6 +807,7 @@ def _aggregate_stock_bars(bars: list[dict[str, Any]], factor: int) -> list[dict[
     output: list[dict[str, Any]] = []
     bucket: list[dict[str, Any]] = []
     session = ""
+    last_stamp: datetime | None = None
 
     def flush() -> None:
         if not bucket:
@@ -786,16 +819,34 @@ def _aggregate_stock_bars(bars: list[dict[str, Any]], factor: int) -> list[dict[
             "low": min(item["low"] for item in bucket),
             "close": bucket[-1]["close"],
             "volume": sum(item.get("volume") or 0 for item in bucket),
-            "source": "ths",
+            "source": bucket[0].get("source") or "ths",
+            "_session": session,
         })
 
     for bar in bars:
-        current_session = str(bar.get("trade_date", ""))[:10]
+        # US sessions are converted to Shanghai time for the frontend and can
+        # cross midnight. Keep the provider session marker when one exists so
+        # a 120-minute candle is not split at local midnight.
+        current_session = str(bar.get("_session") or bar.get("trade_date", ""))[:10]
         if session and current_session != session:
             flush()
             bucket = []
+        current_stamp: datetime | None = None
+        try:
+            current_stamp = datetime.fromisoformat(str(bar.get("trade_date", "")).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            pass
+        # A-share morning and afternoon sessions are separated by a lunch
+        # break. Do not merge the last morning 15-minute bar with the first
+        # afternoon bar when synthesising a 30-minute candle.
+        if bucket and last_stamp and current_stamp:
+            gap_minutes = (current_stamp - last_stamp).total_seconds() / 60
+            if gap_minutes > 60:
+                flush()
+                bucket = []
         session = current_session
         bucket.append(bar)
+        last_stamp = current_stamp
         if len(bucket) >= factor:
             flush()
             bucket = []
@@ -822,25 +873,50 @@ def _eastmoney_historical_a_share_bars(canonical: str, start_date: str, end_date
     return out
 
 
-def _refresh_stock_bars_a_share(canonical: str, period: str) -> None:
+def _fetch_historical_a_share_bars(canonical: str, start_date: str, end_date: str, period: str) -> list[dict[str, Any]]:
+    """Fetch historical intraday bars with provider fallbacks.
+
+    THS currently returns an empty payload for some intraday periods. Keep the
+    existing THS → Eastmoney order, then use Tencent's rolling 15-minute feed
+    as a last-resort source for a recent session so 30-minute synthesis still
+    has usable input.
+    """
+    try:
+        bars = ths_bars(canonical, start_date, end_date, period=period)
+    except Exception:
+        bars = []
+    if bars:
+        return bars
+
+    bars = _eastmoney_historical_a_share_bars(canonical, start_date, end_date, period)
+    if bars or period != "15m":
+        return bars
+
+    try:
+        return tencent_bars(canonical, start_date, end_date, period="15m")
+    except Exception:
+        return []
+
+
+def _fetch_stock_bars_a_share(canonical: str, period: str) -> list[dict[str, Any]]:
     start_date, end_date = _stock_period_dates(period)
     if period in {"15m", "30m", "60m"}:
-        try:
-            bars = ths_bars(canonical, start_date, end_date, period=period)
-        except Exception:
-            bars = []
-        if not bars:
-            bars = _eastmoney_historical_a_share_bars(canonical, start_date, end_date, period)
+        bars = _fetch_historical_a_share_bars(canonical, start_date, end_date, period)
+        if period == "30m" and not bars:
+            source_bars = _fetch_historical_a_share_bars(canonical, start_date, end_date, "15m")
+            bars = _aggregate_stock_bars(source_bars, 2)
     elif period == "120m":
-        try:
-            source_bars = ths_bars(canonical, start_date, end_date, period="60m")
-        except Exception:
-            source_bars = []
-        if not source_bars:
-            source_bars = _eastmoney_historical_a_share_bars(canonical, start_date, end_date, "60m")
+        source_bars = _fetch_historical_a_share_bars(canonical, start_date, end_date, "60m")
         bars = _aggregate_stock_bars(source_bars, 2)
     else:
         bars = tencent_bars(canonical, start_date, end_date, period=period)
+    return bars if isinstance(bars, list) else []
+
+
+def _refresh_stock_bars_a_share(canonical: str, period: str) -> None:
+    bars = _fetch_stock_bars_a_share(canonical, period)
+    # Keep every intraday period separately by (symbol, period). The short TTL
+    # below makes the newest candle/price refresh asynchronously.
     if bars:
         _get_stock_detail_store().save_bars(canonical, period, bars)
 
@@ -854,13 +930,20 @@ def _refresh_stock_info_us(canonical: str) -> None:
     })
 
 
-def _refresh_stock_bars_us(canonical: str, period: str) -> None:
+def _refresh_stock_quote_us(canonical: str) -> None:
+    price, change_pct, source = _fetch_us_snapshots([canonical]).get(canonical, (None, None, "yfinance"))
+    _get_stock_detail_store().update_static(canonical, {
+        "quote": {"price": price, "change_pct": change_pct, "source": source},
+    })
+
+
+def _fetch_stock_bars_us(canonical: str, period: str) -> list[dict[str, Any]]:
     start, end = _stock_period_dates(period)
     interval = {"1d": "1D", "1w": "1W", "1mo": "1M", "1m": "1m", "15m": "15m", "30m": "30m", "60m": "1H", "120m": "1H"}[period]
     frame = YFinanceLoader().fetch([canonical], start, end, interval=interval).get(canonical)
     bars: list[dict[str, Any]] = []
     if frame is not None and not frame.empty:
-        intraday = period in {"1m", "15m", "30m", "60m", "120m"}
+        intraday = period in _INTRADAY_PERIODS
 
         def as_eastern(value: Any) -> datetime:
             stamp = value.to_pydatetime() if hasattr(value, "to_pydatetime") else value
@@ -881,7 +964,15 @@ def _refresh_stock_bars_us(canonical: str, period: str) -> None:
                 "low": _number(row.get("low")),
                 "close": _number(row.get("close")),
                 "volume": _number(row.get("volume")),
+                "_session": latest_session.isoformat() if intraday else None,
             })
+    # Yahoo has no native 120-minute interval. Build it from two adjacent
+    # 60-minute candles while keeping sessions separate.
+    return _aggregate_stock_bars(bars, 2) if period == "120m" else bars
+
+
+def _refresh_stock_bars_us(canonical: str, period: str) -> None:
+    bars = _fetch_stock_bars_us(canonical, period)
     if bars:
         _get_stock_detail_store().save_bars(canonical, period, bars)
 
@@ -981,10 +1072,14 @@ def _stock_info_a_share(symbol: str) -> dict[str, Any]:
     store = _safe_detail_fetch(errors, "cache", _get_stock_detail_store, None)
     record = _safe_detail_fetch(errors, "cache_read", lambda: store.get_static_with_meta(canonical), None) if store else None
     static = (record or {}).get("payload") or {}
+    complete = all(name in static for name in ("quote", "profile", "financials"))
+    market_open = _stock_market_is_open("a_share")
     status = _detail_cache_status(
         f"info:{canonical}",
-        record if all(name in static for name in ("quote", "profile", "financials")) else None,
-        lambda: _refresh_stock_info_a_share(canonical),
+        record if complete else None,
+        lambda: _refresh_stock_quote_a_share(canonical) if complete else _refresh_stock_info_a_share(canonical),
+        ttl_seconds=15.0 if market_open else _DETAIL_CACHE_TTL_SECONDS,
+        allow_refresh=market_open or not complete,
     )
     static = static or {}
     quote = static.get("quote") or {}
@@ -1072,26 +1167,65 @@ def _normalise_stock_bars(bars: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _a_share_current_session_bars(bars: list[dict[str, Any]], session_date: str) -> list[dict[str, Any]]:
+    """Keep only today's bars for the live A-share minute line.
+
+    Tencent's minute endpoint is a rolling window. Before the next session
+    opens, its newest rows are still from the previous trading day; exposing
+    those rows as the current session makes the chart look stale and is more
+    misleading than an empty pre-open chart.
+    """
+    return [
+        item
+        for item in bars
+        if isinstance(item, dict)
+        and str(item.get("trade_date") or item.get("time") or "")[:10] == session_date
+    ]
+
+
 def _stock_bars_a_share(symbol: str, period: str = "1d") -> dict[str, Any]:
     canonical = canonical_a_share_code(symbol, stock_only=True)
     errors: dict[str, str] = {}
     store = _safe_detail_fetch(errors, "cache", _get_stock_detail_store, None)
-    intraday_periods = {"1m", "15m", "30m", "60m", "120m"}
     record = _safe_detail_fetch(errors, "cache_read", lambda: store.get_bars(canonical, period), None) if store else None
-    if period in {"15m", "30m", "60m", "120m"} and record:
+    if period in _PERSISTED_INTRADAY_PERIODS and period != "1m" and record:
         # Invalidate records produced by the old Tencent rolling-minute path;
         # those bars contain only one session and are not historical candles.
         raw_bars = record.get("bars") or []
         if raw_bars and any(item.get("source") == "tencent" for item in raw_bars if isinstance(item, dict)):
             record = None
-    ttl = 15.0 if period in intraday_periods else _DETAIL_CACHE_TTL_SECONDS
-    status = _detail_cache_status(
-        f"bars:{canonical}:{period}",
-        record,
-        lambda: _refresh_stock_bars_a_share(canonical, period),
-        ttl_seconds=ttl,
-    )
+    if period in _HISTORICAL_INTRADAY_PERIODS and record is None:
+        # Historical minute periods must return data on the first request.
+        # They are not live-session-only feeds, so do the initial provider
+        # fetch inline; otherwise a one-shot frontend request only sees the
+        # asynchronous "refreshing" placeholder with empty bars.
+        fresh_bars = _safe_detail_fetch(
+            errors,
+            "bars",
+            lambda: _fetch_stock_bars_a_share(canonical, period),
+            [],
+        )
+        if fresh_bars:
+            record = {"bars": fresh_bars}
+            if store:
+                _safe_detail_fetch(errors, "cache_bars_write", lambda: store.save_bars(canonical, period, fresh_bars), None)
+            status = "cached"
+        else:
+            status = "unavailable"
+    else:
+        ttl = 15.0 if period in _PERSISTED_INTRADAY_PERIODS else _DETAIL_CACHE_TTL_SECONDS
+        status = _detail_cache_status(
+            f"bars:{canonical}:{period}",
+            record,
+            lambda: _refresh_stock_bars_a_share(canonical, period),
+            ttl_seconds=ttl,
+            # Only the 1-minute line is a live-session-only feed. Historical
+            # minute candles remain refreshable outside market hours.
+            allow_refresh=period != "1m" or _stock_market_is_open("a_share"),
+        )
     bars = (record or {}).get("bars") or []
+    if period == "1m":
+        bars = _a_share_current_session_bars(bars, store.today() if store else datetime.now(_SHANGHAI).date().isoformat())
     return {
         "symbol": canonical,
         "market": "a_share",
@@ -1110,10 +1244,14 @@ def _stock_info_us(symbol: str) -> dict[str, Any]:
     store = _safe_detail_fetch(errors, "cache", _get_stock_detail_store, None)
     record = _safe_detail_fetch(errors, "cache_read", lambda: store.get_static_with_meta(canonical), None) if store else None
     static = (record or {}).get("payload") or {}
+    complete = all(name in static for name in ("quote", "profile", "financials"))
+    market_open = _stock_market_is_open("us")
     status = _detail_cache_status(
         f"info:{canonical}",
-        record if all(name in static for name in ("quote", "profile", "financials")) else None,
-        lambda: _refresh_stock_info_us(canonical),
+        record if complete else None,
+        lambda: _refresh_stock_quote_us(canonical) if complete else _refresh_stock_info_us(canonical),
+        ttl_seconds=15.0 if market_open else _DETAIL_CACHE_TTL_SECONDS,
+        allow_refresh=market_open or not complete,
     )
     quote = static.get("quote") or {}
     profile = {**(static.get("profile") or {}), **quote}
@@ -1133,13 +1271,13 @@ def _stock_bars_us(symbol: str, period: str = "1d") -> dict[str, Any]:
     canonical = _canonical_us_symbol(symbol)
     errors: dict[str, str] = {}
     store = _safe_detail_fetch(errors, "cache", _get_stock_detail_store, None)
-    intraday_periods = {"1m", "15m", "30m", "60m", "120m"}
     record = _safe_detail_fetch(errors, "cache_read", lambda: store.get_bars(canonical, period), None) if store else None
     status = _detail_cache_status(
         f"bars:{canonical}:{period}",
         record,
         lambda: _refresh_stock_bars_us(canonical, period),
-        ttl_seconds=15.0 if period in intraday_periods else _DETAIL_CACHE_TTL_SECONDS,
+        ttl_seconds=15.0 if period in _PERSISTED_INTRADAY_PERIODS else _DETAIL_CACHE_TTL_SECONDS,
+        allow_refresh=period not in _INTRADAY_PERIODS or _stock_market_is_open("us"),
     )
     return {
         "symbol": canonical,
@@ -1231,26 +1369,38 @@ def _stock_detail_a_share(symbol: str, period: str = "1d", include_news: bool = 
 
     reports = _safe_detail_fetch(errors, "reports", lambda: _recent_stock_reports(_fetch_stock_reports(canonical, limit=20)), [])
 
-    cached_bars = None
-    if store and period not in {"1m", "15m", "30m", "60m", "120m"}:
-        cached_bars = _safe_detail_fetch(errors, "cache_bars_read", lambda: store.get_bars(canonical, period), None)
-    if cached_bars and store and cached_bars.get("refreshed_date") == store.today():
-        bars = cached_bars.get("bars") or []
+    bars_payload = None
+    bar_cache_status = "live"
+    bar_from_cache = False
+    if period in _PERSISTED_INTRADAY_PERIODS:
+        bars_payload = _stock_bars_a_share(canonical, period)
+        bars = bars_payload.get("bars") or []
+        errors.update(bars_payload.get("errors") or {})
+        bar_cache_status = str(bars_payload.get("cache_status") or "refreshing")
+        bar_from_cache = bool(bars_payload.get("from_cache"))
     else:
-        fresh_bars = _safe_detail_fetch(
-            errors,
-            "bars",
-            lambda: tencent_bars(canonical, *_stock_period_dates(period), period=period),
-            [],
-        )
-        if fresh_bars:
-            bars = fresh_bars
-            if store and period not in {"1m", "15m", "30m", "60m", "120m"}:
-                _safe_detail_fetch(errors, "cache_bars_write", lambda: store.save_bars(canonical, period, fresh_bars), None)
+        cached_bars = None
+        if store and period not in _INTRADAY_PERIODS:
+            cached_bars = _safe_detail_fetch(errors, "cache_bars_read", lambda: store.get_bars(canonical, period), None)
+        if cached_bars and store and cached_bars.get("refreshed_date") == store.today():
+            bars = cached_bars.get("bars") or []
+            bar_cache_status = "cached"
+            bar_from_cache = True
         else:
-            # Keep yesterday's chart usable when the daily refresh provider is
-            # temporarily unavailable; the error remains visible to callers.
-            bars = (cached_bars or {}).get("bars") or []
+            fresh_bars = _safe_detail_fetch(
+                errors,
+                "bars",
+                lambda: tencent_bars(canonical, *_stock_period_dates(period), period=period),
+                [],
+            )
+            if fresh_bars:
+                bars = fresh_bars
+                if store and period not in _INTRADAY_PERIODS:
+                    _safe_detail_fetch(errors, "cache_bars_write", lambda: store.save_bars(canonical, period, fresh_bars), None)
+            else:
+                # Keep yesterday's chart usable when the daily refresh provider
+                # is temporarily unavailable; the error remains visible to callers.
+                bars = (cached_bars or {}).get("bars") or []
     news = _safe_detail_fetch(
         errors,
         "news",
@@ -1270,7 +1420,7 @@ def _stock_detail_a_share(symbol: str, period: str = "1d", include_news: bool = 
         "market": "a_share",
         "profile": merged_profile,
         "financials": financials,
-        "bars": [
+        "bars": bars_payload.get("bars") if bars_payload is not None else [
             {
                 "time": str(item.get("trade_date") or ""),
                 "open": _number(item.get("open")),
@@ -1286,6 +1436,8 @@ def _stock_detail_a_share(symbol: str, period: str = "1d", include_news: bool = 
         "news": _recent_stock_news(news),
         "news_pagination": {"page": 1, "page_size": 20, "has_more": len(news) >= 20},
         "errors": errors,
+        "cache_status": bar_cache_status,
+        "from_cache": bar_from_cache,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -1296,39 +1448,30 @@ def _stock_detail_us(symbol: str, period: str = "1d", include_news: bool = True)
     errors: dict[str, str] = {}
     snapshot = _safe_detail_fetch(errors, "quote", lambda: _fetch_us_snapshots([canonical]).get(canonical, (None, None, "yfinance")), (None, None, "yfinance"))
     bars: list[dict[str, Any]] = []
-    try:
-        start, end = _stock_period_dates(period)
-        interval = {"1d": "1D", "1w": "1W", "1mo": "1M", "1m": "1m", "15m": "15m", "30m": "30m", "60m": "1H", "120m": "1H"}[period]
-        frame = YFinanceLoader().fetch([canonical], start, end, interval=interval).get(canonical)
-        if frame is not None and not frame.empty:
-            intraday = period in {"1m", "15m", "30m", "60m", "120m"}
-
-            def as_eastern(value: Any) -> datetime:
-                stamp = value.to_pydatetime() if hasattr(value, "to_pydatetime") else value
-                if not isinstance(stamp, datetime):
-                    stamp = datetime.fromisoformat(str(value))
-                return stamp.replace(tzinfo=_US_EASTERN) if stamp.tzinfo is None else stamp.astimezone(_US_EASTERN)
-
-            # The detail chart is a single-session intraday view. The loader
-            # intentionally removes the provider timezone, so resolve the
-            # naive Yahoo timestamps as New York time before converting them
-            # to Shanghai time for the frontend axis.
-            if intraday:
-                session_days = [as_eastern(index).date() for index in frame.index]
-                latest_session = max(session_days)
-                frame = frame[[as_eastern(index).date() == latest_session for index in frame.index]]
-            for index, row in frame.iterrows():
-                local_stamp = as_eastern(index).astimezone(_SHANGHAI)
-                bars.append({
-                    "time": local_stamp.strftime("%Y-%m-%d %H:%M") if intraday else index.strftime("%Y-%m-%d"),
-                    "open": _number(row.get("open")),
-                    "high": _number(row.get("high")),
-                    "low": _number(row.get("low")),
-                    "close": _number(row.get("close")),
-                    "volume": _number(row.get("volume")),
-                })
-    except Exception as exc:
-        errors["bars"] = str(exc)
+    bar_cache_status = "live"
+    bar_from_cache = False
+    if period in _PERSISTED_INTRADAY_PERIODS:
+        bars_payload = _stock_bars_us(canonical, period)
+        bars = bars_payload.get("bars") or []
+        errors.update(bars_payload.get("errors") or {})
+        bar_cache_status = str(bars_payload.get("cache_status") or "refreshing")
+        bar_from_cache = bool(bars_payload.get("from_cache"))
+    else:
+        try:
+            bars = [
+                {
+                    "time": str(item.get("trade_date") or ""),
+                    "open": item.get("open"),
+                    "high": item.get("high"),
+                    "low": item.get("low"),
+                    "close": item.get("close"),
+                    "volume": item.get("volume"),
+                }
+                for item in _fetch_stock_bars_us(canonical, period)
+                if item.get("trade_date")
+            ]
+        except Exception as exc:
+            errors["bars"] = str(exc)
     raw_news = _safe_detail_fetch(
         errors,
         "news",
@@ -1354,6 +1497,8 @@ def _stock_detail_us(symbol: str, period: str = "1d", include_news: bool = True)
         "news": news,
         "news_pagination": {"page": 1, "page_size": 20, "has_more": False},
         "errors": errors,
+        "cache_status": bar_cache_status,
+        "from_cache": bar_from_cache,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 

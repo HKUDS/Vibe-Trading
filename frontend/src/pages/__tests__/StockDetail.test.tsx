@@ -1,5 +1,5 @@
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StockDetail } from "../StockDetail";
 
 const apiMock = vi.hoisted(() => ({
@@ -23,6 +23,10 @@ vi.mock("@/components/charts/CandlestickChart", () => ({
 }));
 
 describe("StockDetail", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     apiMock.getStockDetail.mockReset();
     apiMock.getStockInfo.mockReset();
@@ -63,7 +67,7 @@ describe("StockDetail", () => {
     expect(await screen.findByTestId("stock-chart")).toHaveAttribute("data-intraday", "true");
     expect(apiMock.getStockInfo).toHaveBeenCalledWith("600519.SH");
     expect(apiMock.getStockBars).toHaveBeenCalledWith("600519.SH", "1m");
-    expect(apiMock.getStockReports).toHaveBeenCalledWith("600519.SH");
+    await waitFor(() => expect(apiMock.getStockReports).toHaveBeenCalledWith("600519.SH"));
     expect(apiMock.getStockIndustry).toHaveBeenCalledWith("600519.SH");
   });
 
@@ -78,7 +82,7 @@ describe("StockDetail", () => {
     expect(await screen.findByTestId("stock-chart")).toHaveAttribute("data-intraday", "true");
     expect(apiMock.getStockInfo).toHaveBeenCalledWith("AAPL.US");
     expect(apiMock.getStockBars).toHaveBeenCalledWith("AAPL.US", "1m");
-    expect(apiMock.getStockReports).toHaveBeenCalledWith("AAPL.US");
+    await waitFor(() => expect(apiMock.getStockReports).toHaveBeenCalledWith("AAPL.US"));
     expect(apiMock.getStockIndustry).toHaveBeenCalledWith("AAPL.US");
     expect(apiMock.getStockDetail).not.toHaveBeenCalled();
   });
@@ -130,7 +134,7 @@ describe("StockDetail", () => {
     expect(screen.getByRole("link", { name: "Latest stock news - original" })).toHaveAttribute("href", "https://example.test/news");
   });
 
-  it("refreshes reports and news when the detail page is refreshed", async () => {
+  it("refreshes reports and news independently", async () => {
     apiMock.getStockNews.mockResolvedValue({ items: [], page: 1, page_size: 20, has_more: false });
 
     const router = createMemoryRouter(
@@ -141,12 +145,129 @@ describe("StockDetail", () => {
     render(<RouterProvider router={router} />);
     await waitFor(() => expect(apiMock.getStockNews).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(apiMock.getStockReports).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByTestId("refresh-reports"));
+
+    await waitFor(() => {
+      expect(apiMock.getStockReports).toHaveBeenCalledTimes(2);
+      expect(apiMock.getStockNews).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByTestId("refresh-news"));
 
     await waitFor(() => {
       expect(apiMock.getStockReports).toHaveBeenCalledTimes(2);
       expect(apiMock.getStockNews).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("loads only K-line data when changing the period", async () => {
+    const router = createMemoryRouter(
+      [{ path: "/stocks/:symbol", element: <StockDetail /> }],
+      { initialEntries: ["/stocks/600519.SH"] },
+    );
+
+    render(<RouterProvider router={router} />);
+    await waitFor(() => {
+      expect(apiMock.getStockNews).toHaveBeenCalledTimes(1);
+      expect(apiMock.getStockReports).toHaveBeenCalledTimes(1);
+      expect(apiMock.getStockIndustry).toHaveBeenCalledTimes(1);
+    });
+    apiMock.getStockInfo.mockClear();
+    apiMock.getStockBars.mockClear();
+    apiMock.getStockReports.mockClear();
+    apiMock.getStockIndustry.mockClear();
+    apiMock.getStockNews.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: /15/ }));
+
+    await waitFor(() => expect(apiMock.getStockBars).toHaveBeenCalledWith("600519.SH", "15m"));
+    expect(apiMock.getStockInfo).not.toHaveBeenCalled();
+    expect(apiMock.getStockReports).not.toHaveBeenCalled();
+    expect(apiMock.getStockIndustry).not.toHaveBeenCalled();
+    expect(apiMock.getStockNews).not.toHaveBeenCalled();
+  });
+
+  it("requests bars only once when the backend refresh is still in progress", async () => {
+    const router = createMemoryRouter(
+      [{ path: "/stocks/:symbol", element: <StockDetail /> }],
+      { initialEntries: ["/stocks/600519.SH"] },
+    );
+
+    render(<RouterProvider router={router} />);
+    await waitFor(() => expect(apiMock.getStockIndustry).toHaveBeenCalledTimes(1));
+    apiMock.getStockBars.mockClear();
+    apiMock.getStockBars
+      .mockResolvedValueOnce({
+        symbol: "600519.SH",
+        market: "a_share",
+        period: "15m",
+        bars: [],
+        cache_status: "refreshing",
+      });
+
+    fireEvent.click(screen.getByRole("button", { name: /15/ }));
+    await waitFor(() => expect(apiMock.getStockBars).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(apiMock.getStockBars).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes each page block through its own endpoint", async () => {
+    const router = createMemoryRouter(
+      [{ path: "/stocks/:symbol", element: <StockDetail /> }],
+      { initialEntries: ["/stocks/600519.SH"] },
+    );
+
+    render(<RouterProvider router={router} />);
+    await waitFor(() => {
+      expect(apiMock.getStockNews).toHaveBeenCalledTimes(1);
+      expect(apiMock.getStockReports).toHaveBeenCalledTimes(1);
+      expect(apiMock.getStockIndustry).toHaveBeenCalledTimes(1);
+    });
+    apiMock.getStockInfo.mockClear();
+    apiMock.getStockBars.mockClear();
+    apiMock.getStockReports.mockClear();
+    apiMock.getStockIndustry.mockClear();
+    apiMock.getStockNews.mockClear();
+
+    fireEvent.click(screen.getByTestId("refresh-profile"));
+    await waitFor(() => expect(apiMock.getStockInfo).toHaveBeenCalledWith("600519.SH"));
+    expect(apiMock.getStockBars).not.toHaveBeenCalled();
+    expect(apiMock.getStockIndustry).not.toHaveBeenCalled();
+    expect(apiMock.getStockReports).not.toHaveBeenCalled();
+    expect(apiMock.getStockNews).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("refresh-industry"));
+    await waitFor(() => expect(apiMock.getStockIndustry).toHaveBeenCalledWith("600519.SH"));
+    expect(apiMock.getStockBars).not.toHaveBeenCalled();
+    expect(apiMock.getStockReports).not.toHaveBeenCalled();
+    expect(apiMock.getStockNews).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("refresh-bars"));
+    await waitFor(() => expect(apiMock.getStockBars).toHaveBeenCalledWith("600519.SH", "1m"));
+    expect(apiMock.getStockReports).not.toHaveBeenCalled();
+    expect(apiMock.getStockNews).not.toHaveBeenCalled();
+  });
+
+  it("places the industry refresh button beside the associated boards label", async () => {
+    apiMock.getStockIndustry.mockResolvedValueOnce({
+      symbol: "600519.SH",
+      market: "a_share",
+      industry: "Consumer",
+      boards: [{ board_code: "BK001", board_name: "白酒" }],
+    });
+
+    const router = createMemoryRouter(
+      [{ path: "/stocks/:symbol", element: <StockDetail /> }],
+      { initialEntries: ["/stocks/600519.SH"] },
+    );
+
+    render(<RouterProvider router={router} />);
+
+    const boardsLabel = await screen.findByText("Associated boards");
+    const boardsHeader = boardsLabel.parentElement;
+    expect(boardsHeader).toContainElement(screen.getByTestId("refresh-industry"));
   });
 
   it("does not render industry news even when the API includes it", async () => {

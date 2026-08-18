@@ -23,6 +23,15 @@ unless they are explicitly sanitized fixtures.
 
 ## Safe Local Checks
 
+### Workspace Execution Rule
+
+- Do not start development, backend, API, MCP, preview, or other long-running
+  services during agent work.
+- Validation is limited to compilation, static checks, and tests that do not
+  require starting a service.
+- If a service is started accidentally for diagnosis, stop it before handing
+  back to the user and state that it was stopped.
+
 These commands are normally safe for local validation:
 
 ```bash

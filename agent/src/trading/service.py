@@ -26,6 +26,7 @@ _SDK_CONNECTOR_MODULES = {
     "trading212": "src.trading.connectors.trading212.sdk",
     "mt5": "src.trading.connectors.mt5.sdk",
     "etoro": "src.trading.connectors.etoro.sdk",
+    "qmt": "src.trading.connectors.qmt.sdk",
 }
 
 

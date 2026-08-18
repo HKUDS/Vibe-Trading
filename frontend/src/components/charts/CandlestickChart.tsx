@@ -48,6 +48,16 @@ export function getChartGridLayout(intraday: boolean) {
   ];
 }
 
+export function buildChartDataUpdate(
+  chartDates: string[],
+  series: Array<{ name: string; data: unknown; [key: string]: unknown }>,
+) {
+  return {
+    xAxis: [{ data: chartDates }, { data: chartDates }],
+    series: series.map(({ name, data }) => ({ name, data })),
+  };
+}
+
 interface Props {
   data: PriceBar[];
   markers?: TradeMarker[];
@@ -149,18 +159,20 @@ export function buildFundFlowSeries(
   let large = 0;
   let medium = 0;
   let small = 0;
+  const finiteOrZero = (value: number | null | undefined) =>
+    typeof value === "number" && Number.isFinite(value) ? value : 0;
   const sortedRows = [...rows]
     .filter((row) => !intraday || hasIntradayTime(row.timestamp) || rows.every((candidate) => !hasIntradayTime(candidate.timestamp)))
     .sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
   sortedRows.forEach((row) => {
     const key = fundFlowKey(row.timestamp, market, intraday);
     if (!key) return;
-    main += Number.isFinite(row.main) ? row.main : 0;
-    superLarge += Number.isFinite(row.super_large) ? row.super_large : 0;
-    large += Number.isFinite(row.large) ? row.large : 0;
-    medium += Number.isFinite(row.medium) ? row.medium : 0;
-    small += Number.isFinite(row.small) ? row.small : 0;
-    byKey.set(key, { main, superLarge, large, medium, small, histogram: Number.isFinite(row.main) ? row.main : 0 });
+    main += finiteOrZero(row.main);
+    superLarge += finiteOrZero(row.super_large);
+    large += finiteOrZero(row.large);
+    medium += finiteOrZero(row.medium);
+    small += finiteOrZero(row.small);
+    byKey.set(key, { main, superLarge, large, medium, small, histogram: finiteOrZero(row.main) });
   });
   const keys = chartDates.map((date, index) => chartKeys[index] ?? fundFlowKey(date, market, intraday) ?? date);
   const latest = sortedRows.length > 0 ? byKey.get(fundFlowKey(sortedRows[sortedRows.length - 1].timestamp, market, intraday) || "") : undefined;
@@ -267,8 +279,9 @@ function buildIntradayAxis(data: PriceBar[], market: "a_share" | "us"): Intraday
 export function CandlestickChart({ data, markers, indicators, height = 500, intraday = false, previousClose, market = "a_share", symbol, fundFlowRows = [], sub: controlledSub, onSubChange, availableSubs }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof echarts.init> | null>(null);
+  const chartLayoutKeyRef = useRef<string | null>(null);
   const [internalSub, setInternalSub] = useState<Sub>("vol");
-  const [range, setRange] = useState<Range>("ALL");
+  const [range, setRange] = useState<Range>("1M");
   const [overlays, setOverlays] = useState<Set<Overlay>>(new Set(["ma5", "ma20"]));
   const [showMenu, setShowMenu] = useState(false);
   const dark = useThemeDark();
@@ -332,6 +345,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
     chart.group = CHART_GROUP;
     connectCharts();
     chartRef.current = chart;
+    chartLayoutKeyRef.current = null;
 
     let resizeFrame: number | null = null;
     const ro = new ResizeObserver(() => {
@@ -347,6 +361,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
       chart.dispose();
       chartRef.current = null;
+      chartLayoutKeyRef.current = null;
     };
   }, [data.length === 0, dark]); // only re-init when going empty↔non-empty or theme changes
 
@@ -370,7 +385,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
     // grid. Keep them neutral so they do not compete with the price/average
     // lines, and adapt the contrast to the page theme.
     const intradayGridColor = dark ? "#4b5563" : "#94a3b8";
-    const intradayZeroAxisColor = dark ? "#9ca3af" : "#475569";
+    const intradayZeroAxisColor = dark ? "#9ca3af" : "#94a3b8";
 
     // Overlay series
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -540,7 +555,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
           markPoint: marks.length > 0 ? { data: marks, symbolSize: 28, tooltip: { formatter: (p: { name?: string; value?: string }) => p.name || p.value || "" } } : undefined,
         }];
 
-    chart.setOption({
+    const chartOption = {
       backgroundColor: "transparent",
       tooltip: {
         trigger: "axis", axisPointer: { type: "cross" },
@@ -608,7 +623,33 @@ export function CandlestickChart({ data, markers, indicators, height = 500, intr
         ...extraSeries,
         ...subSeries,
       ],
-    }, true);
+    };
+    const chartLayoutKey = JSON.stringify({
+      dark,
+      intraday,
+      market,
+      symbol,
+      previousClose,
+      sub,
+      range,
+      overlays: [...overlays].sort(),
+      markers,
+    });
+    if (chartLayoutKeyRef.current !== chartLayoutKey) {
+      // A layout/configuration change needs a complete option replacement.
+      chart.setOption(chartOption, true);
+      chartLayoutKeyRef.current = chartLayoutKey;
+    } else {
+      // Live refresh: update only categories and series data. This preserves
+      // the existing canvas background, axes, zoom state, and zero reference
+      // line instead of rebuilding them on every quote tick.
+      chart.setOption(buildChartDataUpdate(chartDates, [
+        ...mainSeries,
+        ...overlaySeries,
+        ...extraSeries,
+        ...subSeries,
+      ]), { lazyUpdate: true });
+    }
   }, [data, markers, baseData, indicatorCache, extraIndicators, intraday, intradayAverage, intradayAxis, previousClose, market, symbol, fundFlowRows, sub, range, overlays, dark]);
 
   if (data.length === 0) {

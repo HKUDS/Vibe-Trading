@@ -37,6 +37,7 @@ const Overview = lazy(() =>
 const StockDetail = lazy(() =>
   import("@/pages/StockDetail").then((m) => ({ default: m.StockDetail })),
 );
+const Portfolio = lazy(() => import("@/pages/Portfolio").then((m) => ({ default: m.Portfolio })));
 const HumanoidRobot = lazy(() =>
   import("@/pages/HumanoidRobot").then((m) => ({ default: m.HumanoidRobot })),
 );
@@ -66,6 +67,7 @@ export const router = createBrowserRouter([
     children: [
       { path: "/overview", element: wrap(Overview) },
       { path: "/stocks/:symbol", element: wrap(StockDetail) },
+      { path: "/portfolio", element: wrap(Portfolio) },
       { path: "/research", element: wrap(Research) },
       { path: "/humanoid-robot", element: wrap(HumanoidRobot) },
       { path: "/", element: wrap(Overview) },

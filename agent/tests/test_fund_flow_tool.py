@@ -104,6 +104,9 @@ class TestPerSymbolIsolation:
         ), patch(
             "src.tools.fund_flow_tool.get_json", side_effect=RuntimeError("HTTP 429")
         ), patch(
+            "src.tools.fund_flow_tool._fetch_sina_daily_flow",
+            side_effect=RuntimeError("Sina unavailable"),
+        ), patch(
             "src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow",
             side_effect=RuntimeError("no fallback"),
         ):
@@ -125,6 +128,9 @@ class TestPerSymbolIsolation:
         ), patch(
             "src.tools.fund_flow_tool.get_json", side_effect=RuntimeError("HTTP 429")
         ), patch(
+            "src.tools.fund_flow_tool._fetch_sina_daily_flow",
+            side_effect=RuntimeError("Sina unavailable"),
+        ), patch(
             "src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow",
             return_value=fallback,
         ) as fallback_fetch:
@@ -136,6 +142,95 @@ class TestPerSymbolIsolation:
         assert result["source"] == "tushare"
         assert result["rows"][0]["timestamp"] == "2024-01-03"
         assert "used tushare fallback" in result["warning"]
+
+    def test_http_failure_uses_sina_before_tushare(self):
+        fallback = {
+            "symbol": "002407.SZ",
+            "source": "sina",
+            "rows": [{"timestamp": "2024-01-03", "main": 300.0}],
+        }
+        with patch(
+            "src.tools.fund_flow_tool.resolve_secid", return_value="0.002407"
+        ), patch(
+            "src.tools.fund_flow_tool.get_json", side_effect=RuntimeError("Eastmoney blocked")
+        ), patch(
+            "src.tools.fund_flow_tool._fetch_sina_daily_flow", return_value=fallback
+        ) as sina_fetch, patch(
+            "src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow"
+        ) as tushare_fetch:
+            text = FundFlowTool().execute(codes=["002407.SZ"], period="daily", days=5)
+
+        sina_fetch.assert_called_once_with("002407.SZ", days=5)
+        tushare_fetch.assert_not_called()
+        result = json.loads(text)["data"]["002407.SZ"]
+        assert result["source"] == "sina"
+        assert "used sina fallback" in result["warning"]
+
+    def test_sina_daily_rows_keep_cny_units_and_mark_missing_buckets(self, monkeypatch):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return json.dumps([{
+                    "opendate": "2024-01-03",
+                    "netamount": "10.0",
+                    "r0_net": "1.0",
+                    "r1_net": "2.0",
+                    "r2_net": "3.0",
+                    "r3_net": "4.0",
+                }]).encode()
+
+        monkeypatch.setattr("src.tools.fund_flow_tool.urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
+
+        from src.tools.fund_flow_tool import _fetch_sina_daily_flow
+
+        result = _fetch_sina_daily_flow("002407.SZ", days=5)
+
+        assert result["source"] == "sina"
+        assert result["rows"] == [{
+            "timestamp": "2024-01-03",
+            "main": 1.0,
+            "small": 4.0,
+            "medium": 3.0,
+            "large": 2.0,
+            "super_large": None,
+        }]
+        assert result["available_buckets"] == ["main", "small", "medium", "large"]
+
+    def test_sina_actual_shape_uses_main_and_overall_without_inventing_buckets(self, monkeypatch):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return json.dumps([{
+                    "opendate": "2024-01-03",
+                    "netamount": "-563868939.7000",
+                    "r0_net": "-497955884.7400",
+                }]).encode()
+
+        monkeypatch.setattr("src.tools.fund_flow_tool.urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
+
+        from src.tools.fund_flow_tool import _fetch_sina_daily_flow
+
+        result = _fetch_sina_daily_flow("002407.SZ", days=5)
+
+        assert result["rows"] == [{
+            "timestamp": "2024-01-03",
+            "main": -497955884.74,
+            "small": None,
+            "medium": None,
+            "large": None,
+            "super_large": None,
+        }]
+        assert result["available_buckets"] == ["main"]
 
     def test_malformed_row_skipped(self):
         bad = {"data": {"klines": ["garbage", "2024-01-03,-50.0,20.0,-5.0,-30.0,-20.0"]}}

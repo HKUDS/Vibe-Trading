@@ -110,6 +110,28 @@ const STOCK_PERIODS: Array<{ value: StockDetailPeriod; label: string }> = [
   { value: "120m", label: "120分" },
 ];
 
+const INTRADAY_PERIODS = new Set<StockDetailPeriod>(["1m", "15m", "30m", "60m", "120m"]);
+const INTRADAY_REFRESH_MS = 15_000;
+
+function isStockMarketOpen(symbol: string): boolean {
+  const market = /\.(SH|SZ|BJ)$/i.test(symbol) ? "a_share" : "us";
+  const timeZone = market === "a_share" ? "Asia/Shanghai" : "America/New_York";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const value = (type: string) => parts.find((part) => part.type === type)?.value || "";
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(value("weekday"));
+  if (weekday === 0 || weekday === 6) return false;
+  const minutes = Number(value("hour")) * 60 + Number(value("minute"));
+  return market === "a_share"
+    ? (minutes >= 570 && minutes < 690) || (minutes >= 780 && minutes < 900)
+    : minutes >= 570 && minutes < 960;
+}
+
 export function StockDetail() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -124,25 +146,76 @@ export function StockDetail() {
   const [detail, setDetail] = useState<StockDetailResponse | null>(null);
   const [period, setPeriod] = useState<StockDetailPeriod>("1m");
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [baseReady, setBaseReady] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [industryLoading, setIndustryLoading] = useState(false);
+  const [barsLoading, setBarsLoading] = useState(false);
   const [newsItems, setNewsItems] = useState<Array<Record<string, any>>>([]);
   const [newsPage, setNewsPage] = useState(1);
   const [newsHasMore, setNewsHasMore] = useState(false);
   const [newsLoading, setNewsLoading] = useState(false);
-  const [newsReloadKey, setNewsReloadKey] = useState(0);
+  const [reportItems, setReportItems] = useState<Array<Record<string, any>>>([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
   const [subChart, setSubChart] = useState<Sub>("vol");
   const [fundFlowRows, setFundFlowRows] = useState<StockFundFlowRow[]>([]);
-  const loadToken = useRef(0);
+  const routeToken = useRef(0);
+  const profileRequestToken = useRef(0);
+  const industryRequestToken = useRef(0);
+  const barsRequestToken = useRef(0);
+  const newsRequestToken = useRef(0);
+  const reportsRequestToken = useRef(0);
   const fundFlowPeriod = period === "1m" ? "min" : "daily";
 
-  const load = (initial = false, requestedPeriod: StockDetailPeriod = period) => {
+  const loadInfo = async (initial = false) => {
     if (!symbol) return;
-    const token = ++loadToken.current;
-    if (initial) setLoading(true);
-    else setRefreshing(true);
-    setError(null);
-    setNewsReloadKey((value) => value + 1);
+    const route = routeToken.current;
+    const request = ++profileRequestToken.current;
+    setProfileLoading(true);
+    try {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const response = await api.getStockInfo(symbol);
+        if (route !== routeToken.current || request !== profileRequestToken.current) return;
+        setDetail((current) => mergeDetail(current, response, symbol, current?.period || period));
+        if (initial) setLoading(false);
+        if (response.cache_status !== "refreshing") return;
+        await new Promise((resolve) => window.setTimeout(resolve, Math.min(1200, 150 * 2 ** attempt)));
+      }
+    } catch (err) {
+      if (route === routeToken.current && initial) setError(err instanceof Error ? err.message : t("stockDetail.loadFailed"));
+    } finally {
+      if (route === routeToken.current && request === profileRequestToken.current) setProfileLoading(false);
+    }
+  };
+
+  const loadIndustry = async () => {
+    if (!symbol) return;
+    const route = routeToken.current;
+    const request = ++industryRequestToken.current;
+    setIndustryLoading(true);
+    try {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const response = await api.getStockIndustry(symbol);
+        if (route !== routeToken.current || request !== industryRequestToken.current) return;
+        setDetail((current) => mergeDetail(current, {
+          ...response,
+          profile: { industry: response.industry, boards: response.boards },
+        }, symbol, current?.period || period));
+        if (response.cache_status !== "refreshing") return;
+        await new Promise((resolve) => window.setTimeout(resolve, Math.min(1200, 150 * 2 ** attempt)));
+      }
+    } catch {
+      // Keep the basic profile visible when the industry endpoint is unavailable.
+    } finally {
+      if (route === routeToken.current && request === industryRequestToken.current) setIndustryLoading(false);
+    }
+  };
+
+  const loadBars = async (requestedPeriod: StockDetailPeriod, initial = false) => {
+    if (!symbol) return;
+    const route = routeToken.current;
+    const request = ++barsRequestToken.current;
+    setBarsLoading(true);
     const currentPeriod = detail?.symbol === symbol ? detail.period : null;
     setDetail((current) => mergeDetail(
       current?.symbol === symbol ? current : null,
@@ -150,83 +223,139 @@ export function StockDetail() {
         symbol,
         market: /\.(SH|SZ|BJ)$/i.test(symbol) ? "a_share" : "us",
         period: requestedPeriod,
-        // Do not draw a previous period's bars while the new cache request is pending.
         ...(currentPeriod !== requestedPeriod ? { bars: [] } : {}),
       },
       symbol,
       requestedPeriod,
     ));
-    const tasks = [
-      () => api.getStockInfo(symbol),
-      () => api.getStockBars(symbol, requestedPeriod),
-      () => api.getStockReports(symbol),
-      () => api.getStockIndustry(symbol),
-    ];
-    let succeeded = false;
-    const applyChunk = (chunk: any) => {
-      if (token !== loadToken.current) return;
-      succeeded = true;
-      setDetail((current) => mergeDetail(current, {
-        ...chunk,
-        profile: chunk.industry !== undefined || chunk.boards !== undefined
-          ? { industry: chunk.industry, boards: chunk.boards }
-          : chunk.profile,
-      }, symbol, requestedPeriod));
-      setLoading(false);
-      setRefreshing(false);
-    };
-    const pollSection = async (request: () => Promise<any>) => {
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        const chunk = await request();
-        if (token !== loadToken.current) return;
-        applyChunk(chunk);
-        if (chunk.cache_status !== "refreshing") return;
-        await new Promise((resolve) => window.setTimeout(resolve, Math.min(1200, 150 * 2 ** attempt)));
-      }
-    };
-    tasks.forEach((request) => {
-      void pollSection(request).catch((err) => {
-        if (token === loadToken.current && !succeeded) setError(err instanceof Error ? err.message : t("stockDetail.loadFailed"));
-      });
-    });
+
+    try {
+      // One user action maps to one bars request. If the backend is still
+      // refreshing asynchronously, the next scheduled market-time refresh
+      // will pick up the completed cache instead of polling this endpoint.
+      const response = await api.getStockBars(symbol, requestedPeriod);
+      if (route !== routeToken.current || request !== barsRequestToken.current) return;
+      setDetail((current) => mergeDetail(current, response, symbol, requestedPeriod));
+      if (initial) setLoading(false);
+    } catch (err) {
+      if (route === routeToken.current && initial) setError(err instanceof Error ? err.message : t("stockDetail.loadFailed"));
+    } finally {
+      if (route === routeToken.current && request === barsRequestToken.current) setBarsLoading(false);
+    }
   };
 
   useEffect(() => {
+    const route = ++routeToken.current;
     setPeriod("1m");
-    load(true, "1m");
+    setLoading(true);
+    setBaseReady(false);
+    setError(null);
+    setDetail((current) => mergeDetail(
+      current?.symbol === symbol ? current : null,
+      {
+        symbol,
+        market: /\.(SH|SZ|BJ)$/i.test(symbol) ? "a_share" : "us",
+        period: "1m",
+        bars: [],
+      },
+      symbol,
+      "1m",
+    ));
+    void (async () => {
+      await loadInfo(true);
+      await loadBars("1m", true);
+      await loadIndustry();
+      if (route === routeToken.current) setBaseReady(true);
+    })();
+    return () => {
+      if (route === routeToken.current) routeToken.current += 1;
+    };
     // The route symbol is the only input for this page's data request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
   useEffect(() => {
-    if (!detail) return;
-    const initialNews = mergeNews([], detail.news || []);
-    setNewsItems(initialNews);
-    setNewsPage(detail.news_pagination?.page || 1);
-    setNewsHasMore(detail.news_pagination?.has_more ?? (detail.news || []).length >= 20);
+    if (!symbol || !INTRADAY_PERIODS.has(period)) return;
     let active = true;
+    let inFlight = false;
+    const refreshIntraday = async () => {
+      if (!active || inFlight || !isStockMarketOpen(symbol)) return;
+      inFlight = true;
+      try {
+        await loadBars(period);
+      } catch {
+        // Keep the last persisted candle and quote visible on transient errors.
+      } finally {
+        inFlight = false;
+      }
+    };
+    const timer = window.setInterval(() => {
+      void refreshIntraday();
+    }, INTRADAY_REFRESH_MS);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [symbol, period]);
+
+  const loadNews = async (seed: Array<Record<string, any>> = newsItems) => {
+    if (!symbol) return;
+    const route = routeToken.current;
+    const request = ++newsRequestToken.current;
     setNewsLoading(true);
-    void (async () => {
+    try {
       for (let attempt = 0; attempt < 8; attempt += 1) {
-        const page = await api.getStockNews(detail.symbol, 1, 20);
-        if (!active) return;
-        setNewsItems(mergeNews(initialNews, page.items || []));
+        const page = await api.getStockNews(symbol, 1, 20);
+        if (route !== routeToken.current || request !== newsRequestToken.current) return;
+        setNewsItems(mergeNews(seed, page.items || []));
         setNewsPage(page.page);
         setNewsHasMore(page.has_more);
         if (page.cache_status !== "refreshing") return;
         await new Promise((resolve) => window.setTimeout(resolve, Math.min(1200, 150 * 2 ** attempt)));
       }
-    })()
-      .catch(() => {
-        // Keep the detail page usable when the independent news endpoint is slow.
-      })
-      .finally(() => {
-        if (active) setNewsLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [detail?.symbol, detail?.market, newsReloadKey]);
+    } catch {
+      // Keep the detail page usable when the independent news endpoint is slow.
+    } finally {
+      if (route === routeToken.current && request === newsRequestToken.current) setNewsLoading(false);
+    }
+  };
+
+  const loadReports = async () => {
+    if (!symbol) return;
+    const route = routeToken.current;
+    const request = ++reportsRequestToken.current;
+    setReportsLoading(true);
+    try {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const response = await api.getStockReports(symbol);
+        if (route !== routeToken.current || request !== reportsRequestToken.current) return;
+        setReportItems(response.reports || []);
+        if (response.cache_status !== "refreshing") return;
+        await new Promise((resolve) => window.setTimeout(resolve, Math.min(1200, 150 * 2 ** attempt)));
+      }
+    } catch {
+      // Keep the last persisted reports visible when the endpoint is slow.
+    } finally {
+      if (route === routeToken.current && request === reportsRequestToken.current) setReportsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!detail || !baseReady) return;
+    const initialNews = mergeNews([], detail.news || []);
+    setNewsItems(initialNews);
+    setNewsPage(detail.news_pagination?.page || 1);
+    setNewsHasMore(detail.news_pagination?.has_more ?? (detail.news || []).length >= 20);
+    void loadNews(initialNews);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, detail?.market, baseReady]);
+
+  useEffect(() => {
+    if (!detail || !baseReady) return;
+    setReportItems(detail.reports || []);
+    void loadReports();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, detail?.market, baseReady]);
 
   useEffect(() => {
     if (!detail || detail.market !== "a_share" || subChart !== "fundflow") {
@@ -297,7 +426,7 @@ export function StockDetail() {
   const positive = (changePct || 0) >= 0;
   const name = String(profile.name || detail.symbol);
   const marketLabel = detail.market === "a_share" ? t("stockDetail.aShare") : t("stockDetail.us");
-  const reports = detail.reports || [];
+  const reports = reportItems;
   const boards = Array.isArray(profile.boards) ? profile.boards : [];
   const news = newsItems;
   const metricCells = [
@@ -333,11 +462,13 @@ export function StockDetail() {
               <span className="rounded-full bg-primary/10 px-2 py-1 text-xs text-primary">{marketLabel}</span>
             </div>
           </div>
-          <button type="button" onClick={() => void load(false)} disabled={refreshing} className="inline-flex items-center gap-2 self-start rounded-md border border-border/60 px-3 py-2 text-xs font-medium transition hover:bg-muted/60 disabled:opacity-50 sm:self-auto"><RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />{t("stockDetail.refresh")}</button>
         </header>
 
         <section className="space-y-3" aria-labelledby="stock-profile-heading">
-          <h2 id="stock-profile-heading" className="text-sm font-semibold tracking-wide">{t("stockDetail.profile")}</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="stock-profile-heading" className="text-sm font-semibold tracking-wide">{t("stockDetail.profile")}</h2>
+            <RefreshButton testId="refresh-profile" label={`${t("stockDetail.profile")} ${t("stockDetail.refresh")}`} loading={profileLoading} onClick={() => void loadInfo()} />
+          </div>
           <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
             <div className="grid gap-4 border-b border-border/60 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
               <div>
@@ -352,9 +483,12 @@ export function StockDetail() {
             <div className="grid sm:grid-cols-2 xl:grid-cols-4">
               {metricCells.map((cell) => <MetricCell key={cell.key} label={cell.label} value={cell.value} />)}
             </div>
-            {boards.length > 0 && (
-              <div className="border-t border-border/60 px-4 py-3">
+            <div className="border-t border-border/60 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-[11px] text-muted-foreground">{t("stockDetail.boards")}</p>
+                <RefreshButton testId="refresh-industry" label={`${t("stockDetail.boards")} ${t("stockDetail.refresh")}`} loading={industryLoading} onClick={() => void loadIndustry()} />
+              </div>
+              {boards.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {boards.map((board: Record<string, any>, index: number) => {
                     const label = String(board.board_name || board.name || "").trim();
@@ -362,13 +496,16 @@ export function StockDetail() {
                     return <span key={`${String(board.board_code || label)}-${index}`} className="rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary">{label}</span>;
                   })}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </section>
 
         <section className="space-y-3" aria-labelledby="stock-chart-heading">
-          <h2 id="stock-chart-heading" className="text-sm font-semibold tracking-wide">{t("stockDetail.kline")}</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="stock-chart-heading" className="text-sm font-semibold tracking-wide">{t("stockDetail.kline")}</h2>
+            <RefreshButton testId="refresh-bars" label={`${t("stockDetail.kline")} ${t("stockDetail.refresh")}`} loading={barsLoading} onClick={() => void loadBars(period)} />
+          </div>
           <div className="rounded-xl border border-border/60 bg-card p-3 sm:p-4">
             <div className="mb-3 flex flex-wrap items-center gap-1.5 border-b border-border/60 pb-3">
               {STOCK_PERIODS.map((item) => (
@@ -376,11 +513,11 @@ export function StockDetail() {
                   key={item.value}
                   type="button"
                   aria-pressed={period === item.value}
-                  disabled={refreshing}
+                  disabled={barsLoading}
                   onClick={() => {
                     if (period === item.value) return;
                     setPeriod(item.value);
-                    void load(false, item.value);
+                    loadBars(item.value);
                   }}
                   className={cn(
                     "rounded border px-2.5 py-1 text-xs transition-colors disabled:cursor-wait disabled:opacity-60",
@@ -392,7 +529,7 @@ export function StockDetail() {
                   {item.label}
                 </button>
               ))}
-              {refreshing && <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+              {barsLoading && <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin text-muted-foreground" />}
             </div>
             <CandlestickChart
               data={detail.bars}
@@ -410,13 +547,30 @@ export function StockDetail() {
         </section>
 
         <section className="grid gap-5 lg:grid-cols-2" aria-label={t("stockDetail.researchAndNews")}>
-          <FeedCard title={t("stockDetail.reports")} emptyLabel={t("stockDetail.noReports")} isEmpty={reports.length === 0}>
+          <FeedCard
+            title={t("stockDetail.reports")}
+            emptyLabel={t("stockDetail.noReports")}
+            isEmpty={reports.length === 0}
+            onRefresh={() => void loadReports()}
+            refreshing={reportsLoading}
+            refreshLabel={t("stockDetail.refresh")}
+            refreshTestId="refresh-reports"
+          >
             {reports.map((report, index) => <FeedItem key={`${String(report.iwencai_id || report.infoCode || report.title || index)}`} title={String(report.title || t("stockDetail.untitled"))} meta={[report.orgSName, formatDate(report.publishDate)].filter(Boolean).join(" · ")} href={report.url ? String(report.url) : report.infoCode ? `https://pdf.dfcfw.com/pdf/H3_${report.infoCode}_1.pdf` : undefined} />)}
           </FeedCard>
-          <FeedCard title={t("stockDetail.news")} emptyLabel={t("stockDetail.noNews")} isEmpty={newsItems.length === 0 && !newsLoading} onScroll={(event) => {
+          <FeedCard
+            title={t("stockDetail.news")}
+            emptyLabel={t("stockDetail.noNews")}
+            isEmpty={newsItems.length === 0 && !newsLoading}
+            onRefresh={() => void loadNews()}
+            refreshing={newsLoading}
+            refreshLabel={t("stockDetail.refresh")}
+            refreshTestId="refresh-news"
+            onScroll={(event) => {
               const target = event.currentTarget;
               if (target.scrollHeight - target.scrollTop - target.clientHeight < 80) void loadMoreNews();
-            }}>
+            }}
+          >
             {news.map((item, index) => <FeedItem key={`${String(item.url || item.title || index)}`} title={String(item.title || t("stockDetail.untitled"))} meta={[item.source, formatDate(item.time || item.published)].filter(Boolean).join(" · ")} snippet={String(item.content || item.snippet || "")} href={item.url ? String(item.url) : undefined} />)}
               {newsLoading && <p className="py-3 text-center text-xs text-muted-foreground"><Loader2 className="mr-1 inline h-3 w-3 animate-spin" />{t("stockDetail.newsLoading")}</p>}
           </FeedCard>
@@ -430,8 +584,12 @@ function MetricCell({ label, value }: { label: string; value: ReactNode }) {
   return <div className="min-w-0 border-b border-r border-border/60 px-3 py-2.5 last:border-b-0 sm:px-4"><p className="truncate text-[11px] text-muted-foreground">{label}</p><p className="mt-1 truncate font-mono text-sm font-semibold">{value}</p></div>;
 }
 
-function FeedCard({ title, emptyLabel, isEmpty, children, onScroll }: { title: string; emptyLabel: string; isEmpty: boolean; children: ReactNode; onScroll?: UIEventHandler<HTMLDivElement> }) {
-  return <div className="flex h-[520px] min-h-0 flex-col rounded-xl border border-border/60 bg-card p-4"><h2 className="shrink-0 text-sm font-semibold">{title}</h2><div className="mt-3 min-h-0 flex-1 overflow-y-auto divide-y divide-border/60" onScroll={onScroll}>{isEmpty ? <FeedEmpty label={emptyLabel} /> : children}</div></div>;
+function RefreshButton({ testId, label, loading, onClick }: { testId: string; label: string; loading: boolean; onClick: () => void }) {
+  return <button type="button" data-testid={testId} aria-label={label} onClick={onClick} disabled={loading} className="rounded p-1 text-muted-foreground transition hover:bg-muted/60 hover:text-foreground disabled:opacity-50" title={label}><RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} /></button>;
+}
+
+function FeedCard({ title, emptyLabel, isEmpty, children, onScroll, onRefresh, refreshing, refreshLabel, refreshTestId }: { title: string; emptyLabel: string; isEmpty: boolean; children: ReactNode; onScroll?: UIEventHandler<HTMLDivElement>; onRefresh?: () => void; refreshing?: boolean; refreshLabel?: string; refreshTestId?: string }) {
+  return <div className="flex h-[520px] min-h-0 flex-col rounded-xl border border-border/60 bg-card p-4"><div className="flex shrink-0 items-center justify-between gap-3"><h2 className="text-sm font-semibold">{title}</h2>{onRefresh && <button type="button" data-testid={refreshTestId} aria-label={`${title} ${refreshLabel || "refresh"}`} onClick={onRefresh} disabled={refreshing} className="rounded p-1 text-muted-foreground transition hover:bg-muted/60 hover:text-foreground disabled:opacity-50" title={refreshLabel}><RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /></button>}</div><div className="mt-3 min-h-0 flex-1 overflow-y-auto divide-y divide-border/60" onScroll={onScroll}>{isEmpty ? <FeedEmpty label={emptyLabel} /> : children}</div></div>;
 }
 
 function FeedItem({ title, meta, snippet, href }: { title: string; meta: string; snippet?: string; href?: string }) {

@@ -438,11 +438,14 @@ class TradingPlaceOrderTool(BaseTool):
     """
 
     name = "trading_place_order"
+    execution_domain = "broker"
     description = (
         "Place an order through the selected trading connector profile. Paper "
         "profiles trade a sandbox account; live profiles are gated by the user's "
         "mandate and kill switch. side is 'buy' or 'sell'; give exactly one of "
-        "quantity (units) or notional (account-currency amount)."
+        "quantity (units) or notional (account-currency amount). This broker "
+        "interface never writes the personal portfolio ledger; use "
+        "virtual_portfolio_trade for virtual fills."
     )
     parameters = {
         "type": "object",

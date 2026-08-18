@@ -121,7 +121,7 @@ describe("calcMACD", () => {
   });
 
   it("calcMACDFS doubles the MACD histogram", () => {
-    const macd = calcMACD(data);
+    const macd = calcMACD(data, 11, 25, 10);
     const macdfs = calcMACDFS(data);
     for (let i = 0; i < data.length; i++) {
       if (macd.histogram[i] !== null) {

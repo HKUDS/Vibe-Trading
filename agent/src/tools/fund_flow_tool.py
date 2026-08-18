@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import logging
+import urllib.parse
+import urllib.request
 from typing import Any
 
 from backtest.loaders.eastmoney_client import get_json, resolve_secid
@@ -44,6 +46,7 @@ _BUCKETS = ("main", "small", "medium", "large", "super_large")
 _MAX_DAYS = 250
 _MAX_ROWS_PER_SYMBOL = 250
 _VALID_PERIODS = ("min", "daily")
+_SINA_FLOW_URL = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs"
 
 
 def _error(message: str) -> str:
@@ -85,6 +88,103 @@ def _parse_flow_row(raw: str) -> dict[str, Any] | None:
     return row
 
 
+def _sina_market_code(symbol: str) -> str:
+    """Convert a Vibe-Trading symbol to Sina's lowercase market prefix form."""
+    token = symbol.strip().upper()
+    bare, _, suffix = token.partition(".")
+    if suffix in {"SH", "SZ", "BJ"}:
+        market = suffix.lower()
+    else:
+        bare = token.removeprefix("SH").removeprefix("SZ").removeprefix("BJ")
+        if bare.startswith(("5", "6", "9")):
+            market = "sh"
+        elif bare.startswith(("0", "2", "3")):
+            market = "sz"
+        elif bare.startswith(("4", "8")):
+            market = "bj"
+        else:
+            raise ValueError(f"unsupported Sina symbol: {symbol}")
+    if len(bare) != 6 or not bare.isdigit():
+        raise ValueError(f"unsupported Sina symbol: {symbol}")
+    return f"{market}{bare}"
+
+
+def _sina_float(value: Any) -> float | None:
+    if value in (None, "", "-", "--"):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fetch_sina_daily_flow(symbol: str, *, days: int) -> dict[str, Any]:
+    """Fetch Sina's daily flow and normalize amounts to CNY.
+
+    This Sina endpoint is not equivalent to Eastmoney's five-bucket feed. In
+    live responses it normally exposes ``r0_net`` (main-force net inflow) and
+    ``netamount`` (overall net inflow), while the order-size fields may be
+    absent. Values are returned by the endpoint in CNY despite some older
+    descriptions calling them "ten-thousand CNY". Missing buckets therefore
+    stay ``None`` instead of being fabricated as zero or scaled incorrectly.
+    """
+    params = urllib.parse.urlencode({
+        "page": "1",
+        "num": str(max(days * 3, 30)),
+        "sort": "opendate",
+        "asc": "0",
+        "daima": _sina_market_code(symbol),
+    })
+    request = urllib.request.Request(
+        f"{_SINA_FLOW_URL}?{params}",
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://finance.sina.com.cn/",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        payload = json.loads(response.read().decode("utf-8-sig"))
+    if not isinstance(payload, list):
+        raise RuntimeError("Sina fund-flow response is not a list")
+
+    rows: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        timestamp = item.get("opendate") or item.get("date")
+        main = _sina_float(item.get("r0_net"))
+        large = _sina_float(item.get("r1_net"))
+        medium = _sina_float(item.get("r2_net"))
+        small = _sina_float(item.get("r3_net"))
+        overall = _sina_float(item.get("netamount"))
+        if not timestamp or all(value is None for value in (main, overall, large, medium, small)):
+            continue
+        rows.append({
+            "timestamp": str(timestamp)[:10],
+            # r0_net is Sina's main-force value on this endpoint. If a
+            # provider variant omits it, overall net flow is the only honest
+            # value available for the normalized main field.
+            "main": main if main is not None else overall,
+            "small": small,
+            "medium": medium,
+            "large": large,
+            # This endpoint does not expose a separate super-large value.
+            "super_large": None,
+        })
+    rows.sort(key=lambda item: item.get("timestamp") or "")
+    available_buckets = [
+        bucket for bucket in _BUCKETS
+        if any(row.get(bucket) is not None for row in rows)
+    ]
+    return {
+        "symbol": symbol,
+        "source": "sina",
+        "rows": rows[-days:],
+        "available_buckets": available_buckets,
+        "source_note": "Sina fallback may only provide main net flow; unavailable order-size buckets are null",
+    }
+
+
 def _fetch_symbol_flow(symbol: str, *, period: str, days: int) -> dict[str, Any]:
     """Fetch one symbol's capital-flow series and shape it into a result dict.
 
@@ -101,15 +201,21 @@ def _fetch_symbol_flow(symbol: str, *, period: str, days: int) -> dict[str, Any]
     if secid is None:
         if period == "daily":
             try:
-                fallback = tushare_fallbacks.fetch_fund_flow(symbol, days=days)
-                fallback["warning"] = "eastmoney symbol resolution failed; used tushare fallback"
+                fallback = _fetch_sina_daily_flow(symbol, days=days)
+                fallback["warning"] = "eastmoney symbol resolution failed; used sina fallback"
                 return fallback
-            except Exception as exc:  # noqa: BLE001 - fallback details belong in the symbol result
-                return {
-                    "symbol": symbol,
-                    "error": "unresolvable symbol",
-                    "fallback_error": str(exc),
-                }
+            except Exception as sina_exc:
+                try:
+                    fallback = tushare_fallbacks.fetch_fund_flow(symbol, days=days)
+                    fallback["warning"] = "eastmoney symbol resolution failed; used tushare fallback"
+                    return fallback
+                except Exception as exc:  # noqa: BLE001 - fallback details belong in the symbol result
+                    return {
+                        "symbol": symbol,
+                        "error": "unresolvable symbol",
+                        "fallback_error": str(exc),
+                        "sina_fallback_error": str(sina_exc),
+                    }
         return {"symbol": symbol, "error": "unresolvable symbol"}
 
     is_daily = period == "daily"
@@ -127,15 +233,21 @@ def _fetch_symbol_flow(symbol: str, *, period: str, days: int) -> dict[str, Any]
         logger.warning("fund flow fetch failed for %s: %s", symbol, exc)
         if period == "daily":
             try:
-                fallback = tushare_fallbacks.fetch_fund_flow(symbol, days=days)
-                fallback["warning"] = f"eastmoney failed ({exc}); used tushare fallback"
+                fallback = _fetch_sina_daily_flow(symbol, days=days)
+                fallback["warning"] = f"eastmoney failed ({exc}); used sina fallback"
                 return fallback
-            except Exception as fallback_exc:  # noqa: BLE001 - keep per-symbol isolation
-                return {
-                    "symbol": symbol,
-                    "error": str(exc),
-                    "fallback_error": str(fallback_exc),
-                }
+            except Exception as sina_exc:
+                try:
+                    fallback = tushare_fallbacks.fetch_fund_flow(symbol, days=days)
+                    fallback["warning"] = f"eastmoney failed ({exc}); used tushare fallback"
+                    return fallback
+                except Exception as fallback_exc:  # noqa: BLE001 - keep per-symbol isolation
+                    return {
+                        "symbol": symbol,
+                        "error": str(exc),
+                        "fallback_error": str(fallback_exc),
+                        "sina_fallback_error": str(sina_exc),
+                    }
         return {"symbol": symbol, "error": str(exc)}
 
     data = payload.get("data") if isinstance(payload, dict) else None
@@ -243,7 +355,7 @@ class FundFlowTool(BaseTool):
             "ok": True,
             "market": "stock",
             "source": "eastmoney",
-            "fallback_sources": ["tushare"],
+            "fallback_sources": ["sina", "tushare"],
             "period": period,
             "buckets": list(_BUCKETS),
             "data": results,

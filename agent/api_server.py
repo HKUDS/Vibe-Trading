@@ -212,6 +212,10 @@ register_system_routes(app)
 from src.api.market_routes import register_market_routes  # noqa: E402
 register_market_routes(app)
 
+# --- Personal portfolio ledger ---
+from src.api.portfolio_routes import register_portfolio_routes  # noqa: E402
+register_portfolio_routes(app)
+
 # --- Extended market data ---
 from src.api.extended_market_routes import register_extended_market_routes  # noqa: E402
 register_extended_market_routes(app)

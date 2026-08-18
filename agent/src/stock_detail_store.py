@@ -1,4 +1,4 @@
-"""SQLite cache for stock-detail data that changes at daily cadence."""
+"""SQLite cache for stock-detail data, including period-specific K-lines."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def _json_safe(value: Any) -> Any:
 
 
 class StockDetailStore:
-    """Persist static stock details and daily-refreshed historical bars."""
+    """Persist static stock details and per-period refreshed historical bars."""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
         self.db_path = Path(db_path) if db_path is not None else get_runtime_root() / _DEFAULT_DB_NAME

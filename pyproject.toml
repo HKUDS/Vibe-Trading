@@ -115,6 +115,11 @@ mt5 = [
     # the marker makes this a no-op and everything degrades gracefully.
     "MetaTrader5>=5.0.45; sys_platform == 'win32'",
 ]
+qmt = [
+    # Install the XtQuant wheel supplied by 迅投/QMT or the broker's QMT
+    # distribution.  It is imported lazily and is Windows-only for trading.
+    "xtquant; sys_platform == 'win32'",
+]
 deepseek = [
     "langchain-deepseek>=1.0.0,<2",
 ]

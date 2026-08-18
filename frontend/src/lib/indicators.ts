@@ -89,8 +89,8 @@ export function calcMACD(data: number[], fast = 12, slow = 26, sig = 9) {
   return calcMACDWithHistogramScale(data, fast, slow, sig, 1);
 }
 
-/** MACD used by Chinese intraday charts: the histogram is 2 * (DIF - DEA). */
-export function calcMACDFS(data: number[], fast = 12, slow = 26, sig = 9) {
+/** MACDFS: 11/25/10 periods, with the Chinese 2 * (DIF - DEA) histogram. */
+export function calcMACDFS(data: number[], fast = 11, slow = 25, sig = 10) {
   return calcMACDWithHistogramScale(data, fast, slow, sig, 2);
 }
 

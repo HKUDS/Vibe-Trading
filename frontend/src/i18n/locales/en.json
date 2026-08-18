@@ -10,6 +10,7 @@
   "layout": {
     "home": "Home",
     "overview": "Overview",
+    "portfolio": "Portfolio",
     "humanoidRobot": "Humanoid Robot",
     "research": "Research",
     "agent": "Agent",

@@ -28,7 +28,12 @@ def disable_iwencai_skill_calls(monkeypatch) -> None:
     )
 
 
-def test_a_share_detail_route_aggregates_profile_bars_reports_and_news(monkeypatch) -> None:
+def test_a_share_detail_route_aggregates_profile_bars_reports_and_news(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        market_routes,
+        "_get_stock_detail_store",
+        lambda: market_routes.StockDetailStore(tmp_path / "details.db"),
+    )
     monkeypatch.setattr(
         market_routes,
         "tencent_quote",
@@ -47,6 +52,18 @@ def test_a_share_detail_route_aggregates_profile_bars_reports_and_news(monkeypat
         return [{"trade_date": "2026-08-14", "open": 1490, "high": 1510, "low": 1480, "close": 1500, "volume": 100}]
 
     monkeypatch.setattr(market_routes, "tencent_bars", fake_bars)
+    monkeypatch.setattr(
+        market_routes,
+        "ths_bars",
+        lambda code, start, end, period="30m": [{
+            "trade_date": "2026-08-14 10:30",
+            "open": 1490,
+            "high": 1510,
+            "low": 1480,
+            "close": 1500,
+            "volume": 100,
+        }],
+    )
     monkeypatch.setattr(market_routes, "eastmoney_reports", lambda code, limit: [{"title": "研报"}])
     monkeypatch.setattr(market_routes, "eastmoney_stock_news", lambda code, limit: [{"title": "新闻"}])
     monkeypatch.setattr(market_routes, "sina_financial_report", lambda code, statement, limit: [])
@@ -79,7 +96,9 @@ def test_a_share_detail_route_aggregates_profile_bars_reports_and_news(monkeypat
     response = TestClient(app).get("/market/stocks/600519.SH?period=15m")
     assert response.status_code == 200
     assert response.json()["period"] == "15m"
-    assert requested_periods == ["1d", "15m"]
+    # Historical intraday periods use the asynchronous THS/Eastmoney refresh
+    # path instead of the live-only Tencent minute endpoint.
+    assert requested_periods == ["1d"]
 
     response = TestClient(app).get(
         "/market/stocks/002407.SZ?period=1d",
@@ -180,6 +199,7 @@ def test_stock_news_falls_back_to_live_source_when_cache_is_unavailable(monkeypa
 
 
 def test_a_share_bars_endpoint_normalizes_provider_trade_date(monkeypatch, tmp_path) -> None:
+    today = market_routes.StockDetailStore.today()
     monkeypatch.setattr(
         market_routes,
         "_get_stock_detail_store",
@@ -189,7 +209,7 @@ def test_a_share_bars_endpoint_normalizes_provider_trade_date(monkeypatch, tmp_p
         market_routes,
         "tencent_bars",
         lambda code, start, end, period="1m": [
-            {"trade_date": "2026-08-17 09:31", "open": 99, "high": 101, "low": 98, "close": 100, "volume": 10}
+            {"trade_date": f"{today} 09:31", "open": 99, "high": 101, "low": 98, "close": 100, "volume": 10}
         ],
     )
     market_routes._refresh_stock_bars_a_share("600519.SH", "1m")
@@ -197,13 +217,15 @@ def test_a_share_bars_endpoint_normalizes_provider_trade_date(monkeypatch, tmp_p
     payload = market_routes._stock_bars_a_share("600519.SH", "1m")
 
     assert payload["bars"] == [{
-        "time": "2026-08-17 09:31",
+        "time": f"{today} 09:31",
         "open": 99.0,
         "high": 101.0,
         "low": 98.0,
         "close": 100.0,
         "volume": 10.0,
     }]
+    cached = market_routes.StockDetailStore(tmp_path / "details.db").get_bars("600519.SH", "1m")
+    assert cached is not None
 
 
 def test_us_detail_sections_read_cached_info_and_bars_without_provider_call(monkeypatch, tmp_path) -> None:
@@ -237,7 +259,7 @@ def test_us_detail_sections_read_cached_info_and_bars_without_provider_call(monk
     assert bars["cache_status"] == "cached"
 
 
-def test_us_intraday_bars_are_filtered_to_latest_session_and_converted_to_shanghai(monkeypatch) -> None:
+def test_us_intraday_bars_are_filtered_to_latest_session_and_converted_to_shanghai(monkeypatch, tmp_path) -> None:
     frame = pd.DataFrame(
         {
             "open": [99.0, 100.0, 101.0],
@@ -258,12 +280,65 @@ def test_us_intraday_bars_are_filtered_to_latest_session_and_converted_to_shangh
             return json.dumps({"ok": True, "data": {"articles": []}})
 
     monkeypatch.setattr(market_routes, "YFinanceLoader", FakeLoader)
+    store = market_routes.StockDetailStore(tmp_path / "details.db")
+    monkeypatch.setattr(market_routes, "_get_stock_detail_store", lambda: store)
     monkeypatch.setattr(market_routes, "_fetch_us_snapshots", lambda symbols: {"AAPL.US": (100.0, 1.0, "yfinance")})
     monkeypatch.setattr(market_routes, "StockNewsTool", FakeNews)
 
+    market_routes._refresh_stock_bars_us("AAPL.US", "1m")
     payload = market_routes._stock_detail_us("AAPL.US", "1m")
 
     assert [bar["time"] for bar in payload["bars"]] == ["2026-08-17 21:30", "2026-08-17 22:30"]
+
+
+def test_us_120_minute_bars_are_aggregated_and_persisted(monkeypatch, tmp_path) -> None:
+    store = market_routes.StockDetailStore(tmp_path / "details.db")
+    frame = pd.DataFrame(
+        {
+            "open": [99.0, 100.0, 101.0, 102.0],
+            "high": [100.0, 103.0, 102.0, 104.0],
+            "low": [98.0, 99.0, 100.0, 101.0],
+            "close": [100.0, 102.0, 101.0, 103.0],
+            "volume": [10.0, 20.0, 30.0, 40.0],
+        },
+        index=pd.to_datetime([
+            "2026-08-17 09:30",
+            "2026-08-17 10:30",
+            "2026-08-17 11:30",
+            "2026-08-17 12:30",
+        ]),
+    )
+
+    class FakeLoader:
+        def fetch(self, symbols, start, end, interval):
+            assert interval == "1H"
+            return {"AAPL.US": frame}
+
+    monkeypatch.setattr(market_routes, "_get_stock_detail_store", lambda: store)
+    monkeypatch.setattr(market_routes, "YFinanceLoader", FakeLoader)
+
+    market_routes._refresh_stock_bars_us("AAPL.US", "120m")
+    payload = market_routes._stock_bars_us("AAPL.US", "120m")
+
+    assert payload["cache_status"] == "cached"
+    assert payload["bars"] == [
+        {
+            "time": "2026-08-17 21:30",
+            "open": 99.0,
+            "high": 103.0,
+            "low": 98.0,
+            "close": 102.0,
+            "volume": 30.0,
+        },
+        {
+            "time": "2026-08-17 23:30",
+            "open": 101.0,
+            "high": 104.0,
+            "low": 100.0,
+            "close": 103.0,
+            "volume": 70.0,
+        },
+    ]
 
 
 def test_a_share_historical_intraday_periods_are_not_limited_to_today(monkeypatch, tmp_path) -> None:
@@ -314,9 +389,9 @@ def test_a_share_120_minute_bars_are_aggregated_from_historical_60_minute_bars(m
     }]
 
 
-def test_a_share_old_current_day_intraday_cache_is_invalidated(monkeypatch, tmp_path) -> None:
+def test_a_share_intraday_cache_is_reused_when_market_is_closed(monkeypatch, tmp_path) -> None:
     store = market_routes.StockDetailStore(tmp_path / "details.db")
-    store.save_bars("600519.SH", "30m", [{
+    store.save_bars("600519.SH", "1m", [{
         "trade_date": "2026-08-17 10:30",
         "open": 99,
         "high": 101,
@@ -326,11 +401,90 @@ def test_a_share_old_current_day_intraday_cache_is_invalidated(monkeypatch, tmp_
         "source": "tencent",
     }])
     monkeypatch.setattr(market_routes, "_get_stock_detail_store", lambda: store)
-    monkeypatch.setattr(market_routes, "_refresh_stock_bars_a_share", lambda *args: None)
+    monkeypatch.setattr(market_routes, "_stock_market_is_open", lambda market: False)
+    monkeypatch.setattr(
+        market_routes,
+        "_refresh_stock_bars_a_share",
+        lambda *args: (_ for _ in ()).throw(AssertionError("fresh intraday cache must be reused")),
+    )
 
-    payload = market_routes._stock_bars_a_share("600519.SH", "30m")
+    payload = market_routes._stock_bars_a_share("600519.SH", "1m")
 
+    assert payload["cache_status"] == "cached"
+    # A cached previous-session line must not be rendered as today's live line
+    # before the next A-share session opens.
     assert payload["bars"] == []
+
+
+def test_empty_intraday_cache_does_not_schedule_refresh_when_market_is_closed(monkeypatch, tmp_path) -> None:
+    store = market_routes.StockDetailStore(tmp_path / "details.db")
+    monkeypatch.setattr(market_routes, "_get_stock_detail_store", lambda: store)
+    monkeypatch.setattr(market_routes, "_stock_market_is_open", lambda market: False)
+    scheduled: list[str] = []
+    monkeypatch.setattr(
+        market_routes,
+        "_schedule_detail_refresh",
+        lambda key, fetcher: scheduled.append(key) or True,
+    )
+
+    payload = market_routes._stock_bars_a_share("600519.SH", "1m")
+
+    assert payload["cache_status"] == "unavailable"
+    assert payload["bars"] == []
+    assert scheduled == []
+
+
+def test_a_share_historical_intraday_first_request_loads_data_when_market_is_closed(monkeypatch, tmp_path) -> None:
+    store = market_routes.StockDetailStore(tmp_path / "details.db")
+    calls: list[str] = []
+    monkeypatch.setattr(market_routes, "_get_stock_detail_store", lambda: store)
+    monkeypatch.setattr(market_routes, "_stock_market_is_open", lambda market: False)
+
+    def fake_fetch(code, period):
+        calls.append(period)
+        return [{
+            "trade_date": "2026-08-17 10:30",
+            "open": 99,
+            "high": 101,
+            "low": 98,
+            "close": 100,
+            "volume": 10,
+            "source": "ths",
+        }]
+
+    monkeypatch.setattr(market_routes, "_fetch_stock_bars_a_share", fake_fetch)
+
+    payload = market_routes._stock_bars_a_share("600519.SH", "15m")
+
+    assert calls == ["15m"]
+    assert payload["cache_status"] == "cached"
+    assert payload["bars"][0]["time"] == "2026-08-17 10:30"
+
+
+def test_a_share_30_minute_bars_merge_two_15_minute_bars(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_ths(code, start, end, period="30m"):
+        calls.append(period)
+        if period == "15m":
+            return [
+                {"trade_date": "2026-08-17 09:30", "open": 99, "high": 101, "low": 98, "close": 100, "volume": 10, "source": "tencent"},
+                {"trade_date": "2026-08-17 09:45", "open": 100, "high": 103, "low": 99, "close": 102, "volume": 20, "source": "tencent"},
+                {"trade_date": "2026-08-17 13:00", "open": 102, "high": 104, "low": 101, "close": 103, "volume": 15, "source": "tencent"},
+                {"trade_date": "2026-08-17 13:15", "open": 103, "high": 105, "low": 102, "close": 104, "volume": 25, "source": "tencent"},
+            ]
+        return []
+
+    monkeypatch.setattr(market_routes, "ths_bars", fake_ths)
+    monkeypatch.setattr(market_routes, "_eastmoney_historical_a_share_bars", lambda *args: [])
+
+    rows = market_routes._fetch_stock_bars_a_share("600519.SH", "30m")
+
+    assert calls == ["30m", "15m"]
+    assert rows == [
+        {"trade_date": "2026-08-17 09:30", "open": 99, "high": 103, "low": 98, "close": 102, "volume": 30, "source": "tencent", "_session": "2026-08-17"},
+        {"trade_date": "2026-08-17 13:00", "open": 102, "high": 105, "low": 101, "close": 104, "volume": 40, "source": "tencent", "_session": "2026-08-17"},
+    ]
 
 
 def test_a_share_15_minute_bars_fall_back_to_eastmoney_history(monkeypatch, tmp_path) -> None:

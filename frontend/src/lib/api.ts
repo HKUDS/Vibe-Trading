@@ -87,6 +87,99 @@ export interface MarketWatchlistsResponse {
   us: MarketWatchlistEntry[];
 }
 
+export type PortfolioTransactionType = "buy" | "sell" | "fee" | "dividend" | "deposit" | "withdrawal" | "adjustment";
+export type PortfolioAssetType = "equity" | "etf" | "commodity" | "future" | "bank_gold" | "other";
+
+export interface PortfolioSummary {
+  currency: string;
+  cash: string;
+  holdings_value: string;
+  total_assets: string;
+  net_contributed: string;
+  realized_pnl: string;
+  unrealized_pnl: string;
+  daily_pnl: string;
+  dividends: string;
+  fees: string;
+  taxes: string;
+  total_return: string;
+  return_pct: string | null;
+  holdings_count: number;
+}
+
+export interface PortfolioItem {
+  id: string;
+  name: string;
+  base_currency: string;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PortfolioHolding {
+  symbol: string;
+  market: "a_share" | "us" | "commodity" | "other";
+  asset_type: PortfolioAssetType;
+  currency: string;
+  name: string;
+  quantity: string;
+  avg_cost: string;
+  cost_basis: string;
+  latest_price: string | null;
+  market_value: string | null;
+  unrealized_pnl: string | null;
+  unrealized_pnl_pct: string | null;
+  daily_pnl: string | null;
+  weight: string;
+  price_status: "ok" | "unavailable" | string;
+  price_source: string | null;
+  price_updated_at: string | null;
+}
+
+export interface PortfolioSnapshotResponse {
+  portfolio_id: string;
+  portfolio: PortfolioItem | null;
+  currencies: Record<string, PortfolioSummary>;
+  holdings: PortfolioHolding[];
+  updated_at: string;
+}
+
+export interface PortfolioTransaction {
+  id: string;
+  portfolio_id: string;
+  type: PortfolioTransactionType;
+  asset_type: PortfolioAssetType;
+  symbol: string | null;
+  market: "a_share" | "us" | "commodity" | "other" | null;
+  quantity: string | null;
+  price: string | null;
+  amount: string | null;
+  fee: string;
+  tax: string;
+  currency: string;
+  trade_at: string;
+  external_ref: string | null;
+  note: string | null;
+  created_at: string;
+  reversed_transaction_id: string | null;
+}
+
+export interface PortfolioReconciliationResponse {
+  portfolio_id?: string;
+  broker_profile_id?: string;
+  observed_at?: string;
+  items: Array<Record<string, string | null>>;
+}
+
+export interface PortfolioInstrumentCandidate {
+  symbol: string;
+  name: string;
+  short_name: string;
+  market: "a_share" | "us" | "commodity" | "other";
+  asset_type: PortfolioAssetType;
+  quote_symbol?: string;
+}
+
 export type StockDetailPeriod = "1m" | "1d" | "1w" | "1mo" | "15m" | "30m" | "60m" | "120m";
 export type StockCacheStatus = "cached" | "refreshing" | "live";
 
@@ -165,17 +258,19 @@ export interface StockNewsPage {
 
 export interface StockFundFlowRow {
   timestamp: string;
-  main: number;
-  small: number;
-  medium: number;
-  large: number;
-  super_large: number;
+  main: number | null;
+  small: number | null;
+  medium: number | null;
+  large: number | null;
+  super_large: number | null;
 }
 
 export interface StockFundFlowSymbolData {
   symbol: string;
   secid?: string;
   rows: StockFundFlowRow[];
+  available_buckets?: string[];
+  source_note?: string;
   error?: string;
   warning?: string;
 }
@@ -430,6 +525,32 @@ export const api = {
       body: JSON.stringify(watchlists),
       signal,
     }),
+  listPortfolios: (signal?: AbortSignal) =>
+    request<{ items: PortfolioItem[] }>("/portfolio/portfolios", { signal }),
+  createPortfolio: (payload: { name: string; base_currency: string }, signal?: AbortSignal) =>
+    request<PortfolioItem>("/portfolio/portfolios", { method: "POST", body: JSON.stringify(payload), signal }),
+  updatePortfolio: (id: string, payload: { name?: string; archived?: boolean }, signal?: AbortSignal) =>
+    request<PortfolioItem>(`/portfolio/portfolios/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(payload), signal }),
+  getPortfolioSnapshot: (id: string, signal?: AbortSignal) =>
+    request<PortfolioSnapshotResponse>(`/portfolio/${encodeURIComponent(id)}/snapshot`, { signal }),
+  listPortfolioTransactions: (id: string, filters: { symbol?: string; type?: PortfolioTransactionType } = {}, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (filters.symbol) params.set("symbol", filters.symbol);
+    if (filters.type) params.set("type", filters.type);
+    return request<{ items: PortfolioTransaction[] }>(`/portfolio/${encodeURIComponent(id)}/transactions${params.toString() ? `?${params}` : ""}`, { signal });
+  },
+  addPortfolioTransaction: (id: string, payload: Record<string, unknown>, signal?: AbortSignal) =>
+    request<PortfolioTransaction>(`/portfolio/${encodeURIComponent(id)}/transactions`, { method: "POST", body: JSON.stringify(payload), signal }),
+  savePortfolioPrice: (id: string, payload: { symbol: string; market: string; currency: string; price: string }, signal?: AbortSignal) =>
+    request<{ portfolio_id: string; symbol: string; market: string; currency: string; price: string; updated_at: string }>(`/portfolio/${encodeURIComponent(id)}/prices`, { method: "PUT", body: JSON.stringify(payload), signal }),
+  reversePortfolioTransaction: (id: string, transactionId: string, signal?: AbortSignal) =>
+    request<PortfolioTransaction>(`/portfolio/${encodeURIComponent(id)}/transactions/${encodeURIComponent(transactionId)}/reverse`, { method: "POST", signal }),
+  getPortfolioReconciliation: (id: string, brokerProfileId?: string, signal?: AbortSignal) =>
+    request<PortfolioReconciliationResponse>(`/portfolio/${encodeURIComponent(id)}/reconciliation${brokerProfileId ? `?broker_profile_id=${encodeURIComponent(brokerProfileId)}` : ""}`, { signal }),
+  refreshPortfolioReconciliation: (id: string, brokerProfileId: string, signal?: AbortSignal) =>
+    request<PortfolioReconciliationResponse>(`/portfolio/${encodeURIComponent(id)}/reconciliation/refresh?broker_profile_id=${encodeURIComponent(brokerProfileId)}`, { method: "POST", signal }),
+  searchPortfolioInstruments: (query: string, signal?: AbortSignal) =>
+    request<{ items: PortfolioInstrumentCandidate[] }>(`/portfolio/instruments/search?query=${encodeURIComponent(query)}`, { signal }),
   searchMarketSymbols: (query: string, market: "a_share" | "us", signal?: AbortSignal) =>
     request<MarketSearchResponse>(
       `/market/search?query=${encodeURIComponent(query)}&market=${encodeURIComponent(market)}`,

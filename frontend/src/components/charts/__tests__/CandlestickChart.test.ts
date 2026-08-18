@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { buildFundFlowSeries, getChartGridLayout } from "../CandlestickChart";
+import { buildChartDataUpdate, buildFundFlowSeries, getChartGridLayout } from "../CandlestickChart";
+
+describe("CandlestickChart data refresh", () => {
+  it("updates series and categories without rebuilding background or zero-axis options", () => {
+    const update = buildChartDataUpdate(["09:30", "09:31"], [
+      { name: "Price", data: [100, 101], markLine: { data: [{ yAxis: 100 }] } },
+      { name: "Average", data: [100, 100.5] },
+    ]);
+
+    expect(update.xAxis).toEqual([{ data: ["09:30", "09:31"] }, { data: ["09:30", "09:31"] }]);
+    expect(update.series).toEqual([
+      { name: "Price", data: [100, 101] },
+      { name: "Average", data: [100, 100.5] },
+    ]);
+    expect(update).not.toHaveProperty("backgroundColor");
+    expect(update).not.toHaveProperty("yAxis");
+  });
+});
 
 describe("CandlestickChart grid layout", () => {
   it("uses identical horizontal bounds for intraday main and sub charts", () => {
