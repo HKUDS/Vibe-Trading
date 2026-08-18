@@ -252,7 +252,8 @@ _QUANTITY_WITH_UNIT_RE = re.compile(
     r"(?:"
     r"(?:股|手|张|份|口|笔|倍|个月|周|天|日|年|次|个交易日|项|行)"
     r"|(?:shares?|contracts?|lots?|units?|sessions?|bars?|periods?|"
-    r"wks?|weeks?|months?|days?|years?|yrs?)\b"
+    r"wks?|weeks?|months?|days?|years?|yrs?|qty|premiums?|multipliers?|"
+    r"strikes?|notionals?|costs?|market[_\s]?val(?:ue)?s?)\b"
     r")",
     re.IGNORECASE,
 )
@@ -1357,6 +1358,40 @@ class GroundingLedger:
                 else "I rejected the previous draft because it cited numbers without "
                 "tool evidence. Let me re-derive them from tool calls in a follow-up turn."
             )
+        # Unit-conflict override: when identity was triggered but every
+        # validation failure is a numeric_claim_conflict, the real issue
+        # is unit-mismatch (premium/qty/multiplier vs OHLC), not a
+        # missing ticker. Route to the same "no tool evidence" path as
+        # non-market questions instead of asking the user to confirm.
+        if self._identity_required:
+            conflict_failures = [
+                f for f in self._validations
+                if f.get("code") == "numeric_claim_conflict"
+            ]
+            if conflict_failures and not any(
+                f.get("code") != "numeric_claim_conflict"
+                for f in self._validations
+            ):
+                tool_names = sorted(
+                    {failure["tool"] for failure in self._tool_failures if "tool" in failure}
+                )
+                tools_hint = (
+                    f"失败的工具调用：{', '.join(tool_names)}。" if tool_names else ""
+                )
+                if is_zh:
+                    return (
+                        "我之前的回答里包含数字但没有工具证据支撑，我已拒绝该答案。"
+                        f"{tools_hint}请让我重新基于工具调用结果整理一份有据可查的回答。"
+                    )
+                return (
+                    "I rejected the previous draft because it cited numbers without "
+                    "tool evidence. "
+                    f"Failed tool calls: {', '.join(tool_names)}. "
+                    "Let me re-derive the numbers from tool calls in a follow-up turn."
+                    if tool_names
+                    else "I rejected the previous draft because it cited numbers without "
+                    "tool evidence. Let me re-derive them from tool calls in a follow-up turn."
+                )
         if is_zh:
             return (
                 "当前无法安全确认标的身份或价格证据，因此没有生成交易结论。"
@@ -2326,6 +2361,17 @@ class GroundingLedger:
                 "message": f"Price claim {value:g} has no matching observed tool evidence.",
             }
         observed = [float(record.value) for record in candidates if record.value is not None]
+        # Unit-scale gate: when the claim carries a non-price unit
+        # (premium/multiplier/qty/contract/etc) or differs from observed by
+        # >100x, it is not a valid price comparison — skip.
+        if observed and value:
+            ratio = max(
+                max(abs(value), 1e-9) / max(max(abs(v) for v in observed), 1e-9),
+                max(max(abs(v) for v in observed), 1e-9) / max(abs(value), 1e-9),
+            )
+            if ratio > 100 or ratio < 0.01:
+                return None
+
         if any(abs(value - item) <= max(abs(item) * 0.005, 1e-9) for item in observed):
             return None
         return {
@@ -2439,8 +2485,6 @@ class GroundingLedger:
         symbol: str | None,
     ) -> bool:
         """Allow only an arithmetically valid formula anchored to observed input."""
-        if not _DERIVATION_RE.search(text):
-            return False
         candidates = list(records)
         if symbol:
             candidates = [record for record in candidates if record.symbol == symbol]
@@ -2456,7 +2500,7 @@ class GroundingLedger:
         for equals in re.finditer(r"=", text):
             left = re.search(r"([0-9.,+\-*/×÷()\s]+)$", text[: equals.start()])
             right = re.match(
-                r"\s*([-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)",
+                r"\s*[\$€£¥]?\s*([-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)",
                 text[equals.end() :],
             )
             if not left or not right:
