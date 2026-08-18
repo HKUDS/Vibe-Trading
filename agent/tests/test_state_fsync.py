@@ -14,6 +14,7 @@ import pytest
 
 import src.core.state as state_mod
 from src.core.state import RunStateStore
+from tests.module_os_helpers import patch_module_os
 
 
 def test_write_json_calls_fsync(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -24,7 +25,7 @@ def test_write_json_calls_fsync(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         fsynced.append(fd)
         real_fsync(fd)
 
-    monkeypatch.setattr(state_mod.os, "fsync", spy)
+    patch_module_os(monkeypatch, state_mod, fsync=spy)
 
     target = tmp_path / "state.json"
     RunStateStore._write_json(target, {"status": "success"})

@@ -189,6 +189,108 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class DeliveryStatus(str, Enum):
+    """Outbox state for one job firing's briefing.
+
+    The dispatch path returns once the agent attempt is *accepted*, not when it
+    finishes, so "the run completed" and "the briefing was delivered" are two
+    different facts and each needs its own record. PENDING means a run was
+    dispatched and its result has not been delivered yet; it is the only state
+    a sweep needs to look at.
+    """
+
+    NONE = "none"
+    PENDING = "pending"
+    #: Claimed by a sweep that is inside the send call. The claim is a lease,
+    #: not a lock: a process that dies mid-send would otherwise strand the row
+    #: forever, so a stale SENDING row becomes eligible again once its lease
+    #: expires. Without the claim, a concurrent sweep reads PENDING while the
+    #: first send is still in flight and delivers the same briefing twice.
+    SENDING = "sending"
+    SENT = "sent"
+    FAILED = "failed"
+
+
+@dataclass
+class DeliveryRecord:
+    """What happened to the briefing produced by one firing.
+
+    Attributes:
+        status: Outbox state for this firing.
+        session_id: The session whose terminal result is to be delivered.
+        key: Idempotency key. A send is refused when a record with the same
+            key is already ``SENT``, so a restarted poller, a retried sweep and
+            an event arriving twice cannot produce a second message.
+        error: Redaction-safe diagnostic from the last failed delivery.
+        attempts: Failed send attempts for this firing. A channel outage is
+            transient, so a failed send stays PENDING and is retried; only the
+            attempt threshold, or a run that produced no briefing at all,
+            makes the row terminal.
+        updated_at: Epoch-millisecond timestamp of the last state change.
+    """
+
+    status: DeliveryStatus = DeliveryStatus.NONE
+    session_id: Optional[str] = None
+    key: Optional[str] = None
+    error: Optional[str] = None
+    attempts: int = 0
+    updated_at: Optional[int] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize to a plain JSON-serializable dict."""
+        return {
+            "status": self.status.value,
+            "session_id": self.session_id,
+            "key": self.key,
+            "error": self.error,
+            "attempts": self.attempts,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "DeliveryRecord":
+        """Reconstruct from a raw dict, treating absence as "never delivered".
+
+        Args:
+            data: A raw dict as produced by :meth:`to_dict`, or ``None`` for a
+                record written before delivery existed.
+
+        Returns:
+            The reconstructed :class:`DeliveryRecord`.
+
+        Raises:
+            TypeError: If a present field has the wrong type.
+            ValueError: If ``status`` is not a recognized value.
+        """
+        if not data:
+            return cls()
+        if not isinstance(data, dict):
+            raise TypeError("'delivery' must be an object or null")
+        raw_status = data.get("status", DeliveryStatus.NONE.value)
+        try:
+            status = DeliveryStatus(raw_status)
+        except ValueError as exc:
+            raise ValueError(f"unknown delivery status {raw_status!r}") from exc
+        for name in ("session_id", "key", "error"):
+            value = data.get(name)
+            if value is not None and not isinstance(value, str):
+                raise TypeError(f"'delivery.{name}' must be a string or null")
+        updated_at = data.get("updated_at")
+        if updated_at is not None and not isinstance(updated_at, int):
+            raise TypeError("'delivery.updated_at' must be an integer (epoch ms) or null")
+        attempts = data.get("attempts", 0)
+        if isinstance(attempts, bool) or not isinstance(attempts, int) or attempts < 0:
+            raise TypeError("'delivery.attempts' must be a non-negative integer")
+        return cls(
+            status=status,
+            session_id=data.get("session_id"),
+            key=data.get("key"),
+            error=data.get("error"),
+            attempts=attempts,
+            updated_at=updated_at,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -217,6 +319,13 @@ class ScheduledResearchJob:
         timezone: IANA timezone key the cron schedule is evaluated in, or
             ``None`` for UTC (the semantics every job had before this field
             existed). Interval schedules ignore it.
+        delivery_channel: Channel id a finished briefing is pushed to, or
+            ``None`` to keep the job's results in the app only. Delivery is
+            opt-in per job: absent this, nothing is ever sent anywhere.
+        delivery_target: Address within that channel (chat / group / user id).
+        delivery: Outbox state for the most recent firing. Separate from
+            ``status`` because dispatch returns at enqueue: a job can be
+            COMPLETED (accepted) while its briefing is still PENDING delivery.
     """
 
     id: str
@@ -231,6 +340,9 @@ class ScheduledResearchJob:
     failure_kind: Optional[str] = None
     config: Dict[str, Any] = field(default_factory=dict)
     timezone: Optional[str] = None
+    delivery_channel: Optional[str] = None
+    delivery_target: Optional[str] = None
+    delivery: DeliveryRecord = field(default_factory=DeliveryRecord)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to a plain JSON-serializable dict.
@@ -252,6 +364,9 @@ class ScheduledResearchJob:
             "failure_kind": self.failure_kind,
             "config": self.config,
             "timezone": self.timezone,
+            "delivery_channel": self.delivery_channel,
+            "delivery_target": self.delivery_target,
+            "delivery": self.delivery.to_dict(),
         }
 
     @classmethod
@@ -311,6 +426,14 @@ class ScheduledResearchJob:
         status = JobStatus(data["status"])
         raw_config = data.get("config")
         config: Dict[str, Any] = raw_config if isinstance(raw_config, dict) else {}
+        delivery_channel = data.get("delivery_channel")
+        delivery_target = data.get("delivery_target")
+        for name, value in (
+            ("delivery_channel", delivery_channel),
+            ("delivery_target", delivery_target),
+        ):
+            if value is not None and not isinstance(value, str):
+                raise TypeError(f"'{name}' must be a string or null")
         return cls(
             id=job_id,
             prompt=prompt,
@@ -324,4 +447,7 @@ class ScheduledResearchJob:
             failure_kind=failure_kind,
             config=config,
             timezone=tz,
+            delivery_channel=delivery_channel,
+            delivery_target=delivery_target,
+            delivery=DeliveryRecord.from_dict(data.get("delivery")),
         )

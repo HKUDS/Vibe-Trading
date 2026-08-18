@@ -642,6 +642,7 @@ export const api = {
   },
   getRunCode: (id: string) => request<Record<string, string>>(`/runs/${id}/code`),
   getRunFactor: (id: string) => request<FactorReportPayload>(`/runs/${id}/factor`),
+  getRunAttribution: (id: string) => request<AttributionResponse>(`/runs/${encodeURIComponent(id)}/attribution`),
   getRunPine: (id: string) => request<PineScriptResult>(`/runs/${id}/pine`),
   listSessions: () => request<SessionItem[]>("/sessions"),
   createSession: (title?: string) => request<SessionItem>("/sessions", { method: "POST", body: JSON.stringify({ title: title || "" }) }),
@@ -826,6 +827,13 @@ export interface ScheduledRun {
   failure_kind: string | null;
   config: Record<string, unknown>;
   timezone: string | null;
+  // Delivery is opt-in per monitor: a null channel means results stay in the
+  // app, which is what every monitor created before this did.
+  delivery_channel: string | null;
+  delivery_target: string | null;
+  delivery_status: string;
+  delivery_error: string | null;
+  delivery_updated_at: number | null;
 }
 
 export interface CreateScheduledRunRequest {
@@ -834,6 +842,8 @@ export interface CreateScheduledRunRequest {
   schedule: string;
   timezone?: string | null;
   config?: Record<string, unknown>;
+  delivery_channel?: string | null;
+  delivery_target?: string | null;
 }
 
 // --- Swarm types ---
@@ -1276,6 +1286,70 @@ export interface FactorReportPayload {
   ic_correlation: { labels: string[]; matrix: number[][] } | null;
 }
 
+// --- Attribution types (GET /runs/{runId}/attribution) ---
+
+export interface AttributionBenchmarkInfo {
+  ticker: string | null;
+  mode: "auto_equal_weight" | "explicit";
+}
+
+export interface AttributionRollingPoint {
+  date: string;
+  beta: number;
+  alpha_annualized: number;
+}
+
+export interface AttributionCumulativePoint {
+  date: string;
+  portfolio: number;
+  benchmark: number;
+  /** Portfolio-minus-benchmark cumulative return; plotted as the active line. */
+  active: number;
+}
+
+export interface AttributionFactor {
+  beta: number;
+  alpha_per_period: number;
+  alpha_annualized: number;
+  alpha_t_stat: number;
+  r_squared: number;
+  n_obs: number;
+  rolling_window: number;
+  rolling: AttributionRollingPoint[] | null;
+  cumulative: AttributionCumulativePoint[];
+}
+
+export interface AttributionSectorEntry {
+  sector: string;
+  portfolio_weight: number;
+  benchmark_weight: number;
+  portfolio_return: number;
+  benchmark_return: number;
+  allocation: number;
+  selection: number;
+  interaction: number;
+  total: number;
+}
+
+export interface AttributionBrinson {
+  mode: "symbol" | "asset_class" | "invested_cash";
+  portfolio_return: number;
+  benchmark_return: number;
+  active_return: number;
+  allocation: number;
+  selection: number;
+  interaction: number;
+  sectors: AttributionSectorEntry[];
+}
+
+export interface AttributionResponse {
+  exists: boolean;
+  benchmark: AttributionBenchmarkInfo | null;
+  factor: AttributionFactor | null;
+  brinson: AttributionBrinson | null;
+  notes: string[];
+}
+
 export interface RunData {
   status: string;
   run_id: string;
@@ -1303,7 +1377,58 @@ export interface RunData {
   artifacts_equity_csv?: Array<Record<string, string>>;
   artifacts_metrics_csv?: Array<Record<string, string>>;
   artifacts_trades_csv?: Array<Record<string, string>>;
+  /** Filled portfolio weights per date (rows: {timestamp, <symbol>: weight-string}). */
+  artifacts_positions_csv?: Array<Record<string, string>>;
+  /** Requested target weights per date, same row shape as artifacts_positions_csv. */
+  artifacts_target_positions_csv?: Array<Record<string, string>>;
   run_logs?: Array<{ source?: string; line_number?: number; message?: string }>;
+}
+
+// --- Positions sector-map types (GET /runs/{runId}/positions/sectors) ---
+
+/** Asset classes reported by the backend sector-map endpoint. */
+export type SectorAssetClass =
+  | "a_share"
+  | "us_equity"
+  | "hk_equity"
+  | "india_equity"
+  | "kr_equity"
+  | "ca_equity"
+  | "crypto"
+  | "futures"
+  | "forex";
+
+export interface SectorInfo {
+  asset_class: SectorAssetClass;
+  /** Resolved industry name, or null when unresolved / not applicable. */
+  industry: string | null;
+  /** Provenance of `industry` (e.g. "eastmoney"), null when unresolved. */
+  industry_source: string | null;
+}
+
+export interface SectorMapResponse {
+  ok: boolean;
+  run_id?: string;
+  resolved_at?: string;
+  cached?: boolean;
+  symbols: Record<string, SectorInfo>;
+  unresolved?: string[];
+  /** Total symbol columns in positions.csv (may exceed `symbol_limit`). */
+  total_symbols?: number;
+  /** Max symbols that receive a network industry lookup per resolve. */
+  symbol_limit?: number;
+  /** Present when the run has no positions artifact. */
+  note?: string;
+}
+
+/**
+ * Fetch the resolved sector map for one run's positions artifact.
+ * Uses the same auth-header + error-envelope conventions as every other
+ * fetcher in this module (via the shared `request` helper).
+ */
+export function fetchRunSectorMap(runId: string, refresh?: boolean): Promise<SectorMapResponse> {
+  const qs = refresh ? "?refresh=1" : "";
+  return request<SectorMapResponse>(`/runs/${encodeURIComponent(runId)}/positions/sectors${qs}`);
 }
 
 export interface RunCard {

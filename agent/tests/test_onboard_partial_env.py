@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from cli import onboard
+from tests.module_os_helpers import patch_module_os
 
 pytestmark = pytest.mark.skipif(
     os.name != "posix", reason="POSIX file modes are not meaningful on Windows"
@@ -61,7 +62,7 @@ def test_failed_write_preserves_the_previous_partial(fake_home, monkeypatch):
     def explode(*args, **kwargs):
         raise OSError(28, "No space left on device")
 
-    monkeypatch.setattr(onboard.os, "fdopen", explode)
+    patch_module_os(monkeypatch, onboard, fdopen=explode)
     onboard._save_partial({"TUSHARE_TOKEN": "second-answer"})
 
     # The recovery state survives: a failed save must not leave the user with

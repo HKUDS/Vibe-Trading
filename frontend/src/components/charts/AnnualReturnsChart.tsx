@@ -1,9 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import i18n from "@/i18n";
 import type { AnnualReturn } from "@/lib/tearsheet";
 import { getChartTheme } from "@/lib/chart-theme";
-import { echarts, CHART_GROUP, connectCharts } from "@/lib/echarts";
-import { useThemeDark } from "@/lib/theme-store";
+import { useChartLifecycle } from "@/hooks/useChartLifecycle";
 
 interface Props {
   data: AnnualReturn[];
@@ -12,18 +11,13 @@ interface Props {
 
 export function AnnualReturnsChart({ data, height = 260 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
-  const dark = useThemeDark();
 
-  useEffect(() => {
-    if (!ref.current || data.length === 0) return;
+  useChartLifecycle(ref, () => {
     const t = getChartTheme();
-    const chart = echarts.init(ref.current);
-    chart.group = CHART_GROUP;
-    connectCharts();
 
     const seriesName = i18n.t("runDetail.annualReturns");
 
-    chart.setOption({
+    return {
       backgroundColor: "transparent",
       tooltip: {
         trigger: "axis",
@@ -77,23 +71,8 @@ export function AnnualReturnsChart({ data, height = 260 }: Props) {
           },
         },
       ],
-    });
-
-    let resizeFrame: number | null = null;
-    const ro = new ResizeObserver(() => {
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      resizeFrame = requestAnimationFrame(() => {
-        resizeFrame = null;
-        chart.resize();
-      });
-    });
-    ro.observe(ref.current!);
-    return () => {
-      ro.disconnect();
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      chart.dispose();
     };
-  }, [data, dark]);
+  }, [data]);
 
   if (data.length === 0) {
     return <div className="text-muted-foreground text-sm p-4">{i18n.t("runDetail.noTearsheetData")}</div>;

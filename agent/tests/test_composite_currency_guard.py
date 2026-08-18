@@ -28,6 +28,7 @@ class TestCodeCurrency:
             ("005930.KS", "KRW"),
             ("TD.TO", "CAD"),
             ("PNG.V", "CAD"),
+            ("VIC.VN", "VND"),
             ("IF2406.CFFEX", "CNY"),
         ],
     )
@@ -71,6 +72,18 @@ class TestRejectMixedCurrency:
     def test_canadian_and_us_equities_are_not_summed_without_fx(self):
         with pytest.raises(ValueError, match="one settlement currency"):
             _reject_mixed_currency(["TD.TO", "AAPL.US"])
+
+    def test_vnd_is_named_rather_than_marked_unknown(self):
+        # A market with no entry in the table degrades to 'UNKNOWN:<market>',
+        # which still fails closed but names nothing useful in the error.
+        with pytest.raises(ValueError) as excinfo:
+            _reject_mixed_currency(["VIC.VN", "AAPL.US"])
+        message = str(excinfo.value)
+        assert "VND" in message
+        assert "UNKNOWN" not in message
+
+    def test_two_hose_symbols_are_one_currency(self):
+        _reject_mixed_currency(["VIC.VN", "FPT.VN"])
 
     def test_the_error_names_every_currency_and_its_codes(self):
         with pytest.raises(ValueError) as excinfo:

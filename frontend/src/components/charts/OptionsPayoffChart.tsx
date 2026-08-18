@@ -1,11 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import i18n from "@/i18n";
 import type { ExpiryCurve } from "@/lib/options";
 import { getChartTheme } from "@/lib/chart-theme";
 import { getPnlColors } from "@/lib/pnl-colors";
 import { abbreviateNum } from "@/lib/formatters";
-import { echarts, CHART_GROUP, connectCharts } from "@/lib/echarts";
-import { useThemeDark } from "@/lib/theme-store";
+import { useChartLifecycle } from "@/hooks/useChartLifecycle";
 
 interface Props {
   curve: ExpiryCurve;
@@ -16,15 +15,10 @@ interface Props {
 
 export function OptionsPayoffChart({ curve, entrySpot, breakevens, height = 340 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
-  const dark = useThemeDark();
 
-  useEffect(() => {
-    if (!ref.current || curve.spot.length === 0 || curve.pnl.length === 0) return;
+  useChartLifecycle(ref, () => {
     const t = getChartTheme();
     const pnlC = getPnlColors();
-    const chart = echarts.init(ref.current);
-    chart.group = CHART_GROUP;
-    connectCharts();
 
     const pnlLabel = i18n.t("options.payoff.pnl");
     const spotLabel = i18n.t("options.payoff.entrySpot");
@@ -34,7 +28,7 @@ export function OptionsPayoffChart({ curve, entrySpot, breakevens, height = 340 
     const profitData = pairs.map(([s, v]) => [s, v >= 0 ? v : null]);
     const lossData = pairs.map(([s, v]) => [s, v <= 0 ? v : null]);
 
-    chart.setOption({
+    return {
       backgroundColor: "transparent",
       tooltip: {
         trigger: "axis",
@@ -72,6 +66,9 @@ export function OptionsPayoffChart({ curve, entrySpot, breakevens, height = 340 
       grid: { left: 8, right: 16, top: 36, bottom: 8, containLabel: true },
       xAxis: {
         type: "value",
+        // Pin to the curve's spot range: the default nice domain extends to 0 and leaves a dead zone.
+        min: "dataMin",
+        max: "dataMax",
         name: i18n.t("options.payoff.spot"),
         nameTextStyle: { color: t.textColor, fontSize: 10 },
         nameLocation: "middle",
@@ -96,6 +93,7 @@ export function OptionsPayoffChart({ curve, entrySpot, breakevens, height = 340 
           data: pairs,
           smooth: false,
           symbol: "none",
+          itemStyle: { color: t.infoColor },
           lineStyle: { color: t.infoColor, width: 2 },
           markLine: {
             silent: true,
@@ -150,23 +148,8 @@ export function OptionsPayoffChart({ curve, entrySpot, breakevens, height = 340 
           tooltip: { show: false },
         },
       ],
-    });
-
-    let resizeFrame: number | null = null;
-    const ro = new ResizeObserver(() => {
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      resizeFrame = requestAnimationFrame(() => {
-        resizeFrame = null;
-        chart.resize();
-      });
-    });
-    ro.observe(ref.current!);
-    return () => {
-      ro.disconnect();
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      chart.dispose();
     };
-  }, [curve, entrySpot, breakevens, dark]);
+  }, [curve, entrySpot, breakevens]);
 
   if (curve.spot.length === 0 || curve.pnl.length === 0) {
     return <div className="text-muted-foreground text-sm p-4">{i18n.t("options.payoff.noData")}</div>;

@@ -1119,6 +1119,36 @@ def test_price_validation_ignores_short_dates_and_percent_ranges(
         assert result.valid is True, (draft, result.issues)
 
 
+def test_numbers_without_dates_or_percent_masks_cjk_glued_iso_dates() -> None:
+    """An ISO date running into CJK text is one date, not three prices (#1122).
+
+    ``\b`` is Unicode-aware, so CJK letters count as word characters and
+    ``(2026-07-14最低)`` had no boundary after ``14`` -- the date survived and
+    contributed 2026/7/14 as candidate prices. ``re.ASCII`` restores the byte
+    boundary so the whole date masks while a genuine quote beside it stays.
+    """
+    assert (
+        GroundingLedger._numbers_without_dates_or_percent("若跌破观测支撑位0.980 CNY (2026-07-14最低)")
+        == []
+    )
+    assert (
+        GroundingLedger._numbers_without_dates_or_percent("收盘价 8.20 CNY 自2026-07-14以来最低")
+        == [8.2]
+    )
+
+
+def test_iso_date_running_into_cjk_text_is_still_masked(tmp_path: Path) -> None:
+    """The end-to-end gate no longer rejects a correct report over a glued date (#1122)."""
+    ledger = _screened_ledger(tmp_path)
+
+    for draft in (
+        "000543.SZ 收盘价 8.20 CNY（2026-07-14最低）（source: tencent）",
+        "000543.SZ 收盘价 8.20 CNY 自2026-07-14以来最低（source: tencent）",
+    ):
+        result = ledger.validate_final_answer(draft)
+        assert result.valid is True, (draft, result.issues)
+
+
 def test_short_date_mask_does_not_swallow_a_plain_ratio(tmp_path: Path) -> None:
     """The month/day mask is bounded, so an ordinary ratio still reads (#983).
 
@@ -2130,3 +2160,115 @@ def test_in_text_decimal_survives_list_marker_mask(
     ):
         result = ledger.validate_final_answer(draft)
         assert result.valid is True, (draft, result.issues)
+
+
+def test_dash_form_trading_day_is_a_date_but_a_price_range_is_not() -> None:
+    """A report writes the day as "08-10(一)"; a target still writes "10-20 元".
+
+    The dash carries both meanings, so the mask splits them: a zero-padded
+    month reads as a date on its own, October through December need a weekday
+    or session marker, and a range with neither stays checkable.
+    """
+    extract = GroundingLedger._numbers_without_dates_or_percent
+
+    assert extract("08-10(一) 收盘 8.20 CNY") == [8.2]
+    assert extract("08-10盘中最低 8.20 CNY") == [8.2]
+    assert extract("08-10 close 8.20 USD") == [8.2]
+    assert extract("10-20(周一)盘中 8.20 CNY") == [8.2]
+
+    # No date marker and no zero-padded month: an ordinary quoted range, and
+    # masking it would stop checking a claim the ledger exists to check.
+    assert extract("区间 8-10 元") == [8.0, 10.0]
+    assert extract("跌 12-25 元") == [12.0, 25.0]
+
+
+def test_a_level_stated_as_a_range_masks_both_bounds(tmp_path: Path) -> None:
+    """Masking only the lower bound left a negative upper bound behind.
+
+    The separator touches the second number, so "目标价 10-20 元" used to
+    reduce to "-20" — and a negative price is outside every OHLC window, which
+    made a correct draft impossible to pass rather than merely unchecked.
+    """
+    extract = GroundingLedger._numbers_without_dates_or_percent
+
+    for draft in ("目标价 10-20 元", "支撑位 8-10 元", "阻力位 12.0~13.5", "52周高 15.0-16.0"):
+        assert extract(draft) == [], draft
+
+    # A single-value level is unchanged, and an observed quote beside a ranged
+    # level is still extracted and checked.
+    assert extract("止损位 7.5 元") == []
+    assert extract("目标价 10-20 元，现价 8.20 CNY") == [8.2]
+
+    ledger = _screened_ledger(tmp_path)
+    result = ledger.validate_final_answer(
+        "000543.SZ 收盘价 8.20 CNY，目标价 10-20 元（source: tencent）"
+    )
+    assert result.valid is True, result.issues
+
+
+def test_an_order_line_is_an_instruction_not_an_observation(tmp_path: Path) -> None:
+    """"100 @ $3.50" states where a limit sits; 100 was never a price at all.
+
+    A GTC summary in a weekly update was read as two observed quotes and
+    rejected against the session's range, which is the same category error the
+    target/stop masks already prevent.
+    """
+    extract = GroundingLedger._numbers_without_dates_or_percent
+
+    for draft in (
+        "GTC 100 @ $3.50",
+        "buy 100 @ $3.50 GTC",
+        "挂单 100 股 @ 4.00",
+        "限价单 100 @ 3.50",
+        "委托价 3.50",
+    ):
+        assert extract(draft) == [], draft
+
+    # 买入价/卖出价 stay OUT of the label set: in running prose they name the
+    # price a report says it observed, and masking them let an ungrounded
+    # quote through the gate.
+    assert extract("买入价 0.881") == [0.881]
+
+    # There is no bare "@ <price>" branch either. Dates are masked before this
+    # runs, so an observed close written "2026-08-10 @ 8.20" would reach the
+    # order mask as "@ 8.20" and stop being checked at all.
+    assert extract("收盘 2026-08-10 @ 8.20") == [8.2]
+
+    # An observed quote standing beside an order line is still checked, and a
+    # bare handle carries no price to mask.
+    assert extract("现价 8.20 CNY，挂单 100 @ 8.50") == [8.2]
+    assert extract("联系 @user 获取") == []
+
+    ledger = _screened_ledger(tmp_path)
+    result = ledger.validate_final_answer(
+        "000543.SZ 收盘价 8.20 CNY，挂单 100 股 @ 12.00（source: tencent）"
+    )
+    assert result.valid is True, result.issues
+
+
+def test_a_report_style_date_cell_still_matches_its_evidence_row() -> None:
+    """"08-10(一)" and "08-10盘中" are the same trading day as "08-10".
+
+    A weekday or session suffix made the cell match no evidence row, so every
+    price in that row was reported numeric_claim_unavailable even though the
+    run had fetched the bar.
+    """
+    from src.agent.grounding import _timestamp_matches_claim_date
+
+    stamp = "2026-08-10T15:00:00Z"
+    for claim in ("08-10", "8-10", "08-10(一)", "08-10(周一)", "08-10(周一)盘中", "08-10盘中", "08-10收盘"):
+        assert _timestamp_matches_claim_date(stamp, claim) is True, claim
+
+    # The suffix is decoration, not a wildcard — a different day still misses.
+    assert _timestamp_matches_claim_date(stamp, "08-11(一)") is False
+
+
+def test_a_us_csv_stem_resolves_to_its_venue_suffix() -> None:
+    """``INTC_US.csv`` is ``INTC.US``; without the row it was no evidence at all."""
+    from src.agent.grounding import _symbol_from_csv_filename
+
+    assert _symbol_from_csv_filename("INTC_US") == "INTC.US"
+    assert _symbol_from_csv_filename("BYN_V") == "BYN.V"
+    assert _symbol_from_csv_filename("GC_F") == "GC=F"
+    # A bare name has no venue suffix and must stay unresolvable.
+    assert _symbol_from_csv_filename("AAPL") is None

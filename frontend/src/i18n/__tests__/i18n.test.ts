@@ -1,9 +1,4 @@
 import en from "../locales/en.json";
-import zhCN from "../locales/zh-CN.json";
-import ja from "../locales/ja.json";
-import ko from "../locales/ko.json";
-import ar from "../locales/ar.json";
-import es from "../locales/es.json";
 import i18n, { SUPPORTED_LANGUAGES, isRtl } from "../index";
 
 // ── helpers ────────────────────────────────────────────────────
@@ -42,13 +37,25 @@ function hasPath(obj: Record<string, unknown>, path: string): boolean {
 
 const enKeys = collectKeys(en as unknown as Record<string, unknown>);
 
-const locales: Record<string, Record<string, unknown>> = {
-  "zh-CN": zhCN as unknown as Record<string, unknown>,
-  ja: ja as unknown as Record<string, unknown>,
-  ko: ko as unknown as Record<string, unknown>,
-  ar: ar as unknown as Record<string, unknown>,
-  es: es as unknown as Record<string, unknown>,
-};
+// Locale files are discovered from disk, never listed here. A hardcoded list
+// is how a locale can ship with perfect key parity and still be covered by no
+// parity test at all -- the list is a proxy for the locale set, and the two
+// drift the moment someone adds a language without editing this file.
+const localeModules = import.meta.glob<Record<string, unknown>>("../locales/*.json", {
+  eager: true,
+  import: "default",
+});
+
+const localeCodes = Object.keys(localeModules)
+  .map((path) => path.slice(path.lastIndexOf("/") + 1, -".json".length))
+  // The locales directory also holds its own tsconfig.json.
+  .filter((code) => code !== "tsconfig");
+
+const locales: Record<string, Record<string, unknown>> = Object.fromEntries(
+  localeCodes
+    .filter((code) => code !== "en")
+    .map((code) => [code, localeModules[`../locales/${code}.json`]]),
+);
 
 describe("i18n locale parity", () => {
   it.each(Object.entries(locales))("%s has every key from en.json", (name, locale) => {
@@ -64,6 +71,15 @@ describe("i18n locale parity", () => {
 
   it("en.json has at least 100 keys (sanity check)", () => {
     expect(enKeys.length).toBeGreaterThanOrEqual(100);
+  });
+
+  it("the locale files on disk are exactly the registered languages", () => {
+    // Both directions: a locale file nobody registered is unreachable in the
+    // switcher, and a registered language with no file is a runtime import
+    // failure. Either way the parity tests above would silently skip it.
+    expect([...localeCodes].sort()).toEqual(
+      SUPPORTED_LANGUAGES.map((language) => language.code).sort(),
+    );
   });
 });
 
@@ -138,9 +154,12 @@ describe("i18n utilities", () => {
     expect(isRtl("")).toBe(false);
   });
 
-  it("SUPPORTED_LANGUAGES contains all 6 registered locales", () => {
+  it("SUPPORTED_LANGUAGES lists every locale in switcher order", () => {
+    // The set is pinned against the locales directory above; this case pins
+    // the order the switcher renders, and that "en" stays first so the
+    // primary-match fallback in Layout resolves regional codes to it.
     const codes = SUPPORTED_LANGUAGES.map((l) => l.code);
-    expect(codes).toEqual(["en", "zh-CN", "ja", "ko", "ar", "es"]);
+    expect(codes).toEqual(["en", "zh-CN", "ja", "ko", "ar", "es", "de"]);
   });
 
   it("accepts zh-CN as an explicit supported language", async () => {

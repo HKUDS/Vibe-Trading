@@ -193,6 +193,8 @@ from src.api.runs_routes import (  # noqa: F401, E402
     _load_csv_to_dict,
     _build_response_from_run_dir,
 )
+from src.api.attribution_routes import register_attribution_routes  # noqa: E402
+register_attribution_routes(app)
 
 # --- Sessions ---
 from src.api.sessions_routes import register_sessions_routes  # noqa: E402

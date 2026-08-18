@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _SUBCLASSES_CACHE: list[type[BaseTool]] | None = None
+_DISCOVERY_FAILURES: dict[str, str] = {}
 _SHELL_TOOL_NAMES = {"bash", "background_run", "cancel_background"}
 
 
@@ -38,18 +39,26 @@ def _discover_subclasses() -> list[type[BaseTool]]:
     Returns:
         List of concrete BaseTool subclasses with a non-empty name.
     """
-    global _SUBCLASSES_CACHE
+    global _SUBCLASSES_CACHE, _DISCOVERY_FAILURES
     if _SUBCLASSES_CACHE is not None:
         return _SUBCLASSES_CACHE
 
     pkg_dir = str(Path(__file__).parent)
+    discovery_failures: dict[str, str] = {}
     for _, module_name, _ in pkgutil.iter_modules([pkg_dir]):
         if module_name.startswith("_"):
             continue
         try:
             importlib.import_module(f"src.tools.{module_name}")
         except Exception as exc:
-            logger.warning("Skipped src.tools.%s: %s", module_name, exc)
+            reason = f"{type(exc).__name__}: {exc}"
+            discovery_failures[module_name] = reason
+            # Stays at WARNING: an operator who cannot see *which* module
+            # dropped out is back to the silent partial registry of #1124.
+            # The aggregate line below counts them; this one names them.
+            logger.warning(
+                "Skipped src.tools.%s during discovery: %s", module_name, reason
+            )
 
     classes: list[type[BaseTool]] = []
     queue = deque(BaseTool.__subclasses__())
@@ -60,6 +69,7 @@ def _discover_subclasses() -> list[type[BaseTool]]:
         queue.extend(cls.__subclasses__())
 
     _SUBCLASSES_CACHE = classes
+    _DISCOVERY_FAILURES = discovery_failures
     return classes
 
 
@@ -132,8 +142,12 @@ def build_registry(
     # Tools that need the host session id injected: they create or mutate the
     # session's research goal, and the LLM never knows the session id.
     session_injected_classes = goal_tool_classes | {RunResearchAutopilotTool}
+    classes = _discover_subclasses()
     registry = ToolRegistry()
-    for cls in _discover_subclasses():
+    for module_name, reason in _DISCOVERY_FAILURES.items():
+        registry.record_import_failure(module_name, reason)
+
+    for cls in classes:
         try:
             if cls.name in _SHELL_TOOL_NAMES and not include_shell_tools:
                 logger.info("Tool %s disabled by shell tool policy", cls.name)
@@ -150,7 +164,19 @@ def build_registry(
             else:
                 registry.register(cls())
         except Exception as exc:
-            logger.warning("Failed to register tool %s: %s", cls.name, exc)
+            reason = f"{type(exc).__name__}: {exc}"
+            registry.record_registration_failure(cls.name, reason)
+            logger.warning("Failed to register tool %s: %s", cls.name, reason)
+
+    local_failure_count = len(registry.import_failures) + len(
+        registry.registration_failures
+    )
+    if local_failure_count:
+        summary = (
+            f"Registered {len(registry)} local tools; {local_failure_count} tool "
+            "source(s) failed during registry construction"
+        )
+        logger.warning(summary)
 
     if agent_config and agent_config.mcp_servers:
         from src.tools.mcp import build_mcp_tool_wrappers, resolve_mcp_server_tool_name_segments

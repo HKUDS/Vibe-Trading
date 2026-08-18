@@ -87,6 +87,10 @@ export function Scheduled() {
   const [days, setDays] = useState<DaysChoice>("weekdays");
   const [advanced, setAdvanced] = useState("");
   const [timezone, setTimezone] = useState(() => browserTimezone());
+  // Delivery is opt-in: an empty channel is what every monitor had before, and
+  // it means the briefing stays in the app.
+  const [deliveryChannel, setDeliveryChannel] = useState("");
+  const [deliveryTarget, setDeliveryTarget] = useState("");
   const [saving, setSaving] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
 
@@ -159,7 +163,19 @@ export function Scheduled() {
     }
     setSaving(true);
     try {
-      await api.createScheduledRun({ prompt: prompt.trim(), schedule, timezone });
+      const channel = deliveryChannel.trim();
+      const target = deliveryTarget.trim();
+      if (channel && !target) {
+        setComposerError(t("scheduled.deliveryTargetRequired"));
+        return;
+      }
+      await api.createScheduledRun({
+        prompt: prompt.trim(),
+        schedule,
+        timezone,
+        delivery_channel: channel || null,
+        delivery_target: channel ? target : null,
+      });
       setPrompt("");
       await refresh();
     } catch (error) {
@@ -319,6 +335,34 @@ export function Scheduled() {
           </div>
         </div>
 
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label htmlFor="scheduled-delivery-channel" className={labelClass}>
+              {t("scheduled.deliveryChannelLabel")}
+            </label>
+            <input
+              id="scheduled-delivery-channel"
+              value={deliveryChannel}
+              onChange={(e) => setDeliveryChannel(e.target.value)}
+              placeholder={t("scheduled.deliveryChannelPlaceholder")}
+              className={fieldClass}
+            />
+            <p className={hintClass}>{t("scheduled.deliveryHint")}</p>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="scheduled-delivery-target" className={labelClass}>
+              {t("scheduled.deliveryTargetLabel")}
+            </label>
+            <input
+              id="scheduled-delivery-target"
+              value={deliveryTarget}
+              onChange={(e) => setDeliveryTarget(e.target.value)}
+              placeholder={t("scheduled.deliveryTargetPlaceholder")}
+              className={fieldClass}
+            />
+          </div>
+        </div>
+
         {composerError && (
           <p role="alert" className="text-sm text-danger">
             {composerError}
@@ -385,6 +429,25 @@ export function Scheduled() {
                     {run.last_error && (
                       <p className="break-words text-xs text-danger">
                         {t("scheduled.lastError", { error: run.last_error })}
+                      </p>
+                    )}
+                    {run.delivery_channel && (
+                      <p
+                        className={
+                          run.delivery_status === "failed"
+                            ? "break-words text-xs text-danger"
+                            : hintClass
+                        }
+                      >
+                        {t(`scheduled.delivery_${run.delivery_status}`, {
+                          channel: run.delivery_channel,
+                          defaultValue: t("scheduled.delivery_none", {
+                            channel: run.delivery_channel,
+                          }),
+                        })}
+                        {run.delivery_status === "failed" && run.delivery_error
+                          ? ` — ${run.delivery_error}`
+                          : ""}
                       </p>
                     )}
                   </div>

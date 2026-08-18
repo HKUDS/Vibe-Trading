@@ -18,6 +18,8 @@ Symbol convention (Vibe-Trading -> Yahoo):
     ``.NS``/``.BO`` suffix verbatim)
   * Canada ``TD.TO`` / ``PNG.V`` -> unchanged (Yahoo carries the
     ``.TO``/``.V`` suffix verbatim)
+  * Vietnam ``VIC.VN`` -> unchanged (Yahoo carries the ``.VN`` suffix
+    verbatim; HOSE listings only)
   * Anything else is passed through unchanged (e.g. ``BTC-USD``, ``^GSPC``).
 
 This module is provider-specific glue only; it returns plain Python

@@ -1,11 +1,11 @@
 import i18n from '@/i18n';
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useNavigate, useSearchParams } from "react-router";
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowLeftRight,
   BarChart3,
   CalendarRange,
   CheckCircle2,
@@ -19,6 +19,7 @@ import {
   List,
   LayoutDashboard,
   Loader2,
+  PieChart,
   ShieldCheck,
   Sigma,
   XCircle,
@@ -47,10 +48,14 @@ import { Skeleton, SkeletonMetrics, SkeletonChart } from "@/components/common/Sk
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { getStrategyReportIdentity, StrategyResearchDashboard } from "@/components/charts/StrategyResearchDashboard";
 import { FactorResearchPanel } from "@/components/charts/FactorResearchPanel";
+import { AttributionTab } from "@/components/charts/AttributionTab";
+import { PositionsTab } from "@/components/run/PositionsTab";
+import { RunCardPanel, RunCardStat, formatRunCardValue } from "@/components/run/RunCard";
+import { isDateColumn } from "@/lib/positions";
 
 const rehypePlugins = [rehypeHighlight];
 
-type Tab = "dashboard" | "chart" | "tearsheet" | "trades" | "runCard" | "code" | "validation" | "studio" | "factor";
+type Tab = "dashboard" | "chart" | "tearsheet" | "trades" | "positions" | "attribution" | "runCard" | "code" | "validation" | "studio" | "factor";
 type ChartPayload = Pick<RunData, "price_series" | "indicator_series" | "trade_markers">;
 type ChartCache = Record<string, ChartPayload>;
 type ChartLoadProgress = { done: number; total: number };
@@ -136,11 +141,17 @@ export function RunDetail() {
   const hasStudio = !!run?.risk_xray || !!run?.rebalance_notes;
   const hasTearsheet = (run?.artifacts_equity_csv?.length ?? 0) > 0 || (run?.equity_curve?.length ?? 0) > 0;
   const hasFactor = !!run?.has_factor_artifacts;
+  const hasAttribution = (run?.artifacts_equity_csv?.length ?? 0) > 0;
+  const hasPositions = !!run?.artifacts_positions_csv?.some(
+    (row) => Object.keys(row).some((key) => !isDateColumn(key)),
+  );
   const TABS: { id: Tab; label: string; icon: typeof BarChart3; hidden?: boolean }[] = [
     { id: "dashboard", label: i18n.t("runDetail.dashboard"), icon: LayoutDashboard },
     { id: "chart", label: i18n.t("runDetail.chart"), icon: BarChart3 },
     { id: "tearsheet", label: i18n.t("runDetail.tearsheet"), icon: CalendarRange, hidden: !hasTearsheet },
     { id: "trades", label: i18n.t("runDetail.trades"), icon: List },
+    { id: "positions", label: i18n.t("runDetail.positions.tab"), icon: PieChart, hidden: !hasPositions },
+    { id: "attribution", label: i18n.t("runDetail.attribution"), icon: ArrowLeftRight, hidden: !hasAttribution },
     { id: "factor", label: i18n.t("runDetail.factor"), icon: Sigma, hidden: !hasFactor },
     { id: "studio", label: i18n.t("runDetail.studio"), icon: Gauge, hidden: !hasStudio },
     { id: "validation", label: i18n.t("runDetail.validation"), icon: ShieldCheck, hidden: !hasValidation },
@@ -412,6 +423,8 @@ export function RunDetail() {
           )}
           {tab === "tearsheet" && hasTearsheet && <TearsheetTab run={run} />}
           {tab === "trades" && <TradesTab run={run} />}
+          {tab === "positions" && hasPositions && <PositionsTab run={run} />}
+          {tab === "attribution" && hasAttribution && runId && <AttributionTab runId={runId} run={run} />}
           {tab === "factor" && run.has_factor_artifacts && runId && <FactorTab runId={runId} />}
           {tab === "validation" && run.validation && <ValidationPanel data={run.validation} />}
           {tab === "studio" && hasStudio && (
@@ -612,12 +625,15 @@ function TearsheetTab({ run }: { run: RunData }) {
     const lastTime = equityPoints.length > 0 ? equityPoints[equityPoints.length - 1].time : "";
     return toDrawdownZones(drawdowns, lastTime);
   }, [drawdowns, equityPoints]);
+  const chartData = useMemo<EquityPoint[]>(
+    () => equityPoints.map((p) => ({ time: p.time, equity: p.equity, drawdown: p.drawdown })),
+    [equityPoints],
+  );
 
   if (equityPoints.length < 2) {
     return <div className="p-8 text-muted-foreground text-sm">{i18n.t("runDetail.noTearsheetData")}</div>;
   }
 
-  const chartData: EquityPoint[] = equityPoints.map((p) => ({ time: p.time, equity: p.equity, drawdown: p.drawdown }));
   const yearCount = new Set(monthly.map((m) => m.year)).size;
   const heatmapHeight = Math.min(420, Math.max(200, 40 + 34 * yearCount));
 
@@ -698,27 +714,6 @@ function FactorTab({ runId }: { runId: string }) {
   );
 }
 
-export function RunCardStat({ label, value, tone = "normal" }: { label: string; value: string; tone?: "normal" | "warning" }) {
-  return (
-    <div className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={cn("mt-1 truncate text-sm font-medium", tone === "warning" ? "text-warning" : "")}>{value}</div>
-    </div>
-  );
-}
-
-export function RunCardPanel({ title, icon: Icon, children }: { title: string; icon: typeof FileCheck2; children: ReactNode }) {
-  return (
-    <section className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-        {title}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 function KeyValueTable({ data, empty, monospaceValues = false }: { data: Record<string, unknown>; empty: string; monospaceValues?: boolean }) {
   const entries = Object.entries(data).filter(([, value]) => value !== undefined && value !== null && value !== "");
   if (entries.length === 0) {
@@ -744,13 +739,6 @@ function hasStructuredValidation(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
   return Boolean(v.monte_carlo || v.bootstrap || v.walk_forward);
-}
-
-function formatRunCardValue(value: unknown): string {
-  if (Array.isArray(value)) return value.join(", ");
-  if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(4);
-  if (typeof value === "object" && value !== null) return JSON.stringify(value);
-  return String(value ?? "");
 }
 
 function formatBytes(value: number): string {

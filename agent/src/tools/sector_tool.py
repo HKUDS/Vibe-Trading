@@ -23,6 +23,7 @@ import json
 import logging
 from typing import Any
 
+from backtest.engines._market_hooks import _detect_market
 from backtest.loaders.eastmoney_client import get_json, resolve_secid
 from src.agent.tools import BaseTool
 
@@ -37,6 +38,10 @@ _RANKING_URL = "https://push2.eastmoney.com/api/qt/clist/get"
 # f2 = latest price, f104/f105 = up/down constituent counts (ranking only).
 _MEMBERSHIP_FIELDS = "f12,f13,f14,f3,f2"
 _RANKING_FIELDS = "f12,f14,f3,f2,f104,f105,f128,f140"
+
+# Industry-only selector (f13 = market marker distinguishing the stock row
+# from its board row in the spt=1 single-industry response).
+_INDUSTRY_FIELDS = "f12,f13,f14"
 
 # Industry-board universe selector for the ranking view (m:90 = board market,
 # t:2 = industry board sub-type). Sort by f3 (change percent), descending.
@@ -196,6 +201,57 @@ def _fetch_membership(code: str) -> str:
         "data": {"code": code, "secid": secid, "boards": boards},
     }
     return json.dumps(envelope, ensure_ascii=False)
+
+
+def resolve_industry_board(code: str) -> str | None:
+    """Resolve the single Eastmoney industry board (行业板块) name for an A-share.
+
+    Unlike the membership view (``spt=3``), which mixes industry and concept
+    boards into one list, the ``slist`` endpoint with ``spt=1`` returns the
+    stock itself plus its single industry board. The board row is the one with
+    ``f13 == 90`` (the board-market marker); the stock row carries ``f13`` of
+    ``1``/``0`` instead.
+
+    Args:
+        code: Vibe-Trading symbol (e.g. ``"600519.SH"``).
+
+    Returns:
+        The industry board name (e.g. ``"白酒Ⅱ"``), or ``None`` when the symbol
+        is not an A-share, is unresolvable, the request fails, or the payload
+        carries no board row. Never raises.
+    """
+    if _detect_market(code) != "a_share":
+        return None
+
+    secid = resolve_secid(code)
+    if secid is None:
+        return None
+
+    try:
+        payload = get_json(
+            _MEMBERSHIP_URL,
+            params={
+                "secid": secid,
+                "spt": "1",
+                "pi": "0",
+                "pz": "100",
+                "fields": _INDUSTRY_FIELDS,
+                "fltt": "2",
+                "po": "1",
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 - a failed lookup degrades to None
+        logger.warning("industry board fetch failed for %s: %s", code, exc)
+        return None
+
+    for row in _diff_rows(payload):
+        if not isinstance(row, dict):
+            continue
+        if row.get("f13") in (90, "90"):
+            board_name = row.get("f14")
+            if board_name and board_name != "-":
+                return str(board_name)
+    return None
 
 
 def _fetch_ranking(limit: int) -> str:

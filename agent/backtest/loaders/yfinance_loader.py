@@ -96,8 +96,8 @@ def _to_yfinance_symbol(code: str) -> str:
     if upper.endswith("-USDC"):
         return upper[:-5] + "-USD"
     # India NSE/BSE (RELIANCE.NS, 500325.BO), Korea KRX (005930.KS,
-    # 247540.KQ), and Canada TSX/TSXV (TD.TO, PNG.V): yfinance carries these
-    # suffixes as-is.
+    # 247540.KQ), Canada TSX/TSXV (TD.TO, PNG.V), and Vietnam HOSE (VIC.VN):
+    # yfinance carries these suffixes as-is.
     return upper
 
 
@@ -257,7 +257,8 @@ class DataLoader:
 
     name = "yfinance"
     markets = {
-        "us_equity", "hk_equity", "india_equity", "kr_equity", "ca_equity", "crypto",
+        "us_equity", "hk_equity", "india_equity", "kr_equity", "ca_equity",
+        "vietnam_equity", "crypto",
     }
     # yfinance volume is single shares for US/HK equities
     # (HKUDS/Vibe-Trading#1062; HK verified 2026-08-11, 00700.HK ratio 1.00

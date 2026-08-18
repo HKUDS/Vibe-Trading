@@ -143,6 +143,25 @@ else
     echo "${GREEN}ok${NC}"
 fi
 
+# -------------------------------------------------------------- gate (f)
+# `some_module.os` IS the shared os module, so patching an attribute through it
+# reaches every importer in the process. pytest's own teardown calls os.scandir
+# and os.replace while fixture finalizers are still pending, so a replacement
+# that raises aborts the teardown chain and its undo never runs (#1123 -- one
+# such test produced ~3000 cascading errors). Patch the module's REFERENCE
+# instead: tests/module_os_helpers.py::patch_module_os.
+echo "[gate f] no process-wide os patches in tests ..."
+F_OUTPUT=$(grep -rn "setattr([a-zA-Z_][a-zA-Z_0-9]*\.os," agent/tests --include="*.py" \
+    | grep -v "^agent/tests/module_os_helpers.py:" || true)
+if [ -n "$F_OUTPUT" ]; then
+    echo "${RED}FAIL${NC}: patch the module's os reference, not the shared os module:"
+    echo "$F_OUTPUT"
+    echo "  use: from tests.module_os_helpers import patch_module_os"
+    FAILED=1
+else
+    echo "${GREEN}ok${NC}"
+fi
+
 # --------------------------------------------------------------- result
 if [ "$FAILED" -ne 0 ]; then
     echo

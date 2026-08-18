@@ -23,6 +23,7 @@ Error surface:
 
 - Payoff: pydantic request validation → 422 (FastAPI default). A tool-level
   error envelope (``{"status": "error", ...}``) → 400 with that same body.
+  An unexpected exception inside the tool call → 502 with a generic envelope.
 - Chain: missing/blank ticker → 400 ``{"ok": false, "error": "ticker is
   required"}``; a tool failure envelope (``ok: false``) → 502 with the tool's
   body; an unexpected exception inside the tool call → 502 with a generic
@@ -194,8 +195,15 @@ def register_options_routes(
         """Tool-identical payoff analysis plus portfolio Greeks at entry."""
         params = _tool_params(payload)
         tool = OptionsPayoffTool()
-        raw = await asyncio.to_thread(tool.execute, **params)
-        envelope = json.loads(raw)
+        try:
+            raw = await asyncio.to_thread(tool.execute, **params)
+            envelope = json.loads(raw)
+        except Exception:  # noqa: BLE001 — never leak a stack frame to clients
+            logger.exception("options payoff tool call failed")
+            return JSONResponse(
+                status_code=502,
+                content={"ok": False, "error": "payoff computation failed"},
+            )
         if envelope.get("status") != "ok":
             # Curated tool error envelope (bad bounds, bad scenarios, ...) —
             # surface it verbatim as a client error.

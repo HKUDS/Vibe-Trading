@@ -251,6 +251,34 @@ def _require_nonnegative(value: float, name: str, model: str) -> float:
     return numeric
 
 
+def _require_finite(value: float, name: str, model: str) -> float:
+    """Check a value is a finite number, refusing NaN and infinity.
+
+    Args:
+        value: The candidate value.
+        name: Field name for the error message.
+        model: Model name for the error message.
+
+    Returns:
+        ``value`` as a float.
+
+    Raises:
+        ValuationError: If the value is not a finite number. A non-finite
+            input here would otherwise flow through the valuation arithmetic
+            and surface as a silently wrong per-share number, which is exactly
+            the outcome the package's no-silent-defaults rule exists to prevent.
+    """
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValuationError(f"{model}: {name} must be a number, got {value!r}") from exc
+    if not math.isfinite(numeric):
+        raise ValuationError(
+            f"{model}: {name} must be a finite number, got {numeric!r}"
+        )
+    return numeric
+
+
 def _validate_weights(equity_weight: float, debt_weight: float, *, model: str) -> None:
     """Check that a pair of capital-structure weights is usable.
 
@@ -393,10 +421,12 @@ def wacc(
         MissingInputError: If the market-value or target-weight pair matching
             ``capital_structure_basis`` is not fully supplied.
         ValuationError: If ``capital_structure_basis`` is unrecognised, if
-            ``tax_rate`` is outside ``[0, 1]``, if a market value is negative,
-            if the market value of equity plus debt is zero (weights
-            undefined), or if the resulting weights are negative or do not sum
-            to 1.
+            ``tax_rate`` is outside ``[0, 1]``, if a market value is negative
+            or not finite, if the market value of equity plus debt is zero
+            (weights undefined), if the resulting weights are negative or do
+            not sum to 1, or if ``risk_free_rate``, ``beta``,
+            ``equity_risk_premium``, ``pretax_cost_of_debt``, ``size_premium``,
+            ``country_risk_premium`` or a target weight is not a finite number.
     """
     if capital_structure_basis not in CAPITAL_STRUCTURE_BASES:
         raise ValuationError(
@@ -417,13 +447,12 @@ def wacc(
         ]
         if missing:
             raise MissingInputError(missing, "wacc")
-        equity_mv = float(market_value_of_equity)  # type: ignore[arg-type]
-        debt_mv = float(market_value_of_debt)  # type: ignore[arg-type]
-        if equity_mv < 0.0 or debt_mv < 0.0:
-            raise ValuationError(
-                f"wacc: market values must be non-negative, got "
-                f"market_value_of_equity={equity_mv!r} market_value_of_debt={debt_mv!r}"
-            )
+        equity_mv = _require_nonnegative(
+            market_value_of_equity, "market_value_of_equity", "wacc"
+        )
+        debt_mv = _require_nonnegative(
+            market_value_of_debt, "market_value_of_debt", "wacc"
+        )
         total_mv = equity_mv + debt_mv
         if total_mv <= 0.0:
             raise ValuationError(
@@ -443,10 +472,19 @@ def wacc(
         ]
         if missing:
             raise MissingInputError(missing, "wacc")
-        equity_weight = float(target_equity_weight)  # type: ignore[arg-type]
-        debt_weight = float(target_debt_weight)  # type: ignore[arg-type]
+        equity_weight = _require_finite(
+            target_equity_weight, "target_equity_weight", "wacc"
+        )
+        debt_weight = _require_finite(target_debt_weight, "target_debt_weight", "wacc")
 
     _validate_weights(equity_weight, debt_weight, model="wacc")
+
+    risk_free_rate = _require_finite(risk_free_rate, "risk_free_rate", "wacc")
+    beta = _require_finite(beta, "beta", "wacc")
+    equity_risk_premium = _require_finite(equity_risk_premium, "equity_risk_premium", "wacc")
+    pretax_cost_of_debt = _require_finite(pretax_cost_of_debt, "pretax_cost_of_debt", "wacc")
+    size_premium = _require_finite(size_premium, "size_premium", "wacc")
+    country_risk_premium = _require_finite(country_risk_premium, "country_risk_premium", "wacc")
 
     cost_of_equity = (
         risk_free_rate + beta * equity_risk_premium + size_premium + country_risk_premium
@@ -561,8 +599,8 @@ def fcff_bridge(
 
     Raises:
         ValuationError: If ``tax_rate`` is outside ``[0, 1]``, if ``ebit`` is
-            empty, or if the other three forecasts are not the same length as
-            ``ebit``.
+            empty, if the other three forecasts are not the same length as
+            ``ebit``, or if any forecast entry is not a finite number.
     """
     if not 0.0 <= tax_rate <= 1.0:
         raise ValuationError(f"fcff_bridge: tax_rate must be within [0, 1], got {tax_rate!r}")
@@ -588,10 +626,18 @@ def fcff_bridge(
 
     years = []
     for index in range(horizon):
-        ebit_value = float(ebit_list[index])
-        da_value = float(forecasts["depreciation_amortization"][index])
-        capex_value = float(forecasts["capex"][index])
-        delta_nwc_value = float(forecasts["delta_nwc"][index])
+        ebit_value = _require_finite(ebit_list[index], f"ebit[{index}]", "fcff_bridge")
+        da_value = _require_finite(
+            forecasts["depreciation_amortization"][index],
+            f"depreciation_amortization[{index}]",
+            "fcff_bridge",
+        )
+        capex_value = _require_finite(
+            forecasts["capex"][index], f"capex[{index}]", "fcff_bridge"
+        )
+        delta_nwc_value = _require_finite(
+            forecasts["delta_nwc"][index], f"delta_nwc[{index}]", "fcff_bridge"
+        )
         nopat = ebit_value * (1.0 - tax_rate)
         fcff_value = nopat + da_value - capex_value - delta_nwc_value
         years.append(
@@ -698,8 +744,10 @@ def terminal_value(
 
     Raises:
         ValuationError: If either argument is not the matching
-            :class:`Assumption`; if ``wacc_rate <= -1``; if
-            ``terminal_growth.value >= wacc_rate`` (the perpetuity terminal
+            :class:`Assumption`; if ``wacc_rate``, ``final_year_fcff``,
+            ``terminal_year_ebitda``, ``terminal_growth.value`` or
+            ``exit_multiple.value`` is not a finite number; if ``wacc_rate <= -1``;
+            if ``terminal_growth.value >= wacc_rate`` (the perpetuity terminal
             value is negative or infinite there, not merely large); if
             ``terminal_year_ebitda <= 0`` (an EV/EBITDA multiple is undefined);
             if ``exit_multiple.value <= 0``; or if the exit terminal value
@@ -709,11 +757,17 @@ def terminal_value(
     _require_assumption(terminal_growth, "terminal_growth", "terminal_value")
     _require_assumption(exit_multiple, "exit_multiple", "terminal_value")
 
+    final_year_fcff = _require_finite(final_year_fcff, "final_year_fcff", "terminal_value")
+    terminal_year_ebitda = _require_finite(
+        terminal_year_ebitda, "terminal_year_ebitda", "terminal_value"
+    )
+    wacc_rate = _require_finite(wacc_rate, "wacc_rate", "terminal_value")
+
     if wacc_rate <= -1.0:
         raise ValuationError(
             f"terminal_value: wacc_rate must exceed -1, got {wacc_rate!r}"
         )
-    growth = float(terminal_growth.value)
+    growth = _require_finite(terminal_growth.value, "terminal_growth.value", "terminal_value")
     if growth >= wacc_rate:
         raise ValuationError(
             f"terminal_value: terminal_growth ({growth!r}) must be strictly "
@@ -726,7 +780,7 @@ def terminal_value(
             f"terminal_value: terminal_year_ebitda must be positive to derive "
             f"an implied EV/EBITDA multiple, got {terminal_year_ebitda!r}"
         )
-    multiple = float(exit_multiple.value)
+    multiple = _require_finite(exit_multiple.value, "exit_multiple.value", "terminal_value")
     if multiple <= 0.0:
         raise ValuationError(
             f"terminal_value: exit_multiple.value must be positive, got {multiple!r}"
@@ -832,7 +886,8 @@ def discount_fcff(
 
     Raises:
         ValuationError: If ``discounting_convention`` is unrecognised, if
-            ``fcff_years`` is empty, or if ``wacc_rate <= -1``.
+            ``fcff_years`` is empty, if ``wacc_rate`` is not a finite number,
+            or if ``wacc_rate <= -1``.
     """
     if discounting_convention not in DISCOUNTING_CONVENTIONS:
         raise ValuationError(
@@ -841,6 +896,7 @@ def discount_fcff(
         )
     if not fcff_years:
         raise ValuationError("discount_fcff: fcff_years is empty")
+    wacc_rate = _require_finite(wacc_rate, "wacc_rate", "discount_fcff")
     if wacc_rate <= -1.0:
         raise ValuationError(f"discount_fcff: wacc_rate must exceed -1, got {wacc_rate!r}")
 
@@ -965,8 +1021,9 @@ def equity_bridge(
         A :class:`NetDebtBridgeResult`.
 
     Raises:
-        ValuationError: If any of the five balance-sheet items is negative or
-            not finite, or if ``diluted_shares`` is not a finite positive number.
+        ValuationError: If ``enterprise_value`` is not a finite number, if any
+            of the five balance-sheet items is negative or not finite, or if
+            ``diluted_shares`` is not a finite positive number.
     """
     debt = _require_nonnegative(total_debt, "total_debt", "equity_bridge")
     cash = _require_nonnegative(cash_and_equivalents, "cash_and_equivalents", "equity_bridge")
@@ -976,12 +1033,13 @@ def equity_bridge(
         associate_investments, "associate_investments", "equity_bridge"
     )
     shares = require_positive(diluted_shares, "diluted_shares", "equity_bridge")
+    enterprise_value = _require_finite(enterprise_value, "enterprise_value", "equity_bridge")
 
     equity_value = enterprise_value - debt + cash - minority - preferred + associates
     value_per_share = equity_value / shares
 
     return NetDebtBridgeResult(
-        enterprise_value=float(enterprise_value),
+        enterprise_value=enterprise_value,
         total_debt=debt,
         cash_and_equivalents=cash,
         minority_interest=minority,
@@ -1045,9 +1103,10 @@ def sensitivity_grid(
     Raises:
         ValuationError: If ``fcff_years``, ``wacc_values`` or
             ``growth_values`` is empty, if ``discounting_convention`` is
-            unrecognised, if any ``wacc_values`` entry is at or below -1, or if
-            any balance-sheet item is negative or ``diluted_shares`` is not
-            positive.
+            unrecognised, if any ``wacc_values`` or ``growth_values`` entry is
+            not a finite number, if any ``wacc_values`` entry is at or below
+            -1, or if any balance-sheet item is negative or ``diluted_shares``
+            is not positive.
     """
     if discounting_convention not in DISCOUNTING_CONVENTIONS:
         raise ValuationError(
@@ -1062,6 +1121,14 @@ def sensitivity_grid(
         raise ValuationError("sensitivity_grid: wacc_values is empty")
     if not growth_list:
         raise ValuationError("sensitivity_grid: growth_values is empty")
+    wacc_list = [
+        _require_finite(v, f"wacc_values[{i}]", "sensitivity_grid")
+        for i, v in enumerate(wacc_list)
+    ]
+    growth_list = [
+        _require_finite(v, f"growth_values[{i}]", "sensitivity_grid")
+        for i, v in enumerate(growth_list)
+    ]
 
     debt = _require_nonnegative(total_debt, "total_debt", "sensitivity_grid")
     cash = _require_nonnegative(cash_and_equivalents, "cash_and_equivalents", "sensitivity_grid")

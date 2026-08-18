@@ -996,3 +996,187 @@ def test_dcf_result_exposes_every_intermediate_object():
     assert isinstance(result.net_debt_bridge, NetDebtBridgeResult)
     assert len(result.fcff_bridge) == 3
     assert len(result.discounted_fcff) == 3
+
+
+# ---------------------------------------------------------------------------
+# 11. Non-finite inputs are refused, never silently propagated
+# ---------------------------------------------------------------------------
+
+
+def test_wacc_refuses_non_finite_rates():
+    with pytest.raises(ValuationError):
+        wacc(
+            risk_free_rate=math.inf, beta=1.2, equity_risk_premium=0.05,
+            pretax_cost_of_debt=0.06, tax_rate=0.25, capital_structure_basis="target",
+            target_equity_weight=0.7, target_debt_weight=0.3,
+        )
+    with pytest.raises(ValuationError):
+        wacc(
+            risk_free_rate=0.04, beta=math.nan, equity_risk_premium=0.05,
+            pretax_cost_of_debt=0.06, tax_rate=0.25, capital_structure_basis="target",
+            target_equity_weight=0.7, target_debt_weight=0.3,
+        )
+    with pytest.raises(ValuationError):
+        wacc(
+            risk_free_rate=0.04, beta=1.2, equity_risk_premium=math.inf,
+            pretax_cost_of_debt=0.06, tax_rate=0.25, capital_structure_basis="target",
+            target_equity_weight=0.7, target_debt_weight=0.3,
+        )
+    with pytest.raises(ValuationError):
+        wacc(
+            risk_free_rate=0.04, beta=1.2, equity_risk_premium=0.05,
+            pretax_cost_of_debt=math.nan, tax_rate=0.25, capital_structure_basis="target",
+            target_equity_weight=0.7, target_debt_weight=0.3,
+        )
+
+
+def test_wacc_accepts_negative_but_finite_rates():
+    """A negative beta or a negative risk-free rate is legitimate; the guard
+    must refuse only non-finite values, not flip the sign semantics."""
+    result = wacc(
+        risk_free_rate=-0.01, beta=-0.5, equity_risk_premium=0.05,
+        pretax_cost_of_debt=0.06, tax_rate=0.25, capital_structure_basis="target",
+        target_equity_weight=0.7, target_debt_weight=0.3,
+    )
+    assert math.isfinite(result.wacc)
+
+
+def test_wacc_refuses_non_finite_structure_inputs():
+    # current basis: non-finite market values
+    with pytest.raises(ValuationError):
+        wacc(
+            risk_free_rate=0.04, beta=1.2, equity_risk_premium=0.05,
+            pretax_cost_of_debt=0.06, tax_rate=0.25, capital_structure_basis="current",
+            market_value_of_equity=math.nan, market_value_of_debt=300.0,
+        )
+    with pytest.raises(ValuationError):
+        wacc(
+            risk_free_rate=0.04, beta=1.2, equity_risk_premium=0.05,
+            pretax_cost_of_debt=0.06, tax_rate=0.25, capital_structure_basis="current",
+            market_value_of_equity=700.0, market_value_of_debt=math.inf,
+        )
+    # target basis: non-finite weights
+    with pytest.raises(ValuationError):
+        wacc(
+            risk_free_rate=0.04, beta=1.2, equity_risk_premium=0.05,
+            pretax_cost_of_debt=0.06, tax_rate=0.25, capital_structure_basis="target",
+            target_equity_weight=math.nan, target_debt_weight=0.3,
+        )
+    with pytest.raises(ValuationError):
+        wacc(
+            risk_free_rate=0.04, beta=1.2, equity_risk_premium=0.05,
+            pretax_cost_of_debt=0.06, tax_rate=0.25, capital_structure_basis="target",
+            target_equity_weight=0.7, target_debt_weight=math.inf,
+        )
+
+
+def test_fcff_bridge_refuses_non_finite_forecast_entries():
+    with pytest.raises(ValuationError):
+        fcff_bridge(
+            ebit=[100.0, math.inf], tax_rate=0.25,
+            depreciation_amortization=[20.0, 21.0], capex=[30.0, 28.0],
+            delta_nwc=[5.0, 4.0],
+        )
+    with pytest.raises(ValuationError):
+        fcff_bridge(
+            ebit=[100.0, 105.0], tax_rate=0.25,
+            depreciation_amortization=[20.0, math.nan], capex=[30.0, 28.0],
+            delta_nwc=[5.0, 4.0],
+        )
+
+
+def test_terminal_value_refuses_non_finite_inputs():
+    with pytest.raises(ValuationError):
+        terminal_value(
+            final_year_fcff=math.nan, terminal_year_ebitda=132.0, wacc_rate=0.0905,
+            terminal_growth=Assumption("terminal_growth", 0.03, "b"),
+            exit_multiple=Assumption("exit_multiple", 8.0, "b"),
+        )
+    with pytest.raises(ValuationError):
+        terminal_value(
+            final_year_fcff=75.5, terminal_year_ebitda=math.inf, wacc_rate=0.0905,
+            terminal_growth=Assumption("terminal_growth", 0.03, "b"),
+            exit_multiple=Assumption("exit_multiple", 8.0, "b"),
+        )
+    with pytest.raises(ValuationError):
+        terminal_value(
+            final_year_fcff=75.5, terminal_year_ebitda=132.0, wacc_rate=math.inf,
+            terminal_growth=Assumption("terminal_growth", 0.03, "b"),
+            exit_multiple=Assumption("exit_multiple", 8.0, "b"),
+        )
+    with pytest.raises(ValuationError):
+        terminal_value(
+            final_year_fcff=75.5, terminal_year_ebitda=132.0, wacc_rate=0.0905,
+            terminal_growth=Assumption("terminal_growth", math.nan, "b"),
+            exit_multiple=Assumption("exit_multiple", 8.0, "b"),
+        )
+    with pytest.raises(ValuationError):
+        terminal_value(
+            final_year_fcff=75.5, terminal_year_ebitda=132.0, wacc_rate=0.0905,
+            terminal_growth=Assumption("terminal_growth", 0.03, "b"),
+            exit_multiple=Assumption("exit_multiple", math.inf, "b"),
+        )
+
+
+def test_equity_bridge_refuses_non_finite_enterprise_value():
+    with pytest.raises(ValuationError):
+        equity_bridge(
+            enterprise_value=math.inf, total_debt=200.0, cash_and_equivalents=50.0,
+            minority_interest=10.0, preferred_equity=15.0, associate_investments=5.0,
+            diluted_shares=100.0,
+        )
+
+
+def test_discount_fcff_refuses_non_finite_wacc_rate():
+    bridge = fcff_bridge(
+        ebit=[100.0], tax_rate=0.25, depreciation_amortization=[20.0], capex=[30.0],
+        delta_nwc=[5.0],
+    )
+    with pytest.raises(ValuationError):
+        discount_fcff(bridge, wacc_rate=math.nan, discounting_convention="mid_year")
+
+
+def test_sensitivity_grid_refuses_non_finite_axis_values():
+    bridge = fcff_bridge(
+        ebit=[100.0], tax_rate=0.25, depreciation_amortization=[20.0], capex=[30.0],
+        delta_nwc=[5.0],
+    )
+    common = dict(
+        total_debt=200.0, cash_and_equivalents=50.0, minority_interest=10.0,
+        preferred_equity=15.0, associate_investments=5.0, diluted_shares=100.0,
+    )
+    with pytest.raises(ValuationError):
+        sensitivity_grid(
+            bridge, wacc_values=[0.09, math.nan], growth_values=[0.02, 0.03],
+            discounting_convention="mid_year", **common,
+        )
+    with pytest.raises(ValuationError):
+        sensitivity_grid(
+            bridge, wacc_values=[0.09, 0.10], growth_values=[0.02, math.inf],
+            discounting_convention="mid_year", **common,
+        )
+
+
+def test_run_dcf_never_returns_a_silently_wrong_share_price():
+    """A non-finite WACC or FCFF input must raise, not produce a negative or
+    non-finite per-share value an agent would take as a real valuation."""
+    for field, bad in (("beta", math.inf), ("risk_free_rate", math.nan)):
+        inputs = base_inputs()
+        inputs[field] = bad
+        with pytest.raises(ValuationError):
+            run_dcf(
+                inputs,
+                capital_structure_basis="target",
+                discounting_convention="mid_year",
+                terminal_value_method="perpetuity_growth",
+            )
+
+    inputs = base_inputs()
+    inputs["ebit"] = [100.0, math.inf, 110.0]
+    with pytest.raises(ValuationError):
+        run_dcf(
+            inputs,
+            capital_structure_basis="target",
+            discounting_convention="mid_year",
+            terminal_value_method="perpetuity_growth",
+        )

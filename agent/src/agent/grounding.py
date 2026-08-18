@@ -88,7 +88,16 @@ _CSV_DATE_COLUMNS = {"date", "datetime", "trade_date", "timestamp", "index"}
 # Filename -> symbol mapping for run-dir CSVs. The bash workaround writes each
 # series with a filesystem-safe stem: ``BYN_V.csv`` for ``BYN.V``, ``PDI_TO.csv``
 # for ``PDI.TO``, ``GC_F.csv`` for ``GC=F``.
-_CSV_FILENAME_SUFFIX_MAP = (("_V", ".V"), ("_TO", ".TO"), ("_F", "=F"))
+_CSV_FILENAME_SUFFIX_MAP = (
+    ("_V", ".V"),
+    ("_TO", ".TO"),
+    ("_F", "=F"),
+    # A US name is written ``INTC_US.csv`` by the same workaround, and
+    # ``.US`` is the venue suffix the rest of the project resolves on. Without
+    # this row the CSV was ingested as no evidence at all, so every price the
+    # run had actually fetched came back "numeric_claim_unavailable".
+    ("_US", ".US"),
+)
 
 # Only ``get_market_data`` returns bars whose columns are already the canonical
 # OHLC field names. Every other market-sensitive tool nests its quote somewhere,
@@ -201,7 +210,12 @@ _RATE_FORMULA_IDENTITY_RE = re.compile(
     r"\b[01](?=\s*[-+]\s*(?:[A-Za-z_][A-Za-z0-9_]*_?rate\b|[^\d\s()+*/=-]{0,12}(?:成本率|费率|税率|滑点率)))",
     re.IGNORECASE,
 )
-_DATE_RE = re.compile(r"\b(?:19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}\b")
+# re.ASCII keeps ``\b`` a *byte* word boundary. Without it, ``\w`` is
+# Unicode-aware and CJK letters count as word characters, so a date that runs
+# straight into Chinese text -- "(2026-07-14最低)" -- has no boundary after
+# "14" and is left unmasked, contributing 2026/7/14 as candidate prices that
+# reject a correct report (#1122).
+_DATE_RE = re.compile(r"\b(?:19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}\b", re.ASCII)
 # A year-less "8/5" is how a trading day is written in running prose, and it
 # contributed 8 and 5 as candidate prices (#983). The month and day ranges are
 # bounded, and both sides are fenced off from a longer slash run, so the window
@@ -209,6 +223,28 @@ _DATE_RE = re.compile(r"\b(?:19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}\b")
 _SHORT_DATE_RE = re.compile(
     r"(?<![\d/])(?:0?[1-9]|1[0-2])/(?:0?[1-9]|[12]\d|3[01])(?![\d/])"
 )
+# A report writes a trading day as "08-10(一)" or "08-10盘中", and the dash form
+# leaked 8 and 10 as candidate prices exactly as "8/5" once did. The dash is
+# NOT symmetric with the slash, though: it also separates a range, and "目标价
+# 10-20 元" must stay checkable. So the two halves are split -- a zero-padded
+# month (01-09) is a formatting intent no price range imitates, while 10/11/12
+# have to carry a weekday or session marker to read as a date.
+_DASH_DATE_RE = re.compile(
+    r"(?<![\d/-])(?:"
+    r"0[1-9]-(?:0[1-9]|[12]\d|3[01])"
+    r"|1[0-2]-(?:0[1-9]|[12]\d|3[01])"
+    r"(?=\s*(?:[(（]\s*(?:周|星期)?[一二三四五六日天]\s*[)）]"
+    r"|盘中|盘后|盘前|收盘|开盘|最低|最高"
+    r"|\s*(?:close|open|intraday|low|high)\b))"
+    r")(?![\d/-])",
+    re.IGNORECASE,
+)
+# A level stated as a RANGE has the same shape: the separator touches the
+# second number, so masking "目标价 10" left "-20" behind and a negative price
+# matches no OHLC window at all -- a guaranteed rejection of a correct draft.
+# The tail is optional, so a single-value level is unaffected.
+_RANGE_TAIL = r"(?:\s*[-–—~～至到]\s*[-+]?\d[\d,]*(?:\.\d+)?)?"
+
 # A percentage range masks only its upper bound through the "%" tail check
 # below, because the sign touches the second number: "1–2%" left 1 behind
 # (#983). Mask the span as a whole.
@@ -279,6 +315,32 @@ _INDICATOR_VALUE_RE = re.compile(
 # it, the number survives masking and is compared against observed OHLC as a
 # price claim even though it is a prospective level, not an observed quote.
 _CURRENCY_TOKEN = r"(?:\$|US\$|C\$|HK\$|CAD|USD|CNY|HKD|¥|￥)?"
+
+# An order line is an instruction, not an observation. "100 @ $3.50" states
+# where a limit sits and "100" is a share count that was never a price at all,
+# yet both went to the OHLC check and rejected a weekly update whose quotes
+# were correct. This is the same category as the target/stop levels below -- a
+# level the report proposes, not one the data source reported.
+_ORDER_LEVEL_RE = re.compile(
+    r"(?:"
+    # (a) "<qty> [股|shares] @ <price>" -- the whole clause, quantity included
+    r"\d[\d,]*(?:\.\d+)?\s*(?:股|shares?)?\s*@\s*"
+    + _CURRENCY_TOKEN + r"\s*[-+]?\d[\d,]*(?:\.\d+)?"
+    r"|"
+    # (b) an order label, optionally carrying its own "<qty> @", then the level.
+    # There is deliberately no bare "@ <price>" branch: dates are masked before
+    # this runs, so "收盘 2026-08-10 @ 8.20" would arrive here as "@ 8.20" and a
+    # genuinely observed close would stop being checked. 买入价 / 卖出价 are
+    # absent for the same reason -- in running prose they name a price the
+    # report says it observed, not an instruction it proposes.
+    r"(?:挂单|限价单|限价|委托价?|订单"
+    r"|limit\s+(?:order|price)|\bGTC\b|\bGTD\b|\bIOC\b|\bFOK\b)"
+    r"\s*(?:为|是|at|=)?\s*[:：]?\s*"
+    r"(?:\d[\d,]*(?:\.\d+)?\s*(?:股|shares?)?\s*@\s*)?"
+    + _CURRENCY_TOKEN + r"\s*[-+]?\d[\d,]*(?:\.\d+)?"
+    r")" + _RANGE_TAIL,
+    re.IGNORECASE,
+)
 # A historical reference names a price the instrument once traded at — an
 # all-time high, a 52-week extreme — and the answer is not claiming it as
 # today's observed quote. "8/12 高 149.60 为 6/16 ATH 225.64 以来最高" was
@@ -297,7 +359,7 @@ _REFERENCE_LEVEL_RE = re.compile(
     r"上市以来(?:最高|最低)(?:点|位|价)?"
     r")"
     r"\s*(?:of|为|是|约|at)?\s*[:：]?\s*\(?"
-    r"\s*" + _CURRENCY_TOKEN + r"\s*[-+]?\d[\d,]*(?:\.\d+)?",
+    r"\s*" + _CURRENCY_TOKEN + r"\s*[-+]?\d[\d,]*(?:\.\d+)?" + _RANGE_TAIL,
     re.IGNORECASE,
 )
 # A date-anchored reference puts the historical extreme after the number:
@@ -363,18 +425,19 @@ _PROSPECTIVE_LEVEL_RE = re.compile(
     r"(?:"
     # (a) comparison operator immediately before the number
     r"(?:>=|<=|≥|≤|>|<|大于|小于|不低于|不高于|高于|低于)"
-    r"\s*" + _CURRENCY_TOKEN + r"\s*[-+]?\d[\d,]*(?:\.\d+)?"
-    r"|"
+    r"\s*" + _CURRENCY_TOKEN + r"\s*[-+]?\d[\d,]*(?:\.\d+)?" + _RANGE_TAIL
+    + r"|"
     # (b) a level marker introducing the number
     r"(?:目标位|目标区|目标价|均值目标(?:价)?|平均目标(?:价)?|止损位?|止盈位?|触发价|触发位|触发点|上看|下看|"
     r"支撑(?:阶梯|位|线)?|阻力(?:位|线)?|压力位|压力线|support(?:\s+(?:level|line|zone))?|"
     r"resistance(?:\s+(?:level|line|zone))?|target\s+(?:price|level|zone)|trigger|stop[-\s]?loss|take[-\s]?profit)"
     r"\s*(?:为|是|至|到|on|at|of|=)?\s*[:：]?\s*"
     + _CURRENCY_TOKEN
-    + r"\s*[-+]?\d[\d,]*(?:\.\d+)?"
-    r"|"
+    + r"\s*[-+]?\d[\d,]*(?:\.\d+)?" + _RANGE_TAIL
+    + r"|"
     # (c) the number followed by a level marker
-    r"" + _CURRENCY_TOKEN + r"[-+]?\d[\d,]*(?:\.\d+)?\s*(?:一线|附近)?\s*(?:成为?|作为|是)?\s*"
+    r"" + _CURRENCY_TOKEN + r"[-+]?\d[\d,]*(?:\.\d+)?" + _RANGE_TAIL
+    + r"\s*(?:一线|附近)?\s*(?:成为?|作为|是)?\s*"
     r"(?:目标区|目标位|止损位|止盈位)"
     r"|"
     # (d) a conditional opener before the number, digits fencing the reach
@@ -590,8 +653,18 @@ def _coerce_csv_number(value: Any) -> int | float | None:
 
 # "." is deliberately not a separator: a decimal price such as 8.5 would parse
 # as month 8 day 5 and match a real trading day.
+# A report writes the day as a table cell -- "08-10(一)", "08-10(周一)盘中",
+# "08-10盘中" -- and the weekday or session suffix made the cell match no
+# evidence row at all, so every price in that row came back
+# "numeric_claim_unavailable" even though the run had fetched the bar.
+_TRADING_DAY_SUFFIX = (
+    r"(?:\s*[(（]\s*(?:周|星期)?[一二三四五六日天]\s*[)）])?"
+    r"\s*(?:盘中|盘后|盘前|收盘|开盘|早盘|尾盘)?"
+)
 _YEARLESS_CLAIM_DATE_RE = re.compile(
-    r"^(0?[1-9]|1[0-2])\s*[-/月]\s*(0?[1-9]|[12]\d|3[01])\s*[日号]?$"
+    r"^(0?[1-9]|1[0-2])\s*[-/月]\s*(0?[1-9]|[12]\d|3[01])\s*[日号]?"
+    + _TRADING_DAY_SUFFIX
+    + r"$"
 )
 _ISO_TIMESTAMP_RE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})")
 
@@ -2337,7 +2410,9 @@ class GroundingLedger:
         masked = _LOCALIZED_DATE_RE.sub(" ", masked)
         masked = _DATE_RE.sub(" ", masked)
         masked = _SHORT_DATE_RE.sub(" ", masked)
+        masked = _DASH_DATE_RE.sub(" ", masked)
         masked = _PERCENT_RANGE_RE.sub(" ", masked)
+        masked = _ORDER_LEVEL_RE.sub(" ", masked)
         masked = _AGGREGATE_AMOUNT_RE.sub(" ", masked)
         masked = _LABELLED_SCORE_RE.sub(" ", masked)
         masked = _INDICATOR_VALUE_RE.sub(" ", masked)

@@ -1591,6 +1591,7 @@ def get_market_data(
         interval=interval,
         max_rows=max_rows,
         loader_resolver=_get_loader,
+        include_provenance=True,
     )
 
 

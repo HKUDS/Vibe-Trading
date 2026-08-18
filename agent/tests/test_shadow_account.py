@@ -494,6 +494,33 @@ def test_group_selection_by_currency_us_crypto_single_group() -> None:
 
 
 @pytest.mark.unit
+def test_group_selection_by_currency_names_vnd() -> None:
+    """A HOSE pool groups under VND, not an ``UNKNOWN:`` marker.
+
+    The group key is not merely a label: it names the pool's run directory
+    (``base_dir / currency``) and is rendered into the headline
+    ``_currency_note``. A market missing from the currency table would put a
+    colon into a path — illegal on Windows — and print the marker to the user.
+    """
+    groups = _group_selection_by_currency({"vietnam": ["VIC.VN", "FPT.VN"]})
+
+    assert set(groups.keys()) == {"VND"}
+    assert groups["VND"]["vietnam"] == ["VIC.VN", "FPT.VN"]
+    assert all(":" not in currency for currency in groups)
+
+
+@pytest.mark.unit
+def test_a_hose_pool_is_separated_from_other_currencies() -> None:
+    groups = _group_selection_by_currency({
+        "vietnam": ["VIC.VN"],
+        "us": _LIQUID_BASKETS["us"][:1],
+    })
+
+    assert set(groups.keys()) == {"VND", "USD"}
+    assert groups["VND"] == {"vietnam": ["VIC.VN"]}
+
+
+@pytest.mark.unit
 def test_run_shadow_backtest_runs_once_per_currency(
     profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -36,6 +36,11 @@ function run(overrides: Partial<ScheduledRun> = {}): ScheduledRun {
     failure_kind: null,
     config: {},
     timezone: "Pacific/Auckland",
+    delivery_channel: null,
+    delivery_target: null,
+    delivery_status: "none",
+    delivery_error: null,
+    delivery_updated_at: null,
     ...overrides,
   };
 }
@@ -135,5 +140,78 @@ describe("Scheduled page", () => {
       "Enter a research prompt",
     );
     expect(mocked.createScheduledRun).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("briefing delivery", () => {
+  it("keeps delivery off unless a channel is typed", async () => {
+    render(<Scheduled />);
+    fireEvent.change(screen.getByLabelText(/prompt/i), {
+      target: { value: "pre-open scan" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /schedule|create/i }));
+
+    await waitFor(() => expect(mocked.createScheduledRun).toHaveBeenCalled());
+    const body = mocked.createScheduledRun.mock.calls[0][0];
+    expect(body.delivery_channel).toBeNull();
+    expect(body.delivery_target).toBeNull();
+  });
+
+  it("refuses a channel with no target instead of sending nowhere", async () => {
+    render(<Scheduled />);
+    fireEvent.change(screen.getByLabelText(/prompt/i), {
+      target: { value: "pre-open scan" },
+    });
+    fireEvent.change(screen.getByLabelText(/deliver to channel/i), {
+      target: { value: "telegram" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /schedule|create/i }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(mocked.createScheduledRun).not.toHaveBeenCalled();
+  });
+
+  it("sends the channel and target it was given", async () => {
+    render(<Scheduled />);
+    fireEvent.change(screen.getByLabelText(/prompt/i), {
+      target: { value: "pre-open scan" },
+    });
+    fireEvent.change(screen.getByLabelText(/deliver to channel/i), {
+      target: { value: " telegram " },
+    });
+    fireEvent.change(screen.getByLabelText(/channel target/i), {
+      target: { value: " chat-9 " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /schedule|create/i }));
+
+    await waitFor(() => expect(mocked.createScheduledRun).toHaveBeenCalled());
+    const body = mocked.createScheduledRun.mock.calls[0][0];
+    expect(body.delivery_channel).toBe("telegram");
+    expect(body.delivery_target).toBe("chat-9");
+  });
+
+  it("shows a monitor's delivery state, and shows nothing when it has none", async () => {
+    mocked.listScheduledRuns.mockResolvedValue([
+      run({ id: "with", delivery_channel: "telegram", delivery_status: "sent" }),
+      run({ id: "without" }),
+    ]);
+    render(<Scheduled />);
+
+    expect(await screen.findByText(/delivered to telegram/i)).toBeInTheDocument();
+    expect(screen.queryAllByText(/delivered to/i)).toHaveLength(1);
+  });
+
+  it("surfaces why a delivery failed rather than only that it did", async () => {
+    mocked.listScheduledRuns.mockResolvedValue([
+      run({
+        delivery_channel: "telegram",
+        delivery_status: "failed",
+        delivery_error: "channel unreachable",
+      }),
+    ]);
+    render(<Scheduled />);
+
+    expect(await screen.findByText(/channel unreachable/i)).toBeInTheDocument();
   });
 });

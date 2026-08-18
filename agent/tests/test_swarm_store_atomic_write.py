@@ -22,6 +22,7 @@ import pytest
 import src.swarm.store as store_mod
 from src.swarm.models import SwarmRun
 from src.swarm.store import SwarmStore
+from tests.module_os_helpers import patch_module_os
 
 
 def _winerr(code: int) -> PermissionError:
@@ -53,7 +54,7 @@ def test_replace_retries_transient_winerror_then_succeeds(tmp_path, monkeypatch)
             raise _winerr(5)
         return real(src, dst, *a, **k)
 
-    monkeypatch.setattr(store_mod.os, "replace", flaky)
+    patch_module_os(monkeypatch, store_mod, replace=flaky)
 
     upd = _run()
     upd.final_report = "RETRIED-OK"
@@ -72,7 +73,7 @@ def test_non_transient_error_reraises_immediately(tmp_path, monkeypatch):
         calls["n"] += 1
         raise _winerr(2)  # ERROR_FILE_NOT_FOUND — NOT in the transient set
 
-    monkeypatch.setattr(store_mod.os, "replace", boom)
+    patch_module_os(monkeypatch, store_mod, replace=boom)
     with pytest.raises(OSError):
         store.update_run(_run())
     assert calls["n"] == 1, "non-transient must not be retried (no masking)"
@@ -87,7 +88,7 @@ def test_transient_budget_is_bounded(tmp_path, monkeypatch):
         calls["n"] += 1
         raise _winerr(32)  # ERROR_SHARING_VIOLATION, forever
 
-    monkeypatch.setattr(store_mod.os, "replace", always)
+    patch_module_os(monkeypatch, store_mod, replace=always)
     with pytest.raises(OSError):
         store.update_run(_run())
     assert calls["n"] == store_mod._REPLACE_ATTEMPTS

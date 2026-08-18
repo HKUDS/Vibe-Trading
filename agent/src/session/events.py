@@ -14,7 +14,7 @@ import uuid
 
 logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 
 @dataclass
@@ -73,6 +73,7 @@ class EventBus:
         self.max_buffer_size = max_buffer_size
         self._buffers: Dict[str, List[SSEEvent]] = {}
         self._subscribers: Dict[str, List[asyncio.Queue]] = {}
+        self._listeners: List[Callable[[SSEEvent], None]] = []
         self._lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
@@ -100,6 +101,17 @@ class EventBus:
                 self._buffers[session_id] = buffer[-self.max_buffer_size:]
 
             queues = list(self._subscribers.get(session_id, []))
+            listeners = list(self._listeners)
+
+        # Listeners run before the queues so a slow subscriber cannot delay
+        # them, and each is isolated: this is the SSE hot path, and a listener
+        # that raises must not cost the UI its event stream. A listener is
+        # expected to record or schedule, never to do I/O inline.
+        for listener in listeners:
+            try:
+                listener(event)
+            except Exception:
+                logger.exception("EventBus listener failed for %s", event.event_type)
 
         # Safely enqueue onto the queue from inside the asyncio loop.
         for queue in queues:
@@ -110,6 +122,33 @@ class EventBus:
                     queue.put_nowait(event)
                 except asyncio.QueueFull:
                     pass
+
+    def add_listener(self, listener: Callable[[SSEEvent], None]) -> None:
+        """Register a callback invoked for every published event.
+
+        Unlike :meth:`subscribe`, which is per session and per SSE connection,
+        a listener sees every session — which is what a component that reacts
+        to runs it did not open needs.
+
+        Args:
+            listener: Synchronous callback. It runs on the publishing thread,
+                so it must be cheap and must not raise; schedule any real work
+                elsewhere.
+        """
+        with self._lock:
+            if listener not in self._listeners:
+                self._listeners.append(listener)
+
+    def remove_listener(self, listener: Callable[[SSEEvent], None]) -> None:
+        """Unregister a callback added by :meth:`add_listener`.
+
+        Args:
+            listener: The previously registered callback. Unknown callbacks
+                are ignored so teardown never has to check first.
+        """
+        with self._lock:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
 
     @staticmethod
     def _safe_put(queue: asyncio.Queue, event: SSEEvent) -> None:

@@ -4,8 +4,11 @@ Wraps the shared :mod:`backtest.loaders.yahoo_client` (the public v8 chart
 endpoint) rather than the ``yfinance`` package, so it pulls in no new
 dependency and shares the process-wide throttle/session that keeps Yahoo from
 IP-rate-limiting us. Covers US equities (``AAPL.US``), HK equities
-(``00700.HK``), and Canadian equities (``TD.TO`` / ``PNG.V``); the client maps
-each project symbol to Yahoo's ticker form.
+(``00700.HK``), Canadian equities (``TD.TO`` / ``PNG.V``), and Vietnamese
+equities (``VIC.VN``); the client maps each project symbol to Yahoo's ticker
+form.
+
+Yahoo officially lists HOSE under ``.VN``; HNX and UPCOM are not supported.
 
 The chart endpoint returns each bar's ``trade_date`` as an epoch-second
 timestamp; this loader converts those to a tz-naive ``DatetimeIndex`` and clips
@@ -44,14 +47,14 @@ _INTERVAL_MAP = {
 def _is_supported(code: str) -> bool:
     """Return whether *code* is a symbol this loader handles.
 
-    Covers US/HK/India/Korea/Canada equities plus Yahoo's own futures
+    Covers US/HK/India/Korea/Canada/Vietnam equities plus Yahoo's own futures
     (``GC=F``) and forex (``EURUSD=X``) suffix conventions, which the public
     chart endpoint serves verbatim (the code is used as-is in the request URL,
     no conversion) (#718).
     """
     upper = code.strip().upper()
     return upper.endswith(
-        (".US", ".HK", ".NS", ".BO", ".KS", ".KQ", ".TO", ".V", "=F", "=X")
+        (".US", ".HK", ".NS", ".BO", ".KS", ".KQ", ".TO", ".V", ".VN", "=F", "=X")
     )
 
 
@@ -177,6 +180,7 @@ class DataLoader:
     name = "yahoo"
     markets = {
         "us_equity", "hk_equity", "india_equity", "kr_equity", "ca_equity",
+        "vietnam_equity",
     }
     # Yahoo chart volume is single shares for US/HK equities
     # (HKUDS/Vibe-Trading#1062; HK verified 2026-08-11, 00700.HK ratio 1.00
@@ -204,8 +208,8 @@ class DataLoader:
         """Fetch OHLCV history keyed by the original project symbols.
 
         Args:
-            codes: Project symbols such as ``AAPL.US``, ``00700.HK``, and
-                ``TD.TO``.
+            codes: Project symbols such as ``AAPL.US``, ``00700.HK``,
+                ``TD.TO``, and ``VIC.VN``.
             start_date: Inclusive start date (``YYYY-MM-DD``).
             end_date: Inclusive end date (``YYYY-MM-DD``).
             interval: Backtest interval such as ``1D`` or ``1H``.

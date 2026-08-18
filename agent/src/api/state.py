@@ -67,7 +67,35 @@ def _get_session_service():
         runs_dir=runs_dir,
     )
     _set_host_attr("_session_service", _session_service)
+    _attach_delivery_listener(event_bus)
     return _session_service
+
+
+#: Terminal attempt events a finished scheduled briefing can follow.
+_DELIVERY_TRIGGER_EVENTS = frozenset(
+    {"attempt.completed", "attempt.failed", "attempt.cancelled"}
+)
+
+
+def _attach_delivery_listener(event_bus) -> None:
+    """Let a finished run push its briefing without waiting for the next tick.
+
+    The listener only *asks* for a sweep. Delivery correctness lives in the
+    periodic sweep and the persisted outbox row; this is latency, and it is
+    written so that failing to fire costs nothing but the wait.
+
+    Args:
+        event_bus: The session event bus to listen on.
+    """
+
+    def _on_event(event) -> None:
+        if event.event_type not in _DELIVERY_TRIGGER_EVENTS:
+            return
+        from src.api.scheduled_routes import _get_scheduled_research_executor
+
+        _get_scheduled_research_executor().request_sweep()
+
+    event_bus.add_listener(_on_event)
 
 
 def _get_channel_runtime():

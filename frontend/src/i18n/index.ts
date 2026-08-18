@@ -14,10 +14,12 @@ export const SUPPORTED_LANGUAGES = [
   { code: "ko", label: "한국어", dir: "ltr" as const },
   { code: "ar", label: "العربية", dir: "rtl" as const },
   { code: "es", label: "Español", dir: "ltr" as const },
+  { code: "de", label: "Deutsch", dir: "ltr" as const },
 ] as const;
 
 export type SupportedLanguageCode = (typeof SUPPORTED_LANGUAGES)[number]["code"];
 type LazyLanguageCode = Exclude<SupportedLanguageCode, "en">;
+type LocaleResources = Record<string, unknown>;
 
 const localeLoaders = {
   "zh-CN": () => import("./locales/zh-CN.json"),
@@ -25,7 +27,8 @@ const localeLoaders = {
   ko: () => import("./locales/ko.json"),
   ar: () => import("./locales/ar.json"),
   es: () => import("./locales/es.json"),
-} satisfies Record<LazyLanguageCode, () => Promise<{ default: typeof en }>>;
+  de: () => import("./locales/de.json"),
+} satisfies Record<LazyLanguageCode, () => Promise<{ default: LocaleResources }>>;
 
 const LANGUAGE_STORAGE_KEY = "i18nextLng";
 const LOCALE_LOAD_ATTEMPTS = 2;

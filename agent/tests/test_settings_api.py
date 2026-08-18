@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 import api_server
 from src.api import settings_routes
+from tests.module_os_helpers import patch_module_os
 
 
 @pytest.fixture
@@ -596,7 +597,7 @@ def test_atomic_write_secret_is_crash_safe(
     def _boom(*_args: object, **_kwargs: object) -> None:
         raise OSError("simulated crash before commit")
 
-    monkeypatch.setattr(helpers.os, "replace", _boom)
+    patch_module_os(monkeypatch, helpers, replace=_boom)
 
     with pytest.raises(OSError):
         helpers._atomic_write_secret(target, "NEW=2\n")

@@ -57,12 +57,16 @@ def _get_scheduled_research_store():
     return _scheduled_research_store
 
 
-async def _dispatch_scheduled_research_job(job) -> None:
+async def _dispatch_scheduled_research_job(job) -> Optional[str]:
     """Enqueue one scheduled research job through the session runtime.
 
     ``send_message`` queues the agent attempt and returns once accepted; it
     does not wait for that agent run to reach a terminal status. The executor's
     ``COMPLETED`` state for this dispatch path means "successfully enqueued."
+
+    Returns:
+        The session id the attempt was enqueued into, which is what lets the
+        delivery outbox find the briefing once the run actually finishes.
     """
     host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
     svc = host._get_session_service()
@@ -79,6 +83,62 @@ async def _dispatch_scheduled_research_job(job) -> None:
         session.session_id,
     )
     await svc.send_message(session.session_id, job.prompt)
+    return session.session_id
+
+
+def _read_scheduled_briefing(session_id: str) -> Optional[tuple[str, str]]:
+    """Return ``(terminal status, briefing text)`` once a run has finished.
+
+    The assistant reply carries the attempt's terminal status in its metadata,
+    and it is the same text the user sees in the session — delivering anything
+    else would mean the channel and the app disagree about what the run said.
+
+    Args:
+        session_id: Session the scheduled run was dispatched into.
+
+    Returns:
+        The status and text, or ``None`` while the run is still in flight.
+    """
+    host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+    svc = host._get_session_service() if host else None
+    if not svc:
+        return None
+    for message in reversed(svc.get_messages(session_id, limit=50)):
+        if message.role != "assistant":
+            continue
+        status = (message.metadata or {}).get("status")
+        if isinstance(status, str) and status:
+            return status, message.content or ""
+    return None
+
+
+async def _send_scheduled_briefing(channel: str, target: Optional[str], text: str) -> None:
+    """Deliver one briefing through the configured IM channel.
+
+    Args:
+        channel: Channel id as configured in the channel runtime.
+        target: Address within that channel, or ``None`` for its default.
+        text: The briefing to deliver.
+
+    Raises:
+        RuntimeError: If the channel runtime is unavailable or has no such
+            channel, so the outbox records a retryable failure rather than
+            reporting a delivery that never happened.
+    """
+    from src.channels.bus.events import OutboundMessage
+
+    host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+    manager = getattr(host, "_channel_manager", None) if host else None
+    if manager is None:
+        raise RuntimeError("channel runtime is not running")
+    adapter = manager.get_channel(channel)
+    if adapter is None:
+        raise RuntimeError(f"channel {channel!r} is not configured")
+    if not target:
+        raise RuntimeError(f"channel {channel!r} has no delivery target configured")
+    await adapter.send(
+        OutboundMessage(channel=channel, chat_id=target, content=text)
+    )
 
 
 def _get_scheduled_research_executor():
@@ -91,6 +151,8 @@ def _get_scheduled_research_executor():
             _get_scheduled_research_store(),
             _dispatch_scheduled_research_job,
             enabled=_scheduled_research_scheduler_enabled(),
+            briefing_reader=_read_scheduled_briefing,
+            channel_sender=_send_scheduled_briefing,
         )
     return _scheduled_research_executor
 
@@ -144,6 +206,18 @@ class CreateScheduledRunRequest(BaseModel):
             "(e.g. 'Pacific/Auckland'); null = UTC, the pre-existing "
             "semantics. Ignored by interval schedules."
         ),
+    )
+    delivery_channel: Optional[str] = Field(
+        None,
+        description=(
+            "Channel id a finished briefing is pushed to. Delivery is opt-in "
+            "per job: omit this and results stay in the app, which is the "
+            "behaviour every existing job keeps."
+        ),
+    )
+    delivery_target: Optional[str] = Field(
+        None,
+        description="Address within that channel (chat / group / user id).",
     )
 
 
@@ -221,6 +295,34 @@ class ScheduledRunResponse(BaseModel):
     failure_kind: Optional[str] = None
     config: Dict[str, Any] = Field(default_factory=dict)
     timezone: Optional[str] = None
+    delivery_channel: Optional[str] = None
+    delivery_target: Optional[str] = None
+    delivery_status: str = "none"
+    delivery_error: Optional[str] = None
+    delivery_updated_at: Optional[int] = None
+
+
+def _job_to_response(job: ScheduledResearchJob) -> "ScheduledRunResponse":
+    """Flatten a job for the wire, delivery record included.
+
+    ``to_dict`` nests the outbox row; the API keeps it flat because the list
+    view reads it per row and a nested object would make every consumer reach
+    through a key that means nothing to them.
+
+    Args:
+        job: The stored job.
+
+    Returns:
+        The response model for that job.
+    """
+    payload = job.to_dict()
+    delivery = payload.pop("delivery", {}) or {}
+    return ScheduledRunResponse(
+        **payload,
+        delivery_status=delivery.get("status", "none"),
+        delivery_error=delivery.get("error"),
+        delivery_updated_at=delivery.get("updated_at"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -330,9 +432,11 @@ def register_scheduled_routes(
             created_at=now_ms,
             config=request.config,
             timezone=request.timezone,
+            delivery_channel=request.delivery_channel,
+            delivery_target=request.delivery_target,
         )
         _get_scheduled_research_store().upsert(job)
-        return ScheduledRunResponse(**job.to_dict())
+        return _job_to_response(job)
 
     @app.get(
         "/scheduled-runs",
@@ -347,7 +451,7 @@ def register_scheduled_routes(
         jobs = _get_scheduled_research_store().list_jobs(
             status=status_filter, limit=limit
         )
-        return [ScheduledRunResponse(**j.to_dict()) for j in jobs]
+        return [_job_to_response(j) for j in jobs]
 
     @app.delete(
         "/scheduled-runs/{job_id}",
@@ -478,4 +582,4 @@ def register_scheduled_routes(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         _get_scheduled_research_store().upsert(job)
-        return ScheduledRunResponse(**job.to_dict())
+        return _job_to_response(job)

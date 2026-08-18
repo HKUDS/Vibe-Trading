@@ -1,10 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import i18n from "@/i18n";
 import { downsampleIndices, ivLabel, type ScenarioGrid } from "@/lib/options";
 import { getChartTheme } from "@/lib/chart-theme";
 import { getPnlColors } from "@/lib/pnl-colors";
-import { echarts, CHART_GROUP, connectCharts } from "@/lib/echarts";
-import { useThemeDark } from "@/lib/theme-store";
+import { useChartLifecycle } from "@/hooks/useChartLifecycle";
 
 const MAX_DISPLAY_COLUMNS = 61;
 
@@ -15,18 +14,13 @@ interface Props {
 
 export function OptionsScenarioMatrix({ grid, height = 380 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
-  const dark = useThemeDark();
 
   const hasData =
     grid.iv_values.length > 0 && grid.spot.length > 0 && grid.pnl.length > 0;
 
-  useEffect(() => {
-    if (!ref.current || !hasData) return;
+  useChartLifecycle(ref, () => {
     const t = getChartTheme();
     const pnlC = getPnlColors();
-    const chart = echarts.init(ref.current);
-    chart.group = CHART_GROUP;
-    connectCharts();
 
     // Downsample the spot axis for display only; cell values keep reading the
     // original grid at the retained indices, so labels stay honest.
@@ -49,7 +43,7 @@ export function OptionsScenarioMatrix({ grid, height = 380 }: Props) {
     }
     const bound = Math.max(Math.abs(minVal), Math.abs(maxVal), 1e-9);
 
-    chart.setOption({
+    return {
       backgroundColor: "transparent",
       tooltip: {
         position: "top",
@@ -117,23 +111,8 @@ export function OptionsScenarioMatrix({ grid, height = 380 }: Props) {
           },
         },
       ],
-    });
-
-    let resizeFrame: number | null = null;
-    const ro = new ResizeObserver(() => {
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      resizeFrame = requestAnimationFrame(() => {
-        resizeFrame = null;
-        chart.resize();
-      });
-    });
-    ro.observe(ref.current!);
-    return () => {
-      ro.disconnect();
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      chart.dispose();
     };
-  }, [grid, hasData, dark]);
+  }, [grid, hasData]);
 
   if (!hasData) {
     return <div className="text-muted-foreground text-sm p-4">{i18n.t("options.scenario.noData")}</div>;

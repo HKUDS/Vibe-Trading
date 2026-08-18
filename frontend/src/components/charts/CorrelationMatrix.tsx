@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import i18n from "@/i18n";
-import { echarts } from "@/lib/echarts";
 import { getChartTheme } from "@/lib/chart-theme";
-import { useThemeDark } from "@/lib/theme-store";
+import { escapeHtml } from "@/lib/escapeHtml";
+import { useChartLifecycle } from "@/hooks/useChartLifecycle";
 
 interface Props {
   labels: string[];
@@ -29,13 +29,9 @@ function cellTextColor(value: number): string {
 
 export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
-  const dark = useThemeDark();
 
-  useEffect(() => {
-    if (!ref.current || labels.length === 0 || matrix.length === 0) return;
-
+  useChartLifecycle(ref, () => {
     const t = getChartTheme();
-    const chart = echarts.init(ref.current);
 
     // Build heatmap data: [xIdx, yIdx, value] with per-cell label color for readability on saturated cells
     const data: { value: [number, number, number]; label: { color: string } }[] = [];
@@ -49,7 +45,7 @@ export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
     const minVal = -1;
     const maxVal = 1;
 
-    chart.setOption({
+    return {
       backgroundColor: "transparent",
       tooltip: {
         position: "top",
@@ -59,7 +55,7 @@ export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
         formatter: (params: unknown) => {
           const p = params as { data: { value: [number, number, number] } };
           const [x, y, v] = p.data.value;
-          return `<b>${labels[x]}</b> vs <b>${labels[y]}</b><br/>r = <b>${v.toFixed(4)}</b>`;
+          return `<b>${escapeHtml(labels[x] ?? "")}</b> vs <b>${escapeHtml(labels[y] ?? "")}</b><br/>r = <b>${v.toFixed(4)}</b>`;
         },
       },
       grid: { left: "3%", right: "8%", top: "8%", bottom: "12%", containLabel: true },
@@ -113,25 +109,10 @@ export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
           },
         },
       ],
-    });
-
-    let resizeFrame: number | null = null;
-    const ro = new ResizeObserver(() => {
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      resizeFrame = requestAnimationFrame(() => {
-        resizeFrame = null;
-        chart.resize();
-      });
-    });
-    ro.observe(ref.current!);
-    return () => {
-      ro.disconnect();
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      chart.dispose();
     };
-  }, [labels, matrix, dark]);
+  }, [labels, matrix]);
 
-  if (labels.length === 0) {
+  if (labels.length === 0 || matrix.length === 0) {
     return <div className="text-muted-foreground text-sm p-4">{i18n.t("charts.noCorrelationData")}</div>;
   }
   return <div ref={ref} style={{ height }} />;

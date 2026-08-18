@@ -1,9 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import i18n from "@/i18n";
 import type { AnnualReturn, MonthlyReturn } from "@/lib/tearsheet";
 import { getChartTheme } from "@/lib/chart-theme";
-import { echarts, CHART_GROUP, connectCharts } from "@/lib/echarts";
-import { useThemeDark } from "@/lib/theme-store";
+import { useChartLifecycle } from "@/hooks/useChartLifecycle";
 
 interface Props {
   data: MonthlyReturn[];
@@ -17,14 +16,9 @@ function fmtSignedPct(v: number, digits = 1): string {
 
 export function MonthlyReturnsHeatmap({ data, annual, height = 300 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
-  const dark = useThemeDark();
 
-  useEffect(() => {
-    if (!ref.current || data.length === 0) return;
+  useChartLifecycle(ref, () => {
     const t = getChartTheme();
-    const chart = echarts.init(ref.current);
-    chart.group = CHART_GROUP;
-    connectCharts();
 
     const monthFmt = new Intl.DateTimeFormat(i18n.language || "en", { month: "short" });
     const monthLabels = Array.from({ length: 12 }, (_, i) => monthFmt.format(new Date(2024, i, 15)));
@@ -53,7 +47,7 @@ export function MonthlyReturnsHeatmap({ data, annual, height = 300 }: Props) {
 
     const returnLabel = i18n.t("runDetail.returnPct");
 
-    chart.setOption({
+    return {
       backgroundColor: "transparent",
       tooltip: {
         trigger: "item",
@@ -115,23 +109,8 @@ export function MonthlyReturnsHeatmap({ data, annual, height = 300 }: Props) {
           emphasis: { itemStyle: { borderColor: t.axisColor, borderWidth: 1 } },
         },
       ],
-    });
-
-    let resizeFrame: number | null = null;
-    const ro = new ResizeObserver(() => {
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      resizeFrame = requestAnimationFrame(() => {
-        resizeFrame = null;
-        chart.resize();
-      });
-    });
-    ro.observe(ref.current!);
-    return () => {
-      ro.disconnect();
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      chart.dispose();
     };
-  }, [data, annual, dark]);
+  }, [data, annual]);
 
   if (data.length === 0) {
     return <div className="text-muted-foreground text-sm p-4">{i18n.t("runDetail.noTearsheetData")}</div>;

@@ -7,6 +7,7 @@ import { calcMA, calcBOLL, calcMACD, calcMACDFS, calcRSI, calcKDJ, calcEMA, calc
 import { getChartTheme } from "@/lib/chart-theme";
 import { abbreviateNum } from "@/lib/formatters";
 import { echarts, CHART_GROUP, connectCharts } from "@/lib/echarts";
+import { escapeHtml } from "@/lib/escapeHtml";
 import { useThemeDark } from "@/lib/theme-store";
 
 export type Sub = "fundflow" | "vol" | "amount" | "macd" | "macdfs" | "rsi" | "kdj" | "boll" | "expma";
@@ -742,19 +743,24 @@ export function CandlestickChart({ data, calculationData, calculationOffset = 0,
       legendNames.push("BOLL");
     }
 
-    // Trade markers
+    // Trade markers (escaped tooltip fields and price anchors outside the
+    // candle body keep the marker readable without covering the wick).
     const marks = (markers || []).map(m => {
       const markerBar = data.find((bar) => bar.time === m.time);
       const anchorPrice = markerBar
         ? (m.side === "BUY" ? markerBar.low : markerBar.high)
         : m.price;
       return {
-      coord: [m.time, anchorPrice],
-      value: m.side === "BUY" ? "B" : "S",
-      name: [`${m.side} @ ${m.price}`, m.qty ? `Qty: ${m.qty}` : "", m.reason || ""].filter(Boolean).join("\n"),
-      itemStyle: { color: m.side === "BUY" ? t.upColor : t.downColor },
-      symbolOffset: [0, m.side === "BUY" ? 30 : -30],
-      label: { show: true, color: "#fff", fontSize: 14, fontWeight: "bold" as const },
+        coord: [m.time, anchorPrice],
+        value: m.side === "BUY" ? "B" : "S",
+        name: [
+          `${escapeHtml(m.side)} @ ${escapeHtml(String(m.price))}`,
+          m.qty ? `Qty: ${escapeHtml(String(m.qty))}` : "",
+          escapeHtml(m.reason || ""),
+        ].filter(Boolean).join("\n"),
+        itemStyle: { color: m.side === "BUY" ? t.upColor : t.downColor },
+        symbolOffset: [0, m.side === "BUY" ? 30 : -30],
+        label: { show: true, color: "#fff", fontSize: 14, fontWeight: "bold" as const },
       };
     });
 

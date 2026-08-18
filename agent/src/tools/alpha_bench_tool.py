@@ -39,6 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from backtest.loaders.cn_adjust import apply_qfq as _apply_qfq
@@ -50,6 +51,10 @@ logger = logging.getLogger(__name__)
 # Date the SP500 constituent list was sampled from Wikipedia (best-effort label
 # for the survivorship-bias warning in the bench summary's ``meta`` block).
 _SP500_CONSTITUENT_SOURCE_DATE = "2026-05-17"
+# Below this share of named sectors the tag is worse than absent: one
+# "unknown" bucket demeans as a single group, which is the global fallback
+# the alphas already have, but reported as industry neutralization.
+_SP500_MIN_SECTOR_COVERAGE = 0.9
 
 # Concurrent Tushare ``pro.daily`` fetches when building CSI300. Free tier
 # allows ~200 calls/min; 4 workers stays well under that with a 300-name list.
@@ -474,11 +479,12 @@ def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     runner) surfaces this in the bench summary's ``meta`` block via the
     ``_meta`` panel key set below.
     """
-    codes = _fetch_sp500_constituents()
+    codes, sectors = _fetch_sp500_constituents()
     constituent_source = "wikipedia"
     constituent_source_date: str | None = _SP500_CONSTITUENT_SOURCE_DATE
     if not codes:
         codes = list(_SP500_FALLBACK_CODES)
+        sectors = {}
         constituent_source = "hand-picked fallback"
         constituent_source_date = None
         logger.warning("sp500: using %d-name fallback (degraded run)", len(codes))
@@ -501,6 +507,35 @@ def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     if all(k in panel for k in ("open", "high", "low", "close")):
         panel["vwap"] = (panel["open"] + panel["high"] + panel["low"] + panel["close"]) / 4.0
 
+    # 19 alpha101 alphas are industry-neutralized and the registry refuses them
+    # outright when the panel carries no ``sector`` tag, so the bench reported
+    # n_skipped=19 on every SP500 run. The labels come from the same Wikipedia
+    # table the constituents do — no extra request, no per-name lookup.
+    sector_coverage = 0.0
+    if sectors and "close" in panel and not panel["close"].empty:
+        columns = panel["close"].columns
+        labels = [sectors.get(str(code).removesuffix(".US"), "") for code in columns]
+        sector_coverage = sum(1 for label in labels if label) / len(labels)
+        # A mostly-unlabelled panel would demean one big "unknown" bucket, which
+        # is the global-demean fallback wearing a sector tag. Say so instead.
+        if sector_coverage >= _SP500_MIN_SECTOR_COVERAGE:
+            panel["sector"] = pd.DataFrame(
+                np.repeat(
+                    np.array([label or "UNKNOWN" for label in labels], dtype=object)[None, :],
+                    len(panel["close"].index),
+                    axis=0,
+                ),
+                index=panel["close"].index,
+                columns=columns,
+            )
+        else:
+            logger.warning(
+                "sp500: sector coverage %.1f%% below %.0f%% — leaving the tag off "
+                "so industry-neutralized alphas skip rather than demean one bucket",
+                sector_coverage * 100,
+                _SP500_MIN_SECTOR_COVERAGE * 100,
+            )
+
     # Attach a non-DataFrame metadata blob. Registry.compute() only iterates
     # required column names, so this extra key is ignored by the compute path.
     panel["_meta"] = {
@@ -510,12 +545,19 @@ def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
         "constituent_source": constituent_source,
         "constituent_source_date": constituent_source_date,
         "constituent_count": len(codes),
+        "sector_source": "wikipedia GICS" if "sector" in panel else None,
+        "sector_coverage": round(sector_coverage, 4),
     }
     return panel
 
 
-def _fetch_sp500_constituents() -> list[str]:
-    """Pull current S&P 500 tickers from Wikipedia. Returns [] on any failure."""
+def _fetch_sp500_constituents() -> tuple[list[str], dict[str, str]]:
+    """Pull current S&P 500 tickers and GICS sectors from Wikipedia.
+
+    The sector labels ride along in the table we already request, so the 19
+    industry-neutralized alpha101 alphas cost no extra call. Returns
+    ``([], {})`` on any failure.
+    """
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     try:
         import io
@@ -536,14 +578,27 @@ def _fetch_sp500_constituents() -> list[str]:
         tables = pd.read_html(io.StringIO(resp.text))
         for tbl in tables:
             if "Symbol" in tbl.columns:
-                tickers = tbl["Symbol"].astype(str).str.strip().tolist()
                 # yfinance prefers ``BRK-B`` over ``BRK.B`` — normalise
-                tickers = [t.replace(".", "-") for t in tickers if t and t != "nan"]
-                logger.info("sp500: %d tickers from Wikipedia", len(tickers))
-                return tickers
+                symbols = tbl["Symbol"].astype(str).str.strip().str.replace(".", "-", regex=False)
+                keep = symbols.ne("") & symbols.ne("nan")
+                tickers = symbols[keep].tolist()
+                sectors: dict[str, str] = {}
+                if "GICS Sector" in tbl.columns:
+                    labels = tbl["GICS Sector"].astype(str).str.strip()
+                    sectors = {
+                        symbol: label
+                        for symbol, label in zip(symbols[keep], labels[keep])
+                        if label and label != "nan"
+                    }
+                logger.info(
+                    "sp500: %d tickers from Wikipedia (%d with a GICS sector)",
+                    len(tickers),
+                    len(sectors),
+                )
+                return tickers, sectors
     except Exception as exc:  # noqa: BLE001
         logger.warning("sp500 Wikipedia fetch failed: %s", exc)
-    return []
+    return [], {}
 
 
 def _load_btc_panel(start: str, end: str) -> dict[str, pd.DataFrame]:

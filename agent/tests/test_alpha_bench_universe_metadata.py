@@ -166,7 +166,7 @@ def test_sp500_source_date_matches_the_roster(
 
     import backtest.loaders.registry as registry
 
-    monkeypatch.setattr(tool, "_fetch_sp500_constituents", lambda: codes)
+    monkeypatch.setattr(tool, "_fetch_sp500_constituents", lambda: (codes, {}))
     monkeypatch.setattr(registry, "resolve_loader", lambda _market: _Loader())
 
     panel = tool._load_sp500_panel("2024-01-01", "2024-01-31")

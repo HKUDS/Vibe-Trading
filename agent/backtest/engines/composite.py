@@ -44,6 +44,9 @@ def _build_rule_engines(config: dict, codes: List[str]) -> Dict[str, BaseEngine]
         elif market == "kr_equity":
             from backtest.engines.korea_equity import KoreaEquityEngine
             engines["kr_equity"] = KoreaEquityEngine(config)
+        elif market == "vietnam_equity":
+            from backtest.engines.vietnam_equity import VietnamEquityEngine
+            engines["vietnam_equity"] = VietnamEquityEngine(config)
         elif market == "ca_equity":
             from backtest.engines.global_equity import GlobalEquityEngine
             engines["ca_equity"] = GlobalEquityEngine(config, market="ca")
@@ -161,8 +164,21 @@ class CompositeEngine(BaseEngine):
     # ── Stateless method dispatch ──
 
     def can_execute(self, symbol: str, direction: int, bar: pd.Series) -> bool:
-        """Market-rule check with T+1 interceptor for A-shares."""
+        """Market-rule check with settlement interceptors for A-shares and HOSE."""
         market = self._symbol_market.get(symbol, "a_share")
+
+        # HOSE: both the T+2 hold and the ±7% band read run state — positions
+        # and the fill ledger for the hold, the close panel for the reference
+        # price — that a stateless rule book does not have. Delegating them
+        # would pass every sell and skip every band check, so the rules are
+        # evaluated against this engine's state using the Vietnam engine's own
+        # implementation, with the sub-engine supplying only the parameters.
+        if market == "vietnam_equity":
+            sub = self._rule_engines.get("vietnam_equity")
+            if sub is not None:
+                from backtest.engines.vietnam_equity import hose_can_execute
+
+                return hose_can_execute(self, sub, symbol, direction, bar)
 
         # T+1: intercept here because sub-engine has no access to shared positions
         if market == "a_share" and direction == 0:

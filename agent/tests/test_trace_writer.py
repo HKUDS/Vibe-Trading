@@ -12,6 +12,7 @@ import pytest
 
 import src.agent.trace as trace_mod
 from src.agent.trace import TraceWriter
+from tests.module_os_helpers import patch_module_os
 
 
 def _raw_entries(trace_dir: Path) -> list[dict]:
@@ -150,7 +151,7 @@ def test_write_calls_fsync_for_crash_safety(
         fsync_fds.append(fd)
         real_fsync(fd)
 
-    monkeypatch.setattr(trace_mod.os, "fsync", _tracking_fsync)
+    patch_module_os(monkeypatch, trace_mod, fsync=_tracking_fsync)
     try:
         trace.write({"type": "answer", "iter": 1, "content": "ok"})
         assert fsync_fds == [trace._file.fileno()]
@@ -171,7 +172,7 @@ def test_new_trace_file_fsyncs_parent_directory(
             dir_fsyncs.append(fd)
         real_fsync(fd)
 
-    monkeypatch.setattr(trace_mod.os, "fsync", _tracking_fsync)
+    patch_module_os(monkeypatch, trace_mod, fsync=_tracking_fsync)
     trace = TraceWriter(tmp_path)
     trace.close()
     assert len(dir_fsyncs) == 1
@@ -193,7 +194,7 @@ def test_fsync_oserror_warns_once_and_keeps_writing(
     def _failing_fsync(fd: int) -> None:
         raise OSError("fsync unsupported")
 
-    monkeypatch.setattr(trace_mod.os, "fsync", _failing_fsync)
+    patch_module_os(monkeypatch, trace_mod, fsync=_failing_fsync)
     with caplog.at_level(logging.WARNING, logger="src.agent.trace"):
         trace.write({"type": "answer", "iter": 1, "content": "a"})
         trace.write({"type": "answer", "iter": 2, "content": "b"})
@@ -217,7 +218,7 @@ def test_sidecar_write_is_atomic_and_leaves_no_temp_files(
         replace_targets.append(str(dst))
         real_replace(src, dst)
 
-    monkeypatch.setattr(trace_mod.os, "replace", _tracking_replace)
+    patch_module_os(monkeypatch, trace_mod, replace=_tracking_replace)
     trace = TraceWriter(tmp_path)
     trace.write_tool_result(
         call_id="call-1",
@@ -251,7 +252,7 @@ def test_record_never_references_missing_sidecar_on_crash(
     def _failing_replace(src: object, dst: object) -> None:
         raise OSError("simulated crash before sidecar rename")
 
-    monkeypatch.setattr(trace_mod.os, "replace", _failing_replace)
+    patch_module_os(monkeypatch, trace_mod, replace=_failing_replace)
     with pytest.raises(OSError, match="simulated crash"):
         trace.write_tool_result(
             call_id="call-1",
@@ -280,7 +281,7 @@ def test_sidecar_survives_a_partial_write(tmp_path, monkeypatch):
             return real_write(fd, data[:16])
         return real_write(fd, data)
 
-    monkeypatch.setattr(trace_mod.os, "write", _short_write)
+    patch_module_os(monkeypatch, trace_mod, write=_short_write)
 
     writer = TraceWriter(tmp_path)
     body = "x" * 5000
@@ -299,7 +300,7 @@ def test_failed_sidecar_write_leaves_no_temp_file(tmp_path, monkeypatch):
     def _boom(fd, data):
         raise OSError("disk exploded")
 
-    monkeypatch.setattr(trace_mod.os, "write", _boom)
+    patch_module_os(monkeypatch, trace_mod, write=_boom)
     writer = TraceWriter(tmp_path)
     with pytest.raises(OSError):
         writer._attach_text_field({}, field="result", value="y" * 5000,

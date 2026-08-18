@@ -165,6 +165,18 @@ def test_payoff_tool_error_maps_to_400() -> None:
     assert "spot_max" in payload["error"]
 
 
+def test_payoff_unexpected_tool_exception_maps_to_502(monkeypatch: pytest.MonkeyPatch) -> None:
+    def explode(self: Any, **kwargs: Any) -> str:
+        raise RuntimeError("payoff engine exploded")
+
+    monkeypatch.setattr("src.api.options_routes.OptionsPayoffTool.execute", explode)
+
+    r = _client().post("/options/payoff", json=_long_call_body())
+
+    assert r.status_code == 502
+    assert r.json() == {"ok": False, "error": "payoff computation failed"}
+
+
 # ── GET /options/chain ───────────────────────────────────────────────────────
 
 _OK_CHAIN = json.dumps(
