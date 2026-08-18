@@ -64,6 +64,7 @@ services:
       - ./agent/src/trading/connectors/futu/__init__.py:/app/agent/src/trading/connectors/futu/__init__.py:ro
       - ./agent/src/trading/service.py:/app/agent/src/trading/service.py:ro
       - ./agent/src/tools/trading_connector_tool.py:/app/agent/src/tools/trading_connector_tool.py:ro
+      - ./agent/src/agent/grounding.py:/app/agent/src/agent/grounding.py:ro
       # Broker-SDK bootstrap (added 2026-08 by Alex): installs optional broker
       # SDKs (futu-api, etc.) at container start. Idempotent — only installs
       # when the import is missing, so restarts are cheap.
