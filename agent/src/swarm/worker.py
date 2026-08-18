@@ -383,6 +383,47 @@ def run_worker(
     grounding_block: str = "",
     agent_config: AgentConfig | None = None,
 ) -> WorkerResult:
+    """Run a single worker task and always close the ChatLLM it builds.
+
+    Thin wrapper around :func:`_run_worker_impl`: the impl builds a fresh
+    ``ChatLLM`` per call (see its step 2) and nothing previously closed the
+    provider HTTP client backing it, so every swarm task leaked one pooled
+    connection -- CLOSE-WAIT sockets accumulating on the vibe-trading process
+    over the life of a run. ``llm_holder`` is how the impl hands the instance
+    back out for cleanup without threading a close call through its many
+    early ``return WorkerResult(...)`` points.
+    """
+    llm_holder: list[ChatLLM] = []
+    try:
+        return _run_worker_impl(
+            agent_spec,
+            task,
+            upstream_summaries,
+            user_vars,
+            run_dir,
+            event_callback,
+            include_shell_tools,
+            grounding_block,
+            agent_config,
+            llm_holder,
+        )
+    finally:
+        for llm in llm_holder:
+            llm.close()
+
+
+def _run_worker_impl(
+    agent_spec: SwarmAgentSpec,
+    task: SwarmTask,
+    upstream_summaries: dict[str, str],
+    user_vars: dict[str, str],
+    run_dir: Path,
+    event_callback: Callable[[SwarmEvent], None] | None,
+    include_shell_tools: bool,
+    grounding_block: str,
+    agent_config: AgentConfig | None,
+    llm_holder: list[ChatLLM],
+) -> WorkerResult:
     """Execute a single worker task using a lightweight ReAct loop.
 
     Steps:
@@ -410,6 +451,10 @@ def run_worker(
             consumed by :func:`build_swarm_registry` to merge remote MCP
             tools with the local-tool pool before applying the agent's
             whitelist. ``None`` preserves the prior local-only behavior.
+        llm_holder: Output parameter -- the ``ChatLLM`` built in step 2 is
+            appended here so :func:`run_worker` can close it in a
+            ``finally`` block after this function returns, regardless of
+            which of the many ``return WorkerResult(...)`` points fired.
 
     Returns:
         WorkerResult with status, summary, artifacts, and iteration count.
@@ -431,6 +476,7 @@ def run_worker(
 
     # 2. Create LLM
     llm = ChatLLM(model_name=agent_spec.model_name)
+    llm_holder.append(llm)
 
     # 3. Build system prompt with filtered skills
     skills_loader = SkillsLoader()
