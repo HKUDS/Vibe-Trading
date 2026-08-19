@@ -31,6 +31,45 @@ services:
       # src/api/helpers.py writes to /app/agent/.env) across container recreation.
       # env_file above still seeds the initial boot env from the same file.
       - ./agent/.env:/app/agent/.env
+      # ------------------------------------------------------------------------
+      # Local customization bind mounts (added 2026-08 by Alex).
+      #
+      # These paths are written directly into the image at build time, but a
+      # full `docker compose build` is expensive (~45 min) and re-deploys would
+      # silently drop them. Bind-mounting the host copies makes edits under
+      # 伯克希尔/Vibe-Trading/agent/... take effect immediately on container
+      # restart — no rebuild required.
+      #
+      # Customizations captured:
+      #   1. agent/src/agent/context.py
+      #      → system-prompt policy #7: explanatory/attribution analysis is
+      #        allowed without forward-looking price evidence.
+      #   2. agent/src/trading/types.py
+      #      → READ_CAPABILITIES extended with 6 new broker_sdk capabilities.
+      #   3. agent/src/trading/connectors/futu/{sdk.py,__init__.py}
+      #      → 7 new read-only Futu API endpoints: get_rehab,
+      #        get_capital_flow, get_capital_distribution, get_history_deals,
+      #        get_acc_cash_flow, get_financials, get_earnings_calendar.
+      #   4. agent/src/trading/service.py + agent/src/tools/trading_connector_tool.py
+      #      → 7 service-layer wrappers + 7 BaseTool subclasses that surface the
+      #        new SDK endpoints to the agent loop.
+      #
+      # If you intentionally want to revert a customization: remove the mount,
+      # `docker compose restart vibe-trading`, and the baked-in image copy
+      # reappears.
+      # ------------------------------------------------------------------------
+      - ./agent/src/agent/context.py:/app/agent/src/agent/context.py:ro
+      - ./agent/src/trading/types.py:/app/agent/src/trading/types.py:ro
+      - ./agent/src/trading/connectors/futu/sdk.py:/app/agent/src/trading/connectors/futu/sdk.py:ro
+      - ./agent/src/trading/connectors/futu/__init__.py:/app/agent/src/trading/connectors/futu/__init__.py:ro
+      - ./agent/src/trading/service.py:/app/agent/src/trading/service.py:ro
+      - ./agent/src/tools/trading_connector_tool.py:/app/agent/src/tools/trading_connector_tool.py:ro
+      - ./agent/src/agent/grounding.py:/app/agent/src/agent/grounding.py:ro
+      - ./agent/src/market_data.py:/app/agent/src/market_data.py:ro
+      # Broker-SDK bootstrap (added 2026-08 by Alex): installs optional broker
+      # SDKs (futu-api, etc.) at container start. Idempotent — only installs
+      # when the import is missing, so restarts are cheap.
+      - ./scripts/install-broker-sdks.sh:/usr/local/bin/install-broker-sdks.sh:ro
       # Published Taiwan stock snapshots, mounted read-only. The default host
       # path stays OUTSIDE the checkout: no market data may ever land in the
       # working tree. Compose does not expand "~" in volume paths, so this uses
@@ -49,11 +88,11 @@ services:
       - SETGID
     security_opt:
       - "no-new-privileges:true"
-    read_only: true
-    # Writable scratch on the read-only rootfs. Named volumes above already
-    # cover agent/runs, agent/sessions, agent/uploads, agent/.swarm/runs and
-    # /home/vibe/.vibe-trading; these tmpfs mounts cover /tmp and the cache dirs
-    # matplotlib/fontconfig write to during PDF rendering.
+    # NOTE: read_only: true was removed to allow installing optional broker SDKs
+    # (e.g. futu-api) at runtime. Production hardening (cap_drop, no-new-privileges,
+    # SETUID/SETGID-only, mem/cpu/pids limits) is preserved.
+    # Writable scratch remains on tmpfs; named volumes above still cover all
+    # runtime app-data dirs.
     tmpfs:
       - /tmp
       - /home/vibe/.cache
@@ -63,6 +102,14 @@ services:
     mem_limit: 4g
     cpus: 2
     pids_limit: 512
+    # Run the broker-SDK bootstrap before the server starts. Idempotent —
+    # exits 0 immediately if the SDKs are already installed. The server itself
+    # The Dockerfile sets USER vibe so the long-running server runs unprivileged.
+    # But install-broker-sdks.sh needs root to write into /opt/venv. Force
+    # `user: "0:0"` for the entrypoint command and let the entrypoint itself
+    # drop to `vibe` before exec'ing the server.
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c", "install-broker-sdks.sh && exec su -s /bin/sh vibe -c 'vibe-trading serve --host 0.0.0.0 --port 8899'"]
     restart: unless-stopped
 
   frontend:

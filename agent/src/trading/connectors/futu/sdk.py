@@ -30,6 +30,7 @@ import json
 import os
 import socket
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Mapping
@@ -269,6 +270,12 @@ def check_status(config: FutuConfig | None = None) -> dict[str, Any]:
         "trd_env": cfg.trd_env_name,
         "acc_id": snapshot.get("acc_id"),
     }
+    # Status envelope aligned with the longbridge connector so the
+    # /live/status endpoint can render a non-"unknown" state. The
+    # contract is documented as stable across broker_sdk connectors
+    # (see longbridge.sdk.check_status for the canonical shape).
+    report["connection_state"] = "connected"
+    report["last_checked_at"] = datetime.now(timezone.utc).isoformat()
     return report
 
 
