@@ -104,8 +104,9 @@ def fetch_market_data(
     max_rows: int = DEFAULT_MAX_ROWS,
     loader_resolver: Callable[[str], type] = get_loader,
     fallback_chain_provider: Callable[[str], list[str]] | None = None,
-    max_fallback_attempts: int = 5,
+    max_fallback_attempts: int = 3,
     include_provenance: bool = False,
+    deadline_s: float | None = 30.0,
 ) -> dict[str, Any]:
     """Fetch normalized OHLCV data through the repository loader layer.
 
@@ -172,10 +173,19 @@ def fetch_market_data(
                 attempts.append(candidate)
         attempts = attempts[: max(1, max_fallback_attempts)]
 
+        import time
         data_map: dict[str, Any] = {}
         used_source: str | None = None
         provider_cls: type | None = None
+        deadline_at = time.monotonic() + deadline_s if deadline_s else None
         for attempt_src in attempts:
+            if deadline_at is not None and time.monotonic() >= deadline_at:
+                logger.warning(
+                    "market-data deadline (%.1fs) exceeded for %s after %s; "
+                    "returning partial results",
+                    deadline_s, src_codes, attempt_src,
+                )
+                break
             try:
                 loader_cls = loader_resolver(attempt_src)
             except NoAvailableSourceError as exc:
