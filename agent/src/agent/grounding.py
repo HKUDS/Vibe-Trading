@@ -2374,6 +2374,10 @@ class GroundingLedger:
 
         if any(abs(value - item) <= max(abs(item) * 0.005, 1e-9) for item in observed):
             return None
+        # Range check: if the claim is within the observed [min, max] range,
+        # it is a valid inference (e.g. "average ~85" when range is 77-96.45)
+        if observed and min(observed) <= value <= max(observed):
+            return None
         return {
             "code": "numeric_claim_conflict",
             "claim": claim,

@@ -228,3 +228,54 @@ class TestFixD:
         ledger._tool_failures = [{"tool": "get_market_data"}]
         msg = ledger.safe_fallback()
         assert "without tool evidence" in msg
+
+
+# ===========================================================================
+# Range check: values within observed [min, max] should not conflict
+# ===========================================================================
+
+class TestRangeCheck:
+    """Tests for the range check fix: values within observed [min, max] are valid."""
+
+    def _make_ledger(self, user_message="test"):
+        return GroundingLedger(run_dir=Path("/tmp/test_range"), user_message=user_message)
+
+    def _compare(self, value, observed, claim="test claim"):
+        ledger = self._make_ledger()
+        records = [FakeRecord("AAPL", v, "close") for v in observed]
+        return ledger._compare_price_claim(
+            value=value, records=records, field_name=None,
+            date_value=None, symbol="AAPL", claim=claim,
+        )
+
+    def test_value_within_range_no_conflict(self):
+        """85 within [77, 96.45] should NOT conflict."""
+        result = self._compare(85.0, [77.0, 96.45], "average ~85")
+        assert result is None
+
+    def test_value_at_min_boundary_no_conflict(self):
+        """77 (exact min) should NOT conflict."""
+        result = self._compare(77.0, [77.0, 96.45], "low 77")
+        assert result is None
+
+    def test_value_at_max_boundary_no_conflict(self):
+        """96.45 (exact max) should NOT conflict."""
+        result = self._compare(96.45, [77.0, 96.45], "high 96.45")
+        assert result is None
+
+    def test_value_just_outside_range_conflict(self):
+        """76.0 (below min 77, outside 0.5% tolerance) should conflict."""
+        result = self._compare(76.0, [77.0, 96.45], "price 76.0")
+        assert result is not None
+        assert result["code"] == "numeric_claim_conflict"
+
+    def test_value_far_outside_range_conflict(self):
+        """200 (far above max 96.45) should conflict."""
+        result = self._compare(200.0, [77.0, 96.45], "price 200")
+        assert result is not None
+        assert result["code"] == "numeric_claim_conflict"
+
+    def test_average_calculation_no_conflict(self):
+        """Average of 77 and 96.45 = 86.725 should NOT conflict."""
+        result = self._compare(86.725, [77.0, 96.45], "average 86.7")
+        assert result is None
