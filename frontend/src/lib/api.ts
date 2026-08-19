@@ -591,6 +591,10 @@ export const api = {
     request<ChanTrainingSession>(`/chan-training/sessions/${encodeURIComponent(id)}/trades`, { method: "POST", body: JSON.stringify({ side, ratio }), signal }),
   finishChanTrainingSession: (id: string, signal?: AbortSignal) =>
     request<ChanTrainingSession>(`/chan-training/sessions/${encodeURIComponent(id)}/finish`, { method: "POST", signal }),
+  createChanTrainingAnalysis: (id: string, signal?: AbortSignal) =>
+    request<ChanTrainingAnalysisRun>(`/chan-training/sessions/${encodeURIComponent(id)}/analysis`, { method: "POST", signal }),
+  getChanTrainingAnalysis: (id: string, signal?: AbortSignal) =>
+    request<ChanTrainingAnalysisRun>(`/chan-training/sessions/${encodeURIComponent(id)}/analysis`, { signal }),
   getRobotResearchReports: (days = 90, limit = 200, signal?: AbortSignal) =>
     request<RobotResearchReportsResponse>(
       `/market/research-reports?days=${encodeURIComponent(String(days))}&limit=${encodeURIComponent(String(limit))}`,
@@ -1083,6 +1087,35 @@ export interface ChanTrainingAnalysis {
   segments: ChanTrainingSegment[];
   centers: ChanTrainingCenter[];
   signals: ChanTrainingSignal[];
+}
+
+export interface ChanTrainingAnalysisRun {
+  id?: string;
+  session_id: string;
+  status: "not_started" | "queued" | "running" | "completed" | "failed" | string;
+  window?: Record<string, unknown>;
+  snapshot_summary?: Record<string, unknown>;
+  analysis_version?: string;
+  model?: Record<string, unknown>;
+  report?: {
+    title?: string;
+    performance?: Record<string, unknown>;
+    trades?: Array<Record<string, any>>;
+    structure_summary?: Record<string, number>;
+    execution_correct?: string[];
+    rule_violations?: string[];
+    timing_and_exit?: string[];
+    follow_up_rules?: string[];
+    limitations?: string[];
+    confidence?: string;
+    agent_report?: string;
+    data?: Record<string, unknown>;
+  } | null;
+  error?: string | null;
+  created_at?: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  updated_at?: string;
 }
 
 export interface ChanTrainingTrade {

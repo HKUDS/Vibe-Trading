@@ -175,6 +175,24 @@ class ChanTrainingStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS training_chan_analysis_runs (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL REFERENCES training_sessions(id) ON DELETE CASCADE,
+                    profile_scope TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    window_json TEXT NOT NULL DEFAULT '{}',
+                    snapshot_summary_json TEXT NOT NULL DEFAULT '{}',
+                    analysis_version TEXT NOT NULL,
+                    model_info_json TEXT NOT NULL DEFAULT '{}',
+                    report_json TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    finished_at TEXT,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_training_chan_analysis_runs_session
+                    ON training_chan_analysis_runs(profile_scope, session_id, created_at DESC);
                 CREATE TABLE IF NOT EXISTS training_instruments (
                     market TEXT NOT NULL,
                     symbol TEXT NOT NULL,
@@ -452,6 +470,65 @@ class ChanTrainingStore:
             if payload["chan_analysis"]:
                 payload["chan_analysis"] = filter_chan_analysis(payload["chan_analysis"], int(payload["current_cursor"]))
         return payload
+
+    @staticmethod
+    def _analysis_run_dict(row: sqlite3.Row) -> dict[str, Any]:
+        def loads(value: Any) -> dict[str, Any]:
+            try:
+                parsed = json.loads(value or "{}")
+                return parsed if isinstance(parsed, dict) else {}
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return {}
+        return {
+            "id": row["id"], "session_id": row["session_id"], "status": row["status"],
+            "window": loads(row["window_json"]), "snapshot_summary": loads(row["snapshot_summary_json"]),
+            "analysis_version": row["analysis_version"], "model": loads(row["model_info_json"]),
+            "report": loads(row["report_json"]) if row["report_json"] else None,
+            "error": row["error"], "created_at": row["created_at"], "started_at": row["started_at"],
+            "finished_at": row["finished_at"], "updated_at": row["updated_at"],
+        }
+
+    def create_analysis_run(self, scope: str, session_id: str, *, window: dict[str, Any], snapshot_summary: dict[str, Any], analysis_version: str, model: dict[str, Any] | None = None) -> dict[str, Any]:
+        with self._connect() as conn:
+            self._get_row(scope, session_id, conn)
+            now = _now()
+            run_id = uuid.uuid4().hex
+            conn.execute(
+                """INSERT INTO training_chan_analysis_runs
+                   (id, session_id, profile_scope, status, window_json, snapshot_summary_json,
+                    analysis_version, model_info_json, created_at, updated_at)
+                   VALUES (?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)""",
+                (run_id, session_id, self._scope(scope), json.dumps(_json_safe(window), ensure_ascii=False), json.dumps(_json_safe(snapshot_summary), ensure_ascii=False), analysis_version, json.dumps(_json_safe(model or {}), ensure_ascii=False), now, now),
+            )
+            row = conn.execute("SELECT * FROM training_chan_analysis_runs WHERE id = ?", (run_id,)).fetchone()
+        return self._analysis_run_dict(row)
+
+    def update_analysis_run(self, scope: str, run_id: str, *, status: str, report: dict[str, Any] | None = None, error: str | None = None, started: bool = False, finished: bool = False) -> dict[str, Any]:
+        if status not in {"queued", "running", "completed", "failed"}:
+            raise ValueError("invalid analysis status")
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM training_chan_analysis_runs WHERE id = ? AND profile_scope = ?", (run_id, self._scope(scope))).fetchone()
+            if row is None:
+                raise KeyError("analysis run not found")
+            now = _now()
+            started_at = now if started else row["started_at"]
+            finished_at = now if finished else row["finished_at"]
+            conn.execute("UPDATE training_chan_analysis_runs SET status = ?, report_json = ?, error = ?, started_at = ?, finished_at = ?, updated_at = ? WHERE id = ?", (status, json.dumps(_json_safe(report), ensure_ascii=False) if report is not None else row["report_json"], error, started_at, finished_at, now, run_id))
+            updated = conn.execute("SELECT * FROM training_chan_analysis_runs WHERE id = ?", (run_id,)).fetchone()
+        return self._analysis_run_dict(updated)
+
+    def get_analysis_run(self, scope: str, session_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            self._get_row(scope, session_id, conn)
+            row = conn.execute("SELECT * FROM training_chan_analysis_runs WHERE session_id = ? AND profile_scope = ? ORDER BY created_at DESC LIMIT 1", (session_id, self._scope(scope))).fetchone()
+        return self._analysis_run_dict(row) if row else None
+
+    def get_analysis_run_by_id(self, scope: str, run_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM training_chan_analysis_runs WHERE id = ? AND profile_scope = ?", (run_id, self._scope(scope))).fetchone()
+        if row is None:
+            raise KeyError("analysis run not found")
+        return self._analysis_run_dict(row)
 
     def list_sessions(self, scope: str) -> list[dict[str, Any]]:
         with self._connect() as conn:

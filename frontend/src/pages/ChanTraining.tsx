@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Eye, EyeOff, Link as LinkIcon, Loader2, RotateCcw, ArrowLeft, ArrowRight, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router";
 import { CandlestickChart, ChanTheoryGuide, type Sub } from "@/components/charts/CandlestickChart";
-import { api, type ChanTrainingCreateRequest, type ChanTrainingSession, type TradeMarker } from "@/lib/api";
+import { api, type ChanTrainingAnalysisRun, type ChanTrainingCreateRequest, type ChanTrainingSession, type TradeMarker } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const DEFAULTS: ChanTrainingCreateRequest = {
@@ -61,6 +61,8 @@ export function ChanTraining() {
   const [error, setError] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [poolCounts, setPoolCounts] = useState<Record<string, number>>({});
+  const [analysisRun, setAnalysisRun] = useState<ChanTrainingAnalysisRun | null>(null);
+  const [analysisSubmitting, setAnalysisSubmitting] = useState(false);
   const revealedSession = useRef<ChanTrainingSession | null>(null);
 
   useEffect(() => {
@@ -86,6 +88,19 @@ export function ChanTraining() {
       });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!session || session.status !== "finished") return;
+    void api.getChanTrainingAnalysis(session.id).then(setAnalysisRun).catch(() => undefined);
+  }, [session?.id, session?.status]);
+
+  useEffect(() => {
+    if (!session || session.status !== "finished" || !analysisRun || !["queued", "running"].includes(analysisRun.status)) return;
+    const timer = window.setInterval(() => {
+      void api.getChanTrainingAnalysis(session.id).then(setAnalysisRun).catch(() => undefined);
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [analysisRun, session]);
 
   useEffect(() => {
     let cancelled = false;
@@ -215,6 +230,19 @@ export function ChanTraining() {
     }
   };
 
+  const triggerAnalysis = async () => {
+    if (!session || session.status !== "finished" || analysisSubmitting) return;
+    setAnalysisSubmitting(true);
+    setError("");
+    try {
+      setAnalysisRun(await api.createChanTrainingAnalysis(session.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AI 缠论分析提交失败");
+    } finally {
+      setAnalysisSubmitting(false);
+    }
+  };
+
   const bars = session?.bars || [];
   const startIndex = session ? Math.max(0, session.current_cursor - session.window_size + 1) : 0;
   const revealedBars = useMemo(() => session ? bars.slice(0, session.current_cursor + 1) : [], [bars, session?.current_cursor]);
@@ -268,8 +296,9 @@ export function ChanTraining() {
   const periodLabel = session.period === "1d" ? "日线" : "周线";
 
   return <div className="min-h-full p-6 lg:p-8"><div className="mx-auto max-w-7xl space-y-5">
-    <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-semibold tracking-tight">缠论训练 · {periodLabel}</h1><p className="mt-1 text-sm text-muted-foreground">{session.name || "股票名称未揭示"} {session.symbol ? `· ${session.symbol}` : "· 盲测中"}</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void revealIdentity()} disabled={action} className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm hover:bg-muted disabled:opacity-60">{revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}{revealed ? "隐藏身份/时间" : "显示身份/时间"}</button><button type="button" onClick={finish} disabled={action || session.status !== "active"} className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm hover:bg-muted disabled:opacity-60"><CheckCircle2 className="h-4 w-4" />结束训练</button><button type="button" onClick={() => { setSession(null); setRevealed(false); revealedSession.current = null; }} className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm text-primary-foreground"><RotateCcw className="h-4 w-4" />重新开始</button></div></header>
+    <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-semibold tracking-tight">缠论训练 · {periodLabel}</h1><p className="mt-1 text-sm text-muted-foreground">{session.name || "股票名称未揭示"} {session.symbol ? `· ${session.symbol}` : "· 盲测中"}</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void revealIdentity()} disabled={action} className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm hover:bg-muted disabled:opacity-60">{revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}{revealed ? "隐藏身份/时间" : "显示身份/时间"}</button>{session.status === "finished" && <button type="button" onClick={() => void triggerAnalysis()} disabled={analysisSubmitting || ["queued", "running"].includes(analysisRun?.status || "")} className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm text-primary-foreground disabled:opacity-60">{analysisSubmitting ? "提交中…" : analysisRun?.status === "failed" ? "重新分析" : "AI 缠论分析"}</button>}<button type="button" onClick={finish} disabled={action || session.status !== "active"} className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm hover:bg-muted disabled:opacity-60"><CheckCircle2 className="h-4 w-4" />结束训练</button><button type="button" onClick={() => { setSession(null); setRevealed(false); revealedSession.current = null; setAnalysisRun(null); }} className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm text-primary-foreground"><RotateCcw className="h-4 w-4" />重新开始</button></div></header>
     {error && <p className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>}
+    {session.status === "finished" && analysisRun && <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm"><div><p className="font-medium">AI 缠论分析：{analysisRun.status === "queued" ? "排队中" : analysisRun.status === "running" ? "分析中" : analysisRun.status === "completed" ? "已完成" : "失败"}</p>{analysisRun.error && <p className="mt-1 text-xs text-danger">{analysisRun.error}</p>}</div><Link to={`/chan-training/reviews/${encodeURIComponent(session.id)}`} className="text-primary hover:underline">打开复盘报告</Link></section>}
     <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Metric label="现金" value={number(cash)} suffix={session.currency} /><Metric label="持仓" value={number(position, 0)} suffix="股" /><Metric label="持仓市值" value={number(position * lastClose)} suffix={session.currency} /><Metric label="总资产" value={number(assets)} suffix={session.currency} /><Metric label="收益" value={`${pnl >= 0 ? "+" : ""}${number(pnl)} (${((pnl / Number(session.initial_capital)) * 100).toFixed(2)}%)`} tone={pnl >= 0 ? "text-red-500" : "text-emerald-500"} /></section>
     <ChanTheoryGuide />
     <section className="rounded-xl border border-border/70 bg-card p-3 sm:p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3"><div className="flex items-center gap-2 text-xs text-muted-foreground"><span>窗口 {startIndex + 1}–{session.current_cursor + 1} / {bars.length}</span><span>·</span><span>快捷键 A/D 或 ←/→</span></div><div className="flex gap-1"><button type="button" onClick={() => void move(-1)} disabled={!canLeft || action} className="rounded border border-border p-1.5 disabled:opacity-40" title="上一根"><ArrowLeft className="h-4 w-4" /></button><button type="button" onClick={() => void move(1)} disabled={!canRight || action} className="rounded border border-border p-1.5 disabled:opacity-40" title="下一根"><ArrowRight className="h-4 w-4" /></button></div></div><CandlestickChart data={visibleBars} calculationData={bars} calculationOffset={startIndex} height={520} market={session.market} symbol={session.symbol || undefined} markers={markers} chanAnalysis={session.chan_analysis} showChan sub={sub} onSubChange={setSub} availableSubs={["vol", "amount", "macd", "rsi", "kdj", "boll", "expma"]} /></section>

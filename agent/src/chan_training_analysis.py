@@ -9,10 +9,91 @@ letting the live exercise see structures that were not confirmed yet.
 
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta
 from typing import Any
 
 
 MIN_FRACTAL_DISTANCE = 3
+CHAN_ANALYSIS_VERSION = "chan-structure-v3"
+
+
+def _as_date(value: Any) -> date | None:
+    if isinstance(value, date):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except ValueError:
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            return None
+
+
+def calculate_analysis_window(
+    bars: list[dict[str, Any]],
+    trades: list[dict[str, Any]] | None = None,
+    cursor: int | None = None,
+    days_before: int = 30,
+) -> dict[str, Any]:
+    """Calculate the review window using only the immutable session snapshot."""
+    ordered = sorted(bars, key=lambda item: int(item.get("bar_index", 0)))
+    if not ordered:
+        return {"start": None, "end": None, "start_index": None, "end_index": None, "reason": "no_data", "missing": True}
+    indexed = [{**item, "bar_index": int(item.get("bar_index", index))} for index, item in enumerate(ordered)]
+    valid_trades = [item for item in (trades or []) if 0 <= int(item.get("bar_index", -1)) < len(indexed)]
+    if valid_trades:
+        first_index = min(int(item["bar_index"]) for item in valid_trades)
+        last_index = max(int(item["bar_index"]) for item in valid_trades)
+        first_day = _as_date(indexed[first_index].get("time"))
+        last_day = _as_date(indexed[last_index].get("time"))
+        requested_start = first_day - timedelta(days=days_before) if first_day else None
+        requested_end = last_day
+        reason = "trade_window"
+    else:
+        center = max(0, min(int(cursor if cursor is not None else len(indexed) // 2), len(indexed) - 1))
+        first_index = max(0, center - days_before)
+        last_index = min(len(indexed) - 1, center + days_before)
+        requested_start = _as_date(indexed[first_index].get("time"))
+        requested_end = _as_date(indexed[last_index].get("time"))
+        reason = "cursor_neighborhood"
+    selected = [item for item in indexed if (requested_start is None or (_as_date(item.get("time")) or date.min) >= requested_start) and (requested_end is None or (_as_date(item.get("time")) or date.max) <= requested_end)]
+    if not selected:
+        selected = indexed[max(0, first_index):last_index + 1]
+    available_start = _as_date(selected[0].get("time"))
+    available_end = _as_date(selected[-1].get("time"))
+    return {
+        "start": requested_start.isoformat() if requested_start else None,
+        "end": requested_end.isoformat() if requested_end else None,
+        "available_start": available_start.isoformat() if available_start else None,
+        "available_end": available_end.isoformat() if available_end else None,
+        "start_index": int(selected[0].get("bar_index", first_index)),
+        "end_index": int(selected[-1].get("bar_index", last_index)),
+        "bar_count": len(selected),
+        "reason": reason,
+        "missing": bool(requested_start and available_start and available_start > requested_start),
+    }
+
+
+def match_trade_structures(trades: list[dict[str, Any]], analysis: dict[str, Any]) -> list[dict[str, Any]]:
+    """Match each trade against structures confirmed no later than its bar."""
+    result: list[dict[str, Any]] = []
+    for trade in trades:
+        trade_index = int(trade.get("bar_index", 0))
+        visible = filter_chan_analysis(analysis, trade_index)
+        candidates = [item for key in ("signals", "centers", "segments", "strokes", "fractals") for item in visible.get(key, [])]
+        nearest = min(candidates, key=lambda item: abs(int(item.get("bar_index", item.get("end_index", 0))) - trade_index), default=None)
+        signal = next((item for item in visible.get("signals", []) if item.get("side") == trade.get("side")), None)
+        result.append({
+            "sequence": trade.get("sequence"), "side": trade.get("side"), "bar_index": trade_index,
+            "trade_time": trade.get("trade_time"), "price": trade.get("price"),
+            "confirmed_structures": visible, "nearest_structure": nearest,
+            "matched_signal": signal, "trend_aligned": bool(signal and signal.get("side") == trade.get("side")),
+            "near_center": any(int(item.get("start_index", 0)) <= trade_index <= int(item.get("end_index", 0)) for item in visible.get("centers", [])),
+        })
+    return result
 
 
 def _number(value: Any) -> float:

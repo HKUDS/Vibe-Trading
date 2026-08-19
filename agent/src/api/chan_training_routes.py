@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import re
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from typing import Any
@@ -21,7 +22,8 @@ from src.api.market_routes import (
     canonical_a_share_code,
 )
 from src.api.security import require_auth
-from src.chan_training_analysis import build_chan_analysis
+from src.chan_training_analysis import CHAN_ANALYSIS_VERSION, build_chan_analysis, calculate_analysis_window
+from src.chan_training_agent import run_chan_analysis
 from src.chan_training_store import ChanTrainingStore
 from src.session.models import Principal
 
@@ -227,6 +229,7 @@ def _choose_session_data(store: ChanTrainingStore, market: str, period: str, win
 
 def register_chan_training_routes(app: FastAPI) -> None:
     store = ChanTrainingStore()
+    analysis_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="chan-analysis")
 
     @app.post("/chan-training/instruments/sync", dependencies=[Depends(require_auth)])
     def sync_instruments(payload: InstrumentSyncRequest, principal: Principal = Depends(require_auth)) -> dict[str, Any]:
@@ -312,3 +315,32 @@ def register_chan_training_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/chan-training/sessions/{session_id}/analysis", status_code=202, dependencies=[Depends(require_auth)])
+    def create_analysis(session_id: str, principal: Principal = Depends(require_auth)) -> dict[str, Any]:
+        scope = _scope(principal)
+        try:
+            session = store.get_session(scope, session_id, include_hidden=True)
+            bars = session.get("bars") or []
+            trades = session.get("trades") or []
+            window = calculate_analysis_window(bars, trades, session.get("current_cursor"))
+            snapshot = {
+                "source": "training_session_snapshot", "immutable": True,
+                "symbol": session.get("symbol"), "period": session.get("period"),
+                "bar_count": len(bars), "first_available": bars[0].get("time") if bars else None,
+                "last_available": bars[-1].get("time") if bars else None,
+                "missing": bool(window.get("missing")),
+            }
+            run = store.create_analysis_run(scope, session_id, window=window, snapshot_summary=snapshot, analysis_version=CHAN_ANALYSIS_VERSION, model={"provider": "configured", "async": True})
+            analysis_executor.submit(run_chan_analysis, store, scope, run["id"])
+            return run
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/chan-training/sessions/{session_id}/analysis", dependencies=[Depends(require_auth)])
+    def get_analysis(session_id: str, principal: Principal = Depends(require_auth)) -> dict[str, Any]:
+        try:
+            run = store.get_analysis_run(_scope(principal), session_id)
+            return run or {"status": "not_started", "session_id": session_id, "report": None}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
