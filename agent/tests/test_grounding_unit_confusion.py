@@ -279,3 +279,69 @@ class TestRangeCheck:
         """Average of 77 and 96.45 = 86.725 should NOT conflict."""
         result = self._compare(86.725, [77.0, 96.45], "average 86.7")
         assert result is None
+
+
+# ===========================================================================
+# Safe fallback: only trigger "price conflict" message when there are
+# actual numeric_claim_conflict failures
+# ===========================================================================
+
+class TestSafeFallbackCategorization:
+    """Tests for safe_fallback only triggering price conflict on actual conflicts."""
+
+    def _make_ledger(self, user_message="总结我的持仓"):
+        ledger = GroundingLedger(
+            run_dir=Path("/tmp/test_sfb"),
+            user_message=user_message,
+        )
+        ledger._identity_required = True
+        return ledger
+
+    def _add_validations(self, ledger, validations):
+        """Add validation results via the proper record path."""
+        for v in validations:
+            ledger._validations.append(
+                {
+                    "attempt": len(ledger._validations) + 1,
+                    "checked_at": "2024-01-01T00:00:00",
+                    "content_sha256": "abc123",
+                    "valid": False,
+                    "issues": [v],
+                }
+            )
+
+    def test_non_conflict_validation_does_not_trigger_price_message(self):
+        """data_source_not_surfaced should NOT trigger the price conflict message."""
+        ledger = self._make_ledger()
+        ledger._evidence.append(FakeRecord("03690.HK", 85.0, "close"))
+        self._add_validations(ledger, [
+            {"code": "data_source_not_surfaced", "sources": ["tencent"]},
+        ])
+        msg = ledger.safe_fallback()
+        # Should NOT be the price conflict message
+        assert "价格证据冲突" not in msg
+        assert "无法安全确认" in msg  # Falls through to identity message
+
+    def test_conflict_validation_triggers_price_message(self):
+        """numeric_claim_conflict SHOULD trigger the price conflict message."""
+        ledger = self._make_ledger()
+        ledger._evidence.append(FakeRecord("03690.HK", 77.0, "close"))
+        ledger._evidence.append(FakeRecord("03690.HK", 96.45, "close"))
+        self._add_validations(ledger, [
+            {"code": "numeric_claim_conflict", "value": 85.0},
+        ])
+        msg = ledger.safe_fallback()
+        # Price conflict message contains "避免...冲突" in Chinese
+        assert "冲突" in msg and "价格" in msg
+
+    def test_mixed_validations_with_conflict_triggers_price_message(self):
+        """Mixed validations with at least one conflict trigger price message."""
+        ledger = self._make_ledger()
+        ledger._evidence.append(FakeRecord("03690.HK", 77.0, "close"))
+        ledger._evidence.append(FakeRecord("03690.HK", 96.45, "close"))
+        self._add_validations(ledger, [
+            {"code": "numeric_claim_conflict", "value": 85.0},
+            {"code": "data_source_not_surfaced", "sources": ["tencent"]},
+        ])
+        msg = ledger.safe_fallback()
+        assert "冲突" in msg and "价格" in msg

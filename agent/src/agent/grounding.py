@@ -1307,32 +1307,42 @@ class GroundingLedger:
         is_zh = bool(re.search(r"[\u3400-\u9fff]", self.user_message))
         price_records = self._price_records()
         if price_records:
-            by_symbol: dict[str, list[EvidenceRecord]] = {}
-            for record in price_records:
-                by_symbol.setdefault(record.symbol or "unknown", []).append(record)
-            facts = []
-            for symbol, records in sorted(by_symbol.items()):
-                values = [float(record.value) for record in records if record.value is not None]
-                currency = next((record.currency for record in records if record.currency), None)
-                sources = sorted({record.source for record in records if record.source})
-                source_label = "/".join(sources) if sources else "unknown"
-                unit = f" {currency}" if currency else ""
-                facts.append(
-                    f"{symbol}: {min(values):g}–{max(values):g}{unit} "
-                    f"(source: {source_label}; currency conversion: none)"
-                )
-            joined = "；".join(facts) if is_zh else "; ".join(facts)
-            if is_zh:
-                return (
-                    "为避免输出与工具证据冲突的价格，我已拒绝上一版答案。"
-                    f"当前可验证的已观测 OHLC 范围是：{joined}。"
-                    "在重新核对标的或明确展示推导公式前，我不会生成买入价。"
-                )
-            return (
-                "I rejected the previous draft because its prices conflicted with tool evidence. "
-                f"The verified observed OHLC range is: {joined}. "
-                "I will not invent an entry price without a visible derivation or refreshed evidence."
+            # Only use the "price conflict" message if there are actual
+            # numeric_claim_conflict failures. Other failures (e.g.
+            # data_source_not_surfaced, numeric_claim_unavailable) should
+            # not trigger the "price conflict" message.
+            has_conflict = any(
+                issue.get("code") == "numeric_claim_conflict"
+                for validation in self._validations
+                for issue in validation.get("issues", [validation])
             )
+            if has_conflict:
+                by_symbol: dict[str, list[EvidenceRecord]] = {}
+                for record in price_records:
+                    by_symbol.setdefault(record.symbol or "unknown", []).append(record)
+                facts = []
+                for symbol, records in sorted(by_symbol.items()):
+                    values = [float(record.value) for record in records if record.value is not None]
+                    currency = next((record.currency for record in records if record.currency), None)
+                    sources = sorted({record.source for record in records if record.source})
+                    source_label = "/".join(sources) if sources else "unknown"
+                    unit = f" {currency}" if currency else ""
+                    facts.append(
+                        f"{symbol}: {min(values):g}–{max(values):g}{unit} "
+                        f"(source: {source_label}; currency conversion: none)"
+                    )
+                joined = "；".join(facts) if is_zh else "; ".join(facts)
+                if is_zh:
+                    return (
+                        "为避免输出与工具证据冲突的价格，我已拒绝上一版答案。"
+                        f"当前可验证的已观测 OHLC 范围是：{joined}。"
+                        "在重新核对标的或明确展示推导公式前，我不会生成买入价。"
+                    )
+                return (
+                    "I rejected the previous draft because its prices conflicted with tool evidence. "
+                    f"The verified observed OHLC range is: {joined}. "
+                    "I will not invent an entry price without a visible derivation or refreshed evidence."
+                )
         # Distinguish: if identity was never required (this run answered a
         # non-market question like an alpha-zoo enumeration or a journal
         # analysis), the issue is that the draft cited numbers without tool
