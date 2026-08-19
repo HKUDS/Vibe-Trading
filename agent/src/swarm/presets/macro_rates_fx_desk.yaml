@@ -46,7 +46,13 @@ agents:
       - EM assets: US rate direction drives EM capital flows
 
       Use load_skill for macro analysis and global macro frameworks.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use `web_search` then `read_url` for central-bank, treasury, PBoC,
+      HKMA, and official yield-curve releases. Use `get_market_data` only for
+      observed benchmark yields/price proxies available to the connector, and
+      state tenor, timezone, currency, as-of date, and source. Do not fabricate
+      an unavailable CNY or offshore tenor from a US curve; missing rates stay
+      unavailable.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data]
     skills: [macro-analysis, global-macro, credit-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -91,7 +97,13 @@ agents:
       - EM FX risk assessment: which EM currencies are vulnerable to USD strength?
 
       Use load_skill for global macro and commodity analysis (commodity currencies).
-    tools: [bash, read_file, write_file, load_skill, get_market_data, read_url]
+      Resolve each pair with `search_symbol` where supported and use
+      `get_market_data` for the exact spot/return window, quote currency,
+      timezone, and adjustment. Use `web_search` then `read_url` for official
+      fixing, policy, intervention, and peg-band evidence. Keep onshore/offshore
+      CNY, HKD peg, and cross rates separate; a price move is not evidence of a
+      central-bank action without a cited source.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_market_data]
     skills: [global-macro, macro-analysis, yfinance]
     max_iterations: 50
     timeout_seconds: 1800
@@ -130,7 +142,13 @@ agents:
       - Stagflation risk: favor gold, defensive equities; avoid cyclicals and bonds
 
       Use load_skill for commodity analysis frameworks.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use `web_search` then `read_url` for EIA/IEA/OPEC, exchange, customs, and
+      official inflation releases. Use `get_market_data` for the named
+      benchmark price window and `get_market_data`-derived returns only; it does
+      not provide inventories, CPI, PPI, or physical balances. Preserve
+      contract, unit, currency, venue, publication date, and observation date;
+      unavailable inflation or inventory inputs must not be estimated.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data]
     skills: [commodity-analysis, global-macro, seasonal]
     max_iterations: 50
     timeout_seconds: 1800
@@ -182,7 +200,13 @@ agents:
       - Next scheduled review date / trigger for rebalancing
 
       Use load_skill for asset allocation and risk management frameworks.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+      Reconcile every macro input by source, market, currency, tenor, and
+      observation date. Recheck trade proxies with `get_market_data`; use
+      `backtest` only with a common window, explicit rebalance, fee, slippage,
+      benchmark, and missing-data policy. Macro narratives and unavailable
+      yield/FX observations remain conditional rather than being converted into
+      numerical signals.
+    tools: [bash, read_file, write_file, load_skill, get_market_data, backtest]
     skills: [asset-allocation, risk-analysis, hedging-strategy, strategy-generate]
     max_iterations: 50
     timeout_seconds: 1800

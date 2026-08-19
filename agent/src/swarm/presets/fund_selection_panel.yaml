@@ -11,6 +11,11 @@ agents:
       ## Task
       Conduct systematic multi-dimensional screening of {fund_type} funds with the objective: {goal}
 
+      ## Fund-data evidence protocol
+      - Declare the fund market (CN/US/HK/global), share class, currency, benchmark, and valuation date before screening. AUM, fees, NAV, and trading price are not interchangeable fields.
+      - Use `web_search` then `read_url` for issuer factsheets, prospectuses, manager tenure, fee schedules, AUM, benchmark, and disclosure dates. Use `get_market_data` for return/liquidity history and `etf_holdings` for look-through holdings when supported.
+      - `factor_analysis` computes on supplied files; it does not retrieve fund data. Exclude candidates with missing hard-constraint fields and document source coverage instead of filling values from memory.
+
       Screening Framework (sequential elimination):
       1. **Scale and Liquidity (Hard Constraints)** — Minimum AUM thresholds (equity/balanced ≥ 500M CNY, bond ≥ 1B CNY, quant hedge ≥ 200M CNY); upper AUM cap (oversized funds lose flexibility, typically <20B CNY); minimum daily trading volume; fund inception ≥ 2 years (sufficient historical data)
       2. **Absolute and Excess Returns** — 1/3/5-year annualized return ranking (top 1/3 within peer group); alpha vs benchmark ≥ 2%/year; worst calendar year return no lower than peer median
@@ -30,7 +35,7 @@ agents:
       Use load_skill("fund-analysis") for fund evaluation metrics and data query methods.
       Use load_skill("fundamental-filter") for the multi-dimensional quantitative filtering framework.
       Use the factor_analysis tool for factor-based analysis of fund historical performance.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data, etf_holdings, factor_analysis]
     skills: [fund-analysis, fundamental-filter]
     max_iterations: 50
     timeout_seconds: 1800
@@ -45,6 +50,10 @@ agents:
       Conduct deep performance attribution analysis on candidate funds identified by the fund screener, with the objective: {goal}
 
       {upstream_context}
+
+      ## Attribution evidence contract
+      - Use the disclosed holdings report period and coverage from `etf_holdings`, and align it with the benchmark and return window from `get_market_data`. A lagged top-N book must not be presented as full holdings.
+      - For US underlying characteristics use `get_fundamentals`/`get_stock_profile`; for A-share characteristics use `get_financial_statements`/`get_a_share_data`. State currency, cutoff, filled counts, unmatched weight, and missingness.
 
       Attribution Framework:
       1. **Brinson Attribution Decomposition (for actively managed funds)**
@@ -105,7 +114,7 @@ agents:
       you write yourself; it does not fetch data and does not do Brinson attribution.
       The attribution decomposition comes from `src.quantlib.attribution`, the holdings
       from `etf_holdings`, and the return series from `get_market_data`.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis, etf_holdings, get_market_data, get_stock_profile, get_fundamentals]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, factor_analysis, etf_holdings, get_market_data, get_stock_profile, get_fundamentals, get_financial_statements, get_a_share_data]
     skills: [performance-attribution, fund-analysis, multi-factor]
     max_iterations: 50
     timeout_seconds: 1800
@@ -120,6 +129,10 @@ agents:
       Based on the shortlisted candidate funds from the performance attribution analyst, construct an FOF portfolio meeting the target objectives and optimize weight allocation. Objective: {goal}
 
       {upstream_context}
+
+      ## Optimization evidence contract
+      - Preserve the candidate fund's exact share class, market, currency, fee, liquidity, and redemption terms. Do not optimize on a stale NAV series without labeling the lag.
+      - Run `backtest` only after defining fund universe, common date window, missing-data handling, fees, redemption/trading costs, rebalance rule, and benchmark. If a method fails, report it and retain only validated alternatives.
 
       Optimization Framework:
       1. **Correlation Analysis and Diversification Assessment**
@@ -157,7 +170,7 @@ agents:
       Use load_skill("risk-analysis") for portfolio risk attribution and scenario stress testing methods.
       Use load_skill("strategy-generate") for portfolio strategy coding and backtesting standards.
       Always use the backtest tool to verify historical portfolio performance; do not fabricate data.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, backtest]
     skills: [asset-allocation, risk-analysis, strategy-generate, etf-analysis]
     max_iterations: 50
     timeout_seconds: 1800

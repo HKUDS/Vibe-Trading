@@ -26,8 +26,16 @@ agents:
       - A great business at a fair price beats a fair business at a great price.
       - If uncertain, pass. An opportunity outside your circle of competence is not an opportunity.
 
-      Use load_skill / get_financial_statements / get_market_data / financial_rigor to source and verify numbers precisely (no "TBD" skips).
-    tools: [bash, read_file, write_file, load_skill, get_market_data, get_financial_statements, web_search, financial_rigor]
+      Resolve {company} with `search_symbol`. For A-shares use
+      `get_a_share_data` plus `get_financial_statements`; for US/HK use
+      `get_stock_profile` plus `get_financial_statements`, and use
+      `get_sec_filings` for US filing evidence. Use `get_stock_news` and
+      `get_sector_info` only for dated, market-compatible claims. `financial_rigor`
+      checks arithmetic; it does not retrieve inputs. Record source tool/URL,
+      filing period, currency, exchange, as-of date, and reported-versus-derived
+      status. Missing owner earnings, price, or management evidence stays
+      unavailable rather than being hidden behind a TBD-free estimate.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, get_stock_news, get_sector_info, get_sec_filings, web_search, read_url, financial_rigor]
     skills: [fundamental-filter, valuation-model, management-deep-dive]
     max_iterations: 50
     timeout_seconds: 1800
@@ -56,8 +64,14 @@ agents:
       - Better roughly right than precisely wrong.
       - Admitting what you don't know beats pretending you do.
 
+      Resolve the issuer with `search_symbol` and route A-share versus US/HK
+      data using the compatible profile, statements, news, and filing tools.
+      Use `get_market_data` for the event/valuation price window, not for
+      liabilities, moat, or management claims. Cite source, currency, period,
+      and as-of date for each failure-path input; unknown probability remains
+      qualitative when no historical sample was retrieved.
       Use financial_rigor to verify any key number; load_skill("risk-analysis") to systematize risk.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, get_financial_statements, web_search, financial_rigor]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, get_stock_news, get_sec_filings, web_search, read_url, financial_rigor]
     skills: [risk-analysis, financial-statement, fundamental-filter]
     max_iterations: 50
     timeout_seconds: 1800
@@ -86,8 +100,13 @@ agents:
       - Concentrate: put eggs in a few baskets and watch them.
       - Sell for only three reasons: you were wrong / fundamentals changed / you found something better.
 
+      Resolve the issuer with `search_symbol`; route A-shares through
+      `get_a_share_data` and US/HK through `get_stock_profile`/filings. Use
+      `get_stock_news` and `web_search`/`read_url` for dated management and
+      governance evidence. Preserve source, period, currency, and confidence;
+      do not infer trustworthiness from price performance alone.
       load_skill("thesis-tracker") to build a thesis and red lines.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, get_financial_statements, web_search, financial_rigor]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, get_stock_news, get_sec_filings, web_search, read_url, financial_rigor]
     skills: [management-deep-dive, fundamental-filter, thesis-tracker]
     max_iterations: 50
     timeout_seconds: 1800
@@ -121,8 +140,15 @@ agents:
       - Long-term, stock returns equal the return on corporate capital.
       - Civilizational trend + excellent organization + reasonable price = long-term compounding.
 
+      Resolve the issuer with `search_symbol` and use the market-compatible
+      statement/profile/filing tools for the 10-year evidence. Use
+      `get_market_data` only for observed price/return windows; use
+      `web_search`/`read_url` for demographic, policy, and supply-chain sources.
+      Record geography, currency, date, source, and uncertainty; do not convert
+      an unavailable demographic or market-size series into a high-certainty
+      score.
       Use load_skill("bottleneck-hunter") to judge the supply-chain position; financial_rigor for exact valuation.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, get_financial_statements, web_search, financial_rigor]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, get_stock_news, get_sec_filings, web_search, read_url, financial_rigor]
     skills: [bottleneck-hunter, valuation-model, thesis-tracker, global-macro]
     max_iterations: 50
     timeout_seconds: 1800

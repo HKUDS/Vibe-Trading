@@ -31,8 +31,15 @@ agents:
       5. **Final feature set** — Deliver the screened final list (suggested 30–80 features) with a complete code skeleton for construction
 
       Use load_skill("ml-strategy") for ML feature best practices, load_skill("factor-research") for factor efficacy research, load_skill("multi-factor") for multi-factor design.
-      Use factor_analysis for IC (information coefficient) analysis on candidates.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+      Resolve the universe with `search_symbol` and record the market, exchange,
+      timestamp, filing/publication date, adjustment, and point-in-time cutoff
+      for every feature. Use `get_market_data` for price/volume history; use
+      `get_a_share_data` and `get_financial_statements` for A-share raw fields;
+      use `get_stock_profile` and `get_financial_statements` for US/HK-compatible
+      fields. `factor_analysis` evaluates retrieved inputs; it does not repair
+      look-ahead or invent missing fundamentals. A feature without a defensible
+      as-of date is excluded.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, factor_analysis]
     skills: [ml-strategy, factor-research, multi-factor]
     max_iterations: 50
     timeout_seconds: 1800
@@ -66,7 +73,13 @@ agents:
       5. **Evaluation metrics** — Primary metrics for {target_variable} (ICIR, accuracy, annualized return, etc.) plus secondary metrics; full model-training code skeleton
 
       Use load_skill("ml-strategy") for financial ML design standards, load_skill("quant-statistics") for tests and significance.
-    tools: [bash, read_file, write_file, edit_file, load_skill]
+      Require a point-in-time feature manifest before training: universe,
+      label horizon, publication lag, embargo/purge window, train/validation/
+      test dates, and market/currency. Use `get_market_data` and the appropriate
+      fundamentals route to audit sample availability; random splits and
+      silently backfilled filings are prohibited. Report missingness and failed
+      retrievals separately from valid zero values.
+    tools: [bash, read_file, write_file, edit_file, load_skill, search_symbol, get_market_data, get_financial_statements, get_a_share_data, get_stock_profile]
     skills: [ml-strategy, quant-statistics]
     max_iterations: 50
     timeout_seconds: 1800
@@ -103,7 +116,12 @@ agents:
 
       Use load_skill("strategy-generate") for code standards, load_skill("backtest-diagnose") for diagnostics, load_skill("quant-statistics") for significance tests.
       Use **backtest** for execution; strictly separate OOS data.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+      Re-fetch the exact universe and price window with `search_symbol` and
+      `get_market_data`. Backtest inputs must state signal timestamp, execution
+      lag, corporate-action adjustment, benchmark, rebalance, fees, slippage,
+      borrow assumptions, and missing-data policy. A failed backtest or a
+      leakage check is not a zero-return result; mark the strategy unvalidated.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, backtest]
     skills: [strategy-generate, backtest-diagnose, quant-statistics]
     max_iterations: 50
     timeout_seconds: 1800

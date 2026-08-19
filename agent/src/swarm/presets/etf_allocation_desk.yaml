@@ -11,6 +11,11 @@ agents:
       ## Task
       In the {market} market, conduct multi-dimensional screening of ETF products by asset class and build a candidate ETF pool suited for investors with a {risk_profile} risk profile, covering equities / bonds / commodities / REITs / money market and other major asset classes.
 
+      ## ETF evidence and market protocol
+      - Normalize the market and ETF ticker before comparison: A-share/CN, US, HK, commodity, and crypto products have different currencies, trading calendars, NAV conventions, and fee disclosures.
+      - Use `get_market_data` for price/volume/premium history and `etf_holdings` for look-through holdings when supported. Use `web_search` and `read_url` for issuer factsheets, prospectuses, AUM, fees, tracking difference, replication, and options/short-sale eligibility.
+      - Do not infer AUM, tracking error, fee, or premium/discount from price bars. Every candidate row must include source, observation date, currency, fee basis, and a missing-data flag; exclude candidates without enough evidence from hard-constraint ranking.
+
       ## Screening Framework
 
       ### Scale and Liquidity (Hard Constraints)
@@ -65,7 +70,7 @@ agents:
 
       Use load_skill("etf-analysis") for ETF research methodology; load_skill("fund-analysis") for fund product evaluation; load_skill("tushare") for A-share ETF data.
       Use the factor_analysis tool for ETF tracking error and factor exposure analysis.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data, etf_holdings, factor_analysis]
     skills: [etf-analysis, fund-analysis, tushare]
     max_iterations: 50
     timeout_seconds: 1800
@@ -80,6 +85,10 @@ agents:
       Based on the current economic cycle position and macro environment assessment, determine cross-asset class allocation weights (equities / bonds / commodities / international / cash) for {market} suited for investors with a {risk_profile} risk profile, and deliver macro-driven allocation recommendations.
 
       ## Analysis Framework
+
+      ## Macro evidence protocol
+      - Use `web_search` then `read_url` for official GDP/CPI/PMI, central-bank, yield, and policy releases. Record geography, currency, observation date, revision status, and source URL.
+      - Use `get_market_data` only to validate investable proxy performance; it cannot supply macro indicators. Separate observed data from expected returns and allocation assumptions.
 
       ### Economic Cycle Positioning
       Use the Merrill Lynch Investment Clock to position the current economic cycle:
@@ -124,7 +133,7 @@ agents:
 
       Use load_skill("macro-analysis") for macro analysis framework; load_skill("asset-allocation") for cross-asset allocation methodology; load_skill("global-macro") for global macro comparison analysis.
       Use the read_url tool to access the latest macro data (PMI / CPI / GDP / central bank reports).
-    tools: [bash, read_file, write_file, load_skill, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data]
     skills: [macro-analysis, asset-allocation, global-macro]
     max_iterations: 50
     timeout_seconds: 1800
@@ -137,6 +146,10 @@ agents:
 
       ## Task
       Compute risk budgets and weight constraints for each asset class in a {market} ETF portfolio suited for investors with a {risk_profile} risk profile, ensuring portfolio risk allocation is scientifically sound and no single asset dominates portfolio risk.
+
+      ## Risk-data protocol
+      - Select one named, market-compatible proxy ETF per asset class and retrieve all histories with `get_market_data` using the same currency, interval, adjustment, and date window where possible.
+      - If a proxy or history is unavailable, exclude that asset class and recalculate; do not assign a zero-volatility or zero-correlation placeholder. Record the sample window and missingness.
 
       ## Risk Budgeting Framework
 
@@ -219,6 +232,10 @@ agents:
 
       {upstream_context}
 
+      ## Portfolio evidence contract
+      - Preserve the ETF's exact ticker, exchange, currency, fee, NAV/market-price convention, and source from the screening report. Do not silently substitute a similar fund.
+      - Validate holdings and prices with `etf_holdings`/`get_market_data` when available. Run `backtest` only after universe, weights, dates, rebalancing, fees, slippage, and benchmark are explicit; report failures instead of fabricated metrics.
+
       ## Portfolio Construction Process
 
       ### Step 1: Three-Dimensional Trade-off
@@ -256,7 +273,7 @@ agents:
 
       Use load_skill("etf-analysis") for ETF portfolio construction framework; load_skill("strategy-generate") for standardized backtest code; load_skill("asset-allocation") for portfolio optimization methods.
       Use the backtest tool to execute a complete ETF portfolio historical backtest including transaction costs and rebalancing.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+    tools: [bash, read_file, write_file, load_skill, etf_holdings, get_market_data, backtest]
     skills: [etf-analysis, strategy-generate, asset-allocation]
     max_iterations: 50
     timeout_seconds: 1800

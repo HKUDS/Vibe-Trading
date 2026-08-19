@@ -614,6 +614,7 @@ class OpenAICodexLLM:
         tools: list[dict[str, Any]] | None = None,
         reasoning_effort: str | None = None,
         codex_url: str | None = None,
+        tool_choice: Any = None,
     ) -> None:
         if httpx is None:
             raise RuntimeError("OpenAI Codex OAuth requires httpx. Install dependencies first.")
@@ -623,8 +624,9 @@ class OpenAICodexLLM:
         self.tools = tools or []
         self.reasoning_effort = reasoning_effort
         self.codex_url = validate_codex_base_url(codex_url or get_env_config().llm.openai_codex_base_url)
+        self.tool_choice = tool_choice
 
-    def bind_tools(self, tools: list[dict[str, Any]]) -> "OpenAICodexLLM":
+    def bind_tools(self, tools: list[dict[str, Any]], tool_choice: Any = None) -> "OpenAICodexLLM":
         return OpenAICodexLLM(
             model=self.model,
             temperature=self.temperature,
@@ -632,10 +634,17 @@ class OpenAICodexLLM:
             tools=tools,
             reasoning_effort=self.reasoning_effort,
             codex_url=self.codex_url,
+            tool_choice=tool_choice,
         )
 
     def _body(self, messages: list[dict[str, Any]], *, stream: bool) -> dict[str, Any]:
         system_prompt, input_items = _convert_messages(messages)
+        tool_choice = self.tool_choice
+        if isinstance(tool_choice, dict) and isinstance(tool_choice.get("function"), dict):
+            tool_choice = {
+                "type": "function",
+                "name": tool_choice["function"].get("name"),
+            }
         body: dict[str, Any] = {
             "model": _strip_model_prefix(self.model),
             "store": False,
@@ -645,7 +654,7 @@ class OpenAICodexLLM:
             "text": {"verbosity": "medium"},
             "include": ["reasoning.encrypted_content"],
             "prompt_cache_key": _prompt_cache_key(messages),
-            "tool_choice": "auto",
+            "tool_choice": tool_choice if tool_choice is not None else "auto",
             "parallel_tool_calls": True,
         }
         tools = _convert_tools(self.tools)

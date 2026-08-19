@@ -11,6 +11,11 @@ agents:
       ## Task
       Conduct a deep on-chain data analysis of {target}, identifying current on-chain health and price trend signals for the {timeframe} horizon.
 
+      ## Data protocol
+      - Normalize {target} to an exact asset and chain/network before retrieval (for example BTC-USDT spot versus BTC perpetual). Do not mix chain metrics from one network with a token deployed on another network.
+      - Use `get_market_data` for the price window and state symbol, venue/source, interval, and UTC sample dates. Use `web_search` and `read_url` for on-chain dashboards or exchange disclosures; each metric needs its provider, retrieval timestamp, as-of date, unit, and address cohort definition.
+      - On-chain metrics are not available from `get_market_data`. If a primary dashboard or API cannot be read, mark the metric unavailable and reduce confidence; never infer MVRV, SOPR, whale flows, or exchange reserves from price alone.
+
       ## On-Chain Analysis Framework
 
       ### I. Network Activity and Adoption Metrics
@@ -60,7 +65,7 @@ agents:
       4. **Exchange Fund Flow Analysis** — Net inflow / outflow trend; stablecoin minting activity; assess whether fresh capital is entering or leaving
       5. **Activity and Adoption Trends** — Recent trends in active addresses / new addresses / on-chain transaction volume; assess whether there is organic growth support
       6. **On-Chain Composite Directional Signal** — Explicitly give a "{timeframe} bullish / bearish / neutral" on-chain signal with confidence level
-    tools: [bash, read_file, write_file, load_skill, get_market_data]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data]
     skills: [onchain-analysis, okx-market, stablecoin-flow]
     max_iterations: 50
     timeout_seconds: 1800
@@ -73,6 +78,11 @@ agents:
 
       ## Task
       Analyze the DeFi protocol ecosystem related to {target}, identifying liquidity trends and protocol-level Alpha opportunities within the {timeframe} horizon.
+
+      ## Data protocol
+      - Define the chain, protocol, token contract, TVL currency, and measurement date before comparing values. Do not combine USD TVL with token-denominated TVL without stating the conversion.
+      - Use `web_search` to locate primary protocol dashboards, governance proposals, audits, and reputable data providers, then use `read_url` to verify TVL, revenue, rates, liquidation, and unlock observations. Capture URL, retrieval time, as-of date, and methodology.
+      - Treat APY, TVL, revenue, and token unlock schedules as time-sensitive. Separate reported values from derived P/F ratios and assumptions; mark inaccessible dashboards as unavailable.
 
       ## DeFi Analysis Framework
 
@@ -111,7 +121,7 @@ agents:
       4. **Top Protocol P/F Valuation Comparison** — List P/F ratios for the top 5 protocols; assess which are fairly / richly / cheaply valued
       5. **Token Unlock Selling Pressure Calendar** — Major protocol token unlock schedules over the next 3 months; flag potential selling pressure events
       6. **DeFi-Layer Directional Signal** — From a DeFi ecosystem perspective, give a {timeframe} directional assessment for {target} with core rationale
-    tools: [bash, read_file, write_file, load_skill, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url]
     skills: [crypto-derivatives, defi-yield, token-unlock-treasury, web-reader]
     max_iterations: 50
     timeout_seconds: 1800
@@ -124,6 +134,11 @@ agents:
 
       ## Task
       Conduct multi-dimensional market sentiment analysis on {target}, providing sentiment-based timing evidence for the {timeframe} horizon.
+
+      ## Data protocol
+      - Normalize the asset and contract venue before reading funding/OI/long-short data. Record exchange, contract type, settlement currency, observation time in UTC, and aggregation window.
+      - Use `get_market_data` for price/OHLCV and `web_search` then `read_url` for funding, OI, liquidations, Fear & Greed, social, and crypto-options observations. Do not merge sources with different cutoffs without labeling the mismatch.
+      - A missing crypto-options source remains unavailable; funding is not a proxy for PCR, risk reversal, or IV percentile. Every sentiment sub-score must point to a retrieved figure or be excluded from the composite.
 
       ## Sentiment Analysis Framework
 
@@ -181,7 +196,7 @@ agents:
       4. **Fear & Greed Index vs. Historical Comparison** — Current index value, historical zone positioning, price performance statistics following similar past sentiment readings
       5. **Extreme Sentiment Warning** — Whether extreme greed or extreme fear signals are present; historical average returns following similar signals
       6. **Sentiment Directional Signal** — Provide {timeframe} timing guidance from a sentiment perspective; explicitly state whether the view is "momentum-following" or "contrarian"
-    tools: [bash, read_file, write_file, load_skill, get_market_data, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, get_market_data, read_url]
     skills: [sentiment-analysis, okx-market, perp-funding-basis, liquidation-heatmap]
     max_iterations: 50
     timeout_seconds: 1800
@@ -196,6 +211,10 @@ agents:
       Integrate the on-chain analysis, DeFi analysis, and sentiment analysis for {target}, and provide a composite investment recommendation and position allocation for the {timeframe} horizon.
 
       {upstream_context}
+
+      ## Evidence reconciliation contract
+      - Build the composite only from upstream observations that include source, retrieval time, as-of date, unit, and asset/venue scope. Keep on-chain, DeFi, and sentiment cutoffs visible when they differ.
+      - Recheck the price window with `get_market_data` before allocation and distinguish `retrieved`, `retrieval_failed`, and `not_supported`. Do not turn a missing on-chain or options field into a neutral score.
 
       ## Alpha Synthesis Methodology
 
@@ -231,7 +250,7 @@ agents:
       4. **Position Allocation Scheme** — Specific BTC / ETH / altcoin / stablecoin position percentage recommendations; assess whether hedge protection is needed
       5. **Key Monitoring Indicators** — List 5 key metrics to track continuously (with alert thresholds); position adjustments required when signals reverse
       6. **Risk Scenarios and Contingency Plans** — The 2 most probable downside risk scenarios and response strategies (position reduction triggers and target levels)
-    tools: [bash, read_file, write_file, load_skill]
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
     skills: [asset-allocation, risk-analysis]
     max_iterations: 50
     timeout_seconds: 1800

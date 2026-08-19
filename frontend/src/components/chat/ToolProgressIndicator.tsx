@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, type JSX } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import { ProgressBar } from "@/components/chat/ProgressBar";
 import { localizeToolName } from "@/lib/tools";
 import type { ToolCallEntry } from "@/types/agent";
@@ -141,6 +141,8 @@ function ToolRow({ entries, eta }: RowProps): JSX.Element {
 
   const icon = entry.status === "error"
     ? <XCircle className="h-3 w-3 text-danger shrink-0" />
+    : entry.data_status === "no_data"
+      ? <AlertTriangle className="h-3 w-3 text-warning shrink-0" aria-label={t("toolProgress.noData" as never)} />
     : entry.status === "ok"
       ? <CheckCircle2 className="h-3 w-3 text-success shrink-0" />
       : hasDeterminate

@@ -147,6 +147,7 @@ class TraceWriter:
         status: str,
         elapsed_ms: int,
         iteration: int,
+        data_status: str | None = None,
     ) -> None:
         """Write a tool_result entry, offloading large results to disk.
 
@@ -157,6 +158,8 @@ class TraceWriter:
             status: ``"ok"`` or ``"error"``.
             elapsed_ms: Execution time in milliseconds.
             iteration: Current iteration number.
+            data_status: Optional semantic status such as ``"no_data"`` when
+                the provider succeeded but returned no usable records.
         """
         entry: Dict[str, Any] = {
             "type": "tool_result",
@@ -167,6 +170,8 @@ class TraceWriter:
             "elapsed_ms": elapsed_ms,
             "preview": result[:OFFLOAD_PREVIEW_CHARS],
         }
+        if data_status:
+            entry["data_status"] = data_status
         self._attach_text_field(
             entry,
             field="result",

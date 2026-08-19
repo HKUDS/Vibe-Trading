@@ -35,6 +35,16 @@ const CATEGORIES: Category[] = [
         descKey: "welcome.examples.usTechMaxDivDesc",
         promptKey: "welcome.examples.usTechMaxDivPrompt",
       },
+      {
+        titleKey: "welcome.examples.aShareLimitBacktest",
+        descKey: "welcome.examples.aShareLimitBacktestDesc",
+        promptKey: "welcome.examples.aShareLimitBacktestPrompt",
+      },
+      {
+        titleKey: "welcome.examples.walkForwardValidation",
+        descKey: "welcome.examples.walkForwardValidationDesc",
+        promptKey: "welcome.examples.walkForwardValidationPrompt",
+      },
     ],
   },
   {
@@ -50,6 +60,16 @@ const CATEGORIES: Category[] = [
         titleKey: "welcome.examples.optionsGreeks",
         descKey: "welcome.examples.optionsGreeksDesc",
         promptKey: "welcome.examples.optionsGreeksPrompt",
+      },
+      {
+        titleKey: "welcome.examples.patternRecognition",
+        descKey: "welcome.examples.patternRecognitionDesc",
+        promptKey: "welcome.examples.patternRecognitionPrompt",
+      },
+      {
+        titleKey: "welcome.examples.marketSignalDashboard",
+        descKey: "welcome.examples.marketSignalDashboardDesc",
+        promptKey: "welcome.examples.marketSignalDashboardPrompt",
       },
     ],
   },
@@ -93,6 +113,16 @@ const CATEGORIES: Category[] = [
         descKey: "welcome.examples.quantStrategyDeskDesc",
         promptKey: "welcome.examples.quantStrategyDeskPrompt",
       },
+      {
+        titleKey: "welcome.examples.fundamentalResearchTeam",
+        descKey: "welcome.examples.fundamentalResearchTeamDesc",
+        promptKey: "welcome.examples.fundamentalResearchTeamPrompt",
+      },
+      {
+        titleKey: "welcome.examples.portfolioReviewBoard",
+        descKey: "welcome.examples.portfolioReviewBoardDesc",
+        promptKey: "welcome.examples.portfolioReviewBoardPrompt",
+      },
     ],
   },
   {
@@ -109,6 +139,16 @@ const CATEGORIES: Category[] = [
         descKey: "welcome.examples.macroResearchDesc",
         promptKey: "welcome.examples.macroResearchPrompt",
       },
+      {
+        titleKey: "welcome.examples.researchReports",
+        descKey: "welcome.examples.researchReportsDesc",
+        promptKey: "welcome.examples.researchReportsPrompt",
+      },
+      {
+        titleKey: "welcome.examples.researchPapers",
+        descKey: "welcome.examples.researchPapersDesc",
+        promptKey: "welcome.examples.researchPapersPrompt",
+      },
     ],
   },
   {
@@ -124,6 +164,16 @@ const CATEGORIES: Category[] = [
         titleKey: "welcome.examples.diagnoseBehavior",
         descKey: "welcome.examples.diagnoseBehaviorDesc",
         promptKey: "welcome.examples.diagnoseBehaviorPrompt",
+      },
+      {
+        titleKey: "welcome.examples.journalStrategy",
+        descKey: "welcome.examples.journalStrategyDesc",
+        promptKey: "welcome.examples.journalStrategyPrompt",
+      },
+      {
+        titleKey: "welcome.examples.journalProfile",
+        descKey: "welcome.examples.journalProfileDesc",
+        promptKey: "welcome.examples.journalProfilePrompt",
       },
     ],
   },
@@ -146,6 +196,11 @@ const CATEGORIES: Category[] = [
         descKey: "welcome.examples.quoteTrendDesc",
         promptKey: "welcome.examples.quoteTrendPrompt",
       },
+      {
+        titleKey: "welcome.examples.ordersAndHistory",
+        descKey: "welcome.examples.ordersAndHistoryDesc",
+        promptKey: "welcome.examples.ordersAndHistoryPrompt",
+      },
     ],
   },
   {
@@ -166,6 +221,11 @@ const CATEGORIES: Category[] = [
         titleKey: "welcome.examples.shadowReport",
         descKey: "welcome.examples.shadowReportDesc",
         promptKey: "welcome.examples.shadowReportPrompt",
+      },
+      {
+        titleKey: "welcome.examples.shadowSignals",
+        descKey: "welcome.examples.shadowSignalsDesc",
+        promptKey: "welcome.examples.shadowSignalsPrompt",
       },
     ],
   },

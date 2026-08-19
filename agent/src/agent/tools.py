@@ -25,6 +25,7 @@ class BaseTool(ABC):
     parameters: Dict[str, Any] = {}
     repeatable: bool = False
     is_readonly: bool = True
+    category: str = "other"
 
     @classmethod
     def check_available(cls) -> bool:
@@ -70,6 +71,18 @@ class ToolRegistry:
     def get_definitions(self) -> List[Dict[str, Any]]:
         """Return all tools in OpenAI function calling format."""
         return [t.to_openai_schema() for t in self._tools.values()]
+
+    def filtered(self, names: set[str]) -> "ToolRegistry":
+        """Return a registry containing only the named, already-available tools."""
+        result = ToolRegistry()
+        for name, tool in self._tools.items():
+            if name in names:
+                result.register(tool)
+        for module_name, reason in self._import_failures.items():
+            result.record_import_failure(module_name, reason)
+        for tool_name, reason in self._registration_failures.items():
+            result.record_registration_failure(tool_name, reason)
+        return result
 
     def record_import_failure(self, module_name: str, reason: str) -> None:
         """Record a tool module that could not be imported during discovery."""

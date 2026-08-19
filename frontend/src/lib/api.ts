@@ -171,6 +171,15 @@ export interface PortfolioReconciliationResponse {
   items: Array<Record<string, string | null>>;
 }
 
+export interface PortfolioBrokerProfile {
+  id: string;
+  connector: string;
+  label: string;
+  environment: "paper" | "live";
+  transport: string;
+  readonly: boolean;
+}
+
 export interface PortfolioInstrumentCandidate {
   symbol: string;
   name: string;
@@ -529,6 +538,8 @@ export const api = {
     }),
   listPortfolios: (signal?: AbortSignal) =>
     request<{ items: PortfolioItem[] }>("/portfolio/portfolios", { signal }),
+  listPortfolioBrokerProfiles: (signal?: AbortSignal) =>
+    request<{ items: PortfolioBrokerProfile[] }>("/portfolio/broker-profiles", { signal }),
   createPortfolio: (payload: { name: string; base_currency: string }, signal?: AbortSignal) =>
     request<PortfolioItem>("/portfolio/portfolios", { method: "POST", body: JSON.stringify(payload), signal }),
   updatePortfolio: (id: string, payload: { name?: string; archived?: boolean }, signal?: AbortSignal) =>
@@ -662,7 +673,10 @@ export const api = {
     request<ScheduledRun>("/scheduled-runs", { method: "POST", body: JSON.stringify(body) }),
   deleteScheduledRun: (id: string) =>
     request<void>(`/scheduled-runs/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  sendMessage: (sid: string, content: string) => request<{ message_id: string; attempt_id: string }>(`/sessions/${sid}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+  getAgentCapabilities: () => request<AgentCapabilities>("/agent/capabilities"),
+  getSkills: () => request<CapabilityItem[]>("/skills"),
+  getTools: () => request<ToolCapability[]>("/tools"),
+  sendMessage: (sid: string, content: string, selection?: Partial<MessageSelection>) => request<{ message_id: string; attempt_id: string }>(`/sessions/${sid}/messages`, { method: "POST", body: JSON.stringify({ content, ...(selection ?? {}) }) }),
   cancelSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}/cancel`, { method: "POST" }),
   getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${sid}/messages`),
   createGoal: (sid: string, body: CreateGoalRequest) =>
@@ -1520,6 +1534,28 @@ export interface SessionItem {
   created_at?: string;
   updated_at?: string;
   last_attempt_id?: string;
+}
+
+export interface CapabilityItem {
+  name: string;
+  category: string;
+  description: string;
+}
+
+export interface ToolCapability extends CapabilityItem {
+  read_only: boolean;
+}
+
+export interface AgentCapabilities {
+  skills: CapabilityItem[];
+  tools: ToolCapability[];
+}
+
+export interface MessageSelection {
+  selected_skills: string[];
+  selected_tools: string[];
+  tool_mode: "auto" | "restricted";
+  force_tool?: string | null;
 }
 
 // --- Goal types ---

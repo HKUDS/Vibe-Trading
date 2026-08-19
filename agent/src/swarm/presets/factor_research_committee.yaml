@@ -11,6 +11,11 @@ agents:
       ## Task
       In the {market} market, focus on {factor_type} category factors and conduct systematic candidate factor discovery and definition.
 
+      ## Data and market protocol
+      - Normalize the market and declare universe, listing history, currency, price adjustment, and point-in-time cutoff before defining a factor. A-share and US/HK fields are not interchangeable.
+      - `factor_analysis` computes from files supplied to it; it does not fetch raw data. Use `get_market_data` for prices and `get_financial_statements`/`get_a_share_data` for fundamentals, then record source, filed/as-of date, units, and PIT availability.
+      - Reject a factor whose raw field cannot be retrieved for the full declared universe. Label unavailable alternative data explicitly rather than replacing it with price or a latest-revised value.
+
       ## Factor Mining Methodology
 
       ### I. Economics-Driven Discovery
@@ -45,7 +50,7 @@ agents:
       4. **Expected IC Direction and Magnitude** — Based on historical research or theoretical inference, estimate IC mean range (e.g., ±0.03–0.08)
       5. **Factor Correlation Preview** — Expected correlation matrix among candidate factors to avoid information overlap
       6. **Mining Frontier Assessment** — Which factors are already overcrowded and which still have room
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_financial_statements, get_a_share_data, get_stock_profile, factor_analysis]
     skills: [factor-research, multi-factor]
     max_iterations: 50
     timeout_seconds: 1800
@@ -58,6 +63,11 @@ agents:
 
       ## Task
       Conduct comprehensive statistical validity testing on {factor_type} candidate factors in the {market} market.
+
+      ## Validation data protocol
+      - Verify the factor file's universe, PIT timestamps, corporate-action adjustment, delisted coverage, benchmark, and return horizon before calculating IC. Do not accept a factor CSV without provenance.
+      - Use `get_market_data` and `get_financial_statements`/`get_a_share_data` to spot-check raw fields and dates. `factor_analysis` is the computation surface, not proof that the input data is correct.
+      - Report sample count, missingness, winsorization, neutralization, multiple-testing correction, and all train/test cutoffs; a failed or insufficient sample is not an ineffective factor.
 
       ## Factor Validation Framework
 
@@ -94,7 +104,7 @@ agents:
       4. **Decay Curve Characteristics** — Optimal holding period recommendation for each factor (based on half-life); turnover rate estimate
       5. **Robustness Assessment** — Whether OOS performance decays significantly; stability across market regimes; flag high-risk factors
       6. **Overfitting Risk Warning** — Flag factors whose statistics look "too good to be true" and may suffer from data mining bias
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, get_financial_statements, get_a_share_data, factor_analysis]
     skills: [quant-statistics, factor-research]
     max_iterations: 50
     timeout_seconds: 1800
@@ -109,6 +119,10 @@ agents:
       Based on factor mining and validation results, design an optimal factor combination scheme and build a multi-factor stock selection strategy.
 
       {upstream_context}
+
+      ## Combination evidence contract
+      - Carry forward only factors whose raw data, PIT rule, universe, and validation window are explicit. Keep factor weights tied to observed IC/ICIR and covariance inputs rather than intuition.
+      - Use `backtest` after defining the market-specific universe, costs, liquidity limits, rebalancing, and benchmark. If inputs are missing, make the strategy unvalidated and do not quote expected returns.
 
       ## Factor Combination Methodology
 
@@ -142,7 +156,7 @@ agents:
       4. **Stock Selection Strategy Rules** — Complete stock selection logic (universe → scoring → sector neutralization → position constraints → rebalancing rules)
       5. **Expected Portfolio Characteristics** — Estimated annualized excess return, information ratio, turnover rate, average monthly holdings count
       6. **Strategy Improvement Roadmap** — How to further enhance the strategy (add which factor types, adjust which parameters, consider which alternative data)
-    tools: [bash, read_file, write_file, load_skill, factor_analysis, backtest]
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_market_data, backtest]
     skills: [multi-factor, strategy-generate]
     max_iterations: 50
     timeout_seconds: 1800
@@ -157,6 +171,10 @@ agents:
       Review the backtest results of a {factor_type} multi-factor strategy in the {market} market; identify risks and give a deployment feasibility judgment.
 
       {upstream_context}
+
+      ## Audit evidence contract
+      - Review the actual factor/return files and backtest metadata, not only headline metrics. Verify the market, point-in-time rule, universe, costs, and sample window before rating credibility.
+      - If a bias or input cannot be checked from the artifacts, mark it unresolved. Do not infer deployment readiness from a single Sharpe or from an unavailable stress period.
 
       ## Backtest Review Checklist
 
@@ -193,7 +211,7 @@ agents:
       4. **True Net Return Estimate** — Annualized net excess return and corrected Sharpe ratio after deducting realistic transaction costs
       5. **Extreme Scenario Stress Test Results** — Maximum drawdown, recovery time, and relative performance vs. benchmark in historical extreme markets
       6. **Live Deployment Recommendation** — Explicitly state "Recommend deployment / Deploy after improvement / Do not deploy"; list specific improvement directions and capacity upper bound recommendation
-    tools: [bash, read_file, write_file, load_skill]
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
     skills: [backtest-diagnose, quant-statistics]
     max_iterations: 50
     timeout_seconds: 1800

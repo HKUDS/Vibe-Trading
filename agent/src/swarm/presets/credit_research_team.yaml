@@ -11,6 +11,12 @@ agents:
       ## Task
       Conduct a deep credit quality analysis of "{target}", covering financial health, debt service capacity, default probability, and credit rating outlook, providing credit-dimension support for {market} fixed income investment decisions.
 
+      ## Evidence and issuer-routing protocol
+      - Resolve a named issuer with `search_symbol` when it is an equity ticker; preserve the bond identifier separately. Confirm whether the issuer is A-share, US, HK, LGFV, or a sector basket before selecting a data source.
+      - For A-share issuers use `get_a_share_data` for profile/quote, `get_financial_statements` for statements, `get_stock_news` for events, and `get_market_data` for equity history. For US/HK issuers use `get_stock_profile`, `get_financial_statements`, `get_sec_filings` where applicable, `get_stock_news`, and `get_market_data`.
+      - Use `web_search` then `read_url` for rating actions, bond terms, maturity schedules, guarantees, covenants, and agency releases. No rating feed is implicit: a rating without a cited document is not evidence.
+      - Every model input must show source, filing/publication date, as-of date, currency, unit, and whether it is reported or derived. If the line item is unavailable, stop that model and label it `not_runnable` rather than imputing it.
+
       ## Analysis Framework
 
       ### Financial Health Assessment
@@ -79,7 +85,7 @@ agents:
       `factor_analysis` computes IC/IR and layered NAV from CSVs you write; it does
       not do cross-sectional peer comparison for you — build the peer table from
       per-issuer lookups.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_financial_statements, get_stock_profile, get_market_data, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, factor_analysis, get_a_share_data, get_financial_statements, get_stock_profile, get_sec_filings, get_stock_news, get_market_data]
     skills: [credit-analysis, financial-statement]
     max_iterations: 50
     timeout_seconds: 1800
@@ -92,6 +98,11 @@ agents:
 
       ## Task
       Analyze the current {market} interest rate environment, assess yield curve shape dynamics and credit spread trends, and evaluate the impact of rate moves on bond prices and duration management for "{target}"-related portfolios.
+
+      ## Rate-data protocol
+      - Use `web_search` to locate primary central-bank, treasury, clearing-house, and official yield-curve releases, then use `read_url` to verify the tenor, timestamp, unit, and methodology. Do not state a live yield without a source and observation date.
+      - Keep China and US rate conventions separate: CNY rates, DR007/LPR/MLF and CGB tenors are not interchangeable with SOFR/Treasury/TIPS series. Record the currency, day-count, compounding, and curve source.
+      - If the requested spread or tenor is not published by a reachable source, report it as unavailable and do not backfill with a visually similar series.
 
       ## Analysis Framework
 
@@ -129,7 +140,7 @@ agents:
 
       Use load_skill("credit-analysis") for bond pricing and spread analysis frameworks; load_skill("macro-analysis") for macro data and rate transmission analysis.
       Use the read_url tool to access the latest rate data from China Central Depository & Clearing, the PBOC, Bloomberg, and other sources.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url]
     skills: [credit-analysis, macro-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -142,6 +153,11 @@ agents:
 
       ## Task
       Analyze the credit risk characteristics of the sector / industry where "{target}" operates, assess sector-level default risk, identify intra-sector credit differentiation, and provide a basis for sector allocation in {market} fixed income investment.
+
+      ## Sector evidence protocol
+      - Define the sector and issuer universe before calculating default rates or rating distributions. Use `web_search` to find official policy, exchange, industry, and issuer disclosures, then use `read_url` for the primary text.
+      - Separate observed defaults, rating actions, spread observations, and policy announcements. Every table must include its population, cutoff date, source, and missing-data treatment.
+      - For a named listed issuer, use `search_symbol` and the market-appropriate profile/financial/news tools available to the worker; do not generalize from one issuer to the sector without stating the sampling limitation.
 
       ## Analysis Framework
 
@@ -182,7 +198,7 @@ agents:
 
       Use load_skill("credit-analysis") for sector credit analysis frameworks; load_skill("sector-rotation") for sector comparison; load_skill("regulatory-knowledge") for interpreting the latest regulatory policy impacts on credit risk.
       Use the read_url tool to access the latest sector credit data from China Bond Info, Wind, and policy documents.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_a_share_data, get_financial_statements, get_stock_profile, get_stock_news]
     skills: [credit-analysis, sector-rotation, regulatory-knowledge]
     max_iterations: 50
     timeout_seconds: 1800
@@ -197,6 +213,10 @@ agents:
       Synthesize the research of the credit analyst, interest rate analyst, and sector credit analyst to build a complete bond investment strategy for {market} fixed income investment targeting "{target}", covering strategy direction, portfolio construction, and risk control.
 
       {upstream_context}
+
+      ## Synthesis and validation contract
+      - Reconcile issuer, rate, and sector evidence by market, currency, date, rating scale, and bond seniority. Do not combine incompatible spreads or ratings.
+      - Use `backtest` only after defining the investable universe, benchmark, signal, rebalance schedule, transaction costs, and historical data window. If bond-level history is unavailable, state that the backtest is not runnable and provide scenario math instead.
 
       ## Strategy Design Framework
 
@@ -235,7 +255,7 @@ agents:
 
       Use load_skill("credit-analysis") for fixed income investment methodology; load_skill("strategy-generate") to produce standardized strategy code; load_skill("risk-analysis") for risk budgeting and stress testing.
       Use the backtest tool to run historical backtests validating strategy performance across different rate / credit environments.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, backtest]
     skills: [credit-analysis, strategy-generate, risk-analysis]
     max_iterations: 50
     timeout_seconds: 1800

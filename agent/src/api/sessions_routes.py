@@ -10,7 +10,7 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
@@ -44,6 +44,10 @@ class SessionResponse(BaseModel):
 class SendMessageRequest(BaseModel):
     """Send chat message: natural-language strategy description."""
     content: str = Field(..., description="Natural language strategy description", min_length=1, max_length=5000)
+    selected_skills: List[str] = Field(default_factory=list, max_length=16)
+    selected_tools: List[str] = Field(default_factory=list, max_length=16)
+    tool_mode: Literal["auto", "restricted"] = "auto"
+    force_tool: Optional[str] = Field(None, max_length=120)
 
 
 class MessageResponse(BaseModel):
@@ -706,6 +710,10 @@ def register_sessions_routes(app: FastAPI) -> None:
                 session_id=session_id,
                 content=payload.content,
                 include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
+                selected_skills=payload.selected_skills,
+                selected_tools=payload.selected_tools,
+                tool_mode=payload.tool_mode,
+                force_tool=payload.force_tool,
             )
             return result
         except SessionBusyError as exc:
@@ -713,7 +721,9 @@ def register_sessions_routes(app: FastAPI) -> None:
             # the session exists, it is simply already running.
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            detail = str(exc)
+            status_code = 404 if detail.startswith("Session ") else 400
+            raise HTTPException(status_code=status_code, detail=detail)
 
     @app.post("/sessions/{session_id}/cancel", dependencies=[Depends(require_auth)])
     async def cancel_session(session_id: str):

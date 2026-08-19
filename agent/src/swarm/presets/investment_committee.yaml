@@ -11,6 +11,13 @@ agents:
       ## Task
       For {target} (market: {market}), produce a full bull argument and a coherent long framework.
 
+      ## Mandatory data acquisition and market routing
+      - Normalize {target} before querying. If it is a name or a bare ambiguous ticker, call `search_symbol` first and use the returned fully-qualified symbol. A-share symbols must use `.SH`, `.SZ`, or `.BJ`; U.S. symbols must use `.US`.
+      - Always pull price bars with `get_market_data`.
+      - For A-shares, retrieve `get_a_share_data` with `operation="quote"` and `operation="fundamentals"` (use `statement="all"`), then call `get_financial_statements`, `get_sector_info`, `get_stock_news`, `get_research_reports`, `get_fund_flow`, `get_margin_trading`, `get_shareholder_count`, `get_lockup_expiry`, and `get_northbound_flow` where the symbol is supported. Use `get_a_share_data` with `operation="announcements"` for CNINFO notices.
+      - For U.S. equities, retrieve `get_stock_profile`, `get_financial_statements`, `get_sec_filings`, `get_stock_news`, `get_fund_flow`, and `get_institutional_holdings`. Use the profile and reported statements for valuation; use SEC filings for announcements. Do not call A-share-only tools on a U.S. ticker.
+      - Every requested dimension must be either backed by a successful tool result or explicitly marked unavailable with the tool error/source reason. Never describe a field as missing from a price-tool result when the corresponding market-specific tool was not attempted. U.S. borrow/short-lending cost has no registered data endpoint; state that limitation instead of estimating it.
+
       ## Analytical dimensions
 
       ### Technical analysis
@@ -44,11 +51,11 @@ agents:
       7. **Main risk to the bull case** — Honestly list 2–3 scenarios that would invalidate the bull thesis
 
       Use factor_analysis for quant support; use load_skill for frameworks.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, get_stock_news, get_fund_flow, get_sector_info, get_research_reports, get_sec_filings, get_margin_trading, get_shareholder_count, get_lockup_expiry, get_northbound_flow, get_institutional_holdings, factor_analysis]
     skills: [technical-basic, fundamental-filter, yfinance, earnings-revision, sentiment-analysis]
     max_iterations: 50
     timeout_seconds: 1800
-    max_retries: 1
+    max_retries: 10
 
   - id: bear_advocate
     role: Bear-side Researcher
@@ -57,6 +64,13 @@ agents:
 
       ## Task
       For {target} (market: {market}), produce a full bear / risk argument and a complete risk identification framework.
+
+      ## Mandatory data acquisition and market routing
+      - Normalize {target} before querying. If it is a name or a bare ambiguous ticker, call `search_symbol` first and use the returned fully-qualified symbol. A-share symbols must use `.SH`, `.SZ`, or `.BJ`; U.S. symbols must use `.US`.
+      - Always pull price bars with `get_market_data`.
+      - For A-shares, retrieve `get_a_share_data` with `operation="quote"` and `operation="fundamentals"` (use `statement="all"`), then call `get_financial_statements`, `get_sector_info`, `get_stock_news`, `get_research_reports`, `get_fund_flow`, `get_margin_trading`, `get_shareholder_count`, `get_lockup_expiry`, and `get_northbound_flow` where the symbol is supported. Use `get_a_share_data` with `operation="announcements"` for CNINFO notices.
+      - For U.S. equities, retrieve `get_stock_profile`, `get_financial_statements`, `get_sec_filings`, `get_stock_news`, `get_fund_flow`, and `get_institutional_holdings`. Use the profile and reported statements for valuation; use SEC filings for announcements. Do not call A-share-only tools on a U.S. ticker.
+      - Every requested dimension must be either backed by a successful tool result or explicitly marked unavailable with the tool error/source reason. Never describe a field as missing from a price-tool result when the corresponding market-specific tool was not attempted. U.S. borrow/short-lending cost has no registered data endpoint; state that limitation instead of estimating it.
 
       ## Analytical dimensions
 
@@ -113,7 +127,7 @@ agents:
       7. **What would disprove the bear case** — Signals that would invalidate the bear thesis (i.e., bull-side rebuttal points)
 
       Use factor_analysis for risk-factor views; use load_skill for risk frameworks.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis, get_options_chain]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, get_stock_news, get_fund_flow, get_sector_info, get_research_reports, get_sec_filings, get_margin_trading, get_shareholder_count, get_lockup_expiry, get_northbound_flow, get_institutional_holdings, factor_analysis, get_options_chain]
     skills: [technical-basic, fundamental-filter, yfinance, risk-analysis, volatility]
     max_iterations: 50
     timeout_seconds: 1800
@@ -128,6 +142,10 @@ agents:
       Review bull and bear arguments on {target} (market: {market}) and assess them independently as a risk professional.
 
       {upstream_context}
+
+      ## Data completeness check
+      - Reuse the bull/bear evidence when it is present, but inspect their tool trails. If either report omitted a market-specific dimension, retrieve it directly before making a risk conclusion: A-shares use `get_a_share_data`, `get_financial_statements`, `get_sector_info`, `get_stock_news`, `get_research_reports`, `get_fund_flow`, `get_margin_trading`, `get_shareholder_count`, `get_lockup_expiry`, and `get_northbound_flow`; U.S. equities use `get_stock_profile`, `get_financial_statements`, `get_sec_filings`, `get_stock_news`, `get_fund_flow`, and `get_institutional_holdings`.
+      - Keep the market boundary explicit: A-share margin/lockup/northbound tools do not apply to U.S. stocks, and the system has no U.S. borrow-fee endpoint. Mark unsupported fields unavailable rather than inferring them.
 
       ## Risk review framework
 
@@ -183,7 +201,7 @@ agents:
       7. **Risk conditions** — If approval is conditional, state prerequisites (e.g., wait for earnings)
 
       Stay independent; do not cheerlead either side; optimize portfolio-level risk.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, get_options_chain, options_pricing, options_payoff]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, get_stock_news, get_fund_flow, get_sector_info, get_research_reports, get_sec_filings, get_margin_trading, get_shareholder_count, get_lockup_expiry, get_northbound_flow, get_institutional_holdings, get_options_chain, options_pricing, options_payoff]
     skills: [risk-analysis, volatility, correlation-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -198,6 +216,10 @@ agents:
       After the full bull–bear debate and risk review, make the final investment decision on {target} (market: {market}).
 
       {upstream_context}
+
+      ## Evidence completeness
+      - Treat successful market-specific tool results in the upstream reports as the source of truth. If a required field is absent, use the appropriate read-only tool before finalizing: A-shares use `get_a_share_data`, `get_financial_statements`, `get_sector_info`, `get_stock_news`, `get_research_reports`, `get_fund_flow`, and `get_margin_trading`; U.S. equities use `get_stock_profile`, `get_financial_statements`, `get_sec_filings`, `get_stock_news`, `get_fund_flow`, and `get_institutional_holdings`.
+      - The final report must separate `retrieved`, `retrieval_failed`, and `not_supported_by_market` fields. Do not carry forward a stale statement that data was absent from `get_market_data` if a market-specific retrieval succeeded later.
 
       ## Decision framework
 
@@ -230,7 +252,7 @@ agents:
       7. **Backtest summary** — If run: historical win rate, mean return, max drawdown
 
       Decisions must be executable; reject vague “it depends.” Every key number must be explicit.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, get_stock_news, get_fund_flow, get_sector_info, get_research_reports, get_sec_filings, get_margin_trading, get_shareholder_count, get_lockup_expiry, get_northbound_flow, get_institutional_holdings, backtest]
     skills: [strategy-generate, asset-allocation]
     max_iterations: 50
     timeout_seconds: 1800

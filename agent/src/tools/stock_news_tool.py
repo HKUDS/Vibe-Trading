@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backtest.loaders import eastmoney_client, yahoo_client
+from src.a_share_data import sina_stock_news
 
 from src.agent.tools import BaseTool
 
@@ -361,15 +362,68 @@ class StockNewsTool(BaseTool):
 
     def _stock_via_eastmoney(self, code: str, query: str, limit: int) -> str:
         """Fetch A-share headlines from Eastmoney for one code."""
+        eastmoney_error: str | None = None
         try:
             articles = _fetch_eastmoney_news(query, limit)
         except Exception as exc:  # noqa: BLE001 - surface any fetch failure as envelope
             logger.warning("eastmoney news fetch failed for %s: %s", code, exc)
-            return self._error(f"eastmoney news fetch failed: {exc}")
+            eastmoney_error = f"eastmoney news fetch failed: {exc}"
+            articles = []
+        if articles:
+            return self._ok(
+                "a_share",
+                "eastmoney",
+                {"scope": "stock", "code": code, "articles": articles},
+            )
+
+        # The A-share data module already maintains a Sina feed parser that
+        # filters the global flash stream by the exact stock symbol. Use it
+        # whenever Eastmoney is unavailable or returns an empty CMS result.
+        try:
+            fallback_articles = sina_stock_news(code, limit=limit)
+        except Exception as exc:  # noqa: BLE001 - preserve both provider causes
+            logger.warning("sina stock news fallback failed for %s: %s", code, exc)
+            fallback_articles = []
+            fallback_error = f"sina news fallback failed: {exc}"
+        else:
+            fallback_error = None
+
+        if fallback_articles:
+            warnings = []
+            if eastmoney_error:
+                warnings.append(eastmoney_error)
+            else:
+                warnings.append("eastmoney returned no stock articles")
+            return self._ok(
+                "a_share",
+                "sina",
+                {"scope": "stock", "code": code, "articles": fallback_articles},
+                warnings=warnings,
+            )
+
+        if eastmoney_error:
+            if fallback_error:
+                return self._error(f"{eastmoney_error}; {fallback_error}")
+            # Sina completed successfully but had no feed item explicitly
+            # associated with this security.  That is a valid empty result,
+            # not a second provider failure; keep the successful envelope so
+            # the UI can distinguish "no news" from "news service failed".
+            return self._ok(
+                "a_share",
+                "sina",
+                {"scope": "stock", "code": code, "articles": []},
+                warnings=[
+                    eastmoney_error,
+                    "Sina returned no articles associated with this security",
+                ],
+            )
         return self._ok(
             "a_share",
             "eastmoney",
-            {"scope": "stock", "code": code, "articles": articles},
+            {"scope": "stock", "code": code, "articles": []},
+            warnings=[fallback_error] if fallback_error else [
+                "eastmoney and Sina returned no stock articles"
+            ],
         )
 
     def _stock_via_yahoo(self, code: str, query: str, limit: int) -> str:
@@ -387,7 +441,13 @@ class StockNewsTool(BaseTool):
         )
 
     @staticmethod
-    def _ok(market: str, source: str, data: dict[str, Any]) -> str:
+    def _ok(
+        market: str,
+        source: str,
+        data: dict[str, Any],
+        *,
+        warnings: list[str] | None = None,
+    ) -> str:
         """Render a success envelope as a JSON string.
 
         Args:
@@ -398,10 +458,15 @@ class StockNewsTool(BaseTool):
         Returns:
             ``{"ok": true, "market": ..., "source": ..., "data": ...}`` as JSON.
         """
-        return json.dumps(
-            {"ok": True, "market": market, "source": source, "data": data},
-            ensure_ascii=False,
-        )
+        envelope: dict[str, Any] = {
+            "ok": True,
+            "market": market,
+            "source": source,
+            "data": data,
+        }
+        if warnings:
+            envelope["warnings"] = warnings
+        return json.dumps(envelope, ensure_ascii=False)
 
     @staticmethod
     def _error(message: str) -> str:

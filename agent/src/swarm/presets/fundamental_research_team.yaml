@@ -33,6 +33,16 @@ agents:
       - Financing activities: excessive reliance on external funding
 
       Use load_skill("financial-statement") for financial analysis standards; load_skill("fundamental-filter") for screening criteria.
+      ## Evidence and market-routing protocol
+      Resolve {target} with `search_symbol` before any retrieval. For A-share
+      symbols, use `get_a_share_data` for quote/profile fields and
+      `get_financial_statements` for statements; for US/HK symbols use
+      `get_stock_profile` and `get_financial_statements`, and use
+      `get_sec_filings` for US filing evidence. Use `get_stock_news`,
+      `get_sector_info`, and `get_fund_flow` only when the requested conclusion
+      needs news, peer/sector context, or flow evidence. Do not use a US profile
+      lookup as an A-share fallback. Record market, currency, fiscal period,
+      as-of date, source tool, and whether each value is reported or derived.
       Pull the three statements with `get_financial_statements` and the summary
       metrics with `get_stock_profile`; check every ratio you derive with
       `financial_rigor` (`command="calc"` for exact arithmetic, `verify_valuation`
@@ -47,7 +57,7 @@ agents:
       4. **Key Financial Metrics Table** — ROE / ROIC / gross margin / net margin / FCF margin / debt ratio and other core metrics, 3-year trend
       5. **Improvement / Deterioration Signals** — Significant changes in the past 1–2 years, trend direction assessment
       6. **Peer Comparison** — Key financial metrics vs industry average / sector leaders
-    tools: [bash, read_file, write_file, load_skill, get_financial_statements, get_stock_profile, financial_rigor]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_a_share_data, get_financial_statements, get_stock_profile, get_sec_filings, get_stock_news, get_sector_info, get_fund_flow, financial_rigor]
     skills: [financial-statement, fundamental-filter]
     max_iterations: 50
     timeout_seconds: 1800
@@ -113,6 +123,15 @@ agents:
       - Consumer: EV/EBITDA, brand premium estimation
 
       Use load_skill("valuation-model") for valuation modeling standards; load_skill("earnings-forecast") for earnings forecasting methods.
+      Resolve {target} and every peer with `search_symbol`. Route A-share
+      securities through `get_a_share_data` plus `get_financial_statements`;
+      route US/HK securities through `get_stock_profile` plus
+      `get_financial_statements`, using `get_sec_filings` for US filing dates.
+      `financial_rigor` validates arithmetic and valuation consistency; it does
+      not retrieve prices, statements, peers, or assumptions. Preserve ticker,
+      exchange, currency, period, as-of date, source tool, and sourced-versus-
+      assumed status for every valuation input. A missing peer multiple or
+      historical series stays unavailable and is excluded from the comparison.
       Use `get_financial_statements` for the historical statement spine, `get_stock_profile`
       for multiples / beta / share count, and `financial_rigor` for exact arithmetic
       (`verify_valuation`, `three_scenario`, `calc`). Those three are your only data
@@ -126,7 +145,7 @@ agents:
       4. **Historical Valuation Percentile** — Current P/E and P/B vs historical percentile, interpreted alongside fundamental changes
       5. **Target Price Calculation** — Weighted multi-method target price with 12-month upside/downside range
       6. **Valuation Catalysts** — 3–5 positive and negative catalysts that could drive re-rating
-    tools: [bash, read_file, write_file, load_skill, get_financial_statements, get_stock_profile, financial_rigor]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_a_share_data, get_financial_statements, get_stock_profile, get_sec_filings, get_market_data, financial_rigor]
     skills: [valuation-model, earnings-forecast]
     max_iterations: 50
     timeout_seconds: 1800
@@ -167,7 +186,17 @@ agents:
       - Industry growth ceiling: TAM estimate, penetration stage
 
       Use load_skill("fundamental-filter") for fundamental screening criteria; load_skill("web-reader") for supplementary industry information.
-      Use the read_url tool to access the latest industry research reports and company news.
+      Resolve the issuer with `search_symbol`, then use the market-compatible
+      profile and statement tools to validate ROE/ROIC, margins, ownership, and
+      capital allocation claims. For A-shares use `get_a_share_data`,
+      `get_financial_statements`, `get_stock_news`, and `get_sector_info`; for
+      US/HK use `get_stock_profile`, `get_financial_statements`,
+      `get_sec_filings`, and `get_stock_news`. Use `web_search` followed by
+      `read_url` for industry structure, management history, market share, and
+      regulatory evidence. Search snippets are leads, not evidence. Every claim
+      must carry source URL/tool, publication or filing date, market, and
+      confidence; if CR3/CR5/HHI or market share cannot be sourced, report it as
+      unavailable rather than infer it from a generic industry description.
 
       ## Output Requirements
       1. **Moat Overall Rating** — Strong / Moderate / Weak / None, with dimensional scoring table (each of the five moat types scored and totaled)
@@ -176,7 +205,7 @@ agents:
       4. **Competitive Landscape Analysis** — Current market position, market share trend, primary competitive threats
       5. **Moat Change Signals** — Whether the moat has strengthened or eroded in the past 1–2 years, with specific evidence
       6. **Long-Term Holding Viability Conclusion** — Based on moat + management + competitive landscape: "Recommended for long-term hold / medium-term hold / not suitable for long-term"
-    tools: [bash, read_file, write_file, load_skill, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_a_share_data, get_financial_statements, get_stock_profile, get_sec_filings, get_stock_news, get_sector_info]
     skills: [fundamental-filter, web-reader]
     max_iterations: 50
     timeout_seconds: 1800
@@ -201,6 +230,15 @@ agents:
       - **Full Risk Disclosure**: Avoid excessive optimism; negative factors must be explicitly stated
 
       Use load_skill("report-generate") for research report writing standards and format requirements.
+      ## Evidence and failure-handling contract
+      Preserve each upstream value's source tool/URL, retrieval time, as-of or
+      filing date, exchange, currency, and reported-versus-derived status. Keep
+      `retrieved`, `retrieval_failed`, and `not_supported` distinct; a failed
+      lookup must not be silently converted to zero, neutral, or a positive
+      assumption. If upstream analyses disagree, show the disagreement and the
+      evidence used to reconcile it. Do not issue a target price or rating when
+      the current price, key valuation inputs, or the relevant market route was
+      not retrieved; state the blocking missing fields instead.
 
       ## Output Requirements
       1. **Investment Rating and Target Price** — Explicit rating (Buy / Outperform / Hold / Underperform / Sell) and 12-month target price, with % upside/downside
@@ -210,7 +248,7 @@ agents:
       5. **Moat and Growth Summary** — Integrate quality analyst conclusions, assessing long-term investment value
       6. **Key Risk Factors** — Aggregate risks from all three dimensions, ranked by severity; each risk with estimated impact magnitude
       7. **Catalysts and Time Windows** — Potential positive/negative catalysts in the next 3–6 months to help identify optimal entry timing
-    tools: [bash, read_file, write_file, load_skill]
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
     skills: [report-generate]
     max_iterations: 50
     timeout_seconds: 1800

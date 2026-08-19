@@ -25,6 +25,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+from backtest.loaders._http import resolve_min_interval, throttled_get
 from backtest.loaders import eastmoney_client, sec_edgar_client, yahoo_client
 from src.agent.tools import BaseTool
 
@@ -35,6 +36,9 @@ logger = logging.getLogger(__name__)
 # ready-made ``QuoteID`` secid. Requests route through the frozen, throttled
 # Eastmoney client; this is just the documented endpoint URL + query shape.
 _EASTMONEY_SUGGEST_URL = "https://searchapi.eastmoney.com/api/suggest/get"
+_TENCENT_HINT_URL = "https://smartbox.gtimg.cn/s3/"
+_TENCENT_MIN_INTERVAL_ENV = "VIBE_TRADING_TENCENT_MIN_INTERVAL"
+_TENCENT_DEFAULT_MIN_INTERVAL = 0.15
 
 # Canadian equity suffixes (TSX ``.TO`` / TSX Venture ``.V``). Eastmoney has NO
 # Canada coverage: querying it with a Canadian ticker returns a non-JSON body
@@ -160,6 +164,16 @@ class SymbolSearchTool(BaseTool):
         yh_hits, sources["yahoo"] = _search_yahoo(query)
         candidates.extend(yh_hits)
 
+        # Yahoo intentionally skips CJK queries and Eastmoney occasionally
+        # returns an HTML/empty body while its quote pages remain available.
+        # Tencent's hint endpoint is the repository's existing A-share name
+        # fallback (also used by the market UI), so use it only for this exact
+        # unsupported/failing shape. This keeps a clean two-provider "not
+        # found" result meaningful while recovering names such as 翔鹭钨业.
+        if not candidates and _contains_cjk(query) and not _source_ok(sources.get("eastmoney")):
+            tx_hits, sources["tencent"] = _search_tencent(query)
+            candidates.extend(tx_hits)
+
         # Canada fail-fast: a Canadian ticker must resolve to the Canadian venue
         # only. Yahoo also returns the US OTC alias of the same company (e.g.
         # ``BYN.V`` -> ``BYAGF.US``), which would make the grounding ledger see
@@ -217,6 +231,68 @@ def _is_canadian_symbol(text: str) -> bool:
         (``BTO.TO``, ``BTO.TO B2Gold``, ``SGML.V Sigma Lithium``, ...).
     """
     return bool(_CANADIAN_SYMBOL_RE.match((text or "").strip()))
+
+
+def _contains_cjk(text: str) -> bool:
+    """Return whether *text* contains a CJK ideograph."""
+    return bool(re.search(r"[\u3400-\u9fff]", text or ""))
+
+
+def _source_ok(value: Any) -> bool:
+    """Return whether a provider completed without a fallback/error marker."""
+    return str(value or "").strip().casefold() == "ok"
+
+
+def _search_tencent(query: str) -> tuple[List[Dict[str, Any]], str]:
+    """Resolve Chinese names through Tencent's lightweight symbol hint API."""
+    try:
+        response = throttled_get(
+            _TENCENT_HINT_URL,
+            host_key="tencent-symbol-search",
+            min_interval=resolve_min_interval(
+                _TENCENT_MIN_INTERVAL_ENV, _TENCENT_DEFAULT_MIN_INTERVAL
+            ),
+            params={"q": query, "t": "all"},
+            headers={"Referer": "https://gu.qq.com/"},
+        )
+        text = response.content.decode("utf-8", errors="replace")
+        match = re.search(r'v_hint=(".*")', text)
+        if not match:
+            return [], "ok"
+        raw = json.loads(match.group(1))
+        if raw == "N":
+            return [], "ok"
+    except Exception as exc:  # noqa: BLE001 - provider fallback is non-fatal
+        logger.warning("tencent symbol search failed for %r: %s", query, exc)
+        return [], f"tencent search failed: {exc}"
+
+    candidates: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in str(raw).split("^"):
+        fields = entry.split("~")
+        if len(fields) < 3:
+            continue
+        venue = fields[0].strip().upper()
+        code = fields[1].strip()
+        name = fields[2].strip() or code
+        if venue not in {"SH", "SZ", "BJ"} or not code.isdigit():
+            continue
+        symbol = f"{code.zfill(6)}.{venue}"
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        candidates.append({
+            "symbol": symbol,
+            "name": name,
+            "market": "cn",
+            "type": "index" if symbol in {
+                "000001.SH", "000016.SH", "000300.SH", "000905.SH",
+                "000852.SH", "399001.SZ", "399006.SZ",
+            } else "equity",
+            "exchange": venue,
+            "source": "tencent",
+        })
+    return candidates[:_PER_SOURCE_CAP], "ok"
 
 
 def _is_ticker_name_query(query: str) -> bool:

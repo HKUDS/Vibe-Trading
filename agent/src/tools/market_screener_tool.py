@@ -21,6 +21,7 @@ import json
 import logging
 from typing import Any
 
+from backtest.loaders._http import resolve_min_interval, throttled_get
 from backtest.loaders.eastmoney_client import get_json
 from src.agent.tools import BaseTool
 
@@ -28,6 +29,12 @@ logger = logging.getLogger(__name__)
 
 # Eastmoney push2 full-market quote list endpoint.
 _CLIST_URL = "https://push2.eastmoney.com/api/qt/clist/get"
+_SINA_A_SHARE_URL = (
+    "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+    "Market_Center.getHQNodeDataSimple"
+)
+_SINA_MIN_INTERVAL_ENV = "VIBE_TRADING_SINA_MIN_INTERVAL"
+_SINA_DEFAULT_MIN_INTERVAL = 0.15
 
 # Per-market universe selectors (``fs``). A-share covers the SH/SZ main+ChiNext
 # boards plus the Beijing exchange; US covers NASDAQ/NYSE/AMEX; HK covers the
@@ -54,6 +61,14 @@ _FIELDS = "f2,f3,f4,f5,f6,f8,f12,f14"
 # Defensive caps so a full-market response can never blow up the LLM context.
 _MAX_TOP_N = 100
 _DEFAULT_TOP_N = 30
+
+
+_SINA_SORT: dict[str, str] = {
+    "change_pct": "changepercent",
+    "volume": "volume",
+    "amount": "amount",
+    "turnover": "turnoverratio",
+}
 
 
 def _error(message: str) -> str:
@@ -164,6 +179,57 @@ def _screen_market(market: str, *, sort_by: str, top_n: int) -> list[dict[str, A
     return rows[:top_n]
 
 
+def _screen_a_share_sina(*, sort_by: str, top_n: int) -> list[dict[str, Any]]:
+    """Fallback A-share ranking from Sina's public market-center endpoint."""
+    response = throttled_get(
+        _SINA_A_SHARE_URL,
+        host_key="sina-market-screener",
+        min_interval=resolve_min_interval(
+            _SINA_MIN_INTERVAL_ENV, _SINA_DEFAULT_MIN_INTERVAL
+        ),
+        params={
+            "page": "1",
+            "num": str(top_n),
+            "sort": _SINA_SORT[sort_by],
+            "asc": "0",
+            "node": "hs_a",
+        },
+        headers={"Referer": "https://finance.sina.com.cn/"},
+    )
+    # Sina's endpoint often omits a charset header while returning GBK bytes.
+    # ``Response.json()`` then decodes Chinese names using the wrong codec and
+    # produces mojibake in the tool timeline.  Prefer the raw GBK body and
+    # retain ``json()`` for the lightweight mocked responses in unit tests.
+    try:
+        payload = json.loads(response.content.decode("gbk", errors="replace"))
+    except AttributeError:
+        payload = response.json()
+    if not isinstance(payload, list):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for raw in payload:
+        if not isinstance(raw, dict):
+            continue
+        raw_symbol = str(raw.get("symbol") or "").strip().lower()
+        if len(raw_symbol) < 8 or raw_symbol[:2] not in {"sh", "sz", "bj"}:
+            continue
+        code = raw_symbol[2:]
+        if not code.isdigit():
+            continue
+        rows.append({
+            "code": code,
+            "name": str(raw.get("name") or code),
+            "price": _num(raw.get("trade")),
+            "change_pct": _num(raw.get("changepercent")),
+            "change": _num(raw.get("pricechange")),
+            "volume": _num(raw.get("volume")),
+            "amount": _num(raw.get("amount")),
+            "turnover_rate": _num(raw.get("turnoverratio")),
+        })
+    return rows[:top_n]
+
+
 class MarketScreenerTool(BaseTool):
     """Rank a full market's listed instruments by change%, volume or turnover."""
 
@@ -219,10 +285,13 @@ class MarketScreenerTool(BaseTool):
 
         Returns:
             A JSON string ``{"ok": true, "market": <market>, "source":
-            "eastmoney", "data": {"market": <market>, "sort_by": <sort_by>,
-            "rows": [...]}}`` on success, or ``{"ok": false, "error": ...}`` on
-            a validation or request failure. The row list nests under ``data``
-            so the envelope matches every other tool's ``data:{...}`` shape.
+            "eastmoney"|"sina", "data": {"market": <market>,
+            "sort_by": <sort_by>, "rows": [...]}}`` on success, or
+            ``{"ok": false, "error": ...}`` on a validation or request failure.
+            The A-share path uses Sina as an independent fallback when Eastmoney
+            is unavailable or returns no rows. The row list nests under
+            ``data`` so the envelope matches every other tool's ``data:{...}``
+            shape; a valid empty result remains ``ok: true`` with a warning.
         """
         market = kwargs.get("market")
         if not isinstance(market, str) or market not in _MARKET_FS:
@@ -239,18 +308,48 @@ class MarketScreenerTool(BaseTool):
 
         try:
             rows = _screen_market(market, sort_by=sort_by, top_n=top_n)
-        except Exception as exc:  # noqa: BLE001 - surface as the error envelope
+            source = "eastmoney"
+            warnings: list[str] = []
+        except Exception as exc:  # noqa: BLE001 - try the market-specific fallback
             logger.warning("market screen failed for %s/%s: %s", market, sort_by, exc)
-            return _error(str(exc))
+            if market != "a":
+                return _error(str(exc))
+            try:
+                rows = _screen_a_share_sina(sort_by=sort_by, top_n=top_n)
+            except Exception as fallback_exc:  # noqa: BLE001 - surface both causes
+                logger.warning("Sina market screen failed for %s/%s: %s", market, sort_by, fallback_exc)
+                return _error(f"eastmoney: {exc}; sina fallback: {fallback_exc}")
+            if not rows:
+                return _error(f"eastmoney: {exc}; sina fallback returned no rows")
+            source = "sina"
+            warnings = [f"eastmoney screen failed; used Sina fallback: {exc}"]
+
+        # A degraded Eastmoney response can be HTTP 200 with no rows.  Try the
+        # independent A-share source in that case too; otherwise preserve a
+        # successful empty envelope with an explicit warning.
+        if not rows and market == "a":
+            try:
+                fallback_rows = _screen_a_share_sina(sort_by=sort_by, top_n=top_n)
+            except Exception as fallback_exc:  # noqa: BLE001 - keep no-data envelope
+                warnings.append(f"Sina fallback failed after an empty Eastmoney response: {fallback_exc}")
+            else:
+                if fallback_rows:
+                    rows = fallback_rows
+                    source = "sina"
+                    warnings.append("Eastmoney returned no rows; used Sina fallback")
+                else:
+                    warnings.append("Eastmoney and Sina returned no rows")
 
         envelope = {
             "ok": True,
             "market": market,
-            "source": "eastmoney",
+            "source": source,
             "data": {
                 "market": market,
                 "sort_by": sort_by,
                 "rows": rows,
             },
         }
+        if warnings:
+            envelope["warnings"] = warnings
         return json.dumps(envelope, ensure_ascii=False)

@@ -391,10 +391,30 @@ def register_system_routes(
         return [
             {
                 "name": s.name,
+                "category": s.category or "other",
                 "description": s.description,
             }
             for s in loader.skills
         ]
+
+    @app.get("/agent/capabilities", dependencies=[Depends(require_auth)])
+    async def list_agent_capabilities(request: Request):
+        """Return the authenticated, currently available skill/tool inventory."""
+        from src.agent.capabilities import list_capabilities
+        from src.tools import build_registry
+
+        shell_enabled = bool(host._shell_tools_enabled_for_request(request))
+        registry = build_registry(include_shell_tools=shell_enabled)
+        return list_capabilities(registry)
+
+    @app.get("/tools", dependencies=[Depends(require_auth)])
+    async def list_tools(request: Request):
+        """Compatibility endpoint for clients that load skills and tools separately."""
+        from src.agent.capabilities import list_capabilities
+        from src.tools import build_registry
+
+        shell_enabled = bool(host._shell_tools_enabled_for_request(request))
+        return list_capabilities(build_registry(include_shell_tools=shell_enabled))["tools"]
 
     @app.get("/api")
     async def api_info():

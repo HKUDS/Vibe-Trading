@@ -71,7 +71,10 @@ agents:
       `technical_indicators` (or in `bash` from the bars). A support, resistance,
       MA value or measured target that you did not derive from retrieved bars is
       fabricated — if the bars cannot be retrieved, say so and give no levels.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, technical_indicators]
+      Resolve {target} with `search_symbol` and record exchange, timezone,
+      currency, interval, adjustment, and bar as-of time. Technical indicators
+      compute from retrieved bars; they do not retrieve or repair missing data.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, technical_indicators]
     skills: [technical-basic, candlestick]
     max_iterations: 50
     timeout_seconds: 1800
@@ -128,7 +131,7 @@ agents:
       9 / 26 / 52 windows (state the windows if you deviate). Cloud bounds and
       the quantised S/R prices are outputs of that calculation, never estimates.
       If the bars cannot be retrieved, report the analysis as unavailable.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, technical_indicators]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, technical_indicators]
     skills: [ichimoku]
     max_iterations: 50
     timeout_seconds: 1800
@@ -173,7 +176,7 @@ agents:
       7. **Harmonic score** — −5..+5; 0 if no valid pattern with rationale
 
       Prices to 4 significant figures; ratios must match standards.
-    tools: [bash, read_file, write_file, load_skill, pattern]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, pattern]
     skills: [harmonic]
     max_iterations: 50
     timeout_seconds: 1800
@@ -225,7 +228,7 @@ agents:
       7. **Wave score** — −5..+5; count confidence 0–100%
 
       Label degree (supercycle/cycle/primary/minor) to avoid mixing.
-    tools: [bash, read_file, write_file, load_skill, pattern]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, pattern]
     skills: [elliott-wave, chanlun]
     max_iterations: 50
     timeout_seconds: 1800
@@ -278,7 +281,10 @@ agents:
       is a specific three-bar condition — point to the bars that form it. Zones you
       cannot locate in the data do not get listed, and a "fill probability" must be
       a measured historical fill rate or be omitted.
-    tools: [bash, read_file, write_file, load_skill, get_market_data]
+      Resolve the symbol and session with `search_symbol`; use
+      `orderbook_depth` only for current depth/spread evidence and never as a
+      replacement for the historical OHLC sequence.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, orderbook_depth]
     skills: [smc, minute-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -336,7 +342,12 @@ agents:
 
       Judge outcome must reflect the five inputs fairly—no cherry-picking.
       Prices must be consistent with upstream reports.
-    tools: [bash, read_file, write_file]
+      Preserve each school's source bars, interval, timezone, adjustment,
+      confidence, and missingness. Recheck the target with `search_symbol` and
+      `get_market_data`; if a school failed, recompute the vote over available
+      schools and disclose the changed denominator instead of assigning a
+      neutral score.
+    tools: [bash, read_file, write_file, search_symbol, get_market_data]
     skills: []
     max_iterations: 50
     timeout_seconds: 1800

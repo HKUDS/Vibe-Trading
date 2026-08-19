@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import type { AgentCapabilities, CapabilityItem, MessageSelection, ToolCapability } from "@/lib/api";
+import { filterCapabilities, getSlashContext } from "@/lib/slashCommands";
 import type { AgentActivity } from "@/stores/agent";
 import {
   LiveRuntimeControl,
@@ -50,6 +52,15 @@ export interface ComposerHandle {
   submit(prompt: string): void;
 }
 
+type SlashOption = {
+  kind: "category" | "capability" | "command";
+  value: string;
+  label: string;
+  description: string;
+  category?: string;
+  capability?: CapabilityItem | ToolCapability;
+};
+
 interface Props {
   streaming: boolean;
   activityVerb?: AgentActivity["verb"];
@@ -59,7 +70,8 @@ interface Props {
   goalComposerActive: boolean;
   swarmPreset: { name: string; title: string } | null;
   panels?: ReactNode;
-  onSubmit: (prompt: string, attachment: ComposerAttachment | null) => void;
+  capabilities?: AgentCapabilities | null;
+  onSubmit: (prompt: string, attachment: ComposerAttachment | null, selection?: MessageSelection) => void;
   onCancel: () => void;
   onExport: () => void;
   onStartGoal: () => void;
@@ -84,6 +96,7 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
   onCancelGoal,
   onStartSwarm,
   onCancelSwarm,
+  capabilities = null,
 }, ref) {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
@@ -93,9 +106,65 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
   const [attachment, setAttachment] = useState<ComposerAttachment | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showUploadMenu, setShowUploadMenu] = useState(false);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [selectedTools, setSelectedTools] = useState<string[]>([]);
+  const [slashContext, setSlashContext] = useState<ReturnType<typeof getSlashContext>>(null);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const slashOptionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const uploadMenuRef = useRef<HTMLDivElement>(null);
   const uploadMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const selection = useCallback((): MessageSelection => ({
+    selected_skills: selectedSkills,
+    selected_tools: selectedTools,
+    tool_mode: selectedTools.length > 0 ? "restricted" : "auto",
+    force_tool: selectedTools.length === 1 ? selectedTools[0] : null,
+  }), [selectedSkills, selectedTools]);
+
+  const localized = useCallback((item: CapabilityItem | ToolCapability, field: "name" | "description") => {
+    const key = `agent.capabilities.${item.name}.${field}`;
+    return t(key as never, { defaultValue: field === "name" ? item.name : item.description });
+  }, [t]);
+
+  const slashOptions = useCallback((): SlashOption[] => {
+    if (!slashContext) return [];
+    if (slashContext.kind === "root") {
+      return [
+        { kind: "category", value: "skills", label: t("agent.slash.skills"), description: t("agent.slash.skillCategory") },
+        { kind: "category", value: "tools", label: t("agent.slash.tools"), description: t("agent.slash.toolCategory") },
+        { kind: "category", value: "commands", label: t("agent.slash.commands"), description: t("agent.slash.chooseCapability") },
+      ];
+    }
+    if (slashContext.kind === "commands") {
+      return [
+        { kind: "command", value: "goal", label: t("agent.researchGoal"), description: t("agent.describeGoal") },
+        { kind: "command", value: "swarm", label: t("agent.agentSwarm"), description: t("agent.runSwarmTeam") },
+        { kind: "command", value: "connector", label: t("agent.checkConnector"), description: t("agent.checkConnector") },
+      ];
+    }
+    const source = slashContext.kind === "skills" ? capabilities?.skills ?? [] : capabilities?.tools ?? [];
+    return filterCapabilities(source, slashContext.query).sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name)).map((item) => ({
+      kind: "capability",
+      value: item.name,
+      label: localized(item, "name"),
+      description: localized(item, "description"),
+      category: item.category,
+      capability: item,
+    }));
+  }, [capabilities, localized, slashContext, t]);
+
+  const options = slashOptions();
+
+  useEffect(() => {
+    if (!slashContext || options.length === 0) return;
+    const option = options[slashIndex];
+    if (!option) return;
+    const element = slashOptionRefs.current[`${option.kind}-${option.value}`];
+    if (element && typeof element.scrollIntoView === "function") {
+      element.scrollIntoView({ block: "nearest" });
+    }
+  }, [options, slashContext, slashIndex]);
 
   const focus = useCallback(() => {
     inputRef.current?.focus({ preventScroll: true });
@@ -107,9 +176,51 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
     if (inputRef.current) inputRef.current.style.height = "auto";
     const submittedAttachment = attachment;
     if (!goalComposerActive) setAttachment(null);
-    onSubmit(prompt.trim(), submittedAttachment);
+    const selected = selection();
+    if (selected.selected_skills.length || selected.selected_tools.length) {
+      onSubmit(prompt.trim(), submittedAttachment, selected);
+    } else {
+      onSubmit(prompt.trim(), submittedAttachment);
+    }
+    setSelectedSkills([]);
+    setSelectedTools([]);
     inputRef.current?.focus();
-  }, [attachment, goalComposerActive, onSubmit, streaming]);
+  }, [attachment, goalComposerActive, onSubmit, selection, streaming]);
+
+  const chooseSlashOption = useCallback((option: SlashOption) => {
+    if (!slashContext) return;
+    if (option.kind === "category") {
+      const prefix = option.value === "skills" ? "/skills " : option.value === "tools" ? "/tools " : "/commands ";
+      const cursor = inputRef.current?.selectionStart ?? input.length;
+      setInput((value) => value.slice(0, slashContext.start) + prefix + value.slice(cursor));
+      if (option.value === "skills" || option.value === "tools" || option.value === "commands") {
+        setSlashContext({ kind: option.value, query: "", start: slashContext.start });
+      }
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return;
+    }
+    if (option.kind === "command") {
+      setSlashContext(null);
+      if (option.value === "goal") onStartGoal();
+      else if (option.value === "swarm") onStartSwarm();
+      else submitPrompt(CONNECTOR_CHECK_PROMPT);
+      return;
+    }
+    const isSkill = slashContext.kind === "skills";
+    if (isSkill) setSelectedSkills((items) => items.includes(option.value) ? items : [...items, option.value]);
+    else setSelectedTools((items) => items.includes(option.value) ? items : [...items, option.value]);
+    const cursor = inputRef.current?.selectionStart ?? input.length;
+    setInput((value) => value.slice(0, slashContext.start) + value.slice(cursor));
+    setSlashContext(null);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [input.length, onStartGoal, onStartSwarm, slashContext, submitPrompt]);
+
+  const updateSlashContext = useCallback((value: string) => {
+    const cursor = inputRef.current?.selectionStart ?? value.length;
+    const next = getSlashContext(value, cursor);
+    setSlashContext(next);
+    setSlashIndex(0);
+  }, []);
 
   useImperativeHandle(ref, () => ({
     fill(prompt: string) {
@@ -229,8 +340,46 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
           {t("agent.uploading")}
         </div>
       )}
+      {(selectedSkills.length > 0 || selectedTools.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1">
+          {selectedSkills.map((name) => (
+            <span
+              key={`skill-${name}`}
+              className="group relative inline-flex items-center gap-1 rounded-lg border border-sky-200/70 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 shadow-[0_2px_8px_rgba(14,165,233,0.14)] dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200"
+              title={capabilities?.skills.find((item) => item.name === name)?.description}
+            >
+              {t("agent.slash.selectedSkill")}: {name}
+              <button type="button" aria-label={`Remove ${name}`} onClick={() => setSelectedSkills((items) => items.filter((item) => item !== name))}>
+                <X className="h-3 w-3" />
+              </button>
+              {capabilities?.skills.find((item) => item.name === name)?.description && (
+                <span className="pointer-events-none invisible absolute bottom-full right-0 z-50 mb-2 w-64 rounded-lg border border-sky-200/70 bg-background px-3 py-2 text-left text-xs font-normal leading-relaxed text-muted-foreground opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 dark:border-sky-400/20">
+                  {capabilities.skills.find((item) => item.name === name)?.description}
+                </span>
+              )}
+            </span>
+          ))}
+          {selectedTools.map((name) => (
+            <span
+              key={`tool-${name}`}
+              className="group relative inline-flex items-center gap-1 rounded-lg border border-sky-200/70 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 shadow-[0_2px_8px_rgba(14,165,233,0.14)] dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200"
+              title={capabilities?.tools.find((item) => item.name === name)?.description}
+            >
+              {t("agent.slash.selectedTool")}: {name}
+              <button type="button" aria-label={`Remove ${name}`} onClick={() => setSelectedTools((items) => items.filter((item) => item !== name))}>
+                <X className="h-3 w-3" />
+              </button>
+              {capabilities?.tools.find((item) => item.name === name)?.description && (
+                <span className="pointer-events-none invisible absolute bottom-full right-0 z-50 mb-2 w-64 rounded-lg border border-sky-200/70 bg-background px-3 py-2 text-left text-xs font-normal leading-relaxed text-muted-foreground opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 dark:border-sky-400/20">
+                  {capabilities.tools.find((item) => item.name === name)?.description}
+                </span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
       <LiveRuntimeControl />
-      <div className="flex items-end gap-2 rounded-2xl border border-border/60 bg-background p-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_-12px_rgba(0,0,0,0.12)] transition-shadow focus-within:ring-2 focus-within:ring-primary/25 dark:bg-card">
+      <div className="relative flex items-end gap-2 rounded-2xl border border-border/60 bg-background p-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_-12px_rgba(0,0,0,0.12)] transition-shadow focus-within:ring-2 focus-within:ring-primary/25 dark:bg-card">
         <div className="relative" ref={uploadMenuRef}>
           <button
             ref={uploadMenuTriggerRef}
@@ -325,11 +474,44 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
           onChange={handleFileSelect}
           className="hidden"
         />
+        {slashContext && (
+          <div role="listbox" aria-label={t("agent.slash.chooseCapability")} className="absolute bottom-full left-12 right-12 z-50 mb-2 max-h-72 overflow-y-auto rounded-xl border bg-background/95 p-1 shadow-lg backdrop-blur-sm">
+            <div className="px-3 py-2 text-xs text-muted-foreground">{t("agent.slash.chooseCapability")}</div>
+            {options.length === 0 ? (
+              <div className="px-3 py-3 text-sm text-muted-foreground">{t("agent.slash.noResults")}</div>
+            ) : options.map((option, index) => (
+              <div key={`${option.kind}-${option.value}`}>
+                {option.category && (index === 0 || option.category !== options[index - 1]?.category) && (
+                  <div className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                    {t(`agent.slash.categories.${option.category}` as never, { defaultValue: option.category })}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  role="option"
+                  ref={(element) => {
+                    slashOptionRefs.current[`${option.kind}-${option.value}`] = element;
+                  }}
+                  aria-selected={index === slashIndex}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => chooseSlashOption(option)}
+                  className={`flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${index === slashIndex ? "bg-muted" : "hover:bg-muted/70"}`}
+                >
+                  <span className="shrink-0 font-medium text-foreground">{option.label}</span>
+                  <span className="line-clamp-2 text-muted-foreground/70" title={option.description}>{option.description}</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           ref={inputRef}
           value={input}
           rows={1}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            updateSlashContext(e.target.value);
+          }}
           onCompositionStart={() => {
             isComposingRef.current = true;
           }}
@@ -343,6 +525,19 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
             el.style.height = el.scrollHeight + "px";
           }}
           onKeyDown={(e) => {
+            if (slashContext && options.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === "Escape")) {
+              e.preventDefault();
+              if (e.key === "ArrowDown") setSlashIndex((index) => (index + 1) % options.length);
+              else if (e.key === "ArrowUp") setSlashIndex((index) => (index - 1 + options.length) % options.length);
+              else if (e.key === "Enter") chooseSlashOption(options[slashIndex]);
+              else setSlashContext(null);
+              return;
+            }
+            if (slashContext && e.key === "Escape") {
+              e.preventDefault();
+              setSlashContext(null);
+              return;
+            }
             if (e.key === "Enter" && !e.shiftKey) {
               const nativeEvent = e.nativeEvent as KeyboardEvent & { isComposing?: boolean };
               const justFinishedComposing = Date.now() - lastCompositionEndRef.current < 80;

@@ -209,6 +209,43 @@ def fetch_northbound_flow(*, lookback_days: int) -> dict[str, Any]:
     }
 
 
+def fetch_southbound_flow(*, lookback_days: int) -> dict[str, Any]:
+    """Fetch Southbound daily flow from Tushare's ``moneyflow_hsgt``.
+
+    Tushare publishes ``ggt_ss`` and ``ggt_sz`` in million CNY.  The agent's
+    Stock-Connect tools use 10k CNY, so the values are multiplied by 100 to
+    match the Eastmoney KAMT envelope and the existing Northbound adapter.
+    """
+    start_date, end_date = _date_window(lookback_days)
+    rows = _records(_pro_api().moneyflow_hsgt(start_date=start_date, end_date=end_date))
+    history: list[dict[str, Any]] = []
+    for row in rows:
+        shanghai = _to_float(row.get("ggt_ss"))
+        shenzhen = _to_float(row.get("ggt_sz"))
+        total = _to_float(row.get("south_money"))
+        history.append(
+            {
+                "trade_date": _dashed_date(row.get("trade_date")),
+                "shanghai_connect": shanghai * 100 if shanghai is not None else None,
+                "shenzhen_connect": shenzhen * 100 if shenzhen is not None else None,
+                "total": total * 100 if total is not None else None,
+            }
+        )
+    history.sort(key=lambda item: item.get("trade_date") or "")
+    history = history[-lookback_days:]
+    latest = history[-1] if history else {}
+    return {
+        "unit": "10k CNY",
+        "lookback_days": lookback_days,
+        "realtime": {
+            "shanghai_connect": latest.get("shanghai_connect"),
+            "shenzhen_connect": latest.get("shenzhen_connect"),
+            "total": latest.get("total"),
+        },
+        "history": history,
+    }
+
+
 def fetch_margin_trading(code: str, *, days: int) -> dict[str, Any]:
     ts_code = _ts_code(code)
     start_date, end_date = _date_window(days)

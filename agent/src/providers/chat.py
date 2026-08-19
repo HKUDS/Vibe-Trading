@@ -296,7 +296,7 @@ class ChatLLM:
             reasoning_effort=runtime_cfg.langchain_reasoning_effort.strip().lower(),
         )
 
-    def chat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> LLMResponse:
+    def chat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None, tool_choice: Any = None) -> LLMResponse:
         """Call the LLM synchronously.
 
         Args:
@@ -307,7 +307,7 @@ class ChatLLM:
         Returns:
             LLMResponse.
         """
-        llm = self._llm.bind_tools(tools) if tools else self._llm
+        llm = self._bind_tools(tools, tool_choice)
         config = {"timeout": timeout} if timeout else {}
         ai_message = llm.invoke(messages, config=config)
         return self._parse_response(ai_message)
@@ -320,6 +320,7 @@ class ChatLLM:
         on_reasoning_chunk: Optional[Any] = None,
         timeout: Optional[int] = None,
         should_cancel: Optional[Callable[[], bool]] = None,
+        tool_choice: Any = None,
     ) -> LLMResponse:
         """Stream the LLM and optionally forward text deltas (e.g. thinking).
 
@@ -341,7 +342,7 @@ class ChatLLM:
             Parsed ``LLMResponse``.
         """
         try:
-            llm = self._llm.bind_tools(tools) if tools else self._llm
+            llm = self._bind_tools(tools, tool_choice)
             config = {"timeout": timeout} if timeout else {}
             accumulated = None
             pending_text = ""
@@ -376,7 +377,7 @@ class ChatLLM:
                     "Provider stream returned no chunks; falling back to "
                     "non-streaming invoke."
                 )
-                return self.chat(messages, tools=tools, timeout=timeout)
+                return self.chat(messages, tools=tools, timeout=timeout, tool_choice=tool_choice)
             response = self._parse_response(accumulated)
             if pending_text and not (response.has_tool_calls and response.content == ""):
                 on_text_chunk(pending_text)
@@ -390,11 +391,23 @@ class ChatLLM:
                     "non-streaming invoke.",
                     type(exc).__name__,
                 )
-                return self.chat(messages, tools=tools, timeout=timeout)
+                return self.chat(messages, tools=tools, timeout=timeout, tool_choice=tool_choice)
             _cfg = get_env_config()
             provider = _cfg.llm.langchain_provider.strip().lower() or "openai"
             model = self.model_name or _cfg.llm.langchain_model_name.strip() or "(unset)"
             raise ProviderStreamError(provider=provider, model=model, original=exc) from exc
+
+    def _bind_tools(self, tools: Optional[List[Dict[str, Any]]], tool_choice: Any = None) -> Any:
+        """Bind tools while preserving compatibility with custom providers."""
+        if not tools:
+            return self._llm
+        if tool_choice is None:
+            return self._llm.bind_tools(tools)
+        try:
+            return self._llm.bind_tools(tools, tool_choice=tool_choice)
+        except TypeError:
+            logger.warning("LLM provider does not expose tool_choice; using the single-tool allow-list")
+            return self._llm.bind_tools(tools)
 
     @staticmethod
     def _tool_call_thought_signature_maps(ai_message: Any) -> tuple[dict[str, str], dict[int, str]]:

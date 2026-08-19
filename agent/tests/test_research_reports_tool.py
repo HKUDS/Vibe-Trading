@@ -162,14 +162,16 @@ def test_report_request_failure_is_caught_as_error_envelope():
     assert "429" in payload["error"]
 
 
-def test_empty_coverage_returns_error_envelope():
+def test_empty_coverage_returns_successful_empty_envelope_with_warning():
     with patch.object(rrt, "get_json", return_value={"data": []}), patch.object(
         rrt, "throttled_get", return_value=_fake_response({"data": []})
     ):
         out = ResearchReportsTool().execute(code="600519.SH")
     payload = json.loads(out)
-    assert payload["ok"] is False
-    assert "no research coverage" in payload["error"]
+    assert payload["ok"] is True
+    assert payload["data"]["reports"] == []
+    assert payload["data"]["consensus_eps"] == []
+    assert "no research coverage" in payload["warnings"][0]
 
 
 def test_default_window_is_the_trailing_two_years():

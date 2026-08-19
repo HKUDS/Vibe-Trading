@@ -87,6 +87,21 @@ class TestSuccessEnvelope:
         assert len(history) == 1
         assert history[0]["trade_date"] == "2024-01-04"
 
+    def test_full_kamt_row_keeps_shenzhen_leg_separate_from_north_total(self):
+        def fake_full(url: str, *, params: dict):
+            if "kamt.kline" in url:
+                assert params["fields2"] == "f51,f52,f53,f54,f55,f56,f57"
+                return {"data": {"klines": ["2024-01-02,100,50,150,80,20,100"]}}
+            return _realtime_payload()
+
+        with patch.object(nb, "get_json", side_effect=fake_full):
+            payload = json.loads(nb.NorthboundFlowTool().execute(lookback_days=10))
+
+        row = payload["data"]["history"][0]
+        assert row["shanghai_connect"] == 100.0
+        assert row["shenzhen_connect"] == 50.0
+        assert row["total"] == 150.0
+
 
 class TestErrorEnvelope:
     def test_http_failure_returns_error_envelope(self):
@@ -122,12 +137,34 @@ class TestErrorEnvelope:
         assert "used tushare fallback" in payload["warnings"][0]
 
     def test_missing_data_block_yields_empty_history_and_null_realtime(self):
-        with patch.object(nb, "get_json", return_value={"data": None}):
+        with patch.object(nb, "get_json", return_value={"data": None}), patch.object(
+            nb.tushare_fallbacks,
+            "fetch_northbound_flow",
+            side_effect=RuntimeError("no token"),
+        ):
             text = nb.NorthboundFlowTool().execute(lookback_days=5)
         payload = json.loads(text)
+        assert payload["ok"] is False
+        assert "no token" in payload["error"]
+
+    def test_empty_eastmoney_payload_uses_tushare_fallback(self):
+        fallback = {
+            "unit": "10k CNY",
+            "lookback_days": 5,
+            "realtime": {"total": 12.0},
+            "history": [{"trade_date": "2024-01-03", "total": 12.0}],
+        }
+        with patch.object(nb, "get_json", return_value={"data": None}), patch.object(
+            nb.tushare_fallbacks,
+            "fetch_northbound_flow",
+            return_value=fallback,
+        ) as fetch:
+            payload = json.loads(nb.NorthboundFlowTool().execute(lookback_days=5))
+
+        fetch.assert_called_once_with(lookback_days=5)
         assert payload["ok"] is True
-        assert payload["data"]["history"] == []
-        assert payload["data"]["realtime"]["total"] is None
+        assert payload["source"] == "tushare"
+        assert payload["data"] == fallback
 
 
 class TestToolMetadata:

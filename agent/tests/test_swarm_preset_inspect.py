@@ -29,6 +29,34 @@ def test_inspect_preset_returns_dry_run_layers() -> None:
     ]
 
 
+def test_investment_committee_exposes_cross_market_research_tools() -> None:
+    """The committee must expose both A-share and U.S. evidence surfaces."""
+    report = presets.inspect_preset("investment_committee")
+    expected = {
+        "search_symbol",
+        "get_market_data",
+        "get_a_share_data",
+        "get_financial_statements",
+        "get_stock_profile",
+        "get_stock_news",
+        "get_fund_flow",
+        "get_sector_info",
+        "get_research_reports",
+        "get_sec_filings",
+        "get_margin_trading",
+        "get_shareholder_count",
+        "get_lockup_expiry",
+        "get_northbound_flow",
+        "get_institutional_holdings",
+    }
+
+    agents = {entry["id"]: set(entry["tools"]) for entry in report["agents"]}
+    for agent_id in ("bull_advocate", "bear_advocate", "risk_officer", "portfolio_manager"):
+        assert expected <= agents[agent_id]
+
+    assert "market-specific tool" in presets.load_preset("investment_committee")["agents"][0]["system_prompt"]
+
+
 def test_inspect_preset_reports_invalid_references(
     tmp_path: Path,
     monkeypatch,

@@ -51,7 +51,13 @@ agents:
       7. **Fit with {goal}** — score alignment of {goal} themes with the phase
 
       Every claim needs numeric support, not theory-only.
-    tools: [bash, read_file, write_file, load_skill]
+      Use `web_search` then `read_url` for official macro releases and policy.
+      Use `get_market_data` for index/sector proxies and dates, and
+      `get_a_share_data` for A-share-specific quote, sector, announcements,
+      margin, and flow fields when supported. For US/HK, route named stocks
+      through `get_stock_profile`/`get_financial_statements`. Record geography,
+      currency, frequency, as-of date, and source; theory is not evidence.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_market_data, get_a_share_data, get_stock_profile, get_financial_statements]
     skills: [macro-analysis, seasonal]
     max_iterations: 50
     timeout_seconds: 1800
@@ -105,7 +111,14 @@ agents:
       7. **{goal} deep dive** — prosperity read on {goal} sectors
 
       Must output a quantitative score table.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+      Resolve the sector universe and use market-compatible raw data:
+      `get_a_share_data`/`get_financial_statements` for A-shares and
+      `get_stock_profile`/`get_financial_statements` for US/HK. Use
+      `get_market_data` for returns and `web_search`/`read_url` for dated
+      releases, surveys, guidance, and industry data. `factor_analysis` scores
+      retrieved fields only; missing earnings, revision, or high-frequency
+      inputs remain unavailable.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_a_share_data, get_financial_statements, get_stock_profile, get_market_data, factor_analysis]
     skills: [sector-rotation, fundamental-filter, multi-factor]
     max_iterations: 50
     timeout_seconds: 1800
@@ -158,7 +171,13 @@ agents:
       7. **{goal} flow support** — do {goal} sectors align with cycle & prosperity?
 
       Prefer last 20 trading days; emphasize freshness.
-    tools: [bash, read_file, write_file, load_skill, get_market_data]
+      The Northbound, margin, Dragon-Tiger, and insider fields are A-share
+      specific. Use `get_a_share_data` with the supported operation, and use
+      `get_fund_flow`, `get_margin_trading`, and `get_northbound_flow` only for
+      compatible symbols. Use `get_market_data` for the same 20-trading-day
+      price window; never infer a flow from price. Report unsupported US/HK
+      fields explicitly with cutoff and source.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_a_share_data, get_fund_flow, get_margin_trading, get_northbound_flow, get_market_data]
     skills: [tushare, sentiment-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -204,7 +223,13 @@ agents:
       7. **Triggers for next review** — what forces a refresh
 
       Must include backtest numbers via backtest—no qualitative-only.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+      Reconcile cycle, prosperity, and flow signals by market, sector
+      definition, observation date, currency, and confidence. Validate the
+      universe and benchmark with `search_symbol`/`get_market_data`; use
+      `backtest` only with explicit lag, rebalance, fees, slippage, benchmark,
+      and missing-data policy. If any pillar failed, label the rotation signal
+      conditional rather than imputing a neutral score.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, backtest]
     skills: [strategy-generate, sector-rotation]
     max_iterations: 50
     timeout_seconds: 1800

@@ -5,6 +5,10 @@ import i18n from "../../../i18n";
 import { Composer } from "../Composer";
 
 const baseProps = {
+  capabilities: {
+    skills: [{ name: "technical-basic", category: "analysis", description: "Trend and momentum analysis" }],
+    tools: [{ name: "get_market_data", category: "market-data", read_only: true, description: "Fetch market data" }],
+  },
   streaming: false,
   hasCompletedTurn: false,
   showExport: false,
@@ -73,5 +77,37 @@ describe("Composer", () => {
     await user.type(screen.getByRole("textbox"), "local composer state");
 
     expect(messageListRenderCount).toBe(1);
+  });
+
+  it("renders the loaded skills and tools after selecting slash categories", () => {
+    render(<Composer {...baseProps} />);
+    const textarea = screen.getByRole("textbox");
+
+    fireEvent.change(textarea, { target: { value: "/skills" } });
+    expect(screen.getByText("technical-basic")).toBeInTheDocument();
+
+    fireEvent.change(textarea, { target: { value: "/tools" } });
+    expect(screen.getByText("get_market_data")).toBeInTheDocument();
+  });
+
+  it("scrolls the active slash option into view during keyboard navigation", () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const capabilities = {
+      skills: Array.from({ length: 14 }, (_, index) => ({
+        name: `skill-${index}`,
+        category: "analysis",
+        description: `Description ${index}`,
+      })),
+      tools: [],
+    };
+    render(<Composer {...baseProps} capabilities={capabilities} />);
+    const textarea = screen.getByRole("textbox");
+    fireEvent.change(textarea, { target: { value: "/skills" } });
+    fireEvent.keyDown(textarea, { key: "ArrowDown" });
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
   });
 });

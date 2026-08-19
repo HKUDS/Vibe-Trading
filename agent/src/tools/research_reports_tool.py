@@ -121,7 +121,10 @@ class ResearchReportsTool(BaseTool):
             A JSON string envelope. On success:
             ``{"ok": true, "market": "CN", "source": "eastmoney+ths",
             "data": {"code", "reports": [...], "consensus_eps": [...]}}``.
-            On failure: ``{"ok": false, "error": str}``.
+            When the providers return no matching coverage, the tool returns a
+            successful envelope with empty ``reports``/``consensus_eps`` and a
+            warning. Provider/request failures still return
+            ``{"ok": false, "error": str}``.
         """
         code = kwargs.get("code")
         if not isinstance(code, str) or not code.strip():
@@ -181,22 +184,23 @@ class ResearchReportsTool(BaseTool):
         # Consensus EPS is best-effort: a THS outage must not sink the reports.
         consensus_eps = _fetch_consensus_eps(code)
 
-        if not reports and not consensus_eps:
-            return _error(f"no research coverage found for '{code}'")
-
-        return json.dumps(
-            {
-                "ok": True,
-                "market": "CN",
-                "source": "eastmoney+ths",
-                "data": {
-                    "code": code,
-                    "reports": reports[:limit],
-                    "consensus_eps": consensus_eps,
-                },
+        envelope: dict[str, Any] = {
+            "ok": True,
+            "market": "CN",
+            "source": "eastmoney+ths",
+            "data": {
+                "code": code,
+                "reports": reports[:limit],
+                "consensus_eps": consensus_eps,
             },
-            ensure_ascii=False,
-        )
+        }
+        if not reports and not consensus_eps:
+            # A valid provider response with no rows means that this security
+            # has no coverage in the requested window.  It is not a failed
+            # tool call; callers need the successful empty envelope so the UI
+            # can distinguish "no coverage" from an unavailable provider.
+            envelope["warnings"] = [f"no research coverage found for '{code}'"]
+        return json.dumps(envelope, ensure_ascii=False)
 
 
 def _bare_code(code: str) -> str:

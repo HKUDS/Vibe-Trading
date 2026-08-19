@@ -14,6 +14,8 @@ export const TOOL_LABELS: Record<string, string> = {
   read_document: "Read document",
   options_payoff: "Analyze options payoff",
   get_market_data: "Get market data",
+  get_northbound_flow: "Fetch northbound flow",
+  get_southbound_flow: "Fetch southbound flow",
   screen_market: "Screen market",
   factor_analysis: "Analyze factors",
   run_swarm: "Run agent team",
@@ -35,12 +37,14 @@ export const TOOL_LABELS: Record<string, string> = {
   spawn_subagent: "Spawn sub-agent",
 };
 
-function humanizeToolName(tool: string): string {
-  const humanized = tool.replace(/_/g, " ");
+function humanizeToolName(tool: string | undefined): string {
+  const safeTool = typeof tool === "string" && tool.trim() ? tool : "unknown_tool";
+  const humanized = safeTool.replace(/_/g, " ");
   return humanized.charAt(0).toUpperCase() + humanized.slice(1);
 }
 
-export function localizeToolName(tool: string, fallback?: string): string {
-  const defaultValue = TOOL_LABELS[tool] ?? fallback ?? humanizeToolName(tool);
-  return i18n.t(`tools.${tool}` as never, { defaultValue });
+export function localizeToolName(tool: string | undefined, fallback?: string): string {
+  const safeTool = typeof tool === "string" && tool.trim() ? tool : "unknown_tool";
+  const defaultValue = TOOL_LABELS[safeTool] ?? fallback ?? humanizeToolName(safeTool);
+  return i18n.t(`tools.${safeTool}` as never, { defaultValue });
 }

@@ -53,6 +53,10 @@ agents:
       5. **Correlation stability report** — Top 20: did correlation collapse materially in past 2y? Fragile pairs and warnings
 
       Use load_skill("correlation-analysis"), load_skill("pair-trading"), load_skill("multi-factor").
+      Normalize ticker, exchange, currency, timezone, adjustment, liquidity
+      cutoff, and common observation calendar before joining the panel. Use
+      `search_symbol` for ambiguous names. A pair whose history is incomplete
+      is excluded rather than forward-filled or scored from expectation.
       Pull the price panel with `get_market_data` and compute the correlation matrix,
       the clustering and the ratio statistics yourself in `bash` (pandas / scipy).
       `factor_analysis` computes IC/IR and layered NAV from CSVs you write — it does
@@ -61,7 +65,7 @@ agents:
       Every correlation, cluster and score must come from the panel you pulled;
       name the date range. A pair whose history you could not retrieve is excluded
       from the pool, not scored from expectation.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_market_data, screen_market]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, factor_analysis, get_market_data, screen_market]
     skills: [correlation-analysis, pair-trading, multi-factor]
     max_iterations: 50
     timeout_seconds: 1800
@@ -140,6 +144,10 @@ agents:
       - `src.quantlib.timeseries.cointegration_test(y, x, significance)` → Engle–Granger
       - `src.quantlib.timeseries.find_hedge_ratio(y, x)` → the static OLS β
       - `src.quantlib.timeseries.compute_half_life(spread)` → t½ directly
+      Preserve venue, currency, adjustment, common sample, lag convention, and
+      missingness in every test artifact. Re-run the selected pair window with
+      `get_market_data`; a failed or partial series makes the statistic
+      unavailable, not significant by default.
       These lazily import an optional statistics backend and raise an actionable
       `ImportError` if it is absent. If that happens, report the test as
       unavailable — do not substitute a judgement call for a p-value.
@@ -149,7 +157,7 @@ agents:
       it was not computed. A Johansen trace statistic or a Hurst value that did
       not come out of code you ran is a fabricated number — the classification
       thresholds above then apply only to the tests you actually completed.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_market_data]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, factor_analysis, get_market_data]
     skills: [correlation-analysis, quant-statistics]
     max_iterations: 50
     timeout_seconds: 1800
@@ -211,8 +219,12 @@ agents:
       5. **Year-by-year & regime** — Bull / bear / chop segments; when strategy works / fails
 
       Use load_skill("pair-trading"), load_skill("correlation-analysis"), load_skill("strategy-generate").
+      Revalidate every leg with `search_symbol` and `get_market_data`. State
+      formation/trading windows, signal lag, hedge-ratio refit, short/borrow
+      constraints, fees, spread, impact, tax, slippage, benchmark, and
+      delisting/missing-data policy. A failed backtest is unvalidated.
       Use backtest with costs, dynamic hedge, multi-pair rebalancing.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, backtest]
     skills: [pair-trading, correlation-analysis, strategy-generate]
     max_iterations: 50
     timeout_seconds: 1800
@@ -276,7 +288,12 @@ agents:
       5. **Overall micro verdict** — Grade A/B/C/D; binding limits; pre-live execution checklist
 
       Use load_skill("market-microstructure"), load_skill("execution-model").
-    tools: [bash, read_file, write_file, load_skill]
+      Use `search_symbol` and `get_market_data` for venue, price, volume, and
+      ADV; use `orderbook_depth` only when current depth and bid/ask evidence is
+      required. Do not manufacture spread, impact, or borrow costs when the
+      venue endpoint is unavailable. Keep currency, session, lot size, and
+      timestamp explicit.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, orderbook_depth]
     skills: [market-microstructure, execution-model]
     max_iterations: 50
     timeout_seconds: 1800

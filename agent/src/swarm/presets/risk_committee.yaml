@@ -29,7 +29,7 @@ agents:
       inputs so the probability is reproducible — a drawdown probability stated
       without a simulation behind it is a guess and must not be given.
       If the history cannot be retrieved, say so and produce nothing numeric.
-    tools: [bash, read_file, write_file, load_skill, get_market_data]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data]
     skills: [volatility]
     max_iterations: 50
     timeout_seconds: 1800
@@ -42,6 +42,11 @@ agents:
 
       ## Task
       Evaluate exposure of the target asset/strategy under extreme conditions.
+      Resolve the target with `search_symbol` and preserve exchange, contract,
+      currency, timezone, adjustment, and sample cutoff. Use `get_market_data`
+      for observed returns; `get_options_chain` is US-listed coverage only and
+      must not be used as an A-share or crypto fallback. Missing implied vol,
+      borrow, or liquidity inputs remain unavailable.
 
       {upstream_context}
 
@@ -57,7 +62,7 @@ agents:
       with `get_market_data` first. Every figure above must name the sample window
       it came from. If the series cannot be retrieved, report the section as
       unavailable rather than producing an illustrative number.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, get_options_chain, options_pricing, options_payoff]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_options_chain, options_pricing, options_payoff]
     skills: [volatility]
     max_iterations: 50
     timeout_seconds: 1800
@@ -70,6 +75,10 @@ agents:
 
       ## Task
       Determine the current regime for the market of the target asset.
+      Resolve the target with `search_symbol` and use a consistent market,
+      interval, timezone, currency, and adjustment for bars and indicators.
+      A failed history or non-converged regime model must be reported as
+      unvalidated; do not infer a regime from the latest price alone.
 
       {upstream_context}
 
@@ -107,7 +116,7 @@ agents:
       the mapping you used.
       For historical analogs, name the date range of each and show the
       measured similarity; an analog you did not measure is an anecdote, label it one.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, technical_indicators]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, technical_indicators]
     skills: [volatility, technical-basic]
     max_iterations: 50
     timeout_seconds: 1800
@@ -133,7 +142,11 @@ agents:
       6. **Action items** — Clear guidance on sizing, stops, and hedges
 
       Conclusions must be data-grounded and actionable.
-    tools: [bash, read_file, write_file]
+      Preserve each workstream's source, sample dates, market, confidence,
+      and failure status. If a required series or option quote was unavailable,
+      keep the recommendation conditional and do not replace it with a neutral
+      risk score.
+    tools: [bash, read_file, write_file, search_symbol, get_market_data]
     skills: []
     max_iterations: 50
     timeout_seconds: 1800

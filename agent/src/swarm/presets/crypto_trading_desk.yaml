@@ -13,6 +13,11 @@ agents:
 
       {upstream_context}
 
+      ## Data protocol
+      - Normalize {target} to the exact spot/perpetual/dated-futures contract and venue before comparing funding or basis. Record settlement currency and UTC observation time.
+      - Use `get_market_data` for the price series and `web_search`/`read_url` for exchange funding, OI, basis, and long-short observations. Every number needs venue, contract, interval, source URL or tool result, and timestamp.
+      - Annualize funding only after stating the compounding convention. If cross-exchange or quarterly data is unavailable, do not infer it from one venue.
+
       ## Analysis Requirements
 
       ### I. Funding Rate Regime
@@ -38,7 +43,7 @@ agents:
       - Long/short ratio (retail contrarian indicator)
 
       Use load_skill for funding rate analysis patterns and OKX data interfaces.
-    tools: [bash, read_file, write_file, load_skill, get_market_data]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data]
     skills: [perp-funding-basis, okx-market, crypto-derivatives]
     max_iterations: 50
     timeout_seconds: 1800
@@ -53,6 +58,10 @@ agents:
       Map the current liquidation landscape and microstructure conditions for {target} within the {timeframe} horizon.
 
       {upstream_context}
+
+      ## Data protocol
+      - Use `web_search` and `read_url` to retrieve a named liquidation heatmap or exchange report, recording its methodology, update time, contract, and currency. Do not invent liquidation clusters from candlesticks.
+      - Use `orderbook_depth` for current depth/spread when the venue and symbol are supported; otherwise mark slippage and depth unavailable. Use `get_market_data` only for the historical price/volume context.
 
       ## Analysis Requirements
 
@@ -79,7 +88,7 @@ agents:
       - Time-of-day liquidity patterns (Asian / European / US session differences)
 
       Use load_skill for liquidation analysis and market microstructure patterns.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, orderbook_depth, get_market_data]
     skills: [liquidation-heatmap, market-microstructure, execution-model]
     max_iterations: 50
     timeout_seconds: 1800
@@ -94,6 +103,10 @@ agents:
       Analyze on-chain and stablecoin flow conditions for {target} within the {timeframe} horizon.
 
       {upstream_context}
+
+      ## Data protocol
+      - Define the chain, token contract, stablecoin denomination, and cutoff time. Use `web_search` then `read_url` for primary issuer attestations, exchange-reserve dashboards, token-unlock schedules, and ETF-flow reports.
+      - Every flow figure must state direction, window, unit, source, and as-of timestamp. On-chain flow is not available from price bars; if the dashboard cannot be retrieved, mark it unavailable instead of treating it as zero.
 
       ## Analysis Requirements
 
@@ -115,7 +128,7 @@ agents:
       - ETF flows (BTC/ETH spot ETFs): institutional allocation trend
 
       Use load_skill for stablecoin flow, on-chain analysis, and token unlock patterns.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url]
     skills: [stablecoin-flow, onchain-analysis, token-unlock-treasury, defi-yield]
     max_iterations: 50
     timeout_seconds: 1800
@@ -130,6 +143,10 @@ agents:
       Synthesize all desk analyses and deliver an executable trading plan for {target} within the {timeframe} horizon.
 
       {upstream_context}
+
+      ## Risk-evidence contract
+      - Reconcile funding, liquidation, and flow readings by asset, venue, contract, and UTC cutoff. Separate live observations from assumptions and upstream values.
+      - Use `get_market_data` to calculate realised volatility, drawdown, and correlation over a named window. A risk gate depending on an unavailable upstream metric must remain unavailable; do not choose a round-number threshold.
 
       ## Synthesis Requirements
 
@@ -178,7 +195,7 @@ agents:
       analysts in `{upstream_context}` — cite the upstream figure. If an upstream
       section reported its data as unavailable, the gate that depends on it is
       also unavailable: say so instead of inventing a threshold for it.
-    tools: [bash, read_file, write_file, load_skill, get_market_data]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, orderbook_depth]
     skills: [risk-analysis, asset-allocation, volatility, hedging-strategy]
     max_iterations: 50
     timeout_seconds: 1800

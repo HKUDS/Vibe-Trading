@@ -222,6 +222,26 @@ def register_portfolio_routes(app: FastAPI) -> None:
     def list_portfolios(principal: Principal = Depends(require_auth)) -> dict[str, Any]:
         return {"items": [_portfolio_dict(item) for item in _store().list_portfolios(_scope(principal))]}
 
+    @app.get("/portfolio/broker-profiles", dependencies=[Depends(require_auth)])
+    def list_broker_profiles(principal: Principal = Depends(require_auth)) -> dict[str, Any]:
+        del principal
+        from src.trading.profiles import list_profiles
+
+        return {
+            "items": [
+                {
+                    "id": profile.id,
+                    "connector": profile.connector,
+                    "label": profile.label,
+                    "environment": profile.environment,
+                    "transport": profile.transport,
+                    "readonly": profile.readonly,
+                }
+                for profile in list_profiles()
+                if "positions.read" in profile.capabilities
+            ]
+        }
+
     @app.post("/portfolio/portfolios", dependencies=[Depends(require_auth)])
     def create_portfolio(payload: PortfolioCreateRequest, principal: Principal = Depends(require_auth)) -> dict[str, Any]:
         try:

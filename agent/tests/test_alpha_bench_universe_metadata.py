@@ -90,6 +90,7 @@ def test_csi300_reports_point_in_time_membership(
         # The union of both snapshots, not the terminal roster.
         "constituent_count": 3,
         "price_adjustment": "qfq",
+        "price_source": "tushare",
         "dropped_unadjustable": 0,
     }
 
@@ -140,8 +141,127 @@ def test_csi300_reports_hand_picked_fallback(
         "constituent_source_date": None,
         "constituent_count": 2,
         "price_adjustment": "qfq",
+        "price_source": "tushare",
         "dropped_unadjustable": 0,
     }
+
+
+def test_csi300_uses_embedded_a_stock_data_without_tushare_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing Tushare credentials degrade to adjusted a-stock-data bars."""
+    monkeypatch.setattr(tool, "_CSI300_FALLBACK_CODES", ["600519.SH", "000001.SZ"])
+    monkeypatch.setattr(
+        tool,
+        "get_env_config",
+        lambda: SimpleNamespace(data=SimpleNamespace(tushare_token="")),
+    )
+
+    def fake_tencent_bars(code: str, _start: str, _end: str, *, period: str) -> list[dict]:
+        assert period == "1d"
+        return [{
+            "trade_date": "2024-01-02",
+            "open": 10.0,
+            "high": 11.0,
+            "low": 9.0,
+            "close": 10.5,
+            "volume": 100.0,
+        }]
+
+    import src.a_share_data as a_share_data
+
+    monkeypatch.setattr(a_share_data, "tencent_bars", fake_tencent_bars)
+    panel = tool._load_csi300_panel("2024-01-01", "2024-01-31")
+
+    assert panel["_meta"]["price_source"] == "a-stock-data"
+    assert panel["_meta"]["survivorship_bias"] is True
+    assert panel["_meta"]["degraded"] is True
+    assert panel["amount"].loc["2024-01-02", "600519.SH"] == 101.25
+
+
+def test_csi300_public_fallback_continues_after_tencent_partial_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A partial Tencent response is completed by the next public adapter."""
+    import backtest.loaders.registry as registry
+    import src.a_share_data as a_share_data
+
+    calls: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(a_share_data, "tencent_bars", lambda *_args, **_kwargs: [])
+
+    class _Mootdx:
+        def is_available(self) -> bool:
+            return True
+
+        def fetch(self, codes, *_args, **_kwargs):
+            calls.append(("mootdx", list(codes)))
+            return {
+                "000001.SZ": pd.DataFrame(
+                    {
+                        "open": [20.0], "high": [21.0], "low": [19.0],
+                        "close": [20.5], "volume": [200.0],
+                    },
+                    index=pd.to_datetime(["2024-01-02"]),
+                )
+            }
+
+    class _Eastmoney:
+        def is_available(self) -> bool:
+            return True
+
+        def fetch(self, codes, *_args, **_kwargs):
+            calls.append(("eastmoney", list(codes)))
+            return {
+                "600519.SH": pd.DataFrame(
+                    {
+                        "open": [10.0], "high": [11.0], "low": [9.0],
+                        "close": [10.5], "volume": [100.0],
+                    },
+                    index=pd.to_datetime(["2024-01-02"]),
+                )
+            }
+
+    monkeypatch.setattr(registry, "_ensure_registered", lambda: None)
+    monkeypatch.setattr(
+        registry,
+        "LOADER_REGISTRY",
+        {"mootdx": _Mootdx, "eastmoney": _Eastmoney},
+    )
+    monkeypatch.setattr(
+        registry,
+        "FALLBACK_CHAINS",
+        {"a_share": ["tushare", "tencent", "mootdx", "eastmoney", "local"]},
+    )
+
+    result = tool._fetch_csi300_a_stock_data(
+        ["600519.SH", "000001.SZ"], "2024-01-01", "2024-01-31"
+    )
+
+    assert set(result) == {"600519.SH", "000001.SZ"}
+    assert calls == [("mootdx", ["600519.SH", "000001.SZ"]), ("eastmoney", ["600519.SH"])]
+
+
+def test_alpha_report_renders_universe_degradation_metadata() -> None:
+    """The standalone Alpha report keeps source and bias disclosures visible."""
+    html = tool._render_html(
+        {
+            "generated_at": "2026-08-19T00:00:00+00:00",
+            "universe": "csi300",
+            "period": "2024-2024",
+            "n_alphas_tested": 0,
+            "n_skipped": 0,
+            "top": [],
+            "failures": [],
+            "meta": {
+                "degraded": True,
+                "price_source": "a-stock-data",
+                "survivorship_bias": True,
+            },
+        }
+    )
+    assert "a-stock-data" in html
+    assert "survivorship_bias" in html
+    assert "degraded" in html
 
 
 @pytest.mark.parametrize(

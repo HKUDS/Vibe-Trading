@@ -118,7 +118,7 @@ describe("WelcomeScreen", () => {
     expect(library).toHaveAttribute("aria-hidden", "false");
     // One category at a time: 8 tab chips, only the active category's cards.
     expect(within(library!).getAllByRole("tab")).toHaveLength(8);
-    expect(within(library!).getAllByRole("button")).toHaveLength(3);
+    expect(within(library!).getAllByRole("button")).toHaveLength(5);
     expect(within(library!).getAllByRole("button")[0]).toHaveClass(
       "focus-visible:ring-2",
       "focus-visible:ring-primary/40",

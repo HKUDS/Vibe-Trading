@@ -11,6 +11,12 @@ agents:
       ## Task
       Conduct a comprehensive supply-side analysis of {commodity} to support strategy decisions for a {horizon} investment horizon.
 
+      ## Evidence and data protocol
+      - Establish the exact benchmark, contract, currency, unit, and geography before collecting data. Do not mix spot, front-month futures, and producer-equity proxies.
+      - Use `web_search` to locate current primary releases, then use `read_url` to read the cited source. Prefer exchange inventory releases, OPEC/IEA/EIA, government statistics, customs data, and named producer filings over unsourced commentary.
+      - Use `get_market_data` for a comparable price/futures series when the symbol is supported (for example Yahoo futures symbols such as `CL=F`, `GC=F`, or `HG=F`). Record the source, date window, contract, and whether the series is continuous or a single contract.
+      - Every production, inventory, utilization, and disruption number must include source URL, publication/as-of date, unit, geography, and a confidence level. If a requested series is unavailable, label it `retrieval_failed` or `not_supported`, and do not fill it with an estimate.
+
       Supply Analysis Framework:
       1. **Global Production Landscape** — Historical and current output by major producing regions/countries; YoY growth rates and market share shifts; scheduled ramp-up timelines for new capacity projects
       2. **Inventory Levels and Cycles** — Visible inventory dynamics on LME/COMEX/SHFE and other exchanges; methods for estimating shadow inventory; determine whether the market is currently building or drawing inventories and the expected duration
@@ -29,7 +35,7 @@ agents:
 
       Use load_skill("commodity-analysis") for commodity data and analysis frameworks.
       Use the read_url tool for the latest production, inventory, and policy announcement data.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data]
     skills: [commodity-analysis, web-reader, geopolitical-risk]
     max_iterations: 50
     timeout_seconds: 1800
@@ -42,6 +48,12 @@ agents:
 
       ## Task
       Conduct a comprehensive demand-side analysis of {commodity}, incorporating seasonal patterns to support strategy decisions for a {horizon} investment horizon.
+
+      ## Evidence and data protocol
+      - Define the demand measure before comparing it: apparent consumption, imports, refinery demand, industrial output, or end-use sales. Keep units and reporting periods consistent.
+      - Use `web_search` to locate primary macro, customs, industrial-output, and sector releases, then use `read_url` to verify the cited figures. If a configured macro-series connector is unavailable, do not replace it with an uncited estimate.
+      - Use `get_market_data` for the relevant futures/benchmark price history when supported; do not use price movement as a substitute for physical demand data.
+      - Every demand, macro, and seasonality claim must include source, as-of date, unit, geography, and confidence. Separate observed data from analyst assumptions and mark unavailable fields explicitly.
 
       Demand Analysis Framework:
       1. **Downstream Demand Structure** — Breakdown of demand by end-use sector (e.g., copper: power 40% / construction 25% / transportation 15% / electronics 10% / other 10%); identify the primary demand driver
@@ -62,7 +74,7 @@ agents:
       Use load_skill("commodity-analysis") for demand analysis methodology.
       Use load_skill("seasonal") for seasonality analysis tools and historical pattern database.
       Use load_skill("global-macro") for macroeconomic data interpretation framework.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data]
     skills: [commodity-analysis, seasonal, global-macro]
     max_iterations: 50
     timeout_seconds: 1800
@@ -77,6 +89,11 @@ agents:
       Synthesize the supply and demand research to develop a complete {horizon} cycle investment strategy for {commodity}, with clear position recommendations and entry timing windows.
 
       {upstream_context}
+
+      ## Synthesis evidence contract
+      - Reconcile the upstream reports by contract, unit, currency, geography, and as-of date before calculating a balance sheet. Do not add supply and demand figures from incompatible periods.
+      - Use `get_market_data` to independently verify the benchmark/futures price window used for targets and backtest inputs. Cite the exact symbol, source, interval, and sample window.
+      - Build three scenarios with explicit observed inputs, assumptions, probability, and invalidation trigger. Any missing physical series must remain missing; do not convert an unavailable observation into a fabricated balance-sheet number.
 
       Strategy Framework:
       1. **Supply-Demand Balance Sheet** — Construct the current and forward {horizon} balance sheet (production / consumption / net change / days of inventory); quantify the surplus or deficit magnitude
@@ -97,7 +114,7 @@ agents:
 
       Use load_skill("strategy-generate") for strategy writing standards.
       Always use the backtest tool for historical scenario validation; never fabricate performance data.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, backtest]
     skills: [commodity-analysis, seasonal, strategy-generate]
     max_iterations: 50
     timeout_seconds: 1800

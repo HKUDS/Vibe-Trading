@@ -554,6 +554,52 @@ def _is_tool_success(result: str) -> bool:
     return True
 
 
+def _tool_data_status(tool_name: str, result: str) -> str | None:
+    """Classify a successful envelope that contains no usable data.
+
+    ``ok=true`` means the provider request completed; it does not mean the
+    requested dataset was present. Keep that distinction out of the LLM
+    success path (an empty resolver result is still a meaningful not-found
+    answer) while exposing it to the UI and durable tool trail.
+    """
+    try:
+        payload = json.loads(result)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("ok") is False:
+        return None
+    data = payload.get("data")
+    if tool_name == "search_symbol" and isinstance(data, dict):
+        return "no_data" if not data.get("candidates") else None
+    if tool_name == "get_northbound_flow" and isinstance(data, dict):
+        realtime = data.get("realtime") if isinstance(data.get("realtime"), dict) else {}
+        return (
+            "no_data"
+            if not data.get("history") and realtime.get("total") is None
+            else None
+        )
+    if tool_name == "get_southbound_flow" and isinstance(data, dict):
+        realtime = data.get("realtime") if isinstance(data.get("realtime"), dict) else {}
+        return (
+            "no_data"
+            if not data.get("history") and realtime.get("total") is None
+            else None
+        )
+    if tool_name == "screen_market" and isinstance(data, dict):
+        return "no_data" if not data.get("rows") else None
+    if tool_name == "get_stock_news" and isinstance(data, dict):
+        return "no_data" if not data.get("articles") else None
+    if tool_name == "get_research_reports" and isinstance(data, dict):
+        return "no_data" if not data.get("reports") and not data.get("consensus_eps") else None
+    if tool_name == "get_market_data" and isinstance(data, dict):
+        series = [value for key, value in data.items() if not str(key).startswith("_")]
+        return "no_data" if series and all(not value for value in series) else None
+    if tool_name == "get_a_share_data" and isinstance(data, dict):
+        collections = [value for value in data.values() if isinstance(value, (list, dict))]
+        return "no_data" if collections and all(not value for value in collections) else None
+    return None
+
+
 def _normalize_tool_run_dir(args: dict[str, Any], memory_run_dir: str | None) -> dict[str, Any]:
     """Normalize ``run_dir`` in tool args to an absolute path when possible.
 
@@ -811,7 +857,14 @@ class AgentLoop:
         except Exception as exc:  # noqa: BLE001
             logger.warning("run manifest not written (%s: %s)", type(exc).__name__, exc)
 
-    def run(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None, session_id: str = "") -> Dict[str, Any]:
+    def run(
+        self,
+        user_message: str,
+        history: Optional[List[Dict[str, Any]]] = None,
+        session_id: str = "",
+        selected_skills: Optional[List[str]] = None,
+        forced_tool: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Run the ReAct loop synchronously.
 
         Args:
@@ -841,7 +894,15 @@ class AgentLoop:
             run_dir = state_store.create_run_dir(RUNS_DIR)
             self.memory.run_dir = str(run_dir)
 
-        state_store.save_request(run_dir, user_message, {"session_id": session_id})
+        state_store.save_request(
+            run_dir,
+            user_message,
+            {
+                "session_id": session_id,
+                "selected_skills": list(selected_skills or []),
+                "forced_tool": forced_tool,
+            },
+        )
         self._grounding = GroundingLedger(
             run_dir=run_dir,
             user_message=user_message,
@@ -860,6 +921,17 @@ class AgentLoop:
         goal_store = None
         goal_turn_accounted = False
         messages = context.build_messages(llm_user_message, history)
+        if selected_skills:
+            messages.insert(
+                1 if messages and messages[0].get("role") == "system" else 0,
+                {
+                    "role": "system",
+                    "content": (
+                        "The user explicitly selected these skills. Load each one with "
+                        f"load_skill before answering when relevant: {', '.join(selected_skills)}."
+                    ),
+                },
+            )
         react_trace: List[Dict[str, Any]] = []
 
         trace_dir = SESSIONS_DIR / session_id if session_id else run_dir
@@ -1000,17 +1072,30 @@ class AgentLoop:
                 # On last iteration, drop tool definitions to force text output
                 is_last_iteration = (iteration == self.max_iterations)
                 tool_defs = None if is_last_iteration else self.registry.get_definitions()
+                tool_choice = None
+                if iteration == 1 and forced_tool and tool_defs:
+                    # LangChain/OpenAI-compatible chat providers use the
+                    # standard function-choice envelope. The Codex Responses
+                    # adapter normalizes this to its flatter wire format.
+                    tool_choice = {
+                        "type": "function",
+                        "function": {"name": forced_tool},
+                    }
                 if is_last_iteration:
                     trace.write({"type": "forced_text_only", "iter": current_iter})
 
+                stream_options: Dict[str, Any] = {
+                    "messages": messages,
+                    "tools": tool_defs,
+                    "on_text_chunk": _on_text_chunk,
+                    "on_reasoning_chunk": _on_reasoning_chunk,
+                    "should_cancel": self._cancel_event.is_set,
+                }
+                if tool_choice is not None:
+                    stream_options["tool_choice"] = tool_choice
+
                 try:
-                    response = self.llm.stream_chat(
-                        messages,
-                        tools=tool_defs,
-                        on_text_chunk=_on_text_chunk,
-                        on_reasoning_chunk=_on_reasoning_chunk,
-                        should_cancel=self._cancel_event.is_set,
-                    )
+                    response = self.llm.stream_chat(**stream_options)
                 except ProviderStreamError as exc:
                     # One retry for transient mid-stream failures (connection
                     # reset, relay hiccup) — mirrors the swarm worker policy.
@@ -1037,13 +1122,7 @@ class AgentLoop:
                     reasoning_chars = 0
                     last_reasoning_emit = None
                     _time.sleep(_stream_retry_delay_s())
-                    response = self.llm.stream_chat(
-                        messages,
-                        tools=tool_defs,
-                        on_text_chunk=_on_text_chunk,
-                        on_reasoning_chunk=_on_reasoning_chunk,
-                        should_cancel=self._cancel_event.is_set,
-                    )
+                    response = self.llm.stream_chat(**stream_options)
 
                 # Cancelled mid-stream: discard this turn's partial response and
                 # end the run now, without executing any of its tool calls.
@@ -1980,6 +2059,7 @@ class AgentLoop:
                 )
 
         status = "ok" if success else "error"
+        data_status = _tool_data_status(tc.name, result) if success else None
         truncated = truncate_tool_result(result)
         messages.append(context.format_tool_result(tc.id, tc.name, truncated))
 
@@ -1993,6 +2073,7 @@ class AgentLoop:
             status=status,
             elapsed_ms=elapsed_ms,
             iteration=iteration,
+            data_status=data_status,
         )
         preview = trace_result[:200]
         react_trace.append({"type": "tool_call", "tool": tc.name, "result_preview": preview})
@@ -2001,6 +2082,7 @@ class AgentLoop:
             {
                 "tool": tc.name,
                 "status": status,
+                "data_status": data_status,
                 "elapsed_ms": elapsed_ms,
                 "preview": preview,
                 "call_id": tc.id,

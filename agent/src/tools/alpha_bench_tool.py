@@ -116,7 +116,7 @@ def _load_universe_panel(
 
     Raises:
         ValueError: unknown universe or bad period.
-        RuntimeError: ``TUSHARE_TOKEN`` unset when csi300 is requested.
+        RuntimeError: no usable source returned a panel.
     """
     if universe not in _UNIVERSE_TAG:
         raise ValueError(
@@ -307,64 +307,68 @@ _SP500_FALLBACK_CODES = [
 
 
 def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
-    """CSI 300 panel via Tushare. Includes ``amount`` (required by gtja191).
+    """CSI 300 panel via Tushare with an a-stock-data price fallback.
 
     Constituents are taken from the most recent ``index_weight`` snapshot in
     the requested window; if that call fails we degrade to a 30-name
-    blue-chip fallback so the bench still runs.
+    blue-chip fallback so the bench still runs. Tushare is the primary source
+    for both membership and adjusted prices. When its token, package, API, or
+    adjustment-factor endpoint is unavailable, prices are fetched through the
+    embedded ``src.a_share_data`` adapter.
     """
     token = get_env_config().data.tushare_token.strip()
-    if not token or token == "your-tushare-token":
-        raise RuntimeError(
-            "TUSHARE_TOKEN not in agent/.env or environment; required for csi300 universe"
-        )
-
-    try:
-        import tushare as ts
-    except ImportError as exc:
-        raise RuntimeError(f"tushare not installed: {exc}") from exc
-
-    pro = ts.pro_api(token)
     sd = start.replace("-", "")
     ed = end.replace("-", "")
+    pro = None
+    if token and token != "your-tushare-token":
+        try:
+            import tushare as ts
+
+            pro = ts.pro_api(token)
+        except Exception as exc:  # noqa: BLE001 - fallback covers setup failures
+            logger.warning("csi300: Tushare setup failed (%s); using a-stock-data fallback", exc)
+    else:
+        logger.warning("csi300: TUSHARE_TOKEN is not configured; using a-stock-data fallback")
 
     codes: list[str] = []
     constituent_source = "tushare index_weight"
     constituent_source_date: str | None = None
     membership: pd.DataFrame | None = None
-    try:
-        # Reach back before ``start`` so the snapshot that was in force on the
-        # first requested day is included; Tushare publishes month-end rosters.
-        lookback = (pd.Timestamp(start) - pd.Timedelta(days=60)).strftime("%Y%m%d")
-        weights = pro.index_weight(
-            index_code="399300.SZ", start_date=lookback, end_date=ed
-        )
-        if weights is not None and not weights.empty:
-            frame = weights.copy()
-            frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="coerce")
-            frame = frame.dropna(subset=["trade_date", "con_code"])
-            constituent_source_date = str(weights["trade_date"].max())
-            # Every name that was a member at any point in the window, so the
-            # panel can carry a name that later left the index.
-            codes = sorted(frame["con_code"].astype(str).unique())
-            membership = (
-                frame.assign(_member=True)
-                .pivot_table(
-                    index="trade_date",
-                    columns="con_code",
-                    values="_member",
-                    aggfunc="first",
+    if pro is not None:
+        try:
+            # Reach back before ``start`` so the snapshot that was in force on
+            # the first requested day is included; Tushare publishes month-end
+            # rosters.
+            lookback = (pd.Timestamp(start) - pd.Timedelta(days=60)).strftime("%Y%m%d")
+            weights = pro.index_weight(
+                index_code="399300.SZ", start_date=lookback, end_date=ed
+            )
+            if weights is not None and not weights.empty:
+                frame = weights.copy()
+                frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="coerce")
+                frame = frame.dropna(subset=["trade_date", "con_code"])
+                constituent_source_date = str(weights["trade_date"].max())
+                # Every name that was a member at any point in the window, so
+                # the panel can carry a name that later left the index.
+                codes = sorted(frame["con_code"].astype(str).unique())
+                membership = (
+                    frame.assign(_member=True)
+                    .pivot_table(
+                        index="trade_date",
+                        columns="con_code",
+                        values="_member",
+                        aggfunc="first",
+                    )
+                    .notna()
+                    .sort_index()
                 )
-                .notna()
-                .sort_index()
-            )
-            logger.info(
-                "csi300: %d names ever a member across %d roster snapshots",
-                len(codes),
-                len(membership),
-            )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("csi300 index_weight failed (%s); using fallback list", exc)
+                logger.info(
+                    "csi300: %d names ever a member across %d roster snapshots",
+                    len(codes),
+                    len(membership),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("csi300 index_weight failed (%s); using fallback list", exc)
 
     if not codes:
         codes = list(_CSI300_FALLBACK_CODES)
@@ -376,6 +380,8 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     # loader drops. Tushare's free tier permits ~200 calls/min so 4 concurrent
     # workers is comfortably under the rate limit even for a full 300-name list.
     def _fetch_one(code: str) -> tuple[str, pd.DataFrame | None]:
+        if pro is None:
+            return code, None
         df = _retry(lambda: pro.daily(ts_code=code, start_date=sd, end_date=ed))
         if df is None or df.empty:
             return code, None
@@ -392,32 +398,45 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
         return code, _apply_qfq(df, factor)
 
     fetched: dict[str, pd.DataFrame] = {}
-    with ThreadPoolExecutor(max_workers=_CSI300_FETCH_WORKERS) as pool:
-        futures = [pool.submit(_fetch_one, code) for code in codes]
-        for fut in as_completed(futures):
-            try:
-                code, frame = fut.result()
-            except Exception as exc:  # noqa: BLE001 — _retry already logged
-                logger.warning("csi300 fetch worker raised: %s", exc)
-                continue
-            if frame is not None and not frame.empty:
-                fetched[code] = frame
+    if pro is not None:
+        with ThreadPoolExecutor(max_workers=_CSI300_FETCH_WORKERS) as pool:
+            futures = [pool.submit(_fetch_one, code) for code in codes]
+            for fut in as_completed(futures):
+                try:
+                    code, frame = fut.result()
+                except Exception as exc:  # noqa: BLE001 - _retry already logged
+                    logger.warning("csi300 fetch worker raised: %s", exc)
+                    continue
+                if frame is not None and not frame.empty:
+                    fetched[code] = frame
 
-    # A name with no usable adjustment factors is dropped rather than benched on
+    # Fill Tushare misses through the embedded a-stock-data adapter. It returns
+    # adjusted Tencent bars, so the bridge synthesizes Tushare-compatible
+    # ``amount`` in thousand CNY from board-lot volume and typical price.
+    missing_before_fallback = [code for code in codes if code not in fetched]
+    if missing_before_fallback:
+        fallback_fetched = _fetch_csi300_a_stock_data(
+            missing_before_fallback, start, end
+        )
+        fetched.update(fallback_fetched)
+        if fallback_fetched:
+            logger.warning(
+                "csi300: a-stock-data served %d/%d missing symbol(s)",
+                len(fallback_fetched),
+                len(missing_before_fallback),
+            )
+
+    # A name with no usable adjusted prices is dropped rather than included with
     # raw prices, so the drop has to be visible or it becomes its own silent bias.
     dropped = sorted(set(codes) - set(fetched))
     if not fetched:
         raise RuntimeError(
-            "csi300: no symbol survived corporate-action adjustment — "
-            "pro.adj_factor returned nothing usable for any of the "
-            f"{len(codes)} names, which usually means the Tushare token lacks "
-            "adj_factor permission. Benching on unadjusted prices is not an "
-            "alternative: an ex-date injects a fabricated cross-sectional "
-            "return, measured at -47.2% on 300750.SZ 2023-04-26."
+            "csi300: neither Tushare nor the embedded a-stock-data fallback "
+            f"returned usable prices for any of the {len(codes)} names"
         )
     if dropped:
         logger.warning(
-            "csi300: dropped %d/%d name(s) with no usable adjustment factors: %s",
+            "csi300: dropped %d/%d name(s) with no usable adjusted prices: %s",
             len(dropped),
             len(codes),
             ", ".join(dropped[:10]) + ("..." if len(dropped) > 10 else ""),
@@ -452,21 +471,141 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
             if isinstance(frame, pd.DataFrame):
                 panel[key] = frame.where(mask)
 
+    if pro is not None and not missing_before_fallback:
+        price_source = "tushare"
+    elif pro is not None and any(code in fetched for code in missing_before_fallback):
+        price_source = "tushare+a-stock-data"
+    else:
+        price_source = "a-stock-data"
+
     panel["_meta"] = {
         "universe": "csi300",
         # True only on the degraded path: the hand-picked fallback is a
         # survivor-selected static roster with no point-in-time membership.
         "survivorship_bias": membership is None,
         "pit_membership": membership is not None,
-        "degraded": constituent_source != "tushare index_weight",
+        "degraded": (
+            constituent_source != "tushare index_weight"
+            or price_source != "tushare"
+        ),
         "constituent_source": constituent_source,
         "constituent_source_date": constituent_source_date,
         "constituent_count": len(codes),
         # Prices are corporate-action adjusted; raw pro.daily is not.
         "price_adjustment": "qfq",
+        "price_source": price_source,
         "dropped_unadjustable": len(dropped),
     }
     return panel
+
+
+def _fetch_csi300_a_stock_data(
+    codes: list[str], start: str, end: str
+) -> dict[str, pd.DataFrame]:
+    """Fetch adjusted A-share bars through the embedded a-stock-data adapter.
+
+    ``src.a_share_data`` is the project's concrete implementation of the
+    a-stock-data contract. This narrow bridge keeps the Alpha Bench panel
+    schema independent from its list-of-dicts HTTP response.
+    """
+    if not codes:
+        return {}
+    fetched: dict[str, pd.DataFrame] = {}
+
+    def _normalize_frame(frame: pd.DataFrame | None) -> pd.DataFrame | None:
+        """Normalize an adapter frame and synthesize Tushare-style amount."""
+        if frame is None or frame.empty:
+            return None
+        normalized = frame.copy()
+        if "trade_date" in normalized.columns:
+            normalized["trade_date"] = pd.to_datetime(
+                normalized["trade_date"], errors="coerce"
+            )
+            normalized = normalized.dropna(subset=["trade_date"]).set_index("trade_date")
+        elif not isinstance(normalized.index, pd.DatetimeIndex):
+            normalized.index = pd.to_datetime(normalized.index, errors="coerce")
+        normalized = normalized[~normalized.index.isna()].sort_index()
+        if "vol" in normalized.columns and "volume" not in normalized.columns:
+            normalized = normalized.rename(columns={"vol": "volume"})
+        if "volume" not in normalized.columns:
+            normalized["volume"] = 0.0
+        for column in ("open", "high", "low", "close", "volume"):
+            if column in normalized.columns:
+                normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
+        required = ["open", "high", "low", "close", "volume"]
+        if any(column not in normalized.columns for column in required):
+            return None
+        normalized = normalized[required].dropna(
+            subset=["open", "high", "low", "close"]
+        )
+        if normalized.empty:
+            return None
+        typical_price = normalized[["open", "high", "low", "close"]].mean(axis=1)
+        # Tencent/mootdx/Eastmoney/AKShare expose A-share volume in board lots;
+        # Tushare amount is thousand CNY.
+        normalized["amount"] = typical_price * normalized["volume"] / 10.0
+        return normalized
+
+    # The concrete a-stock-data adapter deliberately leads with Tencent, which
+    # is the least brittle public endpoint in this project.
+    try:
+        from src.a_share_data import tencent_bars
+    except Exception as exc:  # noqa: BLE001 - continue to loader fallbacks
+        logger.warning("Tencent a-stock-data adapter unavailable: %s", exc)
+    else:
+        for code in codes:
+            try:
+                rows = tencent_bars(code, start, end, period="1d")
+                normalized = _normalize_frame(pd.DataFrame(rows) if rows else None)
+                if normalized is not None:
+                    fetched[code] = normalized
+            except Exception as exc:  # noqa: BLE001 - isolate one bad symbol
+                logger.warning("Tencent a-stock-data failed for %s: %s", code, exc)
+
+    # If Tencent omitted a name, continue through the same public A-share
+    # adapters used by the generic backtest fallback chain. This also makes
+    # the bridge resilient when one endpoint is reachable but incomplete.
+    remaining = [code for code in codes if code not in fetched]
+    if remaining:
+        try:
+            from backtest.loaders.registry import (
+                FALLBACK_CHAINS,
+                LOADER_REGISTRY,
+                _ensure_registered,
+            )
+
+            _ensure_registered()
+            public_sources = [
+                source
+                for source in FALLBACK_CHAINS.get("a_share", [])
+                if source not in {"tushare", "tencent", "local"}
+            ]
+            for source in public_sources:
+                if not remaining or source not in LOADER_REGISTRY:
+                    continue
+                try:
+                    loader = LOADER_REGISTRY[source]()
+                    if not loader.is_available():
+                        continue
+                    result = loader.fetch(remaining, start, end, interval="1D") or {}
+                except Exception as exc:  # noqa: BLE001 - try next public source
+                    logger.warning("a-stock-data %s fallback failed: %s", source, exc)
+                    continue
+                for code, frame in result.items():
+                    normalized = _normalize_frame(frame)
+                    if normalized is not None:
+                        fetched[code] = normalized
+                remaining = [code for code in remaining if code not in fetched]
+                if result:
+                    logger.warning(
+                        "a-stock-data %s served %d symbol(s)",
+                        source,
+                        len(result),
+                    )
+        except Exception as exc:  # noqa: BLE001 - Tencent results remain usable
+            logger.warning("a-stock-data public fallback setup failed: %s", exc)
+
+    return fetched
 
 
 def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
@@ -759,6 +898,15 @@ _JINJA_TEMPLATE = """<!doctype html>
   Period {{ period }} &middot; {{ n_alphas_tested }} tested, {{ n_skipped }} skipped
 </div>
 
+{% if meta %}
+<h2>Universe metadata</h2>
+<table>
+{% for key, value in meta.items() %}
+<tr><th>{{ key }}</th><td>{{ value }}</td></tr>
+{% endfor %}
+</table>
+{% endif %}
+
 <h2>Top {{ top|length }} by IR</h2>
 <table>
 <tr><th>#</th><th>Alpha ID</th><th>Zoo</th><th>Theme</th>
@@ -872,6 +1020,13 @@ def _render_html_manual(ctx: dict[str, Any]) -> str:
             f"<td>{_esc(row['ic_count'])}</td></tr>"
         )
     parts.append("</table>")
+    if ctx.get("meta"):
+        parts.append("<h2>Universe metadata</h2><table>")
+        for key, value in ctx["meta"].items():
+            parts.append(
+                f"<tr><th>{_esc(key)}</th><td>{_esc(value)}</td></tr>"
+            )
+        parts.append("</table>")
     if ctx.get("strict"):
         parts.append(
             "<h2>Strict gate</h2>"
@@ -988,6 +1143,18 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
             "selected_total": len(alpha_ids),
         }
 
+    universe_meta_raw = panel.get("_meta") if isinstance(panel, dict) else None
+    universe_meta: dict[str, Any] = {}
+    if universe_meta_raw is not None:
+        try:
+            universe_meta = (
+                dict(universe_meta_raw.to_dict())
+                if hasattr(universe_meta_raw, "to_dict")
+                else dict(universe_meta_raw)
+            )
+        except Exception:  # noqa: BLE001 - metadata must never block a report
+            universe_meta = {"raw": str(universe_meta_raw)}
+
     try:
         return_df = _compute_forward_returns(panel)
     except Exception as exc:
@@ -1022,6 +1189,8 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
         "top": top,
         "failures": failures[:10],
     }
+    if universe_meta:
+        context["meta"] = universe_meta
 
     try:
         report_html = _render_html(context)
@@ -1032,13 +1201,16 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
     except OSError as exc:
         return {"status": "error", "error": f"failed to write report: {exc}"}
 
-    return {
+    envelope = {
         "status": "ok",
         "report_path": str(report_path),
         "n_alphas_tested": len(results),
         "n_skipped": len(failures),
         "top": top,
     }
+    if universe_meta:
+        envelope["meta"] = universe_meta
+    return envelope
 
 
 class AlphaBenchTool(BaseTool):

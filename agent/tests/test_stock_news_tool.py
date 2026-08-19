@@ -227,11 +227,47 @@ class TestExecuteError:
             eastmoney_client,
             "throttled_get_json",
             side_effect=RuntimeError("eastmoney banned"),
+        ), patch(
+            "src.tools.stock_news_tool.sina_stock_news",
+            side_effect=RuntimeError("sina unavailable"),
         ):
             out = json.loads(tool.execute(code="600519.SH"))
 
         assert out["ok"] is False
         assert "eastmoney banned" in out["error"]
+
+    def test_a_share_news_uses_sina_when_eastmoney_fails(self) -> None:
+        fallback = [{"title": "fallback", "source": "新浪财经"}]
+        with patch.object(
+            eastmoney_client,
+            "throttled_get_json",
+            side_effect=RuntimeError("eastmoney banned"),
+        ), patch(
+            "src.tools.stock_news_tool.sina_stock_news",
+            return_value=fallback,
+        ):
+            out = json.loads(StockNewsTool().execute(code="600519.SH"))
+
+        assert out["ok"] is True
+        assert out["source"] == "sina"
+        assert out["data"]["articles"] == fallback
+        assert "eastmoney banned" in out["warnings"][0]
+
+    def test_eastmoney_failure_and_empty_sina_feed_is_successful_empty_result(self) -> None:
+        with patch.object(
+            eastmoney_client,
+            "throttled_get_json",
+            side_effect=RuntimeError("eastmoney unavailable"),
+        ), patch(
+            "src.tools.stock_news_tool.sina_stock_news", return_value=[]
+        ):
+            out = json.loads(StockNewsTool().execute(code="002842.SZ"))
+
+        assert out["ok"] is True
+        assert out["source"] == "sina"
+        assert out["data"]["articles"] == []
+        assert "eastmoney unavailable" in out["warnings"][0]
+        assert "no articles" in out["warnings"][1]
 
     def test_yahoo_failure_envelope(self) -> None:
         tool = StockNewsTool()

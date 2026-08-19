@@ -47,7 +47,13 @@ agents:
       7. **Gray rhinos & black swans** — 2–3 major underpriced global risks
 
       Ground analysis in latest data; prefer read_url for timeliness.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use `web_search` then `read_url` for primary central-bank, IMF, World
+      Bank, customs, and official statistics sources. Use `get_market_data` for
+      clearly identified price, yield, FX, and index proxies only. Every series
+      must include geography, currency, frequency, observation/publication
+      date, source, and revision status; a market proxy cannot stand in for a
+      macro statistic.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data]
     skills: [global-macro, web-reader, geopolitical-risk]
     max_iterations: 50
     timeout_seconds: 1800
@@ -98,7 +104,13 @@ agents:
       7. **Policy surprise scenarios** — Upside/downside policy shock and elasticity of {market}
 
       Prefer fresh macro data via Tushare patterns; every judgment needs a data hook.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, read_url]
+      Use `web_search` then `read_url` for NBS, PBoC, MoF, SAFE, customs, and
+      exchange releases. Use `get_market_data` for the named A-share/index/FX
+      monitor after resolving the market and date window; use
+      `get_a_share_data` for A-share quote, fundamentals, announcements, and
+      flow fields where the claim needs them. Distinguish mainland, offshore,
+      and HK data, and report unavailable high-frequency fields explicitly.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data, get_a_share_data]
     skills: [macro-analysis, tushare]
     max_iterations: 50
     timeout_seconds: 1800
@@ -149,7 +161,12 @@ agents:
       7. **Policy watch-list** — Over {horizon}, signals and key meetings to track
 
       Prefer read_url with specific policy names and document references.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use `web_search` followed by `read_url` for the actual regulator, statute,
+      tax, accounting, and policy document. Record jurisdiction, effective date,
+      affected security/sector, and whether the item is proposal, rule, or
+      enforcement. Use `get_stock_news`/`get_stock_profile` only for compatible
+      issuer impact; do not treat commentary or search snippets as law.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_stock_news, get_stock_profile]
     skills: [regulatory-knowledge, sector-rotation, web-reader]
     max_iterations: 50
     timeout_seconds: 1800
@@ -195,7 +212,12 @@ agents:
       7. **Monthly/quarterly playbook** — Staged actions (e.g., phase 1 build X; add on trigger Y)
 
       Use explicit numbers and dates; avoid vague “maybe”; attach confidence to each major call.
-    tools: [bash, read_file, write_file, load_skill]
+      Reconcile macro and policy evidence by source, release date, geography,
+      currency, and market regime. Validate proposed trade proxies with
+      `get_market_data`; if the relevant series is missing, keep the conclusion
+      conditional. Any backtest or allocation comparison must state the common
+      window, benchmark, rebalance, fees, slippage, and missing-data policy.
+    tools: [bash, read_file, write_file, load_skill, get_market_data, backtest]
     skills: [asset-allocation, macro-analysis]
     max_iterations: 50
     timeout_seconds: 1800

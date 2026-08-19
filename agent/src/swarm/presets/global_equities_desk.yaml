@@ -40,7 +40,14 @@ agents:
 
       Use load_skill for tushare data patterns, fundamental screening, and Northbound flow analysis.
       Use factor_analysis tool for quantitative factor scoring.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis]
+      Resolve each A-share with `search_symbol`; use `get_a_share_data` for
+      quote, announcement, sector, and flow fields and
+      `get_financial_statements` for reported fundamentals. Use
+      `get_market_data` for named index/stock windows and `factor_analysis`
+      only on retrieved raw fields. Use `web_search`/`read_url` for policy and
+      exchange evidence. Record trading date, adjustment, currency, source, and
+      unavailable fields; do not infer Northbound flow from price or volume.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_a_share_data, get_financial_statements, get_market_data, factor_analysis]
     skills: [tushare, fundamental-filter, hk-connect-flow, technical-basic, multi-factor, sector-rotation]
     max_iterations: 50
     timeout_seconds: 1800
@@ -88,7 +95,14 @@ agents:
       - Cross-listing: ADR delisting risk (HFCAA status), VIE structure risk
 
       Use load_skill for yfinance data, SEC filing analysis, earnings revision patterns, ETF flow analysis, and cross-listing dynamics.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, read_url]
+      Resolve US/HK symbols with `search_symbol`. Use `get_market_data` for
+      prices and returns, `get_stock_profile` and `get_financial_statements`
+      for compatible fundamentals, `get_sec_filings` for US filings, and
+      `get_stock_news` for dated catalysts. Use `etf_holdings` for look-through
+      and `web_search` then `read_url` for issuer/exchange evidence. Keep share
+      class, exchange, currency, filing period, and as-of date explicit; failed
+      earnings or ETF-flow retrieval must remain unavailable.
+    tools: [bash, read_file, write_file, load_skill, web_search, search_symbol, get_market_data, get_stock_profile, get_financial_statements, get_sec_filings, get_stock_news, etf_holdings, read_url]
     skills: [yfinance, edgar-sec-filings, earnings-revision, us-etf-flow, adr-hshare, hk-connect-flow, technical-basic]
     max_iterations: 50
     timeout_seconds: 1800
@@ -126,7 +140,12 @@ agents:
       - For each: ticker (BTC-USDT format), direction, timeframe, key risk
 
       Use load_skill for OKX market data, funding rate analysis, and stablecoin flow indicators.
-    tools: [bash, read_file, write_file, load_skill, get_market_data]
+      `get_market_data` covers observed crypto price/volume history only. Use
+      `web_search` then `read_url` for venue-specific funding, open interest,
+      stablecoin, and on-chain evidence, recording venue, contract, chain, UTC
+      timestamp, unit, and provider. Missing implied volatility or flow data is
+      not a neutral signal.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data]
     skills: [okx-market, perp-funding-basis, stablecoin-flow, onchain-analysis, crypto-derivatives]
     max_iterations: 50
     timeout_seconds: 1800
@@ -170,7 +189,13 @@ agents:
       - Stop-loss levels for each position
 
       You may use backtest to validate historical performance of the proposed allocation.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+      Reconcile all regional signals by ticker, exchange, currency, observation
+      date, and source confidence. Re-fetch final holdings with
+      `search_symbol` and `get_market_data`; require a common window,
+      adjustment, rebalance rule, fee, slippage, benchmark, and missing-data
+      policy before using `backtest`. Failed upstream metrics remain conditional
+      inputs and are never replaced by zero or a neutral score.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, backtest]
     skills: [asset-allocation, risk-analysis, strategy-generate, correlation-analysis]
     max_iterations: 50
     timeout_seconds: 1800

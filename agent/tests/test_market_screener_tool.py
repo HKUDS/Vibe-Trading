@@ -111,6 +111,12 @@ class TestSuccessEnvelope:
     def test_rowless_payload_yields_empty_data(self):
         with patch(
             "src.tools.market_screener_tool.get_json", return_value={"data": None}
+        ), patch(
+            "src.tools.market_screener_tool.throttled_get",
+            return_value=type("Response", (), {
+                "content": b"[]",
+                "json": lambda self: [],
+            })(),
         ):
             text = MarketScreenerTool().execute(market="a")
 
@@ -120,6 +126,28 @@ class TestSuccessEnvelope:
         # bare list, with an empty "rows".
         assert payload["data"]["rows"] == []
         assert payload["data"]["sort_by"] == "change_pct"
+        assert "no rows" in payload["warnings"][0]
+
+    def test_empty_eastmoney_payload_uses_sina_fallback(self):
+        response = type("Response", (), {
+            "content": (
+                '[{"symbol":"sh600519","name":"贵州茅台",'
+                '"trade":"1688.0","pricechange":"10.0",'
+                '"changepercent":"0.6","volume":"100",'
+                '"amount":"200","turnoverratio":"1.2"}]'
+            ).encode("gbk"),
+            "json": lambda self: [],
+        })()
+        with patch(
+            "src.tools.market_screener_tool.get_json", return_value={"data": {"diff": []}}
+        ), patch(
+            "src.tools.market_screener_tool.throttled_get", return_value=response
+        ):
+            payload = json.loads(MarketScreenerTool().execute(market="a", top_n=5))
+
+        assert payload["ok"] is True
+        assert payload["source"] == "sina"
+        assert payload["data"]["rows"][0]["name"] == "贵州茅台"
 
 
 class TestErrorEnvelope:
@@ -156,9 +184,38 @@ class TestErrorEnvelope:
         with patch(
             "src.tools.market_screener_tool.get_json",
             side_effect=RuntimeError("HTTP 429"),
+        ), patch(
+            "src.tools.market_screener_tool.throttled_get",
+            side_effect=RuntimeError("Sina unavailable"),
         ):
             text = MarketScreenerTool().execute(market="a")
 
         payload = json.loads(text)
         assert payload["ok"] is False
         assert "429" in payload["error"]
+
+    def test_a_share_http_failure_uses_sina_fallback(self):
+        response = type("Response", (), {
+            "json": lambda self: [{
+                "symbol": "sh600519",
+                "name": "贵州茅台",
+                "trade": "1688.0",
+                "pricechange": "10.0",
+                "changepercent": "0.6",
+                "volume": "100",
+                "amount": "200",
+                "turnoverratio": "1.2",
+            }]
+        })()
+        with patch(
+            "src.tools.market_screener_tool.get_json",
+            side_effect=RuntimeError("Eastmoney unavailable"),
+        ), patch(
+            "src.tools.market_screener_tool.throttled_get",
+            return_value=response,
+        ):
+            payload = json.loads(MarketScreenerTool().execute(market="a", top_n=5))
+
+        assert payload["ok"] is True
+        assert payload["source"] == "sina"
+        assert payload["data"]["rows"][0]["code"] == "600519"

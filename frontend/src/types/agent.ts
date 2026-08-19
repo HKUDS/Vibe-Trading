@@ -63,6 +63,8 @@ export interface ToolCallEntry {
   tool: string;
   arguments: Record<string, string>;
   status: "running" | "ok" | "error";
+  /** Provider completed, but returned no usable records. */
+  data_status?: "no_data";
   preview?: string;
   elapsed_ms?: number;
   /** Live elapsed seconds while the tool is running (heartbeat). */

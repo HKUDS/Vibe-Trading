@@ -52,6 +52,7 @@ is required only where listed (no key listed = free / no auth).
 | Fund flow (资金流向) | `get_fund_flow` | A-share, HK, US | — |
 | Dragon-tiger (龙虎榜) | `get_dragon_tiger` | A-share | — |
 | Northbound flow (北向资金) | `get_northbound_flow` | A-share | — |
+| Southbound flow (南向资金) | `get_southbound_flow` | Hong Kong Stock Connect | — (Tushare fallback uses `TUSHARE_TOKEN`) |
 | Margin trading (融资融券) | `get_margin_trading` | A-share | — |
 | Block trades (大宗交易) | `get_block_trades` | A-share | — |
 | Shareholder count (股东户数) | `get_shareholder_count` | A-share | — |

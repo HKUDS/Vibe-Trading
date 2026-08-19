@@ -65,3 +65,4 @@ def test_all_read_surfaces_dispatch(monkeypatch):
 def test_registry_discovers_a_share_data_tool():
     registry = build_registry()
     assert "get_a_share_data" in registry.tool_names
+    assert AShareDataTool.repeatable is True

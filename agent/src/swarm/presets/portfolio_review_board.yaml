@@ -52,7 +52,13 @@ agents:
       that you write yourself — it does not fetch data and does not perform Brinson
       attribution. Use `get_market_data` for the return series, `src.quantlib.attribution`
       for the Brinson decomposition, and `factor_analysis` only for the factor IC work.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_market_data]
+      Treat {portfolio} holdings, weights, trades, benchmark, and review dates as
+      user-supplied inputs; do not invent missing positions. Resolve ambiguous
+      symbols with `search_symbol`, keep exchange/currency/share class explicit,
+      and attach source/as-of date to every return series. A missing constituent
+      or benchmark series makes that attribution slice not computable and must
+      be disclosed with the NAV share affected.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, factor_analysis, get_market_data]
     skills: [performance-attribution, multi-factor]
     max_iterations: 50
     timeout_seconds: 1800
@@ -65,6 +71,10 @@ agents:
 
       ## Task
       Run a full risk health check on portfolio {portfolio} over {review_period}; identify risk exposures and judge whether they are within tolerance.
+      Normalize bars to a common timezone, currency, interval, adjustment, and
+      cutoff before computing risk. A missing price history, borrow cost, or
+      liquidity field remains an uncovered risk, not a zero or portfolio
+      average; disclose the affected NAV share.
 
       ## Risk review dimensions
 
@@ -107,7 +117,7 @@ agents:
       ADV and pairwise correlations come from the same bars. If a position's bars
       cannot be retrieved, list it as uncovered and state what share of NAV the
       risk report therefore excludes — never extrapolate over the gap.
-    tools: [bash, read_file, write_file, load_skill, get_market_data]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, orderbook_depth]
     skills: [risk-analysis, volatility]
     max_iterations: 50
     timeout_seconds: 1800
@@ -120,6 +130,10 @@ agents:
 
       ## Task
       Analyze execution quality for portfolio {portfolio} during {review_period}; judge efficiency and surfaces for reducing implementation friction.
+      Resolve symbols with `search_symbol` and align fills to venue, session,
+      timezone, currency, and bar interval before comparing VWAP/TWAP. Current
+      depth is optional evidence from `orderbook_depth`; it cannot replace a
+      user-supplied blotter.
 
       ## Execution quality framework
 
@@ -161,7 +175,7 @@ agents:
       If no blotter was supplied, say so and report execution quality as not
       assessable. Do not synthesise fill prices, VWAP deviations, or an
       implementation shortfall from position weights alone.
-    tools: [bash, read_file, write_file, load_skill, analyze_trade_journal, get_market_data]
+    tools: [bash, read_file, write_file, load_skill, analyze_trade_journal, search_symbol, get_market_data, orderbook_depth]
     skills: [execution-model, market-microstructure]
     max_iterations: 50
     timeout_seconds: 1800
@@ -174,6 +188,12 @@ agents:
 
       ## Task
       Chair the {review_period} portfolio review for {portfolio}; integrate attribution, risk, and execution reports into clear adjustment recommendations.
+      Every action must trace to an upstream retrieved value or an explicitly
+      stated user constraint. Recheck proposed names with `search_symbol` and
+      observed returns with `get_market_data`; preserve currency, exchange,
+      review cutoff, and confidence. If attribution, risk, or execution data is
+      unavailable, issue a conditional action with the missing field rather
+      than assuming a benign result.
 
       {upstream_context}
 
@@ -199,7 +219,7 @@ agents:
       5. **Next review focus** — Given this period’s findings, 3–5 KPIs or names to track next {review_period}
 
       Use load_skill("asset-allocation") for allocation decisions, load_skill("risk-analysis") for risk budgeting.
-    tools: [bash, read_file, write_file, load_skill]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data]
     skills: [asset-allocation, risk-analysis]
     max_iterations: 50
     timeout_seconds: 1800

@@ -353,6 +353,41 @@ def test_bare_ticker_stays_blocked_when_it_names_more_than_one_identity(
     assert authorization.error_code == "identity_mismatch"
 
 
+def test_locked_security_may_be_compared_with_explicit_market_benchmarks(
+    tmp_path: Path,
+) -> None:
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="分析 002842.SZ 以及今天的大盘走势",
+    )
+
+    authorization = ledger.authorize_tool_call(
+        "get_market_data",
+        {"codes": ["002842.SZ", "000001.SH", "399001.SZ", "399006.SZ"]},
+        batch_authorized_symbols=ledger.authorized_symbols,
+        call_id="prices",
+    )
+
+    assert authorization.allowed is True
+
+
+def test_locked_security_allows_reference_only_market_basket(tmp_path: Path) -> None:
+    """Overview/index-only calls must not inherit the prior stock identity."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="分析 002842.SZ 以及今天的大盘走势",
+    )
+
+    authorization = ledger.authorize_tool_call(
+        "get_a_share_data",
+        {"operation": "quote", "codes": ["000001.SH", "399001.SZ", "399006.SZ"]},
+        batch_authorized_symbols=ledger.authorized_symbols,
+        call_id="overview-index-data",
+    )
+
+    assert authorization.allowed is True
+
+
 @pytest.mark.parametrize(
     ("locked", "requested"),
     [

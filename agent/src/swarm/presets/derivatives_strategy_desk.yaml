@@ -11,6 +11,11 @@ agents:
       ## Task
       Conduct a comprehensive volatility environment analysis on {target} to provide a quantitative foundation for subsequent options strategy design.
 
+      ## Market and data protocol
+      - Normalize {target} to an exact underlying, exchange, currency, and contract type before analysis. `.US` chains are Yahoo-backed; A-share and crypto option surfaces require a cited external source and may be unavailable.
+      - Use `get_market_data` for the realised-volatility sample and state source, interval, adjustment, and dates. Use `get_options_chain` only for a US-listed underlying and record expiration, bid/ask, open interest, volume, and IV fields used.
+      - `options_pricing` prices supplied inputs; it does not retrieve or invert a market IV surface. For non-US underlyings use `web_search`/`read_url` for a published chain and label any missing skew/term structure as unavailable.
+
       ## Volatility Analysis Framework
 
       ### I. Historical Volatility (HV) Analysis
@@ -76,7 +81,7 @@ agents:
       4. **Term Structure Shape** — Front-month / second-month / quarterly IV comparison; term structure slope and trading implications
       5. **Skew Characteristics Analysis** — Put skew and risk reversal current levels; compare vs. historical median; assess market sentiment bias
       6. **Volatility Strategy Direction Recommendation** — Based on the above, explicitly recommend "long volatility / short volatility / directional bias / calendar spread"; include confidence level
-    tools: [bash, read_file, write_file, load_skill, options_pricing, get_options_chain, get_market_data]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, options_pricing, get_options_chain, get_market_data]
     skills: [volatility, options-advanced]
     max_iterations: 50
     timeout_seconds: 1800
@@ -91,6 +96,11 @@ agents:
       Based on the volatility analysis results and the "{view}" market view, design the optimal options combination strategy for {target}.
 
       {upstream_context}
+
+      ## Trade construction evidence contract
+      - Reconcile the upstream view, underlying price, chain timestamp, expiration, strike, multiplier, and currency before constructing legs. Never create a contract from a symbol alone.
+      - Use `get_options_chain` for US-listed chains or `read_url` for a cited non-US chain; use `options_pricing` and `options_payoff` for theoretical value, breakevens, and bounded loss. State all rates, dividends, volatility, and settlement assumptions.
+      - If a chain or liquidity field is unavailable, do not recommend execution at an assumed bid/ask; mark the strategy non-executable until the missing input is retrieved.
 
       ## Strategy Design Methodology
 
@@ -141,7 +151,7 @@ agents:
       4. **Initial Greeks Overview** — Current values of Delta / Gamma / Theta / Vega and their interpretation (risk exposure direction at initiation)
       5. **Entry and Exit Rules** — Entry trigger conditions, profit-taking rules, stop-loss rules, time stop rules; specific and actionable
       6. **Strategy Applicability and Failure Scenarios** — Under what conditions the strategy is effective; under what conditions it fails (requiring prompt adjustment)
-    tools: [bash, read_file, write_file, load_skill, options_pricing, get_options_chain, get_market_data]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, options_pricing, options_payoff, get_options_chain, get_market_data]
     skills: [options-strategy, options-advanced, hedging-strategy, options-payoff]
     max_iterations: 50
     timeout_seconds: 1800
@@ -156,6 +166,11 @@ agents:
       Conduct comprehensive Greeks risk analysis, scenario simulation, and stress testing for the {target} options strategy.
 
       {upstream_context}
+
+      ## Risk-data contract
+      - Use the exact legs and market inputs from the strategy report; reject any leg without a retrieved price, expiry, strike, multiplier, or IV source.
+      - Reprice each leg with `options_pricing` across the scenario grid and use `options_payoff` for bounded payoff checks. Pull the realised return window with `get_market_data`; state the window, source, and confidence for CVaR or Monte Carlo inputs.
+      - US-only `get_options_chain` data cannot be transferred to A-share or crypto options. If liquidity, IV, or borrow/hedge inputs are unsupported, report the corresponding stress result as unavailable rather than fabricating it.
 
       ## Greeks Risk Management Framework
 
@@ -217,7 +232,7 @@ agents:
       4. **Gamma / Theta Trade-off Analysis** — Current intraday battle between Gamma and Theta; analyze whether it is "trading time for space" or "trading space for time"
       5. **Stress Test Results** — Historical extreme scenario and single-day shock test results; provide maximum expected shortfall (ES / CVaR)
       6. **Dynamic Adjustment Recommendations** — At what price / time / IV level should the strategy be adjusted (Delta rebalancing trigger, roll timing, stop-loss exit conditions)
-    tools: [bash, read_file, write_file, load_skill, options_pricing, get_options_chain, get_market_data]
+    tools: [bash, read_file, write_file, load_skill, options_pricing, options_payoff, get_options_chain, get_market_data]
     skills: [options-advanced, risk-analysis, volatility, options-payoff]
     max_iterations: 50
     timeout_seconds: 1800

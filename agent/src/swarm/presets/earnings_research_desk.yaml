@@ -13,6 +13,11 @@ agents:
 
       {upstream_context}
 
+      ## Market-routing and evidence protocol
+      - Resolve {target} to a fully-qualified symbol with `search_symbol`; retain `.SH/.SZ/.BJ`, `.HK`, or `.US` because the data source depends on the suffix.
+      - A-share route: `get_a_share_data` for profile/quote, `get_financial_statements`, `get_stock_news`, `get_sector_info`, and `get_a_share_data` announcements when needed. US route: `get_stock_profile`, `get_financial_statements`, `get_sec_filings`, `get_stock_news`, and `get_market_data`. HK route only uses tools that explicitly support `.HK`.
+      - Use `web_search` then `read_url` for the issuer's earnings release, presentation, guidance, and filing; record publication date and URL. Every ratio must identify raw fields, period, currency, and whether it is reported or derived.
+
       ## Analysis Requirements
 
       ### I. Financial Statement Deep Dive
@@ -40,7 +45,7 @@ agents:
       - Relative valuation: is this name cheap or expensive relative to peers?
 
       Use load_skill for SEC filing analysis, financial statement frameworks, and yfinance data.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_a_share_data, get_financial_statements, get_stock_profile, get_sec_filings, get_stock_news, get_sector_info, get_market_data]
     skills: [edgar-sec-filings, financial-statement, yfinance, fundamental-filter, valuation-model]
     max_iterations: 50
     timeout_seconds: 1800
@@ -55,6 +60,11 @@ agents:
       Track earnings revision momentum and consensus dynamics for {target} ahead of the earnings event.
 
       {upstream_context}
+
+      ## Consensus evidence protocol
+      - Use `web_search` and `read_url` to locate dated company guidance, exchange filings, and named consensus sources. Do not present an analyst-count, estimate, or revision breadth without a retrieved source and cutoff date.
+      - Use `search_symbol` to disambiguate the security and `get_market_data` to retrieve post-earnings price reactions. Separate reported consensus from a calculation based on retrieved historical prices.
+      - If a free, auditable consensus feed is unavailable for the market, state that revision statistics are unavailable; do not infer them from price momentum.
 
       ## Analysis Requirements
 
@@ -81,7 +91,7 @@ agents:
       - Expected post-earnings drift based on historical pattern
 
       Use load_skill for earnings revision analysis frameworks.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_market_data, get_stock_news, get_sec_filings]
     skills: [earnings-revision, earnings-forecast]
     max_iterations: 50
     timeout_seconds: 1800
@@ -96,6 +106,11 @@ agents:
       Analyze options market positioning and event trade setup for {target} around the upcoming earnings date.
 
       {upstream_context}
+
+      ## Event-options data contract
+      - Resolve {target} and determine whether it is US-listed before requesting a chain. `get_options_chain` is Yahoo-backed and US-listed only; for A/HK names use `web_search`/`read_url` for a cited chain or mark options data unavailable.
+      - Use `get_market_data` for spot and historical post-earnings moves, with reporting dates retrieved from filings/news rather than recalled. Use `options_pricing` only for per-leg calculations from retrieved inputs.
+      - Unusual options flow is not exposed by this system; do not label volume/OI as sweeps or blocks. Every implied-move, PCR, skew, and OI figure must trace to an actual chain call.
 
       ## Analysis Requirements
 
@@ -144,7 +159,7 @@ agents:
         flow you cannot see.
       Any implied move, PCR, skew or OI figure that did not come from a chain call
       you actually ran must not appear.
-    tools: [bash, read_file, write_file, load_skill, get_options_chain, get_market_data, options_pricing]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_options_chain, get_market_data, options_pricing]
     skills: [options-advanced, options-strategy, event-driven, volatility]
     max_iterations: 50
     timeout_seconds: 1800
@@ -159,6 +174,10 @@ agents:
       Deliver the final earnings trade recommendation for {target} based on all three research reports.
 
       {upstream_context}
+
+      ## Final evidence contract
+      - Build the signal table from dated upstream sources and show the market/symbol scope for every component. Distinguish `retrieved`, `retrieval_failed`, and `not_supported`.
+      - Use `backtest` only with a defined event-date sample, entry/exit rule, transaction costs, and survivorship/look-ahead controls. If the source data or backtest fails, do not report performance numbers.
 
       ## Synthesis Requirements
 
@@ -193,7 +212,7 @@ agents:
       - Quiet period end / next guidance opportunity: [date]
 
       Use load_skill for strategy generation and risk analysis.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, backtest]
     skills: [strategy-generate, risk-analysis, report-generate]
     max_iterations: 50
     timeout_seconds: 1800

@@ -53,6 +53,19 @@ _SYMBOL_ARGUMENT_KEYS = {
     "underlying",
     "underlyings",
 }
+# Market-wide comparisons are allowed to add a small, explicit set of public
+# benchmark instruments to a locked security query.  These are reference
+# series, not arbitrary second securities: allowing every unknown symbol here
+# would weaken the identity gate and let a model silently change the subject.
+_REFERENCE_SYMBOLS = frozenset({
+    # A-share indices used by the market overview and research prompts.
+    "000001.SH", "000016.SH", "000300.SH", "000688.SH", "000905.SH",
+    "000852.SH", "399001.SZ", "399005.SZ", "399006.SZ", "399100.SZ",
+    "399102.SZ", "899050.BJ",
+    # Yahoo's native US index symbols and common ETF proxies.
+    "^DJI", "^IXIC", "^GSPC", "^NDX", "^HXC",
+    "DIA.US", "IWM.US", "QQQ.US", "SPY.US",
+})
 # Workflow selection must not race an in-flight resolution or proceed on
 # contradicted identity. It may proceed once the resolver has answered — and
 # ``ambiguous`` is an answer: a screening request ("推荐低价高增长股票") resolves to
@@ -1070,6 +1083,17 @@ class GroundingLedger:
             if self._match_authorized_symbol(symbol, authorized) is None
         )
         if mismatched:
+            reference_only = all(
+                _normalize_symbol(symbol) in _REFERENCE_SYMBOLS
+                for symbol in mismatched
+            )
+            # A pure benchmark basket is a market-wide request, not a request
+            # to silently switch the locked subject.  It is valid even when a
+            # previous tool in the same run locked a different stock (for
+            # example the Overview index basket sent to get_market_data or
+            # get_a_share_data).
+            if reference_only:
+                return ToolAuthorization(allowed=True, symbols=symbols)
             message = (
                 "Consumer symbol/venue differs from the locked resolver identity; "
                 "silent suffix or exchange rewrites are forbidden."

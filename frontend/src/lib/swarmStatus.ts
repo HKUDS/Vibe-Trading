@@ -199,6 +199,7 @@ export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown): Swa
       taskId: agent.taskId || taskId,
       status: "running",
       startedAt: eventTime ?? agent.startedAt,
+      error: undefined,
     }));
   }
 
@@ -246,6 +247,10 @@ export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown): Swa
     return updateAgent(current, { agentId, taskId }, (agent) => ({
       ...agent,
       status: "done",
+      // A retry can emit a failure before its successful completion. The
+      // completion event is authoritative, so do not keep the transient
+      // failure visible after the task has succeeded.
+      error: undefined,
       elapsed_s: agent.startedAt && eventTime
         ? Math.max(0, (eventTime - agent.startedAt) / 1000)
         : agent.elapsed_s,
@@ -255,32 +260,45 @@ export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown): Swa
   }
 
   if (["task_failed", "worker_failed", "worker_timeout", "worker_incomplete"].includes(type)) {
-    return updateAgent(current, { agentId, taskId }, (agent) => ({
-      ...agent,
-      status: "failed",
-      elapsed_s: agent.startedAt && eventTime
-        ? Math.max(0, (eventTime - agent.startedAt) / 1000)
-        : agent.elapsed_s,
-      error: asString(data.error) || asString(data.reason) || agent.error,
-    }));
+    return updateAgent(current, { agentId, taskId }, (agent) => {
+      // SSE replay/reconnect can deliver an older failure after the
+      // successful retry. A completed task must remain completed and keep
+      // its successful result.
+      if (agent.status === "done") return agent;
+      return {
+        ...agent,
+        status: "failed",
+        elapsed_s: agent.startedAt && eventTime
+          ? Math.max(0, (eventTime - agent.startedAt) / 1000)
+          : agent.elapsed_s,
+        error: asString(data.error) || asString(data.reason) || agent.error,
+      };
+    });
   }
 
   if (type === "task_blocked") {
     const blockedBy = Array.isArray(data.blocked_by) ? data.blocked_by.join(", ") : asString(data.reason);
-    return updateAgent(current, { agentId, taskId }, (agent) => ({
-      ...agent,
-      status: "blocked",
-      error: blockedBy ? `Blocked by ${blockedBy}` : agent.error,
-    }));
+    return updateAgent(current, { agentId, taskId }, (agent) => {
+      if (agent.status === "done") return agent;
+      return {
+        ...agent,
+        status: "blocked",
+        error: blockedBy ? `Blocked by ${blockedBy}` : agent.error,
+      };
+    });
   }
 
   if (type === "task_retry") {
     const attempt = asNumber(data.attempt);
-    return updateAgent(current, { agentId, taskId }, (agent) => ({
-      ...agent,
-      status: "retry",
-      tool: attempt ? `retry ${attempt}` : "retry",
-    }));
+    return updateAgent(current, { agentId, taskId }, (agent) => {
+      if (agent.status === "done") return agent;
+      return {
+        ...agent,
+        status: "retry",
+        tool: attempt ? `retry ${attempt}` : "retry",
+        error: undefined,
+      };
+    });
   }
 
   return current;

@@ -162,6 +162,10 @@ class SessionService:
         role: str = "user",
         *,
         include_shell_tools: bool = False,
+        selected_skills: Optional[list[str]] = None,
+        selected_tools: Optional[list[str]] = None,
+        tool_mode: str = "auto",
+        force_tool: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Send a message to a session and trigger execution.
 
@@ -193,7 +197,17 @@ class SessionService:
         handed_off = False
 
         try:
-            message = Message(session_id=session_id, role=role, content=content)
+            selection = {
+                "selected_skills": list(dict.fromkeys(selected_skills or [])),
+                "selected_tools": list(dict.fromkeys(selected_tools or [])),
+                "tool_mode": "restricted" if (selected_tools and tool_mode == "auto") else tool_mode,
+                "force_tool": force_tool,
+            }
+            selection["selected_descriptions"] = self._validate_selection(
+                selection,
+                include_shell_tools=include_shell_tools,
+            )
+            message = Message(session_id=session_id, role=role, content=content, metadata=selection)
             self.store.append_message(message)
             self._search_index.index_message(session_id, role, content)
             self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": role, "content": content})
@@ -201,7 +215,12 @@ class SessionService:
             if role != "user":
                 return {"message_id": message.message_id}
 
-            attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
+            attempt = Attempt(
+                session_id=session_id,
+                parent_attempt_id=session.last_attempt_id,
+                prompt=content,
+                metadata=selection,
+            )
             self.store.create_attempt(attempt)
             session.config["include_shell_tools"] = include_shell_tools
             session.last_attempt_id = attempt.attempt_id
@@ -223,6 +242,38 @@ class SessionService:
     def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
         """Return the message history."""
         return self.store.get_messages(session_id, limit)
+
+    @staticmethod
+    def _validate_selection(selection: Dict[str, Any], *, include_shell_tools: bool) -> Dict[str, str]:
+        """Validate user-selected capabilities against the real runtime registry."""
+        from src.agent.skills import SkillsLoader
+        from src.tools import build_registry
+
+        skills = {skill.name for skill in SkillsLoader().skills}
+        unknown_skills = set(selection["selected_skills"]) - skills
+        if unknown_skills:
+            raise ValueError(f"Unknown or unavailable skill(s): {', '.join(sorted(unknown_skills))}")
+        registry = build_registry(include_shell_tools=include_shell_tools)
+        tools = set(registry.tool_names)
+        unknown_tools = set(selection["selected_tools"]) - tools
+        if unknown_tools:
+            raise ValueError(f"Unknown or unavailable tool(s): {', '.join(sorted(unknown_tools))}")
+        force_tool = selection.get("force_tool")
+        selected_tools = selection["selected_tools"]
+        if force_tool and (len(selected_tools) != 1 or selected_tools[0] != force_tool):
+            raise ValueError("force_tool requires exactly one matching selected tool")
+        if selection["tool_mode"] == "restricted" and not selected_tools and not selection["selected_skills"]:
+            raise ValueError("restricted tool mode requires at least one selected tool or skill")
+        descriptions: Dict[str, str] = {
+            skill.name: skill.description
+            for skill in SkillsLoader().skills
+            if skill.name in selection["selected_skills"]
+        }
+        for tool_name in selection["selected_tools"]:
+            tool = registry.get(tool_name)
+            if tool is not None:
+                descriptions[tool_name] = tool.description
+        return descriptions
 
     def cancel_current(self, session_id: str) -> bool:
         """Cancel the currently running AgentLoop for a session.
@@ -309,7 +360,10 @@ class SessionService:
                 tool_trail=(
                     result.get("tool_trail", [])
                     if attempt.status == AttemptStatus.COMPLETED
-                    else []
+                    else [
+                        entry for entry in result.get("tool_trail", [])
+                        if entry.get("type") == "selection"
+                    ]
                 ),
             )
             self.store.append_message(reply)
@@ -375,9 +429,18 @@ class SessionService:
         pm = PersistentMemory()
 
         session_id = attempt.session_id
+        selection = dict(attempt.metadata or {})
         attempt_id = attempt.attempt_id
         loop = asyncio.get_running_loop()
         tool_trail: list[Dict[str, Any]] = []
+        if selection.get("selected_skills") or selection.get("selected_tools"):
+            tool_trail.append({
+                "type": "selection",
+                "selected_skills": list(selection.get("selected_skills") or []),
+                "selected_tools": list(selection.get("selected_tools") or []),
+                "tool_mode": selection.get("tool_mode", "auto"),
+                "force_tool": selection.get("force_tool"),
+            })
 
         safe_overrides = sanitize_session_overrides(session_config) if session_config else session_config
         agent_config = load_runtime_agent_config(overrides=safe_overrides)
@@ -405,6 +468,15 @@ class SessionService:
             ),
         )
 
+        selected_tools = set(selection.get("selected_tools") or [])
+        selected_skills = list(selection.get("selected_skills") or [])
+        if selection.get("tool_mode") == "restricted":
+            # Loading an explicitly selected skill remains possible even when
+            # the user restricted tools to an allow-list.
+            if selected_skills and registry.get("load_skill") is not None:
+                selected_tools.add("load_skill")
+            registry = registry.filtered(selected_tools)
+
         agent = AgentLoop(
             registry=registry,
             llm=llm,
@@ -424,6 +496,8 @@ class SessionService:
                     user_message=attempt.prompt,
                     history=history,
                     session_id=session_id,
+                    selected_skills=selected_skills,
+                    forced_tool=selection.get("force_tool"),
                 ),
             )
         finally:
@@ -505,6 +579,9 @@ class SessionService:
             tool_trail.append(match)
 
         match["status"] = "ok" if data.get("status") == "ok" else "error"
+        data_status = data.get("data_status")
+        if isinstance(data_status, str) and data_status:
+            match["data_status"] = data_status
         elapsed_ms = data.get("elapsed_ms")
         if isinstance(elapsed_ms, (int, float)) and not isinstance(elapsed_ms, bool):
             match["elapsed_ms"] = max(0, int(elapsed_ms))

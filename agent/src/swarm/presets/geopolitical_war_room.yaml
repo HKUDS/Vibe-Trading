@@ -45,8 +45,13 @@ agents:
       5. **Financial market transmission map** — Chains from geopolitical events to asset-class prices, tagging transmission speed (hourly / daily / weekly) and magnitude estimates
 
       Use load_skill("geopolitical-risk") for the geopolitical risk framework, load_skill("web-reader") for latest news and research, load_skill("global-macro") for macro transmission analysis.
-      Use read_url for GPR Index data and real-time geopolitical news.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use `web_search` to locate official releases and reputable index methodology,
+      then `read_url` to verify the full document. Use `get_market_data` only for
+      observed price/return context after resolving the exact ticker and venue.
+      Keep event date, publication date, observation date, market, currency,
+      source URL, and confidence separate; do not turn a news headline into a
+      probability or a causal price estimate without a cited historical sample.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_market_data]
     skills: [geopolitical-risk, web-reader, global-macro]
     max_iterations: 50
     timeout_seconds: 1800
@@ -100,8 +105,13 @@ agents:
       5. **Energy-related asset signals** — Long/short direction for energy stocks, commodity ETFs, petro-currencies, with reference performance in past shocks
 
       Use load_skill("commodity-analysis") for commodity methods, load_skill("geopolitical-risk") for geopolitical-energy quant framing.
-      Use read_url for latest EIA/IEA/OPEC data and reports.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use `web_search` then `read_url` for primary EIA/IEA/OPEC and government
+      data. Use `get_market_data` for the exact benchmark/contract price window
+      and currency, not as a substitute for supply, inventory, or demand data.
+      Label historical analogies as comparable samples with dates and venue;
+      missing mb/d, inventory, or CPI inputs remain unavailable rather than
+      being filled by the scenario target range.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data]
     skills: [commodity-analysis, geopolitical-risk]
     max_iterations: 50
     timeout_seconds: 1800
@@ -157,8 +167,15 @@ agents:
       5. **Resilience & policy risk** — Pace of government supply-chain policy (IRA / EU Critical Raw Materials / China industrial policy); durability of structural trends
 
       Use load_skill("geopolitical-risk") for supply-chain geopolitical frame, load_skill("sector-rotation") for rotation logic, load_skill("event-driven") for event-driven opportunities.
-      Use read_url for shipping data, semi industry reports, and supply-chain research.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use `web_search` then `read_url` for exchange, customs, industry,
+      government, and issuer sources. Resolve each proposed A-share/US/HK name
+      with `search_symbol`; use `get_a_share_data` for A-share evidence and
+      `get_stock_profile`/`get_financial_statements` for US/HK-compatible
+      fundamentals. Use `get_market_data` to measure the event window only after
+      defining benchmark, currency, adjustment, and dates. Revenue-share,
+      capacity, freight, and market-share claims need a source and cutoff date;
+      do not infer exposure from a ticker's sector label.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_a_share_data, get_stock_profile, get_financial_statements, get_market_data]
     skills: [geopolitical-risk, sector-rotation, event-driven]
     max_iterations: 50
     timeout_seconds: 1800
@@ -219,7 +236,14 @@ agents:
       5. **Risk/reward & timetable** — Risk/reward of proposals; sequencing and timing (immediate/this week/this month); estimate of max drawdown under stress
 
       Use load_skill("asset-allocation") for allocation framework, load_skill("risk-analysis") for risk budget and hedge sizing, load_skill("hedging-strategy") for instruments and execution.
-    tools: [bash, read_file, write_file, load_skill]
+      Validate every proposed instrument with `search_symbol` and observed
+      prices/returns from `get_market_data`, using the correct exchange,
+      currency, timezone, and contract. `get_market_data` does not provide GPR,
+      diplomacy, inventories, or implied volatility. If option chain or hedge
+      cost data is unavailable, present the hedge as a conditional design with
+      missing inputs, not as an executable quote. Preserve upstream source,
+      as-of date, scenario probability, and confidence in the final allocation.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data]
     skills: [asset-allocation, risk-analysis, hedging-strategy]
     max_iterations: 50
     timeout_seconds: 1800

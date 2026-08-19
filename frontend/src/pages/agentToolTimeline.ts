@@ -11,6 +11,7 @@ export interface ToolTimelineEntry {
   tool: string;
   arguments?: Record<string, string>;
   status?: "running" | "ok" | "error";
+  data_status?: "no_data";
   preview?: string;
   elapsed_ms?: number;
   timestamp?: number;
@@ -32,11 +33,14 @@ export function buildToolTimelineMessages(
 ): StoredAgentMessage[] {
   const fallbackTimestamp = options.fallbackTimestamp ?? Date.now();
   const idPrefix = options.idPrefix ?? "";
-  const steps = entries.map((entry, index) => ({
+  // Tool trails also carry non-tool audit records (for example capability
+  // selection metadata). They must not become tool progress rows.
+  const steps = entries.filter((entry) => typeof entry.tool === "string" && entry.tool.trim()).map((entry, index) => ({
     id: entry.id || entry.call_id || `${entry.tool}#${index + 1}`,
     tool: entry.tool,
     arguments: entry.arguments ?? {},
     status: entry.status || "ok",
+    data_status: entry.data_status,
     preview: entry.preview,
     elapsed_ms: entry.elapsed_ms,
     timestamp: (

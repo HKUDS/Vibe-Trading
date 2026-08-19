@@ -1,6 +1,14 @@
 import { buildToolTimelineMessages } from "../agentToolTimeline";
 
 describe("buildToolTimelineMessages", () => {
+  it("ignores non-tool audit entries in a tool trail", () => {
+    const [message] = buildToolTimelineMessages([
+      { type: "selection", selected_tools: ["get_market_data"] } as never,
+      { tool: "get_market_data", status: "ok" },
+    ]);
+    expect(message.meta?.activity?.steps).toHaveLength(1);
+    expect(message.meta?.activity?.steps[0].tool).toBe("get_market_data");
+  });
   it("rebuilds one durable activity object from a persisted tool trail", () => {
     expect(buildToolTimelineMessages(
       [

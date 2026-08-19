@@ -41,6 +41,11 @@ agents:
       5. **Cointegration stability report** — Rolling tests on Top 10; flag structural breaks
 
       Use load_skill("pair-trading"), load_skill("quant-statistics").
+      Normalize symbols with `search_symbol`; keep exchange, currency, venue,
+      timezone, adjustment, and common calendar identical before screening.
+      Pull the exact price panel with `get_market_data`; `screen_market` defines
+      a universe but does not prove liquidity or return availability. A partial
+      history is excluded, not filled or scored from expectation.
 
       ## What is implemented vs what is not
       `factor_analysis` computes IC/IR and layered NAV from a factor CSV and a
@@ -61,7 +66,7 @@ agents:
       **The Hurst exponent and a Kalman time-varying hedge ratio are NOT
       implemented here.** Write and show the estimator yourself in `bash`, or drop
       those columns and say they were not computed — do not populate them by feel.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis, get_market_data, screen_market]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, factor_analysis, get_market_data, screen_market]
     skills: [pair-trading, quant-statistics, correlation-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -102,6 +107,11 @@ agents:
       5. **Liquidity risk alerts** — Pairs likely to dry up in stress (e.g. one-sided drawdown days); contingency exit plan
 
       Use load_skill("market-microstructure"), load_skill("execution-model").
+      Resolve each leg with `search_symbol`; use `get_market_data` for ADV and
+      historical spreads and `orderbook_depth` only for current bid/ask/depth.
+      Do not infer liquidity, borrow, impact, or venue costs from sector labels.
+      Record timestamp, session, lot size, currency, and source; missing fields
+      make the pair conditional or infeasible.
 
       ADV, turnover and intraday liquidity are measured from bars — pull them with
       `get_market_data` (intraday interval for the time-of-day question). Market
@@ -126,7 +136,7 @@ agents:
       present a crypto depth measurement and an equity depth proxy in the same
       column without marking which is which.
       Granger causality between legs comes from `src.quantlib.timeseries.granger_test`.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, orderbook_depth]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, orderbook_depth]
     skills: [market-microstructure, execution-model]
     max_iterations: 50
     timeout_seconds: 1800
@@ -173,8 +183,13 @@ agents:
       5. **Capacity estimate** — Max AUM from microstructure position caps
 
       Use load_skill("pair-trading"), load_skill("strategy-generate"), load_skill("quant-statistics").
+      Revalidate every leg and benchmark with `search_symbol` and
+      `get_market_data`. `backtest` must state formation/trading windows, signal
+      lag, hedge-ratio refit, short/borrow rules, fees, spread, impact,
+      slippage, benchmark, and missing-data policy. Failed tests or execution
+      assumptions are reported as unvalidated, never as positive evidence.
       Use backtest with realistic costs.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, backtest]
     skills: [pair-trading, strategy-generate, quant-statistics]
     max_iterations: 50
     timeout_seconds: 1800
@@ -224,6 +239,10 @@ agents:
       5. **Verdict** — Pass / conditional pass / fail; pre-launch conditions and ongoing monitors
 
       Use load_skill("risk-analysis"), load_skill("volatility").
+      Reconcile risk metrics to the same market, currency, sample, adjustment,
+      and position weights. If a leg's history, borrow cost, or depth is
+      missing, disclose the uncovered NAV share and keep the risk rating
+      conditional rather than extrapolating a portfolio average.
 
       Compute the risk numbers from data. Pull the leg histories with
       `get_market_data`, build the book's return series at the proposed weights in
@@ -237,7 +256,7 @@ agents:
       estimate, when the sample is short.
       Net beta and factor tilts must be regressed against a benchmark series you
       pulled. Any figure without a named sample window does not go in the report.
-    tools: [bash, read_file, write_file, load_skill, get_market_data]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, orderbook_depth]
     skills: [risk-analysis, volatility]
     max_iterations: 50
     timeout_seconds: 1800

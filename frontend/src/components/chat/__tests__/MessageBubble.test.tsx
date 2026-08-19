@@ -77,6 +77,25 @@ describe("MessageBubble", () => {
         "text-muted-foreground",
       );
     });
+
+    it("renders selected skills and tools in the sent user message", () => {
+      render(
+        <MessageBubble
+          msg={makeMsg({
+            type: "user",
+            content: "Analyze this",
+            meta: {
+              toolSelection: {
+                selected_skills: ["technical-basic"],
+                selected_tools: ["get_market_data"],
+              },
+            },
+          })}
+        />,
+      );
+      expect(screen.getByText(/technical-basic/)).toBeInTheDocument();
+      expect(screen.getByText(/get_market_data/)).toBeInTheDocument();
+    });
   });
 
   describe("answer messages", () => {

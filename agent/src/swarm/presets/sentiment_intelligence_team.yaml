@@ -27,7 +27,13 @@ agents:
       6. **Tail-risk news** — items that could crater sentiment (geo / financial-system / black-swan watch)
 
       Use load_skill("web-reader"), load_skill("sentiment-analysis"), read_url.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use `web_search` then `read_url` for dated primary releases and
+      `get_stock_news`/`get_sec_filings` for compatible issuer events. Resolve
+      symbols with `search_symbol`; use `get_market_data` only to measure the
+      price reaction. Separate publication time from event time and record
+      source, market, language, duplicate handling, and confidence. A headline
+      is not a confirmed event until the source is opened.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_stock_news, get_sec_filings, get_market_data]
     skills: [web-reader, sentiment-analysis, social-media-intelligence]
     max_iterations: 50
     timeout_seconds: 1800
@@ -57,7 +63,13 @@ agents:
       6. **Retail flow inflection** — forecast when retail flows may turn within {timeframe}
 
       Use load_skill("behavioral-finance"), load_skill("sentiment-analysis"), read_url.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use `web_search` then `read_url` for survey, platform, and methodology
+      sources. Use `get_market_data` for the exact price/volume/volatility
+      window and `search_symbol` for symbols. Put/call, social heat, app
+      downloads, and retail positioning are not supplied by the price tool;
+      if their source is unavailable, exclude that component rather than assign
+      a neutral score. Record venue, timestamp, unit, and sample percentile.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_market_data]
     skills: [behavioral-finance, sentiment-analysis, social-media-intelligence]
     max_iterations: 50
     timeout_seconds: 1800
@@ -87,7 +99,13 @@ agents:
       6. **Reliability caveats** — lags, data limits, misread risks
 
       Use load_skill("tushare"), load_skill("sentiment-analysis").
-    tools: [bash, read_file, write_file, load_skill, get_market_data]
+      The Northbound, margin, Dragon-Tiger, and block-trade fields are
+      A-share-specific. Use `get_a_share_data`, `get_fund_flow`,
+      `get_margin_trading`, and `get_northbound_flow` only for compatible A-share
+      symbols; use `get_market_data` for the same observation window. For US/HK
+      flow claims use a cited `web_search`/`read_url` source. Never infer smart
+      money from price alone; mark unsupported markets and source cutoffs.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_a_share_data, get_fund_flow, get_margin_trading, get_northbound_flow, web_search, read_url, get_market_data]
     skills: [tushare, sentiment-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -119,7 +137,12 @@ agents:
       6. **Limitations** — when sentiment fails in trends; blend with fundamentals; key uncertainties
 
       Use load_skill("behavioral-finance"), load_skill("risk-analysis").
-    tools: [bash, read_file, write_file, load_skill]
+      Recheck the final price window with `search_symbol` and `get_market_data`.
+      Combine only component scores with source, timestamp, market, and
+      coverage metadata. If a component failed or is not supported in the
+      market, recompute weights over available components and disclose the
+      change; never turn missing sentiment into zero or neutrality.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data]
     skills: [behavioral-finance, risk-analysis]
     max_iterations: 50
     timeout_seconds: 1800

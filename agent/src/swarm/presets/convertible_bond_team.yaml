@@ -11,6 +11,12 @@ agents:
       ## Task
       Conduct a systematic bond-floor analysis of the {market} convertible bond market, assessing the strength of downside protection and credit risk.
 
+      ## Data and market-routing protocol
+      - Confirm whether {market} is mainland A-share convertibles or another venue before collecting data. Keep bond code, underlying equity code, currency, face value, coupon schedule, maturity, and settlement date explicit.
+      - Use `web_search` to locate the exchange listing, issuer prospectus, rating disclosure, and latest financial report; use `read_url` to verify each term. Use `get_market_data` for the bond/underlying price history only when the symbol is supported.
+      - For A-share underlying equities, use `search_symbol`, `get_a_share_data`, `get_financial_statements`, `get_stock_news`, and `get_sector_info` as applicable. For US/HK equity underlyings, use `search_symbol`, `get_stock_profile`, `get_financial_statements`, and `get_stock_news`. Do not treat a missing rating or bond term as zero; label it `retrieval_failed` or `not_supported`.
+      - Every model input must carry source, as-of date, unit, currency, and confidence. Do not rank instruments using an unverified coupon, maturity, rating, or conversion price.
+
       ## Analysis Framework
       - Yield to maturity (YTM) vs. spread over comparably rated straight bonds
       - Bond floor value and the thickness of the cushion relative to current market price
@@ -44,7 +50,7 @@ agents:
       available from any tool here**: quote a rating only with the source you read
       it from, and if you have none, group by a stated proxy (issuer size, leverage
       from `get_financial_statements`) and label the grouping a proxy, not a rating.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, get_financial_statements, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, get_stock_news, get_sector_info]
     skills: [convertible-bond, fundamental-filter, credit-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -57,6 +63,11 @@ agents:
 
       ## Task
       Analyze the fundamentals and technicals of the underlying equities for {market} convertible bonds, assessing conversion value and the scope for conversion price reset.
+
+      ## Equity data protocol
+      - Resolve every underlying equity to a fully-qualified symbol with `search_symbol` before retrieval. Use `.SH/.SZ/.BJ` for A-shares and `.US` for US equities.
+      - A-share evidence: `get_a_share_data` for quote/valuation and profile, `get_financial_statements` for statements, `get_stock_news` for catalysts, and `get_sector_info` for industry. US evidence: `get_stock_profile`, `get_financial_statements`, and `get_stock_news`.
+      - Use `get_market_data` for the technical window and state interval, source, adjustment, and sample dates. Separate observed conversion terms from assumptions and mark any unavailable field explicitly.
 
       ## Analysis Framework
       - Underlying equity fundamental quality (revenue growth, ROE, free cash flow, debt structure)
@@ -74,7 +85,7 @@ agents:
 
       Use load_skill("convertible-bond") for convertible equity analysis methodology; load_skill("technical-basic") for technical analysis; load_skill("valuation-model") for valuation.
       Use the factor_analysis tool for factor exposure analysis of underlying equities.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, get_stock_news, get_sector_info, factor_analysis]
     skills: [convertible-bond, technical-basic, valuation-model]
     max_iterations: 50
     timeout_seconds: 1800
@@ -87,6 +98,11 @@ agents:
 
       ## Task
       Analyze the option characteristics of {market} convertible bonds and quantitatively evaluate the embedded conversion option.
+
+      ## Option data protocol
+      - Use only observed price, conversion terms, tenor, and volatility inputs. Retrieve underlying history with `get_market_data` and cite the exact sample window used for historical volatility.
+      - Use `options_pricing` for the stated model inputs and report model, rate, dividend, volatility, and day-count assumptions. `get_options_chain` is a US-listed equity chain only; omit it for A-share convertibles rather than substituting an unrelated chain.
+      - If the market does not expose an implied-volatility surface, label implied volatility as unavailable and do not infer it from a single price move.
 
       ## Analysis Framework
       - Implied volatility vs. historical volatility comparison; assess whether options are overpriced or underpriced
@@ -104,7 +120,7 @@ agents:
 
       Use load_skill("options-strategy") for option analysis methodology; load_skill("volatility") for volatility analysis support; load_skill("convertible-bond") for convertible option pricing knowledge.
       Use the options_pricing tool for precise option pricing calculations.
-    tools: [bash, read_file, write_file, load_skill, options_pricing]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, options_pricing, get_options_chain]
     skills: [options-strategy, volatility, convertible-bond, options-payoff]
     max_iterations: 50
     timeout_seconds: 1800
@@ -119,6 +135,10 @@ agents:
       Synthesize the research from three specialist analysts to design a convertible bond investment strategy for {market} and validate it through historical backtesting.
 
       {upstream_context}
+
+      ## Synthesis and validation contract
+      - Reconcile bond terms, equity prices, and option assumptions by instrument and as-of date before ranking. A missing upstream field must remain visible as `retrieval_failed` or `not_supported`.
+      - Use `get_market_data` to verify the final backtest price series and cite the symbol, source, adjustment, interval, and date window. Use `backtest` only after the signal, universe, rebalance rule, costs, and benchmark are explicit; never invent performance when the run fails.
 
       ## Strategy Design Directions
       Select or blend the following strategies based on the strategy_type parameter:
@@ -136,7 +156,7 @@ agents:
 
       Use load_skill("convertible-bond") to ensure the strategy is grounded in convertible market dynamics; load_skill("strategy-generate") for strategy code standards.
       Use the backtest tool to run historical backtests validating strategy robustness across different market environments.
-    tools: [bash, read_file, write_file, load_skill, backtest]
+    tools: [bash, read_file, write_file, load_skill, get_market_data, backtest]
     skills: [convertible-bond, strategy-generate]
     max_iterations: 50
     timeout_seconds: 1800

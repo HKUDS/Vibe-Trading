@@ -53,7 +53,12 @@ agents:
 
       Use load_skill("social-media-intelligence"), load_skill("sentiment-analysis").
       Use read_url for X/FinTwit sources.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use `web_search` then `read_url` for public posts, account identity,
+      event announcements, and source methodology. Resolve listed symbols with
+      `search_symbol` and use `get_market_data` to measure the price/volume
+      reaction. Record URL, author, publication time, market, duplicate
+      handling, and confidence; an unverified post is not a confirmed event.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_market_data]
     skills: [social-media-intelligence, sentiment-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -116,7 +121,12 @@ agents:
 
       Use load_skill("social-media-intelligence"), load_skill("sentiment-analysis"), load_skill("onchain-analysis").
       Use read_url for Telegram and Nansen/Dune.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use `web_search` then `read_url` for public channel messages and source
+      provenance. For crypto validation use `get_market_data`, recording asset,
+      chain, contract, venue, UTC timestamp, and quote currency. Funding, open
+      interest, liquidations, and on-chain balances are not available from the
+      price tool; keep them unavailable unless the linked source reports them.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_market_data]
     skills: [social-media-intelligence, sentiment-analysis, onchain-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -175,7 +185,13 @@ agents:
 
       Use load_skill("social-media-intelligence"), load_skill("behavioral-finance"), load_skill("sentiment-analysis").
       Use read_url for Reddit pages/API data.
-    tools: [bash, read_file, write_file, load_skill, read_url]
+      Use `web_search` then `read_url` for Reddit posts, subreddit context, and
+      methodology. Resolve tickers with `search_symbol`; use `get_market_data`
+      for the event-window move. Use `get_options_chain` only for US-listed
+      symbols when a returned chain supports the put/call claim; A-share and
+      crypto options remain unavailable without a cited chain. Separate post
+      volume from validated trading flow.
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, search_symbol, get_market_data, get_options_chain]
     skills: [social-media-intelligence, behavioral-finance, sentiment-analysis]
     max_iterations: 50
     timeout_seconds: 1800
@@ -238,7 +254,12 @@ agents:
 
       Use load_skill("social-media-intelligence"), load_skill("factor-research"), load_skill("quant-statistics").
       Use factor_analysis for factor stats.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+      Validate each component with `search_symbol` and `get_market_data`, and
+      preserve source URL, timestamp, market, venue, coverage, and score
+      definition. If a channel failed or is unsupported, recompute over the
+      available channels and disclose the missingness; do not fabricate hit
+      rates or turn missing sentiment into zero.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, factor_analysis]
     skills: [social-media-intelligence, factor-research, quant-statistics]
     max_iterations: 50
     timeout_seconds: 1800

@@ -31,7 +31,7 @@ export interface AgentActivity {
 const VALIDATION_TOOL = /(?:validate|validation|monte_carlo|bootstrap|walk_forward|stress_test|sanity_check)/;
 const BACKTEST_TOOL = /backtest/;
 const STRATEGY_TOOL = /(?:write|edit|patch|strategy|signal|scaffold|generate)/;
-const MARKET_DATA_TOOL = /(?:market_data|search|read|fetch|ticker|quote|candle|orderbook|funding|open_interest|financial|filing|news|profile|screener|fred|iwencai|fund_flow|dragon|northbound|margin|block_trade|shareholder|lockup|sector|research|options_chain)/;
+const MARKET_DATA_TOOL = /(?:market_data|search|read|fetch|ticker|quote|candle|orderbook|funding|open_interest|financial|filing|news|profile|screener|fred|iwencai|fund_flow|dragon|northbound|southbound|margin|block_trade|shareholder|lockup|sector|research|options_chain)/;
 
 /** Map the latest tool stage to the user-facing activity verb key. */
 export function deriveActivityVerb(tool: string | undefined): ActivityVerb {
@@ -50,6 +50,11 @@ export interface AgentMessageMeta {
   requestText?: string;
   activity?: AgentActivity;
   partialAttemptId?: string;
+  toolSelection?: {
+    selected_skills: string[];
+    selected_tools: string[];
+    selected_descriptions?: Record<string, string>;
+  };
 }
 
 export type StoredAgentMessage = AgentMessage & { meta?: AgentMessageMeta };

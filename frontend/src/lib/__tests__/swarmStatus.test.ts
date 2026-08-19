@@ -54,6 +54,71 @@ describe("swarmStatus server timestamps", () => {
     expect(missingCompletionTimestamp.agents[0].elapsed_s).toBeUndefined();
   });
 
+  it("lets a successful retry replace its transient failure", () => {
+    const initial = buildSwarmStatusFromStarted({
+      run_id: "run-retry-success",
+      status: "running",
+      agents: [{ id: "analyst" }],
+      tasks: [{ id: "task-1", agent_id: "analyst", status: "pending" }],
+    })!;
+    const failed = applySwarmEvent(initial, {
+      type: "worker_failed",
+      agent_id: "analyst",
+      task_id: "task-1",
+      data: { error: "temporary provider failure" },
+      timestamp: "2026-07-29T12:00:01Z",
+    });
+    const retrying = applySwarmEvent(failed, {
+      type: "task_retry",
+      agent_id: "analyst",
+      task_id: "task-1",
+      data: { attempt: 2 },
+      timestamp: "2026-07-29T12:00:02Z",
+    });
+    const completed = applySwarmEvent(retrying, {
+      type: "task_completed",
+      agent_id: "analyst",
+      task_id: "task-1",
+      data: { summary: "successful result", iterations: 2 },
+      timestamp: "2026-07-29T12:00:05Z",
+    });
+
+    expect(completed.agents[0]).toMatchObject({
+      status: "done",
+      lastText: "successful result",
+    });
+    expect(completed.agents[0].error).toBeUndefined();
+  });
+
+  it("ignores a late failure after a task has completed", () => {
+    const initial = buildSwarmStatusFromStarted({
+      run_id: "run-late-failure",
+      status: "running",
+      agents: [{ id: "analyst" }],
+      tasks: [{ id: "task-1", agent_id: "analyst", status: "pending" }],
+    })!;
+    const completed = applySwarmEvent(initial, {
+      type: "task_completed",
+      agent_id: "analyst",
+      task_id: "task-1",
+      data: { summary: "successful result" },
+      timestamp: "2026-07-29T12:00:05Z",
+    });
+    const lateFailure = applySwarmEvent(completed, {
+      type: "worker_failed",
+      agent_id: "analyst",
+      task_id: "task-1",
+      data: { error: "stale failure from an earlier attempt" },
+      timestamp: "2026-07-29T12:00:06Z",
+    });
+
+    expect(lateFailure.agents[0]).toMatchObject({
+      status: "done",
+      lastText: "successful result",
+    });
+    expect(lateFailure.agents[0].error).toBeUndefined();
+  });
+
   it("seeds parsed and truncated previews only from serialized server times", () => {
     const parsed = buildSwarmStatusFromToolResultPreview(JSON.stringify({
       run_id: "run-3",

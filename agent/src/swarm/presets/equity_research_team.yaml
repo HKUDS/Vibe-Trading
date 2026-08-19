@@ -13,6 +13,11 @@ agents:
 
       {upstream_context}
 
+      ## Macro evidence protocol
+      - Define the market, currency, geography, and cutoff date before retrieval. Use `web_search` to locate official central-bank, statistical, and policy releases, then `read_url` to verify dates, units, revisions, and methodology.
+      - Use `get_market_data` only for market-price context; it is not a substitute for GDP/CPI/PMI. If a macro series is unavailable, mark it unavailable rather than using a remembered value.
+      - Every macro claim must carry source, observation date, unit, and confidence; separate current observation, forecast, and analyst inference.
+
       ## Output Requirements
       Please produce a structured analysis report with the following sections:
       1. **Macro Overview** — Interpretation of core indicators: GDP, CPI, PMI, etc.
@@ -22,7 +27,7 @@ agents:
       5. **Conclusion for {market}** — Summarize the bullish / bearish / neutral rationale
 
       Use load_skill to access data query methods; prioritize using tools to obtain the latest data to support the analysis.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, read_url]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data]
     skills: [tushare, okx-market, yfinance, web-reader, global-macro]
     max_iterations: 50
     timeout_seconds: 1800
@@ -38,6 +43,11 @@ agents:
 
       {upstream_context}
 
+      ## Sector evidence protocol
+      - Route by market: A-shares use `get_sector_info`, `get_a_share_data`, `get_fund_flow`, and `get_stock_news`; US/HK use `get_stock_profile`, `get_stock_news`, `get_market_data`, and cited public sources. Do not apply A-share board data to US/HK sectors.
+      - Build rankings from a declared universe, date, score formula, and missing-data rule. `factor_analysis` is a calculation tool, not a data source; cite the raw fields used.
+      - Use `web_search`/`read_url` for industry reports and policy evidence, recording publisher, publication date, and URL.
+
       ## Output Requirements
       Please produce a structured analysis report with the following sections:
       1. **Sector Prosperity Ranking** — Top 5 sectors with scoring rationale
@@ -47,7 +57,7 @@ agents:
       5. **Recommended Sectors and Rationale** — Explicitly recommend 2–3 sectors with suggested allocation weights
 
       Use the factor_analysis tool for factor-based analysis to support judgments.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, web_search, read_url, get_market_data, get_a_share_data, get_sector_info, get_fund_flow, get_stock_news, get_stock_profile, factor_analysis]
     skills: [tushare, yfinance, fundamental-filter, multi-factor, us-etf-flow, sector-rotation]
     max_iterations: 50
     timeout_seconds: 1800
@@ -63,6 +73,11 @@ agents:
 
       {upstream_context}
 
+      ## Security evidence protocol
+      - Resolve every candidate with `search_symbol`; preserve `.SH/.SZ/.BJ`, `.HK`, `.US`, or crypto notation and route only to compatible tools.
+      - A-share candidates: `get_a_share_data`, `get_financial_statements`, `get_sector_info`, `get_stock_news`, `get_fund_flow`. US/HK candidates: `get_stock_profile`, `get_financial_statements`, `get_stock_news`, and `get_market_data`; US filings may use `get_sec_filings`.
+      - Retrieve price bars with `get_market_data` before technical claims. Every valuation input needs source, period, currency, and as-of date; unavailable fields must be excluded from ranking.
+
       ## Output Requirements
       Please produce a structured analysis report with the following sections:
       1. **Recommended Target List** — Each target with ticker, name, and sector
@@ -73,7 +88,7 @@ agents:
 
       Always use load_skill("strategy-generate") for strategy writing standards.
       Use the backtest tool to validate the historical performance of stock selection logic.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, backtest, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, get_stock_news, get_fund_flow, get_sector_info, get_sec_filings, backtest, factor_analysis]
     skills: [tushare, yfinance, strategy-generate, technical-basic, multi-factor, earnings-revision]
     max_iterations: 50
     timeout_seconds: 1800
@@ -88,6 +103,10 @@ agents:
       Synthesize all analysts' research outputs and produce a complete, professional investment research report.
 
       {upstream_context}
+
+      ## Editorial evidence contract
+      - Preserve the source, timestamp, market scope, and confidence for every number. Keep retrieval failures and unsupported markets visible; never silently replace them with a price-tool result.
+      - When reports disagree, show both values and explain the period/source mismatch. Do not issue a target or allocation without a named universe, data cutoff, and explicit assumptions.
 
       ## Output Requirements
       Please produce a complete Markdown-format research report with the following structure:

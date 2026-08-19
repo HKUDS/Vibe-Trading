@@ -190,7 +190,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props
     return (
       <div className="flex justify-end group">
         <div className="max-w-[72%] max-h-[40vh] overflow-y-auto break-words rounded-[18px] bg-muted px-4 py-3 text-[15px] text-foreground leading-relaxed whitespace-pre-wrap">
-          {meta && (meta.attachment || meta.swarmMode || meta.goalMode) && (
+          {meta && (meta.attachment || meta.swarmMode || meta.goalMode || meta.toolSelection) && (
             <div className="mb-1.5 flex flex-wrap justify-end gap-1.5 text-[10px] leading-none text-muted-foreground">
               {meta.attachment && (
                 <span
@@ -214,6 +214,24 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props
                   {i18n.t("agent.goalModeChip" as never)}
                 </span>
               )}
+              {meta.toolSelection?.selected_skills.map((name) => (
+                <span
+                  key={`skill-${name}`}
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-sky-200/70 bg-sky-50 px-2 py-1 text-sky-700 shadow-[0_2px_8px_rgba(14,165,233,0.14)] dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200"
+                  title={meta.toolSelection?.selected_descriptions?.[name] || `${i18n.t("agent.slash.selectedSkill" as never)}: ${name}`}
+                >
+                  <span>{i18n.t("agent.slash.selectedSkill" as never)}: {name}</span>
+                </span>
+              ))}
+              {meta.toolSelection?.selected_tools.map((name) => (
+                <span
+                  key={`tool-${name}`}
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-sky-200/70 bg-sky-50 px-2 py-1 text-sky-700 shadow-[0_2px_8px_rgba(14,165,233,0.14)] dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200"
+                  title={meta.toolSelection?.selected_descriptions?.[name] || `${i18n.t("agent.slash.selectedTool" as never)}: ${name}`}
+                >
+                  <span>{i18n.t("agent.slash.selectedTool" as never)}: {name}</span>
+                </span>
+              ))}
             </div>
           )}
           {msg.content}

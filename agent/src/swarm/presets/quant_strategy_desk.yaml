@@ -20,8 +20,14 @@ agents:
       4. **Screening funnel stats** — Initial universe size → remaining count after each filtering step
 
       Use factor_analysis for factor-based screening.
+      Resolve symbols with `search_symbol`. For A-shares use
+      `get_a_share_data`/`get_financial_statements`; for US/HK use
+      `get_stock_profile`/`get_financial_statements`; use `get_market_data` for
+      price, volume, and date windows. Record universe cutoff, currency,
+      exchange, adjustment, source, and missingness. `factor_analysis` computes
+      on retrieved files; it does not provide raw fundamentals.
       Use load_skill for data access patterns.
-    tools: [bash, read_file, write_file, load_skill, get_market_data, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, factor_analysis]
     skills: [tushare, fundamental-filter]
     max_iterations: 50
     timeout_seconds: 1800
@@ -45,7 +51,11 @@ agents:
       5. **Risk notes** — Factor-decay scenarios and cyclicality
 
       Use factor_analysis for computations.
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+      Preserve point-in-time publication dates, universe membership, delisted
+      coverage, and return horizon for every factor file. Retrieve raw prices
+      with `get_market_data` and market-compatible fundamentals before calling
+      `factor_analysis`; missing raw fields make the factor unvalidated.
+    tools: [bash, read_file, write_file, load_skill, search_symbol, get_market_data, get_a_share_data, get_financial_statements, get_stock_profile, factor_analysis]
     skills: [multi-factor, factor-research]
     max_iterations: 50
     timeout_seconds: 1800
@@ -69,7 +79,12 @@ agents:
       5. **Improvement ideas** — Potential optimizations
 
       You must run **backtest** with real outputs—do not fabricate numbers.
-    tools: [bash, read_file, write_file, edit_file, load_skill, backtest]
+      Revalidate the exact universe with `search_symbol` and price window with
+      `get_market_data`. State signal lag, execution price, corporate-action
+      adjustment, benchmark, rebalance, fees, slippage, liquidity/borrow
+      assumptions, and missing-data policy. A failed or partial backtest is
+      reported as unvalidated, not as zero performance.
+    tools: [bash, read_file, write_file, edit_file, load_skill, search_symbol, get_market_data, backtest]
     skills: [strategy-generate, technical-basic]
     max_iterations: 50
     timeout_seconds: 1800
@@ -111,7 +126,11 @@ agents:
       run. If the backtester produced only one period, say the split was not run
       and that overfitting is therefore unmeasured — do not assert robustness that
       was never tested.
-    tools: [bash, read_file, write_file, load_skill]
+      Confirm the audited returns' market, currency, benchmark, sample dates,
+      fees, and execution assumptions from the upstream artifact. If those
+      fields are absent, mark the risk conclusion conditional rather than
+      reconstructing them from summary KPIs.
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
     skills: [volatility]
     max_iterations: 50
     timeout_seconds: 1800
@@ -138,7 +157,11 @@ agents:
       The report is the single deliverable a user reads after the run; it
       must stand alone without requiring the reader to open intermediate
       task outputs.
-    tools: [bash, read_file, write_file, load_skill]
+      Preserve source, timestamp, market, currency, sample, and confidence for
+      each upstream result. Keep `retrieved`, `retrieval_failed`, and
+      `not_supported` separate; do not carry a failed backtest into a positive
+      recommendation or replace missing metrics with zeros.
+    tools: [bash, read_file, write_file, load_skill, get_market_data]
     skills: [report-generate]
     max_iterations: 50
     timeout_seconds: 1800

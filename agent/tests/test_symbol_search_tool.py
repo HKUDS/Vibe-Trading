@@ -8,6 +8,7 @@ All HTTP is mocked at the client functions the tool imports
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from src.tools import symbol_search_tool as ss
@@ -352,6 +353,22 @@ class TestSymbolSearchErrors:
         assert sources["yahoo"] == "ok"
         symbols = {c["symbol"] for c in payload["data"]["candidates"]}
         assert "AAPL.US" in symbols
+
+    def test_chinese_name_uses_tencent_when_eastmoney_is_unavailable(self):
+        response = SimpleNamespace(
+            content='v_hint="sz~002842~翔鹭钨业~002842~1^"'.encode("utf-8")
+        )
+        with patch.object(
+            ss.eastmoney_client, "get_json", side_effect=ValueError("invalid json")
+        ), patch.object(
+            ss.yahoo_client, "search", return_value=[]
+        ), patch.object(ss, "throttled_get", return_value=response) as tencent:
+            out = json.loads(ss.SymbolSearchTool().execute(query="翔鹭钨业"))
+
+        assert out["data"]["sources"]["tencent"] == "ok"
+        assert out["data"]["candidates"][0]["symbol"] == "002842.SZ"
+        assert out["data"]["candidates"][0]["name"] == "翔鹭钨业"
+        tencent.assert_called_once()
 
     def test_sec_lookup_failure_recorded_not_fatal(self):
         with patch.object(

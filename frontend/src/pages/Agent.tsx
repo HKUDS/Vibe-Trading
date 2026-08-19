@@ -10,7 +10,7 @@ import {
   type StoredAgentMessage,
 } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
-import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LLMSettings } from "@/lib/api";
+import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type AgentCapabilities, type MessageSelection, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LLMSettings } from "@/lib/api";
 import { isReportWorthyRun } from "@/lib/runReports";
 import type { AgentMessage, SwarmRunStatus, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
@@ -239,6 +239,30 @@ export function Agent() {
   const [swarmPreset, setSwarmPreset] = useState<{ name: string; title: string } | null>(null);
   const [goalComposerActive, setGoalComposerActive] = useState(false);
   const [goalSnapshot, setGoalSnapshot] = useState<GoalSnapshot | null>(null);
+  const [capabilities, setCapabilities] = useState<AgentCapabilities | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadCapabilities = async () => {
+      try {
+        const value = await api.getAgentCapabilities();
+        if (active && value.skills?.length && value.tools?.length) {
+          setCapabilities(value);
+          return;
+        }
+      } catch {
+        // Fall through to the legacy split endpoints below.
+      }
+      try {
+        const [skills, tools] = await Promise.all([api.getSkills(), api.getTools()]);
+        if (active) setCapabilities({ skills, tools });
+      } catch {
+        // Keep the composer usable; a later page reload can retry discovery.
+      }
+    };
+    void loadCapabilities();
+    return () => { active = false; };
+  }, []);
 
   /* Connector runtime channel state (SPEC Consent §1/§4/§5) */
   const [liveItems, setLiveItems] = useState<LiveItem[]>([]);
@@ -547,6 +571,24 @@ export function Agent() {
         const assistantTs = Math.max(ts, lastToolTimestamp + 1);
         if (m.role === "user") {
           const displayPrompt = toDisplayPrompt(m.content);
+          const selectedSkills = Array.isArray(meta?.selected_skills)
+            ? meta.selected_skills.filter((item): item is string => typeof item === "string")
+            : [];
+          const selectedTools = Array.isArray(meta?.selected_tools)
+            ? meta.selected_tools.filter((item): item is string => typeof item === "string")
+            : [];
+          if (selectedSkills.length || selectedTools.length) {
+            const rawDescriptions = meta?.selected_descriptions;
+            const selectedDescriptions = rawDescriptions && typeof rawDescriptions === "object"
+              ? Object.fromEntries(
+                  Object.entries(rawDescriptions).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+                )
+              : undefined;
+            displayPrompt.meta = {
+              ...displayPrompt.meta,
+              toolSelection: { selected_skills: selectedSkills, selected_tools: selectedTools, selected_descriptions: selectedDescriptions },
+            };
+          }
           agentMsgs.push({
             id: m.message_id,
             type: "user",
@@ -728,6 +770,7 @@ export function Agent() {
         // Only update tracker (no message creation during streaming)
         act().updateRunningToolCall(callId, toolName, {
           status: d.status === "ok" ? "ok" : "error",
+          data_status: d.data_status === "no_data" ? "no_data" : undefined,
           preview: String(d.preview || ""),
           elapsed_ms: Number(d.elapsed_ms || 0),
           elapsed_s: undefined,
@@ -1265,9 +1308,29 @@ export function Agent() {
   const runPrompt = useCallback(async (
     prompt: string,
     attachment: ComposerAttachment | null = null,
+    selection?: MessageSelection,
   ) => {
     if (!prompt.trim() || status === "streaming") return;
     clearStreamingView();
+
+    const selectedDescriptions = selection
+      ? Object.fromEntries(
+          [...selection.selected_skills, ...selection.selected_tools]
+            .map((name) => {
+              const item = [...(capabilities?.skills ?? []), ...(capabilities?.tools ?? [])]
+                .find((candidate) => candidate.name === name);
+              return item ? [name, item.description] : null;
+            })
+            .filter((entry): entry is [string, string] => entry !== null),
+        )
+      : undefined;
+    const selectionMeta = selection && (selection.selected_skills.length || selection.selected_tools.length)
+      ? {
+          selected_skills: selection.selected_skills,
+          selected_tools: selection.selected_tools,
+          selected_descriptions: selectedDescriptions,
+        }
+      : undefined;
 
     if (goalComposerActive) {
       try {
@@ -1282,14 +1345,14 @@ export function Agent() {
           id: "",
           type: "user",
           content: prompt,
-          meta: { goalMode: true, requestText: kickoff },
+          meta: { goalMode: true, requestText: kickoff, toolSelection: selectionMeta },
           timestamp: Date.now(),
         });
         act().startActivity(`pending-${Date.now()}`);
         act().setStatus("streaming");
         forceScrollToBottom();
         setupSSE(sid);
-        const sent = await api.sendMessage(sid, kickoff);
+        const sent = await api.sendMessage(sid, kickoff, selection);
         if (act().activity?.attemptId.startsWith("pending-")) {
           act().setActivityAttemptId(sent.attempt_id);
         }
@@ -1307,6 +1370,9 @@ export function Agent() {
     let finalPrompt = prompt;
     const displayPrompt = toDisplayPrompt(prompt);
     const messageMeta: AgentMessageMeta = { ...displayPrompt.meta };
+    if (selection && (selection.selected_skills.length || selection.selected_tools.length)) {
+      messageMeta.toolSelection = selectionMeta;
+    }
 
     // Swarm mode: let agent auto-select the right preset
     if (swarmPreset) {
@@ -1340,7 +1406,7 @@ export function Agent() {
         setSearchParams({ session: sid }, { replace: true });
       }
       setupSSE(sid);
-      const sent = await api.sendMessage(sid, finalPrompt);
+      const sent = await api.sendMessage(sid, finalPrompt, selection);
       if (act().activity?.attemptId.startsWith("pending-")) {
         act().setActivityAttemptId(sent.attempt_id);
       }
@@ -1355,6 +1421,7 @@ export function Agent() {
   }, [
     archiveActivity,
     clearStreamingView,
+    capabilities,
     ensureGoalSession,
     forceScrollToBottom,
     goalComposerActive,
@@ -1784,6 +1851,7 @@ export function Agent() {
                   />
                 ) : undefined
               }
+              capabilities={capabilities}
               onSubmit={runPrompt}
               onCancel={handleCancel}
               onExport={handleExport}

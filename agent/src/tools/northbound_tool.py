@@ -21,6 +21,7 @@ from typing import Any
 from backtest.loaders.eastmoney_client import get_json
 from src.agent.tools import BaseTool
 from src.tools import tushare_fallbacks
+from src.tools.stock_connect_summary import SUMMARY_PARAMS, SUMMARY_URL, parse_summary
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +41,17 @@ _MAX_LOOKBACK_DAYS = 250
 # per channel: ``hk2sh`` (Shanghai-Connect) and ``hk2sz`` (Shenzhen-Connect).
 _REALTIME_FIELDS = "f1,f2,f3,f4,f51,f52,f54,f56"
 
-# History field selectors: f51 date, f52 Shanghai net inflow, f54 Shenzhen net
-# inflow (units: 10k CNY as published by Eastmoney).
+# History field selectors.  Eastmoney's KAMT row is a compact Stock-Connect
+# summary, not a three-column northbound-only series:
+#
+#   f51 date, f52 Shanghai NB, f53 Shenzhen NB, f54 Northbound total,
+#   f55 Shanghai SB, f56 Shenzhen SB, f57 Southbound total.
+#
+# The old implementation requested only f51/f52/f54 and then interpreted the
+# third cell as Shenzhen NB.  That silently turned Northbound total into the
+# Shenzhen leg and made the Southbound series impossible to retrieve.
 _HISTORY_FIELDS1 = "f1,f3"
-_HISTORY_FIELDS2 = "f51,f52,f54"
+_HISTORY_FIELDS2 = "f51,f52,f53,f54,f55,f56,f57"
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -99,8 +107,10 @@ def _parse_realtime(payload: Any) -> dict[str, float | None]:
 def _parse_history_row(raw: str) -> dict[str, Any] | None:
     """Parse one ``kamt.kline`` history row into a daily net-inflow dict.
 
-    Column order follows :data:`_HISTORY_FIELDS2`: date, Shanghai net inflow,
-    Shenzhen net inflow.
+    Column order follows :data:`_HISTORY_FIELDS2`.  For compatibility with
+    mocked/legacy three-cell rows, a three-cell row is still interpreted as
+    date, Shanghai, Shenzhen.  Real KAMT rows are parsed by the seven-cell
+    layout documented above.
 
     Args:
         raw: One comma-joined row string from ``data.klines``.
@@ -114,8 +124,11 @@ def _parse_history_row(raw: str) -> dict[str, Any] | None:
         return None
     shanghai = _coerce_float(parts[1])
     shenzhen = _coerce_float(parts[2])
-    if shanghai is None and shenzhen is None:
-        total: float | None = None
+    declared_total = _coerce_float(parts[3]) if len(parts) >= 7 else None
+    if declared_total is not None:
+        total = declared_total
+    elif shanghai is None and shenzhen is None:
+        total = None
     else:
         total = (shanghai or 0.0) + (shenzhen or 0.0)
     return {
@@ -215,6 +228,34 @@ class NorthboundFlowTool(BaseTool):
         """
         lookback_days = _clamp_lookback(kwargs.get("lookback_days", _DEFAULT_LOOKBACK_DAYS))
 
+        # The mutual-quota report is the current Eastmoney contract for the
+        # four Stock-Connect legs.  It is more reliable than guessing the
+        # shape of the older KAMT endpoint and gives us a real current value
+        # even when the optional minute series is empty.
+        try:
+            summary = parse_summary(
+                get_json(SUMMARY_URL, params=SUMMARY_PARAMS),
+                direction="northbound",
+                lookback_days=lookback_days,
+            )
+        except Exception as exc:  # noqa: BLE001 - continue to independent fallback
+            logger.warning("northbound mutual-quota summary failed: %s", exc)
+            summary = None
+        if summary is not None:
+            return json.dumps(
+                {
+                    "ok": True,
+                    "market": "China A",
+                    "source": "eastmoney-mutual-quota",
+                    "warnings": [
+                        "Eastmoney mutual-quota summary provides the current daily snapshot; "
+                        "historical rows require the configured Tushare fallback"
+                    ],
+                    "data": summary,
+                },
+                ensure_ascii=False,
+            )
+
         try:
             realtime_payload = get_json(
                 _REALTIME_URL,
@@ -259,6 +300,39 @@ class NorthboundFlowTool(BaseTool):
 
         realtime = _parse_realtime(realtime_payload)
         history = _parse_history(history_payload, lookback_days)
+
+        # Eastmoney can return HTTP 200 with an empty/placeholder payload while
+        # the endpoint is degraded. Treat that as unavailable and try the
+        # configured Tushare adapter instead of presenting green-check nulls.
+        if not history and realtime.get("total") is None:
+            try:
+                fallback_data = tushare_fallbacks.fetch_northbound_flow(
+                    lookback_days=lookback_days
+                )
+            except Exception as fallback_exc:  # noqa: BLE001 - report both causes
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": (
+                            "eastmoney returned no northbound-flow data; "
+                            f"tushare fallback failed: {fallback_exc}"
+                        ),
+                    },
+                    ensure_ascii=False,
+                )
+            return json.dumps(
+                {
+                    "ok": True,
+                    "market": "China A",
+                    "source": "tushare",
+                    "warnings": [
+                        "eastmoney returned an empty northbound-flow payload; "
+                        "used tushare fallback"
+                    ],
+                    "data": fallback_data,
+                },
+                ensure_ascii=False,
+            )
 
         envelope = {
             "ok": True,

@@ -91,6 +91,24 @@ def test_northbound_converts_tushare_million_yuan_to_10k_cny() -> None:
     assert data["realtime"]["total"] == 450.0
 
 
+def test_southbound_converts_tushare_million_yuan_to_10k_cny() -> None:
+    pro = SimpleNamespace(
+        moneyflow_hsgt=lambda **_: [
+            {"trade_date": "20240102", "ggt_ss": 8.0, "ggt_sz": 2.0, "south_money": 10.0},
+            {"trade_date": "20240103", "ggt_ss": 4.0, "ggt_sz": -1.0, "south_money": 3.0},
+        ]
+    )
+    with patch.object(tf, "_pro_api", return_value=pro), patch.object(
+        tf, "_date_window", return_value=("20240101", "20240103")
+    ):
+        data = tf.fetch_southbound_flow(lookback_days=2)
+
+    assert data["unit"] == "10k CNY"
+    assert data["history"][0]["shanghai_connect"] == 800.0
+    assert data["history"][0]["shenzhen_connect"] == 200.0
+    assert data["history"][1]["total"] == 300.0
+
+
 def test_margin_trading_maps_and_sorts_most_recent_first() -> None:
     pro = SimpleNamespace(
         margin_detail=lambda **_: [

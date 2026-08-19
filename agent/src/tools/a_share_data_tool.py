@@ -74,6 +74,9 @@ class AShareDataTool(BaseTool):
     """Fetch A-share quotes, bars, reports, news, fundamentals, and notices."""
 
     name = "get_a_share_data"
+    # The operation is part of the call arguments, so one analysis may need
+    # separate successful calls for quote/valuation, fundamentals, and notices.
+    repeatable = True
     description = (
         "Read-only mainland A-share data using the a-stock-data provider adapters. "
         "Operations: quote (Tencent snapshot and valuation), bars (Tencent qfq daily "
