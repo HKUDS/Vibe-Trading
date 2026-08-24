@@ -24,6 +24,7 @@ backtest to walk through.
 
 from __future__ import annotations
 
+import math
 from typing import Dict
 
 import numpy as np
@@ -502,6 +503,25 @@ def implied_volatility(market_price: float, S: float, K: float, T: float,
         return float("nan")
 
 
+def _safe_ratio_norm_cdf(ratio: float, power: float, cdf_arg: float) -> float:
+    """Compute (ratio ** power) * norm.cdf(cdf_arg) in log-space to prevent overflow."""
+    if ratio <= 0.0:
+        return 0.0
+    log_power = power * math.log(ratio)
+    if log_power < 600.0:
+        val = float((ratio ** power) * norm.cdf(cdf_arg))
+        if not math.isnan(val):
+            return val
+    # Evaluate in log space
+    log_cdf = float(norm.logcdf(cdf_arg))
+    total_log = log_power + log_cdf
+    if total_log < -700.0:
+        return 0.0
+    if total_log > 700.0:
+        return float("inf")
+    return float(math.exp(total_log))
+
+
 def barrier_option_price(
     S: float,
     K: float,
@@ -596,16 +616,18 @@ def barrier_option_price(
 
     A = phi * S * df_q * norm.cdf(phi * x1) - phi * K * df_r * norm.cdf(phi * (x1 - sigma_sqrt_T))
     B = phi * S * df_q * norm.cdf(phi * x2) - phi * K * df_r * norm.cdf(phi * (x2 - sigma_sqrt_T))
-    C = phi * S * df_q * (hs_ratio ** (2.0 * (mu + 1.0))) * norm.cdf(eta * y1) - phi * K * df_r * (
-        hs_ratio ** (2.0 * mu)
-    ) * norm.cdf(eta * (y1 - sigma_sqrt_T))
-    D = phi * S * df_q * (hs_ratio ** (2.0 * (mu + 1.0))) * norm.cdf(eta * y2) - phi * K * df_r * (
-        hs_ratio ** (2.0 * mu)
-    ) * norm.cdf(eta * (y2 - sigma_sqrt_T))
+    term_c1 = _safe_ratio_norm_cdf(hs_ratio, 2.0 * (mu + 1.0), eta * y1)
+    term_c2 = _safe_ratio_norm_cdf(hs_ratio, 2.0 * mu, eta * (y1 - sigma_sqrt_T))
+    C = phi * S * df_q * term_c1 - phi * K * df_r * term_c2
+
+    term_d1 = _safe_ratio_norm_cdf(hs_ratio, 2.0 * (mu + 1.0), eta * y2)
+    term_d2 = _safe_ratio_norm_cdf(hs_ratio, 2.0 * mu, eta * (y2 - sigma_sqrt_T))
+    D = phi * S * df_q * term_d1 - phi * K * df_r * term_d2
 
     # Cash rebate component
     if rebate > 0.0:
-        E = rebate * df_r * (norm.cdf(eta * (x2 - sigma_sqrt_T)) - (hs_ratio ** (2.0 * mu)) * norm.cdf(eta * (y2 - sigma_sqrt_T)))
+        term_e2 = _safe_ratio_norm_cdf(hs_ratio, 2.0 * mu, eta * (y2 - sigma_sqrt_T))
+        E = rebate * df_r * (norm.cdf(eta * (x2 - sigma_sqrt_T)) - term_e2)
     else:
         E = 0.0
 

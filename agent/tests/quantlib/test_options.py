@@ -20,12 +20,10 @@ import numpy as np
 import pytest
 
 from src.quantlib.options import (
-    BARRIER_TYPES,
     barrier_option_price,
     bs_greeks,
     bs_price,
     implied_volatility,
-    normalise_barrier_type,
     normalise_option_type,
 )
 
@@ -560,6 +558,21 @@ class TestBarrierOptions:
         assert barrier_option_price(85.0, 100.0, 90.0, 0.5, 0.05, 0.20, "down-and-in", "call") == pytest.approx(
             vanilla
         )
+    def test_extreme_moneyness_and_small_vol_no_overflow(self):
+        # High drift-to-vol ratio produces large powers that previously raised OverflowError
+        p = barrier_option_price(
+            S=100.0,
+            K=100.0,
+            H=150.0,
+            T=1.0,
+            r=0.10,
+            sigma=0.01,
+            barrier_type="up-and-out",
+            option_type="call",
+        )
+        assert not np.isnan(p)
+        assert not np.isinf(p)
+        assert p >= 0.0
 
     def test_barrier_option_input_validation(self):
         with pytest.raises(ValueError, match="strictly positive"):
