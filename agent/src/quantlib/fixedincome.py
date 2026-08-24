@@ -735,8 +735,14 @@ def fit_yield_curve(
         if ssr < best_ssr:
             best_ssr, best_lambdas = ssr, lambdas
 
+    def _opt_obj(log_p: np.ndarray) -> float:
+        lams = np.exp(log_p)
+        if n_decay == 2 and abs(lams[0] - lams[1]) < 1e-4:
+            return float("inf")
+        return _profiled_ssr(lams, tau, obs)[0]
+
     refined = minimize(
-        lambda p: _profiled_ssr(np.exp(p), tau, obs)[0],
+        _opt_obj,
         np.log(best_lambdas),
         method="Nelder-Mead",
         bounds=[(math.log(low), math.log(high))] * n_decay,

@@ -12,7 +12,6 @@ import pytest
 
 from src.quantlib.fixedincome import (
     COMPOUNDING_CONVENTIONS,
-    DEFAULT_KEY_RATE_TENORS,
     CurveFit,
     accrued_interest,
     bond_cashflows,
