@@ -877,10 +877,10 @@ def vasicek_credit_var(
     inv_pd = float(norm.ppf(pd))
     inv_conf = float(norm.ppf(confidence))
 
-    numerator = inv_pd + np.sqrt(rho) * inv_conf
-    denominator = np.sqrt(1.0 - rho)
+    denominator = math.sqrt(max(1e-12, 1.0 - rho))
+    numerator = inv_pd + math.sqrt(max(0.0, rho)) * inv_conf
     wcdr = float(norm.cdf(numerator / denominator))
-
+    wcdr = float(np.clip(wcdr, 0.0, 1.0))
     el = expected_loss(ead, pd, lgd)
     wcl = float(ead * lgd * wcdr)
     ul = float(max(0.0, wcl - el))

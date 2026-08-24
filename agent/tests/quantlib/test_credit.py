@@ -592,6 +592,13 @@ def test_vasicek_credit_var_monotonic_with_correlation():
     assert res_high_rho["unexpected_loss"] > res_low_rho["unexpected_loss"]
     assert res_high_rho["capital_ratio"] > res_low_rho["capital_ratio"]
 
+def test_vasicek_credit_var_extreme_correlation_and_pd():
+    # Near-singular correlation and small PD
+    res = vasicek_credit_var(1_000_000.0, pd=1e-6, lgd=0.45, asset_correlation=0.999, confidence=0.999)
+    assert not np.isnan(res["wcdr"])
+    assert not np.isinf(res["wcdr"])
+    assert 0.0 <= res["wcdr"] <= 1.0
+    assert 0.0 <= res["capital_ratio"] <= 1.0
 
 def test_credit_spread_dv01_exact():
     # 5.0 year spread duration on $1,000,000 par at par price 100:
