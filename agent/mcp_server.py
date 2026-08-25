@@ -1356,8 +1356,9 @@ def _trading_common_args(
 def trading_connections() -> str:
     """List selectable trading connector profiles.
 
-    The connector is the first-level choice. Paper/live is an attribute of each
-    profile under that connector.
+    Start here before any other ``trading_*`` call. The connector is the
+    first-level choice. Paper/live is an attribute of each profile under that
+    connector.
     """
     registry = _get_registry()
     return registry.execute("trading_connections", {})
@@ -1366,6 +1367,8 @@ def trading_connections() -> str:
 @mcp.tool
 def trading_select_connection(connection: str) -> str:
     """Select the default trading connector profile for later trading_* calls.
+
+    Run ``trading_connections`` first to list valid profile ids.
 
     Args:
         connection: Profile id, e.g. ``ibkr-paper-local`` or ``robinhood-live-mcp``.
@@ -1384,9 +1387,10 @@ def trading_check(
 ) -> str:
     """Check whether a trading connector profile is configured and reachable.
 
-    This never places orders. For local profiles, it checks the user's local
-    app/socket. For remote MCP profiles, it reports config and OAuth-token
-    presence without returning secrets.
+    Run ``trading_connections`` first to list profiles. This never places
+    orders. For local profiles, it checks the user's local app/socket. For
+    remote MCP profiles, it reports config and OAuth-token presence without
+    returning secrets.
 
     Args:
         connection: Optional profile id. Defaults to the selected profile.
@@ -1412,6 +1416,9 @@ def trading_account(
 ) -> str:
     """Read account data from the selected trading connector profile.
 
+    Requires a configured connector profile; run ``trading_connections`` to
+    list profiles.
+
     Args:
         connection: Optional profile id. Defaults to the selected profile.
         host: Optional local host override.
@@ -1435,6 +1442,9 @@ def trading_positions(
     account: str | None = None,
 ) -> str:
     """Read positions from the selected trading connector profile.
+
+    Requires a configured connector profile; run ``trading_connections`` to
+    list profiles.
 
     Args:
         connection: Optional profile id. Defaults to the selected profile.
@@ -1461,7 +1471,9 @@ def trading_orders(
 ) -> str:
     """Read open orders from the selected trading connector profile.
 
-    Read-only: this tool does not place, cancel, modify, or replace orders.
+    Requires a configured connector profile; run ``trading_connections`` to
+    list profiles. Read-only: this tool does not place, cancel, modify, or
+    replace orders.
 
     Args:
         connection: Optional profile id. Defaults to the selected profile.
@@ -1490,6 +1502,9 @@ def trading_quote(
     sec_type: str = "STK",
 ) -> str:
     """Read a quote snapshot from the selected trading connector profile.
+
+    This is the broker-account view. For market quotes without a broker
+    connection, use ``get_market_data`` instead.
 
     Args:
         symbol: Symbol such as AAPL.
@@ -1527,6 +1542,9 @@ def trading_history(
     limit: int = 90,
 ) -> str:
     """Read historical bars from the selected trading connector profile.
+
+    This is the broker-account view. For market OHLCV without a broker
+    connection, use ``get_market_data`` instead.
 
     Args:
         symbol: Symbol such as AAPL.

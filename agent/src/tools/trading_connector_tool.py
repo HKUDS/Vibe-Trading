@@ -217,7 +217,8 @@ class TradingConnectionsTool(BaseTool):
 
     name = "trading_connections"
     description = (
-        "List selectable trading connector profiles. Connectors come first; paper/live is a profile attribute."
+        "List selectable trading connector profiles. Start here before any other trading_* call. "
+        "Connectors come first; paper/live is a profile attribute."
     )
     parameters = {"type": "object", "properties": {}, "required": []}
     repeatable = True
@@ -242,7 +243,10 @@ class TradingSelectConnectionTool(BaseTool):
     """Select the default trading connector profile."""
 
     name = "trading_select_connection"
-    description = "Select the default trading connector profile for subsequent trading_* tool calls."
+    description = (
+        "Select the default trading connector profile for subsequent trading_* tool calls. "
+        "Run trading_connections first to list valid profile ids."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -270,7 +274,10 @@ class TradingCheckTool(BaseTool):
     """Check a trading connector profile."""
 
     name = "trading_check"
-    description = "Check whether a trading connector profile is configured and reachable. This never places orders."
+    description = (
+        "Check whether a trading connector profile is configured and reachable. "
+        "Run trading_connections first to list profiles. This never places orders."
+    )
     parameters = {
         "type": "object",
         "properties": TRADING_COMMON_PARAMETERS,
@@ -291,7 +298,10 @@ class TradingAccountTool(BaseTool):
     """Read account summary from a trading connector profile."""
 
     name = "trading_account"
-    description = "Read account summary from the selected trading connector profile. Read-only."
+    description = (
+        "Read account summary from the selected trading connector profile. "
+        "Requires a configured connector profile; run trading_connections to list profiles. Read-only."
+    )
     parameters = TradingCheckTool.parameters
     repeatable = True
     is_readonly = True
@@ -308,7 +318,10 @@ class TradingPositionsTool(BaseTool):
     """Read positions from a trading connector profile."""
 
     name = "trading_positions"
-    description = "Read positions from the selected trading connector profile. Read-only."
+    description = (
+        "Read positions from the selected trading connector profile. "
+        "Requires a configured connector profile; run trading_connections to list profiles. Read-only."
+    )
     parameters = TradingCheckTool.parameters
     repeatable = True
     is_readonly = True
@@ -325,7 +338,10 @@ class TradingOrdersTool(BaseTool):
     """Read open orders from a trading connector profile."""
 
     name = "trading_orders"
-    description = "Read open orders from the selected trading connector profile. Read-only."
+    description = (
+        "Read open orders from the selected trading connector profile. "
+        "Requires a configured connector profile; run trading_connections to list profiles. Read-only."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -355,7 +371,10 @@ class TradingQuoteTool(BaseTool):
     """Read a quote from a trading connector profile."""
 
     name = "trading_quote"
-    description = "Read a quote snapshot from the selected trading connector profile. Read-only."
+    description = (
+        "Read a quote snapshot from the selected trading connector profile. "
+        "For market quotes without a broker connection, use get_market_data instead. Read-only."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -391,7 +410,10 @@ class TradingHistoryTool(BaseTool):
     """Read historical bars from a trading connector profile."""
 
     name = "trading_history"
-    description = "Read historical bars from the selected trading connector profile. Read-only."
+    description = (
+        "Read historical bars from the selected trading connector profile. "
+        "For market OHLCV without a broker connection, use get_market_data instead. Read-only."
+    )
     parameters = {
         "type": "object",
         "properties": {
