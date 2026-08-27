@@ -25,16 +25,16 @@ one you need rather than loading them all:
 
 | Doc | Covers |
 |-----|--------|
-| [yahoo_client.get_chart](yfinance/references/yahoo_client_get_chart.md) | Direct v8 OHLCV bars (range or epoch window) |
-| [yahoo_client.get_quote_summary](yfinance/references/yahoo_client_get_quote_summary.md) | v10 quoteSummary modules (key stats, financials, ownership) |
-| [yahoo_client.get_options](yfinance/references/yahoo_client_get_options.md) | v7 option chain (expirations + calls/puts) |
-| [yahoo_client.search](yfinance/references/yahoo_client_search.md) | v1 instrument search by ticker/name |
-| [get_options_chain tool](yfinance/references/tool_get_options_chain.md) | Agent tool: US options ladder envelope |
-| [get_stock_profile tool](yfinance/references/tool_get_stock_profile.md) | Agent tool: company profile/estimates/ownership envelope |
+| [yahoo_client.get_chart](references/yahoo_client_get_chart.md) | Direct v8 OHLCV bars (range or epoch window) |
+| [yahoo_client.get_quote_summary](references/yahoo_client_get_quote_summary.md) | v10 quoteSummary modules (key stats, financials, ownership) |
+| [yahoo_client.get_options](references/yahoo_client_get_options.md) | v7 option chain (expirations + calls/puts) |
+| [yahoo_client.search](references/yahoo_client_search.md) | v1 instrument search by ticker/name |
+| [get_options_chain tool](references/tool_get_options_chain.md) | Agent tool: US options ladder envelope |
+| [get_stock_profile tool](references/tool_get_stock_profile.md) | Agent tool: company profile/estimates/ownership envelope |
 
 > Path convention: `read_file` resolves paths with `skills/` as the root, so
-> every link above is written with the **skill-name prefix** (`yfinance/references/...`).
-> Omitting the prefix makes the read fail. Reuse this `yfinance/references/...`
+> every link above is written with the **skill-name prefix** (`references/...`).
+> Omitting the prefix makes the read fail. Reuse this `references/...`
 > form for any new reference docs.
 
 The Yahoo client uses the project ticker convention (`AAPL.US` → `AAPL`,
