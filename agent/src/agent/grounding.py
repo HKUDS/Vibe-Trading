@@ -551,6 +551,9 @@ class IdentityRecord:
     candidates: list[dict[str, Any]] = field(default_factory=list)
     version: int = 1
     updated_at: str = field(default_factory=_utc_now)
+    inherited_from_attempt_id: str | None = None
+    inherited_from_run_id: str | None = None
+    inherited_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -572,6 +575,9 @@ class EvidenceRecord:
     market_session: str | None = None
     adjustment: str | None = None
     unit: str | None = None
+    inherited_from_attempt_id: str | None = None
+    inherited_from_run_id: str | None = None
+    inherited_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -640,6 +646,7 @@ class GroundingLedger:
         run_dir: Path,
         user_message: str,
         history: Sequence[Mapping[str, Any]] | None = None,
+        inherited_grounding: Mapping[str, Any] | None = None,
     ) -> None:
         """Create a ledger and seed only authoritative prior identities.
 
@@ -650,6 +657,8 @@ class GroundingLedger:
                 the model, but is deliberately not an authorization source for
                 this run: stale identities from an earlier user subject must
                 not unlock a new subject's tools.
+            inherited_grounding: Trusted artifact from the direct parent
+                Attempt after SessionService has verified task continuity.
         """
         self.run_dir = Path(run_dir)
         self.user_message = user_message
@@ -671,8 +680,116 @@ class GroundingLedger:
         # names an instrument the run really handled.
         self._session_symbol_roots: set[str] = set()
 
+        self._hydrate_inherited_grounding(inherited_grounding)
         self._seed_symbols(user_message, source="user_message")
         self.persist()
+
+    def _hydrate_inherited_grounding(
+        self,
+        payload: Mapping[str, Any] | None,
+    ) -> None:
+        """Import trusted locked identities and observed evidence from a parent run."""
+        if not isinstance(payload, Mapping) or payload.get("schema_version") != 1:
+            return
+        inheritance = payload.get("_inheritance")
+        if not isinstance(inheritance, Mapping):
+            return
+        attempt_id = str(inheritance.get("attempt_id") or "").strip()
+        run_id = str(inheritance.get("run_id") or "").strip()
+        if not attempt_id or not run_id:
+            return
+        inherited_at = _utc_now()
+
+        identity = payload.get("identity")
+        identity_rows = identity.get("records") if isinstance(identity, Mapping) else []
+        if isinstance(identity_rows, list):
+            for raw in identity_rows:
+                if not isinstance(raw, Mapping) or raw.get("status") != "locked":
+                    continue
+                symbol_value = raw.get("symbol")
+                symbol = _normalize_symbol(str(symbol_value)) if symbol_value else ""
+                if not symbol:
+                    continue
+                query = str(raw.get("query") or symbol).strip()
+                source_value = raw.get("source")
+                sources = (
+                    [str(item) for item in source_value if str(item).strip()] if isinstance(source_value, list) else []
+                )
+                raw_version = raw.get("version")
+                version = (
+                    max(1, raw_version) if isinstance(raw_version, int) and not isinstance(raw_version, bool) else 1
+                )
+                record = IdentityRecord(
+                    query=query,
+                    status="locked",
+                    symbol=symbol,
+                    venue=str(raw.get("venue") or "") or None,
+                    instrument_type=str(raw.get("instrument_type") or "") or None,
+                    currency=str(raw.get("currency") or "") or None,
+                    source_tool_call_id=(str(raw.get("source_tool_call_id") or "") or None),
+                    source=sources,
+                    candidates=[],
+                    version=version,
+                    updated_at=str(raw.get("updated_at") or inherited_at),
+                    inherited_from_attempt_id=attempt_id,
+                    inherited_from_run_id=run_id,
+                    inherited_at=inherited_at,
+                )
+                self._identities[f"inherited:{symbol}"] = record
+                self._session_symbols.add(symbol)
+
+        evidence_rows = payload.get("evidence")
+        if isinstance(evidence_rows, list):
+            for raw in evidence_rows:
+                if not isinstance(raw, Mapping) or raw.get("status") != "observed":
+                    continue
+                symbol_value = raw.get("symbol")
+                symbol = _normalize_symbol(str(symbol_value)) if symbol_value else ""
+                source = str(raw.get("source") or "").strip()
+                timestamp = str(raw.get("timestamp") or "").strip()
+                value = raw.get("value")
+                if (
+                    not symbol
+                    or not source
+                    or source.casefold() in {"auto", "unknown"}
+                    or not timestamp
+                    or isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(float(value))
+                ):
+                    continue
+                call_id = str(raw.get("call_id") or "").strip()
+                tool = str(raw.get("tool") or "").strip()
+                field_name = str(raw.get("field") or "").strip()
+                if not call_id or not tool or not field_name:
+                    continue
+                self._evidence.append(
+                    EvidenceRecord(
+                        call_id=call_id,
+                        tool=tool,
+                        symbol=symbol,
+                        source=source,
+                        timestamp=timestamp,
+                        field=field_name,
+                        value=value,
+                        status="observed",
+                        currency=str(raw.get("currency") or "") or None,
+                        venue=str(raw.get("venue") or "") or None,
+                        currency_conversion=(str(raw.get("currency_conversion") or "") or None),
+                        observed_at=str(raw.get("observed_at") or inherited_at),
+                        market_session=(str(raw.get("market_session") or "") or None),
+                        adjustment=str(raw.get("adjustment") or "") or None,
+                        unit=str(raw.get("unit") or "") or None,
+                        inherited_from_attempt_id=attempt_id,
+                        inherited_from_run_id=run_id,
+                        inherited_at=inherited_at,
+                    )
+                )
+                self._session_symbols.add(symbol)
+
+        if self._identities or self._evidence:
+            self._identity_required = True
+            self._buffer_output = True
 
     @property
     def authorized_symbols(self) -> set[str]:

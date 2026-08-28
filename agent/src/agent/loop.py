@@ -992,13 +992,21 @@ class AgentLoop:
         except Exception as exc:  # noqa: BLE001
             logger.warning("run manifest not written (%s: %s)", type(exc).__name__, exc)
 
-    def run(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None, session_id: str = "") -> Dict[str, Any]:
+    def run(
+        self,
+        user_message: str,
+        history: Optional[List[Dict[str, Any]]] = None,
+        session_id: str = "",
+        inherited_grounding: Optional[Mapping[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Run the ReAct loop synchronously.
 
         Args:
             user_message: User message.
             history: Prior conversation messages.
             session_id: Session ID.
+            inherited_grounding: Verified grounding artifact from the direct
+                parent Attempt when this message continues the same task.
 
         Returns:
             Execution result dict.
@@ -1035,6 +1043,7 @@ class AgentLoop:
             run_dir=run_dir,
             user_message=user_message,
             history=history,
+            inherited_grounding=inherited_grounding,
         )
 
         context = ContextBuilder(self.registry, self.memory,

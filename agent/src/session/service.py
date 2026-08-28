@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import json
 import logging
+import re
 import threading
 import time
 from datetime import datetime
@@ -32,6 +34,20 @@ if TYPE_CHECKING:
 # Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
 _AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
 logger = logging.getLogger(__name__)
+
+_CONTINUATION_RE = re.compile(
+    r"(?:^|[，,。；;\s])(?:确认|继续|接着|继续完成|重新完成|重试|再试一次)(?:$|[，,。；;\s])"
+    r"|(?:基于|使用|沿用)(?:刚才|上述|上一版|上一轮|之前)(?:的)?(?:数据|结果|证据)?"
+    r"|(?:刚才|上述|上一版|上一个|这个任务|原任务)",
+    re.IGNORECASE,
+)
+_CANONICAL_SYMBOL_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:\d{5,6}|[A-Z][A-Z0-9.-]{0,11})\."
+    r"(?:SH|SZ|BJ|HK|US|TO|V|BO|KS|KQ)(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+_ISO_DATE_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}-\d{2}-\d{2}(?!\d)")
+_LIVE_MARKET_RE = re.compile(r"(?:当前|最新|实时|现价|现在|盘中|intraday|real[- ]?time)", re.IGNORECASE)
 
 
 #: Terminal attempt status -> SSE event name. Cancellation is its own event so
@@ -529,15 +545,19 @@ class SessionService:
 
         # Build the message history context.
         history = self._convert_messages_to_history(messages) if messages else None
+        inherited_grounding = self._resolve_parent_grounding(attempt)
 
         try:
+            run_kwargs: Dict[str, Any] = {
+                "user_message": attempt.prompt,
+                "history": history,
+                "session_id": session_id,
+            }
+            if inherited_grounding is not None:
+                run_kwargs["inherited_grounding"] = inherited_grounding
             result = await loop.run_in_executor(
                 _AGENT_EXECUTOR,
-                lambda: agent.run(
-                    user_message=attempt.prompt,
-                    history=history,
-                    session_id=session_id,
-                ),
+                lambda: agent.run(**run_kwargs),
             )
         finally:
             self._active_loops.pop(session_id, None)
@@ -559,6 +579,77 @@ class SessionService:
                 result["metrics"] = metrics
 
         return result
+
+    def _resolve_parent_grounding(self, attempt: Attempt) -> Optional[Dict[str, Any]]:
+        """Load direct-parent evidence only for an unambiguous task continuation."""
+        if not attempt.parent_attempt_id:
+            return None
+        parent = self.store.get_attempt(attempt.session_id, attempt.parent_attempt_id)
+        if parent is None or parent.session_id != attempt.session_id or not parent.run_dir:
+            return None
+        try:
+            runs_root = self.runs_dir.resolve()
+            parent_run = Path(parent.run_dir).resolve()
+            parent_run.relative_to(runs_root)
+        except (OSError, ValueError):
+            return None
+        artifact_path = parent_run / "artifacts" / "grounding_evidence.json"
+        try:
+            payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return None
+        if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+            return None
+        if not self._continues_parent_task(attempt.prompt, payload):
+            return None
+
+        inherited = dict(payload)
+        if _LIVE_MARKET_RE.search(attempt.prompt):
+            # Reuse the canonical identity, but current/real-time claims must
+            # obtain a fresh observation in this Attempt.
+            inherited["evidence"] = []
+        inherited["_inheritance"] = {
+            "attempt_id": parent.attempt_id,
+            "run_id": parent_run.name,
+        }
+        return inherited
+
+    @staticmethod
+    def _continues_parent_task(prompt: str, payload: Dict[str, Any]) -> bool:
+        """Return whether one prompt clearly continues the direct parent task."""
+        current_symbols = {
+            match.group(0).upper() for match in _CANONICAL_SYMBOL_RE.finditer(prompt)
+        }
+        parent_symbols: set[str] = set()
+        identity = payload.get("identity")
+        records = identity.get("records") if isinstance(identity, dict) else []
+        if isinstance(records, list):
+            parent_symbols.update(
+                str(record.get("symbol") or "").upper()
+                for record in records
+                if isinstance(record, dict) and record.get("status") == "locked"
+            )
+        evidence = payload.get("evidence")
+        if isinstance(evidence, list):
+            parent_symbols.update(
+                str(record.get("symbol") or "").upper()
+                for record in evidence
+                if isinstance(record, dict) and record.get("symbol")
+            )
+        parent_symbols.discard("")
+        if current_symbols and not current_symbols.issubset(parent_symbols):
+            return False
+
+        requested_dates = set(_ISO_DATE_RE.findall(prompt))
+        if requested_dates:
+            evidence_dates = {
+                str(record.get("timestamp"))[:10]
+                for record in evidence or []
+                if isinstance(record, dict) and record.get("timestamp")
+            }
+            if not requested_dates.issubset(evidence_dates):
+                return False
+        return bool(current_symbols and parent_symbols) or bool(_CONTINUATION_RE.search(prompt))
 
     @staticmethod
     def _record_tool_trail_event(

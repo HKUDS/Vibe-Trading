@@ -412,6 +412,122 @@ def test_stale_history_identity_does_not_unlock_new_subject(tmp_path: Path) -> N
     assert authorization.error_code == "identity_required"
 
 
+def test_trusted_parent_artifact_hydrates_identity_and_price_evidence(
+    tmp_path: Path,
+) -> None:
+    inherited = {
+        "schema_version": 1,
+        "identity": {
+            "records": [
+                {
+                    "query": "AAPL",
+                    "status": "locked",
+                    "symbol": "AAPL.US",
+                    "venue": "us",
+                    "instrument_type": "listed_security",
+                    "currency": "USD",
+                    "source_tool_call_id": "resolve-parent",
+                    "source": ["yahoo"],
+                }
+            ]
+        },
+        "evidence": [
+            {
+                "call_id": "price-parent",
+                "tool": "get_market_data",
+                "symbol": "AAPL.US",
+                "source": "yahoo",
+                "timestamp": "2026-08-28",
+                "field": "close",
+                "value": 195.0,
+                "status": "observed",
+                "currency": "USD",
+                "venue": "us",
+                "observed_at": "2026-08-28T21:00:00Z",
+                "market_session": "regular",
+                "adjustment": "unadjusted",
+                "unit": "share",
+            }
+        ],
+        "_inheritance": {
+            "attempt_id": "parent000001",
+            "run_id": "20260828_parent",
+        },
+    }
+
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="确认，继续完成",
+        inherited_grounding=inherited,
+    )
+
+    assert ledger.authorized_symbols == {"AAPL.US"}
+    result = ledger.validate_final_answer("AAPL.US 收盘价为 195.00。")
+    assert result.valid is True, result.issues
+    artifact = json.loads(
+        (tmp_path / "artifacts" / "grounding_evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert artifact["evidence"][0]["inherited_from_attempt_id"] == "parent000001"
+    assert artifact["evidence"][0]["inherited_from_run_id"] == "20260828_parent"
+    assert artifact["evidence"][0]["observed_at"] == "2026-08-28T21:00:00Z"
+    assert artifact["evidence"][0]["market_session"] == "regular"
+    assert artifact["evidence"][0]["adjustment"] == "unadjusted"
+    assert artifact["evidence"][0]["unit"] == "share"
+
+
+def test_inherited_artifact_ignores_untrusted_rows(tmp_path: Path) -> None:
+    inherited = {
+        "schema_version": 1,
+        "identity": {
+            "records": [
+                {"query": "AAPL", "status": "conflicting", "symbol": "AAPL.US"}
+            ]
+        },
+        "evidence": [
+            {
+                "call_id": "missing-source",
+                "tool": "get_market_data",
+                "symbol": "AAPL.US",
+                "source": "unknown",
+                "timestamp": "2026-08-28",
+                "field": "close",
+                "value": 195.0,
+                "status": "observed",
+            },
+            {
+                "call_id": "missing-time",
+                "tool": "get_market_data",
+                "symbol": "AAPL.US",
+                "source": "yahoo",
+                "timestamp": None,
+                "field": "close",
+                "value": 195.0,
+                "status": "observed",
+            },
+        ],
+        "_inheritance": {
+            "attempt_id": "parent000001",
+            "run_id": "20260828_parent",
+        },
+    }
+
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="确认，继续完成",
+        inherited_grounding=inherited,
+    )
+
+    assert ledger.authorized_symbols == set()
+    artifact = json.loads(
+        (tmp_path / "artifacts" / "grounding_evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert artifact["evidence"] == []
+
+
 def test_single_clean_not_found_source_is_not_enough_for_private_routing(
     tmp_path: Path,
 ) -> None:
