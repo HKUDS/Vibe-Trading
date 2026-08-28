@@ -1,0 +1,2 @@
+/home/rucha/HKU-personal-hedge-fund/calibration-study/runs/semis_invvol/code/signal_engine.py:29: FutureWarning: The default fill_method='pad' in DataFrame.pct_change is deprecated and will be removed in a future version. Either fill in any non-leading NA values prior to calling pct_change or specify 'fill_method=None' to not fill NA values.
+  vol = closes.pct_change().rolling(self.vol_window).std()

@@ -1,0 +1,82 @@
+{
+  "rebalances": [
+    {
+      "date": "2019-01-03",
+      "turnover": 0.5,
+      "entries": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.125
+        },
+        {
+          "code": "AMD.US",
+          "weight": 0.125
+        },
+        {
+          "code": "ASML.US",
+          "weight": 0.125
+        },
+        {
+          "code": "AVGO.US",
+          "weight": 0.125
+        },
+        {
+          "code": "LRCX.US",
+          "weight": 0.125
+        },
+        {
+          "code": "MU.US",
+          "weight": 0.125
+        },
+        {
+          "code": "NVDA.US",
+          "weight": 0.125
+        },
+        {
+          "code": "TSM.US",
+          "weight": 0.125
+        }
+      ],
+      "exits": [],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.0,
+          "to": 0.125,
+          "delta": 0.125
+        },
+        {
+          "code": "AMD.US",
+          "from": 0.0,
+          "to": 0.125,
+          "delta": 0.125
+        },
+        {
+          "code": "ASML.US",
+          "from": 0.0,
+          "to": 0.125,
+          "delta": 0.125
+        },
+        {
+          "code": "AVGO.US",
+          "from": 0.0,
+          "to": 0.125,
+          "delta": 0.125
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.125,
+          "delta": 0.125
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "rebalance_count": 1,
+    "turnover_total": 0.5,
+    "turnover_mean": 0.5,
+    "turnover_max": 0.5,
+    "largest_rebalance_date": "2019-01-03"
+  }
+}

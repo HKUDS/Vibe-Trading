@@ -1,0 +1,125 @@
+{
+  "artifacts": [
+    {
+      "path": "artifacts/equity.csv",
+      "sha256": "2945cb11f94d988eeda9a0f20bc195cd196042d2f5b6883535a4a303315b3209",
+      "size_bytes": 27748
+    },
+    {
+      "path": "artifacts/fills.jsonl",
+      "sha256": "e1e4f6abe64e25bfc53ed30732a0d0b252ad1dfdd1e4335aa1a4b9407e67866e",
+      "size_bytes": 569
+    },
+    {
+      "path": "artifacts/metrics.csv",
+      "sha256": "cc96bf7cd70a2c7a6e3504e7ec1811df2400067460743228ae8069e226b33439",
+      "size_bytes": 843
+    },
+    {
+      "path": "artifacts/ohlcv_AAPL.US.csv",
+      "sha256": "734fdf1852945e4d33970c0ce0a9ecb4d88ca0b93005ffda60ac3b31f8a64196",
+      "size_bytes": 23509
+    },
+    {
+      "path": "artifacts/positions.csv",
+      "sha256": "911989048425a64745056c7c183429471d3d4f7d0cbf1acfe4b1495c077e834c",
+      "size_bytes": 7523
+    },
+    {
+      "path": "artifacts/rebalance_notes.json",
+      "sha256": "66b451e141d0e683da97d935fc4af33ebd852a975aea8ba64b06256cf47bda58",
+      "size_bytes": 521
+    },
+    {
+      "path": "artifacts/rebalance_notes.md",
+      "sha256": "efe76238892459f701a73dd2ce3bbe8e0a06439a7cf37baa11986b04ecc5ff8d",
+      "size_bytes": 213
+    },
+    {
+      "path": "artifacts/risk_xray.json",
+      "sha256": "e282021f94d4fbc640eb63b26fb2e7336b24132f389339bd3c18f3895599bcc4",
+      "size_bytes": 1268
+    },
+    {
+      "path": "artifacts/risk_xray.md",
+      "sha256": "9c7f3fda8903aa697501cc97cc128024ce3aff874a4ca0d9cb8ca0e1ad0cbeb2",
+      "size_bytes": 282
+    },
+    {
+      "path": "artifacts/target_positions.csv",
+      "sha256": "45af9d8cd017738ebeaf237c5184bb4f948567de84f4a2cc0740e53bfc642291",
+      "size_bytes": 3798
+    },
+    {
+      "path": "artifacts/trades.csv",
+      "sha256": "1c85d22fff0a7b4769aa663a71b88ca4517d307d1a303d49eafcd4431535e238",
+      "size_bytes": 233
+    },
+    {
+      "path": "code/signal_engine.py",
+      "sha256": "dd499ec96a38ca05d34c4856858389b3d6d84048be54e0ecc06397261c016b06",
+      "size_bytes": 360
+    },
+    {
+      "path": "config.json",
+      "sha256": "23fed5500d1f41692bbd470000acfa0e5ee317a069e39e8bcaa1ae87f1d5bff5",
+      "size_bytes": 252
+    }
+  ],
+  "backtest": {
+    "codes": [
+      "AAPL.US"
+    ],
+    "end_date": "2024-12-31",
+    "engine": "daily",
+    "initial_cash": 100000,
+    "interval": "1D",
+    "source": "auto",
+    "start_date": "2024-01-01"
+  },
+  "data_sources": [
+    "yahoo"
+  ],
+  "generated_at": "2026-08-28T07:03:56.858494Z",
+  "metrics": {
+    "annual_return": 0.3579890137843438,
+    "avg_holding_days": 250.0,
+    "avg_turnover": 0.003969,
+    "benchmark_beta": 0.9488,
+    "benchmark_return": 0.239987,
+    "benchmark_ticker": "SPY",
+    "calmar": 2.3152,
+    "dropped_target_adjustment_count": 0,
+    "excess_return": 0.118002,
+    "final_value": 135798.90137843438,
+    "information_ratio": 0.57,
+    "max_consecutive_loss": 0,
+    "max_drawdown": -0.15462432912494398,
+    "position_adjustment": "hold",
+    "profit_factor": 0.0,
+    "profit_loss_ratio": 0.0,
+    "rebalance_count": 1,
+    "rebalance_tolerance": 0.0,
+    "rebalance_turnover_max": 0.5,
+    "rebalance_turnover_mean": 0.5,
+    "risk_xray_annualized_vol": 0.22422576658562915,
+    "risk_xray_avg_invested": 0.9920503666085944,
+    "risk_xray_effective_n": 1.0,
+    "risk_xray_hhi": 1.0,
+    "risk_xray_max_drawdown": -0.1546264668936324,
+    "sharpe": 1.4799454078529468,
+    "sortino": 2.3417,
+    "total_return": 0.3579890137843438,
+    "total_turnover": 1.000156,
+    "tracking_error": 0.189285,
+    "trade_count": 1,
+    "win_rate": 1.0
+  },
+  "reproducibility": {
+    "config_hash": "23fed5500d1f41692bbd470000acfa0e5ee317a069e39e8bcaa1ae87f1d5bff5",
+    "strategy_hash": "dd499ec96a38ca05d34c4856858389b3d6d84048be54e0ecc06397261c016b06"
+  },
+  "run_dir": "/home/rucha/HKU-personal-hedge-fund/calibration-study/runs/smoke_aapl",
+  "schema_version": "0.1",
+  "warnings": []
+}

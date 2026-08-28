@@ -1,0 +1,12 @@
+{
+  "codes": ["AAPL.US"],
+  "start_date": "2024-01-01",
+  "end_date": "2024-12-31",
+  "source": "auto",
+  "interval": "1D",
+  "initial_cash": 100000,
+  "engine": "daily",
+  "position_adjustment": "hold",
+  "benchmark": "SPY",
+  "slippage_us": 0.0005
+}

@@ -1,0 +1,70 @@
+{
+  "buy_and_hold": {
+    "start": "2019-01-02",
+    "end": "2026-08-27",
+    "total_return": 25.40299094055929,
+    "cagr": 0.5356805286548294,
+    "ann_vol": 0.41051901667057256,
+    "sharpe_rf0": 1.2511934822891242,
+    "max_drawdown": -0.5538632556474878,
+    "max_drawdown_2022": -0.5538632556474878,
+    "engine_avg_turnover_daily": 0.000439,
+    "engine_total_turnover": 1.020867,
+    "engine_trade_count": 8,
+    "engine_sharpe_full_window": 1.1378281774698291,
+    "data_sources": [
+      "local"
+    ]
+  },
+  "ma200_trend": {
+    "start": "2019-01-02",
+    "end": "2026-08-27",
+    "total_return": 9.50879522181418,
+    "cagr": 0.3610361191085978,
+    "ann_vol": 0.324558973573097,
+    "sharpe_rf0": 1.112940323607513,
+    "max_drawdown": -0.45371593632572116,
+    "max_drawdown_2022": -0.41523508707940593,
+    "engine_avg_turnover_daily": 0.015915,
+    "engine_total_turnover": 36.971058,
+    "engine_trade_count": 5834,
+    "engine_sharpe_full_window": 1.0122145224988237,
+    "data_sources": [
+      "local"
+    ]
+  },
+  "mom_12_1_top_half": {
+    "start": "2019-01-02",
+    "end": "2026-08-27",
+    "total_return": 23.423105580495818,
+    "cagr": 0.5200739023291021,
+    "ann_vol": 0.4355550030929413,
+    "sharpe_rf0": 1.179922019531634,
+    "max_drawdown": -0.5509346151780632,
+    "max_drawdown_2022": -0.5509346151780632,
+    "engine_avg_turnover_daily": 0.009957,
+    "engine_total_turnover": 23.129968,
+    "engine_trade_count": 3579,
+    "engine_sharpe_full_window": 1.0730778084588497,
+    "data_sources": [
+      "local"
+    ]
+  },
+  "inverse_vol": {
+    "start": "2019-01-02",
+    "end": "2026-08-27",
+    "total_return": 24.485370247050206,
+    "cagr": 0.5285784664271853,
+    "ann_vol": 0.3847282512650038,
+    "sharpe_rf0": 1.2964788787361565,
+    "max_drawdown": -0.49877214926083546,
+    "max_drawdown_2022": -0.49877214926083546,
+    "engine_avg_turnover_daily": 0.005747,
+    "engine_total_turnover": 13.350839,
+    "engine_trade_count": 7060,
+    "engine_sharpe_full_window": 1.1789640123497225,
+    "data_sources": [
+      "local"
+    ]
+  }
+}

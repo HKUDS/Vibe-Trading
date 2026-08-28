@@ -1,0 +1,69 @@
+{
+  "inputs": {
+    "symbols": [
+      "AMAT.US",
+      "AMD.US",
+      "ASML.US",
+      "AVGO.US",
+      "LRCX.US",
+      "MU.US",
+      "NVDA.US",
+      "TSM.US"
+    ],
+    "weights": {
+      "AMAT.US": 0.12323296,
+      "AMD.US": 0.10110532,
+      "ASML.US": 0.1365006,
+      "AVGO.US": 0.14337289,
+      "LRCX.US": 0.11930951,
+      "MU.US": 0.11150795,
+      "NVDA.US": 0.11363296,
+      "TSM.US": 0.15133781
+    },
+    "aligned_days": 2323,
+    "return_observations": 2322,
+    "first_date": "2017-06-01 00:00:00",
+    "last_date": "2026-08-27 00:00:00"
+  },
+  "concentration": {
+    "hhi": 0.12708121256429317,
+    "effective_n": 7.868983776764627,
+    "top1_weight": 0.1513378135327342,
+    "top3_weight": 0.43121130560592524
+  },
+  "volatility": {
+    "daily_vol": 0.0238779286074894,
+    "annualized_vol": 0.37905036551263066,
+    "downside_deviation_annualized": 0.26817440569415585
+  },
+  "drawdown": {
+    "max_drawdown": -0.5114857034506463,
+    "max_drawdown_start": "2021-12-27 00:00:00",
+    "max_drawdown_trough": "2022-10-14 00:00:00"
+  },
+  "tail_risk": {
+    "var_95": 0.03816849283621762,
+    "expected_shortfall_95": 0.053697751352468494,
+    "var_99": 0.062082108925667075,
+    "expected_shortfall_99": 0.08092703378979627,
+    "method": "historical simulation (non-parametric)"
+  },
+  "diversification": {
+    "diversification_ratio": 1.196467046730984
+  },
+  "correlation": {
+    "avg_pairwise_abs": 0.6562823338652694,
+    "max_pair": {
+      "symbols": [
+        "AMAT.US",
+        "LRCX.US"
+      ],
+      "corr": 0.9126172100175003
+    },
+    "beta_to_equal_weight": 0.9830860113300609
+  },
+  "skipped": [],
+  "warnings": [
+    "weights summed to 0.819098; renormalized to 1.0"
+  ]
+}

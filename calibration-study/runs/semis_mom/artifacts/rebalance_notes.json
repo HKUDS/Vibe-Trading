@@ -1,0 +1,1530 @@
+{
+  "rebalances": [
+    {
+      "date": "2019-01-03",
+      "turnover": 0.495,
+      "entries": [
+        {
+          "code": "AMD.US",
+          "weight": 0.2475
+        },
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        },
+        {
+          "code": "AVGO.US",
+          "weight": 0.2475
+        },
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [],
+      "top_moves": [
+        {
+          "code": "AMD.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "ASML.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "AVGO.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2019-03-06",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2019-04-04",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "LRCX.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2019-06-05",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "ASML.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2019-08-05",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "ASML.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2019-09-04",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "ASML.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2019-10-03",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AMD.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMD.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "ASML.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2019-11-01",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "AMD.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AVGO.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMD.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "AVGO.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2020-02-04",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2020-03-05",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2020-04-03",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "NVDA.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "NVDA.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2020-05-05",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "LRCX.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2020-07-06",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2020-09-02",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "ASML.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2020-10-02",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "ASML.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2021-01-04",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "ASML.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2021-02-03",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "ASML.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2021-04-06",
+      "turnover": 0.495,
+      "entries": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AMD.US",
+          "weight": 0.2475
+        },
+        {
+          "code": "NVDA.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "AMD.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "NVDA.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2021-08-04",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "NVDA.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "NVDA.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2021-09-02",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "MU.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "NVDA.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "MU.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "NVDA.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2021-10-04",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "NVDA.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "MU.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "MU.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "NVDA.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2021-12-02",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "AMD.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMD.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2022-03-04",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "AVGO.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "AVGO.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2022-06-03",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "MU.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "ASML.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "MU.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2022-09-02",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "NVDA.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "NVDA.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2022-11-02",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AMD.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "AMD.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2022-12-02",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "ASML.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2023-01-04",
+      "turnover": 0.495,
+      "entries": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        },
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        },
+        {
+          "code": "MU.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "MU.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2023-02-03",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2023-05-05",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "NVDA.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "LRCX.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "NVDA.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2023-06-06",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2023-08-07",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2023-09-06",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "ASML.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2023-11-03",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "AMD.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMD.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2023-12-05",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2024-05-07",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "MU.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "LRCX.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "MU.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2024-06-06",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AMD.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "AMD.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2024-07-09",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2024-09-06",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "MU.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "ASML.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "MU.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2024-11-05",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "AMD.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMD.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "ASML.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2024-12-05",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "MU.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AMD.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMD.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "MU.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2025-04-09",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "MU.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "MU.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2025-07-11",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "MU.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "LRCX.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "MU.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2025-09-10",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "MU.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "MU.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2025-10-09",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "MU.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "LRCX.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "MU.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        }
+      ]
+    },
+    {
+      "date": "2025-11-07",
+      "turnover": 0.495,
+      "entries": [
+        {
+          "code": "AMD.US",
+          "weight": 0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "NVDA.US",
+          "weight": 0.2475
+        },
+        {
+          "code": "TSM.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMD.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "LRCX.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "NVDA.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        },
+        {
+          "code": "TSM.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2026-02-10",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "AVGO.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "ASML.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "AVGO.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    },
+    {
+      "date": "2026-03-12",
+      "turnover": 0.2475,
+      "entries": [
+        {
+          "code": "AMAT.US",
+          "weight": 0.2475
+        }
+      ],
+      "exits": [
+        {
+          "code": "ASML.US",
+          "weight": 0.2475
+        }
+      ],
+      "top_moves": [
+        {
+          "code": "AMAT.US",
+          "from": 0.0,
+          "to": 0.2475,
+          "delta": 0.2475
+        },
+        {
+          "code": "ASML.US",
+          "from": 0.2475,
+          "to": 0.0,
+          "delta": -0.2475
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "rebalance_count": 48,
+    "turnover_total": 12.87,
+    "turnover_mean": 0.268125,
+    "turnover_max": 0.495,
+    "largest_rebalance_date": "2019-01-03"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "codes": ["NVDA.US", "TSM.US", "ASML.US", "AMD.US", "AVGO.US", "MU.US", "AMAT.US", "LRCX.US"],
+  "start_date": "2017-06-01",
+  "end_date": "2026-08-27",
+  "source": "local",
+  "interval": "1D",
+  "initial_cash": 1000000,
+  "engine": "daily",
+  "position_adjustment": "rebalance",
+  "rebalance_tolerance": 0.0,
+  "slippage_us": 0.0010
+}

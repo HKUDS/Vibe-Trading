@@ -1,0 +1,193 @@
+Bench: 12 alphas x sp500 x 2010-2025
+ETA: ~3-5 min (cache hit) / ~10-20 min (cold fetch)
+  Benching ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12/12 academic_strev 0:06:57
+{
+  "status": "ok",
+  "zoo": "academic",
+  "universe": "sp500",
+  "period": "2010-2025",
+  "n_alphas_tested": 12,
+  "n_skipped": 0,
+  "top": [
+    {
+      "id": "academic_carhart_mom",
+      "zoo": "academic",
+      "theme": [
+        "momentum"
+      ],
+      "formula_latex": "\\mathrm{zscore}_{x}\\bigl((\\mathrm{close}_t - \\mathrm{close}_{t-252})/\\mathrm{close}_{t-252} - (\\mathrm{close}_t - \\mathrm{close}_{t-21})/\\mathrm{close}_{t-21}\\bigr)",
+      "ic_mean": 0.01575,
+      "ic_std": 0.221803,
+      "ir": 0.071,
+      "ic_positive_ratio": 0.5476,
+      "ic_count": 3771,
+      "category": "dead"
+    },
+    {
+      "id": "academic_illiq",
+      "zoo": "academic",
+      "theme": [
+        "liquidity"
+      ],
+      "formula_latex": "\\mathrm{zscore}_{x}\\bigl(\\mathrm{ts\\_mean}(|r_t| / (\\mathrm{close}_t \\cdot \\mathrm{volume}_t),\\,21)\\bigr)",
+      "ic_mean": 0.006881,
+      "ic_std": 0.125077,
+      "ir": 0.055,
+      "ic_positive_ratio": 0.5217,
+      "ic_count": 4002,
+      "category": "dead"
+    },
+    {
+      "id": "academic_smb",
+      "zoo": "academic",
+      "theme": [
+        "quality"
+      ],
+      "formula_latex": "\\mathrm{zscore}_{x}\\bigl(-\\log(\\mathrm{ts\\_mean}(\\mathrm{volume} \\cdot \\mathrm{close},\\,60) + 1)\\bigr)",
+      "ic_mean": 0.006002,
+      "ic_std": 0.109849,
+      "ir": 0.0546,
+      "ic_positive_ratio": 0.5179,
+      "ic_count": 3964,
+      "category": "dead"
+    },
+    {
+      "id": "academic_strev",
+      "zoo": "academic",
+      "theme": [
+        "reversal"
+      ],
+      "formula_latex": "\\mathrm{zscore}_{x}\\bigl(-(\\mathrm{close}_t - \\mathrm{close}_{t-21}) / \\mathrm{close}_{t-21}\\bigr)",
+      "ic_mean": 0.007936,
+      "ic_std": 0.182264,
+      "ir": 0.0435,
+      "ic_positive_ratio": 0.5125,
+      "ic_count": 4002,
+      "category": "dead"
+    },
+    {
+      "id": "academic_high52w",
+      "zoo": "academic",
+      "theme": [
+        "momentum"
+      ],
+      "formula_latex": "\\mathrm{zscore}_{x}\\bigl(\\mathrm{close}_t / \\mathrm{ts\\_max}(\\mathrm{close},\\,252)\\bigr)",
+      "ic_mean": 0.002414,
+      "ic_std": 0.223434,
+      "ir": 0.0108,
+      "ic_positive_ratio": 0.522,
+      "ic_count": 3772,
+      "category": "dead"
+    },
+    {
+      "id": "academic_cma",
+      "zoo": "academic",
+      "theme": [
+        "quality"
+      ],
+      "formula_latex": "\\mathrm{zscore}_{x}\\bigl(-\\Delta_{60}\\log(\\mathrm{ts\\_mean}(\\mathrm{volume},\\,60) + 1)\\bigr)",
+      "ic_mean": 0.000619,
+      "ic_std": 0.078311,
+      "ir": 0.0079,
+      "ic_positive_ratio": 0.5061,
+      "ic_count": 3904,
+      "category": "dead"
+    },
+    {
+      "id": "academic_retskew",
+      "zoo": "academic",
+      "theme": [
+        "volatility"
+      ],
+      "formula_latex": "\\mathrm{zscore}_{x}\\bigl(-\\mathrm{skew}_{60}(r_t)\\bigr)",
+      "ic_mean": 0.000397,
+      "ic_std": 0.09891,
+      "ir": 0.004,
+      "ic_positive_ratio": 0.4946,
+      "ic_count": 3963,
+      "category": "dead"
+    },
+    {
+      "id": "academic_corr_rewire",
+      "zoo": "academic",
+      "theme": [
+        "volatility"
+      ],
+      "formula_latex": "\\mathrm{zscore}_{x}\\Bigl(-\\,\\frac{1}{|J_i|}\\sum_{j \\in J_i}\\bigl|\\rho_{ij}^{\\mathrm{event}} - \\rho_{ij}^{\\mathrm{calm}}\\bigr|\\Bigr),\\quad \\rho^{\\mathrm{event}} = \\mathrm{corr}(r_{t-19..t}),\\ \\rho^{\\mathrm{calm}} = \\mathrm{corr}(r_{t-139..t-20})",
+      "ic_mean": 6.5e-05,
+      "ic_std": 0.105137,
+      "ir": 0.0006,
+      "ic_positive_ratio": 0.5057,
+      "ic_count": 3884,
+      "category": "dead"
+    },
+    {
+      "id": "academic_rmw",
+      "zoo": "academic",
+      "theme": [
+        "quality"
+      ],
+      "formula_latex": "\\mathrm{zscore}_{x}\\bigl(-\\mathrm{ts\\_std}((\\mathrm{close}_t - \\mathrm{close}_{t-1}) / \\mathrm{close}_{t-1},\\,60)\\bigr)",
+      "ic_mean": -0.000227,
+      "ic_std": 0.253276,
+      "ir": -0.0009,
+      "ic_positive_ratio": 0.4928,
+      "ic_count": 3963,
+      "category": "dead"
+    },
+    {
+      "id": "academic_bab",
+      "zoo": "academic",
+      "theme": [
+        "volatility"
+      ],
+      "formula_latex": "\\mathrm{zscore}_{x}\\bigl(-\\,\\mathrm{ts\\_cov}(r_i, r_m, 252) / \\mathrm{ts\\_std}(r_m, 252)^2\\bigr)",
+      "ic_mean": -0.002714,
+      "ic_std": 0.304368,
+      "ir": -0.0089,
+      "ic_positive_ratio": 0.4935,
+      "ic_count": 3771,
+      "category": "dead"
+    },
+    {
+      "id": "academic_mkt_rf",
+      "zoo": "academic",
+      "theme": [
+        "momentum"
+      ],
+      "formula_latex": "\\mathrm{zscore}_{x}\\bigl((\\mathrm{close}_t - \\mathrm{close}_{t-21}) / \\mathrm{close}_{t-21}\\bigr)",
+      "ic_mean": -0.007936,
+      "ic_std": 0.182264,
+      "ir": -0.0435,
+      "ic_positive_ratio": 0.4875,
+      "ic_count": 4002,
+      "category": "dead"
+    },
+    {
+      "id": "academic_hml",
+      "zoo": "academic",
+      "theme": [
+        "value"
+      ],
+      "formula_latex": "\\mathrm{zscore}_{x}\\bigl(-(\\mathrm{close}_t - \\mathrm{close}_{t-252}) / \\mathrm{close}_{t-252}\\bigr)",
+      "ic_mean": -0.012783,
+      "ic_std": 0.222724,
+      "ir": -0.0574,
+      "ic_positive_ratio": 0.4601,
+      "ic_count": 3771,
+      "category": "dead"
+    }
+  ],
+  "wall_seconds": 417.86,
+  "meta": {
+    "universe": "sp500",
+    "survivorship_bias": true,
+    "degraded": false,
+    "constituent_source": "wikipedia",
+    "constituent_source_date": "2026-05-17",
+    "constituent_count": 503,
+    "sector_source": "wikipedia GICS",
+    "sector_coverage": 1.0
+  },
+  "report_path": "/home/rucha/.vibe-trading/reports/alpha_bench_20260828T071116Z.html"
+}

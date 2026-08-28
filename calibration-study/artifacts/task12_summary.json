@@ -1,0 +1,198 @@
+{
+  "panel_meta": {
+    "universe": "sp500",
+    "survivorship_bias": "True",
+    "degraded": "False",
+    "constituent_source": "wikipedia",
+    "constituent_source_date": "2026-05-17",
+    "constituent_count": "503",
+    "sector_source": "wikipedia GICS",
+    "sector_coverage": "1.0"
+  },
+  "task1": {
+    "academic_carhart_mom": {
+      "status": "ok",
+      "ic_mean": 0.01575,
+      "ic_std": 0.221803,
+      "ir": 0.071,
+      "ic_positive_ratio": 0.5476,
+      "ic_count": 3771,
+      "n_groups": 5,
+      "long_short_spread": 7.4524,
+      "group_final_equity": {
+        "Group_1": 7.4855,
+        "Group_2": 6.3275,
+        "Group_3": 7.5227,
+        "Group_4": 6.4893,
+        "Group_5": 14.9379
+      },
+      "output_dir": "/home/rucha/HKU-personal-hedge-fund/calibration-study/artifacts/task1/academic_carhart_mom",
+      "files": [
+        "ic_series.csv",
+        "ic_summary.json",
+        "group_equity.csv"
+      ],
+      "long_short_sharpe_daily_quantiles_frictionless": 0.23544782752053686,
+      "group_final_nav": {
+        "Group_1": 7.485521578927637,
+        "Group_2": 6.327461192935495,
+        "Group_3": 7.522683856761329,
+        "Group_4": 6.489299260059636,
+        "Group_5": 14.937895447455842
+      },
+      "group_sharpe": {
+        "Group_1": 0.7077519156699694,
+        "Group_2": 0.7628621283846897,
+        "Group_3": 0.8702559979247673,
+        "Group_4": 0.8227129736333113,
+        "Group_5": 1.001675682783542
+      },
+      "group_ann_vol": {
+        "Group_1": 0.22692593461682328,
+        "Group_2": 0.18428354238529082,
+        "Group_3": 0.1726598195272716,
+        "Group_4": 0.17052630229994478,
+        "Group_5": 0.2013815710340397
+      }
+    },
+    "academic_bab": {
+      "status": "ok",
+      "ic_mean": -0.002714,
+      "ic_std": 0.304368,
+      "ir": -0.0089,
+      "ic_positive_ratio": 0.4935,
+      "ic_count": 3771,
+      "n_groups": 5,
+      "long_short_spread": -15.237,
+      "group_final_equity": {
+        "Group_1": 19.606,
+        "Group_2": 9.8901,
+        "Group_3": 5.8231,
+        "Group_4": 6.3763,
+        "Group_5": 4.369
+      },
+      "output_dir": "/home/rucha/HKU-personal-hedge-fund/calibration-study/artifacts/task1/academic_bab",
+      "files": [
+        "ic_series.csv",
+        "ic_summary.json",
+        "group_equity.csv"
+      ],
+      "long_short_sharpe_daily_quantiles_frictionless": -0.5615169683590079,
+      "group_final_nav": {
+        "Group_1": 19.60604366677908,
+        "Group_2": 9.89008924448195,
+        "Group_3": 5.82308758268952,
+        "Group_4": 6.376340843556109,
+        "Group_5": 4.369045784494633
+      },
+      "group_sharpe": {
+        "Group_1": 0.8511054998651503,
+        "Group_2": 0.8312898774970401,
+        "Group_3": 0.7451724716546534,
+        "Group_4": 0.8788378374841112,
+        "Group_5": 0.825986655678752
+      },
+      "group_ann_vol": {
+        "Group_1": 0.2807468838248456,
+        "Group_2": 0.21257481164888506,
+        "Group_3": 0.18038515799319085,
+        "Group_4": 0.15497544402549596,
+        "Group_5": 0.12983871807954533
+      }
+    }
+  },
+  "task2": {
+    "baseline_long_short": {
+      "gross_ann_ret": 0.013313686985555462,
+      "net_ann_ret": -0.005435535374214595,
+      "gross_sharpe": 0.16370126215482697,
+      "net_sharpe": 0.05077986625917933,
+      "ann_turnover": 11.249194263488334,
+      "total_cost_drag_ann": 0.018668720545223373
+    },
+    "baseline_long_only_top_quintile": {
+      "gross_ann_ret": 0.17503755204044213,
+      "net_ann_ret": 0.16631906947696762,
+      "gross_sharpe": 0.9146797380027106,
+      "net_sharpe": 0.8770620413668297,
+      "ann_turnover": 5.289784408157078,
+      "total_cost_drag_ann": 0.007453548109903239
+    },
+    "shifted_rebalance_long_short": {
+      "gross_ann_ret": 0.012141580029032095,
+      "net_ann_ret": -0.006476305048122133,
+      "gross_sharpe": 0.15671054153187292,
+      "net_sharpe": 0.044501335275238925,
+      "ann_turnover": 11.161175921789347,
+      "total_cost_drag_ann": 0.018544698677073958
+    },
+    "half_2010_2017": {
+      "ic": {
+        "ic_mean": 0.011784179734397568,
+        "ic_std": 0.1895250269737272,
+        "ir": 0.06217743335834556,
+        "ic_positive_ratio": 0.5377626348665531,
+        "ic_count": 1761,
+        "t_stat": 2.6092306334846054
+      },
+      "long_short_net": {
+        "gross_ann_ret": 0.012253690124874206,
+        "net_ann_ret": -0.005352728413982932,
+        "gross_sharpe": 0.16655621923498382,
+        "net_sharpe": 0.004907537000716099,
+        "ann_turnover": 11.332101220401306,
+        "total_cost_drag_ann": 0.0175244609186199
+      }
+    },
+    "half_2018_2025": {
+      "ic": {
+        "ic_mean": 0.01922494816175115,
+        "ic_std": 0.24663090412528052,
+        "ir": 0.07795028052115277,
+        "ic_positive_ratio": 0.5562189054726369,
+        "ic_count": 2010,
+        "t_stat": 3.4947467617820442
+      },
+      "long_short_net": {
+        "gross_ann_ret": 0.010893404292903197,
+        "net_ann_ret": -0.00918688195389794,
+        "gross_sharpe": 0.15787664654697303,
+        "net_sharpe": 0.0617675846994368,
+        "ann_turnover": 11.339383621970331,
+        "total_cost_drag_ann": 0.020058824501660008
+      }
+    },
+    "purged_cv_5fold": [
+      {
+        "test_start": "2011-01-03",
+        "test_end": "2013-12-31",
+        "ic_mean": 0.013973129059149414,
+        "t_stat": 2.2466171275550715
+      },
+      {
+        "test_start": "2014-01-02",
+        "test_end": "2016-12-28",
+        "ic_mean": 0.00766588966412745,
+        "t_stat": 1.0374939337467286
+      },
+      {
+        "test_start": "2016-12-29",
+        "test_end": "2019-12-27",
+        "ic_mean": 0.016714333033327016,
+        "t_stat": 2.1496724603463178
+      },
+      {
+        "test_start": "2019-12-30",
+        "test_end": "2022-12-23",
+        "ic_mean": 0.016155248625003685,
+        "t_stat": 1.5978397351989257
+      },
+      {
+        "test_start": "2022-12-27",
+        "test_end": "2025-12-30",
+        "ic_mean": 0.02423126043663817,
+        "t_stat": 2.8892485345784458
+      }
+    ]
+  }
+}

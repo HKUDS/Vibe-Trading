@@ -1,0 +1,3 @@
+.venv/
+artifacts/task1/*/factor.csv
+artifacts/task1/*/fwd_ret.csv

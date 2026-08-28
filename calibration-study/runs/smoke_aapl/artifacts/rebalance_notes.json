@@ -1,0 +1,30 @@
+{
+  "rebalances": [
+    {
+      "date": "2024-01-03",
+      "turnover": 0.5,
+      "entries": [
+        {
+          "code": "AAPL.US",
+          "weight": 1.0
+        }
+      ],
+      "exits": [],
+      "top_moves": [
+        {
+          "code": "AAPL.US",
+          "from": 0.0,
+          "to": 1.0,
+          "delta": 1.0
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "rebalance_count": 1,
+    "turnover_total": 0.5,
+    "turnover_mean": 0.5,
+    "turnover_max": 0.5,
+    "largest_rebalance_date": "2024-01-03"
+  }
+}

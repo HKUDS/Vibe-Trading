@@ -1,0 +1,127 @@
+{
+  "panel_meta": {
+    "universe": "sp500",
+    "survivorship_bias": "True",
+    "degraded": "False",
+    "constituent_source": "wikipedia",
+    "constituent_source_date": "2026-05-17",
+    "constituent_count": "503",
+    "sector_source": "wikipedia GICS",
+    "sector_coverage": "1.0"
+  },
+  "task1": {
+    "academic_carhart_mom": {
+      "status": "ok",
+      "ic_mean": 0.01575,
+      "ic_std": 0.221803,
+      "ir": 0.071,
+      "ic_positive_ratio": 0.5476,
+      "ic_count": 3771,
+      "n_groups": 5,
+      "long_short_spread": 7.4524,
+      "group_final_equity": {
+        "Group_1": 7.4855,
+        "Group_2": 6.3275,
+        "Group_3": 7.5227,
+        "Group_4": 6.4893,
+        "Group_5": 14.9379
+      },
+      "output_dir": "/home/rucha/HKU-personal-hedge-fund/calibration-study/artifacts/task1/academic_carhart_mom",
+      "files": [
+        "ic_series.csv",
+        "ic_summary.json",
+        "group_equity.csv"
+      ],
+      "long_short_sharpe_daily_quantiles_frictionless": 0.23544782752053686,
+      "group_final_nav": {
+        "Group_1": 7.485521578927637,
+        "Group_2": 6.327461192935495,
+        "Group_3": 7.522683856761329,
+        "Group_4": 6.489299260059636,
+        "Group_5": 14.937895447455842
+      },
+      "group_sharpe": {
+        "Group_1": 0.7077519156699694,
+        "Group_2": 0.7628621283846897,
+        "Group_3": 0.8702559979247673,
+        "Group_4": 0.8227129736333113,
+        "Group_5": 1.001675682783542
+      },
+      "group_ann_vol": {
+        "Group_1": 0.22692593461682328,
+        "Group_2": 0.18428354238529082,
+        "Group_3": 0.1726598195272716,
+        "Group_4": 0.17052630229994478,
+        "Group_5": 0.2013815710340397
+      }
+    },
+    "academic_bab": {
+      "status": "ok",
+      "ic_mean": -0.002714,
+      "ic_std": 0.304368,
+      "ir": -0.0089,
+      "ic_positive_ratio": 0.4935,
+      "ic_count": 3771,
+      "n_groups": 5,
+      "long_short_spread": -15.237,
+      "group_final_equity": {
+        "Group_1": 19.606,
+        "Group_2": 9.8901,
+        "Group_3": 5.8231,
+        "Group_4": 6.3763,
+        "Group_5": 4.369
+      },
+      "output_dir": "/home/rucha/HKU-personal-hedge-fund/calibration-study/artifacts/task1/academic_bab",
+      "files": [
+        "ic_series.csv",
+        "ic_summary.json",
+        "group_equity.csv"
+      ],
+      "long_short_sharpe_daily_quantiles_frictionless": -0.5615169683590079,
+      "group_final_nav": {
+        "Group_1": 19.60604366677908,
+        "Group_2": 9.89008924448195,
+        "Group_3": 5.82308758268952,
+        "Group_4": 6.376340843556109,
+        "Group_5": 4.369045784494633
+      },
+      "group_sharpe": {
+        "Group_1": 0.8511054998651503,
+        "Group_2": 0.8312898774970401,
+        "Group_3": 0.7451724716546534,
+        "Group_4": 0.8788378374841112,
+        "Group_5": 0.825986655678752
+      },
+      "group_ann_vol": {
+        "Group_1": 0.2807468838248456,
+        "Group_2": 0.21257481164888506,
+        "Group_3": 0.18038515799319085,
+        "Group_4": 0.15497544402549596,
+        "Group_5": 0.12983871807954533
+      }
+    }
+  },
+  "task2": {
+    "baseline_long_short": {
+      "gross_ann_ret": 0.013313686985555462,
+      "net_ann_ret": -0.005435535374214595,
+      "gross_sharpe": 0.16370126215482697,
+      "net_sharpe": 0.05077986625917933,
+      "ann_turnover": 11.249194263488334,
+      "total_cost_drag_ann": 0.018668720545223373
+    },
+    "baseline_long_only_top_quintile": {
+      "gross_ann_ret": 0.17503755204044213,
+      "net_ann_ret": 0.16631906947696762,
+      "gross_sharpe": 0.9146797380027106,
+      "net_sharpe": 0.8770620413668297,
+      "ann_turnover": 5.289784408157078,
+      "total_cost_drag_ann": 0.007453548109903239
+    },
+    "shifted_rebalance_long_short": {
+      "gross_ann_ret": 0.012141580029032095,
+      "net_ann_ret": -0.006476305048122133,
+      "gross_sharpe": 0.15671054153187292,
+      "net_sharpe": 0.044501335275238925,
+      "ann_turnover": 11.161175921789347,
+      "total_cost_drag_ann": 0.018544

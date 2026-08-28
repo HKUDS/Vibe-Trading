@@ -1,0 +1,5 @@
+SP500 universe uses current constituents (wikipedia @ 2026-05-17) → survivorship-biased
+yahoo failed for FDXF.US: 400 Client Error: Bad Request for url: https://query1.finance.yahoo.com/v8/finance/chart/FDXF?interval=1d&period1=1262304000&period2=1767225600
+yahoo failed for HONA.US: 400 Client Error: Bad Request for url: https://query1.finance.yahoo.com/v8/finance/chart/HONA?interval=1d&period1=1262304000&period2=1767225600
+✓ Bench complete. 12 tested, 0 skipped. Report: 
+/home/rucha/.vibe-trading/reports/alpha_bench_20260828T071116Z.html

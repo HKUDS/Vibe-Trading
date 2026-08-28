@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'none'">
+<title>Alpha Bench Report</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 2em;
+       color: #222; background: #fafafa; }
+h1, h2 { color: #111; }
+table { border-collapse: collapse; width: 100%; background: #fff; }
+th, td { padding: .5em .75em; border-bottom: 1px solid #e5e5e5; text-align: left; }
+th { background: #f0f0f0; }
+.meta { color: #666; font-size: .9em; margin-bottom: 1.5em; }
+.formula { font-family: monospace; background: #f4f4f4; padding: .25em .5em; }
+.skipped { color: #a33; font-size: .9em; }
+</style>
+</head><body>
+<h1>Alpha Bench Report</h1>
+<div class="meta">
+  Generated 2026-08-28T07:12:46+00:00 &middot; Universe sp500 &middot;
+  Period 2010-2025 &middot; 12 tested, 0 skipped
+</div>
+
+<h2>Top 12 by IR</h2>
+<table>
+<tr><th>#</th><th>Alpha ID</th><th>Zoo</th><th>Theme</th>
+    <th>IC mean</th><th>IC std</th><th>IR</th><th>IC+ ratio</th><th>N</th></tr>
+
+<tr>
+  <td>1</td>
+  <td>academic_carhart_mom</td>
+  <td>academic</td>
+  <td>momentum</td>
+  <td>0.0158</td>
+  <td>0.2218</td>
+  <td>0.0710</td>
+  <td>0.5476</td>
+  <td>3771</td>
+</tr>
+
+<tr>
+  <td>2</td>
+  <td>academic_illiq</td>
+  <td>academic</td>
+  <td>liquidity</td>
+  <td>0.0069</td>
+  <td>0.1251</td>
+  <td>0.0550</td>
+  <td>0.5217</td>
+  <td>4002</td>
+</tr>
+
+<tr>
+  <td>3</td>
+  <td>academic_smb</td>
+  <td>academic</td>
+  <td>quality</td>
+  <td>0.0060</td>
+  <td>0.1098</td>
+  <td>0.0546</td>
+  <td>0.5179</td>
+  <td>3964</td>
+</tr>
+
+<tr>
+  <td>4</td>
+  <td>academic_strev</td>
+  <td>academic</td>
+  <td>reversal</td>
+  <td>0.0079</td>
+  <td>0.1823</td>
+  <td>0.0435</td>
+  <td>0.5125</td>
+  <td>4002</td>
+</tr>
+
+<tr>
+  <td>5</td>
+  <td>academic_high52w</td>
+  <td>academic</td>
+  <td>momentum</td>
+  <td>0.0024</td>
+  <td>0.2234</td>
+  <td>0.0108</td>
+  <td>0.5220</td>
+  <td>3772</td>
+</tr>
+
+<tr>
+  <td>6</td>
+  <td>academic_cma</td>
+  <td>academic</td>
+  <td>quality</td>
+  <td>0.0006</td>
+  <td>0.0783</td>
+  <td>0.0079</td>
+  <td>0.5061</td>
+  <td>3904</td>
+</tr>
+
+<tr>
+  <td>7</td>
+  <td>academic_retskew</td>
+  <td>academic</td>
+  <td>volatility</td>
+  <td>0.0004</td>
+  <td>0.0989</td>
+  <td>0.0040</td>
+  <td>0.4946</td>
+  <td>3963</td>
+</tr>
+
+<tr>
+  <td>8</td>
+  <td>academic_corr_rewire</td>
+  <td>academic</td>
+  <td>volatility</td>
+  <td>0.0001</td>
+  <td>0.1051</td>
+  <td>0.0006</td>
+  <td>0.5057</td>
+  <td>3884</td>
+</tr>
+
+<tr>
+  <td>9</td>
+  <td>academic_rmw</td>
+  <td>academic</td>
+  <td>quality</td>
+  <td>-0.0002</td>
+  <td>0.2533</td>
+  <td>-0.0009</td>
+  <td>0.4928</td>
+  <td>3963</td>
+</tr>
+
+<tr>
+  <td>10</td>
+  <td>academic_bab</td>
+  <td>academic</td>
+  <td>volatility</td>
+  <td>-0.0027</td>
+  <td>0.3044</td>
+  <td>-0.0089</td>
+  <td>0.4935</td>
+  <td>3771</td>
+</tr>
+
+<tr>
+  <td>11</td>
+  <td>academic_mkt_rf</td>
+  <td>academic</td>
+  <td>momentum</td>
+  <td>-0.0079</td>
+  <td>0.1823</td>
+  <td>-0.0435</td>
+  <td>0.4875</td>
+  <td>4002</td>
+</tr>
+
+<tr>
+  <td>12</td>
+  <td>academic_hml</td>
+  <td>academic</td>
+  <td>value</td>
+  <td>-0.0128</td>
+  <td>0.2227</td>
+  <td>-0.0574</td>
+  <td>0.4601</td>
+  <td>3771</td>
+</tr>
+
+</table>
+
+
+<h2>Strict gate</h2>
+<div class="meta">
+  Alpha t-stats against the same-universe random control. The strict gate
+  decides on these, not on IC.
+</div>
+<table>
+<tr><th>Alpha ID</th><th>alpha_t full</th><th>alpha_t train</th>
+    <th>alpha_t test</th><th>random IC mean</th><th>Category</th></tr>
+
+<tr>
+  <td>academic_carhart_mom</td>
+  <td>4.2858</td>
+  <td>2.6294</td>
+  <td>3.3879</td>
+  <td>0.000195</td>
+  <td>confirmed_alive</td>
+</tr>
+
+<tr>
+  <td>academic_illiq</td>
+  <td>3.2172</td>
+  <td>3.4066</td>
+  <td>1.2471</td>
+  <td>0.000424</td>
+  <td>train_only</td>
+</tr>
+
+<tr>
+  <td>academic_smb</td>
+  <td>3.2133</td>
+  <td>3.8067</td>
+  <td>0.9671</td>
+  <td>0.000310</td>
+  <td>train_only</td>
+</tr>
+
+<tr>
+  <td>academic_strev</td>
+  <td>2.7356</td>
+  <td>2.5117</td>
+  <td>1.5381</td>
+  <td>0.000015</td>
+  <td>train_only</td>
+</tr>
+
+<tr>
+  <td>academic_high52w</td>
+  <td>0.5757</td>
+  <td>0.0217</td>
+  <td>0.6972</td>
+  <td>0.000317</td>
+  <td>noise</td>
+</tr>
+
+<tr>
+  <td>academic_cma</td>
+  <td>0.6248</td>
+  <td>-0.2686</td>
+  <td>1.0388</td>
+  <td>-0.000196</td>
+  <td>noise</td>
+</tr>
+
+<tr>
+  <td>academic_retskew</td>
+  <td>0.2378</td>
+  <td>0.6268</td>
+  <td>-0.2057</td>
+  <td>0.000017</td>
+  <td>noise</td>
+</tr>
+
+<tr>
+  <td>academic_corr_rewire</td>
+  <td>-0.1697</td>
+  <td>-0.7979</td>
+  <td>0.3812</td>
+  <td>0.000357</td>
+  <td>noise</td>
+</tr>
+
+<tr>
+  <td>academic_rmw</td>
+  <td>-0.0366</td>
+  <td>0.6818</td>
+  <td>-0.6231</td>
+  <td>-0.000080</td>
+  <td>noise</td>
+</tr>
+
+<tr>
+  <td>academic_bab</td>
+  <td>-0.5596</td>
+  <td>0.1435</td>
+  <td>-0.8319</td>
+  <td>0.000062</td>
+  <td>noise</td>
+</tr>
+
+<tr>
+  <td>academic_mkt_rf</td>
+  <td>-2.7356</td>
+  <td>-2.5117</td>
+  <td>-1.5381</td>
+  <td>-0.000015</td>
+  <td>reversed_strict</td>
+</tr>
+
+<tr>
+  <td>academic_hml</td>
+  <td>-3.4588</td>
+  <td>-1.8458</td>
+  <td>-2.9332</td>
+  <td>-0.000193</td>
+  <td>reversed_strict</td>
+</tr>
+
+</table>
+
+
+<h2>Formulas</h2>
+<table>
+<tr><th>Alpha ID</th><th>Formula (LaTeX source)</th></tr>
+
+<tr><td>academic_carhart_mom</td><td class="formula">\mathrm{zscore}_{x}\bigl((\mathrm{close}_t - \mathrm{close}_{t-252})/\mathrm{close}_{t-252} - (\mathrm{close}_t - \mathrm{close}_{t-21})/\mathrm{close}_{t-21}\bigr)</td></tr>
+
+<tr><td>academic_illiq</td><td class="formula">\mathrm{zscore}_{x}\bigl(\mathrm{ts\_mean}(|r_t| / (\mathrm{close}_t \cdot \mathrm{volume}_t),\,21)\bigr)</td></tr>
+
+<tr><td>academic_smb</td><td class="formula">\mathrm{zscore}_{x}\bigl(-\log(\mathrm{ts\_mean}(\mathrm{volume} \cdot \mathrm{close},\,60) + 1)\bigr)</td></tr>
+
+<tr><td>academic_strev</td><td class="formula">\mathrm{zscore}_{x}\bigl(-(\mathrm{close}_t - \mathrm{close}_{t-21}) / \mathrm{close}_{t-21}\bigr)</td></tr>
+
+<tr><td>academic_high52w</td><td class="formula">\mathrm{zscore}_{x}\bigl(\mathrm{close}_t / \mathrm{ts\_max}(\mathrm{close},\,252)\bigr)</td></tr>
+
+<tr><td>academic_cma</td><td class="formula">\mathrm{zscore}_{x}\bigl(-\Delta_{60}\log(\mathrm{ts\_mean}(\mathrm{volume},\,60) + 1)\bigr)</td></tr>
+
+<tr><td>academic_retskew</td><td class="formula">\mathrm{zscore}_{x}\bigl(-\mathrm{skew}_{60}(r_t)\bigr)</td></tr>
+
+<tr><td>academic_corr_rewire</td><td class="formula">\mathrm{zscore}_{x}\Bigl(-\,\frac{1}{|J_i|}\sum_{j \in J_i}\bigl|\rho_{ij}^{\mathrm{event}} - \rho_{ij}^{\mathrm{calm}}\bigr|\Bigr),\quad \rho^{\mathrm{event}} = \mathrm{corr}(r_{t-19..t}),\ \rho^{\mathrm{calm}} = \mathrm{corr}(r_{t-139..t-20})</td></tr>
+
+<tr><td>academic_rmw</td><td class="formula">\mathrm{zscore}_{x}\bigl(-\mathrm{ts\_std}((\mathrm{close}_t - \mathrm{close}_{t-1}) / \mathrm{close}_{t-1},\,60)\bigr)</td></tr>
+
+<tr><td>academic_bab</td><td class="formula">\mathrm{zscore}_{x}\bigl(-\,\mathrm{ts\_cov}(r_i, r_m, 252) / \mathrm{ts\_std}(r_m, 252)^2\bigr)</td></tr>
+
+<tr><td>academic_mkt_rf</td><td class="formula">\mathrm{zscore}_{x}\bigl((\mathrm{close}_t - \mathrm{close}_{t-21}) / \mathrm{close}_{t-21}\bigr)</td></tr>
+
+<tr><td>academic_hml</td><td class="formula">\mathrm{zscore}_{x}\bigl(-(\mathrm{close}_t - \mathrm{close}_{t-252}) / \mathrm{close}_{t-252}\bigr)</td></tr>
+
+</table>
+
+
+</body></html>

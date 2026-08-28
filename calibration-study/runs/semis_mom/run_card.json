@@ -1,0 +1,166 @@
+{
+  "artifacts": [
+    {
+      "path": "artifacts/equity.csv",
+      "sha256": "51db7a6409a04497d11e7dfdf56b2397dbde88a0504b4860caad6c57d203f02e",
+      "size_bytes": 238851
+    },
+    {
+      "path": "artifacts/fills.jsonl",
+      "sha256": "b5045b038fad30a58ce1fe01610aaa322672e96ef04ef6fdf448873000cd8885",
+      "size_bytes": 2192192
+    },
+    {
+      "path": "artifacts/metrics.csv",
+      "sha256": "f3dda806ea6fb8d8da83eab3e194946a190496f1d8936bf0eb1f03701f7c3c11",
+      "size_bytes": 893
+    },
+    {
+      "path": "artifacts/ohlcv_AMAT.US.csv",
+      "sha256": "a1d84e453c9a5ba49952ad3651e8afab8c45364b0000dc0fbf68f9309097aa7b",
+      "size_bytes": 219602
+    },
+    {
+      "path": "artifacts/ohlcv_AMD.US.csv",
+      "sha256": "67933efefa341b3a52ffea2dfadf83297f7c3c4a7ccd741722cfee53b1134f48",
+      "size_bytes": 214824
+    },
+    {
+      "path": "artifacts/ohlcv_ASML.US.csv",
+      "sha256": "1812c7edceefba01a75167bd9b5f058f6b29f9a92dfac0bde180b944974496c5",
+      "size_bytes": 215749
+    },
+    {
+      "path": "artifacts/ohlcv_AVGO.US.csv",
+      "sha256": "c46f742a66a8dcb2fe1e2f5261473886881b443f4b04f3b3b0f98de739bc6b76",
+      "size_bytes": 220783
+    },
+    {
+      "path": "artifacts/ohlcv_LRCX.US.csv",
+      "sha256": "fa6aab020d404b30e684071a0b7685da51171a3a4556d66382cfc84792740e9f",
+      "size_bytes": 219684
+    },
+    {
+      "path": "artifacts/ohlcv_MU.US.csv",
+      "sha256": "29e540381f29eb9242b826ebe96aaab6544787ea842da621577e228a5f1ca170",
+      "size_bytes": 218506
+    },
+    {
+      "path": "artifacts/ohlcv_NVDA.US.csv",
+      "sha256": "40e4579611dcc1371a173940b19f8294b91c0b940fce1d060752e6efeb5a850c",
+      "size_bytes": 223510
+    },
+    {
+      "path": "artifacts/ohlcv_TSM.US.csv",
+      "sha256": "dd8e988dd7a7155a498ae598fa9762af479d9004f1a98f48b097401c193e785d",
+      "size_bytes": 218749
+    },
+    {
+      "path": "artifacts/positions.csv",
+      "sha256": "bfa42ec54497473bc6805b08d84910196579540fd1dc0b2114d1b0023dd65329",
+      "size_bytes": 220243
+    },
+    {
+      "path": "artifacts/rebalance_notes.json",
+      "sha256": "6801dc8b3657f235d13d15833b894662b082fd6b147e78b75e60b68ca562ab47",
+      "size_bytes": 28004
+    },
+    {
+      "path": "artifacts/rebalance_notes.md",
+      "sha256": "6e43472bde00e5d3eb5c7e99516399ae715ba47f47c76185fb28cd36192236d7",
+      "size_bytes": 7359
+    },
+    {
+      "path": "artifacts/risk_xray.json",
+      "sha256": "99116207edad908253201e1ae3a934577293f46d1d10cac99b82a9e760c3bad7",
+      "size_bytes": 1713
+    },
+    {
+      "path": "artifacts/risk_xray.md",
+      "sha256": "2625444f58abd67d1bbe2759a249f23aa9c3e2d53948fb3932485cc528fd2861",
+      "size_bytes": 340
+    },
+    {
+      "path": "artifacts/target_positions.csv",
+      "sha256": "83e7adaed4c2294d5f9bf3dce1285011b51138299673600a6917301ab08cd9a5",
+      "size_bytes": 123035
+    },
+    {
+      "path": "artifacts/trades.csv",
+      "sha256": "eb78faf78a19416c6ec6c52ea0baa7f4672df663669e028038ca58447886cee2",
+      "size_bytes": 538629
+    },
+    {
+      "path": "code/signal_engine.py",
+      "sha256": "5049c954d2f69f0948ba36a1f19b12e9c749cbf45bdad3766cf672206254dc61",
+      "size_bytes": 2092
+    },
+    {
+      "path": "config.json",
+      "sha256": "5a13e3c54b60a9a7cd84acc508898df3132a1c480611416d0e49c4730e07ef8b",
+      "size_bytes": 340
+    }
+  ],
+  "backtest": {
+    "codes": [
+      "NVDA.US",
+      "TSM.US",
+      "ASML.US",
+      "AMD.US",
+      "AVGO.US",
+      "MU.US",
+      "AMAT.US",
+      "LRCX.US"
+    ],
+    "end_date": "2026-08-27",
+    "engine": "daily",
+    "initial_cash": 1000000,
+    "interval": "1D",
+    "source": "local",
+    "start_date": "2017-06-01"
+  },
+  "data_sources": [
+    "local"
+  ],
+  "generated_at": "2026-08-28T07:09:41.107629Z",
+  "metrics": {
+    "annual_return": 0.41432498561090947,
+    "avg_holding_days": 87.4,
+    "avg_turnover": 0.009957,
+    "benchmark_beta": 0.9397,
+    "benchmark_return": 31.421113,
+    "calmar": 0.752,
+    "dropped_target_adjustment_count": 0,
+    "excess_return": -7.998007,
+    "final_value": 24423105.58049582,
+    "information_ratio": -0.1625,
+    "max_consecutive_loss": 146,
+    "max_drawdown": -0.5509346151780632,
+    "position_adjustment": "rebalance",
+    "profit_factor": 7.9134,
+    "profit_loss_ratio": 2.4118,
+    "rebalance_count": 48,
+    "rebalance_tolerance": 0.0,
+    "rebalance_turnover_max": 0.495,
+    "rebalance_turnover_mean": 0.268125,
+    "risk_xray_annualized_vol": 0.3857365513461223,
+    "risk_xray_avg_invested": 0.8191090308160386,
+    "risk_xray_effective_n": 7.6096369557187575,
+    "risk_xray_hhi": 0.1314123138618965,
+    "risk_xray_max_drawdown": -0.5259830106425772,
+    "sharpe": 1.0730778084588495,
+    "sortino": 1.3981,
+    "total_return": 23.423105580495818,
+    "total_turnover": 23.129968,
+    "tracking_error": 0.163319,
+    "trade_count": 3579,
+    "win_rate": 0.7664151997764739
+  },
+  "reproducibility": {
+    "config_hash": "5a13e3c54b60a9a7cd84acc508898df3132a1c480611416d0e49c4730e07ef8b",
+    "strategy_hash": "5049c954d2f69f0948ba36a1f19b12e9c749cbf45bdad3766cf672206254dc61"
+  },
+  "run_dir": "/home/rucha/HKU-personal-hedge-fund/calibration-study/runs/semis_mom",
+  "schema_version": "0.1",
+  "warnings": []
+}

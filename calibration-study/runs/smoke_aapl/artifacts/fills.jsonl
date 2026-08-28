@@ -1,0 +1,2 @@
+{"symbol": "AAPL.US", "timestamp": "2024-01-03T00:00:00", "bar_idx": 1, "action": "open", "signed_quantity": 542.55, "notional": 99998.53594312361, "execution_price": 184.31211122131347, "fee": 0.0, "margin": 99998.53594312361, "reason": "signal", "holding_bars": null}
+{"symbol": "AAPL.US", "timestamp": "2024-12-31T00:00:00", "bar_idx": 251, "action": "close", "signed_quantity": -542.55, "notional": 135797.43732155798, "execution_price": 250.29478816986085, "fee": 0.0, "margin": 135797.43732155798, "reason": "end_of_backtest", "holding_bars": 250.00000000000003}
