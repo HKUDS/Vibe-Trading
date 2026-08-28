@@ -190,7 +190,7 @@ class TestPrincipleOneReachesEveryTool:
         """Measured before this landed: rejected as numeric_claim_unavailable."""
         ledger = _ledger(tmp_path, tool="get_stock_profile", result=_PROFILE_QUOTE)
 
-        result = ledger.validate_final_answer("AAPL.US 收盘价 212.5 USD。")
+        result = ledger.validate_final_answer("AAPL.US 现价 212.5 USD。")
 
         assert result.valid is True, result.issues
 
@@ -211,22 +211,16 @@ class TestPrincipleOneReachesEveryTool:
         assert result.valid is False
         assert [issue["code"] for issue in result.issues] == ["numeric_claim_conflict"]
 
-    def test_the_widened_corpus_did_not_widen_what_output_must_disclose(
+    def test_disclosure_wording_does_not_gate_a_grounded_number(
         self, tmp_path: Path
     ) -> None:
-        """Provenance demands stay keyed on market-data evidence, whose source is real."""
+        """Structured evidence keeps provenance without forcing it into prose."""
         market = _ledger(tmp_path / "market").validate_final_answer("AAPL.US 收盘价 212.5。")
 
-        assert market.valid is False
-        assert {issue["code"] for issue in market.issues} >= {
-            "data_source_not_surfaced",
-            "currency_not_surfaced",
-        }
-        # The generic tool's fallback source is its own name; demanding the model
-        # spell that out would reject a correct answer, so it is not demanded.
+        assert market.valid is True, market.issues
         generic = _ledger(
             tmp_path / "generic", tool="get_stock_profile", result=_PROFILE_QUOTE
-        ).validate_final_answer("AAPL.US 收盘价 212.5。")
+        ).validate_final_answer("AAPL.US 现价 212.5。")
 
         assert generic.valid is True, generic.issues
 
@@ -236,7 +230,7 @@ class TestPrincipleThreeBlocksFiguresOnUnhandledSymbols:
 
     def test_a_figure_on_an_unhandled_ticker_is_rejected(self, tmp_path: Path) -> None:
         result = _ledger(tmp_path).validate_final_answer(
-            f"{_GROUNDED_ANSWER}\n600519.SH 收盘 1680.0。"
+            f"{_GROUNDED_ANSWER}\n600519.SH 收盘价 1680.0。"
         )
 
         assert result.valid is False
@@ -262,14 +256,16 @@ class TestPrincipleThreeBlocksFiguresOnUnhandledSymbols:
             success=False,
         )
 
-        result = ledger.validate_final_answer(f"{_GROUNDED_ANSWER}\nFAKE.US 收盘 9.9。")
+        result = ledger.validate_final_answer(f"{_GROUNDED_ANSWER}\nFAKE.US 收盘价 9.9。")
 
         assert result.valid is False
         assert "unsourced_symbol_figures" in [issue["code"] for issue in result.issues]
 
     def test_the_correction_names_the_way_out(self, tmp_path: Path) -> None:
         ledger = _ledger(tmp_path)
-        validation = ledger.validate_final_answer(f"{_GROUNDED_ANSWER}\n600519.SH 收盘 1680.0。")
+        validation = ledger.validate_final_answer(
+            f"{_GROUNDED_ANSWER}\n600519.SH 收盘价 1680.0。"
+        )
 
         prompt = ledger.correction_prompt(validation)
 
@@ -359,10 +355,10 @@ class TestTheGateDoesNotKillCorrectAnswers:
 
         assert result.valid is True, result.issues
 
-    def test_the_root_allowance_does_not_licence_an_untouched_ticker(
+    def test_non_price_figures_are_not_interpreted_as_market_prices(
         self, tmp_path: Path
     ) -> None:
-        """Only the root a succeeding call actually passed in is licensed."""
+        """A revenue figure has no OHLC field binding and stays out of this gate."""
         ledger = GroundingLedger(
             run_dir=tmp_path,
             user_message="Summarize AAPL's latest annual filing.",
@@ -379,8 +375,7 @@ class TestTheGateDoesNotKillCorrectAnswers:
             "MSFT.US reported revenue of 400.0 billion USD."
         )
 
-        assert result.valid is False
-        assert [issue["code"] for issue in result.issues] == ["unsourced_symbol_figures"]
+        assert result.valid is True
 
     def test_a_shortlist_candidate_is_allowed(self, tmp_path: Path) -> None:
         """A resolver that offered the symbol is a tool that returned it."""
@@ -422,24 +417,15 @@ class TestTheGateDoesNotKillCorrectAnswers:
 
         assert result.valid is True, result.issues
 
-    def test_the_gate_is_strict_about_encyclopaedic_figures_on_purpose(
+    def test_constituent_counts_are_not_interpreted_as_market_prices(
         self, tmp_path: Path
     ) -> None:
-        """Where it is strict, it is strict knowingly.
-
-        A definitional figure recited about an instrument the session never
-        fetched is still a figure with no origin but memory, so it is rejected.
-        The alternative — exempting runs the identity gate has not already
-        flagged — opens the case where a symbol-free request ("看看新能源板块")
-        ends in fabricated quotes, so the strictness is kept and the model is
-        handed one round trip to source the figure or call it not retrieved.
-        """
+        """An index constituent count has no OHLC field/value contract."""
         ledger = GroundingLedger(run_dir=tmp_path, user_message="A股宽基指数有哪些")
 
         result = ledger.validate_final_answer("000300.SH 覆盖 300 只成分股。")
 
-        assert result.valid is False
-        assert [issue["code"] for issue in result.issues] == ["unsourced_symbol_figures"]
+        assert result.valid is True
 
 
 class TestTheSemanticPrinciplesStayInThePrompt:

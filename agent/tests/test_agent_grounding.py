@@ -19,9 +19,21 @@ from src.agent.grounding import (
     _timestamp_matches_claim_date,
 )
 from src.agent.loop import AgentLoop, _is_tool_success
+from src.agent.price_claims import extract_prose_price_claims, parse_numeric_cell
 from src.agent.tools import BaseTool, ToolRegistry
 from src.agent.trace import TraceWriter
 from tests.message_roles_helpers import assert_system_messages_only_lead
+
+
+def _price_values(text: str) -> list[float]:
+    """Return values from the positive observed-price grammar."""
+    return [claim.value for claim in extract_prose_price_claims(text)]
+
+
+def test_price_claim_parser_requires_a_field_binding() -> None:
+    assert _price_values("2026-08-28 收盘价 1,309.22 元") == [1309.22]
+    assert _price_values("目标价 1,309.22 元；RSI 46.7；20 个交易日") == []
+    assert parse_numeric_cell("$1,309.22") == (1309.22, "USD", None)
 
 
 def _resolver_payload(
@@ -244,11 +256,7 @@ def test_resolver_and_consumer_in_same_batch_cannot_race(
     trace.close()
 
     assert market.calls == 1
-    artifact = json.loads(
-        (tmp_path / "run" / "artifacts" / "grounding_evidence.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    artifact = json.loads((tmp_path / "run" / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8"))
     assert artifact["identity"]["status"] == "locked"
     assert any(
         record["field"] == "close"
@@ -585,9 +593,7 @@ def test_listed_identity_blocks_private_company_workflow(
 
     assert private_skill.calls == 0
     assert json.loads(messages[-1]["content"])["error_code"] == "identity_conflict"
-    validation = agent._grounding.validate_final_answer(
-        "SpaceX is a private company and is not publicly traded."
-    )
+    validation = agent._grounding.validate_final_answer("SpaceX is a private company and is not publicly traded.")
     assert validation.valid is False
     assert any(issue["code"] == "listed_identity_relabelled_private" for issue in validation.issues)
 
@@ -685,9 +691,7 @@ def test_final_numeric_gate_rejects_known_trace_contradiction(tmp_path: Path) ->
 
 建议重仓买入价为 0.881。"""
     )
-    good = ledger.validate_final_answer(
-        "562500.SS（Yahoo，CNY）在 2026-06-23 的已观测开盘价为 1.141，收盘价为 1.137。"
-    )
+    good = ledger.validate_final_answer("562500.SS（Yahoo，CNY）在 2026-06-23 的已观测开盘价为 1.141，收盘价为 1.137。")
 
     assert bad.valid is False
     assert any(issue["code"] == "numeric_claim_conflict" for issue in bad.issues)
@@ -715,12 +719,8 @@ def test_run_dir_ohlc_csv_is_observed_evidence(tmp_path: Path) -> None:
         user_message="请分析 BYN.V 并推荐买入价",
     )
 
-    inside = ledger.validate_final_answer(
-        "BYN.V（yfinance，CAD）在 2026-08-07 的已观测收盘价为 0.375。"
-    )
-    fabricated = ledger.validate_final_answer(
-        "BYN.V（yfinance，CAD）在 2026-08-07 的已观测收盘价为 0.88。"
-    )
+    inside = ledger.validate_final_answer("BYN.V（yfinance，CAD）在 2026-08-07 的已观测收盘价为 0.375。")
+    fabricated = ledger.validate_final_answer("BYN.V（yfinance，CAD）在 2026-08-07 的已观测收盘价为 0.88。")
 
     assert inside.valid is True, inside.issues
     assert fabricated.valid is False
@@ -732,8 +732,7 @@ def test_run_dir_ohlc_csv_tsx_filename_maps_symbol(tmp_path: Path) -> None:
     raw = tmp_path / "data" / "raw"
     raw.mkdir(parents=True)
     (raw / "PDI_TO.csv").write_text(
-        "Date,Open,High,Low,Close\n"
-        "2026-08-07,10.0,10.5,9.9,10.2\n",
+        "Date,Open,High,Low,Close\n2026-08-07,10.0,10.5,9.9,10.2\n",
         encoding="utf-8",
     )
     ledger = GroundingLedger(
@@ -741,9 +740,7 @@ def test_run_dir_ohlc_csv_tsx_filename_maps_symbol(tmp_path: Path) -> None:
         user_message="请分析 PDI.TO 并推荐买入价",
     )
 
-    good = ledger.validate_final_answer(
-        "PDI.TO（yfinance，CAD）在 2026-08-07 的已观测收盘价为 10.2。"
-    )
+    good = ledger.validate_final_answer("PDI.TO（yfinance，CAD）在 2026-08-07 的已观测收盘价为 10.2。")
 
     assert good.valid is True, good.issues
 
@@ -794,15 +791,23 @@ def test_run_dir_ohlc_csv_us_filename_maps_symbol(tmp_path: Path) -> None:
     ledger.ingest_tool_result(
         tool_name="search_symbol",
         arguments={"query": "INTC"},
-        result=json.dumps({
-            "ok": True,
-            "data": {
-                "candidates": [
-                    {"symbol": "INTC.US", "name": "Intel Corporation", "market": "us",
-                     "type": "equity", "exchange": "NMS", "source": "yahoo"},
-                ]
-            },
-        }),
+        result=json.dumps(
+            {
+                "ok": True,
+                "data": {
+                    "candidates": [
+                        {
+                            "symbol": "INTC.US",
+                            "name": "Intel Corporation",
+                            "market": "us",
+                            "type": "equity",
+                            "exchange": "NMS",
+                            "source": "yahoo",
+                        },
+                    ]
+                },
+            }
+        ),
         call_id="lock1",
         success=True,
     )
@@ -822,9 +827,7 @@ def test_run_dir_ohlc_csv_us_filename_maps_symbol(tmp_path: Path) -> None:
         "INTC.US（yfinance，USD）08-10(一) 开盘价 88.88，收盘价 97.52，数据源 yahoo。"
     )
     assert fabricated.valid is False
-    assert any(
-        issue["code"] == "numeric_claim_conflict" for issue in fabricated.issues
-    )
+    assert any(issue["code"] == "numeric_claim_conflict" for issue in fabricated.issues)
 
 
 def test_run_dir_ohlc_csv_stray_symbol_is_ignored(tmp_path: Path) -> None:
@@ -832,8 +835,7 @@ def test_run_dir_ohlc_csv_stray_symbol_is_ignored(tmp_path: Path) -> None:
     raw = tmp_path / "data" / "raw"
     raw.mkdir(parents=True)
     (raw / "ZZZ_US.csv").write_text(
-        "Date,Open,High,Low,Close\n"
-        "2026-08-07,100.0,100.0,100.0,100.0\n",
+        "Date,Open,High,Low,Close\n2026-08-07,100.0,100.0,100.0,100.0\n",
         encoding="utf-8",
     )
     ledger = GroundingLedger(
@@ -841,20 +843,15 @@ def test_run_dir_ohlc_csv_stray_symbol_is_ignored(tmp_path: Path) -> None:
         user_message="请分析 BYN.V 并推荐买入价",
     )
 
-    result = ledger.validate_final_answer(
-        "ZZZ.US（yfinance，USD）在 2026-08-07 的已观测收盘价为 100.0。"
-    )
+    result = ledger.validate_final_answer("ZZZ.US（yfinance，USD）在 2026-08-07 的已观测收盘价为 100.0。")
 
     # The symbol is not entitled, so the price cannot be grounded.
     assert result.valid is False
-    assert any(
-        issue["code"] in {"numeric_claim_unavailable", "canonical_symbol_not_surfaced"}
-        for issue in result.issues
-    )
+    assert any(issue["code"] == "unsourced_symbol_figures" for issue in result.issues)
 
 
-def test_numeric_gate_validates_derived_formula_and_provenance(tmp_path: Path) -> None:
-    """A derived entry level must calculate correctly from observed evidence."""
+def test_numeric_gate_does_not_treat_a_derived_plan_as_observed_data(tmp_path: Path) -> None:
+    """Derived entry levels remain model analysis, not mechanical observations."""
     ledger = GroundingLedger(
         run_dir=tmp_path,
         user_message="请分析 562500.SS 并给出买入价",
@@ -867,30 +864,15 @@ def test_numeric_gate_validates_derived_formula_and_provenance(tmp_path: Path) -
         success=True,
     )
 
-    bad_math = ledger.validate_final_answer(
-        "562500.SS（Yahoo，CNY）的推导买入价：(1.141 + 1.137) / 2 = 0.881。"
-    )
-    no_observed_input = ledger.validate_final_answer(
-        "562500.SS（Yahoo，CNY）的推导买入价：(0.88 + 0.90) / 2 = 0.89。"
-    )
-    good = ledger.validate_final_answer(
-        "562500.SS（Yahoo，CNY）的推导买入价：(1.141 + 1.137) / 2 = 1.139。"
-    )
-    missing_provenance = ledger.validate_final_answer(
-        "2026-06-23 的已观测收盘价为 1.137。"
-    )
+    bad_math = ledger.validate_final_answer("562500.SS（Yahoo，CNY）的推导买入价：(1.141 + 1.137) / 2 = 0.881。")
+    no_observed_input = ledger.validate_final_answer("562500.SS（Yahoo，CNY）的推导买入价：(0.88 + 0.90) / 2 = 0.89。")
+    good = ledger.validate_final_answer("562500.SS（Yahoo，CNY）的推导买入价：(1.141 + 1.137) / 2 = 1.139。")
+    concise_answer = ledger.validate_final_answer("2026-06-23 的已观测收盘价为 1.137。")
 
-    assert bad_math.valid is False
-    assert no_observed_input.valid is False
+    assert bad_math.valid is True
+    assert no_observed_input.valid is True
     assert good.valid is True
-    assert missing_provenance.valid is False
-    assert {
-        issue["code"] for issue in missing_provenance.issues
-    } >= {
-        "canonical_symbol_not_surfaced",
-        "data_source_not_surfaced",
-        "currency_not_surfaced",
-    }
+    assert concise_answer.valid is True, concise_answer.issues
 
 
 class _Response:
@@ -936,11 +918,7 @@ class _CorrectingLLM:
                 ]
             ),
             _Response(content="建议买入价为 0.881。"),
-            _Response(
-                content=(
-                    "562500.SS（Yahoo，CNY）在 2026-06-23 的已观测收盘价为 1.137。"
-                )
-            ),
+            _Response(content=("562500.SS（Yahoo，CNY）在 2026-06-23 的已观测收盘价为 1.137。")),
         ]
         self.messages_history: list[list[dict[str, Any]]] = []
 
@@ -964,10 +942,10 @@ class _CorrectingLLM:
         return _Response()
 
 
-def test_agent_loop_rejects_then_corrects_ungrounded_final_answer(
+def test_agent_loop_does_not_reject_a_prospective_entry_level(
     tmp_path: Path,
 ) -> None:
-    """Rejected numeric drafts never become the returned or streamed answer."""
+    """A trading plan is returned instead of being mistaken for a bad quote."""
     resolver = _ResolverTool(_resolver_payload())
     market = _MarketTool(_market_payload())
     registry = ToolRegistry()
@@ -988,26 +966,15 @@ def test_agent_loop_rejects_then_corrects_ungrounded_final_answer(
     result = agent.run("请分析机器人ETF并给出买入价")
 
     assert result["status"] == "success"
-    assert "1.137" in result["content"]
-    assert "0.881" not in result["content"]
+    assert "0.881" in result["content"]
     assert market.calls == 1
     # The correction nudge must not be a mid-conversation system message.
     assert_system_messages_only_lead(llm.messages_history)
-    streamed = "".join(
-        data.get("delta", "") for event, data in events if event == "text_delta"
-    )
-    assert "0.881" not in streamed
-    assert "1.137" in streamed
-    completed_thinking = "".join(
-        data.get("content", "")
-        for event, data in events
-        if event == "thinking_done"
-    )
+    streamed = "".join(data.get("delta", "") for event, data in events if event == "text_delta")
+    assert "0.881" in streamed
+    completed_thinking = "".join(data.get("content", "") for event, data in events if event == "thinking_done")
     assert "0.881" not in completed_thinking
-    artifact = json.loads(
-        (run_dir / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8")
-    )
-    assert artifact["validations"][0]["valid"] is False
+    artifact = json.loads((run_dir / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8"))
     assert artifact["validations"][-1]["valid"] is True
 
 
@@ -1210,14 +1177,8 @@ def test_numbers_without_dates_or_percent_masks_cjk_glued_iso_dates() -> None:
     contributed 2026/7/14 as candidate prices. ``re.ASCII`` restores the byte
     boundary so the whole date masks while a genuine quote beside it stays.
     """
-    assert (
-        GroundingLedger._numbers_without_dates_or_percent("若跌破观测支撑位0.980 CNY (2026-07-14最低)")
-        == []
-    )
-    assert (
-        GroundingLedger._numbers_without_dates_or_percent("收盘价 8.20 CNY 自2026-07-14以来最低")
-        == [8.2]
-    )
+    assert _price_values("若跌破观测支撑位0.980 CNY (2026-07-14最低)") == []
+    assert _price_values("收盘价 8.20 CNY 自2026-07-14以来最低") == [8.2]
 
 
 def test_iso_date_running_into_cjk_text_is_still_masked(tmp_path: Path) -> None:
@@ -1283,9 +1244,7 @@ def test_screening_run_reaches_a_final_answer_through_the_agent_loop(
     react_trace: list[dict[str, Any]] = []
 
     def batch(*calls: SimpleNamespace, iteration: int) -> None:
-        agent._process_tool_calls(
-            list(calls), ContextBuilder, messages, trace, react_trace, iteration
-        )
+        agent._process_tool_calls(list(calls), ContextBuilder, messages, trace, react_trace, iteration)
 
     batch(_tool_call("shortlist", "search_symbol", query=_SHORTLIST_QUERY), iteration=1)
     batch(_tool_call("workflow", "load_skill", name="stock-selection"), iteration=2)
@@ -1346,7 +1305,7 @@ def test_year_less_date_still_rejects_a_wrong_quote(tmp_path: Path) -> None:
 
 
 def test_a_date_that_names_a_different_day_is_still_unavailable(tmp_path: Path) -> None:
-    """Loosening the year must not collapse distinct trading days together."""
+    """A different trading day is reported as incomplete, not a refusal."""
     ledger = _screened_ledger(tmp_path)
 
     draft = (
@@ -1357,8 +1316,54 @@ def test_a_date_that_names_a_different_day_is_still_unavailable(tmp_path: Path) 
     )
     result = ledger.validate_final_answer(draft)
 
-    assert result.valid is False
-    assert "numeric_claim_unavailable" in {issue["code"] for issue in result.issues}
+    assert result.valid is True
+    assert "evidence_unavailable" in {warning["code"] for warning in result.warnings}
+
+
+def test_divergent_sources_warn_instead_of_blocking(tmp_path: Path) -> None:
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="562500.SH 现价多少")
+    for call_id, source, close in (
+        ("eastmoney", "eastmoney", 1.171),
+        ("tushare", "tushare", 1.25),
+    ):
+        ledger.ingest_tool_result(
+            tool_name="get_market_data",
+            arguments={"codes": ["562500.SH"], "source": source},
+            result=json.dumps({"562500.SH": [{"trade_date": "2026-06-24", "close": close}]}),
+            call_id=call_id,
+            success=True,
+        )
+
+    result = ledger.validate_final_answer("562500.SH 收盘价 1.171 元。")
+
+    assert result.valid is True
+    assert "source_divergence" in {warning["code"] for warning in result.warnings}
+
+
+def test_different_market_sessions_are_not_hard_compared(tmp_path: Path) -> None:
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="AAPL.US 现价多少")
+    for call_id, session, close in (
+        ("regular", "regular", 200.0),
+        ("after-hours", "after_hours", 201.0),
+    ):
+        ledger.ingest_tool_result(
+            tool_name="get_market_data",
+            arguments={"codes": ["AAPL.US"], "source": call_id},
+            result=json.dumps(
+                {
+                    "AAPL.US": [{"trade_date": "2026-08-28", "close": close}],
+                    "_provenance": {"AAPL.US": {"source": call_id, "market_session": session}},
+                }
+            ),
+            call_id=call_id,
+            success=True,
+        )
+
+    result = ledger.validate_final_answer("AAPL.US 收盘价 200.00 美元。")
+
+    assert result.valid is True
+    warnings = {warning["code"]: warning for warning in result.warnings}
+    assert warnings["evidence_not_comparable"]["reason"] == "mixed_observation_cohorts"
 
 
 # ---------------------------------------------------------------------------
@@ -1384,7 +1389,7 @@ _PLAN_LEVELS_FROM_983 = [
 @pytest.mark.parametrize("segment", _PLAN_LEVELS_FROM_983, ids=range(len(_PLAN_LEVELS_FROM_983)))
 def test_plan_levels_are_not_read_as_observed_price_claims(segment: str) -> None:
     """A trigger, a target and a hypothesis assert nothing about observed data."""
-    assert GroundingLedger._numbers_without_dates_or_percent(segment) == []
+    assert _price_values(segment) == []
 
 
 # The other side of the same guard. Every entry here is an assertion about what
@@ -1398,8 +1403,8 @@ _ASSERTIONS_THAT_MUST_STAY_CHECKED = [
     # Span-local: the target is masked, the quote beside it is not.
     ("现价 5.97，目标位 6.45", [5.97]),
     # A conditional opener must not reach back over a quote already made.
-    ("收盘 6.03，若跌破 5.36 减仓", [6.03]),
-    ("开盘 6.80 最高 7.18 最低 6.68", [6.80, 7.18, 6.68]),
+    ("收盘价 6.03，若跌破 5.36 减仓", [6.03]),
+    ("开盘价 6.80 最高价 7.18 最低价 6.68", [6.80, 7.18, 6.68]),
 ]
 
 
@@ -1409,9 +1414,10 @@ _ASSERTIONS_THAT_MUST_STAY_CHECKED = [
     ids=[c[0][:24] for c in _ASSERTIONS_THAT_MUST_STAY_CHECKED],
 )
 def test_plan_level_mask_leaves_observed_quotes_checked(
-    segment: str, expected: list[float],
+    segment: str,
+    expected: list[float],
 ) -> None:
-    assert GroundingLedger._numbers_without_dates_or_percent(segment) == expected
+    assert _price_values(segment) == expected
 
 
 # A currency token between the anchor and the number used to break every
@@ -1428,169 +1434,44 @@ _CURRENCY_PREFIXED_PLAN_LEVELS = [
 ]
 
 
-@pytest.mark.parametrize(
-    "segment", _CURRENCY_PREFIXED_PLAN_LEVELS, ids=range(len(_CURRENCY_PREFIXED_PLAN_LEVELS))
-)
+@pytest.mark.parametrize("segment", _CURRENCY_PREFIXED_PLAN_LEVELS, ids=range(len(_CURRENCY_PREFIXED_PLAN_LEVELS)))
 def test_currency_prefixed_plan_levels_are_not_read_as_observed_prices(segment: str) -> None:
     """A currency-prefixed trigger or target is prospective, not observed."""
-    assert GroundingLedger._numbers_without_dates_or_percent(segment) == []
-
-
-# A historical reference names a price the instrument once traded at. The
-# SPCX.US weekly plan quoted "6/16 ATH 225.64" next to the 8/12 high 149.60;
-# 225.64 fell outside the session's observed OHLC range (105.11–149.6) and was
-# rejected as a conflict even though it is a reference, not a current quote.
-_REFERENCE_LEVEL_SEGMENTS = [
-    ("8/12 高 149.60 为 6/16 ATH 225.64 以来最高", [149.60]),
-    ("8/12 高 149.60 为 6/16 历史高点 225.64 以来最高", [149.60]),
-    ("8/12 高 149.60 为 6/16 all-time high 225.64 以来最高", [149.60]),
-    ("52W 高 543.14", []),
-    ("52-week low of $190.12", []),
-    ("52W low (C$7.27)", []),
-    ("历史最低 $60.82", []),
-    ("ATH (C$7.31)", []),
-]
+    assert _price_values(segment) == []
 
 
 @pytest.mark.parametrize(
-    "segment,expected",
-    _REFERENCE_LEVEL_SEGMENTS,
-    ids=[c[0][:28] for c in _REFERENCE_LEVEL_SEGMENTS],
+    "segment",
+    [
+        "line 206",
+        "第 206 行",
+        "16 个交易日",
+        "### 6. 关键价位",
+        "USD/CAD≈1.36",
+        "RSI 46.7",
+        "20/50/200-day 均线",
+        "买入股数 = 初始资金 × (1 - 单边成本率) / 期初收盘价",
+    ],
 )
-def test_reference_levels_are_not_read_as_observed_price_claims(
-    segment: str, expected: list[float],
-) -> None:
-    """An ATH/52-week/historical extreme is a reference, not a current quote."""
-    assert GroundingLedger._numbers_without_dates_or_percent(segment) == expected
+def test_unlabelled_numeric_categories_do_not_become_price_claims(segment: str) -> None:
+    """Only the positive field/value contract creates a price claim."""
+    assert _price_values(segment) == []
 
 
-# A validation report cites a plan file by line number ("~line 206",
-# "第 206 行"). The number is a document location, not a price, and was
-# compared against observed OHLC as a claim before this mask existed.
-_LINE_REFERENCE_SEGMENTS = [
-    "**文档 ~line 206「8/12 高 149.60 为 6/16 ATH 225.64 以来最高」不成立",
-    "line 206",
-    "lines 206-208",
-    "第 206 行",
-    "第 206–208 行",
-    "行 206",
-]
+def test_historical_price_with_another_date_is_nonblocking(tmp_path: Path) -> None:
+    ledger = _screened_ledger(tmp_path)
 
+    result = ledger.validate_final_answer("000543.SZ 在 6/16 的 all-time high 225.64 CNY，来源待核对。")
 
-@pytest.mark.parametrize(
-    "segment", _LINE_REFERENCE_SEGMENTS, ids=range(len(_LINE_REFERENCE_SEGMENTS))
-)
-def test_line_number_references_are_not_read_as_price_claims(segment: str) -> None:
-    """A line citation is a document location, not an observed price."""
-    if segment.startswith("**文档"):
-        # The quoted 149.60 beside the line citation stays checked.
-        assert GroundingLedger._numbers_without_dates_or_percent(segment) == [149.6]
-    else:
-        assert GroundingLedger._numbers_without_dates_or_percent(segment) == []
-
-
-# Validation summaries count findings: "1 项事实错误", "2 项不一致", and
-# "16 个交易日" are count nouns, not prices. The count survived extraction
-# and was rejected against the observed OHLC range before 项/个交易日 joined
-# the quantity units.
-_COUNT_NOUN_SEGMENTS = [
-    ("- ❌ **1 项事实错误**:", []),
-    ("⚠️ **2 项不一致**", []),
-    ("3 项", []),
-    ("16 个交易日", []),
-    # 149.60 is masked here too: "高点高于 149.60" is a comparison level.
-    ("6/17–7/10 有 16 个交易日高点高于 149.60", []),
-]
-
-
-@pytest.mark.parametrize(
-    "segment,expected",
-    _COUNT_NOUN_SEGMENTS,
-    ids=[c[0][:22] for c in _COUNT_NOUN_SEGMENTS],
-)
-def test_count_nouns_are_not_read_as_price_claims(
-    segment: str, expected: list[float],
-) -> None:
-    """项/个交易日 counts are quantities, not prices."""
-    assert GroundingLedger._numbers_without_dates_or_percent(segment) == expected
-
-
-_SINCE_REFERENCE_SEGMENTS = [
-    ("正确为 7/10(150.57)以来最高", []),
-    ("收 146.15 为 7/9(收 152.16)以来最高", [146.15]),
-    ("highest since 7/10 (150.57)", []),
-    # The current bar's own high is not a since-reference and stays checked.
-    ("8/12 高 149.60 为 6/16 ATH 225.64 以来最高", [149.6]),
-]
-
-
-@pytest.mark.parametrize(
-    "segment,expected",
-    _SINCE_REFERENCE_SEGMENTS,
-    ids=[c[0][:24] for c in _SINCE_REFERENCE_SEGMENTS],
-)
-def test_since_references_are_not_read_as_observed_price_claims(
-    segment: str, expected: list[float],
-) -> None:
-    """A date-anchored "highest since" value is a reference, not a quote."""
-    assert GroundingLedger._numbers_without_dates_or_percent(segment) == expected
-
-
-_NUMBERED_HEADING_SEGMENTS = [
-    "### 6. 关键价位/旁证核验",
-    "## 12. 结论",
-    "# 3. 身份与数据源",
-    "### 8/13 周中判定",
-    # The section number masks; the observed quote beside it stays checked.
-    ("### 6. 8/12 高 149.60 为 6/16 ATH 以来最高", [149.6]),
-]
-
-
-@pytest.mark.parametrize(
-    "segment", _NUMBERED_HEADING_SEGMENTS, ids=range(len(_NUMBERED_HEADING_SEGMENTS))
-)
-def test_numbered_headings_are_not_read_as_price_claims(segment: str) -> None:
-    """A markdown heading number is a section index, not a price."""
-    if isinstance(segment, tuple):
-        segment, expected = segment
-        assert GroundingLedger._numbers_without_dates_or_percent(segment) == expected
-    else:
-        assert GroundingLedger._numbers_without_dates_or_percent(segment) == []
-
-
-_RATIO_AND_FX_SEGMENTS = [
-    ("TO 报价实际是按 6:1 平价锚定的", []),
-    ("25/25 行 OHLCV、25/25 项派生百分比、7/7 日 CDR 6:1 折算", []),
-    ("远小于当前 USD/CAD≈1.36 的量级", []),
-    ("汇率 1.36", []),
-    # `EUR/USD` is this project's canonical forex symbol, so an asserted pair
-    # rate is a quote and stays checked; only an approximated conversion basis
-    # is masked. Masking both would let an invented FX rate through the gate.
-    ("usd/cad=1.36", [1.36]),
-    ("USD/CAD 1.36", [1.36]),
-    ("USD/CAD ≈ 1.36", []),
-]
-
-
-@pytest.mark.parametrize(
-    "segment,expected",
-    _RATIO_AND_FX_SEGMENTS,
-    ids=[c[0][:24] for c in _RATIO_AND_FX_SEGMENTS],
-)
-def test_ratios_and_fx_rates_are_not_read_as_price_claims(
-    segment: str, expected: list[float],
-) -> None:
-    """A conversion ratio or forex rate is not an instrument quote."""
-    assert GroundingLedger._numbers_without_dates_or_percent(segment) == expected
+    assert result.valid is True
+    assert result.warnings
 
 
 def test_plan_level_mask_does_not_shield_a_wrong_quote_end_to_end(tmp_path: Path) -> None:
     """The end-to-end gate still rejects a fabricated quote beside a plan level."""
     ledger = _screened_ledger(tmp_path)
 
-    result = ledger.validate_final_answer(
-        "000543.SZ 收盘价 42.00 CNY，目标位 45.00（source: tencent）"
-    )
+    result = ledger.validate_final_answer("000543.SZ 收盘价 42.00 CNY，目标位 45.00（source: tencent）")
 
     assert result.valid is False
     assert "numeric_claim_conflict" in {issue["code"] for issue in result.issues}
@@ -1832,13 +1713,16 @@ def test_a_failed_side_query_does_not_retract_a_locked_identity(
     )
 
     assert ledger.identity_status == "locked"
-    assert ledger.authorize_tool_call(
-        "get_market_data",
-        {"codes": ["600519.SH"]},
-        batch_authorized_symbols=ledger.authorized_symbols,
-        batch_identity_status=ledger.identity_status,
-        call_id="prices",
-    ).allowed is True
+    assert (
+        ledger.authorize_tool_call(
+            "get_market_data",
+            {"codes": ["600519.SH"]},
+            batch_authorized_symbols=ledger.authorized_symbols,
+            batch_identity_status=ledger.identity_status,
+            call_id="prices",
+        ).allowed
+        is True
+    )
 
 
 def test_a_conflict_outranks_a_lock_from_another_query(tmp_path: Path) -> None:
@@ -1875,31 +1759,67 @@ def test_a_chinese_answer_may_name_its_source_and_currency_in_chinese(
     tmp_path: Path,
 ) -> None:
     """The answer follows the user's language; the gate must read that language."""
-    result = _cny_ledger(tmp_path).validate_final_answer(
-        "562500.SH 最新收盘价 1.171 元，数据来源：雅虎财经。"
+    result = _cny_ledger(tmp_path).validate_final_answer("562500.SH 最新收盘价 1.171 元，数据来源：雅虎财经。")
+
+    assert result.valid is True, result.issues
+
+
+def test_omitted_currency_does_not_gate_a_matching_observed_price(
+    tmp_path: Path,
+) -> None:
+    """Currency wording is optional; the structured artifact keeps provenance."""
+    result = _cny_ledger(tmp_path).validate_final_answer("562500.SH 最新收盘价 1.171，数据来源：雅虎财经。")
+
+    assert result.valid is True, result.issues
+
+
+def test_explicit_conflicting_currency_is_still_rejected(tmp_path: Path) -> None:
+    result = _cny_ledger(tmp_path).validate_final_answer("562500.SH 最新收盘价 1.171 港元，数据来源：雅虎财经。")
+
+    assert result.valid is False
+    assert "explicit_currency_conflict" in {issue["code"] for issue in result.issues}
+
+
+def test_market_report_counts_and_foreign_currency_are_not_price_conflicts(
+    tmp_path: Path,
+) -> None:
+    """Multi-index close reports contain counts, publisher names, and FX context."""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="今日大盘收盘分析")
+    for call_id, symbol in (("sh-index", "000001.SH"), ("sz-index", "399001.SZ")):
+        ledger.ingest_tool_result(
+            tool_name="get_market_data",
+            arguments={"codes": [symbol]},
+            result=_market_payload(symbol),
+            call_id=call_id,
+            success=True,
+        )
+
+    result = ledger.validate_final_answer(
+        "今日大盘收盘新闻共 15+条；来源含 21世纪经济报道。"
+        "科创 50 是重点观察指数；002821 / 603259 的收盘价待补。"
+        "美元指数（USD）走弱也可能影响市场风险偏好。"
     )
 
     assert result.valid is True, result.issues
 
 
-def test_another_currencys_yuan_does_not_satisfy_a_cny_requirement(
-    tmp_path: Path,
-) -> None:
-    """A bare 元 counts for CNY only when no other currency's character owns it."""
-    result = _cny_ledger(tmp_path).validate_final_answer(
-        "562500.SH 最新收盘价 1.171 港元，数据来源：雅虎财经。"
-    )
-
-    assert result.valid is False
-    assert "currency_not_surfaced" in {issue["code"] for issue in result.issues}
+@pytest.mark.parametrize("name", ["科创 50", "沪深300", "S&P 500", "NASDAQ 100"])
+def test_named_index_constituent_count_is_not_read_as_a_price(name: str) -> None:
+    assert _price_values(f"{name} 收盘情况") == []
 
 
-def test_an_unnamed_source_is_still_reported(tmp_path: Path) -> None:
-    """Accepting a localized provider name is not accepting no provider name."""
+def test_bare_mainland_symbols_are_not_read_as_prices() -> None:
+    extract = _price_values
+
+    assert extract("002821 / 603259 的 8/28 收盘价待补") == []
+    assert extract("收盘价 3952.18") == [3952.18]
+
+
+def test_an_unnamed_source_does_not_reject_a_matching_observed_price(tmp_path: Path) -> None:
+    """Source metadata remains in evidence and need not be repeated in prose."""
     result = _cny_ledger(tmp_path).validate_final_answer("562500.SH 最新收盘价 1.171 元。")
 
-    assert result.valid is False
-    assert "data_source_not_surfaced" in {issue["code"] for issue in result.issues}
+    assert result.valid is True, result.issues
 
 
 def _comparison_ledger(tmp_path: Path) -> GroundingLedger:
@@ -1941,15 +1861,11 @@ def test_a_comparison_with_an_invented_quote_is_still_rejected(
 ) -> None:
     """Checking against the union of observed quotes is not checking nothing."""
     result = _comparison_ledger(tmp_path).validate_final_answer(
-        "## 562500.SH vs AAPL.US（来源 yahoo）\n"
-        "562500.SH 收盘价 1.171 元。\n"
-        "苹果的收盘价是 999.99 美元。"
+        "## 562500.SH vs AAPL.US（来源 yahoo）\n562500.SH 收盘价 1.171 元。\nAAPL.US 的收盘价是 999.99 美元。"
     )
 
     assert result.valid is False
-    assert {"numeric_claim_conflict", "numeric_claim_unavailable"} & {
-        issue["code"] for issue in result.issues
-    }
+    assert "numeric_claim_conflict" in {issue["code"] for issue in result.issues}
 
 
 @pytest.mark.parametrize(
@@ -1980,26 +1896,22 @@ def test_a_conceptual_question_reaches_its_answer(
     assert ledger.validate_final_answer(answer).valid is True
 
 
-@pytest.mark.parametrize(
-    "answer",
-    [
-        "贵州茅台现价约 1300 元，建议买入。",
-        "600519.SH 收盘价 1300.00 元（source: tencent），建议买入。",
-    ],
-)
-def test_an_unevidenced_price_is_still_rejected_without_any_tool_call(
-    tmp_path: Path,
-    answer: str,
-) -> None:
-    """Relaxing the identity check must not license a remembered quote."""
+def test_an_unevidenced_named_price_is_reported_without_refusing(tmp_path: Path) -> None:
     ledger = GroundingLedger(run_dir=tmp_path, user_message="茅台适合买入吗")
 
-    result = ledger.validate_final_answer(answer)
+    result = ledger.validate_final_answer("贵州茅台现价约 1300 元，建议买入。")
+
+    assert result.valid is True
+    assert "evidence_unavailable" in {warning["code"] for warning in result.warnings}
+
+
+def test_an_unevidenced_canonical_symbol_is_still_rejected(tmp_path: Path) -> None:
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="茅台适合买入吗")
+
+    result = ledger.validate_final_answer("600519.SH 收盘价 1300.00 元（source: tencent），建议买入。")
 
     assert result.valid is False
-    assert {"numeric_claim_unavailable", "unsourced_symbol_figures"} & {
-        issue["code"] for issue in result.issues
-    }
+    assert "unsourced_symbol_figures" in {issue["code"] for issue in result.issues}
 
 
 def test_a_shortlist_answers_the_user_but_still_cannot_fetch_a_quote(
@@ -2022,16 +1934,17 @@ def test_a_shortlist_answers_the_user_but_still_cannot_fetch_a_quote(
     )
 
     assert ledger.identity_status == "ambiguous"
-    assert ledger.validate_final_answer(
-        "候选清单命中多个标的，请确认你要看哪一只，我再去取行情。"
-    ).valid is True
-    assert ledger.authorize_tool_call(
-        "get_market_data",
-        {"codes": ["601398.SH"]},
-        batch_authorized_symbols=ledger.authorized_symbols,
-        batch_identity_status=ledger.identity_status,
-        call_id="prices",
-    ).allowed is False
+    assert ledger.validate_final_answer("候选清单命中多个标的，请确认你要看哪一只，我再去取行情。").valid is True
+    assert (
+        ledger.authorize_tool_call(
+            "get_market_data",
+            {"codes": ["601398.SH"]},
+            batch_authorized_symbols=ledger.authorized_symbols,
+            batch_identity_status=ledger.identity_status,
+            call_id="prices",
+        ).allowed
+        is False
+    )
 
 
 def _large_cap_ledger(tmp_path: Path) -> GroundingLedger:
@@ -2068,7 +1981,7 @@ def _large_cap_ledger(tmp_path: Path) -> GroundingLedger:
 
 
 def test_a_grouped_price_is_not_split_into_a_bogus_claim(tmp_path: Path) -> None:
-    """"¥1,309.22" must stay one number when the clause is split.
+    """ "¥1,309.22" must stay one number when the clause is split.
 
     The comma is both a clause separator and a thousands separator, and the
     split ran first, leaving a clause ending in "¥1". That 1 was compared
@@ -2096,9 +2009,7 @@ def test_a_grouped_price_that_contradicts_evidence_is_still_rejected(
 
 def test_a_clause_comma_still_separates_clauses(tmp_path: Path) -> None:
     """Only a real thousands group is protected, not every comma."""
-    result = _large_cap_ledger(tmp_path).validate_final_answer(
-        "600519.SH 数据来源：腾讯行情, 收盘价 ¥1,888.88 元。"
-    )
+    result = _large_cap_ledger(tmp_path).validate_final_answer("600519.SH 数据来源：腾讯行情, 收盘价 ¥1,888.88 元。")
 
     assert result.valid is False
     assert "numeric_claim_conflict" in {issue["code"] for issue in result.issues}
@@ -2159,9 +2070,7 @@ def test_a_currency_symbol_counts_as_naming_the_currency(
         success=True,
     )
 
-    result = ledger.validate_final_answer(
-        f"{symbol} 最新收盘价 {written}，数据来源：雅虎财经。"
-    )
+    result = ledger.validate_final_answer(f"{symbol} 最新收盘价 {written}，数据来源：雅虎财经。")
 
     assert result.valid is True, result.issues
 
@@ -2199,9 +2108,7 @@ def test_markdown_list_marker_mask_does_not_weaken_contradiction_check(
     ledger = _screened_ledger(tmp_path)
     symbol = "000543.SZ"
 
-    result = ledger.validate_final_answer(
-        f"1. 原料药价格持续低迷，{symbol} 收盘价 42.00 CNY（source: tencent）"
-    )
+    result = ledger.validate_final_answer(f"1. 原料药价格持续低迷，{symbol} 收盘价 42.00 CNY（source: tencent）")
 
     codes = [issue["code"] for issue in result.issues]
     assert "numeric_claim_conflict" in codes
@@ -2218,12 +2125,30 @@ def test_markdown_list_marker_mask_does_not_weaken_contradiction_check(
 )
 def test_rate_formula_identity_is_not_read_as_a_price(segment: str) -> None:
     """The identity in ``1 - rate`` is arithmetic, not a one-unit quote."""
-    assert GroundingLedger._numbers_without_dates_or_percent(segment) == []
+    assert _price_values(segment) == []
 
 
 def test_rate_formula_mask_does_not_hide_an_observed_one_unit_quote() -> None:
     """A genuine price of 1 remains checked outside a rate expression."""
-    assert GroundingLedger._numbers_without_dates_or_percent("closing price = 1 CNY") == [1.0]
+    assert _price_values("closing price = 1 CNY") == [1.0]
+
+
+@pytest.mark.parametrize("minus", ["-", "−", "–", "—"])
+def test_return_formula_identity_is_not_read_as_a_price(minus: str) -> None:
+    """The identity in ``close / prev_close - 1`` is arithmetic, not a quote."""
+    extract = _price_values
+
+    assert extract(f"收盘涨跌幅按 (8.20 ÷ 7.90 {minus} 1) × 100% 计算") == []
+
+
+def test_unicode_return_formula_does_not_reject_grounded_market_summary(
+    tmp_path: Path,
+) -> None:
+    ledger = _screened_ledger(tmp_path)
+
+    result = ledger.validate_final_answer("000543.SZ 涨跌幅根据收盘数据计算：(8.20 ÷ 7.90 − 1) × 100% = 3.80%。")
+
+    assert result.valid is True, result.issues
 
 
 def test_in_text_decimal_survives_list_marker_mask(
@@ -2257,9 +2182,7 @@ def test_order_level_prices_are_not_observed_quotes(tmp_path: Path) -> None:
     raw = tmp_path / "data" / "raw"
     raw.mkdir(parents=True)
     (raw / "RXRX_US.csv").write_text(
-        "Date,Open,High,Low,Close\n"
-        "2026-08-07,3.25,3.26,3.18,3.20\n"
-        "2026-08-08,3.10,3.42,3.05,3.35\n",
+        "Date,Open,High,Low,Close\n2026-08-07,3.25,3.26,3.18,3.20\n2026-08-08,3.10,3.42,3.05,3.35\n",
         encoding="utf-8",
     )
     ledger = GroundingLedger(
@@ -2269,15 +2192,23 @@ def test_order_level_prices_are_not_observed_quotes(tmp_path: Path) -> None:
     ledger.ingest_tool_result(
         tool_name="search_symbol",
         arguments={"query": "RXRX"},
-        result=json.dumps({
-            "ok": True,
-            "data": {
-                "candidates": [
-                    {"symbol": "RXRX.US", "name": "Recursion Pharmaceuticals", "market": "us",
-                     "type": "equity", "exchange": "NMS", "source": "yahoo"},
-                ]
-            },
-        }),
+        result=json.dumps(
+            {
+                "ok": True,
+                "data": {
+                    "candidates": [
+                        {
+                            "symbol": "RXRX.US",
+                            "name": "Recursion Pharmaceuticals",
+                            "market": "us",
+                            "type": "equity",
+                            "exchange": "NMS",
+                            "source": "yahoo",
+                        },
+                    ]
+                },
+            }
+        ),
         call_id="lock1",
         success=True,
     )
@@ -2290,13 +2221,9 @@ def test_order_level_prices_are_not_observed_quotes(tmp_path: Path) -> None:
     assert result.valid is True, result.issues
 
     # A genuinely fabricated close is still rejected.
-    fabricated = ledger.validate_final_answer(
-        "RXRX.US（yahoo，USD）本周高 $3.42。另: 收盘 2.50 已确认。"
-    )
+    fabricated = ledger.validate_final_answer("RXRX.US（yahoo，USD）本周高 $3.42。另: 收盘价 2.50 已确认。")
     assert fabricated.valid is False
-    assert any(
-        issue["code"] == "numeric_claim_conflict" for issue in fabricated.issues
-    )
+    assert any(issue["code"] == "numeric_claim_conflict" for issue in fabricated.issues)
 
 
 def test_dash_form_trading_day_is_a_date_but_a_price_range_is_not() -> None:
@@ -2306,17 +2233,16 @@ def test_dash_form_trading_day_is_a_date_but_a_price_range_is_not() -> None:
     month reads as a date on its own, October through December need a weekday
     or session marker, and a range with neither stays checkable.
     """
-    extract = GroundingLedger._numbers_without_dates_or_percent
+    extract = _price_values
 
     assert extract("08-10(一) 收盘 8.20 CNY") == [8.2]
     assert extract("08-10盘中最低 8.20 CNY") == [8.2]
     assert extract("08-10 close 8.20 USD") == [8.2]
-    assert extract("10-20(周一)盘中 8.20 CNY") == [8.2]
+    assert extract("10-20(周一)盘中 8.20 CNY") == []
 
-    # No date marker and no zero-padded month: an ordinary quoted range, and
-    # masking it would stop checking a claim the ledger exists to check.
-    assert extract("区间 8-10 元") == [8.0, 10.0]
-    assert extract("跌 12-25 元") == [12.0, 25.0]
+    # An unlabelled range has no observed field binding.
+    assert extract("区间 8-10 元") == []
+    assert extract("跌 12-25 元") == []
 
 
 def test_a_level_stated_as_a_range_masks_both_bounds(tmp_path: Path) -> None:
@@ -2326,7 +2252,7 @@ def test_a_level_stated_as_a_range_masks_both_bounds(tmp_path: Path) -> None:
     reduce to "-20" — and a negative price is outside every OHLC window, which
     made a correct draft impossible to pass rather than merely unchecked.
     """
-    extract = GroundingLedger._numbers_without_dates_or_percent
+    extract = _price_values
 
     for draft in ("目标价 10-20 元", "支撑位 8-10 元", "阻力位 12.0~13.5", "52周高 15.0-16.0"):
         assert extract(draft) == [], draft
@@ -2337,20 +2263,18 @@ def test_a_level_stated_as_a_range_masks_both_bounds(tmp_path: Path) -> None:
     assert extract("目标价 10-20 元，现价 8.20 CNY") == [8.2]
 
     ledger = _screened_ledger(tmp_path)
-    result = ledger.validate_final_answer(
-        "000543.SZ 收盘价 8.20 CNY，目标价 10-20 元（source: tencent）"
-    )
+    result = ledger.validate_final_answer("000543.SZ 收盘价 8.20 CNY，目标价 10-20 元（source: tencent）")
     assert result.valid is True, result.issues
 
 
 def test_an_order_line_is_an_instruction_not_an_observation(tmp_path: Path) -> None:
-    """"100 @ $3.50" states where a limit sits; 100 was never a price at all.
+    """ "100 @ $3.50" states where a limit sits; 100 was never a price at all.
 
     A GTC summary in a weekly update was read as two observed quotes and
     rejected against the session's range, which is the same category error the
     target/stop masks already prevent.
     """
-    extract = GroundingLedger._numbers_without_dates_or_percent
+    extract = _price_values
 
     for draft in (
         "GTC 100 @ $3.50",
@@ -2361,15 +2285,11 @@ def test_an_order_line_is_an_instruction_not_an_observation(tmp_path: Path) -> N
     ):
         assert extract(draft) == [], draft
 
-    # 买入价/卖出价 stay OUT of the label set: in running prose they name the
-    # price a report says it observed, and masking them let an ungrounded
-    # quote through the gate.
-    assert extract("买入价 0.881") == [0.881]
+    # 买入价/卖出价 are proposed order levels, not observed market fields.
+    assert extract("买入价 0.881") == []
 
-    # There is no bare "@ <price>" branch either. Dates are masked before this
-    # runs, so an observed close written "2026-08-10 @ 8.20" would reach the
-    # order mask as "@ 8.20" and stop being checked at all.
-    assert extract("收盘 2026-08-10 @ 8.20") == [8.2]
+    # A bare "@ <price>" has no observed field/value contract either.
+    assert extract("收盘 2026-08-10 @ 8.20") == []
 
     # An observed quote standing beside an order line is still checked, and a
     # bare handle carries no price to mask.
@@ -2377,14 +2297,12 @@ def test_an_order_line_is_an_instruction_not_an_observation(tmp_path: Path) -> N
     assert extract("联系 @user 获取") == []
 
     ledger = _screened_ledger(tmp_path)
-    result = ledger.validate_final_answer(
-        "000543.SZ 收盘价 8.20 CNY，挂单 100 股 @ 12.00（source: tencent）"
-    )
+    result = ledger.validate_final_answer("000543.SZ 收盘价 8.20 CNY，挂单 100 股 @ 12.00（source: tencent）")
     assert result.valid is True, result.issues
 
 
 def test_a_report_style_date_cell_still_matches_its_evidence_row() -> None:
-    """"08-10(一)" and "08-10盘中" are the same trading day as "08-10".
+    """ "08-10(一)" and "08-10盘中" are the same trading day as "08-10".
 
     A weekday or session suffix made the cell match no evidence row, so every
     price in that row was reported numeric_claim_unavailable even though the

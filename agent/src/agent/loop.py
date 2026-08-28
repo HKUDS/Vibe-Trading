@@ -25,7 +25,7 @@ import threading
 import time as _time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from src.agent.context import ContextBuilder
 from src.agent.grounding import GroundingLedger
@@ -1457,6 +1457,39 @@ class AgentLoop:
                         )
                     if self._grounding is not None:
                         validation = self._grounding.validate_final_answer(final_content)
+                        recovery = self._grounding.recovery_action(validation)
+                        if (
+                            validation.valid
+                            and recovery is not None
+                            and iteration < self.max_iterations
+                        ):
+                            self._grounding.record_recovery(recovery)
+                            trace.write(
+                                {
+                                    "type": "grounding_recovery",
+                                    "iter": current_iter,
+                                    "action": recovery,
+                                    "blocking": False,
+                                }
+                            )
+                            react_trace.append(
+                                {
+                                    "type": "grounding_recovery",
+                                    "action": recovery,
+                                    "blocking": False,
+                                }
+                            )
+                            messages.append(
+                                {"role": "assistant", "content": final_content}
+                            )
+                            messages.append(
+                                {
+                                    "role": "user",
+                                    "content": f"<system>{self._grounding.recovery_prompt(recovery, validation)}</system>",
+                                }
+                            )
+                            final_content = ""
+                            continue
                         if not validation.valid:
                             trace.write_text_entry(
                                 {
