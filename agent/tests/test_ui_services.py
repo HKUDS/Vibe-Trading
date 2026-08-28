@@ -119,6 +119,36 @@ def test_fetch_data_map_uses_registry_for_nonlegacy_source(
     assert list(result.data_map) == ["AAPL.US"]
 
 
+def test_fetch_data_map_uses_data_start_date_for_warmup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+    frame = pd.DataFrame(
+        {"open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0]},
+        index=pd.DatetimeIndex([pd.Timestamp("2025-01-01")]),
+    )
+
+    class StubLoader:
+        name = "yahoo"
+
+        def fetch(self, codes, start_date, end_date, **kwargs):
+            calls.append((start_date, end_date))
+            return {codes[0]: frame}
+
+    monkeypatch.setattr(runner, "_get_loader", lambda source: StubLoader)
+    runner.fetch_data_map(
+        {
+            "codes": ["AAPL.US"],
+            "data_start_date": "2025-01-01",
+            "start_date": "2026-01-01",
+            "end_date": "2026-01-02",
+            "source": "yahoo",
+        }
+    )
+
+    assert calls == [("2025-01-01", "2026-01-02")]
+
+
 def test_fetch_data_map_does_not_expose_config_mutables_to_loader(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

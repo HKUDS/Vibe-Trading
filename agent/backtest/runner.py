@@ -66,6 +66,7 @@ class BacktestConfigSchema(BaseModel):
 
     codes: List[str]
     start_date: str
+    data_start_date: Optional[str] = None
     end_date: str
     source: str = "tushare"
     interval: str = "1D"
@@ -95,9 +96,11 @@ class BacktestConfigSchema(BaseModel):
             raise ValueError("codes must not contain empty strings")
         return v
 
-    @field_validator("start_date", "end_date")
+    @field_validator("start_date", "data_start_date", "end_date")
     @classmethod
-    def valid_date(cls, v: str) -> str:
+    def valid_date(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
         try:
             pd.Timestamp(v)
         except Exception:
@@ -157,6 +160,13 @@ class BacktestConfigSchema(BaseModel):
 
     @model_validator(mode="after")
     def start_before_end(self) -> "BacktestConfigSchema":
+        if self.data_start_date and pd.Timestamp(self.data_start_date) > pd.Timestamp(
+            self.start_date
+        ):
+            raise ValueError(
+                f"data_start_date ({self.data_start_date}) must be <= "
+                f"start_date ({self.start_date})"
+            )
         if pd.Timestamp(self.start_date) > pd.Timestamp(self.end_date):
             raise ValueError(
                 f"start_date ({self.start_date}) must be <= end_date ({self.end_date})"
@@ -1390,7 +1400,7 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
     market_groups = _group_codes_by_market(codes)
     merged = {}
     served_by: set[str] = set()
-    start_date = config.get("start_date", "")
+    start_date = config.get("data_start_date") or config.get("start_date", "")
     end_date = config.get("end_date", "")
 
     for market, market_codes in market_groups.items():
@@ -1497,7 +1507,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
             )
         data_map = loader.fetch(
             codes,
-            config.get("start_date", ""),
+            config.get("data_start_date") or config.get("start_date", ""),
             config.get("end_date", ""),
             fields=config.get("extra_fields") or None,
             interval=interval,
@@ -1528,7 +1538,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
                 fallback_codes = _normalize_codes(missing, fallback_source)
                 fallback_result = fallback_loader.fetch(
                     fallback_codes,
-                    config.get("start_date", ""),
+                    config.get("data_start_date") or config.get("start_date", ""),
                     config.get("end_date", ""),
                     interval=interval,
                 )

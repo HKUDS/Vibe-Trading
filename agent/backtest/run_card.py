@@ -13,6 +13,7 @@ from typing import Any, Mapping, Sequence
 SCHEMA_VERSION = "0.1"
 BACKTEST_SUMMARY_KEYS = (
     "codes",
+    "data_start_date",
     "start_date",
     "end_date",
     "interval",

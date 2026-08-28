@@ -23,6 +23,11 @@ Extract the following from the user's description:
 - **Time range**: if the user does not specify dates, default to **10 years back from today** (for example, if today is `2026-03-18`, then `start_date=2016-03-18`, `end_date=2026-03-18`)
 - **Strategy logic**: entry / exit conditions and indicator parameters
 
+`start_date` is always the first date included in trading and performance
+evaluation. Never move it earlier to warm up an indicator. When a strategy
+needs earlier bars (for example, MA200), set `data_start_date` to the earlier
+fetch boundary and keep the requested evaluation date in `start_date`.
+
 **If critical information is missing, you must ask the user instead of guessing:**
 - Instrument not specified → ask which instrument they want to backtest (offer several popular suggestions)
 - Strategy description is vague (for example, "help me build a strategy") → provide 2-3 strategy directions for the user to choose from
@@ -116,6 +121,7 @@ Self-check after writing `signal_engine.py`:
 {
   "source": "auto",
   "codes": ["000001.SZ"],
+  "data_start_date": "2015-03-18",
   "start_date": "2016-03-18",
   "end_date": "2026-03-18",
   "interval": "1D",
@@ -135,6 +141,10 @@ Self-check after writing `signal_engine.py`:
 - `source`: `"auto"` (recommended, auto-select by code format) / `"tushare"` / `"yfinance"` / `"okx"` / `"akshare"` / `"ccxt"`
   - `"auto"` supports mixed instruments. For example, `["000001.SZ", "BTC-USDT"]` will be automatically routed to `tushare` and `okx`
   - Futures codes (e.g. `"IF2406.CFFEX"`, `"ESZ4"`) and forex pairs (e.g. `"EUR/USD"`) are also auto-routed
+- `data_start_date`: optional earlier data-fetch boundary for indicator or
+  optimizer warm-up. Signal generation sees these earlier bars, but trading,
+  equity, metrics, benchmark performance, and validation begin at `start_date`.
+  Omit it when no warm-up history is needed.
 - `interval`: candlestick interval, default `"1D"`. Supported values: `"1m"` / `"5m"` / `"15m"` / `"30m"` / `"1H"` / `"4H"` / `"1D"`
   - The annualization factor for minute backtests is inferred automatically from `source` (252 trading days for China A-shares, 365 calendar days for crypto)
   - Minute backtests can be very data-heavy. Recommended limits are no more than 30 days for `1m`, or 1 year for `1H`

@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from backtest.engines.base import _evaluation_start_for_index
 from src.quantlib.options import bs_greeks, bs_price, normalise_option_type
 
 
@@ -202,6 +203,7 @@ def run_options_backtest(
     """
     codes = config.get("codes", [])
     start_date = config.get("start_date", "")
+    data_start_date = config.get("data_start_date") or start_date
     end_date = config.get("end_date", "")
     initial_cash = config.get("initial_cash", 1_000_000)
     commission = config.get("commission", 0.001)
@@ -213,7 +215,7 @@ def run_options_backtest(
     iv_curvature = options_cfg.get("iv_curvature", 0.0)  # v2: smile curvature
 
     # Load underlying data
-    data_map = loader.fetch(codes, start_date, end_date)
+    data_map = loader.fetch(codes, data_start_date, end_date)
     if not data_map:
         print(json.dumps({"error": "No data fetched"}))
         sys.exit(1)
@@ -230,7 +232,9 @@ def run_options_backtest(
     all_dates = set()
     for df in data_map.values():
         all_dates.update(df.index)
-    dates = sorted(all_dates)
+    date_index = pd.DatetimeIndex(sorted(all_dates))
+    evaluation_start = _evaluation_start_for_index(date_index, start_date)
+    dates = list(date_index[date_index >= evaluation_start])
 
     # Index signals by date
     signal_by_date: Dict[str, List[Dict[str, Any]]] = {}

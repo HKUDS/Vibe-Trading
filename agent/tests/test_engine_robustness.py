@@ -338,6 +338,24 @@ class TestBacktestConfigSchema:
                 end_date="2025-01-01",
             )
 
+    def test_data_start_date_may_precede_evaluation_start(self) -> None:
+        config = BacktestConfigSchema(
+            codes=["AAPL.US"],
+            data_start_date="2024-01-01",
+            start_date="2025-01-01",
+            end_date="2025-06-01",
+        )
+        assert config.data_start_date == "2024-01-01"
+
+    def test_data_start_date_after_evaluation_start_is_rejected(self) -> None:
+        with pytest.raises(Exception, match="data_start_date.*must be <= start_date"):
+            BacktestConfigSchema(
+                codes=["AAPL.US"],
+                data_start_date="2025-02-01",
+                start_date="2025-01-01",
+                end_date="2025-06-01",
+            )
+
     def test_invalid_date_format_rejected(self) -> None:
         with pytest.raises(Exception, match="invalid date format"):
             BacktestConfigSchema(

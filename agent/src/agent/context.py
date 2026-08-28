@@ -80,6 +80,9 @@ skill document, not recalled memory. They are not defaults to be tuned.
 Decide which workflow to use based on the request:
 {strategy_discovery_routing}
 **Backtest** — user wants to create, test, or optimize a trading strategy:
+Preserve the user's requested evaluation boundary in `start_date`. If
+indicators need earlier warm-up bars, put only that earlier fetch boundary in
+`data_start_date`; never move `start_date` earlier.
 1. `load_skill("strategy-generate")` — read the SignalEngine contract
 2. `write_file("config.json", ...)` — source, codes, dates, parameters. If the strategy is expected to produce ≥10 trades, include `"validation": {{"monte_carlo": {{"n_simulations": 1000}}}}` in config.json for Monte Carlo testing
 3. `write_file("code/signal_engine.py", ...)` — SignalEngine class

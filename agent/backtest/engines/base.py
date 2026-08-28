@@ -118,6 +118,18 @@ def _detect_market_for_align(code: str) -> str:
     return "equity"
 
 
+def _evaluation_start_for_index(
+    dates: pd.DatetimeIndex, start_date: str
+) -> pd.Timestamp:
+    """Return ``start_date`` in the same timezone domain as ``dates``."""
+    start = pd.Timestamp(start_date)
+    if dates.tz is not None:
+        if start.tz is None:
+            return start.tz_localize(dates.tz)
+        return start.tz_convert(dates.tz)
+    return start.tz_localize(None) if start.tz is not None else start
+
+
 # ─── Forward-fill helpers (numpy, avoid pandas overhead) ───
 
 
@@ -695,7 +707,7 @@ class BaseEngine(ABC):
         # 1. Load data
         data_map = loader.fetch(
             codes,
-            config.get("start_date", ""),
+            config.get("data_start_date") or config.get("start_date", ""),
             config.get("end_date", ""),
             fields=extra_fields,
             interval=interval,
@@ -732,6 +744,26 @@ class BaseEngine(ABC):
         dates, close_df, target_pos, ret_df = _align(
             data_map, signal_map, valid_codes, optimizer=opt_fn,
         )
+
+        # Signals and optimizers see the complete data window, including any
+        # indicator warm-up. Trading and every downstream evaluation artifact
+        # start at the user-requested boundary instead (#1240).
+        evaluation_start = _evaluation_start_for_index(
+            dates, config.get("start_date", "")
+        )
+        evaluation_dates = dates[dates >= evaluation_start]
+        if evaluation_dates.empty:
+            raise ValueError(
+                "No market data falls inside the evaluation window beginning "
+                f"at {config.get('start_date', '')}"
+            )
+        dates = evaluation_dates
+        close_df = close_df.loc[dates]
+        target_pos = target_pos.loc[dates]
+        # Recompute after clipping so an implicit equal-weight benchmark starts
+        # at 0% on the first evaluation bar instead of inheriting the return
+        # from the final warm-up close.
+        ret_df = bar_returns(close_df, label="evaluation benchmark returns")
 
         # Sync codes after _align may have dropped all-NaN symbols
         valid_codes = [c for c in valid_codes if c in target_pos.columns]
