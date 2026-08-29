@@ -32,6 +32,8 @@ def _price_values(text: str) -> list[float]:
 
 def test_price_claim_parser_requires_a_field_binding() -> None:
     assert _price_values("2026-08-28 收盘价 1,309.22 元") == [1309.22]
+    assert _price_values("文档写道「8/12 高 149.60」不成立") == [149.6]
+    assert _price_values("收盘价 149.60：已复核") == [149.6]
     assert _price_values("目标价 1,309.22 元；RSI 46.7；20 个交易日") == []
     assert parse_numeric_cell("$1,309.22") == (1309.22, "USD", None)
 
@@ -1007,7 +1009,12 @@ class _Response:
 class _CorrectingLLM:
     model_name = "grounding-test"
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        draft: str = "建议买入价为 0.881。",
+        correction: str = "562500.SS（Yahoo，CNY）在 2026-06-23 的已观测收盘价为 1.137。",
+    ) -> None:
         self.responses = [
             _Response(
                 tool_calls=[
@@ -1033,8 +1040,8 @@ class _CorrectingLLM:
                     )
                 ]
             ),
-            _Response(content="建议买入价为 0.881。"),
-            _Response(content=("562500.SS（Yahoo，CNY）在 2026-06-23 的已观测收盘价为 1.137。")),
+            _Response(content=draft),
+            _Response(content=correction),
         ]
         self.messages_history: list[list[dict[str, Any]]] = []
 
@@ -1092,6 +1099,42 @@ def test_agent_loop_does_not_reject_a_prospective_entry_level(
     assert "0.881" not in completed_thinking
     artifact = json.loads((run_dir / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8"))
     assert artifact["validations"][-1]["valid"] is True
+
+
+def test_agent_loop_rejects_then_corrects_ungrounded_final_answer(
+    tmp_path: Path,
+) -> None:
+    """A rejected observed quote never becomes returned or streamed output."""
+    resolver = _ResolverTool(_resolver_payload())
+    market = _MarketTool(_market_payload())
+    registry = ToolRegistry()
+    registry.register(resolver)
+    registry.register(market)
+    events: list[tuple[str, dict[str, Any]]] = []
+    llm = _CorrectingLLM(
+        draft="562500.SS 的已观测收盘价为 0.881 CNY。",
+        correction="562500.SS（Yahoo，CNY）在 2026-06-23 的已观测收盘价为 1.137。",
+    )
+    agent = AgentLoop(
+        registry=registry,
+        llm=llm,
+        max_iterations=4,
+        event_callback=lambda event, data: events.append((event, data)),
+    )
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    agent.memory.run_dir = str(run_dir)
+
+    result = agent.run("请分析机器人ETF并给出买入价")
+
+    assert result["status"] == "success"
+    assert "1.137" in result["content"]
+    assert "0.881" not in result["content"]
+    streamed = "".join(data.get("delta", "") for event, data in events if event == "text_delta")
+    assert "1.137" in streamed
+    assert "0.881" not in streamed
+    artifact = json.loads((run_dir / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8"))
+    assert [validation["valid"] for validation in artifact["validations"][-2:]] == [False, True]
 
 
 _SHORTLIST_QUERY = "A股低价高增长股票"
@@ -1567,11 +1610,125 @@ def test_currency_prefixed_plan_levels_are_not_read_as_observed_prices(segment: 
         "RSI 46.7",
         "20/50/200-day 均线",
         "买入股数 = 初始资金 × (1 - 单边成本率) / 期初收盘价",
+        "4000 qty",
+        "1.30 premium",
+        "100 multiplier",
+        "1 contract",
+        "444000 notional",
+        "444000 market_val",
     ],
 )
 def test_unlabelled_numeric_categories_do_not_become_price_claims(segment: str) -> None:
     """Only the positive field/value contract creates a price claim."""
     assert _price_values(segment) == []
+
+
+def test_unit_context_does_not_hide_an_explicit_observed_price() -> None:
+    """The #1148 unit corpus is ignored without licensing a labelled quote."""
+    assert _price_values("4000 qty，收盘价 96.45 USD") == [96.45]
+
+
+@pytest.mark.parametrize(
+    "segment,expected",
+    [
+        ("6/16 ATH 225.64", []),
+        ("52-week high 225.64", []),
+        ("8/12 高 149.60 为 6/16 ATH 225.64 以来最高", [149.6]),
+    ],
+)
+def test_reference_levels_are_not_read_as_observed_price_claims(
+    segment: str,
+    expected: list[float],
+) -> None:
+    """Historical reference levels do not hide a field-bound observed quote."""
+    assert _price_values(segment) == expected
+
+
+@pytest.mark.parametrize(
+    "segment,expected",
+    [
+        ("line 206", []),
+        ("lines 206-208", []),
+        ("第 206 行", []),
+        ("第 206–208 行", []),
+        ("**文档 ~line 206「8/12 高 149.60」不成立", [149.6]),
+    ],
+)
+def test_line_number_references_are_not_read_as_price_claims(
+    segment: str,
+    expected: list[float],
+) -> None:
+    """Document locations are ignored without shielding an observed high."""
+    assert _price_values(segment) == expected
+
+
+@pytest.mark.parametrize(
+    "segment",
+    [
+        "- ❌ **1 项事实错误**:",
+        "⚠️ **2 项不一致**",
+        "3 项",
+        "16 个交易日",
+        "6/17–7/10 有 16 个交易日高点高于 149.60",
+    ],
+)
+def test_count_nouns_are_not_read_as_price_claims(segment: str) -> None:
+    """Finding and trading-day counts are not observed-price assertions."""
+    assert _price_values(segment) == []
+
+
+@pytest.mark.parametrize(
+    "segment,expected",
+    [
+        ("正确为 7/10(150.57)以来最高", []),
+        ("highest since 7/10 (150.57)", []),
+        ("8/12 高 149.60 为 6/16 ATH 225.64 以来最高", [149.6]),
+    ],
+)
+def test_since_references_are_not_read_as_observed_price_claims(
+    segment: str,
+    expected: list[float],
+) -> None:
+    """An unlabelled since-reference is not compared as the current quote."""
+    assert _price_values(segment) == expected
+
+
+@pytest.mark.parametrize(
+    "segment,expected",
+    [
+        ("### 6. 关键价位/旁证核验", []),
+        ("## 12. 结论", []),
+        ("# 3. 身份与数据源", []),
+        ("### 8/13 周中判定", []),
+        ("### 6. 8/12 高 149.60 为 6/16 ATH 以来最高", [149.6]),
+    ],
+)
+def test_numbered_headings_are_not_read_as_price_claims(
+    segment: str,
+    expected: list[float],
+) -> None:
+    """Markdown section numbers do not hide a field-bound observed high."""
+    assert _price_values(segment) == expected
+
+
+@pytest.mark.parametrize(
+    "segment,expected",
+    [
+        ("TO 报价实际是按 6:1 平价锚定的", []),
+        ("25/25 行 OHLCV、25/25 项派生百分比、7/7 日 CDR 6:1 折算", []),
+        ("远小于当前 USD/CAD≈1.36 的量级", []),
+        ("汇率 1.36", []),
+        ("usd/cad=1.36", [1.36]),
+        ("USD/CAD 1.36", [1.36]),
+        ("USD/CAD ≈ 1.36", []),
+    ],
+)
+def test_ratios_and_fx_rates_are_not_read_as_price_claims(
+    segment: str,
+    expected: list[float],
+) -> None:
+    """Conversion prose is ignored while an asserted FX pair rate stays checked."""
+    assert _price_values(segment) == expected
 
 
 def test_historical_price_with_another_date_is_nonblocking(tmp_path: Path) -> None:
@@ -1580,7 +1737,10 @@ def test_historical_price_with_another_date_is_nonblocking(tmp_path: Path) -> No
     result = ledger.validate_final_answer("000543.SZ 在 6/16 的 all-time high 225.64 CNY，来源待核对。")
 
     assert result.valid is True
-    assert result.warnings
+    assert not {
+        "numeric_claim_conflict",
+        "numeric_claim_unavailable",
+    } & {finding["code"] for finding in [*result.issues, *result.warnings]}
 
 
 def test_plan_level_mask_does_not_shield_a_wrong_quote_end_to_end(tmp_path: Path) -> None:
@@ -1889,7 +2049,9 @@ def test_omitted_currency_does_not_gate_a_matching_observed_price(
     assert result.valid is True, result.issues
 
 
-def test_explicit_conflicting_currency_is_still_rejected(tmp_path: Path) -> None:
+def test_another_currencys_yuan_does_not_satisfy_a_cny_requirement(
+    tmp_path: Path,
+) -> None:
     result = _cny_ledger(tmp_path).validate_final_answer("562500.SH 最新收盘价 1.171 港元，数据来源：雅虎财经。")
 
     assert result.valid is False
@@ -1931,11 +2093,16 @@ def test_bare_mainland_symbols_are_not_read_as_prices() -> None:
     assert extract("收盘价 3952.18") == [3952.18]
 
 
-def test_an_unnamed_source_does_not_reject_a_matching_observed_price(tmp_path: Path) -> None:
+def test_an_unnamed_source_is_preserved_in_structured_evidence(
+    tmp_path: Path,
+) -> None:
     """Source metadata remains in evidence and need not be repeated in prose."""
-    result = _cny_ledger(tmp_path).validate_final_answer("562500.SH 最新收盘价 1.171 元。")
+    ledger = _cny_ledger(tmp_path)
+    result = ledger.validate_final_answer("562500.SH 最新收盘价 1.171 元。")
 
     assert result.valid is True, result.issues
+    artifact = json.loads((tmp_path / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8"))
+    assert {record["source"] for record in artifact["evidence"] if record.get("source")} == {"yahoo"}
 
 
 def _comparison_ledger(tmp_path: Path) -> GroundingLedger:
@@ -2012,22 +2179,25 @@ def test_a_conceptual_question_reaches_its_answer(
     assert ledger.validate_final_answer(answer).valid is True
 
 
-def test_an_unevidenced_named_price_is_reported_without_refusing(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "贵州茅台现价约 1300 元，建议买入。",
+        "600519.SH 收盘价 1300.00 元（source: tencent），建议买入。",
+    ],
+)
+def test_an_unevidenced_price_is_still_rejected_without_any_tool_call(
+    tmp_path: Path,
+    answer: str,
+) -> None:
     ledger = GroundingLedger(run_dir=tmp_path, user_message="茅台适合买入吗")
 
-    result = ledger.validate_final_answer("贵州茅台现价约 1300 元，建议买入。")
-
-    assert result.valid is True
-    assert "evidence_unavailable" in {warning["code"] for warning in result.warnings}
-
-
-def test_an_unevidenced_canonical_symbol_is_still_rejected(tmp_path: Path) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="茅台适合买入吗")
-
-    result = ledger.validate_final_answer("600519.SH 收盘价 1300.00 元（source: tencent），建议买入。")
+    result = ledger.validate_final_answer(answer)
 
     assert result.valid is False
-    assert "unsourced_symbol_figures" in {issue["code"] for issue in result.issues}
+    assert {"numeric_claim_unavailable", "unsourced_symbol_figures"} & {
+        issue["code"] for issue in result.issues
+    }
 
 
 def test_a_shortlist_answers_the_user_but_still_cannot_fetch_a_quote(

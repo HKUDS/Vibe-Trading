@@ -36,7 +36,9 @@ _AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_na
 logger = logging.getLogger(__name__)
 
 _CONTINUATION_RE = re.compile(
-    r"(?:^|[，,。；;\s])(?:确认|继续|接着|继续完成|重新完成|重试|再试一次)(?:$|[，,。；;\s])"
+    r"(?:^|[，,。：:；;\s])"
+    r"(?:确认|继续(?:上一轮|上一个|这个任务|原任务)?|接着|继续完成|重新完成|重试|再试一次)"
+    r"(?:$|[，,。：:；;\s])"
     r"|(?:基于|使用|沿用)(?:刚才|上述|上一版|上一轮|之前)(?:的)?(?:数据|结果|证据)?"
     r"|(?:刚才|上述|上一版|上一个|这个任务|原任务)",
     re.IGNORECASE,

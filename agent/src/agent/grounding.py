@@ -164,6 +164,7 @@ _CANONICAL_SYMBOL_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:"
     r"\d{3,6}\.(?:SH|SZ|BJ|SS|HK|KS|KQ)|"
     r"[A-Z][A-Z0-9&.-]{0,19}\.(?:US|NS|BO|FX|TO|V)|"
+    r"[A-Z]{3}/[A-Z]{3}|"
     r"[A-Z0-9]{2,15}(?:-|/)(?:USDT|USDC|USD|BTC|ETH)|"
     r"[A-Z0-9]{2,15}=[FX]"
     r")(?![A-Za-z0-9_])",
@@ -2109,6 +2110,17 @@ class GroundingLedger:
         quality facts, so they are returned as auditable warnings instead of
         suppressing the whole answer.
         """
+        if not records:
+            return {
+                "code": "numeric_claim_unavailable",
+                "claim": claim.text,
+                "value": claim.value,
+                "symbol": symbol,
+                "field": claim.field,
+                "date": claim.date,
+                "message": "No observed tool evidence was available for this price claim.",
+            }, None
+
         candidates = [record for record in records if record.field == claim.field]
         if symbol:
             normalized_symbol = _normalize_symbol(symbol)

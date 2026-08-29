@@ -21,23 +21,24 @@ _CURRENCY = (
     r"美元|美金|人民币|港元|港币|加元|澳元|新加坡元|元"
 )
 _POINT_UNIT = r"点|points?"
+_CLAIM_END = r"(?!\.\d)(?=$|[\s,，;；。：:.!！?？)）\]】」』”’])"
 
 # Each branch names the canonical evidence field it represents.  Labels for
 # plans (target/entry/support/resistance) are intentionally absent: those are
 # proposed levels, not observations.
 _PRICE_CLAIM_RE = re.compile(
     rf"(?:"
-    rf"(?P<close>closing\s+price|close\s+price|closed\s+at|close|收盘价|收报|收于)"
+    rf"(?P<close>closing\s+price|close\s+price|closed\s+at|close|收盘价|收报|收于|收)"
     rf"|(?P<open>opening\s+price|open\s+price|opened\s+at|open|开盘价)"
-    rf"|(?P<high>session\s+high|daily\s+high|high\s+price|high|最高价|最高)"
-    rf"|(?P<low>session\s+low|daily\s+low|low\s+price|low|最低价|最低)"
+    rf"|(?P<high>session\s+high|daily\s+high|high\s+price|最高价|最高)"
+    rf"|(?P<low>session\s+low|daily\s+low|low\s+price|最低价|最低)"
     rf"|(?P<price>current\s+price|latest\s+price|last\s+price|market\s+price|quote|现价|最新价|报价)"
     rf")"
     rf"{_MARK}\s*(?:(?:约为|大约为|约|大约|around|about|为|是|报|在|at|was|is|of)\s*)?[:：=]?\s*{_MARK}"
     rf"(?P<currency_before>{_CURRENCY})?\s*{_MARK}"
     rf"(?P<value>{_NUMBER}){_MARK}\s*"
     rf"(?P<currency_after>{_CURRENCY})?\s*(?P<unit>{_POINT_UNIT})?"
-    rf"(?=$|[\s,，;；。.!！?？)）\]】])",
+    rf"{_CLAIM_END}",
     re.IGNORECASE,
 )
 _DATED_OHLC_RE = re.compile(
@@ -48,7 +49,13 @@ _DATED_OHLC_RE = re.compile(
     rf"(?P<currency_before>{_CURRENCY})?\s*{_MARK}"
     rf"(?P<value>{_NUMBER}){_MARK}\s*"
     rf"(?P<currency_after>{_CURRENCY})?\s*(?P<unit>{_POINT_UNIT})?"
-    rf"(?=$|[\s,，;；。.!！?？)）\]】])",
+    rf"{_CLAIM_END}",
+    re.IGNORECASE,
+)
+_FX_RATE_RE = re.compile(
+    rf"(?<![A-Za-z0-9_])(?P<pair>[A-Z]{{3}}\s*/\s*[A-Z]{{3}})"
+    rf"\s*(?:=|is\s+at|at)?\s*(?P<value>{_NUMBER})"
+    rf"{_CLAIM_END}",
     re.IGNORECASE,
 )
 _DATE_RE = re.compile(
@@ -169,6 +176,19 @@ def extract_prose_price_claims(content: str) -> list[NumericClaim]:
                         date=_nearby_date(body[: match.start()]),
                         currency=currency,
                         unit=unit,
+                        start=offset + match.start(),
+                        end=offset + match.end(),
+                    )
+                )
+            for match in _FX_RATE_RE.finditer(body):
+                value = _finite_number(match.group("value"))
+                if value is None:
+                    continue
+                line_claims.append(
+                    NumericClaim(
+                        value=value,
+                        field="price",
+                        text=body.strip(),
                         start=offset + match.start(),
                         end=offset + match.end(),
                     )

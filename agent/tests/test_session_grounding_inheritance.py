@@ -117,6 +117,21 @@ def test_previous_round_followup_inherits_direct_parent_grounding(
     assert inherited["_inheritance"]["attempt_id"] == parent.attempt_id
 
 
+def test_natural_previous_round_prefix_inherits_direct_parent_grounding(
+    tmp_path, monkeypatch
+) -> None:
+    service = _service(tmp_path, monkeypatch)
+    parent = _parent_artifact(service, session_id="abcdef012345")
+
+    inherited = service._resolve_parent_grounding(
+        _child(parent, "继续上一轮：只解释原结论，不新增事实。")
+    )
+
+    assert inherited is not None
+    assert inherited["_inheritance"]["attempt_id"] == parent.attempt_id
+    assert len(inherited["evidence"]) == 1
+
+
 def test_same_symbol_inherits_without_a_continuation_keyword(
     tmp_path, monkeypatch
 ) -> None:
