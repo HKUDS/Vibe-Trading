@@ -151,6 +151,8 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
     "kr_equity":   ["pykrx", "yahoo", "yfinance", "local"],
     # TSX (.TO) / TSX Venture (.V): direct Yahoo first, SDK fallback second.
     "ca_equity":   ["yahoo", "yfinance", "local"],
+    # LSE (.L): London Stock Exchange — same Yahoo-then-SDK chain as Canada.
+    "uk_equity":   ["yahoo", "yfinance", "local"],
     # Vietnam (.VN): Yahoo lists HOSE only — HNX and UPCOM are unsupported,
     # so those two are reachable only through the user's local files.
     "vietnam_equity": ["yahoo", "yfinance", "local"],

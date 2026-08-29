@@ -35,6 +35,9 @@ _MARKET_PATTERNS = [
     # Canada equities: Toronto Stock Exchange (TD.TO) and TSX Venture
     # (PNG.V). Yahoo carries both suffixes verbatim.
     (re.compile(r"^[A-Z0-9&.\-]+\.(TO|V)$", re.I), "ca_equity"),
+    # UK equities: London Stock Exchange (VOD.L, SHEL.L, HSBA.L). Yahoo
+    # carries the .L suffix verbatim (parity with Canada handling).
+    (re.compile(r"^[A-Z0-9&.\-]+\.L$", re.I), "uk_equity"),
     # Vietnam equities: HOSE (VIC.VN). Tickers are three letters in practice;
     # the class stays broad to admit fund certificates and ETF codes.
     (re.compile(r"^[A-Z0-9]+\.VN$", re.I), "vietnam_equity"),
@@ -74,6 +77,7 @@ _MARKET_CURRENCY = {
     "india_equity": "INR",
     "kr_equity": "KRW",
     "ca_equity": "CAD",
+    "uk_equity": "GBP",
     "vietnam_equity": "VND",
     # Every crypto pattern in _MARKET_PATTERNS is USDT-quoted, and USDT is
     # carried at its USD peg. This is the one approximation in the table: a
