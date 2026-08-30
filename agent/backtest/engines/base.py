@@ -1617,6 +1617,103 @@ class BaseEngine(ABC):
             elif self.can_execute(symbol, 0, bar):
                 reductions.append(self._plan_reduction(before, target_size, price))
 
+        def _plans(scale: float) -> tuple[list[_ReductionOrder], list[_OpenOrder]]:
+            reds: list[_ReductionOrder] = []
+            ops: list[_OpenOrder] = []
+            for sym in sorted(codes):
+                tw = target_weights.get(sym)
+                if tw is None:
+                    continue
+                self._validate_rebalance_values(tw)
+                scaled_w = tw * scale
+                self._active_symbol = sym
+                before = self.positions.get(sym)
+                target_direction = 1 if scaled_w > 1e-9 else (-1 if scaled_w < -1e-9 else 0)
+                frame = data_map.get(sym)
+                if frame is None or ts not in frame.index:
+                    continue
+                bar = frame.loc[ts]
+                if before is None or target_direction != before.direction:
+                    if before is not None:
+                        if not self.can_execute(sym, 0, bar):
+                            continue
+                        raw_price = self.execution_open(bar)
+                        self._validate_rebalance_values(raw_price, positive=True)
+                        price = self.apply_slippage(raw_price, -before.direction)
+                        self._validate_rebalance_values(price, positive=True)
+                        reds.append(self._plan_reduction(before, 0.0, price))
+                        if target_direction == 0:
+                            continue
+                    order = self._plan_open_order(
+                        sym,
+                        scaled_w,
+                        frame,
+                        ts,
+                        equity,
+                        allow_existing=before is not None,
+                        require_positive_price=True,
+                    )
+                    if order is not None:
+                        self._validate_rebalance_values(
+                            order.price, order.leverage, order.size, order.margin, order.commission
+                        )
+                        ops.append(order)
+                    continue
+                raw_price = self.execution_open(bar)
+                self._validate_rebalance_values(raw_price, positive=True)
+                leverage = self._leverage_for_symbol(sym)
+                self._validate_rebalance_values(raw_price, before.leverage, leverage)
+                target_notional = abs(scaled_w) * equity * before.leverage
+                prices = (
+                    self.apply_slippage(raw_price, before.direction),
+                    self.apply_slippage(raw_price, -before.direction),
+                )
+                self._validate_rebalance_values(*prices, positive=True)
+                sizes = tuple(
+                    self.round_size(
+                        self._calc_raw_size(sym, target_notional, price), price
+                    )
+                    for price in prices
+                )
+                self._validate_rebalance_values(*prices, *sizes)
+                if self.rebalance_tolerance > 0.0:
+                    reference_size = self.round_size(
+                        self._calc_raw_size(sym, target_notional, raw_price), raw_price
+                    )
+                    if abs(before.size - reference_size) <= self.rebalance_tolerance * abs(
+                        reference_size
+                    ):
+                        continue
+                increase = sizes[0] > before.size + 1e-9
+                reduction = sizes[1] < before.size - 1e-9
+                if increase == reduction:
+                    continue
+                target_size, price = (sizes[0], prices[0]) if increase else (sizes[1], prices[1])
+                if not math.isclose(leverage, before.leverage, rel_tol=1e-9, abs_tol=1e-9):
+                    raise ValueError("cannot rebalance a position with changed leverage")
+                if increase:
+                    if not self.can_execute(sym, target_direction, bar):
+                        continue
+                    size = target_size - before.size
+                    order = _OpenOrder(
+                        symbol=sym,
+                        direction=before.direction,
+                        price=price,
+                        size=size,
+                        leverage=leverage,
+                        margin=self._calc_margin(sym, size, price, leverage),
+                        commission=self.calc_commission(
+                            size, price, before.direction, is_open=True
+                        ),
+                    )
+                    self._validate_rebalance_values(
+                        order.price, order.leverage, order.size, order.margin, order.commission
+                    )
+                    ops.append(order)
+                elif self.can_execute(sym, 0, bar):
+                    reds.append(self._plan_reduction(before, target_size, price))
+            return reds, ops
+
         projected_capital = (
             self.capital
             + sum(order.capital_credit for order in reductions)
@@ -1624,7 +1721,25 @@ class BaseEngine(ABC):
         )
         self._validate_rebalance_values(projected_capital)
         if projected_capital < -1e-9:
-            raise ValueError("insufficient capital for position rebalance")
+            low, high = 0.0, 1.0
+            best: tuple[list[_ReductionOrder], list[_OpenOrder]] | None = None
+            for _ in range(50):
+                mid = (low + high) / 2.0
+                cand_reds, cand_ops = _plans(mid)
+                cand_projected = (
+                    self.capital
+                    + sum(r.capital_credit for r in cand_reds)
+                    - sum(o.cost for o in cand_ops)
+                )
+                self._validate_rebalance_values(cand_projected)
+                if cand_projected >= -1e-9:
+                    low = mid
+                    best = (cand_reds, cand_ops)
+                else:
+                    high = mid
+            if best is None:
+                raise ValueError("insufficient capital for position rebalance")
+            reductions, opens = best
 
         for order in reductions:
             if order.target_size <= 1e-9:

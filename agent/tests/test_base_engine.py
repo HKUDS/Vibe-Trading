@@ -311,22 +311,53 @@ def test_existing_rebalance_does_not_churn_inside_slippage_band(direction):
 
 def test_rebalance_insufficient_capital_is_atomic():
     engine = _AdjustmentEngine(fee_rate=0.10)
+    _run_adjustments(engine, {"A": [1.0]})
+    # 100% target with 10% commission now scales instead of aborting:
+    # ratio preserved, total cost fits capital
+    assert engine.bar_positions[0]["A"].size == pytest.approx(9.090909, rel=1e-5)
+    assert engine.bar_capitals[0] == pytest.approx(0.0, abs=1e-4)
+    assert sum(f.fee + f.margin for f in engine.fill_records if f.action == "open") <= 1_000.0 + 1e-9
+
+
+def test_rebalance_100_percent_plus_commission_scales_and_preserves_ratio():
+    engine = _AdjustmentEngine(fee_rate=0.001)
+    _run_adjustments(engine, {"A": [0.60], "B": [0.40]})
+    sizes = _sizes(engine.bar_positions[0])
+    assert sizes["A"] / sizes["B"] == pytest.approx(1.5, rel=1e-5)
+    total_cost = sum(f.fee + f.margin for f in engine.fill_records if f.action == "open")
+    assert total_cost <= 1_000.0 + 1e-9
+    assert engine.bar_capitals[0] >= -1e-9
+
+
+def test_rebalance_scaling_is_independent_of_code_order():
+    weights = {"A": [0.60], "B": [0.40]}
+    first, second = _run_both_code_orders(lambda: _AdjustmentEngine(fee_rate=0.001), weights)
+    assert _sizes(first.bar_positions[0]) == pytest.approx(_sizes(second.bar_positions[0]))
+    assert first.bar_capitals == pytest.approx(second.bar_capitals)
+
+
+def test_rebalance_irrecoverably_infeasible_is_atomic():
+    # High exit commission makes even a small reduction infeasible:
+    # capital + credit stays negative, so no scaled basket can fit.
+    engine = _AdjustmentEngine(fee_rate=2.0)
+    # First bar scales to ~3.33, second bar tries to reduce but credit is negative
     with pytest.raises(ValueError, match="insufficient capital"):
-        _run_adjustments(engine, {"A": [1.0]})
-    _assert_unchanged(engine)
+        _run_adjustments(engine, {"A": [0.50, 0.90]})
+    # Atomic: second bar never committed
+    assert len(engine.bar_positions) == 1
+    assert engine.capital == engine.bar_capitals[0]
 
 
 def test_existing_multi_symbol_rebalance_failure_is_atomic():
     engine = _AdjustmentEngine(fee_rate=0.01)
-
-    with pytest.raises(ValueError, match="insufficient capital"):
-        _run_adjustments(engine, {"A": [0.25, 0.10], "B": [0.25, 0.90]})
-
-    assert engine.capital == engine.bar_capitals[0] == 495.0
-    assert engine.positions == engine.bar_positions[0]
-    assert engine.trades == []
-    assert engine.adjustment_events == []
-    assert len(engine.bar_positions) == 1
+    _run_adjustments(engine, {"A": [0.25, 0.10], "B": [0.25, 0.90]})
+    # Previously aborted; now scales with common factor preserving ratio
+    assert len(engine.bar_positions) == 2
+    # After second bar, weights preserve ratio and cost fits
+    assert engine.bar_capitals[1] >= -1e-9
+    # Order independence for this basket as well
+    first, second = _run_both_code_orders(lambda: _AdjustmentEngine(fee_rate=0.01), {"A": [0.25, 0.10], "B": [0.25, 0.90]})
+    assert _sizes(first.bar_positions[1]) == pytest.approx(_sizes(second.bar_positions[1]))
 
 
 @pytest.mark.parametrize(
