@@ -488,6 +488,39 @@ export const api = {
       method: "POST",
       body: JSON.stringify(settings),
     }),
+  listCustomProviders: () =>
+    request<{ status: string; providers: CustomProviderProfile[] }>("/settings/custom-providers"),
+  testCustomProvider: (settings: { base_url: string; model: string; api_key: string }) =>
+    request<CustomProviderTestResponse>("/settings/custom-providers/test", {
+      method: "POST",
+      body: JSON.stringify(settings),
+    }),
+  saveCustomProvider: (settings: CustomProviderSaveRequest) =>
+    request<{ status: string; provider: CustomProviderProfile }>("/settings/custom-providers", {
+      method: "POST",
+      body: JSON.stringify(settings),
+    }),
+  activateCustomProvider: (profileId: string) =>
+    request<{ status: string; active_id: string; model: string; base_url: string }>(
+      `/settings/custom-providers/${encodeURIComponent(profileId)}/activate`, {
+        method: "POST",
+        body: JSON.stringify({ confirm: true }),
+      },
+    ),
+  getChannelsConfig: () =>
+    request<ChannelsConfigResponse>("/channels/config"),
+  updateChannelsConfig: (update: { channel: string; enabled: boolean; token?: string; allowlist?: string }) =>
+    request<{ status: string; needs_restart: boolean }>("/channels/config", {
+      method: "PUT",
+      body: JSON.stringify(update),
+    }),
+  testChannelsConfig: (probe: { channel: string; token?: string }) =>
+    request<{ status: string; checks: { adapter_available: boolean; token_present: boolean; live_probe: string; bot_username?: string } }>(
+      "/channels/config/test", {
+        method: "POST",
+        body: JSON.stringify(probe),
+      },
+    ),
   getDataSourceSettings: () => request<DataSourceSettings>("/settings/data-sources"),
   updateDataSourceSettings: (settings: UpdateDataSourceSettingsRequest) =>
     request<DataSourceSettings>("/settings/data-sources", {
@@ -742,6 +775,50 @@ export interface ListLLMModelsRequest {
   provider: string;
   base_url?: string;
   api_key?: string;
+}
+
+export interface CustomProviderProfile {
+  id: string;
+  label: string;
+  base_url: string;
+  model: string;
+  api_key_configured: boolean;
+  active: boolean;
+  last_tested_at?: string | null;
+}
+
+export interface CustomProviderTestResponse {
+  status: "ok";
+  test_id: string;
+  response_preview: string;
+  latency_ms: number;
+}
+
+export interface CustomProviderSaveRequest {
+  id: string;
+  label: string;
+  base_url: string;
+  model: string;
+  api_key: string;
+  test_id: string;
+}
+
+export interface ChannelConfigSummary {
+  channel: string;
+  display_name: string;
+  available: boolean;
+  error: string;
+  install_hint: string;
+  configured: boolean;
+  enabled: boolean;
+  token_configured: boolean;
+  allowlist: string[];
+}
+
+export interface ChannelsConfigResponse {
+  status: string;
+  channels: ChannelConfigSummary[];
+  env_path: string;
 }
 
 export interface LLMModelsResponse {

@@ -120,3 +120,29 @@
 
 /* RTL: mirror directional icons (chevrons, arrows) automatically */
 [dir="rtl"] .rtl\:flip-x { transform: scaleX(-1); }
+
+/* ===== Bidi/RTL support for chat content =====
+   Each markdown block auto-detects its own base direction (first-strong,
+   like Telegram) instead of inheriting the LTR document direction.
+   Unlayered on purpose: unlayered author rules win over @layer utilities,
+   so these override prose-* / Tailwind alignment classes. */
+.vt-bidi :is(p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th, figcaption, dd, dt) {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+.vt-bidi table {
+  unicode-bidi: plaintext;
+}
+.vt-bidi pre {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+}
+.vt-bidi :not(pre) > code {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.vt-bidi .katex,
+.vt-bidi .katex * {
+  direction: ltr;
+}

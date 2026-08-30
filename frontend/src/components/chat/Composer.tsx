@@ -411,6 +411,7 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
         />
         <textarea
           ref={inputRef}
+          dir="auto"
           value={input}
           rows={1}
           onChange={(e) => setInput(e.target.value)}

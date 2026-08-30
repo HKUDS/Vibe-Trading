@@ -3,6 +3,8 @@ import { Database, KeyRound, Loader2, MessageSquareMore, Play, RefreshCw, Rotate
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ModelPicker } from "@/components/settings/ModelPicker";
+import { CustomProviderManager } from "@/components/settings/CustomProviderManager";
+import { ChannelConfigSection } from "@/components/settings/ChannelConfigSection";
 import { QVerisSettings } from "@/components/settings/QVerisSettings"; // QVERIS-INTEGRATION
 import { SourcePrioritySettings } from "@/components/settings/SourcePrioritySettings";
 import { api, isAuthRequiredError, type ChannelRuntimeStatus, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
@@ -489,6 +491,8 @@ export function Settings() {
 
       {channelsSection}
 
+      <ChannelConfigSection />
+
       <div className="space-y-2">
         <h2 className="text-lg font-semibold tracking-tight">{t("settings.llmSettings")}</h2>
         <p className="max-w-3xl text-sm text-muted-foreground">{t("settings.llmSettingsDesc")}</p>
@@ -695,6 +699,8 @@ export function Settings() {
           </div>
         </section>
       </form>
+
+      <CustomProviderManager />
 
       <form onSubmit={submitDataSources} className="rounded-lg border bg-card p-5 shadow-sm">
         <div className="mb-5 space-y-1">

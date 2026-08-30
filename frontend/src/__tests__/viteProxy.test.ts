@@ -10,6 +10,10 @@ describe("Vite API proxy config", () => {
     expect(config).toContain('"/channels"');
   });
 
+  it("proxies the portfolio and connections API namespace", () => {
+    expect(config).toContain('"/api"');
+  });
+
   it("proxies settings endpoints", () => {
     expect(config).toContain('"/settings/llm"');
     expect(config).toContain('"/settings/data-sources"');

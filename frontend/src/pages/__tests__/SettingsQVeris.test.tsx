@@ -11,6 +11,8 @@ const apiMock = vi.hoisted(() => ({
   stopChannels: vi.fn(),
   updateLLMSettings: vi.fn(),
   updateDataSourceSettings: vi.fn(),
+  getChannelsConfig: vi.fn(),
+  listCustomProviders: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -150,6 +152,8 @@ describe("Settings QVeris card", () => {
     apiMock.getChannelStatus.mockResolvedValue(channelStatus());
     apiMock.startChannels.mockResolvedValue(channelStatus());
     apiMock.stopChannels.mockResolvedValue(channelStatus());
+    apiMock.getChannelsConfig.mockResolvedValue({ status: "ok", channels: [], env_path: "agent.json" });
+    apiMock.listCustomProviders.mockResolvedValue({ status: "ok", providers: [] });
   });
 
   afterEach(() => {

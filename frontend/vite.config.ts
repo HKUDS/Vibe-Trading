@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 
 const PROXY_PATHS = [
+  "/api",
   "/auth",
   "/sessions",
   "/swarm/presets",
@@ -10,6 +11,7 @@ const PROXY_PATHS = [
   "/qveris",
   "/settings/llm",
   "/settings/data-sources",
+  "/settings/custom-providers",
   "/channels",
   "/mandate",
   "/live",

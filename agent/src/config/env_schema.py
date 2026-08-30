@@ -144,6 +144,9 @@ class LLMConfig(_EnvBase):
     # preflight could not tell a missing key from a working one and the failure
     # surfaced as an opaque 401 at the first call instead (#1223).
     anthropic_api_key: str = Field(alias="ANTHROPIC_API_KEY", default="")
+    langchain_max_tokens: int | None = Field(
+        alias="LANGCHAIN_MAX_TOKENS", default=None, gt=0
+    )
     anthropic_max_tokens: int | None = Field(alias="ANTHROPIC_MAX_TOKENS", default=None, gt=0)
     timeout_seconds: int = Field(alias="TIMEOUT_SECONDS", default=120)
     max_retries: int = Field(alias="MAX_RETRIES", default=2)

@@ -132,6 +132,11 @@ describe("i18n utilities", () => {
     expect(isRtl("ar")).toBe(true);
   });
 
+  it("isRtl returns true for Persian", () => {
+    expect(isRtl("fa")).toBe(true);
+    expect(isRtl("fa-IR")).toBe(true);
+  });
+
   it("isRtl returns true for Arabic regional variants", () => {
     expect(isRtl("ar-EG")).toBe(true);
     expect(isRtl("ar-SA")).toBe(true);
@@ -159,7 +164,7 @@ describe("i18n utilities", () => {
     // the order the switcher renders, and that "en" stays first so the
     // primary-match fallback in Layout resolves regional codes to it.
     const codes = SUPPORTED_LANGUAGES.map((l) => l.code);
-    expect(codes).toEqual(["en", "zh-CN", "ja", "ko", "ar", "es", "de"]);
+    expect(codes).toEqual(["en", "zh-CN", "ja", "ko", "ar", "fa", "es", "de"]);
   });
 
   it("accepts zh-CN as an explicit supported language", async () => {

@@ -1592,6 +1592,9 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         "vibe_provider": provider,
         "vibe_api_key": api_key,
     }
+    langchain_max_tokens = get_env_config().llm.langchain_max_tokens
+    if langchain_max_tokens:
+        kwargs["max_tokens"] = langchain_max_tokens
     if caps.default_headers:
         headers = dict(caps.default_headers)
         if caps.name in {"moonshot", "kimi-coding"}:

@@ -222,6 +222,9 @@ from src.api.settings_routes import (  # noqa: F401, E402
     _load_llm_providers,
 )
 
+from src.api.custom_provider_routes import register_custom_provider_routes  # noqa: E402
+register_custom_provider_routes(app, require_local_or_auth, require_settings_write_auth)
+
 # --- Uploads ---
 from src.api.uploads_routes import register_uploads_routes  # noqa: E402
 register_uploads_routes(app)
