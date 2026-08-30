@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import copy
+import hashlib
 import json
 import logging
 import queue
@@ -25,13 +26,13 @@ import threading
 import time as _time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from src.agent.context import ContextBuilder
 from src.agent.grounding import GroundingLedger
 from src.agent.memory import WorkspaceMemory
 from src.agent.progress import HeartbeatTimer, ProgressEvent, _set_emitter
-from src.agent.tools import ToolRegistry
+from src.agent.tools import InvocationPolicy, ToolRegistry
 from src.agent.trace import TraceWriter
 from src.core.state import RunStateStore
 from src.goal.context import (
@@ -936,7 +937,8 @@ class AgentLoop:
         self.memory = memory or WorkspaceMemory()
         self._event_callback = event_callback
         self.max_iterations = max_iterations
-        self._called_ok: set[str] = set()
+        self._once_per_run_completed: set[str] = set()
+        self._once_per_run_reserved: set[str] = set()
         self._cancel_event = threading.Event()
         self._previous_summary: str = ""
         self._persistent_memory = persistent_memory
@@ -1041,7 +1043,8 @@ class AgentLoop:
             self._cancel_event.clear()
         else:
             self._has_run = True
-        self._called_ok = set()
+        self._once_per_run_completed = set()
+        self._once_per_run_reserved = set()
         self._previous_summary = ""
         self._released_fallback = False
         self._released_fallback_reason = None
@@ -1929,15 +1932,6 @@ class AgentLoop:
                 continue
 
             tool_def = self.registry.get(tc.name)
-            is_repeatable = tool_def.repeatable if tool_def else False
-            if tc.name in self._called_ok and not is_repeatable:
-                logger.warning(f"Blocked duplicate call: {tc.name} (already succeeded)")
-                skip_msg = json.dumps({"skipped": True, "reason": f"{tc.name} already completed successfully. Use the previous result."})
-                messages.append(context.format_tool_result(tc.id, tc.name, skip_msg))
-                trace.write({"type": "tool_skipped", "iter": iteration, "tool": tc.name})
-                react_trace.append({"type": "tool_skipped", "tool": tc.name})
-                continue
-
             if self._grounding is not None:
                 authorization = self._grounding.authorize_tool_call(
                     tc.name,
@@ -1958,14 +1952,34 @@ class AgentLoop:
                     )
                     continue
 
+            policy = self._invocation_policy(tool_def)
+            call_key = self._identical_call_key(tc.name, tc.arguments)
+            if policy == InvocationPolicy.ONCE_PER_RUN:
+                if (
+                    tc.name in self._once_per_run_completed
+                    or tc.name in self._once_per_run_reserved
+                ):
+                    self._record_invocation_skip(
+                        tc,
+                        policy=policy,
+                        call_key=call_key,
+                        context=context,
+                        messages=messages,
+                        trace=trace,
+                        react_trace=react_trace,
+                        iteration=iteration,
+                    )
+                    continue
+                self._once_per_run_reserved.add(tc.name)
+
             # Deterministic tools (e.g. financial_rigor calc) return the same
             # result for the same args. Checked AFTER authorization above so a
             # cached repeat can never bypass the identity gate. After auto-compact cleared earlier
             # tool outputs, the model used to re-run identical expressions
             # 5-9x each (2026-08-20 INTC run) to re-verify numbers it could
             # no longer see. Serve an identical prior call from cache instead.
-            if tool_def is not None and getattr(tool_def, "deterministic", False):
-                cache_key = self._identical_call_key(tc.name, tc.arguments)
+            if policy == InvocationPolicy.CACHE_IDENTICAL:
+                cache_key = call_key
                 if cache_key is not None and cache_key in self._called_identical:
                     cached = self._called_identical[cache_key]
                     messages.append(context.format_tool_result(tc.id, tc.name, cached))
@@ -1974,8 +1988,15 @@ class AgentLoop:
                         "iter": iteration,
                         "tool": tc.name,
                         "call_id": tc.id,
+                        "invocation_policy": policy.value,
+                        "invocation_key": self._call_key_hash(cache_key),
                     })
-                    react_trace.append({"type": "tool_result_cached", "tool": tc.name})
+                    react_trace.append({
+                        "type": "tool_result_cached",
+                        "tool": tc.name,
+                        "invocation_policy": policy.value,
+                        "invocation_key": self._call_key_hash(cache_key),
+                    })
                     self._emit(
                         "tool_result",
                         {
@@ -1985,6 +2006,8 @@ class AgentLoop:
                             "preview": cached[:200],
                             "call_id": tc.id,
                             "cached": True,
+                            "invocation_policy": policy.value,
+                            "invocation_key": self._call_key_hash(cache_key),
                         },
                     )
                     continue
@@ -2508,6 +2531,88 @@ class AgentLoop:
             return None
         return (tool_name, canonical)
 
+    @staticmethod
+    def _invocation_policy(tool_def: Any) -> InvocationPolicy:
+        """Return a registered tool's effective invocation policy."""
+        if tool_def is None:
+            return InvocationPolicy.ALLOW
+        resolver = getattr(tool_def, "effective_invocation_policy", None)
+        if callable(resolver):
+            return resolver()
+        if getattr(tool_def, "deterministic", False):
+            return InvocationPolicy.CACHE_IDENTICAL
+        if getattr(tool_def, "is_readonly", False) or getattr(
+            tool_def, "repeatable", False
+        ):
+            return InvocationPolicy.ALLOW
+        return InvocationPolicy.ONCE_PER_RUN
+
+    @staticmethod
+    def _call_key_hash(call_key: tuple[str, str] | None) -> str | None:
+        """Return a short non-reversible identifier for trace correlation."""
+        if call_key is None:
+            return None
+        material = f"{call_key[0]}\0{call_key[1]}".encode("utf-8")
+        return hashlib.sha256(material).hexdigest()[:16]
+
+    def _record_invocation_skip(
+        self,
+        tc: Any,
+        *,
+        policy: InvocationPolicy,
+        call_key: tuple[str, str] | None,
+        context: ContextBuilder,
+        messages: list,
+        trace: TraceWriter,
+        react_trace: list,
+        iteration: int,
+    ) -> None:
+        """Return and trace a once-per-run skip without invoking the tool."""
+        reason = (
+            f"{tc.name} is limited to one successful or in-flight invocation "
+            "per run"
+        )
+        key_hash = self._call_key_hash(call_key)
+        args = _normalize_tool_run_dir(tc.arguments, self.memory.run_dir)
+        redacted_args = redact_payload(args)
+        logger.warning("Skipped tool call %s under %s", tc.name, policy.value)
+        messages.append(
+            context.format_tool_result(
+                tc.id,
+                tc.name,
+                json.dumps(
+                    {
+                        "skipped": True,
+                        "reason": reason,
+                        "invocation_policy": policy.value,
+                        "invocation_key": key_hash,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
+        trace.write(
+            {
+                "type": "tool_skipped",
+                "iter": iteration,
+                "tool": tc.name,
+                "call_id": tc.id,
+                "args": redacted_args,
+                "invocation_policy": policy.value,
+                "invocation_key": key_hash,
+                "reason": reason,
+            }
+        )
+        react_trace.append(
+            {
+                "type": "tool_skipped",
+                "tool": tc.name,
+                "invocation_policy": policy.value,
+                "invocation_key": key_hash,
+                "reason": reason,
+            }
+        )
+
     def _finalize_tool_result(
         self,
         tc: Any,
@@ -2541,8 +2646,19 @@ class AgentLoop:
         self._last_activity_wall = _time.time()
 
         success = _is_tool_success(result)
+        try:
+            tool_def = self.registry.get(tc.name)
+        except Exception:  # noqa: BLE001
+            tool_def = None
+        policy = self._invocation_policy(tool_def)
+        call_key = self._identical_call_key(tc.name, tc.arguments)
+
+        if policy == InvocationPolicy.ONCE_PER_RUN:
+            self._once_per_run_reserved.discard(tc.name)
+
         if success:
-            self._called_ok.add(tc.name)
+            if policy == InvocationPolicy.ONCE_PER_RUN:
+                self._once_per_run_completed.add(tc.name)
             if tc.name == "backtest":
                 try:
                     _archive_backtest_result(result, self.memory.run_dir)
@@ -2572,15 +2688,12 @@ class AgentLoop:
         # Cache successful deterministic results so an identical later call is
         # served without re-execution (regression: repeated financial_rigor
         # calcs after compaction, 2026-08-20 INTC run).
-        if success:
-            try:
-                tool_def = self.registry.get(tc.name)
-            except Exception:  # noqa: BLE001
-                tool_def = None
-            if tool_def is not None and getattr(tool_def, "deterministic", False):
-                cache_key = self._identical_call_key(tc.name, tc.arguments)
-                if cache_key is not None:
-                    self._called_identical[cache_key] = result
+        if (
+            success
+            and policy == InvocationPolicy.CACHE_IDENTICAL
+            and call_key is not None
+        ):
+            self._called_identical[call_key] = result
 
         status = "ok" if success else "error"
         truncated = truncate_tool_result(result)

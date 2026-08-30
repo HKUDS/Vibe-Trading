@@ -5,9 +5,18 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
-from typing import Any, Dict, List, Optional
+
+
+class InvocationPolicy(str, Enum):
+    """Host-side execution policy for repeated tool invocations."""
+
+    ALLOW = "allow"
+    CACHE_IDENTICAL = "cache_identical"
+    ONCE_PER_RUN = "once_per_run"
 
 
 class BaseTool(ABC):
@@ -17,18 +26,34 @@ class BaseTool(ABC):
         name: Unique tool identifier.
         description: Tool description shown to the LLM.
         parameters: Parameter definition in JSON Schema format.
-        repeatable: Whether the tool may be called more than once.
+        invocation_policy: Explicit host-side repeat/caching policy.
+        repeatable: Legacy compatibility flag used when no policy is set.
     """
 
     name: str = ""
     description: str = ""
     parameters: Dict[str, Any] = {}
+    invocation_policy: InvocationPolicy | None = None
     repeatable: bool = False
     is_readonly: bool = True
     # Pure, side-effect-free computation: identical args always produce the
     # same result, so the loop may serve repeated identical calls from cache
     # instead of re-executing them (financial_rigor calc/verify, etc.).
     deterministic: bool = False
+
+    def effective_invocation_policy(self) -> InvocationPolicy:
+        """Return the explicit policy or a backward-compatible default.
+
+        Returns:
+            Effective invocation policy for this tool instance.
+        """
+        if self.invocation_policy is not None:
+            return InvocationPolicy(self.invocation_policy)
+        if self.deterministic:
+            return InvocationPolicy.CACHE_IDENTICAL
+        if self.is_readonly or self.repeatable:
+            return InvocationPolicy.ALLOW
+        return InvocationPolicy.ONCE_PER_RUN
 
     @classmethod
     def check_available(cls) -> bool:

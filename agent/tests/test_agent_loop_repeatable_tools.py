@@ -12,9 +12,12 @@ from src.agent.context import ContextBuilder
 from src.agent.loop import AgentLoop
 from src.agent.tools import ToolRegistry
 from src.agent.trace import TraceWriter
+from src.tools.financial_statements_tool import FinancialStatementsTool
 from src.tools.get_fundamentals_tool import GetFundamentalsTool
 from src.tools.market_data_tool import MarketDataTool
 from src.tools.market_screener_tool import MarketScreenerTool
+from src.tools.sector_tool import SectorInfoTool
+from src.tools.stock_news_tool import StockNewsTool
 from src.tools.symbol_search_tool import SymbolSearchTool
 
 
@@ -59,9 +62,24 @@ from src.tools.symbol_search_tool import SymbolSearchTool
             {"query": "Apple", "limit": 5},
             {"query": "Microsoft", "limit": 5},
         ),
+        (
+            FinancialStatementsTool,
+            {"code": "600276.SH", "statement": "indicators"},
+            {"code": "601899.SH", "statement": "indicators"},
+        ),
+        (
+            SectorInfoTool,
+            {"code": "600276.SH", "mode": "membership"},
+            {"code": "601899.SH", "mode": "membership"},
+        ),
+        (
+            StockNewsTool,
+            {"code": "600276.SH", "scope": "stock", "limit": 5},
+            {"code": "601899.SH", "scope": "stock", "limit": 5},
+        ),
     ],
 )
-def test_repeatable_query_executes_again_with_different_arguments(
+def test_readonly_query_executes_again_with_different_arguments(
     monkeypatch,
     tmp_path: Path,
     tool_cls: type,
