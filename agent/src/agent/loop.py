@@ -17,6 +17,7 @@ import concurrent.futures
 import copy
 import json
 import logging
+import os
 import queue
 import re
 import shutil
@@ -79,12 +80,44 @@ def _override(name: str):
     return None
 
 
+# Token-budget derivation from MODEL_CONTEXT_WINDOW (see _token_threshold).
+#: Share of the model's native context window used as the compaction budget.
+_BUDGET_SHARE_OF_WINDOW = 0.6
+#: Floor equals the historical default so a derived budget never compacts
+#: earlier than the pre-feature behavior would have.
+_MIN_TOKEN_BUDGET = 40_000
+#: Ceiling keeps the summary/compaction path bounded even for 1M+ windows;
+#: beyond this the transcript estimate (chars // 4) is too noisy to trust.
+_MAX_TOKEN_BUDGET = 400_000
+
+
+def _derived_token_budget(context_window: int) -> int:
+    """Derive the compaction budget from a model's native context window.
+
+    Args:
+        context_window: Native context window of the configured model, in tokens.
+
+    Returns:
+        ``60%`` of the window clamped to ``[_MIN_TOKEN_BUDGET, _MAX_TOKEN_BUDGET]``.
+    """
+    raw = int(context_window * _BUDGET_SHARE_OF_WINDOW)
+    return max(_MIN_TOKEN_BUDGET, min(_MAX_TOKEN_BUDGET, raw))
+
+
 def _token_threshold() -> int:
     ov = _override("TOKEN_THRESHOLD")
     if ov is not None:
         return ov
+    explicit_env = os.environ.get("TOKEN_THRESHOLD")
     from src.config.accessor import get_env_config
-    return get_env_config().agent_tuning.token_threshold
+    tuning = get_env_config().agent_tuning
+    if explicit_env is not None and explicit_env.strip():
+        # Operator set TOKEN_THRESHOLD deliberately: it wins over the window
+        # derivation even when its value equals the schema default.
+        return tuning.token_threshold
+    if tuning.model_context_window:
+        return _derived_token_budget(tuning.model_context_window)
+    return tuning.token_threshold
 
 
 def _heartbeat_interval_s() -> float:

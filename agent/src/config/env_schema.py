@@ -391,6 +391,17 @@ class AgentTuningConfig(_EnvBase):
     """
 
     token_threshold: int = Field(alias="TOKEN_THRESHOLD", default=40000)
+    model_context_window: int | None = Field(
+        alias="MODEL_CONTEXT_WINDOW",
+        default=None,
+        gt=0,
+        description=(
+            "Native context window (tokens) of the configured LLM. When set and "
+            "TOKEN_THRESHOLD is not explicitly provided, the compaction budget is "
+            "derived as 60% of the window, clamped to [40000, 400000]. "
+            "TOKEN_THRESHOLD (env or per-run override) always wins."
+        ),
+    )
     vt_heartbeat_interval_s: float = Field(alias="VT_HEARTBEAT_INTERVAL_S", default=3.0)
     vt_reasoning_delta_min_interval_s: float = Field(
         alias="VT_REASONING_DELTA_MIN_INTERVAL_S", default=1.0,
