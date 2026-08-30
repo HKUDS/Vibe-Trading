@@ -309,24 +309,41 @@ def test_existing_rebalance_does_not_churn_inside_slippage_band(direction):
     _assert_unchanged(engine, {"A": before})
 
 
-def test_rebalance_insufficient_capital_is_atomic():
+def test_rebalance_insufficient_capital_scales_basket_to_fit():
     engine = _AdjustmentEngine(fee_rate=0.10)
-    with pytest.raises(ValueError, match="insufficient capital"):
-        _run_adjustments(engine, {"A": [1.0]})
-    _assert_unchanged(engine)
+    _run_adjustments(engine, {"A": [1.0]})
+    # Full cost would be 1100 > 1000 capital; the basket must scale to fit.
+    assert engine.bar_positions[0]["A"].size == pytest.approx(100.0 / 11.0)
+    assert engine.bar_capitals[0] == pytest.approx(0.0, abs=1e-4)
 
 
-def test_existing_multi_symbol_rebalance_failure_is_atomic():
+def test_rebalance_scaled_basket_preserves_weight_ratios():
     engine = _AdjustmentEngine(fee_rate=0.01)
+    _run_adjustments(engine, {"A": [0.25, 0.10], "B": [0.25, 0.90]})
+    a, b = engine.bar_positions[1]["A"].size, engine.bar_positions[1]["B"].size
+    assert a / b == pytest.approx(0.10 / 0.90)
+    assert engine.bar_capitals[1] >= -1e-9
+    assert engine.bar_capitals[1] == pytest.approx(0.0, abs=1e-2)
 
+
+def test_rebalance_scaled_basket_is_independent_of_input_code_order():
+    weights = {"A": [0.60, 0.10], "B": [0.40, 0.90]}
+    first, second = _run_both_code_orders(
+        lambda: _AdjustmentEngine(fee_rate=0.01), weights
+    )
+    assert first.bar_positions == second.bar_positions
+    assert first.bar_capitals == second.bar_capitals
+
+
+def test_rebalance_irrecoverably_infeasible_basket_is_atomic():
+    engine = _AdjustmentEngine(fee_rate=0.10)
+    engine.positions["A"] = _position(direction=-1, size=10.0)
+    before = engine.positions["A"]
+    # Closing the short at 300 destroys 1300 net of margin; even after full
+    # closeout the basket cannot fit capital, so it must still abort.
     with pytest.raises(ValueError, match="insufficient capital"):
-        _run_adjustments(engine, {"A": [0.25, 0.10], "B": [0.25, 0.90]})
-
-    assert engine.capital == engine.bar_capitals[0] == 495.0
-    assert engine.positions == engine.bar_positions[0]
-    assert engine.trades == []
-    assert engine.adjustment_events == []
-    assert len(engine.bar_positions) == 1
+        _run_adjustments(engine, {"A": [0.0]}, execution_prices={"A": [300.0]})
+    _assert_unchanged(engine, positions={"A": before})
 
 
 @pytest.mark.parametrize(

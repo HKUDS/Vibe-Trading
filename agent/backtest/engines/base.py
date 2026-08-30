@@ -19,7 +19,7 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -1508,123 +1508,161 @@ class BaseEngine(ABC):
         target_weights: Dict[str, Optional[float]], data_map: Dict[str, pd.DataFrame],
         ts: pd.Timestamp, equity: float, codes: List[str],
     ) -> None:
-        """Plan every target delta, preflight capital, then commit the basket."""
-        reductions: list[_ReductionOrder] = []
-        opens: list[_OpenOrder] = []
+        """Plan every target delta, preflight capital, then commit the basket.
 
-        for symbol in sorted(codes):
-            target_weight = target_weights.get(symbol)
-            if target_weight is None:
-                continue
-            self._validate_rebalance_values(target_weight)
+        If the requested basket does not fit after fees/lot rounding, apply
+        one common scale factor to all target weights -- the same fairness
+        mechanism the open basket path uses -- preserving portfolio
+        proportions and code-order independence. A basket that cannot fit
+        even after full closeouts still aborts atomically.
+        """
 
-            self._active_symbol = symbol
-            before = self.positions.get(symbol)
-            target_direction = 1 if target_weight > 1e-9 else (-1 if target_weight < -1e-9 else 0)
-            frame = data_map.get(symbol)
-            if frame is None or ts not in frame.index:
-                continue
-            bar = frame.loc[ts]
+        def _plan_basket(scale: float) -> Tuple[List[_ReductionOrder], List[_OpenOrder]]:
+            reductions: list[_ReductionOrder] = []
+            opens: list[_OpenOrder] = []
 
-            if before is None or target_direction != before.direction:
-                if before is not None:
-                    if not self.can_execute(symbol, 0, bar):
-                        continue
-                    raw_price = self.execution_open(bar)
-                    self._validate_rebalance_values(raw_price, positive=True)
-                    price = self.apply_slippage(raw_price, -before.direction)
-                    self._validate_rebalance_values(price, positive=True)
-                    reductions.append(self._plan_reduction(before, 0.0, price))
-                    if target_direction == 0:
-                        continue
-                order = self._plan_open_order(
-                    symbol,
-                    target_weight,
-                    frame,
-                    ts,
-                    equity,
-                    allow_existing=before is not None,
-                    require_positive_price=True,
+            for symbol in sorted(codes):
+                target_weight = target_weights.get(symbol)
+                if target_weight is None:
+                    continue
+                self._validate_rebalance_values(target_weight)
+                scaled_weight = target_weight * scale
+
+                self._active_symbol = symbol
+                before = self.positions.get(symbol)
+                target_direction = (
+                    1 if scaled_weight > 1e-9 else (-1 if scaled_weight < -1e-9 else 0)
                 )
-                if order is not None:
+                frame = data_map.get(symbol)
+                if frame is None or ts not in frame.index:
+                    continue
+                bar = frame.loc[ts]
+
+                if before is None or target_direction != before.direction:
+                    if before is not None:
+                        if not self.can_execute(symbol, 0, bar):
+                            continue
+                        raw_price = self.execution_open(bar)
+                        self._validate_rebalance_values(raw_price, positive=True)
+                        price = self.apply_slippage(raw_price, -before.direction)
+                        self._validate_rebalance_values(price, positive=True)
+                        reductions.append(self._plan_reduction(before, 0.0, price))
+                        if target_direction == 0:
+                            continue
+                    order = self._plan_open_order(
+                        symbol,
+                        scaled_weight,
+                        frame,
+                        ts,
+                        equity,
+                        allow_existing=before is not None,
+                        require_positive_price=True,
+                    )
+                    if order is not None:
+                        self._validate_rebalance_values(
+                            order.price, order.leverage, order.size, order.margin, order.commission
+                        )
+                        opens.append(order)
+                    continue
+
+                raw_price = self.execution_open(bar)
+                self._validate_rebalance_values(raw_price, positive=True)
+                leverage = self._leverage_for_symbol(symbol)
+                self._validate_rebalance_values(raw_price, before.leverage, leverage)
+                target_notional = abs(scaled_weight) * equity * before.leverage
+                prices = (
+                    self.apply_slippage(raw_price, before.direction),
+                    self.apply_slippage(raw_price, -before.direction),
+                )
+                self._validate_rebalance_values(*prices, positive=True)
+                sizes = tuple(
+                    self.round_size(
+                        self._calc_raw_size(symbol, target_notional, price), price
+                    )
+                    for price in prices
+                )
+                self._validate_rebalance_values(*prices, *sizes)
+                # Tolerance band. The held size is compared against the size the
+                # target implies at the unslipped price -- keeping the slippage side
+                # out of a drift question is the principled choice, though its
+                # practical effect is one slippage width and only reaches the
+                # outcome within that distance of the band edge, which is why no
+                # test pins it: such a test would assert a coincidence.
+                # A changed target moves this reference far past any sane band, so
+                # target changes still execute at every tolerance.
+                if self.rebalance_tolerance > 0.0:
+                    reference_size = self.round_size(
+                        self._calc_raw_size(symbol, target_notional, raw_price), raw_price
+                    )
+                    if abs(before.size - reference_size) <= self.rebalance_tolerance * abs(
+                        reference_size
+                    ):
+                        continue
+
+                increase = sizes[0] > before.size + 1e-9
+                reduction = sizes[1] < before.size - 1e-9
+                # Both or neither means the target lies inside the fill-price band.
+                if increase == reduction:
+                    continue
+                target_size, price = (
+                    (sizes[0], prices[0]) if increase else (sizes[1], prices[1])
+                )
+                if not math.isclose(leverage, before.leverage, rel_tol=1e-9, abs_tol=1e-9):
+                    raise ValueError("cannot rebalance a position with changed leverage")
+                if increase:
+                    if not self.can_execute(symbol, target_direction, bar):
+                        continue
+                    size = target_size - before.size
+                    order = _OpenOrder(
+                        symbol=symbol,
+                        direction=before.direction,
+                        price=price,
+                        size=size,
+                        leverage=leverage,
+                        margin=self._calc_margin(symbol, size, price, leverage),
+                        commission=self.calc_commission(
+                            size, price, before.direction, is_open=True
+                        ),
+                    )
                     self._validate_rebalance_values(
                         order.price, order.leverage, order.size, order.margin, order.commission
                     )
                     opens.append(order)
-                continue
+                elif self.can_execute(symbol, 0, bar):
+                    reductions.append(self._plan_reduction(before, target_size, price))
 
-            raw_price = self.execution_open(bar)
-            self._validate_rebalance_values(raw_price, positive=True)
-            leverage = self._leverage_for_symbol(symbol)
-            self._validate_rebalance_values(raw_price, before.leverage, leverage)
-            target_notional = abs(target_weight) * equity * before.leverage
-            prices = (
-                self.apply_slippage(raw_price, before.direction),
-                self.apply_slippage(raw_price, -before.direction),
+            return reductions, opens
+
+        def _basket_capital(
+            reductions: List[_ReductionOrder], opens: List[_OpenOrder]
+        ) -> float:
+            return (
+                self.capital
+                + sum(order.capital_credit for order in reductions)
+                - sum(order.cost for order in opens)
             )
-            self._validate_rebalance_values(*prices, positive=True)
-            sizes = tuple(
-                self.round_size(
-                    self._calc_raw_size(symbol, target_notional, price), price
-                )
-                for price in prices
-            )
-            self._validate_rebalance_values(*prices, *sizes)
-            # Tolerance band. The held size is compared against the size the
-            # target implies at the unslipped price -- keeping the slippage side
-            # out of a drift question is the principled choice, though its
-            # practical effect is one slippage width and only reaches the
-            # outcome within that distance of the band edge, which is why no
-            # test pins it: such a test would assert a coincidence.
-            # A changed target moves this reference far past any sane band, so
-            # target changes still execute at every tolerance.
-            if self.rebalance_tolerance > 0.0:
-                reference_size = self.round_size(
-                    self._calc_raw_size(symbol, target_notional, raw_price), raw_price
-                )
-                if abs(before.size - reference_size) <= self.rebalance_tolerance * abs(
-                    reference_size
-                ):
-                    continue
 
-            increase = sizes[0] > before.size + 1e-9
-            reduction = sizes[1] < before.size - 1e-9
-            # Both or neither means the target lies inside the fill-price band.
-            if increase == reduction:
-                continue
-            target_size, price = (sizes[0], prices[0]) if increase else (sizes[1], prices[1])
-            if not math.isclose(leverage, before.leverage, rel_tol=1e-9, abs_tol=1e-9):
-                raise ValueError("cannot rebalance a position with changed leverage")
-            if increase:
-                if not self.can_execute(symbol, target_direction, bar):
-                    continue
-                size = target_size - before.size
-                order = _OpenOrder(
-                    symbol=symbol,
-                    direction=before.direction,
-                    price=price,
-                    size=size,
-                    leverage=leverage,
-                    margin=self._calc_margin(symbol, size, price, leverage),
-                    commission=self.calc_commission(
-                        size, price, before.direction, is_open=True
-                    ),
-                )
-                self._validate_rebalance_values(
-                    order.price, order.leverage, order.size, order.margin, order.commission
-                )
-                opens.append(order)
-            elif self.can_execute(symbol, 0, bar):
-                reductions.append(self._plan_reduction(before, target_size, price))
-
-        projected_capital = (
-            self.capital
-            + sum(order.capital_credit for order in reductions)
-            - sum(order.cost for order in opens)
-        )
-        self._validate_rebalance_values(projected_capital)
+        # a. Plan at full scale; commit directly when the basket fits.
+        reductions, opens = _plan_basket(1.0)
+        projected_capital = _basket_capital(reductions, opens)
+        # b. If fees/lot rounding push the basket past capital, shrink every
+        #    sleeve by one common factor, searching the largest scale that
+        #    still fits -- mirroring the fairness contract of the open path.
         if projected_capital < -1e-9:
-            raise ValueError("insufficient capital for position rebalance")
+            low, high = 0.0, 1.0
+            for _ in range(50):
+                mid = (low + high) * 0.5
+                candidate_reductions, candidate_opens = _plan_basket(mid)
+                candidate_capital = _basket_capital(candidate_reductions, candidate_opens)
+                if candidate_capital >= -1e-9:
+                    low = mid
+                    reductions, opens = candidate_reductions, candidate_opens
+                else:
+                    high = mid
+            projected_capital = _basket_capital(reductions, opens)
+            self._validate_rebalance_values(projected_capital)
+            if projected_capital < -1e-9:
+                raise ValueError("insufficient capital for position rebalance")
 
         for order in reductions:
             if order.target_size <= 1e-9:
