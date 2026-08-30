@@ -449,10 +449,12 @@ _PROSPECTIVE_LEVEL_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
-# Full-width brackets and enumeration commas delimit prose clauses. ASCII
+# Enumeration commas and clause terminators delimit prose clauses. ASCII
 # parentheses are deliberately not separators: an explicit derivation such as
-# "(8.5 - 7.9) / 2" must stay in one segment for the formula check.
-_CLAUSE_SEPARATOR_RE = re.compile(r"[,，;；。、\n（）【】]")
+# "(8.5 - 7.9) / 2" must stay in one segment for the formula check. Full-width
+# brackets （）【】 are grouping characters for the same reason and must also
+# stay in one segment so "公司名（代码）价格" keeps the symbol and figure together.
+_CLAUSE_SEPARATOR_RE = re.compile(r"[,，;；。、\n]")
 
 
 # The ASCII comma both separates clauses and groups thousands, and the clause
