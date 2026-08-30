@@ -793,10 +793,48 @@ def _infer_venue(symbol: str) -> str | None:
     for suffix, venue in suffixes.items():
         if upper.endswith(suffix):
             return venue
-    if "-" in upper or "/" in upper:
-        return "crypto_or_fx"
+    # Yahoo's continuous-front-month futures notation (GC=F, CL=F, SI=F, ...).
+    # The exchange category is the venue class. The engine and the
+    # correlation helper mirror this pattern; this is the third copy.
     if upper.endswith("=F"):
         return "futures"
+    # Yahoo's forex notation (XAUUSD=X, EURUSD=X) is FX.
+    if re.match(r"^[A-Z]{6}=X$", upper):
+        return "forex"
+    # Bare 6-character precious-metal / FX symbols. The whitelist is
+    # ISO 4217 metals + G10 currencies; it intentionally does NOT include
+    # any US-equity prefix. Mirroring the engine ``_MARKET_PATTERNS``.
+    if re.match(
+        r"^(?:XAU|XAG|XPT|XPD|EUR|GBP|JPY|CHF|CAD|AUD|NZD|USD)[A-Z]{3}$",
+        upper,
+    ):
+        return "forex"
+    # Dashed / slashed symbols are NOT categorically crypto. The crypto
+    # resolver (``_canonical_crypto_pair`` in ``src.tools.symbol_search_tool``)
+    # gates the ``USD`` quote leg on a 26-entry base whitelist of Binance /
+    # OKX spot bases (BTC / ETH / BNB / SOL / ADA / XRP / DOGE / TRX / DOT /
+    # MATIC / AVAX / LINK / LTC / BCH / ETC / XLM / ATOM / FIL / APT / NEAR /
+    # ALGO / SAND / MANA / AXS / XAUT / PAXG). ``XAU-USD``, ``EUR-USD``,
+    # ``GBP-USD`` are not in that whitelist, so they are NOT crypto and
+    # are NOT crypto_or_fx — they are forex. Stablecoin quotes (USDT /
+    # USDC / BUSD / TUSD / FDUSD) are unambiguous and accept any alphanumeric
+    # base. Without this guard a bare ``XAUUSD`` query would surface as a
+    # crypto-or-fx hybrid in the runtime registry, contradicting the engine
+    # classifier which already routes it to ``forex`` (see PR #1280).
+    if "-" in upper or "/" in upper:
+        base, sep, quote = upper.partition("-") if "-" in upper else upper.partition("/")
+        if quote in {"FDUSD", "USDT", "USDC", "BUSD", "TUSD"}:
+            return "crypto_or_fx"
+        if quote == "USD" and base in {
+            "BTC", "ETH", "BNB", "SOL", "ADA", "XRP", "DOGE", "TRX", "DOT",
+            "MATIC", "AVAX", "LINK", "LTC", "BCH", "ETC", "XLM", "ATOM",
+            "FIL", "APT", "NEAR", "ALGO", "SAND", "MANA", "AXS", "XAUT", "PAXG",
+        }:
+            return "crypto_or_fx"
+        # Any other dashed / slashed pair is forex-shaped (e.g. ``XAU-USD``,
+        # ``EUR-USD``, ``GBP-USD``); the per-pair engine classifier decides
+        # ``forex`` vs ``crypto`` vs ``futures`` downstream.
+        return "forex"
     return None
 
 
@@ -845,8 +883,36 @@ def _infer_instrument_type(symbol: str, candidate_type: Any = None) -> str:
         return "future"
     if upper.endswith(".FX"):
         return "forex"
+    # Yahoo's continuous-front-month futures notation (GC=F, CL=F, ...).
+    # Mirrors the engine ``_MARKET_PATTERNS`` and the correlation helper.
+    if re.match(r"^[A-Z]{2,5}=F$", upper):
+        return "future"
+    # Yahoo's forex notation (XAUUSD=X, EURUSD=X).
+    if re.match(r"^[A-Z]{6}=X$", upper):
+        return "forex"
+    # Bare 6-character precious-metal / FX symbols (whitelist).
+    if re.match(
+        r"^(?:XAU|XAG|XPT|XPD|EUR|GBP|JPY|CHF|CAD|AUD|NZD|USD)[A-Z]{3}$",
+        upper,
+    ):
+        return "forex"
+    # Dashed / slashed symbols: crypto only when the quote leg is a
+    # stablecoin OR the base is in the USD-whitelist. The whitelist
+    # mirrors ``_canonical_crypto_pair`` in
+    # ``src.tools.symbol_search_tool``. ``XAU-USD`` / ``EUR-USD`` /
+    # ``GBP-USD`` are NOT crypto and resolve as ``forex`` (the per-pair
+    # engine classifier decides the final market downstream).
     if "-" in upper or "/" in upper:
-        return "crypto"
+        base, sep, quote = upper.partition("-") if "-" in upper else upper.partition("/")
+        if quote in {"FDUSD", "USDT", "USDC", "BUSD", "TUSD"}:
+            return "crypto"
+        if quote == "USD" and base in {
+            "BTC", "ETH", "BNB", "SOL", "ADA", "XRP", "DOGE", "TRX", "DOT",
+            "MATIC", "AVAX", "LINK", "LTC", "BCH", "ETC", "XLM", "ATOM",
+            "FIL", "APT", "NEAR", "ALGO", "SAND", "MANA", "AXS", "XAUT", "PAXG",
+        }:
+            return "crypto"
+        return "forex"
     return "listed_security"
 
 

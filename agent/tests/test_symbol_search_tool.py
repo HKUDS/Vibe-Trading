@@ -762,3 +762,106 @@ class TestCryptoPairWithoutABrokerConnection:
         ), patch.object(ss.yahoo_client, "search", return_value=[]):
             ss.SymbolSearchTool().execute(query="apple", limit=5)
         assert called == []
+
+
+class TestSpotGoldCandidateFilter:
+    """Bare gold / FX / futures queries must not lock a wrong crypto identity.
+
+    Yahoo's free-text search can return a near-string crypto pair for a
+    non-crypto query (``XAUUSD`` -> ``VALOUR-BTC-0-SEK.ST`` is a real-world
+    observation). The resolver-side ``_canonical_crypto_pair`` already
+    rejects those candidates, but the symbol-search tool itself used
+    to keep them in the candidate list, propagating the wrong instrument
+    to the identity gate. The fix: when the query is a ticker shape
+    (separator, ``=F``, or ``=X``) but NOT a crypto pair, drop any
+    candidate whose canonical form IS a crypto pair. Free-text name
+    queries (``apple``, ``tesla``) are unaffected.
+    """
+
+    def _run(self, query, yahoo_hits, eastmoney_rows=None):
+        # Default to an empty Eastmoney payload so the test isolates the
+        # Yahoo branch (the layer under test).
+        tool = ss.SymbolSearchTool()
+        em_payload = {"QuotationCodeTable": {"Data": eastmoney_rows or []}}
+        with patch.object(
+            ss.eastmoney_client, "get_json", return_value=em_payload
+        ), patch.object(ss.yahoo_client, "search", return_value=yahoo_hits), \
+             patch.object(ss, "_load_public_markets", return_value={}), \
+             patch.object(ss, "_enrich_us_cik", side_effect=lambda c, s="ok": (c, s)), \
+             patch.object(
+                 trading_profiles, "load_selected_profile_id",
+                 side_effect=OSError("no connector"),
+             ):
+            out = tool.execute(query=query, limit=10)
+        return json.loads(out)
+
+    def test_xauusdt_drops_near_string_btc_etp(self):
+        """The bug repro: Yahoo returns a Swedish Bitcoin ETP for XAUUSD."""
+        yahoo = [
+            {"symbol": "VALOUR-BTC-0-SEK.ST",
+             "shortname": "Valour Bitcoin Zero SEK",
+             "exchange": "STO", "quoteType": "EQUITY", "index": "XETR"},
+        ]
+        data = self._run("XAUUSD", yahoo)["data"]
+        assert data["count"] == 0
+        assert data["candidates"] == []
+
+    def test_xauusd_slash_drops_near_string_crypto_hits(self):
+        yahoo = [
+            {"symbol": "AETHUSDT-USD", "shortname": "Aave Ethereum USDT",
+             "exchange": "CCC", "quoteType": "CRYPTOCURRENCY", "index": "AETH"},
+        ]
+        data = self._run("XAU/USD", yahoo)["data"]
+        assert data["count"] == 0
+
+    def test_xauusd_x_drops_near_string_crypto_hits(self):
+        yahoo = [
+            {"symbol": "AETHUSDT-USD", "shortname": "Aave Ethereum USDT",
+             "exchange": "CCC", "quoteType": "CRYPTOCURRENCY", "index": "AETH"},
+        ]
+        data = self._run("XAUUSD=X", yahoo)["data"]
+        assert data["count"] == 0
+
+    def test_gc_f_keeps_correct_futures_hit(self):
+        yahoo = [
+            {"symbol": "GC=F", "shortname": "Gold Continuous Front Month",
+             "exchange": "NYM", "quoteType": "FUTURE", "index": "GC"},
+        ]
+        data = self._run("GC=F", yahoo)["data"]
+        assert data["count"] == 1
+        assert data["candidates"][0]["symbol"] == "GC=F"
+
+    def test_xaut_usdt_keeps_tokenized_gold(self):
+        yahoo = [
+            {"symbol": "XAUT-USDT", "shortname": "Tether Gold",
+             "exchange": "CCC", "quoteType": "CRYPTOCURRENCY", "index": "XAUT"},
+        ]
+        data = self._run("XAUT-USDT", yahoo)["data"]
+        assert data["count"] == 1
+        assert data["candidates"][0]["symbol"] == "XAUT-USDT"
+
+    def test_paxg_usdt_keeps_tokenized_gold(self):
+        yahoo = [
+            {"symbol": "PAXG-USDT", "shortname": "Paxos Gold",
+             "exchange": "CCC", "quoteType": "CRYPTOCURRENCY", "index": "PAXG"},
+        ]
+        data = self._run("PAXG-USDT", yahoo)["data"]
+        assert data["count"] == 1
+        assert data["candidates"][0]["symbol"] == "PAXG-USDT"
+
+    def test_free_text_name_query_unaffected(self):
+        """A free-text company name (``apple``) is NOT a ticker shape and
+        must not have crypto candidates stripped. Yahoo's free-text
+        answer may include near-string crypto hits (``BTC-USD``) which
+        the user is allowed to see and choose from.
+        """
+        yahoo = [
+            {"symbol": "BTC-USD", "shortname": "Bitcoin USD",
+             "exchange": "CCC", "quoteType": "CRYPTOCURRENCY", "index": "BTC"},
+            {"symbol": "AAPL.US", "shortname": "Apple Inc.",
+             "exchange": "NMS", "quoteType": "EQUITY", "index": "AAPL"},
+        ]
+        data = self._run("apple", yahoo)["data"]
+        symbols = [c["symbol"] for c in data["candidates"]]
+        assert "BTC-USD" in symbols
+        assert "AAPL.US" in symbols
